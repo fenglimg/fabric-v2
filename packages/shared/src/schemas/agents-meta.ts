@@ -77,6 +77,14 @@ export const ruleDescriptionSchema = z
     //   relevance_paths → []        (no path anchors)
     relevance_scope: z.enum(["narrow", "broad"]).default("broad"),
     relevance_paths: z.array(z.string()).default([]),
+    // v2.2 H2-related (W1-T7): explicit graph edges to related KB entries by
+    // stable_id. Authored in frontmatter (`related: [KT-DEC-0001, KT-PIT-0002]`)
+    // or written by the fabric-connect skill (SK2); read by fab_recall's
+    // include_related packaging (MC1). Optional + default [] so the field is a
+    // pure additive — every pre-v2.2 entry parses unchanged. The schema is
+    // .strict(), so this MUST be declared or `related:` frontmatter would be
+    // rejected at parse time.
+    related: z.array(z.string()).default([]).optional(),
   })
   .strict();
 

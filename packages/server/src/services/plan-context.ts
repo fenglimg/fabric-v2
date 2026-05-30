@@ -1,6 +1,6 @@
-import { type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
+import { type RuleDescription, type RuleDescriptionIndexItem, tokenize } from "@fenglimg/fabric-shared";
 
-import { readSelectionTokenTtlMs } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
@@ -8,6 +8,26 @@ import { loadActiveMetaOrStale } from "./load-active-meta.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
+import { buildBm25Model, buildQueryTerms, type Bm25Model } from "./bm25.js";
+import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
+
+// v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
+// and the sort comparator. `queryTerms` are the CJK-tokenized caller intent;
+// `bm25` is the model built over the candidate corpus (only present when the
+// caller supplied query terms — otherwise ranking degrades to recency+locality).
+//
+// v2.2 C2-vector (W2-T7): `vectorScores` is the per-candidate cosine similarity
+// (0..1) against the query, present ONLY when embeddings are enabled AND the
+// optional embedder loaded AND a query exists; `vectorWeight` scales it. Absent
+// → text-only ranking (the default).
+type ScoringContext = {
+  nowMs: number;
+  targetPaths: string[];
+  queryTerms: string[];
+  bm25?: Bm25Model;
+  vectorScores?: Map<string, number>;
+  vectorWeight?: number;
+};
 
 export type PlanContextInput = {
   paths: string[];
@@ -74,6 +94,12 @@ export type PlanContextResult = {
   // top-level array; `preflight_diagnostics` lifted alongside it (the `shared`
   // wrapper held nothing else).
   candidates: RuleDescriptionIndexItem[];
+  // v2.2 A-INFRA-3 (W1-T3-TOPK): number of lower-ranked candidates dropped by
+  // the top_k cap. Present (and > 0) ONLY when truncation actually fired, so
+  // the steady-state wire shape is unchanged. Surfacing the count keeps the cap
+  // honest — the LLM sees "N more exist; narrow your intent" instead of silently
+  // believing the returned set is exhaustive.
+  omitted_candidate_count?: number;
   preflight_diagnostics: PreflightDiagnostic[];
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced ONLY
   // when loadActiveMetaOrStale detected drift between on-disk meta and the
@@ -249,17 +275,63 @@ export async function planContext(
   // contributes zero locality score (no dirname / no package root), which is
   // the correct degenerate behavior — broad mode falls through to recency +
   // stable_id tiebreaker.
-  const scoringContext = {
+  // v2.2 A-INFRA-1 (W1-T2-BM25): caller intent → query text/terms. Joins the
+  // free-form intent with known_tech and every detected_entities value. Empty
+  // when the caller supplies none of these (broad SessionStart probe), which
+  // disables BM25/vector and falls back to recency+locality.
+  const queryText = [
+    input.intent ?? "",
+    ...(input.known_tech ?? []),
+    ...Object.values(input.detected_entities ?? {}).flat(),
+  ].join(" ");
+  const scoringContext: ScoringContext = {
     nowMs: Date.now(),
     targetPaths: input.target_paths ?? dedupePaths(input.paths),
+    queryTerms: buildQueryTerms(queryText),
   };
+
   // v2.0.0-rc.38 UX-1/UX-2: build the single candidate index once. The per-path
   // filters (shouldIncludeIndexItemForPath / shouldIncludeByRelevance) have been
   // no-ops since rc.37 A1, so there is no per-path narrowing to do — every path
   // sees the same candidates. We dedupe by stable_id and surface empty-shell
   // suppressions as a preflight diagnostic.
-  const { items: builtItems, suppressedStableIds } = buildDescriptionIndex(meta, scoringContext);
-  const candidates = dedupeDescriptionIndex(builtItems);
+  const { rawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
+
+  // v2.2 C2-vector (W2-T7): OPTIONAL semantic recall supplement. Default OFF —
+  // only runs when `embed_enabled` is set AND the optional fastembed package
+  // loads AND a query exists. buildVectorScores returns null (→ text-only) on
+  // any of: disabled, embedder absent, empty query, embedding error. Computed
+  // here (async) BEFORE the sort so vector similarity can rescue semantically-
+  // relevant entries into the top_k. The whole block is a no-op on the default
+  // path, so the text-only ranking is byte-identical to pre-C2.
+  const embedConfig = readEmbedConfig(projectRoot);
+  if (embedConfig.enabled && queryText.trim().length > 0 && rawItems.length > 0) {
+    // W2-REVIEW codex BLOCK-1: only pay the embedder init when there is actually
+    // something to embed — an empty candidate set skips the load entirely.
+    const embedder = await loadEmbedder();
+    const vectorScores = await buildVectorScores(
+      embedder,
+      queryText,
+      rawItems.map((item) => ({ stable_id: item.stable_id, text: documentTextForItem(item.description) })),
+    );
+    if (vectorScores !== null) {
+      scoringContext.vectorScores = vectorScores;
+      scoringContext.vectorWeight = embedConfig.weight;
+    }
+  }
+
+  const builtItems = sortDescriptionItems(rawItems, scoringContext);
+  const rankedCandidates = dedupeDescriptionIndex(builtItems);
+  // v2.2 A-INFRA-3 (W1-T3-TOPK): bounded top_k truncation. Applied AFTER BM25
+  // ranking (buildDescriptionIndex already sorted by score) so the entries we
+  // drop are the least content-relevant, not an alphabetic tail. This is the
+  // first link of the unified truncation chain (CJK→BM25→top_k→payload): rank
+  // first, then cap count here, then cap bytes at the MCP payload guard.
+  // Truncating BEFORE ranking would freeze a weak ordering into a hard data
+  // loss, so the dependency order is load-bearing.
+  const topK = readPlanContextTopK(projectRoot);
+  const omittedCandidateCount = Math.max(0, rankedCandidates.length - topK);
+  const candidates = omittedCandidateCount > 0 ? rankedCandidates.slice(0, topK) : rankedCandidates;
 
   const entries: PlanContextEntry[] = uniquePaths.map((path) => ({
     path,
@@ -299,6 +371,7 @@ export async function planContext(
     selection_token: selectionToken,
     entries,
     candidates,
+    ...(omittedCandidateCount > 0 ? { omitted_candidate_count: omittedCandidateCount } : {}),
     preflight_diagnostics: buildPreflightDiagnostics(meta, suppressedStableIds),
     // v2.0.0-rc.22 Scope D T-D2 + rc.23 TASK-005 (a-B): surface auto-heal pair
     // only when a heal actually fired (either revision-drift heal in
@@ -424,40 +497,80 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 // empty intent_clues/tech_stack/impact) carry zero selection signal — they are
 // dropped from `items` and their ids returned in `suppressedStableIds` so the
 // caller can raise a data-quality diagnostic.
-function buildDescriptionIndex(
-  meta: AgentsMeta,
-  scoringContext?: { nowMs: number; targetPaths: string[] },
-): { items: RuleDescriptionIndexItem[]; suppressedStableIds: string[] } {
+// v2.2 C2-vector (W2-T7): split out the raw (unsorted) item build so planContext
+// can compute optional vector scores over the candidate texts BEFORE the sort.
+function buildRawDescriptionItems(meta: AgentsMeta): {
+  rawItems: RuleDescriptionIndexItem[];
+  suppressedStableIds: string[];
+} {
   const suppressedStableIds: string[] = [];
-  const items = Object.entries(meta.nodes)
-    .flatMap(([nodeId, node]) => {
-      const baseDescription = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
-      if (baseDescription === undefined) {
-        return [];
-      }
+  const rawItems = Object.entries(meta.nodes).flatMap(([nodeId, node]) => {
+    const baseDescription = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
+    if (baseDescription === undefined) {
+      return [];
+    }
 
-      const stableId = node.stable_id ?? nodeId;
+    const stableId = node.stable_id ?? nodeId;
 
-      // fold ②: suppress signal-less shells.
-      if (isEmptyShellDescription(baseDescription, stableId)) {
-        suppressedStableIds.push(stableId);
-        return [];
-      }
+    // fold ②: suppress signal-less shells.
+    if (isEmptyShellDescription(baseDescription, stableId)) {
+      suppressedStableIds.push(stableId);
+      return [];
+    }
 
-      // Backfill the path-inferred knowledge layer (team vs personal from the
-      // content_ref/file root) when frontmatter left it unset, so MCP clients
-      // always see a layer without a separate top-level mirror.
-      const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
-      const description =
-        baseDescription.knowledge_layer === undefined && inferredLayer !== undefined
-          ? { ...baseDescription, knowledge_layer: inferredLayer }
-          : baseDescription;
+    // Backfill the path-inferred knowledge layer (team vs personal from the
+    // content_ref/file root) when frontmatter left it unset, so MCP clients
+    // always see a layer without a separate top-level mirror.
+    const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
+    const description =
+      baseDescription.knowledge_layer === undefined && inferredLayer !== undefined
+        ? { ...baseDescription, knowledge_layer: inferredLayer }
+        : baseDescription;
 
-      return [{ stable_id: stableId, description }];
-    })
-    .sort((left, right) => compareDescriptionIndexItems(left, right, scoringContext));
+    return [{ stable_id: stableId, description }];
+  });
 
-  return { items, suppressedStableIds };
+  return { rawItems, suppressedStableIds };
+}
+
+// v2.2 A-INFRA-1 (W1-T2-BM25): build the BM25 model over this call's candidate
+// corpus, fold it into the scoring context, and sort. Only builds BM25 when the
+// caller supplied query terms — a query-less broad probe skips the work entirely
+// and ranks on recency+locality exactly as before (backward compatible). The
+// model scores against the candidate set itself (corpus = candidates), which is
+// the correct collection for IDF: rarity is measured among the entries the caller
+// is choosing between. `scoringContext.vectorScores` (C2) is already computed by
+// the caller and rides through the comparator unchanged.
+function sortDescriptionItems(
+  rawItems: RuleDescriptionIndexItem[],
+  scoringContext?: ScoringContext,
+): RuleDescriptionIndexItem[] {
+  const effectiveContext =
+    scoringContext !== undefined && scoringContext.queryTerms.length > 0
+      ? {
+          ...scoringContext,
+          bm25: buildBm25Model(
+            rawItems.map((item) => ({ id: item.stable_id, tokens: tokenize(documentTextForItem(item.description)) })),
+          ),
+        }
+      : scoringContext;
+
+  return [...rawItems].sort((left, right) => compareDescriptionIndexItems(left, right, effectiveContext));
+}
+
+// v2.2 A-INFRA-1 (W1-T2-BM25): flatten a candidate's selection-signal fields
+// into the BM25 document text. Mirrors the surface the LLM reads when choosing,
+// so content relevance is scored over the same words the caller sees.
+function documentTextForItem(description: RuleDescription): string {
+  return [
+    description.summary,
+    description.must_read_if,
+    ...description.intent_clues,
+    ...description.tech_stack,
+    ...description.impact,
+    ...(description.entities ?? []),
+    ...(description.tags ?? []),
+  ].join(" ");
 }
 
 // v2.0.0-rc.38 UX-2: an entry whose summary just echoes its stable_id and whose
@@ -590,11 +703,11 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
 function compareDescriptionIndexItems(
   left: RuleDescriptionIndexItem,
   right: RuleDescriptionIndexItem,
-  context?: { nowMs: number; targetPaths: string[] },
+  context?: ScoringContext,
 ): number {
   if (context !== undefined) {
-    const leftScore = scoreDescriptionItem(left, context.nowMs, context.targetPaths);
-    const rightScore = scoreDescriptionItem(right, context.nowMs, context.targetPaths);
+    const leftScore = scoreDescriptionItem(left, context);
+    const rightScore = scoreDescriptionItem(right, context);
     if (leftScore !== rightScore) {
       return rightScore - leftScore; // descending
     }
@@ -616,28 +729,77 @@ const LOCALITY_SAME_FILE = 100;
 const LOCALITY_SAME_DIR = 50;
 const LOCALITY_SAME_PACKAGE = 25;
 
-function scoreDescriptionItem(
-  item: RuleDescriptionIndexItem,
-  nowMs: number,
-  targetPaths: string[],
-): number {
+// v2.2 A-INFRA-1 (W1-T2-BM25): weight applied to the raw BM25 score before it
+// joins the additive score. Calibrated so content relevance LEADS the ranking:
+// a single strong term match (raw BM25 ~2-4 on the small KB corpus) clears the
+// top locality tier (same-file = 100), so a candidate whose TEXT matches the
+// caller's intent outranks one merely sitting in the same directory. Recency
+// and locality remain as secondary nudges / tie-breakers (and as the SOLE
+// signals when the caller supplied no query → BM25 contributes 0).
+const BM25_WEIGHT = 50;
+
+// v2.2 C3-salience (W2-T1): maturity-driven salience, deliberately sized as the
+// FINEST tie-breaker. A single BM25 term match moves the score by ~BM25_WEIGHT
+// (50) and a locality hit by 25-100; salience tops out at 15 (proven) so it can
+// only reorder candidates that already tie on content relevance AND locality.
+// This is the "防高成熟低相关压过正文" invariant: a `proven` entry that does not
+// match the intent never outranks a `draft` entry that does. Absent maturity
+// (legacy / unenriched) contributes 0, identical to draft.
+const SALIENCE_PROVEN = 15;
+const SALIENCE_VERIFIED = 8;
+const SALIENCE_DRAFT = 0;
+
+function salienceScore(item: RuleDescriptionIndexItem): number {
+  switch (item.description?.maturity) {
+    case "proven":
+      return SALIENCE_PROVEN;
+    case "verified":
+      return SALIENCE_VERIFIED;
+    default:
+      // draft or unset — the lifecycle floor.
+      return SALIENCE_DRAFT;
+  }
+}
+
+function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
   let score = 0;
+
+  // v2.2 A-INFRA-1 (W1-T2-BM25): content relevance — the lead signal. 0 when no
+  // query terms / no BM25 model (broad probe), preserving recency+locality-only
+  // ranking for the backward-compatible path.
+  if (context.bm25 !== undefined && context.queryTerms.length > 0) {
+    score += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
+  }
+
+  // v2.2 C2-vector (W2-T7): semantic recall SUPPLEMENT, layered after BM25. 0
+  // when embeddings are disabled / the optional embedder is absent / no query
+  // (vectorScores undefined) — the text-only fallback. The weight is kept below
+  // BM25_WEIGHT so vectors rescue semantic matches into the top_k without
+  // overriding lexical relevance.
+  if (context.vectorScores !== undefined) {
+    score += (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0);
+  }
+
+  // v2.2 C3-salience (W2-T1): maturity tie-breaker, applied AFTER (i.e. weighted
+  // below) BM25. See SALIENCE_* calibration — it only separates entries that are
+  // otherwise equally relevant, never overriding content.
+  score += salienceScore(item);
 
   // W2-3: recency boost — read description.created_at, compare with now.
   const createdAtRaw = item.description?.created_at;
   if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
     const createdMs = Date.parse(createdAtRaw);
-    if (Number.isFinite(createdMs) && nowMs - createdMs < RECENCY_WINDOW_MS) {
+    if (Number.isFinite(createdMs) && context.nowMs - createdMs < RECENCY_WINDOW_MS) {
       score += RECENCY_BOOST;
     }
   }
 
   // W2-4: path-locality scoring — max over (relevance_path, target_path).
-  if (targetPaths.length > 0) {
+  if (context.targetPaths.length > 0) {
     const relevancePaths = item.description?.relevance_paths ?? [];
     let best = 0;
     for (const rp of relevancePaths) {
-      for (const tp of targetPaths) {
+      for (const tp of context.targetPaths) {
         const tier = localityTier(rp, tp);
         if (tier > best) best = tier;
       }

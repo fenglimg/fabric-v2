@@ -8,6 +8,7 @@ import {
   archiveScanOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
+import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
@@ -40,17 +41,13 @@ export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker
         });
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(result);
+        // v2.2 MC5-action-hint (W3-T3): symmetric warn surfacing via the shared helper.
         const guardResult = enforcePayloadLimit(serialized, payloadLimits);
-        if (guardResult.warning) {
-          result.warnings = [
-            ...(result.warnings ?? []),
-            {
-              code: guardResult.warning.code,
-              file: "<response>",
-              action_hint: "Pass an explicit `range` of session_ids to narrow the scan.",
-            },
-          ];
-        }
+        result.warnings = appendPayloadWarning(
+          result.warnings,
+          guardResult,
+          "fab_archive_scan returned a large candidate set — pass an explicit `range` of session_ids to narrow the scan.",
+        );
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result) }],
           structuredContent: result,

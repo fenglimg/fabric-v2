@@ -1203,6 +1203,12 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                 "must_read_if": {
                   "type": "string",
                 },
+                "related": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
                 "relevance_paths": {
                   "items": {
                     "type": "string",
@@ -1298,6 +1304,10 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
           "type": "object",
         },
         "type": "array",
+      },
+      "omitted_candidate_count": {
+        "minimum": 0,
+        "type": "integer",
       },
       "preflight_diagnostics": {
         "items": {

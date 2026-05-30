@@ -10,6 +10,7 @@ import {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
+import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -48,12 +49,15 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
 
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(response);
-        // enforcePayloadLimit returns a guard structure; we discard the
-        // size-overage warning here because fab_extract_knowledge response
-        // is small (two short strings + optional rc.23 gate warning) and
-        // never realistically exceeds the limit. Keep the call to remain
-        // consistent with peer tools.
-        enforcePayloadLimit(serialized, payloadLimits);
+        // v2.2 MC5-action-hint (W3-T3): surface the soft-warn banner symmetrically
+        // with peer tools instead of discarding it. The response is normally
+        // small, so this fires only on a pathological over-warn payload.
+        const guardResult = enforcePayloadLimit(serialized, payloadLimits);
+        response.warnings = appendPayloadWarning(
+          response.warnings,
+          guardResult,
+          "fab_extract_knowledge produced an unexpectedly large response — extract from a smaller span of text.",
+        );
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(response) }],

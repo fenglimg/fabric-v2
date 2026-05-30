@@ -29,6 +29,17 @@ export const mcpPayloadLimitsSchema = z.object({
 // fabricConfigSchema `selection_token_ttl_ms` field.
 export const selectionTokenTtlMsSchema = z.number().int().min(30_000).max(3_600_000);
 
+// v2.2 A-INFRA-3 (W1-T3-TOPK): upper bound on the number of candidates
+// `fab_plan_context` returns, applied AFTER BM25 content ranking so the
+// truncation drops the least-relevant entries (not an arbitrary alphabetic
+// tail). Bounds the MCP payload as the KB grows to hundreds of entries — the
+// rc.38 UX-1 fold already collapsed per-path duplication, this caps the single
+// shared list. Exported standalone so the server config-loader validates it on
+// the hot plan_context read path without re-parsing the whole config. Range
+// 1..200; default 24 (generous enough for the LLM to choose from after ranking,
+// small enough to stay well under the payload budget).
+export const planContextTopKSchema = z.number().int().min(1).max(200);
+
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: Drives init-scan
 // baseline template language and the zh-CN body rewrite policy.
 // `match-existing` preserves whatever language the project is already
@@ -264,6 +275,13 @@ export const fabricConfigSchema = z.object({
   // TRUNCATION_THRESHOLD=12 grouped-render kicks in. Mirrors the rc.7 T7 +
   // archive_max_* pattern of externalizing previously-hardcoded thresholds.
   hint_broad_top_k: z.number().int().min(1).max(50).optional().default(8),
+  // v2.2 HK2-degrade (W2-T2): char budget for the rendered SessionStart broad-menu
+  // body — the final rung of the degradation ladder after the hint_broad_top_k
+  // count slice. Once the rendered entry/group lines exceed this, the tail
+  // collapses to a single "N more omitted" marker so a large corpus cannot blow
+  // the agent's working memory. Default 2000 (~one screenful); 0 disables the
+  // budget. Read by knowledge-hint-broad.cjs via readConfigNumber. Range 0..20000.
+  hint_broad_budget_chars: z.number().int().min(0).max(20000).optional().default(2000),
   // v2.0.0-rc.37 NEW-16: durable per-signal dismiss for the fabric-hint Stop
   // hook nudges. Any signal type listed here is suppressed at emit time across
   // all sessions (the session-scoped sibling lives in a .fabric/.cache sidecar
@@ -359,4 +377,28 @@ export const fabricConfigSchema = z.object({
   // whole fabricConfigSchema on every plan_context call — that lets a corrupt
   // unrelated field stay isolated from the hot read path.
   selection_token_ttl_ms: selectionTokenTtlMsSchema.optional(),
+  // v2.2 A-INFRA-3 (W1-T3-TOPK): bound on `fab_plan_context` candidate count,
+  // applied after BM25 ranking. Absent → library default (24). See
+  // planContextTopKSchema for the range/calibration rationale.
+  plan_context_top_k: planContextTopKSchema.optional(),
+  // v2.2 C5-budget (W2-T3): layered retrieval budget profile. A single coherent
+  // strategy across the injection + MCP layers — `balanced` (default) reproduces
+  // the historical per-knob defaults exactly, `conservative` / `generous` scale
+  // the whole truncation chain (top_k + payload bytes + injection chars) down /
+  // up together. Per-field knobs (plan_context_top_k, mcpPayloadLimits.*,
+  // hint_broad_budget_chars) still override the profile when set. See
+  // retrieval-budget.ts (resolveRetrievalBudget) for the resolution order.
+  retrieval_budget_profile: z.enum(["conservative", "balanced", "generous"]).optional(),
+  // v2.2 C2-vector (W2-T7): OPTIONAL dense-embedding semantic retrieval, layered
+  // as a recall supplement after BM25. Default OFF (`--no-embed` is the baseline);
+  // requires the operator to install the optional `fastembed` package — absent →
+  // text-only fallback. Never grows the default install footprint.
+  embed_enabled: z.boolean().optional().default(false),
+  // Weight applied to the 0..1 cosine similarity before it joins the additive
+  // score. Capped at 49 — strictly BELOW BM25_WEIGHT (50) — so a perfect vector
+  // match (weight × 1) can never outscore a single strong BM25 term match. This
+  // ENFORCES the "vectors supplement, never override lexical relevance"
+  // invariant in the schema rather than leaving it to a comment (W2-REVIEW codex
+  // MED-4). Range 0..49; default 30.
+  embed_weight: z.number().int().min(0).max(49).optional().default(30),
 });

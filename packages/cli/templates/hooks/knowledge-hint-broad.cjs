@@ -22,7 +22,7 @@
  *         - <id> · <summary>
  *       ...
  *     revision_hash: <hash>
- *     Use `fab_get_knowledge_sections` to fetch full content.
+ *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
  *
  *   When narrow count > 30 (grouped-truncation mode, per type):
  *     [fabric] Session start — N broad-scoped knowledge entries available (truncated):
@@ -33,7 +33,7 @@
  *       [decision] draft: 7 entries
  *       ...
  *     revision_hash: <hash>
- *     Use `fab_get_knowledge_sections` to fetch full content.
+ *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
  *
  *   When 0 entries / CLI unavailable / CLI error / parse failure:
  *     (no output — silent exit 0)
@@ -63,6 +63,7 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 const {
   readConfigNumber,
   readConfigBoolean,
+  readConfigString,
 } = require("./lib/config-cache.cjs");
 const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
@@ -76,6 +77,15 @@ try {
   bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
 } catch {
   // Lib missing (old install) — store labels degrade to silent absence.
+}
+// v2.2 HK3-telemetry (W3-T1): injection-side per-inject logger. Optional require
+// so an old install lacking the lib degrades to silent absence (no telemetry,
+// hook still works).
+let injectionLog = null;
+try {
+  injectionLog = require("./lib/injection-log.cjs");
+} catch {
+  // Lib missing (old install) — injection telemetry degrades to silent absence.
 }
 
 // Read the project's own `project_id` from `.fabric/fabric-config.json` (the
@@ -349,6 +359,65 @@ const CLI_TIMEOUT_MS = 2000;
 // `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 
+// v2.2 HK2-degrade (W2-T2): char budget for the rendered broad-menu BODY. The
+// hook already degrades by COUNT (hint_broad_top_k slice + TRUNCATION_THRESHOLD
+// grouped mode), but nothing bounded the total rendered SIZE — a corpus with
+// many types or long (near-maxLen) summaries could still emit a wall of text
+// that displaces the agent's working memory. Borrowing the maestro
+// context-budget idea, this is the final rung of the degradation ladder: once
+// the body exceeds the budget, the tail collapses to a single "N more omitted"
+// marker. Default 2000 chars ≈ one screenful. Overridable via
+// fabric-config.json#hint_broad_budget_chars (range 200..20000); 0 disables.
+const DEFAULT_HINT_BROAD_BUDGET_CHARS = 2000;
+
+// v2.2 C5-budget (W2-T3): bind the injection char budget to the layered retrieval
+// budget profile. Mirrors the injectionChars column of shared/retrieval-budget.ts
+// PROFILES (kept in sync — the hook cannot require the TS resolver). The explicit
+// `hint_broad_budget_chars` knob still wins; the profile only supplies the
+// default. `balanced` (and an absent/unknown profile) keeps the historical 2000.
+const RETRIEVAL_BUDGET_INJECTION_CHARS = {
+  conservative: 1000,
+  balanced: 2000,
+  generous: 4000,
+};
+
+function readBroadBudgetChars(projectRoot) {
+  const profile = readConfigString(projectRoot, "retrieval_budget_profile", "balanced");
+  const profileDefault =
+    RETRIEVAL_BUDGET_INJECTION_CHARS[profile] ?? DEFAULT_HINT_BROAD_BUDGET_CHARS;
+  return readConfigNumber(projectRoot, "hint_broad_budget_chars", profileDefault, {
+    min: 0,
+    max: 20000,
+    floor: true,
+  });
+}
+
+// v2.2 HK2-degrade (W2-T2): cap the rendered body to `budgetChars`, collapsing
+// the overflow tail into one marker line. Structural lines (banner, revision_hash,
+// footer) are appended by renderSummary AFTER this pass, so they always survive —
+// only entry/group body lines are subject to the budget. `budgetChars` of 0 or
+// undefined is a no-op (preserves the pre-HK2 unbounded behavior and all
+// existing snapshot tests).
+function capBodyToBudget(body, budgetChars) {
+  if (!budgetChars || budgetChars <= 0) return body;
+  const kept = [];
+  let total = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const line = body[i];
+    // +1 for the newline each line costs once joined.
+    if (kept.length > 0 && total + line.length + 1 > budgetChars) {
+      const remaining = body.length - i;
+      kept.push(
+        `  … ${remaining} more entr${remaining === 1 ? "y" : "ies"} omitted (injection budget ${budgetChars} chars; raise hint_broad_budget_chars or narrow scope)`,
+      );
+      return kept;
+    }
+    kept.push(line);
+    total += line.length + 1;
+  }
+  return kept;
+}
+
 function readSummaryMaxLen(projectRoot) {
   return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
     min: 40,
@@ -587,7 +656,7 @@ function renderTruncated(narrow, maxLen) {
  * after writing exactly one stderr breadcrumb so operators grepping a stuck-
  * banner report can diagnose the version drift without source-diving.
  */
-function renderSummary(payload, maxLen) {
+function renderSummary(payload, maxLen, budgetChars) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       try {
@@ -610,7 +679,9 @@ function renderSummary(payload, maxLen) {
     ? `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available (truncated):`
     : `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available:`;
 
-  const body = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
+  const renderedBody = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
+  // v2.2 HK2-degrade (W2-T2): final budget rung — cap the body's rendered size.
+  const body = capBodyToBudget(renderedBody, budgetChars);
 
   const lines = [banner, ...body];
   const revHash = typeof payload.revision_hash === "string" ? payload.revision_hash : null;
@@ -657,7 +728,18 @@ function renderSummary(payload, maxLen) {
     }
   }
 
-  lines.push("  Use `fab_get_knowledge_sections` to fetch full content.");
+  // v2.2 MC3-fix-guidance (W1-T5): unify the footer with the canonical recall
+  // flow. The prior text ("Use `fab_get_knowledge_sections` to fetch full
+  // content.") told the agent to call a tool that REQUIRES a selection_token it
+  // does not yet have — directly contradicting the bilingual next-step nudge
+  // (and AGENTS.md) which leads with `fab_recall`. Footer now states the same
+  // two-path model: single-step `fab_recall`, or `fab_plan_context` →
+  // `fab_get_knowledge_sections` when the bodies must be trimmed first. Keeps
+  // the `fab_get_knowledge_sections` token (downstream substring contracts) but
+  // sequences it correctly behind the token-issuing `fab_plan_context`.
+  lines.push(
+    "  Load full content: `fab_recall(paths)` (one step), or `fab_plan_context` → `fab_get_knowledge_sections` to trim first.",
+  );
   return lines;
 }
 
@@ -744,7 +826,9 @@ function main(env, stdio) {
     // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
     // hours-based cooldown via fabric-config (see gate above).
     const summaryMaxLen = readSummaryMaxLen(cwd);
-    const lines = renderSummary(resolvedPayload, summaryMaxLen);
+    // v2.2 HK2-degrade (W2-T2): thread the injection char-budget into the renderer.
+    const broadBudgetChars = readBroadBudgetChars(cwd);
+    const lines = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
 
     // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path —
     // shared between the (existing) broadImportBanner branch and the new
@@ -779,15 +863,38 @@ function main(env, stdio) {
     // tells the AI what to do with the broad index it just received. Without
     // this, the model often parses the index and moves on without ever calling
     // fab_recall / fab_plan_context. One-line nudge, bilingual.
+    // v2.2 W1-REVIEW codex LOW-6: `description_index` was renamed to `candidates`
+    // in rc.38 UX-1; the nudge now uses the current field name so the guidance
+    // matches the actual MCP response shape.
     const nextStepNudge =
       fabricLanguageForEmit === "zh-CN"
-        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选 description_index。"
-        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the description_index first.";
+        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选描述(candidates)。"
+        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the candidate descriptions first.";
     lines.push(nextStepNudge);
 
     // Stderr: always emit (human-facing breadcrumb + legacy contract).
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // v2.2 HK3-telemetry (W3-T1): record the injection side. We just OFFERED the
+    // agent `resolvedPayload.entries` (the top_k-sliced broad menu); log their
+    // ids so the true hit rate (consumed ÷ injected) is computable against the
+    // consumption-side metrics.jsonl. Best-effort — never affects the emit.
+    if (injectionLog !== null) {
+      const injectedEntries = Array.isArray(resolvedPayload && resolvedPayload.entries)
+        ? resolvedPayload.entries
+        : [];
+      injectionLog.logInjection(cwd, {
+        surface: "broad",
+        stableIds: injectedEntries.map((e) => (e && e.id) || "").filter(Boolean),
+        count: injectedEntries.length,
+        revisionHash:
+          resolvedPayload && typeof resolvedPayload.revision_hash === "string"
+            ? resolvedPayload.revision_hash
+            : null,
+        ts: nowMs,
+      });
     }
 
     // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When

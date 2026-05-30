@@ -1,0 +1,1012 @@
+{
+  "session_id": "20260530-v22-pool-critique",
+  "active_session_id": "20260530-v22-pool-critique",
+  "sessions": [],
+  "intent": "对 v2.2 全候选池(除全局化外全部: 检索/注入/skill/MCP/治理 + 7 设计抉择 + 8 defer)做多-LLM 对抗式批判审定, 锁定 v2.2 scope + 解决设计抉择, 产出 roadmap-ready 候选集",
+  "goal": "把 .scratchpad/v22-master-consolidation.md 全池(~37 条 v2.2 相关: 22 DO + 7 设计抉择 + 8 defer)拉通做一次整盘批判: 每条由多-LLM(gemini+codex 零上下文冷评 + claude 综合, 允许读真代码 file:line)挑战 {值不值得做 / 优先级对不对 / 与护城河 D 或彼此有无隐藏冲突 / 落地序对不对}; 7 个设计抉择(inline+ref 双层/knowhow 类型字段/virtual wiki/progressive fill/harvest 多路由/实时 validator/keyword 注入)给 absorb-v2.2|reject|defer-v2.3 终判; 8 个 defer 确认或翻案. 终态 = 全池每条有 locked verdict + wave/优先级 + 依赖, v2.2 scope 锁定 roadmap-ready. 守边界: 多-LLM 只 frame 内批判(值不值/优先/冲突/序), frame 级(v2.2 里程碑边界/v2.1 独立)由 human 拍已定; 不为批判而推翻已 grounded 结论(需新证据/新冲突).",
+  "mode": "2",
+  "current_phase": "converged",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "批判 v2.2 全候选池每条: 检索质量(C3/A-INFRA-1/2/C4/top_k) / 注入治理(HK1-4/C5) / 配套 skill(SK1/2/3/5/H2) / MCP(MC1-5) / 治理(A14)",
+      "7 设计抉择终判(A6 inline+ref / A8 knowhow 类型字段 / A18 virtual wiki / A21 progressive fill / A20 harvest 多路由 / A9 实时 validator / A2-injection keyword 注入)",
+      "8 defer 候选确认或翻案(C1 RRF / C2 向量 / HK5 / A-INFRA-4 / A13 hook tier / A19/A7/B11 / H1/H4)",
+      "多-LLM 批判每条: gemini+codex 零上下文冷评挑战 + claude 综合; 分歧/主观/不可逆升 human queue",
+      "锁定集产出: wave 序 + 依赖图 + 护城河 D 不冲突 check + v2.1 边界清(不碰 provenance/store/全局 registry)"
+    ],
+    "out_of_scope": [
+      "写 Fabric 实现代码(本 session 只锁 scope+产 roadmap-ready 集, 实施另起)",
+      "v2.1 全局化线(全局 registry / 多 store / provenance / store-qualified / team-knowledge.git — 用户锁定 v2.1 独立, 不并入)",
+      "已闭环 rc.32-39(cite/dual store/maturity/events 治理)",
+      "已拒绝项重提(腾讯 B1-B8 / A1 / A22 / 重图 A-INFRA-5 / SK4 / review TUI H5)",
+      "frame 级决策(v2.2 里程碑边界 / v2.1 是否独立 — human 已拍定, 多-LLM 不挑战 frame)"
+    ],
+    "constraints": [
+      "批判结论 grounded: file:line 实证 + 护城河 D 四项 check, 允许读 pcf packages + clone 产品 repo",
+      "多-LLM = gemini+codex via maestro delegate(≥1 零上下文冷评)+ claude 综合, quorum≥2; 关键/分歧候选可加 fresh-context claude 子代理作第三批判",
+      "critic 只 frame 内审计(值不值/优先级/冲突/序), frame 级升 human(feedback_comprehensive_test_breadth_iteration: 多-LLM 收敛≠正确)",
+      "不为批判而推翻已 grounded 结论 — 翻案需新证据/新冲突, verbatim 采纳冷评 suggested fix",
+      "分歧(一 absorb 一 reject)/主观(优先级手感)/不可逆 升 needs_adjudication 批量浮 human, 非阻塞继续批别的"
+    ]
+  },
+  "ship_criteria": [
+    {
+      "name": "G-POOL-COVERAGE",
+      "target": "v2.2 全池每条(22 DO + 7 设计 + 8 defer ≈ 37)有 locked verdict(absorb-v2.2|reject|defer-v2.3) + wave/优先级",
+      "actual": "36/36 locked_verdict 非空, 0 limbo (17 absorb/16 defer/3 reject), 每条带 wave/priority",
+      "verifier_cmd": "DETERMINISTIC: count(candidate_pool where locked_verdict != null) >= 全池条数; 无 limbo(verdict=null)",
+      "verified_at": "2026-05-30"
+    },
+    {
+      "name": "G-DESIGN-RESOLVED",
+      "target": "7 设计抉择每条终判(absorb-v2.2|reject|defer-v2.3)+ rationale + grounded",
+      "actual": "7/7 设计抉择终判: A6/A8/A18/A20/A21 defer-v2.3, A9/A2 reject; 每条 rationale 非空 grounded",
+      "verifier_cmd": "DETERMINISTIC: 7 设计抉择(A6/A8/A18/A21/A20/A9/A2-inj)每条 locked_verdict + rationale 非空",
+      "verified_at": "2026-05-30"
+    },
+    {
+      "name": "G-CRITIQUE",
+      "target": "每条批判过多-LLM grounded, contested/设计项 quorum≥2(gemini+codex≥1 零上下文)+ claude 综合, 分歧升 human",
+      "actual": "每条过 gemini+codex 双零上下文冷评(读真代码 file:line)+claude 综合 quorum=3; HK4 grounding 争议我亲验裁决(3bug已修→reject); material 分歧 C2 入 needs_adjudication; 软分歧 grounded 综合落锁",
+      "verifier_cmd": "CROSS-LLM: 每批 gemini+codex 冷评批判 + claude 综合; 设计/contested 候选 quorum>=2 无未解 refuted; 分歧入 needs_adjudication",
+      "verified_at": "2026-05-30"
+    },
+    {
+      "name": "G-PORTFOLIO",
+      "target": "锁定集有 wave 序 + 依赖图 + 护城河 D 不冲突 + v2.1 边界清(零 provenance/store 撞车)",
+      "actual": "锁定集含 wave(3波 7/6/4)+依赖图(6边)+moat_D_check(MOAT-CLEAN)+v2_1_boundary_clean(CLEAN); portfolio 级双LLM批判一致无未解严重分歧",
+      "verifier_cmd": "DETERMINISTIC: 锁定 absorb-v2.2 集含 wave + 依赖 + moat_D_check + v2.1_boundary_clean 字段",
+      "verified_at": "2026-05-30"
+    }
+  ],
+  "task_decomposition": [
+    {
+      "id": "CR0",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "组装全池批判台账: 从 v22-master-consolidation.md 抽全 ~37 条 v2.2 相关候选, 标 {来源轮/现 verdict/优先/依赖}, 建批判输入清单",
+      "done_when": "candidate_pool 含全 37 条 stub(id/title/source/current_verdict/pillar), 无遗漏(对照 consolidation 第二三四节)",
+      "ship_criteria_alignment": [
+        "G-POOL-COVERAGE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "对照 consolidation doc 计数",
+        "evidence": "candidate_pool 写入 36 条 stub(21 DO+7 DESIGN+8 DEFER), 对照 consolidation 二/三/四节无遗漏",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "批判 主题1 检索质量(C3 salience/A-INFRA-1 BM25/A-INFRA-2 CJK/C4 endorsement/top_k): 多-LLM 挑战值不值/优先/冲突/序",
+      "done_when": "每条 gemini+codex 批判 + claude 综合 locked_verdict + wave; 落地序(CJK→BM25→top_k, salience 先行)再确认",
+      "ship_criteria_alignment": [
+        "G-POOL-COVERAGE",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude",
+        "evidence": "主题1检索5条 verdict locked(BM25/CJK/topk P0 + C3 P1 + C4 defer)",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "批判 主题2 注入治理(HK1 always-pin/HK2 SessionStart 降级/HK3 telemetry/HK4 hygiene bug/C5 budget): 多-LLM 批判",
+      "done_when": "每条 locked_verdict + wave; HK4 bug 确认 P0; HK2 与 C5 关系厘清(hook 侧 vs MCP 侧)",
+      "ship_criteria_alignment": [
+        "G-POOL-COVERAGE",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude",
+        "evidence": "主题2注入5条; HK4 亲验裁决 reject(3bug已修), HK2/C5 absorb-P1, HK1 defer, HK3 absorb-P2",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "批判 主题3 配套 skill(SK1 audit/SK2 connect/SK3 digest/SK5 裁决下沉/H2 related 字段): 多-LLM 批判",
+      "done_when": "每条 locked_verdict + wave; H2→SK2 依赖确认; SK1 与 doctor 互补边界确认",
+      "ship_criteria_alignment": [
+        "G-POOL-COVERAGE",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude",
+        "evidence": "主题3 skill5条; SK1/H2 absorb-P1, SK2 absorb-P2, SK3 defer, SK5 absorb-P2",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "批判 主题4 MCP 设施(MC1 recall 打包/MC2 server 引导层/MC3 修引导/MC4 payload 预算/MC5 对称 hint)+ 主题5 A14 doctor health: 多-LLM 批判",
+      "done_when": "每条 locked_verdict + wave; MC2 净新价值再确认; MC4 与 top_k(CR1)去重对齐",
+      "ship_criteria_alignment": [
+        "G-POOL-COVERAGE",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude",
+        "evidence": "主题4 MCP5条+A14; MC3 P0+MC2/MC1/MC4 P1+MC5 P2, A14 absorb-P2",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR5",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "批判 设计抉择 7 条(A6 inline+ref/A8 knowhow 类型字段/A18 virtual wiki/A21 progressive fill/A20 harvest 多路由/A9 实时 validator/A2-injection): 多-LLM 给 absorb-v2.2|reject|defer-v2.3 终判",
+      "done_when": "7 条每条 locked_verdict + rationale + grounded; 影响 schema/数据模型的(A6/A8/A18)冲突 check; 分歧升 human",
+      "ship_criteria_alignment": [
+        "G-DESIGN-RESOLVED",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude",
+        "evidence": "设计7条终判: A6/A18/A20/A21/A8 defer-v2.3, A9/A2 reject — 全 resolved",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR6",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "批判 8 defer 候选(C1 RRF/C2 向量/HK5/A-INFRA-4/A13/A19/A7/B11/H1/H4): 确认 defer 或翻案进 v2.2",
+      "done_when": "每条确认 defer-v2.3(带触发器)或翻案 absorb-v2.2 + rationale; 向量 C2/RRF C1 的 scale-gate 触发器明确",
+      "ship_criteria_alignment": [
+        "G-POOL-COVERAGE",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude",
+        "evidence": "defer8条: C1/HK5/AINFRA4/A13/A19/H4 confirm defer; C2 真分歧升human; H1 reject vs defer→defer",
+        "verified_at": "2026-05-30"
+      }
+    },
+    {
+      "id": "CR7",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "组合批判: 锁定 v2.2 absorb 集 → wave 序 + 依赖图 + 护城河 D 不冲突 + v2.1 边界 check; 多-LLM 对整盘 portfolio 做最后批判(序/遗漏/过载); 分歧 human queue 批量浮",
+      "done_when": "锁定集 wave+依赖+moat check 齐全; portfolio 级多-LLM 批判过(无未解严重分歧); needs_adjudication 批量浮; 输出 v2.2 roadmap-ready 候选集到 .scratchpad/",
+      "ship_criteria_alignment": [
+        "G-PORTFOLIO",
+        "G-CRITIQUE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "gemini+codex+claude portfolio 批判",
+        "evidence": "portfolio: 17 absorb/3 wave/依赖图/MOAT-CLEAN/v2.1-CLEAN; gemini+codex portfolio 级 wave+隐藏冲突一致; C2 单 material 分歧入 needs_adjudication 非阻断",
+        "verified_at": "2026-05-30"
+      }
+    }
+  ],
+  "candidate_pool": [
+    {
+      "id": "C3-salience",
+      "title": "scoreDescriptionItem salience(maturity/lifecycle/recency 线性)",
+      "source": "hybrid",
+      "current_verdict": "v2.2-DO",
+      "pillar": "retrieval",
+      "priority": "P1",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致; codex 精修: 应作 BM25 后 tie-breaker 防高成熟低相关压过正文. plan-context.ts:619 仅 recency+locality"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A-INFRA-1-BM25",
+      "title": "BM25 内容相关性(search.ts:134-163→plan-context.ts:619)",
+      "source": "infra",
+      "current_verdict": "v2.2-DO",
+      "pillar": "retrieval",
+      "priority": "P0",
+      "deps": [
+        "A-INFRA-2-CJK"
+      ],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 P0; gemini 翻案 P1→P0(top_k 安全前置). plan-context.ts:626/635 无正文相关性. 护城河重定义后无 filter 冲突. 依赖 CJK"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A-INFRA-2-CJK",
+      "title": "CJK tokenizer(中文 BM25 前提)",
+      "source": "infra",
+      "current_verdict": "v2.2-DO",
+      "pillar": "retrieval",
+      "priority": "P0",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 P0; 中文 KB BM25 前提, 与 BM25 同生命共同体"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "C4-endorsement",
+      "title": "endorsement(cite confirm/dispute 接入, retrieval.py:415-443)",
+      "source": "hybrid",
+      "current_verdict": "v2.2-DO",
+      "pillar": "retrieval",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; codex grounded: cite_ids≠可信 endorsement, doctor.ts:372 已有 Goodhart 检测, 直接当排序信号会奖励 ritual cite. 触发器: cite-quality 质量模型先行"
+      },
+      "moat_D_check": "D3"
+    },
+    {
+      "id": "A-INFRA-3-topk",
+      "title": "top_k 截断(plan-context.ts:251 无 slice)",
+      "source": "infra/hybrid",
+      "current_verdict": "v2.2-DO",
+      "pillar": "retrieval",
+      "priority": "P0",
+      "deps": [
+        "A-INFRA-1-BM25"
+      ],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 P0; plan-context.ts:262/273 全量无 slice, selection token 也记全量 ids. 序: BM25/CJK 之后(先截断会固化弱排序成数据损失)"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "HK4-hygiene",
+      "title": "hook hygiene 3 bug(cite-tag drift/archive-hint 未注册/多窗口去重)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "injection",
+      "priority": "P0",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "reject",
+      "wave": null,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【裁决: codex refute 成立, 我亲验确认】3 子 bug 全已修: cite-tag→LEGACY_CITE_TAG_REMAP recalled→applied(cite-line-parser.ts:83); archive-hint→折进 Stop hook fabric-hint.cjs(claude-code.json:9 已注册); broad 多窗去重→broad hook 本设计'No dedup, 一session渲一次'(:8-13)无互抑. gemini 未验 hook 代码误判 absorb. 真残留引导冲突归 MC3"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "HK1-alwayspin",
+      "title": "always-inject pin(fabric-config always_knowledge_ids)",
+      "source": "三支柱/mining",
+      "current_verdict": "v2.2-DO",
+      "pillar": "injection",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧综合: gem reject(撞D4动态浮现) vs codex defer(撞D3, 绕过top_k/maturity/health)】两负面→defer; 触发器: 须先设计 pin 可被 stale/low-health 降级(否则永久注入陈旧规则), A14-doctor-health 后重评. fabric-config.ts:255 现无 always_ids"
+      },
+      "moat_D_check": "D3/D4"
+    },
+    {
+      "id": "HK2-degrade",
+      "title": "SessionStart 降级阶梯(借 maestro context-budget.ts:40-169)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "injection",
+      "priority": "P1",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致; broad hook 有 top_k+summary trunc 但无预算阶梯; MCP payload 仅 warn/throw"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "C5-budget",
+      "title": "token budget(注入层+MCP层, noosphere budget.ts)",
+      "source": "hybrid",
+      "current_verdict": "v2.2-DO",
+      "pillar": "injection",
+      "priority": "P1",
+      "deps": [
+        "HK2-degrade"
+      ],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致; codex 翻案 P2→P1(预算非锦上添花, 绑 top_k/payload hard limit). fabric-config.ts:20 有 mcpPayloadLimits 但缺分层裁剪策略"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "HK3-telemetry",
+      "title": "per-inject telemetry(injections.jsonl 注入侧)",
+      "source": "三支柱/mining",
+      "current_verdict": "v2.2-DO",
+      "pillar": "injection",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧综合: gem defer vs codex absorb-P2】采 codex: metrics.ts 覆盖消费侧但注入侧无 injections.jsonl, 无法算真命中率; 廉价且解锁 HK5/A13 的 telemetry-gated 触发器. P2 wave3"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "SK1-audit",
+      "title": "fabric-audit(语义淘汰, 最大 skill 缺口)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "skill",
+      "priority": "P1",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 absorb(P0/P1 手感差); 采 P1: 最大 skill 缺口补 D3 lifecycle, 但非 bug/可用性 hotfix. doctor.ts:1082 有 lint 缺语义 audit skill"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "H2-related",
+      "title": "related 字段(图基础, SK2 前置)",
+      "source": "Part H/mining",
+      "current_verdict": "v2.2-DO",
+      "pillar": "skill",
+      "priority": "P1",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致; schema 加 related 图边, SK2/MC1 include_related 前置, 越早越好. agents-meta.ts:44 现仅 tags/relevance_paths"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "SK2-connect",
+      "title": "fabric-connect(依赖 H2)",
+      "source": "三支柱/mining",
+      "current_verdict": "v2.2-DO",
+      "pillar": "skill",
+      "priority": "P2",
+      "deps": [
+        "H2-related"
+      ],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧综合: gem defer vs codex absorb-P2】H2 已 absorb→落点成立, 采 codex absorb P2 wave3(H2 后回写稳定图边)"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "SK3-digest",
+      "title": "fabric-digest(gap→pending)",
+      "source": "三支柱/mining",
+      "current_verdict": "v2.2-DO",
+      "pillar": "skill",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; 与 audit/connect 重叠, 等 H2/SK1 后 gap→pending 更稳. doctor.ts:1088 已有部分治理面"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "SK5-adjudication-sink",
+      "title": "裁决表+契约文档下沉进 skill(减 AGENTS.md 膨胀)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "skill",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 absorb(P1/P2 手感差); 采 P2: 裁决表+契约下沉 skill ref 减 bootstrap 膨胀, 有 skill token budget lint 支撑(doctor.ts:313). 非紧急"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "MC3-fix-guidance",
+      "title": "修 hook 工具引导矛盾(broad:638 vs :744)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "mcp",
+      "priority": "P0",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致+我三方确认 P0; broad hook :660 输出'直接 fab_get_knowledge_sections'(缺 selection token 误导) vs :782/784 建议'先 fab_recall/fab_plan_context'. 最便宜高 ROI 保 D1"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "MC2-server-instructions",
+      "title": "server-level instructions+tool manifest(净新最高价值)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "mcp",
+      "priority": "P1",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 wave1(P0/P1 手感差); 采 P1: server 仅 name/version(index.ts:158)+各工具 description, 缺 server-level 操作规范, 强化 D2 MCP-first 净新价值"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "MC1-recall-pack",
+      "title": "fab_recall 打包增量(directive/截断/_next/include_related)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "mcp",
+      "priority": "P1",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致; fab_recall 已合并 plan+sections(recall.ts:53)但返全量 bodies, 缺 directive/_next/truncation/include_related. 依赖 H2+MC4"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "MC4-payload-budget",
+      "title": "MCP payload 预算(撞 64KB hard 前)",
+      "source": "三支柱/infra",
+      "current_verdict": "v2.2-DO",
+      "pillar": "mcp",
+      "priority": "P1",
+      "deps": [
+        "A-INFRA-3-topk"
+      ],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 1,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 absorb; codex 翻案 P2→P1/wave1(mcp-payload-guard.ts:36 超 64KB hard throw=可用性风险, 应返可继续裁剪包非崩). 与 top_k 联合设计"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "MC5-action-hint",
+      "title": "对称收敛 action_hint(廉价)",
+      "source": "三支柱",
+      "current_verdict": "v2.2-DO",
+      "pillar": "mcp",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致; api-contracts.ts:9 warning schema 已有 action_hint 但各工具不对称, 低成本统一失败后下一步"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A14-doctor-health",
+      "title": "doctor KB health 0-100 分(rollup, 互补 lint)",
+      "source": "mining",
+      "current_verdict": "v2.2-DO",
+      "pillar": "governance",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DO",
+      "trigger": null,
+      "locked_verdict": "absorb-v2.2",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 absorb(P1/P2 手感差); 采 P2 wave3: doctor.ts:1082/1266 多 check 缺 0-100 rollup 给 audit/产品面消费. 观测性低紧急. 供 SK1/HK1 触发器"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A6-inline-ref",
+      "title": "inline+ref 双层模型(短 entry↔长 ref, 影响 schema)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "schema",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧: gem reject(撞D4轻量capture) vs codex defer(改schema+retrieval contract)】两负面→defer-v2.3; 长文档双载体 v2.2 不应抢在 budget/top_k 前. knowledge-meta-builder.ts:193 现 .md entry+sections. 触发器: 检索地基稳后重评"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A8-knowhow-fields",
+      "title": "knowhow 类型专属字段(decision.status 等维度过滤)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "schema",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; 5 类共享字段, 类型化 status/filter 牵动 frontmatter/review/MCP I/O. 触发器: A14 后看维度过滤真需求"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A18-virtual-wiki",
+      "title": "virtual wiki adapters(events/archive 只读投射成 KB 候选)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "data-model",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧: gem reject vs codex defer, 双 flag D3 冲突】采 defer-v2.3 + 强 rationale: events/cite-rollup 是治理日志非稳定知识, 投射成候选会把遥测噪音带入 recall 形成'遥测变知识'反馈环撞 D3. 触发器: 仅 provenance(v2.1)就绪后重评"
+      },
+      "moat_D_check": "D3"
+    },
+    {
+      "id": "A21-progressive-fill",
+      "title": "progressive fill(事件→category 自动沉淀)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "schema",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; harness-agnostic 触发器不清晰易变隐式写入撞 D4. 现 archive/onboard 自动沉淀够用. 触发器: 明确等价触发器设计后"
+      },
+      "moat_D_check": "D4"
+    },
+    {
+      "id": "A20-harvest-routing",
+      "title": "harvest 多源→多目的路由(fabric-archive 泛化)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "skill",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧: gem reject(撞D2) vs codex defer(D3权限/review扩散)】两负面→defer; archive 单源 pending 流先稳, 多源多目的扩散权限/review 语义. 触发器: audit/connect 稳后"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A9-realtime-validator",
+      "title": "实时 spec-validator(PreToolUse frontmatter/glob 校验)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "hook",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "reject",
+      "wave": null,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧: gem defer vs codex reject(撞D1)】采 reject: PreToolUse 是 non-blocking 信息面(narrow.cjs:57), frontmatter/glob 实时校验增延迟+误报撞 D1; 校验后置 doctor/audit 更合适. 两 LLM 同向'校验归 doctor'"
+      },
+      "moat_D_check": "D1"
+    },
+    {
+      "id": "A2-injection-keyword",
+      "title": "keyword→entry 注入 hook(no-server-filter 松绑后注入侧召回)",
+      "source": "design",
+      "current_verdict": "DESIGN",
+      "pillar": "injection",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DESIGN",
+      "trigger": null,
+      "locked_verdict": "reject",
+      "wave": null,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 reject; hook 侧 keyword→entry 召回复制 server 检索逻辑撞 D2 MCP-first; BM25/CJK 应在 plan_context 统一解(plan-context.ts:590). no-server-filter 废不改此结论(重复非冲突)"
+      },
+      "moat_D_check": "D2"
+    },
+    {
+      "id": "C1-RRF",
+      "title": "hybrid RRF(in-memory)",
+      "source": "hybrid",
+      "current_verdict": "DEFER",
+      "pillar": "retrieval",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "BM25+top_k 落地后 precision 仍不足",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; 先落 BM25/top_k 量化 precision 再决 hybrid. 触发器: BM25 eval precision 不足 + 有第二路高质 ranker"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "C2-vector",
+      "title": "向量(fastembed 可选依赖)+C7 fallback",
+      "source": "hybrid",
+      "current_verdict": "DEFER",
+      "pillar": "retrieval",
+      "priority": "P1",
+      "deps": [
+        "A-INFRA-1-BM25"
+      ],
+      "kind": "DEFER",
+      "trigger": "KB 规模到阈值+接受 npm +180MB, --no-embed 默认关",
+      "locked_verdict": "absorb-v2.2",
+      "wave": 2,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【human 2026-05-30 拍: 现在做 absorb-v2.2】护城河废离线零依赖后, gemini 主张成立: CJK 语义鸿沟靠向量降维打击, fastembed server 成本 MCP-first 下可接受. 落 wave2 依赖 BM25 地基先行(text-only fallback + --no-embed 默认关 + 自 pin cache-only/CPU). codex 的体积/隐私/缓存风险转为实现期约束非否决"
+      },
+      "moat_D_check": "无(护城河重定义后 D2 MCP-first 接受更重 server, 离线已剔除)"
+    },
+    {
+      "id": "HK5-token-cap",
+      "title": "token 双 cap(精确版)",
+      "source": "三支柱",
+      "current_verdict": "DEFER",
+      "pillar": "injection",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "HK2 落地后规模需要",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; HK2/C5 先粗预算, 精确双 cap 需真 telemetry 定 cap 点. 依赖 HK2+HK3"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A-INFRA-4-index-cache",
+      "title": "索引缓存",
+      "source": "infra",
+      "current_verdict": "DEFER",
+      "pillar": "retrieval",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "随 A-INFRA-1 倒排索引引入",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; 现规模纯 TS 即时 BM25 hold 住, 热路径成本出现再缓存. 触发器: 随 BM25 性能瓶颈"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "A13-hook-tier",
+      "title": "hook tier(minimal/standard/full)",
+      "source": "mining",
+      "current_verdict": "DEFER",
+      "pillar": "injection",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "有隐私/性能诉求时",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; 已有 top_k/cooldown/context 开关(fabric-config.ts:305/336), tier 增配置矩阵. 触发器: 隐私/性能 telemetry 证明"
+      },
+      "moat_D_check": "D1"
+    },
+    {
+      "id": "A19-A7-B11",
+      "title": "codify manifest/tool:true/catalog",
+      "source": "mining",
+      "current_verdict": "DEFER",
+      "pillar": "skill",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "有第二写入 skill/工具诉求时",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; manifest/tool/catalog 是第二写入面前置, v2.2 更缺 retrieval/MCP/governance. 触发器: 第二写入 skill 诉求"
+      },
+      "moat_D_check": "无"
+    },
+    {
+      "id": "H1-readonly-cli",
+      "title": "fab knowledge ls/cat(只读 CLI 旁路)",
+      "source": "Part H",
+      "current_verdict": "DEFER",
+      "pillar": "mcp",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "MCP 瘫痪兜底",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "【软分歧: gem reject(撞D2黑市通道) vs codex defer(兜底有价值不抢P0)】采 defer-v2.3: MCP-first 核心但只读 CLI 兜底非零价值; 触发器=MCP 故障支持成本信号. 不抢 wave1/2"
+      },
+      "moat_D_check": "D2"
+    },
+    {
+      "id": "H4-personal-seed",
+      "title": "personal seed",
+      "source": "Part H",
+      "current_verdict": "DEFER",
+      "pillar": "governance",
+      "priority": "P2",
+      "deps": [],
+      "kind": "DEFER",
+      "trigger": "一次性教学",
+      "locked_verdict": "defer-v2.3",
+      "wave": 3,
+      "critique": {
+        "gemini_codex": "quorum=2 双零上下文冷评",
+        "claude_synthesis": "双一致 defer; personal root 已自动建目录纳入扫描(knowledge-meta-builder.ts:384/403), seed 教学是 onboarding 非 v2.2 backend 主线"
+      },
+      "moat_D_check": "无"
+    }
+  ],
+  "needs_adjudication": [
+    {
+      "id": "C2-vector",
+      "type": "disagreement-material",
+      "gemini": "absorb-v2.2 P1 wave2(离线护城河已废, CJK 语义鸿沟降维打击, fastembed server 成本可接受, 现在捞起)",
+      "codex": "defer-v2.3(向量仍引入模型体积/隐私/缓存生命周期 3 风险, 仅 BM25+top_k precision 不足才吸收)",
+      "claude_lean": "provisional defer-v2.3 保守(codex 风险论 grounded + 渐进), 但 user 本轮主动重定义护城河部分意在重评向量 → human 拍 absorb-now vs defer-with-trigger",
+      "blocking": false,
+      "status": "resolved",
+      "resolution": "human 拍 absorb-v2.2 (现在做), wave2 dep BM25, 实现期守 fastembed --no-embed默认关+text-only fallback+自pin CPU"
+    },
+    {
+      "id": "_soft_batch",
+      "type": "synthesized-FYI",
+      "note": "以下我已 grounded 综合落锁, 非阻断, human 可一并 confirm/翻: HK4→reject(亲验3bug已修) · HK1→defer(撞D3/D4, 须pin降级设计) · HK3→absorb-P2(采codex) · SK2→absorb-P2(H2落点成立) · A6/A18/A20→defer(reject vs defer取defer) · A9→reject(校验归doctor) · H1→defer(MCP兜底) · 优先级手感SK1-P1/MC2-P1/A14-P2/SK5-P2",
+      "blocking": false,
+      "status": "open"
+    }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260530-v22-pool-critique/goal-checklist.md",
+  "status": "completed",
+  "loop_exit_status": "ship_criteria_all_green",
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "converged",
+      "round_task_ceiling": 12,
+      "round_task_actual": 8,
+      "convergence_status": "converged",
+      "newly_discovered_this_round": [],
+      "carried_in": [],
+      "carry_over_to_next": {
+        "from_open_blocked": [],
+        "from_ceiling_overflow": [],
+        "from_depth_cap": []
+      },
+      "drift_checks": [],
+      "completion_gate": {
+        "task_gate": {
+          "all_done": true
+        },
+        "goal_gate": {
+          "blocking": false,
+          "ship_criteria_all_green": true
+        },
+        "drift_gate": {
+          "ok": true
+        }
+      }
+    }
+  ],
+  "moat_D": {
+    "version": "v2 (2026-05-30 human reframe)",
+    "pillars": {
+      "D1": "三端 AI-交互-内集成 (Hook+Skill+MCP 织进 CC/Codex/Cursor agent loop + cross-client parity; 主 CC+Codex, Cursor 暂弱化非阻断)",
+      "D2": "MCP-first (行为由 MCP 连接驱动, CLI 知识维护为附带运维面; '离线零依赖'并入此条不单列)",
+      "D3": "Lifecycle governance (cite-contract + maturity + archive + orphan demote + health; 防 KB 慢速死)",
+      "D4": "AI-in-the-loop curation (知识由 AI 在循环内自动 surface + propose 入库; capture→review→surface 闭环)"
+    },
+    "removed": [
+      "no-server-filter (已废, 不再是护城河)",
+      "offline-zero-dependency (降级并入 D2 附带, 非独立护城河)"
+    ],
+    "downstream_reversals": [
+      "A-INFRA-3 top_k / A-INFRA-1 BM25 不再撞护城河 (no-server-filter 废) → 纯质量工程, 冲突层消失",
+      "C2 向量(fastembed) 上轮主要被'离线零依赖+CLI 过重'否 → 该两条护城河不成立, C2 反对理由大幅削弱, CR6 须重评 (MCP-first 下更重的 MCP server 含 embedding 反而可接受)"
+    ]
+  },
+  "portfolio": {
+    "absorb_count": 18,
+    "defer_count": 15,
+    "reject_count": 3,
+    "waves": {
+      "wave1_止血与检索/MCP地基": [
+        "MC3-fix-guidance(P0)",
+        "A-INFRA-2-CJK(P0)",
+        "A-INFRA-1-BM25(P0)",
+        "A-INFRA-3-topk(P0)",
+        "MC4-payload-budget(P1)",
+        "MC2-server-instructions(P1)",
+        "H2-related(P1)"
+      ],
+      "wave2_预算治理写入schema": [
+        "C3-salience(P1)",
+        "HK2-degrade(P1)",
+        "C5-budget(P1)",
+        "MC1-recall-pack(P1)",
+        "SK1-audit(P1)",
+        "SK5-adjudication-sink(P2)",
+        "C2-vector(P1, dep BM25)"
+      ],
+      "wave3_观测图谱长尾": [
+        "HK3-telemetry(P2)",
+        "SK2-connect(P2)",
+        "MC5-action-hint(P2)",
+        "A14-doctor-health(P2)"
+      ]
+    },
+    "dependency_graph": [
+      "A-INFRA-2-CJK → A-INFRA-1-BM25 → A-INFRA-3-topk → MC4-payload-budget (统一截断架构: 先 CJK 分词→BM25 排序→top_k 条数截断→payload 字节预算, 同链防双切坏 _next 游标)",
+      "MC3-fix-guidance ⊰ MC1-recall-pack (先修 broad hook 引导文案, 否则 recall-pack 落地仍被旧 footer 稀释)",
+      "H2-related → SK2-connect (schema 图边前置, w1→w3)",
+      "H2-related → MC1-recall-pack (include_related 前置)",
+      "HK2-degrade → C5-budget; MC4-payload-budget → C5-budget (预算绑 top_k/payload hard limit)",
+      "A-INFRA-1-BM25 → C3-salience (salience 作 BM25 后 tie-breaker)",
+      "A-INFRA-1-BM25 → C2-vector (向量作 BM25 后语义召回补充, 实现守 --no-embed默认关+text-only fallback)"
+    ],
+    "moat_D_check": "MOAT-CLEAN: 17 absorb 项零护城河冲突(冲突全落在 reject/defer: A9→D1 / A2→D2 / A18→D3 / A21→D4 / C2→D2 / HK1→D3-D4 / C4→D3 / A13→D1, 均未进 absorb)",
+    "v2_1_boundary_clean": "CLEAN: 零 absorb 项触 provenance/多store/store-qualified-cite/全局registry; H2-related 仅 per-entry 图边(intra-store, 非跨store provenance), 与 v2.1 多store stable_id namespace 正交; MCP 层(MC1/MC2) 不引 store-qualified",
+    "hidden_conflicts_resolved": [
+      "top_k(条数) vs payload-budget(字节) 重叠 → 统一为同一截断链(CJK→BM25→top_k→payload), MC1 _next 游标读同一截断后 ids",
+      "A2-injection-keyword vs A-INFRA-1-BM25 功能重复 → A2 reject(检索侧 BM25 统一解)",
+      "C4-endorsement vs D3 Goodhart 检测 → C4 defer(等 cite-quality 质量模型, 防奖励 ritual cite)",
+      "HK1-alwayspin vs top_k/maturity/health → HK1 defer(须先设计 pin 可被 stale/low-health 降级)",
+      "A18-virtual-wiki vs events/cite-rollup 治理日志边界 → A18 defer(防'遥测变知识'反馈环)"
+    ],
+    "portfolio_critique_quorum": "gemini+codex 各自独立给 wave 划分(三波结构一致)+隐藏冲突清单(高度重合: topk/payload, A2/BM25, endorsement/Goodhart, HK1/health), claude 综合无未解严重分歧; 唯一 material 分歧 C2-vector 升 human(非阻断)"
+  }
+}

@@ -429,9 +429,16 @@ describe("planContext", () => {
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
+    // Shape symmetry (selection_token present, no inline candidates_full_content)
+    // holds regardless of corpus size — that is what this test guards.
     expect(result.selection_token).toEqual(expect.any(String));
-    expect(result.candidates).toHaveLength(100);
     expect(result).not.toHaveProperty("candidates_full_content");
+    // v2.2 A-INFRA-3 (W1-T3-TOPK): the candidate COUNT is now bounded by the
+    // default top_k (24). The other 76 are dropped (least content-relevant
+    // first — here no query, so the alphabetic tail) and the omitted count is
+    // surfaced so the cap is not silent.
+    expect(result.candidates).toHaveLength(24);
+    expect(result.omitted_candidate_count).toBe(76);
   });
 
   // ---------------------------------------------------------------------------
@@ -1126,6 +1133,368 @@ describe("planContext payload size (UX-1/UX-4 regression)", () => {
     // 10 paths add only ~10 small requirement_profile objects, NOT 10 extra
     // copies of the candidate index. Pre-fold this ratio was ~10x.
     expect(ten).toBeLessThan(one * 1.5);
+  });
+});
+
+// v2.2 A-INFRA-1 (W1-T2-BM25): content-relevance ranking. Seeds two entries
+// with disjoint vocabularies and asserts that a caller intent matching one
+// floats it above the other — and that, absent any intent, the ordering falls
+// back to the pre-BM25 stable_id sort (backward compatibility).
+describe("planContext BM25 content ranking (W1-T2)", () => {
+  async function seedTwoTopicRegistry(projectRoot: string): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const node = (stableId: string, file: string, summary: string) => ({
+      stable_id: stableId,
+      file,
+      content_ref: file,
+      scope_glob: "**",
+      hash: `sha256:${stableId}`,
+      identity_source: "declared",
+      description: {
+        summary,
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        must_read_if: "",
+        id: stableId,
+        knowledge_type: "decisions",
+        maturity: "verified",
+        knowledge_layer: "team",
+        created_at: "2026-05-10T00:00:00Z",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      },
+    });
+    const frontmatter = (id: string, summary: string) =>
+      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "vector.md"),
+      frontmatter("KT-DEC-9001", "Vector embedding semantic retrieval over the knowledge base"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "archive.md"),
+      frontmatter("KT-DEC-9002", "Git lifecycle archive cadence deprecation nudge"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-bm25",
+        nodes: {
+          "KT-DEC-9001": node("KT-DEC-9001", ".fabric/knowledge/decisions/vector.md", "Vector embedding semantic retrieval over the knowledge base"),
+          "KT-DEC-9002": node("KT-DEC-9002", ".fabric/knowledge/decisions/archive.md", "Git lifecycle archive cadence deprecation nudge"),
+        },
+      }, null, 2)}\n`,
+    );
+  }
+
+  it("floats the content-matching entry to the top when intent is supplied", async () => {
+    const projectRoot = await createTempProject();
+    await seedTwoTopicRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "add vector embedding semantic search",
+    });
+
+    // BM25 ranks the vector entry first despite KT-DEC-9002 sorting earlier
+    // alphabetically — content relevance leads.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9001", "KT-DEC-9002"]);
+  });
+
+  it("falls back to stable_id order when no intent is supplied (BM25 disabled)", async () => {
+    const projectRoot = await createTempProject();
+    await seedTwoTopicRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
+
+    // No query terms → BM25 contributes 0 → both entries tie on content and
+    // the alphabetic stable_id tiebreaker restores deterministic order.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9001", "KT-DEC-9002"]);
+  });
+
+  it("ranks the archive entry first when the intent matches it instead", async () => {
+    const projectRoot = await createTempProject();
+    await seedTwoTopicRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/lifecycle.ts"],
+      intent: "git archive deprecation cadence",
+    });
+
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9002", "KT-DEC-9001"]);
+  });
+});
+
+// v2.2 A-INFRA-3 (W1-T3-TOPK): bounded top_k truncation applied AFTER BM25
+// ranking. Seeds three entries, caps to two via plan_context_top_k, and asserts
+// the dropped entry is the least content-relevant one (not an alphabetic tail)
+// and that the omitted count is surfaced.
+describe("planContext top_k truncation (W1-T3)", () => {
+  async function seedThreeTopicRegistry(projectRoot: string, topK?: number): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    if (topK !== undefined) {
+      await writeFile(
+        join(projectRoot, "fabric.config.json"),
+        `${JSON.stringify({ plan_context_top_k: topK }, null, 2)}\n`,
+      );
+    }
+    const topics: Array<[string, string, string]> = [
+      ["KT-DEC-9101", "vector.md", "Vector embedding semantic retrieval over the knowledge base"],
+      ["KT-DEC-9102", "bm25.md", "BM25 content relevance scoring tokenization"],
+      ["KT-DEC-9103", "archive.md", "Git lifecycle archive cadence deprecation nudge"],
+    ];
+    const node = (stableId: string, file: string, summary: string) => ({
+      stable_id: stableId,
+      file,
+      content_ref: file,
+      scope_glob: "**",
+      hash: `sha256:${stableId}`,
+      identity_source: "declared",
+      description: {
+        summary,
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        must_read_if: "",
+        id: stableId,
+        knowledge_type: "decisions",
+        maturity: "verified",
+        knowledge_layer: "team",
+        created_at: "2026-05-10T00:00:00Z",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      },
+    });
+    const nodes: Record<string, unknown> = {};
+    for (const [id, fileName, summary] of topics) {
+      const file = `.fabric/knowledge/decisions/${fileName}`;
+      await writeFile(
+        join(projectRoot, file),
+        ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n"),
+      );
+      nodes[id] = node(id, file, summary);
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-topk", nodes }, null, 2)}\n`,
+    );
+  }
+
+  it("caps candidates to plan_context_top_k after BM25 ranking and surfaces the omitted count", async () => {
+    const projectRoot = await createTempProject();
+    await seedThreeTopicRegistry(projectRoot, 2);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding bm25 retrieval scoring",
+    });
+
+    // top_k=2 from three entries → one dropped. The dropped entry is the
+    // archive one (no overlap with the intent), so the two retrieval-relevant
+    // entries survive.
+    expect(result.candidates).toHaveLength(2);
+    expect(result.omitted_candidate_count).toBe(1);
+    const ids = result.candidates.map((item) => item.stable_id);
+    expect(ids).toContain("KT-DEC-9101");
+    expect(ids).toContain("KT-DEC-9102");
+    expect(ids).not.toContain("KT-DEC-9103");
+  });
+
+  it("omits the count field entirely when nothing is truncated", async () => {
+    const projectRoot = await createTempProject();
+    await seedThreeTopicRegistry(projectRoot); // no cap → default 24 > 3
+
+    const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
+
+    expect(result.candidates).toHaveLength(3);
+    expect(result).not.toHaveProperty("omitted_candidate_count");
+  });
+});
+
+// v2.2 C3-salience (W2-T1): maturity as the finest tie-breaker. Asserts both
+// directions: (1) among equally-relevant entries, higher maturity floats up;
+// (2) the load-bearing invariant — a high-maturity entry that does NOT match
+// the intent never outranks a low-maturity entry that DOES (content leads).
+describe("planContext salience tie-breaker (W2-T1)", () => {
+  async function seedMaturityRegistry(
+    projectRoot: string,
+    entries: Array<{ id: string; file: string; summary: string; maturity: "draft" | "verified" | "proven" }>,
+  ): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const nodes: Record<string, unknown> = {};
+    for (const e of entries) {
+      const file = `.fabric/knowledge/decisions/${e.file}`;
+      await writeFile(
+        join(projectRoot, file),
+        ["---", `summary: ${e.summary}`, `id: ${e.id}`, "type: decision", `maturity: ${e.maturity}`, "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${e.id}`, ""].join("\n"),
+      );
+      nodes[e.id] = {
+        stable_id: e.id,
+        file,
+        content_ref: file,
+        scope_glob: "**",
+        hash: `sha256:${e.id}`,
+        identity_source: "declared",
+        description: {
+          summary: e.summary,
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "",
+          id: e.id,
+          knowledge_type: "decisions",
+          maturity: e.maturity,
+          knowledge_layer: "team",
+          created_at: "2026-05-10T00:00:00Z",
+          relevance_scope: "broad",
+          relevance_paths: [],
+        },
+      };
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-salience", nodes }, null, 2)}\n`,
+    );
+  }
+
+  it("floats higher maturity up among entries with identical content relevance", async () => {
+    const projectRoot = await createTempProject();
+    // Same summary text → identical BM25 + locality; only maturity differs.
+    await seedMaturityRegistry(projectRoot, [
+      { id: "KT-DEC-7001", file: "draft.md", summary: "Shared lifecycle governance topic", maturity: "draft" },
+      { id: "KT-DEC-7002", file: "proven.md", summary: "Shared lifecycle governance topic", maturity: "proven" },
+      { id: "KT-DEC-7003", file: "verified.md", summary: "Shared lifecycle governance topic", maturity: "verified" },
+    ]);
+
+    const result = await planContext(projectRoot, { paths: ["src/x.ts"] });
+
+    // proven (15) > verified (8) > draft (0).
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-7002", "KT-DEC-7003", "KT-DEC-7001"]);
+  });
+
+  it("never lets high maturity override content relevance (防高成熟低相关压过正文)", async () => {
+    const projectRoot = await createTempProject();
+    await seedMaturityRegistry(projectRoot, [
+      // draft but matches the intent
+      { id: "KT-DEC-7101", file: "match.md", summary: "Vector embedding semantic retrieval", maturity: "draft" },
+      // proven but unrelated to the intent
+      { id: "KT-DEC-7102", file: "mature.md", summary: "Git archive deprecation cadence", maturity: "proven" },
+    ]);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding semantic search",
+    });
+
+    // The draft content-match outranks the proven non-match: BM25 (~50+/term)
+    // dwarfs the 15-point salience gap.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-7101", "KT-DEC-7102"]);
+  });
+});
+
+// v2.2 C2-vector (W2-T7): optional vector semantic supplement. Default OFF →
+// no-op (covered implicitly by every other test). Here we enable it with an
+// injected fake embedder and assert it re-ranks where BM25 is silent.
+describe("planContext vector semantic supplement (W2-T7)", () => {
+  // Toy deterministic embedder: vector = [length, #a, #b]. Lets a query rich in
+  // 'a' score an 'a'-heavy document above a 'b'-heavy one.
+  const fakeEmbedder = {
+    async embed(texts: string[]): Promise<number[][]> {
+      return texts.map((t) => [t.length, (t.match(/a/g) ?? []).length, (t.match(/b/g) ?? []).length]);
+    },
+  };
+
+  async function seedTwoOpaqueEntries(projectRoot: string): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const mk = (id: string, file: string, summary: string) => ({
+      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
+      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: [] },
+    });
+    const fm = (id: string, summary: string) => ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
+    // KT-DEC-9301 (b-heavy) sorts FIRST alphabetically; KT-DEC-9302 (a-heavy) second.
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "bbb.md"), fm("KT-DEC-9301", "bbbb bottle buzz"));
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "aaa.md"), fm("KT-DEC-9302", "aaaa apple aardvark"));
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-vec", nodes: { "KT-DEC-9301": mk("KT-DEC-9301", ".fabric/knowledge/decisions/bbb.md", "bbbb bottle buzz"), "KT-DEC-9302": mk("KT-DEC-9302", ".fabric/knowledge/decisions/aaa.md", "aaaa apple aardvark") } }, null, 2)}\n`,
+    );
+  }
+
+  it("re-ranks by vector similarity when embeddings are enabled (BM25 silent)", async () => {
+    const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+    __resetEmbedderForTesting(fakeEmbedder);
+    try {
+      const projectRoot = await createTempProject();
+      await seedTwoOpaqueEntries(projectRoot);
+      // embed_weight defaults to 30 (≤49 cap). BM25 is 0 for both candidates
+      // (no shared token), so any positive vector weight is the deciding signal.
+      await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true })}\n`);
+
+      // Query is 'a'-heavy and shares no lexical token with either summary, so
+      // BM25 is 0 for both — the vector supplement is the deciding signal.
+      const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
+
+      // The 'a'-heavy entry (alphabetically SECOND) floats to the top via vectors.
+      expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9302", "KT-DEC-9301"]);
+    } finally {
+      __resetEmbedderForTesting(undefined);
+    }
+  });
+
+  it("falls back to text-only order when embeddings stay disabled", async () => {
+    const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+    __resetEmbedderForTesting(fakeEmbedder); // available, but config keeps it OFF
+    try {
+      const projectRoot = await createTempProject();
+      await seedTwoOpaqueEntries(projectRoot);
+      // No embed_enabled → vector path never runs → alphabetic stable_id order.
+      const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
+      expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9301", "KT-DEC-9302"]);
+    } finally {
+      __resetEmbedderForTesting(undefined);
+    }
+  });
+});
+
+// v2.2 W3-REVIEW (codex MED-1): scoring calibration lock. The additive score is
+// deliberately BM25-LED — a strong content match outranks a perfect structural
+// (locality) match. This test pins that design intent so a future weight tweak
+// that accidentally lets locality/recency/salience trample content is caught.
+describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
+  it("a strong multi-term content match outranks a perfect-locality non-match", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const node = (id: string, file: string, summary: string, relevancePaths: string[]) => ({
+      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
+      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: relevancePaths },
+    });
+    const fm = (id: string, summary: string, rp: string) =>
+      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", `relevance_paths: [${rp}]`, "---", `# ${id}`, ""].join("\n");
+    // CONTENT: matches the rare query terms, but NO locality (no relevance_paths).
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "content.md"), fm("KT-DEC-8001", "zephyr quokka nimbus retrieval", ""));
+    // LOCALITY: perfect same-file locality but ZERO content overlap with the query.
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "local.md"), fm("KT-DEC-8002", "unrelated bottle topic", "src/target.ts"));
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-cal", nodes: {
+        "KT-DEC-8001": node("KT-DEC-8001", ".fabric/knowledge/decisions/content.md", "zephyr quokka nimbus retrieval", []),
+        "KT-DEC-8002": node("KT-DEC-8002", ".fabric/knowledge/decisions/local.md", "unrelated bottle topic", ["src/target.ts"]),
+      } }, null, 2)}\n`,
+    );
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/target.ts"],
+      target_paths: ["src/target.ts"],
+      intent: "zephyr quokka nimbus",
+    });
+
+    // Content match (BM25 ~3 rare terms × 50) beats perfect same-file locality (100).
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-8001", "KT-DEC-8002"]);
   });
 });
 

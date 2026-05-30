@@ -79,6 +79,10 @@ const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
 const SKILL_SYNC_TEMPLATE_REL = "skills/fabric-sync/SKILL.md";
 // v2.1 ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill template.
 const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
+// v2.2 SK1-audit (W2-T5): semantic-deprecation audit skill template.
+const SKILL_AUDIT_TEMPLATE_REL = "skills/fabric-audit/SKILL.md";
+// v2.2 SK2-connect (W3-T2): knowledge-graph relation skill template.
+const SKILL_CONNECT_TEMPLATE_REL = "skills/fabric-connect/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -137,6 +141,17 @@ export const SKILL_DESTINATIONS = {
   fabricStore: [
     ".claude/skills/fabric-store/SKILL.md",
     ".codex/skills/fabric-store/SKILL.md",
+  ],
+  // v2.2 SK1-audit (W2-T5): fabric-audit semantic-deprecation skill, same
+  // 2-client coverage as the sibling skills.
+  fabricAudit: [
+    ".claude/skills/fabric-audit/SKILL.md",
+    ".codex/skills/fabric-audit/SKILL.md",
+  ],
+  // v2.2 SK2-connect (W3-T2): fabric-connect knowledge-graph relation skill.
+  fabricConnect: [
+    ".claude/skills/fabric-connect/SKILL.md",
+    ".codex/skills/fabric-connect/SKILL.md",
   ],
 } as const;
 
@@ -508,6 +523,57 @@ export async function installFabricStoreSkill(
   for (const target of targets) {
     const staleMsg = inspectStaleInstall(target, source);
     const result = await copyTextIdempotent("skill-store", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * v2.2 SK1-audit (W2-T5): install the fabric-audit Skill — the conversational
+ * façade over `fabric doctor`-driven KB lifecycle audit, enforcing the
+ * deprecate-over-delete + rescue-before-delete red lines (D3 lifecycle
+ * governance). Sibling installer to archive/review/import/sync/store; same
+ * 2-client coverage. Single-file skill (no `ref/` dir).
+ */
+export async function installFabricAuditSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_AUDIT_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-audit");
+  const targets = SKILL_DESTINATIONS.fabricAudit.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-audit", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * v2.2 SK2-connect (W3-T2): install the fabric-connect Skill — the conversational
+ * façade over knowledge-graph relation discovery (writes H2 `related` edges via
+ * the fabric-review write path). Sibling installer to audit/store/etc; same
+ * 2-client coverage. Single-file skill (no `ref/` dir).
+ */
+export async function installFabricConnectSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_CONNECT_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-connect");
+  const targets = SKILL_DESTINATIONS.fabricConnect.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-connect", source, target);
     if (staleMsg && result.status === "written") {
       result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
     }

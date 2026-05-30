@@ -972,6 +972,8 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
     // or malformed scopes).
     relevance_scope: knowledge?.relevance_scope ?? "broad",
     relevance_paths: knowledge?.relevance_paths ?? [],
+    // v2.2 H2-related (W1-T7): graph edges, undefined when absent.
+    related: knowledge?.related,
   };
 }
 
@@ -1015,6 +1017,8 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     tags: knowledge.tags,
     relevance_scope: knowledge.relevance_scope,
     relevance_paths: knowledge.relevance_paths,
+    // v2.2 H2-related (W1-T7): graph edges parsed from frontmatter.
+    related: knowledge.related,
   };
 }
 
@@ -1044,6 +1048,10 @@ type KnowledgeFrontmatterFields = {
   // without requiring frontmatter migration.
   relevance_scope: "narrow" | "broad";
   relevance_paths: string[];
+  // v2.2 H2-related (W1-T7): graph edges to related KB entries by stable_id.
+  // Parsed from a flow-style inline array `related: [KT-DEC-0001, ...]`. Absent
+  // or empty → undefined (mirrors tags), so the field is purely additive.
+  related?: string[];
 };
 
 function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFrontmatterFields {
@@ -1150,6 +1158,10 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
   // intent_clues), so a missing key returns [] without warning.
   const relevance_paths = extractInlineArray(frontmatter, "relevance_paths");
 
+  // v2.2 H2-related (W1-T7): related — flow-style inline array of stable_ids.
+  // Reuses extractInlineArray like tags; absent/empty → undefined.
+  const related = extractInlineArray(frontmatter, "related");
+
   return {
     id,
     knowledge_type,
@@ -1160,6 +1172,7 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     tags: tags.length > 0 ? tags : undefined,
     relevance_scope,
     relevance_paths,
+    related: related.length > 0 ? related : undefined,
   };
 }
 

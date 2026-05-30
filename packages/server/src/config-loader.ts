@@ -1,8 +1,27 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { selectionTokenTtlMsSchema } from "@fenglimg/fabric-shared";
-import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
+import { selectionTokenTtlMsSchema, planContextTopKSchema, resolveRetrievalBudget } from "@fenglimg/fabric-shared";
+import type { FabricConfig, McpPayloadLimits, RetrievalBudgetProfile } from "@fenglimg/fabric-shared";
+
+// v2.2 C5-budget (W2-T3): the valid retrieval budget profiles. Kept as a const
+// tuple so the per-field reader can validate the config value without pulling in
+// the whole fabricConfigSchema on the hot read path.
+const RETRIEVAL_BUDGET_PROFILES: readonly RetrievalBudgetProfile[] = ["conservative", "balanced", "generous"];
+
+function readRetrievalBudgetProfile(config: FabricConfig): RetrievalBudgetProfile | undefined {
+  const raw = config.retrieval_budget_profile;
+  return typeof raw === "string" && (RETRIEVAL_BUDGET_PROFILES as readonly string[]).includes(raw)
+    ? (raw as RetrievalBudgetProfile)
+    : undefined;
+}
+
+// v2.2 A-INFRA-3 (W1-T3-TOPK): library default for the plan_context candidate
+// cap when fabric.config.json omits `plan_context_top_k`. Mirrors the
+// SELECTION_TOKEN_TTL_DEFAULT pattern — the schema's `.default(24)` only
+// applies on a full fabricConfigSchema parse, but the hot read path validates
+// the single field, so the default lives here too.
+export const PLAN_CONTEXT_TOP_K_DEFAULT = 24;
 
 /**
  * Reads fabric.config.json from the project root.
@@ -24,11 +43,30 @@ function readFabricConfig(projectRoot: string): FabricConfig {
 }
 
 /**
- * Returns the mcpPayloadLimits block from fabric.config.json, or undefined
- * when absent so call sites fall back to the guard's built-in defaults.
+ * Returns the effective MCP payload byte limits, or undefined when no budget
+ * strategy is in play so call sites fall back to the guard's built-in defaults.
+ *
+ * v2.2 C5-budget (W2-T3): the limits now derive from the layered retrieval
+ * budget — explicit `mcpPayloadLimits.{warn,hard}Bytes` win, else the
+ * `retrieval_budget_profile` provides them. When NEITHER is set we still return
+ * undefined (not the balanced numbers) so the historical "fall through to the
+ * guard defaults" path — and doctor's `source: "default"` rendering — is byte-
+ * identical. A conservative/generous profile (or any explicit limit) makes this
+ * return concrete bytes, binding the payload rung to the chosen strategy.
  */
 export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undefined {
-  return readFabricConfig(projectRoot).mcpPayloadLimits;
+  const config = readFabricConfig(projectRoot);
+  const explicit = config.mcpPayloadLimits;
+  const profile = readRetrievalBudgetProfile(config);
+  if (profile === undefined && explicit === undefined) {
+    return undefined;
+  }
+  const resolved = resolveRetrievalBudget({
+    profile,
+    payloadWarnBytes: explicit?.warnBytes,
+    payloadHardBytes: explicit?.hardBytes,
+  });
+  return { warnBytes: resolved.payloadWarnBytes, hardBytes: resolved.payloadHardBytes };
 }
 
 /**
@@ -53,6 +91,54 @@ export function readSelectionTokenTtlMs(projectRoot: string): number | undefined
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * v2.2 A-INFRA-3 (W1-T3-TOPK): returns the `plan_context_top_k` override from
+ * fabric.config.json, or PLAN_CONTEXT_TOP_K_DEFAULT when absent / invalid.
+ * Best-effort and hot-path safe: any read/parse failure returns the default so
+ * plan_context never crashes on a corrupt config file. Validates the single
+ * field (planContextTopKSchema) rather than the whole config so an unrelated
+ * corrupt field stays isolated.
+ */
+/**
+ * v2.2 C2-vector (W2-T7): resolve the optional embedding settings. `enabled`
+ * defaults to false (`--no-embed` baseline); `weight` defaults to 30. Best-effort
+ * and hot-path safe — any read/parse failure returns the safe text-only default
+ * (enabled:false) so plan_context never crashes on a corrupt config.
+ */
+export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight: number } {
+  try {
+    const config = readFabricConfig(projectRoot);
+    const enabled = config.embed_enabled === true;
+    const rawWeight = config.embed_weight;
+    // Cap at 49 (< BM25_WEIGHT 50) — enforces the supplement-not-override
+    // invariant; out-of-range / non-integer / non-finite all fall to 30.
+    const weight = typeof rawWeight === "number" && Number.isInteger(rawWeight) && rawWeight >= 0 && rawWeight <= 49
+      ? rawWeight
+      : 30;
+    return { enabled, weight };
+  } catch {
+    return { enabled: false, weight: 30 };
+  }
+}
+
+export function readPlanContextTopK(projectRoot: string): number {
+  try {
+    const config = readFabricConfig(projectRoot);
+    // Explicit per-field knob wins over the profile.
+    const raw = config.plan_context_top_k;
+    if (raw !== undefined) {
+      const parsed = planContextTopKSchema.safeParse(raw);
+      if (parsed.success) return parsed.data;
+    }
+    // v2.2 C5-budget (W2-T3): else derive from the retrieval budget profile.
+    // `balanced` (and the absent-profile default) resolves to 24 ===
+    // PLAN_CONTEXT_TOP_K_DEFAULT, so the no-config behavior is unchanged.
+    return resolveRetrievalBudget({ profile: readRetrievalBudgetProfile(config) }).topK;
+  } catch {
+    return PLAN_CONTEXT_TOP_K_DEFAULT;
   }
 }
 

@@ -61,6 +61,11 @@ const _ruleDescriptionSchema = z.object({
   tags: z.array(z.string()).optional(),
   relevance_scope: z.enum(["narrow", "broad"]).optional(),
   relevance_paths: z.array(z.string()).optional(),
+  // v2.2 H2-related (W1-T7) — W1-REVIEW codex HIGH-2: the MCP-facing description
+  // schema must also carry `related`, else zod strips the graph edges on output
+  // validation and they never reach the client (MC1 include_related / fabric-
+  // connect would see nothing). Mirrors the agents-meta ruleDescriptionSchema.
+  related: z.array(z.string()).optional(),
 });
 
 // v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to { stable_id, description }.
@@ -194,6 +199,12 @@ export const planContextOutputSchema = z.object({
     }),
   ),
   candidates: z.array(_descriptionIndexItemSchema),
+  // v2.2 A-INFRA-3 (W1-T3-TOPK) / MC4-payload-budget (W1-T4): number of
+  // lower-ranked candidates dropped by the unified truncation chain (top_k cap
+  // + payload-budget trim). Present and > 0 ONLY when truncation fired, so the
+  // steady-state wire shape is unchanged. Lets the LLM know the returned set is
+  // not exhaustive ("N more exist; narrow your intent").
+  omitted_candidate_count: z.number().int().nonnegative().optional(),
   preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   warnings: z.array(structuredWarningSchema).optional(),
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced
@@ -423,6 +434,13 @@ export const recallInputSchema = z.object({
     .describe(
       "Optional explicit stable_ids to fetch. When omitted, fab_recall returns ALL entries plan-context surfaces (the common case after rc.37 selectable-filter removal). When provided, filters fetched bodies to this set.",
     ),
+  // v2.2 MC1-recall-pack (W2-T4): graph expansion.
+  include_related: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, also fetch the one-hop `related` graph neighbours (of the selected entries) that are present in the candidate set. Useful with a scoped `ids` to pull connected knowledge in one call.",
+    ),
 });
 
 export const recallOutputSchema = z.object({
@@ -442,6 +460,11 @@ export const recallOutputSchema = z.object({
     }),
   ),
   candidates: z.array(_descriptionIndexItemSchema),
+  // v2.2 W1-REVIEW codex MED-5: fab_recall spreads `...planResult`, so it carries
+  // the truncation signal too. Declare it here or zod strips it on output
+  // validation — the RECOMMENDED one-step entry would silently lose the "more
+  // candidates exist" signal that plan_context surfaces.
+  omitted_candidate_count: z.number().int().nonnegative().optional(),
   preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   // Same shape as knowledgeSectionsOutputSchema.rules — full body keyed by stable_id.
   rules: z.array(
@@ -469,6 +492,17 @@ export const recallOutputSchema = z.object({
   // passed via `ids` before fetching bodies; the surfaced map still exposes
   // the substitution to callers that want to refresh their cached state.
   redirects: z.record(z.string()).optional(),
+  // v2.2 MC1-recall-pack (W2-T4): packaging increments — a standing behavioral
+  // directive (cite-before-edit), dynamic next-step hints, and a truncation
+  // summary, so the one-call recall is self-describing.
+  directive: z.string(),
+  next_steps: z.array(z.string()).optional(),
+  truncation: z
+    .object({
+      omitted_candidate_count: z.number().int().nonnegative(),
+      returned_candidate_count: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 
 export const recallAnnotations = {
