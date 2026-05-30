@@ -3,6 +3,11 @@ import type { KnipConfig } from 'knip'
 const config: KnipConfig = {
   ignore: [
     'scripts/**',
+    // Workflow orchestration scratch (.maestro session ledgers, issue
+    // discoveries, generator helpers). Never imported by shipped TS sources —
+    // knip --strict otherwise flags artifacts like discoveries/*/_generate.cjs
+    // as unused files (W4-10 / ISS-019).
+    '.workflow/**',
     // Dogfooded Fabric Stop-hook scripts installed by `fabric install` into this
     // repo's own .claude / .codex client configs. They are runtime hooks
     // invoked externally by Claude Code / Codex CLI — never imported by TS
@@ -38,37 +43,29 @@ const config: KnipConfig = {
     // tsc invoked in .github/workflows/ci.yml; it is a devDep of each workspace package.
     'tsc'
   ],
-  // TODO: review these export/duplicate suppressions during 1.8.x patch.
-  // These are internal server implementation details and CLI citty command patterns
-  // that knip flags as unused/duplicate but are intentional.
+  // Internal server implementation details and CLI citty command patterns that
+  // knip flags as unused/duplicate but are intentional. W4-10 (ISS-020): pruned
+  // 8 stale entries whose files were deleted (http.ts, audit-log.ts,
+  // get-rules.ts, rule-sections.ts, bootstrap.ts, hooks.ts, scan.ts, serve.ts).
   ignoreIssues: {
     // server/cache.ts: cache types are internal; class is unexported but types remain.
     'packages/server/src/cache.ts': ['exports', 'types'],
     // server/config-loader.ts: readFabricConfig is package-private helper.
     'packages/server/src/config-loader.ts': ['exports'],
-    // server/http.ts: FabricHttpApp type and notifyAllSessions are server-internal.
-    'packages/server/src/http.ts': ['exports', 'types'],
     // server/meta-reader.ts: schema shapes and error classes are server-internal.
     'packages/server/src/meta-reader.ts': ['exports', 'types'],
     // server/services: internal implementation files — exports are package-private helpers.
     'packages/server/src/services/_shared.ts': ['exports', 'duplicates'],
-    'packages/server/src/services/audit-log.ts': ['exports'],
     'packages/server/src/services/doctor.ts': ['exports', 'types'],
     'packages/server/src/services/event-ledger.ts': ['types'],
-    'packages/server/src/services/get-rules.ts': ['exports', 'types'],
     'packages/server/src/services/plan-context.ts': ['types'],
     'packages/server/src/services/read-ledger.ts': ['exports', 'types'],
     'packages/server/src/services/rehydrate-state.ts': ['exports'],
-    'packages/server/src/services/rule-sections.ts': ['exports', 'types'],
     // CLI commands: citty pattern exports both named const and `export default`.
     // Both forms are intentional (named for potential programmatic use, default for citty).
-    'packages/cli/src/commands/bootstrap.ts': ['duplicates'],
     'packages/cli/src/commands/config.ts': ['duplicates'],
     'packages/cli/src/commands/doctor.ts': ['duplicates'],
-    'packages/cli/src/commands/hooks.ts': ['duplicates'],
-    'packages/cli/src/commands/install.ts': ['duplicates'],
-    'packages/cli/src/commands/scan.ts': ['duplicates'],
-    'packages/cli/src/commands/serve.ts': ['duplicates']
+    'packages/cli/src/commands/install.ts': ['duplicates']
   },
   workspaces: {
     'packages/cli': {

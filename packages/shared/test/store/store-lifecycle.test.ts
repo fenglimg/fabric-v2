@@ -8,6 +8,7 @@ import {
   explainStore,
   findMountedStore,
 } from "../../src/store/store-lifecycle.js";
+import { scrubRemoteUrl } from "../../src/store/secret-scan.js";
 
 // v2.1.0-rc.1 P3 — store lifecycle config-core unit tests (S57/E4/S7).
 
@@ -72,5 +73,48 @@ describe("P3 store lifecycle — bind + explain", () => {
     expect(explainStore(cfg, "team")?.local_only).toBe(false);
     expect(explainStore(cfg, "platform")?.local_only).toBe(true);
     expect(explainStore(cfg, "ghost")).toBeNull();
+  });
+
+  // W4-09 (ISS-044): credential userinfo must never be persisted into the
+  // registry — auth lives in .git/config, not a shared/tracked store entry.
+  it("scrubs credential userinfo from a mounted store's remote", () => {
+    const cfg = addMountedStore(baseConfig(), {
+      store_uuid: PLATFORM,
+      alias: "platform",
+      remote: "https://user:ghp_secrettoken@github.com/org/repo.git",
+    });
+    const stored = findMountedStore(cfg, "platform")?.remote;
+    expect(stored).toBe("https://github.com/org/repo.git");
+    expect(stored).not.toContain("ghp_secrettoken");
+  });
+
+  it("scrubs credential userinfo from a bound suggested_remote", () => {
+    const r = bindRequiredStore([], {
+      id: "team",
+      suggested_remote: "https://x-access-token:abc123@gitlab.com/g/r.git",
+    });
+    expect(r[0].suggested_remote).toBe("https://gitlab.com/g/r.git");
+    expect(r[0].suggested_remote).not.toContain("abc123");
+  });
+
+  it("leaves credential-free remotes untouched (scp-like)", () => {
+    const cfg = addMountedStore(baseConfig(), {
+      store_uuid: PLATFORM,
+      alias: "platform",
+      remote: "git@github.com:org/repo.git",
+    });
+    expect(findMountedStore(cfg, "platform")?.remote).toBe("git@github.com:org/repo.git");
+  });
+});
+
+describe("scrubRemoteUrl (ISS-044)", () => {
+  it("strips user:token userinfo from a scheme URL", () => {
+    expect(scrubRemoteUrl("https://u:tok@h/r.git")).toBe("https://h/r.git");
+    expect(scrubRemoteUrl("ssh://user:pass@host:22/r")).toBe("ssh://host:22/r");
+  });
+  it("leaves credential-free forms unchanged", () => {
+    expect(scrubRemoteUrl("git@github.com:org/repo.git")).toBe("git@github.com:org/repo.git");
+    expect(scrubRemoteUrl("ssh://git@host/r")).toBe("ssh://git@host/r");
+    expect(scrubRemoteUrl("https://github.com/org/repo.git")).toBe("https://github.com/org/repo.git");
   });
 });

@@ -1,4 +1,5 @@
 import type { GlobalConfig, MountedStore, RequiredStoreEntry } from "../schemas/store.js";
+import { scrubRemoteUrl } from "./secret-scan.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — Store lifecycle config core (pure transforms).
@@ -30,6 +31,10 @@ export function addMountedStore(config: GlobalConfig, store: MountedStore): Glob
       `alias '${store.alias}' already mounts store ${aliasClash.store_uuid}; choose another alias`,
     );
   }
+  // ISS-044: never persist credential userinfo into the registry.
+  const sanitized: MountedStore =
+    store.remote === undefined ? store : { ...store, remote: scrubRemoteUrl(store.remote) };
+  store = sanitized;
   const existing = config.stores.find((s) => s.store_uuid === store.store_uuid);
   const stores =
     existing === undefined
@@ -60,9 +65,15 @@ export function bindRequiredStore(
   required: RequiredStoreEntry[],
   entry: RequiredStoreEntry,
 ): RequiredStoreEntry[] {
-  return required.some((r) => r.id === entry.id)
-    ? required.map((r) => (r.id === entry.id ? entry : r))
-    : [...required, entry];
+  // ISS-044: project config is typically committed — scrub any credential from
+  // the suggested_remote hint before persisting it.
+  const safeEntry: RequiredStoreEntry =
+    entry.suggested_remote === undefined
+      ? entry
+      : { ...entry, suggested_remote: scrubRemoteUrl(entry.suggested_remote) };
+  return required.some((r) => r.id === safeEntry.id)
+    ? required.map((r) => (r.id === safeEntry.id ? safeEntry : r))
+    : [...required, safeEntry];
 }
 
 // Human-readable explanation of how an alias resolves (S7 `store explain`).
