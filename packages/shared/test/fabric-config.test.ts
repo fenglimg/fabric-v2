@@ -135,6 +135,29 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
   });
 });
 
+// v2.1 ADJ-NEWN-4: user-override escape hatches for the two strong policies.
+describe("fabricConfigSchema — cite/self-archive escape hatches", () => {
+  it("defaults both policy flags to true (policies ON) when omitted", () => {
+    const parsed = fabricConfigSchema.parse({});
+    expect(parsed.cite_policy_enabled).toBe(true);
+    expect(parsed.self_archive_policy_enabled).toBe(true);
+  });
+
+  it("honors an explicit opt-out (false) for either policy", () => {
+    const parsed = fabricConfigSchema.parse({
+      cite_policy_enabled: false,
+      self_archive_policy_enabled: false,
+    });
+    expect(parsed.cite_policy_enabled).toBe(false);
+    expect(parsed.self_archive_policy_enabled).toBe(false);
+  });
+
+  it("rejects a non-boolean policy flag", () => {
+    expect(() => fabricConfigSchema.parse({ cite_policy_enabled: "off" })).toThrow();
+    expect(() => fabricConfigSchema.parse({ self_archive_policy_enabled: 0 })).toThrow();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // archive_edit_threshold — rc.6 TASK-022 (E5)
 //
