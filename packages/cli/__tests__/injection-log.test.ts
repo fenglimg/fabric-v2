@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -75,6 +75,29 @@ describe("logInjection (HK3 injection telemetry)", () => {
     const root = tmp();
     logInjection(root, { surface: "broad", stableIds: ["a", 1 as unknown as string, "b"] });
     expect(readRows(root)[0]?.stable_ids).toEqual(["a", "b"]);
+  });
+
+  it("drops the row under lock contention rather than risk an interleaved write", () => {
+    // ADJ-W3-INJECTION-CONCURRENCY: a fresh lock = another window mid-write.
+    const root = tmp();
+    logInjection(root, { surface: "broad", stableIds: ["a"], ts: 1 }); // creates dir + first row
+    const lockPath = join(root, ".fabric", "injections.jsonl.lock");
+    writeFileSync(lockPath, ""); // simulate a concurrent holder
+    logInjection(root, { surface: "broad", stableIds: ["b"], ts: 2 }); // contended → dropped
+    expect(readRows(root).map((r) => r.ts)).toEqual([1]);
+    rmSync(lockPath, { force: true });
+  });
+
+  it("reclaims a stale lock left by a crashed holder and resumes writing", () => {
+    const root = tmp();
+    logInjection(root, { surface: "broad", stableIds: ["a"], ts: 1 });
+    const lockPath = join(root, ".fabric", "injections.jsonl.lock");
+    writeFileSync(lockPath, "");
+    const oldSec = Date.now() / 1000 - 3600; // 1h ago — well past STALE_LOCK_MS
+    utimesSync(lockPath, oldSec, oldSec);
+    logInjection(root, { surface: "broad", stableIds: ["b"], ts: 2 }); // stale → reclaimed + written
+    expect(readRows(root).map((r) => r.ts)).toEqual([1, 2]);
+    expect(existsSync(lockPath)).toBe(false); // released after write
   });
 
   it("the consumed÷injected hit-rate is computable: injected ids ∩ consumed", () => {

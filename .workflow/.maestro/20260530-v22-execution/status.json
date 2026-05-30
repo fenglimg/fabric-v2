@@ -150,7 +150,13 @@
       "subject": "Wave3 末 + portfolio maestro delegate review: 观测/图谱(HK3/SK2/MC5/A14) + 整盘 18 候选集成/回归/护城河 D 一致性最终审", "done_when": "review 过; 全 18 候选无未解 BLOCK; portfolio 一致",
       "ship_criteria_alignment": ["G-REVIEW"], "alignment_strength": "direct", "status": "done", "kind": "review-gate", "wave": 3,
       "dep": ["W3-T1-HK3","W3-T2-SK2","W3-T3-MC5","W3-T4-A14","W2-REVIEW"],
-      "verification": { "method": "cross-llm", "verifier": "gemini+codex", "evidence": "gemini(OVERALL PASS: 18候选无结构冲突/回归/护城河D漂移, 截断链端到端一致, 量纲协调, D1-4一致强化)+codex(零上下文冷评, 无BLOCK); 修复 1HIGH(health命名)+加BM25-leads校准锁 commit f3e7fd6; 2 by-design 升非阻塞ADJ; 无未解BLOCK; server697/cli837/shared539 tsc0", "verified_at": "2026-05-30" } }
+      "verification": { "method": "cross-llm", "verifier": "gemini+codex", "evidence": "gemini(OVERALL PASS: 18候选无结构冲突/回归/护城河D漂移, 截断链端到端一致, 量纲协调, D1-4一致强化)+codex(零上下文冷评, 无BLOCK); 修复 1HIGH(health命名)+加BM25-leads校准锁 commit f3e7fd6; 2 by-design 升非阻塞ADJ; 无未解BLOCK; server697/cli837/shared539 tsc0", "verified_at": "2026-05-30" } },
+
+    { "id": "W3-T1-HK3-followup-1", "round": 1, "parent_id": "W3-T1-HK3", "relationship": "incomplete-resolution", "subdivision_depth": 1,
+      "subject": "ADJ-W3-INJECTION-CONCURRENCY 落地: injections.jsonl 多窗口并发写加 advisory lock(防交错损坏)", "done_when": "O_EXCL 锁+争用丢行+stale回收; 并发测; tsc0; cli 全绿",
+      "ship_criteria_alignment": ["G-QUALITY"], "alignment_strength": "supporting", "status": "done", "kind": "followup", "wave": 3,
+      "commit_point": "feat(v2.2): injections.jsonl advisory lock 防多窗口并发交错", "dep": ["W3-T1-HK3"],
+      "verification": { "method": "deterministic", "verifier": "test + tsc", "evidence": "appendLockedLine(O_EXCL 原子acquire→write→release; 争用drop保不交错; stale>5s reclaim)替换裸 appendFileSync; 2 并发测(contention-drop + stale-reclaim); cli 839 全绿(原837+2); tsc0; 仅改 hook 模板 cjs 无 shared schema", "verified_at": "2026-05-30" } }
   ],
   "needs_adjudication": [
     { "id": "ADJ-W1-BM25WEIGHT", "source": "W1-REVIEW", "type": "cross-llm-divergence", "blocking": false,
@@ -165,9 +171,10 @@
     { "id": "ADJ-W3-VECTOR-SUPPLEMENT", "source": "W3-REVIEW", "type": "design-philosophy", "blocking": false,
       "summary": "codex MED-2: embed_weight≤49<BM25_WEIGHT50, 故 vector 翻不动强 BM25, 价值窄(仅 BM25 弱/静默/接近打平区)",
       "adjudication": "by-design。候选 spec 明确 C2='作 BM25 后语义召回补充'(supplement)非'语义纠偏'(correction); 且 W2-REVIEW codex 自己要求 cap<BM25 防 vector 覆盖词法——'不覆盖'与'能纠偏'本互斥。vector 价值在 BM25 弱区(语义召回, 捕词法漏的)正是设计目标。若未来要 semantic correction 则需 hybrid rank fusion(不同设计), 留 v2.3 human 拍。非阻塞。" },
-    { "id": "ADJ-W3-INJECTION-CONCURRENCY", "source": "W3-REVIEW", "type": "accepted-low-risk", "blocking": false,
+    { "id": "ADJ-W3-INJECTION-CONCURRENCY", "source": "W3-REVIEW", "type": "accepted-low-risk", "blocking": false, "resolved": true,
       "summary": "codex LOW: injection-log.cjs 同步 appendFileSync 无 lock, 多窗口并发写 injections.jsonl 理论可交错; 同步写在 SessionStart 热路径 stdout 前",
-      "adjudication": "accepted。单行小 JSONL append 在 POSIX 近原子(<PIPE_BUF), best-effort telemetry 容忍偶发交错; gemini 未 flag。热路径延迟: append 一行 µs 级, 可忽略。若后续真见交错损坏再引 ledger lock 模式。非阻塞。" }
+      "adjudication": "accepted。单行小 JSONL append 在 POSIX 近原子(<PIPE_BUF), best-effort telemetry 容忍偶发交错; gemini 未 flag。热路径延迟: append 一行 µs 级, 可忽略。若后续真见交错损坏再引 ledger lock 模式。非阻塞。",
+      "resolution": "2026-05-30 post-milestone(user 决定吃掉): 实现 advisory lock(O_EXCL 原子建锁→写→释放; 争用丢行保不交错; stale 锁>5s 回收), 因用户多窗口并发改同 repo 是高频场景(价值确定)且改动小。cli 839 测绿(+2 并发测)+tsc0; commit W3-T1-HK3-followup-1。残留触发器: 真见损坏行/命中率异常再升带退避真锁。" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260530-v22-execution/goal-checklist.md",
   "status": "completed",
