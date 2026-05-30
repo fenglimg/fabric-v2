@@ -106,6 +106,13 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(claudeImportSkill).toBe(importSkillTemplate);
     expect(codexImportSkill).toBe(importSkillTemplate);
 
+    // v2.2 SK1-audit (W2-T5): fabric-audit skill copies — byte-identical to template.
+    const auditSkillTemplate = readTemplate("skills/fabric-audit/SKILL.md");
+    const claudeAuditSkill = readFileSync(join(target, ".claude/skills/fabric-audit/SKILL.md"), "utf8");
+    const codexAuditSkill = readFileSync(join(target, ".codex/skills/fabric-audit/SKILL.md"), "utf8");
+    expect(claudeAuditSkill).toBe(auditSkillTemplate);
+    expect(codexAuditSkill).toBe(auditSkillTemplate);
+
     // Hook script copies — byte-identical (rc.5 TASK-010: Cursor added)
     const claudeHook = readFileSync(join(target, ".claude/hooks/fabric-hint.cjs"), "utf8");
     const codexHook = readFileSync(join(target, ".codex/hooks/fabric-hint.cjs"), "utf8");
