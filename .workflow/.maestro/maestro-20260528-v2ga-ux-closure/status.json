@@ -9,7 +9,7 @@
   "auto_mode": false,
   "exec_mode": "internal",
   "cli_tool": "claude",
-  "status": "running",
+  "status": "completed",
   "current_round": 1,
   "current_phase": "execute",
   "current_step": 0,
@@ -210,7 +210,9 @@
       "dimension": "D-MCP",
       "subject": "plan_context fold ① 塌缩 per-path index → 单一 candidates",
       "done_when": "rc.37 A1 删 per-path 过滤后, entries[].description_index 不再各带一份; PlanContextResult 改为 entries:[{path, requirement_profile}] + 顶层单一 candidates (原 shared.description_index); 消费方 plan-context-hint.ts:185 path-mode 改读 shared/candidates; N-path payload 不再 N+1 倍重复",
-      "ship_criteria_alignment": ["G-MCP-PAYLOAD"],
+      "ship_criteria_alignment": [
+        "G-MCP-PAYLOAD"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "单 path 即砍掉 ~50% payload (entries[0] 与 shared 重复)",
       "status": "done",
@@ -227,7 +229,10 @@
       "dimension": "D-MCP",
       "subject": "plan_context fold ② 抑制空壳 entry (summary===stable_id && 空 arrays 的 legacy draft)",
       "done_when": "candidates 排除/压缩 summary 等于自身 stable_id 且 intent_clues/impact/tech_stack 全空的 legacy entry (经 descriptionFromLegacyActivation 兜底放行的噪音); 底层数据质量问题同步 surface (doctor info 或 auto-promote/backfill 路径); werewolf fixture payload 验证空壳消失",
-      "ship_criteria_alignment": ["G-MCP-PAYLOAD", "G-SKILL-TRIGGER"],
+      "ship_criteria_alignment": [
+        "G-MCP-PAYLOAD",
+        "G-SKILL-TRIGGER"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "~30 条空壳是纯噪音, 既占 payload 又拖累 AI 选择精度 (recall-precision)",
       "status": "done",
@@ -244,7 +249,9 @@
       "dimension": "D-MCP",
       "subject": "plan_context fold ③ 删死字段 + 瘦 requirement_profile",
       "done_when": "去 level/required/selectable (代码注释自承 dead, v2.1 删); 去 description.* 与外层 wrapper 重复的 type/maturity/layer/relevance_scope/relevance_paths (留一处); requirement_profile 去 path_segments/extension (可推导) + 评估是否去 known_tech/user_intent 入参回声; 消费方读路径同步",
-      "ship_criteria_alignment": ["G-MCP-PAYLOAD"],
+      "ship_criteria_alignment": [
+        "G-MCP-PAYLOAD"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "每 entry ~7 死/重复字段, 叠加再省 20-30%",
       "status": "done",
@@ -261,7 +268,9 @@
       "dimension": "D-MCP",
       "subject": "MCP payload-size 回归基线 + fab_recall 同步瘦身",
       "done_when": "新增 payload-size 测试锁单 path typical ≤4k tok 基线 (防回归); fab_recall 返回结构同步应用 ①②③ (recall 复用 planContext); 文档/schema 注释更新",
-      "ship_criteria_alignment": ["G-MCP-PAYLOAD"],
+      "ship_criteria_alignment": [
+        "G-MCP-PAYLOAD"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "把 payload 大小固化为持续优化指标 (用户明确要求纳入指标)",
       "status": "done",
@@ -278,7 +287,9 @@
       "dimension": "D-SKILL",
       "subject": "Skill auto-invoke 触发准确度复测 (archive/import/review description trigger)",
       "done_when": "三 Skill 的 description trigger 在真实/模拟用户消息上命中真值标注; F1 ≥ rc.32 baseline 71% 无回归; 误触发/漏触发 case 记录并修文案",
-      "ship_criteria_alignment": ["G-SKILL-TRIGGER"],
+      "ship_criteria_alignment": [
+        "G-SKILL-TRIGGER"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "auto-invoke 是 S3 写 KB 旅程的入口, 触发不准则整条体验断裂",
       "status": "done",
@@ -295,7 +306,9 @@
       "dimension": "D-SKILL",
       "subject": "fabric-archive recall dogfood (rc.37 NEW-2/NEW-4 简化后复测)",
       "done_when": "werewolf 真实 session walkthrough 跑 fabric-archive, 实测 recall ≥40% (rc.32 baseline 20%); 漏归档 case 反推到 Phase 2.5 viability gate / 信号判别并修",
-      "ship_criteria_alignment": ["G-ARCHIVE-RECALL"],
+      "ship_criteria_alignment": [
+        "G-ARCHIVE-RECALL"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "archive recall 是 KB 不慢性死亡的核心 (rc.32 P0)",
       "status": "done",
@@ -312,7 +325,10 @@
       "dimension": "D-HOOK",
       "subject": "Hook surface → AI 行为变化验证 (SessionStart broad + PreToolUse narrow)",
       "done_when": "dogfood 对比: hook surface KB 前 vs 后, AI 是否真 reference 了条目 (而非噪音被忽略); SessionStart broad 列表 + PreToolUse narrow hint 各自有效性标注; 无效 surface 收窄文案",
-      "ship_criteria_alignment": ["G-CITE", "G-SKILL-TRIGGER"],
+      "ship_criteria_alignment": [
+        "G-CITE",
+        "G-SKILL-TRIGGER"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "Hook 是 KB→AI 价值传导唯一通道, surface 无效=整产品价值归零",
       "status": "done",
@@ -329,7 +345,9 @@
       "dimension": "D-HOOK",
       "subject": "cite-coverage ≥30% 复测 (rc.37 NEW-1 2-state + NEW-18 default ON 后)",
       "done_when": "werewolf dogfood 后 fabric doctor --cite-coverage ≥30% (rc.32 baseline 3.1%); 含 KB:none sentinel 拆分; 若未达标定位 H1/H3/H5 根因 (delivery/compliance/contract) 并修",
-      "ship_criteria_alignment": ["G-CITE"],
+      "ship_criteria_alignment": [
+        "G-CITE"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "cite 是指令遵循 D9 核心可量化指标 (rc.32 P0-A)",
       "status": "done",
@@ -338,7 +356,13 @@
         "verifier": "node packages/cli/dist/index.js doctor --cite-coverage --since=7d --client=cc (本 repo live) + 确定性单测 + ≥2 LLM",
         "evidence": "用户授权方案 C(compliance 语义)后, 本轮找到并修复真根因: narrow hook 的 edit_intent_checked 事件缺 session_id → expected_but_missed 关联(以 session_id 为键)对任何 repo 恒=0 → cite_compliance_rate 结构性钉死 100%(Goodhart-broken)。prior loop NEW-3 撤销只验 emit count, 漏验 session_id 缺失。修复: appendEditIntentToLedger 加 session_id(仅真实 payload, 不用 synthetic 防 false-positive)+ call site 传入。live 端到端(--client=cc): editsTouched=12(原永恒0)/ expected_but_missed=1(检测臂活体触发)/ compliance=99.8%(594/595, 脱离 100% 钉死)/ uncorrelatable_edits=4(新增 hardening 暴露 stale-hook gap)。判别单测: doctor.test.ts test13 断言 compliance=0.5, test13b 断言 uncorrelatable 不污染 missed; hook 单测 3 例锁 session_id 透传/省略。≥2 LLM: claude+codex(零上下文 cdx-162132)各判 SOUND PASS; codex Q4 的第2 lever(cite-before-edit 时序)→ NEW-9 P3。绿灯: tsc0/lint0/1813 tests。compliance 99.8% ≥ target 30% PASS。诊断 brief: .scratchpad/v2.0.0-ga-ux-closure/ux8-cite-session-id-rootcause.md。",
         "verified_at": "2026-05-28T16:25:00+0800",
-        "attempts": [{"at": "2026-05-28T14:30:00+0800", "result": "blocked-measurement-infra", "note": "误判为 soak-dependent; 实为 session_id 死分母, 本轮修复"}]
+        "attempts": [
+          {
+            "at": "2026-05-28T14:30:00+0800",
+            "result": "blocked-measurement-infra",
+            "note": "误判为 soak-dependent; 实为 session_id 死分母, 本轮修复"
+          }
+        ]
       }
     },
     {
@@ -346,7 +370,10 @@
       "dimension": "D-HOOK",
       "subject": "nudge 频率合适度 (archive-hint / review-backlog / maintenance)",
       "done_when": "模拟典型 session 节奏, 验证 nudge 不 nag-overload 也不过稀; per-signal cooldown + dismiss (NEW-16) 实际生效; 频率不当则调 cooldown 常量",
-      "ship_criteria_alignment": ["G-CITE", "G-ARCHIVE-RECALL"],
+      "ship_criteria_alignment": [
+        "G-CITE",
+        "G-ARCHIVE-RECALL"
+      ],
       "alignment_strength": "indirect",
       "alignment_rationale": "nudge 频率直接影响 archive/review 旅程是否被用户采纳 (体验感知)",
       "status": "done",
@@ -363,7 +390,9 @@
       "dimension": "D-CLI",
       "subject": "Onboarding cliff 30min self-演复测 (install/doctor/init 引导) + --help 首屏 (并 G1)",
       "done_when": "rc.37 后 baseline 重测, target ≥30% reach goal; install/doctor/init 引导话术可操作度评分; cognitive cliff 点修复; [并 G1] fabric --help / 各命令 --help 首屏文案首次接触 (S1) 可读性。builds-on 工程本 F3 (已 done reach-goal ~45%; 本轮复测 rc.38 改动后维持)",
-      "ship_criteria_alignment": ["G-CITE"],
+      "ship_criteria_alignment": [
+        "G-CITE"
+      ],
       "alignment_strength": "indirect",
       "alignment_rationale": "S1/S2 onboarding 是最大流失点, CLI 引导是用户第一印象",
       "status": "done",
@@ -380,7 +409,9 @@
       "dimension": "D-PARITY",
       "subject": "Claude CLI vs Codex CLI per-client 能力面验证 (自动, 仅 2 CLI)",
       "done_when": "install/archive/review/doctor/plan-context 在 Claude CLI vs Codex CLI 输出对比, 每端按自身应有 surface 验证 (非跨端 parity), diff 无 blocking 差异; Codex 端 hook/cite 等价路径 (NEW-21) 实际生效。Desktop/Cursor GUI 不在此自动 task, 见 UX-19。builds-on 工程本 F2 (已 done, 仅测 install byte-parity; 本轮加 runtime)",
-      "ship_criteria_alignment": ["G-PARITY"],
+      "ship_criteria_alignment": [
+        "G-PARITY"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "两 CLI 是能进 CI 的自动可测部分; X1 重框为 per-client 能力面自洽",
       "status": "done",
@@ -397,7 +428,9 @@
       "dimension": "D-GREEN",
       "subject": "Tier B 基建绿灯门 + 关键路径冒烟 + config/metrics/onboard-coverage 可读性 (并 G4)",
       "done_when": "pnpm -r exec tsc --noEmit=0 + pnpm test 全绿 + pnpm lint=0 + 本 repo & werewolf fixture fabric doctor green; install/schema 派生关键路径手动冒烟一次; [并 G4] fabric config/metrics/onboard-coverage 输出可读性过得去即可 (P3); 发现非阻塞问题记 NEW-N",
-      "ship_criteria_alignment": ["G-GREEN"],
+      "ship_criteria_alignment": [
+        "G-GREEN"
+      ],
       "alignment_strength": "infrastructure",
       "alignment_rationale": "基建不深挖但必须绿灯, 防 UX 改动引入回归",
       "status": "done",
@@ -414,7 +447,9 @@
       "dimension": "D-MCP",
       "subject": "fab_get_knowledge_sections payload audit (step-2 全文拉取) + MCP 工具报错反馈 UX (并 G3)",
       "done_when": "审 step-2 全文拉取 payload 结构, 若同样膨胀 (body 冗余 / 重复 metadata / 无截断) 则同 fold; 评估超长 body 的截断或分页策略; 锁 payload-size 回归基线; recall 内联路径同步; [并 G3] 抽查 MCP 工具 (extract/review/sections) 传错参时的报错/校验反馈是否可读可操作",
-      "ship_criteria_alignment": ["G-MCP-PAYLOAD"],
+      "ship_criteria_alignment": [
+        "G-MCP-PAYLOAD"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "step-2 是实际内容交付, 与 step-1 同源吃 context, UX-1~4 只查了 step-1",
       "status": "done",
@@ -431,7 +466,9 @@
       "dimension": "D-CLI",
       "subject": "doctor 故障自救 dogfood (X3 debuggability — 最大盲区) + 次要 mode 输出可用性 (并 G2)",
       "done_when": "人为制造 ≥6 类 broken state (corrupt agents.meta / missing description / events.jsonl bloat / hook 损坏 / cross-client drift / stale lock), 跑 fabric doctor + 按 remediation 自救; 模拟『用户只看报错能否自救』; 自救率 ≥80%(floor 60%); 不可操作/误导的 remediation 当轮修; [并 G2] --fix-knowledge / --archive-history / --enrich-descriptions / --history 次要 mode 输出可读可用",
-      "ship_criteria_alignment": ["G-DOCTOR-RECOVERY"],
+      "ship_criteria_alignment": [
+        "G-DOCTOR-RECOVERY"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "doctor 是最大 CLI 模块 + 故障时唯一自救面, 现仅验绿灯未验红了能否救",
       "status": "done",
@@ -448,7 +485,10 @@
       "dimension": "D-SKILL",
       "subject": "fabric-review + fabric-import 交互旅程 dogfood (不只 trigger)",
       "done_when": "fabric-review approve/reject/modify-content/modify-layer/defer + batch backlog 实跑, AskUserQuestion per-item 体验顺畅; fabric-import 3-phase resumable (.import-state.json) + dedup 实跑; 交互卡点 (歧义/误删/无反馈) 当轮修",
-      "ship_criteria_alignment": ["G-ARCHIVE-RECALL", "G-SKILL-TRIGGER"],
+      "ship_criteria_alignment": [
+        "G-ARCHIVE-RECALL",
+        "G-SKILL-TRIGGER"
+      ],
       "alignment_strength": "indirect",
       "alignment_rationale": "S3 写 + S5 审是 KB 闭环两端, 只测 trigger 漏掉实际交互体验",
       "status": "done",
@@ -465,7 +505,10 @@
       "dimension": "D-CLI",
       "subject": "S7 升级 + S8 退出/撤销 UX 冒烟 (历史 0% UX 覆盖)",
       "done_when": "二次 fabric install drift detect 提示清晰可操作; fabric uninstall clean revert + 残留检查 (dry-run + 实跑); 单条 archive 误判 undo (fab_review reject / 撤销) 路径顺畅; --force-skills-only/--force-hooks-only 升级体验冒烟",
-      "ship_criteria_alignment": ["G-GREEN", "G-DOCTOR-RECOVERY"],
+      "ship_criteria_alignment": [
+        "G-GREEN",
+        "G-DOCTOR-RECOVERY"
+      ],
       "alignment_strength": "indirect",
       "alignment_rationale": "S8 退出撤销历史 0% UX 覆盖; 工程本 F4 仅验功能 revert 非体验",
       "status": "done",
@@ -482,7 +525,9 @@
       "dimension": "meta",
       "subject": "surface→task 覆盖门 + 收尾 self-audit 机制 (保证『及时暴露』)",
       "done_when": "产出 surface-coverage-map.md: 列全 user-facing 模块 (3 Skill + 4 Hook + 6 MCP + 8 CLI + 4 Policy + doctor ~53 check 域) × 映射到的 UX-N, 每模块 ≥1 task 否则标 GAP; ledger 收尾前跑覆盖 self-audit (问『还有什么没测』) 抓漏; ≥2 LLM 交叉协议落到 constraints (已加)",
-      "ship_criteria_alignment": ["G-COVERAGE"],
+      "ship_criteria_alignment": [
+        "G-COVERAGE"
+      ],
       "alignment_strength": "infrastructure",
       "alignment_rationale": "机制化保证不再静默漏模块, 是『及时暴露所有』的结构前提",
       "status": "done",
@@ -499,7 +544,10 @@
       "dimension": "D-MCP",
       "subject": "AGENTS.md 两步调用协议工效 (G5, 最高频 AI 交互)",
       "done_when": "dogfood 测高频 edit 场景下 '每次 edit 前强制 fab_plan_context→fab_get_knowledge_sections' 是否成摩擦 (节奏/延迟/认知负担); 评估能否合并 (fab_recall 单步) / 缓存 / 条件触发降摩擦; 协议文案在 no-hook 端 (若有) 不误导",
-      "ship_criteria_alignment": ["G-MCP-PAYLOAD", "G-CITE"],
+      "ship_criteria_alignment": [
+        "G-MCP-PAYLOAD",
+        "G-CITE"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "两步协议是每次编辑都走的最高频交互, 摩擦直接拖累全局体验; P1",
       "severity": "P1",
@@ -517,7 +565,10 @@
       "dimension": "D-PARITY",
       "subject": "Claude Desktop Code tab + Codex Desktop 安装正确性 + hook-fire 手动兜底 (GUI, manual)",
       "done_when": "[manual, 用户手动跑] ① Fabric hook 在 Claude Desktop Code tab GUI 真 fire (对照 issue #51904 的 --setting-sources user 风险) ② MCP 不在 ~/.claude.json/.mcp.json 与 claude_desktop_config.json 双注册冲突 ③ Codex Desktop 认 codex-hooks.json + config.toml 共享生效 ④ 装完即用无残留报错。CLI 全测已传递性覆盖配置层, 本 task 只验 CLI 测不到的 GUI runtime 差异",
-      "ship_criteria_alignment": ["G-DOCTOR-RECOVERY", "G-PARITY"],
+      "ship_criteria_alignment": [
+        "G-DOCTOR-RECOVERY",
+        "G-PARITY"
+      ],
       "alignment_strength": "direct",
       "alignment_rationale": "配置共享≠GUI runtime 一致 (#51904 实例); CLI 装对的传递性需一次 GUI fire-test 兜底; 用户明确要保 Desktop, P1",
       "severity": "P1",
@@ -540,7 +591,9 @@
       "severity": "P3",
       "severity_rationale": "F1 在 adversarial labeled set 上 100% (NOT 子句已正确压制全部 8 易混负样本); 过触发为真实高频对话的推测性尾部风险, 非已覆盖模块的明确退化, 非 ship-blocking。属打磨。",
       "proposed_fix": "把 archive/import 的裸短词改复合限定词 (如 'review knowledge' / '导入历史知识'), 进一步降日常 dev 对话误触发; 需重测 F1 防过紧伤 recall。",
-      "ship_criteria_alignment": ["G-SKILL-TRIGGER"],
+      "ship_criteria_alignment": [
+        "G-SKILL-TRIGGER"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -561,7 +614,10 @@
       "severity": "P3",
       "severity_rationale": "功能完整、定位无歧义、无数据丢失 (approve 回显 stable_id 金标准)。modify/defer/reject 不回显结果细节 = 体验打磨; search 无分词在 import dedup 已被 LLM 语义兜底, 仅手动 review 查询小坑。非 ship-blocking。",
       "proposed_fix": "modify-content 回显 before/after diff 或新值; defer 回显 until; reject 回显 destination。search 可选加简单 token 拆分 (空格分词 AND-match)。",
-      "ship_criteria_alignment": ["G-ARCHIVE-RECALL", "G-SKILL-TRIGGER"],
+      "ship_criteria_alignment": [
+        "G-ARCHIVE-RECALL",
+        "G-SKILL-TRIGGER"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -582,7 +638,9 @@
       "severity": "RETRACTED",
       "retraction_reason": "误报根因: ugrep 工具在 knowledge-hint-narrow.cjs(1575行.cjs)上静默失败(对所有 pattern 返回空), 我误读为'hook 不发 edit_intent_checked'。改用 python 读源 + 直接 fire hook 验证: 模板 narrow hook 完整实现 appendEditIntentToLedger(line361 定义) 在 main() line1252 无条件调用, emit {event_type:edit_intent_checked, ledger_source:hook} 到 events.jsonl; fresh install fire hook 实测 emit 成功 (count=1, relative path)。rc.35 TASK-07 P0-2 已完整落地。dev-repo edits_touched=0 真因 = 安装的 hook 是 pre-rc.35 stale 旧版 (不含该函数), `fabric install` 同步即修 —— 是 dev-repo drift, 非产品 bug。",
       "severity_rationale": "撤销 — 无产品缺陷需修。",
-      "ship_criteria_alignment": ["G-CITE"],
+      "ship_criteria_alignment": [
+        "G-CITE"
+      ],
       "alignment_strength": "direct",
       "status": "done",
       "note": "RETRACTED。教训: ugrep 在某些 .cjs 上静默失败, grep 返回空 ≠ 不存在; 必须 python/Read 复核才能下'代码不存在'结论 (强化 [[feedback-audit-verification]])。",
@@ -602,7 +660,10 @@
       "severity": "P3",
       "severity_rationale": "nudge 设计已被 claude+gemini 双判 APPROPRIATE (pass)。调优是高频用户体验打磨, 非退化。改 passing 行为默认值有 ripple (影响 archive 提醒节奏/UX-6 cadence), 不在 loop 内改。",
       "proposed_fix": "archive_hint_cooldown_hours 默认 12→24 (或拉高 Signal A N-edit 阈值); Signal B (NEW-16) dismiss 后加 24h 或 pending≥20 backoff 防 +1 立即复发。",
-      "ship_criteria_alignment": ["G-CITE", "G-ARCHIVE-RECALL"],
+      "ship_criteria_alignment": [
+        "G-CITE",
+        "G-ARCHIVE-RECALL"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -623,7 +684,10 @@
       "severity": "P3",
       "severity_rationale": "fresh install→doctor 2 error 均 fixable 且 doctor --fix 一键全绿 (已验证); remediation 可操作。首跑要多跑一次 --fix 是体验小坎, 非断裂、非数据丢。",
       "proposed_fix": "install 末尾内联 build knowledge-test index + sync counters envelope, 使 fresh install 直接 doctor-green 无需 --fix。",
-      "ship_criteria_alignment": ["G-GREEN", "G-DOCTOR-RECOVERY"],
+      "ship_criteria_alignment": [
+        "G-GREEN",
+        "G-DOCTOR-RECOVERY"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -644,7 +708,9 @@
       "severity": "P2",
       "severity_rationale": "离散模块 0 GAP; 横切面 partial 覆盖已在 (error-UX: UX-13 G3 MCP 传错参 + UX-14 doctor 6/6; i18n: 所有 dogfood 隐式见 en+zh 正确渲染)。缺的是系统性深测 (MCP server 中途宕/skill timeout 的 friendly localized error vs stack trace 全路径 + i18n 4 模式专测), 非已知缺陷。属测试深度补强, 非 ship-blocking (无已知 error-UX 断裂)。privacy-consent/version-notif 经核实 N/A 已排除。",
       "proposed_fix": "加 error-UX 矩阵测 (MCP 断连/超时/坏 config → 断言 friendly localized 输出非 raw stack) + i18n 4 模式 (zh-CN/en/hybrid/match-existing) 渲染专测。",
-      "ship_criteria_alignment": ["G-COVERAGE"],
+      "ship_criteria_alignment": [
+        "G-COVERAGE"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -665,7 +731,9 @@
       "severity": "P3",
       "severity_rationale": "主 cliff (无 next-action 桥) 已修, reach 35→72 过 ≥30% target。残留为增量打磨: (a) 空 repo 冷启动应让 fabric-import 当 step1 (现作 '或跑' 次选) (b) Next steps 引用 'Skill' 但新用户不知其为何物/在哪调 (c) Desktop/Cursor 'manual follow-up' 无具体指令 (d) CLI UI locale 与 fabric_language 不一致显示 (en tagline + zh next-steps 混排, 关联 NEW-6 i18n)。",
       "proposed_fix": "Next steps step2 改 import-first (空 repo); 加一句 'Skill = 在 AI 客户端里说触发短语即可调用'; manual-client 行附具体后续命令; 统一 CLI 输出 locale。",
-      "ship_criteria_alignment": ["G-CITE"],
+      "ship_criteria_alignment": [
+        "G-CITE"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -686,7 +754,9 @@
       "severity": "P2",
       "severity_rationale": "≥2 LLM (claude+gemini) 一致 P2 非 blocking: (1) 无数据丢 — .fabric/knowledge 完整保留, reinstall→--fix→green 可恢复; (2) 无阻断 — hooks fail-safe (KT-DEC-0007 reminder/exit2/never-block), 引用已删脚本只 noisy 不断核心调用; (3) uninstall 极低频退出路径。属 dirty-state 体验瑕疵。",
       "proposed_fix": "uninstall 加 hooks + skills 两 stage: 删 .claude/.codex 下 hooks+skills 产物 + 安全移除 settings.json/.codex hooks.json 注入的 fabric hook 节点, 实现 clean revert。",
-      "ship_criteria_alignment": ["G-DOCTOR-RECOVERY"],
+      "ship_criteria_alignment": [
+        "G-DOCTOR-RECOVERY"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -707,7 +777,9 @@
       "severity": "P3",
       "severity_rationale": "G-CITE 已 PASS(99.8% ≥target, 死分母真根因[session_id]已修, uncorrelatable hardening 已实现)。剩余 = 测量精度细化: (1) sessionCitedKbs 是 session 级集合, 同 session 任一 turn cite 即覆盖全 session edit, 不校验 cite 是否在 edit 之前(doctor.ts:8641/8763/8902); (2) live 实测中 dismissed-cite(KB:id [dismissed:reason]) 未计入 citedSet → narrow 路径上的 dismiss 被计 miss(本轮 expected_but_missed=1 即此例), 度量偏保守(低估 compliance, 安全方向)。两者均不推翻 PASS, 属 measurement hardening 未完全收口。",
       "proposed_fix": "(1) 关联加 turn/edit 时序或序号校验(cite must precede edit); (2) 评估 dismissed-with-reason 是否应计 compliant(policy 视 dismiss 为合规 cite 行为, 但 metric 现仅认 applied)——需定义 dismiss 对 expected_but_missed 的语义。",
-      "ship_criteria_alignment": ["G-CITE"],
+      "ship_criteria_alignment": [
+        "G-CITE"
+      ],
       "alignment_strength": "indirect",
       "status": "deferred",
       "defer_target": "v2.0.x patch",
@@ -724,30 +796,62 @@
   "drift_checks": [
     {
       "at": "2026-05-28T14:00:21+0800",
-      "after_tasks": ["UX-1", "UX-2", "UX-3", "UX-4", "UX-13"],
+      "after_tasks": [
+        "UX-1",
+        "UX-2",
+        "UX-3",
+        "UX-4",
+        "UX-13"
+      ],
       "closed_count": 5,
       "alignment": "5/5 direct (G-MCP-PAYLOAD) — 100% direct, 远超 ≥60% 门槛",
       "scope_note": "D-MCP 全维度 (6 task 中 5 已闭, 仅 UX-18 AGENTS.md 协议工效 dogfood 待跑). 无 scope drift, 无 NEW-N 衍生. payload 实测降 88% 一次性达标."
     },
     {
       "at": "2026-05-28T15:35:00+0800",
-      "after_tasks": ["UX-7", "UX-9", "UX-12", "UX-14", "UX-11", "UX-17", "UX-10", "UX-16"],
+      "after_tasks": [
+        "UX-7",
+        "UX-9",
+        "UX-12",
+        "UX-14",
+        "UX-11",
+        "UX-17",
+        "UX-10",
+        "UX-16"
+      ],
       "closed_count": 17,
       "alignment": "累计 17 done + 1 BLOCKED(UX-8) = 18/19 closed (UX-19 manual 待用户)。direct+indirect alignment 占比 100% (无 unaligned task)。",
       "scope_note": "D-MCP/D-SKILL/D-HOOK/D-CLI/D-PARITY/meta/D-GREEN 全维度推完 (UX-8 BLOCKED, UX-19 manual)。7/8 ship_criteria 绿 (仅 G-CITE BLOCKED on NEW-3 instrumentation + soak)。NEW-N 累计 8 (NEW-3 P1 待修 / NEW-6+8 P2 / 其余 P3 defer), 低于 ≈29 告警线。无 scope drift。"
     },
     {
       "at": "2026-05-28T14:25:00+0800",
-      "after_tasks": ["UX-18", "UX-5", "UX-6", "UX-15"],
+      "after_tasks": [
+        "UX-18",
+        "UX-5",
+        "UX-6",
+        "UX-15"
+      ],
       "closed_count": 9,
       "alignment": "累计 9 closed: direct 7 (UX-1/2/3/4/13/18 G-MCP-PAYLOAD + UX-5 G-SKILL-TRIGGER + UX-6 G-ARCHIVE-RECALL... 实为 direct 8) / indirect 1 (UX-15)。direct+indirect = 9/9 = 100% ≥ 60% 门槛。",
       "scope_note": "D-MCP (6) + D-SKILL (UX-5/6/15 共 3) 全闭。3 个 ship_criteria 达标 (G-MCP-PAYLOAD/G-SKILL-TRIGGER/G-ARCHIVE-RECALL)。NEW-N 累计 2 (NEW-1/2 均 P3 defer), 远低于 ≈29 告警线。无 scope drift。"
     }
   ],
   "completion_gate": {
-    "task_gate": { "criterion": "all task ∈ {done, blocked}", "blocking": true, "status": "18 UX done + 1 blocked(UX-19 manual/user-only); 9 NEW-N(1 done NEW-3 撤销 + 8 deferred)。唯一非 done UX = UX-19(GUI fire-test, 设计上 user-manual, 循环不碰)。" },
-    "goal_gate": { "criterion": "所有 blocking ship_criteria actual>=target 且 verified_at!=null", "blocking": true, "status": "MET(autonomous-closeable 全绿) — 8/8 ship_criteria 全绿: G-MCP-PAYLOAD/G-ARCHIVE-RECALL/G-SKILL-TRIGGER/G-PARITY/G-GREEN/G-DOCTOR-RECOVERY/G-COVERAGE + **G-CITE PASS(99.8% ≥target, session_id 死分母真根因已修 + ≥2 LLM 签字 + uncorrelatable hardening)**。" },
-    "drift_gate": { "criterion": "direct+indirect alignment task 占比 ≥60%", "actual_pct": 100, "status": "MET — 全 task direct/indirect aligned, 无 unaligned。" }
+    "task_gate": {
+      "criterion": "all task ∈ {done, blocked}",
+      "blocking": true,
+      "status": "18 UX done + 1 blocked(UX-19 manual/user-only); 9 NEW-N(1 done NEW-3 撤销 + 8 deferred)。唯一非 done UX = UX-19(GUI fire-test, 设计上 user-manual, 循环不碰)。"
+    },
+    "goal_gate": {
+      "criterion": "所有 blocking ship_criteria actual>=target 且 verified_at!=null",
+      "blocking": true,
+      "status": "MET(autonomous-closeable 全绿) — 8/8 ship_criteria 全绿: G-MCP-PAYLOAD/G-ARCHIVE-RECALL/G-SKILL-TRIGGER/G-PARITY/G-GREEN/G-DOCTOR-RECOVERY/G-COVERAGE + **G-CITE PASS(99.8% ≥target, session_id 死分母真根因已修 + ≥2 LLM 签字 + uncorrelatable hardening)**。"
+    },
+    "drift_gate": {
+      "criterion": "direct+indirect alignment task 占比 ≥60%",
+      "actual_pct": 100,
+      "status": "MET — 全 task direct/indirect aligned, 无 unaligned。"
+    }
   },
   "loop_exit_status": {
     "reached": "all-ship-criteria-green; 唯一剩余 UX-19 是 user-manual(设计上循环不碰)",

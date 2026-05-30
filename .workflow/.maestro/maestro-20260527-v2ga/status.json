@@ -9,7 +9,7 @@
   "auto_mode": false,
   "exec_mode": "internal",
   "cli_tool": "claude",
-  "status": "running",
+  "status": "completed",
   "current_step": 0,
   "context": {
     "kb_decisions": [
@@ -828,5 +828,11 @@
       "estimated_hours": "4-6",
       "dependencies": "A-F 全绿后"
     }
-  ]
+  ],
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "retroactive-close: 工程闭环已 ship GA",
+    "summary": "v2.0.0 GA 工程闭环本, 各 wave 基本 done; 会话结束遗留 running, 现补收尾",
+    "at": "2026-05-29T17:35:00+08:00"
+  }
 }
