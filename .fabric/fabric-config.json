@@ -1,8 +1,38 @@
 {
+  "required_stores": [
+    {
+      "id": "personal"
+    }
+  ],
   "fabric_language": "zh-CN",
+  "default_layer_filter": "both",
+  "archive_hint_cooldown_hours": 12,
+  "underseed_node_threshold": 10,
+  "archive_edit_threshold": 20,
   "archive_hint_hours": 24,
   "review_hint_pending_count": 10,
   "review_hint_pending_age_days": 7,
   "maintenance_hint_days": 14,
-  "maintenance_hint_cooldown_days": 7
+  "maintenance_hint_cooldown_days": 7,
+  "import_window_first_run_months": 60,
+  "import_window_rerun_months": 2,
+  "import_max_pending_per_run": 10,
+  "import_max_commits_scan": 500,
+  "import_skip_canonical_threshold": 50,
+  "archive_max_candidates_per_batch": 8,
+  "archive_max_recent_paths": 20,
+  "archive_digest_max_sessions": 10,
+  "review_topic_result_cap": 8,
+  "review_stale_pending_days": 14,
+  "reverse_unarchive_enabled": false,
+  "reverse_unarchive_dry_run": false,
+  "cite_evict_interval": 0,
+  "onboard_slots_opted_out": [],
+  "hint_broad_top_k": 8,
+  "hint_narrow_top_k": 5,
+  "hint_narrow_dedup_window_turns": 5,
+  "hint_broad_cooldown_hours": 0,
+  "hint_narrow_cooldown_hours": 0,
+  "hint_summary_max_len": 80,
+  "hint_reminder_to_context": true
 }

@@ -1,0 +1,89 @@
+{
+  "session_id": "20260530-v21-comprehensive-test",
+  "created_at": "2026-05-30",
+  "active_session_id": null,
+  "sessions": [],
+  "intent": "依据 e2e-methodology-FINAL.md 对 v2.1.0-rc2 跑三轴全面测试: 写 J1-J40 真实测试套件 + 自动修确定性真 bug + 设计级进 needs_adjudication; 分 3 波(T1 确定性→建 9 埋点解锁交互 T2→T3 real-agent replay); 每确定性修复独立 auto-commit; 驱动 rc3/rc4→GA",
+  "mode": "3",
+  "current_phase": "execute",
+  "current_round": 1,
+  "goal": "三轴 ship gate 全绿: GATE-DEPTH(深度 grounded 全绿) + GATE-BREADTH(J-META census 全覆盖) + GATE-INSTR(9 埋点事件) + GATE-INTERACT-T2(skill/hook/MCP 行为可复盘) + GATE-INTERACT-T3(D1-D9 real-agent replay) + ship_criteria 全过 floor",
+  "methodology_ref": ".workflow/.scratchpad/e2e-methodology-FINAL.md",
+  "real_env_harness": {
+    "purpose": "真实远端多 store dogfood: 用真实 gh 私有仓 + 两 store 共存(团队+个人)实跑 push/pull/sync 闭环, 直接验 ADJ-NEWN-1(无 push) + J2 多store resolution + J5 防泄漏 + J4 跨库 pending + 共存",
+    "backup": "~/.fabric-backups/20260530-104721/ (werewolf-minigame-fabric 1.4M + pcf-fabric 2.7M + global-fabric 4K, 三 tar 校验可解)",
+    "team_store": { "scope": "team", "knowledge_source": "合成/脱敏(模拟公司规范, 0 真实公司知识)", "remote": "私有 github(fenglimg)", "consumer_project": "~/Desktop/projects/werewolf-minigame(2.9G 真实公司项, 仅绑定不 push 项目本身)" },
+    "personal_store": { "scope": "personal", "knowledge_source": "pcf 现有/合成个人知识", "remote": "私有 github(fenglimg)", "consumer_project": "~/Desktop/personal-projects/pcf(当前 repo)" },
+    "safety": "store=知识-only 小仓 ≠ 项目仓; 绝不 push 2.9G 项目; 团队 store 用合成知识 0 公司泄漏; ~/.fabric 旧 co-location 结构迁 v2.1 多store 前已备份",
+    "cli_invocation": "⚠ 全局 fabric=2.0.0-rc.38(旧 v2.0 无多store); 测试必用仓内 rc2: `node packages/cli/dist/index.js <args>`(packages/cli@2.1.0-rc.2); 每次改 shared/cli 后须 rebuild"
+  },
+  "boundary_contract": {
+    "in_scope": [
+      "写 J1-J40 真实测试套件(grounded 在真实 test-wall/导出符号/真实 CLI, 非臆造)",
+      "自动追加+修复确定性可验证真 bug(test fail/tsc/grep/measure_cmd 证实, in-scope, 非破坏性), 每修复独立 auto-commit",
+      "Wave2 建 NEW-N-3 的 9 个 ledger 事件(instrumentation, tier 选项已 greenlit)解锁交互轴 T2",
+      "Wave3 real-agent replay + LLM-judge harness 跑 D1-D9(T3)",
+      "wave 边界切 rc 版本(rc3/rc4...)"
+    ],
+    "out_of_scope": [
+      "产品设计级决策(4 条 NEW-N 那类: 无push环/parity欠覆盖/over-compliance/凡涉产品行为取舍) → needs_adjudication 不擅自定",
+      "主动重构/改超出修 bug 必需的代码(minimize-changes)",
+      "推翻已收敛的 e2e-methodology-FINAL 三轴结构",
+      "破坏性操作(删数据/force push/迁移) → 无条件 needs_adjudication"
+    ],
+    "constraints": [
+      "verify-before-trust: 测试/critic 报的问题先自验(grep/复跑)再定性 — 确定性真 bug 直接修+commit; 削弱/refuted 丢弃; 设计级/主观/破坏性 → needs_adjudication",
+      "grounded 强制: fixture 引真实符号/CLI/测试文件, 臆造=FAIL; 真实 CLI 仅 install/store/sync/whoami/status/doctor/uninstall/config/metrics",
+      "rc 前必本地 pnpm -r exec tsc --noEmit(不只 build); 改 shared schema 后必 rebuild dist",
+      "commit 中文 类型:简短描述; 每确定性已验证修复独立 commit; needs_adjudication 项不 commit",
+      "auto-mode: 无 human 阻塞但非无 human — 三级裁决 AI自决(deterministic)→多-LLM(含零上下文冷评)→needs_adjudication 队列"
+    ]
+  },
+  "ship_criteria": [
+    { "name": "G-GREEN", "dimension": "基建", "target": "tsc 0 / test 全绿 / lint 0", "floor": "hard", "actual": "baseline 绿: tsc 0 error + cli 823 tests passed + test exit 0(2026-05-30 rc2 fresh build); lint 待 Wave1 跑", "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test && pnpm -r lint", "verified_at": "2026-05-30 (baseline; Wave1 末复核)" },
+    { "name": "G-LEAK-NEG", "dimension": "D-LEAK", "target": "越界写/secret 拦截 100%", "floor": "hard(正确性类)", "actual": null, "verifier_cmd": "vitest run packages/shared/test/store/p2-resolution-leak.test.ts (+ hasSecrets/lintCrossStoreReferences)", "verified_at": null },
+    { "name": "G-SCOPE-ISO", "dimension": "D-SCOPE", "target": "personal 泄漏共享读集=0", "floor": "hard", "actual": null, "verifier_cmd": "PROBE: resolver read-set 测试 required_stores∪personal 隔离", "verified_at": null },
+    { "name": "G-STORE-TXN", "dimension": "D-STORE", "target": "install 中断→回滚 0 残留+幂等", "floor": "hard", "actual": null, "verifier_cmd": "PROBE: install 事务集成测试 + SIGKILL 注入", "verified_at": null },
+    { "name": "G-MCP-PAYLOAD", "dimension": "D-MCP", "target": "单 path payload ≤4k tok", "floor": "≤4k hard", "actual": null, "verifier_cmd": "vitest run packages/server/src/services/plan-context.test.ts (payload guard)", "verified_at": null },
+    { "name": "G-CITE", "dimension": "D-HOOK", "target": "cite 合规率 ≥30%", "floor": "≥20%", "actual": null, "verifier_cmd": "fabric doctor --cite-coverage --json (Wave2/3 real-agent)", "verified_at": null },
+    { "name": "G-SKILL-TRIGGER", "dimension": "D-SKILL", "target": "auto-invoke F1 ≥71%", "floor": "≥65%", "actual": null, "verifier_cmd": "PROBE: Wave3 real-agent replay F1 (须先建 skill_trigger_candidate+invocation 埋点)", "verified_at": null },
+    { "name": "G-ARCHIVE-RECALL", "dimension": "D-SKILL", "target": "archive recall ≥40%", "floor": "≥30%", "actual": null, "verifier_cmd": "PROBE: Wave3 dogfood", "verified_at": null },
+    { "name": "G-PARITY-3", "dimension": "D-PARITY", "target": "CC/Codex/Cursor 21 cell diff 仅白名单", "floor": "无 blocking", "actual": null, "verifier_cmd": "vitest run packages/cli/__tests__/integration/parity-matrix-e2e.test.ts", "verified_at": null }
+  ],
+  "named_gates": {
+    "GATE-DEPTH": { "wave": 1, "tier": "T1", "done_when": "J1-J24 深度 grounded 测试全绿(Vitest 调真 API + tsc0)", "status": "open" },
+    "GATE-BREADTH": { "wave": 1, "tier": "T1", "done_when": "J-META census: 8 源每 surface 有 journey/parity/waiver, 无未覆盖", "status": "open" },
+    "GATE-INSTR": { "wave": 2, "tier": "T2-enable", "done_when": "9 个 NEW-N-3 ledger 事件入 event-ledger union + join 字段(session_id/correlation_id/request_id/input_trace_id)", "status": "open" },
+    "GATE-INTERACT-T2": { "wave": 2, "tier": "T2", "done_when": "交互轴 skill/hook/MCP 行为经新埋点可复盘(hook delta/skill F1 false-neg/MCP trace)", "status": "open" },
+    "GATE-INTERACT-T3": { "wave": 3, "tier": "T3", "done_when": "D1-D9 real-agent replay + llm_judge_run harness 跑通 + ship_criteria 涌现类过 floor", "status": "open" }
+  },
+  "task_decomposition": [
+    { "id": "W0-BACKUP", "wave": 0, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "tar 备份 werewolf-minigame/.fabric + pcf/.fabric + ~/.fabric", "done_when": "三 tar 校验可解", "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "infrastructure", "status": "done", "verification": { "method": "deterministic", "verifier": "tar tzf 全可解", "evidence": "~/.fabric-backups/20260530-104721/ (1.4M+2.7M+4K)", "verified_at": "2026-05-30" } },
+    { "id": "W0-HARNESS-stores", "wave": 0, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "gh 建 2 私有知识仓(团队/个人 store) + fabric install --global 初始化 ~/.fabric/stores + store add(uuid alias remote)", "done_when": "~/.fabric/stores 下 2 store 各有 remote + git init, fabric store list 显示", "ship_criteria_alignment": ["G-STORE-TXN"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "fabric store list + git remote -v", "evidence": "2 私有仓建成(fabric-store-team-synthetic + -personal-pcf); install --global mint uid u-0d5908a96208 + personal store a2bec02a; team store 6d5bcbd4 经真实导出符号 initStore scaffold(脚本 import packages/shared/dist); store list 显示 team(remote)+personal; 发现: store add 不校验磁盘目录存在(臆造 uuid 可幽灵 mount)+ CLI 无'创建全新 store'命令 → ADJ-NEWN-5/6", "verified_at": "2026-05-30" } },
+    { "id": "W0-HARNESS-seed-bind", "wave": 0, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "团队 store 灌合成/脱敏知识 + werewolf-minigame 绑团队 store + pcf 绑个人 store(bindings 快照)", "done_when": "两项目 .fabric 绑对应 store uuid, read-set 解析正确(团队+个人共存)", "ship_criteria_alignment": ["G-SCOPE-ISO"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "fabric scope-explain + bindings 快照", "evidence": "team store seed 4 条合成/脱敏知识(KT-DEC-1001/1002 + KT-PIT-1001 + KT-GLD-1001, 0 公司数据); pcf store bind personal + werewolf-minigame store bind team(均 RC0); scope-explain personal→read-set[personal] write[personal]; scope-explain team→read-set[personal,team](required∪personal 设计)write[team]", "verified_at": "2026-05-30" } },
+    { "id": "W0-HARNESS-pushloop", "wave": 0, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J14 真实 push 闭环(解 ADJ-NEWN-1): archive 知识→store commit→push 私有 gh→另一 clone pull→验同步; 量 sync 是否真 push 还是缺陷", "done_when": "push/pull 闭环跑通 or 确认缺陷(无 push)→ 缺陷则进 needs_adjudication 真定性", "ship_criteria_alignment": ["G-STORE-TXN"], "alignment_strength": "direct", "status": "done", "verification": { "method": "dogfood", "verifier": "真实 gh 远端 push/pull 往返", "evidence": "ADJ-NEWN-1 RESOLVED(REFUTED for v2.1): grounded run-sync.ts push + filter s.remote!==undefined; 端到端 dogfood: team 加 KT-DEC-1002 本地 commit → werewolf-minigame cwd 跑 `fabric sync`(输出 team→pushed/personal→pushed, RC0) → gh api 独立验远端 commit 1→2 + md 3→4 + TEAM_HAS_DEC1002=1; 旧'0 push'是 v2.0 co-location 论断, v2.1 多store 已实装 push", "verified_at": "2026-05-30" } },
+    { "id": "W0-HARNESS-coexist-leak", "wave": 0, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J5 真实共存防泄漏: 个人 store 条目绝不入团队共享仓 + 团队知识不污染个人; secret-scan 实拦", "done_when": "negative case 全拦 + 团队仓 byte 级无 personal", "ship_criteria_alignment": ["G-LEAK-NEG","G-SCOPE-ISO"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "grep 团队仓无 personal + lint", "evidence": "personal store 种 canary KP-DEC-9001(含 PERSONAL-LEAK-CANARY-TOKEN-zxq9); fresh clone team 远端 byte 级 grep: LEAK_CANARY_HITS=0 + LEAK_KP_HITS=0 + team 仅 4 团队 md; 正向对照 PERS_HAS_CANARY=1(canary 确入 personal 远端); 隔离在写/共享层(独立 git repo, personal 永不进 team remote)", "verified_at": "2026-05-30" } },
+    { "id": "W1-DEPTH-store", "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J1/J2/J4/J14 store/resolution/pending/sync grounded 测试(调 createStoreResolver/aggregatePendingAcrossStores/readKnowledgeAcrossStores)", "done_when": "该组 Vitest 全绿 + grounded(真符号)", "ship_criteria_alignment": ["G-GREEN","G-SCOPE-ISO","G-STORE-TXN"], "alignment_strength": "direct", "status": "open", "verification": { "method": "deterministic", "verifier": "vitest run + tsc", "evidence": null, "verified_at": null } },
+    { "id": "W1-DEPTH-leak", "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J5 写路径防泄漏(hasSecrets/lintCrossStoreReferences + extract-knowledge viability gate)negative-first", "done_when": "越界/secret 6 例全拦 + 0 残留 Vitest 绿", "ship_criteria_alignment": ["G-LEAK-NEG"], "alignment_strength": "direct", "status": "open", "verification": { "method": "deterministic", "verifier": "p2-resolution-leak.test.ts + secret-scan", "evidence": null, "verified_at": null } },
+    { "id": "W1-DEPTH-cite-perf", "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J3/J7 store-qualified cite(doctor --cite-coverage) + perf(recall-perf 非全扫) + J15 schema-compat", "done_when": "cite namespace 不串 + recall p95 + schema replay 绿; 检出 ADJ-P4-1 cite legacy drift 标 NEW-N", "ship_criteria_alignment": ["G-MCP-PAYLOAD","G-GREEN"], "alignment_strength": "direct", "status": "open", "verification": { "method": "deterministic", "verifier": "recall-perf.test.ts + cite-coverage", "evidence": null, "verified_at": null } },
+    { "id": "W1-DEPTH-lifecycle", "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J11/J12/J13/J20/J22 维护/doctor broken-state/治理 redirect/ledger 韧性/Tombstone grounded 测试", "done_when": "doctor 50+ check fixture + tombstone→recall 返空 + 冲突 JSONL 降级不崩 绿", "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "direct", "status": "open", "verification": { "method": "deterministic", "verifier": "doctor-checks + store-core 测试", "evidence": null, "verified_at": null } },
+    { "id": "W1-BREADTH-jmeta", "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J-META 生成式覆盖断言: 8 源(CLI allCommands/MCP registerTool/hook/skill/schema enum/doctor registry/parity row/config key+env var)census + 断言每 surface∈{journey|parity|waiver}", "done_when": "J-META meta-test 跑通, 列出未覆盖 surface(自动 red), 0 未 waiver 遗漏", "ship_criteria_alignment": ["G-PARITY-3","G-GREEN"], "alignment_strength": "direct", "status": "open", "verification": { "method": "deterministic", "verifier": "census grep + 覆盖断言", "evidence": null, "verified_at": null } },
+    { "id": "W1-PARITY", "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "J6/J16 三端 parity 21 cell(parity-matrix-e2e) + 验 NEW-N-2 parity 欠覆盖", "done_when": "parity-matrix-e2e 绿; parity 仅 7 cap 确认 → NEW-N-2 进 needs_adjudication", "ship_criteria_alignment": ["G-PARITY-3"], "alignment_strength": "direct", "status": "open", "verification": { "method": "deterministic", "verifier": "parity-matrix-e2e.test.ts", "evidence": null, "verified_at": null } }
+  ],
+  "needs_adjudication": [
+    { "id": "ADJ-NEWN-1", "topic": "安装/知识共享环无 git push", "adjudication_reason": "out-of-authority", "status": "resolved", "resolution": "用户授权用真实 gh 远端 dogfood 验证 push 闭环 → 转为 real_env_harness 测试任务 W0-HARNESS, 不再纯纸面待裁决", "context": "全库 0 git push exec, sync 只 pull+deferred-push 报告; 真实远端测试将确认是缺陷还是设计上手动 push", "surfaced_by": "方法论 round11 + 自验", "ai_decision": "real-env harness 实测后定性" },
+    { "id": "ADJ-NEWN-2", "topic": "parity-matrix 仅 7 capability 欠覆盖", "adjudication_reason": "unmodeled-tradeoff", "context": "parity-matrix.json 仅 3hook/2skill/1mcp/1render, 漏 fabric-import/sync + 5 MCP 工具。是否补全 parity 覆盖=产品取舍。", "surfaced_by": "方法论 round11", "ai_decision": null },
+    { "id": "ADJ-NEWN-3", "topic": "交互轴 9 个 instrumentation 事件(NEW-N-3)", "adjudication_reason": "out-of-authority", "context": "hook_surface_emitted/mcp_stdio_trace/skill_phase_transition/llm_judge_run 等 9 事件是产品代码新增; tier 选项已 greenlit Wave2 建, 但事件 schema 入 event-ledger union 影响产品, Wave2 前确认 schema 即按 codex spec。", "surfaced_by": "方法论 round10 codex", "ai_decision": "Wave2 按 codex NEW-N-3 schema 建; 若执行中发现 union 冲突再浮" },
+    { "id": "ADJ-NEWN-4", "topic": "Fabric 强策略 over-compliance 反噬风险", "adjudication_reason": "subjective", "context": "cite/self-archive 强策略可能使 agent 变倔强复读机(D2 user-in-control 红线); 是否加 user-override 逃生口=产品设计。Wave3 J32 会量化摩擦。", "surfaced_by": "方法论 round9 gemini", "ai_decision": null },
+    { "id": "ADJ-NEWN-5", "topic": "CLI 缺'创建全新 store'命令", "adjudication_reason": "unmodeled-tradeoff", "context": "Wave0 实测: 新建团队 store 无 CLI 入口 — install --global 仅建 personal; install --global --url 是 clone 既有远端; store add 仅挂元数据不建目录。首个团队 store 诞生只能手动 git init 远端空仓 + 内部 initStore(非公开 CLI)。是否需 `fabric store create`=产品取舍; harness 用真实导出符号 initStore 绕过, 不擅自加命令。", "surfaced_by": "Wave0 W0-HARNESS-stores 实测", "ai_decision": null },
+    { "id": "ADJ-NEWN-6", "topic": "store add 不校验磁盘目录存在(幽灵 mount)", "adjudication_reason": "unmodeled-tradeoff", "context": "Wave0 实测: `store add --uuid <臆造> --alias --remote` 即使该 uuid 在 ~/.fabric/stores 下无目录也成功写入 global config(mounted), 后续 sync 才崩在 spawnSync git ENOENT(cwd 不存在)。是否应在 store add 时校验目录存在/可 clone=产品健壮性取舍。非破坏性, 不擅自加校验。", "surfaced_by": "Wave0 store add 行为观测", "ai_decision": null }
+  ],
+  "audit_rounds": [
+    { "round": 1, "wave": 1, "status": "running", "tier": "T1 确定性(深度+广度)", "round_task_ceiling": 14, "round_task_actual": 0, "convergence_status": "converging", "newly_discovered_this_round": [], "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] }, "drift_checks": [], "completion_gate": { "task_gate": { "gates": ["GATE-DEPTH","GATE-BREADTH"] }, "goal_gate": { "blocking": true, "ship_criteria": ["G-GREEN","G-LEAK-NEG","G-SCOPE-ISO","G-STORE-TXN","G-MCP-PAYLOAD","G-PARITY-3"] }, "drift_gate": {} } },
+    { "round": 2, "wave": 2, "status": "pending", "tier": "T2(建 9 埋点解锁交互可观测)", "round_task_ceiling": 12, "completion_gate": { "task_gate": { "gates": ["GATE-INSTR","GATE-INTERACT-T2"] } } },
+    { "round": 3, "wave": 3, "status": "pending", "tier": "T3(real-agent replay + LLM-judge D1-D9)", "round_task_ceiling": 12, "completion_gate": { "task_gate": { "gates": ["GATE-INTERACT-T3"] }, "goal_gate": { "ship_criteria": ["G-CITE","G-SKILL-TRIGGER","G-ARCHIVE-RECALL"] } } }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260530-v21-comprehensive-test/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null
+}
