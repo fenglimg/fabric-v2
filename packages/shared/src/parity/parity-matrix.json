@@ -63,6 +63,46 @@
       }
     },
     {
+      "id": "mcp.fab_plan_context",
+      "surface": "mcp",
+      "description": "plan-context surfaces store-aware candidates (store_uuid + alias + global_ref) for the two-step recall path. ADJ-NEWN-2 coverage fill.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "MCP stdio" },
+        "codexCLI": { "supported": true, "mechanism": "MCP stdio" },
+        "cursor": { "supported": true, "mechanism": "MCP stdio" }
+      }
+    },
+    {
+      "id": "mcp.fab_get_knowledge_sections",
+      "surface": "mcp",
+      "description": "get-knowledge-sections returns store-aware section bodies (store_uuid + alias + global_ref). ADJ-NEWN-2 coverage fill.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "MCP stdio" },
+        "codexCLI": { "supported": true, "mechanism": "MCP stdio" },
+        "cursor": { "supported": true, "mechanism": "MCP stdio" }
+      }
+    },
+    {
+      "id": "skill.fabric-import",
+      "surface": "skill",
+      "description": "Cold-start import flow mines git log + docs into pending. Delivered to all three clients (SKILL_DESTINATIONS.import). ADJ-NEWN-2 coverage fill.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-import" },
+        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-import" },
+        "cursor": { "supported": true, "mechanism": ".cursor/skills/fabric-import (also reads .claude/.codex for back-compat)" }
+      }
+    },
+    {
+      "id": "skill.fabric-sync",
+      "surface": "skill",
+      "description": "Multi-store pull+push sync flow delivered as a Skill (ADJ-NEWN-1 direction: sync semantics live in a Skill). Delivered to all three clients (SKILL_DESTINATIONS.sync). ADJ-NEWN-2 coverage fill.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-sync" },
+        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-sync" },
+        "cursor": { "supported": true, "mechanism": ".cursor/skills/fabric-sync (also reads .claude/.codex for back-compat)" }
+      }
+    },
+    {
       "id": "render.knowledge-text",
       "surface": "render",
       "description": "Plain-text / markdown minimal render set, language per project fabric_language.",

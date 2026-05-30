@@ -42,7 +42,18 @@ const CLIENT_DIR: Record<ParityClient, string> = {
 const SKILL_SLUG = {
   "skill.fabric-archive": "fabric-archive",
   "skill.fabric-review": "fabric-review",
+  // ADJ-NEWN-2 coverage fill: import + sync skills are delivered too.
+  "skill.fabric-import": "fabric-import",
+  "skill.fabric-sync": "fabric-sync",
 } as const;
+
+// ADJ-NEWN-2: per-MCP-tool store-aware contract key, so each mcp capability row
+// asserts ITS OWN contract exists (not a homogeneous "any contract" check).
+const MCP_CONTRACT_KEY: Record<string, keyof typeof MCP_STORE_AWARE_CONTRACTS> = {
+  "mcp.fab_recall": "fab_recall",
+  "mcp.fab_plan_context": "fab_plan_context",
+  "mcp.fab_get_knowledge_sections": "fab_get_knowledge_sections",
+};
 
 let target: string;
 const tempRoots: string[] = [];
@@ -90,13 +101,15 @@ function assertDelivered(cap: ParityCapability, client: ParityClient): void {
     return;
   }
   if (cap.surface === "mcp") {
-    // The MCP recall contract is store-aware for every client (provenance:
-    // store_uuid + alias + global_ref). One store-aware contract serves all
-    // three clients (same MCP stdio surface).
+    // ADJ-NEWN-2: assert THIS tool's own store-aware contract exists (per-tool,
+    // not a homogeneous "any contract" check). Same MCP stdio surface serves all
+    // three clients, so the contract presence is the per-client deliverable.
+    const key = MCP_CONTRACT_KEY[cap.id];
+    expect(key, `${cap.id}: no MCP_CONTRACT_KEY mapping`).toBeDefined();
     expect(
-      Object.keys(MCP_STORE_AWARE_CONTRACTS).length,
-      `${cap.id}: store-aware contracts`,
-    ).toBeGreaterThan(0);
+      MCP_STORE_AWARE_CONTRACTS[key as keyof typeof MCP_STORE_AWARE_CONTRACTS],
+      `${cap.id}: store-aware contract for this tool`,
+    ).toBeDefined();
     return;
   }
   if (cap.surface === "render") {
@@ -127,8 +140,9 @@ describe("P5 — parity-matrix-driven three-client E2E (S14/S29)", () => {
         }
       }
     }
-    // 7 capabilities × 3 clients all supported = 21 cells; guard against an
-    // accidental empty sweep silently "passing".
+    // ADJ-NEWN-2: 11 capabilities × 3 clients all supported = 33 cells (was 7×3=21;
+    // +2 skills fabric-import/sync, +2 MCP plan-context/get-knowledge-sections).
+    // Guard against an accidental empty sweep silently "passing".
     expect(cells.length).toBe(matrix.capabilities.length * 3);
   });
 });
