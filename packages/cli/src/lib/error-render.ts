@@ -55,3 +55,25 @@ export function renderFabricError(
   stream.write(`${err.message}\n`);
   stream.write(`  -> ${err.actionHint}\n`);
 }
+
+/**
+ * ISS-030: top-level CLI error renderer. citty's default handler prints only
+ * `err.message`, silently dropping a FabricError's structured `actionHint` at
+ * every command surface. The CLI entrypoint (index.ts `run`) routes thrown
+ * errors here so any FabricError-shaped failure surfaces its recovery guidance.
+ *
+ * Returns a discriminant so the caller can decide follow-up handling:
+ *   - "fabric-error": rendered message + actionHint here; caller just exits 1.
+ *   - "other":        not a FabricError — caller falls back to citty's own
+ *                     usage/error rendering (unknown-command, arg-parse, etc.).
+ */
+export function renderTopLevelError(
+  err: unknown,
+  stream: Writable = process.stderr,
+): "fabric-error" | "other" {
+  if (hasActionHint(err)) {
+    renderFabricError(err, stream);
+    return "fabric-error";
+  }
+  return "other";
+}

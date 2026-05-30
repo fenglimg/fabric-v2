@@ -150,10 +150,11 @@ export function detectClientSupports(
       },
       installedCapabilities: {
         hook: existsSync(join(workspaceRoot, ".codex", "hooks.json")),
-        // v2/rc.2: v1 client-side init skill removed; skill-installation probes
-        // will return once rc.2/3/4 introduce the v2 skills (fabric-archive,
-        // fabric-review, fabric-import). Until then there is nothing to probe.
-        skill: false,
+        // F6: the v2 skills (fabric-archive/review/import/…) DO install to
+        // `.codex/skills/` now, so probe that directory instead of the stale
+        // hardcoded `false` (which made `fabric install` always re-report Codex
+        // skills as uninstalled even right after installing them).
+        skill: existsSync(join(workspaceRoot, ".codex", "skills")),
       },
     },
   ];

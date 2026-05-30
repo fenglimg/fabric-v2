@@ -27,7 +27,7 @@ import { describe, expect, it } from "vitest";
 // FabricError subclass coverage is still provided by the plain-object tests
 // below (`hasActionHint` / `renderFabricError` only care about the structural
 // shape `{ message: string, actionHint: string }`).
-import { hasActionHint, renderFabricError } from "../src/lib/error-render.js";
+import { hasActionHint, renderFabricError, renderTopLevelError } from "../src/lib/error-render.js";
 
 function captureStream(): Writable & { captured: string } {
   let buf = "";
@@ -75,6 +75,33 @@ describe("hasActionHint", () => {
 
   it("returns false when actionHint is non-string", () => {
     expect(hasActionHint({ message: "m", actionHint: 7 })).toBe(false);
+  });
+});
+
+describe("renderTopLevelError (ISS-030 top-level CLI catch)", () => {
+  it("renders a FabricError-shaped failure (message + actionHint) and returns 'fabric-error'", () => {
+    const stream = captureStream();
+    const verdict = renderTopLevelError(
+      { message: "agents.meta.json is corrupt and was NOT overwritten", actionHint: "Restore from version control or delete it." },
+      stream,
+    );
+    expect(verdict).toBe("fabric-error");
+    expect(stream.captured).toContain("agents.meta.json is corrupt and was NOT overwritten");
+    expect(stream.captured).toContain("  -> Restore from version control or delete it.");
+  });
+
+  it("returns 'other' and writes nothing for a plain Error (caller falls back to citty)", () => {
+    const stream = captureStream();
+    const verdict = renderTopLevelError(new Error("plain failure"), stream);
+    expect(verdict).toBe("other");
+    expect(stream.captured).toBe("");
+  });
+
+  it("returns 'other' for a citty CLIError shape (has code, no actionHint)", () => {
+    const stream = captureStream();
+    const cittyErr = Object.assign(new Error("Unknown command foo"), { code: "E_UNKNOWN_COMMAND" });
+    expect(renderTopLevelError(cittyErr, stream)).toBe("other");
+    expect(stream.captured).toBe("");
   });
 });
 

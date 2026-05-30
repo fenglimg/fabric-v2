@@ -461,28 +461,41 @@ export const doctorCommand = defineCommand({
       // accident.
       const preReport = await runDoctorReport(resolution.target);
       const plan = computeFixKnowledgePlan(preReport);
-      const yesFlag = args.yes === true;
-      const envBypass = process.env.FABRIC_NONINTERACTIVE === "1";
 
-      if (plan.totalCount === 0) {
-        // No mutations would happen — skip the prompt entirely. We still run
-        // runDoctorFixKnowledge so the report is correctly tagged as a no-op
-        // pass; the existing message text covers this case.
-      } else {
-        renderFixKnowledgePlan(plan);
-        const decision = await resolveFixKnowledgeConsent({
-          yesFlag,
-          envBypass,
-          plan,
-        });
-        if (decision === "abort") {
-          process.exitCode = 1;
-          return;
+      // F8: --fix-knowledge --dry-run must NOT mutate. Mirror the --fix
+      // --dry-run short-circuit below: render the plan as a preview (what the
+      // run WOULD mutate) and stop before runDoctorFixKnowledge touches any
+      // frontmatter or runs git mv. No consent prompt — nothing is mutated, so
+      // the safety gate (which only guards real mutation) is irrelevant here.
+      if (args["dry-run"] === true) {
+        if (plan.totalCount > 0) {
+          renderFixKnowledgePlan(plan);
         }
-      }
+        report = preReport;
+      } else {
+        const yesFlag = args.yes === true;
+        const envBypass = process.env.FABRIC_NONINTERACTIVE === "1";
 
-      fixKnowledgeReport = await runDoctorFixKnowledge(resolution.target);
-      report = fixKnowledgeReport.report;
+        if (plan.totalCount === 0) {
+          // No mutations would happen — skip the prompt entirely. We still run
+          // runDoctorFixKnowledge so the report is correctly tagged as a no-op
+          // pass; the existing message text covers this case.
+        } else {
+          renderFixKnowledgePlan(plan);
+          const decision = await resolveFixKnowledgeConsent({
+            yesFlag,
+            envBypass,
+            plan,
+          });
+          if (decision === "abort") {
+            process.exitCode = 1;
+            return;
+          }
+        }
+
+        fixKnowledgeReport = await runDoctorFixKnowledge(resolution.target);
+        report = fixKnowledgeReport.report;
+      }
     } else if (fix) {
       // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run 短路 — 跑只读 doctor 报告,
       // 不调用 runDoctorFix 的 mutation 路径。fixable_errors 列表本身就是
@@ -518,11 +531,12 @@ export const doctorCommand = defineCommand({
         renderFixKnowledgeMutations(fixKnowledgeReport, dt);
       } else if (fixReport !== null) {
         writeStdout(fixReport.message);
-      } else if (fix && args["dry-run"] === true) {
+      } else if ((fix || fixKnowledge) && args["dry-run"] === true) {
         // v2.0.0-rc.33 W4-B1: dry-run banner. Surfaces above the standard
         // report so user knows no mutations were applied; the fixable_errors
         // section already lists what `fabric doctor --fix` (sans --dry-run) would
-        // address.
+        // address. F8: also covers --fix-knowledge --dry-run (the plan preview
+        // above lists what the frontmatter/git-mv pass would have mutated).
         writeStdout(dt("cli.doctor.fix-dry-run-banner"));
       }
       renderHumanReport(report, dt, args.verbose === true);

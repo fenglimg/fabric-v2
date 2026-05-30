@@ -36,7 +36,11 @@ function serializeTomlInlineTable(values: Record<string, string>): string {
   return `{ ${entries.join(", ")} }`;
 }
 
-function serializeCodexServerBlock(serverName: string, serverEntry: ServerEntry): string {
+function serializeCodexServerBlock(
+  serverName: string,
+  serverEntry: ServerEntry,
+  preservedUserLines: readonly string[] = [],
+): string {
   const lines = [
     `[mcp_servers.${serverName}]`,
     `command = ${escapeTomlString(serverEntry.command)}`,
@@ -47,7 +51,40 @@ function serializeCodexServerBlock(serverName: string, serverEntry: ServerEntry)
     lines.push(`env = ${serializeTomlInlineTable(serverEntry.env)}`);
   }
 
+  // 升级项 a: carry through any user-authored sibling keys inside the block
+  // (e.g. `disabled = true`, `startup_timeout_ms = ...`) so a re-install only
+  // refreshes the fabric-managed command/args/env, mirroring the claude
+  // json.ts deepMerge that preserves user keys.
+  lines.push(...preservedUserLines);
+
   return `${lines.join("\n")}\n`;
+}
+
+// Fabric-managed keys inside an `[mcp_servers.<name>]` block — these are the
+// only keys a re-install overwrites; everything else the user added is kept.
+const CODEX_MANAGED_BLOCK_KEYS = new Set(["command", "args", "env"]);
+
+/**
+ * From a captured `[mcp_servers.<name>]` block (including its header line),
+ * return the user-authored body lines to preserve: any `key = ...` line whose
+ * key is NOT fabric-managed, plus inline comments. Blank lines are dropped
+ * (re-normalized by the serializer). Best-effort, line-based (the blocks Fabric
+ * and typical users write are single-line scalars/arrays/inline-tables).
+ */
+function extractCodexBlockUserLines(blockText: string): string[] {
+  const out: string[] = [];
+  const lines = blockText.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    if (/^\[/.test(trimmed)) continue; // section header
+    const keyMatch = /^([A-Za-z0-9_-]+)\s*=/.exec(trimmed);
+    if (keyMatch !== null && CODEX_MANAGED_BLOCK_KEYS.has(keyMatch[1])) {
+      continue; // fabric-managed — re-emitted canonically
+    }
+    out.push(trimmed);
+  }
+  return out;
 }
 
 function trimTrailingBlankLines(value: string): string {
@@ -89,13 +126,24 @@ function removeCodexServerBlock(
 }
 
 function upsertCodexServerBlock(rawConfig: string, serverName: string, serverEntry: ServerEntry): string {
-  const block = serializeCodexServerBlock(serverName, serverEntry);
   const normalized = rawConfig.replace(/\r\n/g, "\n");
-  const legacyPattern = new RegExp(String.raw`\n?\[mcp\.servers\.${serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`, "g");
+  const escaped = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const legacyPattern = new RegExp(String.raw`\n?\[mcp\.servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`, "g");
   const currentPattern = new RegExp(
-    String.raw`\n?\[mcp_servers\.${serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
+    String.raw`\n?\[mcp_servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
     "g",
   );
+
+  // 升级项 a: capture the existing block (if any) BEFORE stripping it, so its
+  // user-authored sibling keys (disabled, startup_timeout_ms, …) survive the
+  // re-serialize. Only the current-form block carries user keys worth keeping;
+  // the legacy `[mcp.servers.*]` form is migrated away wholesale.
+  const existingMatch = normalized.match(currentPattern);
+  const preservedUserLines =
+    existingMatch !== null && existingMatch.length > 0
+      ? extractCodexBlockUserLines(existingMatch[0])
+      : [];
+  const block = serializeCodexServerBlock(serverName, serverEntry, preservedUserLines);
 
   const withoutLegacy = normalized.replace(legacyPattern, "");
   const withoutExisting = withoutLegacy.replace(currentPattern, "");

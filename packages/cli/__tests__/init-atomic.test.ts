@@ -239,4 +239,26 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
       expect(existsSync(join(dir, ".gitkeep"))).toBe(true);
     }
   });
+
+  // W1-09 (ISS-042): the scaffold must write a .fabric/.gitignore so the per-dev
+  // activity ledgers/caches (called "gitignored" throughout the code) are
+  // actually ignored, not committed.
+  it("writes a .fabric/.gitignore covering the per-dev activity ledgers and caches", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-gitignore");
+    tempRoots.push(target);
+
+    await initFabric(target);
+
+    const gitignorePath = join(target, ".fabric", ".gitignore");
+    expect(existsSync(gitignorePath)).toBe(true);
+    const patterns = readFileSync(gitignorePath, "utf8")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("#"));
+    for (const p of ["events.jsonl", "metrics.jsonl", "cite-rollup.jsonl", "injections.jsonl", ".cache/", "*.lock"]) {
+      expect(patterns).toContain(p);
+    }
+    // agents.meta.json is the shared derived index — must NOT be ignored.
+    expect(patterns).not.toContain("agents.meta.json");
+  });
 });

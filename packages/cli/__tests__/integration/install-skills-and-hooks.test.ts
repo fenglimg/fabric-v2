@@ -29,6 +29,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { BOOTSTRAP_CANONICAL } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import { installHooks } from "../../src/install/hooks-orchestrator.ts";
+import { buildInitExecutionPlan, executeInitExecutionPlan } from "../../src/commands/install.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
@@ -294,6 +295,97 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
       .map((h) => h.command);
     expect(stopCommands).toContain(".claude/hooks/my-custom-hook.cjs");
     expect(stopCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs");
+  });
+
+  // W2-02 (F4): the bootstrap stage merges hook CONFIGS that reference
+  // cite-policy-evict.cjs, but previously never copied the SCRIPT — only the
+  // downstream `hooks` stage did. A bootstrap-only install (skipHooks) thus
+  // left configs pointing at a missing file. The script must now be copied by
+  // the bootstrap stage too.
+  it("bootstrap-only install copies cite-policy-evict.cjs the config references (F4)", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-cite");
+    tempRoots.push(target);
+
+    const plan = await buildInitExecutionPlan({
+      target,
+      options: { skipMcp: true, skipHooks: true },
+      interactive: false,
+    });
+    await executeInitExecutionPlan(plan);
+
+    // The Claude config (written by the bootstrap stage) references the script...
+    const settings = readFileSync(join(target, ".claude/settings.json"), "utf8");
+    expect(settings).toContain("cite-policy-evict.cjs");
+    // ...and the bootstrap stage must have copied the actual script too.
+    expect(existsSync(join(target, ".claude/hooks/cite-policy-evict.cjs"))).toBe(true);
+  });
+
+  // W2-03 (F7): the bootstrap stage installed only 3 of 7 skills
+  // (archive/review/import); sync/store/audit/connect + the shared skill lib
+  // came only from the downstream hooks stage. A bootstrap-only install must
+  // ship the complete 7-skill set.
+  it("bootstrap-only install ships all 7 skills + shared skill lib (F7)", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-skills");
+    tempRoots.push(target);
+
+    const plan = await buildInitExecutionPlan({
+      target,
+      options: { skipMcp: true, skipHooks: true },
+      interactive: false,
+    });
+    await executeInitExecutionPlan(plan);
+
+    for (const skill of [
+      "fabric-archive",
+      "fabric-review",
+      "fabric-import",
+      "fabric-sync",
+      "fabric-store",
+      "fabric-audit",
+      "fabric-connect",
+    ]) {
+      expect(
+        existsSync(join(target, ".claude/skills", skill, "SKILL.md")),
+        `${skill}/SKILL.md should be installed by the bootstrap stage`,
+      ).toBe(true);
+    }
+    // Shared skill lib the skills depend on.
+    expect(existsSync(join(target, ".claude/skills/lib"))).toBe(true);
+  });
+
+  // W1-08 (F2): HOOK_CONFIG_ARRAY_PATHS.claudeCode omitted "hooks.UserPromptSubmit",
+  // yet the Claude Code template ships a UserPromptSubmit cite-policy hook. So on
+  // install the UserPromptSubmit array was REPLACED (not append-with-dedupe),
+  // silently clobbering any user-defined UserPromptSubmit hook.
+  it("preserves a user UserPromptSubmit hook entry (F2)", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-ups");
+    tempRoots.push(target);
+
+    const customSettings = {
+      hooks: {
+        UserPromptSubmit: [
+          {
+            matcher: "*",
+            hooks: [{ type: "command", command: ".claude/hooks/my-ups-hook.cjs" }],
+          },
+        ],
+      },
+    };
+    writeFixtureFile(target, ".claude/settings.json", JSON.stringify(customSettings, null, 2));
+
+    await runInit(target);
+
+    const merged = JSON.parse(
+      readFileSync(join(target, ".claude/settings.json"), "utf8"),
+    ) as { hooks?: { UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }> } };
+
+    const upsCommands = (merged.hooks?.UserPromptSubmit ?? [])
+      .flatMap((entry) => entry.hooks ?? [])
+      .map((h) => h.command);
+    // User entry preserved (not clobbered by array-REPLACE)...
+    expect(upsCommands).toContain(".claude/hooks/my-ups-hook.cjs");
+    // ...alongside the fabric cite-policy hook.
+    expect(upsCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
   });
 });
 

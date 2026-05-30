@@ -270,6 +270,44 @@ describe("doctor command", () => {
       expect(process.exitCode).toBe(originalExitCode);
     });
 
+    // W1-11 (F8): --fix-knowledge --dry-run must NOT mutate. The mutating
+    // service (runDoctorApplyLint = runDoctorFixKnowledge) is the only thing
+    // that writes frontmatter / runs git mv, so "no mutation" ⟺ that spy is
+    // never called. A read-only runDoctorReport runs instead (preview).
+    it("--fix-knowledge --dry-run does NOT invoke runDoctorApplyLint (no frontmatter write / git mv)", async () => {
+      const applyLintSpy = vi.fn();
+      const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: reportSpy,
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: applyLintSpy,
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "fix-knowledge": true,
+            "dry-run": true,
+            yes: true,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      // The mutating arm is never reached under --dry-run...
+      expect(applyLintSpy).not.toHaveBeenCalled();
+      // ...and a read-only report is produced instead.
+      expect(reportSpy).toHaveBeenCalled();
+    });
+
     it("--fix-knowledge with manual_error blocker (aborted=true) sets exit code 1 and writes abort_reason to stderr", async () => {
       const applyLintReport = {
         changed: false,

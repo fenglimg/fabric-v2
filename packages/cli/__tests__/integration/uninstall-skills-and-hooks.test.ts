@@ -158,6 +158,45 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
   });
+
+  // W2-01 (F3): cite-policy-evict.cjs was installed (rc.34 TASK-06) across all
+  // three clients but the uninstall path never removed the script OR pruned the
+  // config entry. Round-trip must leave zero cite-policy-evict residue.
+  it("removes cite-policy-evict.cjs scripts and prunes its config entries (F3)", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-cite-evict");
+    tempRoots.push(target);
+
+    await runInit(target);
+
+    // Pre-condition: the cite-policy-evict script exists on every client.
+    for (const dir of [".claude", ".codex", ".cursor"]) {
+      expect(
+        existsSync(join(target, dir, "hooks", "cite-policy-evict.cjs")),
+        `${dir} cite-policy-evict.cjs should exist after init`,
+      ).toBe(true);
+    }
+    // ...and the Claude settings register it under UserPromptSubmit.
+    const settingsBefore = readFileSync(join(target, ".claude", "settings.json"), "utf8");
+    expect(settingsBefore).toContain("cite-policy-evict.cjs");
+
+    await runUninstall(target);
+
+    // Scripts gone on every client.
+    for (const dir of [".claude", ".codex", ".cursor"]) {
+      expect(
+        existsSync(join(target, dir, "hooks", "cite-policy-evict.cjs")),
+        `${dir} cite-policy-evict.cjs should be removed`,
+      ).toBe(false);
+    }
+    // Config entry pruned: no surviving config across the three clients still
+    // references the script.
+    for (const rel of [".claude/settings.json", ".codex/hooks.json", ".cursor/hooks.json"]) {
+      const p = join(target, rel);
+      if (existsSync(p)) {
+        expect(readFileSync(p, "utf8")).not.toContain("cite-policy-evict.cjs");
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

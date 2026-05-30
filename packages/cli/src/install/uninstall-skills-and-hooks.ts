@@ -183,6 +183,21 @@ export async function removeKnowledgeHintNarrowHook(
   );
 }
 
+/**
+ * F3: inverse of `installCitePolicyEvictHook`. Removes the
+ * `cite-policy-evict.cjs` script from each client's `.<client>/hooks/`
+ * directory. Without this the script lingered after `fabric uninstall`.
+ */
+export async function removeCitePolicyEvictHook(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeHookScripts(
+    "hook-cite-policy-evict-script",
+    HOOK_SCRIPT_DESTINATIONS.citePolicyEvict,
+    projectRoot,
+  );
+}
+
 async function removeHookScripts(
   step: string,
   rels: readonly string[],
@@ -569,6 +584,10 @@ export async function uninstallBootstrapStage(
   );
   await runAndCollect(results, "hook-script", projectRoot, () =>
     removeArchiveHintHook(projectRoot),
+  );
+  // F3: cite-policy-evict.cjs (rc.34 TASK-06) was installed but never removed.
+  await runAndCollect(results, "hook-cite-policy-evict-script", projectRoot, () =>
+    removeCitePolicyEvictHook(projectRoot),
   );
 
   // 5. Skill files (reverse of install order: connect → audit → sync → import → review → archive)

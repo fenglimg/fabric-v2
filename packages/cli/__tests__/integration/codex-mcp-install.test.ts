@@ -143,6 +143,37 @@ describe("rc.17 TASK-007 — Codex MCP TOML write regression (Bug Y closed-no-re
     expect(occurrences).toHaveLength(1);
   });
 
+  // W2-05 (升级项 a): a re-install must refresh only the fabric-managed keys
+  // (command/args/env) inside [mcp_servers.fabric] and preserve any user-added
+  // sibling keys (e.g. `disabled = true`) — parity with the claude json.ts
+  // deepMerge. Previously upsert dropped the whole block and re-serialized only
+  // command/args/env, silently clobbering user keys.
+  it("preserves user-authored sibling keys inside [mcp_servers.fabric] on re-write", async () => {
+    const { configPath } = createTempConfig();
+    const fixture = `${REAL_WORLD_CODEX_FIXTURE}
+[mcp_servers.fabric]
+command = "/old/node"
+args = ["/old/server.js"]
+disabled = true
+startup_timeout_ms = 30000
+`;
+    writeFileSync(configPath, fixture, "utf8");
+
+    const writer = new CodexTOMLConfigWriter(configPath);
+    await writer.write("/usr/local/bin/fabric-server.js", process.cwd());
+
+    const written = readFileSync(configPath, "utf8");
+    // Fabric-managed keys refreshed...
+    expect(written).toContain(`command = ${JSON.stringify(process.execPath)}`);
+    expect(written).toContain('args = ["/usr/local/bin/fabric-server.js"]');
+    expect(written).not.toContain('command = "/old/node"');
+    // ...user sibling keys preserved.
+    expect(written).toContain("disabled = true");
+    expect(written).toContain("startup_timeout_ms = 30000");
+    // Still exactly one fabric block.
+    expect(written.match(/\[mcp_servers\.fabric\]/g) ?? []).toHaveLength(1);
+  });
+
   it("migrates legacy [mcp.servers.fabric] to [mcp_servers.fabric] without duplicates", async () => {
     const { configPath } = createTempConfig();
     // Real-world fixture + a stale legacy block (the leading hypothesis for

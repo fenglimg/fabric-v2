@@ -28,12 +28,18 @@ import { detectClientSupports, type DetectedClientSupport } from "../config/reso
 import {
   cleanupDeprecatedSkills,
   installArchiveHintHook,
+  installCitePolicyEvictHook,
   installFabricArchiveSkill,
+  installFabricAuditSkill,
+  installFabricConnectSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installFabricStoreSkill,
+  installFabricSyncSkill,
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
+  installSharedSkillLib,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
@@ -560,6 +566,32 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  * `fabric install` invocation shares this helper with identical semantics —
  * re-runs preserve user customisations verbatim.
  */
+// ISS-042: the per-dev activity ledgers and caches are described throughout the
+// codebase as "gitignored" (events.jsonl, metrics.jsonl, cite-rollup.jsonl,
+// .cache/, advisory `.lock` files, `.corrupted.*` forensic sidecars), but
+// nothing ever wrote a .gitignore — so they would be committed by default. The
+// scaffold now drops a `.fabric/.gitignore`. Idempotent: written only when
+// absent, never overwriting user edits (mirrors writeDefaultFabricConfig).
+const FABRIC_GITIGNORE_CONTENT = [
+  "# Fabric per-dev activity ledgers & caches — auto-generated, not shared.",
+  "# Managed by `fabric install`; edit freely (re-install never overwrites this).",
+  "events.jsonl",
+  "metrics.jsonl",
+  "cite-rollup.jsonl",
+  "injections.jsonl",
+  ".cache/",
+  "*.lock",
+  "*.corrupted.*",
+  "",
+].join("\n");
+
+function writeDefaultGitignore(fabricDir: string): void {
+  const target = join(fabricDir, ".gitignore");
+  if (existsSync(target)) return;
+  mkdirSync(fabricDir, { recursive: true });
+  writeFileSync(target, FABRIC_GITIGNORE_CONTENT, "utf8");
+}
+
 function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
   const target = join(fabricDir, "fabric-config.json");
   if (existsSync(target)) return;
@@ -884,6 +916,10 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // plan.target's README/docs to fixate fabric_language on fresh init.
   writeDefaultFabricConfig(plan.fabricDir, plan.target);
 
+  // ISS-042: ignore the per-dev activity ledgers/caches that install + runtime
+  // generate under .fabric/ so they are never accidentally committed.
+  writeDefaultGitignore(plan.fabricDir);
+
   // rc.19 TASK-003: root AGENTS.md is no longer written in the scaffold
   // stage. Ownership moved to `writeCodexBootstrapManagedBlock` in the
   // bootstrap stage so the canonical fabric:bootstrap managed block is
@@ -1161,11 +1197,28 @@ async function executeInitStagePlan(
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-import-install", () => installFabricImportSkill(plan.target)));
+        // F7: the bootstrap stage previously installed only archive/review/import
+        // (3 of 7 skills). installHooks() covered the rest, but a bootstrap-only
+        // invocation (hooks stage skipped) shipped an incomplete skill set.
+        // Mirror installHooks' full set here: sync/store/audit/connect + the
+        // shared skill lib they depend on.
+        installResults.push(...await runBestEffort("skill-sync-install", () => installFabricSyncSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-store-install", () => installFabricStoreSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-audit-install", () => installFabricAuditSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-connect-install", () => installFabricConnectSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-shared-lib", () => installSharedSkillLib(plan.target)));
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
         // rc.6 TASK-019 (E1): SessionStart broad-injection hook script.
         installResults.push(...await runBestEffort("hook-broad-script", () => installKnowledgeHintBroadHook(plan.target)));
         // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook + edit-counter sidecar.
         installResults.push(...await runBestEffort("hook-narrow-script", () => installKnowledgeHintNarrowHook(plan.target)));
+        // F4: rc.34 TASK-06 UserPromptSubmit cite-policy-evict.cjs. The hook
+        // CONFIG merges below register it across all three clients, but the
+        // bootstrap stage previously never copied the SCRIPT — so a
+        // bootstrap-only install (e.g. init without the downstream `hooks`
+        // stage) left configs pointing at a missing file. Inlined here too,
+        // mirroring the cursor-hook-config note below.
+        installResults.push(...await runBestEffort("hook-cite-policy-evict-script", () => installCitePolicyEvictHook(plan.target)));
         // rc.16 TASK-004 (F2-tests): copy shared hook-lib helpers
         // (banner-i18n.cjs, session-digest-writer.cjs) into each client's
         // <client>/hooks/lib/ directory. Same best-effort discipline as the

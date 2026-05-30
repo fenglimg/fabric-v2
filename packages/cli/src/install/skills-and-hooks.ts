@@ -252,7 +252,11 @@ export const HOOK_CONFIG_TARGETS = {
  * `deepMerge` silently falls back to array-REPLACE on re-install.
  */
 export const HOOK_CONFIG_ARRAY_PATHS = {
-  claudeCode: ["hooks.Stop", "hooks.SessionStart", "hooks.PreToolUse"],
+  // F2: "hooks.UserPromptSubmit" MUST be listed — the Claude Code template
+  // ships a UserPromptSubmit cite-policy hook, so without this path deepMerge
+  // array-REPLACEs (instead of append-with-dedupe) on re-install, silently
+  // clobbering any user-defined UserPromptSubmit hook.
+  claudeCode: ["hooks.Stop", "hooks.SessionStart", "hooks.PreToolUse", "hooks.UserPromptSubmit"],
   codex: ["events.Stop", "events.SessionStart", "events.PreToolUse"],
   cursor: ["hooks.stop", "hooks.sessionStart", "hooks.preToolUse"],
 } as const;
@@ -268,16 +272,21 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
     fabricHint: "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs",
     knowledgeHintBroad: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-broad.cjs",
     knowledgeHintNarrow: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs",
+    // F3: the UserPromptSubmit cite-policy-evict hook must be a known fabric
+    // command so uninstall prunes it (matches the literal in claude-code.json).
+    citePolicyEvict: "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs",
   },
   codex: {
     fabricHint: "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\"",
     knowledgeHintBroad: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\"",
     knowledgeHintNarrow: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\"",
+    citePolicyEvict: "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\"",
   },
   cursor: {
     fabricHint: ".cursor/hooks/fabric-hint.cjs",
     knowledgeHintBroad: ".cursor/hooks/knowledge-hint-broad.cjs",
     knowledgeHintNarrow: ".cursor/hooks/knowledge-hint-narrow.cjs",
+    citePolicyEvict: ".cursor/hooks/cite-policy-evict.cjs",
   },
 } as const;
 
