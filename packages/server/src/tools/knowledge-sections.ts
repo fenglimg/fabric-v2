@@ -8,6 +8,7 @@ import {
   knowledgeSectionsOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
+import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -55,17 +56,13 @@ export function registerKnowledgeSections(server: McpServer, tracker?: InFlightT
 
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(response);
+        // v2.2 MC5-action-hint (W3-T3): symmetric warn surfacing via the shared helper.
         const guardResult = enforcePayloadLimit(serialized, payloadLimits);
-        if (guardResult.warning) {
-          response.warnings = [
-            ...response.warnings,
-            {
-              code: guardResult.warning.code,
-              file: '<response>',
-              action_hint: 'Consider narrowing the request scope to reduce response size',
-            },
-          ];
-        }
+        response.warnings = appendPayloadWarning(
+          response.warnings,
+          guardResult,
+          "fab_get_knowledge_sections returned large bodies — select fewer stable_ids per call to reduce response size.",
+        );
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(response) }],

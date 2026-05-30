@@ -10,6 +10,7 @@ import {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
+import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -55,7 +56,14 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
 
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(response);
-        enforcePayloadLimit(serialized, payloadLimits);
+        // v2.2 MC5-action-hint (W3-T3): surface the soft-warn banner symmetrically
+        // with peer tools instead of discarding it.
+        const guardResult = enforcePayloadLimit(serialized, payloadLimits);
+        response.warnings = appendPayloadWarning(
+          response.warnings,
+          guardResult,
+          "fab_review returned a large result set — pass a narrower filter (topic / status / id) to reduce response size.",
+        );
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(response) }],
