@@ -272,6 +272,19 @@ export const fabricConfigSchema = z.object({
   hint_dismiss_signals: z
     .array(z.enum(["archive", "review", "import", "maintenance"]))
     .optional(),
+  // v2.1 ADJ-NEWN-4: user-override escape hatches for the two strong behavioral
+  // policies (cite-before-edit + self-archive). The strong policies can make an
+  // agent feel like a "stubborn parrot" (D2 user-in-control red line); these
+  // flags let a user durably turn either off via fabric-config.json (or the
+  // `fabric config` panel) without editing bootstrap/AGENTS.md. Default true
+  // preserves rc.x behavior (policies ON); set false to opt a project out.
+  // The bootstrap behavior layer references these so the AGENTS.md rules degrade
+  // from "MUST" to "optional" when disabled — a config knob for an existing
+  // surface, mirroring the cite_evict_interval=0 / hint_dismiss_signals opt-out
+  // convention, NOT a new feature. Wave3 J32 will quantify the friction these
+  // relieve; until then they ship as inert-safe opt-outs.
+  cite_policy_enabled: z.boolean().optional().default(true),
+  self_archive_policy_enabled: z.boolean().optional().default(true),
   // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the narrow PreToolUse hint
   // emitted by knowledge-hint-narrow.cjs. After filtering to entries whose
   // `relevance_scope === "narrow"` (rc.27 TASK-005 audit §2.5 fix), the hook
