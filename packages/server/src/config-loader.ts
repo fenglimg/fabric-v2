@@ -1,8 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { selectionTokenTtlMsSchema } from "@fenglimg/fabric-shared";
+import { selectionTokenTtlMsSchema, planContextTopKSchema } from "@fenglimg/fabric-shared";
 import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
+
+// v2.2 A-INFRA-3 (W1-T3-TOPK): library default for the plan_context candidate
+// cap when fabric.config.json omits `plan_context_top_k`. Mirrors the
+// SELECTION_TOKEN_TTL_DEFAULT pattern — the schema's `.default(24)` only
+// applies on a full fabricConfigSchema parse, but the hot read path validates
+// the single field, so the default lives here too.
+export const PLAN_CONTEXT_TOP_K_DEFAULT = 24;
 
 /**
  * Reads fabric.config.json from the project root.
@@ -53,6 +60,25 @@ export function readSelectionTokenTtlMs(projectRoot: string): number | undefined
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * v2.2 A-INFRA-3 (W1-T3-TOPK): returns the `plan_context_top_k` override from
+ * fabric.config.json, or PLAN_CONTEXT_TOP_K_DEFAULT when absent / invalid.
+ * Best-effort and hot-path safe: any read/parse failure returns the default so
+ * plan_context never crashes on a corrupt config file. Validates the single
+ * field (planContextTopKSchema) rather than the whole config so an unrelated
+ * corrupt field stays isolated.
+ */
+export function readPlanContextTopK(projectRoot: string): number {
+  try {
+    const raw = readFabricConfig(projectRoot).plan_context_top_k;
+    if (raw === undefined) return PLAN_CONTEXT_TOP_K_DEFAULT;
+    const parsed = planContextTopKSchema.safeParse(raw);
+    return parsed.success ? parsed.data : PLAN_CONTEXT_TOP_K_DEFAULT;
+  } catch {
+    return PLAN_CONTEXT_TOP_K_DEFAULT;
   }
 }
 

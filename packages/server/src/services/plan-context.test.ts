@@ -429,9 +429,16 @@ describe("planContext", () => {
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
+    // Shape symmetry (selection_token present, no inline candidates_full_content)
+    // holds regardless of corpus size — that is what this test guards.
     expect(result.selection_token).toEqual(expect.any(String));
-    expect(result.candidates).toHaveLength(100);
     expect(result).not.toHaveProperty("candidates_full_content");
+    // v2.2 A-INFRA-3 (W1-T3-TOPK): the candidate COUNT is now bounded by the
+    // default top_k (24). The other 76 are dropped (least content-relevant
+    // first — here no query, so the alphabetic tail) and the omitted count is
+    // surfaced so the cap is not silent.
+    expect(result.candidates).toHaveLength(24);
+    expect(result.omitted_candidate_count).toBe(76);
   });
 
   // ---------------------------------------------------------------------------
@@ -1216,6 +1223,93 @@ describe("planContext BM25 content ranking (W1-T2)", () => {
     });
 
     expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9002", "KT-DEC-9001"]);
+  });
+});
+
+// v2.2 A-INFRA-3 (W1-T3-TOPK): bounded top_k truncation applied AFTER BM25
+// ranking. Seeds three entries, caps to two via plan_context_top_k, and asserts
+// the dropped entry is the least content-relevant one (not an alphabetic tail)
+// and that the omitted count is surfaced.
+describe("planContext top_k truncation (W1-T3)", () => {
+  async function seedThreeTopicRegistry(projectRoot: string, topK?: number): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    if (topK !== undefined) {
+      await writeFile(
+        join(projectRoot, "fabric.config.json"),
+        `${JSON.stringify({ plan_context_top_k: topK }, null, 2)}\n`,
+      );
+    }
+    const topics: Array<[string, string, string]> = [
+      ["KT-DEC-9101", "vector.md", "Vector embedding semantic retrieval over the knowledge base"],
+      ["KT-DEC-9102", "bm25.md", "BM25 content relevance scoring tokenization"],
+      ["KT-DEC-9103", "archive.md", "Git lifecycle archive cadence deprecation nudge"],
+    ];
+    const node = (stableId: string, file: string, summary: string) => ({
+      stable_id: stableId,
+      file,
+      content_ref: file,
+      scope_glob: "**",
+      hash: `sha256:${stableId}`,
+      identity_source: "declared",
+      description: {
+        summary,
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        must_read_if: "",
+        id: stableId,
+        knowledge_type: "decisions",
+        maturity: "verified",
+        knowledge_layer: "team",
+        created_at: "2026-05-10T00:00:00Z",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      },
+    });
+    const nodes: Record<string, unknown> = {};
+    for (const [id, fileName, summary] of topics) {
+      const file = `.fabric/knowledge/decisions/${fileName}`;
+      await writeFile(
+        join(projectRoot, file),
+        ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n"),
+      );
+      nodes[id] = node(id, file, summary);
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-topk", nodes }, null, 2)}\n`,
+    );
+  }
+
+  it("caps candidates to plan_context_top_k after BM25 ranking and surfaces the omitted count", async () => {
+    const projectRoot = await createTempProject();
+    await seedThreeTopicRegistry(projectRoot, 2);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding bm25 retrieval scoring",
+    });
+
+    // top_k=2 from three entries → one dropped. The dropped entry is the
+    // archive one (no overlap with the intent), so the two retrieval-relevant
+    // entries survive.
+    expect(result.candidates).toHaveLength(2);
+    expect(result.omitted_candidate_count).toBe(1);
+    const ids = result.candidates.map((item) => item.stable_id);
+    expect(ids).toContain("KT-DEC-9101");
+    expect(ids).toContain("KT-DEC-9102");
+    expect(ids).not.toContain("KT-DEC-9103");
+  });
+
+  it("omits the count field entirely when nothing is truncated", async () => {
+    const projectRoot = await createTempProject();
+    await seedThreeTopicRegistry(projectRoot); // no cap → default 24 > 3
+
+    const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
+
+    expect(result.candidates).toHaveLength(3);
+    expect(result).not.toHaveProperty("omitted_candidate_count");
   });
 });
 

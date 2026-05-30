@@ -1,6 +1,6 @@
 import { type RuleDescription, type RuleDescriptionIndexItem, tokenize } from "@fenglimg/fabric-shared";
 
-import { readSelectionTokenTtlMs } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
@@ -86,6 +86,12 @@ export type PlanContextResult = {
   // top-level array; `preflight_diagnostics` lifted alongside it (the `shared`
   // wrapper held nothing else).
   candidates: RuleDescriptionIndexItem[];
+  // v2.2 A-INFRA-3 (W1-T3-TOPK): number of lower-ranked candidates dropped by
+  // the top_k cap. Present (and > 0) ONLY when truncation actually fired, so
+  // the steady-state wire shape is unchanged. Surfacing the count keeps the cap
+  // honest — the LLM sees "N more exist; narrow your intent" instead of silently
+  // believing the returned set is exhaustive.
+  omitted_candidate_count?: number;
   preflight_diagnostics: PreflightDiagnostic[];
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced ONLY
   // when loadActiveMetaOrStale detected drift between on-disk meta and the
@@ -282,7 +288,17 @@ export async function planContext(
   // sees the same candidates. We dedupe by stable_id and surface empty-shell
   // suppressions as a preflight diagnostic.
   const { items: builtItems, suppressedStableIds } = buildDescriptionIndex(meta, scoringContext);
-  const candidates = dedupeDescriptionIndex(builtItems);
+  const rankedCandidates = dedupeDescriptionIndex(builtItems);
+  // v2.2 A-INFRA-3 (W1-T3-TOPK): bounded top_k truncation. Applied AFTER BM25
+  // ranking (buildDescriptionIndex already sorted by score) so the entries we
+  // drop are the least content-relevant, not an alphabetic tail. This is the
+  // first link of the unified truncation chain (CJK→BM25→top_k→payload): rank
+  // first, then cap count here, then cap bytes at the MCP payload guard.
+  // Truncating BEFORE ranking would freeze a weak ordering into a hard data
+  // loss, so the dependency order is load-bearing.
+  const topK = readPlanContextTopK(projectRoot);
+  const omittedCandidateCount = Math.max(0, rankedCandidates.length - topK);
+  const candidates = omittedCandidateCount > 0 ? rankedCandidates.slice(0, topK) : rankedCandidates;
 
   const entries: PlanContextEntry[] = uniquePaths.map((path) => ({
     path,
@@ -322,6 +338,7 @@ export async function planContext(
     selection_token: selectionToken,
     entries,
     candidates,
+    ...(omittedCandidateCount > 0 ? { omitted_candidate_count: omittedCandidateCount } : {}),
     preflight_diagnostics: buildPreflightDiagnostics(meta, suppressedStableIds),
     // v2.0.0-rc.22 Scope D T-D2 + rc.23 TASK-005 (a-B): surface auto-heal pair
     // only when a heal actually fired (either revision-drift heal in

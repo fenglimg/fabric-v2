@@ -29,6 +29,17 @@ export const mcpPayloadLimitsSchema = z.object({
 // fabricConfigSchema `selection_token_ttl_ms` field.
 export const selectionTokenTtlMsSchema = z.number().int().min(30_000).max(3_600_000);
 
+// v2.2 A-INFRA-3 (W1-T3-TOPK): upper bound on the number of candidates
+// `fab_plan_context` returns, applied AFTER BM25 content ranking so the
+// truncation drops the least-relevant entries (not an arbitrary alphabetic
+// tail). Bounds the MCP payload as the KB grows to hundreds of entries — the
+// rc.38 UX-1 fold already collapsed per-path duplication, this caps the single
+// shared list. Exported standalone so the server config-loader validates it on
+// the hot plan_context read path without re-parsing the whole config. Range
+// 1..200; default 24 (generous enough for the LLM to choose from after ranking,
+// small enough to stay well under the payload budget).
+export const planContextTopKSchema = z.number().int().min(1).max(200);
+
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: Drives init-scan
 // baseline template language and the zh-CN body rewrite policy.
 // `match-existing` preserves whatever language the project is already
@@ -359,4 +370,8 @@ export const fabricConfigSchema = z.object({
   // whole fabricConfigSchema on every plan_context call — that lets a corrupt
   // unrelated field stay isolated from the hot read path.
   selection_token_ttl_ms: selectionTokenTtlMsSchema.optional(),
+  // v2.2 A-INFRA-3 (W1-T3-TOPK): bound on `fab_plan_context` candidate count,
+  // applied after BM25 ranking. Absent → library default (24). See
+  // planContextTopKSchema for the range/calibration rationale.
+  plan_context_top_k: planContextTopKSchema.optional(),
 });
