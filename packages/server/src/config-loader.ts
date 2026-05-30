@@ -102,6 +102,26 @@ export function readSelectionTokenTtlMs(projectRoot: string): number | undefined
  * field (planContextTopKSchema) rather than the whole config so an unrelated
  * corrupt field stays isolated.
  */
+/**
+ * v2.2 C2-vector (W2-T7): resolve the optional embedding settings. `enabled`
+ * defaults to false (`--no-embed` baseline); `weight` defaults to 30. Best-effort
+ * and hot-path safe — any read/parse failure returns the safe text-only default
+ * (enabled:false) so plan_context never crashes on a corrupt config.
+ */
+export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight: number } {
+  try {
+    const config = readFabricConfig(projectRoot);
+    const enabled = config.embed_enabled === true;
+    const rawWeight = config.embed_weight;
+    const weight = typeof rawWeight === "number" && Number.isInteger(rawWeight) && rawWeight >= 0 && rawWeight <= 100
+      ? rawWeight
+      : 30;
+    return { enabled, weight };
+  } catch {
+    return { enabled: false, weight: 30 };
+  }
+}
+
 export function readPlanContextTopK(projectRoot: string): number {
   try {
     const config = readFabricConfig(projectRoot);

@@ -389,4 +389,13 @@ export const fabricConfigSchema = z.object({
   // hint_broad_budget_chars) still override the profile when set. See
   // retrieval-budget.ts (resolveRetrievalBudget) for the resolution order.
   retrieval_budget_profile: z.enum(["conservative", "balanced", "generous"]).optional(),
+  // v2.2 C2-vector (W2-T7): OPTIONAL dense-embedding semantic retrieval, layered
+  // as a recall supplement after BM25. Default OFF (`--no-embed` is the baseline);
+  // requires the operator to install the optional `fastembed` package — absent →
+  // text-only fallback. Never grows the default install footprint.
+  embed_enabled: z.boolean().optional().default(false),
+  // Weight applied to the 0..1 cosine similarity before it joins the additive
+  // score. Kept below BM25_WEIGHT (50) so vectors SUPPLEMENT lexical relevance
+  // (rescue semantic matches into top_k) without overriding it. Range 0..100.
+  embed_weight: z.number().int().min(0).max(100).optional().default(30),
 });

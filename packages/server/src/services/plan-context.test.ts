@@ -1395,6 +1395,69 @@ describe("planContext salience tie-breaker (W2-T1)", () => {
   });
 });
 
+// v2.2 C2-vector (W2-T7): optional vector semantic supplement. Default OFF →
+// no-op (covered implicitly by every other test). Here we enable it with an
+// injected fake embedder and assert it re-ranks where BM25 is silent.
+describe("planContext vector semantic supplement (W2-T7)", () => {
+  // Toy deterministic embedder: vector = [length, #a, #b]. Lets a query rich in
+  // 'a' score an 'a'-heavy document above a 'b'-heavy one.
+  const fakeEmbedder = {
+    async embed(texts: string[]): Promise<number[][]> {
+      return texts.map((t) => [t.length, (t.match(/a/g) ?? []).length, (t.match(/b/g) ?? []).length]);
+    },
+  };
+
+  async function seedTwoOpaqueEntries(projectRoot: string): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const mk = (id: string, file: string, summary: string) => ({
+      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
+      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: [] },
+    });
+    const fm = (id: string, summary: string) => ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
+    // KT-DEC-9301 (b-heavy) sorts FIRST alphabetically; KT-DEC-9302 (a-heavy) second.
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "bbb.md"), fm("KT-DEC-9301", "bbbb bottle buzz"));
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "aaa.md"), fm("KT-DEC-9302", "aaaa apple aardvark"));
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-vec", nodes: { "KT-DEC-9301": mk("KT-DEC-9301", ".fabric/knowledge/decisions/bbb.md", "bbbb bottle buzz"), "KT-DEC-9302": mk("KT-DEC-9302", ".fabric/knowledge/decisions/aaa.md", "aaaa apple aardvark") } }, null, 2)}\n`,
+    );
+  }
+
+  it("re-ranks by vector similarity when embeddings are enabled (BM25 silent)", async () => {
+    const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+    __resetEmbedderForTesting(fakeEmbedder);
+    try {
+      const projectRoot = await createTempProject();
+      await seedTwoOpaqueEntries(projectRoot);
+      await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true, embed_weight: 100 })}\n`);
+
+      // Query is 'a'-heavy and shares no lexical token with either summary, so
+      // BM25 is 0 for both — the vector supplement is the deciding signal.
+      const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
+
+      // The 'a'-heavy entry (alphabetically SECOND) floats to the top via vectors.
+      expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9302", "KT-DEC-9301"]);
+    } finally {
+      __resetEmbedderForTesting(undefined);
+    }
+  });
+
+  it("falls back to text-only order when embeddings stay disabled", async () => {
+    const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+    __resetEmbedderForTesting(fakeEmbedder); // available, but config keeps it OFF
+    try {
+      const projectRoot = await createTempProject();
+      await seedTwoOpaqueEntries(projectRoot);
+      // No embed_enabled → vector path never runs → alphabetic stable_id order.
+      const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
+      expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9301", "KT-DEC-9302"]);
+    } finally {
+      __resetEmbedderForTesting(undefined);
+    }
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
   tempDirs.push(projectRoot);
