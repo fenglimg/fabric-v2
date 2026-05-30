@@ -58,7 +58,7 @@
     { "name": "G-PARITY-3", "dimension": "D-PARITY", "target": "CC/Codex/Cursor 21 cell diff 仅白名单", "floor": "无 blocking", "actual": "PASS: parity-matrix-e2e 2 passed; NEW-N-2(parity 欠覆盖)仍待裁 ADJ-NEWN-2", "verifier_cmd": "vitest run packages/cli/__tests__/integration/parity-matrix-e2e.test.ts", "verified_at": "2026-05-30" }
   ],
   "named_gates": {
-    "GATE-DEPTH": { "wave": 1, "tier": "T1", "done_when": "J1-J24 深度 grounded 测试全绿(Vitest 调真 API + tsc0)", "status": "open" },
+    "GATE-DEPTH": { "wave": 1, "tier": "T1", "done_when": "J1-J24 深度 grounded 测试全绿(Vitest 调真 API + tsc0)", "status": "green", "evidence": "全量 pnpm -r test EXIT=0 / 0 failed: shared 40files 516 + server 40files 640 + cli 70files 823 = 150 files 1979 tests 全 passed; tsc --noEmit 0 error; J1-J24 覆盖映射(jmap)每条均有现有 grounded 测试触及(J1 install-transaction/J2 resolver/J5 p2-resolution-leak+privacy/J12 doctor/J13 fab-review/J22 knowledge-sections/J23 extract-knowledge sanitize 等真符号); 副带发现根 package.json type='3d' 无效值(esbuild warning, 超 test-only 边界记 report)", "verified_at": "2026-05-30" },
     "GATE-BREADTH": { "wave": 1, "tier": "T1", "done_when": "J-META census: 8 源每 surface 有 journey/parity/waiver, 无未覆盖", "status": "open" },
     "GATE-INSTR": { "wave": 2, "tier": "T2-enable", "done_when": "9 个 NEW-N-3 ledger 事件入 event-ledger union + join 字段(session_id/correlation_id/request_id/input_trace_id)", "status": "open" },
     "GATE-INTERACT-T2": { "wave": 2, "tier": "T2", "done_when": "交互轴 skill/hook/MCP 行为经新埋点可复盘(hook delta/skill F1 false-neg/MCP trace)", "status": "open" },
