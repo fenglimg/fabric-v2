@@ -78,6 +78,15 @@ try {
 } catch {
   // Lib missing (old install) — store labels degrade to silent absence.
 }
+// v2.2 HK3-telemetry (W3-T1): injection-side per-inject logger. Optional require
+// so an old install lacking the lib degrades to silent absence (no telemetry,
+// hook still works).
+let injectionLog = null;
+try {
+  injectionLog = require("./lib/injection-log.cjs");
+} catch {
+  // Lib missing (old install) — injection telemetry degrades to silent absence.
+}
 
 // Read the project's own `project_id` from `.fabric/fabric-config.json` (the
 // snapshot key). Reading the PROJECT config is not a store-tree read — it is how
@@ -866,6 +875,26 @@ function main(env, stdio) {
     // Stderr: always emit (human-facing breadcrumb + legacy contract).
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // v2.2 HK3-telemetry (W3-T1): record the injection side. We just OFFERED the
+    // agent `resolvedPayload.entries` (the top_k-sliced broad menu); log their
+    // ids so the true hit rate (consumed ÷ injected) is computable against the
+    // consumption-side metrics.jsonl. Best-effort — never affects the emit.
+    if (injectionLog !== null) {
+      const injectedEntries = Array.isArray(resolvedPayload && resolvedPayload.entries)
+        ? resolvedPayload.entries
+        : [];
+      injectionLog.logInjection(cwd, {
+        surface: "broad",
+        stableIds: injectedEntries.map((e) => (e && e.id) || "").filter(Boolean),
+        count: injectedEntries.length,
+        revisionHash:
+          resolvedPayload && typeof resolvedPayload.revision_hash === "string"
+            ? resolvedPayload.revision_hash
+            : null,
+        ts: nowMs,
+      });
     }
 
     // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
