@@ -9,6 +9,7 @@ import { appendFile } from "node:fs/promises";
 
 import {
   appendEventLedgerEvent,
+  readEventLedger,
   __eventLedgerParseStats,
   __resetEventLedgerParseStats,
 } from "./event-ledger.js";
@@ -61,6 +62,33 @@ describe("id-redirect resolver", () => {
     const projectRoot = await createTempProject();
     const map = await loadIdRedirectMap(projectRoot);
     expect(map.size).toBe(0);
+  });
+
+  // W2-09 (ISS-043): free-text event fields (intent / reason / message /
+  // ai_selection_reasons) must be scrubbed of secrets before the row lands in
+  // events.jsonl, mirroring the knowledge write path. Structured fields (ids,
+  // paths) are NOT redacted (whitelist by field name).
+  it("redacts secrets in free-text fields on append (ISS-043)", async () => {
+    const projectRoot = await createTempProject();
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "edit_intent_checked",
+      ts: 1,
+      path: "src/AKIAIOSFODNN7EXAMPLE/keep-path.ts", // a path-like field: NOT redacted
+      compliant: true,
+      intent: "rotate key sk-abcdefghijklmnopqrstuvwxyz012345 before commit",
+      ledger_entry_id: "hook:x",
+      ledger_source: "hook",
+      matched_rule_context_ts: null,
+      window_ms: 0,
+    });
+    const { events } = await readEventLedger(projectRoot, { event_type: "edit_intent_checked" });
+    expect(events).toHaveLength(1);
+    const ev = events[0] as { intent?: string; path?: string };
+    // Secret in free-text intent is redacted...
+    expect(ev.intent).not.toContain("sk-abcdefghijklmnopqrstuvwxyz012345");
+    expect(ev.intent).toContain("[REDACTED:openai-api-key]");
+    // ...structured path field is left intact (whitelist, no false-positive mangling).
+    expect(ev.path).toBe("src/AKIAIOSFODNN7EXAMPLE/keep-path.ts");
   });
 
   // W1-06 (ISS-005): loadIdRedirectMap asks readEventLedger for one rare

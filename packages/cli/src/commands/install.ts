@@ -383,6 +383,15 @@ export async function runSkillsOnlyRefresh(targetInput: string): Promise<void> {
   results.push(...(await installFabricArchiveSkill(target)));
   results.push(...(await installFabricReviewSkill(target)));
   results.push(...(await installFabricImportSkill(target)));
+  // 升级项 c: refresh ALL 7 skills (was only archive/review/import). A
+  // SKILL.md doc update to sync/store/audit/connect was unreachable via
+  // --force-skills-only, forcing a full re-install. Mirror the bootstrap/
+  // installHooks full set incl. the shared skill lib.
+  results.push(...(await installFabricSyncSkill(target)));
+  results.push(...(await installFabricStoreSkill(target)));
+  results.push(...(await installFabricAuditSkill(target)));
+  results.push(...(await installFabricConnectSkill(target)));
+  results.push(...(await installSharedSkillLib(target)));
 
   let written = 0;
   let skipped = 0;

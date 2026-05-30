@@ -89,6 +89,20 @@ type: decision
     expect(body.charCodeAt(0)).not.toBe(0xfeff);
     expect(body.startsWith("# Heading")).toBe(true);
   });
+
+  // W2-08 (ISS-017): extractBody is now a SINGLE shared implementation
+  // (_shared.ts), re-exported here and imported by review.ts. It returns the
+  // body UNTRIMMED; the trim policy is per-consumer (review applies `.trim()`
+  // at its list/search call sites). This locks the unified semantics so the
+  // two call sites can't silently re-fork.
+  it("returns the body UNTRIMMED (consumers trim explicitly) \u2014 single shared impl", () => {
+    const source = `---\nid: KT-DEC-0001\n---\n  ## Body with surrounding whitespace  \n\n`;
+    const body = extractBody(source);
+    // Untrimmed: the body's own leading spaces and trailing newlines are kept.
+    expect(body).toBe("  ## Body with surrounding whitespace  \n\n");
+    // review's trimmed surface is exactly the shared result .trim()'d.
+    expect(body.trim()).toBe("## Body with surrounding whitespace");
+  });
 });
 
 describe("getKnowledgeSections", () => {

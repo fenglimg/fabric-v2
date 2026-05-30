@@ -14,7 +14,7 @@ import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
-import { atomicWriteText, ensureParentDirectory } from "./_shared.js";
+import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.js";
 
 // rc.5 B1: dual pending root. Team layer writes/reads via the workspace
 // .fabric/knowledge/pending/; personal layer via ~/.fabric/knowledge/pending/.
@@ -252,12 +252,11 @@ type ListFilters = {
  * full content as body (defensive — a malformed entry without `---`
  * fences shouldn't be silently dropped from the body inspection surface).
  */
-function extractBody(content: string): string {
-  const match = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/u.exec(content);
-  if (match === null) {
-    return content.trim();
-  }
-  return content.slice(match[0].length).trim();
+// ISS-017: body extraction now uses the single shared extractBody (_shared.ts).
+// review trims for its list/search inspection surface, so this wrapper applies
+// `.trim()` explicitly \u2014 keeping the trim policy visible at the consumer.
+function extractBodyTrimmed(content: string): string {
+  return extractBody(content).trim();
 }
 
 type ListItem = {
@@ -436,7 +435,7 @@ async function listPending(
           // v2.0.0-rc.27 TASK-006 (audit §2.23): full body when caller
           // opted in. Reviewer UI consumes this to scan for prompt-injection
           // payloads hidden under `## Evidence` body.
-          ...(filters?.include_body === true ? { body: extractBody(content) } : {}),
+          ...(filters?.include_body === true ? { body: extractBodyTrimmed(content) } : {}),
         });
       }
     }
@@ -1103,7 +1102,7 @@ async function searchEntries(
         // TASK-006 (audit §2.23): when filters.include_body=true, extend
         // the haystack to body text so reviewers can search for payload
         // strings hidden under `## Evidence`.
-        const bodyForSearch = filters?.include_body === true ? extractBody(content) : "";
+        const bodyForSearch = filters?.include_body === true ? extractBodyTrimmed(content) : "";
         const haystacks = [
           fm.title ?? "",
           fm.summary ?? "",

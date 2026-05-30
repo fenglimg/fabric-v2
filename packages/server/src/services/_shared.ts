@@ -46,6 +46,23 @@ export function getCiteRollupPath(projectRoot: string): string {
   return join(projectRoot, CITE_ROLLUP_PATH);
 }
 
+/**
+ * ISS-017: single source of truth for stripping YAML frontmatter off a
+ * knowledge markdown file and returning the body. Previously forked between
+ * knowledge-sections.ts (no trim) and review.ts (trimmed); the fork risked
+ * divergent BOM/regex handling. Canonical semantics: strip a leading BOM, then
+ * the leading `---\n...\n---` fence; return the remainder UNTRIMMED. Callers
+ * wanting a trimmed body (review's list/search inspection) apply `.trim()` at
+ * the call site so the trim policy stays explicit per consumer.
+ */
+export function extractBody(content: string): string {
+  const match = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/u.exec(content);
+  if (match === null) {
+    return content.replace(/^\uFEFF/u, "");
+  }
+  return content.slice(match[0].length);
+}
+
 export async function ensureParentDirectory(path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
 }

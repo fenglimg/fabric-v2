@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import {
   eventLedgerEventSchema,
+  redactSecrets,
   type EventLedgerEvent,
   type EventLedgerEventInput,
 } from "@fenglimg/fabric-shared";
@@ -175,17 +176,52 @@ function truncateLongStrings(value: unknown): unknown {
   return value;
 }
 
+// ISS-043: free-text event fields that may carry caller-pasted secrets (an
+// edit intent, a review reason, a per-selection rationale). These are redacted
+// before the row is appended, mirroring the knowledge write path's secret
+// scrubbing (store/observability redactSecrets). We redact by FIELD NAME (not
+// every string) so structured fields — ids, paths, hashes — are never mangled
+// by a false-positive secret match.
+const REDACTED_EVENT_FIELDS = new Set([
+  "intent",
+  "message",
+  "reason",
+  "summary",
+  "user_messages_summary",
+]);
+
+function redactSecretsInEvent(event: EventLedgerEventInput): EventLedgerEventInput {
+  const out: Record<string, unknown> = { ...(event as Record<string, unknown>) };
+  for (const key of Object.keys(out)) {
+    if (REDACTED_EVENT_FIELDS.has(key) && typeof out[key] === "string") {
+      out[key] = redactSecrets(out[key] as string);
+    }
+  }
+  // ai_selection_reasons is a record of free-text rationales (id -> reason).
+  const reasons = out.ai_selection_reasons;
+  if (reasons !== null && typeof reasons === "object" && !Array.isArray(reasons)) {
+    const scrubbed: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(reasons as Record<string, unknown>)) {
+      scrubbed[k] = typeof v === "string" ? redactSecrets(v) : v;
+    }
+    out.ai_selection_reasons = scrubbed;
+  }
+  return out as EventLedgerEventInput;
+}
+
 export async function appendEventLedgerEvent(
   projectRoot: string,
   event: EventLedgerEventInput,
 ): Promise<StoredEventLedgerEvent> {
   const eventPath = getEventLedgerPath(projectRoot);
+  // ISS-043: scrub secrets from free-text fields BEFORE truncation + validation.
+  const redacted = redactSecretsInEvent(event);
   // v2.0.0-rc.37 NEW-14: apply per-field truncate BEFORE Zod validation —
   // the truncated value still satisfies every existing schema (strings stay
   // strings). Run on the input shape because Zod removes excess properties
   // on parse; running post-parse would skip any optional fields that
   // happened to also be too long.
-  const truncated = truncateLongStrings(event) as EventLedgerEventInput;
+  const truncated = truncateLongStrings(redacted) as EventLedgerEventInput;
   const nextEvent = eventLedgerEventSchema.parse({
     ...truncated,
     kind: "fabric-event",

@@ -11,6 +11,11 @@ import { readSelectionToken } from "./plan-context.js";
 import { loadActiveMeta } from "./load-active-meta.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
+// ISS-017: extractBody is now the single shared implementation in _shared.ts.
+// Re-exported here to preserve the existing import surface (recall.ts +
+// knowledge-sections.test.ts import it from this module).
+import { extractBody } from "./_shared.js";
+export { extractBody };
 
 // v2.0.0-rc.23 TASK-013 (F8b): KNOWLEDGE_SECTION_NAMES + KnowledgeSectionName
 // + the `missing_section` diagnostic + the per-section structured response
@@ -85,15 +90,9 @@ const PRIORITY_ORDER: Record<NodePriority, number> = {
  * original content is returned unchanged.
  *
  * Replaces the legacy `parseKnowledgeSections` which split markdown into the
- * 4-element A-set enum (removed in F8b).
+ * 4-element A-set enum (removed in F8b). The implementation now lives in
+ * _shared.ts (ISS-017) and is re-exported above.
  */
-export function extractBody(content: string): string {
-  const match = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/u.exec(content);
-  if (match === null) {
-    return content.replace(/^\uFEFF/u, "");
-  }
-  return content.slice(match[0].length);
-}
 
 export async function getKnowledgeSections(
   projectRoot: string,

@@ -95,6 +95,45 @@ describe("runSkillsOnlyRefresh", () => {
     }
   });
 
+  // W2-07 (升级项 c): --force-skills-only previously refreshed only 3 of 7
+  // skills (archive/review/import), so a SKILL.md doc update to
+  // sync/store/audit/connect was unreachable without a full re-install. It must
+  // now refresh all 7 + the shared skill lib.
+  it("(4) refreshes ALL 7 skills + shared lib, not just archive/review/import", async () => {
+    const target = createWerewolfFixtureRoot("fab-skills-only-all7");
+    tempRoots.push(target);
+    process.env.FAB_LANG = "en";
+    await runInitCommand({ target, yes: true });
+
+    const skills = [
+      "fabric-archive",
+      "fabric-review",
+      "fabric-import",
+      "fabric-sync",
+      "fabric-store",
+      "fabric-audit",
+      "fabric-connect",
+    ];
+    // Corrupt every SKILL.md so the refresh is detectable per-skill.
+    for (const s of skills) {
+      const p = join(target, ".claude", "skills", s, "SKILL.md");
+      expect(existsSync(p), `${s} should exist after full init`).toBe(true);
+      writeFileSync(p, `# hand-edited drift ${s}\n`, "utf8");
+    }
+
+    process.exitCode = 0;
+    await runSkillsOnlyRefresh(target);
+    expect(process.exitCode === 0 || process.exitCode === undefined).toBe(true);
+
+    // Every skill restored (drift gone).
+    for (const s of skills) {
+      const after = readFileSync(join(target, ".claude", "skills", s, "SKILL.md"), "utf8");
+      expect(after, `${s} should be refreshed`).not.toContain("hand-edited drift");
+    }
+    // Shared skill lib present.
+    expect(existsSync(join(target, ".claude", "skills", "lib"))).toBe(true);
+  });
+
   it("(3) partially-broken install (missing agents.meta.json) hits the uninitialised guard", async () => {
     const target = createWerewolfFixtureRoot("fab-skills-only-broken");
     tempRoots.push(target);
