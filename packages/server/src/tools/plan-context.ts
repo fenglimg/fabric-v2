@@ -79,9 +79,41 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
         // same `omitted_candidate_count` signal top_k already uses. Trimming
         // from the tail is safe because planContext returns candidates ranked
         // best-first.
+        //
+        // v2.2 W1-REVIEW (gemini HIGH): the trim warning itself costs ~250B, and
+        // appending it AFTER the fit re-breached hardBytes (then enforcePayloadLimit
+        // re-threw the 413 this feature removes). Fix: the measurement envelope
+        // INCLUDES that warning whenever the list is being trimmed (i.e. shorter
+        // than the full candidate set), so the post-trim payload — warning and all
+        // — is what gets bounded. The full-list measurement stays bare, so a
+        // response that already fits is never over-trimmed for a warning it will
+        // not carry. The appended warning is byte-identical to the measured one
+        // (the exact dropped count lives in omitted_candidate_count, not the text).
+        //
+        // v2.2 W1-REVIEW (codex-1, non-blocking): the selection_token was already
+        // minted in planContext() over the POST-top_k candidate set, before this
+        // byte-trim runs. So after a payload trim the token's
+        // ai_selectable_stable_ids is a SUPERSET of the returned `candidates`.
+        // This is benign: every candidate the client can see is still fetchable
+        // (token ⊇ candidates — never the harmful reverse), and with the default
+        // top_k=24 a >64KB response is essentially unreachable so this path rarely
+        // fires. Recorded as a v2.3 consistency note (move the byte-trim into the
+        // service before token mint) rather than fixed here, to avoid threading
+        // the gate/sync warnings + payload limits down into planContext().
+        const trimWarning = {
+          code: 'mcp_payload_trimmed' as const,
+          file: '<response>',
+          action_hint:
+            'Dropped lower-ranked candidate(s) to fit the MCP payload budget (see omitted_candidate_count); narrow your intent or raise mcpPayloadLimits.hardBytes to surface more.',
+        };
         const trim = trimToPayloadBudget(
           response.candidates,
-          (candidates) => JSON.stringify({ ...response, candidates }),
+          (candidates) =>
+            JSON.stringify(
+              candidates.length === response.candidates.length
+                ? response
+                : { ...response, candidates, warnings: [...response.warnings, trimWarning] },
+            ),
           payloadLimits,
         );
         if (trim.dropped > 0) {
@@ -90,14 +122,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
             candidates: trim.items,
             omitted_candidate_count: (response.omitted_candidate_count ?? 0) + trim.dropped,
           };
-          response.warnings = [
-            ...response.warnings,
-            {
-              code: 'mcp_payload_trimmed',
-              file: '<response>',
-              action_hint: `Dropped ${trim.dropped} lowest-ranked candidate(s) to fit the MCP payload budget; narrow your intent (or raise mcpPayloadLimits.hardBytes) to surface more.`,
-            },
-          ];
+          response.warnings = [...response.warnings, trimWarning];
         }
 
         const serialized = JSON.stringify(response);

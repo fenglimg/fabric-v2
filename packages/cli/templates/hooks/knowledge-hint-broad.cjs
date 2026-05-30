@@ -790,10 +790,13 @@ function main(env, stdio) {
     // tells the AI what to do with the broad index it just received. Without
     // this, the model often parses the index and moves on without ever calling
     // fab_recall / fab_plan_context. One-line nudge, bilingual.
+    // v2.2 W1-REVIEW codex LOW-6: `description_index` was renamed to `candidates`
+    // in rc.38 UX-1; the nudge now uses the current field name so the guidance
+    // matches the actual MCP response shape.
     const nextStepNudge =
       fabricLanguageForEmit === "zh-CN"
-        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选 description_index。"
-        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the description_index first.";
+        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选描述(candidates)。"
+        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the candidate descriptions first.";
     lines.push(nextStepNudge);
 
     // Stderr: always emit (human-facing breadcrumb + legacy contract).

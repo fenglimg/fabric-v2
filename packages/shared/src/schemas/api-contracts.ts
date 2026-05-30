@@ -61,6 +61,11 @@ const _ruleDescriptionSchema = z.object({
   tags: z.array(z.string()).optional(),
   relevance_scope: z.enum(["narrow", "broad"]).optional(),
   relevance_paths: z.array(z.string()).optional(),
+  // v2.2 H2-related (W1-T7) — W1-REVIEW codex HIGH-2: the MCP-facing description
+  // schema must also carry `related`, else zod strips the graph edges on output
+  // validation and they never reach the client (MC1 include_related / fabric-
+  // connect would see nothing). Mirrors the agents-meta ruleDescriptionSchema.
+  related: z.array(z.string()).optional(),
 });
 
 // v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to { stable_id, description }.
@@ -448,6 +453,11 @@ export const recallOutputSchema = z.object({
     }),
   ),
   candidates: z.array(_descriptionIndexItemSchema),
+  // v2.2 W1-REVIEW codex MED-5: fab_recall spreads `...planResult`, so it carries
+  // the truncation signal too. Declare it here or zod strips it on output
+  // validation — the RECOMMENDED one-step entry would silently lose the "more
+  // candidates exist" signal that plan_context surfaces.
+  omitted_candidate_count: z.number().int().nonnegative().optional(),
   preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   // Same shape as knowledgeSectionsOutputSchema.rules — full body keyed by stable_id.
   rules: z.array(

@@ -196,3 +196,25 @@ describe('trimToPayloadBudget (W1-T4 payload-budget truncation tail)', () => {
     expect(res.dropped).toBeGreaterThan(0)
   })
 })
+
+describe('trimToPayloadBudget — warning-on-trim accounting (W1-REVIEW gemini HIGH regression)', () => {
+  // Reproduces the plan_context composition: the serialize envelope is BARE for
+  // the full list but carries a ~250B trim-warning once any item is dropped.
+  // The bug was measuring bare, fitting hardBytes, THEN appending the warning —
+  // which re-breached the limit. The fix measures WITH the warning while
+  // trimming, so the FINAL payload (warning included) is what stays bounded.
+  it('keeps the final warning-bearing payload within hardBytes', () => {
+    const items = Array.from({ length: 20 }, () => 'y'.repeat(100))
+    const WARNING_SUFFIX = `,"warnings":["${'w'.repeat(240)}"]`
+    const serialize = (kept: string[]) =>
+      kept.length === items.length ? JSON.stringify(kept) : JSON.stringify(kept) + WARNING_SUFFIX
+    const hardBytes = 700
+
+    const res = trimToPayloadBudget(items, serialize, { hardBytes })
+
+    // The actual envelope the caller ships (with the warning) must fit — the
+    // pre-fix code would leave this just over hardBytes.
+    expect(res.dropped).toBeGreaterThan(0)
+    expect(Buffer.byteLength(serialize(res.items), 'utf8')).toBeLessThanOrEqual(hardBytes)
+  })
+})
