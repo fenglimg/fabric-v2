@@ -434,6 +434,13 @@ export const recallInputSchema = z.object({
     .describe(
       "Optional explicit stable_ids to fetch. When omitted, fab_recall returns ALL entries plan-context surfaces (the common case after rc.37 selectable-filter removal). When provided, filters fetched bodies to this set.",
     ),
+  // v2.2 MC1-recall-pack (W2-T4): graph expansion.
+  include_related: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, also fetch the one-hop `related` graph neighbours (of the selected entries) that are present in the candidate set. Useful with a scoped `ids` to pull connected knowledge in one call.",
+    ),
 });
 
 export const recallOutputSchema = z.object({
@@ -485,6 +492,17 @@ export const recallOutputSchema = z.object({
   // passed via `ids` before fetching bodies; the surfaced map still exposes
   // the substitution to callers that want to refresh their cached state.
   redirects: z.record(z.string()).optional(),
+  // v2.2 MC1-recall-pack (W2-T4): packaging increments — a standing behavioral
+  // directive (cite-before-edit), dynamic next-step hints, and a truncation
+  // summary, so the one-call recall is self-describing.
+  directive: z.string(),
+  next_steps: z.array(z.string()).optional(),
+  truncation: z
+    .object({
+      omitted_candidate_count: z.number().int().nonnegative(),
+      returned_candidate_count: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 
 export const recallAnnotations = {

@@ -25,6 +25,23 @@ export type RecallInput = PlanContextInput & {
    * provided, filters the fetched body set to this intersection.
    */
   ids?: string[];
+  /**
+   * v2.2 MC1-recall-pack (W2-T4): when true, expand the fetched set with the
+   * one-hop `related` graph neighbours (H2) of the selected entries that are
+   * also present in the candidate index. Lets a scoped `ids` recall pull in the
+   * connected knowledge without a second round-trip. No-op when `ids` is omitted
+   * (every candidate is already fetched) or no related edges resolve in-corpus.
+   */
+  include_related?: boolean;
+};
+
+// v2.2 MC1-recall-pack (W2-T4): packaging increments that make the one-call
+// recall self-describing — a behavioral directive, dynamic next-step hints, and
+// a truncation summary — so the agent does not have to infer next actions from
+// raw fields.
+export type RecallTruncation = {
+  omitted_candidate_count: number;
+  returned_candidate_count: number;
 };
 
 export type RecallResult = PlanContextResult & {
@@ -41,6 +58,10 @@ export type RecallResult = PlanContextResult & {
     stable_id: string;
     message: string;
   }>;
+  // v2.2 MC1-recall-pack (W2-T4): packaging increments.
+  directive: string;
+  next_steps?: string[];
+  truncation?: RecallTruncation;
 };
 
 // Synth `ai_selection_reasons` payload for the underlying
@@ -49,6 +70,12 @@ export type RecallResult = PlanContextResult & {
 // audits (cite-coverage / orphan-demote replay) treat it as a system-driven
 // recall, distinguishable from genuine AI-chosen selections.
 const RECALL_REASON_MARKER = "fab_recall: combined-call auto-selection";
+
+// v2.2 MC1-recall-pack (W2-T4): the standing behavioral directive returned on
+// every recall. Reinforces the cite-before-edit contract (D4 AI-in-loop) at the
+// exact moment the agent has the KB bodies in hand and is about to act on them.
+const RECALL_DIRECTIVE =
+  "Before you edit or commit to a decision, cite the KB id you apply or dismiss (first reply line: `KB: <id> [applied|dismissed:<reason>]`).";
 
 export async function recall(projectRoot: string, input: RecallInput): Promise<RecallResult> {
   const planResult = await planContext(projectRoot, input);
@@ -82,6 +109,39 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     }
   }
 
+  // v2.2 MC1-recall-pack (W2-T4): include_related graph expansion. Collect the
+  // one-hop `related` (H2) ids declared by the currently-selected entries, then
+  // append those that are present in the candidate index but not yet selected
+  // (preserving candidate order). Bounded to the candidate set so every added id
+  // is fetchable under the same selection_token — a related id outside the
+  // surfaced corpus is intentionally skipped rather than fetched out of band.
+  let relatedAvailableNotIncluded = false;
+  if (input.include_related === true) {
+    const relatedIds = new Set<string>();
+    for (const candidate of planResult.candidates) {
+      if (!seen.has(candidate.stable_id)) continue;
+      for (const rel of candidate.description.related ?? []) {
+        relatedIds.add(rel);
+      }
+    }
+    for (const id of candidateIds) {
+      if (relatedIds.has(id) && !seen.has(id)) {
+        seen.add(id);
+        orderedIds.push(id);
+      }
+    }
+  } else {
+    // Surface (without fetching) whether the selected entries point at related
+    // entries the caller could pull in via include_related.
+    relatedAvailableNotIncluded = planResult.candidates.some(
+      (candidate) =>
+        seen.has(candidate.stable_id) &&
+        (candidate.description.related ?? []).some((rel) => candidateIds.includes(rel) && !seen.has(rel)),
+    );
+  }
+
+  const packaging = buildRecallPackaging(planResult, relatedAvailableNotIncluded);
+
   // Empty-fetch path: no candidates → return the plan envelope with empty
   // rules/diagnostics. Avoids a spurious getKnowledgeSections call that would
   // immediately validate-then-no-op.
@@ -91,6 +151,7 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
       rules: [],
       selected_stable_ids: [],
       diagnostics: [],
+      ...packaging,
     };
   }
 
@@ -113,6 +174,35 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     rules: sectionsResult.rules,
     selected_stable_ids: sectionsResult.selected_stable_ids,
     diagnostics: sectionsResult.diagnostics,
+    ...packaging,
+  };
+}
+
+// v2.2 MC1-recall-pack (W2-T4): assemble the directive / next_steps / truncation
+// packaging from the plan envelope. Pure — derives entirely from the already-
+// computed planResult plus the related-availability flag.
+function buildRecallPackaging(
+  planResult: PlanContextResult,
+  relatedAvailableNotIncluded: boolean,
+): { directive: string; next_steps?: string[]; truncation?: RecallTruncation } {
+  const omitted = planResult.omitted_candidate_count ?? 0;
+  const nextSteps: string[] = [];
+  if (omitted > 0) {
+    nextSteps.push(
+      `${omitted} lower-ranked candidate(s) were omitted by the retrieval budget — pass a narrower intent (or raise plan_context_top_k / the retrieval_budget_profile) to surface them.`,
+    );
+  }
+  if (relatedAvailableNotIncluded) {
+    nextSteps.push(
+      "Selected entries link to related KB entries (graph edges) — pass include_related:true to fetch them in the same call.",
+    );
+  }
+  return {
+    directive: RECALL_DIRECTIVE,
+    ...(nextSteps.length > 0 ? { next_steps: nextSteps } : {}),
+    ...(omitted > 0
+      ? { truncation: { omitted_candidate_count: omitted, returned_candidate_count: planResult.candidates.length } }
+      : {}),
   };
 }
 

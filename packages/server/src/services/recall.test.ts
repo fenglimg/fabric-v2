@@ -151,6 +151,74 @@ describe("recall (one-call combined service — NEW-3)", () => {
     ]);
   });
 
+  // v2.2 MC1-recall-pack (W2-T4): packaging increments + include_related.
+  async function seedRelatedProject(): Promise<string> {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    // auth declares a top-level `related` graph edge to the ui guideline.
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "auth.md"),
+      ["---", "stable_id: decisions/auth", "summary: Auth decision", "type: decision", "maturity: verified", "layer: team", "related: [guidelines/ui]", "---", "# Auth body", ""].join("\n"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"),
+      ["---", "stable_id: guidelines/ui", "summary: UI guideline", "type: guideline", "maturity: verified", "layer: team", "---", "# UI body", ""].join("\n"),
+    );
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    return projectRoot;
+  }
+
+  it("always returns a cite directive in the packaging", async () => {
+    const projectRoot = await seedTwoEntryProject();
+    const result = await recall(projectRoot, { paths: ["src/index.ts"] });
+    expect(result.directive).toMatch(/cite the KB id/i);
+  });
+
+  it("include_related expands a scoped recall to fetch the related neighbour", async () => {
+    const projectRoot = await seedRelatedProject();
+
+    // Scope to auth only, but ask for its related graph neighbours.
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      ids: ["decisions/auth"],
+      include_related: true,
+    });
+
+    // auth + its related guidelines/ui both fetched.
+    expect(result.selected_stable_ids.sort()).toEqual(["decisions/auth", "guidelines/ui"]);
+  });
+
+  it("hints via next_steps that related entries exist when not included", async () => {
+    const projectRoot = await seedRelatedProject();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      ids: ["decisions/auth"],
+    });
+
+    // Only auth fetched, but the packaging nudges include_related.
+    expect(result.selected_stable_ids).toEqual(["decisions/auth"]);
+    expect(result.next_steps ?? []).toEqual(
+      expect.arrayContaining([expect.stringMatching(/include_related:true/)]),
+    );
+  });
+
+  it("surfaces a truncation summary + next_steps hint when the budget omits candidates", async () => {
+    const projectRoot = await seedTwoEntryProject();
+    // top_k=1 over two candidates → one omitted by the retrieval budget.
+    await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ plan_context_top_k: 1 })}\n`);
+
+    const result = await recall(projectRoot, { paths: ["src/index.ts"] });
+
+    expect(result.truncation).toEqual({ omitted_candidate_count: 1, returned_candidate_count: 1 });
+    expect(result.next_steps ?? []).toEqual(
+      expect.arrayContaining([expect.stringMatching(/omitted by the retrieval budget/)]),
+    );
+  });
+
   it("returns empty rules + diagnostics array when no candidates surface (no spurious fetch call)", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric"), { recursive: true });
