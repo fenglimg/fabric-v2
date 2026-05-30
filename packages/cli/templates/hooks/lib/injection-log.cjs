@@ -88,4 +88,4 @@ function logInjection(projectRoot, record) {
   }
 }
 
-module.exports = { logInjection };
+module.exports = { logInjection, appendLockedLine };

@@ -47,8 +47,14 @@
  */
 
 const { spawnSync } = require("node:child_process");
-const { appendFileSync, existsSync, readdirSync, readFileSync } = require("node:fs");
+const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
+
+// W1-01 (ISS-012): the SessionStart broad hook appends a hook_surface_emitted
+// event to the shared events.jsonl. Under multi-window concurrency a bare
+// appendFileSync can interleave a partial write; route through the advisory-lock
+// primitive (drop-on-contention, best-effort — matches injection-log).
+const { appendLockedLine } = require("./lib/injection-log.cjs");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
@@ -965,7 +971,7 @@ function main(env, stdio) {
           rendered_ids: renderedIds,
           delivery_status: "delivered",
         };
-        appendFileSync(join(fabricDir, "events.jsonl"), JSON.stringify(surfaceEvent) + "\n", "utf8");
+        appendLockedLine(join(fabricDir, "events.jsonl"), JSON.stringify(surfaceEvent) + "\n");
       }
     } catch {
       // best-effort telemetry — never block session start

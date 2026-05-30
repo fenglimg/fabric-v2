@@ -1,6 +1,12 @@
 #!/usr/bin/env node
-const { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
+const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
+
+// W1-01 (ISS-012): Stop / SessionStart hooks append to shared, non-session-scoped
+// ledgers (events.jsonl, metrics.jsonl). Under multi-window concurrency a bare
+// appendFileSync can interleave a partial write; route through the advisory-lock
+// primitive (drop-on-contention, best-effort — matches injection-log).
+const { appendLockedLine } = require("./lib/injection-log.cjs");
 
 // v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
 // on failure — see contract in lib/session-digest-writer.cjs).
@@ -1272,7 +1278,7 @@ function emitSignalFiredEvent(cwd, sessionId, result) {
       fired: true,
     };
     if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
-    appendFileSync(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n", "utf8");
+    appendLockedLine(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n");
   } catch {
     // best-effort telemetry — never block the hook
   }
@@ -1482,7 +1488,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           timestamp: new Date().toISOString(),
         };
         if (client !== undefined) event.client = client;
-        appendFileSync(ledgerPath, JSON.stringify(event) + "\n", "utf8");
+        appendLockedLine(ledgerPath, JSON.stringify(event) + "\n");
       } catch {
         // Per-turn failure must not abort the remaining turns; the Stop hook
         // contract is "never block on hook failure". Best-effort continues.
@@ -1507,7 +1513,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           counters: { [counterKey]: emptyShellCount },
         };
         const metricsPath = join(fabricDir, METRICS_LEDGER_FILE);
-        appendFileSync(metricsPath, JSON.stringify(metricsRow) + "\n", "utf8");
+        appendLockedLine(metricsPath, JSON.stringify(metricsRow) + "\n");
       } catch {
         // metrics fold is observability-only; never block the hook on failure.
       }

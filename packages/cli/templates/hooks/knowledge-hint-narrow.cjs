@@ -66,7 +66,6 @@
 const { spawnSync } = require("node:child_process");
 const { createHash, randomUUID } = require("node:crypto");
 const {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -85,6 +84,13 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
 const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
+// W1-01 (ISS-011): the PreToolUse hook is the highest-frequency, most
+// concurrency-exposed write surface in Fabric. Multi-window edits spawn
+// concurrent hook processes that all append to the SAME non-session-scoped
+// ledger/counter files; a bare appendFileSync can interleave a partial write
+// and corrupt a line. Route every shared-file append through the advisory-lock
+// primitive (drop-on-contention, best-effort — matches injection-log).
+const { appendLockedLine } = require("./lib/injection-log.cjs");
 // v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
 // resolved-bindings snapshot. Store-aware hint surfaces the write-target store
 // for the edited file WITHOUT re-resolving or walking store trees. Best-effort.
@@ -427,7 +433,7 @@ function appendEditIntentToLedger(projectRoot, now, paths, toolName, sessionId) 
         window_ms: 0,
       }))
       .join("\n") + "\n";
-    appendFileSync(join(fabricDir, EVENTS_LEDGER_FILE), lines, "utf8");
+    appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), lines);
   } catch {
     // Silent — events ledger failure must never block the edit.
   }
@@ -471,7 +477,7 @@ function appendEditCounter(projectRoot, now, paths) {
           .filter((p) => typeof p === "string" && p.length > 0)
       : [];
     const line = JSON.stringify({ ts: iso, paths: pathList });
-    appendFileSync(file, `${line}\n`, "utf8");
+    appendLockedLine(file, `${line}\n`);
   } catch {
     // Silent — sidecar failure must never block the edit.
   }
@@ -501,7 +507,7 @@ function appendHintSilenceCounter(projectRoot, now) {
       mkdirSync(dir, { recursive: true });
     }
     const iso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
-    appendFileSync(file, `${iso}\n`, "utf8");
+    appendLockedLine(file, `${iso}\n`);
   } catch {
     // Silent — sidecar failure must never block the edit.
   }
