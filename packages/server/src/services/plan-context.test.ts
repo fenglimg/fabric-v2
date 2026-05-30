@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { readEventLedger } from "./event-ledger.js";
-import { planContext } from "./plan-context.js";
+import { planContext, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 
 const tempDirs: string[] = [];
@@ -1495,6 +1495,63 @@ describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
 
     // Content match (BM25 ~3 rare terms × 50) beats perfect same-file locality (100).
     expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-8001", "KT-DEC-8002"]);
+  });
+});
+
+// W4-02 (ISS-024): the BM25 model is corpus-keyed (meta.revision) and reused
+// across queries — repeated query-bearing recalls over the same KB must NOT
+// re-tokenize + re-index the whole corpus.
+describe("planContext BM25 model cache (ISS-024)", () => {
+  // `marker` varies the KB content so two projects produce DIFFERENT healed
+  // revisions (planContext re-hashes the .md files; the seeded revision literal
+  // is overwritten by the auto-heal).
+  async function seedQueryableProject(marker: string): Promise<string> {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const summaryA = `zephyr quokka nimbus retrieval ${marker}`;
+    const fm = (id: string, summary: string) =>
+      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "a.md"), fm("KT-DEC-7001", summaryA));
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "b.md"), fm("KT-DEC-7002", "unrelated bottle topic widget"));
+    const node = (id: string, file: string, summary: string) => ({
+      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
+      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: [] },
+    });
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: `seed-${marker}`, nodes: {
+        "KT-DEC-7001": node("KT-DEC-7001", ".fabric/knowledge/decisions/a.md", summaryA),
+        "KT-DEC-7002": node("KT-DEC-7002", ".fabric/knowledge/decisions/b.md", "unrelated bottle topic widget"),
+      } }, null, 2)}\n`,
+    );
+    return projectRoot;
+  }
+
+  it("builds the model once across multiple query-bearing calls over the same KB", async () => {
+    __resetBm25Cache();
+    const projectRoot = await seedQueryableProject("same");
+
+    const r1 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr quokka" });
+    const r2 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "nimbus retrieval bottle" });
+
+    // Different intents → contextCache misses → both reach the ranker, but the
+    // corpus (and thus the BM25 model) is identical → built exactly once.
+    expect(__bm25CacheStats().builds).toBe(1);
+    // Content-relevant entry still ranks first for both queries (correctness).
+    expect(r1.candidates[0]?.stable_id).toBe("KT-DEC-7001");
+    expect(r2.candidates.map((c) => c.stable_id).sort()).toEqual(["KT-DEC-7001", "KT-DEC-7002"]);
+  });
+
+  it("rebuilds when the corpus revision changes", async () => {
+    __resetBm25Cache();
+    const p1 = await seedQueryableProject("alpha");
+    await planContext(p1, { paths: ["src/x.ts"], intent: "zephyr" });
+    expect(__bm25CacheStats().builds).toBe(1);
+
+    const p2 = await seedQueryableProject("beta-distinct-content");
+    await planContext(p2, { paths: ["src/x.ts"], intent: "zephyr" });
+    expect(__bm25CacheStats().builds).toBe(2);
   });
 });
 

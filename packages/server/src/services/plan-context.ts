@@ -146,6 +146,39 @@ const SELECTION_TOKEN_TTL_DEFAULT_MS = 30 * 60 * 1000;
 // across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
 const selectionTokenCache = new Map<string, SelectionTokenState>();
 
+// ISS-027: the cache was unbounded — one entry per plan-context call lived up to
+// the TTL with no proactive eviction, so memory grew O(call-rate within the TTL
+// window). Cap it and run an expiry sweep on insert. The Map preserves insertion
+// order, and readSelectionToken re-inserts on a hit (LRU bump), so eviction from
+// the front drops the least-recently-used token.
+const SELECTION_TOKEN_CACHE_MAX = 1000;
+
+function sweepAndCapSelectionTokens(now: number): void {
+  // Proactive expiry sweep (bounded: the cache is capped below).
+  for (const [token, state] of selectionTokenCache) {
+    if (state.expires_at <= now) {
+      selectionTokenCache.delete(token);
+    }
+  }
+  // Capacity cap: evict the least-recently-used (front of insertion order) until
+  // there is room for the new token.
+  while (selectionTokenCache.size >= SELECTION_TOKEN_CACHE_MAX) {
+    const lru = selectionTokenCache.keys().next().value;
+    if (lru === undefined) {
+      break;
+    }
+    selectionTokenCache.delete(lru);
+  }
+}
+
+// Test seams (mirror the other cache seams in this module).
+export function __selectionTokenCacheSize(): number {
+  return selectionTokenCache.size;
+}
+export function __resetSelectionTokenCache(): void {
+  selectionTokenCache.clear();
+}
+
 /**
  * v2.0.0-rc.27 TASK-002 (audit §2.22): sandbox each caller-supplied path
  * before it reaches downstream consumers. plan_context currently only echoes
@@ -310,6 +343,15 @@ export async function planContext(
   }
   scoringContext.docTexts = docTexts;
 
+  // ISS-024: the BM25 model is a pure function of the candidate corpus, which is
+  // itself a pure function of `meta` — so it is keyed on meta.revision (a content
+  // hash) and reused across queries instead of re-tokenizing + re-indexing the
+  // whole corpus on every query-bearing call. queryTerms vary per call but only
+  // feed scoreDoc (cheap); the model is corpus-only.
+  if (scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
+    scoringContext.bm25 = getOrBuildBm25Model(meta.revision, rawItems, docTexts);
+  }
+
   // v2.2 C2-vector (W2-T7): OPTIONAL semantic recall supplement. Default OFF —
   // only runs when `embed_enabled` is set AND the optional fastembed package
   // loads AND a query exists. buildVectorScores returns null (→ text-only) on
@@ -442,6 +484,10 @@ export function readSelectionToken(token: string, now = Date.now()): SelectionTo
     return undefined;
   }
 
+  // ISS-027: LRU bump — re-insert so a recently-read token moves to the back of
+  // the insertion order and is evicted last under the capacity cap.
+  selectionTokenCache.delete(token);
+  selectionTokenCache.set(token, state);
   return state;
 }
 
@@ -461,6 +507,8 @@ export function createSelectionToken(
   ttlMs: number = SELECTION_TOKEN_TTL_DEFAULT_MS,
 ): string {
   const token = `selection:${revisionHash}:${now.toString(36)}:${Math.random().toString(36).slice(2)}`;
+  // ISS-027: sweep expired + enforce the capacity cap before inserting.
+  sweepAndCapSelectionTokens(now);
   selectionTokenCache.set(token, {
     token,
     revision_hash: revisionHash,
@@ -557,35 +605,61 @@ function buildRawDescriptionItems(meta: AgentsMeta): {
 // the correct collection for IDF: rarity is measured among the entries the caller
 // is choosing between. `scoringContext.vectorScores` (C2) is already computed by
 // the caller and rides through the comparator unchanged.
+// ISS-024: corpus-keyed BM25 model cache. The model depends only on the
+// candidate corpus (a pure function of meta), so keying on meta.revision (a
+// content hash) lets repeated query-bearing calls over the SAME KB reuse the
+// index instead of re-tokenizing + re-indexing the full corpus each time. Two
+// projects sharing a revision share identical corpora, so a cross-project hit
+// returns an identical model — correct, not a leak.
+let bm25ModelCache: { revision: string; model: Bm25Model } | null = null;
+let bm25BuildCount = 0;
+
+function getOrBuildBm25Model(
+  revision: string,
+  rawItems: RuleDescriptionIndexItem[],
+  docTexts: Map<string, string>,
+): Bm25Model {
+  if (bm25ModelCache !== null && bm25ModelCache.revision === revision) {
+    return bm25ModelCache.model;
+  }
+  bm25BuildCount += 1;
+  const model = buildBm25Model(
+    rawItems.map((item) => ({
+      id: item.stable_id,
+      tokens: tokenize(docTexts.get(item.stable_id) ?? documentTextForItem(item.description)),
+    })),
+  );
+  bm25ModelCache = { revision, model };
+  return model;
+}
+
+// Test seams (mirror __knowledgeMetaCacheStats / __resetKnowledgeMetaCache).
+export function __bm25CacheStats(): { builds: number } {
+  return { builds: bm25BuildCount };
+}
+export function __resetBm25Cache(): void {
+  bm25ModelCache = null;
+  bm25BuildCount = 0;
+}
+
 function sortDescriptionItems(
   rawItems: RuleDescriptionIndexItem[],
   scoringContext?: ScoringContext,
 ): RuleDescriptionIndexItem[] {
-  const effectiveContext =
-    scoringContext !== undefined && scoringContext.queryTerms.length > 0
-      ? {
-          ...scoringContext,
-          bm25: buildBm25Model(
-            rawItems.map((item) => ({
-              id: item.stable_id,
-              tokens: tokenize(scoringContext.docTexts?.get(item.stable_id) ?? documentTextForItem(item.description)),
-            })),
-          ),
-        }
-      : scoringContext;
-
   // ISS-006: score each item exactly ONCE here, then sort on the precomputed
   // score. The previous design called scoreDescriptionItem(left)+­(right) inside
   // the comparator, so every candidate was re-scored ~log n times per sort
   // (and BM25/locality recomputed each time). Precomputing is O(n) scores +
   // O(n log n) cheap numeric/string comparisons, with byte-identical output:
   // primary key = score DESC, tiebreaker = stable_id ASC.
-  if (effectiveContext === undefined) {
+  // ISS-024: scoringContext.bm25 is now pre-built (and cached) by the caller, so
+  // this function no longer re-indexes the corpus per sort.
+  if (scoringContext === undefined) {
     return [...rawItems].sort((left, right) => left.stable_id.localeCompare(right.stable_id));
   }
   const scored = rawItems.map((item) => ({
     item,
-    score: scoreDescriptionItem(item, effectiveContext),
+    score: scoreDescriptionItem(item, scoringContext),
   }));
   scored.sort((left, right) =>
     left.score !== right.score

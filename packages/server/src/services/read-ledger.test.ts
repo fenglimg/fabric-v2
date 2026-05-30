@@ -1,11 +1,15 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { appendLedgerEntry, migrateLegacyLedger, readLedger, resolveLedgerPaths } from "./read-ledger.js";
-import { appendEventLedgerEvent } from "./event-ledger.js";
+import {
+  appendEventLedgerEvent,
+  __eventLedgerParseStats,
+  __resetEventLedgerParseStats,
+} from "./event-ledger.js";
 
 const tempDirs: string[] = [];
 
@@ -176,6 +180,43 @@ describe("readLedger", () => {
         affected_paths: ["src/legacy.ts"],
       },
     ]);
+  });
+
+  // W4-03 (ISS-026): readLedger projects only edit_intent_checked events. The
+  // event_type filter is pushed DOWN to the ledger read so the grouping pass
+  // (and Zod parse) scales with edit events, not the total event count.
+  it("projects edit entries while skipping the parse of unrelated event types", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+
+    // 2 genuine edit entries → 2 edit_intent_checked events in events.jsonl.
+    await appendLedgerEntry(projectRoot, createEntry("first", "a.ts"));
+    await appendLedgerEntry(projectRoot, createEntry("second", "b.ts"));
+
+    // 50 unrelated events of another type interleaved into the same ledger.
+    const noise =
+      Array.from({ length: 50 }, (_, i) =>
+        JSON.stringify({
+          kind: "fabric-event",
+          id: `event:noise-${i}`,
+          ts: 1,
+          schema_version: 1,
+          event_type: "assistant_turn_observed",
+          turn_id: `t-${i}`,
+          envelope_index: i,
+          timestamp: new Date().toISOString(),
+        }),
+      ).join("\n") + "\n";
+    await appendFile(join(projectRoot, ".fabric", "events.jsonl"), noise, "utf8");
+
+    __resetEventLedgerParseStats();
+    const entries = await readLedger(projectRoot);
+
+    // Correctness: only the 2 edit entries are projected; noise is ignored.
+    expect(entries.map((e) => e.intent).sort()).toEqual(["first", "second"]);
+    // Bounded parse: only the 2 edit_intent_checked lines were Zod-parsed, not
+    // all 52 (the W1-06 substring pre-filter + this event_type pushdown).
+    expect(__eventLedgerParseStats.lineParses).toBe(2);
   });
 });
 

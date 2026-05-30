@@ -998,8 +998,15 @@ function readShownCache(projectRoot) {
 function writeShownCache(projectRoot, cache) {
   const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
   try {
-    mkdirSync(dirname(cachePath), { recursive: true });
-    writeFileSync(cachePath, JSON.stringify(cache));
+    // ISS-016: atomic tmp+rename so concurrent windows / a crash never leave a
+    // truncated shown-cache (this file is NOT session-scoped). Falls back to a
+    // plain write only if the shared lib failed to load.
+    if (stateStore && typeof stateStore.atomicWrite === "function") {
+      stateStore.atomicWrite(cachePath, JSON.stringify(cache));
+    } else {
+      mkdirSync(dirname(cachePath), { recursive: true });
+      writeFileSync(cachePath, JSON.stringify(cache));
+    }
   } catch {
     // Silent — cache failure must never block the hook.
   }
@@ -1136,8 +1143,13 @@ function readMaintenanceLastEmit(projectRoot) {
 function writeMaintenanceLastEmit(projectRoot, nowMs) {
   const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
   try {
-    mkdirSync(dirname(p), { recursive: true });
-    writeFileSync(p, new Date(nowMs).toISOString());
+    // ISS-016: atomic tmp+rename (see writeShownCache).
+    if (stateStore && typeof stateStore.atomicWrite === "function") {
+      stateStore.atomicWrite(p, new Date(nowMs).toISOString());
+    } else {
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, new Date(nowMs).toISOString());
+    }
   } catch {
     // Silent — sidecar failure must never block the hook.
   }

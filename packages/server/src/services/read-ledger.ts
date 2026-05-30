@@ -184,7 +184,14 @@ function parseLedgerLine(line: string, index: number): StoredLedgerEntry | null 
 }
 
 async function readLedgerFromEventLedger(projectRoot: string): Promise<StoredLedgerEntry[]> {
-  const { events } = await readEventLedger(projectRoot);
+  // ISS-026: push the event_type filter DOWN to the ledger read so the grouping
+  // pass scales with edit_intent_checked events, not the total event count.
+  // projectLedgerEvent already drops every other event_type, so this is
+  // behaviour-identical — it just skips JSON.parse + Zod on non-matching lines
+  // (the W1-06 substring pre-filter). `since` is deliberately NOT pushed down:
+  // it would change the legacy↔event merge's Math.min(ts) dedup for ids that
+  // straddle the boundary, so it stays a post-merge filter in readLedger.
+  const { events } = await readEventLedger(projectRoot, { event_type: "edit_intent_checked" });
   const grouped = new Map<string, StoredLedgerEntry>();
 
   for (const event of events) {
