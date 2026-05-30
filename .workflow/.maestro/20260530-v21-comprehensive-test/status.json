@@ -7,6 +7,13 @@
   "mode": "3",
   "current_phase": "execute",
   "current_round": 1,
+  "scope_revision_20260530": {
+    "decided_by": "user",
+    "rule": "test-only: 可写新测试文件(test/ 下只读断言), 严禁碰 packages/*/src 产品代码; 缺陷只 report + 更新 ledger, 不修产品代码",
+    "impact_on_termination": "原终止判据的 GATE-INSTR(建 9 埋点)/GATE-INTERACT-T2/T3 本质是 src 产品改动 → 在 test-only 边界下转为 deferred-to-product report, 不在本会话建成; ADJ-2/5/6 裁决的产品改动(store create/add 校验/parity 补全)同理改为 report 不实现; ADJ-1/7(sync→skill)亦 deferred-to-product",
+    "in_scope_now": "Wave1 GATE-DEPTH(J1-J24 grounded 测试) + GATE-BREADTH(J-META census meta-test) — 二者纯测试不碰 src",
+    "note": "终止判据需相应调整: 5 gate 中 DEPTH/BREADTH 可在本会话达成; INSTR/T2/T3 转 deferred-to-product。待 wave1 末与用户确认终止口径"
+  },
   "goal": "三轴 ship gate 全绿: GATE-DEPTH(深度 grounded 全绿) + GATE-BREADTH(J-META census 全覆盖) + GATE-INSTR(9 埋点事件) + GATE-INTERACT-T2(skill/hook/MCP 行为可复盘) + GATE-INTERACT-T3(D1-D9 real-agent replay) + ship_criteria 全过 floor",
   "methodology_ref": ".workflow/.scratchpad/e2e-methodology-FINAL.md",
   "real_env_harness": {
