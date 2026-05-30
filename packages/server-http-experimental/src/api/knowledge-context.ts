@@ -1,4 +1,4 @@
-import { getKnowledge } from "../services/get-knowledge.js";
+import { getKnowledge } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";
 
 export function registerKnowledgeContextApi(app: FabricHttpApp, projectRoot: string): void {

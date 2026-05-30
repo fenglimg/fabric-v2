@@ -1,4 +1,4 @@
-import { readAgentsMeta } from "../meta-reader.js";
+import { readAgentsMeta } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError } from "./_error.js";
 
 export function registerKnowledgeApi(app: FabricHttpApp, projectRoot: string): void {

@@ -28,8 +28,8 @@ vi.mock("./services/event-ledger.js", () => ({
   readEventLedger: vi.fn(),
 }));
 
-import { contextCache } from "./cache.js";
-import { appendEventLedgerEvent } from "./services/event-ledger.js";
+import { contextCache } from "@fenglimg/fabric-server";
+import { appendEventLedgerEvent } from "@fenglimg/fabric-server";
 import { handleCacheWatcherEvent } from "./http.js";
 
 // ---------------------------------------------------------------------------

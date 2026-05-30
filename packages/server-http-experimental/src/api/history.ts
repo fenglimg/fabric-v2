@@ -1,6 +1,6 @@
 import { historyStateQuerySchema } from "@fenglimg/fabric-shared";
 
-import { rehydrateAgentsMetaAt } from "../services/rehydrate-state.js";
+import { rehydrateAgentsMetaAt } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";
 
 export function registerHistoryApi(app: FabricHttpApp, projectRoot: string): void {

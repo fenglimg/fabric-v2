@@ -7,6 +7,18 @@
   "main": "./README.md",
   "scripts": {
     "build": "echo 'experimental package — skipped' && exit 0",
-    "test": "echo 'experimental package — skipped' && exit 0"
+    "test": "echo 'experimental package — skipped' && exit 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fenglimg/fabric-server": "workspace:*",
+    "@fenglimg/fabric-shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

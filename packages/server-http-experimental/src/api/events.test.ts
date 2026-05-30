@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createEventsHandler } from "./events.js";
-import { appendEventLedgerEvent } from "../services/event-ledger.js";
+import { appendEventLedgerEvent } from "@fenglimg/fabric-server";
 
 const tempDirs: string[] = [];
 const servers: Server[] = [];

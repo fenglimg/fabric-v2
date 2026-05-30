@@ -1,4 +1,4 @@
-import { runDoctorReport } from "../services/doctor.js";
+import { runDoctorReport } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError } from "./_error.js";
 
 export function registerDoctorApi(app: FabricHttpApp, projectRoot: string): void {

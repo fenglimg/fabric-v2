@@ -1,7 +1,7 @@
 import { ledgerQuerySchema } from "@fenglimg/fabric-shared";
 
-import { readAgentsMeta } from "../meta-reader.js";
-import { readLedger } from "../services/read-ledger.js";
+import { readAgentsMeta } from "@fenglimg/fabric-server";
+import { readLedger } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";
 
 export function registerLedgerApi(app: FabricHttpApp, projectRoot: string): void {

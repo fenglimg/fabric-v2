@@ -10,14 +10,14 @@ import {
 } from "@fenglimg/fabric-shared";
 import { eventLedgerEventSchema } from "@fenglimg/fabric-shared";
 import chokidar, { type FSWatcher } from "chokidar";
-import { resolveLedgerPaths } from "../services/read-ledger.js";
+import { resolveLedgerPaths } from "@fenglimg/fabric-server";
 import {
   EVENT_LEDGER_PATH,
   LEGACY_LEDGER_PATH,
   LEDGER_PATH,
   getEventLedgerPath,
   getLedgerPath,
-} from "../services/_shared.js";
+} from "@fenglimg/fabric-server";
 
 const AGENTS_META_PATH = ".fabric/agents.meta.json";
 const WATCHED_PATHS = [

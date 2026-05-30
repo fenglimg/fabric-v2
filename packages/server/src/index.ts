@@ -108,6 +108,18 @@ export {
 } from "./services/metrics.js";
 export { startRotationTick, stopRotationTick } from "./services/rotation-tick.js";
 
+// W2-06 (升级项 b): additive re-exports consumed by the experimental HTTP
+// server package (@fenglimg/fabric-server-http-experimental). These modules
+// used to live alongside that package; they now live here, so the package
+// imports them from this barrel. Purely additive — no behavior change.
+export { contextCache } from "./cache.js";
+export { readEventLedger } from "./services/event-ledger.js";
+export { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
+export { rehydrateAgentsMetaAt } from "./services/rehydrate-state.js";
+export { getKnowledge } from "./services/get-knowledge.js";
+export { resolveLedgerPaths, readLedger } from "./services/read-ledger.js";
+export { readAgentsMeta } from "./meta-reader.js";
+
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
 }

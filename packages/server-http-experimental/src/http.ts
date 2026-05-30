@@ -13,7 +13,7 @@ import {
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import chokidar from "chokidar";
 
-import { contextCache } from "./cache.js";
+import { contextCache } from "@fenglimg/fabric-server";
 import { registerDoctorApi } from "./api/doctor.js";
 import { createEventsHandler } from "./api/events.js";
 import { registerHistoryApi } from "./api/history.js";
@@ -22,9 +22,9 @@ import { registerKnowledgeApi } from "./api/knowledge.js";
 import { registerKnowledgeContextApi } from "./api/knowledge-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { createBearerAuthMiddleware, createLoopbackDenyMiddleware } from "./middleware/bearer-auth.js";
-import { getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
-import { appendEventLedgerEvent, readEventLedger } from "./services/event-ledger.js";
-import { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
+import { getLedgerPath, getLegacyLedgerPath } from "@fenglimg/fabric-server";
+import { appendEventLedgerEvent, readEventLedger } from "@fenglimg/fabric-server";
+import { invalidateKnowledgeSyncCooldown } from "@fenglimg/fabric-server";
 
 const DEFAULT_HOST = "127.0.0.1";
 const NOTIFY_DEBOUNCE_MS = 200;
@@ -375,7 +375,7 @@ async function createSession(
   eventStore: EventStore,
   sessions: Map<string, FabricHttpSession>,
 ): Promise<FabricHttpSession> {
-  const { createFabricServer } = await import("./index.js");
+  const { createFabricServer } = await import("@fenglimg/fabric-server");
   const server = createFabricServer();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: randomUUID,

@@ -1,0 +1,21 @@
+{
+  "//": "W2-06: standalone typecheck for the quarantined HTTP package. Excluded from pnpm-workspace (zero burden on the four gates), so deps resolve via explicit path mappings to the sibling packages' built dist + the pnpm store. Tests excluded (vitest types not wired). noImplicitAny is relaxed HERE ONLY — the task fixes the broken-import bug (TS2307); retrofitting strict handler typings onto the experimental express handlers is out of scope and never affected the shipped packages.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "typeRoots": ["../../node_modules/.pnpm/@types+node@22.19.17/node_modules/@types"],
+    "paths": {
+      "@fenglimg/fabric-server": ["../server/dist/index.d.ts"],
+      "@fenglimg/fabric-shared": ["../shared/dist/index.d.ts"],
+      "@fenglimg/fabric-shared/errors": ["../shared/dist/errors/index.d.ts"],
+      "@fenglimg/fabric-shared/node": ["../shared/dist/node.d.ts"],
+      "chokidar": ["../../node_modules/.pnpm/chokidar@4.0.3/node_modules/chokidar/index.d.ts"],
+      "@modelcontextprotocol/sdk/*": ["../../node_modules/.pnpm/@modelcontextprotocol+sdk@1.29.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
+    },
+    "noImplicitAny": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}
