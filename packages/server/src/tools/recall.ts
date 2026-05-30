@@ -17,6 +17,7 @@ import {
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
 import { recall, type RecallInput } from "../services/recall.js";
+import { appendEventLedgerEvent } from "../services/event-ledger.js";
 
 // v2.0.0-rc.37 NEW-3: one-call recall MCP tool. Mirrors plan-context.ts +
 // knowledge-sections.ts envelope handling (gate wait + auto-heal + payload
@@ -44,6 +45,12 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
       ids,
     }) => {
       const requestId = randomUUID();
+      // v2.1 GATE-INTERACT-T2 (#2 slice): time the round-trip so the MCP stdio
+      // surface emits a `mcp_stdio_trace` ledger event (NEW-N-3 instrumentation).
+      // Wall-clock via a monotonic-ish counter avoided: hrtime is fine server-side.
+      const startedAt = process.hrtime.bigint();
+      let traceStatus: "ok" | "error" = "ok";
+      let payloadBytesOut = 0;
       tracker?.enter(requestId);
       try {
         const gateResult = await awaitFirstReconcileGate();
@@ -88,12 +95,37 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
           ];
         }
 
+        payloadBytesOut = Buffer.byteLength(serialized, "utf8");
         return {
           content: [{ type: "text" as const, text: JSON.stringify(response) }],
           structuredContent: response,
         };
+      } catch (error) {
+        traceStatus = "error";
+        throw error;
       } finally {
         tracker?.exit(requestId);
+        // Best-effort MCP stdio trace (telemetry must never break the tool).
+        try {
+          const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+          const payloadBytesIn = Buffer.byteLength(
+            JSON.stringify({ paths, intent, known_tech, detected_entities, target_paths, ids }),
+            "utf8",
+          );
+          await appendEventLedgerEvent(resolveProjectRoot(), {
+            event_type: "mcp_stdio_trace",
+            ...(correlation_id ? { correlation_id } : {}),
+            ...(session_id ? { session_id } : {}),
+            tool_name: "fab_recall",
+            request_id: requestId,
+            duration_ms: durationMs,
+            status: traceStatus,
+            payload_bytes_in: payloadBytesIn,
+            payload_bytes_out: payloadBytesOut,
+          });
+        } catch {
+          // swallow — telemetry is never load-bearing.
+        }
       }
     },
   );
