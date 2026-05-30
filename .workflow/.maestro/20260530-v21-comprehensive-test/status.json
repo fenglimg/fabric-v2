@@ -176,7 +176,7 @@
       "tier": "T3",
       "done_when": "D1-D9 real-agent replay + llm_judge_run harness",
       "status": "partial",
-      "evidence": "gemini real-agent replay(maestro delegate gem-150340-a3f1, 真实 werewolf cwd)CONFIRMED: store list✓ + scope-explain team read-set=[team,personal]✓ + 读 3 条真实迁移知识(卧底房/社交UI决策)✓; 独立 agent 结论=多store WORKS, 大重构(co-location→全局store)未发现兼容破坏。codex 跨agent replay 进行中。完整 D1-D9 taxonomy + llm_judge_run harness 属增量",
+      "evidence": "双 real-agent replay(maestro delegate, 真实 werewolf cwd): codex(cdx-145339, 有shell)CONFIRMED 全闭环 — store list✓ + scope-explain team readSet=[team,personal] warnings空✓ + 读 2 条真实迁移知识(KT-GLD-0003语音房/KT-PIT-0002 WS重连)✓, 结论=多store WORKS 大重构无兼容破坏; gemini(gem-145113, 无shell+沙盒禁~/.fabric)受限→暴露真实发现 ADJ-NEWN-8(agent 沙盒可达性)。完整 D1-D9 taxonomy + llm_judge_run harness 属增量",
       "verified_at": "2026-05-30"
     }
   },
@@ -477,6 +477,14 @@
       "ai_decision": null,
       "status_final": "resolved-by-user",
       "user_decision": "与 ADJ-1 合并: CLI sync 退役改 Skill, help 契约问题随之消解(skill 内同时做 pull+push)。归入 W2-SYNC-SKILL"
+    },
+    {
+      "id": "ADJ-NEWN-8",
+      "topic": "agent 沙盒对 ~/.fabric 全局 store 的可达性",
+      "adjudication_reason": "unmodeled-tradeoff",
+      "context": "real-agent replay 实测: codex(有 shell)能跑 CLI + 读 ~/.fabric/stores 全闭环; gemini(沙盒禁 run_shell_command + workspace 白名单禁 ~/.fabric 外路径 + .geminiignore 屏蔽 .fabric/)完全无法访问多 store 知识。全局 store 模型默认假设 agent 能访问 ~/.fabric, 但受限沙盒 agent(无 shell/路径白名单)下 Fabric 价值归零。是否需 MCP server 中介(agent 经 MCP 而非直接文件/CLI 访问 store)= 产品方向。gemini 建议: path 白名单 / un-ignore / MCP wrapper。",
+      "surfaced_by": "Wave3 #3 real-agent replay(gemini vs codex 对比)",
+      "ai_decision": null
     }
   ],
   "audit_rounds": [
