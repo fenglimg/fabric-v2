@@ -1299,6 +1299,10 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         },
         "type": "array",
       },
+      "omitted_candidate_count": {
+        "minimum": 0,
+        "type": "integer",
+      },
       "preflight_diagnostics": {
         "items": {
           "additionalProperties": false,

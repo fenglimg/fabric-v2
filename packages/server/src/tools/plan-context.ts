@@ -7,7 +7,11 @@ import {
   planContextInputSchema,
   planContextOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
-import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
+import {
+  enforcePayloadLimit,
+  trimToPayloadBudget,
+  type PayloadGuardResult,
+} from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -56,7 +60,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
           session_id,
         });
 
-        const response = {
+        let response = {
           ...result,
           warnings: [
             ...(gateWarn ? [gateWarn] : []),
@@ -65,17 +69,66 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
         };
 
         const payloadLimits = readPayloadLimits(projectRoot);
-        const serialized = JSON.stringify(response);
-        const guardResult = enforcePayloadLimit(serialized, payloadLimits);
-        if (guardResult.warning) {
+
+        // v2.2 MC4-payload-budget (W1-T4): the byte-budget tail of the unified
+        // truncation chain (CJK → BM25 → top_k → payload). Previously the guard
+        // HARD-THREW a 413 when a well-seeded repo's response overflowed the
+        // 64KB limit, crashing plan_context entirely. Now we trim the
+        // LEAST-relevant candidates off the BM25-ranked tail until the envelope
+        // fits — degrading gracefully and folding the dropped count into the
+        // same `omitted_candidate_count` signal top_k already uses. Trimming
+        // from the tail is safe because planContext returns candidates ranked
+        // best-first.
+        const trim = trimToPayloadBudget(
+          response.candidates,
+          (candidates) => JSON.stringify({ ...response, candidates }),
+          payloadLimits,
+        );
+        if (trim.dropped > 0) {
+          response = {
+            ...response,
+            candidates: trim.items,
+            omitted_candidate_count: (response.omitted_candidate_count ?? 0) + trim.dropped,
+          };
           response.warnings = [
             ...response.warnings,
             {
-              code: guardResult.warning.code,
+              code: 'mcp_payload_trimmed',
               file: '<response>',
-              action_hint: 'Consider narrowing the request scope to reduce response size',
+              action_hint: `Dropped ${trim.dropped} lowest-ranked candidate(s) to fit the MCP payload budget; narrow your intent (or raise mcpPayloadLimits.hardBytes) to surface more.`,
             },
           ];
+        }
+
+        const serialized = JSON.stringify(response);
+        // After the budget trim the envelope fits the hard limit in the common
+        // case, so enforcePayloadLimit only contributes the soft WARN banner.
+        // The sole exception is a pathological single oversized candidate
+        // (trim.overBudget) — there we degrade to a warning rather than
+        // re-introducing the 413 crash this task removed.
+        let guardResult: PayloadGuardResult;
+        if (trim.overBudget) {
+          guardResult = { bytes: trim.bytes };
+          response.warnings = [
+            ...response.warnings,
+            {
+              code: 'mcp_payload_warn',
+              file: '<response>',
+              action_hint: 'Response still exceeds the hard payload budget after trimming; a single entry may be oversized — raise mcpPayloadLimits.hardBytes or enrich that entry to be terser.',
+            },
+          ];
+        } else {
+          guardResult = enforcePayloadLimit(serialized, payloadLimits);
+          if (guardResult.warning) {
+            response.warnings = [
+              ...response.warnings,
+              {
+                code: guardResult.warning.code,
+                file: '<response>',
+                action_hint: 'Consider narrowing the request scope to reduce response size',
+              },
+            ];
+          }
         }
 
         return {

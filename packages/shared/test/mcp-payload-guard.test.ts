@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MCPError } from '../src/errors/index'
-import { enforcePayloadLimit } from '../src/node/mcp-payload-guard'
+import { enforcePayloadLimit, trimToPayloadBudget } from '../src/node/mcp-payload-guard'
 
 const DEFAULT_WARN = 16384  // 16KB
 const DEFAULT_HARD = 65536  // 64KB
@@ -152,5 +152,47 @@ describe('enforcePayloadLimit', () => {
       expect(result.warning).toBeDefined()
       expect(result.warning?.code).toBe('mcp_payload_warn')
     })
+  })
+})
+
+describe('trimToPayloadBudget (W1-T4 payload-budget truncation tail)', () => {
+  // Envelope: a fixed ~base plus one line per kept item. Each item serializes
+  // to a known chunk so byte math is predictable.
+  const itemChunk = (n: number) => 'y'.repeat(n)
+
+  it('keeps all items when the envelope already fits', () => {
+    const items = [itemChunk(10), itemChunk(10), itemChunk(10)]
+    const res = trimToPayloadBudget(items, (kept) => JSON.stringify(kept), { hardBytes: 10_000 })
+    expect(res.dropped).toBe(0)
+    expect(res.items).toHaveLength(3)
+    expect(res.overBudget).toBe(false)
+  })
+
+  it('drops items off the tail until the envelope fits the hard budget', () => {
+    const items = Array.from({ length: 10 }, () => itemChunk(100))
+    // Each item ~100 bytes + JSON quoting/commas. Cap small enough to force drops.
+    const res = trimToPayloadBudget(items, (kept) => JSON.stringify(kept), { hardBytes: 350 })
+    expect(res.dropped).toBeGreaterThan(0)
+    expect(res.items.length).toBe(10 - res.dropped)
+    expect(res.bytes).toBeLessThanOrEqual(350)
+    expect(res.overBudget).toBe(false)
+    // trimming is tail-first: the retained items are the head slice.
+    expect(res.items).toEqual(items.slice(0, res.items.length))
+  })
+
+  it('respects minKeep and reports overBudget when even the head overflows', () => {
+    const items = [itemChunk(1000), itemChunk(1000)]
+    const res = trimToPayloadBudget(items, (kept) => JSON.stringify(kept), { hardBytes: 50, minKeep: 1 })
+    expect(res.items).toHaveLength(1) // never trims below minKeep
+    expect(res.overBudget).toBe(true)
+  })
+
+  it('counts the FULL envelope (not just the list) when deciding to trim', () => {
+    const items = [itemChunk(10), itemChunk(10)]
+    const fatEnvelope = (kept: string[]) => JSON.stringify({ padding: 'z'.repeat(500), candidates: kept })
+    const res = trimToPayloadBudget(items, fatEnvelope, { hardBytes: 520 })
+    // The 500-byte padding pushes the envelope over even though the list is tiny,
+    // so at least one item is dropped.
+    expect(res.dropped).toBeGreaterThan(0)
   })
 })

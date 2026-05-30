@@ -194,6 +194,12 @@ export const planContextOutputSchema = z.object({
     }),
   ),
   candidates: z.array(_descriptionIndexItemSchema),
+  // v2.2 A-INFRA-3 (W1-T3-TOPK) / MC4-payload-budget (W1-T4): number of
+  // lower-ranked candidates dropped by the unified truncation chain (top_k cap
+  // + payload-budget trim). Present and > 0 ONLY when truncation fired, so the
+  // steady-state wire shape is unchanged. Lets the LLM know the returned set is
+  // not exhaustive ("N more exist; narrow your intent").
+  omitted_candidate_count: z.number().int().nonnegative().optional(),
   preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   warnings: z.array(structuredWarningSchema).optional(),
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced
