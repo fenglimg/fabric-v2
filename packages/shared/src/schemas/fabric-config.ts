@@ -395,7 +395,10 @@ export const fabricConfigSchema = z.object({
   // text-only fallback. Never grows the default install footprint.
   embed_enabled: z.boolean().optional().default(false),
   // Weight applied to the 0..1 cosine similarity before it joins the additive
-  // score. Kept below BM25_WEIGHT (50) so vectors SUPPLEMENT lexical relevance
-  // (rescue semantic matches into top_k) without overriding it. Range 0..100.
-  embed_weight: z.number().int().min(0).max(100).optional().default(30),
+  // score. Capped at 49 — strictly BELOW BM25_WEIGHT (50) — so a perfect vector
+  // match (weight × 1) can never outscore a single strong BM25 term match. This
+  // ENFORCES the "vectors supplement, never override lexical relevance"
+  // invariant in the schema rather than leaving it to a comment (W2-REVIEW codex
+  // MED-4). Range 0..49; default 30.
+  embed_weight: z.number().int().min(0).max(49).optional().default(30),
 });

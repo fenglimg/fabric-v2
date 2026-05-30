@@ -113,7 +113,9 @@ export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight
     const config = readFabricConfig(projectRoot);
     const enabled = config.embed_enabled === true;
     const rawWeight = config.embed_weight;
-    const weight = typeof rawWeight === "number" && Number.isInteger(rawWeight) && rawWeight >= 0 && rawWeight <= 100
+    // Cap at 49 (< BM25_WEIGHT 50) — enforces the supplement-not-override
+    // invariant; out-of-range / non-integer / non-finite all fall to 30.
+    const weight = typeof rawWeight === "number" && Number.isInteger(rawWeight) && rawWeight >= 0 && rawWeight <= 49
       ? rawWeight
       : 30;
     return { enabled, weight };

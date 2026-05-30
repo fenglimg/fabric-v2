@@ -305,7 +305,9 @@ export async function planContext(
   // relevant entries into the top_k. The whole block is a no-op on the default
   // path, so the text-only ranking is byte-identical to pre-C2.
   const embedConfig = readEmbedConfig(projectRoot);
-  if (embedConfig.enabled && queryText.trim().length > 0) {
+  if (embedConfig.enabled && queryText.trim().length > 0 && rawItems.length > 0) {
+    // W2-REVIEW codex BLOCK-1: only pay the embedder init when there is actually
+    // something to embed — an empty candidate set skips the load entirely.
     const embedder = await loadEmbedder();
     const vectorScores = await buildVectorScores(
       embedder,

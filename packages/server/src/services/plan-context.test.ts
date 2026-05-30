@@ -1430,7 +1430,9 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
     try {
       const projectRoot = await createTempProject();
       await seedTwoOpaqueEntries(projectRoot);
-      await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true, embed_weight: 100 })}\n`);
+      // embed_weight defaults to 30 (≤49 cap). BM25 is 0 for both candidates
+      // (no shared token), so any positive vector weight is the deciding signal.
+      await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true })}\n`);
 
       // Query is 'a'-heavy and shares no lexical token with either summary, so
       // BM25 is 0 for both — the vector supplement is the deciding signal.

@@ -32,6 +32,19 @@ describe("cosineSimilarity", () => {
     const far = cosineSimilarity(q, [0, 0, 1]);
     expect(near).toBeGreaterThan(far);
   });
+
+  // W2-REVIEW codex HIGH-2 / MED-5: non-finite elements must never produce NaN.
+  it("returns 0 (never NaN) for NaN or Infinity elements", () => {
+    expect(cosineSimilarity([Number.NaN, 1], [1, 1])).toBe(0);
+    expect(cosineSimilarity([1, 1], [Number.POSITIVE_INFINITY, 1])).toBe(0);
+    expect(Number.isFinite(cosineSimilarity([1e308, 1e308], [1e308, 1e308]))).toBe(true);
+  });
+
+  it("clamps the result into [-1, 1]", () => {
+    const sim = cosineSimilarity([1, 2, 3], [2, 4, 6]); // parallel → 1
+    expect(sim).toBeLessThanOrEqual(1);
+    expect(sim).toBeGreaterThanOrEqual(-1);
+  });
 });
 
 describe("buildVectorScores fallback contract", () => {
