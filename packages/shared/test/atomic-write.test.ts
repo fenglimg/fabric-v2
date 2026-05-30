@@ -5,10 +5,13 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { existsSync, writeFileSync, utimesSync } from "node:fs";
+
 import {
   atomicWriteJson,
   atomicWriteText,
   createLedgerWriteQueue,
+  withFileLock,
 } from "../src/node/atomic-write";
 
 const tempRoots: string[] = [];
@@ -23,6 +26,72 @@ afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }
+});
+
+describe("withFileLock", () => {
+  it("runs fn while holding the lock, then releases it", async () => {
+    const dir = makeTempDir("wfl-basic-");
+    const lock = join(dir, "x.lock");
+    let held = false;
+    const result = await withFileLock(lock, async () => {
+      held = existsSync(lock);
+      return 42;
+    });
+    expect(result).toBe(42);
+    expect(held).toBe(true); // lock file present during fn
+    expect(existsSync(lock)).toBe(false); // released after
+  });
+
+  it("releases the lock even when fn throws", async () => {
+    const dir = makeTempDir("wfl-throw-");
+    const lock = join(dir, "x.lock");
+    await expect(
+      withFileLock(lock, async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  it("serializes concurrent critical sections (no overlap)", async () => {
+    const dir = makeTempDir("wfl-serial-");
+    const lock = join(dir, "x.lock");
+    let active = 0;
+    let maxActive = 0;
+    const run = () =>
+      withFileLock(
+        lock,
+        async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((r) => setTimeout(r, 5));
+          active -= 1;
+        },
+        { retryDelayMs: 2 },
+      );
+    await Promise.all(Array.from({ length: 8 }, run));
+    expect(maxActive).toBe(1); // never two holders at once
+  });
+
+  it("reclaims a stale lock left by a crashed holder", async () => {
+    const dir = makeTempDir("wfl-stale-");
+    const lock = join(dir, "x.lock");
+    writeFileSync(lock, ""); // orphan lock
+    const oldSec = Date.now() / 1000 - 3600; // 1h ago
+    utimesSync(lock, oldSec, oldSec);
+    const result = await withFileLock(lock, async () => "ok", { staleMs: 1000 });
+    expect(result).toBe("ok");
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  it("times out when a fresh foreign lock is never released", async () => {
+    const dir = makeTempDir("wfl-timeout-");
+    const lock = join(dir, "x.lock");
+    writeFileSync(lock, ""); // fresh holder that never releases
+    await expect(
+      withFileLock(lock, async () => "never", { maxWaitMs: 60, retryDelayMs: 10, staleMs: 10_000 }),
+    ).rejects.toThrow(/timed out/);
+  });
 });
 
 describe("atomicWriteText", () => {
