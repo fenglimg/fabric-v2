@@ -245,6 +245,41 @@ describe("knowledge-hint-broad.cjs — renderSummary (full mode, count <= TRUNCA
   });
 });
 
+// v2.2 HK2-degrade (W2-T2): SessionStart injection budget ladder. With a tight
+// char budget the rendered body collapses its tail into a single marker, while
+// the structural lines (banner / revision_hash / footer) always survive.
+describe("knowledge-hint-broad.cjs — HK2 injection budget ladder (W2-T2)", () => {
+  it("collapses the body tail into a marker once the char budget is exceeded", () => {
+    const narrow = Array.from({ length: 10 }, (_, i) =>
+      makeEntry(`KT-DEC-${1000 + i}`, "decision", "proven", `summary number ${i} with some length`),
+    );
+    // Tiny budget forces a cap after only a couple of body lines.
+    const lines = hook.renderSummary(makePayload(narrow, { revision_hash: "budget-rev" }), 80, 120);
+
+    // Banner + revision_hash + footer survive regardless of budget.
+    expect(lines[0]).toMatch(/Session start/);
+    expect(lines.some((l) => l.includes("revision_hash: budget-rev"))).toBe(true);
+    expect(lines.some((l) => l.includes("fab_get_knowledge_sections"))).toBe(true);
+    // The overflow marker is present and reports the remaining count.
+    expect(lines.some((l) => /more entr(y|ies) omitted \(injection budget 120 chars/.test(l))).toBe(true);
+    // Far fewer than 10 entry lines survived under the 120-char body budget.
+    const entryLines = lines.filter((l) => /^\s+- KT-DEC-/.test(l));
+    expect(entryLines.length).toBeLessThan(10);
+  });
+
+  it("is a no-op when budgetChars is 0 or omitted (backward compatible)", () => {
+    const narrow = Array.from({ length: 6 }, (_, i) =>
+      makeEntry(`KT-DEC-${2000 + i}`, "decision", "proven", `s${i}`),
+    );
+    const capped = hook.renderSummary(makePayload(narrow), 80, 0);
+    const uncapped = hook.renderSummary(makePayload(narrow), 80);
+    // 0 budget disables the ladder → identical to no-budget rendering, and no
+    // overflow marker appears.
+    expect(capped).toEqual(uncapped);
+    expect(capped.some((l) => /omitted \(injection budget/.test(l))).toBe(false);
+  });
+});
+
 describe("knowledge-hint-broad.cjs — renderSummary (truncated mode, count > TRUNCATION_THRESHOLD)", () => {
   it("emits (truncated) banner when count > TRUNCATION_THRESHOLD", () => {
     const max = hook.CONSTANTS.TRUNCATION_THRESHOLD;

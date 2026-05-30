@@ -349,6 +349,51 @@ const CLI_TIMEOUT_MS = 2000;
 // `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 
+// v2.2 HK2-degrade (W2-T2): char budget for the rendered broad-menu BODY. The
+// hook already degrades by COUNT (hint_broad_top_k slice + TRUNCATION_THRESHOLD
+// grouped mode), but nothing bounded the total rendered SIZE — a corpus with
+// many types or long (near-maxLen) summaries could still emit a wall of text
+// that displaces the agent's working memory. Borrowing the maestro
+// context-budget idea, this is the final rung of the degradation ladder: once
+// the body exceeds the budget, the tail collapses to a single "N more omitted"
+// marker. Default 2000 chars ≈ one screenful. Overridable via
+// fabric-config.json#hint_broad_budget_chars (range 200..20000); 0 disables.
+const DEFAULT_HINT_BROAD_BUDGET_CHARS = 2000;
+
+function readBroadBudgetChars(projectRoot) {
+  return readConfigNumber(projectRoot, "hint_broad_budget_chars", DEFAULT_HINT_BROAD_BUDGET_CHARS, {
+    min: 0,
+    max: 20000,
+    floor: true,
+  });
+}
+
+// v2.2 HK2-degrade (W2-T2): cap the rendered body to `budgetChars`, collapsing
+// the overflow tail into one marker line. Structural lines (banner, revision_hash,
+// footer) are appended by renderSummary AFTER this pass, so they always survive —
+// only entry/group body lines are subject to the budget. `budgetChars` of 0 or
+// undefined is a no-op (preserves the pre-HK2 unbounded behavior and all
+// existing snapshot tests).
+function capBodyToBudget(body, budgetChars) {
+  if (!budgetChars || budgetChars <= 0) return body;
+  const kept = [];
+  let total = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const line = body[i];
+    // +1 for the newline each line costs once joined.
+    if (kept.length > 0 && total + line.length + 1 > budgetChars) {
+      const remaining = body.length - i;
+      kept.push(
+        `  … ${remaining} more entr${remaining === 1 ? "y" : "ies"} omitted (injection budget ${budgetChars} chars; raise hint_broad_budget_chars or narrow scope)`,
+      );
+      return kept;
+    }
+    kept.push(line);
+    total += line.length + 1;
+  }
+  return kept;
+}
+
 function readSummaryMaxLen(projectRoot) {
   return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
     min: 40,
@@ -587,7 +632,7 @@ function renderTruncated(narrow, maxLen) {
  * after writing exactly one stderr breadcrumb so operators grepping a stuck-
  * banner report can diagnose the version drift without source-diving.
  */
-function renderSummary(payload, maxLen) {
+function renderSummary(payload, maxLen, budgetChars) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       try {
@@ -610,7 +655,9 @@ function renderSummary(payload, maxLen) {
     ? `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available (truncated):`
     : `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available:`;
 
-  const body = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
+  const renderedBody = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
+  // v2.2 HK2-degrade (W2-T2): final budget rung — cap the body's rendered size.
+  const body = capBodyToBudget(renderedBody, budgetChars);
 
   const lines = [banner, ...body];
   const revHash = typeof payload.revision_hash === "string" ? payload.revision_hash : null;
@@ -755,7 +802,9 @@ function main(env, stdio) {
     // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
     // hours-based cooldown via fabric-config (see gate above).
     const summaryMaxLen = readSummaryMaxLen(cwd);
-    const lines = renderSummary(resolvedPayload, summaryMaxLen);
+    // v2.2 HK2-degrade (W2-T2): thread the injection char-budget into the renderer.
+    const broadBudgetChars = readBroadBudgetChars(cwd);
+    const lines = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
 
     // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path —
     // shared between the (existing) broadImportBanner branch and the new

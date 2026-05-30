@@ -275,6 +275,13 @@ export const fabricConfigSchema = z.object({
   // TRUNCATION_THRESHOLD=12 grouped-render kicks in. Mirrors the rc.7 T7 +
   // archive_max_* pattern of externalizing previously-hardcoded thresholds.
   hint_broad_top_k: z.number().int().min(1).max(50).optional().default(8),
+  // v2.2 HK2-degrade (W2-T2): char budget for the rendered SessionStart broad-menu
+  // body — the final rung of the degradation ladder after the hint_broad_top_k
+  // count slice. Once the rendered entry/group lines exceed this, the tail
+  // collapses to a single "N more omitted" marker so a large corpus cannot blow
+  // the agent's working memory. Default 2000 (~one screenful); 0 disables the
+  // budget. Read by knowledge-hint-broad.cjs via readConfigNumber. Range 0..20000.
+  hint_broad_budget_chars: z.number().int().min(0).max(20000).optional().default(2000),
   // v2.0.0-rc.37 NEW-16: durable per-signal dismiss for the fabric-hint Stop
   // hook nudges. Any signal type listed here is suppressed at emit time across
   // all sessions (the session-scoped sibling lives in a .fabric/.cache sidecar
