@@ -21,6 +21,7 @@ export * from "./resolver/store-qualified-id.js";
 export * from "./resolver/resolution.js";
 export * from "./store/core.js";
 export * from "./store/secret-scan.js";
+export * from "./scanner/scan-recommendations.js";
 export * from "./store/cross-store-lint.js";
 export * from "./store/observability.js";
 export * from "./schemas/provenance.js";

@@ -2,6 +2,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared/node";
+// ISS-021: route through the shared, i18n-keyed recommendation builder so this
+// (quarantined) http scan no longer forks its own English-only strings.
+import { buildScanRecommendations, createTranslator, resolveFabricLocale } from "@fenglimg/fabric-shared";
 
 import { type FabricHttpApp, sendUnknownError } from "./_error.js";
 
@@ -59,12 +62,15 @@ async function createScanReport(targetInput: string = process.cwd()): Promise<Sc
     fileCount: walkResult.fileCount,
     ignoredCount: walkResult.ignoredCount,
     hasExistingFabric,
-    recommendations: buildRecommendations({
-      framework,
-      readmeQuality,
-      hasContributing,
-      hasExistingFabric,
-    }),
+    recommendations: buildScanRecommendations(
+      {
+        frameworkKind: framework.kind,
+        readmeOk: readmeQuality === "ok",
+        hasContributing,
+        hasExistingFabric,
+      },
+      createTranslator(resolveFabricLocale(target)),
+    ),
   };
 }
 
@@ -146,33 +152,4 @@ function matchesIgnorePattern(relativePath: string, isDirectory: boolean, patter
 
 function toPosixPath(path: string): string {
   return path.split(sep).join("/");
-}
-
-function buildRecommendations(input: {
-  framework: FrameworkInfo;
-  readmeQuality: ReadmeQuality;
-  hasContributing: boolean;
-  hasExistingFabric: boolean;
-}): string[] {
-  const recommendations: string[] = [];
-
-  if (!input.hasExistingFabric) {
-    recommendations.push("L0: Run `fabric install` to scaffold the .fabric/ knowledge layout (decisions, pitfalls, guidelines, models, processes).");
-  }
-
-  if (input.readmeQuality === "stub") {
-    recommendations.push("L0: Expand README.md before promoting project facts into Fabric knowledge entries.");
-  }
-
-  if (!input.hasContributing) {
-    recommendations.push("L0: Add CONTRIBUTING.md or capture contribution-flow guidance under .fabric/knowledge/processes/.");
-  }
-
-  if (input.framework.kind === "unknown") {
-    recommendations.push("L1: Add tech-stack TODOs manually because no framework marker was detected.");
-  } else {
-    recommendations.push(`L1: Review ${input.framework.kind} directories for future scoped Fabric rule files.`);
-  }
-
-  return recommendations;
 }

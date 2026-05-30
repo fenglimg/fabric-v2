@@ -1367,4 +1367,26 @@ export const enMessages: Messages = {
   // W3-09 (ISS-035): forensic project scan progress (stderr, TTY-only).
   "cli.install.scanning": "scanning project for client/framework signals…",
   "cli.install.scan-complete": "  project scan complete",
+
+  // W4-11 (ISS-021): unified project-scan recommendations (cli forensic +
+  // http scan share this single i18n-keyed set).
+  "scan.rec.install":
+    "Run `fabric install` to scaffold the .fabric/ knowledge layout (decisions, pitfalls, guidelines, models, processes).",
+  "scan.rec.readme":
+    "Expand README.md (project goal, run steps, no-touch zones) before promoting facts into Fabric knowledge.",
+  "scan.rec.contributing":
+    "Add CONTRIBUTING.md or capture contribution-flow guidance under .fabric/knowledge/processes/.",
+  "scan.rec.cocos.lifecycle":
+    "Confirm the Cocos Creator Component lifecycle (onLoad/onEnable/start) ordering with the user.",
+  "scan.rec.cocos.human-protect":
+    "Ask whether assets/prefabs and assets/scenes are @HUMAN-protected zones.",
+  "scan.rec.cocos.meta-lock":
+    "`.meta` files detected — consider @HUMAN-locking them so the AI does not modify them.",
+  "scan.rec.next": "Confirm app/pages routing boundaries and server-component constraints.",
+  "scan.rec.vite":
+    "Confirm the src/main entry, component directories, and build-script maintenance boundaries.",
+  "scan.rec.unknown":
+    "No framework marker detected — confirm the tech stack and main entry with the user first.",
+  "scan.rec.generic":
+    "Confirm the AGENTS.md layering boundaries around {kind}'s main entry and generated directories.",
 };

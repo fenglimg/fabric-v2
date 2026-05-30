@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { basename, extname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
 import {
+  buildScanRecommendations,
   forensicReportSchema,
   type CandidateFileEntry,
   type ForensicAssertion,
@@ -12,6 +13,7 @@ import {
   type ForensicReport,
 } from "@fenglimg/fabric-shared";
 
+import { getProjectTranslator } from "../i18n.js";
 import { detectFramework } from "./detector.js";
 
 declare const __CLI_VERSION__: string | undefined;
@@ -200,7 +202,7 @@ export async function buildForensicReport(targetInput: string): Promise<Forensic
     candidate_files: candidateFiles,
     sampling_budget: DEFAULT_SAMPLING_BUDGET,
     readme,
-    recommendations_for_skill: buildSkillRecommendations(framework.kind, topology, readme),
+    recommendations_for_skill: buildSkillRecommendations(framework.kind, topology, readme, target),
   };
 
   const validation = forensicReportSchema.safeParse(report);
@@ -1419,36 +1421,25 @@ function isDomainFile(relativePath: string): boolean {
 
 /**
  * @deprecated Transitional migration helper. Prefer buildAssertions() for structured confidence/evidence output.
+ *
+ * ISS-021: now a thin adapter over the shared, i18n-keyed buildScanRecommendations
+ * so cli forensic and http scan no longer fork hardcoded recommendation strings.
+ * Output is resolved through the project's fabric_language (was hardcoded zh-CN).
  */
 function buildSkillRecommendations(
   frameworkKind: ForensicReport["framework"]["kind"],
   topology: TopologyResult,
   readme: ReadmeInfo,
+  projectRoot: string,
 ): string[] {
-  const recommendations: string[] = [];
-
-  if (frameworkKind === "cocos-creator") {
-    recommendations.push("建议向用户确认 Cocos Creator Component 生命周期(onLoad/onEnable/start)顺序。");
-    recommendations.push("建议询问 assets/prefabs 和 assets/scenes 是否属于 @HUMAN 保护区域。");
-
-    if ((topology.by_ext[".meta"] ?? 0) > 0) {
-      recommendations.push("检测到 .meta 文件,建议在 @HUMAN 锁定 .meta 不被 AI 改动。");
-    }
-  } else if (frameworkKind === "next") {
-    recommendations.push("建议确认 app/pages 路由边界和服务端组件约束。");
-  } else if (frameworkKind === "vite") {
-    recommendations.push("建议确认 src/main 入口、组件目录和构建脚本的维护边界。");
-  } else if (frameworkKind === "unknown") {
-    recommendations.push("未检测到明确框架,建议先让用户确认技术栈和主要入口。");
-  } else {
-    recommendations.push(`建议围绕 ${frameworkKind} 的主要入口和生成目录确认 AGENTS.md 分层边界。`);
-  }
-
-  if (readme.quality !== "ok") {
-    recommendations.push("README 信息不足,建议在初始化访谈中补齐项目目标、运行方式和禁改区域。");
-  }
-
-  return recommendations;
+  return buildScanRecommendations(
+    {
+      frameworkKind,
+      hasMeta: (topology.by_ext[".meta"] ?? 0) > 0,
+      readmeOk: readme.quality === "ok",
+    },
+    getProjectTranslator(projectRoot),
+  );
 }
 
 function readProjectName(target: string): string {

@@ -1344,4 +1344,17 @@ export const zhCNMessages: Messages = {
   // W3-09 (ISS-035): forensic 项目扫描进度 (stderr, 仅 TTY)。
   "cli.install.scanning": "正在扫描项目的客户端/框架特征…",
   "cli.install.scan-complete": "  项目扫描完成",
+
+  // W4-11 (ISS-021): 统一项目扫描推荐(cli forensic + http scan 共用此 i18n key 集)。
+  "scan.rec.install":
+    "运行 `fabric install` 搭建 .fabric/ 知识层(decisions/pitfalls/guidelines/models/processes)。",
+  "scan.rec.readme": "README 信息不足,建议在初始化访谈中补齐项目目标、运行方式和禁改区域。",
+  "scan.rec.contributing": "补充 CONTRIBUTING.md,或在 .fabric/knowledge/processes/ 下记录贡献流程。",
+  "scan.rec.cocos.lifecycle": "建议向用户确认 Cocos Creator Component 生命周期(onLoad/onEnable/start)顺序。",
+  "scan.rec.cocos.human-protect": "建议询问 assets/prefabs 和 assets/scenes 是否属于 @HUMAN 保护区域。",
+  "scan.rec.cocos.meta-lock": "检测到 .meta 文件,建议在 @HUMAN 锁定 .meta 不被 AI 改动。",
+  "scan.rec.next": "建议确认 app/pages 路由边界和服务端组件约束。",
+  "scan.rec.vite": "建议确认 src/main 入口、组件目录和构建脚本的维护边界。",
+  "scan.rec.unknown": "未检测到明确框架,建议先让用户确认技术栈和主要入口。",
+  "scan.rec.generic": "建议围绕 {kind} 的主要入口和生成目录确认 AGENTS.md 分层边界。",
 };
