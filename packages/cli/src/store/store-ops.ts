@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -6,6 +7,7 @@ import {
   bindRequiredStore,
   detachMountedStore,
   explainStore,
+  initStore,
   storeRelativePath,
   type FabricConfig,
   type GlobalConfig,
@@ -48,6 +50,48 @@ export function storeAdd(
   const next = addMountedStore(requireConfig(globalRoot), store);
   saveGlobalConfig(next, globalRoot);
   return next;
+}
+
+// ADJ-NEWN-5 (v2.1 dogfood): create a brand-new LOCAL store + mount it.
+//
+// Wave0 found there was no CLI path to birth a fresh store: `install --global`
+// only mints the personal store, `install --global --url` clones an EXISTING
+// remote, and `store add` merely registers an already-on-disk store. The first
+// team store therefore had to be hand-rolled (git init + the internal initStore
+// symbol). This wraps that into a first-class command: mint an intrinsic uuid
+// (S55 identity-is-intrinsic), scaffold the store tree via initStore (git), and
+// mount it into the registry. `now`/`uuid` are injectable for deterministic
+// tests; production mints them.
+export interface StoreCreateResult {
+  config: GlobalConfig;
+  store_uuid: string;
+  storeDir: string;
+}
+
+export function storeCreate(
+  alias: string,
+  now: string,
+  options: { uuid?: string; remote?: string; git?: boolean; globalRoot?: string } = {},
+): StoreCreateResult {
+  const globalRoot = options.globalRoot ?? resolveGlobalRoot();
+  // requireConfig first: refuse to create before `install --global` (no uid).
+  const config = requireConfig(globalRoot);
+  const uuid = options.uuid ?? randomUUID();
+  const storeDir = join(globalRoot, storeRelativePath(uuid));
+
+  initStore(
+    storeDir,
+    { store_uuid: uuid, created_at: now, canonical_alias: alias },
+    { git: options.git },
+  );
+
+  const mounted: MountedStore =
+    options.remote === undefined
+      ? { store_uuid: uuid, alias }
+      : { store_uuid: uuid, alias, remote: options.remote };
+  const next = addMountedStore(config, mounted);
+  saveGlobalConfig(next, globalRoot);
+  return { config: next, store_uuid: uuid, storeDir };
 }
 
 // ADJ-NEWN-6 (v2.1 dogfood): refuse a "phantom mount". `store add` previously

@@ -6,6 +6,7 @@ import {
   assertStoreMountable,
   storeAdd,
   storeBind,
+  storeCreate,
   storeExplain,
   storeList,
   storeRemove,
@@ -48,6 +49,25 @@ const addCommand = defineCommand({
         : { store_uuid: args.uuid, alias: args.alias, remote: args.remote };
     const next = storeAdd(store);
     console.log(`mounted '${args.alias}' (${next.stores.length} store(s) total)`);
+  },
+});
+
+const createCommand = defineCommand({
+  meta: { name: "create", description: "Create a brand-new local knowledge store and mount it" },
+  args: {
+    alias: { type: "string", required: true, description: "Local alias for the new store" },
+    remote: { type: "string", description: "Git remote to associate (push target; optional)" },
+  },
+  run({ args }) {
+    const result = storeCreate(args.alias, new Date().toISOString(), {
+      ...(args.remote === undefined ? {} : { remote: args.remote }),
+    });
+    console.log(
+      `created store '${args.alias}' (${result.store_uuid}) at ${result.storeDir}` +
+        (args.remote === undefined
+          ? "\n(local-only — add a remote later with `git -C <storeDir> remote add origin <url>`)"
+          : ""),
+    );
   },
 });
 
@@ -111,6 +131,7 @@ export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
   subCommands: {
     list: listCommand,
+    create: createCommand,
     add: addCommand,
     remove: removeCommand,
     explain: explainCommand,

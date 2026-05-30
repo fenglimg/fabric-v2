@@ -16,11 +16,13 @@ import {
   missingRequiredStores,
   storeAdd,
   storeBind,
+  storeCreate,
   storeExplain,
   storeList,
   storeRemove,
   storeSwitchWrite,
 } from "../src/store/store-ops.js";
+import { existsSync, readFileSync } from "node:fs";
 
 // v2.1.0-rc.1 P3 — `fabric store {list,add,remove,explain}` integration tests
 // against an isolated global root (no FABRIC_HOME / real ~/.fabric touched).
@@ -77,6 +79,44 @@ describe("assertStoreMountable (ADJ-NEWN-6 phantom-mount guard)", () => {
       join(dir, "store.json"),
       JSON.stringify({ store_uuid: PLATFORM, created_at: "2026-05-30T00:00:00.000Z", canonical_alias: "platform" }),
     );
+    expect(() => assertStoreMountable(PLATFORM, globalRoot)).not.toThrow();
+  });
+});
+
+// ADJ-NEWN-5 (v2.1 Wave0 dogfood): no CLI path existed to birth a fresh store
+// (install --global mints only personal; --url clones existing; add only
+// registers an on-disk store). `storeCreate` scaffolds + mounts in one step.
+describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
+  it("scaffolds the store tree, writes store.json with the intrinsic uuid, and mounts it", () => {
+    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+      uuid: PLATFORM,
+      git: false,
+      globalRoot,
+    });
+    expect(result.store_uuid).toBe(PLATFORM);
+    // store.json written with the intrinsic identity (S55).
+    const identity = JSON.parse(readFileSync(join(result.storeDir, "store.json"), "utf8"));
+    expect(identity.store_uuid).toBe(PLATFORM);
+    expect(identity.canonical_alias).toBe("team");
+    // knowledge scaffold exists.
+    expect(existsSync(join(result.storeDir, "knowledge"))).toBe(true);
+    // mounted into the registry.
+    expect(storeList(globalRoot).map((s) => s.alias)).toContain("team");
+  });
+
+  it("associates a remote when provided", () => {
+    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+      uuid: PLATFORM,
+      git: false,
+      remote: "git@h:team.git",
+      globalRoot,
+    });
+    expect(storeExplain("team", globalRoot)?.local_only).toBe(false);
+    expect(result.storeDir).toContain(PLATFORM);
+  });
+
+  it("a created store passes the phantom-mount guard (round-trip with assertStoreMountable)", () => {
+    storeCreate("team", "2026-05-30T00:00:00.000Z", { uuid: PLATFORM, git: false, globalRoot });
     expect(() => assertStoreMountable(PLATFORM, globalRoot)).not.toThrow();
   });
 });
