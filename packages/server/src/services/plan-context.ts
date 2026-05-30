@@ -642,6 +642,15 @@ export function __resetBm25Cache(): void {
   bm25BuildCount = 0;
 }
 
+// ISS-029: numeric-aware stable_id comparison. Plain localeCompare sorts
+// "KT-DEC-9999" AFTER "KT-DEC-10000" (lexicographic: '9' > '1'), so the
+// stable_id tiebreaker mis-orders once any per-store/per-type counter crosses
+// into 5 digits. Intl numeric collation compares the trailing digit run by
+// value, so 9999 < 10000 holds while same-width ids sort identically to before.
+export function compareStableIds(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
 function sortDescriptionItems(
   rawItems: RuleDescriptionIndexItem[],
   scoringContext?: ScoringContext,
@@ -655,7 +664,7 @@ function sortDescriptionItems(
   // ISS-024: scoringContext.bm25 is now pre-built (and cached) by the caller, so
   // this function no longer re-indexes the corpus per sort.
   if (scoringContext === undefined) {
-    return [...rawItems].sort((left, right) => left.stable_id.localeCompare(right.stable_id));
+    return [...rawItems].sort((left, right) => compareStableIds(left.stable_id, right.stable_id));
   }
   const scored = rawItems.map((item) => ({
     item,
@@ -664,7 +673,7 @@ function sortDescriptionItems(
   scored.sort((left, right) =>
     left.score !== right.score
       ? right.score - left.score // descending
-      : left.item.stable_id.localeCompare(right.item.stable_id),
+      : compareStableIds(left.item.stable_id, right.item.stable_id),
   );
   return scored.map((entry) => entry.item);
 }

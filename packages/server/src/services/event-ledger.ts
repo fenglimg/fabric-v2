@@ -239,18 +239,25 @@ export async function appendEventLedgerEvent(
   // rotateEventLedgerIfNeeded in T4) before the file grows unbounded.
   // Best-effort: stat failures are swallowed (filesystem race, etc.) — the
   // warning is hint-grade, not load-bearing.
-  if (!warnedOversize) {
-    try {
-      const size = statSync(eventPath).size;
-      if (size > EVENT_LEDGER_SIZE_WARN_BYTES) {
+  try {
+    const size = statSync(eventPath).size;
+    if (size > EVENT_LEDGER_SIZE_WARN_BYTES) {
+      if (!warnedOversize) {
         warnedOversize = true;
         process.stderr.write(
-          'fabric: events.jsonl > 50MB, run "fabric doctor --fix" to rotate\n',
+          'fabric: events.jsonl > 50MB, auto-rotating (also run "fabric doctor --fix" to inspect)\n',
         );
       }
-    } catch {
-      // ignore — size check is best-effort
+      // ISS-025: size-triggered rotation so short-lived MCP spawns (which never
+      // hit the 6h rotation tick) still bound the ledger. Archives down to half
+      // the trigger for hysteresis — avoids re-rotating on every subsequent
+      // append. Best-effort + awaited; rotation failures never fail the append.
+      await rotateEventLedgerIfNeeded(projectRoot, {
+        maxBytes: Math.floor(EVENT_LEDGER_SIZE_WARN_BYTES / 2),
+      });
     }
+  } catch {
+    // ignore — size check / rotation is best-effort and must not fail the append
   }
 
   return nextEvent;
@@ -433,6 +440,12 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 export type RotateEventLedgerOptions = {
   now?: Date;
   retentionDays?: number;
+  // ISS-025: byte budget for the RETAINED set. When set, after the age
+  // partition the oldest kept lines are additionally archived until the
+  // retained ledger fits within `maxBytes`. Bounds in-window growth on
+  // high-frequency workspaces (age-only rotation kept everything younger than
+  // the cutoff regardless of volume). Omitted → age-only behaviour (unchanged).
+  maxBytes?: number;
 };
 
 export type RotateEventLedgerResult = {
@@ -501,6 +514,20 @@ export async function rotateEventLedgerIfNeeded(
         archived.push(trimmed);
       } else {
         kept.push(trimmed);
+      }
+    }
+
+    // ISS-025: size-based rotation. Independent of age — archive the OLDEST
+    // retained lines (front of the chronological kept[]) until the retained set
+    // fits the byte budget, so a high-frequency workspace cannot grow the ledger
+    // unbounded within the retention window. age-archived lines are already the
+    // oldest, so archived[] stays chronologically ordered.
+    if (opts.maxBytes !== undefined && opts.maxBytes >= 0) {
+      let keptBytes = kept.reduce((sum, line) => sum + Buffer.byteLength(line, "utf8") + 1, 0);
+      while (keptBytes > opts.maxBytes && kept.length > 0) {
+        const oldest = kept.shift() as string;
+        archived.push(oldest);
+        keptBytes -= Buffer.byteLength(oldest, "utf8") + 1;
       }
     }
 

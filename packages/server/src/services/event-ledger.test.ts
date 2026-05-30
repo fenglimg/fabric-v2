@@ -632,6 +632,42 @@ describe("rotateEventLedgerIfNeeded", () => {
     expect(existsSync(join(projectRoot, ".fabric", "events.archive"))).toBe(false);
   });
 
+  it("rotate_size_bounded: archives the oldest retained lines until the ledger fits maxBytes (ISS-025)", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    // All events are 1 day old → none age-eligible, so ONLY size rotation can
+    // trim them. This isolates the new size-based path from age rotation.
+    const recentTs = now.getTime() - 1 * 86_400_000;
+    for (let i = 0; i < 20; i += 1) {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "mcp_event",
+        mcp_event_id: `mcp-${i}`,
+        stream_id: "s",
+        message: { jsonrpc: "2.0", method: "ping" },
+        ts: recentTs + i,
+      });
+    }
+    const path = join(projectRoot, ".fabric", "events.jsonl");
+    const fullSize = statSync(path).size;
+    const budget = Math.floor(fullSize / 2);
+
+    const result = await rotateEventLedgerIfNeeded(projectRoot, { now, maxBytes: budget });
+
+    // Age rotation alone would be a no-op (everything is within retention); the
+    // size budget forces the oldest events out.
+    expect(result.rotated).toBe(true);
+    expect(result.archivedCount).toBeGreaterThan(0);
+    expect(result.archivePath).toBeDefined();
+    expect(statSync(path).size).toBeLessThan(fullSize);
+
+    const archiveRaw = await readFile(join(projectRoot, result.archivePath as string), "utf8");
+    const mainRaw = await readFile(path, "utf8");
+    // Oldest archived, newest retained (chronological eviction).
+    expect(archiveRaw).toContain('"mcp_event_id":"mcp-0"');
+    expect(mainRaw).toContain('"mcp_event_id":"mcp-19"');
+    expect(mainRaw).not.toContain('"mcp_event_id":"mcp-0"');
+  });
+
   it("rotate_partitions_correctly: archives stale lines and keeps recent ones", async () => {
     const projectRoot = await createTempProject();
     const now = new Date("2026-05-18T12:00:00.000Z");
@@ -951,8 +987,9 @@ describe("appendEventLedgerEvent — 50MB soft-warn (rc.22 Scope A T3)", () => {
         (call[0] as string).includes("events.jsonl > 50MB"),
       );
       expect(warnCalls).toHaveLength(1);
+      // ISS-025: the warn now announces auto-rotation (append size-triggers it).
       expect(warnCalls[0][0]).toBe(
-        'fabric: events.jsonl > 50MB, run "fabric doctor --fix" to rotate\n',
+        'fabric: events.jsonl > 50MB, auto-rotating (also run "fabric doctor --fix" to inspect)\n',
       );
     } finally {
       stderrSpy.mockRestore();

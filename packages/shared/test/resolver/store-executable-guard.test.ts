@@ -54,4 +54,36 @@ describe("findStoreExecutableViolations (S65 — store carries no executable hoo
     chmodSync(sample, 0o755);
     expect(findStoreExecutableViolations(store)).toEqual([]);
   });
+
+  // W4-02→W4-06 (ISS-028): the walk is bounded so a pathologically large/deep
+  // store cannot block the event loop. The bound is fail-closed — it records a
+  // synthetic violation and stops, so an over-large tree is flagged (untrusted)
+  // rather than partially scanned and trusted.
+  it("fail-closes with a synthetic violation when the entry count exceeds the bound", () => {
+    const store = createValidStoreDir();
+    for (let i = 0; i < 8; i += 1) {
+      writeFileSync(join(store, "knowledge", `note-${i}.md`), `# ${i}\n`, "utf8");
+    }
+    const result = findStoreExecutableViolations(store, { maxEntries: 3 });
+    expect(result.some((v) => v.startsWith("<scan-bounded: entries"))).toBe(true);
+  });
+
+  it("fail-closes with a synthetic violation when the tree exceeds the depth bound", () => {
+    const store = createValidStoreDir();
+    let deep = join(store, "knowledge");
+    for (let i = 0; i < 6; i += 1) {
+      deep = join(deep, `lvl${i}`);
+    }
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, "x.md"), "# x\n", "utf8");
+    const result = findStoreExecutableViolations(store, { maxDepth: 2 });
+    expect(result.some((v) => v.startsWith("<scan-bounded: depth"))).toBe(true);
+  });
+
+  it("does not flag a clean store that stays within the bounds", () => {
+    const store = createValidStoreDir();
+    writeFileSync(join(store, "knowledge", "a.md"), "# a\n", "utf8");
+    writeFileSync(join(store, "knowledge", "b.md"), "# b\n", "utf8");
+    expect(findStoreExecutableViolations(store, { maxEntries: 1000, maxDepth: 16 })).toEqual([]);
+  });
 });

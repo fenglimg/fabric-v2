@@ -5,12 +5,14 @@ import {
   buildVectorScores,
   loadEmbedder,
   __resetEmbedderForTesting,
+  __resetVectorCache,
   type Embedder,
 } from "./vector-retrieval.js";
 
 afterEach(() => {
-  // Restore the real lazy-load probe between tests.
+  // Restore the real lazy-load probe + clear the doc-embedding cache between tests.
   __resetEmbedderForTesting(undefined);
+  __resetVectorCache();
 });
 
 describe("cosineSimilarity", () => {
@@ -83,6 +85,58 @@ describe("buildVectorScores fallback contract", () => {
     ]);
     expect(scores).not.toBeNull();
     expect(scores?.get("near") ?? 0).toBeGreaterThan(scores?.get("far") ?? 1);
+  });
+
+  // W4-08 (ISS-023): doc embeddings are cached by text, so repeated queries over
+  // the same corpus do NOT re-embed every document — only the (varying) query
+  // plus any newly-seen docs are embedded.
+  it("re-embeds only the query on a repeated query over an unchanged corpus", async () => {
+    __resetVectorCache();
+    const embeddedBatches: string[][] = [];
+    const counting: Embedder = {
+      async embed(texts: string[]): Promise<number[][]> {
+        embeddedBatches.push(texts);
+        return texts.map((t) => [t.length, (t.match(/a/g) ?? []).length, (t.match(/b/g) ?? []).length]);
+      },
+    };
+    const items = [
+      { stable_id: "d1", text: "alpha bravo" },
+      { stable_id: "d2", text: "charlie delta" },
+      { stable_id: "d3", text: "echo foxtrot" },
+    ];
+
+    const first = await buildVectorScores(counting, "q1", items);
+    const second = await buildVectorScores(counting, "q2", items);
+
+    // First call embeds query + all 3 docs; second embeds only the new query.
+    expect(embeddedBatches[0]).toHaveLength(4); // q1 + 3 docs
+    expect(embeddedBatches[1]).toHaveLength(1); // q2 only (docs cached)
+    expect(embeddedBatches[1]).toEqual(["q2"]);
+
+    // Equivalence: the cached run scores identically to a fresh full embed.
+    __resetVectorCache();
+    const fresh = await buildVectorScores(counting, "q2", items);
+    expect(second).not.toBeNull();
+    for (const item of items) {
+      expect(second?.get(item.stable_id)).toBeCloseTo(fresh?.get(item.stable_id) ?? NaN, 10);
+    }
+  });
+
+  it("embeds only the newly-added doc when the corpus grows", async () => {
+    __resetVectorCache();
+    const batches: string[][] = [];
+    const counting: Embedder = {
+      async embed(texts: string[]): Promise<number[][]> {
+        batches.push(texts);
+        return texts.map((t) => [t.length, 0, 0]);
+      },
+    };
+    await buildVectorScores(counting, "q", [{ stable_id: "d1", text: "one" }]);
+    await buildVectorScores(counting, "q", [
+      { stable_id: "d1", text: "one" },
+      { stable_id: "d2", text: "two" },
+    ]);
+    expect(batches[1]).toEqual(["q", "two"]); // d1 cached, only the new doc embedded
   });
 });
 

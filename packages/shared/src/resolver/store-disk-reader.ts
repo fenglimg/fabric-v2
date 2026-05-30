@@ -67,11 +67,44 @@ function hasScriptExtension(name: string): boolean {
   return dot !== -1 && SCRIPT_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
 
+// ISS-028: bound the synchronous walk so a pathologically deep / huge store
+// cannot block the event loop indefinitely at mount/verify time. The bounds are
+// generous — a legitimate data-only KB (markdown/JSON in a handful of dirs)
+// never approaches them. Crucially the bound is FAIL-CLOSED: when it is hit we
+// record a synthetic violation and stop, so an over-large/over-deep store is
+// flagged (and refused trust) rather than partially-scanned-and-trusted — an
+// attacker cannot bury an executable past the bound to evade the S65 guard.
+const STORE_SCAN_MAX_DEPTH = 32;
+const STORE_SCAN_MAX_ENTRIES = 100_000;
+
+export type FindStoreExecutableViolationsOptions = {
+  maxDepth?: number;
+  maxEntries?: number;
+};
+
 // Returns relative paths (POSIX) of any executable/script file found inside the
-// store tree — the S65 violation set. Empty ⟺ the store is data-only.
-export function findStoreExecutableViolations(absDir: string): string[] {
+// store tree — the S65 violation set. Empty ⟺ the store is data-only. A
+// `<scan-bounded: …>` synthetic entry means the tree exceeded the scan bounds
+// (fail-closed — treat as untrusted).
+export function findStoreExecutableViolations(
+  absDir: string,
+  options: FindStoreExecutableViolationsOptions = {},
+): string[] {
+  const maxDepth = options.maxDepth ?? STORE_SCAN_MAX_DEPTH;
+  const maxEntries = options.maxEntries ?? STORE_SCAN_MAX_ENTRIES;
   const violations: string[] = [];
-  const walk = (dir: string, rel: string): void => {
+  let entriesScanned = 0;
+  let bounded = false;
+
+  const walk = (dir: string, rel: string, depth: number): void => {
+    if (bounded) {
+      return;
+    }
+    if (depth > maxDepth) {
+      violations.push(`<scan-bounded: depth > ${maxDepth} at ${rel === "" ? "." : rel}>`);
+      bounded = true;
+      return;
+    }
     let entries: string[];
     try {
       entries = readdirSync(dir);
@@ -79,9 +112,18 @@ export function findStoreExecutableViolations(absDir: string): string[] {
       return;
     }
     for (const entry of entries) {
+      if (bounded) {
+        return;
+      }
       // `.git` is git's own internal tree — never Fabric-executed; skip it.
       if (rel === "" && entry === ".git") {
         continue;
+      }
+      entriesScanned += 1;
+      if (entriesScanned > maxEntries) {
+        violations.push(`<scan-bounded: entries > ${maxEntries}>`);
+        bounded = true;
+        return;
       }
       const abs = join(dir, entry);
       const relPath = rel === "" ? entry : `${rel}/${entry}`;
@@ -92,7 +134,7 @@ export function findStoreExecutableViolations(absDir: string): string[] {
         continue;
       }
       if (stat.isDirectory()) {
-        walk(abs, relPath);
+        walk(abs, relPath, depth + 1);
         continue;
       }
       // A regular file is a violation if it carries any executable bit OR has a
@@ -102,6 +144,6 @@ export function findStoreExecutableViolations(absDir: string): string[] {
       }
     }
   };
-  walk(absDir, "");
+  walk(absDir, "", 0);
   return violations;
 }

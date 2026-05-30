@@ -8,7 +8,7 @@ import { McpToolError } from "@fenglimg/fabric-shared/errors";
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
-import { readSelectionToken } from "./plan-context.js";
+import { readSelectionToken, compareStableIds } from "./plan-context.js";
 import { loadActiveMeta } from "./load-active-meta.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
@@ -358,7 +358,8 @@ function sortRuleNodes(rules: RuleNodeEntry[]): RuleNodeEntry[] {
       return priorityDelta;
     }
 
-    return left.stable_id.localeCompare(right.stable_id);
+    // ISS-029: numeric-aware so a 5-digit counter sorts after 9999, not before.
+    return compareStableIds(left.stable_id, right.stable_id);
   });
 }
 

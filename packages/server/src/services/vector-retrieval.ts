@@ -143,6 +143,33 @@ export interface VectorScoreItem {
  * embedding throws. The first array element of the embedding batch is the query;
  * the rest align with `items` order.
  */
+// ISS-023: document-embedding cache. Embedding is the dominant cost and scales
+// linearly with corpus size; without a cache every recall re-embeds the WHOLE
+// candidate corpus on CPU. Doc embeddings depend only on the (deterministic)
+// doc text, so we cache vector-by-text and embed ONLY the query (always — it
+// varies) plus cache-miss docs. Bounded by an LRU cap so a long-lived server
+// with a churning corpus does not grow the cache without limit.
+const docVectorCache = new Map<string, number[]>();
+const DOC_VECTOR_CACHE_MAX = 10_000;
+
+export function __resetVectorCache(): void {
+  docVectorCache.clear();
+}
+
+function cacheDocVector(text: string, vector: number[]): void {
+  if (docVectorCache.has(text)) {
+    docVectorCache.delete(text);
+  }
+  docVectorCache.set(text, vector);
+  while (docVectorCache.size > DOC_VECTOR_CACHE_MAX) {
+    const lru = docVectorCache.keys().next().value;
+    if (lru === undefined) {
+      break;
+    }
+    docVectorCache.delete(lru);
+  }
+}
+
 export async function buildVectorScores(
   embedder: Embedder | null,
   queryText: string,
@@ -152,14 +179,31 @@ export async function buildVectorScores(
     return null;
   }
   try {
-    const vectors = await embedder.embed([queryText, ...items.map((item) => item.text)]);
-    if (vectors.length !== items.length + 1) {
+    // Embed the query (always) plus only the docs whose text is not yet cached.
+    const missTexts: string[] = [];
+    for (const item of items) {
+      if (!docVectorCache.has(item.text)) {
+        missTexts.push(item.text);
+      }
+    }
+    const toEmbed = [queryText, ...missTexts];
+    const embedded = await embedder.embed(toEmbed);
+    if (embedded.length !== toEmbed.length) {
       return null;
     }
-    const queryVec = vectors[0];
+    const queryVec = embedded[0];
+    for (let m = 0; m < missTexts.length; m += 1) {
+      cacheDocVector(missTexts[m], embedded[m + 1]);
+    }
     const scores = new Map<string, number>();
-    for (let i = 0; i < items.length; i += 1) {
-      scores.set(items[i].stable_id, cosineSimilarity(queryVec, vectors[i + 1]));
+    for (const item of items) {
+      const docVec = docVectorCache.get(item.text);
+      if (docVec === undefined) {
+        // Defensive: a doc we just embedded should always be present. Bail to
+        // the text-only fallback rather than emit a partial score set.
+        return null;
+      }
+      scores.set(item.stable_id, cosineSimilarity(queryVec, docVec));
     }
     return scores;
   } catch {
