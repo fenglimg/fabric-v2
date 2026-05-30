@@ -77,6 +77,8 @@ const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
 // v2.1.0-rc.1 P4 (S46): multi-store git sync assistant skill.
 const SKILL_SYNC_TEMPLATE_REL = "skills/fabric-sync/SKILL.md";
+// v2.1 ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill template.
+const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a

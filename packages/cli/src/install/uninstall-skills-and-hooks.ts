@@ -94,6 +94,16 @@ export async function uninstallFabricSyncSkill(
   return removeSkill("skill-sync", SKILL_DESTINATIONS.fabricSync, projectRoot);
 }
 
+/**
+ * Inverse of `installFabricStoreSkill` (v2.1 ADJ-NEWN-1/#4). Removes each
+ * SKILL.md at `SKILL_DESTINATIONS.fabricStore`, then removes the empty parent.
+ */
+export async function uninstallFabricStoreSkill(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeSkill("skill-store", SKILL_DESTINATIONS.fabricStore, projectRoot);
+}
+
 async function removeSkill(
   step: string,
   rels: readonly string[],
