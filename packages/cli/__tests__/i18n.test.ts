@@ -64,10 +64,20 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   // KB on fresh install is empty by design.
   // rc.15 TASK-004 (C9): capture `fabric config` placeholder output as the replacement
   // i18n snapshot — locks the rc.16 placeholder string in en + zh-CN.
+  // Pass an explicit UNINITIALIZED target so this snapshot is hermetic.
+  // Previously `args: {}` defaulted config's workspaceRoot to process.cwd();
+  // when the suite runs from a dogfooded Fabric repo root (which has a tracked
+  // .fabric/fabric-config.json), config's uninit gate is bypassed and it emits
+  // the "requires an interactive terminal" message instead of the expected
+  // "workspace not initialized" — cwd-dependent snapshot drift. A bare temp dir
+  // has no .fabric/, so the uninit gate fires deterministically regardless of
+  // where vitest is launched.
+  const configUninitTarget = mkdtempSync(join(tmpdir(), "fab-i18n-config-"));
+  tempRoots.push(configUninitTarget);
   vi.resetModules();
   const { configCmd } = await import("../src/commands/config.ts");
   const configOutput = await captureOutput(async () => {
-    await configCmd.run?.({ args: {} } as never);
+    await configCmd.run?.({ args: { target: configUninitTarget } } as never);
   });
 
   // v2.0.0-rc.37 Wave A2: `fabric serve` snapshot removed alongside the
