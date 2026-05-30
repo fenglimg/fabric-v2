@@ -1460,6 +1460,44 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
   });
 });
 
+// v2.2 W3-REVIEW (codex MED-1): scoring calibration lock. The additive score is
+// deliberately BM25-LED — a strong content match outranks a perfect structural
+// (locality) match. This test pins that design intent so a future weight tweak
+// that accidentally lets locality/recency/salience trample content is caught.
+describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
+  it("a strong multi-term content match outranks a perfect-locality non-match", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const node = (id: string, file: string, summary: string, relevancePaths: string[]) => ({
+      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
+      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: relevancePaths },
+    });
+    const fm = (id: string, summary: string, rp: string) =>
+      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", `relevance_paths: [${rp}]`, "---", `# ${id}`, ""].join("\n");
+    // CONTENT: matches the rare query terms, but NO locality (no relevance_paths).
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "content.md"), fm("KT-DEC-8001", "zephyr quokka nimbus retrieval", ""));
+    // LOCALITY: perfect same-file locality but ZERO content overlap with the query.
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "local.md"), fm("KT-DEC-8002", "unrelated bottle topic", "src/target.ts"));
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-cal", nodes: {
+        "KT-DEC-8001": node("KT-DEC-8001", ".fabric/knowledge/decisions/content.md", "zephyr quokka nimbus retrieval", []),
+        "KT-DEC-8002": node("KT-DEC-8002", ".fabric/knowledge/decisions/local.md", "unrelated bottle topic", ["src/target.ts"]),
+      } }, null, 2)}\n`,
+    );
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/target.ts"],
+      target_paths: ["src/target.ts"],
+      intent: "zephyr quokka nimbus",
+    });
+
+    // Content match (BM25 ~3 rare terms × 50) beats perfect same-file locality (100).
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-8001", "KT-DEC-8002"]);
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
   tempDirs.push(projectRoot);
