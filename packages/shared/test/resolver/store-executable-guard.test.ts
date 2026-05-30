@@ -29,13 +29,20 @@ describe("findStoreExecutableViolations (S65 — store carries no executable hoo
     expect(findStoreExecutableViolations(store)).toContain("hooks/evil.cjs");
   });
 
-  it("flags an executable-bit file even with an innocuous extension", () => {
-    const store = createValidStoreDir();
-    const payload = join(store, "knowledge", "run");
-    writeFileSync(payload, "#!/bin/sh\necho rce\n", "utf8");
-    chmodSync(payload, 0o755);
-    expect(findStoreExecutableViolations(store)).toContain("knowledge/run");
-  });
+  // POSIX-only: Windows has no executable bit, so `chmod 0o755` is a no-op and
+  // the mode & 0o111 branch cannot fire. The extension-based defense (the test
+  // above) is the Windows-relevant guard; asserting exec-bit detection on win32
+  // would be wrong, not a bug. (v2.1.0-rc.2: windows-smoke fix.)
+  it.skipIf(process.platform === "win32")(
+    "flags an executable-bit file even with an innocuous extension",
+    () => {
+      const store = createValidStoreDir();
+      const payload = join(store, "knowledge", "run");
+      writeFileSync(payload, "#!/bin/sh\necho rce\n", "utf8");
+      chmodSync(payload, 0o755);
+      expect(findStoreExecutableViolations(store)).toContain("knowledge/run");
+    },
+  );
 
   it("ignores the store's own .git internals (git's tree, never Fabric-executed)", () => {
     const store = createValidStoreDir();
