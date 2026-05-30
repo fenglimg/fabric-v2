@@ -686,6 +686,141 @@ export const sessionArchiveAttemptedEventSchema = z.object({
   knowledge_proposed_ids: z.array(z.string()).default([]),
 });
 
+// ---------------------------------------------------------------------------
+// v2.1 GATE-INSTR (NEW-N-3): 9 interaction-axis instrumentation events.
+//
+// Source spec: .workflow/.scratchpad/e2e-axis3-v3-delta.md §4 + e2e-methodology-
+// FINAL.md:87 (codex round10). These lift the interaction axis (hook→behavior
+// delta, skill auto-invoke F1, MCP stdio behavior, LLM-judge auditability) from
+// T2/T3 "can't observe today" up to T1-ledger "replayable from events.jsonl".
+//
+// JOIN-FIELD HARD CONSTRAINT (spec §4): every interaction event carries
+// session_id + correlation_id (envelope, optional there but expected here);
+// MCP events add request_id; LLM-judge adds input_trace_id. Without these the
+// cross-event join (e.g. skill_trigger_candidate ⋈ skill_invocation_started to
+// measure false-negatives) cannot reconstruct, so the events would be inert.
+// Kept envelope-optional for schema additivity / back-compat; the EMIT sites
+// (future wiring) are responsible for always populating them.
+// ---------------------------------------------------------------------------
+
+// 1. hook_surface_emitted — a hook rendered knowledge into a client channel.
+// Measures hook→behavior delta (what was injected vs. what the agent did).
+export const hookSurfaceEmittedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("hook_surface_emitted"),
+  hook_name: z.string(),
+  client: z.enum(["cc", "codex", "cursor"]),
+  target_channel: z.string(),
+  rendered_ids: z.array(z.string()),
+  delivery_status: z.enum(["delivered", "suppressed", "error"]),
+  suppression_reason: z.string().optional(),
+});
+
+// 2. hook_signal_emitted — a nudge signal (archive/review/maintenance hint)
+// evaluated its threshold. Measures nudge-trigger logic (fired vs. not).
+export const hookSignalEmittedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("hook_signal_emitted"),
+  signal_type: z.enum(["archive", "review", "maintenance", "other"]),
+  threshold: z.number(),
+  actual_value: z.number(),
+  fired: z.boolean(),
+});
+
+// 3. mcp_stdio_trace — one MCP stdio tool round-trip. Measures MCP call
+// behavior (latency / payload size / errors). request_id is the join key.
+export const mcpStdioTraceEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("mcp_stdio_trace"),
+  tool_name: z.string(),
+  request_id: z.string(),
+  duration_ms: z.number().nonnegative(),
+  status: z.enum(["ok", "error"]),
+  payload_bytes_in: z.number().int().nonnegative(),
+  payload_bytes_out: z.number().int().nonnegative(),
+  error_code: z.string().optional(),
+});
+
+// 4. payload_guard_observed — the ≤4k MCP payload guard ran. Measures
+// truncation behavior (G-MCP-PAYLOAD's runtime counterpart).
+export const payloadGuardObservedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("payload_guard_observed"),
+  tool_name: z.string(),
+  path_count: z.number().int().nonnegative(),
+  tokens_estimated: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  cap: z.number().int().positive(),
+});
+
+// 5. skill_invocation_started — a skill began. trigger_source distinguishes
+// user-typed vs. auto-invoke vs. AI self-trigger (the cite/self-archive E3).
+export const skillInvocationStartedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("skill_invocation_started"),
+  skill_name: z.string(),
+  trigger_source: z.enum(["user", "auto_invoke", "ai_self_trigger", "chained"]),
+  entry_point: z.string(),
+});
+
+// 6. skill_invocation_completed — a skill finished. outcome closes the loop
+// opened by skill_invocation_started (join via correlation_id).
+export const skillInvocationCompletedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("skill_invocation_completed"),
+  skill_name: z.string(),
+  trigger_source: z.enum(["user", "auto_invoke", "ai_self_trigger", "chained"]),
+  entry_point: z.string(),
+  outcome: z.enum(["completed", "aborted", "error", "no_op"]),
+  elapsed_ms: z.number().nonnegative().optional(),
+});
+
+// 7. skill_phase_transition — phase-level telemetry within a skill run.
+export const skillPhaseTransitionEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("skill_phase_transition"),
+  skill_name: z.string(),
+  phase: z.string(),
+  status: z.enum(["entered", "completed", "skipped", "failed"]),
+  checkpoint: z.string().optional(),
+  elapsed_ms: z.number().nonnegative().optional(),
+});
+
+// 8. skill_trigger_candidate — a moment where a skill COULD have auto-invoked
+// (signal present). Joined with skill_invocation_started it yields auto-invoke
+// false-negatives (candidate fired but no invocation = should-have-triggered).
+export const skillTriggerCandidateEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("skill_trigger_candidate"),
+  skill_name: z.string(),
+  trigger_source: z.enum(["user", "auto_invoke", "ai_self_trigger", "chained"]),
+  signal: z.string(),
+  invoked: z.boolean(),
+});
+
+// 9. llm_judge_run — an LLM-judge scored a T3 quality dimension. input_trace_id
+// links the judged artifact back to its producing run (T3 auditability).
+export const llmJudgeRunEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("llm_judge_run"),
+  prompt: z.string(),
+  version: z.string(),
+  model: z.string(),
+  input_trace_id: z.string(),
+  score: z.number(),
+  rationale: z.string(),
+});
+
+// (9, cont.) client_capability_snapshot — records a client's capability set so
+// cross-client behavior deltas (D6 parity) can be attributed to capability gaps.
+export const clientCapabilitySnapshotEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("client_capability_snapshot"),
+  client: z.enum(["cc", "codex", "cursor"]),
+  capabilities: z.array(z.string()),
+  version: z.string(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -768,6 +903,17 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // cross-session digest, outcome-based rescan filter (skips user_dismissed),
   // covered_through_ts watermark, and `fabric doctor --archive-history`.
   sessionArchiveAttemptedEventSchema,
+  // v2.1 GATE-INSTR (NEW-N-3): 9 interaction-axis instrumentation events.
+  hookSurfaceEmittedEventSchema,
+  hookSignalEmittedEventSchema,
+  mcpStdioTraceEventSchema,
+  payloadGuardObservedEventSchema,
+  skillInvocationStartedEventSchema,
+  skillInvocationCompletedEventSchema,
+  skillPhaseTransitionEventSchema,
+  skillTriggerCandidateEventSchema,
+  llmJudgeRunEventSchema,
+  clientCapabilitySnapshotEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -814,6 +960,17 @@ export type EventsRotatedEvent = z.infer<typeof eventsRotatedEventSchema>;
 export type ServeLockClearedEvent = z.infer<typeof serveLockClearedEventSchema>;
 export type KnowledgeEnrichedEvent = z.infer<typeof knowledgeEnrichedEventSchema>;
 export type SessionArchiveAttemptedEvent = z.infer<typeof sessionArchiveAttemptedEventSchema>;
+// v2.1 GATE-INSTR (NEW-N-3) interaction-axis event types.
+export type HookSurfaceEmittedEvent = z.infer<typeof hookSurfaceEmittedEventSchema>;
+export type HookSignalEmittedEvent = z.infer<typeof hookSignalEmittedEventSchema>;
+export type McpStdioTraceEvent = z.infer<typeof mcpStdioTraceEventSchema>;
+export type PayloadGuardObservedEvent = z.infer<typeof payloadGuardObservedEventSchema>;
+export type SkillInvocationStartedEvent = z.infer<typeof skillInvocationStartedEventSchema>;
+export type SkillInvocationCompletedEvent = z.infer<typeof skillInvocationCompletedEventSchema>;
+export type SkillPhaseTransitionEvent = z.infer<typeof skillPhaseTransitionEventSchema>;
+export type SkillTriggerCandidateEvent = z.infer<typeof skillTriggerCandidateEventSchema>;
+export type LlmJudgeRunEvent = z.infer<typeof llmJudgeRunEventSchema>;
+export type ClientCapabilitySnapshotEvent = z.infer<typeof clientCapabilitySnapshotEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -858,7 +1015,17 @@ export type EventLedgerEvent =
   | EventsRotatedEvent
   | ServeLockClearedEvent
   | KnowledgeEnrichedEvent
-  | SessionArchiveAttemptedEvent;
+  | SessionArchiveAttemptedEvent
+  | HookSurfaceEmittedEvent
+  | HookSignalEmittedEvent
+  | McpStdioTraceEvent
+  | PayloadGuardObservedEvent
+  | SkillInvocationStartedEvent
+  | SkillInvocationCompletedEvent
+  | SkillPhaseTransitionEvent
+  | SkillTriggerCandidateEvent
+  | LlmJudgeRunEvent
+  | ClientCapabilitySnapshotEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
