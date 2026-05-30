@@ -783,6 +783,11 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       reason,
       signal: "archive",
       recommended_skill: "fabric-archive",
+      // v2.1 NEW-N-3: surface the firing sub-signal's numbers for the
+      // hook_signal_emitted ledger row main() writes. Dual trigger (24h OR
+      // N-edits): report the hours pair when it fired, else the edit-count pair.
+      threshold: triggerByHours ? archiveHintHours : editStats.threshold,
+      actual_value: triggerByHours ? hoursElapsed : editStats.editsSinceLastProposed,
     };
   }
 
@@ -819,6 +824,10 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       reason,
       signal: "review",
       recommended_skill: "fabric-review",
+      // v2.1 NEW-N-3: dual trigger (pending-count OR oldest-age). Report the
+      // count pair when it fired, else the oldest-age-in-days pair.
+      threshold: triggerByPendingCount ? reviewHintPendingCount : reviewHintPendingAgeDays,
+      actual_value: triggerByPendingCount ? stats.count : stats.oldestAgeMs / MS_PER_DAY,
     };
   }
 
@@ -869,6 +878,10 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       reason,
       signal: "import",
       recommended_skill: "fabric-import",
+      // v2.1 NEW-N-3: underseed corpus trigger — node-count vs threshold. The
+      // "import" signal collapses to schema signal_type "other" in main().
+      threshold: underseed.threshold,
+      actual_value: underseed.nodeCount,
     };
   }
 
@@ -1207,7 +1220,62 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
     signal: "maintenance",
     // CLI recommendation rather than Skill — doctor is a CLI surface.
     recommended_skill: null,
+    // v2.1 NEW-N-3: staleness trigger. threshold=days; actual=ageDays. When
+    // lint was NEVER run ageDays is null — main() skips the signal emit rather
+    // than fabricate a number (honest gap over fake telemetry).
+    threshold: days,
+    actual_value: ageDays,
   };
+}
+
+// v2.1 NEW-N-3 (ADJ-NEWN-3): hook_signal_emitted instrumentation. Writes ONE
+// best-effort ledger row at the point a nudge is actually delivered (post-
+// cooldown), so the join key measures nudge-trigger logic (which signal fired,
+// at what threshold vs. actual). Emitted at delivery rather than at
+// threshold-cross so it inherits the cooldown gate — a fired-but-cooled signal
+// does not spam the ledger every session. Skips silently when threshold /
+// actual_value are not finite numbers (e.g. maintenance "never run" → null
+// age). Never blocks the hook (KT-DEC-0007).
+const SIGNAL_TYPE_ENUM = new Set(["archive", "review", "maintenance", "other"]);
+function emitSignalFiredEvent(cwd, sessionId, result) {
+  try {
+    if (!result || typeof result.signal !== "string") return;
+    const threshold = result.threshold;
+    const actualValue = result.actual_value;
+    if (
+      typeof threshold !== "number" ||
+      !Number.isFinite(threshold) ||
+      typeof actualValue !== "number" ||
+      !Number.isFinite(actualValue)
+    ) {
+      return;
+    }
+    const fabricDir = join(cwd, FABRIC_DIR);
+    if (!existsSync(fabricDir)) return;
+    // "import" / any non-canonical signal collapses to schema's catch-all "other".
+    const signalType = SIGNAL_TYPE_ENUM.has(result.signal) ? result.signal : "other";
+    let idSuffix;
+    try {
+      idSuffix = require("node:crypto").randomUUID();
+    } catch {
+      idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    const event = {
+      kind: "fabric-event",
+      id: `event:${idSuffix}`,
+      ts: Date.now(),
+      schema_version: 1,
+      event_type: "hook_signal_emitted",
+      signal_type: signalType,
+      threshold,
+      actual_value: actualValue,
+      fired: true,
+    };
+    if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
+    appendFileSync(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n", "utf8");
+  } catch {
+    // best-effort telemetry — never block the hook
+  }
 }
 
 /**
@@ -1951,6 +2019,9 @@ function main(env, stdio) {
     // see MAINTENANCE_HINT_LAST_EMIT_FILE). The A/B/C shared cooldown cache
     // uses hours, so we branch here to avoid mixing semantics.
     if (result.signal === "maintenance") {
+      emitSignalFiredEvent(cwd, sessionId, result);
+      delete result.threshold;
+      delete result.actual_value;
       out.write(JSON.stringify(result));
       writeMaintenanceLastEmit(cwd, nowMs);
       return;
@@ -1972,6 +2043,9 @@ function main(env, stdio) {
       return; // Still in cooldown — silent.
     }
 
+    emitSignalFiredEvent(cwd, sessionId, result);
+    delete result.threshold;
+    delete result.actual_value;
     out.write(JSON.stringify(result));
     cache[result.signal] = nowMs;
     writeShownCache(cwd, cache);

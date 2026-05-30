@@ -47,7 +47,7 @@
  */
 
 const { spawnSync } = require("node:child_process");
-const { existsSync, readdirSync, readFileSync } = require("node:fs");
+const { appendFileSync, existsSync, readdirSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
@@ -67,7 +67,7 @@ const {
 const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
 // CLAUDE_PROJECT_DIR single-bit check below).
-const { isClaudeCode } = require("./lib/client-adapter.cjs");
+const { isClaudeCode, detectClient } = require("./lib/client-adapter.cjs");
 // v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
 // resolved-bindings snapshot. The hook NEVER re-resolves stores or walks store
 // trees — it only echoes the read-set the CLI already computed. Best-effort.
@@ -820,6 +820,48 @@ function main(env, stdio) {
       } catch {
         // Best-effort — stderr is the durable contract
       }
+    }
+
+    // v2.1 NEW-N-3 (ADJ-NEWN-3): hook_surface_emitted instrumentation. One
+    // best-effort ledger row recording WHICH broad-scoped ids were surfaced
+    // into the session — the join key for measuring hook→behavior delta (did
+    // the agent fab_recall what the hook surfaced?). SessionStart fires once
+    // per session boot so this never bloats the ledger. Never blocks the hook
+    // (KT-DEC-0007): any failure (no .fabric/, undetected client, write error)
+    // degrades to silent skip. Client is omitted-by-skip when undetectable
+    // because the schema's `client` enum admits only cc/codex/cursor.
+    try {
+      const surfaceClient = detectClient();
+      const fabricDir = join(cwd, FABRIC_DIR_REL);
+      if (surfaceClient !== undefined && existsSync(fabricDir)) {
+        const renderedIds =
+          resolvedPayload && Array.isArray(resolvedPayload.entries)
+            ? resolvedPayload.entries
+                .map((e) => (e && typeof e.id === "string" ? e.id : null))
+                .filter((x) => x !== null)
+            : [];
+        let idSuffix;
+        try {
+          idSuffix = require("node:crypto").randomUUID();
+        } catch {
+          idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        }
+        const surfaceEvent = {
+          kind: "fabric-event",
+          id: `event:${idSuffix}`,
+          ts: Date.now(),
+          schema_version: 1,
+          event_type: "hook_surface_emitted",
+          hook_name: "knowledge-hint-broad",
+          client: surfaceClient,
+          target_channel: reminderToContext ? "stdout-additionalContext" : "stderr",
+          rendered_ids: renderedIds,
+          delivery_status: "delivered",
+        };
+        appendFileSync(join(fabricDir, "events.jsonl"), JSON.stringify(surfaceEvent) + "\n", "utf8");
+      }
+    } catch {
+      // best-effort telemetry — never block session start
     }
 
     // v2.0.0-rc.33 W2-5 (P1-8): record successful emit timestamp for the
