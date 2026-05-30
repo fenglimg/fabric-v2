@@ -155,11 +155,46 @@ export {
 // can reap legacy `.fabric/.serve.lock` corpses left behind by rc ≤36
 // `fabric serve` invocations. No public re-exports remain.
 
+// v2.2 MC2-server-instructions (W1-T6): server-level `instructions` surfaced in
+// the MCP `initialize` result. Before this the server shipped only name+version,
+// so an AI client connecting to Fabric had NO server-authored guidance on how to
+// drive the tools — it relied entirely on the bootstrap AGENTS.md being present
+// and read. This is the D2 (MCP-first) anchor: a concise tool manifest + the
+// canonical retrieval flow + the cite/session conventions, delivered by the
+// server itself at connect time so the behavior layer survives even where the
+// bootstrap is absent (a bare MCP host). Kept terse — it is sent on every
+// initialize. Exported so the contract can be asserted deterministically.
+export const FABRIC_SERVER_INSTRUCTIONS = [
+  "Fabric is a cross-client knowledge layer: durable team/personal decisions, pitfalls, guidelines, models, and processes this server surfaces so you do not re-learn them each session.",
+  "",
+  "Retrieval — do this BEFORE you edit code or commit to a decision:",
+  "- Default (one step): call `fab_recall(paths)` with the files you are about to touch; it returns the relevant KB bodies directly.",
+  "- Two step (only when single-step bodies are too large and you must trim noise): `fab_plan_context(paths)` returns a `selection_token` + ranked candidate descriptions, then `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids })` fetches the chosen bodies. The token comes ONLY from a recent `fab_plan_context` — never fabricate one.",
+  "",
+  "Tools:",
+  "- `fab_recall` — one-shot KB recall for given paths (preferred entry point).",
+  "- `fab_plan_context` — preview ranked candidate descriptions and obtain a selection_token (two-step retrieval / large corpora).",
+  "- `fab_get_knowledge_sections` — fetch full bodies for a selection_token + chosen stable_ids.",
+  "- `fab_extract_knowledge` — extract structured knowledge from text you supply.",
+  "- `fab_archive_scan` — scan recent work for archive-worthy knowledge candidates.",
+  "- `fab_review` — review and triage pending knowledge entries.",
+  "",
+  "Conventions:",
+  "- Candidate lists are ranked best-first (content relevance) and bounded; `omitted_candidate_count > 0` means more exist — narrow your intent to surface them.",
+  "- Pass the client `session_id` to `fab_recall` / `fab_plan_context` so cross-session knowledge-debt tracking stays accurate.",
+  "- Cite the KB id you applied or dismissed before edits, per the project's cite policy.",
+].join("\n");
+
 export function createFabricServer(tracker?: InFlightTracker): McpServer {
-  const server = new McpServer({
-    name: "fabric-knowledge-server",
-    version: __SERVER_VERSION__,
-  });
+  const server = new McpServer(
+    {
+      name: "fabric-knowledge-server",
+      version: __SERVER_VERSION__,
+    },
+    {
+      instructions: FABRIC_SERVER_INSTRUCTIONS,
+    },
+  );
 
   registerPlanContext(server, tracker);
   registerKnowledgeSections(server, tracker);
