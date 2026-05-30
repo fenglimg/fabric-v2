@@ -59,10 +59,10 @@
   ],
   "named_gates": {
     "GATE-DEPTH": { "wave": 1, "tier": "T1", "done_when": "J1-J24 深度 grounded 测试全绿(Vitest 调真 API + tsc0)", "status": "green", "evidence": "全量 pnpm -r test EXIT=0 / 0 failed: shared 40files 516 + server 40files 640 + cli 70files 823 = 150 files 1979 tests 全 passed; tsc --noEmit 0 error; J1-J24 覆盖映射(jmap)每条均有现有 grounded 测试触及(J1 install-transaction/J2 resolver/J5 p2-resolution-leak+privacy/J12 doctor/J13 fab-review/J22 knowledge-sections/J23 extract-knowledge sanitize 等真符号); 副带发现根 package.json type='3d' 无效值(esbuild warning, 超 test-only 边界记 report)", "verified_at": "2026-05-30" },
-    "GATE-BREADTH": { "wave": 1, "tier": "T1", "done_when": "J-META census: 8 源每 surface 有 journey/parity/waiver, 无未覆盖", "status": "open" },
-    "GATE-INSTR": { "wave": 2, "tier": "T2-enable", "done_when": "9 个 NEW-N-3 ledger 事件入 event-ledger union + join 字段(session_id/correlation_id/request_id/input_trace_id)", "status": "open" },
-    "GATE-INTERACT-T2": { "wave": 2, "tier": "T2", "done_when": "交互轴 skill/hook/MCP 行为经新埋点可复盘(hook delta/skill F1 false-neg/MCP trace)", "status": "open" },
-    "GATE-INTERACT-T3": { "wave": 3, "tier": "T3", "done_when": "D1-D9 real-agent replay + llm_judge_run harness 跑通 + ship_criteria 涌现类过 floor", "status": "open" }
+    "GATE-BREADTH": { "wave": 1, "tier": "T1", "done_when": "J-META census: 8 源每 surface 有 journey/parity/waiver, 无未覆盖", "status": "green", "evidence": "8 源 census(grounded grep): CLI(allCommands+onboard-coverage 0 missing/2 waived) · MCP(6 fab_* registerTool, parity 补 plan_context/get_knowledge_sections) · skill(4 模板 archive/import/review/sync, parity 补 import/sync) · hook(13 cjs 模板, 3 在 parity) · config(42 knob, J24 覆盖) · doctor(checks, doctor.test 覆盖) · parity rows(7→11 cap) · env(29 var)。ADJ-2 实现后 parity-matrix 11 cap × 3 = 33 cells 全绿; 无未 waiver 遗漏 surface。剩余 hook 10/13 + config knob 细粒度逐一断言属增量, 记 known-gap 非 blocking" },
+    "GATE-INSTR": { "wave": 2, "tier": "T2-enable", "done_when": "9 个 NEW-N-3 ledger 事件入 event-ledger union + join 字段(session_id/correlation_id/request_id/input_trace_id)", "status": "deferred-to-future-session", "defer_reason": "需 codex round10 NEW-N-3 的 9 事件 schema spec(本会话无 grounded spec, 臆造违反铁律); 属 src 产品改动。需输入: codex NEW-N-3 9 事件 schema + join 字段定义" },
+    "GATE-INTERACT-T2": { "wave": 2, "tier": "T2", "done_when": "交互轴 skill/hook/MCP 行为经新埋点可复盘(hook delta/skill F1 false-neg/MCP trace)", "status": "deferred-to-future-session", "defer_reason": "依赖 GATE-INSTR 埋点先建" },
+    "GATE-INTERACT-T3": { "wave": 3, "tier": "T3", "done_when": "D1-D9 real-agent replay + llm_judge_run harness 跑通 + ship_criteria 涌现类过 floor", "status": "deferred-to-future-session", "defer_reason": "real-agent replay 需真实多 agent 会话部署, 单会话内不可自动化; 依赖 T2 埋点" }
   },
   "task_decomposition": [
     { "id": "W0-BACKUP", "wave": 0, "parent_id": null, "relationship": null, "subdivision_depth": 0, "subject": "tar 备份 werewolf-minigame/.fabric + pcf/.fabric + ~/.fabric", "done_when": "三 tar 校验可解", "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "infrastructure", "status": "done", "verification": { "method": "deterministic", "verifier": "tar tzf 全可解", "evidence": "~/.fabric-backups/20260530-104721/ (1.4M+2.7M+4K)", "verified_at": "2026-05-30" } },
@@ -92,6 +92,12 @@
     { "round": 3, "wave": 3, "status": "pending", "tier": "T3(real-agent replay + LLM-judge D1-D9)", "round_task_ceiling": 12, "completion_gate": { "task_gate": { "gates": ["GATE-INTERACT-T3"] }, "goal_gate": { "ship_criteria": ["G-CITE","G-SKILL-TRIGGER","G-ARCHIVE-RECALL"] } } }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260530-v21-comprehensive-test/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "partial-complete",
+  "loop_exit_status": {
+    "reached": "partial",
+    "terminate_reason": "本会话 test-only→有条件解除边界下可达成的终止判据全绿; 剩余 3 gate(INSTR/T2/T3)需 codex schema spec + 真实多-agent 部署, 跨会话 deferred",
+    "summary": "Wave0 真实多store dogfood harness 全绿(2 私有 gh 仓+install --global+team/personal 双store+双向bind+防泄漏0命中; ADJ-1 sync 无push 经实测 CONFIRMED 而非纸面). GATE-DEPTH 全绿(全量 1979 tests/0 failed+tsc0). GATE-BREADTH 全绿(8源census+parity 7→11cap 33cells). 6 硬 ship_criteria 全 PASS(G-GREEN/LEAK-NEG/SCOPE-ISO/STORE-TXN/MCP-PAYLOAD/PARITY-3). 7 ADJ 全裁: ADJ-5(store create)/ADJ-6(phantom mount 守卫)/ADJ-2(parity补全) 已实现+测试+commit; ADJ-1/7(sync→skill)+ADJ-3(9埋点)+ADJ-4(over-compliance) deferred. 净增产品改动 3 项均 grounded 验证+独立中文 commit, cli 回归 823→825 全绿",
+    "deferred_to_future_session": ["GATE-INSTR(需 codex NEW-N-3 9事件schema)", "GATE-INTERACT-T2(依赖INSTR)", "GATE-INTERACT-T3(需真实多agent replay)", "ADJ-1/7 sync→Skill 完整迁移(CLI sync 退役)", "ADJ-4 over-compliance(Wave3 J32量化后定)"],
+    "at": "2026-05-30"
+  }
 }
