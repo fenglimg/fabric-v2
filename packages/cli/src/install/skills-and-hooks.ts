@@ -81,6 +81,8 @@ const SKILL_SYNC_TEMPLATE_REL = "skills/fabric-sync/SKILL.md";
 const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
 // v2.2 SK1-audit (W2-T5): semantic-deprecation audit skill template.
 const SKILL_AUDIT_TEMPLATE_REL = "skills/fabric-audit/SKILL.md";
+// v2.2 SK2-connect (W3-T2): knowledge-graph relation skill template.
+const SKILL_CONNECT_TEMPLATE_REL = "skills/fabric-connect/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -145,6 +147,11 @@ export const SKILL_DESTINATIONS = {
   fabricAudit: [
     ".claude/skills/fabric-audit/SKILL.md",
     ".codex/skills/fabric-audit/SKILL.md",
+  ],
+  // v2.2 SK2-connect (W3-T2): fabric-connect knowledge-graph relation skill.
+  fabricConnect: [
+    ".claude/skills/fabric-connect/SKILL.md",
+    ".codex/skills/fabric-connect/SKILL.md",
   ],
 } as const;
 
@@ -542,6 +549,31 @@ export async function installFabricAuditSkill(
   for (const target of targets) {
     const staleMsg = inspectStaleInstall(target, source);
     const result = await copyTextIdempotent("skill-audit", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * v2.2 SK2-connect (W3-T2): install the fabric-connect Skill — the conversational
+ * façade over knowledge-graph relation discovery (writes H2 `related` edges via
+ * the fabric-review write path). Sibling installer to audit/store/etc; same
+ * 2-client coverage. Single-file skill (no `ref/` dir).
+ */
+export async function installFabricConnectSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_CONNECT_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-connect");
+  const targets = SKILL_DESTINATIONS.fabricConnect.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-connect", source, target);
     if (staleMsg && result.status === "written") {
       result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
     }

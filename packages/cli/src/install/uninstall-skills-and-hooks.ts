@@ -114,6 +114,16 @@ export async function uninstallFabricAuditSkill(
   return removeSkill("skill-audit", SKILL_DESTINATIONS.fabricAudit, projectRoot);
 }
 
+/**
+ * v2.2 SK2-connect (W3-T2). Inverse of `installFabricConnectSkill`. Removes each
+ * SKILL.md at `SKILL_DESTINATIONS.fabricConnect`, then removes the empty parent.
+ */
+export async function uninstallFabricConnectSkill(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeSkill("skill-connect", SKILL_DESTINATIONS.fabricConnect, projectRoot);
+}
+
 async function removeSkill(
   step: string,
   rels: readonly string[],
@@ -561,7 +571,10 @@ export async function uninstallBootstrapStage(
     removeArchiveHintHook(projectRoot),
   );
 
-  // 5. Skill files (reverse of install order: audit → sync → import → review → archive)
+  // 5. Skill files (reverse of install order: connect → audit → sync → import → review → archive)
+  await runAndCollect(results, "skill-connect", projectRoot, () =>
+    uninstallFabricConnectSkill(projectRoot),
+  );
   await runAndCollect(results, "skill-audit", projectRoot, () =>
     uninstallFabricAuditSkill(projectRoot),
   );
