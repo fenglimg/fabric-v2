@@ -22,11 +22,18 @@
 //  - Idempotent flush — calling flushMetrics with zero counters is a no-op
 //    (no spurious empty rows).
 
-import { appendFile, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+
+import { createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { ensureParentDirectory, getMetricsLedgerPath, isNodeError } from "./_shared.js";
 
 const DEFAULT_FLUSH_INTERVAL_MS = 60 * 1000;
+
+// W1-01 (ISS-015): serialize appends to metrics.jsonl through the same
+// per-path write queue event-ledger uses, so concurrent flushMetrics calls on
+// the same root can't interleave / tear a line. Mirrors event-ledger.ts.
+const metricsQueue = createLedgerWriteQueue();
 
 // Per-project counter accumulators, keyed by resolved project root. Keeps
 // the API stateless from the caller's POV — bumpCounter / flushMetrics take
@@ -99,7 +106,7 @@ export async function flushMetrics(
   const path = getMetricsLedgerPath(projectRoot);
   try {
     await ensureParentDirectory(path);
-    await appendFile(path, `${JSON.stringify(row)}\n`);
+    await metricsQueue.append(path, JSON.stringify(row));
   } catch {
     // Re-seed the bucket so the failed counts survive into the next flush.
     const bucket = bucketFor(projectRoot);

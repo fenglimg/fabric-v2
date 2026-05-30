@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -172,6 +172,57 @@ export async function writeKnowledgeMeta(
   return result;
 }
 
+// ISS-004: buildKnowledgeMeta (and thus this fn) runs on EVERY read path
+// (loadActiveMeta / loadActiveMetaOrStale call it purely to compare the derived
+// revision against the on-disk one). Previously it read + sha256 + frontmatter-
+// parsed every knowledge .md on every call — the 5s TTL on the on-disk meta
+// cache did not cover this derived computation, so it re-ran per request. We
+// gate the expensive read/hash/parse behind a content signature built from the
+// cheap directory walk + per-file (mtime, size) stat plus the previous meta's
+// revision (the only other input that affects the merged nodes). Signature
+// unchanged → return the cached meta with zero file reads. Result is identical
+// because any content change moves a file's mtime/size, and any merge-relevant
+// previous-meta change moves its revision.
+type KnowledgeMetaCacheEntry = { signature: string; meta: AgentsMeta };
+const knowledgeMetaCache = new Map<string, KnowledgeMetaCacheEntry>();
+
+// Test-only seam (mirrors __knowledgeTestIndexCacheStats): asserts read-path
+// calls don't re-hash unchanged knowledge files.
+export const __knowledgeMetaCacheStats = { fileReads: 0 };
+export function __resetKnowledgeMetaCache(): void {
+  knowledgeMetaCache.clear();
+  __knowledgeMetaCacheStats.fileReads = 0;
+}
+
+async function computeKnowledgeFileSignature(
+  projectRoot: string,
+  ruleFiles: string[],
+  previousMeta: AgentsMetaShapeForSig,
+): Promise<string> {
+  // The derived meta = { ...previousMeta, revision/nodes (from files), counters
+  // (from previousMeta) }. So the cache result depends on the FULL previousMeta,
+  // not just its revision — counters (and the per-node merge of existing fields)
+  // can change WITHOUT the revision changing (revision hashes nodes only). A
+  // doctor --fix that bumps counters in place is exactly such a case, so keying
+  // on revision alone would return a stale (un-bumped) meta. Fingerprint the
+  // whole previousMeta instead (cheap: in-memory, no file I/O).
+  const prevFingerprint = previousMeta === undefined ? "none" : sha256(stableStringify(previousMeta));
+  const parts: string[] = [`meta:${prevFingerprint}`];
+  for (const contentRef of ruleFiles) {
+    try {
+      const { mtimeMs, size } = await stat(resolveContentRefPath(projectRoot, contentRef));
+      parts.push(`${contentRef}:${mtimeMs}:${size}`);
+    } catch {
+      // File vanished between walk and stat — encode as absent so the signature
+      // differs from a present file and forces a recompute.
+      parts.push(`${contentRef}:absent`);
+    }
+  }
+  return parts.join("|");
+}
+
+type AgentsMetaShapeForSig = AgentsMeta | undefined;
+
 export async function computeKnowledgeBasedAgentsMeta(
   projectRootInput: string,
   existingMeta?: AgentsMeta,
@@ -182,6 +233,13 @@ export async function computeKnowledgeBasedAgentsMeta(
   const previousMeta = existingMeta ?? await readExistingMeta(join(projectRoot, ".fabric", "agents.meta.json"));
   const existingByContentRef = indexExistingNodesByContentRef(previousMeta);
   const ruleFiles = await findKnowledgeFiles(projectRoot);
+
+  const signature = await computeKnowledgeFileSignature(projectRoot, ruleFiles, previousMeta);
+  const cached = knowledgeMetaCache.get(projectRoot);
+  if (cached !== undefined && cached.signature === signature) {
+    return cached.meta;
+  }
+
   const nodes: Record<string, NodeMeta> = {};
 
   // v2.0: there is no longer a single L0 anchor file. Knowledge entries
@@ -192,6 +250,7 @@ export async function computeKnowledgeBasedAgentsMeta(
 
   for (const contentRef of ruleFiles) {
     const source = await readFile(resolveContentRefPath(projectRoot, contentRef), "utf8");
+    __knowledgeMetaCacheStats.fileReads += 1;
     const existing = existingByContentRef.get(contentRef);
     const hash = sha256(source);
     const defaults = createDefaultNodeMeta(contentRef);
@@ -222,12 +281,14 @@ export async function computeKnowledgeBasedAgentsMeta(
   // the KnowledgeIdAllocator.
   const counters = previousMeta?.counters ?? defaultAgentsMetaCounters();
 
-  return {
+  const meta: AgentsMeta = {
     ...(previousMeta ?? {}),
     revision: computeRevision(nodes),
     nodes: sortNodes(nodes),
     counters,
   };
+  knowledgeMetaCache.set(projectRoot, { signature, meta });
+  return meta;
 }
 
 export async function computeKnowledgeTestIndex(
@@ -432,30 +493,74 @@ async function findKnowledgeFiles(projectRoot: string): Promise<string[]> {
   return files.sort();
 }
 
+const annotationPattern = /^\s*\/\/\s*@fabric-verify\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*$/u;
+
+function parseFabricVerifyAnnotations(
+  source: string,
+  testFile: string,
+  testHash: string,
+): FabricVerifyAnnotation[] {
+  const annotations: FabricVerifyAnnotation[] = [];
+  const lines = source.split(/\r?\n/u);
+  for (const [index, line] of lines.entries()) {
+    const match = annotationPattern.exec(line);
+    if (match === null) {
+      continue;
+    }
+    annotations.push({ stableId: match[1], testFile, testHash, line: index + 1 });
+  }
+  return annotations;
+}
+
+// ISS-003: computeKnowledgeTestIndex runs on EVERY recall/plan-context (via
+// buildKnowledgeMeta). Previously it read + sha256'd every *.test.ts in the
+// whole tree on each call. We keep the directory walk (readdir-only, cheap) to
+// detect added/removed test files, but gate the expensive per-file read+hash
+// behind an mtime/size cache: a file is re-read only when its (mtime, size)
+// changed since the last scan. Cache hits do zero content reads. Result is
+// byte-identical to a full scan because (mtime, size) changing is the trigger
+// for re-hashing, and an unchanged file's hash is unchanged.
+type CachedFileAnnotations = { mtimeMs: number; size: number; annotations: FabricVerifyAnnotation[] };
+const annotationCache = new Map<string, Map<string, CachedFileAnnotations>>();
+
+// Test-only seam (mirrors resetMetricsForTest / resetSyntheticSessionId): lets
+// the cache-equivalence test assert content reads are bounded to changed files.
+export const __knowledgeTestIndexCacheStats = { contentReads: 0 };
+export function __resetKnowledgeTestIndexCache(): void {
+  annotationCache.clear();
+  __knowledgeTestIndexCacheStats.contentReads = 0;
+}
+
 async function findFabricVerifyAnnotations(projectRoot: string): Promise<FabricVerifyAnnotation[]> {
   const files = await findTestFiles(projectRoot);
+  const perFile = annotationCache.get(projectRoot) ?? new Map<string, CachedFileAnnotations>();
   const annotations: FabricVerifyAnnotation[] = [];
-  const annotationPattern = /^\s*\/\/\s*@fabric-verify\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*$/u;
+  const seen = new Set<string>();
 
   for (const testFile of files) {
-    const source = await readFile(join(projectRoot, testFile), "utf8");
-    const testHash = sha256(source);
-    const lines = source.split(/\r?\n/u);
+    seen.add(testFile);
+    const absolutePath = join(projectRoot, testFile);
+    const { mtimeMs, size } = await stat(absolutePath);
+    const cached = perFile.get(testFile);
+    if (cached !== undefined && cached.mtimeMs === mtimeMs && cached.size === size) {
+      annotations.push(...cached.annotations);
+      continue;
+    }
 
-    for (const [index, line] of lines.entries()) {
-      const match = annotationPattern.exec(line);
-      if (match === null) {
-        continue;
-      }
+    const source = await readFile(absolutePath, "utf8");
+    __knowledgeTestIndexCacheStats.contentReads += 1;
+    const fileAnnotations = parseFabricVerifyAnnotations(source, testFile, sha256(source));
+    perFile.set(testFile, { mtimeMs, size, annotations: fileAnnotations });
+    annotations.push(...fileAnnotations);
+  }
 
-      annotations.push({
-        stableId: match[1],
-        testFile,
-        testHash,
-        line: index + 1,
-      });
+  // Evict cache entries for files that no longer exist (deleted/renamed).
+  for (const key of [...perFile.keys()]) {
+    if (!seen.has(key)) {
+      perFile.delete(key);
     }
   }
+  annotationCache.set(projectRoot, perFile);
 
   return annotations.sort(compareAnnotationEntries);
 }

@@ -15,6 +15,15 @@ import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js"
 
 const ledgerQueue = createLedgerWriteQueue();
 
+// ISS-005 test-only seam (mirrors __knowledgeMetaCacheStats): counts how many
+// ledger lines were actually JSON.parse + Zod-validated. The event_type
+// pushdown filter must keep this bounded to candidate lines, not the whole
+// ledger, on targeted queries like loadIdRedirectMap.
+export const __eventLedgerParseStats = { lineParses: 0 };
+export function __resetEventLedgerParseStats(): void {
+  __eventLedgerParseStats.lineParses = 0;
+}
+
 // v2.0.0-rc.22 Scope A T3: sliding-window-by-age retention constants and
 // soft-warn threshold. `EVENT_LEDGER_DEFAULT_RETENTION_DAYS` is applied when
 // neither `opts.retentionDays` nor `fabric_event_retention_days` (in
@@ -263,8 +272,22 @@ export async function readEventLedger(
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const events: StoredEventLedgerEvent[] = [];
+  const eventTypeFilter = options.event_type;
   for (let i = 0; i < trimmed.length; i++) {
     const line = trimmed[i];
+    // ISS-005 pushdown: when the caller asks for one event_type (e.g.
+    // loadIdRedirectMap's rare `knowledge_id_redirect`), skip the expensive
+    // JSON.parse + Zod for lines that cannot match. A line whose raw text does
+    // not contain the event_type token cannot carry that event_type (the value
+    // appears verbatim in the JSON), so pruning it is loss-free. Substring
+    // false-positives still get parsed and dropped by the post-parse filter
+    // below — the result is byte-identical to a full scan. Warning
+    // classification for unrelated lines is intentionally skipped here; the
+    // doctor full-ledger scan passes no event_type and keeps full coverage.
+    if (eventTypeFilter !== undefined && !line.includes(eventTypeFilter)) {
+      continue;
+    }
+    __eventLedgerParseStats.lineParses += 1;
     const parsed = parseEventLedgerLine(line, i);
     if (parsed !== null) {
       events.push(parsed);

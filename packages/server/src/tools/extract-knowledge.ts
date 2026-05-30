@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
   FabExtractKnowledgeInputShape,
+  FabExtractKnowledgeInputSchema,
   FabExtractKnowledgeOutputSchema,
   fabExtractKnowledgeAnnotations,
   type FabExtractKnowledgeInput,
@@ -39,8 +40,16 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
         const gateResult = await awaitFirstReconcileGate();
         const gateWarn = gateWarning(gateResult);
 
+        // F5: registerTool validates against FabExtractKnowledgeInputShape (the
+        // raw z.object shape), which does NOT carry the superRefine that
+        // requires a non-empty source_sessions[]. Re-parse through the full
+        // schema (mirrors review.ts) so a missing/empty source_sessions is
+        // rejected here instead of silently persisting a contract-violating
+        // pending entry with source_sessions=[].
+        const validated = FabExtractKnowledgeInputSchema.parse(input);
+
         const projectRoot = resolveProjectRoot();
-        const result = await extractKnowledge(projectRoot, input);
+        const result = await extractKnowledge(projectRoot, validated);
 
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
         if (gateWarn) {

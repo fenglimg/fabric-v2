@@ -555,7 +555,25 @@ function sortDescriptionItems(
         }
       : scoringContext;
 
-  return [...rawItems].sort((left, right) => compareDescriptionIndexItems(left, right, effectiveContext));
+  // ISS-006: score each item exactly ONCE here, then sort on the precomputed
+  // score. The previous design called scoreDescriptionItem(left)+­(right) inside
+  // the comparator, so every candidate was re-scored ~log n times per sort
+  // (and BM25/locality recomputed each time). Precomputing is O(n) scores +
+  // O(n log n) cheap numeric/string comparisons, with byte-identical output:
+  // primary key = score DESC, tiebreaker = stable_id ASC.
+  if (effectiveContext === undefined) {
+    return [...rawItems].sort((left, right) => left.stable_id.localeCompare(right.stable_id));
+  }
+  const scored = rawItems.map((item) => ({
+    item,
+    score: scoreDescriptionItem(item, effectiveContext),
+  }));
+  scored.sort((left, right) =>
+    left.score !== right.score
+      ? right.score - left.score // descending
+      : left.item.stable_id.localeCompare(right.item.stable_id),
+  );
+  return scored.map((entry) => entry.item);
 }
 
 // v2.2 A-INFRA-1 (W1-T2-BM25): flatten a candidate's selection-signal fields
@@ -679,13 +697,14 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
   });
 }
 
-// v2.0-rc.5 A3 (TASK-007): primary sort is stable_id only — the legacy
-// levelOrder switch keyed off L0/L1/L2 selection ceremony which no longer
-// drives output.
+// v2.0-rc.5 A3 (TASK-007): primary sort is stable_id only when no scoring
+// context — the legacy levelOrder switch keyed off L0/L1/L2 selection ceremony
+// which no longer drives output.
 //
 // v2.0.0-rc.33 W2-3 / W2-4 (P1-6 + P1-7): scoring layer. When `now` and
-// `targetPaths` are provided, compute a per-item score and sort DESCENDING
-// by score, with stable_id ascending as tiebreaker. Scoring components:
+// `targetPaths` are provided, sortDescriptionItems (above) computes a per-item
+// score ONCE and sorts DESCENDING by score, stable_id ascending as tiebreaker.
+// Scoring components (see scoreDescriptionItem):
 //
 //   recency_score (W2-3, P1-6):
 //     +100 if description.created_at parses and is within the last 7 days
@@ -700,20 +719,6 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
 //
 // Sort is stable: items with identical scores fall through to the
 // pre-existing alphabetic stable_id order.
-function compareDescriptionIndexItems(
-  left: RuleDescriptionIndexItem,
-  right: RuleDescriptionIndexItem,
-  context?: ScoringContext,
-): number {
-  if (context !== undefined) {
-    const leftScore = scoreDescriptionItem(left, context);
-    const rightScore = scoreDescriptionItem(right, context);
-    if (leftScore !== rightScore) {
-      return rightScore - leftScore; // descending
-    }
-  }
-  return left.stable_id.localeCompare(right.stable_id);
-}
 
 // v2.0.0-rc.33 W2-3: recency boost — entries created within RECENCY_WINDOW_MS
 // of `now` get +RECENCY_BOOST. Binary boost (vs. linear decay) keeps the

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -158,5 +158,52 @@ describe("KnowledgeIdAllocator", () => {
 
     const counters = await allocator.getCounters();
     expect(counters.KT.DEC).toBe(6);
+  });
+
+  // W1-02 (ISS-013): allocate()'s read → mutate → atomic-write was three
+  // separate awaited steps with no lock, so concurrent allocations (two windows
+  // running fab_review / fabric-review approve at once) all read the same
+  // counter and mint the SAME stable_id. A cross-process advisory lock must
+  // serialize the whole R-M-W so every minted id is unique.
+  it("concurrent_allocation: parallel allocate() never mints a duplicate stable_id", async () => {
+    const dir = await createTempDir("kid-concurrent");
+    const metaPath = join(dir, "agents.meta.json");
+
+    // Two allocator instances on the SAME meta path = two would-be windows.
+    const a = new KnowledgeIdAllocator(metaPath);
+    const b = new KnowledgeIdAllocator(metaPath);
+    const N = 25;
+    const ids = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        (i % 2 === 0 ? a : b).allocate("team", "decisions"),
+      ),
+    );
+
+    expect(new Set(ids).size).toBe(N); // all distinct — no duplicate mint
+    // Counter advanced by exactly N (no lost increments).
+    const counters = await new KnowledgeIdAllocator(metaPath).getCounters();
+    expect(counters.KT.DEC).toBe(N);
+  });
+
+  // W1-03 (ISS-014): a corrupt/truncated agents.meta.json must NOT silently
+  // fall back to empty meta — the next atomic write would then destroy every
+  // node entry. allocate() must abort (throw) so the original file is preserved
+  // and a forensic `.corrupted.{ts}` sidecar is left behind.
+  it("corrupt_meta_preservation: allocate() aborts on a corrupt meta, never overwrites it", async () => {
+    const dir = await createTempDir("kid-corrupt");
+    const metaPath = join(dir, "agents.meta.json");
+    const corruptRaw = '{ "revision": "abc", "nodes": { "KT-DEC-0001": {trunc';
+    await writeFile(metaPath, corruptRaw, "utf8");
+
+    await expect(
+      new KnowledgeIdAllocator(metaPath).allocate("team", "decisions"),
+    ).rejects.toBeTruthy();
+
+    // Original file preserved byte-for-byte — never overwritten with empty meta.
+    expect(await readFile(metaPath, "utf8")).toBe(corruptRaw);
+    // A forensic sidecar was written for recovery.
+    const sidecars = (await readdir(dir)).filter((f) => f.includes("agents.meta.json.corrupted"));
+    expect(sidecars.length).toBe(1);
+    expect(await readFile(join(dir, sidecars[0]), "utf8")).toBe(corruptRaw);
   });
 });

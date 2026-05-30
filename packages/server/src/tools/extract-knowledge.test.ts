@@ -90,6 +90,8 @@ describe("registerExtractKnowledge", () => {
       source_sessions: ["sess-tool-001"],
       recent_paths: ["packages/server/src/index.ts"],
       user_messages_summary: "Tool-handler integration: write through to pending.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
       type: "decisions",
       slug: "tool-handler-coverage",
     });
@@ -125,6 +127,8 @@ describe("registerExtractKnowledge", () => {
       source_sessions: ["sess-tracker"],
       recent_paths: [],
       user_messages_summary: "Tracker exercises enter/exit on success.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
       type: "guidelines",
       slug: "tracker-enter-exit",
     });
@@ -157,6 +161,8 @@ describe("registerExtractKnowledge", () => {
         source_sessions: ["sess-throw"],
         recent_paths: [],
         user_messages_summary: "Forces a failure path.",
+        proposed_reason: "decision-confirmation",
+        session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
         type: "decisions",
         slug: "force-throw",
       }),
@@ -197,6 +203,8 @@ describe("registerExtractKnowledge", () => {
       source_sessions: ["sess-gate-failed"],
       recent_paths: [],
       user_messages_summary: "Gate failed-path coverage.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
       type: "decisions",
       slug: "gate-failed-coverage",
     });
@@ -226,6 +234,8 @@ describe("registerExtractKnowledge", () => {
       source_sessions: ["sess-tool-c1"],
       recent_paths: ["packages/cli/src/commands/hooks.ts"],
       user_messages_summary: "C1 triage fields propagate via the tool layer.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
       type: "guidelines",
       slug: "c1-tool-layer",
       intent_clues: ["editing hooks.ts"],
@@ -258,6 +268,8 @@ describe("registerExtractKnowledge", () => {
       source_sessions: ["sess-tool-c1-omit"],
       recent_paths: [],
       user_messages_summary: "C1 omit path coverage at the tool layer.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
       type: "decisions",
       slug: "c1-tool-omit",
     });
@@ -270,6 +282,54 @@ describe("registerExtractKnowledge", () => {
     expect(body).not.toMatch(/^tech_stack:/mu);
     expect(body).not.toMatch(/^impact:/mu);
     expect(body).not.toMatch(/^must_read_if:/mu);
+  });
+
+  // W1-10 (F5): registerTool validates against the raw shape, which lacks the
+  // superRefine requiring a non-empty source_sessions[]. The handler must
+  // re-parse through FabExtractKnowledgeInputSchema so a missing/empty
+  // source_sessions is rejected instead of persisting a source_sessions=[]
+  // contract violation.
+  it("rejects input with source_sessions omitted (superRefine enforced in handler)", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-noss-"));
+    tempDirs.push(projectRoot);
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerExtractKnowledge(server);
+    const t = tool();
+
+    await expect(
+      t.handler({
+        recent_paths: [],
+        user_messages_summary: "Missing source_sessions must be rejected.",
+        proposed_reason: "decision-confirmation",
+        session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
+        type: "decisions",
+        slug: "missing-source-sessions",
+      }),
+    ).rejects.toBeTruthy();
+  });
+
+  it("rejects input with an empty source_sessions array", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-emptyss-"));
+    tempDirs.push(projectRoot);
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerExtractKnowledge(server);
+    const t = tool();
+
+    await expect(
+      t.handler({
+        source_sessions: [],
+        recent_paths: [],
+        user_messages_summary: "Empty source_sessions must be rejected.",
+        proposed_reason: "decision-confirmation",
+        session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
+        type: "decisions",
+        slug: "empty-source-sessions",
+      }),
+    ).rejects.toBeTruthy();
   });
 
   it("works without a tracker (optional argument)", async () => {
@@ -285,6 +345,8 @@ describe("registerExtractKnowledge", () => {
       source_sessions: ["sess-no-tracker"],
       recent_paths: [],
       user_messages_summary: "Verifies the optional-tracker branch.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
       type: "guidelines",
       slug: "no-tracker-branch",
     });

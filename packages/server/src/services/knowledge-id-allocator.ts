@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
 
@@ -12,7 +12,8 @@ import {
   type Layer,
   type StableId,
 } from "@fenglimg/fabric-shared";
-import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
+import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 type AgentsMetaShape = {
   revision?: string;
@@ -47,12 +48,20 @@ export class KnowledgeIdAllocator {
    * the advanced counter to `agents.meta.json`.
    */
   async allocate(layer: Layer, type: KnowledgeType): Promise<StableId> {
-    const meta = await this.readMeta();
-    const counters = this.normalizeCounters(meta.counters);
-    const { id, nextCounters } = allocateKnowledgeId(layer, type, counters);
+    // ISS-013: the read → mutate → atomic-write below must be a single critical
+    // section. atomicWriteJson only guarantees readers never see a torn file;
+    // it does NOT serialize the R-M-W, so two concurrent allocate() calls (e.g.
+    // two windows approving knowledge at once) would both read the same counter
+    // and mint a duplicate stable_id. Guard the whole sequence with a
+    // cross-process advisory lock keyed on the meta path.
+    return withFileLock(`${this.metaPath}.lock`, async () => {
+      const meta = await this.readMeta();
+      const counters = this.normalizeCounters(meta.counters);
+      const { id, nextCounters } = allocateKnowledgeId(layer, type, counters);
 
-    await this.writeMetaAtomic({ ...meta, counters: nextCounters });
-    return id;
+      await this.writeMetaAtomic({ ...meta, counters: nextCounters });
+      return id;
+    });
   }
 
   /**
@@ -81,9 +90,28 @@ export class KnowledgeIdAllocator {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
-    } catch {
-      // Corrupt JSON: fall back to fresh meta rather than corrupting further.
-      return { revision: "", nodes: {} };
+    } catch (err) {
+      // ISS-014: a corrupt/truncated agents.meta.json must NOT silently fall
+      // back to empty meta — the next allocate() would atomically write that
+      // near-empty object back, destroying every node entry. Quarantine the
+      // bytes to a `.corrupted.{ts}` sidecar (mirrors event-ledger forensics)
+      // and ABORT so the original file is preserved and the caller surfaces the
+      // failure instead of overwriting it.
+      const corruptedPath = `${this.metaPath}.corrupted.${Date.now()}`;
+      try {
+        await writeFile(corruptedPath, raw, "utf8");
+      } catch {
+        // best-effort forensics — never mask the original parse failure
+      }
+      throw new GenericIOError(
+        `agents.meta.json is corrupt and was NOT overwritten (forensic copy: ${corruptedPath}). Parse error: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        {
+          actionHint: `Restore agents.meta.json from version control, or delete it to let Fabric rebuild a fresh meta. Inspect ${corruptedPath} for the corrupt bytes.`,
+          details: { metaPath: this.metaPath, corruptedPath },
+        },
+      );
     }
 
     // Best-effort schema validation: prefer agentsMetaSchema (which honors

@@ -11,6 +11,10 @@ import {
   computeKnowledgeBasedAgentsMeta,
   loadKbIdTypeMap,
   writeKnowledgeMeta,
+  __knowledgeTestIndexCacheStats,
+  __resetKnowledgeTestIndexCache,
+  __knowledgeMetaCacheStats,
+  __resetKnowledgeMetaCache,
 } from "./knowledge-meta-builder.js";
 
 const tempDirs: string[] = [];
@@ -1121,6 +1125,129 @@ describe("loadKbIdTypeMap", () => {
     for (const { id, plural } of legacy) {
       expect(map.get(id)).toBe(plural);
     }
+  });
+});
+
+// W1-04 (ISS-003): computeKnowledgeTestIndex must not re-read+re-hash every
+// test file on every recall. An mtime/size cache bounds content reads to
+// changed files while keeping the result byte-identical to a full scan.
+describe("computeKnowledgeTestIndex test-file cache (ISS-003)", () => {
+  it("cache hit yields an identical index with zero additional content reads", async () => {
+    __resetKnowledgeTestIndexCache();
+    const projectRoot = await createProject("rmb-cache-equiv");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/server-core.md",
+      "<!-- fab:rule-id rules/server-core -->\n# Server rules\n",
+    );
+    await writeProjectFile(
+      projectRoot,
+      "packages/a.test.ts",
+      "// @fabric-verify rules/server-core\nexpect(true).toBe(true);\n",
+    );
+    await writeProjectFile(
+      projectRoot,
+      "packages/b.test.ts",
+      "// @fabric-verify rules/other\nexpect(true).toBe(true);\n",
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const first = await computeKnowledgeTestIndex(projectRoot, meta);
+    const readsAfterFirst = __knowledgeTestIndexCacheStats.contentReads;
+    expect(readsAfterFirst).toBe(2); // one read per test file on cold scan
+
+    const second = await computeKnowledgeTestIndex(projectRoot, meta, first);
+    // Cache hit: no file content re-read.
+    expect(__knowledgeTestIndexCacheStats.contentReads).toBe(readsAfterFirst);
+    // Equivalent to a full scan.
+    expect(second.links).toEqual(first.links);
+    expect(second.orphan_annotations).toEqual(first.orphan_annotations);
+  });
+
+  it("re-reads only the changed file when one test file is edited", async () => {
+    __resetKnowledgeTestIndexCache();
+    const projectRoot = await createProject("rmb-cache-invalidate");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/server-core.md",
+      "<!-- fab:rule-id rules/server-core -->\n# Server rules\n",
+    );
+    await writeProjectFile(
+      projectRoot,
+      "packages/a.test.ts",
+      "// @fabric-verify rules/server-core\nexpect(true).toBe(true);\n",
+    );
+    await writeProjectFile(projectRoot, "packages/b.test.ts", "// no annotation\n");
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    await computeKnowledgeTestIndex(projectRoot, meta);
+    const readsAfterFirst = __knowledgeTestIndexCacheStats.contentReads;
+
+    // Edit only a.test.ts — its mtime/size changes.
+    await writeProjectFile(
+      projectRoot,
+      "packages/a.test.ts",
+      "// @fabric-verify rules/server-core\n// edited\nexpect(true).toBe(true);\nexpect(2).toBe(2);\n",
+    );
+    const meta2 = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const after = await computeKnowledgeTestIndex(projectRoot, meta2, undefined);
+    // Exactly one additional content read (the edited file), not a full rescan.
+    expect(__knowledgeTestIndexCacheStats.contentReads).toBe(readsAfterFirst + 1);
+    // The edited annotation moved to line 1 still maps to the same rule.
+    expect(after.links[0]?.annotation_line).toBe(1);
+  });
+});
+
+// W1-05 (ISS-004): computeKnowledgeBasedAgentsMeta must not re-read+re-hash
+// every knowledge .md on every read-path call. A content-signature cache
+// (per-file mtime/size + previous meta revision) returns the cached meta with
+// zero file reads when nothing changed, and recomputes when a file is edited.
+describe("computeKnowledgeBasedAgentsMeta knowledge-file cache (ISS-004)", () => {
+  it("repeated calls return an identical meta with zero re-reads when nothing changed", async () => {
+    __resetKnowledgeMetaCache();
+    const projectRoot = await createProject("rmb-meta-cache");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/a.md",
+      "---\nstable_id: KT-DEC-0001\n---\n# A\n",
+    );
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/pitfalls/b.md",
+      "---\nstable_id: KT-PIT-0001\n---\n# B\n",
+    );
+
+    const first = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const readsAfterFirst = __knowledgeMetaCacheStats.fileReads;
+    expect(readsAfterFirst).toBe(2);
+
+    const second = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    expect(__knowledgeMetaCacheStats.fileReads).toBe(readsAfterFirst); // cache hit — no re-read
+    expect(second.revision).toBe(first.revision);
+    expect(second.nodes).toEqual(first.nodes);
+  });
+
+  it("recomputes (re-reads) and yields a new revision after a knowledge file is edited", async () => {
+    __resetKnowledgeMetaCache();
+    const projectRoot = await createProject("rmb-meta-invalidate");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/a.md",
+      "---\nstable_id: KT-DEC-0001\n---\n# A\n",
+    );
+
+    const first = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const readsAfterFirst = __knowledgeMetaCacheStats.fileReads;
+
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/a.md",
+      "---\nstable_id: KT-DEC-0001\n---\n# A (edited body)\n",
+    );
+
+    const second = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    expect(__knowledgeMetaCacheStats.fileReads).toBeGreaterThan(readsAfterFirst); // re-read on change
+    expect(second.revision).not.toBe(first.revision); // content change reflected
   });
 });
 

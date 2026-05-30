@@ -15,10 +15,18 @@
 //
 // gitignored per-dev telemetry, mirroring events.jsonl / metrics.jsonl.
 
-import { appendFile, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+
+import { createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { CiteCoverageReport } from "./doctor.js";
 import { ensureParentDirectory, getCiteRollupPath, isNodeError } from "./_shared.js";
+
+// W1-01 (ISS-015): serialize appends to cite-rollup.jsonl through the same
+// per-path write queue event-ledger uses. The queue's `append` still rejects
+// on fs failure, preserving this writer's throw-to-caller contract (rotation
+// aborts the drop on a failed write — never silently loses un-rolled-up turns).
+const citeRollupQueue = createLedgerWriteQueue();
 
 export type CiteRollupRow = {
   /** UTC day this row aggregates, `YYYY-MM-DD`. */
@@ -37,7 +45,7 @@ export type CiteRollupRow = {
 export async function appendCiteRollupRow(projectRoot: string, row: CiteRollupRow): Promise<void> {
   const path = getCiteRollupPath(projectRoot);
   await ensureParentDirectory(path);
-  await appendFile(path, `${JSON.stringify(row)}\n`);
+  await citeRollupQueue.append(path, JSON.stringify(row));
 }
 
 /**
