@@ -5,7 +5,7 @@
   "intent": "实现 v2.2 检索/治理里程碑: 18 个 absorb-v2.2 候选按 3 wave 序落地到全绿(实现+tsc+test+maestro delegate review+提交点), 涌现问题 live-ledger 吃掉",
   "goal": "把 v22-roadmap-ready-candidate-set.md 的 18 absorb 候选全部实现: 每条 代码实现 + tsc --noEmit 0 错 + 相关 test 过 + 该 wave 末 gemini+codex delegate review 过 + 定点提交。终态 = task_decomposition 全 done(模式① ALL_GOALS_DONE) 且 4 门 ship_criteria 全绿。守边界: 只做 absorb 集(reject/defer 不碰); v2.1 全局化线不并入; 护城河 D 重定义为基线(D1三端集成/D2 MCP-first/D3 lifecycle/D4 AI-in-loop)。",
   "mode": "1",
-  "current_phase": "execute",
+  "current_phase": "complete",
   "current_round": 1,
   "boundary_contract": {
     "in_scope": [
@@ -30,18 +30,18 @@
     ]
   },
   "ship_criteria": [
-    { "name": "G-IMPL", "target": "18/18 absorb 候选实现(task_decomposition 全 done)", "actual": null,
+    { "name": "G-IMPL", "target": "18/18 absorb 候选实现(task_decomposition 全 done)", "actual": "18/18 candidate task status=done(W1 7+W2 7+W3 4)",
       "verifier_cmd": "DETERMINISTIC: count(task where status=done 且 kind=candidate) == 18",
-      "verified_at": null },
-    { "name": "G-QUALITY", "target": "全程 tsc --noEmit 0 错 + 每 wave 相关 test 过", "actual": null,
+      "verified_at": "2026-05-30" },
+    { "name": "G-QUALITY", "target": "全程 tsc --noEmit 0 错 + 每 wave 相关 test 过", "actual": "pnpm -r exec tsc --noEmit = 0 错; shared539+server697+cli837 = 2073 测全绿",
       "verifier_cmd": "pnpm -r exec tsc --noEmit (0 errors) + pnpm -r test (相关包绿)",
-      "verified_at": null },
-    { "name": "G-REVIEW", "target": "3 wave 每个末过 maestro delegate gemini+codex review(无未解 BLOCK)", "actual": null,
+      "verified_at": "2026-05-30" },
+    { "name": "G-REVIEW", "target": "3 wave 每个末过 maestro delegate gemini+codex review(无未解 BLOCK)", "actual": "W1/W2/W3-REVIEW 三门全过 gemini+codex(含零上下文冷评); 各轮 BLOCK/HIGH 已修闭环; 4 项 by-design/frame 升 needs_adjudication 非阻塞; 无未解 BLOCK",
       "verifier_cmd": "CROSS-LLM: 每 wave W{n}-REVIEW task done 且 review verdict 无未解 refuted/分歧(分歧升 needs_adjudication)",
-      "verified_at": null },
-    { "name": "G-COMMITTED", "target": "每候选/逻辑组在其提交点提交, 无未提交 absorb 改动", "actual": null,
+      "verified_at": "2026-05-30" },
+    { "name": "G-COMMITTED", "target": "每候选/逻辑组在其提交点提交, 无未提交 absorb 改动", "actual": "全 18 候选+各 REVIEW 修复定点提交(0ea6aa6..f3e7fd6); git status 仅余 status.json ledger",
       "verifier_cmd": "DETERMINISTIC: git log 含全部提交点 commit; git status 无遗留 absorb 相关 staged/dirty",
-      "verified_at": null }
+      "verified_at": "2026-05-30" }
   ],
   "task_decomposition": [
     { "id": "W1-T1-CJK", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -148,9 +148,9 @@
       "verification": { "method": "deterministic", "verifier": "test + tsc", "evidence": "computeKbHealth 0-100+grade 复用 lint 计数(无新探针)入 doctor summary.kb_health; 6 测; server696/cli837; tsc0; commit 5fd0301", "verified_at": "2026-05-30" } },
     { "id": "W3-REVIEW", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "Wave3 末 + portfolio maestro delegate review: 观测/图谱(HK3/SK2/MC5/A14) + 整盘 18 候选集成/回归/护城河 D 一致性最终审", "done_when": "review 过; 全 18 候选无未解 BLOCK; portfolio 一致",
-      "ship_criteria_alignment": ["G-REVIEW"], "alignment_strength": "direct", "status": "open", "kind": "review-gate", "wave": 3,
+      "ship_criteria_alignment": ["G-REVIEW"], "alignment_strength": "direct", "status": "done", "kind": "review-gate", "wave": 3,
       "dep": ["W3-T1-HK3","W3-T2-SK2","W3-T3-MC5","W3-T4-A14","W2-REVIEW"],
-      "verification": { "method": "cross-llm", "verifier": "gemini+codex", "evidence": null, "verified_at": null } }
+      "verification": { "method": "cross-llm", "verifier": "gemini+codex", "evidence": "gemini(OVERALL PASS: 18候选无结构冲突/回归/护城河D漂移, 截断链端到端一致, 量纲协调, D1-4一致强化)+codex(零上下文冷评, 无BLOCK); 修复 1HIGH(health命名)+加BM25-leads校准锁 commit f3e7fd6; 2 by-design 升非阻塞ADJ; 无未解BLOCK; server697/cli837/shared539 tsc0", "verified_at": "2026-05-30" } }
   ],
   "needs_adjudication": [
     { "id": "ADJ-W1-BM25WEIGHT", "source": "W1-REVIEW", "type": "cross-llm-divergence", "blocking": false,
@@ -161,11 +161,17 @@
       "adjudication": "benign 超集——每个显示候选都可 fetch(非有害的反向), top_k=24 下 >64KB 罕触发。已加注释记为 v2.3 一致性清理(把 byte-trim 移进 service token mint 前), 不在 v2.2 重构(需把 gate/sync warnings+payload limits 下沉进 planContext)。非阻塞。" },
     { "id": "ADJ-SK5-BOOTSTRAP-GUT", "source": "W2-T6-SK5", "type": "frame-conflict", "blocking": false,
       "summary": "SK5 字面要求把 cite 契约从 bootstrap 下沉(减膨胀), 但 bootstrap-canonical.test 显式钉死 cite 明细(operators/dismissed enum/audit/backward-compat)为 always-on 治理不变式, 且 cite-coverage 是项目首要指标",
-      "adjudication": "采非破坏读: 建权威 ref/cite-contract.md(沉淀+裁决阶梯)+bootstrap 纯增指针, 不 gut。gut(删 bootstrap pinned 内容+对应 test)会移除被测保证并回归 cite 覆盖(rc.33 努力是把 cite 推进 context)——属 frame 级决定, 留 human。SK5 实质(详参有可查的 skill ref 家、未来深度归 ref)已达成。" }
+      "adjudication": "采非破坏读: 建权威 ref/cite-contract.md(沉淀+裁决阶梯)+bootstrap 纯增指针, 不 gut。gut(删 bootstrap pinned 内容+对应 test)会移除被测保证并回归 cite 覆盖(rc.33 努力是把 cite 推进 context)——属 frame 级决定, 留 human。SK5 实质(详参有可查的 skill ref 家、未来深度归 ref)已达成。" },
+    { "id": "ADJ-W3-VECTOR-SUPPLEMENT", "source": "W3-REVIEW", "type": "design-philosophy", "blocking": false,
+      "summary": "codex MED-2: embed_weight≤49<BM25_WEIGHT50, 故 vector 翻不动强 BM25, 价值窄(仅 BM25 弱/静默/接近打平区)",
+      "adjudication": "by-design。候选 spec 明确 C2='作 BM25 后语义召回补充'(supplement)非'语义纠偏'(correction); 且 W2-REVIEW codex 自己要求 cap<BM25 防 vector 覆盖词法——'不覆盖'与'能纠偏'本互斥。vector 价值在 BM25 弱区(语义召回, 捕词法漏的)正是设计目标。若未来要 semantic correction 则需 hybrid rank fusion(不同设计), 留 v2.3 human 拍。非阻塞。" },
+    { "id": "ADJ-W3-INJECTION-CONCURRENCY", "source": "W3-REVIEW", "type": "accepted-low-risk", "blocking": false,
+      "summary": "codex LOW: injection-log.cjs 同步 appendFileSync 无 lock, 多窗口并发写 injections.jsonl 理论可交错; 同步写在 SessionStart 热路径 stdout 前",
+      "adjudication": "accepted。单行小 JSONL append 在 POSIX 近原子(<PIPE_BUF), best-effort telemetry 容忍偶发交错; gemini 未 flag。热路径延迟: append 一行 µs 级, 可忽略。若后续真见交错损坏再引 ledger lock 模式。非阻塞。" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260530-v22-execution/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null,
+  "status": "completed",
+  "loop_exit_status": "ALL_GOALS_DONE",
   "live_ledger_policy": "执行中涌现的 bug/缺口 → append 进 task_decomposition: 挂 parent_id(被影响候选)+relationship(incomplete-resolution|regression|similar-but-distinct), id 形如 W{n}-T{x}-followup-{k}, subdivision_depth≤3; 不另起 session; 带 ship_criteria_alignment 防漂移",
   "commit_discipline": "每候选 task done(实现+tsc+test) → 立即按 commit_point 提交; 提交前必跑 pnpm -r exec tsc --noEmit; 改 shared schema 先 rebuild dist; 中文提交信息 + Co-Authored-By",
   "review_discipline": "每 wave 末 W{n}-REVIEW: maestro delegate gemini+codex --mode analysis run_in_background; 等权威 [DELEGATE COMPLETED]; 一致 PASS 自动闭; 一致 BLOCK+fix verbatim 采纳重跑; 分歧/主观/不可逆 升 needs_adjudication 非阻塞"
