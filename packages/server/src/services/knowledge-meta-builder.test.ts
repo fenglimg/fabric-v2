@@ -796,6 +796,43 @@ describe("knowledge-meta-builder", () => {
     expect(node?.description?.relevance_paths).toEqual([]);
   });
 
+  // v2.2 H2-related (W1-T7): `related` graph-edge field round-trips through
+  // frontmatter → meta description.
+  it("test_parse_related_graph_edges — related stable_ids are read into description", async () => {
+    const projectRoot = await createProject("rules-builder-h2-related");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/linked.md",
+      [
+        "---",
+        "summary: Linked decision",
+        "related: [KT-DEC-0001, KT-PIT-0002]",
+        "---",
+        "# Linked decision",
+        "",
+      ].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/linked.md");
+
+    expect(node?.description?.related).toEqual(["KT-DEC-0001", "KT-PIT-0002"]);
+  });
+
+  it("test_related_absent — related stays undefined when the field is omitted", async () => {
+    const projectRoot = await createProject("rules-builder-h2-related-absent");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/unlinked.md",
+      ["---", "summary: Unlinked decision", "---", "# Unlinked decision", ""].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/unlinked.md");
+
+    expect(node?.description?.related).toBeUndefined();
+  });
+
   it("test_malformed_value_falls_back_to_default — bogus relevance_scope falls back to broad", async () => {
     const projectRoot = await createProject("rules-builder-rc5-c1-malformed");
     await writeProjectFile(

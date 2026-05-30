@@ -28,6 +28,11 @@ export interface RuleDescription {
   // default to safe values when absent from frontmatter (broad + []).
   relevance_scope?: "narrow" | "broad";
   relevance_paths?: string[];
+  // v2.2 H2-related (W1-T7): explicit graph edges to related KB entries by
+  // stable_id. Authored in frontmatter or written by the fabric-connect skill
+  // (SK2); consumed by fab_recall include_related packaging (MC1). Optional —
+  // pre-v2.2 entries simply lack it.
+  related?: string[];
 }
 
 // v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to the two load-bearing fields.
