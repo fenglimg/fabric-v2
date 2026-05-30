@@ -7,6 +7,7 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installFabricStoreSkill,
   installFabricSyncSkill,
   installSharedSkillLib,
   installHookLibs,
