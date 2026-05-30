@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 
+import { getProjectTranslator } from "../i18n.js";
 import { runAbortSync, runContinueSync, runStartSync, type RunSyncResult } from "../sync/run-sync.js";
 
 // ---------------------------------------------------------------------------
@@ -9,19 +10,16 @@ import { runAbortSync, runContinueSync, runStartSync, type RunSyncResult } from 
 // orchestration). `--continue`/`--abort` resume a paused (conflicted) session.
 // ---------------------------------------------------------------------------
 
-function report(result: RunSyncResult): void {
+function report(result: RunSyncResult, projectRoot: string): void {
+  const t = getProjectTranslator(projectRoot);
   for (const store of result.session.stores) {
     console.log(`${store.alias}\t${store.state}`);
   }
   if (result.deferred.length > 0) {
-    console.log(
-      `${result.deferred.length} store(s) offline — push deferred; re-run \`fabric sync\` when online`,
-    );
+    console.log(t("cli.sync.deferred", { count: String(result.deferred.length) }));
   }
   if (!result.settled) {
-    console.log(
-      "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
-    );
+    console.log(t("cli.sync.paused"));
   }
 }
 
@@ -32,15 +30,16 @@ export default defineCommand({
     abort: { type: "boolean", description: "Abort the conflicted store's rebase" },
   },
   run({ args }) {
-    const options = { projectRoot: process.cwd(), now: new Date().toISOString() };
+    const projectRoot = process.cwd();
+    const options = { projectRoot, now: new Date().toISOString() };
     if (args.continue === true) {
-      report(runContinueSync(options));
+      report(runContinueSync(options), projectRoot);
       return;
     }
     if (args.abort === true) {
-      report(runAbortSync(options));
+      report(runAbortSync(options), projectRoot);
       return;
     }
-    report(runStartSync(options));
+    report(runStartSync(options), projectRoot);
   },
 });

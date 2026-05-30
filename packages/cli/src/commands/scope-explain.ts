@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 
+import { getProjectTranslator } from "../i18n.js";
 import { scopeExplain } from "../store/scope-explain.js";
 
 // v2.1.0-rc.1 P3 (F5): `fabric scope-explain <scope>` — show the resolved
@@ -17,9 +18,10 @@ export default defineCommand({
     },
   },
   run({ args }) {
-    const result = scopeExplain(process.cwd(), args.scope);
+    const projectRoot = process.cwd();
+    const result = scopeExplain(projectRoot, args.scope);
     if (result === null) {
-      console.log("no global Fabric config — run `fabric install --global <url>` first");
+      console.log(getProjectTranslator(projectRoot)("cli.cmd.no-global-config"));
       return;
     }
     console.log(JSON.stringify(result, null, 2));

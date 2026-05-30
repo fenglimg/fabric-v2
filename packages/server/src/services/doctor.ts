@@ -6293,7 +6293,7 @@ function createStaleArchiveCheck(t: Translator, inspection: StaleArchiveInspecti
     );
   }
   const first = inspection.candidates[0];
-  const detail = `${first.stable_id} (${first.age_days}d inactive at ${first.path}) → ${first.archive_path}`;
+  const detail = `${first.stable_id} (${first.age_days}d inactive at ${first.path}) -> ${first.archive_path}`;
   const count = inspection.candidates.length;
   return issueCheck(
     t("doctor.check.stale_archive.name"),
@@ -6780,7 +6780,7 @@ function createRelevancePathsDanglingCheck(
     );
   }
   const first = inspection.entries[0];
-  const detail = `${first.stable_id} at ${first.path} → \`${first.dangling_glob}\` (0 matches)`;
+  const detail = `${first.stable_id} at ${first.path} -> \`${first.dangling_glob}\` (0 matches)`;
   const count = inspection.entries.length;
   return issueCheck(
     t("doctor.check.relevance_paths_dangling.name"),
@@ -6891,7 +6891,7 @@ function createPersonalLayerPathMisclassifyCheck(
     );
   }
   const first = inspection.candidates[0];
-  const detail = `${first.stable_id} → ${first.matched_globs.slice(0, 2).join(", ")}`;
+  const detail = `${first.stable_id} -> ${first.matched_globs.slice(0, 2).join(", ")}`;
   const count = inspection.candidates.length;
   return issueCheck(
     t("doctor.check.personal_layer_path_misclassify.name"),
@@ -6955,7 +6955,7 @@ function createSuspiciousKbCheck(
     );
   }
   const first = inspection.candidates[0];
-  const detail = `${first.stable_id} → ${first.patterns.slice(0, 2).join(", ")}`;
+  const detail = `${first.stable_id} -> ${first.patterns.slice(0, 2).join(", ")}`;
   const count = inspection.candidates.length;
   return issueCheck(
     t("doctor.check.suspicious_kb.name"),

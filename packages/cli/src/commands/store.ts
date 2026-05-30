@@ -1,6 +1,7 @@
 import type { MountedStore } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
+import { getProjectTranslator } from "../i18n.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import {
   assertStoreMountable,
@@ -21,13 +22,15 @@ import {
 const listCommand = defineCommand({
   meta: { name: "list", description: "List mounted knowledge stores" },
   run() {
+    const t = getProjectTranslator();
     const stores = storeList();
     if (stores.length === 0) {
-      console.log("(no stores mounted)");
+      console.log(t("cli.store.none-mounted"));
       return;
     }
+    const localOnly = t("cli.shared.local-only");
     for (const store of stores) {
-      console.log(`${store.alias}\t${store.store_uuid}\t${store.remote ?? "(local-only)"}`);
+      console.log(`${store.alias}\t${store.store_uuid}\t${store.remote ?? localOnly}`);
     }
   },
 });
@@ -48,7 +51,12 @@ const addCommand = defineCommand({
         ? { store_uuid: args.uuid, alias: args.alias }
         : { store_uuid: args.uuid, alias: args.alias, remote: args.remote };
     const next = storeAdd(store);
-    console.log(`mounted '${args.alias}' (${next.stores.length} store(s) total)`);
+    console.log(
+      getProjectTranslator()("cli.store.mounted", {
+        alias: args.alias,
+        count: String(next.stores.length),
+      }),
+    );
   },
 });
 
@@ -62,11 +70,10 @@ const createCommand = defineCommand({
     const result = storeCreate(args.alias, new Date().toISOString(), {
       ...(args.remote === undefined ? {} : { remote: args.remote }),
     });
+    const t = getProjectTranslator();
     console.log(
-      `created store '${args.alias}' (${result.store_uuid}) at ${result.storeDir}` +
-        (args.remote === undefined
-          ? "\n(local-only — add a remote later with `git -C <storeDir> remote add origin <url>`)"
-          : ""),
+      t("cli.store.created", { alias: args.alias, uuid: result.store_uuid, dir: result.storeDir }) +
+        (args.remote === undefined ? `\n${t("cli.store.created-local-hint")}` : ""),
     );
   },
 });
@@ -78,10 +85,11 @@ const removeCommand = defineCommand({
   },
   run({ args }) {
     const { detached } = storeRemove(args.alias);
+    const t = getProjectTranslator();
     console.log(
       detached === null
-        ? `no store aliased '${args.alias}'`
-        : `detached '${args.alias}' — on-disk store tree left intact (detach ≠ delete)`,
+        ? t("cli.store.no-alias", { alias: args.alias })
+        : t("cli.store.detached", { alias: args.alias }),
     );
   },
 });
@@ -94,7 +102,9 @@ const explainCommand = defineCommand({
   run({ args }) {
     const explanation = storeExplain(args.alias);
     console.log(
-      explanation === null ? `no store aliased '${args.alias}'` : JSON.stringify(explanation, null, 2),
+      explanation === null
+        ? getProjectTranslator()("cli.store.no-alias", { alias: args.alias })
+        : JSON.stringify(explanation, null, 2),
     );
   },
 });
@@ -108,11 +118,17 @@ const bindCommand = defineCommand({
   run({ args }) {
     const entry =
       args.remote === undefined ? { id: args.id } : { id: args.id, suggested_remote: args.remote };
-    const next = storeBind(process.cwd(), entry);
-    console.log(`bound required store '${args.id}' (${next.required_stores?.length ?? 0} required)`);
+    const projectRoot = process.cwd();
+    const next = storeBind(projectRoot, entry);
+    console.log(
+      getProjectTranslator(projectRoot)("cli.store.bound", {
+        id: args.id,
+        count: String(next.required_stores?.length ?? 0),
+      }),
+    );
     // Regenerate the resolved-bindings snapshot so P4 hooks read a consistent
     // read-set/write-target without re-resolving (P3→P4 chain, done_when).
-    regenerateBindingsSnapshot(process.cwd(), { now: new Date().toISOString() });
+    regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
   },
 });
 
@@ -122,8 +138,9 @@ const switchWriteCommand = defineCommand({
     alias: { type: "positional", required: true, description: "Alias of the store to write to" },
   },
   run({ args }) {
-    storeSwitchWrite(process.cwd(), args.alias);
-    console.log(`active write store set to '${args.alias}' for this project`);
+    const projectRoot = process.cwd();
+    storeSwitchWrite(projectRoot, args.alias);
+    console.log(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias }));
   },
 });
 

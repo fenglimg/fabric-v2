@@ -1314,4 +1314,34 @@ export const zhCNMessages: Messages = {
   "dashboard.health.boundary.cli-prompt": "检测到 {count} 个可修复的问题。请在终端中运行以下命令以自动修复元数据。",
   "dashboard.health.runtime.connected": "MCP 运行时已连接",
   "dashboard.health.runtime.disconnected": "MCP 运行时已断开",
+
+  // W3-05 (ISS-033): 项目作用域命令输出 (whoami / store / scope-explain /
+  // sync / metrics) —— 原硬编码英文, 现按项目 fabric_language 渲染。
+  "cli.cmd.no-global-config": "未找到全局 Fabric 配置 —— 请先运行 `fabric install --global <url>`",
+  "cli.whoami.uid": "uid: {uid}",
+  "cli.whoami.stores-none": "stores: (未挂载任何 store)",
+  "cli.whoami.stores-label": "stores:",
+  "cli.shared.local-only": "(仅本地)",
+  "cli.store.none-mounted": "(未挂载任何 store)",
+  "cli.store.mounted": "已挂载 '{alias}' (共 {count} 个 store)",
+  "cli.store.created": "已创建 store '{alias}' ({uuid}) 于 {dir}",
+  "cli.store.created-local-hint":
+    "(仅本地 —— 稍后用 `git -C <storeDir> remote add origin <url>` 添加 remote)",
+  "cli.store.no-alias": "没有别名为 '{alias}' 的 store",
+  "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
+  "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
+  "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
+  "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
+  "cli.sync.paused":
+    "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",
+  "cli.metrics.invalid-since": '--since: 无效的时长 "{raw}" (示例: 24h、7d、30m)',
+  "cli.metrics.window": "Fabric 指标 —— 时间窗: {window}",
+  "cli.metrics.window-all-time": "全部时间",
+  "cli.metrics.rows-range": "  行数: {count} ({start} → {end})",
+  "cli.metrics.rows": "  行数: {count}",
+  "cli.metrics.no-activity": "  (时间窗内无计数活动 —— server 可能空闲或刚启动)",
+
+  // W3-09 (ISS-035): forensic 项目扫描进度 (stderr, 仅 TTY)。
+  "cli.install.scanning": "正在扫描项目的客户端/框架特征…",
+  "cli.install.scan-complete": "  项目扫描完成",
 };

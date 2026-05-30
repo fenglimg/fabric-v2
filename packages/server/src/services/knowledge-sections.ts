@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { deriveAgentsMetaLayer, type AgentsLayer } from "@fenglimg/fabric-shared";
+import { McpToolError } from "@fenglimg/fabric-shared/errors";
 
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
@@ -100,7 +101,16 @@ export async function getKnowledgeSections(
 ): Promise<KnowledgeSectionResult> {
   const token = readSelectionToken(input.selection_token);
   if (token === undefined) {
-    throw new Error("selection_token is missing or expired");
+    // ISS-035: the MCP SDK serializes only `error.message` to the client, so
+    // the recovery hint lives in the message AND the FabricError actionHint
+    // field (the latter aligns with the payload-warning action_hint surface).
+    throw new McpToolError(
+      "selection_token is missing or expired — re-run fab_plan_context to obtain a fresh selection_token, then retry fab_get_knowledge_sections with the same ai_selected_stable_ids",
+      {
+        actionHint:
+          "re-run fab_plan_context(paths) to mint a fresh selection_token, then call fab_get_knowledge_sections again with that token",
+      },
+    );
   }
 
   // v2.0.0-rc.37 NEW-24: rewrite any layer-flipped ids in the caller-supplied

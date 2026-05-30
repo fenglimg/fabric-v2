@@ -106,6 +106,26 @@ type: decision
 });
 
 describe("getKnowledgeSections", () => {
+  // W3-06 (ISS-035): a missing/expired selection_token must fail with an
+  // actionable recovery hint (re-run fab_plan_context) reaching the MCP client.
+  it("rejects a missing/expired selection_token with a fab_plan_context recovery hint", async () => {
+    const projectRoot = await createSectionProject();
+    let err: unknown;
+    try {
+      await getKnowledgeSections(projectRoot, {
+        selection_token: "selection:bogus-never-minted",
+        ai_selected_stable_ids: [],
+        ai_selection_reasons: {},
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(Error);
+    // The hint must be in the message (the only field the MCP SDK serializes).
+    expect((err as Error).message).toMatch(/fab_plan_context/);
+    expect((err as { actionHint?: string }).actionHint).toMatch(/fab_plan_context/);
+  });
+
   it("merges required L0/L2 with AI-selected L1 and returns requested sections", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });

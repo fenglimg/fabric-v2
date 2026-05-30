@@ -1336,4 +1336,35 @@ export const enMessages: Messages = {
   "dashboard.health.boundary.cli-prompt": "You have {count} fixable issues. Run the following command in your terminal to repair metadata automatically.",
   "dashboard.health.runtime.connected": "MCP Runtime Connected",
   "dashboard.health.runtime.disconnected": "MCP Runtime Disconnected",
+
+  // W3-05 (ISS-033): project-scoped command output (whoami / store /
+  // scope-explain / sync / metrics) — previously hardcoded English, now
+  // resolved via the project's fabric_language.
+  "cli.cmd.no-global-config": "no global Fabric config — run `fabric install --global <url>` first",
+  "cli.whoami.uid": "uid: {uid}",
+  "cli.whoami.stores-none": "stores: (none mounted)",
+  "cli.whoami.stores-label": "stores:",
+  "cli.shared.local-only": "(local-only)",
+  "cli.store.none-mounted": "(no stores mounted)",
+  "cli.store.mounted": "mounted '{alias}' ({count} store(s) total)",
+  "cli.store.created": "created store '{alias}' ({uuid}) at {dir}",
+  "cli.store.created-local-hint":
+    "(local-only — add a remote later with `git -C <storeDir> remote add origin <url>`)",
+  "cli.store.no-alias": "no store aliased '{alias}'",
+  "cli.store.detached": "detached '{alias}' — on-disk store tree left intact (detach ≠ delete)",
+  "cli.store.bound": "bound required store '{id}' ({count} required)",
+  "cli.store.switch-write": "active write store set to '{alias}' for this project",
+  "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
+  "cli.sync.paused":
+    "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
+  "cli.metrics.invalid-since": '--since: invalid duration "{raw}" (expected e.g. 24h, 7d, 30m)',
+  "cli.metrics.window": "Fabric metrics — window: {window}",
+  "cli.metrics.window-all-time": "all-time",
+  "cli.metrics.rows-range": "  rows: {count} ({start} → {end})",
+  "cli.metrics.rows": "  rows: {count}",
+  "cli.metrics.no-activity": "  (no counter activity in window — server may be idle or just started)",
+
+  // W3-09 (ISS-035): forensic project scan progress (stderr, TTY-only).
+  "cli.install.scanning": "scanning project for client/framework signals…",
+  "cli.install.scan-complete": "  project scan complete",
 };

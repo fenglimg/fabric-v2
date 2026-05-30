@@ -884,7 +884,19 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const eventsAction = diffStateToWriteAction(eventsClassification.state);
   const forensicAction = diffStateToWriteAction(forensicClassification.state);
 
+  // ISS-035: the forensic scan recursively walks the tree + lazily loads
+  // tree-sitter parsers, so on a large repo the wizard looked frozen between
+  // the target and plan steps. Emit a progress nudge to stderr — gated on a
+  // TTY so piped/CI/test/dry-run-capture contexts stay silent (no snapshot
+  // churn) while interactive users get feedback.
+  const showScanProgress = process.stderr.isTTY === true;
+  if (showScanProgress) {
+    process.stderr.write(`${t("cli.install.scanning")}\n`);
+  }
   const forensicReport = await buildForensicReport(target);
+  if (showScanProgress) {
+    process.stderr.write(`${t("cli.install.scan-complete")}\n`);
+  }
   const meta = createInitialMeta();
 
   return {

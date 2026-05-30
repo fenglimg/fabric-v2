@@ -592,7 +592,7 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: 
   // (fixable_errors ∪ manual_errors ∪ warnings) in that severity order and
   // print them as a one-line each header BEFORE the per-check enumeration.
   // Empty TL;DR (everything OK) just emits a single green line.
-  renderTldrHeader(report);
+  renderTldrHeader(report, dt, verbose);
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
@@ -694,16 +694,26 @@ function writeIssueSection(
 // users see the actionable signal without scrolling past 48 OK checks. Severity
 // order: fixable_errors > manual_errors > warnings. When the report is all
 // green, emits a single OK line instead of an empty header.
-function renderTldrHeader(report: DoctorReport): void {
-  const ranked: Array<{ severity: "fixable" | "manual" | "warn"; code: string; message: string }> = [];
+// ISS-038: the TL;DR carries each finding's actionHint (folded for
+// maintainer-audience hints unless --verbose), mirroring the full issue list —
+// a user who reads only the TL;DR now sees how to fix, not just what is wrong.
+// Exported for direct rendering tests.
+export function renderTldrHeader(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
+  const ranked: Array<{
+    severity: "fixable" | "manual" | "warn";
+    code: string;
+    message: string;
+    actionHint?: string;
+    audience?: "user" | "maintainer";
+  }> = [];
   for (const issue of report.fixable_errors) {
-    ranked.push({ severity: "fixable", code: issue.code, message: issue.message });
+    ranked.push({ severity: "fixable", code: issue.code, message: issue.message, actionHint: issue.actionHint, audience: issue.audience });
   }
   for (const issue of report.manual_errors) {
-    ranked.push({ severity: "manual", code: issue.code, message: issue.message });
+    ranked.push({ severity: "manual", code: issue.code, message: issue.message, actionHint: issue.actionHint, audience: issue.audience });
   }
   for (const issue of report.warnings) {
-    ranked.push({ severity: "warn", code: issue.code, message: issue.message });
+    ranked.push({ severity: "warn", code: issue.code, message: issue.message, actionHint: issue.actionHint, audience: issue.audience });
   }
   if (ranked.length === 0) {
     writeStdout(`${symbol.ok} TL;DR: all 48 checks green — nothing to fix.`);
@@ -723,6 +733,15 @@ function renderTldrHeader(report: DoctorReport): void {
     // Truncate verbose check messages so the TL;DR stays single-line-ish.
     const truncated = item.message.length > 140 ? `${item.message.slice(0, 137)}...` : item.message;
     writeStdout(`  ${marker} ${item.code}: ${truncated}`);
+    // Mirror writeIssueSection's actionHint surface (same arrow, same fold rule)
+    // so the TL;DR is self-sufficient for the user who reads no further.
+    if (item.actionHint !== undefined && item.actionHint.length > 0) {
+      writeStdout(
+        item.audience === "maintainer" && !verbose
+          ? `    → ${dt("doctor.maintainer-hint-folded")}`
+          : `    → ${item.actionHint}`,
+      );
+    }
   }
 }
 

@@ -3,8 +3,22 @@ import stringWidth from "string-width";
 
 type PaintFn = (value: string) => string;
 
-function isColorEnabled(): boolean {
-  return !process.env.NO_COLOR && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+// ISS-040: FORCE_COLOR is the dual of NO_COLOR. Exported for direct unit tests.
+export function isColorEnabled(): boolean {
+  // NO_COLOR (https://no-color.org) is an unconditional opt-out and takes
+  // precedence over FORCE_COLOR when both are set.
+  if (process.env.NO_COLOR) {
+    return false;
+  }
+  // FORCE_COLOR forces color ON regardless of TTY (e.g. piping into a pager or
+  // a CI runner that strips the TTY but renders ANSI). FORCE_COLOR=0 / "false"
+  // is an explicit disable; any other value (incl. empty string) enables —
+  // matching the de-facto supports-color convention.
+  const force = process.env.FORCE_COLOR;
+  if (force !== undefined) {
+    return force !== "0" && force.toLowerCase() !== "false";
+  }
+  return Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
 }
 
 function colorize(painter: PaintFn): PaintFn {

@@ -13,6 +13,9 @@ import { resolve } from "node:path";
 import { defineCommand } from "citty";
 
 import { readMetrics, type MetricsRow } from "@fenglimg/fabric-server";
+import type { Translator } from "@fenglimg/fabric-shared";
+
+import { getProjectTranslator } from "../i18n.js";
 
 interface MetricsArgs {
   json?: boolean;
@@ -29,12 +32,12 @@ type Aggregated = {
   rangeEnd: string | null;
 };
 
-function parseSinceArg(raw: string | undefined): number {
+function parseSinceArg(raw: string | undefined, t: Translator): number {
   if (raw === undefined || raw.length === 0) return 0;
   // Accepts plain integer seconds, or 1d / 24h / 30m / 90s shorthand.
   const match = /^(\d+)([smhd]?)$/u.exec(raw);
   if (match === null) {
-    throw new Error(`--since: invalid duration "${raw}" (expected e.g. 24h, 7d, 30m)`);
+    throw new Error(t("cli.metrics.invalid-since", { raw }));
   }
   const n = Number.parseInt(match[1]!, 10);
   const unit = match[2] ?? "s";
@@ -63,6 +66,8 @@ function aggregate(rows: MetricsRow[], sinceMs: number, now: Date): Aggregated {
     }
   }
   return {
+    // Stable token (NOT localized) so the --json contract is locale-independent;
+    // renderText localizes "all-time" at presentation time only.
     windowDescription: sinceMs > 0 ? formatDuration(sinceMs) : "all-time",
     rowCount: filtered.length,
     totals,
@@ -79,17 +84,25 @@ function formatDuration(ms: number): string {
   return `${Math.round(ms / 1000)}s`;
 }
 
-function renderText(agg: Aggregated): string {
+function renderText(agg: Aggregated, t: Translator): string {
   const lines: string[] = [];
-  lines.push(`Fabric metrics — window: ${agg.windowDescription}`);
+  const windowDisplay =
+    agg.windowDescription === "all-time" ? t("cli.metrics.window-all-time") : agg.windowDescription;
+  lines.push(t("cli.metrics.window", { window: windowDisplay }));
   if (agg.rangeStart && agg.rangeEnd) {
-    lines.push(`  rows: ${agg.rowCount} (${agg.rangeStart} → ${agg.rangeEnd})`);
+    lines.push(
+      t("cli.metrics.rows-range", {
+        count: String(agg.rowCount),
+        start: agg.rangeStart,
+        end: agg.rangeEnd,
+      }),
+    );
   } else {
-    lines.push(`  rows: ${agg.rowCount}`);
+    lines.push(t("cli.metrics.rows", { count: String(agg.rowCount) }));
   }
   lines.push("");
   if (Object.keys(agg.totals).length === 0) {
-    lines.push("  (no counter activity in window — server may be idle or just started)");
+    lines.push(t("cli.metrics.no-activity"));
     return lines.join("\n");
   }
   lines.push("  counter                              total");
@@ -134,13 +147,14 @@ export const metricsCommand = defineCommand({
   },
   async run({ args }: { args: MetricsArgs }) {
     const projectRoot = resolve(args.target ?? process.cwd());
-    const sinceMs = parseSinceArg(args.since);
+    const t = getProjectTranslator(projectRoot);
+    const sinceMs = parseSinceArg(args.since, t);
     const rows = await readMetrics(projectRoot);
     const aggregated = aggregate(rows, sinceMs, new Date());
     if (args.json === true) {
       process.stdout.write(`${JSON.stringify(aggregated)}\n`);
     } else {
-      process.stdout.write(`${renderText(aggregated)}\n`);
+      process.stdout.write(`${renderText(aggregated, t)}\n`);
     }
   },
 });
