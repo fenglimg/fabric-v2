@@ -697,6 +697,29 @@ const LOCALITY_SAME_PACKAGE = 25;
 // signals when the caller supplied no query → BM25 contributes 0).
 const BM25_WEIGHT = 50;
 
+// v2.2 C3-salience (W2-T1): maturity-driven salience, deliberately sized as the
+// FINEST tie-breaker. A single BM25 term match moves the score by ~BM25_WEIGHT
+// (50) and a locality hit by 25-100; salience tops out at 15 (proven) so it can
+// only reorder candidates that already tie on content relevance AND locality.
+// This is the "防高成熟低相关压过正文" invariant: a `proven` entry that does not
+// match the intent never outranks a `draft` entry that does. Absent maturity
+// (legacy / unenriched) contributes 0, identical to draft.
+const SALIENCE_PROVEN = 15;
+const SALIENCE_VERIFIED = 8;
+const SALIENCE_DRAFT = 0;
+
+function salienceScore(item: RuleDescriptionIndexItem): number {
+  switch (item.description?.maturity) {
+    case "proven":
+      return SALIENCE_PROVEN;
+    case "verified":
+      return SALIENCE_VERIFIED;
+    default:
+      // draft or unset — the lifecycle floor.
+      return SALIENCE_DRAFT;
+  }
+}
+
 function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
   let score = 0;
 
@@ -706,6 +729,11 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
   if (context.bm25 !== undefined && context.queryTerms.length > 0) {
     score += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
   }
+
+  // v2.2 C3-salience (W2-T1): maturity tie-breaker, applied AFTER (i.e. weighted
+  // below) BM25. See SALIENCE_* calibration — it only separates entries that are
+  // otherwise equally relevant, never overriding content.
+  score += salienceScore(item);
 
   // W2-3: recency boost — read description.created_at, compare with now.
   const createdAtRaw = item.description?.created_at;

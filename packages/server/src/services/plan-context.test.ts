@@ -1313,6 +1313,88 @@ describe("planContext top_k truncation (W1-T3)", () => {
   });
 });
 
+// v2.2 C3-salience (W2-T1): maturity as the finest tie-breaker. Asserts both
+// directions: (1) among equally-relevant entries, higher maturity floats up;
+// (2) the load-bearing invariant — a high-maturity entry that does NOT match
+// the intent never outranks a low-maturity entry that DOES (content leads).
+describe("planContext salience tie-breaker (W2-T1)", () => {
+  async function seedMaturityRegistry(
+    projectRoot: string,
+    entries: Array<{ id: string; file: string; summary: string; maturity: "draft" | "verified" | "proven" }>,
+  ): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const nodes: Record<string, unknown> = {};
+    for (const e of entries) {
+      const file = `.fabric/knowledge/decisions/${e.file}`;
+      await writeFile(
+        join(projectRoot, file),
+        ["---", `summary: ${e.summary}`, `id: ${e.id}`, "type: decision", `maturity: ${e.maturity}`, "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${e.id}`, ""].join("\n"),
+      );
+      nodes[e.id] = {
+        stable_id: e.id,
+        file,
+        content_ref: file,
+        scope_glob: "**",
+        hash: `sha256:${e.id}`,
+        identity_source: "declared",
+        description: {
+          summary: e.summary,
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "",
+          id: e.id,
+          knowledge_type: "decisions",
+          maturity: e.maturity,
+          knowledge_layer: "team",
+          created_at: "2026-05-10T00:00:00Z",
+          relevance_scope: "broad",
+          relevance_paths: [],
+        },
+      };
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-salience", nodes }, null, 2)}\n`,
+    );
+  }
+
+  it("floats higher maturity up among entries with identical content relevance", async () => {
+    const projectRoot = await createTempProject();
+    // Same summary text → identical BM25 + locality; only maturity differs.
+    await seedMaturityRegistry(projectRoot, [
+      { id: "KT-DEC-7001", file: "draft.md", summary: "Shared lifecycle governance topic", maturity: "draft" },
+      { id: "KT-DEC-7002", file: "proven.md", summary: "Shared lifecycle governance topic", maturity: "proven" },
+      { id: "KT-DEC-7003", file: "verified.md", summary: "Shared lifecycle governance topic", maturity: "verified" },
+    ]);
+
+    const result = await planContext(projectRoot, { paths: ["src/x.ts"] });
+
+    // proven (15) > verified (8) > draft (0).
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-7002", "KT-DEC-7003", "KT-DEC-7001"]);
+  });
+
+  it("never lets high maturity override content relevance (防高成熟低相关压过正文)", async () => {
+    const projectRoot = await createTempProject();
+    await seedMaturityRegistry(projectRoot, [
+      // draft but matches the intent
+      { id: "KT-DEC-7101", file: "match.md", summary: "Vector embedding semantic retrieval", maturity: "draft" },
+      // proven but unrelated to the intent
+      { id: "KT-DEC-7102", file: "mature.md", summary: "Git archive deprecation cadence", maturity: "proven" },
+    ]);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding semantic search",
+    });
+
+    // The draft content-match outranks the proven non-match: BM25 (~50+/term)
+    // dwarfs the 15-point salience gap.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-7101", "KT-DEC-7102"]);
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
   tempDirs.push(projectRoot);
