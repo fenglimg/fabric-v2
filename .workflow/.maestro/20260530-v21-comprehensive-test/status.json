@@ -175,8 +175,9 @@
       "wave": 3,
       "tier": "T3",
       "done_when": "D1-D9 real-agent replay + llm_judge_run harness",
-      "status": "in-progress",
-      "evidence": "#3: 用 maestro delegate(gemini/codex/claude)跑 real-agent replay; D1-D9 taxonomy 见 e2e-axis3-v3-delta.md"
+      "status": "partial",
+      "evidence": "gemini real-agent replay(maestro delegate gem-150340-a3f1, 真实 werewolf cwd)CONFIRMED: store list✓ + scope-explain team read-set=[team,personal]✓ + 读 3 条真实迁移知识(卧底房/社交UI决策)✓; 独立 agent 结论=多store WORKS, 大重构(co-location→全局store)未发现兼容破坏。codex 跨agent replay 进行中。完整 D1-D9 taxonomy + llm_judge_run harness 属增量",
+      "verified_at": "2026-05-30"
     }
   },
   "task_decomposition": [
