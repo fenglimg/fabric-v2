@@ -1129,6 +1129,96 @@ describe("planContext payload size (UX-1/UX-4 regression)", () => {
   });
 });
 
+// v2.2 A-INFRA-1 (W1-T2-BM25): content-relevance ranking. Seeds two entries
+// with disjoint vocabularies and asserts that a caller intent matching one
+// floats it above the other — and that, absent any intent, the ordering falls
+// back to the pre-BM25 stable_id sort (backward compatibility).
+describe("planContext BM25 content ranking (W1-T2)", () => {
+  async function seedTwoTopicRegistry(projectRoot: string): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const node = (stableId: string, file: string, summary: string) => ({
+      stable_id: stableId,
+      file,
+      content_ref: file,
+      scope_glob: "**",
+      hash: `sha256:${stableId}`,
+      identity_source: "declared",
+      description: {
+        summary,
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        must_read_if: "",
+        id: stableId,
+        knowledge_type: "decisions",
+        maturity: "verified",
+        knowledge_layer: "team",
+        created_at: "2026-05-10T00:00:00Z",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      },
+    });
+    const frontmatter = (id: string, summary: string) =>
+      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "vector.md"),
+      frontmatter("KT-DEC-9001", "Vector embedding semantic retrieval over the knowledge base"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "archive.md"),
+      frontmatter("KT-DEC-9002", "Git lifecycle archive cadence deprecation nudge"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-bm25",
+        nodes: {
+          "KT-DEC-9001": node("KT-DEC-9001", ".fabric/knowledge/decisions/vector.md", "Vector embedding semantic retrieval over the knowledge base"),
+          "KT-DEC-9002": node("KT-DEC-9002", ".fabric/knowledge/decisions/archive.md", "Git lifecycle archive cadence deprecation nudge"),
+        },
+      }, null, 2)}\n`,
+    );
+  }
+
+  it("floats the content-matching entry to the top when intent is supplied", async () => {
+    const projectRoot = await createTempProject();
+    await seedTwoTopicRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "add vector embedding semantic search",
+    });
+
+    // BM25 ranks the vector entry first despite KT-DEC-9002 sorting earlier
+    // alphabetically — content relevance leads.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9001", "KT-DEC-9002"]);
+  });
+
+  it("falls back to stable_id order when no intent is supplied (BM25 disabled)", async () => {
+    const projectRoot = await createTempProject();
+    await seedTwoTopicRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
+
+    // No query terms → BM25 contributes 0 → both entries tie on content and
+    // the alphabetic stable_id tiebreaker restores deterministic order.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9001", "KT-DEC-9002"]);
+  });
+
+  it("ranks the archive entry first when the intent matches it instead", async () => {
+    const projectRoot = await createTempProject();
+    await seedTwoTopicRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/lifecycle.ts"],
+      intent: "git archive deprecation cadence",
+    });
+
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9002", "KT-DEC-9001"]);
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
   tempDirs.push(projectRoot);

@@ -1,4 +1,4 @@
-import { type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
+import { type RuleDescription, type RuleDescriptionIndexItem, tokenize } from "@fenglimg/fabric-shared";
 
 import { readSelectionTokenTtlMs } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
@@ -8,6 +8,18 @@ import { loadActiveMetaOrStale } from "./load-active-meta.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
+import { buildBm25Model, buildQueryTerms, type Bm25Model } from "./bm25.js";
+
+// v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
+// and the sort comparator. `queryTerms` are the CJK-tokenized caller intent;
+// `bm25` is the model built over the candidate corpus (only present when the
+// caller supplied query terms — otherwise ranking degrades to recency+locality).
+type ScoringContext = {
+  nowMs: number;
+  targetPaths: string[];
+  queryTerms: string[];
+  bm25?: Bm25Model;
+};
 
 export type PlanContextInput = {
   paths: string[];
@@ -249,9 +261,20 @@ export async function planContext(
   // contributes zero locality score (no dirname / no package root), which is
   // the correct degenerate behavior — broad mode falls through to recency +
   // stable_id tiebreaker.
-  const scoringContext = {
+  const scoringContext: ScoringContext = {
     nowMs: Date.now(),
     targetPaths: input.target_paths ?? dedupePaths(input.paths),
+    // v2.2 A-INFRA-1 (W1-T2-BM25): caller intent → BM25 query terms. Joins the
+    // free-form intent with known_tech and every detected_entities value, then
+    // CJK-tokenizes. Empty when the caller supplies none of these (broad
+    // SessionStart probe), which disables BM25 and falls back to recency+locality.
+    queryTerms: buildQueryTerms(
+      [
+        input.intent ?? "",
+        ...(input.known_tech ?? []),
+        ...Object.values(input.detected_entities ?? {}).flat(),
+      ].join(" "),
+    ),
   };
   // v2.0.0-rc.38 UX-1/UX-2: build the single candidate index once. The per-path
   // filters (shouldIncludeIndexItemForPath / shouldIncludeByRelevance) have been
@@ -426,38 +449,70 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 // caller can raise a data-quality diagnostic.
 function buildDescriptionIndex(
   meta: AgentsMeta,
-  scoringContext?: { nowMs: number; targetPaths: string[] },
+  scoringContext?: ScoringContext,
 ): { items: RuleDescriptionIndexItem[]; suppressedStableIds: string[] } {
   const suppressedStableIds: string[] = [];
-  const items = Object.entries(meta.nodes)
-    .flatMap(([nodeId, node]) => {
-      const baseDescription = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
-      if (baseDescription === undefined) {
-        return [];
-      }
+  const rawItems = Object.entries(meta.nodes).flatMap(([nodeId, node]) => {
+    const baseDescription = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
+    if (baseDescription === undefined) {
+      return [];
+    }
 
-      const stableId = node.stable_id ?? nodeId;
+    const stableId = node.stable_id ?? nodeId;
 
-      // fold ②: suppress signal-less shells.
-      if (isEmptyShellDescription(baseDescription, stableId)) {
-        suppressedStableIds.push(stableId);
-        return [];
-      }
+    // fold ②: suppress signal-less shells.
+    if (isEmptyShellDescription(baseDescription, stableId)) {
+      suppressedStableIds.push(stableId);
+      return [];
+    }
 
-      // Backfill the path-inferred knowledge layer (team vs personal from the
-      // content_ref/file root) when frontmatter left it unset, so MCP clients
-      // always see a layer without a separate top-level mirror.
-      const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
-      const description =
-        baseDescription.knowledge_layer === undefined && inferredLayer !== undefined
-          ? { ...baseDescription, knowledge_layer: inferredLayer }
-          : baseDescription;
+    // Backfill the path-inferred knowledge layer (team vs personal from the
+    // content_ref/file root) when frontmatter left it unset, so MCP clients
+    // always see a layer without a separate top-level mirror.
+    const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
+    const description =
+      baseDescription.knowledge_layer === undefined && inferredLayer !== undefined
+        ? { ...baseDescription, knowledge_layer: inferredLayer }
+        : baseDescription;
 
-      return [{ stable_id: stableId, description }];
-    })
-    .sort((left, right) => compareDescriptionIndexItems(left, right, scoringContext));
+    return [{ stable_id: stableId, description }];
+  });
+
+  // v2.2 A-INFRA-1 (W1-T2-BM25): build the BM25 model over this call's candidate
+  // corpus and fold it into the scoring context. Only built when the caller
+  // supplied query terms — a query-less broad probe skips the work entirely and
+  // ranks on recency+locality exactly as before (backward compatible). The
+  // model scores against the candidate set itself (corpus = candidates), which
+  // is the correct collection for IDF: rarity is measured among the entries the
+  // caller is choosing between.
+  const effectiveContext =
+    scoringContext !== undefined && scoringContext.queryTerms.length > 0
+      ? {
+          ...scoringContext,
+          bm25: buildBm25Model(
+            rawItems.map((item) => ({ id: item.stable_id, tokens: tokenize(documentTextForItem(item.description)) })),
+          ),
+        }
+      : scoringContext;
+
+  const items = rawItems.sort((left, right) => compareDescriptionIndexItems(left, right, effectiveContext));
 
   return { items, suppressedStableIds };
+}
+
+// v2.2 A-INFRA-1 (W1-T2-BM25): flatten a candidate's selection-signal fields
+// into the BM25 document text. Mirrors the surface the LLM reads when choosing,
+// so content relevance is scored over the same words the caller sees.
+function documentTextForItem(description: RuleDescription): string {
+  return [
+    description.summary,
+    description.must_read_if,
+    ...description.intent_clues,
+    ...description.tech_stack,
+    ...description.impact,
+    ...(description.entities ?? []),
+    ...(description.tags ?? []),
+  ].join(" ");
 }
 
 // v2.0.0-rc.38 UX-2: an entry whose summary just echoes its stable_id and whose
@@ -590,11 +645,11 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
 function compareDescriptionIndexItems(
   left: RuleDescriptionIndexItem,
   right: RuleDescriptionIndexItem,
-  context?: { nowMs: number; targetPaths: string[] },
+  context?: ScoringContext,
 ): number {
   if (context !== undefined) {
-    const leftScore = scoreDescriptionItem(left, context.nowMs, context.targetPaths);
-    const rightScore = scoreDescriptionItem(right, context.nowMs, context.targetPaths);
+    const leftScore = scoreDescriptionItem(left, context);
+    const rightScore = scoreDescriptionItem(right, context);
     if (leftScore !== rightScore) {
       return rightScore - leftScore; // descending
     }
@@ -616,28 +671,40 @@ const LOCALITY_SAME_FILE = 100;
 const LOCALITY_SAME_DIR = 50;
 const LOCALITY_SAME_PACKAGE = 25;
 
-function scoreDescriptionItem(
-  item: RuleDescriptionIndexItem,
-  nowMs: number,
-  targetPaths: string[],
-): number {
+// v2.2 A-INFRA-1 (W1-T2-BM25): weight applied to the raw BM25 score before it
+// joins the additive score. Calibrated so content relevance LEADS the ranking:
+// a single strong term match (raw BM25 ~2-4 on the small KB corpus) clears the
+// top locality tier (same-file = 100), so a candidate whose TEXT matches the
+// caller's intent outranks one merely sitting in the same directory. Recency
+// and locality remain as secondary nudges / tie-breakers (and as the SOLE
+// signals when the caller supplied no query → BM25 contributes 0).
+const BM25_WEIGHT = 50;
+
+function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
   let score = 0;
+
+  // v2.2 A-INFRA-1 (W1-T2-BM25): content relevance — the lead signal. 0 when no
+  // query terms / no BM25 model (broad probe), preserving recency+locality-only
+  // ranking for the backward-compatible path.
+  if (context.bm25 !== undefined && context.queryTerms.length > 0) {
+    score += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
+  }
 
   // W2-3: recency boost — read description.created_at, compare with now.
   const createdAtRaw = item.description?.created_at;
   if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
     const createdMs = Date.parse(createdAtRaw);
-    if (Number.isFinite(createdMs) && nowMs - createdMs < RECENCY_WINDOW_MS) {
+    if (Number.isFinite(createdMs) && context.nowMs - createdMs < RECENCY_WINDOW_MS) {
       score += RECENCY_BOOST;
     }
   }
 
   // W2-4: path-locality scoring — max over (relevance_path, target_path).
-  if (targetPaths.length > 0) {
+  if (context.targetPaths.length > 0) {
     const relevancePaths = item.description?.relevance_paths ?? [];
     let best = 0;
     for (const rp of relevancePaths) {
-      for (const tp of targetPaths) {
+      for (const tp of context.targetPaths) {
         const tier = localityTier(rp, tp);
         if (tier > best) best = tier;
       }
