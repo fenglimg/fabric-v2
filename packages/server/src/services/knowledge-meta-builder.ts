@@ -29,7 +29,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteText, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, sha256 } from "./_shared.js";
 
 type NodeMeta = AgentsMeta["nodes"][string];
@@ -143,33 +143,46 @@ export async function writeKnowledgeMeta(
   const projectRoot = normalizeProjectRoot(projectRootInput);
   const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
   const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
-  const existingMeta = await readExistingMeta(metaPath);
-  const result = await buildKnowledgeMeta(projectRoot);
+  // F39 (ISS-20260531-047) / F30 / F31: the read-rebuild-write below preserves
+  // the counters envelope verbatim (buildKnowledgeMeta copies previousMeta.counters
+  // through). KnowledgeIdAllocator.allocate() bumps those same counters inside
+  // `withFileLock(${metaPath}.lock)`. Without taking the SAME lock here, a
+  // writeKnowledgeMeta that read meta before a concurrent allocate's bump landed
+  // would atomically clobber the bumped counter back to its stale value —
+  // re-minting an already-handed-out stable_id. Hold the allocator's lock across
+  // the whole read→rebuild→write so the two operations serialize. NOTE: callers
+  // (reconcileKnowledge, doctor --fix, load-active-meta auto-heal) must NOT wrap
+  // this in the same lock — withFileLock is non-reentrant (O_EXCL) and would
+  // self-deadlock.
+  return withFileLock(`${metaPath}.lock`, async () => {
+    const existingMeta = await readExistingMeta(metaPath);
+    const result = await buildKnowledgeMeta(projectRoot);
 
-  if (!result.changed) {
+    if (!result.changed) {
+      return result;
+    }
+
+    await ensureParentDirectory(metaPath);
+    await atomicWriteText(metaPath, `${JSON.stringify(result.meta, null, 2)}\n`);
+    // v2/rc.2: cache lives under `.fabric/.cache/` (gitignored). Ensure the
+    // subdirectory exists before atomicWriteText — first scan in a fresh repo
+    // would otherwise ENOENT on the missing parent.
+    await ensureParentDirectory(knowledgeTestIndexPath);
+    await atomicWriteText(knowledgeTestIndexPath, `${JSON.stringify(result.knowledgeTestIndex, null, 2)}\n`);
+
+    if (existingMeta === undefined || stableStringify(existingMeta) !== stableStringify(result.meta)) {
+      await recordBaselineSynced(projectRoot, {
+        previousRevision: existingMeta?.revision,
+        revision: result.meta.revision,
+        syncedFiles: collectSyncedFiles(existingMeta, result.meta),
+        acceptedStableIds: collectStableIds(result.meta),
+        driftDetails: collectDriftDetails(existingMeta, result.meta),
+        source: options.source,
+      });
+    }
+
     return result;
-  }
-
-  await ensureParentDirectory(metaPath);
-  await atomicWriteText(metaPath, `${JSON.stringify(result.meta, null, 2)}\n`);
-  // v2/rc.2: cache lives under `.fabric/.cache/` (gitignored). Ensure the
-  // subdirectory exists before atomicWriteText — first scan in a fresh repo
-  // would otherwise ENOENT on the missing parent.
-  await ensureParentDirectory(knowledgeTestIndexPath);
-  await atomicWriteText(knowledgeTestIndexPath, `${JSON.stringify(result.knowledgeTestIndex, null, 2)}\n`);
-
-  if (existingMeta === undefined || stableStringify(existingMeta) !== stableStringify(result.meta)) {
-    await recordBaselineSynced(projectRoot, {
-      previousRevision: existingMeta?.revision,
-      revision: result.meta.revision,
-      syncedFiles: collectSyncedFiles(existingMeta, result.meta),
-      acceptedStableIds: collectStableIds(result.meta),
-      driftDetails: collectDriftDetails(existingMeta, result.meta),
-      source: options.source,
-    });
-  }
-
-  return result;
+  });
 }
 
 // ISS-004: buildKnowledgeMeta (and thus this fn) runs on EVERY read path

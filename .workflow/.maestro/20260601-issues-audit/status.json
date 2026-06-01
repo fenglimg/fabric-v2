@@ -209,6 +209,28 @@
         "evidence": "security wave",
         "verified_at": "2026-06-01T05:00:00.000Z"
       }
+    },
+    {
+      "id": "T9",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F39/F30/F31: meta-counter writers (writeKnowledgeMeta, doctor fixCounterDesync/applyIndexDriftFix) hold ${metaPath}.lock to serialize against KnowledgeIdAllocator.allocate — prevents counter clobber → duplicate stable_id",
+      "done_when": "fix + tsc 绿 + 测试绿 + grep 复核",
+      "from_finding": "F39",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": "writeKnowledgeMeta wrapped in withFileLock(${metaPath}.lock) (knowledge-meta-builder.ts); doctor fixCounterDesync(:8135)+applyIndexDriftFix(:2334) wrapped; reconcileKnowledge delegates locked write (no nesting — withFileLock non-reentrant, verified doctor 252/252 no deadlock). +1 regression test F39 counter-clobber. Full server suite 733/733; tsc EXIT0.",
+        "verified_at": "2026-06-01T07:40:08.758Z"
+      }
     }
   ],
   "findings": [
@@ -227,9 +249,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "knowledge-meta-builder.ts:515-566 (ISS-003): read+sha256-per-test-file gated behind annotationCache (mtime/size); cache hit zero content reads (:543-554). Residual readdir-only walk is documented deliberate-cheap retention.",
+        "refute_reason": "already-fixed",
+        "classification": "perf-optimization"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -248,9 +271,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "knowledge-meta-builder.ts:197-291 (ISS-004): computeKnowledgeBasedAgentsMeta gates per-file read+sha256 behind computeKnowledgeFileSignature; signature match returns cached meta zero file reads (:237-241).",
+        "refute_reason": "already-fixed",
+        "classification": "perf-optimization"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -269,9 +293,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "event-ledger.ts: readEventLedger reads whole file but bounded by ISS-025 size rotation (50MB trigger→25MB, :272-286) + 30d retention + 6h tick; parse gated by ISS-005 event_type pushdown (:358). Bounded, not unbounded.",
+        "refute_reason": "already-fixed",
+        "classification": "perf-optimization"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -672,9 +697,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "recall path does NOT read ledger 3x — recall.ts:117 only APPENDS one telemetry trace. The 3x readEventLedger is doctor.ts:4575-4577 cite-rollup (cold path). All reads use event_type pushdown skipping JSON.parse+Zod for non-matching lines (ISS-005, event-ledger.ts:358).",
+        "refute_reason": "already-fixed",
+        "classification": "perf-optimization"
       },
       "severity": "high",
       "fix_task_id": null
@@ -712,9 +738,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "knowledge-id-allocator.ts:50-65 (ISS-013): allocate() read→mutate→atomic-write wrapped in withFileLock(${metaPath}.lock); cross+in-process serialized. Test concurrent_allocation proves N parallel allocate() mint distinct ids.",
+        "refute_reason": "already-fixed",
+        "classification": "concurrency"
       },
       "severity": "high",
       "fix_task_id": null
@@ -732,9 +759,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "knowledge-id-allocator.ts:90-115 (ISS-014): corrupt JSON now quarantines to .corrupted.{ts} sidecar and THROWS GenericIOError instead of returning empty meta — original file preserved, no silent overwrite. Test corrupt_meta_preservation covers it.",
+        "refute_reason": "already-fixed",
+        "classification": "data-loss"
       },
       "severity": "high",
       "fix_task_id": null
@@ -832,12 +860,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "doctor.ts fixCounterDesync(:8135) + applyIndexDriftFix(:2334) did unlocked read→atomicWriteJson of counters → same clobber class as F39 (sibling write sites). FIXED: both wrapped in withFileLock(${metaPath}.lock).",
+        "refute_reason": null,
+        "classification": "concurrency",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T9"
     },
     {
       "id": "F31",
@@ -852,12 +882,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "doctor --fix reconcileKnowledge(writeKnowledgeMeta) + fixCounterDesync were two independent unlocked atomic writes. Each meta write now holds ${metaPath}.lock; combined with the deliberate before/after fixCounterDesync ordering (doctor.ts:1540-1618) the counter-clobber window is closed. Cross-step intermediate visibility is self-healing via the post-reconcile fixCounterDesync (acceptable; full doctor-run lock would block live MCP allocate for seconds).",
+        "refute_reason": null,
+        "classification": "concurrency",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T9"
     },
     {
       "id": "F32",
@@ -872,9 +904,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "All ledger appends are best-effort by design: emitEventBestEffort (extract-knowledge.ts:907-916) + recall.ts:127 swallow with comment 'Event emission is observability-only — pending file write is source of truth'. Ledger is non-authoritative; source-of-truth writes propagate errors separately.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -912,9 +945,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "readEventLedger/rotateEventLedger memory bounded by ISS-025 size rotation (50MB→25MB) + retention + 6h tick (event-ledger.ts:272-286,557-564). Not unbounded.",
+        "refute_reason": "already-fixed",
+        "classification": "perf-optimization"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1015,12 +1049,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "writeKnowledgeMeta (knowledge-meta-builder.ts:139) did read-rebuild-write of agents.meta.json preserving counters from a possibly-stale snapshot WITHOUT the allocator's ${metaPath}.lock → could clobber a concurrent allocate()'s counter bump → re-mint duplicate stable_id. Reachable under user's multi-window concurrent-dev. FIXED: wrapped in withFileLock.",
+        "refute_reason": null,
+        "classification": "concurrency",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T9"
     },
     {
       "id": "F40",
@@ -1035,9 +1071,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "F9/ISS-002: append/rotate/drop/truncate all wrapped in cross-process withFileLock(events.jsonl.lock) (event-ledger.ts:36-40 exclusiveLedgerWrite, :260 append, :392 truncate, :496 rotate, :646 drop). Cross-process mutual exclusion present.",
+        "refute_reason": "already-fixed",
+        "classification": "concurrency"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1055,9 +1092,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "atomicWriteText uses tmp+rename (atomic, prevents torn writes regardless of fsync — atomic-write.ts:37-39) for ledger rewrites; append crashes handled by partial-tail tolerance (truncateLedgerToLastNewline, event-ledger.ts:387-420); shutdown durability via flushAndSyncEventLedger fsync (:781-790).",
+        "refute_reason": "already-fixed",
+        "classification": "durability"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1235,9 +1273,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "metrics.jsonl is a FOLDED counter-row ledger (rc.37 Wave B): one row per flush/drain interval, not per-event (metrics.ts:87-109) — low growth rate. doctor G7/G9/G10 surface size/staleness warnings (events-jsonl-gates.ts). Adding rotation is rc3 enhancement, not critical bug.",
+        "refute_reason": "non-bug",
+        "classification": "perf-optimization"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1255,9 +1294,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "events.jsonl scans bounded by rotation+pushdown (see F3); metrics.jsonl is folded-counters low-growth (see F50). 'Scale poorly' mitigated.",
+        "refute_reason": "already-fixed",
+        "classification": "perf-optimization"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1529,7 +1569,7 @@
       "name": "G-TRIAGE",
       "desc": "critical+high 全部 triage(每簇 verdict!=null)",
       "target": "64/64 verdicted",
-      "actual": null,
+      "actual": "31/64 verdicted",
       "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
       "verified_at": null
     },

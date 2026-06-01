@@ -16,6 +16,7 @@ import {
   __knowledgeMetaCacheStats,
   __resetKnowledgeMetaCache,
 } from "./knowledge-meta-builder.js";
+import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -1248,6 +1249,59 @@ describe("computeKnowledgeBasedAgentsMeta knowledge-file cache (ISS-004)", () =>
     const second = await computeKnowledgeBasedAgentsMeta(projectRoot);
     expect(__knowledgeMetaCacheStats.fileReads).toBeGreaterThan(readsAfterFirst); // re-read on change
     expect(second.revision).not.toBe(first.revision); // content change reflected
+  });
+
+  // F39 (ISS-20260531-047) / F30 / F31: writeKnowledgeMeta rebuilds the meta and
+  // carries the counters envelope through verbatim, but it used to do its
+  // read→rebuild→write WITHOUT taking the allocator's `${metaPath}.lock`. A
+  // writeKnowledgeMeta that read meta before a concurrent allocate's counter
+  // bump landed would atomically clobber the bump back to its stale value,
+  // re-minting an already-handed-out stable_id. With the lock, the two
+  // operations serialize: every allocation persists and no rebuild lowers the
+  // counter. The invariant below (final counter == #allocations, all ids
+  // distinct) holds only when both writers share the lock.
+  it("F39 counter-clobber: concurrent writeKnowledgeMeta never overwrites an allocate() counter bump", async () => {
+    const projectRoot = await createProject("rmb-f39-clobber");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/seed.md",
+      "---\nstable_id: KT-DEC-0900\ndescription: seed\n---\n# Seed\n## Summary\nseed\n",
+    );
+    // Baseline meta with zeroed counters.
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    __resetKnowledgeMetaCache();
+
+    const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+    const allocator = new KnowledgeIdAllocator(metaPath);
+
+    const N = 8;
+    const ops: Promise<unknown>[] = [];
+    for (let i = 0; i < N; i++) {
+      // Each allocate() bumps counters.KT.DEC by one under the allocator lock.
+      ops.push(allocator.allocate("team", "decisions"));
+      // Each writeKnowledgeMeta() adds a fresh node (so result.changed === true
+      // and it actually rewrites the meta file — the exact path that could
+      // clobber a concurrent counter bump).
+      ops.push(
+        (async () => {
+          await writeProjectFile(
+            projectRoot,
+            `.fabric/knowledge/decisions/extra-${i}.md`,
+            `---\nstable_id: KT-DEC-09${String(i + 10)}\ndescription: extra ${i}\n---\n# Extra ${i}\n## Summary\nx\n`,
+          );
+          return writeKnowledgeMeta(projectRoot, { source: "sync_meta" });
+        })(),
+      );
+    }
+    const results = await Promise.all(ops);
+
+    const allocatedIds = results.filter((_value, idx) => idx % 2 === 0) as string[];
+    expect(new Set(allocatedIds).size).toBe(N); // every minted id is distinct
+
+    const finalMeta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
+    // No writeKnowledgeMeta clobbered a bump back to a stale value: the counter
+    // reflects all N allocations.
+    expect(finalMeta.counters?.KT?.DEC).toBe(N);
   });
 });
 

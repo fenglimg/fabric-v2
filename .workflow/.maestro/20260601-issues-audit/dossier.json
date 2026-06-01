@@ -1,0 +1,671 @@
+[
+ {
+  "id": "F1",
+  "sev": "critical",
+  "title": "Full project-tree walk + read+sha256 of every test file on EVERY recall/plan-context call",
+  "expectation": "Cache the knowledge-test index keyed by a cheap stat-based fingerprint (max mtime of knowledge/ + test files, or a dir-listing hash) and only re-walk when it changes; or decouple computeKnowledgeTestIndex from the read-path buildKnowledgeMeta entirely (the test-annotation index is only needed by doc",
+  "members": [
+   {
+    "id": "ISS-20260530-003",
+    "path": null,
+    "desc": "computeKnowledgeTestIndex (called unconditionally inside buildKnowledgeMeta) calls findFabricVerifyAnnotations -> findTestFiles, which performs a recursive readdir walk of the ENTIRE project tree (every dir except .git/.fabric/node_modules/dist/build/coverage) and then readFile + sha256 + line-split of EVERY *.test.ts/*.spec.ts file in the repo, scanning each line with a regex for `@fabric-verify` annotations. buildKnowledgeMeta has NO mtime/revision short-circuit, so this runs on every loadActiveMeta / loadActiveMetaOrStale, which are invoked on every fab_plan_context call (planContext line 2"
+   },
+   {
+    "id": "ISS-20260531-009",
+    "path": null,
+    "desc": "Overlong function and file handling complex installation logic, multi-client support, and interactive prompts."
+   },
+   {
+    "id": "ISS-20260531-042",
+    "path": null,
+    "desc": "buildKnowledgeMeta is called unconditionally on all read/plan paths (loadActiveMeta / loadActiveMetaOrStale during planContext, recall, getKnowledgeSections). It triggers findFabricVerifyAnnotations -> findTestFiles, which recursively walks the ENTIRE workspace directory + stats all files to inspect annotations. At 10x-100x codebase size, a full-workspace traversal on every read request degrades performance catastrophically."
+   }
+  ]
+ },
+ {
+  "id": "F2",
+  "sev": "critical",
+  "title": "buildKnowledgeMeta re-reads + re-hashes every knowledge file on every read-path call (no cache)",
+  "expectation": "Memoize buildKnowledgeMeta output keyed by a directory-fingerprint (file count + max mtime over the knowledge subdirs), reusing the existing contextCache infrastructure / file_watch invalidation. The revision-drift comparison can short-circuit on the fingerprint without reading file bodies when noth",
+  "members": [
+   {
+    "id": "ISS-20260530-004",
+    "path": null,
+    "desc": "loadActiveMeta / loadActiveMetaOrStale always call buildKnowledgeMeta(projectRoot) purely to compare the derived revision against the on-disk revision. buildKnowledgeMeta -> computeKnowledgeBasedAgentsMeta does findKnowledgeFiles (readdir over decisions/pitfalls/guidelines/models/processes/pending in BOTH team and personal roots) then readFile + sha256 + frontmatter-parse of EVERY knowledge .md (knowledge-meta-builder.ts:193-218), plus stableStringify (flattenKeys+sort over the whole meta, line 302-303). The contextCache 'meta' slot only caches readAgentsMeta's parsed JSON — it does NOT cache "
+   },
+   {
+    "id": "ISS-20260531-093",
+    "path": null,
+    "desc": "ensureKnowledgeFresh (called on every MCP tool invocation after a 500ms cooldown) loops every knowledge markdown file and sequentially awaits processSingleFile (readFile + sha256). For larger KBs this is hundreds of sequential blocking I/O ops on the hot path."
+   }
+  ]
+ },
+ {
+  "id": "F3",
+  "sev": "critical",
+  "title": "Repeated full-corpus loading of event ledger into memory",
+  "expectation": "Parse the ledger once per doctor run and pass the resulting events array to all dependent inspection functions, or use a stream parser.",
+  "members": [
+   {
+    "id": "ISS-20260531-001",
+    "path": null,
+    "desc": "readEventLedger reads and JSON-parses the entire events.jsonl file into memory. It is called repeatedly (8+ times) across inspection functions like inspectEventLedger, inspectCiteGoodhart, buildDriftedStableIds, and inspectDriftUnconsumed. For large event ledgers this results in unbounded memory allocation and CPU overhead."
+   },
+   {
+    "id": "ISS-20260531-094",
+    "path": null,
+    "desc": "JsonlEventStore.readEvents loads and parses the entire event ledger from disk on every lookup (get stream ID, replay events). As the ledger grows this causes linear degradation and repeated disk I/O on the streamable-HTTP hot path."
+   }
+  ]
+ },
+ {
+  "id": "F4",
+  "sev": "critical",
+  "title": "God-file: doctor.ts (8697 lines)",
+  "expectation": "Decompose into smaller, domain-specific lint and repair services.",
+  "members": [
+   {
+    "id": "ISS-20260531-003",
+    "path": null,
+    "desc": "Massive 8697-line dependency hub handling almost all server linting and fixing logic, coupled to nearly every service."
+   },
+   {
+    "id": "ISS-20260531-037",
+    "path": null,
+    "desc": "doctor.ts is an 8696-line god-file packing report generation (runDoctorReport), three repair/mutation runners, and dozens of complex low-level inspectors (e.g. inspectL2ManagedBlockDrift spanning lines 3250-4012, over 750 lines). Highly regression-prone, slow to analyze, hard to test in isolation."
+   }
+  ]
+ },
+ {
+  "id": "F7",
+  "sev": "critical",
+  "title": "Synchronous git process spawning during array sorting (forensic scan)",
+  "expectation": "Pre-calculate git churn weights for all entry points once into a Map, then look them up O(1) in the comparator.",
+  "members": [
+   {
+    "id": "ISS-20260531-085",
+    "path": null,
+    "desc": "In collectEntryPoints, the sort comparator calls readGitChurnWeight for compared elements, which runs execFileSync to spawn a synchronous git process. Sorting K elements is O(K log K) comparisons, so it can trigger hundreds of synchronous external process spawns, completely blocking the main event loop."
+   },
+   {
+    "id": "ISS-20260531-089",
+    "path": null,
+    "desc": "The forensic scanner sorts all detected entry points with a comparator calling readGitChurnWeight per comparison, which synchronously spawns a child process (execFileSync git log) with no caching. O(N log N) comparisons cause hundreds of synchronous spawns (50 files -> 500+ spawns), freezing the CLI, starving the event loop, and risking FD exhaustion."
+   }
+  ]
+ },
+ {
+  "id": "F12",
+  "sev": "critical",
+  "title": "Synchronous Blocking I/O in Hot Edit-Time Hook Paths",
+  "expectation": "Refactor the file persistence helper (state-store.cjs) and hook script to use async operations (fs.promises) or a decoupled background process so writes do not block the active editor loop.",
+  "members": [
+   {
+    "id": "ISS-20260531-035",
+    "path": null,
+    "desc": "The PreToolUse hook (knowledge-hint-narrow.cjs) is invoked synchronously on every file edit tool (Edit, Write, MultiEdit) to inject narrow knowledge hints. It blocks the main host event loop by performing synchronous filesystem checks and writes (readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync via the atomicWrite wrapper in state-store.cjs) on every invocation. In rapid edits or concurrent workspaces this blocks Node's single thread on disk I/O, creating a typing/editing delay for the developer."
+   }
+  ]
+ },
+ {
+  "id": "F18",
+  "sev": "high",
+  "title": "PreToolUse hook appends edit-counter / events.jsonl / silence-counter with bare appendFileSync — no advisory lock (multi-window interleave)",
+  "expectation": "Route all three appends through the appendLockedLine pattern (factor it out of injection-log.cjs into lib/ and share it), or at minimum events.jsonl since it is the load-bearing ledger. The counters could alternatively be made session-scoped (filename suffixed with session_id, like hint-dismiss-{ses",
+  "members": [
+   {
+    "id": "ISS-20260530-011",
+    "path": null,
+    "desc": "The PreToolUse narrow hook fires on every Edit/Write/MultiEdit, making it the single highest-frequency, most-concurrency-exposed write surface in Fabric. Three functions append to SHARED, non-session-scoped files with plain appendFileSync and zero serialization: appendEditIntentToLedger -> .fabric/events.jsonl (line 430), appendEditCounter -> .fabric/.cache/edit-counter (line 474), appendHintSilenceCounter -> .fabric/.cache/hint-silence-counter (line 504). This is exactly the multi-window scenario for which injections.jsonl received the O_EXCL advisory lock in commit 76bc350 (injection-log.cjs"
+   },
+   {
+    "id": "ISS-20260530-012",
+    "path": null,
+    "desc": "The same un-serialized bare-append pattern exists in the Stop hook (fabric-hint.cjs) and SessionStart broad hook. emitSignalFiredEvent appends to events.jsonl at fabric-hint.cjs:1275, the assistant-turn observer appends per-turn at fabric-hint.cjs:1485, the empty-shell metrics fold appends to metrics.jsonl at fabric-hint.cjs:1510, and the broad hook appends a hook_surface_emitted event at knowledge-hint-broad.cjs:968. These are concurrent hook processes (Stop / SessionStart fire across multiple windows) appending to the SAME shared ledger files with no lock. Under the documented multi-window c"
+   }
+  ]
+ },
+ {
+  "id": "F19",
+  "sev": "high",
+  "title": "Synchronous file system reads in full-corpus scans (iterateCanonicalEntries)",
+  "expectation": "Replace sync FS calls with async variants (fs/promises) or cache the canonical entries map across the doctor run.",
+  "members": [
+   {
+    "id": "ISS-20260531-006",
+    "path": null,
+    "desc": "iterateCanonicalEntries uses readdirSync and readFileSync. It is called multiple times sequentially across inspections (inspectDraftAutoPromote, inspectDraftBacklog, inspectKnowledgeTagsEmpty). This causes N+1 blocking sync I/O calls scaling linearly with knowledge entries, blocking the event loop on hot paths."
+   },
+   {
+    "id": "ISS-20260531-015",
+    "path": null,
+    "desc": "searchEntries performs a linear O(N) scan across all pending and canonical trees, calling readFile on every markdown file to parse frontmatter for titles/summaries/tags. This O(N) FS + parsing load degrades search latency severely as the KB grows 10x-100x."
+   }
+  ]
+ },
+ {
+  "id": "F21",
+  "sev": "high",
+  "title": "O(N * M) nested array intersection loop on recall path",
+  "expectation": "Convert candidateIds and requestedIds to Sets for O(1) membership, yielding O(N+M).",
+  "members": [
+   {
+    "id": "ISS-20260531-092",
+    "path": null,
+    "desc": "On the recall path, candidate IDs and requested IDs are intersected with nested loops (effectiveIds.filter + requestedIds.includes), giving O(N*M) instead of O(N+M)."
+   },
+   {
+    "id": "ISS-20260531-105",
+    "path": null,
+    "desc": "Combined recall filters effective IDs against candidate IDs via effectiveIds.filter(id => candidateIds.includes(id)), then dedupes preserving order with a loop calling requestedIds.includes(id). Both arrays can grow to the retrieval limit N (or larger if a client passes a huge ID array), so .includes() inside .filter()/loop is O(N^2), costly at hundreds of IDs."
+   }
+  ]
+ },
+ {
+  "id": "F22",
+  "sev": "high",
+  "title": "Full events.jsonl read + Zod-validate of every line on every recall (3x per fab_recall), only to surface rare redirects",
+  "expectation": "Add an early per-line event_type prefilter (cheap substring/JSON key check) before Zod safeParse, or maintain a small in-memory cache of the redirect map invalidated on append. De-duplicate the redundant loadIdRedirectMap calls across planContext/recall/getKnowledgeSections within one recall (comput",
+  "members": [
+   {
+    "id": "ISS-20260530-005",
+    "path": null,
+    "desc": "readEventLedger reads the entire events.jsonl, splits all lines, JSON.parses and runs eventLedgerEventSchema.safeParse on EVERY line, builds the full events array, THEN applies 4 chained .filter() passes (event-ledger.ts:262-283). The event_type filter is applied post-parse, so even loadIdRedirectMap (which only wants knowledge_id_redirect events) pays to parse+validate the entire ledger. loadIdRedirectMap is called in planContext (plan-context.ts:359) AND again in recall (recall.ts:92) AND again in getKnowledgeSections (knowledge-sections.ts:114) — so a single fab_recall does 3 full-ledger sc"
+   }
+  ]
+ },
+ {
+  "id": "F23",
+  "sev": "high",
+  "title": "BM25/locality score recomputed for every item on every comparator invocation (score-in-sort antipattern)",
+  "expectation": "Precompute each item's score once into a parallel array (or Schwartzian transform: map to {item, score} then sort on the cached score), so the comparator only subtracts two numbers. Eliminates the log n score-recompute factor and the repeated locality nested-loop.",
+  "members": [
+   {
+    "id": "ISS-20260530-006",
+    "path": null,
+    "desc": "sortDescriptionItems builds the BM25 model once, but then sorts via compareDescriptionIndexItems which calls scoreDescriptionItem for BOTH the left and right item on EVERY pairwise comparison (plan-context.ts:703-716). Array.sort makes O(n log n) comparisons, so each candidate's score is recomputed ~log n times instead of once. scoreDescriptionItem is not trivial: per call it runs bm25.scoreDoc (loops query terms), a vector-map lookup, Date.parse, and a nested loop over relevance_paths x targetPaths with localityTier doing regex .search + string splits (plan-context.ts:798-808). Net effective "
+   }
+  ]
+ },
+ {
+  "id": "F24",
+  "sev": "high",
+  "title": "KnowledgeIdAllocator.allocate() read-modify-write of agents.meta.json counters is not serialized — concurrent allocation yields duplicate stable_ids",
+  "expectation": "Guard the read-modify-write with a cross-process advisory lock on agents.meta.json (O_EXCL lock-file like injection-log.cjs, or proper-lockfile). Loop-based promotion in review.ts amplifies the window, so the lock should ideally span the whole batch or be re-acquired per allocate.",
+  "members": [
+   {
+    "id": "ISS-20260530-013",
+    "path": null,
+    "desc": "allocate() performs readMeta() -> allocateKnowledgeId(advance counter) -> writeMetaAtomic() as three separate awaited steps with no lock or queue (knowledge-id-allocator.ts:49-56). atomicWriteJson only guarantees readers never see a torn file; it does NOT guarantee the read-modify-write is atomic. Two concurrent windows running fabric-review approve / fab_review at the same time (review.ts:557 and review.ts:895 both call allocator.allocate) can each read counter=N, each compute id N+1, and each write back N+1 — minting DUPLICATE stable_ids and clobbering each other's counter advance. Unlike th"
+   }
+  ]
+ },
+ {
+  "id": "F25",
+  "sev": "high",
+  "title": "Corrupt agents.meta.json silently falls back to empty meta, and the next allocate() atomically overwrites the file — destroys all node entries",
+  "expectation": "On JSON.parse failure do NOT proceed to overwrite. Either throw (let doctor surface + repair), or preserve the corrupt file to a .corrupted sidecar (as event-ledger.ts:307 does for ledgers) before any rewrite, and refuse to allocate until reconciled.",
+  "members": [
+   {
+    "id": "ISS-20260530-014",
+    "path": null,
+    "desc": "readMeta() catches a JSON.parse failure on agents.meta.json and returns { revision: '', nodes: {} } as 'fresh meta' (knowledge-id-allocator.ts:84-87). The comment claims this avoids 'corrupting further', but allocate() then does writeMetaAtomic({ ...meta, counters: nextCounters }) (line 54) — atomically writing back that near-empty object. So a transiently/partially-corrupt meta (e.g. one truncated by a concurrent non-atomic writer, or a half-written file observed mid-rename on some filesystems) is silently REPLACED with a meta that has revision='', nodes={}, and a counter that restarts effect"
+   }
+  ]
+ },
+ {
+  "id": "F26",
+  "sev": "high",
+  "title": "Two divergent `extractBody` implementations with different semantics",
+  "expectation": "Delete the private copy in review.ts and import `extractBody` from knowledge-sections.ts. Reconcile the trim() difference deliberately (pick one contract — likely trim at the API boundary, not in the shared stripper) and add a test pinning the chosen behavior.",
+  "members": [
+   {
+    "id": "ISS-20260530-017",
+    "path": null,
+    "desc": "Frontmatter-stripping logic exists as two separate functions named identically but behaving differently. `knowledge-sections.ts:90` does NOT trim and only strips BOM (`return content.slice(match[0].length)` / `content.replace(/^\\uFEFF/u, \"\")`). `review.ts:255` DOES `.trim()` the result and uses a slightly different regex (no capture group). Same name + same conceptual job + different output is a latent bug: a caller migrating between the two paths silently gets trailing/leading-whitespace-differing bodies. review.ts re-declares the helper privately instead of importing the shared one."
+   }
+  ]
+ },
+ {
+  "id": "F27",
+  "sev": "high",
+  "title": "Vector retrieval embeds the ENTIRE candidate corpus per request — no persisted embedding index",
+  "expectation": "Persist per-entry embeddings keyed by stable_id + content hash (e.g. in agents.meta.json or a sidecar), embed only the query + any entries whose hash changed since last index build. Embedding the full corpus per request defeats the purpose of a cache and makes vectors unusable past a few hundred ent",
+  "members": [
+   {
+    "id": "ISS-20260530-023",
+    "path": null,
+    "desc": "When embeddings are enabled, plan-context.ts:311-315 calls buildVectorScores over `rawItems.map(...)` — i.e. EVERY non-suppressed KB entry. buildVectorScores (vector-retrieval.ts:155) does `embedder.embed([queryText, ...items.map(item => item.text)])`, CPU-embedding the query plus all N candidate documents on EVERY plan-context/recall call. There is NO persisted/cached embedding index (the header comment at bm25.ts:11-13 explicitly notes 'no index to persist' for BM25, and the vector path inherits the same per-call rebuild). As the KB grows to hundreds/thousands of entries, each recall re-embe"
+   }
+  ]
+ },
+ {
+  "id": "F28",
+  "sev": "high",
+  "title": "FabricError.actionHint infrastructure is entirely dead in the CLI — every CLI error shows only a bare message with no remedy",
+  "expectation": "Either (a) wrap runMain in index.ts with a try/catch that calls renderFabricError(err) + process.exit(1) when hasActionHint(err), or (b) migrate the plain throws to FabricError subclasses AND wire the renderer. Pick one; right now the actionHint contract is enforced at construction but never surface",
+  "members": [
+   {
+    "id": "ISS-20260530-030",
+    "path": null,
+    "desc": "The whole structured-error stack (FabricError with a REQUIRED non-empty actionHint, packages/shared/src/errors/fabric-error.ts:10-14) plus the dedicated renderer renderFabricError/hasActionHint (packages/cli/src/lib/error-render.ts) exists to print '<message>\\n  -> <actionHint>' to stderr. But grep across packages/cli/src shows ZERO throws of any FabricError subclass and ZERO call sites for renderFabricError or hasActionHint outside error-render.ts itself — it is dead code. All 40 CLI error throws are plain `throw new Error(...)` which propagate to citty's runMain default handler (packages/cli"
+   }
+  ]
+ },
+ {
+  "id": "F29",
+  "sev": "high",
+  "title": "fabric install scaffolds per-project ledgers (events.jsonl, metrics.jsonl, cite-rollup.jsonl) into .fabric/ but never writes a .gitignore to exclude them",
+  "expectation": "On install, append `.fabric/events.jsonl`, `.fabric/metrics.jsonl`, `.fabric/cite-rollup.jsonl`, `.fabric/events.archive/`, `.fabric/.cache/` to the project's .gitignore (idempotently), or write `.fabric/.gitignore` covering the volatile ledgers, mirroring the STORE_GITIGNORE pattern already used fo",
+  "members": [
+   {
+    "id": "ISS-20260530-042",
+    "path": null,
+    "desc": "`fabric install` creates `.fabric/events.jsonl` in the target project (install.ts:828, listed as a created artifact at install.ts:1766) and the hooks/MCP server append metrics.jsonl and cite-rollup.jsonl alongside it. No code path in packages/cli/src writes a project-level .gitignore or .git/info/exclude entry for these files (grep for 'gitignore' across packages/cli/src returns zero install-time writers; only the STORE scaffolder writes a .gitignore, core.ts:76, and it covers state/ + .cache/ only). This monorepo itself avoids committing the ledgers solely because its hand-maintained ROOT .gi"
+   }
+  ]
+ },
+ {
+  "id": "F30",
+  "sev": "high",
+  "title": "Race condition during agents.meta.json counter repairs",
+  "expectation": "Apply optimistic concurrency control (check revision/hash before writing) or a cross-process file lock during meta repairs.",
+  "members": [
+   {
+    "id": "ISS-20260531-007",
+    "path": null,
+    "desc": "fixCounterDesync and applyIndexDriftFix perform a read-modify-write on agents.meta.json to update knowledge ID counters. If another client concurrently allocates a new KB ID (bumping the counter), doctor will overwrite the meta file with a stale, lower counter value, leading to subsequent stable_id collisions."
+   }
+  ]
+ },
+ {
+  "id": "F31",
+  "sev": "high",
+  "title": "Non-atomic multi-step meta updates",
+  "expectation": "Merge node reconciliation and counter desync repairs into a single read-modify-write atomic transaction on agents.meta.json.",
+  "members": [
+   {
+    "id": "ISS-20260531-008",
+    "path": null,
+    "desc": "In the reconcile block, doctor calls reconcileKnowledge followed by fixCounterDesync. Both perform independent atomic writes to agents.meta.json. Concurrent readers can observe the intermediate state where nodes are reconciled but counters are not, leading to invalid ID allocations."
+   }
+  ]
+ },
+ {
+  "id": "F32",
+  "sev": "high",
+  "title": "Silent Event Ledger append failure (no visibility to human or AI)",
+  "expectation": "Do not silently swallow; capture non-fatal ledger append failures as a warning / failed-mutation entry in the returned DoctorFixReport/DoctorApplyLintReport so callers see the desync.",
+  "members": [
+   {
+    "id": "ISS-20260531-010",
+    "path": null,
+    "desc": "In runDoctorFix and runDoctorApplyLint, event ledger appends (bootstrap_marker_migrated, serve_lock_cleared, etc.) use .catch(() => {}). On disk-full/permission failure the file fix still applies but the audit event is lost, desyncing metadata from actual state with zero error output, so neither the human dev nor the AI agent can perceive the failure."
+   }
+  ]
+ },
+ {
+  "id": "F33",
+  "sev": "high",
+  "title": "Sensitive data / PII written to disk without fine-grained redaction",
+  "expectation": "Introduce content-based PII/secrets scanning + redaction before knowledge is persisted, and extend redactSecretsInEvent to cover dynamic payload content.",
+  "members": [
+   {
+    "id": "ISS-20260531-013",
+    "path": null,
+    "desc": "extract-knowledge.ts hasSecrets is only a hard-block gate; free text that passes (PII or unrecognized secrets) is written via atomicWriteText with no content-level redaction. event-ledger.ts redactSecretsInEvent only redacts by predefined field-name whitelist, not deep-cleaning all payload fields, so sensitive data may persist into the KB or event ledger."
+   }
+  ]
+ },
+ {
+  "id": "F34",
+  "sev": "high",
+  "title": "Unbounded memory growth in readEventLedger / rotateEventLedgerIfNeeded",
+  "expectation": "Migrate readEventLedger and rotateEventLedgerIfNeeded to readline.createInterface + fs.createReadStream for O(1)-memory linear parsing.",
+  "members": [
+   {
+    "id": "ISS-20260531-014",
+    "path": null,
+    "desc": "Both functions load the entire events.jsonl into memory via readFile and split by newline. For a 50MB ledger (the soft-warning threshold) this instantiates millions of strings simultaneously, causing heavy GC pressure and potential OOM under concurrent sessions or large corpora."
+   }
+  ]
+ },
+ {
+  "id": "F38",
+  "sev": "high",
+  "title": "Synchronous Repository Walks and File Reads in Doctor Checks",
+  "expectation": "Refactor deep directory inspections and reads in doctor.ts to async readdir/stat/readFile and parallelize with Promise.all().",
+  "members": [
+   {
+    "id": "ISS-20260531-046",
+    "path": null,
+    "desc": "fabric doctor executes deep repository walks to lint the KB and system state. During loop processing it performs synchronous readdirSync, readFileSync, statSync to check all MD entries and session cache files. For large repos or slow storage this synchronous blocking I/O freezes the single-threaded Node loop, causing slow CLI responses and high CPU."
+   }
+  ]
+ },
+ {
+  "id": "F39",
+  "sev": "high",
+  "title": "Counter overwrite: writeKnowledgeMeta rebuilds without the allocator lock",
+  "expectation": "Acquire withFileLock on ${metaPath}.lock in writeKnowledgeMeta before reading/computing/writing the metadata, serializing rebuilds against allocator increments.",
+  "members": [
+   {
+    "id": "ISS-20260531-047",
+    "path": null,
+    "desc": "KnowledgeIdAllocator.allocate increments stable_id counters in agents.meta.json inside a withFileLock critical section. But writeKnowledgeMeta (sync/auto-heal/doctor) reads + recomputes via buildKnowledgeMeta and writes back with atomicWriteText WITHOUT acquiring the lock. If it reads before allocate's incremented write lands, it overwrites the meta with stale counters, causing duplicate stable_id allocation and index collisions."
+   }
+  ]
+ },
+ {
+  "id": "F40",
+  "sev": "high",
+  "title": "Cross-process event loss in ledger rotation and drops",
+  "expectation": "Wrap the critical sections of rotateEventLedgerIfNeeded and dropEventsFromLedger in withFileLock on events.jsonl.lock for cross-process mutual exclusion.",
+  "members": [
+   {
+    "id": "ISS-20260531-048",
+    "path": null,
+    "desc": "rotateEventLedgerIfNeeded and dropEventsFromLedger read events.jsonl, partition/filter, and overwrite via atomicWriteText, serialized only by an in-process queue (ledgerQueue.runExclusive). Across multiple client sessions or CLI/server processes the separate queues do not lock against each other, so one process's rewrite clobbers concurrent appends/rotations."
+   }
+  ]
+ },
+ {
+  "id": "F41",
+  "sev": "high",
+  "title": "Torn writes / page-cache corruption from omission of fsync",
+  "expectation": "Enable fsync by default for critical metadata/config writes (agents.meta.json, settings.json) in KnowledgeIdAllocator and doctor fixes, forcing fd.datasync before rename.",
+  "members": [
+   {
+    "id": "ISS-20260531-049",
+    "path": null,
+    "desc": "atomicWriteJson persists critical derived files like agents.meta.json but calls atomicWriteText without a truthy fsync option — write temp then rename, no flush. A power loss/crash right after rename can leave unflushed page-cache, corrupting metadata or producing a zero-byte agents.meta.json."
+   }
+  ]
+ },
+ {
+  "id": "F42",
+  "sev": "high",
+  "title": "Boilerplate Copy-Paste Installation Functions for Skills",
+  "expectation": "Use a single data-driven helper installFabricSkill(skillKey, templateRel, options) with skills represented as config objects in a metadata array.",
+  "members": [
+   {
+    "id": "ISS-20260531-050",
+    "path": null,
+    "desc": "Identical boilerplate install functions exist for all 7 active Skills (installFabricArchiveSkill, installFabricReviewSkill, installFabricImportSkill, installFabricSyncSkill, installFabricStoreSkill, installFabricAuditSkill, installFabricConnectSkill). Each manually reads a template, validates size, maps destinations, runs copyTextIdempotent, and logs. Violates DRY and risks drift when adding skills."
+   }
+  ]
+ },
+ {
+  "id": "F43",
+  "sev": "high",
+  "title": "Duplicated Process Liveness and Lock Reading Logic across Packages",
+  "expectation": "Consolidate these OS/process utilities in the shared package (e.g. @fenglimg/fabric-shared/node lock-utils.ts) and import in both packages.",
+  "members": [
+   {
+    "id": "ISS-20260531-051",
+    "path": null,
+    "desc": "isAlive(pid) and readLockState(projectRoot) are duplicated line-for-line between legacy-serve-lock-probe.ts (server) and serve-lock.ts (server-http-experimental). Redundant logic raises maintenance overhead and risks divergence if lock behavior changes."
+   }
+  ]
+ },
+ {
+  "id": "F44",
+  "sev": "high",
+  "title": "Standard Error throws bypass the actionHint error renderer",
+  "expectation": "Throw a FabricError class (or structural FabricErrorShape match) carrying actionHint instead of generic Error.",
+  "members": [
+   {
+    "id": "ISS-20260531-052",
+    "path": null,
+    "desc": "During fabric install, drift-abort and workspace folder checks throw plain Error instances. Lacking the structured actionHint field, renderTopLevelError treats them as generic 'other' errors, omitting recovery-guidance arrows/indents and leaving the developer with generic, un-actionable error stacks."
+   }
+  ]
+ },
+ {
+  "id": "F45",
+  "sev": "high",
+  "title": "Swallowed cache write failures silently break hooks and nudge logic",
+  "expectation": "Have fabric doctor explicitly check write permissions/health of .fabric/.cache/ and log a diagnostic warning/error if the hook cache cannot be updated.",
+  "members": [
+   {
+    "id": "ISS-20260531-053",
+    "path": null,
+    "desc": "writeJsonState/writeTextState in state-store.cjs swallow all FS errors (read-only FS, permissions) and return boolean false with no logging/alert. Since the hook runs inside the editor process and never prints warnings, nudges constantly repeat or session-hints stop updating, with no way in fabric doctor to verify .fabric/.cache writability."
+   }
+  ]
+ },
+ {
+  "id": "F46",
+  "sev": "high",
+  "title": "CLI glyphs lack accessible text fallback in color-enabled sessions",
+  "expectation": "Prepend/append textual labels in all color states (e.g. '[ok] ✓', '[warn] !', '[error] x') for a robust visual + spoken fallback.",
+  "members": [
+   {
+    "id": "ISS-20260531-055",
+    "path": null,
+    "desc": "In color-enabled terminals, status indicators are bare Unicode shapes (check/!/x) styled with ANSI color. Screen readers read these ambiguously (or skip them) and colorblind users lose the color channel, leaving only shape. Only NO_COLOR mode includes text fallback ([ok]/[warn]/[error])."
+   }
+  ]
+ },
+ {
+  "id": "F47",
+  "sev": "high",
+  "title": "Store diagnostics severity check masks errors as info",
+  "expectation": "Add explicit branches: severity==='error' -> symbol.error, 'warn' -> symbol.warn, else [info].",
+  "members": [
+   {
+    "id": "ISS-20260531-056",
+    "path": null,
+    "desc": "In the store diagnostics renderer, any severity other than 'warn' (including critical errors) defaults to [info], making serious diagnostic errors appear as harmless info logs to screen-reader and terminal users, hiding critical issues."
+   }
+  ]
+ },
+ {
+  "id": "F48",
+  "sev": "high",
+  "title": "No PII scanning/redaction before capturing into KB or event ledger",
+  "expectation": "Add dedicated PII regex rules (emails, IPs, phone numbers) into redactSecrets/scanForSecrets and apply across all telemetry logging and write-paths.",
+  "members": [
+   {
+    "id": "ISS-20260531-057",
+    "path": null,
+    "desc": "secret-scan.ts only targets technical secrets (AWS/OpenAI/Slack/GitHub tokens, basic password assignments). There are no rules/heuristics to detect/redact PII (emails, IPs, names, phone numbers). Since event ledger inputs capture arbitrary caller free-text (intent, message, reason), any PII is permanently logged to plain-text events.jsonl or the KB without redaction."
+   }
+  ]
+ },
+ {
+  "id": "F49",
+  "sev": "high",
+  "title": "Audit gap: in-place knowledge edits (modifyEntry) emit no ledger event",
+  "expectation": "Emit a knowledge_modified / knowledge_metadata_updated event in the modifyEntry in-place flow capturing stable_id/path, patch changes, original values, and session metadata.",
+  "members": [
+   {
+    "id": "ISS-20260531-058",
+    "path": null,
+    "desc": "When an in-place modification (title, summary, maturity, tags, relevance) is performed on a pending/canonical entry, reviewKnowledge dispatches to modifyEntry. Other actions (approve/reject/layer-flip/defer) emit telemetry to events.jsonl, but in-place edits write directly to frontmatter and exit WITHOUT a ledger event — allowing users or skills to silently change maturity levels or relevance paths."
+   }
+  ]
+ },
+ {
+  "id": "F50",
+  "sev": "high",
+  "title": "metrics.jsonl grows unbounded with NO rotation mechanism",
+  "expectation": "Add size-based and age-based rotation for metrics.jsonl like events.jsonl (archive old rows to a compressed sidecar, keep only active rows).",
+  "members": [
+   {
+    "id": "ISS-20260531-059",
+    "path": null,
+    "desc": "Metric-natured events flush to .fabric/metrics.jsonl every 60s. Unlike events.jsonl (which has rotation + age cutoff), metrics.jsonl has NO rotation/age cutoff/truncation and appends indefinitely. readMetrics loads and parses the entire file into memory, causing linear memory/CPU degradation as it grows."
+   }
+  ]
+ },
+ {
+  "id": "F51",
+  "sev": "high",
+  "title": "Full-ledger in-memory scans for events and metrics files scale poorly",
+  "expectation": "Implement index/tail-based streaming scans (read only last N lines or since a timestamp) or a pre-aggregated in-memory index, avoiding full-text parse per call.",
+  "members": [
+   {
+    "id": "ISS-20260531-060",
+    "path": null,
+    "desc": "readEventLedger and readMetrics read their entire .jsonl into memory and split into lines, running JSON.parse + Zod validation per line. This happens during doctor health checks (inspectEventsJsonlGates on every CLI invocation/server loop), scaling O(M) with ledger size (up to 50MB before rotation), causing memory spikes and CPU choking."
+   }
+  ]
+ },
+ {
+  "id": "F52",
+  "sev": "high",
+  "title": "Concurrent multi-window sessions cause cross-session selection-token invalidation",
+  "expectation": "Keep active selection tokens valid for their full TTL (30 min) despite minor revision_hash mutations, or scope invalidation to the specific files mutated rather than globally destroying all active tokens.",
+  "members": [
+   {
+    "id": "ISS-20260531-061",
+    "path": null,
+    "desc": "selectionTokenCache is a single global in-memory Map; tokens are bound to the project's revision_hash and cleared immediately on any file mutation. In multi-window concurrent sessions, one window modifying a knowledge file (sync or frontmatter edit) changes the revision hash, instantly invalidating active selection tokens in ALL other windows, aborting reasoning loops with 'selection_token is missing or expired'."
+   }
+  ]
+ },
+ {
+  "id": "F53",
+  "sev": "high",
+  "title": "Synchronous blocking FS and process execution in multi-store core",
+  "expectation": "Refactor multi-store core to async (fs.promises, execFile-as-promise) to prevent event-loop blockage during cross-store reads/writes or git interactions.",
+  "members": [
+   {
+    "id": "ISS-20260531-062",
+    "path": null,
+    "desc": "initStore, listMarkdown, listStoreKnowledge, readKnowledgeAcrossStores, aggregatePendingAcrossStores use synchronous fs APIs (readdirSync, existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync) and synchronous execFileSync('git'). These block Node's single-threaded event loop; as store count or corpus grows or under concurrent sessions, the loop chokes, blocking all other HTTP/MCP requests."
+   }
+  ]
+ },
+ {
+  "id": "F54",
+  "sev": "high",
+  "title": "Ignored/discarded MCP tool arguments (layer_filter & target_paths)",
+  "expectation": "Destructure layer_filter and target_paths in registerPlanContext and layer_filter in registerRecall, pass them to the services, and extend PlanContextInput to declare layer_filter.",
+  "members": [
+   {
+    "id": "ISS-20260531-090",
+    "path": null,
+    "desc": "The MCP tool definitions for fab_plan_context and fab_recall declare layer_filter (and target_paths for plan_context), but the registration callbacks in plan-context.ts and recall.ts omit these fields from destructuring and never pass them to the underlying services. Any client/LLM-supplied values are silently discarded."
+   }
+  ]
+ },
+ {
+  "id": "F56",
+  "sev": "high",
+  "title": "Blocking synchronous recursive directory walk on Express event loop",
+  "expectation": "Refactor walkFiles to async fs promises (readdir/stat) or delegate the scan to a worker thread.",
+  "members": [
+   {
+    "id": "ISS-20260531-095",
+    "path": null,
+    "desc": "GET /api/scan calls walkFiles, a fully blocking synchronous recursive directory walk (readdirSync/statSync) on the Express event loop thread. For repos with thousands of files this hangs the HTTP server for seconds."
+   }
+  ]
+ },
+ {
+  "id": "F57",
+  "sev": "high",
+  "title": "Unhandled git rebase error crashes sync continue/abort flow",
+  "expectation": "Wrap the rebase ops in try-catch in runContinueSync/runAbortSync, record failure/abort cleanup in the state machine/session file, and return a clean error diagnostic instead of crashing.",
+  "members": [
+   {
+    "id": "ISS-20260531-096",
+    "path": null,
+    "desc": "runContinueSync and runAbortSync invoke defaultRebaseContinue / defaultRebaseAbort without catching thrown errors. If git rebase --continue/--abort fails (unstaged conflicts, other git errors), the exception propagates uncaught and crashes the CLI, leaving sync-session.json in a conflicted/stale state and locking the CLI in an unrecoverable sync loop."
+   }
+  ]
+ },
+ {
+  "id": "F58",
+  "sev": "high",
+  "title": "Non-atomic session writes and unhandled parse error crash the CLI",
+  "expectation": "Use atomicWriteJson (with fsync) in saveSession, and wrap JSON.parse in loadSession in try-catch to handle corruption gracefully (warn + return null / reclaim new session).",
+  "members": [
+   {
+    "id": "ISS-20260531-097",
+    "path": null,
+    "desc": "saveSession writes sync-session.json with writeFileSync directly (no write-tmp+rename, no fsync); interruption/power loss corrupts it. loadSession parses via JSON.parse(readFileSync(...)) with no try-catch, so any later command (fabric sync --continue) crashes with an unhandled SyntaxError, permanently breaking sync until the session file is manually deleted."
+   }
+  ]
+ },
+ {
+  "id": "F59",
+  "sev": "high",
+  "title": "Layer boundary leak / contract inconsistency in plan-context payload trimming",
+  "expectation": "Move payload-budget trimming into the planContext() service layer before the selection token is minted, passing warnings/limits down into the service.",
+  "members": [
+   {
+    "id": "ISS-20260531-099",
+    "path": null,
+    "desc": "Payload-budget byte-trimming is implemented in the MCP tool registration/presentation layer instead of the core service. The selection_token is minted in planContext() over the FULL candidate set before trimming runs, so the token's ai_selectable_stable_ids is a superset of the returned candidates — the token references candidates that were stripped from the response."
+   }
+  ]
+ },
+ {
+  "id": "F60",
+  "sev": "high",
+  "title": "Fragile subcommand short-circuit in fabric config parent command",
+  "expectation": "Check whether the subcommand name exists anywhere in process.argv (process.argv.includes) or query the parsed citty command context instead of hardcoding argv indexes.",
+  "members": [
+   {
+    "id": "ISS-20260531-100",
+    "path": null,
+    "desc": "fabric config short-circuits subcommands (dismiss-slot, onboard-reset) by strictly checking process.argv[3]. If invoked with a flag before the subcommand (fabric config --target ./project dismiss-slot), argv[3] is '--target' not the subcommand, so the short-circuit is bypassed and the parent run launches the interactive Clack panel (or logs an uninitialized-workspace error and exits) instead of letting the subcommand finish."
+   }
+  ]
+ },
+ {
+  "id": "F61",
+  "sev": "high",
+  "title": "Unhandled promise rejection in experimental HTTP server /events endpoint",
+  "expectation": "Wrap the /events handler in try/catch or an Express async wrapper to send a standard HTTP 500 via sendUnknownError when watcher setup fails.",
+  "members": [
+   {
+    "id": "ISS-20260531-101",
+    "path": null,
+    "desc": "The /events endpoint passes the async handler from createEventsHandler directly. When ensureWatcher fails (server started in a non-Fabric dir, resolveLedgerPaths throws), the returned promise rejects. The router does not wrap this async call in a catch, so the rejection is unhandled — the connection hangs indefinitely or Express crashes without sending HTTP 500/diagnostic."
+   }
+  ]
+ },
+ {
+  "id": "F62",
+  "sev": "high",
+  "title": "scrubRemoteUrl misses bare userinfo tokens (no ':' separator) -> credential leak",
+  "expectation": "Change the scrubRemoteUrl regex to strip any credential/token in the userinfo segment even without a ':' separator.",
+  "members": [
+   {
+    "id": "ISS-20260531-103",
+    "path": null,
+    "desc": "scrubRemoteUrl's regex expects a ':' password separator. Remote URLs with a bare userinfo token and no password (https://ghp_TokenSecret@github.com/org/repo.git) fail to match, so the token is not scrubbed and is persisted in plaintext into fabric-global.json or project fabric.json."
+   }
+  ]
+ },
+ {
+  "id": "F63",
+  "sev": "high",
+  "title": "Experimental HTTP APIs expose unredacted ledger/history with personal-layer leakage",
+  "expectation": "Add a visibility/scope filter to the ledger/history endpoints excluding personal-scope records, and apply redactSecrets before serializing payloads.",
+  "members": [
+   {
+    "id": "ISS-20260531-104",
+    "path": null,
+    "desc": "The experimental HTTP APIs (/api/ledger, /api/history/state, /api/replay) fetch and return the raw event ledger and historical state in plaintext with no content-based secrets/PII redaction, and read the full project ledger without filtering personal-scope (KP-*) events — violating cross-store privacy at the HTTP layer."
+   }
+  ]
+ },
+ {
+  "id": "F64",
+  "sev": "high",
+  "title": "Unbounded HTTP session growth (no cleanup / idle expiration)",
+  "expectation": "Add session eviction: a background reaper for sessions idle > TTL (e.g. 5 min), or cap max concurrent sessions.",
+  "members": [
+   {
+    "id": "ISS-20260531-106",
+    "path": null,
+    "desc": "The experimental HTTP server holds all active SSE sessions in a module-level Map. onsessionclosed only deletes on clean SSE teardown; half-open connections, network drops, or repeated init requests accumulate sessions indefinitely. With no reaping/TTL/idle timeout the session map grows unbounded, a slow memory leak and eventual OOM under high concurrent traffic."
+   }
+  ]
+ }
+]

@@ -41,7 +41,7 @@ import {
 import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-loader.js";
 
 import { contextCache } from "../cache.js";
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import {
@@ -2338,19 +2338,26 @@ async function applyIndexDriftFix(
   const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
   const detailParts: string[] = [];
   try {
-    const meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
-    const baseCounters = AgentsMetaCountersSchema.parse(meta.counters ?? undefined);
-    // Defensive deep clone so we do not mutate the parsed object in place.
-    const updatedCounters: AgentsMetaCounters = {
-      KP: { ...baseCounters.KP },
-      KT: { ...baseCounters.KT },
-    };
-    for (const drift of inspection.drifts) {
-      updatedCounters[drift.layer][drift.type] = drift.proposed_after;
-      detailParts.push(`${drift.layer}.${drift.type}: ${drift.counter} -> ${drift.proposed_after}`);
-    }
-    const updated: AgentsMeta = { ...meta, counters: updatedCounters };
-    await atomicWriteJson(metaPath, updated, { indent: 2 });
+    // F30 (ISS-20260531-007): this counter read-modify-write must serialize
+    // against KnowledgeIdAllocator.allocate(), which bumps the same counters
+    // under `withFileLock(${metaPath}.lock)`. Otherwise a concurrent allocate
+    // (another window / the live MCP server) racing this --fix overwrites the
+    // bumped counter with a stale lower value → duplicate stable_id.
+    await withFileLock(`${metaPath}.lock`, async () => {
+      const meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
+      const baseCounters = AgentsMetaCountersSchema.parse(meta.counters ?? undefined);
+      // Defensive deep clone so we do not mutate the parsed object in place.
+      const updatedCounters: AgentsMetaCounters = {
+        KP: { ...baseCounters.KP },
+        KT: { ...baseCounters.KT },
+      };
+      for (const drift of inspection.drifts) {
+        updatedCounters[drift.layer][drift.type] = drift.proposed_after;
+        detailParts.push(`${drift.layer}.${drift.type}: ${drift.counter} -> ${drift.proposed_after}`);
+      }
+      const updated: AgentsMeta = { ...meta, counters: updatedCounters };
+      await atomicWriteJson(metaPath, updated, { indent: 2 });
+    });
     return {
       kind: "knowledge_index_drift",
       path: "agents.meta.json#counters",
@@ -8140,33 +8147,39 @@ async function fixCounterDesync(projectRoot: string): Promise<void> {
   if (!existsSync(metaPath)) {
     return;
   }
-  let meta: AgentsMeta;
-  try {
-    meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
-  } catch {
-    return;
-  }
+  // F30 (ISS-20260531-007) / F31 (ISS-20260531-008): hold the allocator's lock
+  // across the whole read→re-derive→write so a concurrent
+  // KnowledgeIdAllocator.allocate() (or another --fix) cannot interleave and
+  // clobber the freshly-bumped counter back to a stale value.
+  await withFileLock(`${metaPath}.lock`, async () => {
+    let meta: AgentsMeta;
+    try {
+      meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
+    } catch {
+      return;
+    }
 
-  // Re-derive corrected counters using the same algorithm as inspectCounterDesync.
-  const synthetic: MetaInspection = {
-    present: true,
-    valid: true,
-    meta,
-    revision: meta.revision,
-    computedRevision: null,
-    ruleCount: 0,
-    missingContentRefs: [],
-    invalidContentRefs: [],
-    stale: false,
-    changed: false,
-  };
-  const desync = inspectCounterDesync(synthetic);
-  if (desync.desyncs.length === 0 || desync.correctedCounters === null) {
-    return;
-  }
+    // Re-derive corrected counters using the same algorithm as inspectCounterDesync.
+    const synthetic: MetaInspection = {
+      present: true,
+      valid: true,
+      meta,
+      revision: meta.revision,
+      computedRevision: null,
+      ruleCount: 0,
+      missingContentRefs: [],
+      invalidContentRefs: [],
+      stale: false,
+      changed: false,
+    };
+    const desync = inspectCounterDesync(synthetic);
+    if (desync.desyncs.length === 0 || desync.correctedCounters === null) {
+      return;
+    }
 
-  const updated: AgentsMeta = { ...meta, counters: desync.correctedCounters };
-  await atomicWriteJson(metaPath, updated, { indent: 2 });
+    const updated: AgentsMeta = { ...meta, counters: desync.correctedCounters };
+    await atomicWriteJson(metaPath, updated, { indent: 2 });
+  });
 }
 
 async function ensureEventLedger(projectRoot: string): Promise<void> {
