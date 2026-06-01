@@ -92,6 +92,30 @@ describe("withFileLock", () => {
       withFileLock(lock, async () => "never", { maxWaitMs: 60, retryDelayMs: 10, staleMs: 10_000 }),
     ).rejects.toThrow(/timed out/);
   });
+
+  it("release only removes the lock the holder still owns (no lock theft)", async () => {
+    // F6 regression: a holder that overran staleMs and was reclaimed by another
+    // process must NOT delete the new holder's lock in its finally. We simulate
+    // the reclaim by overwriting the lock with a foreign token mid-critical-section.
+    const dir = makeTempDir("wfl-theft-");
+    const lock = join(dir, "x.lock");
+    await withFileLock(lock, async () => {
+      writeFileSync(lock, "FOREIGN-HOLDER-TOKEN"); // another process took over
+    });
+    expect(existsSync(lock)).toBe(true); // our finally was a no-op
+    expect(readFileSync(lock, "utf8")).toBe("FOREIGN-HOLDER-TOKEN");
+  });
+
+  it("stamps a non-empty ownership token into the lock while held", async () => {
+    const dir = makeTempDir("wfl-token-");
+    const lock = join(dir, "x.lock");
+    let observed = "unset";
+    await withFileLock(lock, async () => {
+      observed = readFileSync(lock, "utf8");
+    });
+    expect(observed).not.toBe("");
+    expect(observed).toContain(`${process.pid}.`);
+  });
 });
 
 describe("atomicWriteText", () => {

@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Silent Event Ledger append failure (no visibility to human or AI)",
+    "severity": "high",
+    "description": "In runDoctorFix and runDoctorApplyLint, event ledger appends (bootstrap_marker_migrated, serve_lock_cleared, etc.) use .catch(() => {}). On disk-full/permission failure the file fix still applies but the audit event is lost, desyncing metadata from actual state with zero error output, so neither the human dev nor the AI agent can perceive the failure.",
+    "location": "packages/server/src/services/doctor.ts:1154",
+    "fix_direction": "Do not silently swallow; capture non-fatal ledger append failures as a warning / failed-mutation entry in the returned DoctorFixReport/DoctorApplyLintReport so callers see the desync.",
+    "affected_components": ["runDoctorFix", "runDoctorApplyLint", "appendEventLedgerEvent"]
+  },
+  {
+    "title": "Ambiguous 'triage by hand' hint is not actionable for AI consumer",
+    "severity": "medium",
+    "description": "On stable_id_duplicate / layer_mismatch (data-overwrite risk) apply-lint aborts with abort_reason 'triage by hand'. An MCP AI consumer cannot tell which concrete operations to perform (which file to delete, which frontmatter ID to change).",
+    "location": "packages/server/src/services/doctor.ts:1344",
+    "fix_direction": "Provide precise machine-readable guidance in abort_reason / actionHint: list conflicting absolute file paths and which MCP tools resolve the conflict.",
+    "affected_components": ["runDoctorApplyLint", "MCP Consumer", "AI Agent"]
+  },
+  {
+    "title": "Cognitive friction from --fix vs --apply-lint split",
+    "severity": "medium",
+    "description": "Workspace health repair is hard-split into runDoctorFix (ledger rotation, meta alignment, dir repair) and runDoctorApplyLint (frontmatter state changes). The two-headed interface confuses users; a human or AI may run --fix and miss the substantive lint correction.",
+    "location": "packages/server/src/services/doctor.ts:1330",
+    "fix_direction": "Unify both flows under one entry, or have runDoctorFix's report detect remaining lint findings and prominently prompt the next-step doctor --apply-lint in CLI and MCP return values.",
+    "affected_components": ["runDoctorFix", "runDoctorApplyLint", "CLI UX"]
+  },
+  {
+    "title": "Hardcoded hygiene thresholds not configurable",
+    "severity": "low",
+    "description": "NARROW_RATIO_THRESHOLD (0.2), SILENCE_RATE_THRESHOLD (0.95), SESSION_HINTS_STALE_DAYS (7) are hardcoded. Different AI model context windows make hardcoded thresholds cause false positives that users cannot silence via config.",
+    "location": "packages/server/src/services/doctor.ts:783",
+    "fix_direction": "Follow payload_limits / underseed_node_threshold: move these constants into the fabric.config.json override layer in config-loader.",
+    "affected_components": ["inspectNarrowTooFew", "inspectSessionHintsStale", "Config Loader"]
+  },
+  {
+    "title": "Lock-file cleanup throws uncaught FS error, aborting whole fix flow",
+    "severity": "low",
+    "description": "When clearing a stale .fabric/.serve.lock, a non-ENOENT error (e.g. EACCES) is thrown directly, crashing the entire long runDoctorFix flow at its tail and failing other otherwise-recoverable repair steps.",
+    "location": "packages/server/src/services/doctor.ts:1264",
+    "fix_direction": "Catch non-ENOENT errors without throwing; record as manual_error in the report so the fix flow degrades gracefully.",
+    "affected_components": ["runDoctorFix", "Serve Lock Cleanup"]
+  }
+]

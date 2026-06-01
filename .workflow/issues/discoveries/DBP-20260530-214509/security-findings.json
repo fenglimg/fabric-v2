@@ -1,0 +1,18 @@
+[
+  {
+    "title": "YAML frontmatter injection via unescaped backslash/newline in extract-knowledge field emission",
+    "severity": "medium",
+    "description": "quoteRelevancePath() escapes only the double-quote character (value.replace(/\"/g, '\\\\\"')) but NOT backslashes or newlines (packages/server/src/services/extract-knowledge.ts:718-720). Every caller-supplied string field written into the YAML frontmatter of a pending KB file flows through this function: summary (line 625), tags (631), relevance_paths (639), intent_clues (650), tech_stack (654), impact (658), must_read_if (662), evidence_paths (676). The corresponding zod schemas are plain z.string()/z.array(z.string()) with NO charset or newline restriction (packages/shared/src/schemas/api-contracts.ts:683-740). A value ending in a single backslash (e.g. summary='foo\\\\') renders as `summary: \"foo\\\\\"` — the trailing backslash escapes the closing quote, breaking YAML parsing and allowing a crafted value to inject arbitrary additional frontmatter keys (e.g. forging layer:, type:, maturity:, x-fabric-idempotency-key:, or a status: active to bypass review). The NEW-31 prompt-injection sanitizer (extract-knowledge.ts:46-75) only redacts instruction-style patterns; it does not neutralize backslashes or newlines, so the YAML-breaking primitive survives sanitization. Because fab_extract_knowledge is an MCP tool whose inputs are produced by an LLM/skill (a prompt-injection-reachable surface), a poisoned session transcript could steer the emitted frontmatter.",
+    "location": "packages/server/src/services/extract-knowledge.ts:718",
+    "fix_direction": "Replace the hand-rolled quoting with a real YAML scalar serializer, or at minimum escape backslashes before quotes (value.replace(/\\\\/g, '\\\\\\\\').replace(/\"/g, '\\\\\"')) AND reject/escape embedded newlines. Better: add a regex/length guard at the zod schema layer (api-contracts.ts) for single-line frontmatter fields and round-trip the assembled frontmatter through a YAML parser before write to fail closed.",
+    "affected_components": ["packages/server", "packages/shared"]
+  },
+  {
+    "title": "git clone URL argument injection in `fabric install --global <url>`",
+    "severity": "low",
+    "description": "mountStoreFromRemote() passes the user-supplied CLI <url> positionally to `git clone` without a `--` separator: execFileSync(\"git\", [\"clone\", url, dest], ...) (packages/cli/src/install/run-global-install.ts:38, called from line 88 with options.url straight from the CLI arg). Because there is no `--` end-of-options marker before url, a value beginning with a dash (e.g. `--upload-pack=...` or other git transport options such as ext::) is parsed by git as an OPTION rather than a repository, which git's transport layer can turn into local command execution. execFileSync avoids shell injection, but not git's own argument/transport injection. Threat model is local — the user is supplying the URL to their own CLI — so impact is limited (self-inflicted), hence low; still a hardening gap given the URL may be copy-pasted from an untrusted source (e.g. a README badge or shared store link).",
+    "location": "packages/cli/src/install/run-global-install.ts:38",
+    "fix_direction": "Insert a `--` separator before the URL: [\"clone\", \"--\", url, dest]. Additionally validate the URL scheme against an allowlist (https://, git@, ssh://) and reject leading '-' and the ext::/fd:: transports before invoking git.",
+    "affected_components": ["packages/cli"]
+  }
+]

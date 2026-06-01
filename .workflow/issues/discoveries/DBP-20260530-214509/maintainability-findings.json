@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Two divergent `extractBody` implementations with different semantics",
+    "severity": "high",
+    "description": "Frontmatter-stripping logic exists as two separate functions named identically but behaving differently. `knowledge-sections.ts:90` does NOT trim and only strips BOM (`return content.slice(match[0].length)` / `content.replace(/^\\uFEFF/u, \"\")`). `review.ts:255` DOES `.trim()` the result and uses a slightly different regex (no capture group). Same name + same conceptual job + different output is a latent bug: a caller migrating between the two paths silently gets trailing/leading-whitespace-differing bodies. review.ts re-declares the helper privately instead of importing the shared one.",
+    "location": "packages/server/src/services/review.ts:255",
+    "fix_direction": "Delete the private copy in review.ts and import `extractBody` from knowledge-sections.ts. Reconcile the trim() difference deliberately (pick one contract — likely trim at the API boundary, not in the shared stripper) and add a test pinning the chosen behavior.",
+    "affected_components": ["packages/server/src/services/review.ts", "packages/server/src/services/knowledge-sections.ts", "packages/server/src/services/recall.ts"]
+  },
+  {
+    "title": "doctor.ts is a 10,117-line god-file (102 functions, 51 inspect* + 51 create*Check)",
+    "severity": "medium",
+    "description": "packages/server/src/services/doctor.ts is 10,117 lines — over 2x the next-largest source file (review.ts 1,479). It holds 51 `inspect*` collectors, 51 matching `create*Check` builders, 7 `apply*` fixers, plus the orchestrators `runDoctorReport` (~364 lines, 1100-1463), `runDoctorFix` (~334 lines, 1477-1810), `runDoctorApplyLint` (1810+). Each lint check follows an identical inspect→create boilerplate shape (see createDraftBacklogCheck 3977-4000, createDriftUnconsumedCheck 4043+), so the file grows linearly with every new rc check and is the single highest-churn maintenance surface. Navigation, review, and merge-conflict risk are all amplified.",
+    "location": "packages/server/src/services/doctor.ts:1",
+    "fix_direction": "Split into per-domain check modules (e.g. checks/knowledge-lifecycle.ts, checks/bootstrap-drift.ts, checks/skill-budget.ts) each exporting an {inspect, createCheck} pair conforming to a shared `DoctorCheckModule` interface; have runDoctorReport iterate a registry array instead of hand-wiring 51 calls. Pre-1.0 + clean-slate-preferred owner makes this a low-risk mechanical extraction.",
+    "affected_components": ["packages/server/src/services/doctor.ts"]
+  },
+  {
+    "title": "Dead re-export stub file `cli/scanner/detector.ts` (never imported)",
+    "severity": "low",
+    "description": "packages/cli/src/scanner/detector.ts is a single-line file that re-exports `detectFramework`/`FrameworkInfo`/`TechProfile` from @fenglimg/fabric-shared/node. Grep shows no source (non-test) import of `scanner/detector` anywhere — the indirection is unused dead code. Callers can import from shared directly.",
+    "location": "packages/cli/src/scanner/detector.ts:1",
+    "fix_direction": "Delete the file and point any (test-only) consumers at @fenglimg/fabric-shared/node directly.",
+    "affected_components": ["packages/cli/src/scanner/detector.ts", "packages/shared/src/detector.ts"]
+  },
+  {
+    "title": "25 unused exports + 8 unused exported types + 4 duplicate exports (knip)",
+    "severity": "low",
+    "description": "`npx knip` reports concrete dead/over-broad exports. Notably 14 functions in uninstall-skills-and-hooks.ts (uninstallFabric*Skill, removeArchiveHintHook, unmergeClaudeCodeHookConfig, stripFabricBootstrapBlocks, etc.) are EXPORTED but only used same-file (verified: uninstallFabricArchiveSkill referenced only at lines 588/591 within its own module) — the `export` keyword is unnecessary surface. Plus validateHookPaths, buildManagedBlockBody (used same-file), FABRIC_HOOK_SCRIPT_BASENAMES, sanitizeInjectionPatterns, invalidateKnowledgeSyncCooldown, the recall.ts:211 `extractBody` re-export (no source consumer), and 8 unused types (StepStatus, ReceiptStep, RecallTruncation, GitRebasePull/Resolve, etc.). 4 commands also have duplicate named+default exports (metrics, onboard-coverage, plan-context-hint, uninstall).",
+    "location": "packages/cli/src/install/uninstall-skills-and-hooks.ts:59",
+    "fix_direction": "Drop the `export` keyword on functions/types consumed only within their module; remove the dead recall.ts extractBody re-export; collapse the duplicate named+default command exports to one form. Re-run `npx knip` to confirm zero unused after.",
+    "affected_components": ["packages/cli/src/install/uninstall-skills-and-hooks.ts", "packages/cli/src/install/skills-and-hooks.ts", "packages/cli/src/install/hooks-orchestrator.ts", "packages/cli/src/install/transaction.ts", "packages/cli/src/store/doctor-checks.ts", "packages/cli/src/sync/run-sync.ts", "packages/server/src/services/recall.ts", "packages/server/src/services/extract-knowledge.ts", "packages/server/src/services/knowledge-sync.ts", "packages/cli/src/commands/metrics.ts", "packages/cli/src/commands/onboard-coverage.ts", "packages/cli/src/commands/plan-context-hint.ts", "packages/cli/src/commands/uninstall.ts"]
+  },
+  {
+    "title": "Scan/recommendation logic forked across cli and server-http-experimental with inconsistent language",
+    "severity": "low",
+    "description": "Project-scan recommendation building lives in two places that have diverged. packages/server-http-experimental/src/api/scan.ts:157-177 emits English keyed strings (\"L0: Run `fabric install`...\", \"L1: Add tech-stack TODOs...\"). packages/cli/src/scanner/forensic.ts:1428-1448 emits hardcoded Simplified-Chinese recommendations (\"建议向用户确认 Cocos Creator...\"). Both consume the same shared detector but produce parallel, drifting recommendation sets — neither routes through the i18n layer (shared/i18n/locales) the rest of the codebase uses, so language is inconsistent with the locale-driven `fabric_language` config.",
+    "location": "packages/server-http-experimental/src/api/scan.ts:157",
+    "fix_direction": "Route both recommendation builders through shared/i18n keys (the cli.scan.recommendation.* namespace already exists in en.ts/zh-CN.ts:1070+). Extract a single shared buildScanRecommendations() in shared so cli and the experimental HTTP server cannot drift.",
+    "affected_components": ["packages/server-http-experimental/src/api/scan.ts", "packages/cli/src/scanner/forensic.ts", "packages/shared/src/i18n/locales/en.ts", "packages/shared/src/i18n/locales/zh-CN.ts"]
+  },
+  {
+    "title": "knip.config.ts carries a stale workspace-resolution workaround pending 1.8.x",
+    "severity": "low",
+    "description": "knip.config.ts ignoreDependencies block disables knip checking for workspace packages + runtime deps (express, chokidar, minimatch, picocolors, etc.) with the comment `TODO: review during 1.8.x patch when knip workspace resolution matures`. This is a broad suppression that masks any genuinely-unused runtime dependency going forward, and the TODO is an open maintenance debt with no owner/date. knip's own `Configuration hints (30)` output flags several of these entries as removable (e.g. `@fenglimg/fabric-shared`, `@clack/prompts`), suggesting the workaround is already partly stale.",
+    "location": "knip.config.ts:18",
+    "fix_direction": "Action the existing TODO: re-test knip without the workspace ignoreDependencies entries (knip already reports 30 config hints saying several are removable). Trim the ignore list to only entries that still genuinely false-positive, restoring real unused-dependency detection.",
+    "affected_components": ["knip.config.ts"]
+  }
+]

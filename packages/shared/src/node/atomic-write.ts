@@ -1,5 +1,6 @@
-import { appendFile, mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 
 export interface AtomicWriteOptions {
   fsync?: boolean;
@@ -96,6 +97,13 @@ export async function withFileLock<T>(
   const maxWaitMs = opts.maxWaitMs ?? 10_000;
   await mkdir(dirname(lockPath), { recursive: true });
 
+  // Unique ownership token written into the lock file. Release/reclaim only ever
+  // removes a lock whose on-disk token still matches the token it observed — so a
+  // holder that overran `staleMs` (and was reclaimed) can never delete the NEW
+  // holder's lock. Without this, the old `finally`/reclaim did an unconditional
+  // unlink(lockPath), letting two callers enter the critical section at once.
+  const token = `${process.pid}.${randomUUID()}`;
+
   const start = Date.now();
   for (;;) {
     let handle;
@@ -107,8 +115,13 @@ export async function withFileLock<T>(
       try {
         const st = await stat(lockPath);
         if (Date.now() - st.mtimeMs > staleMs) {
-          await unlink(lockPath).catch(() => undefined);
-          continue; // reclaimed — retry immediately
+          // Read the stale holder's token, then unlink only if it is unchanged —
+          // guards against deleting a lock that was recreated between stat and unlink.
+          const staleToken = await readFile(lockPath, "utf8").catch(() => null);
+          if (staleToken !== null) {
+            await unlinkIfToken(lockPath, staleToken);
+          }
+          continue; // reclaimed (or lost the race) — retry the wx create either way
         }
       } catch {
         continue; // lock vanished between EEXIST and stat — retry immediately
@@ -119,13 +132,32 @@ export async function withFileLock<T>(
       await sleep(retryDelayMs);
       continue;
     }
-    // Acquired.
+    // Acquired — stamp our ownership token into the lock file before running fn.
     try {
+      await handle.writeFile(token, "utf8");
       await handle.close();
       return await fn();
     } finally {
+      await unlinkIfToken(lockPath, token); // only remove the lock if we still own it
+    }
+  }
+}
+
+/**
+ * Unlink `lockPath` only if its current contents equal `expected`. Best-effort:
+ * a mismatch (another holder reclaimed and rewrote it) or a vanished file both
+ * leave the unlink as a no-op. Not perfectly atomic across processes — there is
+ * no portable compare-and-unlink syscall — but it closes the lock-theft window
+ * that an unconditional unlink left wide open.
+ */
+async function unlinkIfToken(lockPath: string, expected: string): Promise<void> {
+  try {
+    const current = await readFile(lockPath, "utf8");
+    if (current === expected) {
       await unlink(lockPath).catch(() => undefined);
     }
+  } catch {
+    // file already gone / unreadable — nothing to release
   }
 }
 

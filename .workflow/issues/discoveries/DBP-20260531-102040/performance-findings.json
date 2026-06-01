@@ -1,0 +1,26 @@
+[
+  {
+    "title": "Synchronous Blocking I/O in Hot Edit-Time Hook Paths",
+    "severity": "critical",
+    "description": "The PreToolUse hook (knowledge-hint-narrow.cjs) is invoked synchronously on every file edit tool (Edit, Write, MultiEdit) to inject narrow knowledge hints. It blocks the main host event loop by performing synchronous filesystem checks and writes (readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync via the atomicWrite wrapper in state-store.cjs) on every invocation. In rapid edits or concurrent workspaces this blocks Node's single thread on disk I/O, creating a typing/editing delay for the developer.",
+    "location": "packages/cli/templates/hooks/lib/state-store.cjs:39",
+    "fix_direction": "Refactor the file persistence helper (state-store.cjs) and hook script to use async operations (fs.promises) or a decoupled background process so writes do not block the active editor loop.",
+    "affected_components": ["PreToolUse Hook", "CLI Hook Templates", "State-Store helper"]
+  },
+  {
+    "title": "Synchronous Repository Walks and File Reads in Doctor Checks",
+    "severity": "high",
+    "description": "fabric doctor executes deep repository walks to lint the KB and system state. During loop processing it performs synchronous readdirSync, readFileSync, statSync to check all MD entries and session cache files. For large repos or slow storage this synchronous blocking I/O freezes the single-threaded Node loop, causing slow CLI responses and high CPU.",
+    "location": "packages/server/src/services/doctor.ts:2909",
+    "fix_direction": "Refactor deep directory inspections and reads in doctor.ts to async readdir/stat/readFile and parallelize with Promise.all().",
+    "affected_components": ["Doctor CLI Command", "Doctor Service"]
+  },
+  {
+    "title": "N+1 Sequential Disk Reads during Knowledge Sync Drift Checks",
+    "severity": "medium",
+    "description": "During knowledge sync drift checks (ensureKnowledgeFresh, reconcileKnowledge), the sync orchestrator traverses every knowledge file sequentially via processSingleFile(), doing await stat then await readFile per entry. In larger KBs this leads to slow Planning and Recall MCP tool response times.",
+    "location": "packages/server/src/services/knowledge-sync.ts:484",
+    "fix_direction": "Batch file parsing concurrently with Promise.all() + a concurrency controller (p-limit) instead of sequential I/O.",
+    "affected_components": ["Knowledge Sync Service", "MCP Planning and Recall hot-paths"]
+  }
+]

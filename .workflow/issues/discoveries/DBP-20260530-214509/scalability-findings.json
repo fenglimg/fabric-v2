@@ -1,0 +1,82 @@
+[
+  {
+    "title": "id-redirect loader reads & parses the ENTIRE events.jsonl on every plan-context AND recall call",
+    "severity": "high",
+    "description": "planContext calls loadIdRedirectMap (plan-context.ts:359) and recall calls it again (recall.ts:92); getKnowledgeSections calls it a third time (knowledge-sections.ts:114). loadIdRedirectMap (id-redirect.ts:41) calls readEventLedger(projectRoot, { event_type: 'knowledge_id_redirect' }). But readEventLedger (event-ledger.ts:222) does `readFile(eventPath, 'utf8')` of the WHOLE file, splits on newlines, JSON.parse + Zod.safeParse EVERY line (event-ledger.ts:262-275), and only THEN applies the event_type filter in memory (event-ledger.ts:277-281). The event_type filter is never pushed down to the read, so the per-request cost is O(total events in ledger), not O(redirect events). At the documented 50MB ledger size this is a full ~50MB read + hundreds-of-thousands-of-lines Zod parse on the hot recall path, on every single recall — even though knowledge_id_redirect events are rare. The 30-day redirect window only trims AFTER the full parse. There is NO cache for the redirect map (unlike meta which has a 5s contextCache).",
+    "location": "packages/server/src/services/id-redirect.ts:41",
+    "fix_direction": "Cache the redirect map per projectRoot with a short TTL (reuse contextCache pattern), or scan the ledger tail-first / push event_type filter into a streaming line reader so cost is O(matching events). Redirect events are append-only and rare — a memoized map invalidated on revision change avoids the per-request full-file parse entirely.",
+    "affected_components": ["packages/server/src/services/id-redirect.ts", "packages/server/src/services/event-ledger.ts", "packages/server/src/services/plan-context.ts", "packages/server/src/services/recall.ts", "packages/server/src/services/knowledge-sections.ts"]
+  },
+  {
+    "title": "readEventLedger has no streaming / pushdown — reads whole file into a string and parses every line regardless of filter",
+    "severity": "high",
+    "description": "readEventLedger (event-ledger.ts:214-284) does `readFile(eventPath, 'utf8')` (line 222) loading the entire ledger as one string, splits into a `lines` array (line 235), trims/filters to another array (lines 262-264), then JSON.parse + Zod.safeParse each surviving line (parseEventLedgerLine, lines 266-275) BEFORE any of the event_type/since/correlation_id/session_id filters run (lines 277-281). Every caller pays O(file size) memory + O(line count) parse cost no matter how narrow their filter. The ledger is documented to grow to ~50MB. Doctor uses it ~20 times (doctor.ts: 2553, 2792, 2945, 4018, 4575-4577, 5342, 5494, 5563, 8197, 8272, 8652, 9242, 9358, 9486, 9604, 9625, 10061) and several of those are unfiltered full scans; the hot recall path hits it via id-redirect. A `since`-bounded reader cannot early-exit because events are appended in ts order but the reader still parses from the top.",
+    "location": "packages/server/src/services/event-ledger.ts:222",
+    "fix_direction": "Stream the file line-by-line (readline / createReadStream) and apply event_type/since predicates per-line before Zod parse; for `since` queries, exploit append-order to seek/skip. Avoid materializing the full string + two intermediate arrays for a 50MB file.",
+    "affected_components": ["packages/server/src/services/event-ledger.ts", "packages/server/src/services/doctor.ts", "packages/server/src/services/read-ledger.ts", "packages/server/src/services/archive-scan.ts"]
+  },
+  {
+    "title": "Vector retrieval embeds the ENTIRE candidate corpus per request — no persisted embedding index",
+    "severity": "high",
+    "description": "When embeddings are enabled, plan-context.ts:311-315 calls buildVectorScores over `rawItems.map(...)` — i.e. EVERY non-suppressed KB entry. buildVectorScores (vector-retrieval.ts:155) does `embedder.embed([queryText, ...items.map(item => item.text)])`, CPU-embedding the query plus all N candidate documents on EVERY plan-context/recall call. There is NO persisted/cached embedding index (the header comment at bm25.ts:11-13 explicitly notes 'no index to persist' for BM25, and the vector path inherits the same per-call rebuild). As the KB grows to hundreds/thousands of entries, each recall re-embeds the whole corpus on CPU — embedding cost is the dominant term and scales linearly with KB size per request. This is the single most growth-sensitive operation once vectors are turned on.",
+    "location": "packages/server/src/services/vector-retrieval.ts:155",
+    "fix_direction": "Persist per-entry embeddings keyed by stable_id + content hash (e.g. in agents.meta.json or a sidecar), embed only the query + any entries whose hash changed since last index build. Embedding the full corpus per request defeats the purpose of a cache and makes vectors unusable past a few hundred entries.",
+    "affected_components": ["packages/server/src/services/vector-retrieval.ts", "packages/server/src/services/plan-context.ts"]
+  },
+  {
+    "title": "BM25 model rebuilt from scratch over the full corpus on every query-bearing plan-context call",
+    "severity": "medium",
+    "description": "sortDescriptionItems (plan-context.ts:551-555) calls buildBm25Model over `rawItems.map(... tokenize(documentTextForItem(...)))` for every plan-context call that carries query terms. buildBm25Model (bm25.ts:45-99) tokenizes every document, builds per-term documentFrequency and per-doc termFreq maps — O(corpus tokens) per request. The header (bm25.ts:11-14) justifies this as 'corpus is small (tens of entries)'. That assumption is the scaling cliff: the KB is explicitly designed to GROW (the whole project is a knowledge accumulator), and once it reaches hundreds/thousands of entries every recall re-tokenizes and re-indexes the entire corpus. Tokenization additionally happens twice for the same text — once in buildVectorScores' documentTextForItem path and once here — though that is a constant factor.",
+    "location": "packages/server/src/services/bm25.ts:45",
+    "fix_direction": "Memoize the BM25 model (and the tokenization of each document) per revision_hash so it is built once per KB change rather than once per request; invalidate on meta revision change (same trigger as contextCache).",
+    "affected_components": ["packages/server/src/services/bm25.ts", "packages/server/src/services/plan-context.ts"]
+  },
+  {
+    "title": "Event-ledger rotation is age-only (30d retention), never size-bounded — file grows unbounded within the retention window under heavy usage",
+    "severity": "medium",
+    "description": "rotateEventLedgerIfNeeded (event-ledger.ts:386-511) partitions strictly by `ts < now - retentionDays*86400000` (line 395, 441). retentionDays defaults to 30 (line 27) with config options of only 7/30/90 (line 637). There is NO size-based trigger: a high-frequency workspace (the audit comment at read-ledger.ts:101-105 notes edit_intent_checked 'fires per affected_path on every Edit/Write/MultiEdit') can append far more than 50MB of events WITHIN 30 days, and rotation will keep all of them because they are younger than the cutoff. The 50MB threshold (event-ledger.ts:28, 200) only emits a one-shot stderr warning — it does NOT trigger rotation. Combined with the full-file-read in readEventLedger, the in-window growth degrades every ledger read. Rotation also only runs on a 6h server tick (rotation-tick.ts:18,40) or doctor --fix (doctor.ts:1677); short-lived per-session MCP spawns that exit before 6h never rotate.",
+    "location": "packages/server/src/services/event-ledger.ts:441",
+    "fix_direction": "Add a size-based rotation trigger (rotate oldest N% when file exceeds payloadHardBytes-style ceiling regardless of age) and run a startup rotation tick (currently first tick fires only after a full 6h interval per rotation-tick.ts:30-31). Tie the 50MB warn threshold to an actual rotate, not just stderr.",
+    "affected_components": ["packages/server/src/services/event-ledger.ts", "packages/server/src/services/rotation-tick.ts"]
+  },
+  {
+    "title": "buildRawDescriptionItems + findRuleNode walk the entire KB (Object.entries(meta.nodes)) per request; meta cache TTL is only 5s",
+    "severity": "medium",
+    "description": "Every plan-context call materializes the whole KB: buildRawDescriptionItems (plan-context.ts:507) does `Object.entries(meta.nodes).flatMap(...)` over ALL nodes, and buildPreflightDiagnostics (plan-context.ts:638) + hasUndefinedDescription (plan-context.ts:630) each iterate all nodes again. findRuleNode (knowledge-sections.ts:298-324) does a LINEAR `for (const [nodeId, node] of Object.entries(meta.nodes))` scan per requested stable_id — so a recall fetching K bodies is O(K × total_nodes). The full meta is read+Zod-parsed via readAgentsMeta (meta-reader.ts:49-77) into memory, cached only with a 5-second TTL (cache.ts:37,124). Under sustained recall traffic the meta re-reads + re-parses the entire agents.meta.json every 5s, and that whole structure is held in memory. As node count grows these per-request O(N) walks and the in-memory whole-KB load scale linearly with KB size.",
+    "location": "packages/server/src/services/plan-context.ts:507",
+    "fix_direction": "Build a stable_id -> node Map once per revision (memoized) so findRuleNode is O(1) and the per-request node walks reuse a cached derived index; raise/condition the meta cache TTL on revision_hash rather than a blind 5s expiry.",
+    "affected_components": ["packages/server/src/services/plan-context.ts", "packages/server/src/services/knowledge-sections.ts", "packages/server/src/meta-reader.ts", "packages/server/src/cache.ts"]
+  },
+  {
+    "title": "readLedger merges legacy ledger + full event-ledger projection on every rehydrate, double full-file reads",
+    "severity": "medium",
+    "description": "readLedger (read-ledger.ts:56-69) runs readLegacyLedger (full read+parse of audit.jsonl, lines 71-91) AND readLedgerFromEventLedger (read-ledger.ts:186-210) in parallel; the latter calls readEventLedger() with NO filter (line 187) — a full events.jsonl read — then projects every edit_intent_checked event into a grouped Map (lines 188-209). source/since filters are applied only AFTER the full merge (lines 66-68). rehydrate-state.ts:65 calls this on state rehydration. So each rehydrate pays two full-file reads (legacy + events) plus a full grouping pass that scales with total event count, not with the entries actually needed.",
+    "location": "packages/server/src/services/read-ledger.ts:187",
+    "fix_direction": "Push source/since filters into the event read (event_type='edit_intent_checked' + since) and stream; avoid re-reading the whole events.jsonl whenever a bounded slice is needed.",
+    "affected_components": ["packages/server/src/services/read-ledger.ts", "packages/server/src/services/rehydrate-state.ts", "packages/server/src/services/event-ledger.ts"]
+  },
+  {
+    "title": "selectionTokenCache is an unbounded in-memory Map with no eviction — grows with session/call count",
+    "severity": "low",
+    "description": "createSelectionToken (plan-context.ts:447-457) inserts into the module-level `selectionTokenCache = new Map()` (plan-context.ts:143) on EVERY plan-context call, with a default 30-minute TTL (line 140, bumped from 5min in rc.37). Entries are only deleted lazily on readSelectionToken when already expired (plan-context.ts:424-426) — there is NO periodic sweep. A long-lived MCP server handling many sessions/recalls accumulates one never-read-again token per plan-context call for up to 30 minutes each; tokens whose getKnowledgeSections follow-up never arrives are never proactively evicted. Memory grows O(plan-context calls in any 30-min window). Bounded by TTL so not catastrophic, but unbounded in call-rate.",
+    "location": "packages/server/src/services/plan-context.ts:143",
+    "fix_direction": "Add a periodic sweep (or LRU cap) for selectionTokenCache so expired tokens are reclaimed without waiting for a matching read that may never come; cap total entries for high-throughput servers.",
+    "affected_components": ["packages/server/src/services/plan-context.ts"]
+  },
+  {
+    "title": "findStoreExecutableViolations does a synchronous unbounded recursive readdirSync+statSync walk of the entire store tree",
+    "severity": "low",
+    "description": "findStoreExecutableViolations (store-disk-reader.ts:72-107) recursively walks every directory (readdirSync, line 76) and statSync's every entry (line 90) in a mounted store tree with no depth/file-count bound. As stores grow (the north-star is N parallel git stores, each an accumulating KB) this synchronous walk scales O(total files per store) and blocks the event loop during mount/verify. It excludes .git (line 83) but nothing else. Currently a mount-time / verify-time cost (not per-recall), so lower severity, but it runs per store and the store model is explicitly designed for growth in both store count and per-store size.",
+    "location": "packages/shared/src/resolver/store-disk-reader.ts:72",
+    "fix_direction": "Make the scan async (fs/promises) and/or bound it (depth/file-count cap with a diagnostic when exceeded); cache results per store commit so re-mounts of an unchanged store skip the full walk.",
+    "affected_components": ["packages/shared/src/resolver/store-disk-reader.ts"]
+  },
+  {
+    "title": "stable_id counter width is fixed at NNNN (min 4 digits) — overflow semantics undefined past 9999 per type per store",
+    "severity": "low",
+    "description": "The stable_id grammar is `K[PT]-TYPE-\\d{4,}` (store-stable-id.ts:51 GLOBAL_REF_PATTERN uses `\\d{4,}`; the local form reuses StableIdSchema). The `{4,}` quantifier technically allows more than 4 digits, so the regex itself does not hard-cap at 9999 — but the human-facing format and per-store/per-type counters (storeCountersSchema, store-stable-id.ts:107-127) are nonnegative integers with no documented rollover or width-expansion handling. Per store, per layer (KP/KT), per type (MOD/DEC/GLD/PIT/PRO) the counter is independent, so 9999 is a long way off for any single bucket; risk is low and only matters for a single extremely prolific store+type combination. Worth noting that the format string assumes 4 digits for alignment/sorting — lexicographic sort of stable_ids breaks once a counter crosses into 5 digits (K-DEC-9999 vs K-DEC-10000 sort wrong), and plan-context uses stable_id.localeCompare as a tiebreaker (plan-context.ts:715).",
+    "location": "packages/shared/src/schemas/store-stable-id.ts:51",
+    "fix_direction": "Confirm counter allocation zero-pads to a consistent width (and widens cleanly past 9999) so lexicographic stable_id tiebreaks in plan-context stay correct; document the rollover behavior. Low priority unless a single store+type bucket is expected to exceed ~10k entries.",
+    "affected_components": ["packages/shared/src/schemas/store-stable-id.ts", "packages/server/src/services/plan-context.ts"]
+  }
+]

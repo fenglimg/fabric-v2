@@ -1,0 +1,1457 @@
+{
+  "session_id": "20260601-issues-audit",
+  "active_session_id": "20260601-issues-audit",
+  "sessions": [
+    {
+      "session_id": "20260601-issues-audit",
+      "attached_at": "2026-06-01T00:00:00.000Z"
+    }
+  ],
+  "intent": "审计 issues.jsonl 中 critical+high bug:去重→验真伪(refuted 记理由)→修复 confirmed→回归收敛, 目标 v2.2 rc2+",
+  "goal": "issues.jsonl 中全部 critical+high 条目完成 triage(confirmed/refuted/dup-merged/already-fixed 均带证据), 其中 confirmed-real 项全部修复且通过 deterministic 验证, 且修复后全仓 tsc+test 绿(无回归). medium/low carry 到 rc3 backlog.",
+  "mode": "2",
+  "current_phase": "audit",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "issues.jsonl 中 severity=critical|high 的 77 条(去重后 ~64 簇)",
+      "去重: 同簇 member 合并并在 issues.jsonl 标 resolution",
+      "验真伪: 每条 grep/tsc/read 取证, refuted 标 already-fixed|non-bug|duplicate",
+      "修复 confirmed-real 项 + 每 wave 收口 git commit(rc2 节奏)",
+      "回归: 每 wave 末 pnpm -r exec tsc --noEmit + test 必绿"
+    ],
+    "out_of_scope": [
+      "severity=medium|low 的 94 条(carry 到 rc3 backlog, 本轮只标记不修)",
+      "新功能/重构超出 bug 修复范围",
+      "非 issues.jsonl 来源的新发现(另起 finding 但需 alignment 论证)"
+    ],
+    "constraints": [
+      "任何 fix 前先 grep 验证声称(防 reimplemented-noop, 见 feedback-audit-verification)",
+      "改 packages/shared schema 必须 rebuild dist",
+      "release 前本地必跑 pnpm -r exec tsc --noEmit(CI tsc≠local build)",
+      "分批 commit: 每 wave 收口即 commit 并回填 git_commits[]",
+      "已 GA 包烧号约束: 不动 published 版本号, rc tag 递进"
+    ]
+  },
+  "task_decomposition": [
+    {
+      "id": "T1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F6: withFileLock 写 UUID token, finally/reclaim 仅当 token 匹配才 unlink",
+      "done_when": "fix 实现 + tsc 绿 + 相关 test 绿 + grep 复核生效",
+      "from_finding": "F6",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": "atomic-write.test.ts +2 用例(no-theft/token-stamp)全绿; tsc 绿; grep 复核 finally 走 unlinkIfToken",
+        "verified_at": "2026-06-01T02:00:00.000Z"
+      }
+    },
+    {
+      "id": "T2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F16: 在 knowledge write-path(extractKnowledge 等)调用 lintCrossStoreReferences+isPersonalLeakIntoSharedStore, 违规阻断",
+      "done_when": "fix 实现 + tsc 绿 + 相关 test 绿 + grep 复核生效",
+      "from_finding": "F16",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "in_progress",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "T3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F17: projectId 严格 alphanumeric 校验(Zod/regex)+ 解析后 snapshot path 前缀校验",
+      "done_when": "fix 实现 + tsc 绿 + 相关 test 绿 + grep 复核生效",
+      "from_finding": "F17",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": "bindings-snapshot.test.ts +11 用例(traversal reject)全绿; tsc 绿; sink 加 assertSafeProjectId+前缀校验",
+        "verified_at": "2026-06-01T02:00:00.000Z"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-003",
+        "ISS-20260531-009",
+        "ISS-20260531-042"
+      ],
+      "rep_issue_id": "ISS-20260530-003",
+      "title": "Full project-tree walk + read+sha256 of every test file on EVERY recall/plan-context call",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Cache the knowledge-test index keyed by a cheap stat-based fingerprint (max mtime of knowledge/ + test files, or a dir-listing hash) and only re-walk when it changes; or decouple computeKnowledgeTestIndex from the read-path buildKnowledgeMeta entirely (the test-annotation index is only needed by doctor, not by recall). At minimum, gate findTestFiles behind the same mtime check used to decide whether agents.meta.json actually drifted.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F2",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-004",
+        "ISS-20260531-093"
+      ],
+      "rep_issue_id": "ISS-20260530-004",
+      "title": "buildKnowledgeMeta re-reads + re-hashes every knowledge file on every read-path call (no cache)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Memoize buildKnowledgeMeta output keyed by a directory-fingerprint (file count + max mtime over the knowledge subdirs), reusing the existing contextCache infrastructure / file_watch invalidation. The revision-drift comparison can short-circuit on the fingerprint without reading file bodies when nothing changed.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F3",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-001",
+        "ISS-20260531-094"
+      ],
+      "rep_issue_id": "ISS-20260531-001",
+      "title": "Repeated full-corpus loading of event ledger into memory",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Parse the ledger once per doctor run and pass the resulting events array to all dependent inspection functions, or use a stream parser.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F4",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-003",
+        "ISS-20260531-037"
+      ],
+      "rep_issue_id": "ISS-20260531-003",
+      "title": "God-file: doctor.ts (8697 lines)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Decompose into smaller, domain-specific lint and repair services.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F5",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-011",
+        "ISS-20260531-040"
+      ],
+      "rep_issue_id": "ISS-20260531-011",
+      "title": "Search input removes keyboard focus indicator",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Remove outline-none or add a WCAG-compliant focus outline via focus-visible:ring-2 focus-visible:ring-brand-accent.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F6",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-036",
+        "ISS-20260531-098"
+      ],
+      "rep_issue_id": "ISS-20260531-036",
+      "title": "Lock-Reclaim Race Condition and Lock Theft in withFileLock",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Write a unique process/session token (UUID) into the exclusive lock file on creation; in finally, only unlink if file contents match the current holder's token.",
+      "actual": "atomic-write.ts:127 finally 无条件 unlink(lockPath),不校验持有权;line 109-110 reclaim stat→unlink 间无 token 校验。临界区超 staleMs 时 A 的 finally 删 B 锁 = 双进程同时进临界区。",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "atomic-write.ts:127 finally 无条件 unlink(lockPath),不校验持有权;line 109-110 reclaim stat→unlink 间无 token 校验。临界区超 staleMs 时 A 的 finally 删 B 锁 = 双进程同时进临界区。",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T01:00:00.000Z"
+      },
+      "severity": "critical",
+      "fix_task_id": "T1"
+    },
+    {
+      "id": "F7",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-085",
+        "ISS-20260531-089"
+      ],
+      "rep_issue_id": "ISS-20260531-085",
+      "title": "Synchronous git process spawning during array sorting (forensic scan)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Pre-calculate git churn weights for all entry points once into a Map, then look them up O(1) in the comparator.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F8",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-086",
+        "ISS-20260531-102"
+      ],
+      "rep_issue_id": "ISS-20260531-086",
+      "title": "Missing ARIA tree roles and keyboard focusability in registry tree nodes",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Wrap the tree container in role=tree, give each node role=treeitem + tabindex=0, and add keydown handlers for arrows and Enter/Space to manage focus/selection.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F9",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-002"
+      ],
+      "rep_issue_id": "ISS-20260531-002",
+      "title": "Race condition in event ledger truncation",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Implement a cross-process lock (e.g., .fabric/events.jsonl.lock) that agents must acquire before appending and doctor must acquire before truncating.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F10",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-004"
+      ],
+      "rep_issue_id": "ISS-20260531-004",
+      "title": "Interactive elements lack semantic tags — not keyboard accessible",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Replace interactive <div> with <button>/<a>; if <div> is required, add tabindex=0, the appropriate role, and Enter/Space key handling.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F11",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-005"
+      ],
+      "rep_issue_id": "ISS-20260531-005",
+      "title": "Personal-layer knowledge (KP-*) can leak into team read-set",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Enforce required_stores authorization at the knowledge-graph read layer (recall/query), isolating the personal tree by default.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F12",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-035"
+      ],
+      "rep_issue_id": "ISS-20260531-035",
+      "title": "Synchronous Blocking I/O in Hot Edit-Time Hook Paths",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Refactor the file persistence helper (state-store.cjs) and hook script to use async operations (fs.promises) or a decoupled background process so writes do not block the active editor loop.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F13",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-038"
+      ],
+      "rep_issue_id": "ISS-20260531-038",
+      "title": "Global cooldown throttle silences hook nudges across concurrent sessions",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Scope cache filenames/keys by session_id (archive-hint-shown-{sessionId}.json, maintenance-hint-last-emit-{sessionId}), mirroring session-hints-{session_id}.json.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F14",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-039"
+      ],
+      "rep_issue_id": "ISS-20260531-039",
+      "title": "Interactive elements lack custom focus styles (nav/toggle/copy)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:outline-none to all sidebar nav links and active buttons.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F15",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-041"
+      ],
+      "rep_issue_id": "ISS-20260531-041",
+      "title": "Personal-layer (KP-*) metadata leaks into git-committed agents.meta.json",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Exclude KP-* / ~/.fabric/knowledge entries from the shared .fabric/agents.meta.json; persist personal metadata machine-locally (.fabric/.cache/ or ~/.fabric/). Exclude personal entries from computeRevision.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "critical",
+      "fix_task_id": null
+    },
+    {
+      "id": "F16",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-087"
+      ],
+      "rep_issue_id": "ISS-20260531-087",
+      "title": "Dormant cross-store reference lint / personal-leak guard never invoked on write path",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Import and execute lintCrossStoreReferences and isPersonalLeakIntoSharedStore inside knowledge write-path services (e.g. extractKnowledge) and block persistence on violation.",
+      "actual": "cross-store-lint.ts:33/74 定义 lintCrossStoreReferences/isPersonalLeakIntoSharedStore, 排除 def+test 后零调用点 = 死守卫, write path 从不拦 cross-store/personal-leak。",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "cross-store-lint.ts:33/74 定义 lintCrossStoreReferences/isPersonalLeakIntoSharedStore, 排除 def+test 后零调用点 = 死守卫, write path 从不拦 cross-store/personal-leak。",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T01:00:00.000Z"
+      },
+      "severity": "critical",
+      "fix_task_id": "T2"
+    },
+    {
+      "id": "F17",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-088"
+      ],
+      "rep_issue_id": "ISS-20260531-088",
+      "title": "Path traversal -> arbitrary file write via unsanitized project_id in bindings snapshot",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Sanitize projectId to strictly alphanumeric (regex/Zod in fabricConfigSchema) and verify the resolved snapshot path starts with the expected global bindings directory.",
+      "actual": "bindings.ts:26 bindingsSnapshotPath join(...,`${projectId}_resolved.json`) 无消毒, projectId 含 ../ → line58 writeFileSync 任意路径写。",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "bindings.ts:26 bindingsSnapshotPath join(...,`${projectId}_resolved.json`) 无消毒, projectId 含 ../ → line58 writeFileSync 任意路径写。",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T01:00:00.000Z"
+      },
+      "severity": "critical",
+      "fix_task_id": "T3"
+    },
+    {
+      "id": "F18",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-011",
+        "ISS-20260530-012"
+      ],
+      "rep_issue_id": "ISS-20260530-011",
+      "title": "PreToolUse hook appends edit-counter / events.jsonl / silence-counter with bare appendFileSync — no advisory lock (multi-window interleave)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Route all three appends through the appendLockedLine pattern (factor it out of injection-log.cjs into lib/ and share it), or at minimum events.jsonl since it is the load-bearing ledger. The counters could alternatively be made session-scoped (filename suffixed with session_id, like hint-dismiss-{sessionId}.json) so concurrent writers never touch the same file.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F19",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-006",
+        "ISS-20260531-015"
+      ],
+      "rep_issue_id": "ISS-20260531-006",
+      "title": "Synchronous file system reads in full-corpus scans (iterateCanonicalEntries)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Replace sync FS calls with async variants (fs/promises) or cache the canonical entries map across the doctor run.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F20",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-012",
+        "ISS-20260531-054"
+      ],
+      "rep_issue_id": "ISS-20260531-012",
+      "title": "Insufficient text contrast in light mode",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Map higher-contrast colors (700 variants) in the light-mode Tailwind theme or darken weight/palette to reach at least 4.5:1.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F21",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-092",
+        "ISS-20260531-105"
+      ],
+      "rep_issue_id": "ISS-20260531-092",
+      "title": "O(N * M) nested array intersection loop on recall path",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Convert candidateIds and requestedIds to Sets for O(1) membership, yielding O(N+M).",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F22",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-005"
+      ],
+      "rep_issue_id": "ISS-20260530-005",
+      "title": "Full events.jsonl read + Zod-validate of every line on every recall (3x per fab_recall), only to surface rare redirects",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add an early per-line event_type prefilter (cheap substring/JSON key check) before Zod safeParse, or maintain a small in-memory cache of the redirect map invalidated on append. De-duplicate the redundant loadIdRedirectMap calls across planContext/recall/getKnowledgeSections within one recall (compute once, thread through). Replace the 4 chained .filter() with a single pass.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F23",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-006"
+      ],
+      "rep_issue_id": "ISS-20260530-006",
+      "title": "BM25/locality score recomputed for every item on every comparator invocation (score-in-sort antipattern)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Precompute each item's score once into a parallel array (or Schwartzian transform: map to {item, score} then sort on the cached score), so the comparator only subtracts two numbers. Eliminates the log n score-recompute factor and the repeated locality nested-loop.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F24",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-013"
+      ],
+      "rep_issue_id": "ISS-20260530-013",
+      "title": "KnowledgeIdAllocator.allocate() read-modify-write of agents.meta.json counters is not serialized — concurrent allocation yields duplicate stable_ids",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Guard the read-modify-write with a cross-process advisory lock on agents.meta.json (O_EXCL lock-file like injection-log.cjs, or proper-lockfile). Loop-based promotion in review.ts amplifies the window, so the lock should ideally span the whole batch or be re-acquired per allocate.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F25",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-014"
+      ],
+      "rep_issue_id": "ISS-20260530-014",
+      "title": "Corrupt agents.meta.json silently falls back to empty meta, and the next allocate() atomically overwrites the file — destroys all node entries",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "On JSON.parse failure do NOT proceed to overwrite. Either throw (let doctor surface + repair), or preserve the corrupt file to a .corrupted sidecar (as event-ledger.ts:307 does for ledgers) before any rewrite, and refuse to allocate until reconciled.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F26",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-017"
+      ],
+      "rep_issue_id": "ISS-20260530-017",
+      "title": "Two divergent `extractBody` implementations with different semantics",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Delete the private copy in review.ts and import `extractBody` from knowledge-sections.ts. Reconcile the trim() difference deliberately (pick one contract — likely trim at the API boundary, not in the shared stripper) and add a test pinning the chosen behavior.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F27",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-023"
+      ],
+      "rep_issue_id": "ISS-20260530-023",
+      "title": "Vector retrieval embeds the ENTIRE candidate corpus per request — no persisted embedding index",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Persist per-entry embeddings keyed by stable_id + content hash (e.g. in agents.meta.json or a sidecar), embed only the query + any entries whose hash changed since last index build. Embedding the full corpus per request defeats the purpose of a cache and makes vectors unusable past a few hundred entries.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F28",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-030"
+      ],
+      "rep_issue_id": "ISS-20260530-030",
+      "title": "FabricError.actionHint infrastructure is entirely dead in the CLI — every CLI error shows only a bare message with no remedy",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Either (a) wrap runMain in index.ts with a try/catch that calls renderFabricError(err) + process.exit(1) when hasActionHint(err), or (b) migrate the plain throws to FabricError subclasses AND wire the renderer. Pick one; right now the actionHint contract is enforced at construction but never surfaced.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F29",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260530-042"
+      ],
+      "rep_issue_id": "ISS-20260530-042",
+      "title": "fabric install scaffolds per-project ledgers (events.jsonl, metrics.jsonl, cite-rollup.jsonl) into .fabric/ but never writes a .gitignore to exclude them",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "On install, append `.fabric/events.jsonl`, `.fabric/metrics.jsonl`, `.fabric/cite-rollup.jsonl`, `.fabric/events.archive/`, `.fabric/.cache/` to the project's .gitignore (idempotently), or write `.fabric/.gitignore` covering the volatile ledgers, mirroring the STORE_GITIGNORE pattern already used for stores.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F30",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-007"
+      ],
+      "rep_issue_id": "ISS-20260531-007",
+      "title": "Race condition during agents.meta.json counter repairs",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Apply optimistic concurrency control (check revision/hash before writing) or a cross-process file lock during meta repairs.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F31",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-008"
+      ],
+      "rep_issue_id": "ISS-20260531-008",
+      "title": "Non-atomic multi-step meta updates",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Merge node reconciliation and counter desync repairs into a single read-modify-write atomic transaction on agents.meta.json.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F32",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-010"
+      ],
+      "rep_issue_id": "ISS-20260531-010",
+      "title": "Silent Event Ledger append failure (no visibility to human or AI)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Do not silently swallow; capture non-fatal ledger append failures as a warning / failed-mutation entry in the returned DoctorFixReport/DoctorApplyLintReport so callers see the desync.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F33",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-013"
+      ],
+      "rep_issue_id": "ISS-20260531-013",
+      "title": "Sensitive data / PII written to disk without fine-grained redaction",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Introduce content-based PII/secrets scanning + redaction before knowledge is persisted, and extend redactSecretsInEvent to cover dynamic payload content.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F34",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-014"
+      ],
+      "rep_issue_id": "ISS-20260531-014",
+      "title": "Unbounded memory growth in readEventLedger / rotateEventLedgerIfNeeded",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Migrate readEventLedger and rotateEventLedgerIfNeeded to readline.createInterface + fs.createReadStream for O(1)-memory linear parsing.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F35",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-043"
+      ],
+      "rep_issue_id": "ISS-20260531-043",
+      "title": "Frontmatter YAML Injection in Modify/Approve/Reject Paths",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Use quoteRelevancePath / quoteIfNeeded on each element of tags and relevance_paths before joining.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F36",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-044"
+      ],
+      "rep_issue_id": "ISS-20260531-044",
+      "title": "Frontmatter Escape via Backslash in quoteIfNeeded (review.ts)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Escape backslashes first (replace(/\\\\/g,'\\\\\\\\')) before escaping double-quotes, matching quoteRelevancePath in extract-knowledge.ts.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F37",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-045"
+      ],
+      "rep_issue_id": "ISS-20260531-045",
+      "title": "Path Traversal in reverse-unarchive primitive",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add path confinement (like resolveSandboxedPath in review.ts) to guarantee the resolved path stays strictly within .fabric/.archive/.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F38",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-046"
+      ],
+      "rep_issue_id": "ISS-20260531-046",
+      "title": "Synchronous Repository Walks and File Reads in Doctor Checks",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Refactor deep directory inspections and reads in doctor.ts to async readdir/stat/readFile and parallelize with Promise.all().",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F39",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-047"
+      ],
+      "rep_issue_id": "ISS-20260531-047",
+      "title": "Counter overwrite: writeKnowledgeMeta rebuilds without the allocator lock",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Acquire withFileLock on ${metaPath}.lock in writeKnowledgeMeta before reading/computing/writing the metadata, serializing rebuilds against allocator increments.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F40",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-048"
+      ],
+      "rep_issue_id": "ISS-20260531-048",
+      "title": "Cross-process event loss in ledger rotation and drops",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Wrap the critical sections of rotateEventLedgerIfNeeded and dropEventsFromLedger in withFileLock on events.jsonl.lock for cross-process mutual exclusion.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F41",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-049"
+      ],
+      "rep_issue_id": "ISS-20260531-049",
+      "title": "Torn writes / page-cache corruption from omission of fsync",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Enable fsync by default for critical metadata/config writes (agents.meta.json, settings.json) in KnowledgeIdAllocator and doctor fixes, forcing fd.datasync before rename.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F42",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-050"
+      ],
+      "rep_issue_id": "ISS-20260531-050",
+      "title": "Boilerplate Copy-Paste Installation Functions for Skills",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Use a single data-driven helper installFabricSkill(skillKey, templateRel, options) with skills represented as config objects in a metadata array.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F43",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-051"
+      ],
+      "rep_issue_id": "ISS-20260531-051",
+      "title": "Duplicated Process Liveness and Lock Reading Logic across Packages",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Consolidate these OS/process utilities in the shared package (e.g. @fenglimg/fabric-shared/node lock-utils.ts) and import in both packages.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F44",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-052"
+      ],
+      "rep_issue_id": "ISS-20260531-052",
+      "title": "Standard Error throws bypass the actionHint error renderer",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Throw a FabricError class (or structural FabricErrorShape match) carrying actionHint instead of generic Error.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F45",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-053"
+      ],
+      "rep_issue_id": "ISS-20260531-053",
+      "title": "Swallowed cache write failures silently break hooks and nudge logic",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Have fabric doctor explicitly check write permissions/health of .fabric/.cache/ and log a diagnostic warning/error if the hook cache cannot be updated.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F46",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-055"
+      ],
+      "rep_issue_id": "ISS-20260531-055",
+      "title": "CLI glyphs lack accessible text fallback in color-enabled sessions",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Prepend/append textual labels in all color states (e.g. '[ok] ✓', '[warn] !', '[error] x') for a robust visual + spoken fallback.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F47",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-056"
+      ],
+      "rep_issue_id": "ISS-20260531-056",
+      "title": "Store diagnostics severity check masks errors as info",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add explicit branches: severity==='error' -> symbol.error, 'warn' -> symbol.warn, else [info].",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F48",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-057"
+      ],
+      "rep_issue_id": "ISS-20260531-057",
+      "title": "No PII scanning/redaction before capturing into KB or event ledger",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add dedicated PII regex rules (emails, IPs, phone numbers) into redactSecrets/scanForSecrets and apply across all telemetry logging and write-paths.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F49",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-058"
+      ],
+      "rep_issue_id": "ISS-20260531-058",
+      "title": "Audit gap: in-place knowledge edits (modifyEntry) emit no ledger event",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Emit a knowledge_modified / knowledge_metadata_updated event in the modifyEntry in-place flow capturing stable_id/path, patch changes, original values, and session metadata.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F50",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-059"
+      ],
+      "rep_issue_id": "ISS-20260531-059",
+      "title": "metrics.jsonl grows unbounded with NO rotation mechanism",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add size-based and age-based rotation for metrics.jsonl like events.jsonl (archive old rows to a compressed sidecar, keep only active rows).",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F51",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-060"
+      ],
+      "rep_issue_id": "ISS-20260531-060",
+      "title": "Full-ledger in-memory scans for events and metrics files scale poorly",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Implement index/tail-based streaming scans (read only last N lines or since a timestamp) or a pre-aggregated in-memory index, avoiding full-text parse per call.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F52",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-061"
+      ],
+      "rep_issue_id": "ISS-20260531-061",
+      "title": "Concurrent multi-window sessions cause cross-session selection-token invalidation",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Keep active selection tokens valid for their full TTL (30 min) despite minor revision_hash mutations, or scope invalidation to the specific files mutated rather than globally destroying all active tokens.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F53",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-062"
+      ],
+      "rep_issue_id": "ISS-20260531-062",
+      "title": "Synchronous blocking FS and process execution in multi-store core",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Refactor multi-store core to async (fs.promises, execFile-as-promise) to prevent event-loop blockage during cross-store reads/writes or git interactions.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F54",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-090"
+      ],
+      "rep_issue_id": "ISS-20260531-090",
+      "title": "Ignored/discarded MCP tool arguments (layer_filter & target_paths)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Destructure layer_filter and target_paths in registerPlanContext and layer_filter in registerRecall, pass them to the services, and extend PlanContextInput to declare layer_filter.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F55",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-091"
+      ],
+      "rep_issue_id": "ISS-20260531-091",
+      "title": "YAML frontmatter injection via unescaped array joining (review merge/patch)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Map each array item through an escaping/quoting helper (quoteIfNeeded / quoteRelevancePath) to escape backslashes, quotes, newlines, brackets before joining.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F56",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-095"
+      ],
+      "rep_issue_id": "ISS-20260531-095",
+      "title": "Blocking synchronous recursive directory walk on Express event loop",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Refactor walkFiles to async fs promises (readdir/stat) or delegate the scan to a worker thread.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F57",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-096"
+      ],
+      "rep_issue_id": "ISS-20260531-096",
+      "title": "Unhandled git rebase error crashes sync continue/abort flow",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Wrap the rebase ops in try-catch in runContinueSync/runAbortSync, record failure/abort cleanup in the state machine/session file, and return a clean error diagnostic instead of crashing.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F58",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-097"
+      ],
+      "rep_issue_id": "ISS-20260531-097",
+      "title": "Non-atomic session writes and unhandled parse error crash the CLI",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Use atomicWriteJson (with fsync) in saveSession, and wrap JSON.parse in loadSession in try-catch to handle corruption gracefully (warn + return null / reclaim new session).",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F59",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-099"
+      ],
+      "rep_issue_id": "ISS-20260531-099",
+      "title": "Layer boundary leak / contract inconsistency in plan-context payload trimming",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Move payload-budget trimming into the planContext() service layer before the selection token is minted, passing warnings/limits down into the service.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F60",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-100"
+      ],
+      "rep_issue_id": "ISS-20260531-100",
+      "title": "Fragile subcommand short-circuit in fabric config parent command",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Check whether the subcommand name exists anywhere in process.argv (process.argv.includes) or query the parsed citty command context instead of hardcoding argv indexes.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F61",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-101"
+      ],
+      "rep_issue_id": "ISS-20260531-101",
+      "title": "Unhandled promise rejection in experimental HTTP server /events endpoint",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Wrap the /events handler in try/catch or an Express async wrapper to send a standard HTTP 500 via sendUnknownError when watcher setup fails.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F62",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-103"
+      ],
+      "rep_issue_id": "ISS-20260531-103",
+      "title": "scrubRemoteUrl misses bare userinfo tokens (no ':' separator) -> credential leak",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Change the scrubRemoteUrl regex to strip any credential/token in the userinfo segment even without a ':' separator.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F63",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-104"
+      ],
+      "rep_issue_id": "ISS-20260531-104",
+      "title": "Experimental HTTP APIs expose unredacted ledger/history with personal-layer leakage",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add a visibility/scope filter to the ledger/history endpoints excluding personal-scope records, and apply redactSecrets before serializing payloads.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    },
+    {
+      "id": "F64",
+      "round": 1,
+      "cluster_member_ids": [
+        "ISS-20260531-106"
+      ],
+      "rep_issue_id": "ISS-20260531-106",
+      "title": "Unbounded HTTP session growth (no cleanup / idle expiration)",
+      "oracle": "declared-vs-impl",
+      "expectation_source": "Add session eviction: a background reaper for sessions idle > TTL (e.g. 5 min), or cap max concurrent sessions.",
+      "actual": null,
+      "verify": {
+        "tier": "deterministic",
+        "verdict": null,
+        "evidence": null,
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null
+    }
+  ],
+  "ship_criteria": [
+    {
+      "name": "G-TRIAGE",
+      "desc": "critical+high 全部 triage(每簇 verdict!=null)",
+      "target": "64/64 verdicted",
+      "actual": null,
+      "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
+      "verified_at": null
+    },
+    {
+      "name": "G-FIX",
+      "desc": "confirmed-real 项全部修复且 deterministic 验证",
+      "target": "100% confirmed fixed+verified",
+      "actual": null,
+      "verifier_cmd": "count(confirmed findings with fix_task done&verified)/count(confirmed)",
+      "verified_at": null
+    },
+    {
+      "name": "G-GREEN",
+      "desc": "修复后全仓无回归",
+      "target": "tsc+test 全绿",
+      "actual": "tsc 全仓 EXIT 0; shared 566/566",
+      "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test",
+      "verified_at": "2026-06-01T02:00:00.000Z"
+    }
+  ],
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "running",
+      "round_task_ceiling": 14,
+      "round_task_actual": 3,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": [],
+      "carried_in": [],
+      "carry_over_to_next": {
+        "from_open_blocked": [],
+        "from_ceiling_overflow": [],
+        "from_depth_cap": []
+      },
+      "drift_checks": [],
+      "completion_gate": {
+        "task_gate": {},
+        "goal_gate": {
+          "blocking": true
+        },
+        "drift_gate": {}
+      }
+    }
+  ],
+  "git_commits": [],
+  "needs_adjudication": [],
+  "goal_checklist_path": ".workflow/.maestro/20260601-issues-audit/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null
+}

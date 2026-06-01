@@ -1,0 +1,58 @@
+[
+  {
+    "title": "Lock-Reclaim Race Condition and Lock Theft in withFileLock",
+    "severity": "critical",
+    "description": "withFileLock manages cross-process advisory locking via O_CREAT|O_EXCL. If a lock becomes stale (exceeding staleMs, e.g. 10s), another process reclaims it by unlink(lockPath) then open(lockPath,'wx'). When the original slow holder finally completes, its unconditional finally block calls unlink(lockPath), deleting the NEW holder's active lock file. This leaves the new holder unprotected, allowing concurrent entry into the critical section and shared-state corruption.",
+    "location": "packages/shared/src/node/atomic-write.ts:127",
+    "fix_direction": "Write a unique process/session token (UUID) into the exclusive lock file on creation; in finally, only unlink if file contents match the current holder's token.",
+    "affected_components": ["@fenglimg/fabric-shared", "@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Counter overwrite: writeKnowledgeMeta rebuilds without the allocator lock",
+    "severity": "high",
+    "description": "KnowledgeIdAllocator.allocate increments stable_id counters in agents.meta.json inside a withFileLock critical section. But writeKnowledgeMeta (sync/auto-heal/doctor) reads + recomputes via buildKnowledgeMeta and writes back with atomicWriteText WITHOUT acquiring the lock. If it reads before allocate's incremented write lands, it overwrites the meta with stale counters, causing duplicate stable_id allocation and index collisions.",
+    "location": "packages/server/src/services/knowledge-meta-builder.ts:154",
+    "fix_direction": "Acquire withFileLock on ${metaPath}.lock in writeKnowledgeMeta before reading/computing/writing the metadata, serializing rebuilds against allocator increments.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Cross-process event loss in ledger rotation and drops",
+    "severity": "high",
+    "description": "rotateEventLedgerIfNeeded and dropEventsFromLedger read events.jsonl, partition/filter, and overwrite via atomicWriteText, serialized only by an in-process queue (ledgerQueue.runExclusive). Across multiple client sessions or CLI/server processes the separate queues do not lock against each other, so one process's rewrite clobbers concurrent appends/rotations.",
+    "location": "packages/server/src/services/event-ledger.ts:464",
+    "fix_direction": "Wrap the critical sections of rotateEventLedgerIfNeeded and dropEventsFromLedger in withFileLock on events.jsonl.lock for cross-process mutual exclusion.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Torn writes / page-cache corruption from omission of fsync",
+    "severity": "high",
+    "description": "atomicWriteJson persists critical derived files like agents.meta.json but calls atomicWriteText without a truthy fsync option — write temp then rename, no flush. A power loss/crash right after rename can leave unflushed page-cache, corrupting metadata or producing a zero-byte agents.meta.json.",
+    "location": "packages/shared/src/node/atomic-write.ts:36",
+    "fix_direction": "Enable fsync by default for critical metadata/config writes (agents.meta.json, settings.json) in KnowledgeIdAllocator and doctor fixes, forcing fd.datasync before rename.",
+    "affected_components": ["@fenglimg/fabric-shared", "@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Graceful read-path auto-heal crashes on malformed metadata",
+    "severity": "medium",
+    "description": "In loadActiveMetaOrStale (graceful read path for planContext hints), a malformed agents.meta.json makes readAgentsMeta throw AgentsMetaInvalidError. loadActiveMetaOrStale catches rebuild errors but explicitly lets AgentsMetaInvalidError propagate, crashing all plan-context hint requests and breaking the graceful-fallback guarantee.",
+    "location": "packages/server/src/services/load-active-meta.ts:156",
+    "fix_direction": "Catch AgentsMetaInvalidError inside loadActiveMetaOrStale, quarantine the corrupt file, and trigger a fresh meta rebuild instead of throwing.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Mismatched multi-file sync of agents.meta.json and knowledge-test.index.json",
+    "severity": "medium",
+    "description": "writeKnowledgeMeta writes agents.meta.json and .cache/knowledge-test.index.json sequentially via atomicWriteText with no lock spanning both. Two concurrent executions can interleave (A writes meta X, B writes meta Y, B writes index Y, A writes index X), producing on-disk state where metadata does not match the cached test index.",
+    "location": "packages/server/src/services/knowledge-meta-builder.ts:154-159",
+    "fix_direction": "Enforce a serialized lock covering the entire multi-file write sequence in writeKnowledgeMeta for transactional multi-file updates.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Silent index drift on contended git index.lock",
+    "severity": "medium",
+    "description": "During auto-archiving/approvals/rejections, doctor.ts and review.ts run git mv/git rm. A stale .git/index.lock (crashed git or concurrent command) makes git ops throw; the try/catch falls back to plain fs.rename/unlink but silently degrades git status — files are moved/removed on disk yet tracked incorrectly in the git index.",
+    "location": "packages/server/src/services/doctor.ts:2211",
+    "fix_direction": "Proactively detect a stale .git/index.lock, warn/clean up, and report git index sync issues prominently in fabric doctor instead of silently degrading.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  }
+]

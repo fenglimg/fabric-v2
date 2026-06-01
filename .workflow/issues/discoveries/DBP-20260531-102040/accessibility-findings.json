@@ -1,0 +1,66 @@
+[
+  {
+    "title": "Interactive elements lack custom focus styles (nav/toggle/copy)",
+    "severity": "critical",
+    "description": "Navigation links (Readiness, Rules Explain, Timeline, Health), theme toggle, and terminal copy buttons define no focus-visible/custom focus indicator. Under keyboard nav users cannot track focus — WCAG 2.4.7 (Focus Visible).",
+    "location": "ui-prototype-hybrid.html:86",
+    "fix_direction": "Add focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:outline-none to all sidebar nav links and active buttons.",
+    "affected_components": ["Sidebar Navigation", "Header theme toggle button", "Copy terminal command button"]
+  },
+  {
+    "title": "Search input removes focus outline without visual fallback (line 139)",
+    "severity": "critical",
+    "description": "The search input uses outline-none, suppressing default focus rings, with no custom indicator on focus — fails WCAG 2.4.7 for keyboard-only operators.",
+    "location": "ui-prototype-hybrid.html:139",
+    "fix_direction": "Replace outline-none with focus:ring-2 focus:ring-brand-accent focus:border-transparent focus:outline-none.",
+    "affected_components": ["Search Bar Input"]
+  },
+  {
+    "title": "Severe light mode color contrast violations (line 192)",
+    "severity": "high",
+    "description": "In light mode, warning tags/action headers use #f59e0b (Amber 500) on near-white (~2.1:1); small muted labels #71717a yield ~3.8:1. Fails WCAG 1.4.3 (4.5:1).",
+    "location": "ui-prototype-hybrid.html:192",
+    "fix_direction": "Use high-contrast light-mode overrides: Amber 700 (#b45309)/800 (#92400e) for warnings, darken muted text to zinc-600.",
+    "affected_components": ["L2 Rule Tag", "CLI Action Required Header", "MCP Connected Banner"]
+  },
+  {
+    "title": "Dual-TTY check disables color when stderr is redirected",
+    "severity": "medium",
+    "description": "isColorEnabled disables ANSI color globally if either stdout OR stderr is not a TTY. When stderr is redirected (fabric doctor 2> err.log) color is disabled on stdout even though the console is color-capable, degrading readability.",
+    "location": "packages/cli/src/colors.ts:21",
+    "fix_direction": "Evaluate each stream's target independently (check process.stdout.isTTY for stdout-bound prints) rather than the boolean intersection of both streams.",
+    "affected_components": ["CLI Color Utilities", "Doctor Command Output", "Install/Uninstall CLI Stages"]
+  },
+  {
+    "title": "Unicode arrows and em-dashes corrupt on legacy terminals and clutter screen readers",
+    "severity": "medium",
+    "description": "The CLI doctor command renders literal Unicode arrows (->) and em-dashes directly to stdout. In legacy/non-UTF-8 terminals (Windows CMD with GBK code page) these garble; screen readers read them literally, adding clutter — contradicting the project's own ASCII guideline in error-render.ts.",
+    "location": "packages/cli/src/commands/doctor.ts:741",
+    "fix_direction": "Use ASCII equivalents (-> for arrows, colon/double-hyphen for em-dash) following error-render.ts.",
+    "affected_components": ["Doctor CLI Command Output", "Candidate List Output", "Enrich Descriptions Mode Output"]
+  },
+  {
+    "title": "CLI glyphs lack accessible text fallback in color-enabled sessions",
+    "severity": "high",
+    "description": "In color-enabled terminals, status indicators are bare Unicode shapes (check/!/x) styled with ANSI color. Screen readers read these ambiguously (or skip them) and colorblind users lose the color channel, leaving only shape. Only NO_COLOR mode includes text fallback ([ok]/[warn]/[error]).",
+    "location": "packages/cli/src/colors.ts:53",
+    "fix_direction": "Prepend/append textual labels in all color states (e.g. '[ok] ✓', '[warn] !', '[error] x') for a robust visual + spoken fallback.",
+    "affected_components": ["CLI Symbols", "Doctor Status Output", "Install Mutation Markers"]
+  },
+  {
+    "title": "Sidebar navigation lacks a landmark identifier",
+    "severity": "low",
+    "description": "The sidebar <nav> has no aria-label/landmark description, so screen-reader landmark navigation cannot distinguish it from other nav bars — WCAG 1.3.1.",
+    "location": "ui-prototype-hybrid.html:83",
+    "fix_direction": "Add aria-label=\"Sidebar Navigation\" to the sidebar nav element.",
+    "affected_components": ["Sidebar Navigation"]
+  },
+  {
+    "title": "Store diagnostics severity check masks errors as info",
+    "severity": "high",
+    "description": "In the store diagnostics renderer, any severity other than 'warn' (including critical errors) defaults to [info], making serious diagnostic errors appear as harmless info logs to screen-reader and terminal users, hiding critical issues.",
+    "location": "packages/cli/src/commands/doctor.ts:625",
+    "fix_direction": "Add explicit branches: severity==='error' -> symbol.error, 'warn' -> symbol.warn, else [info].",
+    "affected_components": ["Store Diagnostics Renderer"]
+  }
+]

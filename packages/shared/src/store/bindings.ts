@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import {
   GLOBAL_BINDINGS_DIR,
@@ -21,10 +21,32 @@ import { createStoreResolver } from "../resolver/store-resolver.js";
 // shared so both the CLI (generates) and hooks/server (read) share one shape.
 // ---------------------------------------------------------------------------
 
+// project_id is free-form user config (fabricConfigSchema.project_id), so it
+// must never be interpolated into a filesystem path unsanitized — a value like
+// "../../etc/cron.d/x" would otherwise escape the bindings dir and let
+// writeBindingsSnapshot clobber an arbitrary file (path-traversal write).
+const SAFE_PROJECT_ID = /^[A-Za-z0-9._-]+$/;
+
+function assertSafeProjectId(projectId: string): void {
+  if (!SAFE_PROJECT_ID.test(projectId) || projectId.includes("..")) {
+    throw new Error(
+      `bindingsSnapshotPath: refusing unsafe project_id ${JSON.stringify(projectId)} ` +
+        `(must match ${SAFE_PROJECT_ID} and contain no "..")`,
+    );
+  }
+}
+
 // Absolute path to a project's resolved-bindings snapshot under the global home.
 // `globalRoot` is the `~/.fabric` directory (FABRIC_HOME/.fabric in tests).
 export function bindingsSnapshotPath(globalRoot: string, projectId: string): string {
-  return join(globalRoot, GLOBAL_STATE_DIR, GLOBAL_BINDINGS_DIR, `${projectId}_resolved.json`);
+  assertSafeProjectId(projectId);
+  const bindingsDir = resolve(join(globalRoot, GLOBAL_STATE_DIR, GLOBAL_BINDINGS_DIR));
+  const path = resolve(join(bindingsDir, `${projectId}_resolved.json`));
+  // Defence in depth: even a charset-clean id must resolve back inside the dir.
+  if (path !== bindingsDir && !path.startsWith(bindingsDir + sep)) {
+    throw new Error(`bindingsSnapshotPath: resolved path escapes bindings dir for ${JSON.stringify(projectId)}`);
+  }
+  return path;
 }
 
 export interface WriteBindingsSnapshotOptions {

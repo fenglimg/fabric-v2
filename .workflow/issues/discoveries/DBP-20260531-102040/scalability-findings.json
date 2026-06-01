@@ -1,0 +1,74 @@
+[
+  {
+    "title": "Unconditional recursive workspace walk on every read/plan-context request",
+    "severity": "critical",
+    "description": "buildKnowledgeMeta is called unconditionally on all read/plan paths (loadActiveMeta / loadActiveMetaOrStale during planContext, recall, getKnowledgeSections). It triggers findFabricVerifyAnnotations -> findTestFiles, which recursively walks the ENTIRE workspace directory + stats all files to inspect annotations. At 10x-100x codebase size, a full-workspace traversal on every read request degrades performance catastrophically.",
+    "location": "packages/server/src/services/knowledge-meta-builder.ts:535",
+    "fix_direction": "Cache the workspace test-file list or only re-walk on a file-mutation event from the watcher, instead of a full recursive walk per incoming API request.",
+    "affected_components": ["PlanContext", "Recall", "GetKnowledgeSections", "KnowledgeMetaBuilder"]
+  },
+  {
+    "title": "metrics.jsonl grows unbounded with NO rotation mechanism",
+    "severity": "high",
+    "description": "Metric-natured events flush to .fabric/metrics.jsonl every 60s. Unlike events.jsonl (which has rotation + age cutoff), metrics.jsonl has NO rotation/age cutoff/truncation and appends indefinitely. readMetrics loads and parses the entire file into memory, causing linear memory/CPU degradation as it grows.",
+    "location": "packages/server/src/services/metrics.ts:93",
+    "fix_direction": "Add size-based and age-based rotation for metrics.jsonl like events.jsonl (archive old rows to a compressed sidecar, keep only active rows).",
+    "affected_components": ["MetricsService", "Doctor", "CLI"]
+  },
+  {
+    "title": "Full-ledger in-memory scans for events and metrics files scale poorly",
+    "severity": "high",
+    "description": "readEventLedger and readMetrics read their entire .jsonl into memory and split into lines, running JSON.parse + Zod validation per line. This happens during doctor health checks (inspectEventsJsonlGates on every CLI invocation/server loop), scaling O(M) with ledger size (up to 50MB before rotation), causing memory spikes and CPU choking.",
+    "location": "packages/server/src/services/event-ledger.ts:266",
+    "fix_direction": "Implement index/tail-based streaming scans (read only last N lines or since a timestamp) or a pre-aggregated in-memory index, avoiding full-text parse per call.",
+    "affected_components": ["EventLedger", "MetricsService", "Doctor"]
+  },
+  {
+    "title": "Concurrent multi-window sessions cause cross-session selection-token invalidation",
+    "severity": "high",
+    "description": "selectionTokenCache is a single global in-memory Map; tokens are bound to the project's revision_hash and cleared immediately on any file mutation. In multi-window concurrent sessions, one window modifying a knowledge file (sync or frontmatter edit) changes the revision hash, instantly invalidating active selection tokens in ALL other windows, aborting reasoning loops with 'selection_token is missing or expired'.",
+    "location": "packages/server/src/services/plan-context.ts:147",
+    "fix_direction": "Keep active selection tokens valid for their full TTL (30 min) despite minor revision_hash mutations, or scope invalidation to the specific files mutated rather than globally destroying all active tokens.",
+    "affected_components": ["PlanContext", "GetKnowledgeSections", "Recall"]
+  },
+  {
+    "title": "Synchronous blocking FS and process execution in multi-store core",
+    "severity": "high",
+    "description": "initStore, listMarkdown, listStoreKnowledge, readKnowledgeAcrossStores, aggregatePendingAcrossStores use synchronous fs APIs (readdirSync, existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync) and synchronous execFileSync('git'). These block Node's single-threaded event loop; as store count or corpus grows or under concurrent sessions, the loop chokes, blocking all other HTTP/MCP requests.",
+    "location": "packages/shared/src/store/core.ts:44",
+    "fix_direction": "Refactor multi-store core to async (fs.promises, execFile-as-promise) to prevent event-loop blockage during cross-store reads/writes or git interactions.",
+    "affected_components": ["MultiStoreStorage", "GitCore", "StoreResolver"]
+  },
+  {
+    "title": "O(N x R x T) nested-loop cartesian product for path-locality scoring",
+    "severity": "medium",
+    "description": "scoreDescriptionItem nests a loop over a candidate's relevance_paths (R) and the session's targetPaths (T). Over N candidates this is O(N x R x T). When a session targets many files (full-repo analysis/batch) or candidates list many relevance paths, this nested iteration degrades quadratically at scale.",
+    "location": "packages/server/src/services/plan-context.ts:910",
+    "fix_direction": "Pre-index targetPaths by directory/package for O(1) locality lookup instead of an O(R x T) nested scan per candidate.",
+    "affected_components": ["PlanContext", "Recall"]
+  },
+  {
+    "title": "Excessive per-item file appends during batch knowledge selections",
+    "severity": "medium",
+    "description": "getKnowledgeSections for a batch of K stable IDs iterates each ID and executes a separate appendEventLedgerEvent (knowledge_consumed) — K separate disk appends, each with Zod validation, string conversion, dir existence checks, size stat, disk write. For many selected rules this is an I/O bottleneck and swells events.jsonl quickly.",
+    "location": "packages/server/src/services/knowledge-sections.ts:279",
+    "fix_direction": "Batch all knowledge_consumed events into a single atomic array write to the ledger rather than per-rule append promises in a loop.",
+    "affected_components": ["GetKnowledgeSections", "EventLedger"]
+  },
+  {
+    "title": "Uncapped audit cursor cache leaks memory across multi-project roots",
+    "severity": "medium",
+    "description": "ContextCache holds raw metadata and cursors in global maps. metaSlot/contextSlot are TTL-based, but auditSlot (AuditCursor per project root) is never cleared and has no TTL/capacity limit. In long-running MCP server processes accessing multiple project roots or temporary worktrees, this leaks memory growing with the number of roots accessed.",
+    "location": "packages/server/src/cache.ts:35",
+    "fix_direction": "Add a max-capacity LRU eviction (like the selection token cache) or a TTL for inactive project roots on auditSlot.",
+    "affected_components": ["ContextCache", "EventLedger"]
+  },
+  {
+    "title": "Silent truncation of plan-context candidates via hardcoded Top-K cap (default 24)",
+    "severity": "low",
+    "description": "planContext candidates are silently truncated to a top-K cap (PLAN_CONTEXT_TOP_K_DEFAULT=24). Although omitted_candidate_count warns more exist, relevant knowledge beyond the top 24 is dropped. In a 10x-100x corpus where many rules share close BM25/locality scores, this hard cap causes silent omission and degraded reasoning context.",
+    "location": "packages/server/src/services/plan-context.ts:391",
+    "fix_direction": "Dynamic budgeting by token weight/payload size, or let the AI paginate/request more when omitted_candidate_count > 0, instead of a hardcoded top-K.",
+    "affected_components": ["PlanContext", "Recall"]
+  }
+]

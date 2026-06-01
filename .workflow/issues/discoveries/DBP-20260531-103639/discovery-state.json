@@ -1,0 +1,40 @@
+{
+  "id": "DBP-20260531-103639",
+  "mode": "discover",
+  "engine": "maestro-delegate-agy",
+  "round": 2,
+  "note": "Round 2 agy scan with new-ground steering (avoid R1-known issues, dig less-examined modules). Security needed a robustness-framing retry to bypass agy refusal. dedup deferred per user.",
+  "scope": "packages/**/*.ts + ui-prototype-hybrid.html",
+  "status": "completed",
+  "completed_at": "2026-05-31T02:52:31Z",
+  "perspectives_completed": [
+    "security",
+    "performance",
+    "reliability",
+    "maintainability",
+    "ux",
+    "accessibility",
+    "compliance",
+    "scalability"
+  ],
+  "dedup": "deferred (all findings appended raw per user instruction)",
+  "issues_found": 42,
+  "issues_appended": 42,
+  "severity_breakdown": {
+    "critical": 5,
+    "high": 17,
+    "medium": 16,
+    "low": 4
+  },
+  "perspective_breakdown": {
+    "performance": 7,
+    "accessibility": 6,
+    "compliance": 5,
+    "scalability": 5,
+    "security": 3,
+    "reliability": 5,
+    "maintainability": 4,
+    "ux": 7
+  },
+  "id_range": "ISS-20260531-085 .. ISS-20260531-126"
+}

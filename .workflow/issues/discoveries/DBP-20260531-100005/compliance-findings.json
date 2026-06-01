@@ -1,0 +1,34 @@
+[
+  {
+    "title": "Personal-layer knowledge (KP-*) can leak into team read-set",
+    "severity": "critical",
+    "description": "Personal-layer (KP-*) and team-layer (KT-*) knowledge nodes are built together and stored equally in agents.meta.json. If downstream recall (fab_recall / read-sets) does not enforce required_stores isolation for personal, personal knowledge and intent data may leak into shared team context.",
+    "location": "packages/server/src/services/knowledge-meta-builder.ts:84",
+    "fix_direction": "Enforce required_stores authorization at the knowledge-graph read layer (recall/query), isolating the personal tree by default.",
+    "affected_components": ["knowledge-meta-builder", "recall", "plan-context"]
+  },
+  {
+    "title": "Sensitive data / PII written to disk without fine-grained redaction",
+    "severity": "high",
+    "description": "extract-knowledge.ts hasSecrets is only a hard-block gate; free text that passes (PII or unrecognized secrets) is written via atomicWriteText with no content-level redaction. event-ledger.ts redactSecretsInEvent only redacts by predefined field-name whitelist, not deep-cleaning all payload fields, so sensitive data may persist into the KB or event ledger.",
+    "location": "packages/server/src/services/extract-knowledge.ts:465",
+    "fix_direction": "Introduce content-based PII/secrets scanning + redaction before knowledge is persisted, and extend redactSecretsInEvent to cover dynamic payload content.",
+    "affected_components": ["extract-knowledge", "event-ledger"]
+  },
+  {
+    "title": "Audit trail gap: agents.meta.json repair skips event emission",
+    "severity": "medium",
+    "description": "When apply-lint handles knowledge_index_drift it updates counters in agents.meta.json via atomicWriteJson but intentionally skips event recording (comment: 'NO event emission — the schema does not (yet) carry an agents_meta_repaired event type'). This state change bypasses the ledger, breaking the Event Ledger as the single audit trail.",
+    "location": "packages/server/src/services/doctor.ts:1782",
+    "fix_direction": "Add a dedicated audit event type (e.g. agents_meta_repaired) so all meta state mutations are recorded in the ledger.",
+    "affected_components": ["doctor", "agents-meta"]
+  },
+  {
+    "title": "Archived data lacks retention/rotation policy — unbounded growth",
+    "severity": "low",
+    "description": "Stale knowledge nodes (stale_archive) and over-age pending proposals (pending_auto_archive) are only fs.renamed into .fabric/.archive/, and the event ledger is only rotated; there is no TTL or MaxBytes destruction/rotation policy for the .archive tombstone directory, so storage grows unbounded over time.",
+    "location": "packages/server/src/services/doctor.ts:1865",
+    "fix_direction": "Add a global archive eviction mechanism with configurable max archive size or retention days and periodic physical deletion of over-age files.",
+    "affected_components": ["doctor", "event-ledger", "archive"]
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Unbounded memory growth in readEventLedger / rotateEventLedgerIfNeeded",
+    "severity": "high",
+    "description": "Both functions load the entire events.jsonl into memory via readFile and split by newline. For a 50MB ledger (the soft-warning threshold) this instantiates millions of strings simultaneously, causing heavy GC pressure and potential OOM under concurrent sessions or large corpora.",
+    "location": "packages/server/src/services/event-ledger.ts:274",
+    "fix_direction": "Migrate readEventLedger and rotateEventLedgerIfNeeded to readline.createInterface + fs.createReadStream for O(1)-memory linear parsing.",
+    "affected_components": ["readEventLedger", "rotateEventLedgerIfNeeded", "Event Ledger System"]
+  },
+  {
+    "title": "O(N) full-corpus in-memory file scans during search",
+    "severity": "high",
+    "description": "searchEntries performs a linear O(N) scan across all pending and canonical trees, calling readFile on every markdown file to parse frontmatter for titles/summaries/tags. This O(N) FS + parsing load degrades search latency severely as the KB grows 10x-100x.",
+    "location": "packages/server/src/services/review.ts:1023",
+    "fix_direction": "Implement a pre-computed description_index or SQLite backing store to serve search queries without blocking on thousands of file reads per request.",
+    "affected_components": ["searchEntries", "fab_review", "List / Search actions"]
+  },
+  {
+    "title": "Linear directory scans for session hint hygiene",
+    "severity": "medium",
+    "description": "Session hints create per-session cache files (.fabric/.cache/session-hints-*.json). inspectSessionHintsStale scans the cache directory linearly to purge stale sessions. With concurrent multi-window sessions on the same repo these files accrete rapidly, making readdirSync progressively slower.",
+    "location": "packages/server/src/services/doctor.ts:1225",
+    "fix_direction": "Consolidate session hint state into a unified LRU cache file or lightweight store, or shard by day to bound directory listings.",
+    "affected_components": ["inspectSessionHintsStale", "session-hints.cjs", "Doctor Lints"]
+  },
+  {
+    "title": "Hardcoded directory structures impede multi-store scaling",
+    "severity": "medium",
+    "description": "Multiple services (review, extract-knowledge, doctor lints) hardcode iterations over static paths like .fabric/knowledge and ~/.fabric/knowledge. As the multi-store git model (~/.fabric/stores/<id>) expands, these static loops fail to discover cross-store knowledge dynamically or incur heavy latency enumerating cloned stores.",
+    "location": "packages/server/src/services/review.ts:1040",
+    "fix_direction": "Abstract knowledge paths into a dynamic store registry/workspace locator that resolves ~/.fabric/stores/<id> and queries only relevant indexed stores.",
+    "affected_components": ["searchEntries", "inspectKnowledgeDirMissing", "Knowledge Sync"]
+  },
+  {
+    "title": "Hardcoded default top_k silently truncates matches",
+    "severity": "low",
+    "description": "The retrieval pipeline ranks candidates and truncates with a default plan_context_top_k limit. As corpus size scales 10x-100x, highly relevant entries are silently omitted if they rank below the static count threshold, causing retrieval starvation on large KBs.",
+    "location": "packages/server/src/services/plan-context.ts:383",
+    "fix_direction": "Adopt a dynamic top_k that scales with corpus size, or rely on a BM25/vector score minimum threshold instead of an absolute scalar cap.",
+    "affected_components": ["planContext", "fab_plan_context"]
+  }
+]

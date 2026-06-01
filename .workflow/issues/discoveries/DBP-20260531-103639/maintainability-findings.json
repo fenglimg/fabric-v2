@@ -1,0 +1,34 @@
+[
+  {
+    "title": "Layer boundary leak / contract inconsistency in plan-context payload trimming",
+    "severity": "high",
+    "description": "Payload-budget byte-trimming is implemented in the MCP tool registration/presentation layer instead of the core service. The selection_token is minted in planContext() over the FULL candidate set before trimming runs, so the token's ai_selectable_stable_ids is a superset of the returned candidates — the token references candidates that were stripped from the response.",
+    "location": "packages/server/src/tools/plan-context.ts:93",
+    "fix_direction": "Move payload-budget trimming into the planContext() service layer before the selection token is minted, passing warnings/limits down into the service.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Code duplication: fab_recall bypasses the appendPayloadWarning helper",
+    "severity": "medium",
+    "description": "appendPayloadWarning is the unified standard for MCP tool payload warnings under v2.2 MC5. Peer tools (fab_get_knowledge_sections, fab_extract_knowledge, fab_review) call the shared helper, but fab_recall manually constructs the structured warning dict inline, risking warning-shape divergence.",
+    "location": "packages/server/src/tools/recall.ts:87",
+    "fix_direction": "Replace the manual inline warning assembly in recall.ts with the shared appendPayloadWarning helper imported from payload-warning.js.",
+    "affected_components": ["@fenglimg/fabric-server"]
+  },
+  {
+    "title": "Identically duplicated DEFAULT_IGNORES in HTTP server and CLI scanner",
+    "severity": "medium",
+    "description": "The DEFAULT_IGNORES patterns are identically duplicated between server-http-experimental/src/api/scan.ts and cli/src/scanner/ignores.ts, risking inconsistent scan results if one copy changes without the other.",
+    "location": "packages/server-http-experimental/src/api/scan.ts:24",
+    "fix_direction": "Extract DEFAULT_IGNORES into @fenglimg/fabric-shared (or reuse cli/src/scanner/ignores.ts) and import it in scan.ts.",
+    "affected_components": ["@fenglimg/fabric-server-http-experimental", "@fenglimg/fabric-cli"]
+  },
+  {
+    "title": "Dead code: unused export ResolverNotImplementedError",
+    "severity": "low",
+    "description": "ResolverNotImplementedError is defined/exported in project-root-resolver.ts as a remnant of earlier P0.5 TDD stages; it is no longer thrown or imported anywhere, cluttering the public API surface of @fenglimg/fabric-shared.",
+    "location": "packages/shared/src/resolver/project-root-resolver.ts:25",
+    "fix_direction": "Remove the ResolverNotImplementedError class definition and export.",
+    "affected_components": ["@fenglimg/fabric-shared"]
+  }
+]

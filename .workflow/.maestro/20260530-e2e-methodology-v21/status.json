@@ -1,0 +1,357 @@
+{
+  "session_id": "20260530-e2e-methodology-v21",
+  "active_session_id": null,
+  "sessions": [],
+  "intent": "v2.1 全局多 store 重构(maestro-20260530-v21-impl 已 completed)后, 旧的 E2E/dogfood 用户旅程测试方法论(为单 .fabric co-location 设计)已 stale; 多轮迭代优化出一份贴合 v2.1 多 store 现状的 E2E dogfood 旅程方法论",
+  "goal": "产出一份 v2.1-fit 的 E2E/dogfood 用户旅程测试方法论(journey 集 + 每条旅程可执行验收协议 + fresh-eyes 冷评闸), 经多-LLM 零上下文冷评迭代至收敛或预算耗尽, 取最优版本",
+  "mode": "4",
+  "current_phase": "audit",
+  "current_round": 12,
+  "boundary_contract": {
+    "in_scope": [
+      "锚定 baseline: 把分布在 ux-closure(D-SKILL/D-CLI 的 UX-N 交互旅程)+ ANL-2026-05-08-fabric-test-cases 结论 + cold-eval 16-场景 harness 的旧 dogfood 方法论汇成 baseline v0",
+      "从 v2.1 九个面(P0~P6)蒸馏出新 journey 覆盖清单作为 exploration_axes",
+      "每轮: execute(按当前方法论版本对 v2.1 journey 场景集逐条产判定) -> evaluate(≥2 LLM 含 ≥1 零上下文冷评, 行为型 rubric 打分) -> improve(verbatim 采纳冷评 suggested fix, 只改 weakest journey)",
+      "收敛(连续 2 轮无提升)或预算(max 5 轮)即停, 取 incumbent 最优版本落地为方法论文档"
+    ],
+    "out_of_scope": [
+      "重跑 / 推翻 v21-impl 已 completed 的实现(本 loop 只做测试方法论, 不改产品代码)",
+      "v21-impl 遗留的 2 条 needs_adjudication(ADJ-P0-1 resolver 优先级 / ADJ-P4-1 cite tag 漂移)——属实现期决策, 不属测试方法论范围",
+      "实际执行全量 E2E 测试套件(本 loop 产出的是方法论/旅程协议, 真跑由后续按方法论落地; UX-19 类纯 GUI 手动 fire-test 仍 user-only)",
+      "风格型 rubric / 已收敛后续 loop(负收益, 记忆纪律)"
+    ],
+    "constraints": [
+      "评估必须另一 LLM 零上下文冷评, 不信执行者(claude)自评——self-score 天然乐观(项目先验+善意补全), cold-eval gap 才是真信号",
+      "行为型 rubric(journey 是否覆盖 v2.1 新面+可照字面跑通+判得对), 非风格型",
+      "反膨胀: candidate 使方法论 +20% 行数且无 justify -> 扣分",
+      "improve 阶段 verbatim 采纳冷评 suggested fix, 不自创变体",
+      "三端仅 CC/Codex/Cursor; journey 须覆盖多 store 写路径防泄漏(共享库绝不含 personal scope)"
+    ]
+  },
+  "task_decomposition": [
+    {
+      "id": "T0",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "锚定 baseline v0: 汇集旧 dogfood 旅程方法论(ux-closure UX-N + ANL-2026-05-08 结论 + cold-eval harness)成单页 baseline",
+      "done_when": "baseline-v0.md 落 .scratchpad, 含旧 journey 清单 + fresh-eyes 冷评闸协议出处, 作为 incumbent v0",
+      "ship_criteria_alignment": ["G-CONVERGE"],
+      "alignment_strength": "infrastructure",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "artifact 存在 + 引用源可追溯", "evidence": ".scratchpad/e2e-methodology-baseline-v0.md (4 层骨架 + 5 层全面性 + cold-eval 引擎, 源 ux-closure/ANL-2026-05-08)", "verified_at": "2026-05-30" }
+    },
+    {
+      "id": "T1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "从 v2.1 P0~P6 蒸馏 v2.1 journey 覆盖清单(多 store install/binding · scope 阶梯 resolution · store-qualified cite · 跨库 pending 聚合 · 写路径防泄漏 · 三端 store parity)",
+      "done_when": "exploration_axes 落实为带验收点的 journey 场景集(测试集), 每条标可执行 fixture 方向",
+      "ship_criteria_alignment": ["G-COVERAGE"],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": { "method": "cross-llm", "verifier": "冷评核对 9 phase 新面无遗漏", "evidence": ".scratchpad/e2e-methodology-v21-journeys.md (J1-J6 + 覆盖自检; J7 性能/观测候选标记防膨胀)", "verified_at": "2026-05-30" }
+    }
+  ],
+  "needs_adjudication": [
+    {
+      "id": "ADJ-NEWN-8",
+      "subject": "agent 沙盒对全局 store 的可达性 (MCP 中介 vs 路径白名单)",
+      "status": "resolved",
+      "resolution": "NON-ISSUE / out-of-scope by design. (1) 三端支持客户端(CC/Codex/Cursor)经 unsandboxed 的 hook 注入 + MCP host 进程拿知识, 模型自身无需 ~/.fabric 文件系统可达性 → 无兼容缺口; MCP 中介早是既成事实, 非待选方案。(2) gemini 等 delegate target 不在支持范围, 其沙盒不可达属设计内 out-of-scope, 非回归缺陷。future 默认: 若某 delegate target 要消费 Fabric 知识, 走 MCP 中介(现成机制), 不开路径白名单(破 read-set 防泄漏治理)。",
+      "resolved_at": "2026-05-30",
+      "resolved_by": "user frame-correction (gemini 非支持 CLI + 模型从不直接读 ~/.fabric)"
+    },
+    {
+      "id": "ADJ-NEWN-3",
+      "subject": "9 埋点的其余 emit 站点 (schema 已建, emit 站点增量接)",
+      "status": "partial",
+      "progress": "3/9 已接: mcp_stdio_trace(recall.ts:115, 既存) + hook_surface_emitted(knowledge-hint-broad.cjs, 本次) + hook_signal_emitted(fabric-hint.cjs decide/maintenance 4 return + 2 交付点, 本次)。两个 hook 事件: 227 单测全过 + 5 event 形状过真实 schema 校验 + broad hook full-main e2e emit 验证。",
+      "note": "剩余 6 个 emit 站点 deferred(各有非机械障碍): payload_guard_observed = schema 与现实不匹配(真实 mcp-payload-guard.ts 按字节 warn/throw 不 truncate, 但 schema 要 tokens_estimated/truncated/cap → 须先校 schema 再接) · skill_invocation_started/completed/phase_transition/trigger_candidate = skill 是 markdown 无代码执行点(须设计 emit 入口: AI 自报 vs hook 启发式探测) · llm_judge_run = cold-eval harness-only, 非产品 runtime 无 emit 点。",
+      "carried_to": "v2.2 instrumentation 实现期 (payload_guard 须先 schema 校准; skill_* 须先定 emit 入口设计)"
+    }
+  ],
+  "objective": {
+    "metric": "覆盖完备性 (广度主轴, round4 pivot): 工程 surface × 产品生命周期 stage 矩阵 0 GAP 格 + 4 条闭环价值链全部可 0 用户模拟跑通; 深度 grounded 为次轴(方法论强制 grounding+anchor, 不逐签名编码)",
+    "direction": "maximize",
+    "baseline": "v3 深度 1/7~6/7(裂票); 广度未测(J1-J7 仅覆 v2.1 工程 delta, 漏 onboarding/recall/archive/doctor/sync/uninstall/并发 persona/知识环闭环)",
+    "measure_cmd": "completeness-critic: 有代码访问的冷评 agent 问'矩阵漏哪个 surface/stage/loop/persona + 哪个真实 bug 0 用户模拟抓不到', maestro delegate --to gemini/codex --mode analysis; loop-until-dry(连续 K 轮无新 GAP 才停), 非 score 收敛",
+    "epsilon": "连续 2 轮 critic 无新 GAP 视为覆盖收敛",
+    "pivot_note": "round1-3 优化深度(单条 grounded 可跑)边际递减+渐近 over-fit(codex 逐签名钻到 1/7, 签名会随码漂移); 用户 reframe: 高价值杠杆是广度(工程+产品全角度全阶段+闭环), 0 用户模拟全闭环 = 广度×深度双满"
+  },
+  "incumbent": { "candidate_id": "v0", "score": "0/6 journeys (旧方法论假设单 .fabric, v2.1 多 store 面零覆盖)", "artifact": ".scratchpad/e2e-methodology-baseline-v0.md" },
+  "exploration_axes": [
+    "[round1-3 深度轴, 已边际递减] J1-J7: install/scope/cite/pending/leak/parity/perf 各条 grounded 可跑",
+    "[round4+ 广度轴, 新主轴] 工程 surface 枚举: CLI9 · store4子 · MCP6工具 · 5hooks · 3skills · 核心svc(resolver/core/secret-scan/lint/observability)",
+    "[round4+ 广度轴] 产品生命周期 stage: discover→install→bind→日常(recall/cite)→capture(archive)→curate(review/import)→治理(audit)→维护(doctor/sync/upgrade)→offboard(uninstall)",
+    "[round4+ 广度轴] persona: solo · team(shared) · 多窗口并发同repo · 跨端(CC/Codex/Cursor)",
+    "[round4+ 闭环] 4 价值链: 知识环(archive→surface→recall→cite→audit→decay) · 安装环(install→bind→resolve→write→commit→sync→recovery) · 治理环(pending→review→provenance→audit) · 跨端环",
+    "[初判 GAP] onboarding/recall/archive/doctor自救/sync/upgrade/uninstall/并发persona/知识环闭环 旅程缺(旧ux-closure有未迁 or 全新)"
+  ],
+  "candidate_pool": [
+    { "id": "v0", "axis": "baseline", "hypothesis": "旧 co-location dogfood 方法论", "score": "0/6", "status": "abandoned", "vs_incumbent": "tie" },
+    { "id": "v1", "axis": "全 6 journey 扩展", "hypothesis": "v0 四层骨架扩到覆盖 J1-J6 多 store 面", "score": "0/6 (gemini+codex 一致)", "status": "tried", "vs_incumbent": "tie", "cold_eval": "根因: fixture 停在'该测什么'无可跑脚本(rubric-b 全 FAIL, rubric-a/c 多数过); GAP: P6 真缺口(我误降级)/P0.5 应强制前置/MCP-live 不足/secret-scan 漏" },
+    { "id": "v2", "axis": "fixture 脚本骨架结构修复 + J7 + P0.5 强制前置", "hypothesis": "每 journey 附可跑脚本骨架, P6 升正式 J7, P0.5 强制隔离前置, 补 secret-scan/MCP-live", "score": "裂票: gemini 5/7(表层) vs codex 0/7(ground-truth); 实判 fail", "status": "tried", "vs_incumbent": "better-than-v1-on-form-but-still-fails", "cold_eval": "裂票裁决: codex 读真代码证 fixture 用臆造 CLI(resolve/run/recall/review 不存在), gemini ripgrep 挂无法核验给假高分; 已自验 codex 属实(真 CLI 仅 install/store/sync/whoami/status/doctor/uninstall/config/metrics); 按 ground-truth 判定 codex 胜, 不升 human" },
+    { "id": "v3", "axis": "codebase-grounded 强制 + 冷评 grounded 闸", "hypothesis": "fixture 必引真实符号/CLI/测试文件(API-level Vitest vs real-CLI), 优先复用已存在真实测试; 冷评 rubric 加第(d)维 grounded + 须 ≥1 reviewer 有代码访问核验", "score": null, "status": "pending", "vs_incumbent": null, "artifact": ".scratchpad/e2e-methodology-v3.md + .scratchpad/e2e-methodology-v21-journeys-v3.md" }
+  ],
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "done",
+      "round_task_ceiling": 8,
+      "round_task_actual": 3,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["J7 性能/观测(P6, 冷评推翻防膨胀降级)", "P0.5 强制隔离前置", "D-MCP-LIVE 维度", "secret-scan 拦截 case"],
+      "carried_in": [],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["v1 alignment: 全 journey direct/infra 回指 v2.1 done_when, 无漂移"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 5 },
+        "terminate_reason": null,
+        "note": "v0/v1 均 0/6 但非停滞: v1 是首个真候选, 冷评在新轴(可执行性)refute + 产 4 项新发现, 按 doctrine 新候选不计 streak; v2 verbatim 修后 round 2 重评"
+      }
+    },
+    {
+      "round": 2,
+      "status": "done",
+      "round_task_ceiling": 8,
+      "round_task_actual": 2,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["根因升级: fixture 臆造 CLI(看似可跑实不存在)", "rubric 缺陷: 缺 grounded 检查 + 冷评须代码访问", "真实 CLI surface 9 命令清单 verified"],
+      "carried_in": ["v2 候选"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["self-verify codex 断言: CLI surface + 真实 test 文件/API 全部核实属实(audit-verification 纪律)"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 5 },
+        "terminate_reason": null,
+        "adjudication": "裂票(gemini 5/7 SHIP-ish vs codex 0/7 BLOCK)非真歧义: ground-truth 可判(命令存在与否)→ AI 自决(自验 CLI surface)→ codex 胜, 不升 human"
+      }
+    },
+    {
+      "round": 3,
+      "status": "done",
+      "round_task_ceiling": 8,
+      "round_task_actual": 2,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["深度轴 over-fit 信号: codex 逐签名钻 v3→1/7(install --json/resolveReadSet 导出形态/by_store 字段/hasSecrets 入参型 全签名级错), gemini 表层 6/7", "结论: 编码精确签名进方法论=反模式(随码漂移); 深度该收口为'强制grounding+anchor, 签名交 tsc/test-run'"],
+      "carried_in": ["v3 候选"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": [],
+      "convergence_gate": {
+        "no_improvement_streak": 1,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 5 },
+        "terminate_reason": null,
+        "note": "深度轴边际递减(裂票持续 surface vs ground-truth); 用户 reframe 触发 pivot 到广度轴, 不在深度轴继续 loop(避免 over-fit 签名)"
+      }
+    },
+    {
+      "round": 4,
+      "status": "done",
+      "round_task_ceiling": 12,
+      "round_task_actual": 12,
+      "convergence_status": "converging",
+      "axis": "广度: 覆盖完备性 (completeness-critic + loop-until-dry)",
+      "newly_discovered_this_round": ["J8 知识全环(脏数据穿下游hook)", "J9 LLM认知漂移(L-LLM层)", "J10 多窗口并发", "J11 维护+offboard", "J12 doctor 50+check broken-state", "J13 治理provenance环", "J14 global-store-sync环(闭)", "J15 schema-compat", "J16 parity扩展全inventory", "J17 onboarding", "J18 daily-recall主路径", "A段补全: fabric-sync skill+scope-explain/plan-context-hint/onboard-coverage/store bind/doctor 9模式/fab_review 8action", "可模拟性分层洞察 L-DET vs L-LLM"],
+      "carried_in": ["覆盖矩阵 v1"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": ["J8/J12/J13 各含多子链, 实现期防 depth>3 拆分"] },
+      "drift_checks": ["verify-before-trust: critic 2 候选 bug 自验 → uninstall hook identity REFUTED(cite-policy-evict 在 line178) / sync push WEAKENED(有 deferred-push); fabric-sync skill CONFIRMED 补入"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 8 },
+        "terminate_reason": null,
+        "engine": "loop-until-dry: 连续 2 轮 critic 无新 GAP 才 converged",
+        "note": "round4 双 critic 均非 NO-NEW-GAP → 矩阵 v1 远不全, 新增 11 旅程; streak 重置 0"
+      }
+    },
+    {
+      "round": 5,
+      "status": "done",
+      "round_task_ceiling": 12,
+      "round_task_actual": 8,
+      "convergence_status": "converging",
+      "axis": "广度: critic 验矩阵 v2 是否仍冒新缺口",
+      "newly_discovered_this_round": ["J8↔J13 越权断点(拆 J8a Personal/J8b Team)", "J19 volume-stress(规模化上下文溢出)", "J20 ledger-resilience(冲突标记+语义冲突)", "J21 cold-start-discovery(AI 被动感知)", "★J-META 生成式覆盖断言(关闭工程穷举轴)", "工程枚举渐近洞察=同深度轴签名问题"],
+      "carried_in": ["覆盖矩阵 v2"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["verify-before-trust 纠偏: 上轮误判 sync-push WEAKENED, codex 深挖 + 我 grep 全 src 0 个 git push exec → 改判 CONFIRMED 真实环缺"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 8 },
+        "terminate_reason": null,
+        "note": "工程轴渐近 → J-META 按构造关闭; 产品轴递减但每轮出深层 distinct failure mode; streak 0 未 dry"
+      }
+    },
+    {
+      "round": 6,
+      "status": "done",
+      "round_task_ceiling": 10,
+      "round_task_actual": 3,
+      "convergence_status": "converging",
+      "axis": "广度: 验 v3 产品轴 + J-META 工程轴",
+      "newly_discovered_this_round": ["J22 Tombstone/Zombie(CRUD 的 D 缺失)", "J23 Prompt 边界投毒(共享 store 安全)", "J-META 多源修正(rg export 5 洞: CLI key/MCP 字符串/hook 模板/schema enum 值/doctor registry → 升多源抽取器)"],
+      "carried_in": ["覆盖矩阵 v3-delta"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["gemini 明确加 J22/J23 后产品轴 NO-NEW-GAP GA-ready; codex J-META 方向对但需多源修正"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 8 },
+        "terminate_reason": null,
+        "note": "轨迹 11→8→3 强收敛; 终版 FINAL 整合 J1-J23+J-META多源; round7 收敛确认"
+      }
+    },
+    {
+      "round": 7,
+      "status": "done",
+      "round_task_ceiling": 8,
+      "round_task_actual": 1,
+      "convergence_status": "converging",
+      "axis": "收敛确认: 验终版 FINAL",
+      "newly_discovered_this_round": ["J-META 第7源: 用户配置旋钮(fabric-config object keys, 非 enum) — 6 源抽不到", "J24 config-tuning journey(改 knob→断言行为实变)"],
+      "carried_in": ["e2e-methodology-FINAL.md"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["裂票: gemini CONVERGED(产品+双视角无 distinct gap) vs codex NOT-CONVERGED(1 真实 gap=config surface); 自验 fabric_language 等确为真实用户配置键(CLAUDE.md 佐证) → 采纳补第7源, 非噪声"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 8 },
+        "terminate_reason": null,
+        "note": "轨迹 11→8→3→1 收敛中; gemini 已 dry, codex 仅剩 config 第7源 additive gap(已补); round8 终确认"
+      }
+    },
+    {
+      "round": 8,
+      "status": "done",
+      "round_task_ceiling": 6,
+      "round_task_actual": 2,
+      "convergence_status": "converged",
+      "axis": "终确认(budget cap)",
+      "newly_discovered_this_round": ["J-META 第8源: 环境变量 runtime knobs(FABRIC_PROJECT_ROOT/HOME/NONINTERACTIVE/FAB_LANG/SERVER_PATH/HINT_CLIENT/CLAUDE_PROJECT_DIR, grep process.env)", "收敛锁定子句: J-META 源清单=开放 data 非方法论, census 模式吸收长尾"],
+      "carried_in": ["FINAL + 第7源 config + J24"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["gemini round8 CONVERGED(连续2轮, 主动反驳硬凑 J25); codex round8 NOT-CONVERGED 但仅 env-var 第8源(source-list data, 非 distinct 方法论 gap); codex 严谨排除 HTTP 候选(server-http-experimental private/zero-consumer)"],
+      "convergence_gate": {
+        "no_improvement_streak": 2,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 8 },
+        "terminate_reason": "converged",
+        "rationale": "方法论层收敛(CLI/surface frame 内): 产品轴 gemini 连续2轮 CONVERGED; 工程轴 J-META census 结构已完整。注: 此收敛后被用户 frame-challenge 重开(见 top-level reopened) — 漏了交互体验第三轴。"
+      }
+    },
+    {
+      "round": 9,
+      "status": "done",
+      "round_task_ceiling": 10,
+      "round_task_actual": 5,
+      "axis": "★第三轴: 交互体验 / agent-in-the-loop 行为观测 (用户 frame-challenge 重开)",
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["J31 错误韧性 UX(MCP失败→降级话术)", "J32 意图冲突/过度合规(Fabric 强策略反噬, user-in-control)", "J33 skill 中断恢复", "J34 多轮深水区知识衰减/主动 re-fetch", "★可观测性 3 层分级 T1 ledger现可测/T2 需补埋点/T3 只能LLM-judge", "NEW-N-3 instrumentation debt(hook delta/skill F1 false-neg/MCP raw trace/phase telemetry 今天测不了)"],
+      "carried_in": ["Axis-3 v1"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["codex harness=partial 纠正我 v1 过度声称(旧 ux-closure harness 多是 deterministic/static+LLM-judgment, 非 real-agent replay); gemini 4 gap 全 distinct 动态交互(我 v1 happy-path)"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 13 },
+        "terminate_reason": null,
+        "note": "第三轴富矿: 静态→动态交互 + 可观测性分级; streak 0 未 dry"
+      }
+    },
+    {
+      "round": 10,
+      "status": "done",
+      "round_task_ceiling": 8,
+      "round_task_actual": 6,
+      "axis": "第三轴: 验 Axis-3 v2 动态交互 + 3层分级",
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["J35 KB柔性纠正(用户错KB对镜像)", "J36 主动提议时机情商", "J37 多窗口并发知识脏读", "★J-EXP-META 体验 taxonomy(D1-D6)+rubric 收口 T3 长尾", "tier 修正: payload→T1-online / J34→T1/T2", "NEW-N-3 具体化为 T2 事件 schema(codex 9 个 ledger 事件定义)"],
+      "carried_in": ["Axis-3 v2"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["codex tier-accurate=no 纠 2 误标(payload/J34); ★贯穿三轴同一律: 长尾枚举(签名/surface/体验场景)→生成式收口(anchor/census/taxonomy-rubric)"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 13 },
+        "terminate_reason": null,
+        "note": "J-EXP-META 引入后第三轴结构闭合(同 J-META 之于工程); 新体验场景=data。round11 确认"
+      }
+    },
+    {
+      "round": 11,
+      "status": "done",
+      "round_task_ceiling": 6,
+      "round_task_actual": 3,
+      "axis": "收敛确认: J-EXP-META 维度收口 + 三轴闭合",
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["D7 透明/可解释(信任校准, 非 D1-6 instance)", "D8 启发/可发现(无GUI菜单的发现性)", "★HAX 框架锚定维度完备性(引用而非逐轮发现)", "codex 确认 9 事件映射 D1-D6 闭合 + tier 修正准"],
+      "carried_in": ["Axis-3 v3"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["裂票: codex CONVERGED(三轴结构+T2 schema 充分) vs gemini 2 新维度 D7/D8(排他性论证非 instance); gemini 引 HAX → 用 HAX 锚定收口维度完备性(同 J-META census), 非无限发现"],
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 13 },
+        "terminate_reason": null,
+        "note": "D1-D8 锚 HAX 后交互轴结构闭合; 三轴齐(深度/广度/交互) + 统一收口律; round12 终确认"
+      }
+    },
+    {
+      "round": 12,
+      "status": "done",
+      "round_task_ceiling": 6,
+      "round_task_actual": 2,
+      "axis": "终确认: 三轴整体收敛",
+      "convergence_status": "converged",
+      "newly_discovered_this_round": ["D9 进化/谨慎适应(HAX Over-Time G13/14/15, gemini 用真实 HAX 18 逐条映射定位)", "HAX 锚定生效: D1-D9 完整映射 HAX 18 全 4 阶段 → 锚内无 D10", "codex 整体 CONVERGED 三轴可作基石", "修 2 文案瑕(J1-J24/4层可观测)"],
+      "carried_in": ["FINAL 三轴整合"],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": ["裂票: codex CONVERGED(三轴整体) vs gemini D9(HAX Over-Time 最后阶段); D9 补入后 D1-D9 映射 HAX 全 18 条, 锚内无 D10 → 完备 by reference"],
+      "convergence_gate": {
+        "no_improvement_streak": 2,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 13 },
+        "terminate_reason": "converged",
+        "rationale": "三轴收敛: codex 独立判三轴整体 CONVERGED; gemini 用真实 HAX 18 框架完整映射 D1-D9 全 4 阶段(锚内无 D10)→交互轴维度完备 by reference。gemini 每轮 finds 是有界 HAX 框架内的维度补全(非开放发现), 现已穷尽。继续 = cold-eval 记忆警告的 over-fit 负收益。"
+      }
+    }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260530-e2e-methodology-v21/goal-checklist.md",
+  "status": "completed",
+  "reopened": {
+    "at": "2026-05-30",
+    "by": "user frame-challenge",
+    "reason": "round8 converged 是『CLI/surface frame 内收敛』; 用户指出整套方法论结构性偏 CLI 工程侧, 丢了 Fabric 本体价值=改变 live agent 行为(MCP调用/skill触发/hook行为delta/预算/策略遵守)。这层被我塞进单薄 L-LLM nightly ring 当二等公民(旧 ux-closure 本有 UX-5/7/8/9, v2.1 丢了)。critic 在 frame 内审计抓不到, 只有 human 能挑战 frame → 第三轴: 交互体验/agent-in-the-loop 行为观测。重开 round9+",
+    "prior_converged_within_frame": { "reached_for": "L-DET CLI/surface 轴", "terminate_reason": "converged" }
+  },
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "converged",
+    "final_at": "2026-05-30",
+    "axes": "三轴: 深度(grounded anchor) / 广度(J-META census 8源) / 交互(J-EXP-META D1-D9 锚 HAX 18) + 统一收口律 + 4层可观测(T1-ledger/T1-online/T2/T3)",
+    "deliverable_final": ".scratchpad/e2e-methodology-FINAL.md (三轴整合终版)",
+    "round_trajectory": "round1-3 深度(收口) / round4-8 广度 GAP 11→0 / round9-12 交互(用户 frame-challenge 重开) D 维 6→9 锚 HAX",
+    "new_n_product_findings": [
+      "NEW-N-1: 全库无 git push → 安装/共享环未闭(待确认手动 push?)",
+      "NEW-N-2: parity-matrix 仅 7 cap 欠覆盖",
+      "NEW-N-3: instrumentation debt — 9 个 ledger 事件待补(交互轴可验前提)",
+      "NEW-N-4: Fabric 强策略 over-compliance 反噬风险, 须留 user-override 逃生口"
+    ],
+    "summary": "8 轮 mode④ 收敛: 深度轴(round1-3 v1→v3, grounded 但渐近 over-fit→收口) → 用户 reframe pivot 广度轴(round4-8 completeness-critic loop-until-dry)。产出终版方法论 e2e-methodology-FINAL.md: 两轴+可模拟性边界(L-DET/L-LLM) · 完整旅程地图 J1-J24 · J-META 8源生成式覆盖断言(census 模式) · 5 闭环价值链 · verify-before-trust。GAP 轨迹 11→8→3→1→0。附 2 条方法论 surfaced 的真实产品发现(NEW-N)。",
+    "at": "2026-05-30",
+    "deliverable": ".scratchpad/e2e-methodology-FINAL.md",
+    "new_n_product_findings": [
+      "NEW-N-1: 全库无 git push, sync 只 pull+deferred-push 报告 → 知识本地 commit 从不传 remote/team, 安装/共享环未闭(或设计手动 push, 待用户确认)",
+      "NEW-N-2: parity-matrix.json 仅 7 capability, 漏 fabric-import/sync + 5 MCP 工具 → 跨端 parity 产品层欠覆盖"
+    ]
+  }
+}

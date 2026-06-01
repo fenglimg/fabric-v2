@@ -1,0 +1,26 @@
+[
+  {
+    "title": "Ignored/discarded MCP tool arguments (layer_filter & target_paths)",
+    "severity": "high",
+    "description": "The MCP tool definitions for fab_plan_context and fab_recall declare layer_filter (and target_paths for plan_context), but the registration callbacks in plan-context.ts and recall.ts omit these fields from destructuring and never pass them to the underlying services. Any client/LLM-supplied values are silently discarded.",
+    "location": "packages/server/src/tools/plan-context.ts:35",
+    "fix_direction": "Destructure layer_filter and target_paths in registerPlanContext and layer_filter in registerRecall, pass them to the services, and extend PlanContextInput to declare layer_filter.",
+    "affected_components": ["fab_plan_context MCP Tool", "fab_recall MCP Tool"]
+  },
+  {
+    "title": "YAML frontmatter injection via unescaped array joining (review merge/patch)",
+    "severity": "high",
+    "description": "In rewriteFrontmatterMerge and appendPatchLines, array fields (tags, relevance_paths) are serialized into YAML frontmatter by joining elements with ', ' with no quoting/escaping. An element containing commas, brackets, newlines, or quotes corrupts the YAML flow-array syntax or allows arbitrary frontmatter injection.",
+    "location": "packages/server/src/services/review.ts:1381",
+    "fix_direction": "Map each array item through an escaping/quoting helper (quoteIfNeeded / quoteRelevancePath) to escape backslashes, quotes, newlines, brackets before joining.",
+    "affected_components": ["review service", "fab_review MCP Tool"]
+  },
+  {
+    "title": "Unnormalized multiline free-form fields in markdown persistence",
+    "severity": "medium",
+    "description": "user_messages_summary and session_context are written directly into markdown rule bodies with no line normalization or heading sanitization. Multiline user_messages_summary malforms the ## Evidence list; a field containing markdown headers (## Heading) corrupts structural section parsing in knowledge-meta-builder.ts.",
+    "location": "packages/server/src/services/extract-knowledge.ts:695",
+    "fix_direction": "Sanitize/escape leading '#' in free-form user text to prevent heading collision, and indent continuation lines of multiline summary values when embedding inside list bullets.",
+    "affected_components": ["extract-knowledge service", "fab_extract_knowledge MCP Tool"]
+  }
+]

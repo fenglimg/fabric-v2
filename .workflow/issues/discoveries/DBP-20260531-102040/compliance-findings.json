@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Personal-layer (KP-*) metadata leaks into git-committed agents.meta.json",
+    "severity": "critical",
+    "description": "buildKnowledgeMeta scans both team-root (.fabric/knowledge/) and personal-root (~/.fabric/knowledge/), merges KT-* and KP-* nodes into one dictionary, and writes .fabric/agents.meta.json in the project root. Since that file is NOT gitignored, developers' personal-layer metadata (absolute home paths, titles, summaries, section headers) is permanently committed to the shared repo. Per-developer personal dirs also cause constant computeRevision mismatches, triggering drift/heal spam.",
+    "location": "packages/server/src/services/knowledge-meta-builder.ts:467",
+    "fix_direction": "Exclude KP-* / ~/.fabric/knowledge entries from the shared .fabric/agents.meta.json; persist personal metadata machine-locally (.fabric/.cache/ or ~/.fabric/). Exclude personal entries from computeRevision.",
+    "affected_components": ["knowledge-meta-builder.ts", "load-active-meta.ts", ".gitignore"]
+  },
+  {
+    "title": "No PII scanning/redaction before capturing into KB or event ledger",
+    "severity": "high",
+    "description": "secret-scan.ts only targets technical secrets (AWS/OpenAI/Slack/GitHub tokens, basic password assignments). There are no rules/heuristics to detect/redact PII (emails, IPs, names, phone numbers). Since event ledger inputs capture arbitrary caller free-text (intent, message, reason), any PII is permanently logged to plain-text events.jsonl or the KB without redaction.",
+    "location": "packages/shared/src/store/secret-scan.ts:22",
+    "fix_direction": "Add dedicated PII regex rules (emails, IPs, phone numbers) into redactSecrets/scanForSecrets and apply across all telemetry logging and write-paths.",
+    "affected_components": ["@fenglimg/fabric-shared/secret-scan", "event-ledger.ts"]
+  },
+  {
+    "title": "Audit gap: in-place knowledge edits (modifyEntry) emit no ledger event",
+    "severity": "high",
+    "description": "When an in-place modification (title, summary, maturity, tags, relevance) is performed on a pending/canonical entry, reviewKnowledge dispatches to modifyEntry. Other actions (approve/reject/layer-flip/defer) emit telemetry to events.jsonl, but in-place edits write directly to frontmatter and exit WITHOUT a ledger event — allowing users or skills to silently change maturity levels or relevance paths.",
+    "location": "packages/server/src/services/review.ts:774",
+    "fix_direction": "Emit a knowledge_modified / knowledge_metadata_updated event in the modifyEntry in-place flow capturing stable_id/path, patch changes, original values, and session metadata.",
+    "affected_components": ["review.ts"]
+  },
+  {
+    "title": "No retention/rotation/auto-deletion for archived event ledger and KB files",
+    "severity": "medium",
+    "description": "rotateEventLedgerIfNeeded rotates/compresses the active events.jsonl into .fabric/events.archive/ (events-rotated-YYYY-MM-DD.jsonl[.gz]), but there is no cleanup/expiration for those archives — they grow indefinitely. Likewise, pruned knowledge entries moved to .fabric/.archive/ by doctor are retained forever with no purge.",
+    "location": "packages/server/src/services/event-ledger.ts:557",
+    "fix_direction": "Add a retention cleanup task (in fabric doctor or the rotation daemon) that removes archives in .fabric/events.archive/ and .fabric/.archive/ exceeding a configured max age (e.g. 90/180 days).",
+    "affected_components": ["event-ledger.ts", "doctor.ts"]
+  },
+  {
+    "title": "Provenance / git history loss on layer flip or cross-store transfer",
+    "severity": "medium",
+    "description": "When a KT-* entry flips to KP-* in modifyLayerFlip, the original file is git rm'd and rewritten under the personal root (~/.fabric/knowledge), a separate/untracked git repo — so the original commit/development history is lost. The same history loss occurs moving entries across multi-store boundaries.",
+    "location": "packages/server/src/services/review.ts:926",
+    "fix_direction": "Inject a provenance_history frontmatter field (original store UUID, stable ID, prior commit hashes) on cross-layer/store transfer, or record a knowledge_transferred event documenting the provenance chain.",
+    "affected_components": ["review.ts", "provenance.ts"]
+  }
+]

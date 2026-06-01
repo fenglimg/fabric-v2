@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Interactive elements lack semantic tags — not keyboard accessible",
+    "severity": "critical",
+    "description": "Sidebar registry tree items use non-interactive <div> with cursor-pointer, missing tabindex, ARIA role (role=button/treeitem) and keyboard listeners. Screen readers cannot identify them and keyboard-only users cannot navigate or activate the nodes.",
+    "location": "ui-prototype-hybrid.html:125",
+    "fix_direction": "Replace interactive <div> with <button>/<a>; if <div> is required, add tabindex=0, the appropriate role, and Enter/Space key handling.",
+    "affected_components": ["Registry Tree Directory Item", "Registry Tree Rule Items"]
+  },
+  {
+    "title": "Search input removes keyboard focus indicator",
+    "severity": "high",
+    "description": "Top search input hardcodes outline-none with no compensating focus state (e.g. focus:ring), so keyboard users tabbing through cannot see the current focus position.",
+    "location": "ui-prototype-hybrid.html:94",
+    "fix_direction": "Remove outline-none or add a WCAG-compliant focus outline via focus-visible:ring-2 focus-visible:ring-brand-accent.",
+    "affected_components": ["Header Search Input"]
+  },
+  {
+    "title": "Insufficient text contrast in light mode",
+    "severity": "high",
+    "description": "On light backgrounds, text-brand-accent (#3b82f6) is ~3.1:1 and text-brand-warning (#f59e0b) is ~2.1:1, both below WCAG AA 4.5:1 for small text.",
+    "location": "ui-prototype-hybrid.html:138",
+    "fix_direction": "Map higher-contrast colors (700 variants) in the light-mode Tailwind theme or darken weight/palette to reach at least 4.5:1.",
+    "affected_components": ["Selected Rule Badge text-brand-accent", "Action Required Box text-brand-warning"]
+  },
+  {
+    "title": "Key shortcut hint hidden from screen readers",
+    "severity": "medium",
+    "description": "The ⌘K shortcut hint next to search has aria-hidden=true with no sr-only alternative, so screen-reader users cannot learn the shortcut.",
+    "location": "ui-prototype-hybrid.html:95",
+    "fix_direction": "Include the shortcut in the input aria-label (e.g. aria-label=\"Search path (Command K)\") or remove aria-hidden and provide sr-only readable text.",
+    "affected_components": ["Search Shortcut Hint (Cmd K)"]
+  },
+  {
+    "title": "Continuous pulse animation lacks reduced-motion support",
+    "severity": "medium",
+    "description": "The 'MCP Connected' status dot uses animate-pulse (infinite loop) with no prefers-reduced-motion handling, which can cause discomfort for vestibular-disorder users.",
+    "location": "ui-prototype-hybrid.html:78",
+    "fix_direction": "Enable motion-safe/reduce variants globally in Tailwind config or add motion-reduce:animate-none on the element.",
+    "affected_components": ["MCP Status Pulse Dot"]
+  },
+  {
+    "title": "Redundant ARIA labels on navigation links",
+    "severity": "low",
+    "description": "Sidebar nav <a> tags (Readiness, Rules Explain) already have visible text but hardcode identical aria-label, causing some screen readers to announce link text twice.",
+    "location": "ui-prototype-hybrid.html:53",
+    "fix_direction": "Remove the redundant aria-label since the links already have visible readable text.",
+    "affected_components": ["Sidebar Navigation Links"]
+  }
+]

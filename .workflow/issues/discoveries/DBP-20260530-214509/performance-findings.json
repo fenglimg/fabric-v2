@@ -1,0 +1,66 @@
+[
+  {
+    "title": "Full project-tree walk + read+sha256 of every test file on EVERY recall/plan-context call",
+    "severity": "critical",
+    "description": "computeKnowledgeTestIndex (called unconditionally inside buildKnowledgeMeta) calls findFabricVerifyAnnotations -> findTestFiles, which performs a recursive readdir walk of the ENTIRE project tree (every dir except .git/.fabric/node_modules/dist/build/coverage) and then readFile + sha256 + line-split of EVERY *.test.ts/*.spec.ts file in the repo, scanning each line with a regex for `@fabric-verify` annotations. buildKnowledgeMeta has NO mtime/revision short-circuit, so this runs on every loadActiveMeta / loadActiveMetaOrStale, which are invoked on every fab_plan_context call (planContext line 214) AND every fab_get_knowledge_sections call (knowledge-sections.ts line 141). A single fab_recall therefore walks the whole source tree and reads+hashes every test file at least twice. On this repo (200+ source files, ~dozens of test files) that is a full-tree fs scan per MCP recall — the most expensive operation on the hottest path, gated by nothing.",
+    "location": "packages/server/src/services/knowledge-meta-builder.ts:463",
+    "fix_direction": "Cache the knowledge-test index keyed by a cheap stat-based fingerprint (max mtime of knowledge/ + test files, or a dir-listing hash) and only re-walk when it changes; or decouple computeKnowledgeTestIndex from the read-path buildKnowledgeMeta entirely (the test-annotation index is only needed by doctor, not by recall). At minimum, gate findTestFiles behind the same mtime check used to decide whether agents.meta.json actually drifted.",
+    "affected_components": ["knowledge-meta-builder", "load-active-meta", "plan-context", "knowledge-sections", "recall"]
+  },
+  {
+    "title": "buildKnowledgeMeta re-reads + re-hashes every knowledge file on every read-path call (no cache)",
+    "severity": "critical",
+    "description": "loadActiveMeta / loadActiveMetaOrStale always call buildKnowledgeMeta(projectRoot) purely to compare the derived revision against the on-disk revision. buildKnowledgeMeta -> computeKnowledgeBasedAgentsMeta does findKnowledgeFiles (readdir over decisions/pitfalls/guidelines/models/processes/pending in BOTH team and personal roots) then readFile + sha256 + frontmatter-parse of EVERY knowledge .md (knowledge-meta-builder.ts:193-218), plus stableStringify (flattenKeys+sort over the whole meta, line 302-303). The contextCache 'meta' slot only caches readAgentsMeta's parsed JSON — it does NOT cache buildKnowledgeMeta. So every fab_plan_context and every fab_get_knowledge_sections re-scans and re-hashes the entire KB corpus from disk. fab_recall does this twice per call (planContext + getKnowledgeSections). Cost scales O(knowledge files x file size) per recall with zero memoization.",
+    "location": "packages/server/src/services/load-active-meta.ts:93",
+    "fix_direction": "Memoize buildKnowledgeMeta output keyed by a directory-fingerprint (file count + max mtime over the knowledge subdirs), reusing the existing contextCache infrastructure / file_watch invalidation. The revision-drift comparison can short-circuit on the fingerprint without reading file bodies when nothing changed.",
+    "affected_components": ["knowledge-meta-builder", "load-active-meta", "plan-context", "knowledge-sections", "recall"]
+  },
+  {
+    "title": "Full events.jsonl read + Zod-validate of every line on every recall (3x per fab_recall), only to surface rare redirects",
+    "severity": "high",
+    "description": "readEventLedger reads the entire events.jsonl, splits all lines, JSON.parses and runs eventLedgerEventSchema.safeParse on EVERY line, builds the full events array, THEN applies 4 chained .filter() passes (event-ledger.ts:262-283). The event_type filter is applied post-parse, so even loadIdRedirectMap (which only wants knowledge_id_redirect events) pays to parse+validate the entire ledger. loadIdRedirectMap is called in planContext (plan-context.ts:359) AND again in recall (recall.ts:92) AND again in getKnowledgeSections (knowledge-sections.ts:114) — so a single fab_recall does 3 full-ledger scans+validations. The file is explicitly allowed to grow to 50MB before a warning fires (event-ledger.ts:28,200), making this an unbounded per-request cost.",
+    "location": "packages/server/src/services/event-ledger.ts:262",
+    "fix_direction": "Add an early per-line event_type prefilter (cheap substring/JSON key check) before Zod safeParse, or maintain a small in-memory cache of the redirect map invalidated on append. De-duplicate the redundant loadIdRedirectMap calls across planContext/recall/getKnowledgeSections within one recall (compute once, thread through). Replace the 4 chained .filter() with a single pass.",
+    "affected_components": ["event-ledger", "id-redirect", "plan-context", "recall", "knowledge-sections"]
+  },
+  {
+    "title": "BM25/locality score recomputed for every item on every comparator invocation (score-in-sort antipattern)",
+    "severity": "high",
+    "description": "sortDescriptionItems builds the BM25 model once, but then sorts via compareDescriptionIndexItems which calls scoreDescriptionItem for BOTH the left and right item on EVERY pairwise comparison (plan-context.ts:703-716). Array.sort makes O(n log n) comparisons, so each candidate's score is recomputed ~log n times instead of once. scoreDescriptionItem is not trivial: per call it runs bm25.scoreDoc (loops query terms), a vector-map lookup, Date.parse, and a nested loop over relevance_paths x targetPaths with localityTier doing regex .search + string splits (plan-context.ts:798-808). Net effective cost is roughly O(n log n x queryTerms) + O(n log n x relevancePaths x targetPaths) of redundant work per plan-context, all avoidable by scoring each item once.",
+    "location": "packages/server/src/services/plan-context.ts:558",
+    "fix_direction": "Precompute each item's score once into a parallel array (or Schwartzian transform: map to {item, score} then sort on the cached score), so the comparator only subtracts two numbers. Eliminates the log n score-recompute factor and the repeated locality nested-loop.",
+    "affected_components": ["plan-context", "bm25"]
+  },
+  {
+    "title": "documentTextForItem + tokenize run twice per candidate during ranking",
+    "severity": "medium",
+    "description": "On the query path each candidate's selection text is built and tokenized redundantly: buildBm25Model tokenizes documentTextForItem(item) for every item (plan-context.ts:552-554, tokenize is a regex-loop CJK bigram splitter in text-tokenize.ts), and separately buildVectorScores is fed documentTextForItem(item) for every item (plan-context.ts:315). documentTextForItem itself rebuilds a joined string (spread of summary/intent_clues/tech_stack/impact/entities/tags) each time it is called. With score-in-sort (separate finding) the locality path also re-derives dirname/package via regex repeatedly. The per-candidate text construction + tokenization is duplicated rather than computed once and reused across BM25 + vector.",
+    "location": "packages/server/src/services/plan-context.ts:564",
+    "fix_direction": "Build documentTextForItem(item) once per candidate into a map, and tokenize once; pass the cached token arrays to buildBm25Model and the cached text strings to buildVectorScores. Avoids double string-build and double tokenize per candidate.",
+    "affected_components": ["plan-context", "bm25", "text-tokenize", "vector-retrieval"]
+  },
+  {
+    "title": "O(selectedIds x nodes) linear node scan in getKnowledgeSections body fetch",
+    "severity": "medium",
+    "description": "getKnowledgeSections resolves bodies via selectedStableIds.map(id => findRuleNode(meta, id)) (knowledge-sections.ts:143). findRuleNode does a full Object.entries(meta.nodes) linear scan for each id (knowledge-sections.ts:298-324). In the common rc.37 fab_recall path the AI 'picks all' candidates, so selectedStableIds ~= every node, giving O(n^2) over the node set per recall. A single stable_id -> node Map built once would make this O(n).",
+    "location": "packages/server/src/services/knowledge-sections.ts:298",
+    "fix_direction": "Build a Map<stableId, node> from meta.nodes once at the top of getKnowledgeSections (and reuse it for both findRuleNode lookups and validation), turning the per-id O(nodes) scan into O(1).",
+    "affected_components": ["knowledge-sections"]
+  },
+  {
+    "title": "O(metaEntries x ruleFiles) removal check using Array.includes in knowledge-sync",
+    "severity": "medium",
+    "description": "Both ensureKnowledgeFresh and reconcileKnowledge detect removed entries by iterating metaEntries and calling ruleFiles.includes(relPath) (knowledge-sync.ts:496 and :620). ruleFiles is a plain string[], so .includes is O(ruleFiles); nested inside the loop over metaEntries this is O(metaEntries x ruleFiles). ensureKnowledgeFresh runs on hot-path MCP consumers (the cooldown gate mitigates it to ~once/500ms, but it still fires whenever drift is suspected) and reconcileKnowledge runs on every auto-heal. Cheap to make O(n) with a Set.",
+    "location": "packages/server/src/services/knowledge-sync.ts:496",
+    "fix_direction": "Construct `const ruleFileSet = new Set(ruleFiles)` once and use ruleFileSet.has(relPath) in both removal-detection loops.",
+    "affected_components": ["knowledge-sync"]
+  },
+  {
+    "title": "Per-call relevanceTargetPaths nested loop in locality scoring (no early exit)",
+    "severity": "low",
+    "description": "scoreDescriptionItem locality computation loops relevancePaths x targetPaths and calls localityTier for every pair, where localityTier runs up to two regex .search calls plus split/filter on both strings (plan-context.ts:798-822, 813-858). It always exhausts the full cartesian product even after finding the max tier (LOCALITY_SAME_FILE=100 can never be beaten yet the loop continues). Combined with the score-in-sort recompute this multiplies, but on its own it is a minor per-candidate inefficiency.",
+    "location": "packages/server/src/services/plan-context.ts:801",
+    "fix_direction": "Break out of the loops once `best === LOCALITY_SAME_FILE`, and precompute dirname/packageRoot for each path once instead of re-deriving via regex inside the inner loop.",
+    "affected_components": ["plan-context"]
+  }
+]

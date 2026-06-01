@@ -1,0 +1,66 @@
+[
+  {
+    "title": "Massive God-File and Overlong Functions in doctor.ts",
+    "severity": "critical",
+    "description": "doctor.ts is an 8696-line god-file packing report generation (runDoctorReport), three repair/mutation runners, and dozens of complex low-level inspectors (e.g. inspectL2ManagedBlockDrift spanning lines 3250-4012, over 750 lines). Highly regression-prone, slow to analyze, hard to test in isolation.",
+    "location": "packages/server/src/services/doctor.ts:1",
+    "fix_direction": "Decompose into a doctor/ directory; extract each validator/inspector into its own module (managed-block-drift.ts, orphan-demote.ts, ledger-invariant.ts) behind a consolidated orchestrator.",
+    "affected_components": ["server"]
+  },
+  {
+    "title": "Boilerplate Copy-Paste Installation Functions for Skills",
+    "severity": "high",
+    "description": "Identical boilerplate install functions exist for all 7 active Skills (installFabricArchiveSkill, installFabricReviewSkill, installFabricImportSkill, installFabricSyncSkill, installFabricStoreSkill, installFabricAuditSkill, installFabricConnectSkill). Each manually reads a template, validates size, maps destinations, runs copyTextIdempotent, and logs. Violates DRY and risks drift when adding skills.",
+    "location": "packages/cli/src/install/skills-and-hooks.ts:412",
+    "fix_direction": "Use a single data-driven helper installFabricSkill(skillKey, templateRel, options) with skills represented as config objects in a metadata array.",
+    "affected_components": ["cli"]
+  },
+  {
+    "title": "Duplicated Process Liveness and Lock Reading Logic across Packages",
+    "severity": "high",
+    "description": "isAlive(pid) and readLockState(projectRoot) are duplicated line-for-line between legacy-serve-lock-probe.ts (server) and serve-lock.ts (server-http-experimental). Redundant logic raises maintenance overhead and risks divergence if lock behavior changes.",
+    "location": "packages/server/src/services/legacy-serve-lock-probe.ts:25",
+    "fix_direction": "Consolidate these OS/process utilities in the shared package (e.g. @fenglimg/fabric-shared/node lock-utils.ts) and import in both packages.",
+    "affected_components": ["server", "server-http-experimental"]
+  },
+  {
+    "title": "Circular Dependency Cycle in Doctor Services",
+    "severity": "medium",
+    "description": "Circular dependency between doctor.ts and doctor-cite-coverage.ts: doctor.ts imports from doctor-cite-coverage.js (lines 8203, 8223) while doctor-cite-coverage.ts imports inspectL1BootstrapSnapshotDrift and normalizePath back from doctor.js (line 68). Resolved at call-time but tightly couples the domains and complicates testing/tree-shaking.",
+    "location": "packages/server/src/services/doctor.ts:8203",
+    "fix_direction": "Move shared utilities (inspectL1BootstrapSnapshotDrift, normalizePath) and core types into a common doctor-utils.ts both modules import, eliminating the cycle.",
+    "affected_components": ["server"]
+  },
+  {
+    "title": "Cloned Dead Code and Unused Imports in doctor-cite-coverage.ts",
+    "severity": "medium",
+    "description": "doctor-cite-coverage.ts has a large dead-code import block copied verbatim when split out of doctor.ts, leaving unused imports (execFileSync, spawnSync from node:child_process; mkdirSync, readdirSync from node:fs; access, appendFile, mkdir, readFile, rename, unlink, writeFile from node:fs/promises; homedir from node:os; Script from node:vm).",
+    "location": "packages/server/src/services/doctor-cite-coverage.ts:7",
+    "fix_direction": "Prune the unused imports and Node module dependencies from the file header.",
+    "affected_components": ["server"]
+  },
+  {
+    "title": "Brittle Class Identity Checks in HTTP Server Error Handling",
+    "severity": "medium",
+    "description": "The HTTP server error handler relies on error instanceof FabricError. Crossing package/bundle boundaries in a monorepo can make instanceof fail due to multiple class symbol instances. The CLI resolved this with structural duck-typing (hasActionHint), but the HTTP server still uses fragile class identity matching.",
+    "location": "packages/server-http-experimental/src/api/_error.ts:62",
+    "fix_direction": "Migrate HTTP server error normalization to the same structural type-guard (hasActionHint) exported by the shared package.",
+    "affected_components": ["server-http-experimental"]
+  },
+  {
+    "title": "Inconsistent and Bloated Error/Return Contracts in Doctor APIs",
+    "severity": "medium",
+    "description": "The doctor service surfaces three report types (DoctorReport, DoctorFixReport, DoctorApplyLintReport) with slightly different fields representing the same concept using disparate keys (fixable_errors vs fixed vs mutations; manual_errors vs remaining_manual_errors), and all duplicate the full raw report: DoctorReport inside themselves — API bloat and high integration complexity.",
+    "location": "packages/server/src/services/doctor.ts:197",
+    "fix_direction": "Consolidate around a single layered schema (unified DoctorReport with an optional remedy/mutation transaction block) rather than three divergent envelopes.",
+    "affected_components": ["server"]
+  },
+  {
+    "title": "Unclear and Cryptic Core Type Names in Agents Metadata",
+    "severity": "low",
+    "description": "Core counter schemas use cryptic acronyms. In AgentsMetaCountersEnvelope, counters sit under KP and KT (personal/team layers) using keys MOD, DEC, GLD, PIT, PRO (models, decisions, guidelines, pitfalls, processes), making the code harder to read/maintain for new developers.",
+    "location": "packages/shared/src/types/agents.ts:83",
+    "fix_direction": "Rename interface keys to descriptive names (personal/team instead of KP/KT; models/decisions/... instead of MOD/DEC) or provide clear documentation/mappings in the type files.",
+    "affected_components": ["shared"]
+  }
+]

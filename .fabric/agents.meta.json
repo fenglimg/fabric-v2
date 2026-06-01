@@ -1,5 +1,5 @@
 {
-  "revision": "sha256:ae8a425f4cc9e9f84ee9cee7759ad75b64e40137e8105327b148c0760e04ec2d",
+  "revision": "sha256:a0a45821452c94d635c744ef4e4aa3a6c5a9fa4b67be8500ae5a8df0637df94b",
   "nodes": {
     "KP-PRO-0001": {
       "file": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
@@ -289,15 +289,15 @@
       "priority": "medium",
       "level": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:736eb5a83fed3005b97a7be1a0936f64ab41111fce8ebf7117fc2ccca77b911a",
+      "hash": "sha256:97f96ea28be387e6e5f9564f414c93596ab512b86955c8390efa173dbd3d4116",
       "stable_id": "KT-DEC-0007",
       "identity_source": "declared",
       "description": {
-        "summary": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks",
+        "summary": "Hook = reminder layer (nudge, never a permanent gate)",
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks",
+        "must_read_if": "Hook = reminder layer (nudge, never a permanent gate)",
         "id": "KT-DEC-0007",
         "knowledge_type": "decisions",
         "maturity": "proven",

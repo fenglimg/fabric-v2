@@ -1,0 +1,34 @@
+[
+  {
+    "title": "fabric install scaffolds per-project ledgers (events.jsonl, metrics.jsonl, cite-rollup.jsonl) into .fabric/ but never writes a .gitignore to exclude them",
+    "severity": "high",
+    "description": "`fabric install` creates `.fabric/events.jsonl` in the target project (install.ts:828, listed as a created artifact at install.ts:1766) and the hooks/MCP server append metrics.jsonl and cite-rollup.jsonl alongside it. No code path in packages/cli/src writes a project-level .gitignore or .git/info/exclude entry for these files (grep for 'gitignore' across packages/cli/src returns zero install-time writers; only the STORE scaffolder writes a .gitignore, core.ts:76, and it covers state/ + .cache/ only). This monorepo itself avoids committing the ledgers solely because its hand-maintained ROOT .gitignore lists them (.gitignore: .fabric/events.jsonl, .fabric/metrics.jsonl, .fabric/cite-rollup.jsonl). A downstream user who runs `fabric install` in their repo gets NO such protection: events.jsonl records target_paths (file paths) and free-text intent fields and will be swept into version control on the next `git add .`, leaking one developer's edit/activity trail and any pasted snippets to the whole team via the shared repo.",
+    "location": "packages/cli/src/commands/install.ts:828",
+    "fix_direction": "On install, append `.fabric/events.jsonl`, `.fabric/metrics.jsonl`, `.fabric/cite-rollup.jsonl`, `.fabric/events.archive/`, `.fabric/.cache/` to the project's .gitignore (idempotently), or write `.fabric/.gitignore` covering the volatile ledgers, mirroring the STORE_GITIGNORE pattern already used for stores.",
+    "affected_components": ["packages/cli/src/commands/install.ts", "packages/server/src/services/event-ledger.ts", "packages/server/src/services/metrics.ts", "packages/server/src/services/cite-rollup.ts"]
+  },
+  {
+    "title": "events.jsonl append path has no secret-scan / redaction; credential-shaped strings in free-text intent/message fields are persisted verbatim at rest",
+    "severity": "medium",
+    "description": "A secret scanner exists (shared/src/store/secret-scan.ts: AWS keys, private-key blocks, openai/github/slack tokens, credential assignments) and is correctly enforced on the knowledge-entry write path (extract-knowledge.ts:298 calls hasSecrets and blocks the write) and on debug-bundle output (observability.ts redacts). But the event-ledger append path applies NO secret scan — appendEventLedgerEvent (event-ledger.ts:169) only truncates strings to 4KB (truncateLongStrings, line 156). The editIntentCheckedEvent.intent (event-ledger schema line 75), knowledge_context_planned.intent (line 40), and mcp_event.message (line 115, z.unknown) are free-text fields populated from AI/human input — a pasted command line, stack trace, or git URL with an embedded token lands unredacted in .fabric/events.jsonl. Combined with finding #1 (ledger not gitignored in user projects) this becomes a committed-secret vector. Severity medium rather than high because the file is intended to be local and secrets land there only via user paste, not by the tool harvesting env/tokens.",
+    "location": "packages/server/src/services/event-ledger.ts:179",
+    "fix_direction": "Run redactSecrets() (already exported from shared) over string fields inside truncateLongStrings or just before the eventLedgerEventSchema.parse in appendEventLedgerEvent, so credential-shaped content is redacted before it is written to disk — same control already applied to debug-bundle output.",
+    "affected_components": ["packages/server/src/services/event-ledger.ts", "packages/shared/src/store/secret-scan.ts", "packages/shared/src/schemas/event-ledger.ts"]
+  },
+  {
+    "title": "Git remote URL stored verbatim in tracked store.json; a credential-embedded URL would be committed/pushed with the store",
+    "severity": "low",
+    "description": "Store registration persists the user-supplied remote string verbatim into store.json (store-ops.ts:91 `{ store_uuid, alias, remote: options.remote }`; store-lifecycle.ts:72 `remote: string | null`). store.json is a tracked file in each store's own git repo — it is NOT listed in STORE_GITIGNORE (core.ts:36, which only excludes state/, agents.meta.json, .cache/). If a user supplies a remote of the form `https://user:token@host/repo.git`, that credential is written into a committed file and would be pushed/shared along with the store. No sanitization of userinfo is applied to the remote before persistence. Low severity: requires the user to pass a credential-laden URL (an anti-pattern), and the normal path sets the auth-bearing URL only in .git/config (gitignored by git itself), not the store.json registry copy.",
+    "location": "packages/cli/src/store/store-ops.ts:91",
+    "fix_direction": "Strip userinfo (user:pass@) from the remote URL before persisting it to store.json (store only the scheme/host/path locator), or run the remote string through redactSecrets/a URL-credential strip on write.",
+    "affected_components": ["packages/cli/src/store/store-ops.ts", "packages/shared/src/store/store-lifecycle.ts", "packages/shared/src/store/core.ts"]
+  },
+  {
+    "title": "Personal-layer (KP-*) stable_ids embed a uid = sha256(git user.email); pseudonymous identifier travels in any shared cross-reference to a personal entry",
+    "severity": "low",
+    "description": "deriveUid (cli/src/store/uid.ts:11) runs `git config user.email`, lowercases it and stores sha256(email)[:12] as the uid (no salt). This uid is embedded into personal-store stable_ids as a namespace segment: global_ref format `<store_uuid>:<uid>:<local_id>` (shared/src/schemas/store-stable-id.ts:24). The hash is one-way and unsalted but deterministic — the same email always yields the same uid, so it is a stable pseudonymous identifier (re-identifiable by anyone who can hash a candidate email list). The read-set resolver isolates personal stores correctly (store-resolver.ts:51 excludes personal stores from required_stores matching; line 82-85 adds the personal store ONLY to the local user's own read set) so personal KP-* entries do not leak into another developer's shared recall by default. Residual low-severity exposure: if a personal entry is ever cited/cross-referenced from a shared store, or a personal store is shared, the email-derived uid segment travels with the id.",
+    "location": "packages/cli/src/store/uid.ts:24",
+    "fix_direction": "Acceptable as-is for an OSS local tool. If hardening is wanted: salt the uid hash (per-machine random salt stored in global config) so the value is not a globally-correlatable email fingerprint, and document the uid derivation in SECURITY.md.",
+    "affected_components": ["packages/cli/src/store/uid.ts", "packages/shared/src/schemas/store-stable-id.ts", "packages/shared/src/resolver/store-resolver.ts"]
+  }
+]

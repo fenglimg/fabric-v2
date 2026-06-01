@@ -26,3 +26,5 @@ coverage/
 # dogfood / build runs are not part of the source contract.
 .workflow/wiki-index.json
 packages/*/.fabric/
+
+.antigravitycli
