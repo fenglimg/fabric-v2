@@ -325,6 +325,44 @@ describe("reviewKnowledge", () => {
     expect(layerEvents.events).toHaveLength(0);
   });
 
+  it("F55 (ISS-055): a malicious tag cannot inject a new frontmatter key via flow array", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "inject-array", {
+      tags: ["initial"],
+    });
+    // Tag carrying a `]` + newline + a fake key. Pre-fix raw join produced
+    // `tags: [ok, evil]\nmaturity: proven]` — an injected `maturity` line.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { tags: ["ok", "evil]\nmaturity: proven"] },
+    });
+    expect(result.action).toBe("modify");
+    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    // The malicious element is JSON-quoted on one line; no real newline injected.
+    expect(updated).toContain('tags: [ok, "evil]\\nmaturity: proven"]');
+    // The injected key must NOT appear as a standalone frontmatter line.
+    expect(updated).not.toMatch(/^maturity: proven$/mu);
+  });
+
+  it("F36 (ISS-034): a backslash-bearing summary is escaped, not left to break the quoted scalar", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "inject-backslash", {
+      tags: ["initial"],
+    });
+    // Summary contains a colon (forces quoting) and ends in a backslash. Pre-fix
+    // `"...path\"` left a dangling escaped quote that swallowed the closer.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { summary: "drive C:\\" },
+    });
+    expect(result.action).toBe("modify");
+    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    // Backslash doubled, value properly closed — valid YAML double-quoted scalar.
+    expect(updated).toContain('summary: "drive C:\\\\"');
+  });
+
   // -------------------------------------------------------------------------
   // rc.37 NEW-12: explicit modify split (modify-content / modify-layer)
   // -------------------------------------------------------------------------

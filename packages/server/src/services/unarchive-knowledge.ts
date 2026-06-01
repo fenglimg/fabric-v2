@@ -114,6 +114,27 @@ export async function unarchiveKnowledge(
   // result.archivePath is reported in POSIX form (callers can re-localize
   // for display if needed, but the contract is "relative POSIX path").
   const archivePathPosix = normalizeToPosix(archivePathRel);
+  // F37 (ISS-20260531-045): path-traversal guard. `archivePathRel` is caller
+  // input; without this, ".fabric/.archive/../../secret/KT-DEC-0001.md" would
+  // make archivePathAbs escape the project (read) and let deriveType return ".."
+  // (write climb). Require a clean, relative, archive-rooted path with no ".."
+  // segment before touching the filesystem.
+  const archiveSegments = archivePathPosix.split("/");
+  const traversalUnsafe =
+    archivePathPosix.startsWith("/") ||
+    archiveSegments.includes("..") ||
+    !archivePathPosix.startsWith(".fabric/.archive/");
+  if (traversalUnsafe) {
+    return {
+      ok: false,
+      stableId: null,
+      archivePath: archivePathPosix,
+      restoredTo: null,
+      applied: false,
+      dryRun,
+      error: `refusing unsafe archive path '${archivePathPosix}' (must be a relative path under '.fabric/.archive/' with no '..' segment)`,
+    };
+  }
   const archivePathAbs = join(projectRoot, archivePathPosix);
   const filename = basename(archivePathPosix);
   const stableId = extractStableId(filename);

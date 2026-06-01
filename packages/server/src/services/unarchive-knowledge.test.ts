@@ -223,11 +223,19 @@ describe("unarchiveKnowledge — defensive failures (rc.34 TASK-05)", () => {
     expect(ledger.events).toHaveLength(0); // no partial event
   });
 
-  it("returns ok=false when archive path is malformed (no .archive segment)", async () => {
+  it("returns ok=false when archive path is malformed (not under .fabric/.archive/)", async () => {
     const bogusPath = ".fabric/other/decisions/KT-D-0007--x.md";
     const result = await unarchiveKnowledge(projectRoot, bogusPath);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/cannot derive type/);
+    // F37 guard rejects non-archive-rooted paths up front (was: "cannot derive type").
+    expect(result.error).toMatch(/refusing unsafe archive path/);
+  });
+
+  it("F37 (ISS-045): rejects path-traversal even with a targetLayer override", async () => {
+    const evil = ".fabric/.archive/../../secret/KT-DEC-0001--x.md";
+    const result = await unarchiveKnowledge(projectRoot, evil, { targetLayer: "team" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/refusing unsafe archive path/);
   });
 
   it("rc.34 TASK-05 review-fix (Gemini P0): Windows-style backslash archive path derives correctly", async () => {

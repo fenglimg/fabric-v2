@@ -1378,10 +1378,10 @@ function rewriteFrontmatterMerge(
   if (patch.summary !== undefined) updates.summary = `summary: ${quoteIfNeeded(patch.summary)}`;
   if (patch.layer !== undefined) updates.layer = `layer: ${patch.layer}`;
   if (patch.maturity !== undefined) updates.maturity = `maturity: ${patch.maturity}`;
-  if (patch.tags !== undefined) updates.tags = `tags: [${patch.tags.join(", ")}]`;
+  if (patch.tags !== undefined) updates.tags = `tags: ${flowArray(patch.tags)}`;
   // v2.0-rc.5 C3 (TASK-012): relevance hints — same flow-array shape as tags.
   if (patch.relevance_scope !== undefined) updates.relevance_scope = `relevance_scope: ${patch.relevance_scope}`;
-  if (patch.relevance_paths !== undefined) updates.relevance_paths = `relevance_paths: [${patch.relevance_paths.join(", ")}]`;
+  if (patch.relevance_paths !== undefined) updates.relevance_paths = `relevance_paths: ${flowArray(patch.relevance_paths)}`;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
   // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
   // datetimes correctly (no colon in the date portion would need quoting,
@@ -1422,11 +1422,27 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.summary !== undefined) lines.push(`summary: ${quoteIfNeeded(patch.summary)}`);
   if (patch.layer !== undefined) lines.push(`layer: ${patch.layer}`);
   if (patch.maturity !== undefined) lines.push(`maturity: ${patch.maturity}`);
-  if (patch.tags !== undefined) lines.push(`tags: [${patch.tags.join(", ")}]`);
+  if (patch.tags !== undefined) lines.push(`tags: ${flowArray(patch.tags)}`);
   if (patch.relevance_scope !== undefined) lines.push(`relevance_scope: ${patch.relevance_scope}`);
-  if (patch.relevance_paths !== undefined) lines.push(`relevance_paths: [${patch.relevance_paths.join(", ")}]`);
+  if (patch.relevance_paths !== undefined) lines.push(`relevance_paths: ${flowArray(patch.relevance_paths)}`);
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
+}
+
+// F55 (ISS-20260531-055): flow-array emit must escape EACH element, not
+// raw-join them. An element carrying a newline, `]`/`[`, `,`, quote, `#` or `:`
+// would otherwise break out of the single-line `[...]` scalar and inject a new
+// frontmatter key/line. Such elements are emitted as JSON double-quoted scalars
+// (valid YAML, escapes `\`, `"`, newline). Diff-friendly barewords and globs
+// (`auth`, `src/ui/**/*`) carry none of those chars and stay bare.
+function flowArrayElement(value: string): string {
+  if (/[\n\r,\[\]{}"#:]/u.test(value) || /^\s|\s$/u.test(value)) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+function flowArray(values: string[]): string {
+  return `[${values.map(flowArrayElement).join(", ")}]`;
 }
 
 function quoteIfNeeded(value: string): string {
@@ -1445,8 +1461,13 @@ function quoteIfNeeded(value: string): string {
   }
   // Quote values that contain colons, leading/trailing whitespace, or special
   // YAML chars. Otherwise emit bare so the file stays diff-friendly.
-  if (/[:#\[\]{}&*!|>'"%@`,]|^\s|\s$/u.test(value)) {
-    return `"${value.replace(/"/gu, '\\"')}"`;
+  // F36/F35 (ISS-20260531-034/033): a backslash is itself the escape char in a
+  // YAML double-quoted scalar, so it MUST be doubled BEFORE escaping the inner
+  // quotes — otherwise a value ending in `\` produces `"…\"`, where the trailing
+  // `\"` reads as an escaped quote, swallowing the closing quote and corrupting
+  // (or injecting into) the frontmatter block.
+  if (/[\\:#\[\]{}&*!|>'"%@`,]|^\s|\s$/u.test(value)) {
+    return `"${value.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`;
   }
   return value;
 }

@@ -143,6 +143,72 @@
         "evidence": null,
         "verified_at": null
       }
+    },
+    {
+      "id": "T6",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F36/F35: quoteIfNeeded 先转义反斜杠再转义引号 + 触发正则纳入 \\",
+      "done_when": "fix + tsc + test 绿 + grep 复核",
+      "from_finding": "F35",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "vitest review/unarchive 84/84 + server 732/732 + tsc0",
+        "evidence": "security wave",
+        "verified_at": "2026-06-01T05:00:00.000Z"
+      }
+    },
+    {
+      "id": "T8",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F37: unarchiveKnowledge 入口 containment guard(拒 ../、非 .fabric/.archive/ 根、绝对路径)",
+      "done_when": "fix + tsc + test 绿 + grep 复核",
+      "from_finding": "F37",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "vitest review/unarchive 84/84 + server 732/732 + tsc0",
+        "evidence": "security wave",
+        "verified_at": "2026-06-01T05:00:00.000Z"
+      }
+    },
+    {
+      "id": "T7",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F55: flowArray 每元素经 flowArrayElement(危险字符 JSON 转义), 阻 flow-array 注入",
+      "done_when": "fix + tsc + test 绿 + grep 复核",
+      "from_finding": "F55",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "vitest review/unarchive 84/84 + server 732/732 + tsc0",
+        "evidence": "security wave",
+        "verified_at": "2026-06-01T05:00:00.000Z"
+      }
     }
   ],
   "findings": [
@@ -242,12 +308,13 @@
       "title": "Search input removes keyboard focus indicator",
       "oracle": "declared-vs-impl",
       "expectation_source": "Remove outline-none or add a WCAG-compliant focus outline via focus-visible:ring-2 focus-visible:ring-brand-accent.",
-      "actual": null,
+      "actual": "(phantom UI — 无对应代码)",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "non-applicable: repo 无任何前端源(packages 仅 cli/server/server-http-experimental/shared; 零 focus-visible/treeitem/brand-accent/.tsx/.css 产品源). 该 a11y finding 引用不存在的 web UI 组件(Registry Tree/Sidebar/Header Search)",
+        "refute_reason": "non-applicable",
+        "verified_at": "2026-06-01T04:30:00.000Z"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -306,12 +373,13 @@
       "title": "Missing ARIA tree roles and keyboard focusability in registry tree nodes",
       "oracle": "declared-vs-impl",
       "expectation_source": "Wrap the tree container in role=tree, give each node role=treeitem + tabindex=0, and add keydown handlers for arrows and Enter/Space to manage focus/selection.",
-      "actual": null,
+      "actual": "(phantom UI — 无对应代码)",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "non-applicable: repo 无任何前端源(packages 仅 cli/server/server-http-experimental/shared; 零 focus-visible/treeitem/brand-accent/.tsx/.css 产品源). 该 a11y finding 引用不存在的 web UI 组件(Registry Tree/Sidebar/Header Search)",
+        "refute_reason": "non-applicable",
+        "verified_at": "2026-06-01T04:30:00.000Z"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -347,12 +415,13 @@
       "title": "Interactive elements lack semantic tags — not keyboard accessible",
       "oracle": "declared-vs-impl",
       "expectation_source": "Replace interactive <div> with <button>/<a>; if <div> is required, add tabindex=0, the appropriate role, and Enter/Space key handling.",
-      "actual": null,
+      "actual": "(phantom UI — 无对应代码)",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "non-applicable: repo 无任何前端源(packages 仅 cli/server/server-http-experimental/shared; 零 focus-visible/treeitem/brand-accent/.tsx/.css 产品源). 该 a11y finding 引用不存在的 web UI 组件(Registry Tree/Sidebar/Header Search)",
+        "refute_reason": "non-applicable",
+        "verified_at": "2026-06-01T04:30:00.000Z"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -430,12 +499,13 @@
       "title": "Interactive elements lack custom focus styles (nav/toggle/copy)",
       "oracle": "declared-vs-impl",
       "expectation_source": "Add focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:outline-none to all sidebar nav links and active buttons.",
-      "actual": null,
+      "actual": "(phantom UI — 无对应代码)",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "non-applicable: repo 无任何前端源(packages 仅 cli/server/server-http-experimental/shared; 零 focus-visible/treeitem/brand-accent/.tsx/.css 产品源). 该 a11y finding 引用不存在的 web UI 组件(Registry Tree/Sidebar/Header Search)",
+        "refute_reason": "non-applicable",
+        "verified_at": "2026-06-01T04:30:00.000Z"
       },
       "severity": "critical",
       "fix_task_id": null
@@ -557,12 +627,13 @@
       "title": "Insufficient text contrast in light mode",
       "oracle": "declared-vs-impl",
       "expectation_source": "Map higher-contrast colors (700 variants) in the light-mode Tailwind theme or darken weight/palette to reach at least 4.5:1.",
-      "actual": null,
+      "actual": "(phantom UI — 无对应代码)",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "non-applicable: repo 无任何前端源(packages 仅 cli/server/server-http-experimental/shared; 零 focus-visible/treeitem/brand-accent/.tsx/.css 产品源). 该 a11y finding 引用不存在的 web UI 组件(Registry Tree/Sidebar/Header Search)",
+        "refute_reason": "non-applicable",
+        "verified_at": "2026-06-01T04:30:00.000Z"
       },
       "severity": "high",
       "fix_task_id": null
@@ -858,15 +929,16 @@
       "title": "Frontmatter YAML Injection in Modify/Approve/Reject Paths",
       "oracle": "declared-vs-impl",
       "expectation_source": "Use quoteRelevancePath / quoteIfNeeded on each element of tags and relevance_paths before joining.",
-      "actual": null,
+      "actual": "与 F36 同根: modify/approve/reject 路径经 quoteIfNeeded 写 frontmatter, 反斜杠未转义",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "与 F36 同根: modify/approve/reject 路径经 quoteIfNeeded 写 frontmatter, 反斜杠未转义",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T05:00:00.000Z"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T6"
     },
     {
       "id": "F36",
@@ -878,15 +950,16 @@
       "title": "Frontmatter Escape via Backslash in quoteIfNeeded (review.ts)",
       "oracle": "declared-vs-impl",
       "expectation_source": "Escape backslashes first (replace(/\\\\/g,'\\\\\\\\')) before escaping double-quotes, matching quoteRelevancePath in extract-knowledge.ts.",
-      "actual": null,
+      "actual": "review.ts:1449 quoteIfNeeded 转义 \" 却不先转义 \\, 末尾反斜杠值产出 \"…\\\" 吞掉闭合引号",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "review.ts:1449 quoteIfNeeded 转义 \" 却不先转义 \\, 末尾反斜杠值产出 \"…\\\" 吞掉闭合引号",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T05:00:00.000Z"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T6"
     },
     {
       "id": "F37",
@@ -898,15 +971,16 @@
       "title": "Path Traversal in reverse-unarchive primitive",
       "oracle": "declared-vs-impl",
       "expectation_source": "Add path confinement (like resolveSandboxedPath in review.ts) to guarantee the resolved path stays strictly within .fabric/.archive/.",
-      "actual": null,
+      "actual": "unarchive-knowledge.ts archivePathRel 无 containment, .fabric/.archive/../../x + targetLayer 越界读+写爬升",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "unarchive-knowledge.ts archivePathRel 无 containment, .fabric/.archive/../../x + targetLayer 越界读+写爬升",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T05:00:00.000Z"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T8"
     },
     {
       "id": "F38",
@@ -1258,15 +1332,16 @@
       "title": "YAML frontmatter injection via unescaped array joining (review merge/patch)",
       "oracle": "declared-vs-impl",
       "expectation_source": "Map each array item through an escaping/quoting helper (quoteIfNeeded / quoteRelevancePath) to escape backslashes, quotes, newlines, brackets before joining.",
-      "actual": null,
+      "actual": "review.ts flow-array [${arr.join}] 原样拼接, 元素含 ]/换行注入新 frontmatter key",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "review.ts flow-array [${arr.join}] 原样拼接, 元素含 ]/换行注入新 frontmatter key",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T05:00:00.000Z"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T7"
     },
     {
       "id": "F56",
@@ -1480,7 +1555,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 5,
+      "round_task_actual": 8,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],
