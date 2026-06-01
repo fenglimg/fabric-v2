@@ -122,6 +122,31 @@ describe("rc.16 TASK-007: fabric config panel — uninit gate", () => {
     expect(process.exitCode).toBe(1);
     expect(errSpy).toHaveBeenCalledTimes(1);
   });
+
+  // F60 (ISS-20260531-...): the parent `run` short-circuits when a subcommand
+  // (dismiss-slot/onboard-reset) was invoked, so it must NOT also launch the
+  // panel / uninit-gate. The old `process.argv[3]` check broke when a flag
+  // preceded the subcommand (`fabric config --target ./p dismiss-slot` → argv[3]
+  // was `--target`), so the panel launched ON TOP of the subcommand. With the
+  // order-independent argv scan, the short-circuit fires regardless of flag
+  // position — proven here by an UNINIT workspace NOT hitting the uninit gate.
+  it("short-circuits a subcommand even when a flag precedes it (no panel/gate)", async () => {
+    const configCmd = await loadConfigCmd();
+    const dir = makeWorkspace(false); // uninit — would error if not short-circuited
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const savedArgv = process.argv;
+    process.argv = ["node", "fab", "config", "--target", dir, "dismiss-slot"];
+    try {
+      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+    } finally {
+      process.argv = savedArgv;
+    }
+
+    // Short-circuited cleanly: the uninit gate never fired and the panel never opened.
+    expect(errSpy).not.toHaveBeenCalled();
+    expect(introMock).not.toHaveBeenCalled();
+    expect(selectMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("rc.16 TASK-007: fabric config panel — exit path", () => {

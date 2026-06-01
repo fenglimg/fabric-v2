@@ -268,11 +268,17 @@ export const configCmd = defineCommand({
     // v2.0.0-rc.23 TASK-014 (F8c): citty runs the parent `run` AFTER routing
     // to a matched subcommand. The subcommands (`dismiss-slot` /
     // `onboard-reset`) do their own work; we must NOT also launch the
-    // interactive panel after them. Short-circuit by detecting the
-    // subcommand name in process.argv — argv[3] is the first positional
-    // after `fabric config` (argv[0]=node, argv[1]=fab, argv[2]=config).
-    const argvSub = process.argv[3];
-    if (argvSub === "dismiss-slot" || argvSub === "onboard-reset") {
+    // interactive panel after them. Short-circuit by detecting the subcommand
+    // name in process.argv.
+    //
+    // F60 (ISS-20260531-...): a strict `process.argv[3]` check only worked when
+    // the subcommand was the FIRST token after `config`. With a flag in front
+    // (`fabric config --target ./p dismiss-slot`) argv[3] was `--target`, so the
+    // short-circuit was bypassed and the interactive panel/uninit-gate launched
+    // ON TOP of the already-run subcommand. Scan every arg after `config`
+    // instead so the detection is order-independent.
+    const argvAfterConfig = process.argv.slice(3);
+    if (argvAfterConfig.includes("dismiss-slot") || argvAfterConfig.includes("onboard-reset")) {
       return;
     }
 

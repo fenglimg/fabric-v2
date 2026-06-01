@@ -363,6 +363,28 @@
         "evidence": "run-sync.ts loadSession/saveSession; +2 测试; cli 884/884",
         "verified_at": "2026-06-01T08:00:27.611Z"
       }
+    },
+    {
+      "id": "T16",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F60: fabric config 父命令短路改用 argv.slice(3).includes(subcommand),修 flag 在 subcommand 前时 panel 双启动",
+      "done_when": "fix + tsc + test 绿",
+      "from_finding": "F60",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": "config.ts:274 order-independent argv scan; +1 测试(flag-before-subcommand 短路); cli 885/885",
+        "verified_at": "2026-06-01T08:10:13.374Z"
+      }
     }
   ],
   "findings": [
@@ -919,9 +941,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "ISS-017 already consolidated to a SINGLE shared extractBody in _shared.ts. review.ts:17 imports it; review.ts:258 extractBodyTrimmed is a thin wrapper = extractBody(content).trim() (explicitly named, comment :256). knowledge-sections.ts:19 re-exports the same shared fn. No divergent same-named implementations remain.",
+        "refute_reason": "already-fixed",
+        "classification": "refactor-smell"
       },
       "severity": "high",
       "fix_task_id": null
@@ -960,9 +983,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "renderTopLevelError IS wired into the CLI top-level catch (index.ts:42), and it calls renderFabricError when hasActionHint(err) (error-render.ts:70-75). The actionHint infra is live, not dead — the finding's premise ('entirely dead, never called') is false.",
+        "refute_reason": "already-fixed",
+        "classification": "declared-vs-impl"
       },
       "severity": "high",
       "fix_task_id": null
@@ -980,9 +1004,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "install.ts:597 writeDefaultGitignore writes .fabric/.gitignore covering events.jsonl/metrics.jsonl/cite-rollup.jsonl/injections.jsonl/.cache//*.lock/*.corrupted.* and is CALLED at install.ts:942. Telemetry is gitignored; comment :579-582 documents exactly this fix.",
+        "refute_reason": "already-fixed",
+        "classification": "data-hygiene"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1297,9 +1322,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "renderTopLevelError correctly handles BOTH FabricError (with actionHint arrows) and plain Error (generic message). Plain Errors legitimately have no actionHint. The errors ARE displayed; converting specific install throws to FabricError-with-hint is a UX enhancement (richer remedy text), not a correctness bug.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1317,9 +1343,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "writeJsonState/writeTextState swallowing FS errors is deliberate hook resilience — a hook must NEVER crash the host editor process over a best-effort cache write (read-only FS, perms). The 'no diagnostic visibility' gap is an enhancement (a doctor cache-health check), not a regression; the swallow itself is correct.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1337,9 +1364,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "Color-mode status glyphs (✓/!/x) are the established UX; NO_COLOR mode already provides [ok]/[warn]/[error] text. Adding text labels alongside glyphs in color mode is an accessibility ENHANCEMENT (rc3 a11y track), not a bug — no incorrect behavior or data loss; the information is present via color+shape.",
+        "refute_reason": "non-bug",
+        "classification": "feature-request"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1357,9 +1385,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "StoreDiagnostic.severity is typed ONLY 'warn' | 'info' (doctor-checks.ts:24) — TS forbids any 'error'/'critical' value. The doctor.ts:625 ternary (warn→[warn], else→[info]) is correct for the actual domain; there is NO error severity that could be masked. Finding's premise (critical errors rendered as info) is impossible given the type.",
+        "refute_reason": "non-bug",
+        "classification": "declared-vs-impl"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1398,9 +1427,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "The event ledger is observability-only (see F32) — the KB frontmatter is the source of truth for maturity/tags/etc. modifyEntry's in-place edit persists to frontmatter (authoritative); a missing knowledge_modified telemetry event is an audit-completeness enhancement, not a correctness bug. No gate/replay depends on it for correctness.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1460,9 +1490,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "selectionTokenCache is keyed on revision_hash and cleared on mutation BY DESIGN: once a window edits a knowledge file the revision changes, so another window's token IS genuinely stale (its plan was over superseded data). Forcing a re-plan_context is the conservative-correct behavior; serving a token over a superseded revision would be the actual bug.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1610,9 +1641,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "The selection_token's ai_selectable_stable_ids being a superset of the displayed top_k candidates is benign: a client picking a trimmed-out id still fetches a valid body via get_knowledge_sections (the bodies are in the same layer-filtered corpus — post-F54 the token's set is already layer-scoped, so no cross-layer leak). top_k is a display cap, not an access boundary. The 'trimming in presentation layer' note is a refactor, not a bug.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1630,12 +1662,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "config.ts:274 parent run short-circuit used strict process.argv[3]; `fabric config --target ./p dismiss-slot` made argv[3]='--target' so the short-circuit was bypassed → the interactive panel/uninit-gate launched ON TOP of the already-run subcommand. FIXED: scan process.argv.slice(3) for the subcommand name (order-independent). +1 test.",
+        "refute_reason": null,
+        "classification": "declared-vs-impl",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T16"
     },
     {
       "id": "F61",
@@ -1731,9 +1765,9 @@
       "name": "G-TRIAGE",
       "desc": "critical+high 全部 triage(每簇 verdict!=null)",
       "target": "64/64 verdicted",
-      "actual": "53/64 verdicted",
+      "actual": "64/64 verdicted",
       "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
-      "verified_at": null
+      "verified_at": "2026-06-01T08:10:13.374Z"
     },
     {
       "name": "G-FIX",
