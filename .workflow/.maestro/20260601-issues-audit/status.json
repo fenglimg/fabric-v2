@@ -1654,6 +1654,12 @@
         "F55"
       ],
       "at": "2026-06-01T05:00:00.000Z"
+    },
+    {
+      "sha": "482848e",
+      "wave": "meta-lock",
+      "subject": "F39/F30/F31 meta-counter writers 持 allocator 锁",
+      "at": "2026-06-01T07:40:37.994Z"
     }
   ],
   "needs_adjudication": [
