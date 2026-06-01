@@ -1766,6 +1766,12 @@
       "wave": "security",
       "subject": "F62 凭证泄漏 + F61/F64 HTTP experimental",
       "at": "2026-06-01T07:49:18.237Z"
+    },
+    {
+      "sha": "8c32f9e",
+      "wave": "F54-layer-filter",
+      "subject": "layer_filter 端到端 + target_paths 转发",
+      "at": "2026-06-01T07:57:27.766Z"
     }
   ],
   "needs_adjudication": [
