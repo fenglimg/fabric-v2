@@ -10,11 +10,34 @@ import {
   type EventLedgerEvent,
   type EventLedgerEventInput,
 } from "@fenglimg/fabric-shared";
-import { atomicWriteText, createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
+import {
+  atomicWriteText,
+  createLedgerWriteQueue,
+  withFileLock,
+} from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 
 const ledgerQueue = createLedgerWriteQueue();
+
+// F9 (ISS-20260531-002): the LedgerWriteQueue above only serializes writers
+// WITHIN one process. A second process (e.g. `fabric doctor --fix` truncating)
+// racing the MCP server's appends can tear the ledger or drop lines. So every
+// mutation of the main ledger file is additionally guarded by a cross-process
+// `withFileLock` on `<ledger>.lock`. NOTE: the lock must NOT be held across a
+// nested mutation (append → size-triggered rotate) or the same-process re-acquire
+// would self-deadlock — append releases its lock before rotation runs.
+function eventLedgerLockPath(eventPath: string): string {
+  return `${eventPath}.lock`;
+}
+
+// Cross-process (withFileLock) + in-process (ledgerQueue.runExclusive) exclusive
+// mutation of the main ledger. Use for any rewrite/truncate of the file.
+function exclusiveLedgerWrite<T>(eventPath: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(eventLedgerLockPath(eventPath), () =>
+    ledgerQueue.runExclusive(eventPath, fn),
+  );
+}
 
 // ISS-005 test-only seam (mirrors __knowledgeMetaCacheStats): counts how many
 // ledger lines were actually JSON.parse + Zod-validated. The event_type
@@ -231,7 +254,12 @@ export async function appendEventLedgerEvent(
   });
 
   await ensureParentDirectory(eventPath);
-  await ledgerQueue.append(eventPath, JSON.stringify(nextEvent));
+  // Cross-process + in-process serialized append. Lock is released here, BEFORE
+  // the size-triggered rotation below, so the nested rotate() can re-acquire it
+  // without self-deadlocking.
+  await withFileLock(eventLedgerLockPath(eventPath), () =>
+    ledgerQueue.append(eventPath, JSON.stringify(nextEvent)),
+  );
 
   // v2.0.0-rc.22 Scope A T3: post-append size check. Emits a one-shot stderr
   // warning when the ledger crosses 50MB so operators of long-lived MCP
@@ -359,32 +387,36 @@ export async function readEventLedger(
 export async function truncateLedgerToLastNewline(
   path: string,
 ): Promise<{ truncated_bytes: number; corrupted_path: string }> {
-  const raw = await readFile(path);
-  const content = raw.toString("utf8");
+  // F9: doctor-side truncation must hold the SAME cross-process lock the server
+  // takes for appends/rotations, otherwise it can truncate the file mid-append.
+  return withFileLock(eventLedgerLockPath(path), async () => {
+    const raw = await readFile(path);
+    const content = raw.toString("utf8");
 
-  if (content.endsWith("\n") || content.length === 0) {
-    return { truncated_bytes: 0, corrupted_path: "" };
-  }
+    if (content.endsWith("\n") || content.length === 0) {
+      return { truncated_bytes: 0, corrupted_path: "" };
+    }
 
-  const lastNewlineIndex = content.lastIndexOf("\n");
+    const lastNewlineIndex = content.lastIndexOf("\n");
 
-  if (lastNewlineIndex === -1) {
-    // Entire file is one partial line — preserve all of it and truncate to empty.
+    if (lastNewlineIndex === -1) {
+      // Entire file is one partial line — preserve all of it and truncate to empty.
+      const corruptedPath = `${path}.corrupted.${Date.now()}`;
+      await writeFile(corruptedPath, raw);
+      await truncate(path, 0);
+      return { truncated_bytes: raw.length, corrupted_path: corruptedPath };
+    }
+
+    // Keep everything up to and including the last newline.
+    const keepByteLength = Buffer.byteLength(content.slice(0, lastNewlineIndex + 1), "utf8");
+    const corruptedBytes = raw.slice(keepByteLength);
     const corruptedPath = `${path}.corrupted.${Date.now()}`;
-    await writeFile(corruptedPath, raw);
-    await truncate(path, 0);
-    return { truncated_bytes: raw.length, corrupted_path: corruptedPath };
-  }
 
-  // Keep everything up to and including the last newline.
-  const keepByteLength = Buffer.byteLength(content.slice(0, lastNewlineIndex + 1), "utf8");
-  const corruptedBytes = raw.slice(keepByteLength);
-  const corruptedPath = `${path}.corrupted.${Date.now()}`;
+    await writeFile(corruptedPath, corruptedBytes);
+    await truncate(path, keepByteLength);
 
-  await writeFile(corruptedPath, corruptedBytes);
-  await truncate(path, keepByteLength);
-
-  return { truncated_bytes: corruptedBytes.length, corrupted_path: corruptedPath };
+    return { truncated_bytes: corruptedBytes.length, corrupted_path: corruptedPath };
+  });
 }
 
 function parseEventLedgerLine(line: string, index: number): StoredEventLedgerEvent | null {
@@ -461,7 +493,7 @@ export async function rotateEventLedgerIfNeeded(
 ): Promise<RotateEventLedgerResult> {
   const eventPath = getEventLedgerPath(projectRoot);
 
-  return ledgerQueue.runExclusive(eventPath, async () => {
+  return exclusiveLedgerWrite(eventPath, async () => {
     const now = opts.now ?? new Date();
     const retentionDays = resolveRetentionDays(projectRoot, opts.retentionDays);
     const cutoffMs = now.getTime() - retentionDays * 86_400_000;
@@ -611,7 +643,7 @@ export async function dropEventsFromLedger(
 ): Promise<RotateEventLedgerResult> {
   const eventPath = getEventLedgerPath(projectRoot);
 
-  return ledgerQueue.runExclusive(eventPath, async () => {
+  return exclusiveLedgerWrite(eventPath, async () => {
     const now = opts.now ?? new Date();
 
     let raw: string;

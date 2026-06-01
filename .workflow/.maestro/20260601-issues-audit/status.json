@@ -114,12 +114,12 @@
         "G-GREEN"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest+grep",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "event-ledger.test 36/36 (含+2 F9 lock 用例); server 全套 729/729; 全仓 tsc EXIT0. append/rotate/drop/truncate 全包 withFileLock(events.jsonl.lock), append 先释锁再 rotate 防自死锁",
+        "verified_at": "2026-06-01T04:00:00.000Z"
       }
     },
     {

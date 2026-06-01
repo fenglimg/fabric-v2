@@ -70,6 +70,43 @@ describe("event-ledger", () => {
     });
   });
 
+  it("F9 (ISS-002): append acquires + releases the cross-process ledger lock cleanly", async () => {
+    const projectRoot = await createTempProject();
+    const ledgerPath = join(projectRoot, ".fabric", "events.jsonl");
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "event_ledger_truncated",
+      byte_offset: 0,
+      byte_length: 0,
+      corrupted_path: "",
+      ts: 1_000,
+    });
+    // The lock is held only for the critical section — no orphan .lock after.
+    expect(existsSync(`${ledgerPath}.lock`)).toBe(false);
+  });
+
+  it("F9 (ISS-002): append reclaims a stale ledger lock left by a crashed writer", async () => {
+    const projectRoot = await createTempProject();
+    const ledgerPath = join(projectRoot, ".fabric", "events.jsonl");
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    // Orphan lock from a crashed holder, stamped well in the past so withFileLock
+    // treats it as stale and reclaims it instead of blocking.
+    await writeFile(`${ledgerPath}.lock`, "dead-holder");
+    const { utimesSync } = await import("node:fs");
+    const old = Date.now() / 1000 - 3600;
+    utimesSync(`${ledgerPath}.lock`, old, old);
+    const event = await appendEventLedgerEvent(projectRoot, {
+      event_type: "event_ledger_truncated",
+      byte_offset: 0,
+      byte_length: 0,
+      corrupted_path: "",
+      ts: 2_000,
+    });
+    expect(event.event_type).toBe("event_ledger_truncated");
+    const { events } = await readEventLedger(projectRoot);
+    expect(events).toHaveLength(1);
+    expect(existsSync(`${ledgerPath}.lock`)).toBe(false);
+  });
+
   it("roundtrips an assistant_turn_observed event preserving cite-policy fields", async () => {
     const projectRoot = await createTempProject();
 
