@@ -10,7 +10,7 @@
   "intent": "审计 issues.jsonl 中 critical+high bug:去重→验真伪(refuted 记理由)→修复 confirmed→回归收敛, 目标 v2.2 rc2+",
   "goal": "issues.jsonl 中全部 critical+high 条目完成 triage(confirmed/refuted/dup-merged/already-fixed 均带证据), 其中 confirmed-real 项全部修复且通过 deterministic 验证, 且修复后全仓 tsc+test 绿(无回归). medium/low carry 到 rc3 backlog.",
   "mode": "2",
-  "current_phase": "audit",
+  "current_phase": "final",
   "current_round": 1,
   "boundary_contract": {
     "in_scope": [
@@ -1771,9 +1771,9 @@
       "name": "G-TRIAGE",
       "desc": "critical+high 全部 triage(每簇 verdict!=null)",
       "target": "64/64 verdicted",
-      "actual": "64/64 verdicted",
+      "actual": "64/64 verdicted (41 refuted / 23 confirmed)",
       "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
-      "verified_at": "2026-06-01T08:10:13.374Z"
+      "verified_at": "2026-06-01T08:19:57.755Z"
     },
     {
       "name": "G-FIX",
@@ -1781,15 +1781,15 @@
       "target": "100% confirmed fixed+verified",
       "actual": "18/18 FIX-NOW confirmed fixed+verified (5 CARRY-RC3 deferred: F11,F15,F16,F56,F63)",
       "verifier_cmd": "count(confirmed findings with fix_task done&verified)/count(confirmed)",
-      "verified_at": "2026-06-01T08:18:04.870Z"
+      "verified_at": "2026-06-01T08:19:57.755Z"
     },
     {
       "name": "G-GREEN",
       "desc": "修复后全仓无回归",
       "target": "tsc+test 全绿",
-      "actual": "tsc 全仓 EXIT 0; shared 566/566",
+      "actual": "pnpm -r tsc EXIT0; test 2189 passed (shared 567 / server 736 / cli 886); http-experimental standalone typecheck EXIT0",
       "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test",
-      "verified_at": "2026-06-01T02:00:00.000Z"
+      "verified_at": "2026-06-01T08:19:57.755Z"
     }
   ],
   "audit_rounds": [
@@ -1886,6 +1886,12 @@
       "wave": "F60+triage-closeout",
       "subject": "F60 + 剩余 triage 收口 → G-TRIAGE 64/64",
       "at": "2026-06-01T08:10:13.693Z"
+    },
+    {
+      "sha": "1ef1e57",
+      "wave": "F13-session-cooldown + G-FIX 收口",
+      "subject": "F13 cooldown session-scoped + KP-leak CARRY 裁决",
+      "at": "2026-06-01T08:19:57.755Z"
     }
   ],
   "needs_adjudication": [
@@ -1920,6 +1926,21 @@
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260601-issues-audit/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "ship_criteria 三门全绿 (in-scope): G-TRIAGE 64/64 verdicted, G-FIX 18/18 FIX-NOW confirmed 全修验, G-GREEN tsc+test 全绿无回归",
+    "summary": "77 critical+high → 64 簇 triage 完成: 23 confirmed / 41 refuted(20 already-fixed + 21 non-bug)。18 FIX-NOW confirmed 全修+deterministic 验证(8 本会话新修: F39/F30/F31 meta-lock, F62 凭证泄漏, F61/F64 HTTP, F54 layer_filter, F57/F58 sync crash, F60 config argv, F13 cooldown)。5 CARRY-RC3 deferred: F11/F15/F16(KP-leak,需 v2.1 global-refactor,已入 needs_adjudication)+ F56/F63(quarantine 包)。",
+    "carry_rc3": [
+      "F11",
+      "F15",
+      "F16",
+      "F56",
+      "F63"
+    ],
+    "needs_human_adjudication": [
+      "KP-leak 簇 F11/F15/F16: 并入 v2.1 global-refactor 里程碑(推荐) 或 提前拉入 rc2"
+    ],
+    "at": "2026-06-01T08:19:57.755Z"
+  }
 }
