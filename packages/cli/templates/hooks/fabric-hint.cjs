@@ -984,8 +984,34 @@ function readUnderseedThreshold(projectRoot) {
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
-function readShownCache(projectRoot) {
-  const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
+// F13 (ISS-20260531-038): the reminder cooldown sidecars were process-global
+// (one file per project, no session key), so in concurrent multi-window sessions
+// one window firing a nudge wrote the cooldown and silenced that nudge in EVERY
+// other window. Scope the sidecar filename by sessionId — mirrors the already-
+// session-scoped dismiss sidecar (sessionDismissFileName). Backward-compatible:
+// a null/absent sessionId falls back to the legacy non-scoped path (upgrade +
+// pre-session-id callers), so existing on-disk state and tests are unaffected;
+// the Stop hook always passes the real session_id from its stdin payload.
+function resolveHookSessionId(payload) {
+  return payload && typeof payload.session_id === "string" && payload.session_id.length > 0
+    ? payload.session_id
+    : null;
+}
+
+function sessionScopedCacheFile(baseRelPath, sessionId) {
+  if (sessionId === undefined || sessionId === null || String(sessionId).length === 0) {
+    return baseRelPath;
+  }
+  const safe = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, "-");
+  const lastSlash = baseRelPath.lastIndexOf("/");
+  const dot = baseRelPath.lastIndexOf(".");
+  return dot > lastSlash
+    ? `${baseRelPath.slice(0, dot)}-${safe}${baseRelPath.slice(dot)}`
+    : `${baseRelPath}-${safe}`;
+}
+
+function readShownCache(projectRoot, sessionId) {
+  const cachePath = join(projectRoot, sessionScopedCacheFile(SHOWN_CACHE_FILE, sessionId));
   if (!existsSync(cachePath)) return {};
   try {
     const parsed = JSON.parse(readFileSync(cachePath, "utf8"));
@@ -995,12 +1021,11 @@ function readShownCache(projectRoot) {
   }
 }
 
-function writeShownCache(projectRoot, cache) {
-  const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
+function writeShownCache(projectRoot, cache, sessionId) {
+  const cachePath = join(projectRoot, sessionScopedCacheFile(SHOWN_CACHE_FILE, sessionId));
   try {
-    // ISS-016: atomic tmp+rename so concurrent windows / a crash never leave a
-    // truncated shown-cache (this file is NOT session-scoped). Falls back to a
-    // plain write only if the shared lib failed to load.
+    // ISS-016: atomic tmp+rename so a crash never leaves a truncated shown-cache.
+    // Falls back to a plain write only if the shared lib failed to load.
     if (stateStore && typeof stateStore.atomicWrite === "function") {
       stateStore.atomicWrite(cachePath, JSON.stringify(cache));
     } else {
@@ -1124,8 +1149,8 @@ function findLastDoctorRunTs(events) {
  * v2.0.0-rc.7 T10: read the Signal-D cooldown sidecar timestamp (epoch ms).
  * Missing file / parse failure → null (allow signal to fire).
  */
-function readMaintenanceLastEmit(projectRoot) {
-  const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
+function readMaintenanceLastEmit(projectRoot, sessionId) {
+  const p = join(projectRoot, sessionScopedCacheFile(MAINTENANCE_HINT_LAST_EMIT_FILE, sessionId));
   if (!existsSync(p)) return null;
   try {
     const raw = readFileSync(p, "utf8").trim();
@@ -1140,8 +1165,8 @@ function readMaintenanceLastEmit(projectRoot) {
   return null;
 }
 
-function writeMaintenanceLastEmit(projectRoot, nowMs) {
-  const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
+function writeMaintenanceLastEmit(projectRoot, nowMs, sessionId) {
+  const p = join(projectRoot, sessionScopedCacheFile(MAINTENANCE_HINT_LAST_EMIT_FILE, sessionId));
   try {
     // ISS-016: atomic tmp+rename (see writeShownCache).
     if (stateStore && typeof stateStore.atomicWrite === "function") {
@@ -1984,7 +2009,7 @@ function main(env, stdio) {
     // for the prompt to be actionable.
     if (result === null) {
       try {
-        const lastEmit = readMaintenanceLastEmit(cwd);
+        const lastEmit = readMaintenanceLastEmit(cwd, resolveHookSessionId(stdinPayload));
         result = evaluateMaintenanceSignal(
           events,
           now,
@@ -2041,7 +2066,7 @@ function main(env, stdio) {
       delete result.threshold;
       delete result.actual_value;
       out.write(JSON.stringify(result));
-      writeMaintenanceLastEmit(cwd, nowMs);
+      writeMaintenanceLastEmit(cwd, nowMs, resolveHookSessionId(stdinPayload));
       return;
     }
 
@@ -2049,7 +2074,7 @@ function main(env, stdio) {
     // archive_hint_cooldown_hours (default 12h) regardless of state drift.
     // Pure reminder-noise reduction; the underlying trigger logic is unchanged.
     const cooldownMs = readCooldownHours(cwd) * MS_PER_HOUR;
-    const cache = readShownCache(cwd);
+    const cache = readShownCache(cwd, resolveHookSessionId(stdinPayload));
     const lastShown = cache[result.signal];
     // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastShown
     // (backward clock skew) bypasses cooldown — sidecar treated as expired.
@@ -2066,7 +2091,7 @@ function main(env, stdio) {
     delete result.actual_value;
     out.write(JSON.stringify(result));
     cache[result.signal] = nowMs;
-    writeShownCache(cwd, cache);
+    writeShownCache(cwd, cache, resolveHookSessionId(stdinPayload));
   } catch {
     // Silent — never block on hook failure.
   }

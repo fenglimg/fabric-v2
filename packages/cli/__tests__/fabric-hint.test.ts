@@ -88,8 +88,8 @@ type HookModule = {
     },
   ) => HookDecision | { decision: "block"; reason: string; signal: "maintenance"; recommended_skill: null } | null;
   findLastDoctorRunTs: (events: Array<Record<string, unknown>>) => number | null;
-  readMaintenanceLastEmit: (projectRoot: string) => number | null;
-  writeMaintenanceLastEmit: (projectRoot: string, nowMs: number) => void;
+  readMaintenanceLastEmit: (projectRoot: string, sessionId?: string | null) => number | null;
+  writeMaintenanceLastEmit: (projectRoot: string, nowMs: number, sessionId?: string | null) => void;
   CONSTANTS: {
     FABRIC_DIR: string;
     EVENT_LEDGER_FILE: string;
@@ -1544,6 +1544,29 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
     // Cooldown sidecar written.
     const sidecar = join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit");
     expect(existsSync(sidecar)).toBe(true);
+  });
+
+  // F13 (ISS-20260531-038): the cooldown sidecar must be session-scoped so a
+  // nudge fired in one window does not silence the same nudge in a concurrent
+  // window. Two distinct sessionIds get independent sidecars; an absent
+  // sessionId keeps the legacy non-scoped path (upgrade compatibility).
+  it("F13: maintenance cooldown sidecar is session-scoped (concurrent windows independent)", () => {
+    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
+    const tStamp = NOW_MS - 1000;
+
+    hook.writeMaintenanceLastEmit(tempRoot, tStamp, "session-A");
+    // Window A's emit is visible to A...
+    expect(hook.readMaintenanceLastEmit(tempRoot, "session-A")).toBe(tStamp);
+    // ...but NOT to window B (B would still fire its own nudge).
+    expect(hook.readMaintenanceLastEmit(tempRoot, "session-B")).toBeNull();
+    // The scoped file exists; the legacy non-scoped file was NOT written.
+    expect(existsSync(join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit-session-A"))).toBe(true);
+    expect(existsSync(join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit"))).toBe(false);
+
+    // Backward-compat: a null sessionId still uses the legacy non-scoped path.
+    hook.writeMaintenanceLastEmit(tempRoot, tStamp, null);
+    expect(existsSync(join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit"))).toBe(true);
+    expect(hook.readMaintenanceLastEmit(tempRoot, null)).toBe(tStamp);
   });
 
   it("does NOT fire Signal D when canonical < 5 (fresh-init guard)", () => {
