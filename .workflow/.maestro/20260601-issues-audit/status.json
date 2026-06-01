@@ -1449,7 +1449,21 @@
       }
     }
   ],
-  "git_commits": [],
+  "git_commits": [
+    {
+      "sha": "35c4617",
+      "wave": "W1-security",
+      "tasks": [
+        "T1",
+        "T3"
+      ],
+      "findings": [
+        "F6",
+        "F17"
+      ],
+      "at": "2026-06-01T02:00:00.000Z"
+    }
+  ],
   "needs_adjudication": [],
   "goal_checklist_path": ".workflow/.maestro/20260601-issues-audit/goal-checklist.md",
   "status": "running",
