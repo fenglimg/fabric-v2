@@ -1874,6 +1874,12 @@
       "wave": "F57-F58-sync",
       "subject": "sync CLI crash 加固",
       "at": "2026-06-01T08:00:39.749Z"
+    },
+    {
+      "sha": "11703bb",
+      "wave": "F60+triage-closeout",
+      "subject": "F60 + 剩余 triage 收口 → G-TRIAGE 64/64",
+      "at": "2026-06-01T08:10:13.693Z"
     }
   ],
   "needs_adjudication": [
