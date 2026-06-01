@@ -231,6 +231,72 @@
         "evidence": "writeKnowledgeMeta wrapped in withFileLock(${metaPath}.lock) (knowledge-meta-builder.ts); doctor fixCounterDesync(:8135)+applyIndexDriftFix(:2334) wrapped; reconcileKnowledge delegates locked write (no nesting — withFileLock non-reentrant, verified doctor 252/252 no deadlock). +1 regression test F39 counter-clobber. Full server suite 733/733; tsc EXIT0.",
         "verified_at": "2026-06-01T07:40:08.758Z"
       }
+    },
+    {
+      "id": "T10",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F62: scrubRemoteUrl http(s) 全 strip userinfo(含无冒号 bare PAT token),保留 ssh git@ 约定",
+      "done_when": "fix + tsc 绿 + verify + grep 复核",
+      "from_finding": "F62",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+grep",
+        "evidence": "secret-scan.ts:78 重写; +3 回归用例(bare token/port); shared 全套 567/567; 全仓 tsc EXIT0; shared dist rebuilt",
+        "verified_at": "2026-06-01T07:48:49.668Z"
+      }
+    },
+    {
+      "id": "T11",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F61: /events handler ensureWatcher 包 try/catch,headers 未发时回 503 JSON,防 Express4 async unhandled rejection",
+      "done_when": "fix + tsc 绿 + verify + grep 复核",
+      "from_finding": "F61",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+grep",
+        "evidence": "events.ts:123 try/catch; http-experimental standalone typecheck EXIT0(quarantine 包 workspace-excluded,vitest 无法独立跑)",
+        "verified_at": "2026-06-01T07:48:49.668Z"
+      }
+    },
+    {
+      "id": "T12",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F64: HTTP session Map 加 lastActivityMs + idle TTL reaper(30min TTL/5min sweep),app.dispose 清理",
+      "done_when": "fix + tsc 绿 + verify + grep 复核",
+      "from_finding": "F64",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+grep",
+        "evidence": "http.ts reaper+lastActivityMs bump; standalone typecheck EXIT0(quarantine)",
+        "verified_at": "2026-06-01T07:48:49.668Z"
+      }
     }
   ],
   "findings": [
@@ -925,9 +991,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "event-ledger redactSecretsInEvent by FIELD NAME is deliberate (ISS-043, event-ledger.ts:202-214): redacting all fields would mangle structured ids/paths/hashes with false-positive secret matches. Technical secrets ARE redacted on free-text fields + hasSecrets hard-block on KB write. 'deep-clean all payload' conflicts with the documented design. PII coverage is the F48 feature gap, not a regression.",
+        "refute_reason": "non-bug",
+        "classification": "by-design"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1233,9 +1300,10 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "refuted",
+        "evidence": "PII regex rules (emails/IPs/phones) are a MISSING FEATURE — secret-scan.ts never claimed PII coverage, only technical-secret detection (AWS/OpenAI/Slack/GitHub/password). events.jsonl + KB are gitignored per-dev local telemetry (low exposure). Adding PII redaction is an rc3 enhancement, not a bug fix; out of rc2 bug-audit scope.",
+        "refute_reason": "non-bug",
+        "classification": "feature-request"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1496,12 +1564,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "events.ts:123 await ensureWatcher (→resolveLedgerPaths throws outside a Fabric dir) in a bare async route (http.ts:319 app.get(/events, handler)); Express 4 doesn't catch async rejection → unhandled rejection / hung connection. FIXED: try/catch around ensureWatcher sends 503 JSON before SSE headers. NOTE: package is workspace-excluded quarantine (0.0.0); verified by standalone typecheck EXIT0 (vitest cannot run — no workspace symlinks).",
+        "refute_reason": null,
+        "classification": "crash",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T11"
     },
     {
       "id": "F62",
@@ -1516,12 +1586,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "secret-scan.ts:78 scrubRemoteUrl regex required ':' in userinfo, so https://ghp_TOKEN@github.com (bare-token PAT auth, no colon) leaked verbatim into shared registry (fabric-global.json / project fabric.json). FIXED: http(s) now strips ENTIRE userinfo (with/without ':'); ssh git@ convention preserved. +3 regression cases.",
+        "refute_reason": null,
+        "classification": "security",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T10"
     },
     {
       "id": "F63",
@@ -1536,9 +1608,11 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "Experimental HTTP /api/ledger,/api/history,/api/replay return raw ledger/state with no KP-* personal-scope filter (+ no PII redaction). DEFERRED: (a) package is 0.0.0-quarantine, private, EXCLUDED from pnpm workspace (not in rc2 ship surface); (b) HTTP server is localhost-bound + bearer-auth single-user dev tool (low cross-store exposure); (c) the redaction half is the F48 PII feature-gap, the KP-* filter half belongs with the global-refactor read-set work when the HTTP server is un-quarantined. Recorded, non-blocking.",
+        "refute_reason": null,
+        "classification": "privacy",
+        "fix_decision": "CARRY-RC3"
       },
       "severity": "high",
       "fix_task_id": null
@@ -1556,12 +1630,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "http.ts sessions Map only pruned on clean onsessionclosed/onclose; half-open/network-drop/orphan-init accumulate unbounded. FIXED: added lastActivityMs + 5-min idle reaper (30-min TTL) closing+evicting stale sessions, cleared in app.dispose, unref'd. Standalone typecheck EXIT0 (quarantine, workspace-excluded).",
+        "refute_reason": null,
+        "classification": "resource-exhaustion",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T12"
     }
   ],
   "ship_criteria": [
@@ -1569,7 +1645,7 @@
       "name": "G-TRIAGE",
       "desc": "critical+high 全部 triage(每簇 verdict!=null)",
       "target": "64/64 verdicted",
-      "actual": "31/64 verdicted",
+      "actual": "37/64 verdicted",
       "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
       "verified_at": null
     },

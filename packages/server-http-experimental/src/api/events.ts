@@ -120,7 +120,31 @@ export function createEventsHandler(options: CreateEventsHandlerOptions) {
       return;
     }
 
-    await ensureWatcher(state, projectRoot);
+    try {
+      await ensureWatcher(state, projectRoot);
+    } catch (error) {
+      // F61 (ISS-20260531-101): ensureWatcher → resolveLedgerPaths throws when
+      // the server was started outside a Fabric project. This handler is
+      // registered as a bare async route (`app.get("/events", ...)`), and
+      // Express 4 does NOT catch async rejections — the rejection would be
+      // unhandled and the connection would hang with no diagnostic. Send a 503
+      // and bail before any SSE headers are written.
+      if (!res.headersSent) {
+        res.statusCode = 503;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(
+          JSON.stringify({
+            error: {
+              code: "EVENTS_WATCHER_INIT_FAILED",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }),
+        );
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+      return;
+    }
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");

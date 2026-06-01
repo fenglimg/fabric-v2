@@ -45,7 +45,16 @@ function isLoopbackHost(host: string): boolean {
 type FabricHttpSession = {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
+  // F64 (ISS-20260531-106): wall-clock of the last /mcp request on this session.
+  // The idle reaper evicts sessions whose transport never fired onclose/
+  // onsessionclosed (half-open connections, network drops, orphaned inits).
+  lastActivityMs: number;
 };
+
+// F64: idle-session reaper bounds the sessions Map. A session is reaped after
+// 30 min with no /mcp activity; the sweep runs every 5 min.
+const SESSION_IDLE_TTL_MS = 30 * 60_000;
+const SESSION_REAP_INTERVAL_MS = 5 * 60_000;
 
 type StoredMcpEvent = {
   kind: "mcp-event";
@@ -281,6 +290,25 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   cacheWatcher.on("add", onCacheWatcherEvent);
   cacheWatcher.on("unlink", onCacheWatcherEvent);
 
+  // F64 (ISS-20260531-106): periodic idle-session reaper. onsessionclosed /
+  // transport.onclose only fire on a CLEAN teardown; half-open connections,
+  // network drops, or orphaned init requests would otherwise accumulate in the
+  // sessions Map unbounded (slow memory leak → OOM). Sweep evicts any session
+  // with no /mcp activity for SESSION_IDLE_TTL_MS and closes its transport.
+  const sessionReaper = setInterval(() => {
+    const cutoff = Date.now() - SESSION_IDLE_TTL_MS;
+    for (const [sessionId, session] of sessions) {
+      if (session.lastActivityMs < cutoff) {
+        sessions.delete(sessionId);
+        // Best-effort close — releases transport resources; a throw from a
+        // already-dead transport must not abort the sweep.
+        void Promise.resolve(session.transport.close()).catch(() => undefined);
+      }
+    }
+  }, SESSION_REAP_INTERVAL_MS);
+  // Don't keep the process alive solely for the reaper.
+  sessionReaper.unref?.();
+
   let disposed = false;
   app.dispose = async () => {
     if (disposed) {
@@ -288,6 +316,7 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
     }
 
     disposed = true;
+    clearInterval(sessionReaper);
     clearTimeout(agentsMdNotifyTimer);
     clearTimeout(toolListNotifyTimer);
     await cacheWatcher.close();
@@ -327,6 +356,8 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
         return;
       }
 
+      // F64: refresh the idle clock so an actively-used session is never reaped.
+      session.lastActivityMs = Date.now();
       await session.transport.handleRequest(req, res, req.body);
       return;
     }
@@ -382,7 +413,7 @@ async function createSession(
     enableJsonResponse: true,
     eventStore,
     onsessioninitialized: async (sessionId) => {
-      sessions.set(sessionId, { server, transport });
+      sessions.set(sessionId, { server, transport, lastActivityMs: Date.now() });
     },
     onsessionclosed: async (sessionId) => {
       sessions.delete(sessionId);
@@ -398,7 +429,10 @@ async function createSession(
 
   await server.connect(transport);
 
-  return { server, transport };
+  // The map entry (created in onsessioninitialized) is the one the reaper and
+  // /mcp activity-bump operate on; this returned value is only used to drive the
+  // initialize request. Stamp lastActivityMs to satisfy FabricHttpSession.
+  return { server, transport, lastActivityMs: Date.now() };
 }
 
 function isInitializeRequest(body: unknown): boolean {

@@ -68,14 +68,26 @@ export function redactSecrets(content: string): string {
   return out;
 }
 
-// ISS-044: strip credential userinfo (`user:secret@`) from a git remote URL
-// before it is persisted into a registry (global config mounted store, project
-// `suggested_remote`). Auth belongs in `.git/config` (gitignored by git) or a
-// credential helper — NEVER in a shared/tracked registry entry. Only the
-// password/token form (userinfo containing ':') is stripped; bare-user SSH
-// (`ssh://git@host`) and scp-like (`git@github.com:org/repo`) syntax are
-// credential-free and left untouched. Non-URL / non-string input passes through.
+// ISS-044 / F62 (ISS-20260531-103): strip credential userinfo from a git remote
+// URL before it is persisted into a registry (global config mounted store,
+// project `suggested_remote`). Auth belongs in `.git/config` (gitignored by git)
+// or a credential helper — NEVER in a shared/tracked registry entry.
+//
+// http(s) userinfo is credential-bearing: besides `user:password@`, a personal
+// access token is commonly passed as a BARE username with no ':' separator
+// (`https://ghp_token@github.com/org/repo.git`). The original regex required a
+// ':' and therefore leaked that token verbatim. So for http(s) we strip the
+// ENTIRE userinfo segment (with or without ':').
+//
+// For other schemes a bare `user@` is the conventional, credential-free account
+// selector — `ssh://git@host` and scp-like `git@github.com:org/repo` must stay
+// intact — so only the password form (userinfo containing ':') is stripped.
+// Non-URL / non-string input passes through.
 export function scrubRemoteUrl(remote: string): string {
+  const httpStripped = remote.replace(/^(https?:\/\/)[^/@]+@/i, "$1");
+  if (httpStripped !== remote) {
+    return httpStripped;
+  }
   return remote.replace(
     /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/@]*:[^/@]*@/,
     "$1",

@@ -117,4 +117,17 @@ describe("scrubRemoteUrl (ISS-044)", () => {
     expect(scrubRemoteUrl("ssh://git@host/r")).toBe("ssh://git@host/r");
     expect(scrubRemoteUrl("https://github.com/org/repo.git")).toBe("https://github.com/org/repo.git");
   });
+  // F62 (ISS-20260531-103): a PAT passed as bare http(s) userinfo (no ':'
+  // password separator) must be stripped — the original ':'-requiring regex
+  // leaked it verbatim into the persisted registry.
+  it("strips bare http(s) userinfo tokens with no ':' separator", () => {
+    expect(scrubRemoteUrl("https://ghp_TokenSecret@github.com/org/repo.git")).toBe(
+      "https://github.com/org/repo.git",
+    );
+    expect(scrubRemoteUrl("http://x-access-token@gitlab.com/g/r.git")).toBe(
+      "http://gitlab.com/g/r.git",
+    );
+    // bare userinfo + explicit port stays intact except the credential
+    expect(scrubRemoteUrl("https://ghp_tok@host:8443/r.git")).toBe("https://host:8443/r.git");
+  });
 });
