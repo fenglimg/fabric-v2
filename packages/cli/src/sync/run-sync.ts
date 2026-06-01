@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { GLOBAL_STATE_DIR, storeRelativePath } from "@fenglimg/fabric-shared";
@@ -73,13 +73,41 @@ function loadSession(globalRoot: string): SyncSession | null {
   if (!existsSync(path)) {
     return null;
   }
-  return JSON.parse(readFileSync(path, "utf8")) as SyncSession;
+  const raw = readFileSync(path, "utf8");
+  try {
+    return JSON.parse(raw) as SyncSession;
+  } catch (error) {
+    // F58 (ISS-20260531-097): a truncated / corrupt sync-session.json must not
+    // crash every later `fabric sync --continue/--abort` with a bare
+    // SyntaxError that the user cannot act on. Quarantine the bytes to a
+    // `.corrupted.{ts}` sidecar (mirrors agents.meta.json forensics) and throw
+    // an actionable FabricError so the operator can recover.
+    const corruptedPath = `${path}.corrupted.${Date.now()}`;
+    try {
+      writeFileSync(corruptedPath, raw, "utf8");
+    } catch {
+      // best-effort forensics — never mask the original parse failure
+    }
+    throw new GenericIOError(
+      `sync-session.json is corrupt (forensic copy: ${corruptedPath}). Parse error: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      {
+        actionHint: `Delete ${path} to start a fresh sync (any in-progress rebase must be resolved manually with git first).`,
+        details: { path, corruptedPath },
+      },
+    );
+  }
 }
 
 function saveSession(globalRoot: string, session: SyncSession): void {
   const path = syncSessionPath(globalRoot);
   mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(session, null, 2)}\n`, "utf8");
+  // F58: write-tmp + rename so an interruption/power-loss can never leave a
+  // half-written (corrupt) session file that breaks the next sync command.
+  const tmpPath = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmpPath, `${JSON.stringify(session, null, 2)}\n`, "utf8");
+  renameSync(tmpPath, path);
 }
 
 function clearSession(globalRoot: string): void {
@@ -127,12 +155,36 @@ function gitErrText(error: unknown, key: "stdout" | "stderr"): string {
   return typeof value === "string" || Buffer.isBuffer(value) ? String(value) : "";
 }
 
+// F57 (ISS-20260531-096): `git rebase --continue/--abort` can fail (unstaged
+// conflicts still present, no rebase in progress, dirty tree). Without catching,
+// execFileSync's bare "Command failed" throw propagates uncaught and crashes the
+// CLI, leaving sync-session.json in a stale conflicted state. Mirror defaultPull
+// (ISS-032): re-surface git's own diagnostic in an actionable FabricError.
+function runRebaseStep(storeDir: string, step: "continue" | "abort"): void {
+  try {
+    execFileSync("git", ["rebase", `--${step}`], {
+      cwd: storeDir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    const detail = `${gitErrText(error, "stdout")}${gitErrText(error, "stderr")}`.trim();
+    const gitMessage = detail.length > 0 ? detail : "unknown git error";
+    throw new GenericIOError(`git rebase --${step} failed in ${storeDir}: ${gitMessage}`, {
+      actionHint:
+        step === "continue"
+          ? "resolve the remaining conflicts (git status) and stage them, then re-run `fabric sync --continue`; or run `fabric sync --abort` to discard the rebase"
+          : "inspect the store with `git status`; if no rebase is in progress the session may already be resolved — delete sync-session.json to reset",
+      details: error,
+    });
+  }
+}
+
 function defaultRebaseContinue(storeDir: string): void {
-  execFileSync("git", ["rebase", "--continue"], { cwd: storeDir, stdio: "ignore" });
+  runRebaseStep(storeDir, "continue");
 }
 
 function defaultRebaseAbort(storeDir: string): void {
-  execFileSync("git", ["rebase", "--abort"], { cwd: storeDir, stdio: "ignore" });
+  runRebaseStep(storeDir, "abort");
 }
 
 const OUTCOME_EVENT: Record<GitRebaseOutcome, SyncEvent> = {

@@ -319,6 +319,50 @@
         "evidence": "config-loader readDefaultLayerFilter; plan-context.ts service filter; 两 tool callback 转发; +3 layer_filter 测试(team/personal/both); server 736/736; 全仓 tsc EXIT0",
         "verified_at": "2026-06-01T07:57:14.321Z"
       }
+    },
+    {
+      "id": "T14",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F57: git rebase --continue/--abort 失败包 GenericIOError(actionHint),防 CLI crash",
+      "done_when": "fix + tsc 绿 + 测试绿 + grep",
+      "from_finding": "F57",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": "run-sync.ts runRebaseStep; +1 测试; cli 884/884",
+        "verified_at": "2026-06-01T08:00:27.611Z"
+      }
+    },
+    {
+      "id": "T15",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F58: loadSession corrupt 抛 actionable error+quarantine; saveSession tmp+renameSync 原子",
+      "done_when": "fix + tsc 绿 + 测试绿 + grep",
+      "from_finding": "F58",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": "run-sync.ts loadSession/saveSession; +2 测试; cli 884/884",
+        "verified_at": "2026-06-01T08:00:27.611Z"
+      }
     }
   ],
   "findings": [
@@ -1508,12 +1552,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "run-sync.ts defaultRebaseContinue/Abort (:130,134) ran execFileSync git rebase --continue/--abort with NO try/catch; a failing rebase (unstaged conflicts/no-rebase/dirty) propagated execFileSync's bare throw uncaught → CLI crash, sync-session.json left stale. FIXED: runRebaseStep wraps both, re-surfacing git's diagnostic as actionable GenericIOError (mirrors defaultPull ISS-032). +1 test.",
+        "refute_reason": null,
+        "classification": "crash",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T14"
     },
     {
       "id": "F58",
@@ -1528,12 +1574,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "run-sync.ts loadSession (:76) JSON.parse(readFileSync) with no try-catch → corrupt sync-session.json crashed every later sync with SyntaxError, unrecoverable without manual delete. saveSession (:82) wrote with bare writeFileSync (no tmp+rename) → interruption corrupts. FIXED: loadSession quarantines to .corrupted.{ts} + throws actionable GenericIOError; saveSession writes tmp+renameSync (atomic). +2 tests; cli 884/884.",
+        "refute_reason": null,
+        "classification": "crash",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T15"
     },
     {
       "id": "F59",
@@ -1669,7 +1717,7 @@
       "name": "G-TRIAGE",
       "desc": "critical+high 全部 triage(每簇 verdict!=null)",
       "target": "64/64 verdicted",
-      "actual": "38/64 verdicted",
+      "actual": "40/64 verdicted",
       "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
       "verified_at": null
     },

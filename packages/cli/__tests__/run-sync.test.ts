@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -159,6 +159,46 @@ describe("runContinueSync / runAbortSync (resume a paused conflict)", () => {
 
   it("--continue with no session in progress throws", () => {
     expect(() => runContinueSync({ projectRoot, globalRoot, now: NOW })).toThrow(/no sync in progress/);
+  });
+});
+
+describe("F57/F58 sync-session robustness", () => {
+  function sessionPath(): string {
+    return join(globalRoot, "state", "sync-session.json");
+  }
+
+  // F58 (ISS-20260531-097): a corrupt sync-session.json must surface an
+  // actionable error, not a bare unhandled SyntaxError that crashes every later
+  // sync command. It also quarantines the bytes to a forensic sidecar.
+  it("loadSession on a corrupt session file throws an actionable error + quarantines bytes", () => {
+    mkdirSync(join(globalRoot, "state"), { recursive: true });
+    writeFileSync(sessionPath(), "{ this is not valid json", "utf8");
+    expect(() => runContinueSync({ projectRoot, globalRoot, now: NOW })).toThrow(/corrupt/i);
+    const stateDir = join(globalRoot, "state");
+    const quarantined = readdirSync(stateDir).filter((f) => f.includes("sync-session.json.corrupted."));
+    expect(quarantined.length).toBe(1);
+  });
+
+  // F58: saveSession uses write-tmp + rename, so a persisted conflict session
+  // leaves no `.tmp` residue (and an interrupted write can never corrupt the
+  // live file).
+  it("saveSession persists atomically — no .tmp residue after a conflict pause", () => {
+    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }) });
+    expect(syncSessionExists()).toBe(true);
+    const residue = readdirSync(join(globalRoot, "state")).filter((f) => f.endsWith(".tmp"));
+    expect(residue).toEqual([]);
+  });
+
+  // F57 (ISS-20260531-096): a failing `git rebase --continue` (default wiring,
+  // no rebase in progress / non-repo store) surfaces an actionable FabricError
+  // instead of crashing the CLI with execFileSync's bare "Command failed".
+  it("default rebase --continue failure surfaces an actionable error", () => {
+    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }) });
+    // No rebaseContinue injected → the real `git rebase --continue` runs and
+    // fails (the store dir is not mid-rebase / not a git repo).
+    expect(() => runContinueSync({ projectRoot, globalRoot, now: NOW })).toThrow(
+      /git rebase --continue failed/,
+    );
   });
 });
 
