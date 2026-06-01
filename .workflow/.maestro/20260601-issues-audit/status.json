@@ -70,7 +70,7 @@
         "G-GREEN"
       ],
       "alignment_strength": "direct",
-      "status": "in_progress",
+      "status": "needs_adjudication",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest+grep",
@@ -98,6 +98,50 @@
         "verifier": "tsc+vitest+grep",
         "evidence": "bindings-snapshot.test.ts +11 用例(traversal reject)全绿; tsc 绿; sink 加 assertSafeProjectId+前缀校验",
         "verified_at": "2026-06-01T02:00:00.000Z"
+      }
+    },
+    {
+      "id": "T4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F9: ledger truncate/rotate + append 用 withFileLock(.fabric/events.jsonl.lock) 跨进程互斥",
+      "done_when": "fix + tsc 绿 + 相关 test 绿 + grep 复核",
+      "from_finding": "F9",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "T5",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F13: SHOWN_CACHE + MAINTENANCE cooldown sidecar 按 sessionId scope (模板 fabric-hint.cjs + 同步3端 + 测试)",
+      "done_when": "fix + tsc 绿 + 相关 test 绿 + grep 复核",
+      "from_finding": "F13",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": null,
+        "verified_at": null
       }
     }
   ],
@@ -282,15 +326,16 @@
       "title": "Race condition in event ledger truncation",
       "oracle": "declared-vs-impl",
       "expectation_source": "Implement a cross-process lock (e.g., .fabric/events.jsonl.lock) that agents must acquire before appending and doctor must acquire before truncating.",
-      "actual": null,
+      "actual": "event-ledger.ts:375/385 truncate + doctor.ts:1622 truncateLedgerToLastNewline 无 withFileLock; append 仅 in-process ledgerQueue → 跨进程 append↔truncate race",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "event-ledger.ts:375/385 truncate + doctor.ts:1622 truncateLedgerToLastNewline 无 withFileLock; append 仅 in-process ledgerQueue → 跨进程 append↔truncate race",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T03:30:00.000Z"
       },
       "severity": "critical",
-      "fix_task_id": null
+      "fix_task_id": "T4"
     },
     {
       "id": "F10",
@@ -322,15 +367,17 @@
       "title": "Personal-layer knowledge (KP-*) can leak into team read-set",
       "oracle": "declared-vs-impl",
       "expectation_source": "Enforce required_stores authorization at the knowledge-graph read layer (recall/query), isolating the personal tree by default.",
-      "actual": null,
+      "actual": "load-active-meta/recall/plan-context 零 layer 隔离, personal KP-* 可进 team read-set",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "load-active-meta/recall/plan-context 零 layer 隔离, personal KP-* 可进 team read-set",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T03:00:00.000Z"
       },
       "severity": "critical",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "status": "needs_adjudication"
     },
     {
       "id": "F12",
@@ -362,15 +409,16 @@
       "title": "Global cooldown throttle silences hook nudges across concurrent sessions",
       "oracle": "declared-vs-impl",
       "expectation_source": "Scope cache filenames/keys by session_id (archive-hint-shown-{sessionId}.json, maintenance-hint-last-emit-{sessionId}), mirroring session-hints-{session_id}.json.",
-      "actual": null,
+      "actual": "fabric-hint.cjs:199/205 SHOWN_CACHE/MAINTENANCE cooldown sidecar 无 sessionId, 并发窗口互相静默 nudge; 旁证 session-hints-{id} 已 session-scoped",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "fabric-hint.cjs:199/205 SHOWN_CACHE/MAINTENANCE cooldown sidecar 无 sessionId, 并发窗口互相静默 nudge; 旁证 session-hints-{id} 已 session-scoped",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T03:30:00.000Z"
       },
       "severity": "critical",
-      "fix_task_id": null
+      "fix_task_id": "T5"
     },
     {
       "id": "F14",
@@ -402,15 +450,17 @@
       "title": "Personal-layer (KP-*) metadata leaks into git-committed agents.meta.json",
       "oracle": "declared-vs-impl",
       "expectation_source": "Exclude KP-* / ~/.fabric/knowledge entries from the shared .fabric/agents.meta.json; persist personal metadata machine-locally (.fabric/.cache/ or ~/.fabric/). Exclude personal entries from computeRevision.",
-      "actual": null,
+      "actual": "meta-builder.ts:84 注释明示 KP-* 含入 git-committed agents.meta.json; line286 computeRevision(nodes) 含 personal",
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "meta-builder.ts:84 注释明示 KP-* 含入 git-committed agents.meta.json; line286 computeRevision(nodes) 含 personal",
+        "refute_reason": null,
+        "verified_at": "2026-06-01T03:00:00.000Z"
       },
       "severity": "critical",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "status": "needs_adjudication"
     },
     {
       "id": "F16",
@@ -1430,7 +1480,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 3,
+      "round_task_actual": 5,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],
@@ -1464,7 +1514,24 @@
       "at": "2026-06-01T02:00:00.000Z"
     }
   ],
-  "needs_adjudication": [],
+  "needs_adjudication": [
+    {
+      "id": "ADJ-1",
+      "round": 1,
+      "cluster": "personal-layer-isolation",
+      "findings": [
+        "F11",
+        "F15",
+        "F16",
+        "(F54-high 待 triage)"
+      ],
+      "severity": "critical",
+      "adjudication_reason": "unmodeled-tradeoff",
+      "question": "KP-* personal/team layer 隔离漏洞(read-set 泄露 + git-committed meta 泄露 + layer_filter 被忽略 + 死守卫)的正确修法 = 已规划 v2.1 layered-registry 重构(required_stores∪personal read-set). 选项: (A) rc2 内做最小补丁(排除 KP-* 出 agents.meta.json + computeRevision, 但会 ripple 到 read path) (B) 整簇 defer 到 v2.1 重构里一并正确解决(推荐, 避免 rc2 引入半成品再被重构推翻). 关系到 commit 点划分.",
+      "recommendation": "B — defer 到 v2.1 重构; rc2 不碰, 防半成品",
+      "raised_at": "2026-06-01T03:00:00.000Z"
+    }
+  ],
   "goal_checklist_path": ".workflow/.maestro/20260601-issues-audit/goal-checklist.md",
   "status": "running",
   "loop_exit_status": null
