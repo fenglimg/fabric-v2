@@ -297,6 +297,28 @@
         "evidence": "http.ts reaper+lastActivityMs bump; standalone typecheck EXIT0(quarantine)",
         "verified_at": "2026-06-01T07:48:49.668Z"
       }
+    },
+    {
+      "id": "T13",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F54: 实现 layer_filter 端到端(planContext rawItems 按 knowledge_layer 过滤,recall+plan-context callback 转发 layer_filter,plan-context 补转发 target_paths)",
+      "done_when": "fix + tsc 绿 + 测试绿 + grep 复核",
+      "from_finding": "F54",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest+grep",
+        "evidence": "config-loader readDefaultLayerFilter; plan-context.ts service filter; 两 tool callback 转发; +3 layer_filter 测试(team/personal/both); server 736/736; 全仓 tsc EXIT0",
+        "verified_at": "2026-06-01T07:57:14.321Z"
+      }
     }
   ],
   "findings": [
@@ -1423,12 +1445,14 @@
       "actual": null,
       "verify": {
         "tier": "deterministic",
-        "verdict": null,
-        "evidence": null,
-        "refute_reason": null
+        "verdict": "confirmed",
+        "evidence": "layer_filter declared in recall+planContext schemas (api-contracts.ts:140,419) + default_layer_filter config, but NO service consumed it and tool callbacks dropped it → silently discarded (privacy: layer_filter=team did not exclude personal KP-*). target_paths declared+service-implemented but plan-context tool callback never forwarded it. FIXED: planContext filters rawItems by knowledge_layer (per-call layer_filter ?? config default ?? both); both tool callbacks forward layer_filter; plan-context forwards target_paths. +3 tests; server 736/736; tsc EXIT0.",
+        "refute_reason": null,
+        "classification": "declared-vs-impl",
+        "fix_decision": "FIX-NOW"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": "T13"
     },
     {
       "id": "F55",
@@ -1645,7 +1669,7 @@
       "name": "G-TRIAGE",
       "desc": "critical+high 全部 triage(每簇 verdict!=null)",
       "target": "64/64 verdicted",
-      "actual": "37/64 verdicted",
+      "actual": "38/64 verdicted",
       "verifier_cmd": "count(findings[].verify.verdict!=null)/len(findings)",
       "verified_at": null
     },
@@ -1736,6 +1760,12 @@
       "wave": "meta-lock",
       "subject": "F39/F30/F31 meta-counter writers 持 allocator 锁",
       "at": "2026-06-01T07:40:37.994Z"
+    },
+    {
+      "sha": "96fbde3",
+      "wave": "security",
+      "subject": "F62 凭证泄漏 + F61/F64 HTTP experimental",
+      "at": "2026-06-01T07:49:18.237Z"
     }
   ],
   "needs_adjudication": [

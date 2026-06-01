@@ -32,7 +32,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
       outputSchema: planContextOutputSchema,
       annotations: planContextAnnotations,
     },
-    async ({ paths, intent, known_tech, detected_entities, client_hash, correlation_id, session_id }: PlanContextInput) => {
+    async ({ paths, intent, known_tech, detected_entities, client_hash, correlation_id, session_id, target_paths, layer_filter }: PlanContextInput) => {
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
@@ -58,6 +58,11 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
           client_hash,
           correlation_id,
           session_id,
+          // F54 (ISS-20260531-090): these were declared in
+          // planContextInputSchema but never forwarded to the service, so any
+          // client/LLM-supplied value was silently discarded.
+          target_paths,
+          layer_filter,
         });
 
         let response = {

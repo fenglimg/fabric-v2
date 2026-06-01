@@ -334,6 +334,69 @@ describe("planContext", () => {
     expect(indexById.get("legacy-v1")?.description.knowledge_layer).toBe("team");
   });
 
+  // F54 (ISS-20260531-090): layer_filter was declared in planContextInputSchema
+  // (and recallInputSchema) but the tool callbacks never forwarded it and the
+  // service never applied it — every layer leaked into every result. These
+  // assert the param now actually narrows the candidate corpus by layer.
+  async function seedDualLayerProject(): Promise<string> {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "team-auth.md"), "# Team JWT\n");
+    const fakeHome = process.env.FABRIC_HOME!;
+    await mkdir(join(fakeHome, ".fabric", "knowledge", "guidelines"), { recursive: true });
+    await writeFile(join(fakeHome, ".fabric", "knowledge", "guidelines", "personal-style.md"), "# Personal style\n");
+    const mkDesc = (summary: string, id: string, layer: "team" | "personal", type: string) => ({
+      summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: summary,
+      id, knowledge_type: type, maturity: "draft", knowledge_layer: layer,
+    });
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-layerfilter",
+        nodes: {
+          "KT-DEC-0001": {
+            stable_id: "KT-DEC-0001", file: ".fabric/knowledge/decisions/team-auth.md",
+            content_ref: ".fabric/knowledge/decisions/team-auth.md", scope_glob: "**",
+            hash: "sha256:team", identity_source: "declared",
+            description: mkDesc("Team JWT decision", "KT-DEC-0001", "team", "decisions"),
+          },
+          "KP-GLD-0001": {
+            stable_id: "KP-GLD-0001", file: "~/.fabric/knowledge/guidelines/personal-style.md",
+            content_ref: "~/.fabric/knowledge/guidelines/personal-style.md", scope_glob: "**",
+            hash: "sha256:personal", identity_source: "declared",
+            description: mkDesc("Personal coding style", "KP-GLD-0001", "personal", "guidelines"),
+          },
+        },
+      }, null, 2)}\n`,
+    );
+    return projectRoot;
+  }
+
+  it("layer_filter=team surfaces only team candidates, dropping personal (KP-*)", async () => {
+    const projectRoot = await seedDualLayerProject();
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"], layer_filter: "team" });
+    const ids = result.candidates.map((c) => c.stable_id);
+    expect(ids).toContain("KT-DEC-0001");
+    expect(ids).not.toContain("KP-GLD-0001");
+  });
+
+  it("layer_filter=personal surfaces only personal candidates, dropping team (KT-*)", async () => {
+    const projectRoot = await seedDualLayerProject();
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"], layer_filter: "personal" });
+    const ids = result.candidates.map((c) => c.stable_id);
+    expect(ids).toContain("KP-GLD-0001");
+    expect(ids).not.toContain("KT-DEC-0001");
+  });
+
+  it("layer_filter omitted (default both) surfaces every layer", async () => {
+    const projectRoot = await seedDualLayerProject();
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    const ids = result.candidates.map((c) => c.stable_id);
+    expect(ids).toContain("KT-DEC-0001");
+    expect(ids).toContain("KP-GLD-0001");
+  });
+
   // ---------------------------------------------------------------------------
   // v2.0-rc.7 T9: degenerate single-stage mode removed. Output is now
   // symmetric across all candidate counts — description_index + selection_token,

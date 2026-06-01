@@ -124,6 +124,20 @@ export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight
   }
 }
 
+// F54 (ISS-20260531-090): resolve the effective knowledge-layer filter for
+// recall / plan_context when the call omits an explicit `layer_filter`. Mirrors
+// the schema default (`default_layer_filter` → "both" = no filtering). Returns
+// "both" on any read/parse failure so a corrupt config never narrows results.
+export function readDefaultLayerFilter(projectRoot: string): "team" | "personal" | "both" {
+  try {
+    const config = readFabricConfig(projectRoot);
+    const raw = (config as { default_layer_filter?: unknown }).default_layer_filter;
+    return raw === "team" || raw === "personal" ? raw : "both";
+  } catch {
+    return "both";
+  }
+}
+
 export function readPlanContextTopK(projectRoot: string): number {
   try {
     const config = readFabricConfig(projectRoot);

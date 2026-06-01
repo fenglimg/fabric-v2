@@ -1,6 +1,6 @@
 import { type RuleDescription, type RuleDescriptionIndexItem, tokenize } from "@fenglimg/fabric-shared";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
@@ -47,6 +47,11 @@ export type PlanContextInput = {
   // `target_paths`. When omitted or empty, the filter fails open and every
   // narrow entry is included (matches the rc.5 D1 hint CLI behavior).
   target_paths?: string[];
+  // F54 (ISS-20260531-090): restrict the candidate corpus to one knowledge
+  // layer. "both" (or omitted) → no filtering, falling back to
+  // fabric.config.json#default_layer_filter. Personal/team layer per candidate
+  // comes from its content_ref-inferred `knowledge_layer`.
+  layer_filter?: "team" | "personal" | "both";
 };
 
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired. The profile
@@ -332,7 +337,19 @@ export async function planContext(
   // no-ops since rc.37 A1, so there is no per-path narrowing to do — every path
   // sees the same candidates. We dedupe by stable_id and surface empty-shell
   // suppressions as a preflight diagnostic.
-  const { rawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
+  const { rawItems: allRawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
+
+  // F54 (ISS-20260531-090): honor the declared `layer_filter`. The per-call
+  // value wins; otherwise fabric.config.json#default_layer_filter; "all"/"both"
+  // mean no filtering. Each candidate's layer is the content_ref-inferred
+  // `knowledge_layer` backfilled by buildRawDescriptionItems. Previously this
+  // parameter (and the config default) was declared in the schema but silently
+  // discarded — every layer leaked into every recall regardless of the filter.
+  const effectiveLayerFilter = input.layer_filter ?? readDefaultLayerFilter(projectRoot);
+  const rawItems =
+    effectiveLayerFilter === "both"
+      ? allRawItems
+      : allRawItems.filter((item) => item.description.knowledge_layer === effectiveLayerFilter);
 
   // ISS-007: flatten each candidate's selection text ONCE here, then reuse the
   // same string for vector embedding (below) and BM25 tokenization (in

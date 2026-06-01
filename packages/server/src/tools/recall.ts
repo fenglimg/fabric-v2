@@ -42,6 +42,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
       correlation_id,
       session_id,
       target_paths,
+      layer_filter,
       ids,
       include_related,
     }) => {
@@ -69,6 +70,9 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
           correlation_id,
           session_id,
           target_paths,
+          // F54 (ISS-20260531-090): forwarded so recall→planContext honors the
+          // declared layer restriction instead of silently discarding it.
+          layer_filter,
           ids,
           include_related,
         };
