@@ -1820,6 +1820,12 @@
       "wave": "F54-layer-filter",
       "subject": "layer_filter 端到端 + target_paths 转发",
       "at": "2026-06-01T07:57:27.766Z"
+    },
+    {
+      "sha": "907bd28",
+      "wave": "F57-F58-sync",
+      "subject": "sync CLI crash 加固",
+      "at": "2026-06-01T08:00:39.749Z"
     }
   ],
   "needs_adjudication": [
