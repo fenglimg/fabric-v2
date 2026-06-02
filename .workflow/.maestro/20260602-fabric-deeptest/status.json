@@ -1,0 +1,152 @@
+{
+  "session_id": "20260602-fabric-deeptest",
+  "active_session_id": "20260602-fabric-deeptest",
+  "sessions": [
+    {
+      "session_id": "20260602-fabric-deeptest",
+      "attached_at": "2026-06-02T05:06:19.000Z"
+    }
+  ],
+  "intent": "补 fulltest 没覆盖的真实场景深度测试: 规模/多人共享/sync实跑/失败路径/跨客户端真运行/冷启动/性能定量/6 candidate收口/剩余冷评/fix真app复验. LIBERAL capture延续.",
+  "goal": "10扇深度门各达成或诚实标needs-real-env; confirmed bug修+验; 回归绿",
+  "mode": "3",
+  "current_phase": "audit",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "fulltest诚实盘点的7宏观+微观洞",
+      "造合成大语料/2 clone模拟多人/真remote sync",
+      "失败路径注入",
+      "6 candidate深验",
+      "剩余L-LLM冷评",
+      "4 fix dev-build复验",
+      "LIBERAL capture: 像bug/设计疑惑/efficacy弱全记"
+    ],
+    "out_of_scope": [
+      "3功能实现(那是followup-impl goal)",
+      "KP-leak(多-store已基本解)",
+      "已confirmed并修的4 bug重修"
+    ],
+    "constraints": [
+      "复现门槛=deterministic实跑",
+      "跨客户端若无法全自动须诚实标needs-real-client不假装",
+      "造的合成语料用完清理不污染真库",
+      "sync/push真remote操作前确认安全(synthetic store)",
+      "改前grep验声称"
+    ]
+  },
+  "execution_criteria": [
+    "每continue取一扇门→deterministic实跑(造语料/模拟多人/真sync/注入失败)→观测→confirmed bug进findings+修",
+    "L-PARTIAL门(跨客户端)诚实标simulability, 不能全自动的标needs-real-client浮用户",
+    "6 candidate逐个深验到终verdict",
+    "剩余L-LLM面发多-LLM冷评(quorum)",
+    "每wave收口commit; 回归门必绿"
+  ],
+  "task_decomposition": [],
+  "findings": [],
+  "ship_criteria": [
+    {
+      "name": "G-SCALE",
+      "desc": "大语料行为: 造/载 1000s 条 → 验 BM25 排序区分度/top_k/payload预算/上下文溢出/延迟",
+      "sim": "L-DET(可造合成语料)",
+      "target": "≥1000条语料下 ranking区分+payload截断+延迟测得",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-MULTIUSER",
+      "desc": "团队共享真旅程: bind team store→模拟2开发者(2 clone/2 uid)→A写push→B pull→B recall搜到",
+      "sim": "L-DET(2 clone+真remote可模拟)",
+      "target": "端到端共享回路实跑通或gap",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-SYNC",
+      "desc": "fabric sync 实际 pull--rebase+push + 冲突恢复(--continue/--abort)",
+      "sim": "L-DET(werewolf team store真remote)",
+      "target": "sync实跑+制造冲突验恢复; 复查F57/F58面",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-FAILPATH",
+      "desc": "失败/降级路径: 损坏agents.meta/events.jsonl、断网sync、git冲突、磁盘满模拟",
+      "sim": "L-DET(可注入损坏)",
+      "target": "各降级路径观测到优雅处理或记bug",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-CROSSCLIENT",
+      "desc": "Codex/Cursor真实运行(非仅配置): 在各客户端真触发hook/MCP观测",
+      "sim": "L-PARTIAL(需真Codex/Cursor session, 诚实标可能无法全自动)",
+      "target": "各端hook/MCP真触发验证或标needs-real-client",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-COLDSTART",
+      "desc": "全新用户冷启动: clone干净repo→fabric install→第一次用 端到端体验",
+      "sim": "L-DET(可造fresh repo)",
+      "target": "fresh install→use旅程实走+记体验gap",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-PERF",
+      "desc": "定量性能: recall/plan_context/doctor 延迟+token+内存测量(非定性)",
+      "sim": "L-DET",
+      "target": "关键路径延迟/payload字节实测",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-CANDIDATE-CLOSE",
+      "desc": "fulltest 6个candidate(F5/F9/F13/F14/F15/F17)深验到confirmed/refuted",
+      "sim": "L-DET",
+      "target": "6/6 candidate 有终verdict",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-EFFICACY-2",
+      "desc": "剩余L-LLM面冷评: fabric-review/import可遵循性、narrow注入质量、条目description质量",
+      "sim": "L-LLM(多-LLM冷评)",
+      "target": "剩余L-LLM面≥2冷评",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "name": "G-FIX-REVERIFY",
+      "desc": "4个已修bug(F8/F11/F18/F10)在dev build真app跑确认生效(非仅单测)",
+      "sim": "L-DET",
+      "target": "4 fix dev-build行为复验",
+      "actual": null,
+      "verified_at": null
+    }
+  ],
+  "carried_candidates": [
+    "F5",
+    "F9",
+    "F13",
+    "F14",
+    "F15",
+    "F17"
+  ],
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "running",
+      "round_task_ceiling": 12,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": []
+    }
+  ],
+  "needs_adjudication": [],
+  "git_commits": [],
+  "goal_checklist_path": ".workflow/.maestro/20260602-fabric-deeptest/goal-checklist.md",
+  "predecessor": "20260602-fabric-fulltest(8门绿但frame有洞, 本goal补洞)",
+  "status": "running",
+  "loop_exit_status": null
+}
