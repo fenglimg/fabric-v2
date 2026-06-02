@@ -108,7 +108,23 @@ export function readSelectionTokenTtlMs(projectRoot: string): number | undefined
  * and hot-path safe — any read/parse failure returns the safe text-only default
  * (enabled:false) so plan_context never crashes on a corrupt config.
  */
-export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight: number } {
+// v2.1 ③ vector-chinese-model (P3): supported fastembed@2.x EmbeddingModel enum
+// VALUES (the strings init() consumes). Mirrors the schema enum in
+// fabric-config.ts. Default is the light Chinese model — the whole point of ③:
+// the prior code pinned fastembed's English default (bge-small-en) which mis-
+// embeds the Chinese-heavy KB.
+export const DEFAULT_EMBED_MODEL = "fast-bge-small-zh-v1.5";
+const SUPPORTED_EMBED_MODELS = new Set<string>([
+  "fast-bge-small-zh-v1.5",
+  "fast-multilingual-e5-large",
+  "fast-bge-small-en-v1.5",
+  "fast-bge-small-en",
+  "fast-bge-base-en-v1.5",
+  "fast-bge-base-en",
+  "fast-all-MiniLM-L6-v2",
+]);
+
+export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight: number; model: string } {
   try {
     const config = readFabricConfig(projectRoot);
     const enabled = config.embed_enabled === true;
@@ -118,9 +134,15 @@ export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight
     const weight = typeof rawWeight === "number" && Number.isInteger(rawWeight) && rawWeight >= 0 && rawWeight <= 49
       ? rawWeight
       : 30;
-    return { enabled, weight };
+    // v2.1 ③: pin the embedding model. An unknown / non-string value falls back
+    // to the light Chinese default rather than fastembed's English baseline.
+    const rawModel = (config as { embed_model?: unknown }).embed_model;
+    const model = typeof rawModel === "string" && SUPPORTED_EMBED_MODELS.has(rawModel)
+      ? rawModel
+      : DEFAULT_EMBED_MODEL;
+    return { enabled, weight, model };
   } catch {
-    return { enabled: false, weight: 30 };
+    return { enabled: false, weight: 30, model: DEFAULT_EMBED_MODEL };
   }
 }
 

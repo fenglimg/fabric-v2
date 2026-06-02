@@ -418,4 +418,25 @@ export const fabricConfigSchema = z.object({
   // invariant in the schema rather than leaving it to a comment (W2-REVIEW codex
   // MED-4). Range 0..49; default 30.
   embed_weight: z.number().int().min(0).max(49).optional().default(30),
+  // v2.1 ③ vector-chinese-model (P3): which fastembed model to load. The prior
+  // code pinned fastembed's English default (bge-small-en-v1.5) — wrong for the
+  // Chinese-heavy zh-CN-hybrid KB. Values are the fastembed@2.x EmbeddingModel
+  // enum strings. Default `fast-bge-small-zh-v1.5` (BGESmallZH): light, fast,
+  // Chinese-capable (bm25 already covers English/code tokens; the vector term
+  // supplements Chinese semantics). `fast-multilingual-e5-large` (MLE5Large) is
+  // available for full multilingual recall at a ~1GB download + slower CPU cost.
+  // (V1 research: fastembed@2.1.0 has NO multilingual-e5-SMALL — the originally
+  // planned pin — so bge-small-zh is the light Chinese choice.)
+  embed_model: z
+    .enum([
+      "fast-bge-small-zh-v1.5",
+      "fast-multilingual-e5-large",
+      "fast-bge-small-en-v1.5",
+      "fast-bge-small-en",
+      "fast-bge-base-en-v1.5",
+      "fast-bge-base-en",
+      "fast-all-MiniLM-L6-v2",
+    ])
+    .optional()
+    .default("fast-bge-small-zh-v1.5"),
 });

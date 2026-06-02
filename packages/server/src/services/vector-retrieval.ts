@@ -39,12 +39,34 @@ let embedderLoad: Promise<Embedder | null> | undefined;
 // package.json. Operators enabling vectors run `npm i fastembed` themselves.
 const OPTIONAL_EMBED_PACKAGE = "fastembed";
 
+// v2.1 ③ vector-chinese-model (P3): build the fastembed init options. Pure +
+// exported so the model-threading is unit-testable without the optional package
+// installed. `model` is a fastembed EmbeddingModel enum VALUE (e.g.
+// "fast-bge-small-zh-v1.5"); when omitted, fastembed falls back to ITS default
+// (English bge-small) — the pre-③ behavior, preserved for callers that pass no
+// model. `maxLength` + operator-controlled `cacheDir` are unchanged.
+export function buildEmbedInitOptions(
+  modelName?: string,
+): { maxLength: number; cacheDir: string | undefined; model?: string } {
+  return {
+    maxLength: 512,
+    cacheDir: process.env.FABRIC_EMBED_CACHE_DIR,
+    ...(typeof modelName === "string" && modelName.length > 0 ? { model: modelName } : {}),
+  };
+}
+
 /**
  * Lazy-load the optional fastembed embedder, pinned to CPU + cache-only. Returns
  * null (cached) when the package is not installed or initialization throws, so
  * every caller degrades to the text-only path. Never throws.
+ *
+ * v2.1 ③: `modelName` (a fastembed EmbeddingModel enum value) selects the
+ * embedding model — the caller threads `embed_model` config through so the
+ * Chinese-heavy KB no longer embeds against fastembed's English default. The
+ * load is cached per-process; the FIRST model wins (a config change needs a
+ * server restart, already the norm for MCP config changes).
  */
-export async function loadEmbedder(): Promise<Embedder | null> {
+export async function loadEmbedder(modelName?: string): Promise<Embedder | null> {
   if (embedderLoad === undefined) {
     embedderLoad = (async (): Promise<Embedder | null> => {
       try {
@@ -56,11 +78,9 @@ export async function loadEmbedder(): Promise<Embedder | null> {
           return null;
         }
         // CPU execution; model cache dir is operator-controlled (pre-warm for
-        // strict offline — see the HONEST CAVEAT in the header comment).
-        const model = await mod.FlagEmbedding.init({
-          maxLength: 512,
-          cacheDir: process.env.FABRIC_EMBED_CACHE_DIR,
-        });
+        // strict offline — see the HONEST CAVEAT in the header comment). v2.1 ③:
+        // model pinned via buildEmbedInitOptions (Chinese default, not English).
+        const model = await mod.FlagEmbedding.init(buildEmbedInitOptions(modelName));
         return {
           async embed(texts: string[]): Promise<number[][]> {
             const out: number[][] = [];
@@ -91,7 +111,7 @@ export function __resetEmbedderForTesting(embedder: Embedder | null | undefined)
 // so we never need its types as a build dependency.
 interface FastembedModule {
   FlagEmbedding?: {
-    init(opts: { maxLength?: number; cacheDir?: string }): Promise<{
+    init(opts: { maxLength?: number; cacheDir?: string; model?: string }): Promise<{
       embed(texts: string[]): AsyncIterable<Iterable<number>[] | Float32Array[]>;
     }>;
   };

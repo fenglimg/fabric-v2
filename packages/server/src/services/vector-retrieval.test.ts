@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   cosineSimilarity,
   buildVectorScores,
+  buildEmbedInitOptions,
   loadEmbedder,
   __resetEmbedderForTesting,
   __resetVectorCache,
@@ -147,5 +148,41 @@ describe("loadEmbedder", () => {
     __resetEmbedderForTesting(undefined);
     const embedder = await loadEmbedder();
     expect(embedder).toBeNull();
+  });
+
+  it("still degrades to null when given an explicit model and the package is absent", async () => {
+    __resetEmbedderForTesting(undefined);
+    const embedder = await loadEmbedder("fast-bge-small-zh-v1.5");
+    expect(embedder).toBeNull();
+  });
+});
+
+// v2.1 ③ vector-chinese-model (P3): the model threads into fastembed init opts.
+describe("buildEmbedInitOptions (v2.1 ③)", () => {
+  const prevCache = process.env.FABRIC_EMBED_CACHE_DIR;
+  afterEach(() => {
+    if (prevCache === undefined) delete process.env.FABRIC_EMBED_CACHE_DIR;
+    else process.env.FABRIC_EMBED_CACHE_DIR = prevCache;
+  });
+
+  it("includes the model when a name is given (Chinese pin)", () => {
+    const opts = buildEmbedInitOptions("fast-bge-small-zh-v1.5");
+    expect(opts.model).toBe("fast-bge-small-zh-v1.5");
+    expect(opts.maxLength).toBe(512);
+  });
+
+  it("includes a multilingual model override", () => {
+    expect(buildEmbedInitOptions("fast-multilingual-e5-large").model).toBe("fast-multilingual-e5-large");
+  });
+
+  it("omits model when no name is given (preserves fastembed's English default — pre-③ behavior)", () => {
+    const opts = buildEmbedInitOptions();
+    expect("model" in opts).toBe(false);
+    expect(buildEmbedInitOptions("").model).toBeUndefined();
+  });
+
+  it("threads the operator cacheDir through", () => {
+    process.env.FABRIC_EMBED_CACHE_DIR = "/tmp/fabric-embed-cache";
+    expect(buildEmbedInitOptions("fast-bge-small-zh-v1.5").cacheDir).toBe("/tmp/fabric-embed-cache");
   });
 });

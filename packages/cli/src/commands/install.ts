@@ -20,6 +20,7 @@ import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
+import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
@@ -73,6 +74,12 @@ type InitArgs = {
   // cite-policy-evict.cjs to Codex / Cursor) and the operator wants to absorb
   // them without re-running the whole pipeline.
   "force-hooks-only"?: boolean;
+  // v2.1 ③ vector-chinese-model (P3): opt-in "enable semantic search" step.
+  // Default OFF (skip path). When set, flips embed_enabled + pins embed_model in
+  // fabric.config.json and prints the fastembed install + cache-warm + reindex
+  // instructions. `--embed-model` overrides the light-Chinese default pin.
+  "enable-embed"?: boolean;
+  "embed-model"?: string;
 };
 
 type InitOptions = {
@@ -341,6 +348,15 @@ export const installCommand = defineCommand({
       type: "string",
       description: "With --global: clone + mount this shared store remote",
     },
+    "enable-embed": {
+      type: "boolean",
+      description: t("cli.install.args.enable-embed.description"),
+      default: false,
+    },
+    "embed-model": {
+      type: "string",
+      description: t("cli.install.args.embed-model.description"),
+    },
   },
   async run({ args }: { args: InitArgs }) {
     await runInitCommand(args);
@@ -541,6 +557,22 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     console.log(t("cli.install.next-steps"));
     console.log("");
     console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+
+    // v2.1 ③ vector-chinese-model (P3): opt-in semantic-search enable step.
+    // Skip path (default): never touches embed config. When --enable-embed is
+    // set, idempotently flip embed_enabled + pin embed_model, then print the
+    // host-side fastembed install + cache-warm + reindex instructions.
+    if (args["enable-embed"] === true) {
+      const enabled = enableSemanticSearch(resolution.target, { model: args["embed-model"] });
+      console.log("");
+      if (enabled.alreadyEnabled) {
+        console.log(paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`));
+      } else {
+        for (const line of renderSemanticSearchInstructions(enabled.model)) {
+          console.log(line);
+        }
+      }
+    }
   }
   return result;
 }

@@ -135,13 +135,30 @@ describe("config-loader — readEmbedConfig (C2 / W2-T7)", () => {
     writeFileSync(join(tempDir, "fabric.config.json"), JSON.stringify(obj));
   }
 
-  it("defaults to disabled + weight 30 with no config", () => {
-    expect(readEmbedConfig(tempDir)).toEqual({ enabled: false, weight: 30 });
+  it("defaults to disabled + weight 30 + Chinese model with no config", () => {
+    expect(readEmbedConfig(tempDir)).toEqual({ enabled: false, weight: 30, model: "fast-bge-small-zh-v1.5" });
   });
 
   it("honors embed_enabled + an in-range weight", () => {
     writeConfig({ embed_enabled: true, embed_weight: 40 });
-    expect(readEmbedConfig(tempDir)).toEqual({ enabled: true, weight: 40 });
+    expect(readEmbedConfig(tempDir)).toEqual({ enabled: true, weight: 40, model: "fast-bge-small-zh-v1.5" });
+  });
+
+  // v2.1 ③ vector-chinese-model (P3): embed_model selection.
+  it("defaults embed_model to the light Chinese model (fast-bge-small-zh-v1.5)", () => {
+    expect(readEmbedConfig(tempDir).model).toBe("fast-bge-small-zh-v1.5");
+  });
+
+  it("honors a supported embed_model override (multilingual-e5-large)", () => {
+    writeConfig({ embed_enabled: true, embed_model: "fast-multilingual-e5-large" });
+    expect(readEmbedConfig(tempDir).model).toBe("fast-multilingual-e5-large");
+  });
+
+  it("falls back to the Chinese default for an unknown / non-string embed_model", () => {
+    for (const bad of ["not-a-real-model", "bge-small-en", 42, null]) {
+      writeConfig({ embed_model: bad });
+      expect(readEmbedConfig(tempDir).model).toBe("fast-bge-small-zh-v1.5");
+    }
   });
 
   it("falls back to weight 30 for out-of-range / non-integer / wrong-type values", () => {

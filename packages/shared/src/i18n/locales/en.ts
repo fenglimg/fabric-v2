@@ -887,6 +887,10 @@ export const enMessages: Messages = {
   "cli.install.args.debug.description": "Print target resolution details to stderr.",
   "cli.install.args.yes.description": "Accept the current install plan and run without the TTY wizard",
   "cli.install.args.dry-run.description": "Print the install plan without writing files or running follow-up stages",
+  "cli.install.args.enable-embed.description":
+    "Opt in to vector semantic search (sets embed_enabled + embed_model; prints fastembed install steps)",
+  "cli.install.args.embed-model.description":
+    "With --enable-embed: override the pinned embed model (default fast-bge-small-zh-v1.5)",
   // rc.35 TASK-08 (P0-5/6): --force-skills-only.
   "cli.install.args.force-skills-only.description":
     "Skip bootstrap / MCP / hooks / settings; refresh ONLY the fabric Skill template copies (.claude/.codex/.cursor/skills/*).",

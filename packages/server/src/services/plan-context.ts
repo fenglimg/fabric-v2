@@ -380,7 +380,7 @@ export async function planContext(
   if (embedConfig.enabled && queryText.trim().length > 0 && rawItems.length > 0) {
     // W2-REVIEW codex BLOCK-1: only pay the embedder init when there is actually
     // something to embed — an empty candidate set skips the load entirely.
-    const embedder = await loadEmbedder();
+    const embedder = await loadEmbedder(embedConfig.model);
     const vectorScores = await buildVectorScores(
       embedder,
       queryText,

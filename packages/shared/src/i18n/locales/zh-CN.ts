@@ -873,6 +873,10 @@ export const zhCNMessages: Messages = {
   "cli.install.args.debug.description": "将目标解析细节输出到 stderr。",
   "cli.install.args.yes.description": "接受当前安装计划并跳过 TTY 向导直接执行",
   "cli.install.args.dry-run.description": "仅输出安装计划，不写文件也不执行后续阶段",
+  "cli.install.args.enable-embed.description":
+    "启用向量语义搜索 (设 embed_enabled + embed_model;打印 fastembed 安装步骤)",
+  "cli.install.args.embed-model.description":
+    "配合 --enable-embed:覆盖固定的 embed 模型 (默认 fast-bge-small-zh-v1.5)",
   // rc.35 TASK-08 (P0-5/6): --force-skills-only。
   "cli.install.args.force-skills-only.description":
     "跳过 bootstrap / MCP / hooks / settings,只重新刷新 fabric Skill 模板 (.claude/.codex/.cursor/skills/*)。",
