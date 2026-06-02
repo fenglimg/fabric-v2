@@ -255,6 +255,22 @@
       "severity": "medium",
       "fix_task_id": null,
       "note": "非缺文件bug; mitigation=inline高风险决策表进SKILL.md或硬性ref-load precondition"
+    },
+    {
+      "id": "F-MULTISTORE-UNWIRED",
+      "round": 1,
+      "oracle": "declared-vs-impl",
+      "expectation_source": "fabric store/sync 命令存在 → 暗示 multi-store 知识共享可用",
+      "actual": "multi-store 知识流三处全未接线: (1)写入路径从不写 store(只写项目.fabric+全局personal, storeRelativePath仅用于sync/doctor/create); (2)recall/meta从不读mounted store(server零import loadGlobalConfig); (3)sync零git push(F-SYNC-NOPUSH)。实证: 挂载的team store 61条知识, recall在pcf只返9条项目自有, store条目0命中。只有mount元数据+pull空壳能用",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "grep loadGlobalConfig/required_stores在server零结果; recall(pcf)=9条全项目自有 vs team store 61条; storeRelativePath无写知识用途",
+        "refute_reason": null
+      },
+      "severity": "high",
+      "fix_task_id": null,
+      "note": "SUPERSEDES/扩展 F-SYNC-NOPUSH+F-SYNC-REMOTE+F14为同一根因: multi-store层是scaffolding(CLI壳先造)读写推集成未做。BY design-status(global-refactor北极星未实现)非regression; 但命令'假装能用'(store add+sync报synced)给false confidence=最危险。当前真实工作模型=dual-root co-location(KT-DEC-0003)。fix=global-refactor goal整套接线; 止血=未接线警告(本turn B)"
     }
   ],
   "ship_criteria": [

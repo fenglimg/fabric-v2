@@ -21,6 +21,10 @@ function report(result: RunSyncResult, projectRoot: string): void {
   if (!result.settled) {
     console.log(t("cli.sync.paused"));
   }
+  // F-MULTISTORE-UNWIRED: sync pulls but never pushes, and recall never reads
+  // mounted stores — a "synced" line otherwise reads as "team knowledge shared"
+  // when it is not. Surface the honest status so users don't rely on it.
+  console.log(t("cli.store.experimental-unwired"));
 }
 
 export default defineCommand({

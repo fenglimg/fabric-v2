@@ -1378,6 +1378,8 @@ export const enMessages: Messages = {
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
+  "cli.store.experimental-unwired":
+    "⚠️ multi-store is still under development: knowledge in mounted stores is NOT yet read by recall, and sync does not yet push. For team knowledge sharing use co-location — commit .fabric/knowledge into your project's git repo.",
   "cli.metrics.invalid-since": '--since: invalid duration "{raw}" (expected e.g. 24h, 7d, 30m)',
   "cli.metrics.window": "Fabric metrics — window: {window}",
   "cli.metrics.window-all-time": "all-time",

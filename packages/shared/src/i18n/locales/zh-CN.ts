@@ -1355,6 +1355,8 @@ export const zhCNMessages: Messages = {
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",
+  "cli.store.experimental-unwired":
+    "⚠️ multi-store 仍在开发中: 挂载 store 的知识当前不会被 recall 读取, 且 sync 尚未实现 push。团队知识共享请用 co-location —— 把 .fabric/knowledge 提交进项目 git 仓库。",
   "cli.metrics.invalid-since": '--since: 无效的时长 "{raw}" (示例: 24h、7d、30m)',
   "cli.metrics.window": "Fabric 指标 —— 时间窗: {window}",
   "cli.metrics.window-all-time": "全部时间",
