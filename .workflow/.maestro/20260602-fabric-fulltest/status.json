@@ -566,12 +566,16 @@
         "P5"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F16"
+      ]
     },
     {
       "id": "H-knowledge-hint-narrow",
@@ -589,11 +593,13 @@
         "P5"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -639,11 +645,13 @@
         "P5"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -1244,6 +1252,26 @@
       "severity": "low",
       "finding_class_note": "传入path疑被忽略; 或正常broad-only回退",
       "fix_task_id": null
+    },
+    {
+      "id": "F16",
+      "round": 1,
+      "finding_class": "value-loop-broken",
+      "surface": "H-knowledge-hint-broad",
+      "axis": "interaction",
+      "oracle": "value-loop(team知识surfacing) + read-set(required_stores∪personal)",
+      "expectation_source": "mounted team store(57条)应在read-set surfacing; multi-store read-set=required_stores∪personal",
+      "actual": "werewolf SessionStart broad-hint 报'知识库稀疏'仅显示1条personal(KP-PRO-0001); team store(6d5bcbd4)mounted但 fabric status 'required:(none)' 未bind → 57条team知识不在read-set不surface; project agents.meta.json nodes=1",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "knowledge-hint-broad输出'1 broad entry'+'知识库稀疏'; fabric status required:(none); store team mounted; ~/.fabric/stores/6d5bcbd4 含57条",
+        "refute_reason": null,
+        "needs": "判: install/migrate 后未自动 bind team store(install gap) vs 用户需手动 fabric store bind team(预期手动步骤). 若需手动则文档/onboard是否引导"
+      },
+      "severity": "high",
+      "finding_class_note": "multi-store mounted≠bound; 团队知识surfacing断裂(共享存在但读不到); F1 refuted后真问题另一面",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1251,7 +1279,7 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "18/34 surface 探测中",
+      "actual": "21/34 surface 探测中",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
       "verified_at": null
     },
@@ -1322,7 +1350,8 @@
         "F12",
         "F13",
         "F14",
-        "F15"
+        "F15",
+        "F16"
       ],
       "carried_in": [],
       "carry_over_to_next": {
@@ -1507,5 +1536,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:25:04.000Z"
+  "updated_at": "2026-06-02T03:26:39.000Z"
 }
