@@ -102,12 +102,17 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F12",
+        "F13"
+      ]
     },
     {
       "id": "M-plan_context",
@@ -986,7 +991,8 @@
       },
       "severity": "medium",
       "finding_class_note": "自评偏乐观, 须冷评/coverage 实测遵循率",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "observability_tier": "T2"
     },
     {
       "id": "F4",
@@ -1143,6 +1149,48 @@
       "severity": "medium",
       "finding_class_note": "合法配置被误判 placeholder; 每命令重复噪声+doctor双打; 只有 match-existing 才是真 placeholder",
       "fix_task_id": null
+    },
+    {
+      "id": "F12",
+      "round": 1,
+      "finding_class": "efficacy-weakness",
+      "surface": "M-recall",
+      "axis": "interaction",
+      "oracle": "mcp-payload-quality",
+      "expectation_source": "recall payload 应精简; 单 path 查询不该塞回全库 broad 条目全文",
+      "actual": "fab_recall(单path doctor.ts) 返 11 broad 条目 FULL BODY + 系统自带 mcp_payload_warn('用 ids 收窄或走两步'); 默认单步=返全 body",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "fab_recall 响应实测: 11 全文 body + warnings[].code=mcp_payload_warn",
+        "refute_reason": null,
+        "needs": "HAX冷评: 默认返全body vs description-first 哪个合理; payload 随 broad 条目数线性膨胀"
+      },
+      "severity": "medium",
+      "observability_tier": "T1",
+      "finding_class_note": "payload 随项目 broad 条目数线性膨胀; 有两步逃生但默认重",
+      "fix_task_id": null
+    },
+    {
+      "id": "F13",
+      "round": 1,
+      "finding_class": "design-confusion",
+      "surface": "M-recall",
+      "axis": "interaction",
+      "oracle": "field-semantics(must_read_if 应是强触发≠摘要)",
+      "expectation_source": "must_read_if = 单行强触发条件, 与 summary 提供不同信号",
+      "actual": "fab_recall candidates 中 proven 条目 must_read_if 与 summary 逐字相同 → 无额外触发信号",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "KT-DEC-0001..0008 must_read_if===summary 实测",
+        "refute_reason": null,
+        "needs": "查是否系统性(空 must_read_if 回退 summary)vs 仅这批未填"
+      },
+      "severity": "low",
+      "observability_tier": "T1",
+      "finding_class_note": "触发字段退化为摘要副本",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1150,7 +1198,7 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "13/34 surface 探测中",
+      "actual": "14/34 surface 探测中",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
       "verified_at": null
     },
@@ -1182,7 +1230,7 @@
       "name": "G-OBSERV",
       "desc": "每 efficacy/interaction finding 映射 T1/T2/T3 + 埋点缺口标注",
       "target": "all interaction findings tiered + instrumentation gaps noted",
-      "actual": "0 tiered",
+      "actual": "4/6 interaction-findings tiered",
       "verifier_cmd": "count(interaction findings with observability_tier)/count",
       "verified_at": null
     },
@@ -1217,7 +1265,9 @@
         "F8",
         "F9",
         "F10",
-        "F11"
+        "F11",
+        "F12",
+        "F13"
       ],
       "carried_in": [],
       "carry_over_to_next": {
@@ -1404,5 +1454,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:20:15.000Z"
+  "updated_at": "2026-06-02T03:21:47.000Z"
 }
