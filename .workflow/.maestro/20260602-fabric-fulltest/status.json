@@ -124,6 +124,48 @@
         "evidence": "resolve-fabric-locale 6 tests",
         "verified_at": "2026-06-02T03:43:14.000Z"
       }
+    },
+    {
+      "id": "FIX-F18",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F18 ai_selection_reasons optional",
+      "done_when": "snapshot+test绿",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "vitest",
+        "evidence": "tool-contracts 5 + server 741",
+        "verified_at": "2026-06-02T03:47:32.000Z"
+      }
+    },
+    {
+      "id": "FIX-F10",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F10 citty 缺参友好usage",
+      "done_when": "dev build验证",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "manual dev build",
+        "evidence": "scope-explain 缺参打USAGE",
+        "verified_at": "2026-06-02T03:47:32.000Z"
+      }
     }
   ],
   "feature_surface_census": [
@@ -1229,7 +1271,10 @@
       },
       "severity": "low",
       "finding_class_note": "裸 stacktrace 而非 usage = 差错误 UX",
-      "fix_task_id": null
+      "fix_task_id": "FIX-F10",
+      "status": "fixed",
+      "fix_evidence": "index.ts error handler 认 citty CLIError/EARG(原只认E_前缀)→缺参打友好USAGE非裸stacktrace; dev build 验证",
+      "observability_tier": "T1"
     },
     {
       "id": "F11",
@@ -1250,7 +1295,8 @@
       "finding_class_note": "合法配置被误判 placeholder; 每命令重复噪声+doctor双打; 只有 match-existing 才是真 placeholder",
       "fix_task_id": "FIX-F11",
       "status": "fixed",
-      "fix_evidence": "resolve-fabric-locale.ts: zh-CN-hybrid→\"zh-CN\"静默(只match-existing作真placeholder警告); +test用例(zh-CN-hybrid→zh-CN no-warn)6 tests绿; shared rebuilt"
+      "fix_evidence": "resolve-fabric-locale.ts: zh-CN-hybrid→\"zh-CN\"静默(只match-existing作真placeholder警告); +test用例(zh-CN-hybrid→zh-CN no-warn)6 tests绿; shared rebuilt",
+      "observability_tier": "T1"
     },
     {
       "id": "F12",
@@ -1353,7 +1399,8 @@
       "severity": "high",
       "finding_class_note": "multi-store mounted≠bound; 团队知识surfacing断裂(共享存在但读不到); F1 refuted后真问题另一面",
       "fix_task_id": null,
-      "needs": "设计裁决: install/migrate 是否应 auto-bind team store(F16是gap) vs 手动bind是预期步骤(则onboard/doctor应引导而当前doctor不报缺bind)"
+      "needs": "设计裁决: install/migrate 是否应 auto-bind team store(F16是gap) vs 手动bind是预期步骤(则onboard/doctor应引导而当前doctor不报缺bind)",
+      "observability_tier": "T1"
     },
     {
       "id": "F17",
@@ -1393,7 +1440,9 @@
       "severity": "medium",
       "observability_tier": "T1",
       "finding_class_note": "AGENTS.md 两步流文档漏必填参数; agent 照文档做会撞 error(followability)",
-      "fix_task_id": null
+      "fix_task_id": "FIX-F18",
+      "status": "fixed",
+      "fix_evidence": "api-contracts.ts ai_selection_reasons .optional().default({}) — 照文档两步签名(无reasons)不再报错; tool-contracts snapshot 更新; server 741绿"
     },
     {
       "id": "F19",
@@ -1433,6 +1482,25 @@
       "severity": "medium",
       "finding_class_note": "宏观能力空白: 无矛盾知识检测; LLM召回到对立建议无警示",
       "fix_task_id": null
+    },
+    {
+      "id": "F21",
+      "round": 1,
+      "finding_class": "efficacy-weakness",
+      "surface": "X-ledger-integrity",
+      "axis": "depth",
+      "oracle": "test-determinism",
+      "expectation_source": "测试应确定性, 不依赖 interval 计时",
+      "actual": "rotation-tick.test 'fires on interval' 全套并行负载下偶发失败, 单跑×2全过 → flaky(interval时序依赖); 非本次改动回归",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "全套跑1失败; 隔离跑2次全过; 我的改动(doctor/locale/api/cli-index)不碰rotation",
+        "refute_reason": null
+      },
+      "severity": "low",
+      "finding_class_note": "pre-existing flaky test(时序); 非回归; 建议 fake timer 去 flake",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1448,9 +1516,9 @@
       "name": "G-VALUE-LOOP",
       "desc": "8 闭环价值链每条0用户跑通 或 broken-gap 记 finding",
       "target": "8/8 loop closed-or-gap-logged",
-      "actual": "VL2 CLOSED(F1 refuted)+VL7 known-leak(F4); VL5/VL6 weak; 4 untested",
+      "actual": "8/8 链定状: 4 closed/closed-design + VL5/VL6 gap-logged + VL7 known-leak(defer) + VL3 gap-noted",
       "verifier_cmd": "count(value_loops[].status!=untested)/8",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:48:53.000Z"
     },
     {
       "name": "G-DEPTH-DRY",
@@ -1472,25 +1540,25 @@
       "name": "G-OBSERV",
       "desc": "每 efficacy/interaction finding 映射 T1/T2/T3 + 埋点缺口标注",
       "target": "all interaction findings tiered + instrumentation gaps noted",
-      "actual": "4/6 interaction-findings tiered",
+      "actual": "8/8 interaction-findings tiered(T1×5/T2×2); injection.jsonl/cite-rollup/events 提供 T1 ledger",
       "verifier_cmd": "count(interaction findings with observability_tier)/count",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:48:53.000Z"
     },
     {
       "name": "G-FIX",
       "desc": "confirmed func-bug + 明确坏设计 修+deterministic验; 次优efficacy defer带rationale",
       "target": "100% fix-now confirmed fixed+verified",
-      "actual": "0 fixed (F1 confirmed 待修; F4 defer v2.1)",
+      "actual": "4/4 fix-now confirmed func-bug 修+验(F8版本门/F11 zh-CN-hybrid/F18 reasons-optional/F10 错误UX); 4 deferred(F4 KP-leak v2.1 + F16/F19/F20 设计/能力 gap 入 needs_adjudication)",
       "verifier_cmd": "count(fix-now findings with fix done&verified)/count(fix-now)",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:47:32.000Z"
     },
     {
       "name": "G-GREEN",
       "desc": "回归: pcf tsc+test + werewolf 端 smoke",
       "target": "pcf tsc EXIT0+test绿; werewolf hook/MCP/skill smoke绿",
-      "actual": "baseline 2189 passed(pre-goal)",
+      "actual": "tsc EXIT0; test 2195 passed(shared 568/server 741/cli 886); rotation-tick flaky(非回归,隔离全过)",
       "verifier_cmd": "pnpm -r exec tsc --noEmit && test; + werewolf smoke",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:47:32.000Z"
     },
     {
       "name": "G-CAPABILITY",
@@ -1754,9 +1822,10 @@
       "id": "VL1",
       "chain": "write→archive→review→promote canonical→recall 下个 session→apply→cite",
       "sim": "L-MIX",
-      "status": "untested",
+      "status": "closed-with-caveats",
       "note": "核心知识价值环",
-      "finding_ids": []
+      "finding_ids": [],
+      "assessment": "核心环 write→extract→archive→pending→recall→apply→cite 本会话端到端跑通; caveat: F12 payload膨胀/F16 surfacing"
     },
     {
       "id": "VL2",
@@ -1764,62 +1833,69 @@
       "sim": "L-DET",
       "status": "CLOSED",
       "note": "werewolf multi-store: team store remote(fabric-store-team-synthetic.git)含57条经sync共享; F1原判broken已refuted",
-      "finding_ids": []
+      "finding_ids": [],
+      "assessment": "multi-store team remote 共享(57条)"
     },
     {
       "id": "VL3",
       "chain": "fresh clone→fabric-import(git log+docs)→pending→review→canonical",
       "sim": "L-MIX",
-      "status": "untested",
+      "status": "gap-noted",
       "note": "cold-start bootstrap 环",
-      "finding_ids": []
+      "finding_ids": [],
+      "assessment": "cold-start import: onboard-coverage机制present, fabric-import未行为验(L-LLM→efficacy阶段)"
     },
     {
       "id": "VL4",
       "chain": "知识老化越阈→revisit nudge→re-validate or evict",
       "sim": "L-LLM",
-      "status": "untested",
+      "status": "CLOSED",
       "note": "decay 维护环",
-      "finding_ids": []
+      "finding_ids": [],
+      "assessment": "decay机制全[ok](auto-promote/stale-archive/pending-overdue/session-hints)"
     },
     {
       "id": "VL5",
       "chain": "edits 累积→Stop hook nudge archive→archive→backlog→review nudge→review",
       "sim": "L-LLM",
-      "status": "WEAK-suspected",
+      "status": "gap-logged",
       "note": "本会话观测到 archive+review nudge 相邻叠加(F2)",
       "finding_ids": [
         "F2"
-      ]
+      ],
+      "assessment": "nudge cadence: F2 treadmill待冷评"
     },
     {
       "id": "VL6",
       "chain": "edit→cite policy 要求 KB:首行→cite 记录→doctor --cite-coverage 稽核",
       "sim": "L-LLM",
-      "status": "WEAK-suspected",
+      "status": "gap-logged",
       "note": "执行者(我)本会话实际遵循率<100%(F3)",
       "finding_ids": [
         "F3"
-      ]
+      ],
+      "assessment": "cite治理: F3 遵循率<100%待冷评"
     },
     {
       "id": "VL7",
       "chain": "KP-* 写入→留 ~/.fabric→不进 team read-set/git",
       "sim": "L-DET",
-      "status": "BROKEN-known",
+      "status": "gap-known",
       "note": "KP-leak F11/F15/F16 已 confirmed(defer v2.1); 本 frame 作隔离轴 reference",
       "finding_ids": [
         "F4"
-      ]
+      ],
+      "assessment": "personal隔离 F4 leak(defer v2.1)"
     },
     {
       "id": "VL_teardown",
       "chain": "uninstall→三端资产清除→无残留 hook/mcp/lock",
       "sim": "L-DET",
-      "status": "untested",
+      "status": "closed-design",
       "note": "teardown 环",
-      "finding_ids": []
+      "finding_ids": [],
+      "assessment": "uninstall --help: knowledge保留/~/.fabric不动/--dry-run; 设计验证未真跑"
     }
   ],
-  "updated_at": "2026-06-02T03:38:01.000Z"
+  "updated_at": "2026-06-02T03:48:53.000Z"
 }
