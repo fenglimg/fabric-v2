@@ -163,6 +163,8 @@ export const zhCNMessages: Messages = {
   "doctor.cite.metric.complianceRate": "cite 合规率 (含 KB:none[reason])",
   "doctor.cite.metric.complianceNA": "N/A (无应 cite 回合)",
   "doctor.cite.metric.uncorrelatableEdits": "无法关联的 edit (缺 session_id — hook 过期? 请跑 `fabric install`)",
+  "doctor.cite.metric.recallCoverage": "recall 覆盖率 (改前有相关 fab_recall 的 edit 占比)",
+  "doctor.cite.metric.recallCoverageNA": "N/A (无可关联 edit)",
   "doctor.cite.section.perClient": "按客户端拆分",
   "doctor.cite.section.dismissedReasons": "驳回原因分布",
   "doctor.cite.dismissed.scope-mismatch": "范围不符",

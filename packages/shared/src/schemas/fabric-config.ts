@@ -233,6 +233,17 @@ export const fabricConfigSchema = z.object({
   // high-contract-criticality projects. Other strategies (time-based,
   // token-budget) deferred to rc.35 per plan locked-decisions 2026-05-26.
   cite_evict_interval: z.number().int().min(0).optional().default(0),
+  // v2.1 ⑤ cite-redesign (P5): recall-based cite-accounting hook config. The
+  // rc.34 cite_evict_interval turn-counter above is superseded by the
+  // PreToolUse(Edit/Write) recall-aware nudge in cite-policy-evict.cjs; the old
+  // key is retained for back-compat (inert now that the hook moved off
+  // UserPromptSubmit). `cite_recall_nudge` is the master switch (default true =
+  // ON); set false to silence the "改前先 fab_recall" nudge entirely (mirrors
+  // the cite_evict_interval=0 opt-out convention). `cite_recall_window_minutes`
+  // bounds how far back an in-session fab_recall counts as "informing" the edit
+  // (default 30; 0 = unbounded).
+  cite_recall_nudge: z.boolean().optional().default(true),
+  cite_recall_window_minutes: z.number().int().min(0).optional().default(30),
   // v2.0.0-rc.22 Scope A T3: sliding-window retention (in days) for the
   // event ledger rotation primitive (`rotateEventLedgerIfNeeded`). Lines
   // whose `ts` is older than `now - fabric_event_retention_days * 86_400_000`

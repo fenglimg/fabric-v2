@@ -128,10 +128,11 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 
   Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
 
-## Cite policy (v2.0.0-rc.37 NEW-1: 简化 4-state → 2-state)
+## Cite policy (v2.1 ⑤ recall-based: 自动记账优先, 首行 KB: 可选 override)
 
-- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 \`KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]\` 或 \`KB: none [<reason>]\`。
-- **\`[applied]\` 验证义务**: 引用任何 id 前必须先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
+- **核心 (recall-first 自动记账)**: 改任何文件前先 \`fab_recall(paths=[<被改文件>])\`。系统按"本 session 近期 recall 命中的 path 与编辑目标重叠"自动把召回的 KB 关联为该次 edit 的引用 —— **无需手写回复首行**。PreToolUse hook 在检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007);改前 recall 过(或已手写 cite)即静默。为什么不再逼首行:先想后说,recall 才是引用发生的真实信号,手写首行违背 CoT 且 \`KB: none\` 逃逸使旧规则形同虚设。
+- **可选 override (首行 KB:)**: 仍可在回复首行手写 \`KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]\` 或 \`KB: none [<reason>]\` 来显式标注/精确化引用;cite-line 解析器保留(向后兼容),旧习惯不破。
+- **\`[applied]\` 验证义务**: 引用任何 id(自动或手写)的前提是先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
 - **store 前缀 (v2.1, 多 store)**: 当 read-set 含多个 store 且同一 local id 在多 store 间 shadow 时,cite 必须 store-qualified: \`KB: <store-alias>:<id> ...\`(如 \`KB: team:KT-DEC-0001 (auth) [applied]\`);alias 用户自定/canonical,底层 UUID。单 store 或无歧义时裸 \`KB: <id>\` 仍 valid。personal-only 条目 cite 进团队产物=强 warning(接 P2 写路径防泄漏 R5#3)。
 - **contract 语法**: decisions/pitfalls 类 \`[applied]\` cite 尾段加 contract: \`→ <operator> [<operator> ...]\`,operator ∈ {\`edit:<glob>\` \`!edit:<glob>\` \`require:<symbol>\` \`forbid:<symbol>\` \`skip:<reason>\`}。例:\`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**\`。
 - **skip reason 词典**: \`sequencing | conditional | semantic | aesthetic | architectural | other:<text>\`。

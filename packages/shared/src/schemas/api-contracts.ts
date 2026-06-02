@@ -1268,6 +1268,16 @@ export const citeCoverageReportSchema = z.object({
     // installed (run `fabric install`). Surfaced so the denominator gap is
     // visible rather than a silent 100% confound.
     uncorrelatable_edits: z.number().int().nonnegative().optional(),
+    // v2.1 ⑤ cite-redesign (P5): recall-based coverage口径. The redesign infers
+    // a citation from real behavior — an in-session fab_recall
+    // (knowledge_context_planned) whose target_paths overlap a subsequently
+    // edited file IS the citation, no hand-written `KB:` line required.
+    // recall_backed_edits = correlatable edits preceded (within the recall
+    // window) by such an overlapping recall. recall_coverage_rate =
+    // recall_backed_edits / edits_touched (null when no edits). Additive — the
+    // legacy first-line-`KB:` metrics above are unchanged (back-compat).
+    recall_backed_edits: z.number().int().nonnegative().optional(),
+    recall_coverage_rate: z.number().min(0).max(1).nullable().optional(),
   }),
   per_client: z
     .record(

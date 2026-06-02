@@ -969,6 +969,15 @@ function renderCiteCoverageReport(
     ? dt("doctor.cite.metric.complianceNA")
     : `${(complianceRate * 100).toFixed(1)}% (${report.metrics.compliant_cites ?? 0}/${(report.metrics.compliant_cites ?? 0) + (report.metrics.noncompliant_cites ?? 0)})`;
   lines.push(`  ${dt("doctor.cite.metric.complianceRate")}: ${complianceStr}`);
+  // v2.1 ⑤ cite-redesign (P5): recall-based coverage口径 — the redesign infers a
+  // citation from a fab_recall whose target paths overlap the edited file, so
+  // surface "what fraction of edits were recall-backed" alongside the legacy
+  // compliance metric.
+  const recallRate = report.metrics.recall_coverage_rate;
+  const recallStr = recallRate === null || recallRate === undefined
+    ? dt("doctor.cite.metric.recallCoverageNA")
+    : `${(recallRate * 100).toFixed(1)}% (${report.metrics.recall_backed_edits ?? 0}/${report.metrics.edits_touched})`;
+  lines.push(`  ${dt("doctor.cite.metric.recallCoverage")}: ${recallStr}`);
   // v2.0.0-rc.38 UX-8 (C, hardening): warn when edit signals couldn't be
   // correlated (no session_id) — a stale pre-session_id hook silently deflates
   // expected_but_missed, so surface it instead of hiding behind a clean 100%.

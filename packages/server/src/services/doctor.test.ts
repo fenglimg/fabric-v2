@@ -5744,6 +5744,9 @@ describe("runDoctorCiteCoverage", () => {
       compliant_cites: 0,
       noncompliant_cites: 0,
       uncorrelatable_edits: 0,
+      // v2.1 ⑤ cite-redesign (P5): recall-based口径 — 0 edits → 0 backed, null rate.
+      recall_backed_edits: 0,
+      recall_coverage_rate: null,
     });
   });
 
@@ -7731,6 +7734,153 @@ function createForensic(target: string, name: string): unknown {
     recommendations_for_skill: [],
   };
 }
+
+// ---------------------------------------------------------------------------
+// v2.1 ⑤ cite-redesign (P5): recall-based coverage口径.
+//
+// runDoctorCiteCoverage now also reports recall_backed_edits /
+// recall_coverage_rate: an edit is "recall-backed" when an in-session
+// knowledge_context_planned (the fab_recall event) with overlapping
+// target_paths preceded it within the recall window. This is the new口径 — the
+// recall→edit overlap IS the citation, no hand-written `KB:` line required.
+// The legacy first-line-`KB:` metrics are unchanged (back-compat).
+// ---------------------------------------------------------------------------
+
+describe("runDoctorCiteCoverage recall-based口径 (v2.1 ⑤)", () => {
+  function seedRecallEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    writeFileSync(ledgerPath, existing + events.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+  }
+  function planned(sessionId: string, ts: number, targetPaths: string[], ids: string[]): object {
+    return {
+      kind: "fabric-event",
+      id: `event:planned:${randomUUID()}`,
+      ts,
+      schema_version: 1,
+      session_id: sessionId,
+      event_type: "knowledge_context_planned",
+      target_paths: targetPaths,
+      required_stable_ids: [],
+      ai_selectable_stable_ids: ids,
+      final_stable_ids: ids,
+    };
+  }
+  function edit(sessionId: string | undefined, ts: number, path: string): object {
+    return {
+      kind: "fabric-event",
+      id: `event:edit:${randomUUID()}`,
+      ts,
+      schema_version: 1,
+      ...(sessionId !== undefined ? { session_id: sessionId } : {}),
+      event_type: "edit_intent_checked",
+      path,
+      compliant: true,
+      intent: "Edit",
+      ledger_entry_id: `ledger:${randomUUID()}`,
+      matched_rule_context_ts: null,
+      window_ms: 0,
+    };
+  }
+
+  it("recall→edit overlap (same session, in-window) → recall-backed", async () => {
+    const target = createInitializedProject("cite-recall-backed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const base = marker.marker_ts + 1000;
+    seedRecallEvents(target, [
+      planned("S1", base, ["src/a.ts"], ["KT-DEC-0007"]),
+      edit("S1", base + 5_000, "src/a.ts"),
+    ]);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.recall_backed_edits).toBe(1);
+    expect(report.metrics.recall_coverage_rate).toBe(1);
+  });
+
+  it("edit with NO preceding recall → not recall-backed (coverage 0)", async () => {
+    const target = createInitializedProject("cite-recall-none");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedRecallEvents(target, [edit("S1", marker.marker_ts + 2_000, "src/a.ts")]);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.recall_backed_edits).toBe(0);
+    expect(report.metrics.recall_coverage_rate).toBe(0);
+  });
+
+  it("recall of a different path → not recall-backed", async () => {
+    const target = createInitializedProject("cite-recall-otherpath");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const base = marker.marker_ts + 1000;
+    seedRecallEvents(target, [
+      planned("S1", base, ["src/other.ts"], ["KT-DEC-0007"]),
+      edit("S1", base + 5_000, "src/a.ts"),
+    ]);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.recall_backed_edits).toBe(0);
+  });
+
+  it("recall in a different session → not recall-backed", async () => {
+    const target = createInitializedProject("cite-recall-othersession");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const base = marker.marker_ts + 1000;
+    seedRecallEvents(target, [
+      planned("OTHER", base, ["src/a.ts"], ["KT-DEC-0007"]),
+      edit("S1", base + 5_000, "src/a.ts"),
+    ]);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.recall_backed_edits).toBe(0);
+  });
+
+  it("recall AFTER the edit does not back it (ordering)", async () => {
+    const target = createInitializedProject("cite-recall-afteredit");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const base = marker.marker_ts + 10_000;
+    seedRecallEvents(target, [
+      edit("S1", base, "src/a.ts"),
+      planned("S1", base + 5_000, ["src/a.ts"], ["KT-DEC-0007"]),
+    ]);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.recall_backed_edits).toBe(0);
+  });
+
+  it("recall outside recallWindowMs does not back the edit", async () => {
+    const target = createInitializedProject("cite-recall-window");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const base = marker.marker_ts + 1000;
+    seedRecallEvents(target, [
+      planned("S1", base, ["src/a.ts"], ["KT-DEC-0007"]),
+      edit("S1", base + 20 * 60_000, "src/a.ts"),
+    ]);
+    // 10-minute window — the recall is 20min before the edit → out of window.
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all", recallWindowMs: 10 * 60_000 });
+    expect(report.metrics.recall_backed_edits).toBe(0);
+    // ...but an unbounded window (0) backs it.
+    const unbounded = await runDoctorCiteCoverage(target, { since: 0, client: "all", recallWindowMs: 0 });
+    expect(unbounded.metrics.recall_backed_edits).toBe(1);
+  });
+
+  it("mixed: 2 edits, 1 recall-backed → coverage 0.5", async () => {
+    const target = createInitializedProject("cite-recall-mixed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const base = marker.marker_ts + 1000;
+    seedRecallEvents(target, [
+      planned("S1", base, ["src/a.ts"], ["KT-DEC-0007"]),
+      edit("S1", base + 1_000, "src/a.ts"),
+      edit("S1", base + 2_000, "src/b.ts"),
+    ]);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.edits_touched).toBe(2);
+    expect(report.metrics.recall_backed_edits).toBe(1);
+    expect(report.metrics.recall_coverage_rate).toBe(0.5);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // v2.0.0-rc.30 TASK-003 (H2 deferred-from-rc.29): emit-cadence sub-check.

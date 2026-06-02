@@ -1,39 +1,56 @@
 /**
- * v2.0.0-rc.34 TASK-06: unit tests for cite-policy long-session evict sidecar
- * (packages/cli/templates/hooks/cite-policy-evict.cjs).
+ * v2.1 ⑤ cite-redesign (P5) — unit tests for the recall-based cite-accounting
+ * hook (packages/cli/templates/hooks/cite-policy-evict.cjs).
  *
- * Covers:
- *   1. `evaluateCiteEvict` pure helper contract (window math, off-state, guards)
- *   2. State sidecar read/write round-trip + corruption tolerance
- *   3. Config read defaults + override
- *   4. main() end-to-end via stdin payload injection + stdout envelope check
- *   5. Reminder body contract (cite-policy keywords present)
+ * The rc.34 turn-counter UserPromptSubmit reminder was replaced by a
+ * PreToolUse(Edit/Write/MultiEdit) recall-aware nudge. The three behaviours the
+ * redesign must guarantee (C1 done_when):
  *
- * The hook script is invoked thousands of times in long sessions; defensive
- * exits MUST keep it silent on every failure mode (per rc.34 plan §7 risk
- * mitigation + the never-block-on-failure invariant shared with all fabric
- * hooks). Tests pin each defensive branch.
+ *   1. recall → edit  : an in-session fab_recall whose target paths overlap the
+ *      edit target makes the edit "recall-backed" → NO nudge (the citation is
+ *      auto-accounted from the recall→edit join; doctor C3 reconstructs it).
+ *   2. edit, no recall: no overlapping recall → soft nudge "改前先 fab_recall".
+ *   3. manual override: a hand-written `KB:` line (observed as an
+ *      assistant_turn_observed event with cite_ids) still suppresses the nudge —
+ *      the legacy explicit-cite path is honored (back-compat).
+ *
+ * Every defensive branch must keep the hook silent (never block the edit).
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const hook = require("../templates/hooks/cite-policy-evict.cjs") as {
-  evaluateCiteEvict: (turnCount: unknown, interval: unknown) => boolean;
-  renderReminder: (turnCount: number, interval: number) => string;
-  readEvictInterval: (cwd: string) => number;
-  readEvictState: (cwd: string) => { session_id: string; turn_count: number } | null;
-  writeEvictState: (cwd: string, sessionId: string, turnCount: number) => void;
-  main: (env?: {
-    cwd?: string;
-    payload?: { session_id?: string } | null;
-    forceClaudeCode?: boolean;
-    stdio?: { stdout?: { write: (s: string) => boolean | void } };
-  }) => Promise<void>;
+  extractPaths: (toolInput: unknown) => string[];
+  extractToolName: (payload: unknown) => string | null;
+  resolveSessionId: (payload: unknown, env?: unknown) => string;
+  readNudgeEnabled: (cwd: string) => boolean;
+  readWindowMinutes: (cwd: string) => number;
+  readEventsLedger: (cwd: string) => Array<Record<string, unknown>>;
+  normalizeForCompare: (p: string, root?: string) => string;
+  pathsOverlap: (recall: unknown, edit: unknown, root?: string) => boolean;
+  evaluateRecallCite: (args: {
+    events: Array<Record<string, unknown>>;
+    editPaths: string[];
+    sessionId: string;
+    nowMs: number;
+    windowMs: number;
+    projectRoot?: string;
+  }) => { recallBacked: boolean; recalledIds: string[]; matchedRecallTs: number | null; manualCited: boolean };
+  renderNudge: (editPaths: string[]) => string;
+  main: (
+    env?: {
+      cwd?: string;
+      payload?: unknown;
+      nowMs?: number;
+      forceClaudeCode?: boolean;
+      stdio?: { stdout?: { write: (s: string) => boolean | void }; stderr?: { write: (s: string) => boolean | void } };
+    },
+  ) => Promise<void>;
 };
 
 let tempDirs: string[] = [];
@@ -46,7 +63,7 @@ afterEach(() => {
 });
 
 function mkTemp(): string {
-  const dir = mkdtempSync(join(tmpdir(), "rc34-task06-cite-evict-"));
+  const dir = mkdtempSync(join(tmpdir(), "cite-recall-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -57,7 +74,13 @@ function writeConfig(cwd: string, body: object): void {
   writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(body));
 }
 
-class StdoutCapture {
+function writeEvents(cwd: string, events: Array<Record<string, unknown>>): void {
+  const dir = join(cwd, ".fabric");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "events.jsonl"), events.map((e) => JSON.stringify(e)).join("\n") + "\n");
+}
+
+class Capture {
   chunks: string[] = [];
   write = (s: string): boolean => {
     this.chunks.push(s);
@@ -68,383 +91,242 @@ class StdoutCapture {
   }
 }
 
-describe("evaluateCiteEvict (rc.34 TASK-06)", () => {
-  it("emits when turn_count divides interval", () => {
-    expect(hook.evaluateCiteEvict(10, 10)).toBe(true);
-    expect(hook.evaluateCiteEvict(20, 10)).toBe(true);
-    expect(hook.evaluateCiteEvict(30, 10)).toBe(true);
-  });
+const NOW = 1_900_000_000_000;
+function plannedEvent(sessionId: string, ts: number, targetPaths: string[], ids: string[]) {
+  return {
+    kind: "fabric-event",
+    id: `event:${ts}`,
+    ts,
+    schema_version: 1,
+    session_id: sessionId,
+    event_type: "knowledge_context_planned",
+    target_paths: targetPaths,
+    required_stable_ids: [],
+    ai_selectable_stable_ids: ids,
+    final_stable_ids: ids,
+  };
+}
+function turnEvent(sessionId: string, ts: number, citeIds: string[]) {
+  return {
+    kind: "fabric-event",
+    id: `event:${ts}`,
+    ts,
+    schema_version: 1,
+    session_id: sessionId,
+    event_type: "assistant_turn_observed",
+    kb_line_raw: citeIds.length > 0 ? `KB: ${citeIds[0]} [applied]` : null,
+    cite_ids: citeIds,
+    cite_tags: citeIds.length > 0 ? ["applied"] : [],
+    turn_id: "t1",
+    timestamp: new Date(ts).toISOString(),
+  };
+}
 
-  it("does NOT emit on non-boundary turns", () => {
-    expect(hook.evaluateCiteEvict(5, 10)).toBe(false);
-    expect(hook.evaluateCiteEvict(15, 10)).toBe(false);
-    expect(hook.evaluateCiteEvict(1, 10)).toBe(false);
-    expect(hook.evaluateCiteEvict(9, 10)).toBe(false);
-  });
+// ---------------------------------------------------------------------------
+// pure helpers
+// ---------------------------------------------------------------------------
 
-  it("interval <= 0 → never emit (feature off)", () => {
-    expect(hook.evaluateCiteEvict(10, 0)).toBe(false);
-    expect(hook.evaluateCiteEvict(10, -1)).toBe(false);
-    expect(hook.evaluateCiteEvict(100, 0)).toBe(false);
+describe("path overlap", () => {
+  it("matches identical relative paths", () => {
+    expect(hook.pathsOverlap(["src/a.ts"], ["src/a.ts"])).toBe(true);
   });
-
-  it("turnCount <= 0 → never emit (guard against bogus state)", () => {
-    expect(hook.evaluateCiteEvict(0, 10)).toBe(false);
-    expect(hook.evaluateCiteEvict(-5, 10)).toBe(false);
+  it("matches abs edit vs rel recall (suffix)", () => {
+    expect(hook.pathsOverlap(["src/a.ts"], ["/Users/x/proj/src/a.ts"], "/Users/x/proj")).toBe(true);
   });
-
-  it("non-number inputs → never emit (defensive)", () => {
-    expect(hook.evaluateCiteEvict("10", 10)).toBe(false);
-    expect(hook.evaluateCiteEvict(10, "10")).toBe(false);
-    expect(hook.evaluateCiteEvict(null, 10)).toBe(false);
-    expect(hook.evaluateCiteEvict(undefined, undefined)).toBe(false);
+  it("matches a recall directory covering the edited file", () => {
+    expect(hook.pathsOverlap(["src"], ["src/a.ts"])).toBe(true);
   });
-});
-
-describe("readEvictInterval (rc.34 TASK-06 / rc.37 NEW-18 default flip)", () => {
-  // v2.0.0-rc.37 NEW-18: DEFAULT_CITE_EVICT_INTERVAL flipped 0 (opt-in OFF) →
-  // 10 (default ON every 10 turns). Operators can still set cite_evict_interval=0
-  // explicitly to opt back out. The 'default' assertions below now pin the new 10.
-  it("returns default 10 when fabric-config.json missing (rc.37 NEW-18)", () => {
-    const cwd = mkTemp();
-    expect(hook.readEvictInterval(cwd)).toBe(10);
+  it("does NOT match unrelated paths", () => {
+    expect(hook.pathsOverlap(["src/a.ts"], ["src/b.ts"])).toBe(false);
   });
-
-  it("returns parsed value when config has cite_evict_interval", () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 15 });
-    expect(hook.readEvictInterval(cwd)).toBe(15);
-  });
-
-  it("explicit opt-out (cite_evict_interval=0) is honored — disables emission", () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 0 });
-    expect(hook.readEvictInterval(cwd)).toBe(0);
-  });
-
-  it("returns default 10 when config value is non-integer or negative", () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: -5 });
-    expect(hook.readEvictInterval(cwd)).toBe(10);
-    writeConfig(cwd, { cite_evict_interval: "10" });
-    expect(hook.readEvictInterval(cwd)).toBe(10);
-    writeConfig(cwd, { cite_evict_interval: 3.14 });
-    expect(hook.readEvictInterval(cwd)).toBe(10);
-  });
-
-  it("returns default 10 on malformed JSON (defensive)", () => {
-    const cwd = mkTemp();
-    mkdirSync(join(cwd, ".fabric"), { recursive: true });
-    writeFileSync(join(cwd, ".fabric", "fabric-config.json"), "{ not valid json");
-    expect(hook.readEvictInterval(cwd)).toBe(10);
+  it("does NOT match on basename alone", () => {
+    expect(hook.pathsOverlap(["lib/util.ts"], ["src/util.ts"])).toBe(false);
   });
 });
 
-describe("readEvictState / writeEvictState round-trip (rc.34 TASK-06)", () => {
-  it("returns null when sidecar missing", () => {
-    const cwd = mkTemp();
-    expect(hook.readEvictState(cwd)).toBeNull();
+describe("extractPaths", () => {
+  it("scalar file_path", () => {
+    expect(hook.extractPaths({ file_path: "src/a.ts" })).toEqual(["src/a.ts"]);
   });
-
-  it("writes + reads back same shape", () => {
-    const cwd = mkTemp();
-    hook.writeEvictState(cwd, "session-abc", 7);
-    const state = hook.readEvictState(cwd);
-    expect(state).toEqual({ session_id: "session-abc", turn_count: 7 });
+  it("MultiEdit edits[]", () => {
+    expect(hook.extractPaths({ edits: [{ file_path: "src/a.ts" }, { file_path: "src/b.ts" }] })).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+    ]);
   });
-
-  it("creates .fabric/.cache/ if absent (defensive mkdir)", () => {
-    const cwd = mkTemp();
-    hook.writeEvictState(cwd, "session-xyz", 3);
-    expect(existsSync(join(cwd, ".fabric", ".cache", "cite-evict-state.json"))).toBe(true);
-  });
-
-  it("returns null on corrupted sidecar (malformed JSON)", () => {
-    const cwd = mkTemp();
-    const sidecarPath = join(cwd, ".fabric", ".cache", "cite-evict-state.json");
-    mkdirSync(dirname(sidecarPath), { recursive: true });
-    writeFileSync(sidecarPath, "not json");
-    expect(hook.readEvictState(cwd)).toBeNull();
-  });
-
-  it("returns null when sidecar schema invalid (missing turn_count)", () => {
-    const cwd = mkTemp();
-    const sidecarPath = join(cwd, ".fabric", ".cache", "cite-evict-state.json");
-    mkdirSync(dirname(sidecarPath), { recursive: true });
-    writeFileSync(sidecarPath, JSON.stringify({ session_id: "x" }));
-    expect(hook.readEvictState(cwd)).toBeNull();
+  it("empty on no recognizable shape", () => {
+    expect(hook.extractPaths({})).toEqual([]);
   });
 });
 
-describe("renderReminder (rc.34 TASK-06)", () => {
-  const body = hook.renderReminder(20, 10);
-
-  it("includes the cite contract format anchor", () => {
-    expect(body).toContain("KB: <id>");
-    expect(body).toContain("KB: none");
+describe("evaluateRecallCite", () => {
+  it("recall→edit overlap → recallBacked with recalled ids", () => {
+    const events = [plannedEvent("S1", NOW - 5_000, ["src/a.ts"], ["KT-DEC-0007"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.recallBacked).toBe(true);
+    expect(d.recalledIds).toEqual(["KT-DEC-0007"]);
+    expect(d.matchedRecallTs).toBe(NOW - 5_000);
+    expect(d.manualCited).toBe(false);
   });
 
-  it("references the two-step verification for [recalled]", () => {
-    expect(body).toContain("fab_plan_context");
-    expect(body).toContain("fab_get_knowledge_sections");
+  it("recall in a DIFFERENT session does not count", () => {
+    const events = [plannedEvent("OTHER", NOW - 5_000, ["src/a.ts"], ["KT-DEC-0007"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.recallBacked).toBe(false);
   });
 
-  it("documents the contract operator vocabulary", () => {
-    expect(body).toContain("edit:<glob>");
-    expect(body).toContain("require:<symbol>");
-    expect(body).toContain("forbid:<symbol>");
+  it("recall OUTSIDE the window does not count", () => {
+    const events = [plannedEvent("S1", NOW - 60 * 60_000, ["src/a.ts"], ["KT-DEC-0007"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.recallBacked).toBe(false);
   });
 
-  it("includes skip reason dictionary", () => {
-    expect(body).toMatch(/sequencing.*conditional.*semantic/);
+  it("windowMs<=0 means unbounded — an old recall still counts", () => {
+    const events = [plannedEvent("S1", NOW - 24 * 60 * 60_000, ["src/a.ts"], ["KT-DEC-0007"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 0 });
+    expect(d.recallBacked).toBe(true);
   });
 
-  it("includes turn+interval context for operator awareness", () => {
-    expect(body).toContain("turn 20");
-    expect(body).toContain("interval 10");
+  it("recall of a non-overlapping path → not recallBacked", () => {
+    const events = [plannedEvent("S1", NOW - 5_000, ["src/other.ts"], ["KT-DEC-0007"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.recallBacked).toBe(false);
   });
 
-  it("declares non-blocking nature (audit only)", () => {
-    expect(body).toContain("does not block");
+  it("manual KB: line (assistant_turn_observed with cite_ids) → manualCited", () => {
+    const events = [turnEvent("S1", NOW - 1_000, ["KT-DEC-0001"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.manualCited).toBe(true);
+    expect(d.recallBacked).toBe(false);
+  });
+
+  it("empty cite_ids turn → not manualCited", () => {
+    const events = [turnEvent("S1", NOW - 1_000, [])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.manualCited).toBe(false);
+  });
+
+  it("future recall (ts > now) is ignored", () => {
+    const events = [plannedEvent("S1", NOW + 5_000, ["src/a.ts"], ["KT-DEC-0007"])];
+    const d = hook.evaluateRecallCite({ events, editPaths: ["src/a.ts"], sessionId: "S1", nowMs: NOW, windowMs: 30 * 60_000 });
+    expect(d.recallBacked).toBe(false);
   });
 });
 
-describe("main() end-to-end (rc.34 TASK-06)", () => {
-  it("silent exit when interval is 0 (feature off)", async () => {
+// ---------------------------------------------------------------------------
+// main() — the three required behaviours, end to end via the events ledger
+// ---------------------------------------------------------------------------
+
+describe("main() recall-based nudge", () => {
+  const editPayload = (sessionId: string) => ({
+    tool_name: "Edit",
+    tool_input: { file_path: "src/a.ts" },
+    session_id: sessionId,
+  });
+
+  it("1. recall → edit: NO nudge (auto-cited)", async () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 0 });
-    const stdout = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: { session_id: "test-session" },
-      forceClaudeCode: true,
-      stdio: { stdout },
-    });
+    writeConfig(cwd, {});
+    writeEvents(cwd, [plannedEvent("S1", NOW - 5_000, ["src/a.ts"], ["KT-DEC-0007"])]);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({ cwd, payload: editPayload("S1"), nowMs: NOW, forceClaudeCode: true, stdio: { stdout, stderr } });
     expect(stdout.joined()).toBe("");
-  });
-
-  it("on first invocation with interval=1, fires immediately + writes state", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 1 });
-    const stdout = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: { session_id: "session-1" },
-      forceClaudeCode: true,
-      stdio: { stdout },
-    });
-    const output = stdout.joined();
-    expect(output).toContain("hookSpecificOutput");
-    expect(output).toContain("UserPromptSubmit");
-    expect(output).toContain("additionalContext");
-    expect(output).toContain("cite-evict");
-    const state = hook.readEvictState(cwd);
-    expect(state).toEqual({ session_id: "session-1", turn_count: 1 });
-  });
-
-  it("does NOT fire on turn 5 when interval=10, but fires on turn 10", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 10 });
-
-    // Simulate 9 turns already accumulated.
-    hook.writeEvictState(cwd, "session-long", 9);
-
-    // 10th turn — should fire.
-    const stdout10 = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: { session_id: "session-long" },
-      forceClaudeCode: true,
-      stdio: { stdout: stdout10 },
-    });
-    expect(stdout10.joined()).toContain("turn 10");
-    expect(stdout10.joined()).toContain("interval 10");
-    expect(hook.readEvictState(cwd)?.turn_count).toBe(10);
-
-    // 11th turn — should NOT fire.
-    const stdout11 = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: { session_id: "session-long" },
-      forceClaudeCode: true,
-      stdio: { stdout: stdout11 },
-    });
-    expect(stdout11.joined()).toBe("");
-    expect(hook.readEvictState(cwd)?.turn_count).toBe(11);
-  });
-
-  it("resets counter to 1 on new session_id (session boundary)", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 10 });
-    hook.writeEvictState(cwd, "session-A", 7);
-
-    const stdout = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: { session_id: "session-B" },
-      forceClaudeCode: true,
-      stdio: { stdout },
-    });
-
-    const state = hook.readEvictState(cwd);
-    expect(state?.session_id).toBe("session-B");
-    expect(state?.turn_count).toBe(1);
-    // turn 1 % 10 !== 0 → no reminder
-    expect(stdout.joined()).toBe("");
-  });
-
-  it("simulated 30-turn session, interval=10, reminder fires exactly 3 times", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 10 });
-    const sessionId = "session-stress";
-
-    let fireCount = 0;
-    for (let i = 1; i <= 30; i++) {
-      const stdout = new StdoutCapture();
-      await hook.main({
-        cwd,
-        payload: { session_id: sessionId },
-        forceClaudeCode: true,
-        stdio: { stdout },
-      });
-      if (stdout.joined().includes("hookSpecificOutput")) {
-        fireCount++;
-      }
-    }
-    expect(fireCount).toBe(3); // turns 10, 20, 30
-    expect(hook.readEvictState(cwd)?.turn_count).toBe(30);
-  });
-
-  it("silent exit on non-Claude-Code clients (CLAUDE_PROJECT_DIR absent + forceClaudeCode=false)", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 1 });
-    const stdout = new StdoutCapture();
-    const prevEnv = process.env.CLAUDE_PROJECT_DIR;
-    delete process.env.CLAUDE_PROJECT_DIR;
-    try {
-      await hook.main({
-        cwd,
-        payload: { session_id: "test" },
-        stdio: { stdout },
-      });
-      expect(stdout.joined()).toBe("");
-    } finally {
-      if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
-    }
-  });
-
-  it("handles missing payload (anonymous session_id) without crashing", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 1 });
-    const stdout = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: null,
-      forceClaudeCode: true,
-      stdio: { stdout },
-    });
-    // interval=1 fires on turn 1 — should produce output despite anonymous session
-    expect(stdout.joined()).toContain("hookSpecificOutput");
-    const state = hook.readEvictState(cwd);
-    expect(state?.session_id).toBe("anonymous");
-  });
-});
-
-describe("read JSON envelope content (rc.34 TASK-06)", () => {
-  it("emitted envelope is valid JSON parseable by hostHook", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 1 });
-    const stdout = new StdoutCapture();
-    await hook.main({
-      cwd,
-      payload: { session_id: "json-test" },
-      forceClaudeCode: true,
-      stdio: { stdout },
-    });
-    const raw = stdout.joined().trim();
-    expect(() => JSON.parse(raw)).not.toThrow();
-    const parsed = JSON.parse(raw) as {
-      hookSpecificOutput: { hookEventName: string; additionalContext: string };
-    };
-    expect(parsed.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
-    expect(parsed.hookSpecificOutput.additionalContext).toContain("KB: <id>");
-  });
-});
-
-// v2.0.0-rc.37 NEW-21: SessionStart-mode parity for Codex/Cursor. The hook
-// detects hook_event_name === "SessionStart" (or env.forceSessionStart) and
-// emits one unconditional reminder to stderr (no turn-counter, no Claude-
-// specific stdout envelope). Tests confirm the new branch fires once per
-// invocation regardless of session_id and stays inert when feature is off.
-describe("SessionStart-mode (rc.37 NEW-21)", () => {
-  class StderrCapture {
-    chunks: string[] = [];
-    write = (s: string): boolean => {
-      this.chunks.push(s);
-      return true;
-    };
-    joined(): string {
-      return this.chunks.join("");
-    }
-  }
-
-  it("emits cite reminder to stderr when hook_event_name=SessionStart", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 10 });
-    const stdout = new StdoutCapture();
-    const stderr = new StderrCapture();
-    await hook.main({
-      cwd,
-      payload: {
-        hook_event_name: "SessionStart",
-        session_id: "codex-session",
-      } as unknown as { session_id: string },
-      stdio: {
-        stdout,
-        stderr,
-      } as unknown as { stdout: { write: (s: string) => boolean } },
-    } as unknown as Parameters<typeof hook.main>[0]);
-    expect(stderr.joined()).toContain("KB: <id>");
-    expect(stdout.joined()).toBe("");
-  });
-
-  it("stays silent in SessionStart mode when interval=0 (feature off)", async () => {
-    const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 0 });
-    const stdout = new StdoutCapture();
-    const stderr = new StderrCapture();
-    await hook.main({
-      cwd,
-      payload: {
-        hook_event_name: "SessionStart",
-        session_id: "off-test",
-      } as unknown as { session_id: string },
-      stdio: {
-        stdout,
-        stderr,
-      } as unknown as { stdout: { write: (s: string) => boolean } },
-    } as unknown as Parameters<typeof hook.main>[0]);
     expect(stderr.joined()).toBe("");
-    expect(stdout.joined()).toBe("");
   });
 
-  it("does NOT write turn-counter sidecar in SessionStart mode", async () => {
+  it("2. edit, no recall: soft nudge (Claude Code stdout envelope)", async () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: 10 });
-    const stdout = new StdoutCapture();
-    const stderr = new StderrCapture();
+    writeConfig(cwd, {});
+    writeEvents(cwd, []);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({ cwd, payload: editPayload("S1"), nowMs: NOW, forceClaudeCode: true, stdio: { stdout, stderr } });
+    const out = stdout.joined();
+    expect(out).toContain("hookSpecificOutput");
+    expect(out).toContain("PreToolUse");
+    expect(out).toContain("fab_recall");
+    // valid JSON envelope
+    expect(() => JSON.parse(out.trim())).not.toThrow();
+  });
+
+  it("2b. edit, no recall on non-Claude client: nudge to stderr", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, {});
+    writeEvents(cwd, []);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({ cwd, payload: editPayload("S1"), nowMs: NOW, forceClaudeCode: false, stdio: { stdout, stderr } });
+    expect(stdout.joined()).toBe("");
+    expect(stderr.joined()).toContain("fab_recall");
+  });
+
+  it("3. manual KB: override → NO nudge", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, {});
+    writeEvents(cwd, [turnEvent("S1", NOW - 1_000, ["KT-DEC-0001"])]);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({ cwd, payload: editPayload("S1"), nowMs: NOW, forceClaudeCode: true, stdio: { stdout, stderr } });
+    expect(stdout.joined()).toBe("");
+    expect(stderr.joined()).toBe("");
+  });
+
+  it("non-edit tool → silent", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, {});
+    writeEvents(cwd, []);
+    const stdout = new Capture();
+    const stderr = new Capture();
     await hook.main({
       cwd,
-      payload: {
-        hook_event_name: "SessionStart",
-        session_id: "no-state-test",
-      } as unknown as { session_id: string },
-      stdio: {
-        stdout,
-        stderr,
-      } as unknown as { stdout: { write: (s: string) => boolean } },
-    } as unknown as Parameters<typeof hook.main>[0]);
-    // SessionStart mode is stateless — no sidecar should be created
-    expect(hook.readEvictState(cwd)).toBeNull();
+      payload: { tool_name: "Bash", tool_input: { command: "ls" }, session_id: "S1" },
+      nowMs: NOW,
+      forceClaudeCode: true,
+      stdio: { stdout, stderr },
+    });
+    expect(stdout.joined()).toBe("");
+    expect(stderr.joined()).toBe("");
+  });
+
+  it("feature off (cite_recall_nudge=false) → silent even with no recall", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_recall_nudge: false });
+    writeEvents(cwd, []);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({ cwd, payload: editPayload("S1"), nowMs: NOW, forceClaudeCode: true, stdio: { stdout, stderr } });
+    expect(stdout.joined()).toBe("");
+    expect(stderr.joined()).toBe("");
+  });
+
+  it("missing events ledger → still nudges (no recall observed), never throws", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, {});
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({ cwd, payload: editPayload("S1"), nowMs: NOW, forceClaudeCode: true, stdio: { stdout, stderr } });
+    expect(stdout.joined()).toContain("fab_recall");
+  });
+});
+
+describe("config readers", () => {
+  it("readNudgeEnabled defaults true", () => {
+    const cwd = mkTemp();
+    expect(hook.readNudgeEnabled(cwd)).toBe(true);
+  });
+  it("readNudgeEnabled honors explicit false", () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_recall_nudge: false });
+    expect(hook.readNudgeEnabled(cwd)).toBe(false);
+  });
+  it("readWindowMinutes defaults 30", () => {
+    const cwd = mkTemp();
+    expect(hook.readWindowMinutes(cwd)).toBe(30);
+  });
+  it("readWindowMinutes honors override", () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_recall_window_minutes: 60 });
+    expect(hook.readWindowMinutes(cwd)).toBe(60);
   });
 });

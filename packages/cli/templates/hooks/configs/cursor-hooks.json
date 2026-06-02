@@ -5,13 +5,16 @@
       { "command": ".cursor/hooks/fabric-hint.cjs" }
     ],
     "sessionStart": [
-      { "command": ".cursor/hooks/knowledge-hint-broad.cjs" },
-      { "command": ".cursor/hooks/cite-policy-evict.cjs" }
+      { "command": ".cursor/hooks/knowledge-hint-broad.cjs" }
     ],
     "preToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
         "command": ".cursor/hooks/knowledge-hint-narrow.cjs"
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": ".cursor/hooks/cite-policy-evict.cjs"
       }
     ]
   }

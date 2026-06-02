@@ -8,15 +8,16 @@
     "SessionStart": [
       {
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\""
-      },
-      {
-        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\""
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\""
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\""
       }
     ]
   }

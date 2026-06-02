@@ -353,11 +353,13 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     expect(existsSync(join(target, ".claude/skills/lib"))).toBe(true);
   });
 
-  // W1-08 (F2): HOOK_CONFIG_ARRAY_PATHS.claudeCode omitted "hooks.UserPromptSubmit",
-  // yet the Claude Code template ships a UserPromptSubmit cite-policy hook. So on
-  // install the UserPromptSubmit array was REPLACED (not append-with-dedupe),
-  // silently clobbering any user-defined UserPromptSubmit hook.
-  it("preserves a user UserPromptSubmit hook entry (F2)", async () => {
+  // W1-08 (F2): HOOK_CONFIG_ARRAY_PATHS.claudeCode lists "hooks.UserPromptSubmit"
+  // so a user-defined UserPromptSubmit hook is append-with-dedupe-preserved on
+  // install (never array-REPLACEd). The fabric template no longer ships a
+  // UserPromptSubmit hook (v2.1 ⑤ moved cite-policy-evict to PreToolUse), so the
+  // user entry survives untouched AND the cite-policy hook now lands under
+  // hooks.PreToolUse alongside the narrow hint (one matcher, two hooks).
+  it("preserves a user UserPromptSubmit hook entry + cite-policy moved to PreToolUse (F2)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-ups");
     tempRoots.push(target);
 
@@ -377,15 +379,26 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
 
     const merged = JSON.parse(
       readFileSync(join(target, ".claude/settings.json"), "utf8"),
-    ) as { hooks?: { UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }> } };
+    ) as {
+      hooks?: {
+        UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }>;
+        PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }>;
+      };
+    };
 
     const upsCommands = (merged.hooks?.UserPromptSubmit ?? [])
       .flatMap((entry) => entry.hooks ?? [])
       .map((h) => h.command);
     // User entry preserved (not clobbered by array-REPLACE)...
     expect(upsCommands).toContain(".claude/hooks/my-ups-hook.cjs");
-    // ...alongside the fabric cite-policy hook.
-    expect(upsCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
+    // ...and the fabric template no longer adds anything to UserPromptSubmit.
+    expect(upsCommands).not.toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
+
+    // cite-policy-evict now rides PreToolUse (recall-based nudge).
+    const preToolCommands = (merged.hooks?.PreToolUse ?? [])
+      .flatMap((entry) => entry.hooks ?? [])
+      .map((h) => h.command);
+    expect(preToolCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
   });
 });
 

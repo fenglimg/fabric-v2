@@ -262,6 +262,14 @@ export type CiteCoverageReport = {
     // correlate → silently excluded from expected_but_missed). >0 usually means
     // a stale pre-session_id hook is installed; run `fabric install`.
     uncorrelatable_edits?: number;
+    // v2.1 ⑤ cite-redesign (P5): recall-based coverage口径. recall_backed_edits =
+    // correlatable edits preceded (within the recall window) by an in-session
+    // knowledge_context_planned whose target_paths overlap the edited file —
+    // the recall→edit overlap IS the citation (no hand-written `KB:` needed).
+    // recall_coverage_rate = recall_backed_edits / edits_touched (null when no
+    // edits). Additive — legacy first-line-`KB:` metrics are unchanged.
+    recall_backed_edits?: number;
+    recall_coverage_rate?: number | null;
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -362,6 +370,25 @@ function matchesRelevancePath(editPath: string, relevancePaths: readonly string[
   return false;
 }
 
+// v2.1 ⑤ cite-redesign (P5): does an edited file fall within a fab_recall's
+// target_paths? Mirror of the cite-policy-evict.cjs hook's pathPairOverlaps so
+// the hook's runtime nudge and doctor's recall-based口径 use the SAME overlap
+// definition. True on exact match, path-boundary suffix (abs-vs-rel skew), or
+// ancestor-directory containment. Conservative — no basename-only matches.
+function recallPathOverlaps(editPath: string, recallPaths: readonly string[]): boolean {
+  if (recallPaths.length === 0) return false;
+  const e = normalizePath(editPath);
+  if (e.length === 0) return false;
+  for (const rp of recallPaths) {
+    const r = normalizePath(rp);
+    if (r.length === 0) continue;
+    if (e === r) return true;
+    if (e.endsWith("/" + r) || r.endsWith("/" + e)) return true;
+    if (e.startsWith(r + "/") || r.startsWith(e + "/")) return true;
+  }
+  return false;
+}
+
 // v2.0.0-rc.39 (P1 emit-fold reader merge): empty-shell assistant_turn_observed
 // turns no longer hit events.jsonl — the fabric-hint Stop hook (and the one-time
 // doctor --fix purge) fold them into metrics.jsonl counter rows keyed
@@ -449,9 +476,18 @@ export async function runDoctorCiteCoverage(
     // window {since: dayStart, until: dayEnd} by reusing this exact aggregation
     // (no duplicate metric logic that could drift from the live report).
     until?: number;
+    // v2.1 ⑤ cite-redesign (P5): how far back (ms) an in-session fab_recall
+    // counts as "informing" a subsequent edit for the recall-based口径.
+    // Default 30min (mirrors cite_recall_window_minutes default). 0 = unbounded.
+    recallWindowMs?: number;
   },
 ): Promise<CiteCoverageReport> {
   const layerFilter = options.layer ?? "all";
+  // v2.1 ⑤: recall→edit correlation window. Default 30min; 0 = unbounded.
+  const recallWindowMs =
+    typeof options.recallWindowMs === "number" && options.recallWindowMs >= 0
+      ? options.recallWindowMs
+      : 30 * 60_000;
   const marker = await ensureCitePolicyActivatedMarker(projectRoot);
   // v2.0.0-rc.24 TASK-08: contract marker (independent audit window from the
   // rc.20 cite_policy_activated marker — see plan B4). The drift gate inside
@@ -558,9 +594,14 @@ export async function runDoctorCiteCoverage(
   type TurnEvent = Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }>;
   type EditEvent = Extract<EventLedgerEvent, { event_type: "edit_intent_checked" }>;
   type FetchEvent = Extract<EventLedgerEvent, { event_type: "knowledge_sections_fetched" }>;
+  // v2.1 ⑤ cite-redesign (P5): knowledge_context_planned is the recall event
+  // (target_paths + final_stable_ids + session_id) — the recall→edit overlap
+  // is the recall-based citation.
+  type PlannedEvent = Extract<EventLedgerEvent, { event_type: "knowledge_context_planned" }>;
   const assistantTurns: TurnEvent[] = [];
   const editEvents: EditEvent[] = [];
   const fetchEvents: FetchEvent[] = [];
+  const plannedEvents: PlannedEvent[] = [];
   for (const event of ledgerEvents) {
     switch (event.event_type) {
       case "assistant_turn_observed":
@@ -572,9 +613,26 @@ export async function runDoctorCiteCoverage(
       case "knowledge_sections_fetched":
         fetchEvents.push(event);
         break;
+      case "knowledge_context_planned":
+        plannedEvents.push(event);
+        break;
       default:
         break;
     }
+  }
+
+  // v2.1 ⑤: per-session recall index for the recall-based口径. Each session maps
+  // to its knowledge_context_planned events (ts + target_paths), ts-ascending.
+  const plannedBySession = new Map<string, { ts: number; target_paths: readonly string[] }[]>();
+  for (const planned of plannedEvents) {
+    const sid = planned.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const list = plannedBySession.get(sid) ?? [];
+    list.push({ ts: planned.ts, target_paths: planned.target_paths ?? [] });
+    plannedBySession.set(sid, list);
+  }
+  for (const list of plannedBySession.values()) {
+    list.sort((a, b) => a.ts - b.ts);
   }
 
   // Apply client filter to assistant turns (edit/fetch events are not
@@ -929,6 +987,11 @@ export async function runDoctorCiteCoverage(
   // into a visible signal — exactly the confound that pinned compliance at a
   // misleading 100% for two prior closure attempts.
   let uncorrelatableEdits = 0;
+  // v2.1 ⑤ cite-redesign (P5): recall-based coverage口径. An edit is
+  // "recall-backed" when an in-session knowledge_context_planned with
+  // overlapping target_paths preceded it within the recall window. Counted over
+  // the SAME population as edits_touched (post client-filter, with session_id).
+  let recallBackedEdits = 0;
   for (const edit of editEvents) {
     // Edit events have no `client` field; per-client edits_touched stays at 0
     // (per_client only tabulates assistant-side metrics — see comment block).
@@ -949,6 +1012,22 @@ export async function runDoctorCiteCoverage(
     }
     editsTouched += 1;
     if (!hasSid) continue;
+
+    // v2.1 ⑤: recall-backed check. Scan this session's recalls for one that
+    // (a) happened at-or-before this edit, (b) within the recall window
+    // (recallWindowMs <= 0 = unbounded), and (c) targeted an overlapping path.
+    const recalls = plannedBySession.get(sid);
+    if (recalls !== undefined) {
+      for (const recall of recalls) {
+        if (recall.ts > edit.ts) break; // ts-ascending — no earlier match past here
+        if (recallWindowMs > 0 && edit.ts - recall.ts > recallWindowMs) continue;
+        if (recallPathOverlaps(edit.path, recall.target_paths)) {
+          recallBackedEdits += 1;
+          break;
+        }
+      }
+    }
+
     const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
     for (const [kbId, kb] of kbIndex) {
       if (kb.relevance_scope !== "narrow") continue;
@@ -971,6 +1050,9 @@ export async function runDoctorCiteCoverage(
   const complianceDenom = compliantCites + noncompliantCites;
   const citeComplianceRate = complianceDenom > 0 ? compliantCites / complianceDenom : null;
 
+  // v2.1 ⑤: recall-based coverage rate over the correlatable edit population.
+  const recallCoverageRate = editsTouched > 0 ? recallBackedEdits / editsTouched : null;
+
   const metrics: CiteCoverageReport["metrics"] = {
     edits_touched: editsTouched,
     qualifying_cites: qualifyingCites,
@@ -981,6 +1063,8 @@ export async function runDoctorCiteCoverage(
     compliant_cites: compliantCites,
     noncompliant_cites: noncompliantCites,
     uncorrelatable_edits: uncorrelatableEdits,
+    recall_backed_edits: recallBackedEdits,
+    recall_coverage_rate: recallCoverageRate,
   };
 
   // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were
@@ -1014,9 +1098,15 @@ export async function runDoctorCiteCoverage(
           (metrics.noncompliant_cites ?? 0) + (r.metrics.noncompliant_cites ?? 0);
         metrics.uncorrelatable_edits =
           (metrics.uncorrelatable_edits ?? 0) + (r.metrics.uncorrelatable_edits ?? 0);
+        // v2.1 ⑤: recall-backed edits are disjoint per day, so summing is exact.
+        metrics.recall_backed_edits =
+          (metrics.recall_backed_edits ?? 0) + (r.metrics.recall_backed_edits ?? 0);
       }
       const mergedDenom = (metrics.compliant_cites ?? 0) + (metrics.noncompliant_cites ?? 0);
       metrics.cite_compliance_rate = mergedDenom > 0 ? (metrics.compliant_cites ?? 0) / mergedDenom : null;
+      // v2.1 ⑤: recompute recall coverage over the merged edit population.
+      metrics.recall_coverage_rate =
+        metrics.edits_touched > 0 ? (metrics.recall_backed_edits ?? 0) / metrics.edits_touched : null;
     }
 
     // rc.39 emit-fold: add the folded empty-shell turns back into total_turns.
