@@ -155,12 +155,16 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F18"
+      ]
     },
     {
       "id": "M-extract",
@@ -205,11 +209,13 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
         "interaction": "untested"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -310,12 +316,15 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [],
+      "census_note": "cli test-suite 20 install 用例覆盖 idempotency/三端资产"
     },
     {
       "id": "C-metrics",
@@ -678,12 +687,15 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [],
+      "census_note": "depth: doctor 校验结构+ref镜像; archive 本会话实跑成功; 完整 followability efficacy → G-EFFICACY 冷评"
     },
     {
       "id": "S-fabric-review",
@@ -702,12 +714,15 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [],
+      "census_note": "depth: doctor 校验结构+ref镜像; archive 本会话实跑成功; 完整 followability efficacy → G-EFFICACY 冷评"
     },
     {
       "id": "S-fabric-import",
@@ -726,12 +741,15 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [],
+      "census_note": "depth: doctor 校验结构+ref镜像; archive 本会话实跑成功; 完整 followability efficacy → G-EFFICACY 冷评"
     },
     {
       "id": "X-git-governance",
@@ -857,11 +875,13 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -1306,6 +1326,26 @@
       "severity": "medium",
       "finding_class_note": "多-worktree并发(用户习惯)下知识分叉; co-location→store迁移per-branch不完整",
       "fix_task_id": null
+    },
+    {
+      "id": "F18",
+      "round": 1,
+      "finding_class": "followability-gap",
+      "surface": "M-get_sections",
+      "axis": "interaction",
+      "oracle": "doc-vs-code(API 签名)",
+      "expectation_source": "AGENTS.md 文档: fab_get_knowledge_sections({selection_token, ai_selected_stable_ids:[...]})",
+      "actual": "实调缺 ai_selection_reasons(必填 object)→ MCP validation error; 照文档签名 verbatim 调用必失败",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "首调按文档签名→error 'ai_selection_reasons Required'; 补上才成功",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "observability_tier": "T1",
+      "finding_class_note": "AGENTS.md 两步流文档漏必填参数; agent 照文档做会撞 error(followability)",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1313,7 +1353,7 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "27/34 surface 探测过",
+      "actual": "34/34 surface 探测过(skills depth-probed, 完整 efficacy 待 G-EFFICACY)",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
       "verified_at": null
     },
@@ -1386,7 +1426,8 @@
         "F14",
         "F15",
         "F16",
-        "F17"
+        "F17",
+        "F18"
       ],
       "carried_in": [],
       "carry_over_to_next": {
@@ -1571,5 +1612,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:28:42.000Z"
+  "updated_at": "2026-06-02T03:30:34.000Z"
 }
