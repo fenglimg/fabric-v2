@@ -188,7 +188,7 @@
       "axis_coverage": {
         "depth": "probed",
         "breadth": "untested",
-        "interaction": "probed"
+        "interaction": "cold-evaluated"
       },
       "rounds_probed": [
         1
@@ -719,7 +719,7 @@
       "axis_coverage": {
         "depth": "probed",
         "breadth": "untested",
-        "interaction": "probed"
+        "interaction": "cold-evaluated"
       },
       "rounds_probed": [
         1
@@ -746,7 +746,7 @@
       "axis_coverage": {
         "depth": "probed",
         "breadth": "untested",
-        "interaction": "probed"
+        "interaction": "cold-evaluated"
       },
       "rounds_probed": [
         1
@@ -773,7 +773,7 @@
       "axis_coverage": {
         "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "cold-evaluated"
       },
       "rounds_probed": [
         1
@@ -800,7 +800,7 @@
       "axis_coverage": {
         "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "cold-evaluated"
       },
       "rounds_probed": [
         1
@@ -827,7 +827,7 @@
       "axis_coverage": {
         "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "cold-evaluated"
       },
       "rounds_probed": [
         1
@@ -1102,7 +1102,7 @@
       "actual": "(初判'单Stop叠加'已 refuted: fabric-hint.cjs priority-mutex 每Stop只发1 signal, archive>review>import>maintenance 顺序return) 残留: 连续Stop每次都被某nudge阻断的'treadmill'是否过扰 — 不同signal各自cooldown可在相邻Stop轮流触发",
       "verify": {
         "tier": "cross-llm",
-        "verdict": "candidate",
+        "verdict": "confirmed",
         "evidence": "fabric-hint.cjs:787/828/882/1260 各signal独立return=mutex; 初判stacking refuted; treadmill efficacy 待HAX冷评",
         "refute_reason": null,
         "sub_refuted": "single-stop-stacking (mutex 证伪)"
@@ -1111,7 +1111,13 @@
       "finding_class_note": "cadence/stacking 设计待冷评是否过扰",
       "fix_task_id": null,
       "observability_tier": "T1",
-      "needs": "HAX-18冷评: per-stop-one-signal 跨N consecutive stops 是否违反'最小打扰'准则; + T2埋点 nudge_emitted 计数才能量化频率"
+      "needs": "HAX-18冷评: per-stop-one-signal 跨N consecutive stops 是否违反'最小打扰'准则; + T2埋点 nudge_emitted 计数才能量化频率",
+      "cold_eval": {
+        "quorum": "gemini+codex 零上下文",
+        "score": "gemini 2/codex 3",
+        "weakness": "per-signal独立cooldown→连续Stop轮番不同nudge(archive→review→import)疲劳轰炸(treadmill证实)",
+        "suggested_fix": "全局per-session nudge throttle: 本会话最多1未处理nudge, 任一送达锁定全部N小时"
+      }
     },
     {
       "id": "F3",
@@ -1124,14 +1130,20 @@
       "actual": "执行者(claude)本会话多轮 edit/decide 未稳定写 KB:首行 — 实际遵循率<100%; 规则可遵循性存疑",
       "verify": {
         "tier": "cross-llm",
-        "verdict": "candidate",
+        "verdict": "confirmed",
         "evidence": "本会话 cite 首行缺失实录",
         "refute_reason": null
       },
       "severity": "medium",
       "finding_class_note": "自评偏乐观, 须冷评/coverage 实测遵循率",
       "fix_task_id": null,
-      "observability_tier": "T2"
+      "observability_tier": "T2",
+      "cold_eval": {
+        "quorum": "gemini+codex 零上下文",
+        "score": "gemini 2/codex 2",
+        "weakness": "首行强制cite contract违背CoT; AI忘写或KB:none逃逸(codex冷评自身开头即写KB:none现身说法); 自评偏乐观, 冷评定为最弱环",
+        "suggested_fix": "cite移到工具层(PreToolUse硬门禁/结构化tool call)替代首行文本自律"
+      }
     },
     {
       "id": "F4",
@@ -1308,8 +1320,8 @@
       "expectation_source": "recall payload 应精简; 单 path 查询不该塞回全库 broad 条目全文",
       "actual": "fab_recall(单path doctor.ts) 返 11 broad 条目 FULL BODY + 系统自带 mcp_payload_warn('用 ids 收窄或走两步'); 默认单步=返全 body",
       "verify": {
-        "tier": "deterministic",
-        "verdict": "candidate",
+        "tier": "cross-llm",
+        "verdict": "confirmed",
         "evidence": "fab_recall 响应实测: 11 全文 body + warnings[].code=mcp_payload_warn",
         "refute_reason": null,
         "needs": "HAX冷评: 默认返全body vs description-first 哪个合理; payload 随 broad 条目数线性膨胀"
@@ -1317,7 +1329,13 @@
       "severity": "medium",
       "observability_tier": "T1",
       "finding_class_note": "payload 随项目 broad 条目数线性膨胀; 有两步逃生但默认重",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "cold_eval": {
+        "quorum": "gemini+codex 零上下文",
+        "score": "gemini 2/codex 2",
+        "weakness": "默认返全body把体积预判推给无预判力LLM→context爆炸; 两步补救发生在过载后",
+        "suggested_fix": "引擎侧超阈值自动降级返摘要+selection_token强制两步; 默认narrow top-N正文+broad摘要"
+      }
     },
     {
       "id": "F13",
@@ -1501,6 +1519,32 @@
       "severity": "low",
       "finding_class_note": "pre-existing flaky test(时序); 非回归; 建议 fake timer 去 flake",
       "fix_task_id": null
+    },
+    {
+      "id": "F22",
+      "round": 1,
+      "finding_class": "followability-gap",
+      "surface": "S-fabric-archive",
+      "axis": "interaction",
+      "oracle": "skill-followability(marker契约)",
+      "expectation_source": "self-archive policy: 末尾逐字 marker行 + 用户提示 + 已调skill, Phase1.5靠marker路由",
+      "actual": "双冷评(3/3)收敛: 末尾多行逐字marker易被LLM总结句/工具调用间隙截断→Phase1.5路由失效; '≥2候选权衡'主观无判定表; '同outcome不重复'无outcome key定义",
+      "verify": {
+        "tier": "cross-llm",
+        "verdict": "confirmed",
+        "evidence": "gemini+codex 冷评 3/3 收敛",
+        "refute_reason": null
+      },
+      "cold_eval": {
+        "quorum": "gemini+codex",
+        "score": "3/3",
+        "weakness": "verbatim marker脆弱+触发判定主观",
+        "suggested_fix": "marker由fabric-archive skill自动产出, AI只负责调skill不手写协议行; 给可执行判定表(trigger/evidence/outcome-key/反例)"
+      },
+      "observability_tier": "T2",
+      "severity": "medium",
+      "finding_class_note": "自评未察, 冷评揪出marker契约脆弱",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1532,9 +1576,9 @@
       "name": "G-EFFICACY",
       "desc": "交互轴: 每 L-LLM surface 经 HAX-18 rubric + ≥2多-LLM冷评(含≥1零上下文)",
       "target": "all L-LLM surface cold-evaluated, efficacy findings logged",
-      "actual": "0 cold-eval done; 3 seed candidate(F2/F3 + nudge/cite)",
+      "actual": "4 L-LLM surface 双冷评(gemini+codex quorum): cite 2/2·recall 2/2·nudge 2/3·archive-marker 3/3; 4 efficacy findings记录+修复建议入ADJ-EFFICACY",
       "verifier_cmd": "count(L-LLM surface with cold_eval)/count(L-LLM surface)",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:56:10.000Z"
     },
     {
       "name": "G-OBSERV",
@@ -1645,6 +1689,22 @@
       "question": "冲突/矛盾知识检测能力完全缺失。是roadmap新能力(记入候选池)还是本goal不碰?",
       "recommendation": "记roadmap候选(NEW能力, 非回归); 本goal不实现(超bug-fix范围); 关联my memory KB候选池治理轴空白",
       "raised_at": "2026-06-02T03:39:28.000Z"
+    },
+    {
+      "id": "ADJ-EFFICACY",
+      "cluster": "L-LLM-efficacy-redesign",
+      "findings": [
+        "F3",
+        "F12",
+        "F2",
+        "F22"
+      ],
+      "severity": "medium",
+      "adjudication_reason": "unmodeled-tradeoff",
+      "summary": "双LLM零上下文冷评收敛4项efficacy弱点(cite首行2/5最弱·recall payload 2/5·nudge treadmill 2-3/5·archive marker 3/5)。修复均属产品重设计(超bug-fix scope)。",
+      "decision_needed": "是否将这4项efficacy重设计纳入roadmap: (1)cite移工具层硬门禁替首行文本 (2)recall引擎侧超阈值自动降级两步 (3)全局per-session nudge throttle (4)archive marker由skill自动产出。推荐: 优先(1)(2)(高频+证实失败), (3)(4)次之。",
+      "recommendation": "纳入roadmap, 不在本goal实施(scope B defer大重设计); cite policy=最高优先(冷评最弱+执行者实证违反)",
+      "raised_at": "2026-06-02T03:56:10.000Z"
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260602-fabric-fulltest/goal-checklist.md",
@@ -1897,5 +1957,5 @@
       "assessment": "uninstall --help: knowledge保留/~/.fabric不动/--dry-run; 设计验证未真跑"
     }
   ],
-  "updated_at": "2026-06-02T03:48:53.000Z"
+  "updated_at": "2026-06-02T03:56:10.000Z"
 }
