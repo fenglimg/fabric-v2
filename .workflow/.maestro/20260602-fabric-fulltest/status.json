@@ -130,11 +130,13 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -177,11 +179,13 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -224,11 +228,13 @@
         "P3"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -825,12 +831,16 @@
         "P5"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F17"
+      ]
     },
     {
       "id": "X-decay-lifecycle",
@@ -895,11 +905,13 @@
         "P1"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -917,11 +929,13 @@
         "P5"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -1272,6 +1286,26 @@
       "severity": "high",
       "finding_class_note": "multi-store mounted≠bound; 团队知识surfacing断裂(共享存在但读不到); F1 refuted后真问题另一面",
       "fix_task_id": null
+    },
+    {
+      "id": "F17",
+      "round": 1,
+      "finding_class": "design-confusion",
+      "surface": "X-worktree-concurrency",
+      "axis": "breadth",
+      "oracle": "cross-worktree-consistency + migration-completeness",
+      "expectation_source": "同一逻辑项目跨worktree的知识应一致; co-location→store迁移应跨分支完成或有引导",
+      "actual": "werewolf-5sp3=multi-store(0本地, team store mounted); werewolf-minigame/4sp2分支=co-location 59条本地committed; 0601=无fabric → 同项目跨worktree fabric模型分叉, 知识重复(59 co-located vs 57 store)/迁移未跨分支",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "5sp3 .fabric/knowledge=0; werewolf-minigame .fabric/knowledge=59; team store commit='migrate 57 werewolf real knowledge'",
+        "refute_reason": null,
+        "needs": "判: git分支天然.fabric不同(预期) vs 迁移工具应处理跨worktree/分支一致性(gap); 用户多worktree切换得不同知识"
+      },
+      "severity": "medium",
+      "finding_class_note": "多-worktree并发(用户习惯)下知识分叉; co-location→store迁移per-branch不完整",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1279,7 +1313,7 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "21/34 surface 探测中",
+      "actual": "27/34 surface 探测过",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
       "verified_at": null
     },
@@ -1351,7 +1385,8 @@
         "F13",
         "F14",
         "F15",
-        "F16"
+        "F16",
+        "F17"
       ],
       "carried_in": [],
       "carry_over_to_next": {
@@ -1536,5 +1571,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:26:39.000Z"
+  "updated_at": "2026-06-02T03:28:42.000Z"
 }
