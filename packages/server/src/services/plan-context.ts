@@ -5,6 +5,7 @@ import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { loadActiveMetaOrStale } from "./load-active-meta.js";
+import { buildCrossStoreRawItems } from "./cross-store-recall.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
@@ -337,7 +338,15 @@ export async function planContext(
   // no-ops since rc.37 A1, so there is no per-path narrowing to do — every path
   // sees the same candidates. We dedupe by stable_id and surface empty-shell
   // suppressions as a preflight diagnostic.
-  const { rawItems: allRawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
+  const { rawItems: projectRawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
+
+  // v2.1 global-refactor (W1-T1): merge candidates from every mounted store in
+  // the project's read-set (required_stores ∪ implicit personal). Store entries
+  // are store-qualified (`<alias>:<id>`) and flow through the SAME layer-filter /
+  // BM25 / vector / sort / dedup / top_k pipeline below. best-effort: a
+  // multi-store hiccup degrades to project-only recall, never crashes the hint.
+  const storeRawItems = await buildCrossStoreRawItems(projectRoot).catch(() => []);
+  const allRawItems = [...projectRawItems, ...storeRawItems];
 
   // F54 (ISS-20260531-090): honor the declared `layer_filter`. The per-call
   // value wins; otherwise fabric.config.json#default_layer_filter; "all"/"both"

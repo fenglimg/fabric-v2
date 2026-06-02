@@ -919,7 +919,10 @@ function toPosixPath(path: string): string {
   return path.split(sep).join("/");
 }
 
-function deriveRuleIdentity(file: string, source: string, existing: NodeMeta | undefined): RuleIdentity {
+// v2.1 global-refactor (W1-T1): exported so the cross-store recall builder can
+// derive a store entry's stable_id from its frontmatter with the same logic the
+// project meta build uses (path-decoupled id verbatim, deterministic fallback).
+export function deriveRuleIdentity(file: string, source: string, existing: NodeMeta | undefined): RuleIdentity {
   // v2.0: Knowledge entries declare a path-decoupled id (KP-/KT-) in their
   // YAML frontmatter `id:` field. When present we use it verbatim and never
   // regenerate from the path — moving a knowledge file between directories
@@ -999,7 +1002,11 @@ function extractDeclaredKnowledgeId(source: string): string | undefined {
   return isKnowledgeStableId(candidate) ? candidate : undefined;
 }
 
-function extractRuleDescription(source: string): RuleDescription | undefined {
+// v2.1 global-refactor (W1-T1): exported so the cross-store recall builder can
+// turn a mounted store's raw markdown frontmatter into the same RuleDescription
+// the project meta build produces (stores ship no prebuilt agents.meta — their
+// .gitignore excludes it — so candidates must be built from markdown at recall).
+export function extractRuleDescription(source: string): RuleDescription | undefined {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/u.exec(source);
   const description = frontmatter === null
     ? undefined
