@@ -10,7 +10,7 @@
   "intent": "实现3个fabric后续功能: ⑤cite重设计(recall-based自动记账) ④冲突检测(LLM判定) ③向量中文模型+install. 各按scratchpad方案文档.",
   "goal": "task_decomposition 全部 status=done(每个fix实现+deterministic验证+tsc/test绿); 依次 ⑤→④→③; 分批commit",
   "mode": "1",
-  "current_phase": "execute",
+  "current_phase": "completed",
   "current_round": 1,
   "boundary_contract": {
     "in_scope": [
@@ -54,12 +54,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "recall-aware PreToolUse hook 27测绿 + 三端注册迁移(install/parity/uninstall绿)",
+        "verified_at": "2026-06-02T05:59:25.680Z"
       }
     },
     {
@@ -75,12 +75,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "bootstrap-canonical Cite policy 段 recall-first 重写; bootstrap-canonical 32测+cite-parser parity 全绿",
+        "verified_at": "2026-06-02T05:59:25.680Z"
       }
     },
     {
@@ -96,12 +96,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "doctor recall-based口径(recall_backed_edits/rate) 8单测绿 + CLI渲染+中英i18n; doctor.test 259全绿; recursive tsc clean",
+        "verified_at": "2026-06-02T05:59:25.680Z"
       }
     },
     {
@@ -117,12 +117,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "conflict-lint.ts bm25候选+可注入LLM-judge seam; 12单测(矛盾/无关/相似非矛盾/跨type跨layer/阈值/judge throw降级)绿",
+        "verified_at": "2026-06-02T06:21:10.888Z"
       }
     },
     {
@@ -138,12 +138,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "doctor-conflict + --lint-conflicts[--deep] + config阈值 + 中英i18n + 渲染; 5集成单测绿; 全测2214绿0失败; recursive tsc clean; CLI surface snapshot更新",
+        "verified_at": "2026-06-02T06:21:10.888Z"
       }
     },
     {
@@ -159,12 +159,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "确认 fastembed@2.1.0 EmbeddingModel 枚举(BGESmallZH/MLE5Large+5英文); 无 e5-small → 修正选 fast-bge-small-zh-v1.5(轻/中文)为默认 pin",
+        "verified_at": "2026-06-02T06:31:13.999Z"
       }
     },
     {
@@ -180,12 +180,12 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "config embed_model 枚举+默认 + readEmbedConfig 读取 + vector-retrieval buildEmbedInitOptions 纯seam 传 model 入 init + plan-context 接线; config(21)+vector(20) 单测绿",
+        "verified_at": "2026-06-02T06:31:13.999Z"
       }
     },
     {
@@ -201,19 +201,38 @@
         "ALL-DONE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc+vitest",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "install --enable-embed[--embed-model] 幂等启用步骤 + semantic-search.ts(8单测: 幂等/skip/override/merge保留/corrupt重建) + 中英i18n + CLI surface snapshot; 全测2230绿0失败; recursive tsc clean",
+        "verified_at": "2026-06-02T06:31:13.999Z"
       }
     }
   ],
   "needs_adjudication": [],
-  "git_commits": [],
+  "git_commits": [
+    {
+      "sha": "984c855",
+      "cluster": "⑤cite C1-C3",
+      "at": "2026-06-02T05:59:25.680Z",
+      "note": "recall-based cite 重设计"
+    },
+    {
+      "sha": "4d1cbcb",
+      "cluster": "④conflict D1-D2",
+      "at": "2026-06-02T06:21:10.888Z",
+      "note": "知识冲突检测 conflict-lint"
+    },
+    {
+      "sha": "330dfbe",
+      "cluster": "③vector V1-V3",
+      "at": "2026-06-02T06:31:13.999Z",
+      "note": "中文embed模型pin+install一键启用"
+    }
+  ],
   "goal_checklist_path": ".workflow/.maestro/20260602-fabric-followup-impl/goal-checklist.md",
   "proposals_dir": ".workflow/.scratchpad/fabric-followup-proposals/",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "completed",
+  "loop_exit_status": "goal_met"
 }
