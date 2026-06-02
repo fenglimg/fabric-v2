@@ -1138,14 +1138,15 @@
       "actual": "doctor global_cli_outdated 报 '2.2.0-rc.1 低于最低支持版本 2.0.0-rc.31' = 假阳性; 疑只比 rc 后缀(1<31)忽略 base(2.2.0>2.0.0)",
       "verify": {
         "tier": "deterministic",
-        "verdict": "candidate-strong",
-        "evidence": "fabric doctor 输出实证 = 把更新版本判为过时; 影响所有 2.1.x/2.2.x-rc.<31 用户被误导降级重装",
+        "verdict": "confirmed",
+        "evidence": "doctor.ts:4749-4752 inspectGlobalCliVersion: observedRc=Number(m[4]) 只取rc后缀, 比 minRc(31) 忽略base版本(2.2.0 vs 2.0.0); 1<31→outdated. 且GA版(无-rc)正则不匹配→unparseable",
         "refute_reason": null,
         "needs": "锁 doctor.ts version floor 比较 fn 行号确认 rc-suffix-only 比较"
       },
       "severity": "high",
       "finding_class_note": "版本门假阳性, 高扩散(每个 2.1+/2.2-rc.<31 用户中招)",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "fix_known": "改为全semver比较(base major.minor.patch 优先, 相等再比rc); GA版正则需容纳无-rc后缀"
     },
     {
       "id": "F9",
@@ -1298,14 +1299,15 @@
       "actual": "werewolf SessionStart broad-hint 报'知识库稀疏'仅显示1条personal(KP-PRO-0001); team store(6d5bcbd4)mounted但 fabric status 'required:(none)' 未bind → 57条team知识不在read-set不surface; project agents.meta.json nodes=1",
       "verify": {
         "tier": "deterministic",
-        "verdict": "candidate",
-        "evidence": "knowledge-hint-broad输出'1 broad entry'+'知识库稀疏'; fabric status required:(none); store team mounted; ~/.fabric/stores/6d5bcbd4 含57条",
+        "verdict": "confirmed",
+        "evidence": "store bind 是手动命令(store.ts:113); install.ts grep 无 auto-bind/required_stores 写入 → 迁移multi-store后team store mounted但不bind, 需手动 fabric store bind team; 否则57条不在read-set",
         "refute_reason": null,
         "needs": "判: install/migrate 后未自动 bind team store(install gap) vs 用户需手动 fabric store bind team(预期手动步骤). 若需手动则文档/onboard是否引导"
       },
       "severity": "high",
       "finding_class_note": "multi-store mounted≠bound; 团队知识surfacing断裂(共享存在但读不到); F1 refuted后真问题另一面",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "needs": "设计裁决: install/migrate 是否应 auto-bind team store(F16是gap) vs 手动bind是预期步骤(则onboard/doctor应引导而当前doctor不报缺bind)"
     },
     {
       "id": "F17",
@@ -1346,6 +1348,45 @@
       "observability_tier": "T1",
       "finding_class_note": "AGENTS.md 两步流文档漏必填参数; agent 照文档做会撞 error(followability)",
       "fix_task_id": null
+    },
+    {
+      "id": "F19",
+      "round": 1,
+      "finding_class": "efficacy-weakness",
+      "surface": "CAP-vector",
+      "axis": "capability",
+      "oracle": "capability-state + efficacy",
+      "expectation_source": "产品同空间有向量检索; my memory v2.2 C2-vector conditional-absorb",
+      "actual": "向量检索已实现但默认OFF(embed_enabled false); 需operator手装fastembed到server解析位置(全局MCP=npm i -g); 首跑cold-cache下载模型权重(非严格air-gap, HONEST CAVEAT in src); 默认体验=BM25-only无语义",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "fabric-config.ts:396 embed_enabled default false; vector-retrieval.ts头部constraints; werewolf/pcf均未装fastembed",
+        "refute_reason": null
+      },
+      "severity": "low",
+      "finding_class_note": "语义检索能力present但dormant; 默认无语义召回(BM25漏义近词); 是否该默认引导opt-in待冷评",
+      "fix_task_id": null
+    },
+    {
+      "id": "F20",
+      "round": 1,
+      "finding_class": "value-loop-broken",
+      "surface": "CAP-conflict",
+      "axis": "capability",
+      "oracle": "capability-absence",
+      "expectation_source": "知识库应能检测矛盾条目(两条对立decision/pitfall共存=知识可信度危机)",
+      "actual": "conflict/contradiction检测未实现(grep detectConflict/contradict零结果); 两条对立知识可静默共存, recall会同时召回矛盾建议",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "grep零实现; doctor无conflict check(20+ check清单无矛盾检测项)",
+        "refute_reason": null,
+        "needs": "判: 冲突检测是roadmap缺口(记NEW浮用户)vs 超本goal范围; 属能力空白非回归bug"
+      },
+      "severity": "medium",
+      "finding_class_note": "宏观能力空白: 无矛盾知识检测; LLM召回到对立建议无警示",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1353,9 +1394,9 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "34/34 surface 探测过(skills depth-probed, 完整 efficacy 待 G-EFFICACY)",
+      "actual": "34/34 surface 探测过(MCP6/CLI12/hook4/skill3/跨切9)",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:31:25.000Z"
     },
     {
       "name": "G-VALUE-LOOP",
@@ -1404,6 +1445,14 @@
       "actual": "baseline 2189 passed(pre-goal)",
       "verifier_cmd": "pnpm -r exec tsc --noEmit && test; + werewolf smoke",
       "verified_at": null
+    },
+    {
+      "name": "G-CAPABILITY",
+      "desc": "能力/特性级census每条 present+efficacy评 或 absent+记录",
+      "target": "9 capability 全评估",
+      "actual": "9/9 census(present:bm25/salience/endorsement/budget/tokenize/dedup; OFF:vector; ABSENT:conflict; partial:scale); efficacy: bm25/scale 待规模化, salience/endorsement 待独立验",
+      "verifier_cmd": "count(capability_census assessed)/9",
+      "verified_at": "2026-06-02T03:38:01.000Z"
     }
   ],
   "audit_rounds": [
@@ -1538,7 +1587,84 @@
       "followability-gap",
       "isolation-leak"
     ],
-    "bug_capture_policy": "LIBERAL — 像bug的/设计导致疑惑的/efficacy弱的全部当 finding 记(标 finding_class), verify 阶梯(deterministic→多-LLM冷评→human)再判 confirmed/refuted; 目标'评完留下完整 findings ledger', 不留空"
+    "bug_capture_policy": "LIBERAL — 像bug的/设计导致疑惑的/efficacy弱的全部当 finding 记(标 finding_class), verify 阶梯(deterministic→多-LLM冷评→human)再判 confirmed/refuted; 目标'评完留下完整 findings ledger', 不留空",
+    "capability_census": {
+      "note": "能力/特性级 census(跨surface宏观功能), 每条 present+efficacy 或 absent+noted; J-META从源码grep判实现态",
+      "capabilities": [
+        {
+          "id": "CAP-bm25",
+          "name": "BM25 lexical 排序",
+          "status": "present-active",
+          "source": "services/bm25.ts",
+          "efficacy": "unverifiable-at-small-scale(语料~10条全在top_k内, 观测不到排序区分; 需大语料如bound团队57条验)",
+          "finding": "F-bm25-scale"
+        },
+        {
+          "id": "CAP-vector",
+          "name": "向量/语义检索",
+          "status": "present-OFF-default",
+          "source": "services/vector-retrieval.ts",
+          "efficacy": "opt-in(embed_enabled default false; 需手装fastembed到server模块位置; 首跑cold-cache下载模型权重非严格air-gap); 默认BM25-only",
+          "finding": "F19"
+        },
+        {
+          "id": "CAP-salience",
+          "name": "salience 评分",
+          "status": "present",
+          "source": "vector-retrieval/plan-context",
+          "efficacy": "在fallback ranking路径; 效能未独立验",
+          "finding": null
+        },
+        {
+          "id": "CAP-endorsement",
+          "name": "endorsement 加权",
+          "status": "present",
+          "source": "config-loader/doctor/config-schema",
+          "efficacy": "有config+doctor check; 效能未独立验",
+          "finding": null
+        },
+        {
+          "id": "CAP-budget",
+          "name": "retrieval budget/payload截断",
+          "status": "present-active",
+          "source": "shared/retrieval-budget.ts + mcp-payload-guard",
+          "efficacy": "active(F12观测到payload warn); conservative/balanced/generous profile",
+          "finding": "F12"
+        },
+        {
+          "id": "CAP-tokenize-cjk",
+          "name": "CJK分词",
+          "status": "present",
+          "source": "shared/text-tokenize.ts",
+          "efficacy": "未独立验(zh-CN-hybrid内容)",
+          "finding": null
+        },
+        {
+          "id": "CAP-dedup",
+          "name": "去重(id/idempotency)",
+          "status": "present",
+          "source": "knowledge-id-allocator/extract-knowledge(idempotency_key)",
+          "efficacy": "id分配+extract幂等去重; near-dup语义去重未见",
+          "finding": null
+        },
+        {
+          "id": "CAP-conflict",
+          "name": "冲突/矛盾检测",
+          "status": "ABSENT",
+          "source": "grep零结果",
+          "efficacy": "未实现 — fabric不检测矛盾知识条目(两条对立decision共存不报)",
+          "finding": "F20"
+        },
+        {
+          "id": "CAP-scale",
+          "name": "大语料/上下文溢出处理",
+          "status": "partial(budget截断)",
+          "source": "retrieval-budget",
+          "efficacy": "有截断但大语料行为(1000s条)未实测; my memory记v2.1 '规模化上下文溢出' gap",
+          "finding": "F-scale"
+        }
+      ]
+    }
   },
   "value_loops": [
     {
@@ -1612,5 +1738,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:30:34.000Z"
+  "updated_at": "2026-06-02T03:38:01.000Z"
 }
