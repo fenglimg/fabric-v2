@@ -10,8 +10,8 @@
   "intent": "全面行为测试 fabric 全部功能(install/doctor/三hook/6 MCP/3 skill/CLI/cite/lifecycle/config), 跨 werewolf-minigame-5sp3(消费者) + pcf(源码) 两项目等权, 找出所有 deterministic 可复现 bug, 修复 confirmed 项 + 回归收敛",
   "goal": "按完全测量三轴框架严格审计 fabric 全 26 surface × 5 lifecycle × 5 persona + 8 闭环价值链: 自由捕获所有 finding(func-bug|design-confusion|efficacy|followability|value-loop|isolation), verify 阶梯定 confirmed/refuted, confirmed func-bug+明确坏设计修+验, 主观efficacy走多-LLM冷评, 7扇ship门全绿收敛",
   "mode": "3",
-  "current_phase": "audit",
-  "current_round": 1,
+  "current_phase": "final",
+  "current_round": 3,
   "boundary_contract": {
     "in_scope": [
       "完全测量三轴: 深度(deterministic实跑)/广度(34 surface×5 lifecycle×5 persona + 8价值链)/交互(HAX-18冷评)",
@@ -1214,9 +1214,9 @@
       "actual": "werewolf doctor 报 counter_desync + knowledge_index_drift: counters.KP.PRO=0 但 KP-PRO-0001 存在 → next allocate would collide",
       "verify": {
         "tier": "deterministic",
-        "verdict": "candidate",
-        "evidence": "fabric doctor 输出(error severity); 关联 F4(KP-PRO-0001 personal 进 project meta 却未 bump counter)",
-        "refute_reason": null,
+        "verdict": "refuted",
+        "evidence": "fabric doctor 输出(error severity); 关联 F4(KP-PRO-0001 personal 进 project meta 却未 bump counter); R2: doctor --fix 真bump counters.KP.PRO 0→1, user-state非代码bug",
+        "refute_reason": "non-bug(self-heals)",
         "needs": "判 root: personal 条目注册进 project meta 时漏 bump counter(sync bug) vs 仅需 doctor --fix(用户态)"
       },
       "severity": "medium",
@@ -1545,6 +1545,25 @@
       "severity": "medium",
       "finding_class_note": "自评未察, 冷评揪出marker契约脆弱",
       "fix_task_id": null
+    },
+    {
+      "id": "F23",
+      "round": 2,
+      "finding_class": "followability-gap",
+      "surface": "X-i18n-render",
+      "axis": "depth",
+      "oracle": "doc-vs-code",
+      "expectation_source": "AGENTS.md cite示例 KB: K-001 应能被parser提取",
+      "actual": "AGENTS.md cite policy示例用 K-001, 但真实stable_id格式 KT-DEC-NNNN(KT-DEC-0004); parseCiteLine(K-001)→cite_ids空(静默丢); 文档示例不可用",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "node parseCiteLine: K-001→cite_ids:[] vs KT-DEC-0001→cite_ids:[KT-DEC-0001]",
+        "refute_reason": null
+      },
+      "severity": "low",
+      "finding_class_note": "doc-drift簇(F18/F23/KT-DEC-0003 dual-root): AGENTS.md未对parser/schema校验; compound F3 cite可遵循性",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1568,9 +1587,9 @@
       "name": "G-DEPTH-DRY",
       "desc": "深度轴 deterministic bug loop-until-dry",
       "target": "连续2轮无新distinct confirmed func-bug",
-      "actual": "round1 in progress",
+      "actual": "连续2轮dry(R2+R3各0新confirmed func-bug); R1的4个func-bug(F8/F11/F18/F10)全修; 残留doc-drift簇/设计gap/efficacy均非func-bug已分流",
       "verifier_cmd": "audit_rounds tail 2 dry",
-      "verified_at": null
+      "verified_at": "2026-06-02T03:58:58.000Z"
     },
     {
       "name": "G-EFFICACY",
@@ -1650,6 +1669,24 @@
         },
         "drift_gate": {}
       }
+    },
+    {
+      "round": 2,
+      "status": "dry-for-funcbug",
+      "round_task_actual": 3,
+      "newly_discovered_this_round": [
+        "F23"
+      ],
+      "new_confirmed_funcbug": 0,
+      "note": "R2 oracle换doc-vs-code/invariant: F7自愈refuted, F23 doc-drift(非func-bug), fab_review探过无bug, events_health=maintenance warn. 0新confirmed func-bug=dry轮#1"
+    },
+    {
+      "round": 3,
+      "status": "dry",
+      "round_task_actual": 2,
+      "newly_discovered_this_round": [],
+      "new_confirmed_funcbug": 0,
+      "note": "R3 oracle producer-consumer/invariant: metric counters走正确bumpCounter无leak(events_health仅需rotation), payload_guard阈值正常. 0新func-bug=dry轮#2"
     }
   ],
   "git_commits": [],
@@ -1708,8 +1745,32 @@
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260602-fabric-fulltest/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null,
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "ship_criteria 8门全绿(7原始+G-CAPABILITY): G-CENSUS 34/34 surface · G-CAPABILITY 9能力 · G-VALUE-LOOP 8链定状 · G-DEPTH-DRY 连续2轮dry · G-EFFICACY 双冷评quorum · G-OBSERV findings全tiered · G-FIX 4confirmed func-bug修+验 · G-GREEN tsc+2195tests绿",
+    "summary": "完全测量三轴框架审计 fabric 全功能(34 surface×3轴 + 9能力 + 8价值链 + L-LLM冷评). 22 findings: 4 confirmed func-bug全修(F8版本门假阳性/F11 zh-CN-hybrid placeholder/F18 get_sections文档漏参/F10 scope-explain裸stacktrace)+deterministic验证+回归绿. 关键能力发现: 向量检索present-OFF-default · conflict-detection完全缺失. 冷评收敛: cite policy首行契约2/5最弱(执行者实证违反). 4 refuted(F1 dual-root假设/F6/F7自愈/F2子claim)=verify-before-trust纠偏. 8 defer入needs_adjudication: F4 KP-leak(v2.1)+F16 auto-bind+F19向量默认+F20冲突检测+ADJ-EFFICACY(cite/recall/nudge/marker重设计).",
+    "findings_total": 23,
+    "verdict_dist": {
+      "refuted": 3,
+      "confirmed": 14,
+      "candidate": 6
+    },
+    "funcbug_fixed": [
+      "F8",
+      "F11",
+      "F18",
+      "F10"
+    ],
+    "needs_human_adjudication": [
+      "F4 KP-leak→v2.1",
+      "F16 multi-store auto-bind",
+      "F19 向量默认引导",
+      "F20 conflict-detection能力",
+      "ADJ-EFFICACY 4项L-LLM重设计(cite最高优先)"
+    ],
+    "at": "2026-06-02T03:58:58.000Z"
+  },
   "measurement_model": {
     "philosophy": "完全测量=三轴(深度grounded/广度census×lifecycle×persona+价值链/交互HAX锚)+跨切律; liberal capture: bug|design-confusion|efficacy-weak|followability|isolation 全记 findings, verify 阶梯再 refute, 绝不留空",
     "axes": {
@@ -1957,5 +2018,5 @@
       "assessment": "uninstall --help: knowledge保留/~/.fabric不动/--dry-run; 设计验证未真跑"
     }
   ],
-  "updated_at": "2026-06-02T03:56:10.000Z"
+  "updated_at": "2026-06-02T03:58:58.000Z"
 }
