@@ -291,7 +291,11 @@ export const knowledgeSectionsInputSchema = z.object({
     ),
   ai_selection_reasons: z
     .record(z.string().min(1))
-    .describe("Reason for each AI-selected L1 stable_id"),
+    .optional()
+    .default({})
+    .describe(
+      "Optional reason for each AI-selected L1 stable_id (audit telemetry). Omit to fetch bodies without annotating — server defaults to {} rather than rejecting the documented two-step call.",
+    ),
   correlation_id: z
     .string()
     .optional()

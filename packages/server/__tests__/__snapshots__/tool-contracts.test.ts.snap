@@ -895,7 +895,8 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
           "minLength": 1,
           "type": "string",
         },
-        "description": "Reason for each AI-selected L1 stable_id",
+        "default": {},
+        "description": "Optional reason for each AI-selected L1 stable_id (audit telemetry). Omit to fetch bodies without annotating — server defaults to {} rather than rejecting the documented two-step call.",
         "type": "object",
       },
       "client_hash": {
@@ -919,7 +920,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     "required": [
       "selection_token",
       "ai_selected_stable_ids",
-      "ai_selection_reasons",
     ],
     "type": "object",
   },

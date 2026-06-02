@@ -45,8 +45,15 @@ export async function run(): Promise<void> {
     // Unknown-command / arg-parse failures are citty CLIErrors raised during
     // resolution (before any command body runs), so re-dispatching through
     // runMain to reuse its usage rendering + exit semantics is side-effect-free.
+    // citty tags these with a `CLIError` name and codes like `EARG` (missing
+    // required positional) / `EUSAGE` — NOT the `E_`-prefixed shape the original
+    // check assumed, so a missing positional leaked citty's raw stack trace to
+    // the user instead of a friendly usage block.
     const code = err !== null && typeof err === "object" ? (err as { code?: unknown }).code : undefined;
-    if (typeof code === "string" && code.startsWith("E_")) {
+    const isCittyUsageError =
+      (err instanceof Error && err.name === "CLIError") ||
+      (typeof code === "string" && (code.startsWith("E_") || code.startsWith("EARG") || code === "EUSAGE"));
+    if (isCittyUsageError) {
       await runMain(main, { rawArgs });
       return;
     }

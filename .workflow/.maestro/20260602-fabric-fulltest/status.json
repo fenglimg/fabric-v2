@@ -103,6 +103,27 @@
         "evidence": "doctor-global-cli 15 tests + doctor 741",
         "verified_at": "2026-06-02T03:41:13.000Z"
       }
+    },
+    {
+      "id": "FIX-F11",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F11 zh-CN-hybrid 不再误判placeholder",
+      "done_when": "test绿+shared rebuild",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "vitest",
+        "evidence": "resolve-fabric-locale 6 tests",
+        "verified_at": "2026-06-02T03:43:14.000Z"
+      }
     }
   ],
   "feature_surface_census": [
@@ -1227,7 +1248,9 @@
       },
       "severity": "medium",
       "finding_class_note": "合法配置被误判 placeholder; 每命令重复噪声+doctor双打; 只有 match-existing 才是真 placeholder",
-      "fix_task_id": null
+      "fix_task_id": "FIX-F11",
+      "status": "fixed",
+      "fix_evidence": "resolve-fabric-locale.ts: zh-CN-hybrid→\"zh-CN\"静默(只match-existing作真placeholder警告); +test用例(zh-CN-hybrid→zh-CN no-warn)6 tests绿; shared rebuilt"
     },
     {
       "id": "F12",
