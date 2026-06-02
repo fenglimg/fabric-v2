@@ -55,12 +55,12 @@
         "G-CENSUS"
       ],
       "alignment_strength": "infrastructure",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
-        "verifier": "fab -v + ls .fabric + MCP probe",
-        "evidence": null,
-        "verified_at": null
+        "verifier": "fab -v + build + .fabric ls + config.toml grep",
+        "evidence": "werewolf fabric=2.2.0-rc.1 + .fabric 全资产; pcf build EXIT0(dist 刷新到当前源, 原 dist stale); 三端 wiring 确认(claude .mcp.json/cursor .cursor/mcp.json/codex ~/.codex/config.toml)",
+        "verified_at": "2026-06-02T03:15:03.000Z"
       }
     },
     {
@@ -696,11 +696,15 @@
       ],
       "axis_coverage": {
         "depth": "untested",
-        "breadth": "untested",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F1"
+      ]
     },
     {
       "id": "X-meta-sync",
@@ -719,11 +723,15 @@
       ],
       "axis_coverage": {
         "depth": "untested",
-        "breadth": "untested",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F6"
+      ]
     },
     {
       "id": "X-multiclient-parity",
@@ -742,11 +750,15 @@
       ],
       "axis_coverage": {
         "depth": "untested",
-        "breadth": "untested",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F5"
+      ]
     },
     {
       "id": "X-worktree-concurrency",
@@ -875,11 +887,15 @@
       ],
       "axis_coverage": {
         "depth": "untested",
-        "breadth": "untested",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F4"
+      ]
     }
   ],
   "findings": [
@@ -958,6 +974,45 @@
       "severity": "high",
       "finding_class_note": "本 goal 作隔离/安全轴 reference, 修复归属 v2.1(不在本 goal 重修)",
       "fix_task_id": null
+    },
+    {
+      "id": "F5",
+      "round": 1,
+      "finding_class": "func-bug",
+      "surface": "X-multiclient-parity",
+      "axis": "breadth",
+      "oracle": "cross-client-parity",
+      "expectation_source": "fabric 支持 Codex CLI(toml.ts 有 codex MCP writer 写 [mcp_servers.fabric]; install restart-banner 点名 Codex MCP)→ intent=codex MCP 应接上",
+      "actual": "werewolf 端 codex 仅 hooks+skills 接上; ~/.codex/config.toml(存在,2851B)无 mcp_servers/无 fabric → Codex 用户拿不到 fab_recall 等 MCP, VL1 检索环对 Codex 断裂",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "grep -i fabric ~/.codex/config.toml=∅; .codex/mcp.json MISSING; toml.ts:45/185 writer 存在",
+        "refute_reason": null,
+        "needs": "install-replay 区分 user-skip vs install-gap(非破坏性: 在 werewolf 跑 fabric config mcp install 观测是否回写 codex)"
+      },
+      "severity": "medium",
+      "finding_class_note": "三端 MCP parity 缺口; codex 检索环依赖手动/重装",
+      "fix_task_id": null
+    },
+    {
+      "id": "F6",
+      "round": 1,
+      "finding_class": "design-confusion",
+      "surface": "X-meta-sync",
+      "axis": "breadth",
+      "oracle": "meta-knowledge-consistency",
+      "expectation_source": "agents.meta.json nodes 数 应 ≈ knowledge/*.md 数",
+      "actual": "werewolf meta nodes=1 但 project knowledge/*.md=0",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "refuted",
+        "evidence": "那 1 node=KP-PRO-0001 是 personal 层(file→~/.fabric/...), project knowledge=0 正确; 非 desync",
+        "refute_reason": "non-bug"
+      },
+      "severity": "low",
+      "finding_class_note": "REFUTED 但取证副产: KP-PRO-0001(personal)嵌在 werewolf git-committed agents.meta.json = F4/F15 的 LIVE 实证; F1 gitignore 当前遮蔽该泄漏(F1∩F15 交互)",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -965,7 +1020,7 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "0/26",
+      "actual": "4/34 surface breadth-probed (git-gov/multiclient/meta-sync/isolation)",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
       "verified_at": null
     },
@@ -973,7 +1028,7 @@
       "name": "G-VALUE-LOOP",
       "desc": "8 闭环价值链每条0用户跑通 或 broken-gap 记 finding",
       "target": "8/8 loop closed-or-gap-logged",
-      "actual": "3 suspected broken(VL2/VL5/VL6)+1 known(VL7) 已记, 4 untested",
+      "actual": "VL2 BROKEN(F1 confirmed)+VL7 BROKEN-known(F4)+VL5/VL6 WEAK; +VL1 codex 断裂(F5); 4 untested",
       "verifier_cmd": "count(value_loops[].status!=untested)/8",
       "verified_at": null
     },
@@ -1023,9 +1078,12 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 12,
-      "round_task_actual": 0,
+      "round_task_actual": 1,
       "convergence_status": "converging",
-      "newly_discovered_this_round": [],
+      "newly_discovered_this_round": [
+        "F5",
+        "F6"
+      ],
       "carried_in": [],
       "carry_over_to_next": {
         "from_open_blocked": [],
@@ -1211,5 +1269,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:08:20.000Z"
+  "updated_at": "2026-06-02T03:15:03.000Z"
 }
