@@ -54,6 +54,12 @@ export type GitPushOutcome = "clean" | "offline";
 export type GitRebasePull = (storeDir: string) => GitRebaseOutcome;
 export type GitPush = (storeDir: string) => GitPushOutcome;
 export type GitRebaseResolve = (storeDir: string) => void;
+// v2.1 global-refactor (W2-T3 review fix): commit the store's working-tree
+// knowledge changes (the .md files extract/approve wrote into the store repo)
+// BEFORE pull/push. Without this the store stays dirty: `git pull --rebase`
+// aborts on the dirty tree (F-SYNC-DIRTY) and `git push` has no commit to send,
+// so cross-machine team sharing never actually propagated — the whole point.
+export type GitCommitDirty = (storeDir: string) => void;
 
 export interface RunSyncOptions {
   // Project whose bindings snapshot is regenerated once the session settles.
@@ -63,6 +69,7 @@ export interface RunSyncOptions {
   now: string;
   pull?: GitRebasePull;
   push?: GitPush;
+  commit?: GitCommitDirty;
   rebaseContinue?: GitRebaseResolve;
   rebaseAbort?: GitRebaseResolve;
   writeScope?: string;
@@ -199,6 +206,45 @@ export function defaultPush(storeDir: string): GitPushOutcome {
   }
 }
 
+// v2.1 global-refactor (W2-T3 review fix, NEW-APPROVE-PROMOTE seam): commit the
+// store repo's working-tree knowledge changes before pull/push. extract-knowledge
+// and review approve write/move .md files INTO the store repo but deliberately do
+// NOT commit (they must not stage in a repo they don't own — that's sync's job).
+// The store `.gitignore` already excludes state/ + agents.meta.json + .cache/, so
+// `git add -A` stages only knowledge files. Best-effort: a non-repo dir (test
+// fixture / not-yet-initialized store) or a missing git identity leaves the tree
+// untouched and the next sync retries — a commit hiccup must never crash sync.
+export function defaultCommitDirty(storeDir: string): void {
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: storeDir,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+  } catch {
+    return; // not a git repo (test fixture / unmounted store) — nothing to commit.
+  }
+  try {
+    execFileSync("git", ["add", "-A"], { cwd: storeDir, stdio: ["ignore", "ignore", "pipe"] });
+    try {
+      // Exits 0 when the index matches HEAD (nothing staged) → no commit needed.
+      execFileSync("git", ["diff", "--cached", "--quiet"], {
+        cwd: storeDir,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      return;
+    } catch {
+      // Non-zero exit → staged changes exist → commit them.
+      execFileSync("git", ["commit", "-m", "fabric: sync local knowledge changes"], {
+        cwd: storeDir,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+    }
+  } catch {
+    // Best-effort — e.g. no configured git identity. Leave the changes
+    // uncommitted; the next `fabric sync` retries once the env is fixed.
+  }
+}
+
 // F57 (ISS-20260531-096): `git rebase --continue/--abort` can fail (unstaged
 // conflicts still present, no rebase in progress, dirty tree). Without catching,
 // execFileSync's bare "Command failed" throw propagates uncaught and crashes the
@@ -254,6 +300,7 @@ function walkPending(
   storeDirOf: (status: SyncStoreStatus) => string,
   pull: GitRebasePull,
   push: GitPush,
+  commit: GitCommitDirty,
   pushableAliases: ReadonlySet<string>,
 ): SyncSession {
   let next = session;
@@ -262,6 +309,10 @@ function walkPending(
       continue;
     }
     const dir = storeDirOf(store);
+    // Commit any extract/approve knowledge writes sitting in the store's working
+    // tree BEFORE rebasing — otherwise pull --rebase aborts on the dirty tree and
+    // push would have no commit to send.
+    commit(dir);
     const pullOutcome = pull(dir);
     if (pullOutcome !== "clean") {
       next = applySyncEvent(next, store.alias, OUTCOME_EVENT[pullOutcome]);
@@ -326,6 +377,7 @@ export function runStartSync(options: RunSyncOptions): RunSyncResult {
     storeDirOf,
     options.pull ?? defaultPull,
     options.push ?? defaultPush,
+    options.commit ?? defaultCommitDirty,
     pushableAliases,
   );
   return finalize(walked, options, globalRoot);
@@ -385,6 +437,7 @@ export function runContinueSync(options: RunSyncOptions): RunSyncResult {
     storeDirOf,
     options.pull ?? defaultPull,
     push,
+    options.commit ?? defaultCommitDirty,
     pushableAliases,
   );
   return finalize(resumed, options, globalRoot);
@@ -414,6 +467,7 @@ export function runAbortSync(options: RunSyncOptions): RunSyncResult {
     storeDirOf,
     options.pull ?? defaultPull,
     options.push ?? defaultPush,
+    options.commit ?? defaultCommitDirty,
     pushableAliases,
   );
   return finalize(resumed, options, globalRoot);

@@ -338,6 +338,57 @@ describe("real git: default `git push` publishes local commits (W2-T3)", () => {
     expect(git(remote, ["rev-parse", "main"]).trim()).toBe(localHead);
   });
 
+  // v2.1 global-refactor (W2-T3 review fix): the extract/approve seam. extract
+  // and review-approve write knowledge .md INTO the store working tree but do
+  // NOT commit (sync owns the store repo's git). This proves sync commits those
+  // UNCOMMITTED changes and pushes them — the previous round-trip test manually
+  // committed, masking that nothing in the real flow ever committed store writes.
+  it("commits uncommitted store knowledge writes (extract/approve seam) then pushes to the remote", () => {
+    const remote = mkdtempSync(join(tmpdir(), "fabric-sync-remote-"));
+    dirs.push(remote);
+    git(remote, ["init", "--bare", "-b", "main"]);
+    const seed = mkdtempSync(join(tmpdir(), "fabric-sync-seed-"));
+    dirs.push(seed);
+    git(seed, ["init", "-b", "main"]);
+    git(seed, ["commit", "--allow-empty", "-m", "seed"]);
+    git(seed, ["remote", "add", "origin", remote]);
+    git(seed, ["push", "-u", "origin", "main"]);
+    const remoteHeadBefore = git(remote, ["rev-parse", "main"]).trim();
+
+    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    mkdirSync(join(globalRoot, "stores"), { recursive: true });
+    execFileSync("git", ["clone", remote, storeDir], { stdio: "ignore" });
+    // git identity so defaultCommitDirty's plain `git commit` succeeds.
+    git(storeDir, ["config", "user.name", "t"]);
+    git(storeDir, ["config", "user.email", "t@e"]);
+
+    // Simulate extract/approve: a knowledge file appears in the store working
+    // tree, UNCOMMITTED (exactly what cross-store-write / approve produce).
+    const decisionsDir = join(storeDir, "knowledge", "decisions");
+    mkdirSync(decisionsDir, { recursive: true });
+    writeFileSync(join(decisionsDir, "KT-DEC-9001.md"), "---\nid: KT-DEC-9001\n---\n# Routed knowledge\n");
+
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        stores: [{ store_uuid: TEAM, alias: "team", remote, writable: true }],
+      }),
+      globalRoot,
+    );
+
+    // Real defaultCommit + defaultPush (no injection): sync must commit the dirty
+    // tree, then push so the knowledge file actually reaches the remote.
+    const result = runStartSync({ projectRoot, globalRoot, now: NOW });
+    expect(result.session.stores.find((s) => s.alias === "team")?.state).toBe("synced");
+
+    // origin/main advanced past its seed...
+    expect(git(remote, ["rev-parse", "main"]).trim()).not.toBe(remoteHeadBefore);
+    // ...and the pushed commit actually contains the knowledge file.
+    expect(git(remote, ["ls-tree", "-r", "--name-only", "main"])).toContain(
+      "knowledge/decisions/KT-DEC-9001.md",
+    );
+  });
+
   it("defers gracefully (no crash) when the push reports the remote unreachable", () => {
     // An offline push must defer (S17) rather than throw: the local commit stays
     // committed for a later retry, and the session still settles. The push
