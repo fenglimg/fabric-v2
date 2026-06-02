@@ -1,15 +1,14 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  buildStoreResolveInput,
   createStoreResolver,
-  loadGlobalConfig,
   readKnowledgeAcrossStores,
   resolveGlobalRoot,
   storeRelativePath,
   type MountedStoreDir,
   type RuleDescriptionIndexItem,
-  type StoreResolveInput,
 } from "@fenglimg/fabric-shared";
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
@@ -26,11 +25,9 @@ import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-bui
 // markdown into recall candidates, which plan-context concatenates into its
 // candidate corpus so they flow through the same ranking/dedup/top_k pipeline.
 //
-// Path A (self-resolve at recall time) is used INSTEAD of reading the
-// pre-resolved bindings snapshot (`~/.fabric/state/bindings/<project_id>_resolved.json`)
-// because `install` does not yet write `project_id` (deeptest F9), so the
-// snapshot is itself unwired. Self-resolving from global + project config is
-// robust to that gap.
+// Read-set / write-target resolution inputs come from the shared
+// `buildStoreResolveInput` (single source shared with the CLI scope-explain and
+// the W1-T2 write-side) instead of a hand-rolled config read.
 //
 // Stores ship NO prebuilt agents.meta (their `.gitignore` excludes it), so each
 // candidate's description is built from frontmatter at recall time. Entry ids
@@ -38,44 +35,6 @@ import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-bui
 // project ids in dedup and (b) satisfy the multi-store cite contract (S61
 // anti-shadowing — the cite-line-parser already accepts `alias:id`).
 // ---------------------------------------------------------------------------
-
-// Read the project's declared required_stores from `.fabric/fabric-config.json`
-// (the schema-described, hook-facing config — same file readConflictLintThreshold
-// targets). Best-effort: any read/parse failure → no required stores (the
-// implicit personal store still resolves).
-function readRequiredStores(projectRoot: string): StoreResolveInput["requiredStores"] {
-  try {
-    const cfgPath = join(projectRoot, ".fabric", "fabric-config.json");
-    if (!existsSync(cfgPath)) {
-      return [];
-    }
-    const parsed = JSON.parse(readFileSync(cfgPath, "utf8")) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return [];
-    }
-    const raw = (parsed as { required_stores?: unknown }).required_stores;
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-    return raw.flatMap((entry) => {
-      if (entry === null || typeof entry !== "object") {
-        return [];
-      }
-      const id = (entry as { id?: unknown }).id;
-      if (typeof id !== "string" || id.length === 0) {
-        return [];
-      }
-      const suggestedRemote = (entry as { suggested_remote?: unknown }).suggested_remote;
-      return [
-        typeof suggestedRemote === "string" && suggestedRemote.length > 0
-          ? { id, suggested_remote: suggestedRemote }
-          : { id },
-      ];
-    });
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Build recall candidates from every store in the project's read-set.
@@ -88,22 +47,10 @@ function readRequiredStores(projectRoot: string): StoreResolveInput["requiredSto
 export async function buildCrossStoreRawItems(
   projectRoot: string,
 ): Promise<RuleDescriptionIndexItem[]> {
-  const globalConfig = loadGlobalConfig();
-  if (globalConfig === null || globalConfig.stores.length === 0) {
+  const resolveInput = buildStoreResolveInput(projectRoot);
+  if (resolveInput === null) {
     return [];
   }
-
-  const resolveInput: StoreResolveInput = {
-    uid: globalConfig.uid,
-    mountedStores: globalConfig.stores.map((s) => ({
-      store_uuid: s.store_uuid,
-      alias: s.alias,
-      ...(s.remote !== undefined ? { remote: s.remote } : {}),
-      writable: s.writable ?? true,
-      personal: s.personal ?? false,
-    })),
-    requiredStores: readRequiredStores(projectRoot),
-  };
 
   const readSet = createStoreResolver().resolveReadSet(resolveInput);
   if (readSet.stores.length === 0) {
@@ -111,9 +58,9 @@ export async function buildCrossStoreRawItems(
   }
 
   // store_uuid → "personal" | "team" for layer tagging (the read-set entry does
-  // not carry the personal flag; the global config does).
+  // not carry the personal flag; the resolver input's mountedStores does).
   const personalUuids = new Set(
-    globalConfig.stores.filter((s) => s.personal === true).map((s) => s.store_uuid),
+    resolveInput.mountedStores.filter((s) => s.personal).map((s) => s.store_uuid),
   );
 
   const globalRoot = resolveGlobalRoot();

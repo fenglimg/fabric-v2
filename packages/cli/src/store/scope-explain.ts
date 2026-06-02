@@ -1,21 +1,22 @@
 import {
+  buildStoreResolveInput,
   createStoreResolver,
+  resolveGlobalRoot,
   type StoreReadSet,
   type StoreResolveInput,
   type WriteTarget,
 } from "@fenglimg/fabric-shared";
 
-import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
-import { loadProjectConfig } from "./project-config-io.js";
-
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric scope-explain` (F5 / S21/S53 surfaced in the CLI).
 //
-// Assembles the StoreResolveInput from the global config (uid + mounted stores)
-// + the project config (required_stores + active_write_store), then runs the
-// StoreResolver to show the resolved read-set + write-target for a given scope.
-// Pure read; no mutation. This is how a user inspects "which stores do I read,
-// and where do my writes go for scope X".
+// Runs the StoreResolver to show the resolved read-set + write-target for a
+// given scope. Pure read; no mutation. This is how a user inspects "which
+// stores do I read, and where do my writes go for scope X".
+//
+// v2.1 global-refactor (W1-T2): the StoreResolveInput assembly moved to shared
+// (`buildStoreResolveInput`) so the CLI and the MCP server share ONE source of
+// truth. `buildResolveInput` stays as a thin alias for existing CLI importers.
 // ---------------------------------------------------------------------------
 
 export interface ScopeExplanation {
@@ -30,28 +31,7 @@ export function buildResolveInput(
   projectRoot: string,
   globalRoot: string = resolveGlobalRoot(),
 ): StoreResolveInput | null {
-  const global = loadGlobalConfig(globalRoot);
-  if (global === null) {
-    return null;
-  }
-  const project = loadProjectConfig(projectRoot);
-  return {
-    uid: global.uid,
-    mountedStores: global.stores.map((s) => ({
-      store_uuid: s.store_uuid,
-      alias: s.alias,
-      ...(s.remote === undefined ? {} : { remote: s.remote }),
-      writable: s.writable ?? true,
-      personal: s.personal ?? false,
-    })),
-    requiredStores: (project?.required_stores ?? []).map((r) => ({
-      id: r.id,
-      ...(r.suggested_remote === undefined ? {} : { suggested_remote: r.suggested_remote }),
-    })),
-    ...(project?.active_write_store === undefined
-      ? {}
-      : { activeWriteAlias: project.active_write_store }),
-  };
+  return buildStoreResolveInput(projectRoot, globalRoot);
 }
 
 export function scopeExplain(

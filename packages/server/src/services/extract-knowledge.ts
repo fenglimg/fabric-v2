@@ -16,6 +16,7 @@ import { AgentsMetaFileMissingError } from "../meta-reader.js";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { loadActiveMeta } from "./load-active-meta.js";
+import { resolveStorePendingBase } from "./cross-store-write.js";
 import {
   atomicWriteText,
   ensureParentDirectory,
@@ -130,6 +131,15 @@ function sanitizeInjectionFields<T extends Record<string, unknown>>(
 // ---------------------------------------------------------------------------
 
 export function pendingBase(layer: "team" | "personal", projectRoot: string): string {
+  // v2.1 global-refactor (W1-T2): route into the resolved write-target store
+  // when one is mounted + selected (personal store for personal scope; active
+  // write store for team scope). Falls through to the dual-root co-location
+  // default (byte-identical) when no store target resolves — see
+  // resolveStorePendingBase for the exact null conditions.
+  const storeBase = resolveStorePendingBase(layer, projectRoot);
+  if (storeBase !== null) {
+    return storeBase;
+  }
   if (layer === "personal") {
     return join(resolvePersonalRoot(), ".fabric", "knowledge", "pending");
   }
