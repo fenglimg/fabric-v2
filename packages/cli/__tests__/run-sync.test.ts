@@ -12,6 +12,7 @@ import {
   runAbortSync,
   runContinueSync,
   runStartSync,
+  type GitPushOutcome,
   type GitRebaseOutcome,
 } from "../src/sync/run-sync.js";
 
@@ -34,12 +35,19 @@ function syncSessionExists(): boolean {
   return existsSync(join(globalRoot, "state", "sync-session.json"));
 }
 
+function aliasOf(storeDir: string): string {
+  return storeDir.includes(TEAM) ? "team" : storeDir.includes(PLATFORM) ? "platform" : "?";
+}
+
 // Outcome script keyed by alias; falls back to "clean".
 function scriptedPull(plan: Record<string, GitRebaseOutcome>) {
-  return (storeDir: string): GitRebaseOutcome => {
-    const alias = storeDir.includes(TEAM) ? "team" : storeDir.includes(PLATFORM) ? "platform" : "?";
-    return plan[alias] ?? "clean";
-  };
+  return (storeDir: string): GitRebaseOutcome => plan[aliasOf(storeDir)] ?? "clean";
+}
+
+// v2.1 global-refactor (W2-T3): scripted push, keyed by alias; falls back to
+// "clean". Injected so the orchestration tests never shell out to real `git push`.
+function scriptedPush(plan: Record<string, GitPushOutcome>) {
+  return (storeDir: string): GitPushOutcome => plan[aliasOf(storeDir)] ?? "clean";
 }
 
 beforeEach(() => {
@@ -78,6 +86,7 @@ describe("runStartSync", () => {
       globalRoot,
       now: NOW,
       pull: scriptedPull({}),
+      push: scriptedPush({}),
     });
     // Local-only personal store is skipped (nothing to pull/push).
     expect(result.session.stores.map((s) => s.alias).sort()).toEqual(["platform", "team"]);
@@ -94,6 +103,7 @@ describe("runStartSync", () => {
       globalRoot,
       now: NOW,
       pull: scriptedPull({ platform: "offline" }),
+      push: scriptedPush({}),
     });
     expect(result.settled).toBe(true);
     expect(result.deferred.map((s) => s.alias)).toEqual(["platform"]);
@@ -106,6 +116,7 @@ describe("runStartSync", () => {
       globalRoot,
       now: NOW,
       pull: scriptedPull({ team: "conflict" }),
+      push: scriptedPush({}),
     });
     expect(result.settled).toBe(false);
     expect(result.snapshotWritten).toBe(false);
@@ -116,7 +127,7 @@ describe("runStartSync", () => {
 
 describe("runContinueSync / runAbortSync (resume a paused conflict)", () => {
   function pauseOnTeamConflict(): void {
-    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }) });
+    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }), push: scriptedPush({}) });
   }
 
   it("--continue advances the resolved store, walks the rest, settles + snapshots", () => {
@@ -127,6 +138,7 @@ describe("runContinueSync / runAbortSync (resume a paused conflict)", () => {
       globalRoot,
       now: NOW,
       pull: scriptedPull({}),
+      push: scriptedPush({}),
       rebaseContinue: (dir) => {
         rebaseContinued = dir;
       },
@@ -146,6 +158,7 @@ describe("runContinueSync / runAbortSync (resume a paused conflict)", () => {
       globalRoot,
       now: NOW,
       pull: scriptedPull({}),
+      push: scriptedPush({}),
       rebaseAbort: (dir) => {
         rebaseAborted = dir;
       },
@@ -183,7 +196,7 @@ describe("F57/F58 sync-session robustness", () => {
   // leaves no `.tmp` residue (and an interrupted write can never corrupt the
   // live file).
   it("saveSession persists atomically — no .tmp residue after a conflict pause", () => {
-    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }) });
+    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }), push: scriptedPush({}) });
     expect(syncSessionExists()).toBe(true);
     const residue = readdirSync(join(globalRoot, "state")).filter((f) => f.endsWith(".tmp"));
     expect(residue).toEqual([]);
@@ -193,7 +206,7 @@ describe("F57/F58 sync-session robustness", () => {
   // no rebase in progress / non-repo store) surfaces an actionable FabricError
   // instead of crashing the CLI with execFileSync's bare "Command failed".
   it("default rebase --continue failure surfaces an actionable error", () => {
-    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }) });
+    runStartSync({ projectRoot, globalRoot, now: NOW, pull: scriptedPull({ team: "conflict" }), push: scriptedPush({}) });
     // No rebaseContinue injected → the real `git rebase --continue` runs and
     // fails (the store dir is not mid-rebase / not a git repo).
     expect(() => runContinueSync({ projectRoot, globalRoot, now: NOW })).toThrow(
@@ -260,6 +273,139 @@ describe("real git: default `git pull --rebase` clean path", () => {
 
     const result = runStartSync({ projectRoot, globalRoot, now: NOW });
     expect(result.session.stores.find((s) => s.alias === "team")?.state).toBe("synced");
+    expect(result.settled).toBe(true);
+  });
+});
+
+// v2.1 global-refactor (W2-T3, F-SYNC-NOPUSH): the default `git push` wiring.
+// Before this, `fabric sync` only ran `git pull --rebase`, so a store's local
+// commits were never published — it reported "synced" while origin/main stayed
+// put. These prove the remote actually advances, and that an unreachable remote
+// degrades to a deferred push (not a crash).
+describe("real git: default `git push` publishes local commits (W2-T3)", () => {
+  function git(cwd: string, args: string[]): string {
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@e",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@e",
+      },
+    });
+  }
+
+  it("pushes the store's local commit so origin/main truly advances", () => {
+    // Bare remote seeded with one commit.
+    const remote = mkdtempSync(join(tmpdir(), "fabric-sync-remote-"));
+    dirs.push(remote);
+    git(remote, ["init", "--bare", "-b", "main"]);
+    const seed = mkdtempSync(join(tmpdir(), "fabric-sync-seed-"));
+    dirs.push(seed);
+    git(seed, ["init", "-b", "main"]);
+    git(seed, ["commit", "--allow-empty", "-m", "seed"]);
+    git(seed, ["remote", "add", "origin", remote]);
+    git(seed, ["push", "-u", "origin", "main"]);
+
+    const remoteHeadBefore = git(remote, ["rev-parse", "main"]).trim();
+
+    // The mounted store is a clone of the remote with a NEW local commit that
+    // has NOT been pushed (this is exactly what extract→approve produced).
+    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    mkdirSync(join(globalRoot, "stores"), { recursive: true });
+    execFileSync("git", ["clone", remote, storeDir], { stdio: "ignore" });
+    git(storeDir, ["commit", "--allow-empty", "-m", "local knowledge commit"]);
+    const localHead = git(storeDir, ["rev-parse", "HEAD"]).trim();
+
+    // Sanity: the remote does NOT yet have the local commit.
+    expect(remoteHeadBefore).not.toBe(localHead);
+
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        stores: [{ store_uuid: TEAM, alias: "team", remote, writable: true }],
+      }),
+      globalRoot,
+    );
+
+    const result = runStartSync({ projectRoot, globalRoot, now: NOW });
+    expect(result.session.stores.find((s) => s.alias === "team")?.state).toBe("synced");
+    expect(result.settled).toBe(true);
+
+    // The push actually advanced origin/main to the local commit.
+    expect(git(remote, ["rev-parse", "main"]).trim()).toBe(localHead);
+  });
+
+  // v2.1 global-refactor (W2-T3 review fix): the extract/approve seam. extract
+  // and review-approve write knowledge .md INTO the store working tree but do
+  // NOT commit (sync owns the store repo's git). This proves sync commits those
+  // UNCOMMITTED changes and pushes them — the previous round-trip test manually
+  // committed, masking that nothing in the real flow ever committed store writes.
+  it("commits uncommitted store knowledge writes (extract/approve seam) then pushes to the remote", () => {
+    const remote = mkdtempSync(join(tmpdir(), "fabric-sync-remote-"));
+    dirs.push(remote);
+    git(remote, ["init", "--bare", "-b", "main"]);
+    const seed = mkdtempSync(join(tmpdir(), "fabric-sync-seed-"));
+    dirs.push(seed);
+    git(seed, ["init", "-b", "main"]);
+    git(seed, ["commit", "--allow-empty", "-m", "seed"]);
+    git(seed, ["remote", "add", "origin", remote]);
+    git(seed, ["push", "-u", "origin", "main"]);
+    const remoteHeadBefore = git(remote, ["rev-parse", "main"]).trim();
+
+    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    mkdirSync(join(globalRoot, "stores"), { recursive: true });
+    execFileSync("git", ["clone", remote, storeDir], { stdio: "ignore" });
+    // git identity so defaultCommitDirty's plain `git commit` succeeds.
+    git(storeDir, ["config", "user.name", "t"]);
+    git(storeDir, ["config", "user.email", "t@e"]);
+
+    // Simulate extract/approve: a knowledge file appears in the store working
+    // tree, UNCOMMITTED (exactly what cross-store-write / approve produce).
+    const decisionsDir = join(storeDir, "knowledge", "decisions");
+    mkdirSync(decisionsDir, { recursive: true });
+    writeFileSync(join(decisionsDir, "KT-DEC-9001.md"), "---\nid: KT-DEC-9001\n---\n# Routed knowledge\n");
+
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        stores: [{ store_uuid: TEAM, alias: "team", remote, writable: true }],
+      }),
+      globalRoot,
+    );
+
+    // Real defaultCommit + defaultPush (no injection): sync must commit the dirty
+    // tree, then push so the knowledge file actually reaches the remote.
+    const result = runStartSync({ projectRoot, globalRoot, now: NOW });
+    expect(result.session.stores.find((s) => s.alias === "team")?.state).toBe("synced");
+
+    // origin/main advanced past its seed...
+    expect(git(remote, ["rev-parse", "main"]).trim()).not.toBe(remoteHeadBefore);
+    // ...and the pushed commit actually contains the knowledge file.
+    expect(git(remote, ["ls-tree", "-r", "--name-only", "main"])).toContain(
+      "knowledge/decisions/KT-DEC-9001.md",
+    );
+  });
+
+  it("defers gracefully (no crash) when the push reports the remote unreachable", () => {
+    // An offline push must defer (S17) rather than throw: the local commit stays
+    // committed for a later retry, and the session still settles. The push
+    // outcome is injected (defaultPush's offline classification keys off git's
+    // English stderr, which is locale-dependent — same constraint as defaultPull;
+    // the round-trip test above proves the real push wiring).
+    const result = runStartSync({
+      projectRoot,
+      globalRoot,
+      now: NOW,
+      pull: scriptedPull({}),
+      push: scriptedPush({ team: "offline", platform: "offline" }),
+    });
+    // Push could not reach the remote → store deferred (offline), session still
+    // settles (offline is terminal-deferred), and no exception was thrown.
+    expect(result.session.stores.find((s) => s.alias === "team")?.state).toBe("offline");
+    expect(result.deferred.map((s) => s.alias).sort()).toEqual(["platform", "team"]);
     expect(result.settled).toBe(true);
   });
 });

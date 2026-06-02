@@ -1,0 +1,146 @@
+{
+  "session_id": "maestro-20260602-164955",
+  "created_at": "2026-06-02T08:49:55Z",
+  "updated_at": "2026-06-02T08:49:55Z",
+  "intent": "实现 Fabric multi-store/sync 接线(global-refactor 北极星首个落地里程碑)+ 修 F-MATURITY-ENDORSED schema vocab bug。新 worktree feat/multistore-wiring 完成。",
+  "task_type": "analyze-plan-execute",
+  "chain_name": "analyze-plan-execute",
+  "phase": null,
+  "auto_mode": false,
+  "exec_mode": "internal",
+  "cli_tool": "claude",
+  "source": "maestro",
+  "worktree": "/Users/wepie/Desktop/personal-projects/pcf-multistore",
+  "branch": "feat/multistore-wiring",
+  "context": {
+    "issue_id": null,
+    "milestone_num": null,
+    "scratch_dir": ".workflow/.maestro/maestro-20260602-164955/.scratchpad",
+    "origin_sessions": ["20260602-fabric-deeptest", "20260602-hollow-feature-audit", "20260602-lifecycle-concept"],
+    "exec_policy": "主线串行 Edit/Write/Bash 实现, 不 spawn per-task agent; delegate 仅末尾一次 batch review (feedback_agent_review_efficiency C)"
+  },
+  "boundary_contract": {
+    "in_scope": [
+      "读侧接线: recall/meta 跨 mounted store 聚合; read-set = required_stores ∪ personal",
+      "写侧接线: 写知识路径写进 mounted store(消费 shared/src/store/core.ts readKnowledgeAcrossStores/listStoreKnowledge 等)",
+      "sync push 接线: run-sync.ts 实现 git push + offline defer (F-SYNC-NOPUSH)",
+      "store-remote 接线: storeCreate git remote add + store list 真 git remote 标签 (F-SYNC-REMOTE + F14)",
+      "F-MATURITY-ENDORSED: maturity 'endorsed' config vocab ⊥ schema enum 对齐"
+    ],
+    "out_of_scope": [
+      "堆 B: lifecycle 可观测性新架构 (lifecycle-concept-final.md §3-§8, 8 hook 终态/telemetry/cite拆分/graph闭环/物理隔离) → 留后续 goal",
+      "F-NARROW-BUDGET injection 优先级重设计 → 留后续 goal",
+      "性能优化 / 重构 / 美学 polish"
+    ],
+    "constraints": [
+      "KT-DEC-0003 dual-root(~/.fabric + repo/.fabric)+ store⊥scope 平行 git 模型; store identity=intrinsic UUID",
+      "改任何文件前先 fab_recall 该文件",
+      "改 packages/shared/src/schemas/ 后必须 pnpm --filter @fenglimg/fabric-shared build(否则 runtime invalid_union_discriminator)",
+      "回归门: shared+server+cli vitest 全绿(基线 2232 passed)",
+      "release 前本地 pnpm -r exec tsc --noEmit(CI tsc 比 local build 严)",
+      "每 wave 收口 git commit(中文 commit message)+ sha 回填 git_commits[]",
+      "改前 grep 验证声称(防 reimplemented-noop)"
+    ]
+  },
+  "execution_criteria": [
+    "每改文件前 fab_recall 该文件 + grep 验证 finding 声称仍成立",
+    "改 shared schema 后 pnpm --filter @fenglimg/fabric-shared build",
+    "每个 wave 收口: shared+server+cli vitest 全绿(≥2232) + git commit(中文) + sha 回填",
+    "multi-store 必须实证 round-trip(写入 store→另一来源 recall 命中); sync push 必须实证 remote 真更新",
+    "只动 in_scope; 堆 B / F-NARROW-BUDGET 不碰; 越界即停报告"
+  ],
+  "task_decomposition": [
+    { "id": "W1-T1", "wave": 1, "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "读侧接线: recall/meta 跨 mounted store 聚合(read-set = required_stores ∪ personal)",
+      "done_when": "server recall 路径 import store 层 + loadGlobalConfig; recall(pcf) 能返回 mounted team store 条目(非仅 9 条项目自有); vitest 加覆盖",
+      "ship_criteria_alignment": ["读侧接线"], "alignment_strength": "direct",
+      "status": "done",
+      "progress": {
+        "done": "完成(commit cc4f243 前置 + f0ec45f 读侧): cross-store-recall.ts 自解析 read-set 跨 store 聚合候选; plan-context 拼接; store-qualified id; 实证 3/3(team:KT-DEC-9001 真冒/非required不冒/无gc降级); server 776 passed",
+        "next_plan_FINAL_SPEC": [
+          "STEP1 export 复用纯函数: packages/server/src/services/knowledge-meta-builder.ts 给 extractRuleDescription(source):RuleDescription|undefined (L1002) + deriveRuleIdentity(file,source,existing):RuleIdentity (L922) 加 export",
+          "STEP2 新模块 packages/server/src/services/cross-store-recall.ts 导出 async buildCrossStoreRawItems(projectRoot): Promise<RuleDescriptionIndexItem[]> — 走 Path A 自解析(不依赖 bindings-snapshot, 因 install 不写 project_id=F9, 快照未接线): (a) const gc=loadGlobalConfig() (from @fenglimg/fabric-shared); 若 null→return []; (b) 读项目 .fabric/fabric-config.json 的 required_stores[](注意是 .fabric/fabric-config.json 非 root fabric.config.json, 仿 readConflictLintThreshold L220 的读法); (c) const rs=createStoreResolver().resolveReadSet({uid:gc.uid, mountedStores:gc.stores.map(...writable??true,personal??false), requiredStores:required_stores??[], }); (d) rs.stores.map→MountedStoreDir{store_uuid,alias,dir:join(resolveGlobalRoot(),storeRelativePath(store_uuid))}; (e) readKnowledgeAcrossStores(dirs) →StoreKnowledgeRef[]; (f) 每 ref: readFileSync→extractRuleDescription→若 undefined skip; stable_id=deriveRuleIdentity(...).stableId; **store-qualified id = `${ref.alias}:${stableId}`**(cite-line-parser 已支持 alias:id, 且 dedupeDescriptionIndex 按 stable_id 去重→与项目 id 天然不撞, 兼 S61 anti-shadow); knowledge_layer='team'(store=team 默认, personal store 条目可按 gc personal 标 'personal'); 建 {stable_id, description:{...desc, knowledge_layer}}",
+          "STEP3 wire: plan-context.ts:340 之后 `const storeItems = await buildCrossStoreRawItems(projectRoot).catch(()=>[]);` (best-effort, hot-path 不可崩, 仿 readEmbedConfig try/catch); `const allRawItems = [...projectRawItems, ...storeItems];` 改 L340 解构名后拼接, 让 store 条目走 layer-filter/docTexts/BM25/sort/dedup/topK 同一管线",
+          "STEP4 test: packages/server/__tests__/.../cross-store-recall.test.ts — FABRIC_HOME 隔离造 ~/.fabric/fabric-global.json(uid+1 mounted team store uuid)+ ~/.fabric/stores/<uuid>/knowledge/decisions/KT-DEC-9001.md(带 frontmatter)+ 项目 .fabric/fabric-config.json required_stores 引用该 store → planContext(projectRoot) candidates 含 `<alias>:KT-DEC-9001`; 另测 gc=null→[]; required_stores 空→只 personal",
+          "STEP5 全回归 + commit; round-trip 与 W1-T2(写侧)合并实证(写进 store→recall 命中)",
+          "关键约束已勘定: meta-builder 硬编码 <root>/.fabric/ 不能 per-store 复用 buildKnowledgeMeta(只复用 extract/derive 纯函数); store .gitignore 排 agents.meta(无预建索引, 必现建); RuleDescriptionIndexItem={stable_id,description} 仅两字段(provenance 靠 alias:id 前缀承载); buildCrossStoreRawItems 必须 best-effort try/catch(plan_context hot path)"
+        ]
+      },
+      "verification": { "method": "deterministic", "verifier": "vitest + 真 recall 实跑命中 store 条目", "evidence": "cross-store-recall.test.ts 3/3 passed; server 776 passed", "verified_at": "2026-06-02T09:15:00Z" } },
+    { "id": "W1-T2", "wave": 1, "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "写侧接线: 写知识路径写进 mounted store(round-trip 闭合)",
+      "done_when": "写入 mounted store 的知识能被 W1-T1 的 recall 读出; round-trip 实证(写→读命中); vitest 加覆盖",
+      "ship_criteria_alignment": ["写侧接线"], "alignment_strength": "direct",
+      "status": "done",
+      "progress": { "done": "commit a1d1969: extractKnowledge→active write store pending 路由(DRY 重构: project-config-io 移 shared + buildStoreResolveInput 单一真源, 读写共用); 3/3 写测试 + 回归 2238. 自审: pending(draft)路由通; review approve→store-canonical 提升是剩余链(见 NEW-APPROVE-PROMOTE), 故全自动 write→recall round-trip 待 approve 接线(canonical store→recall 已由 W1-T1 证)" },
+      "verification": { "method": "deterministic", "verifier": "round-trip 实证 + vitest", "evidence": "cross-store-write.test.ts 3/3; server 779; 总 2238 passed", "verified_at": "2026-06-02T09:30:00Z" } },
+    { "id": "NEW-APPROVE-PROMOTE", "wave": 2, "round": 1, "parent_id": "W1-T2", "relationship": "incomplete-resolution", "subdivision_depth": 1,
+      "subject": "review approve→store-canonical 提升(写侧剩余链, 闭合全自动 write→recall round-trip)",
+      "done_when": "fab_review approve 把 pending 提升到 active write store 的 canonical 类型目录(非仅项目 .fabric); review.ts 路径沙箱 L177-186 加 store 根; git-mv 跨 repo 语义处理; round-trip 全自动实证(extract→approve→recall 命中); vitest 覆盖",
+      "ship_criteria_alignment": ["写侧接线"], "alignment_strength": "direct",
+      "status": "done",
+      "note": "W1-T2 自审涌现: extract 写 pending 已路由, 但 recall 只读 canonical, 故真 round-trip 需 approve 也路由进 store。触及 review.ts 安全沙箱(需加 store 根白名单)+ git-mv(team store 是独立 repo 非项目 repo), 故拆为独立任务防半成品",
+      "progress": { "done": "commit a6fffdb: resolveStoreCanonicalBase + review.ts pendingBaseAbs/approveOne 优先 store(null 回落 dual-root byte-identical); 沙箱仅加 resolver 真解析出的 store 根白名单(非任意 stores/**); store 源 fs.unlink(独立 repo 不预 stage, commit 交 sync 层) + 文档化。3/3 测试: 全自动 round-trip(extract→list→approve→recall 命中 team:<id>) + 无 active_write_store 回落 + 无 gc 回落" },
+      "verification": { "method": "deterministic", "verifier": "extract→approve→recall 全自动 round-trip + vitest", "evidence": "approve-promote-store.test.ts 3/3; server 782 passed; server tsc 0 error", "verified_at": "2026-06-02T17:37:00Z" } },
+    { "id": "W2-T3", "wave": 2, "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "sync push 接线: run-sync.ts 实现 git push + offline defer (F-SYNC-NOPUSH)",
+      "done_when": "commit 后 fabric sync 真 git push; offline 优雅 defer; 实证 remote 真更新(origin/HEAD 推进); vitest 加覆盖",
+      "ship_criteria_alignment": ["sync push 接线"], "alignment_strength": "direct",
+      "status": "done",
+      "progress": { "done": "commit 90f23e3: defaultPush + walkPending clean-rebase 后对可写有 remote store push, offline→defer(复用 deferred-push); state-machine 加 conflict--network_unavailable-->offline; runContinueSync rebase 后显式 push resolved store; 三入口从 config 重算 pushableAliases 缺 config 降级 pull-only。2 新测试: 真 bare remote round-trip(origin/main 推进到 local HEAD) + offline 优雅 defer 不崩" },
+      "verification": { "method": "deterministic", "verifier": "真 bare remote push 实证 + vitest", "evidence": "run-sync.test.ts: origin/main rev-parse == local HEAD; cli 893 passed; cli tsc 0 error", "verified_at": "2026-06-02T17:43:00Z" } },
+    { "id": "W2-T4", "wave": 2, "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "store-remote 接线: storeCreate git remote add + store list 真 remote 标签 (F-SYNC-REMOTE + F14)",
+      "done_when": "store create --remote 后 git remote -v 非空 + 可 sync; store list local_only 标签反映真实 git remote; vitest 加覆盖",
+      "ship_criteria_alignment": ["store-remote 接线"], "alignment_strength": "direct",
+      "status": "done",
+      "progress": { "done": "commit b64e015: storeCreate --remote 真跑 git remote add origin(gitRemoteAdd, origin 存在则 set-url best-effort); storeGitRemote(uuid) 读 git remote get-url origin; store list 改用真实 git remote 判 local_only 不信 config metadata。3 新测试: --remote→git remote get-url 断言 + 无 remote→storeGitRemote undefined + label 派生自 git 不信 config 谎报。自审: 'experimental-unwired' 警告越界保守保留待后续清理" },
+      "verification": { "method": "deterministic", "verifier": "git remote -v 实证 + vitest", "evidence": "store-ops.test.ts 18/18; cli 896 passed; cli tsc 0 error", "verified_at": "2026-06-02T17:45:00Z" } },
+    { "id": "W3-T5", "wave": 3, "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "F-MATURITY-ENDORSED: config vocab 'endorsed' ⊥ schema enum 对齐",
+      "done_when": "maturity 'endorsed' 不再被 schema 静默 skip(对齐 fabric-config.ts orphan_demote_endorsed_days); vitest 加覆盖",
+      "ship_criteria_alignment": ["F-MATURITY-ENDORSED"], "alignment_strength": "direct",
+      "status": "done",
+      "progress": { "done": "commit 3e5f0d1: 调查确认 doctor orphan_demote ladder 用 legacy stable/endorsed/draft, MATURITY_LINE_PATTERN 只匹配 legacy → canonical proven/verified 被整个 lint 静默 skip。修: 扩 pattern 识别 verified|proven + CANONICAL_TO_LINT_MATURITY(proven→stable/verified→endorsed)归一; rewriteFrontmatterMaturity vocab-aware(canonical 条目 demote 写 canonical 名防再 drift); fabric-config 加 canonical keys orphan_demote_{proven,verified}_days 保留 legacy aliases; readOrphanDemoteThresholdDays 双读 canonical 优先。改 shared schema 已 rebuild。8 新测试(doctor 3 + config-loader 5)" },
+      "verification": { "method": "deterministic", "verifier": "vitest endorsed 条目不被丢", "evidence": "doctor.test.ts canonical proven/verified 被 flag + demote 写 canonical verified; config-loader.test.ts 双 vocab; server 790 + shared 568 passed; tsc 各 0", "verified_at": "2026-06-02T17:52:00Z" } },
+    { "id": "W3-T6", "wave": 3, "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "终收口: 全回归绿 + tsc --noEmit + round-trip & push 实证 + 末尾一次 batch cross-LLM review",
+      "done_when": "shared+server+cli vitest 全绿(≥2232) + pnpm -r exec tsc --noEmit 0 error + round-trip/push 证据落 .scratchpad + 一次 batch review 采纳",
+      "ship_criteria_alignment": ["全部"], "alignment_strength": "infrastructure",
+      "status": "done",
+      "progress": { "done": "全回归: shared 568 + server 790 + cli 896 = 2254 passed(基线 2238 + 16 新测试); tsc --noEmit shared/server/cli 各 0 error; round-trip/push/store-remote/maturity 实证证据落 .scratchpad/wave23-evidence.md。cross-LLM batch review 按指令留主 agent 事后做(本 agent 不跑)" },
+      "verification": { "method": "deterministic", "verifier": "vitest + tsc + 证据", "evidence": ".scratchpad/wave23-evidence.md; 2254 passed; 三包 tsc 0 error", "verified_at": "2026-06-02T17:55:00Z" } }
+  ],
+  "waves": [
+    { "wave": 1, "name": "round-trip 核心(读+写)", "tasks": ["W1-T1", "W1-T2"], "status": "done", "note": "读侧+写侧pending路由完成; approve-promote(NEW-APPROVE-PROMOTE)挪 W2" },
+    { "wave": 2, "name": "sync/remote(团队共享)", "tasks": ["W2-T3", "W2-T4", "NEW-APPROVE-PROMOTE"], "status": "done", "note": "approve-promote round-trip 闭合 + sync push(真 remote 推进)+ store-remote git 接线 全完成" },
+    { "wave": 3, "name": "小 bug + 终收口", "tasks": ["W3-T5", "W3-T6"], "status": "done", "note": "maturity vocab 对齐 + 全回归 2254 绿 + tsc 0 + 证据落地" }
+  ],
+  "steps": [
+    { "index": 0, "skill": "inline-execute", "args": "W1 read+write round-trip", "type": "skill", "status": "completed", "started_at": null, "completed_at": "2026-06-02T09:30:00Z", "error": null },
+    { "index": 1, "skill": "inline-execute", "args": "W2 sync+remote", "type": "skill", "status": "completed", "started_at": null, "completed_at": "2026-06-02T17:45:00Z", "error": null },
+    { "index": 2, "skill": "inline-execute", "args": "W3 maturity bug + final gate", "type": "skill", "status": "completed", "started_at": null, "completed_at": "2026-06-02T17:55:00Z", "error": null },
+    { "index": 3, "type": "decision", "decision": "post-goal-audit", "retry_count": 0, "max_retries": 2, "status": "pending" }
+  ],
+  "current_step": 3,
+  "git_commits": [
+    { "sha": "cc4f243", "subject": "refactor(shared): global-config-io 移入 shared — server 可读 mounted-store 注册表", "wave": 1, "task": "W1-T1-前置" },
+    { "sha": "f0ec45f", "subject": "feat(server/recall): W1-T1 读侧接线 — recall 跨 mounted store 聚合", "wave": 1, "task": "W1-T1" },
+    { "sha": "a1d1969", "subject": "feat(store): W1-T2 写侧接线 — 知识写入路由进 active write store", "wave": 1, "task": "W1-T2" },
+    { "sha": "a6fffdb", "subject": "feat(server/review): NEW-APPROVE-PROMOTE 接线 — approve 提升进 store canonical 闭合全自动 round-trip", "wave": 2, "task": "NEW-APPROVE-PROMOTE" },
+    { "sha": "90f23e3", "subject": "feat(cli/sync): W2-T3 sync push 接线 — F-SYNC-NOPUSH 修复 (CRITICAL)", "wave": 2, "task": "W2-T3" },
+    { "sha": "b64e015", "subject": "feat(cli/store): W2-T4 store-remote 接线 — F-SYNC-REMOTE + F14", "wave": 2, "task": "W2-T4" },
+    { "sha": "3e5f0d1", "subject": "fix(maturity): W3-T5 F-MATURITY-ENDORSED — orphan_demote 对齐 canonical maturity vocab", "wave": 3, "task": "W3-T5" },
+    { "sha": "f40e800", "subject": "fix(cli/sync): 复审修复 — sync 在 pull/push 前 commit store 脏工作树(闭合 commit 缺环)", "wave": 2, "task": "review-fix(W2-T3+NEW-APPROVE-PROMOTE seam)" }
+  ],
+  "needs_adjudication": [],
+  "review_outcome": {
+    "reviewer": "main-agent (人工要求事后复审)",
+    "verified_independently": "全回归亲跑 shared 568 + server 790 + cli 897 = 2255 passed; tsc --noEmit 三包各 0 error(此前 cli doctor/metrics 报错=server dist 未 build 连带, 全量 build 后消失)",
+    "audit_per_commit": "5/6 commit 干净(W1-T1/W1-T2/W2-T4/W3-T5 正确; NEW-APPROVE-PROMOTE 沙箱白名单只放行 resolver 解析出的 store 根=安全; W3-T5 甚至超 spec 揪出 MATURITY_LINE_PATTERN 把 proven 条目整个 skip)",
+    "gap_found_and_fixed": "唯一 load-bearing gap: extract/approve 写知识进 store 工作树都不 commit, sync 只 push 已有 commit 不创建 → 没人 commit → 跨机器团队共享未闭合(approve 测试只验 recall 直接读文件、sync round-trip 测试手动 commit, 双双漏掉)。已修(f40e800): sync pull 前 commit 脏 store 树 + 端到端测试(未提交写→sync→remote 真收到文件)。顺带修 F-SYNC-DIRTY。",
+    "agent_note": "spawn 的 agent 先报 stalled(watchdog 误报)后实际完成; 自报 done 不可信→全部亲验, 印证 feedback_audit_verification"
+  },
+  "goal_checklist_path": ".workflow/.maestro/maestro-20260602-164955/goal-checklist.md",
+  "status": "completed"
+}

@@ -9,6 +9,7 @@ import {
   storeBind,
   storeCreate,
   storeExplain,
+  storeGitRemote,
   storeList,
   storeRemove,
   storeSwitchWrite,
@@ -30,7 +31,12 @@ const listCommand = defineCommand({
     }
     const localOnly = t("cli.shared.local-only");
     for (const store of stores) {
-      console.log(`${store.alias}\t${store.store_uuid}\t${store.remote ?? localOnly}`);
+      // F14 (W2-T4): the local-only label reflects the store repo's TRUE git
+      // remote, not the config metadata. A store whose config records a remote
+      // but whose repo has no `origin` (created before the F-SYNC-REMOTE fix, or
+      // a personal store) is honestly shown as local-only.
+      const realRemote = storeGitRemote(store.store_uuid);
+      console.log(`${store.alias}\t${store.store_uuid}\t${realRemote ?? localOnly}`);
     }
   },
 });

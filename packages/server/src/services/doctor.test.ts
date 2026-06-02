@@ -1804,6 +1804,71 @@ describe("runDoctorReport", () => {
       expect(check?.message).toContain("draft");
     });
 
+    // v2.2 W3-T5 (F-MATURITY-ENDORSED): a CANONICAL `proven` entry (the live
+    // schema vocabulary, KT-DEC-0005) used to be silently skipped by the entire
+    // orphan_demote lint because the maturity regex only matched the legacy
+    // stable/endorsed/draft names. It must now be a first-class candidate
+    // (proven ≡ the 90d "stable" tier).
+    it("orphan_demote: flags a canonical `proven` entry inactive >90d (was silently skipped)", async () => {
+      const target = createInitializedProject("doctor-w3t5-orphan-proven");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const relPath = ".fabric/knowledge/decisions/KT-DEC-1501--ancient-proven.md";
+      const stableId = "KT-DEC-1501";
+      writeFile(
+        relPath,
+        `---\nid: ${stableId}\ntype: decision\nmaturity: proven\nlayer: team\ncreated_at: ${ageDaysAgoIso(91)}\n---\n# ${stableId}\n`,
+        target,
+      );
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: `event:seed-${stableId}-promoted`,
+        ts: NOW_MS - 91 * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_promoted",
+        stable_id: stableId,
+        timestamp: ageDaysAgoIso(91),
+        reason: "test:seed",
+      });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.code).toBe("knowledge_orphan_demote_required");
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_orphan_demote_required");
+      expect(check?.message).toContain("KT-DEC-1501");
+    });
+
+    // A canonical `verified` entry maps to the 30d "endorsed" tier.
+    it("orphan_demote: flags a canonical `verified` entry inactive >30d", async () => {
+      const target = createInitializedProject("doctor-w3t5-orphan-verified");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const relPath = ".fabric/knowledge/decisions/KT-DEC-1502--ancient-verified.md";
+      const stableId = "KT-DEC-1502";
+      writeFile(
+        relPath,
+        `---\nid: ${stableId}\ntype: decision\nmaturity: verified\nlayer: team\ncreated_at: ${ageDaysAgoIso(31)}\n---\n# ${stableId}\n`,
+        target,
+      );
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: `event:seed-${stableId}-promoted`,
+        ts: NOW_MS - 31 * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_promoted",
+        stable_id: stableId,
+        timestamp: ageDaysAgoIso(31),
+        reason: "test:seed",
+      });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.code).toBe("knowledge_orphan_demote_required");
+      expect(check?.message).toContain("KT-DEC-1502");
+    });
+
     it("orphan_demote: skips entry that has a recent knowledge_consumed event within threshold", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-recent-fetch");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
@@ -2616,6 +2681,48 @@ describe("runDoctorReport", () => {
 
       const afterSource = readFileSync(join(target, filePath), "utf8");
       expect(afterSource).toContain("maturity: draft");
+    });
+
+    // v2.2 W3-T5 (F-MATURITY-ENDORSED): demoting a CANONICAL `proven` entry must
+    // write the canonical next tier (`verified`), NOT the legacy `endorsed` —
+    // otherwise the demote would splice a legacy value into a canonical file and
+    // re-introduce the vocab drift this task fixes.
+    it("orphan_demote: demotes a canonical `proven` entry to canonical `verified` (not legacy endorsed)", async () => {
+      const target = createInitializedProject("doctor-w3t5-applylint-proven");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const filePath = ".fabric/knowledge/decisions/KT-DEC-1601--ancient-proven.md";
+      const stableId = "KT-DEC-1601";
+      writeFile(
+        filePath,
+        `---\nid: ${stableId}\ntype: decision\nmaturity: proven\nlayer: team\ncreated_at: ${ageDaysAgoIso(95)}\n---\n# ${stableId}\nBody.\n`,
+        target,
+      );
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: `event:seed-${stableId}-promoted`,
+        ts: NOW_MS - 95 * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_promoted",
+        stable_id: stableId,
+        timestamp: ageDaysAgoIso(95),
+        reason: "test:seed",
+      });
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      expect(
+        result.mutations.find((m) => m.kind === "knowledge_orphan_demote_required")?.applied,
+      ).toBe(true);
+
+      const afterSource = readFileSync(join(target, filePath), "utf8");
+      expect(afterSource).toContain("maturity: verified");
+      expect(afterSource).not.toContain("maturity: proven");
+      expect(afterSource).not.toContain("maturity: endorsed"); // never a legacy value in a canonical file
+      // Round-trip preservation.
+      expect(afterSource).toContain("id: KT-DEC-1601");
+      expect(afterSource).toContain("layer: team");
     });
 
     it("orphan_demote: emits knowledge_demoted event with stable_id + reason", async () => {

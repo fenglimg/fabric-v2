@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readPayloadLimits, readEmbedConfig } from "./config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readPayloadLimits, readEmbedConfig, readOrphanDemoteThresholdDays } from "./config-loader.js";
 
 // v2.0.0-rc.29 REVIEW (codex HIGH-3): the raw JSON read previously cast the
 // `selection_token_ttl_ms` field straight onto the typed config without going
@@ -173,5 +173,62 @@ describe("config-loader — readEmbedConfig (C2 / W2-T7)", () => {
     expect(readEmbedConfig(tempDir).weight).toBe(49);
     writeConfig({ embed_weight: 50 });
     expect(readEmbedConfig(tempDir).weight).toBe(30);
+  });
+});
+
+// v2.2 W3-T5 (F-MATURITY-ENDORSED): readOrphanDemoteThresholdDays bridges the
+// canonical maturity vocabulary (proven/verified, KT-DEC-0005) and the legacy
+// stable/endorsed config keys, returning the doctor's internal ladder keys.
+describe("config-loader — readOrphanDemoteThresholdDays (W3-T5)", () => {
+  let tempDir: string;
+  beforeEach(() => {
+    tempDir = join(process.cwd(), ".tmp-config-loader-orphan", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    mkdirSync(tempDir, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+  function writeConfig(obj: unknown): void {
+    writeFileSync(join(tempDir, "fabric.config.json"), JSON.stringify(obj));
+  }
+
+  it("returns empty when no config is present (defaults apply downstream)", () => {
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({});
+  });
+
+  it("honors the CANONICAL keys (proven/verified) → internal stable/endorsed ladder", () => {
+    writeConfig({
+      orphan_demote_proven_days: 120,
+      orphan_demote_verified_days: 45,
+      orphan_demote_draft_days: 7,
+    });
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 120, endorsed: 45, draft: 7 });
+  });
+
+  it("still honors the LEGACY keys (stable/endorsed) for backward-compat", () => {
+    writeConfig({
+      orphan_demote_stable_days: 200,
+      orphan_demote_endorsed_days: 60,
+    });
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 200, endorsed: 60 });
+  });
+
+  it("prefers the canonical key when both canonical + legacy are present", () => {
+    writeConfig({
+      orphan_demote_proven_days: 111,
+      orphan_demote_stable_days: 222,
+      orphan_demote_verified_days: 33,
+      orphan_demote_endorsed_days: 44,
+    });
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 111, endorsed: 33 });
+  });
+
+  it("drops out-of-range / non-integer values without nuking the rest", () => {
+    writeConfig({
+      orphan_demote_proven_days: 0, // below min → dropped
+      orphan_demote_verified_days: 30,
+      orphan_demote_draft_days: 4000, // above max → dropped
+    });
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ endorsed: 30 });
   });
 });

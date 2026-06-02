@@ -180,9 +180,20 @@ export function readPlanContextTopK(projectRoot: string): number {
 
 /**
  * v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity orphan_demote thresholds. Returns
- * the override Map keyed by maturity ("stable"|"endorsed"|"draft") so doctor's
- * orphan_demote inspect can spread it over the hardcoded defaults. Absent keys
- * fall through. Best-effort: any read/parse failure returns an empty map.
+ * the override Map keyed by the doctor's internal LintMaturity ladder
+ * ("stable"|"endorsed"|"draft") so doctor's orphan_demote inspect can spread it
+ * over the hardcoded defaults. Absent keys fall through. Best-effort: any
+ * read/parse failure returns an empty map.
+ *
+ * v2.2 W3-T5 (F-MATURITY-ENDORSED): the CANONICAL maturity enum is
+ * draft/verified/proven (KT-DEC-0005); the doctor's orphan_demote ladder still
+ * speaks the legacy stable/endorsed names internally. This loader bridges the
+ * two: it accepts both the canonical config keys
+ * (`orphan_demote_proven_days` / `orphan_demote_verified_days`) and the legacy
+ * aliases (`orphan_demote_stable_days` / `orphan_demote_endorsed_days`), mapping
+ * proven→stable and verified→endorsed. The canonical key wins when both are
+ * present, so a config can migrate to the canonical vocabulary without losing
+ * its tuning, and a pre-fix config keeps working unchanged.
  *
  * Validation rule mirrors the schema: integer in [1, 3650] (one day to ten
  * years). Out-of-range or non-numeric values are silently dropped so a
@@ -191,7 +202,14 @@ export function readPlanContextTopK(projectRoot: string): number {
 export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Record<"stable" | "endorsed" | "draft", number>> {
   try {
     const cfg = readFabricConfig(projectRoot) as Partial<
-      Record<"orphan_demote_stable_days" | "orphan_demote_endorsed_days" | "orphan_demote_draft_days", unknown>
+      Record<
+        | "orphan_demote_proven_days"
+        | "orphan_demote_verified_days"
+        | "orphan_demote_stable_days"
+        | "orphan_demote_endorsed_days"
+        | "orphan_demote_draft_days",
+        unknown
+      >
     >;
     const out: Partial<Record<"stable" | "endorsed" | "draft", number>> = {};
     const validate = (v: unknown): number | undefined => {
@@ -200,10 +218,12 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
       }
       return v;
     };
-    const s = validate(cfg.orphan_demote_stable_days);
-    if (s !== undefined) out.stable = s;
-    const e = validate(cfg.orphan_demote_endorsed_days);
-    if (e !== undefined) out.endorsed = e;
+    // Canonical key wins; legacy alias is the fallback (back-compat).
+    const proven = validate(cfg.orphan_demote_proven_days) ?? validate(cfg.orphan_demote_stable_days);
+    if (proven !== undefined) out.stable = proven;
+    const verified =
+      validate(cfg.orphan_demote_verified_days) ?? validate(cfg.orphan_demote_endorsed_days);
+    if (verified !== undefined) out.endorsed = verified;
     const d = validate(cfg.orphan_demote_draft_days);
     if (d !== undefined) out.draft = d;
     return out;

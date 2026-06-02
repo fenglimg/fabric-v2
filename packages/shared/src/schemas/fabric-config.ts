@@ -354,13 +354,25 @@ export const fabricConfigSchema = z.object({
   // 0..168 (one week).
   hint_narrow_cooldown_hours: z.number().int().min(0).max(168).optional().default(0),
   // v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity inactivity thresholds (days)
-  // driving orphan_demote. Hardcoded at stable=90/endorsed=30/draft=14 in
+  // driving orphan_demote. Hardcoded at proven=90/verified=30/draft=14 in
   // rc.32; chatty workspaces want them tighter, slow ones want them looser.
   // Each field optional; absent → defaults inside doctor.ts apply. Ranges
   // chosen so a typo can't accidentally disable the lint (min 1).
+  //
+  // v2.2 W3-T5 (F-MATURITY-ENDORSED): the canonical maturity enum is
+  // draft/verified/proven (KT-DEC-0005), but these threshold keys historically
+  // used the legacy stable/endorsed vocabulary — a config authored with the
+  // canonical names could never tune the proven/verified tiers. The canonical
+  // keys below are the preferred form; the legacy keys are retained for
+  // backward-compat (a config written before this fix keeps working). The
+  // loader maps stable→proven / endorsed→verified, canonical taking precedence.
+  orphan_demote_proven_days: z.number().int().min(1).max(3650).optional(),
+  orphan_demote_verified_days: z.number().int().min(1).max(3650).optional(),
+  orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
+  // Legacy aliases (deprecated; map to proven/verified). Kept so existing
+  // configs do not silently lose their tuning.
   orphan_demote_stable_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_endorsed_days: z.number().int().min(1).max(3650).optional(),
-  orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
   // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
   // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
   // short for entries with parameterized summaries (e.g. "Use bcrypt with
