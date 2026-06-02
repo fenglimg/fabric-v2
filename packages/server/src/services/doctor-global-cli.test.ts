@@ -60,6 +60,37 @@ describe("inspectGlobalCliVersion", () => {
     }
   });
 
+  it("(c2) returns ok when global CLI has a NEWER base version even if rc suffix is lower (2.2.0-rc.1 > 2.0.0-rc.31)", () => {
+    const inspection = inspectGlobalCliVersion(fakeSpawn({ status: 0, stdout: "2.2.0-rc.1\n" }));
+    expect(inspection.status).toBe("ok");
+    if (inspection.status === "ok") {
+      expect(inspection.version).toBe("2.2.0-rc.1");
+    }
+  });
+
+  it("(c3) returns ok for a newer minor (2.1.0-rc.5 > 2.0.0-rc.31)", () => {
+    const inspection = inspectGlobalCliVersion(fakeSpawn({ status: 0, stdout: "2.1.0-rc.5\n" }));
+    expect(inspection.status).toBe("ok");
+  });
+
+  it("(c4) returns ok for a GA release with no -rc suffix (2.0.1 > 2.0.0-rc.31)", () => {
+    const inspection = inspectGlobalCliVersion(fakeSpawn({ status: 0, stdout: "2.0.1\n" }));
+    expect(inspection.status).toBe("ok");
+    if (inspection.status === "ok") {
+      expect(inspection.version).toBe("2.0.1");
+    }
+  });
+
+  it("(c5) returns ok for the GA of the minimum base (2.0.0 > 2.0.0-rc.31, release > prerelease)", () => {
+    const inspection = inspectGlobalCliVersion(fakeSpawn({ status: 0, stdout: "2.0.0\n" }));
+    expect(inspection.status).toBe("ok");
+  });
+
+  it("(c6) returns outdated for an OLDER base even with a high rc (1.9.0-rc.99 < 2.0.0-rc.31)", () => {
+    const inspection = inspectGlobalCliVersion(fakeSpawn({ status: 0, stdout: "1.9.0-rc.99\n" }));
+    expect(inspection.status).toBe("outdated");
+  });
+
   it("(d) returns not-found on ENOENT (no fabric on PATH)", () => {
     const inspection = inspectGlobalCliVersion(fakeSpawn({ errorCode: "ENOENT" }));
     expect(inspection.status).toBe("not-found");

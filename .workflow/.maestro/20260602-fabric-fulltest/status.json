@@ -1495,7 +1495,44 @@
     }
   ],
   "git_commits": [],
-  "needs_adjudication": [],
+  "needs_adjudication": [
+    {
+      "id": "ADJ-F16",
+      "cluster": "multi-store-binding",
+      "findings": [
+        "F16"
+      ],
+      "severity": "high",
+      "adjudication_reason": "unmodeled-tradeoff",
+      "question": "multi-store 迁移后 team store mounted 但未 bind→团队知识不surface。install/migrate 是否应 auto-bind team store(选项A: install后自动bind已迁入的store) vs 手动bind是预期步骤(选项B: 但需doctor报缺bind+onboard引导, 当前都没有)?",
+      "recommendation": "B+: 保持手动bind但 doctor 加 'team store mounted未bind' warn + migrate末尾提示; 不静默",
+      "raised_at": "2026-06-02T03:39:28.000Z"
+    },
+    {
+      "id": "ADJ-F19",
+      "cluster": "vector-default",
+      "findings": [
+        "F19"
+      ],
+      "severity": "low",
+      "adjudication_reason": "unmodeled-tradeoff",
+      "question": "向量语义检索默认OFF(需手装fastembed+cold-cache下载)。是否该在知识库达规模时主动引导opt-in, 还是保持纯opt-in静默?",
+      "recommendation": "保持默认OFF(my memory已收敛: 向量conditional-absorb须自pin); 可加doctor提示'语料>N条可考虑embed_enabled'",
+      "raised_at": "2026-06-02T03:39:28.000Z"
+    },
+    {
+      "id": "ADJ-F20",
+      "cluster": "conflict-detection-absent",
+      "findings": [
+        "F20"
+      ],
+      "severity": "medium",
+      "adjudication_reason": "out-of-authority",
+      "question": "冲突/矛盾知识检测能力完全缺失。是roadmap新能力(记入候选池)还是本goal不碰?",
+      "recommendation": "记roadmap候选(NEW能力, 非回归); 本goal不实现(超bug-fix范围); 关联my memory KB候选池治理轴空白",
+      "raised_at": "2026-06-02T03:39:28.000Z"
+    }
+  ],
   "goal_checklist_path": ".workflow/.maestro/20260602-fabric-fulltest/goal-checklist.md",
   "status": "running",
   "loop_exit_status": null,

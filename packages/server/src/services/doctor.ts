@@ -4741,15 +4741,25 @@ export function inspectGlobalCliVersion(
     return { status: "unparseable", detail: `exit ${res.status ?? "?"}` };
   }
   const raw = (res.stdout ?? "").trim();
-  const m = /(\d+)\.(\d+)\.(\d+)-rc\.(\d+)/.exec(raw);
+  // Accept both prereleases ("2.2.0-rc.1") and GA releases ("2.0.1", no -rc).
+  const m = /(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?/.exec(raw);
   if (!m) {
     return { status: "unparseable", detail: raw.slice(0, 80) };
   }
-  const version = `${m[1]}.${m[2]}.${m[3]}-rc.${m[4]}`;
-  const observedRc = Number(m[4]);
-  const minMatch = /-rc\.(\d+)/.exec(MIN_SUPPORTED_GLOBAL_CLI_VERSION);
-  const minRc = minMatch ? Number(minMatch[1]) : 0;
-  if (observedRc < minRc) {
+  const hasRc = m[4] !== undefined;
+  const version = hasRc ? `${m[1]}.${m[2]}.${m[3]}-rc.${m[4]}` : `${m[1]}.${m[2]}.${m[3]}`;
+  // Full-semver precedence: compare base (major.minor.patch) BEFORE the rc
+  // suffix. A GA release (no -rc) outranks any prerelease of the same base, so
+  // model its rc as +Infinity. This replaces the rc-suffix-only comparison that
+  // wrongly flagged a newer base (e.g. 2.2.0-rc.1) as below an older base's rc
+  // (2.0.0-rc.31), and treated GA releases as unparseable.
+  const minM = /(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?/.exec(MIN_SUPPORTED_GLOBAL_CLI_VERSION);
+  const observed = [Number(m[1]), Number(m[2]), Number(m[3]), hasRc ? Number(m[4]) : Infinity];
+  const min = minM
+    ? [Number(minM[1]), Number(minM[2]), Number(minM[3]), minM[4] !== undefined ? Number(minM[4]) : Infinity]
+    : [0, 0, 0, 0];
+  const diffAt = observed.findIndex((v, i) => v !== min[i]);
+  if (diffAt !== -1 && observed[diffAt] < min[diffAt]) {
     return { status: "outdated", version, minVersion: MIN_SUPPORTED_GLOBAL_CLI_VERSION };
   }
   return { status: "ok", version };
