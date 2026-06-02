@@ -982,7 +982,28 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // Regex extracting the `maturity:` value from YAML frontmatter. Mirrors
 // extractKnowledgeFrontmatterId; we keep parsing line-based to avoid pulling
 // in a YAML dependency for a handful of fields.
-const MATURITY_LINE_PATTERN = /^maturity:\s*("?)(stable|endorsed|draft)\1\s*$/mu;
+//
+// v2.2 W3-T5 (F-MATURITY-ENDORSED): recognize BOTH the canonical maturity
+// vocabulary (draft/verified/proven — KT-DEC-0005) and the legacy
+// stable/endorsed names this doctor ladder was written against. Before this, a
+// canonical `proven`/`verified` entry's maturity line did not match, so it was
+// silently dropped from the ENTIRE orphan_demote lint (a proven entry could
+// never be demoted). extractKnowledgeFrontmatterMaturity normalizes the
+// canonical names back onto the internal LintMaturity ladder
+// (proven→stable, verified→endorsed).
+const MATURITY_LINE_PATTERN = /^maturity:\s*("?)(stable|endorsed|draft|verified|proven)\1\s*$/mu;
+
+// Canonical maturity (KT-DEC-0005) → internal LintMaturity ladder. The doctor
+// orphan_demote ladder is expressed in the legacy stable/endorsed names; this
+// map lets canonical entries flow through it without rewriting the ladder.
+const CANONICAL_TO_LINT_MATURITY: Record<string, LintMaturity> = {
+  proven: "stable",
+  verified: "endorsed",
+  draft: "draft",
+  // legacy values pass through unchanged.
+  stable: "stable",
+  endorsed: "endorsed",
+};
 
 // Regex extracting `created_at:` (ISO 8601 datetime) from YAML frontmatter.
 const CREATED_AT_LINE_PATTERN = /^created_at:\s*("?)([^"\n]+)\1\s*$/mu;
@@ -1956,11 +1977,28 @@ function createApplyLintMessage(
   return parts.join(" ");
 }
 
+// v2.2 W3-T5 (F-MATURITY-ENDORSED): the internal demote ladder produces a
+// legacy next-tier name (endorsed|draft). When the on-disk entry uses the
+// canonical vocabulary (verified|proven), the rewrite must emit the CANONICAL
+// equivalent so a canonical file never gets a legacy value spliced into it
+// (which would re-introduce the very vocab drift this task fixes). verified is
+// the canonical name for the legacy "endorsed" tier; draft is shared.
+const LINT_TO_CANONICAL_MATURITY: Record<"endorsed" | "draft", string> = {
+  endorsed: "verified",
+  draft: "draft",
+};
+
 // Pure helper: rewrite the `maturity:` line in a YAML frontmatter block.
 // Returns null if the source does not contain a parseable frontmatter with a
 // `maturity:` field — caller must handle that defensively. Surgical replace:
 // only the maturity line is touched; all other fields preserve their exact
 // bytes (per risk note: round-trip preservation matters).
+//
+// v2.2 W3-T5: the replacement value tracks the SOURCE entry's vocabulary —
+// canonical entries (verified/proven) are demoted to canonical names, legacy
+// entries (stable/endorsed) to legacy names — so the rewrite is both correct
+// for canonical entries (previously a no-op that silently failed) and
+// non-regressing for legacy ones.
 function rewriteFrontmatterMaturity(
   source: string,
   newMaturity: "endorsed" | "draft",
@@ -1971,12 +2009,17 @@ function rewriteFrontmatterMaturity(
     return null;
   }
   const block = fm[1];
-  if (!MATURITY_LINE_PATTERN.test(block)) {
+  const matMatch = MATURITY_LINE_PATTERN.exec(block);
+  if (matMatch === null) {
     return null;
   }
+  const currentValue = matMatch[2];
+  const isCanonicalVocab =
+    currentValue === "proven" || currentValue === "verified" || currentValue === "draft";
+  const replacement = isCanonicalVocab ? LINT_TO_CANONICAL_MATURITY[newMaturity] : newMaturity;
   const replacedBlock = block.replace(
     MATURITY_LINE_PATTERN,
-    (line) => line.replace(/(stable|endorsed|draft)/u, newMaturity),
+    (line) => line.replace(/(stable|endorsed|draft|verified|proven)/u, replacement),
   );
   // Splice replacement back into the original. Use string slicing to preserve
   // BOM / line endings outside the captured block exactly.
@@ -5670,7 +5713,13 @@ function extractKnowledgeFrontmatterMaturity(source: string): LintMaturity | nul
     return null;
   }
   const match = MATURITY_LINE_PATTERN.exec(fm[1]);
-  return match === null ? null : (match[2] as LintMaturity);
+  if (match === null) {
+    return null;
+  }
+  // v2.2 W3-T5 (F-MATURITY-ENDORSED): normalize canonical (proven/verified) and
+  // legacy (stable/endorsed) names onto the internal LintMaturity ladder so a
+  // canonical entry is a first-class orphan_demote candidate.
+  return CANONICAL_TO_LINT_MATURITY[match[2] as string] ?? null;
 }
 
 // rc.36 TASK-05 (P0-8): true if the frontmatter has a `tags:` line with an
