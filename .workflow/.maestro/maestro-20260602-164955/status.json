@@ -130,9 +130,17 @@
     { "sha": "a6fffdb", "subject": "feat(server/review): NEW-APPROVE-PROMOTE 接线 — approve 提升进 store canonical 闭合全自动 round-trip", "wave": 2, "task": "NEW-APPROVE-PROMOTE" },
     { "sha": "90f23e3", "subject": "feat(cli/sync): W2-T3 sync push 接线 — F-SYNC-NOPUSH 修复 (CRITICAL)", "wave": 2, "task": "W2-T3" },
     { "sha": "b64e015", "subject": "feat(cli/store): W2-T4 store-remote 接线 — F-SYNC-REMOTE + F14", "wave": 2, "task": "W2-T4" },
-    { "sha": "3e5f0d1", "subject": "fix(maturity): W3-T5 F-MATURITY-ENDORSED — orphan_demote 对齐 canonical maturity vocab", "wave": 3, "task": "W3-T5" }
+    { "sha": "3e5f0d1", "subject": "fix(maturity): W3-T5 F-MATURITY-ENDORSED — orphan_demote 对齐 canonical maturity vocab", "wave": 3, "task": "W3-T5" },
+    { "sha": "f40e800", "subject": "fix(cli/sync): 复审修复 — sync 在 pull/push 前 commit store 脏工作树(闭合 commit 缺环)", "wave": 2, "task": "review-fix(W2-T3+NEW-APPROVE-PROMOTE seam)" }
   ],
   "needs_adjudication": [],
+  "review_outcome": {
+    "reviewer": "main-agent (人工要求事后复审)",
+    "verified_independently": "全回归亲跑 shared 568 + server 790 + cli 897 = 2255 passed; tsc --noEmit 三包各 0 error(此前 cli doctor/metrics 报错=server dist 未 build 连带, 全量 build 后消失)",
+    "audit_per_commit": "5/6 commit 干净(W1-T1/W1-T2/W2-T4/W3-T5 正确; NEW-APPROVE-PROMOTE 沙箱白名单只放行 resolver 解析出的 store 根=安全; W3-T5 甚至超 spec 揪出 MATURITY_LINE_PATTERN 把 proven 条目整个 skip)",
+    "gap_found_and_fixed": "唯一 load-bearing gap: extract/approve 写知识进 store 工作树都不 commit, sync 只 push 已有 commit 不创建 → 没人 commit → 跨机器团队共享未闭合(approve 测试只验 recall 直接读文件、sync round-trip 测试手动 commit, 双双漏掉)。已修(f40e800): sync pull 前 commit 脏 store 树 + 端到端测试(未提交写→sync→remote 真收到文件)。顺带修 F-SYNC-DIRTY。",
+    "agent_note": "spawn 的 agent 先报 stalled(watchdog 误报)后实际完成; 自报 done 不可信→全部亲验, 印证 feedback_audit_verification"
+  },
   "goal_checklist_path": ".workflow/.maestro/maestro-20260602-164955/goal-checklist.md",
   "status": "completed"
 }
