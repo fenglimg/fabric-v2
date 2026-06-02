@@ -243,11 +243,13 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -268,12 +270,17 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F7",
+        "F8"
+      ]
     },
     {
       "id": "C-install",
@@ -314,11 +321,13 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -339,11 +348,13 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -387,12 +398,16 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F10"
+      ]
     },
     {
       "id": "C-status",
@@ -409,12 +424,16 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F9"
+      ]
     },
     {
       "id": "C-store",
@@ -505,11 +524,13 @@
         "P4"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
+        "depth": "probed",
+        "breadth": "probed",
         "interaction": "untested"
       },
-      "rounds_probed": [],
+      "rounds_probed": [
+        1
+      ],
       "finding_ids": []
     },
     {
@@ -823,12 +844,16 @@
         "P1"
       ],
       "axis_coverage": {
-        "depth": "untested",
-        "breadth": "untested",
-        "interaction": "untested"
+        "depth": "probed",
+        "breadth": "probed",
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F11"
+      ]
     },
     {
       "id": "X-injection",
@@ -1020,6 +1045,104 @@
       "severity": "low",
       "finding_class_note": "REFUTED 但取证副产: KP-PRO-0001(personal)嵌在 werewolf git-committed agents.meta.json = F4/F15 的 LIVE 实证; F1 gitignore 当前遮蔽该泄漏(F1∩F15 交互)",
       "fix_task_id": null
+    },
+    {
+      "id": "F7",
+      "round": 1,
+      "finding_class": "func-bug",
+      "surface": "C-doctor",
+      "axis": "depth",
+      "oracle": "invariant(counter monotonic ≥ observed max)",
+      "expectation_source": "agents.meta.json counters.KP.PRO 应 ≥ 已观测 KP-PRO-* 最大序号",
+      "actual": "werewolf doctor 报 counter_desync + knowledge_index_drift: counters.KP.PRO=0 但 KP-PRO-0001 存在 → next allocate would collide",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "fabric doctor 输出(error severity); 关联 F4(KP-PRO-0001 personal 进 project meta 却未 bump counter)",
+        "refute_reason": null,
+        "needs": "判 root: personal 条目注册进 project meta 时漏 bump counter(sync bug) vs 仅需 doctor --fix(用户态)"
+      },
+      "severity": "medium",
+      "finding_class_note": "stable_id 碰撞风险; 疑 F4/F15 KP-leak 家族下游(personal 入 project meta 留 counter 失步)",
+      "fix_task_id": null
+    },
+    {
+      "id": "F8",
+      "round": 1,
+      "finding_class": "func-bug",
+      "surface": "C-doctor",
+      "axis": "depth",
+      "oracle": "declared-vs-impl(semver 比较)",
+      "expectation_source": "semver: 2.2.0-rc.1 > 2.0.0-rc.31(2.2.0 主版本 > 2.0.0, prerelease 仅在 base 相等才比)",
+      "actual": "doctor global_cli_outdated 报 '2.2.0-rc.1 低于最低支持版本 2.0.0-rc.31' = 假阳性; 疑只比 rc 后缀(1<31)忽略 base(2.2.0>2.0.0)",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate-strong",
+        "evidence": "fabric doctor 输出实证 = 把更新版本判为过时; 影响所有 2.1.x/2.2.x-rc.<31 用户被误导降级重装",
+        "refute_reason": null,
+        "needs": "锁 doctor.ts version floor 比较 fn 行号确认 rc-suffix-only 比较"
+      },
+      "severity": "high",
+      "finding_class_note": "版本门假阳性, 高扩散(每个 2.1+/2.2-rc.<31 用户中招)",
+      "fix_task_id": null
+    },
+    {
+      "id": "F9",
+      "round": 1,
+      "finding_class": "design-confusion",
+      "surface": "C-status",
+      "axis": "breadth",
+      "oracle": "doc-vs-code(项目识别)",
+      "expectation_source": "装了 .fabric(hooks+meta+config)的 repo 应被识别为 Fabric project",
+      "actual": "werewolf 有完整 .fabric 但 `fabric status` 报 project_id:(not a Fabric project)",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "candidate",
+        "evidence": "fabric status 输出; 疑 project_id 需额外 binding/registration 而 .fabric 存在不足以判定",
+        "refute_reason": null,
+        "needs": "查 project_id 判定条件(是否需 bindings/远程注册)"
+      },
+      "severity": "low",
+      "finding_class_note": "用户困惑: 明明装了却说'不是 Fabric 项目'",
+      "fix_task_id": null
+    },
+    {
+      "id": "F10",
+      "round": 1,
+      "finding_class": "efficacy-weakness",
+      "surface": "C-scope-explain",
+      "axis": "interaction",
+      "oracle": "error-UX-reasonableness",
+      "expectation_source": "缺必填参数应给友好 usage 提示",
+      "actual": "`fabric scope-explain` 无参数 → 直接抛 raw citty CLIError + 完整 stack trace(EARG)给用户",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "fabric scope-explain 输出 raw stacktrace; 对比 config 子命令的友好 TTY 提示",
+        "refute_reason": null
+      },
+      "severity": "low",
+      "finding_class_note": "裸 stacktrace 而非 usage = 差错误 UX",
+      "fix_task_id": null
+    },
+    {
+      "id": "F11",
+      "round": 1,
+      "finding_class": "func-bug",
+      "surface": "X-i18n-render",
+      "axis": "interaction",
+      "oracle": "declared-vs-impl(合法配置值处理)",
+      "expectation_source": "zh-CN-hybrid 是合法 fabric_language(config.ts type union + detect-language rc.12 故意返回)",
+      "actual": "resolve-fabric-locale.ts:52 把 zh-CN-hybrid 与 match-existing 一起当 placeholder, 警告'应在 init 时 resolved(KT-DEC-9004)' + 每次 CLI 调用打(doctor 双打)",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "resolve-fabric-locale.ts:52 `=== 'match-existing' || === 'zh-CN-hybrid'`; werewolf config 合法 zh-CN-hybrid 触发重复误导警告",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "finding_class_note": "合法配置被误判 placeholder; 每命令重复噪声+doctor双打; 只有 match-existing 才是真 placeholder",
+      "fix_task_id": null
     }
   ],
   "ship_criteria": [
@@ -1027,7 +1150,7 @@
       "name": "G-CENSUS",
       "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
       "target": "26/26 surface 三轴覆盖标记",
-      "actual": "4/34 surface breadth-probed (git-gov/multiclient/meta-sync/isolation)",
+      "actual": "13/34 surface 探测中",
       "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
       "verified_at": null
     },
@@ -1085,11 +1208,16 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 12,
-      "round_task_actual": 2,
+      "round_task_actual": 3,
       "convergence_status": "converging",
       "newly_discovered_this_round": [
         "F5",
-        "F6"
+        "F6",
+        "F7",
+        "F8",
+        "F9",
+        "F10",
+        "F11"
       ],
       "carried_in": [],
       "carry_over_to_next": {
@@ -1276,5 +1404,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:16:22.000Z"
+  "updated_at": "2026-06-02T03:20:15.000Z"
 }
