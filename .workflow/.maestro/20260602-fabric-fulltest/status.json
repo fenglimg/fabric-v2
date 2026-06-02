@@ -1,0 +1,1215 @@
+{
+  "session_id": "20260602-fabric-fulltest",
+  "active_session_id": "20260602-fabric-fulltest",
+  "sessions": [
+    {
+      "session_id": "20260602-fabric-fulltest",
+      "attached_at": "2026-06-02T02:48:54.000Z"
+    }
+  ],
+  "intent": "全面行为测试 fabric 全部功能(install/doctor/三hook/6 MCP/3 skill/CLI/cite/lifecycle/config), 跨 werewolf-minigame-5sp3(消费者) + pcf(源码) 两项目等权, 找出所有 deterministic 可复现 bug, 修复 confirmed 项 + 回归收敛",
+  "goal": "按完全测量三轴框架严格审计 fabric 全 26 surface × 5 lifecycle × 5 persona + 8 闭环价值链: 自由捕获所有 finding(func-bug|design-confusion|efficacy|followability|value-loop|isolation), verify 阶梯定 confirmed/refuted, confirmed func-bug+明确坏设计修+验, 主观efficacy走多-LLM冷评, 7扇ship门全绿收敛",
+  "mode": "3",
+  "current_phase": "audit",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "完全测量三轴: 深度(deterministic实跑)/广度(34 surface×5 lifecycle×5 persona + 8价值链)/交互(HAX-18冷评)",
+      "LIBERAL capture: func-bug|design-confusion|efficacy-weakness|followability-gap|value-loop-broken|isolation-leak 全记 findings",
+      "J-META 自动 census(grep声明源)+ 端到端价值链枚举(环未闭=gap)",
+      "L-LLM 主观项走≥2多-LLM冷评(含≥1零上下文); efficacy finding 映射 T1/T2/T3 埋点",
+      "confirmed func-bug+明确坏设计→修+deterministic验; 次优efficacy→记finding+推荐 defer",
+      "werewolf(消费者)+pcf(源码)两项目等权; 每wave commit(两项目隔离); 回归门必绿"
+    ],
+    "out_of_scope": [
+      "werewolf 业务代码 bug(只测 fabric 在其中行为)",
+      "次优efficacy的产品重设计(记finding+推荐, 不在本goal实施)",
+      "KP-leak F11/F15/F16 修复(已defer v2.1 global-refactor; 本goal仅作隔离轴reference不重修)"
+    ],
+    "constraints": [
+      "verify阶梯: deterministic→多-LLM冷评(执行者自评不可信, self100%→cold81%)→human; 标confirmed前必取证",
+      "诚实标注L-DET/L-LLM, 不假装L-LLM能确定性0用户模拟",
+      "J-META census自动化(grep), 不手维护穷举(必漂移=anti-pattern)",
+      "fix前grep验声称防reimplemented-noop; 改shared schema必rebuild dist; release前本地tsc",
+      "两项目commit物理隔离; 改packages前先fab_recall相关KB"
+    ]
+  },
+  "execution_criteria": [
+    "每 continue 单步: 取一个 untested/under-probed surface → deterministic 行为探测 → 观测到 failure 则建 finding(verify.verdict=confirmed + 复现步骤)",
+    "candidate ≠ finding: 探测产出先过 verify 阶梯, refuted 丢弃记 reason, confirmed 才进 findings[]",
+    "confirmed finding → spawn 修复 task 进 task_decomposition 回填 fix_task_id → 修复后 deterministic 验证(status=done ⟺ verified_at!=null)",
+    "loop-until-dry: 连续 2 轮无新 distinct confirmed bug 才认 G-DRY 收敛(非 score 收敛)",
+    "每 wave 末跑 G-GREEN 回归门; 每 5 task close 自检 drift(alignment<60% 停报)",
+    "每个 surface 两项目都要探(project_scope=both), census 表 status 回填 tested + rounds_probed"
+  ],
+  "task_decomposition": [
+    {
+      "id": "T0",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "环境就绪核验: werewolf-5sp3 fab 版本/.fabric 完整性 + pcf 开发版 build/dist 最新 + 两端 MCP server 可连",
+      "done_when": "两项目 fab -v + .fabric 资产 + MCP 工具可调 均确认; 探测前置就绪",
+      "ship_criteria_alignment": [
+        "G-CENSUS"
+      ],
+      "alignment_strength": "infrastructure",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "fab -v + ls .fabric + MCP probe",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "T1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "J-META census 自动化脚本: 从 registerTool/.command()/hooks目录/skills目录 grep 抽 inventory, 断言每surface∈覆盖集, 新增无覆盖 auto-red(防手维护漂移)",
+      "done_when": "脚本可重跑产出 26 surface inventory + 覆盖断言; census 成 data 非手维护",
+      "ship_criteria_alignment": [
+        "G-CENSUS"
+      ],
+      "alignment_strength": "infrastructure",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "脚本输出 diff census[]",
+        "evidence": null,
+        "verified_at": null
+      }
+    }
+  ],
+  "feature_surface_census": [
+    {
+      "id": "M-recall",
+      "surface": "MCP fab_recall",
+      "kind": "mcp",
+      "simulability": "L-MIX",
+      "value_loops": [
+        "VL1",
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "M-plan_context",
+      "surface": "MCP fab_plan_context",
+      "kind": "mcp",
+      "simulability": "L-MIX",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "M-get_sections",
+      "surface": "MCP fab_get_knowledge_sections",
+      "kind": "mcp",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "M-extract",
+      "surface": "MCP fab_extract_knowledge",
+      "kind": "mcp",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL1",
+        "VL3"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "M-review",
+      "surface": "MCP fab_review",
+      "kind": "mcp",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL1",
+        "VL3"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "M-archive_scan",
+      "surface": "MCP fab_archive_scan",
+      "kind": "mcp",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL5"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-config",
+      "surface": "CLI fab config",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL6"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-doctor",
+      "surface": "CLI fab doctor",
+      "kind": "cli",
+      "simulability": "L-MIX",
+      "value_loops": [
+        "VL4",
+        "VL6"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-install",
+      "surface": "CLI fab install",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL2"
+      ],
+      "lifecycle_stages": [
+        "ST1"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-metrics",
+      "surface": "CLI fab metrics",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-onboard-coverage",
+      "surface": "CLI fab onboard-coverage",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL3"
+      ],
+      "lifecycle_stages": [
+        "ST1",
+        "ST5"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-plan-context-hint",
+      "surface": "CLI fab plan-context-hint",
+      "kind": "cli",
+      "simulability": "L-MIX",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-scope-explain",
+      "surface": "CLI fab scope-explain",
+      "kind": "cli",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-status",
+      "surface": "CLI fab status",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-store",
+      "surface": "CLI fab store",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-sync",
+      "surface": "CLI fab sync",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL2"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-uninstall",
+      "surface": "CLI fab uninstall",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL_teardown"
+      ],
+      "lifecycle_stages": [
+        "ST4"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "C-whoami",
+      "surface": "CLI fab whoami",
+      "kind": "cli",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "H-knowledge-hint-broad",
+      "surface": "Hook SessionStart broad discovery",
+      "kind": "hook",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P5"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "H-knowledge-hint-narrow",
+      "surface": "Hook PreToolUse narrow hint+injection",
+      "kind": "hook",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P5"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "H-fabric-hint",
+      "surface": "Hook Stop archive/review nudge",
+      "kind": "hook",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL5"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P5"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "H-cite-policy-evict",
+      "surface": "Hook cite enforce+evict",
+      "kind": "hook",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL6"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P5"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "S-fabric-archive",
+      "surface": "Skill fabric-archive",
+      "kind": "skill",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL1",
+        "VL5"
+      ],
+      "lifecycle_stages": [
+        "ST2",
+        "ST3"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "S-fabric-review",
+      "surface": "Skill fabric-review",
+      "kind": "skill",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2",
+        "ST3"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "S-fabric-import",
+      "surface": "Skill fabric-import",
+      "kind": "skill",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL3"
+      ],
+      "lifecycle_stages": [
+        "ST2",
+        "ST3"
+      ],
+      "personas": [
+        "P1",
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-git-governance",
+      "surface": "知识库 git 治理(committed knowledge vs ignored ledger; .gitignore 遮蔽)",
+      "kind": "cross-cutting",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL2",
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST1",
+        "ST5"
+      ],
+      "personas": [
+        "P2",
+        "P4"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-meta-sync",
+      "surface": "agents.meta.json sync+computeRevision(KP-* layer)",
+      "kind": "cross-cutting",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL2",
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P2"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-multiclient-parity",
+      "surface": "三端 parity(.claude/.codex/.cursor wiring 各异)",
+      "kind": "cross-cutting",
+      "simulability": "L-MIX",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST1",
+        "ST2"
+      ],
+      "personas": [
+        "P1"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-worktree-concurrency",
+      "surface": "多 worktree × 多窗口并发(.fabric 状态争用, session-scoped 信号)",
+      "kind": "cross-cutting",
+      "simulability": "L-MIX",
+      "value_loops": [
+        "VL5"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P5"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-decay-lifecycle",
+      "surface": "decay/maturity 老化(90/30/14d)+revisit",
+      "kind": "cross-cutting",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL4"
+      ],
+      "lifecycle_stages": [
+        "ST3"
+      ],
+      "personas": [
+        "P3"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-i18n-render",
+      "surface": "config 渲染(fabric_language zh-CN/hybrid/en; dismiss_signals)",
+      "kind": "cross-cutting",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL6"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-injection",
+      "surface": "PreToolUse 注入(hint 真进 context; injections.jsonl)",
+      "kind": "cross-cutting",
+      "simulability": "L-LLM",
+      "value_loops": [
+        "VL1"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-ledger-integrity",
+      "surface": "events/forensic/metrics.jsonl(append/rotate/lock 跨进程)",
+      "kind": "cross-cutting",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL5"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P5"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    },
+    {
+      "id": "X-isolation-security",
+      "surface": "KP-* personal/team 隔离(read-set/git/守卫)",
+      "kind": "cross-cutting",
+      "simulability": "L-DET",
+      "value_loops": [
+        "VL7"
+      ],
+      "lifecycle_stages": [
+        "ST2"
+      ],
+      "personas": [
+        "P1",
+        "P2"
+      ],
+      "axis_coverage": {
+        "depth": "untested",
+        "breadth": "untested",
+        "interaction": "untested"
+      },
+      "rounds_probed": [],
+      "finding_ids": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "round": 1,
+      "finding_class": "value-loop-broken",
+      "surface": "X-git-governance",
+      "axis": "breadth",
+      "oracle": "value-loop-closure",
+      "expectation_source": "KT-DEC-0003 dual-root: .fabric/knowledge git-committed 团队共享",
+      "actual": "werewolf .gitignore L137 整 ignore .fabric → git ls-files .fabric 空; install.ts:579 drop 的 .fabric/.gitignore 被宿主根 ignore 遮蔽, install 不检测不警告",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "git ls-files .fabric=∅; .gitignore:137=.fabric; install.ts:579-598",
+        "refute_reason": null
+      },
+      "severity": "high",
+      "finding_class_note": "团队知识共享产品承诺静默失效",
+      "fix_task_id": null
+    },
+    {
+      "id": "F2",
+      "round": 1,
+      "finding_class": "design-confusion",
+      "surface": "H-fabric-hint",
+      "axis": "interaction",
+      "oracle": "hook-policy-reasonableness(HAX: 防打扰/时机)",
+      "expectation_source": "KT-DEC-0007 hook=nudge 非 gate; cadence 应防噪声",
+      "actual": "本会话 Stop-hook 先弹 archive nudge、紧接回合又弹 review nudge — 两 nudge 相邻叠加, 无合并/节流",
+      "verify": {
+        "tier": "cross-llm",
+        "verdict": "candidate",
+        "evidence": "本会话两次 Stop hook 输出实录",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "finding_class_note": "cadence/stacking 设计待冷评是否过扰",
+      "fix_task_id": null
+    },
+    {
+      "id": "F3",
+      "round": 1,
+      "finding_class": "followability-gap",
+      "surface": "H-cite-policy-evict",
+      "axis": "interaction",
+      "oracle": "skill-policy-followability",
+      "expectation_source": "cite policy: edit/decide 前回复首行必写 KB:<id>",
+      "actual": "执行者(claude)本会话多轮 edit/decide 未稳定写 KB:首行 — 实际遵循率<100%; 规则可遵循性存疑",
+      "verify": {
+        "tier": "cross-llm",
+        "verdict": "candidate",
+        "evidence": "本会话 cite 首行缺失实录",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "finding_class_note": "自评偏乐观, 须冷评/coverage 实测遵循率",
+      "fix_task_id": null
+    },
+    {
+      "id": "F4",
+      "round": 1,
+      "finding_class": "isolation-leak",
+      "surface": "X-isolation-security",
+      "axis": "breadth",
+      "oracle": "personal-team-isolation",
+      "expectation_source": "KP-* personal 不得进 team read-set/git-committed meta",
+      "actual": "F11/F15/F16 已 confirmed: recall 零 layer 隔离 + meta-builder KP-* 进 git + 死守卫; 已 defer v2.1 global-refactor",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "见 20260601-issues-audit F11/F15/F16",
+        "refute_reason": null
+      },
+      "severity": "high",
+      "finding_class_note": "本 goal 作隔离/安全轴 reference, 修复归属 v2.1(不在本 goal 重修)",
+      "fix_task_id": null
+    }
+  ],
+  "ship_criteria": [
+    {
+      "name": "G-CENSUS",
+      "desc": "J-META 自动census: 26 surface 每个∈{journey}∪{parity}∪{waiver}, 三轴各至少探一次",
+      "target": "26/26 surface 三轴覆盖标记",
+      "actual": "0/26",
+      "verifier_cmd": "count(census[].axis_coverage all!=untested)/26",
+      "verified_at": null
+    },
+    {
+      "name": "G-VALUE-LOOP",
+      "desc": "8 闭环价值链每条0用户跑通 或 broken-gap 记 finding",
+      "target": "8/8 loop closed-or-gap-logged",
+      "actual": "3 suspected broken(VL2/VL5/VL6)+1 known(VL7) 已记, 4 untested",
+      "verifier_cmd": "count(value_loops[].status!=untested)/8",
+      "verified_at": null
+    },
+    {
+      "name": "G-DEPTH-DRY",
+      "desc": "深度轴 deterministic bug loop-until-dry",
+      "target": "连续2轮无新distinct confirmed func-bug",
+      "actual": "round1 in progress",
+      "verifier_cmd": "audit_rounds tail 2 dry",
+      "verified_at": null
+    },
+    {
+      "name": "G-EFFICACY",
+      "desc": "交互轴: 每 L-LLM surface 经 HAX-18 rubric + ≥2多-LLM冷评(含≥1零上下文)",
+      "target": "all L-LLM surface cold-evaluated, efficacy findings logged",
+      "actual": "0 cold-eval done; 3 seed candidate(F2/F3 + nudge/cite)",
+      "verifier_cmd": "count(L-LLM surface with cold_eval)/count(L-LLM surface)",
+      "verified_at": null
+    },
+    {
+      "name": "G-OBSERV",
+      "desc": "每 efficacy/interaction finding 映射 T1/T2/T3 + 埋点缺口标注",
+      "target": "all interaction findings tiered + instrumentation gaps noted",
+      "actual": "0 tiered",
+      "verifier_cmd": "count(interaction findings with observability_tier)/count",
+      "verified_at": null
+    },
+    {
+      "name": "G-FIX",
+      "desc": "confirmed func-bug + 明确坏设计 修+deterministic验; 次优efficacy defer带rationale",
+      "target": "100% fix-now confirmed fixed+verified",
+      "actual": "0 fixed (F1 confirmed 待修; F4 defer v2.1)",
+      "verifier_cmd": "count(fix-now findings with fix done&verified)/count(fix-now)",
+      "verified_at": null
+    },
+    {
+      "name": "G-GREEN",
+      "desc": "回归: pcf tsc+test + werewolf 端 smoke",
+      "target": "pcf tsc EXIT0+test绿; werewolf hook/MCP/skill smoke绿",
+      "actual": "baseline 2189 passed(pre-goal)",
+      "verifier_cmd": "pnpm -r exec tsc --noEmit && test; + werewolf smoke",
+      "verified_at": null
+    }
+  ],
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "running",
+      "round_task_ceiling": 12,
+      "round_task_actual": 0,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": [],
+      "carried_in": [],
+      "carry_over_to_next": {
+        "from_open_blocked": [],
+        "from_ceiling_overflow": [],
+        "from_depth_cap": []
+      },
+      "drift_checks": [],
+      "completion_gate": {
+        "task_gate": {},
+        "goal_gate": {
+          "blocking": true
+        },
+        "drift_gate": {}
+      }
+    }
+  ],
+  "git_commits": [],
+  "needs_adjudication": [],
+  "goal_checklist_path": ".workflow/.maestro/20260602-fabric-fulltest/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null,
+  "measurement_model": {
+    "philosophy": "完全测量=三轴(深度grounded/广度census×lifecycle×persona+价值链/交互HAX锚)+跨切律; liberal capture: bug|design-confusion|efficacy-weak|followability|isolation 全记 findings, verify 阶梯再 refute, 绝不留空",
+    "axes": {
+      "depth": {
+        "desc": "每 journey grounded 可真跑",
+        "engine": "deterministic 实跑(命令/hook/MCP), 签名交 tsc/test",
+        "simulability": "L-DET",
+        "terminate": "loop-until-dry 2轮无新 distinct confirmed bug"
+      },
+      "breadth": {
+        "desc": "覆盖矩阵 surface×lifecycle×persona + 端到端闭环价值链",
+        "engine": "completeness-critic loop-until-dry; J-META 自动census(grep声明源)断言每surface∈journey∪parity∪waiver",
+        "simulability": "L-MIX",
+        "terminate": "每surface有覆盖+每价值链0用户跑通或gap记录, critic连续2轮无新distinct gap"
+      },
+      "interaction": {
+        "desc": "agent-in-the-loop 行为观测: hook行为delta/MCP payload质量/skill可遵循/策略遵守/预算",
+        "engine": "scripted real-agent replay + 埋点观测; rubric锚HAX-18; 主观项≥2多-LLM冷评(含≥1零上下文)",
+        "simulability": "L-LLM",
+        "terminate": "每L-LLM surface经HAX rubric冷评过+efficacy findings记录"
+      }
+    },
+    "coverage_matrix": {
+      "surfaces": "见 feature_surface_census[](J-META 自动抽, 非手维护)",
+      "lifecycle_stages": [
+        [
+          "ST1",
+          "install/cold-start"
+        ],
+        [
+          "ST2",
+          "daily-use"
+        ],
+        [
+          "ST3",
+          "maintenance/decay/review"
+        ],
+        [
+          "ST4",
+          "teardown/uninstall"
+        ],
+        [
+          "ST5",
+          "cross-session/clone-bootstrap"
+        ]
+      ],
+      "personas": [
+        [
+          "P1",
+          "solo-dev"
+        ],
+        [
+          "P2",
+          "team-member(git-share)"
+        ],
+        [
+          "P3",
+          "future-self(cross-session)"
+        ],
+        [
+          "P4",
+          "new-clone-onboarder"
+        ],
+        [
+          "P5",
+          "multi-window-concurrent"
+        ]
+      ]
+    },
+    "simulability_layers": {
+      "L-DET": "纯数据/CLI/API, fixture 0用户全模拟",
+      "L-LLM": "语义判断(分类/触发/cold-start感知/可遵循性), 半模拟走多-LLM冷评, 诚实标注不假装确定性",
+      "L-MIX": "机械部分L-DET+质量部分L-LLM"
+    },
+    "observability_tiers": {
+      "T1": "events.jsonl 现成事件可复盘",
+      "T2": "需补 ledger 事件才可审计",
+      "T3": "不可约质量, 补 llm_judge_run 使可复盘"
+    },
+    "interaction_rubric_anchor": "HAX-18(微软人机交互18准则)— 维度集 by-reference 可判完备, 无 D10",
+    "finding_classes": [
+      "func-bug",
+      "design-confusion",
+      "efficacy-weakness",
+      "value-loop-broken",
+      "followability-gap",
+      "isolation-leak"
+    ],
+    "bug_capture_policy": "LIBERAL — 像bug的/设计导致疑惑的/efficacy弱的全部当 finding 记(标 finding_class), verify 阶梯(deterministic→多-LLM冷评→human)再判 confirmed/refuted; 目标'评完留下完整 findings ledger', 不留空"
+  },
+  "value_loops": [
+    {
+      "id": "VL1",
+      "chain": "write→archive→review→promote canonical→recall 下个 session→apply→cite",
+      "sim": "L-MIX",
+      "status": "untested",
+      "note": "核心知识价值环",
+      "finding_ids": []
+    },
+    {
+      "id": "VL2",
+      "chain": "dev A commit knowledge→git push→dev B pull→recall 命中",
+      "sim": "L-DET",
+      "status": "BROKEN-suspected",
+      "note": "werewolf .fabric 整 gitignored→知识从不进 git→团队共享失效(F1)",
+      "finding_ids": [
+        "F1"
+      ]
+    },
+    {
+      "id": "VL3",
+      "chain": "fresh clone→fabric-import(git log+docs)→pending→review→canonical",
+      "sim": "L-MIX",
+      "status": "untested",
+      "note": "cold-start bootstrap 环",
+      "finding_ids": []
+    },
+    {
+      "id": "VL4",
+      "chain": "知识老化越阈→revisit nudge→re-validate or evict",
+      "sim": "L-LLM",
+      "status": "untested",
+      "note": "decay 维护环",
+      "finding_ids": []
+    },
+    {
+      "id": "VL5",
+      "chain": "edits 累积→Stop hook nudge archive→archive→backlog→review nudge→review",
+      "sim": "L-LLM",
+      "status": "WEAK-suspected",
+      "note": "本会话观测到 archive+review nudge 相邻叠加(F2)",
+      "finding_ids": [
+        "F2"
+      ]
+    },
+    {
+      "id": "VL6",
+      "chain": "edit→cite policy 要求 KB:首行→cite 记录→doctor --cite-coverage 稽核",
+      "sim": "L-LLM",
+      "status": "WEAK-suspected",
+      "note": "执行者(我)本会话实际遵循率<100%(F3)",
+      "finding_ids": [
+        "F3"
+      ]
+    },
+    {
+      "id": "VL7",
+      "chain": "KP-* 写入→留 ~/.fabric→不进 team read-set/git",
+      "sim": "L-DET",
+      "status": "BROKEN-known",
+      "note": "KP-leak F11/F15/F16 已 confirmed(defer v2.1); 本 frame 作隔离轴 reference",
+      "finding_ids": [
+        "F4"
+      ]
+    },
+    {
+      "id": "VL_teardown",
+      "chain": "uninstall→三端资产清除→无残留 hook/mcp/lock",
+      "sim": "L-DET",
+      "status": "untested",
+      "note": "teardown 环",
+      "finding_ids": []
+    }
+  ],
+  "updated_at": "2026-06-02T03:08:20.000Z"
+}
