@@ -32,7 +32,7 @@ import {
 // store, never silently moving knowledge for the dual-root co-location model.
 // ---------------------------------------------------------------------------
 
-export function resolveStorePendingBase(
+function resolveWriteTargetStoreDir(
   layer: "team" | "personal",
   projectRoot: string,
 ): string | null {
@@ -47,10 +47,38 @@ export function resolveStorePendingBase(
   if (target === null) {
     return null;
   }
-  return join(
-    resolveGlobalRoot(),
-    storeRelativePath(target.store_uuid),
-    STORE_LAYOUT.knowledgeDir,
-    STORE_PENDING_DIR,
-  );
+  return join(resolveGlobalRoot(), storeRelativePath(target.store_uuid));
+}
+
+export function resolveStorePendingBase(
+  layer: "team" | "personal",
+  projectRoot: string,
+): string | null {
+  const storeDir = resolveWriteTargetStoreDir(layer, projectRoot);
+  if (storeDir === null) {
+    return null;
+  }
+  return join(storeDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR);
+}
+
+// v2.1 global-refactor (NEW-APPROVE-PROMOTE) — the approve-side counterpart of
+// resolveStorePendingBase. Resolves the canonical knowledge base of the
+// write-target store (where review approve promotes the pending entry to), so
+// the full extract→approve→recall round-trip stays inside the store instead of
+// landing the canonical copy back in the project .fabric (which recall would
+// still find, but as a project-local entry, defeating store sharing).
+//
+// Returns the store's `<storeDir>/knowledge` base (the per-type subdir is
+// appended by the caller). null under the SAME conditions as
+// resolveStorePendingBase — preserving the dual-root default byte-for-byte when
+// no store is selected.
+export function resolveStoreCanonicalBase(
+  layer: "team" | "personal",
+  projectRoot: string,
+): string | null {
+  const storeDir = resolveWriteTargetStoreDir(layer, projectRoot);
+  if (storeDir === null) {
+    return null;
+  }
+  return join(storeDir, STORE_LAYOUT.knowledgeDir);
 }

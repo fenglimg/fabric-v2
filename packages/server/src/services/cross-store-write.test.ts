@@ -82,7 +82,7 @@ const goodInput = {
   type: "decisions" as const,
   slug: "store-routed-decision",
   layer: "team" as const,
-  proposed_reason: "diagnostic-then-fix",
+  proposed_reason: "diagnostic-then-fix" as const,
   session_context: "Session goal: validate W1-T2 cross-store write routing into the active write store.",
 };
 

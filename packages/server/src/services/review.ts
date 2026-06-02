@@ -14,6 +14,7 @@ import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
+import { resolveStoreCanonicalBase, resolveStorePendingBase } from "./cross-store-write.js";
 import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.js";
 
 // rc.5 B1: dual pending root. Team layer writes/reads via the workspace
@@ -23,7 +24,17 @@ import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.j
 // continue to pass for team entries.
 const PENDING_BASE_TEAM_REL = ".fabric/knowledge/pending";
 
+// v2.1 global-refactor (NEW-APPROVE-PROMOTE): when the project has selected an
+// active write store, extract-knowledge routes pending entries INTO that store
+// (cross-store-write.resolveStorePendingBase). Review's list/approve must read
+// from the SAME base, else it would scan the empty project pending dir and the
+// round-trip would never close. resolveStorePendingBase returns null — falling
+// back to the dual-root literal byte-for-byte — when no store is selected.
 function pendingBaseAbs(layer: "team" | "personal", projectRoot: string): string {
+  const storeBase = resolveStorePendingBase(layer, projectRoot);
+  if (storeBase !== null) {
+    return storeBase;
+  }
   if (layer === "personal") {
     return join(resolvePersonalRoot(), ".fabric", "knowledge", "pending");
   }
@@ -165,6 +176,28 @@ export async function reviewKnowledge(
 // or when the path resolves outside the allowed roots.
 // ---------------------------------------------------------------------------
 
+// v2.1 global-refactor (NEW-APPROVE-PROMOTE): the resolved write-target store
+// knowledge roots (team + personal) that approve/list operate inside when the
+// project has selected an active write store. Used to extend the sandbox
+// whitelist to the SPECIFIC store dirs the resolver actually returns — never a
+// blanket `~/.fabric/stores/**` so a buggy/malicious path can't reach a store
+// the project did not mount-as-write-target. Returns [] (no store roots, dual-
+// root behavior unchanged) when no store is selected.
+function storeKnowledgeRoots(projectRoot: string): string[] {
+  const roots: string[] = [];
+  for (const layer of ["team", "personal"] as const) {
+    const base = resolveStoreCanonicalBase(layer, projectRoot);
+    if (base !== null) {
+      roots.push(resolve(base));
+    }
+  }
+  return roots;
+}
+
+function isUnder(abs: string, root: string): boolean {
+  return abs === root || abs.startsWith(root + "/");
+}
+
 function resolveSandboxedPath(
   projectRoot: string,
   candidate: string,
@@ -176,6 +209,9 @@ function resolveSandboxedPath(
 
   const projectKnowledgeRoot = resolve(projectRoot, ".fabric", "knowledge");
   const personalKnowledgeRoot = resolve(resolvePersonalRoot(), ".fabric", "knowledge");
+  // Defense-in-depth: only the EXACT store knowledge roots the resolver returns
+  // for this project are admitted (never an arbitrary store path).
+  const storeRoots = storeKnowledgeRoots(projectRoot);
 
   // `~/...` form maps to FABRIC_HOME (only meaningful for modify on canonical
   // personal entries; approve always operates on pending which is project-local).
@@ -184,15 +220,27 @@ function resolveSandboxedPath(
       throw new Error(`personal-root path not allowed for this action: ${candidate}`);
     }
     const abs = resolve(resolvePersonalRoot(), candidate.slice(2));
-    if (abs !== personalKnowledgeRoot && !abs.startsWith(personalKnowledgeRoot + "/")) {
+    if (!isUnder(abs, personalKnowledgeRoot)) {
       throw new Error(`path escapes personal knowledge root: ${candidate}`);
     }
     return { abs, isInProjectTree: false };
   }
 
+  // Absolute paths are admitted ONLY when they resolve under a resolved store
+  // knowledge root (the form listPending reports for store-routed entries).
+  // Store entries live outside the project's git tree (each store is its own
+  // repo), so isInProjectTree is false.
+  if (candidate.startsWith("/")) {
+    const abs = resolve(candidate);
+    if (storeRoots.some((root) => isUnder(abs, root))) {
+      return { abs, isInProjectTree: false };
+    }
+    throw new Error(`path escapes knowledge root: ${candidate}`);
+  }
+
   // Project-relative — must resolve under .fabric/knowledge.
   const projectAbs = resolve(projectRoot, candidate);
-  if (projectAbs === projectKnowledgeRoot || projectAbs.startsWith(projectKnowledgeRoot + "/")) {
+  if (isUnder(projectAbs, projectKnowledgeRoot)) {
     return { abs: projectAbs, isInProjectTree: true };
   }
 
@@ -201,10 +249,7 @@ function resolveSandboxedPath(
   // intended for personal). Try the personal root as a fallback.
   if (options.allowPersonal === true) {
     const personalAbs = resolve(resolvePersonalRoot(), candidate);
-    if (
-      personalAbs === personalKnowledgeRoot ||
-      personalAbs.startsWith(personalKnowledgeRoot + "/")
-    ) {
+    if (isUnder(personalAbs, personalKnowledgeRoot)) {
       return { abs: personalAbs, isInProjectTree: false };
     }
   }
@@ -352,9 +397,16 @@ async function listPending(
   // origin so callers can distinguish workspace-rooted from home-rooted
   // pending entries. Missing roots are silently skipped (personal root may
   // not exist yet on a fresh install — that's not an error).
-  const sources: ReadonlyArray<{ origin: "team" | "personal"; root: string }> = [
-    { origin: "team", root: pendingBaseAbs("team", projectRoot) },
-    { origin: "personal", root: pendingBaseAbs("personal", projectRoot) },
+  // v2.1 global-refactor (NEW-APPROVE-PROMOTE): when a write store is selected,
+  // pendingBaseAbs returns a path OUTSIDE the project tree (the store repo).
+  // Such entries can't be reported workspace-relative (would be `../../..`),
+  // so flag store-rooted sources and report their entries by absolute path —
+  // which resolveSandboxedPath admits under the store knowledge root.
+  const teamStorePending = resolveStorePendingBase("team", projectRoot);
+  const personalStorePending = resolveStorePendingBase("personal", projectRoot);
+  const sources: ReadonlyArray<{ origin: "team" | "personal"; root: string; isStore: boolean }> = [
+    { origin: "team", root: pendingBaseAbs("team", projectRoot), isStore: teamStorePending !== null },
+    { origin: "personal", root: pendingBaseAbs("personal", projectRoot), isStore: personalStorePending !== null },
   ];
 
   for (const source of sources) {
@@ -415,16 +467,23 @@ async function listPending(
           continue;
         }
 
-        const reportedPath = source.origin === "personal"
-          ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
-          : relative(projectRoot, absolutePath);
+        // Store-rooted entries (any layer) live outside both the project tree
+        // and the personal ~/.fabric root, so they are reported by absolute
+        // path. Non-store team → workspace-relative; non-store personal → `~/`.
+        const reportedPath = source.isStore
+          ? absolutePath
+          : source.origin === "personal"
+            ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
+            : relative(projectRoot, absolutePath);
 
         items.push({
           pending_path: reportedPath,
           // v2.0.0-rc.27 TASK-001 (§2.12): absolute path companion for
           // personal entries so programmatic consumers (Read, fs.readFile)
-          // don't need to shell-expand the `~` themselves.
-          ...(source.origin === "personal" ? { pending_path_absolute: absolutePath } : {}),
+          // don't need to shell-expand the `~` themselves. Store entries
+          // already report an absolute pending_path, so the companion is
+          // emitted for non-store personal entries only.
+          ...(source.origin === "personal" && !source.isStore ? { pending_path_absolute: absolutePath } : {}),
           type,
           layer,
           maturity,
@@ -481,6 +540,9 @@ async function approveOne(
   // project-relative forms, then we narrow to pending/ specifically.
   let sourceAbs: string;
   let sourceOrigin: "team" | "personal";
+  // v2.1 global-refactor (NEW-APPROVE-PROMOTE): true when the resolved pending
+  // base is a write-target STORE repo (not the project / personal dual-root).
+  let sourceIsStore = false;
   try {
     const sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
     const teamPendingAbs = pendingBaseAbs("team", projectRoot);
@@ -497,6 +559,9 @@ async function approveOne(
     }
     sourceAbs = sandboxed.abs;
     sourceOrigin = inPersonalPending ? "personal" : "team";
+    // The pending base is a store repo iff resolveStorePendingBase (consulted
+    // inside pendingBaseAbs) returned non-null for that layer.
+    sourceIsStore = resolveStorePendingBase(sourceOrigin, projectRoot) !== null;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     await emitEventBestEffort(projectRoot, {
@@ -557,10 +622,19 @@ async function approveOne(
     allocatedId = stableId;
 
     const newFilename = `${stableId}--${slug}.md`;
-    const layerRoot = layer === "personal"
-      ? join(resolvePersonalRoot(), ".fabric")
-      : join(projectRoot, ".fabric");
-    targetAbs = join(layerRoot, "knowledge", pluralType, newFilename);
+    // v2.1 global-refactor (NEW-APPROVE-PROMOTE): when a write store is selected
+    // for this layer, promote into the store's canonical knowledge dir so the
+    // full extract→approve→recall round-trip stays inside the store. null →
+    // dual-root co-location (byte-identical to the pre-store behavior).
+    const storeCanonicalBase = resolveStoreCanonicalBase(layer, projectRoot);
+    if (storeCanonicalBase !== null) {
+      targetAbs = join(storeCanonicalBase, pluralType, newFilename);
+    } else {
+      const layerRoot = layer === "personal"
+        ? join(resolvePersonalRoot(), ".fabric")
+        : join(projectRoot, ".fabric");
+      targetAbs = join(layerRoot, "knowledge", pluralType, newFilename);
+    }
     await ensureParentDirectory(targetAbs);
 
     // Inject id, drop x-fabric-idempotency-key (no longer meaningful post-promote).
@@ -579,7 +653,21 @@ async function approveOne(
     // (the Skill may have written to workspace pending if the layer field
     // wasn't classified upstream), so use sourceOrigin to choose the removal
     // strategy independent of fm.layer.
-    if (sourceOrigin === "team") {
+    //
+    // v2.1 global-refactor (NEW-APPROVE-PROMOTE): a store-rooted pending source
+    // lives in a SEPARATE git repo (~/.fabric/stores/<uuid>/), not the project
+    // repo, so the project-cwd `git rm` below would fail (path is absolute /
+    // outside the project tree). Conservative choice: plain fs.unlink. The
+    // canonical copy is written via atomicWriteText (already done above), and
+    // committing the store's pending-removal + canonical-add is the sync layer's
+    // job (`fabric sync` stages + commits the store repo) — review must not
+    // pre-stage in a repo it doesn't own. Loss of git rename detection across
+    // the pending→canonical move is acceptable (same trade-off as personal).
+    if (sourceIsStore) {
+      if (existsSync(sourceAbs)) {
+        await unlink(sourceAbs);
+      }
+    } else if (sourceOrigin === "team") {
       try {
         execFileSync("git", ["rm", "--quiet", "-f", pendingPath], {
           cwd: projectRoot,
