@@ -574,12 +574,16 @@
         "P5"
       ],
       "axis_coverage": {
-        "depth": "untested",
+        "depth": "probed",
         "breadth": "untested",
-        "interaction": "untested"
+        "interaction": "probed"
       },
-      "rounds_probed": [],
-      "finding_ids": []
+      "rounds_probed": [
+        1
+      ],
+      "finding_ids": [
+        "F2"
+      ]
     },
     {
       "id": "H-cite-policy-evict",
@@ -921,21 +925,24 @@
     {
       "id": "F2",
       "round": 1,
-      "finding_class": "design-confusion",
+      "finding_class": "efficacy-weakness",
       "surface": "H-fabric-hint",
       "axis": "interaction",
       "oracle": "hook-policy-reasonableness(HAX: 防打扰/时机)",
       "expectation_source": "KT-DEC-0007 hook=nudge 非 gate; cadence 应防噪声",
-      "actual": "本会话 Stop-hook 先弹 archive nudge、紧接回合又弹 review nudge — 两 nudge 相邻叠加, 无合并/节流",
+      "actual": "(初判'单Stop叠加'已 refuted: fabric-hint.cjs priority-mutex 每Stop只发1 signal, archive>review>import>maintenance 顺序return) 残留: 连续Stop每次都被某nudge阻断的'treadmill'是否过扰 — 不同signal各自cooldown可在相邻Stop轮流触发",
       "verify": {
         "tier": "cross-llm",
         "verdict": "candidate",
-        "evidence": "本会话两次 Stop hook 输出实录",
-        "refute_reason": null
+        "evidence": "fabric-hint.cjs:787/828/882/1260 各signal独立return=mutex; 初判stacking refuted; treadmill efficacy 待HAX冷评",
+        "refute_reason": null,
+        "sub_refuted": "single-stop-stacking (mutex 证伪)"
       },
       "severity": "medium",
       "finding_class_note": "cadence/stacking 设计待冷评是否过扰",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "observability_tier": "T1",
+      "needs": "HAX-18冷评: per-stop-one-signal 跨N consecutive stops 是否违反'最小打扰'准则; + T2埋点 nudge_emitted 计数才能量化频率"
     },
     {
       "id": "F3",
@@ -1078,7 +1085,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 12,
-      "round_task_actual": 1,
+      "round_task_actual": 2,
       "convergence_status": "converging",
       "newly_discovered_this_round": [
         "F5",
@@ -1269,5 +1276,5 @@
       "finding_ids": []
     }
   ],
-  "updated_at": "2026-06-02T03:15:03.000Z"
+  "updated_at": "2026-06-02T03:16:22.000Z"
 }
