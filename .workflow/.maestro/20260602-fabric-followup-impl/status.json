@@ -1,0 +1,219 @@
+{
+  "session_id": "20260602-fabric-followup-impl",
+  "active_session_id": "20260602-fabric-followup-impl",
+  "sessions": [
+    {
+      "session_id": "20260602-fabric-followup-impl",
+      "attached_at": "2026-06-02T04:57:09.000Z"
+    }
+  ],
+  "intent": "实现3个fabric后续功能: ⑤cite重设计(recall-based自动记账) ④冲突检测(LLM判定) ③向量中文模型+install. 各按scratchpad方案文档.",
+  "goal": "task_decomposition 全部 status=done(每个fix实现+deterministic验证+tsc/test绿); 依次 ⑤→④→③; 分批commit",
+  "mode": "1",
+  "current_phase": "execute",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "⑤cite: P5方案(recall自动记账+legacy保留)",
+      "④conflict: P4方案v2一步到位LLM判定",
+      "③vector: P3方案(multilingual-e5-small+install接线), 先确认fastembed-js枚举",
+      "每功能: 实现+test+每完成commit回填git_commits[]",
+      "改shared必rebuild dist; release前本地tsc"
+    ],
+    "out_of_scope": [
+      "3功能外的新需求",
+      "KP-leak修复(多-store已基本解, 见fulltest F4更正)",
+      "破坏现有行为(cite/recall/hook向后兼容必保)"
+    ],
+    "constraints": [
+      "fix前grep验声称",
+      "改packages/shared schema必rebuild",
+      "cite/recall/hook改动必保向后兼容",
+      "LLM-judge seam须可注入fake(test不真调LLM)",
+      "向量真实模型召回测放nightly不进CI默认"
+    ]
+  },
+  "execution_criteria": [
+    "依次 ⑤(C1-C3)→④(D1-D2)→③(V1-V3); depends_on 满足才动",
+    "每task: 实现→deterministic验证(tsc+vitest)→status=done仅当verified_at!=null",
+    "每功能簇收口即commit并回填git_commits[]",
+    "向后兼容是硬约束: cite/recall/hook 旧行为不破",
+    "③的V1是研究task(确认fastembed-js枚举), 产出选定模型才进V2"
+  ],
+  "task_decomposition": [
+    {
+      "id": "C1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "⑤cite: cite-policy-evict.cjs 改 recall-based 自动记账 — PreToolUse(Edit/Write)查本session近期fab_recall命中编辑path重叠→自动关联KB为cite; 无recall→软nudge(非gate); 不再要求回复首行",
+      "done_when": "hook行为test绿: recall→edit自动cite / edit无recall软提醒 / 手写首行override仍生效",
+      "depends_on": null,
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "C2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "⑤cite: AGENTS.md(bootstrap-canonical.ts) Cite policy段重写 — 首行必写→改前先recall+系统自动记账+首行可选override; cite-line-parser保留(向后兼容)",
+      "done_when": "bootstrap snapshot更新+三端同步; parser legacy test绿",
+      "depends_on": "C1",
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "C3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "⑤cite: doctor --cite-coverage 口径迁移(edit前有相关recall) + 三端hook同步 + 全test",
+      "done_when": "doctor cite-coverage新口径单测绿; tsc+全test绿",
+      "depends_on": "C2",
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "D1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "④conflict: conflict-lint.ts — 同type/layer条目用bm25算相似度产候选对, 候选对走LLM-judge判真矛盾(复用冷评机制), 矛盾报error/相似报warn",
+      "done_when": "conflict-lint 单测(矛盾对/无关对/相似非矛盾) + LLM-judge seam可注入fake",
+      "depends_on": null,
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "D2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "④conflict: doctor check knowledge_conflict接入 + config阈值 + i18n中英 + --lint-conflicts[--deep]",
+      "done_when": "doctor新check单测 + i18n齐 + tsc+全test绿",
+      "depends_on": "D1",
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "V1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "③vector: 确认 fastembed-js 支持的模型枚举(multilingual-e5-small vs e5-large vs bge-small-zh) — npm view/查EmbeddingModel; 定最终pin模型(lokb验证倾向 multilingual-e5-small)",
+      "done_when": "产出确认: fastembed-js实际支持的中文/多语言模型名 + 最终选定",
+      "depends_on": null,
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "V2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "③vector: config加embed_model(pin多语言) + vector-retrieval.ts FlagEmbedding.init读config模型(替硬编码英文默认)",
+      "done_when": "config schema+读取单测(fake embedder); tsc绿",
+      "depends_on": "V1",
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "V3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "③vector: install加可选'启用语义搜索'步骤(npm i fastembed+预热+设embed_enabled+embed_model) + reindex说明 + 幂等test",
+      "done_when": "install可选步骤幂等+skip路径test; tsc+全test绿",
+      "depends_on": "V2",
+      "ship_criteria_alignment": [
+        "ALL-DONE"
+      ],
+      "alignment_strength": "direct",
+      "status": "open",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc+vitest",
+        "evidence": null,
+        "verified_at": null
+      }
+    }
+  ],
+  "needs_adjudication": [],
+  "git_commits": [],
+  "goal_checklist_path": ".workflow/.maestro/20260602-fabric-followup-impl/goal-checklist.md",
+  "proposals_dir": ".workflow/.scratchpad/fabric-followup-proposals/",
+  "status": "running",
+  "loop_exit_status": null
+}
