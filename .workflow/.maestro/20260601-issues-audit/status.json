@@ -629,7 +629,10 @@
       },
       "severity": "critical",
       "fix_task_id": null,
-      "status": "needs_adjudication"
+      "status": "deferred",
+      "carry_reason": "CARRY-RC3 → v2.1 global-refactor 里程碑. user 2026-06-02 拍板 option B: KP-* layer 隔离须 required_stores∪personal read-set 重构一并正确解决, rc2 不打半成品补丁(避免被重构推翻 + ripple read path).",
+      "carry_decided_by": "user",
+      "carry_decided_at": "2026-06-02T00:00:00.000Z"
     },
     {
       "id": "F12",
@@ -716,7 +719,10 @@
       },
       "severity": "critical",
       "fix_task_id": null,
-      "status": "needs_adjudication"
+      "status": "deferred",
+      "carry_reason": "CARRY-RC3 → v2.1 global-refactor 里程碑. user 2026-06-02 拍板 option B: KP-* layer 隔离须 required_stores∪personal read-set 重构一并正确解决, rc2 不打半成品补丁(避免被重构推翻 + ripple read path).",
+      "carry_decided_by": "user",
+      "carry_decided_at": "2026-06-02T00:00:00.000Z"
     },
     {
       "id": "F16",
@@ -739,7 +745,11 @@
         "adjudication_reason": "out-of-authority: 修复需 v2.1 global-refactor(多-store layer 隔离)——cross-store-lint guards (cross-store-lint.ts) 需 store_uuid/storeVisibility/global_refs 等多-store 模型输入, 当前 dual-root write path 无此模型(F53 证多-store core 未接线); boundary 明确 超范围重构 OUT + directive 严禁超范围重构; 用户 pre-session 已标 KP-leak 簇 defer 待裁"
       },
       "severity": "critical",
-      "fix_task_id": "T2"
+      "fix_task_id": "T2",
+      "status": "deferred",
+      "carry_reason": "CARRY-RC3 → v2.1 global-refactor 里程碑. user 2026-06-02 拍板 option B: KP-* layer 隔离须 required_stores∪personal read-set 重构一并正确解决, rc2 不打半成品补丁(避免被重构推翻 + ripple read path).",
+      "carry_decided_by": "user",
+      "carry_decided_at": "2026-06-02T00:00:00.000Z"
     },
     {
       "id": "F17",
@@ -1588,7 +1598,11 @@
         "fix_decision": "CARRY-RC3"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "status": "deferred",
+      "carry_reason": "CARRY-RC3 → 随 @fenglimg/fabric-server-http-experimental 包正式化时修. user 2026-06-02 拍板: 宿主为 workspace-excluded quarantine 实验包, 不在 rc2 ship 产品面, 与包生命周期对齐 defer.",
+      "carry_decided_by": "user",
+      "carry_decided_at": "2026-06-02T00:00:00.000Z"
     },
     {
       "id": "F57",
@@ -1741,7 +1755,11 @@
         "fix_decision": "CARRY-RC3"
       },
       "severity": "high",
-      "fix_task_id": null
+      "fix_task_id": null,
+      "status": "deferred",
+      "carry_reason": "CARRY-RC3 → 随 @fenglimg/fabric-server-http-experimental 包正式化时修. user 2026-06-02 拍板: 宿主为 workspace-excluded quarantine 实验包, 不在 rc2 ship 产品面, 与包生命周期对齐 defer.",
+      "carry_decided_by": "user",
+      "carry_decided_at": "2026-06-02T00:00:00.000Z"
     },
     {
       "id": "F64",
@@ -1911,7 +1929,14 @@
       "adjudication_reason": "unmodeled-tradeoff",
       "question": "KP-* personal/team layer 隔离漏洞(read-set 泄露 + git-committed meta 泄露 + layer_filter 被忽略 + 死守卫)的正确修法 = 已规划 v2.1 layered-registry 重构(required_stores∪personal read-set). 选项: (A) rc2 内做最小补丁(排除 KP-* 出 agents.meta.json + computeRevision, 但会 ripple 到 read path) (B) 整簇 defer 到 v2.1 重构里一并正确解决(推荐, 避免 rc2 引入半成品再被重构推翻). 关系到 commit 点划分.",
       "recommendation": "B — defer 到 v2.1 重构; rc2 不碰, 防半成品",
-      "raised_at": "2026-06-01T03:00:00.000Z"
+      "raised_at": "2026-06-01T03:00:00.000Z",
+      "resolution": {
+        "decided": "B",
+        "by": "user",
+        "at": "2026-06-02T00:00:00.000Z",
+        "note": "defer KP-leak 簇(F11/F15/F16)到 v2.1 global-refactor; rc2 不做最小补丁."
+      },
+      "status": "resolved"
     },
     {
       "cluster": "KP-leak",
@@ -1924,7 +1949,14 @@
       "adjudication_reason": "out-of-authority",
       "summary": "Personal KP-* 跨层泄漏(read-set F11 / git-committed meta F15 / dead cross-store guard F16)。修复需 v2.1 global-refactor 多-store layer 隔离, 属架构里程碑, 超 rc2 bug-scope。F54 已落 layer_filter 机制为部分缓解(默认 both 仍泄漏)。",
       "decision_needed": "将 KP-leak 簇并入 v2.1 global-refactor 里程碑(推荐), 还是把 global-refactor 提前拉入 rc2?",
-      "raised_at": "2026-06-01T08:18:04.870Z"
+      "raised_at": "2026-06-01T08:18:04.870Z",
+      "resolution": {
+        "decided": "defer-to-v2.1-global-refactor",
+        "by": "user",
+        "at": "2026-06-02T00:00:00.000Z",
+        "note": "并入 v2.1 global-refactor 里程碑(option B), 不提前拉入 rc2."
+      },
+      "status": "resolved"
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260601-issues-audit/goal-checklist.md",
@@ -1943,6 +1975,12 @@
     "needs_human_adjudication": [
       "KP-leak 簇 F11/F15/F16: 并入 v2.1 global-refactor 里程碑(推荐) 或 提前拉入 rc2"
     ],
-    "at": "2026-06-01T08:19:57.755Z"
+    "at": "2026-06-01T08:19:57.755Z",
+    "carry_rc3_disposition": {
+      "decided_at": "2026-06-02T00:00:00.000Z",
+      "KP_leak_F11_F15_F16": "defer → v2.1 global-refactor (option B)",
+      "http_experimental_F56_F63": "defer → 随 http-experimental 包正式化",
+      "note": "全部 5 CARRY-RC3 已由 user 显式拍板归属; needs_adjudication 全 resolved; rc2 干净 ship."
+    }
   }
 }
