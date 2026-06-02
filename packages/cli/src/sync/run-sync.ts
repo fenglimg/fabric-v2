@@ -39,8 +39,20 @@ const NO_CONFLICT = "no conflicted store to resume — sync is not paused";
 
 export type GitRebaseOutcome = "clean" | "conflict" | "offline";
 
+// v2.1 global-refactor (W2-T3, F-SYNC-NOPUSH): the push half of sync. A store
+// only becomes truly "synced" once its local commits reach the remote. Push
+// outcomes:
+//   clean   → the remote advanced (local commits are now shared).
+//   offline → the remote was unreachable; the local commits stay committed and
+//             the push is deferred (S17 offline-first) — same "offline" state as
+//             an offline pull, so the existing deferred-push reporting applies.
+// Any other push failure (non-fast-forward after a clean rebase should not
+// happen, auth denied, etc.) is surfaced as an actionable FabricError.
+export type GitPushOutcome = "clean" | "offline";
+
 // I/O edge contracts (injected in tests; real git defaults in production).
 export type GitRebasePull = (storeDir: string) => GitRebaseOutcome;
+export type GitPush = (storeDir: string) => GitPushOutcome;
 export type GitRebaseResolve = (storeDir: string) => void;
 
 export interface RunSyncOptions {
@@ -50,6 +62,7 @@ export interface RunSyncOptions {
   // ISO-8601 timestamp for the regenerated snapshot (injected for tests).
   now: string;
   pull?: GitRebasePull;
+  push?: GitPush;
   rebaseContinue?: GitRebaseResolve;
   rebaseAbort?: GitRebaseResolve;
   writeScope?: string;
@@ -155,6 +168,37 @@ function gitErrText(error: unknown, key: "stdout" | "stderr"): string {
   return typeof value === "string" || Buffer.isBuffer(value) ? String(value) : "";
 }
 
+// v2.1 global-refactor (W2-T3, F-SYNC-NOPUSH): real `git push`, classified into
+// the two push outcomes. Mirrors defaultPull's offline classification (S17
+// offline-first). An unreachable remote is `offline` → the push is deferred and
+// retried on a later sync. Any other failure (auth denied, non-fast-forward,
+// no upstream) is re-surfaced as an actionable FabricError rather than
+// execFileSync's bare "Command failed".
+export function defaultPush(storeDir: string): GitPushOutcome {
+  try {
+    execFileSync("git", ["push"], {
+      cwd: storeDir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return "clean";
+  } catch (error) {
+    const detail = `${gitErrText(error, "stdout")}${gitErrText(error, "stderr")}`;
+    if (
+      /could not resolve host|could not read from remote|unable to access|connection|network is unreachable|timed out/i.test(
+        detail,
+      )
+    ) {
+      return "offline";
+    }
+    const gitMessage = detail.trim().length > 0 ? detail.trim() : "unknown git error";
+    throw new GenericIOError(`git push failed in ${storeDir}: ${gitMessage}`, {
+      actionHint:
+        "resolve the git issue above (e.g. authentication, no upstream branch, or a rejected non-fast-forward push), then re-run `fabric sync`",
+      details: error,
+    });
+  }
+}
+
 // F57 (ISS-20260531-096): `git rebase --continue/--abort` can fail (unstaged
 // conflicts still present, no rebase in progress, dirty tree). Without catching,
 // execFileSync's bare "Command failed" throw propagates uncaught and crashes the
@@ -193,24 +237,50 @@ const OUTCOME_EVENT: Record<GitRebaseOutcome, SyncEvent> = {
   offline: "network_unavailable",
 };
 
-// Walk the still-`pending` stores in order, pulling each. A conflict pauses the
-// walk (the state machine permits only one conflicted store at a time); offline
-// stores are recorded and the walk continues (deferred push, S17).
+// Walk the still-`pending` stores in order, pulling then pushing each. A
+// conflict pauses the walk (the state machine permits only one conflicted store
+// at a time); offline stores are recorded and the walk continues (deferred
+// push, S17).
+//
+// v2.1 global-refactor (W2-T3, F-SYNC-NOPUSH): after a CLEAN rebase, a writable
+// store's local commits are pushed. The push outcome refines the per-store
+// event: a clean push keeps the store `synced`; an offline push marks it
+// `offline` so the existing deferred-push reporting retries it later — without
+// push, `fabric sync` reported "synced" while local commits never left the
+// machine. Read-only stores (no write intent) and the rare non-pushable store
+// skip push entirely (pull-only mirror).
 function walkPending(
   session: SyncSession,
   storeDirOf: (status: SyncStoreStatus) => string,
   pull: GitRebasePull,
+  push: GitPush,
+  pushableAliases: ReadonlySet<string>,
 ): SyncSession {
   let next = session;
   for (const store of session.stores) {
     if (store.state !== "pending") {
       continue;
     }
-    const outcome = pull(storeDirOf(store));
-    next = applySyncEvent(next, store.alias, OUTCOME_EVENT[outcome]);
-    if (outcome === "conflict") {
-      break;
+    const dir = storeDirOf(store);
+    const pullOutcome = pull(dir);
+    if (pullOutcome !== "clean") {
+      next = applySyncEvent(next, store.alias, OUTCOME_EVENT[pullOutcome]);
+      if (pullOutcome === "conflict") {
+        break;
+      }
+      continue;
     }
+    // Clean rebase. Push the store's local commits when it accepts writes.
+    if (!pushableAliases.has(store.alias)) {
+      next = applySyncEvent(next, store.alias, "rebase_clean");
+      continue;
+    }
+    const pushOutcome = push(dir);
+    next = applySyncEvent(
+      next,
+      store.alias,
+      pushOutcome === "clean" ? "rebase_clean" : "network_unavailable",
+    );
   }
   return next;
 }
@@ -250,8 +320,29 @@ export function runStartSync(options: RunSyncOptions): RunSyncResult {
   );
   const storeDirOf = (status: SyncStoreStatus): string =>
     join(globalRoot, storeRelativePath(status.store_uuid));
-  const walked = walkPending(session, storeDirOf, options.pull ?? defaultPull);
+  const pushableAliases = pushableAliasesOf(config);
+  const walked = walkPending(
+    session,
+    storeDirOf,
+    options.pull ?? defaultPull,
+    options.push ?? defaultPush,
+    pushableAliases,
+  );
   return finalize(walked, options, globalRoot);
+}
+
+// v2.1 global-refactor (W2-T3): a store is pushable iff it has a remote AND
+// accepts writes (`writable` defaults true when unset, matching
+// buildStoreResolveInput). A read-only mounted store is pull-only — pushing
+// would be meaningless (the local tree only ever mirrors upstream).
+function pushableAliasesOf(config: {
+  stores: Array<{ alias: string; remote?: string; writable?: boolean }>;
+}): ReadonlySet<string> {
+  return new Set(
+    config.stores
+      .filter((store) => store.remote !== undefined && (store.writable ?? true))
+      .map((store) => store.alias),
+  );
 }
 
 // `fabric sync --continue`: the user resolved the conflict; advance that store
@@ -269,7 +360,33 @@ export function runContinueSync(options: RunSyncOptions): RunSyncResult {
   const storeDirOf = (status: SyncStoreStatus): string =>
     join(globalRoot, storeRelativePath(status.store_uuid));
   (options.rebaseContinue ?? defaultRebaseContinue)(storeDirOf(conflicted));
-  const resumed = walkPending(continueSync(session), storeDirOf, options.pull ?? defaultPull);
+  // The conflicted store, now rebased clean, must also be pushed — and so must
+  // any remaining pending stores. Recompute pushable aliases from the config
+  // (the resumed session carries only state, not write intent). A missing/null
+  // config (store unmounted between sessions) degrades to pull-only — never crash.
+  const pushableAliases = pushableAliasesOf(loadGlobalConfig(globalRoot) ?? { stores: [] });
+  const push = options.push ?? defaultPush;
+  // Push the just-resolved store (the state machine's walkPending only processes
+  // `pending` stores; the conflicted store moves straight to synced/offline via
+  // the explicit continue transition here). Offline push → defer (S17).
+  let advanced: SyncSession;
+  if (pushableAliases.has(conflicted.alias)) {
+    const pushOutcome = push(storeDirOf(conflicted));
+    advanced = applySyncEvent(
+      session,
+      conflicted.alias,
+      pushOutcome === "clean" ? "user_continue" : "network_unavailable",
+    );
+  } else {
+    advanced = continueSync(session);
+  }
+  const resumed = walkPending(
+    advanced,
+    storeDirOf,
+    options.pull ?? defaultPull,
+    push,
+    pushableAliases,
+  );
   return finalize(resumed, options, globalRoot);
 }
 
@@ -288,6 +405,16 @@ export function runAbortSync(options: RunSyncOptions): RunSyncResult {
   const storeDirOf = (status: SyncStoreStatus): string =>
     join(globalRoot, storeRelativePath(status.store_uuid));
   (options.rebaseAbort ?? defaultRebaseAbort)(storeDirOf(conflicted));
-  const resumed = walkPending(abortSync(session), storeDirOf, options.pull ?? defaultPull);
+  // The aborted store is abandoned (no push); remaining pending stores still
+  // pull+push. Recompute pushable aliases from config (degrade to pull-only on
+  // a missing config).
+  const pushableAliases = pushableAliasesOf(loadGlobalConfig(globalRoot) ?? { stores: [] });
+  const resumed = walkPending(
+    abortSync(session),
+    storeDirOf,
+    options.pull ?? defaultPull,
+    options.push ?? defaultPush,
+    pushableAliases,
+  );
   return finalize(resumed, options, globalRoot);
 }

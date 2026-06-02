@@ -32,6 +32,11 @@ export function syncTransition(state: SyncStoreState, event: SyncEvent): SyncSto
     case "conflict":
       if (event === "user_continue") return "synced";
       if (event === "user_abort") return "aborted";
+      // v2.1 global-refactor (W2-T3, F-SYNC-NOPUSH): the user resolved the
+      // rebase but the subsequent push found the remote unreachable. The local
+      // commits are safe; the push is deferred (offline) and retried on a later
+      // sync — same terminal-but-deferred semantics as an offline pull.
+      if (event === "network_unavailable") return "offline";
       break;
     case "offline":
       // Back online: retrying either pushes cleanly or surfaces a fresh conflict.
