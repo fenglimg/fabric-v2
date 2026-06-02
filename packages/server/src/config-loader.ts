@@ -189,3 +189,24 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
     return {};
   }
 }
+
+// v2.1 ④ conflict-detection (P4): bm25 similarity floor for the knowledge-
+// conflict lint. Reads `.fabric/fabric-config.json` (the schema-described,
+// hook-facing config file) — NOT the root `fabric.config.json` that
+// readFabricConfig targets. Returns the configured value when it is a valid
+// [0,1] number, else undefined (caller falls back to the lint default).
+export function readConflictLintThreshold(projectRoot: string): number | undefined {
+  try {
+    const cfgPath = join(projectRoot, ".fabric", "fabric-config.json");
+    if (!existsSync(cfgPath)) return undefined;
+    const parsed = JSON.parse(readFileSync(cfgPath, "utf8")) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const v = (parsed as Record<string, unknown>).conflict_lint_similarity_threshold;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) {
+      return v;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -239,6 +239,21 @@ export const zhCNMessages: Messages = {
     "按知识层过滤 cite 合约审计 (team|personal|all)",
   "cli.doctor.errors.cite-coverage-mutex":
     "--cite-coverage 不能与 --fix 或 --fix-knowledge 同时使用",
+  "cli.doctor.errors.lint-conflicts-mutex":
+    "--lint-conflicts 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用",
+  "cli.doctor.args.lint-conflicts.description":
+    "体检知识库中互相矛盾/重复的条目对 (bm25 候选)",
+  "cli.doctor.args.deep.description":
+    "配合 --lint-conflicts: 对候选对跑 LLM 判定 (冷评 seam)",
+  "doctor.conflict.header": "知识冲突体检",
+  "doctor.conflict.none": "未发现可疑的矛盾/重复条目对",
+  "doctor.conflict.summary":
+    "{candidates} 个候选对, {conflicts} 个判定为矛盾 (相似度 ≥ {threshold})",
+  "doctor.conflict.deep_no_judge":
+    "已请求 --deep 但未接入 LLM judge (请手动跑冷评 review);先展示便宜候选",
+  "doctor.conflict.verdict.conflict": "矛盾",
+  "doctor.conflict.verdict.similar": "相似 (可能重复)",
+  "doctor.conflict.verdict.unknown": "待审 (可能重复或矛盾)",
   "cli.doctor.errors.invalid-since":
     "--since 取值无效: {input}。预期格式 7d / 24h / 30m 或 epoch ms。",
   "cli.doctor.errors.invalid-client":

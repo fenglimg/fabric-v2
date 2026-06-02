@@ -48,6 +48,22 @@ export {
   type EnrichDescriptionsMode,
   type EnrichDescriptionsReport,
 } from "./services/doctor.js";
+// v2.1 ④ conflict-detection (P4): knowledge-conflict lint.
+export {
+  loadConflictEntries,
+  runDoctorConflictLint,
+  type ConflictLintReport,
+} from "./services/doctor-conflict.js";
+export {
+  findConflictCandidates,
+  lintConflicts,
+  pairSimilarity,
+  DEFAULT_CONFLICT_SIMILARITY_THRESHOLD,
+  type ConflictEntry,
+  type ConflictJudge,
+  type ConflictPair,
+  type ConflictVerdict,
+} from "./services/conflict-lint.js";
 export {
   buildKnowledgeMeta,
   computeKnowledgeTestIndex,

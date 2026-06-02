@@ -79,6 +79,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
+      "description": "With --lint-conflicts: run the LLM judge over candidates (cold-eval seam)",
+      "name": "deep",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
       "description": "With --enrich-descriptions --auto or --fix: preview the planned changes without writing to disk. The fix-dry-run output mirrors --fix's fixable_errors list but executes no mutations.",
       "name": "dry-run",
       "negativeDescription": undefined,
@@ -138,6 +147,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
       "negativeDescription": undefined,
       "required": undefined,
       "type": "string",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Lint the knowledge base for conflicting/duplicate entry pairs (bm25 candidates)",
+      "name": "lint-conflicts",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
     },
     {
       "alias": undefined,

@@ -248,6 +248,21 @@ export const enMessages: Messages = {
     "Filter cite contract audit by KB layer (team|personal|all)",
   "cli.doctor.errors.cite-coverage-mutex":
     "--cite-coverage cannot be combined with --fix or --fix-knowledge",
+  "cli.doctor.errors.lint-conflicts-mutex":
+    "--lint-conflicts cannot be combined with --fix, --fix-knowledge or --cite-coverage",
+  "cli.doctor.args.lint-conflicts.description":
+    "Lint the knowledge base for conflicting/duplicate entry pairs (bm25 candidates)",
+  "cli.doctor.args.deep.description":
+    "With --lint-conflicts: run the LLM judge over candidates (cold-eval seam)",
+  "doctor.conflict.header": "Knowledge conflict lint",
+  "doctor.conflict.none": "No candidate conflicting/duplicate pairs found",
+  "doctor.conflict.summary":
+    "{candidates} candidate pair(s), {conflicts} judged conflict(s) (similarity ≥ {threshold})",
+  "doctor.conflict.deep_no_judge":
+    "--deep requested but no LLM judge is wired (run the cold-eval review manually); showing cheap candidates",
+  "doctor.conflict.verdict.conflict": "conflict",
+  "doctor.conflict.verdict.similar": "similar (possible duplicate)",
+  "doctor.conflict.verdict.unknown": "review (possible duplicate or conflict)",
   "cli.doctor.errors.invalid-since":
     "Invalid --since value: {input}. Expected duration like 7d, 24h, 30m or epoch ms.",
   "cli.doctor.errors.invalid-client":

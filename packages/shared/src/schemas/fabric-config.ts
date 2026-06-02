@@ -244,6 +244,12 @@ export const fabricConfigSchema = z.object({
   // (default 30; 0 = unbounded).
   cite_recall_nudge: z.boolean().optional().default(true),
   cite_recall_window_minutes: z.number().int().min(0).optional().default(30),
+  // v2.1 ④ conflict-detection (P4): bm25 content-similarity threshold (0..1)
+  // for the knowledge-conflict lint (`fabric doctor --lint-conflicts`). A
+  // same-(type,layer) pair whose normalized bm25 similarity reaches this floor
+  // is surfaced as a candidate (possible duplicate OR conflict). Conservative
+  // default 0.5 — raise to reduce noise, lower to catch looser pairs.
+  conflict_lint_similarity_threshold: z.number().min(0).max(1).optional().default(0.5),
   // v2.0.0-rc.22 Scope A T3: sliding-window retention (in days) for the
   // event ledger rotation primitive (`rotateEventLedgerIfNeeded`). Lines
   // whose `ts` is older than `now - fabric_event_retention_days * 86_400_000`

@@ -10,8 +10,10 @@ import {
   runDoctorFix,
   runDoctorHistoryAll,
   runDoctorReport,
+  runDoctorConflictLint,
   type ArchiveHistoryReport,
   type CiteCoverageReport,
+  type ConflictLintReport,
   type DoctorApplyLintReport as DoctorFixKnowledgeReport,
   type DoctorIssue,
   type DoctorReport,
@@ -74,6 +76,12 @@ type DoctorArgs = {
   "archive-history"?: boolean;
   // rc.37 NEW-33: unified history view. Mode = `archive | fix | all`.
   history?: string;
+  // v2.1 ④ conflict-detection (P4): knowledge-conflict lint. Read-only; its own
+  // dispatch arm (different output shape). `--deep` is reserved for the
+  // LLM-judge pass (cold-eval seam) — without a wired judge it stays the cheap
+  // bm25 candidate pass and reports that no judge ran.
+  "lint-conflicts"?: boolean;
+  deep?: boolean;
 };
 
 // rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
@@ -220,6 +228,17 @@ export const doctorCommand = defineCommand({
       type: "string",
       description: t("cli.doctor.args.history.description"),
       valueHint: "archive|fix|all",
+    },
+    // v2.1 ④ conflict-detection (P4): knowledge-conflict lint surface.
+    "lint-conflicts": {
+      type: "boolean",
+      description: t("cli.doctor.args.lint-conflicts.description"),
+      default: false,
+    },
+    deep: {
+      type: "boolean",
+      description: t("cli.doctor.args.deep.description"),
+      default: false,
     },
   },
   async run({ args }: { args: DoctorArgs }) {
@@ -435,6 +454,29 @@ export const doctorCommand = defineCommand({
       // (TASK-06/07 scope decision), so this path keeps the ledger contract
       // unchanged.
 
+      return;
+    }
+
+    // v2.1 ④ conflict-detection (P4): --lint-conflicts is a read-only report
+    // surface (own output shape). Mutex with the mutation arms. The cheap pass
+    // (bm25 candidate pairs) always runs; `--deep` is reserved for the LLM-judge
+    // pass — no in-process judge is wired (the cold-eval mechanism is manual),
+    // so --deep currently reports that no judge ran and falls back to the cheap
+    // candidates rather than silently pretending to classify.
+    if (args["lint-conflicts"] === true) {
+      if (fix || fixKnowledge || citeCoverage) {
+        writeStderr(dt("cli.doctor.errors.lint-conflicts-mutex"));
+        process.exitCode = 1;
+        return;
+      }
+      const report = await runDoctorConflictLint(resolution.target, {
+        deep: args.deep === true,
+      });
+      if (args.json === true) {
+        writeStdout(JSON.stringify(report, null, 2));
+      } else {
+        renderConflictLintReport(report, args.deep === true, dt);
+      }
       return;
     }
 
@@ -1207,6 +1249,50 @@ function appendContractSection(
       `${symbol.warn} ${dt("cite-coverage.contract.cite_id_unresolved")}: ${metrics.cite_id_unresolved}`,
     );
   }
+}
+
+/**
+ * v2.1 ④ conflict-detection (P4): human-readable formatter for the
+ * --lint-conflicts report. Cheap-pass candidates render as warnings ("review
+ * one"); deep-pass conflicts (judge-confirmed contradictions) render as errors.
+ * JSON mode is handled at the call site.
+ */
+function renderConflictLintReport(
+  report: ConflictLintReport,
+  deepRequested: boolean,
+  dt: DoctorTranslator,
+): void {
+  const lines: string[] = [];
+  lines.push(dt("doctor.conflict.header"));
+  lines.push("");
+  if (report.candidate_count === 0) {
+    lines.push(`  ${symbol.ok} ${dt("doctor.conflict.none")}`);
+    writeStdout(lines.join("\n"));
+    return;
+  }
+  lines.push(
+    `  ${dt("doctor.conflict.summary", {
+      candidates: String(report.candidate_count),
+      conflicts: String(report.conflict_count),
+      threshold: report.threshold.toFixed(2),
+    })}`,
+  );
+  // deep requested but no judge wired → tell the operator the cheap pass ran.
+  if (deepRequested && !report.deep) {
+    lines.push(`  ${symbol.warn} ${dt("doctor.conflict.deep_no_judge")}`);
+  }
+  lines.push("");
+  for (const pair of report.pairs) {
+    const sym = pair.verdict === "conflict" ? symbol.error : symbol.warn;
+    const verdictLabel = dt(`doctor.conflict.verdict.${pair.verdict}`);
+    const pct = `${(pair.similarity * 100).toFixed(0)}%`;
+    let line = `  ${sym} [${pair.a} ↔ ${pair.b}] (${pair.knowledge_type}/${pair.layer}) ${pct} — ${verdictLabel}`;
+    if (pair.rationale !== undefined && pair.rationale.length > 0) {
+      line += `: ${pair.rationale}`;
+    }
+    lines.push(line);
+  }
+  writeStdout(lines.join("\n"));
 }
 
 /**
