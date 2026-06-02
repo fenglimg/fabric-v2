@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -85,6 +86,16 @@ export function storeCreate(
     { git: options.git },
   );
 
+  // v2.1 global-refactor (W2-T4, F-SYNC-REMOTE): wire the remote into the store's
+  // OWN git repo, not just the config metadata. Before this, `--remote` was
+  // recorded in the registry but `git remote add` never ran, so the store could
+  // never pull/push (sync's `git pull --rebase`/`git push` had no `origin`).
+  // Only when the repo was actually git-init'd (options.git !== false; tests use
+  // pure-fs scaffolding) and a remote was requested.
+  if (options.remote !== undefined && options.git !== false) {
+    gitRemoteAdd(storeDir, options.remote);
+  }
+
   const mounted: MountedStore =
     options.remote === undefined
       ? { store_uuid: uuid, alias }
@@ -92,6 +103,58 @@ export function storeCreate(
   const next = addMountedStore(config, mounted);
   saveGlobalConfig(next, globalRoot);
   return { config: next, store_uuid: uuid, storeDir };
+}
+
+// `git remote add origin <remote>` in the store's repo. Idempotent: if an
+// `origin` already exists (re-create over an existing tree shouldn't happen —
+// initStore refuses — but be defensive), update it via `set-url` instead.
+function gitRemoteAdd(storeDir: string, remote: string): void {
+  try {
+    execFileSync("git", ["remote", "add", "origin", remote], {
+      cwd: storeDir,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  } catch {
+    // origin already present (or add failed) → set the url so the store is still
+    // remote-backed. A genuine git failure surfaces on the next sync with git's
+    // own diagnostic; we don't want create to crash on a benign re-add.
+    try {
+      execFileSync("git", ["remote", "set-url", "origin", remote], {
+        cwd: storeDir,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+    } catch {
+      // best-effort — leave the store with the config metadata remote; sync will
+      // report the missing/broken origin actionably.
+    }
+  }
+}
+
+// v2.1 global-refactor (W2-T4, F14): the TRUE git remote of a store, read from
+// its repo (`git remote get-url origin`), not the config metadata. `store list`
+// uses this so the local-only label reflects on-disk reality — a store whose
+// config claims a remote but whose repo has no `origin` (e.g. created before the
+// F-SYNC-REMOTE fix) is honestly shown as local-only. Returns undefined when the
+// store has no origin / is not a git repo / the dir is missing.
+export function storeGitRemote(
+  uuid: string,
+  globalRoot: string = resolveGlobalRoot(),
+): string | undefined {
+  const storeDir = join(globalRoot, storeRelativePath(uuid));
+  if (!existsSync(storeDir)) {
+    return undefined;
+  }
+  try {
+    const out = execFileSync("git", ["remote", "get-url", "origin"], {
+      cwd: storeDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+    });
+    const trimmed = out.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ADJ-NEWN-6 (v2.1 dogfood): refuse a "phantom mount". `store add` previously
