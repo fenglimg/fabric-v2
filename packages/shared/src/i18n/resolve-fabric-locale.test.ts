@@ -60,6 +60,17 @@ describe("resolveFabricLocale", () => {
     expect(resolveFabricLocale(root)).toBe("en");
   });
 
+  it("returns 'zh-CN' (silently) when fabric_language is 'zh-CN-hybrid' — a valid persistent value, NOT a placeholder", () => {
+    const root = freshRoot();
+    writeFabricConfig(root, JSON.stringify({ fabric_language: "zh-CN-hybrid" }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = resolveFabricLocale(root);
+
+    expect(result).toBe("zh-CN");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it("warns and falls back to detectNodeLocale when fabric_language is 'match-existing'", () => {
     const root = freshRoot();
     writeFabricConfig(

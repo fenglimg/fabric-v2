@@ -82,6 +82,27 @@
         "evidence": null,
         "verified_at": null
       }
+    },
+    {
+      "id": "FIX-F8",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "F8 版本门全semver比较修复",
+      "done_when": "test绿+无回归",
+      "ship_criteria_alignment": [
+        "G-FIX",
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "vitest",
+        "evidence": "doctor-global-cli 15 tests + doctor 741",
+        "verified_at": "2026-06-02T03:41:13.000Z"
+      }
     }
   ],
   "feature_surface_census": [
@@ -1145,8 +1166,10 @@
       },
       "severity": "high",
       "finding_class_note": "版本门假阳性, 高扩散(每个 2.1+/2.2-rc.<31 用户中招)",
-      "fix_task_id": null,
-      "fix_known": "改为全semver比较(base major.minor.patch 优先, 相等再比rc); GA版正则需容纳无-rc后缀"
+      "fix_task_id": "FIX-F8",
+      "fix_known": "改为全semver比较(base major.minor.patch 优先, 相等再比rc); GA版正则需容纳无-rc后缀",
+      "status": "fixed",
+      "fix_evidence": "doctor.ts:4744 全semver比较(base优先, GA无rc视+Inf); doctor-global-cli.test +c2-c6(2.2.0-rc.1/2.1.0/GA/旧base高rc)15 tests绿; doctor全套741绿"
     },
     {
       "id": "F9",

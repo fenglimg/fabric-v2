@@ -49,13 +49,24 @@ export function resolveFabricLocale(projectRoot: string): Locale {
     return fabricLanguage;
   }
 
-  if (fabricLanguage === "match-existing" || fabricLanguage === "zh-CN-hybrid") {
-    // KT-DEC-9004 invariant: `fabric init` is expected to eager-resolve these
-    // placeholders into a concrete Locale ("en" | "zh-CN") and write back to
-    // fabric-config.json. Encountering one of them at runtime means either
-    // (a) `fabric init` was never run, (b) the user hand-edited the config, or
-    // (c) a legacy v1.x config slipped through the v2.0 lenient root parser.
-    // Warn loudly and degrade to env detection.
+  if (fabricLanguage === "zh-CN-hybrid") {
+    // `zh-CN-hybrid` is a VALID, persistent fabric_language (Chinese narrative
+    // with English technical tokens — rc.12, bootstrap "locked clarification 3";
+    // detect-language deliberately returns it). It is NOT an unresolved
+    // placeholder: it maps to the zh-CN base Locale for i18n string lookup, and
+    // the hybrid narrative behavior is applied by the renderers downstream that
+    // read the raw fabric_language. Resolve it silently (no warning) to avoid
+    // the spurious "pre-init placeholder" noise that fired on every CLI command.
+    return "zh-CN";
+  }
+
+  if (fabricLanguage === "match-existing") {
+    // KT-DEC-9004 invariant: `fabric init` is expected to eager-resolve this
+    // placeholder into a concrete Locale ("en" | "zh-CN") and write back to
+    // fabric-config.json. Encountering it at runtime means either (a) `fabric
+    // init` was never run, (b) the user hand-edited the config, or (c) a legacy
+    // v1.x config slipped through the v2.0 lenient root parser. Warn loudly and
+    // degrade to env detection.
     console.warn(
       `[fabric] fabric_language="${fabricLanguage}" is a pre-init placeholder ` +
         `that should have been resolved during 'fabric init' (KT-DEC-9004). ` +
