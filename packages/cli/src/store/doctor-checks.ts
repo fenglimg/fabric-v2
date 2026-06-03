@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { findStoreExecutableViolations, storeRelativePath } from "@fenglimg/fabric-shared";
 
 import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
-import { missingRequiredStores } from "./store-ops.js";
+import { detectAliasLinkDrift, missingRequiredStores, unboundAvailableStores } from "./store-ops.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric doctor` multi-store health checks (S10/S51/R5#5).
@@ -16,8 +16,10 @@ import { missingRequiredStores } from "./store-ops.js";
 export type StoreDiagnosticCode =
   | "no_global_config"
   | "missing_required_store"
+  | "unbound_available_store"
   | "local_only_store"
-  | "executable_in_store";
+  | "executable_in_store"
+  | "store_alias_link_drift";
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;
@@ -48,6 +50,30 @@ export function storeDoctorChecks(
       severity: "warn",
       ref: missing.id,
       message: `required store '${missing.id}' is not mounted; run \`fabric store add\``,
+    });
+  }
+
+  // Wave A (D4/F3 onboarding nudge): a store is mounted but this project never
+  // bound it → its knowledge is invisible to the project read-set. INFO-level
+  // reminder (never a gate, KT-DEC-0007): point the user at `store bind`.
+  for (const store of unboundAvailableStores(projectRoot, globalRoot)) {
+    diagnostics.push({
+      code: "unbound_available_store",
+      severity: "info",
+      ref: store.alias,
+      message: `store '${store.alias}' is mounted but not bound to this project; run \`fabric store bind ${store.alias}\` to read its knowledge here (then \`fabric store switch-write ${store.alias}\` to write team knowledge into it)`,
+    });
+  }
+
+  // C3: by-alias readability links drifted from the registry (missing / wrong
+  // target). INFO — `fabric doctor --fix` re-syncs them via syncStoreAliasLinks.
+  const aliasDrift = detectAliasLinkDrift(globalRoot);
+  if (aliasDrift.length > 0) {
+    diagnostics.push({
+      code: "store_alias_link_drift",
+      severity: "info",
+      ref: aliasDrift.join(", "),
+      message: `by-alias readability link(s) out of sync for ${aliasDrift.join(", ")}; run \`fabric doctor --fix\` to repair ~/.fabric/stores/by-alias/`,
     });
   }
 

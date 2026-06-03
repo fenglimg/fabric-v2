@@ -1,4 +1,5 @@
 import {
+  SCOPE_COORDINATE_PATTERN,
   buildStoreResolveInput,
   createStoreResolver,
   resolveGlobalRoot,
@@ -6,6 +7,7 @@ import {
   type StoreResolveInput,
   type WriteTarget,
 } from "@fenglimg/fabric-shared";
+import { GenericConfigError } from "@fenglimg/fabric-shared/errors";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric scope-explain` (F5 / S21/S53 surfaced in the CLI).
@@ -39,6 +41,18 @@ export function scopeExplain(
   scope: string,
   globalRoot: string = resolveGlobalRoot(),
 ): ScopeExplanation | null {
+  // v2.2 全砍 F21: validate the scope coordinate GRAMMAR before resolving.
+  // Unknown-but-well-formed coordinates stay valid (S20 open-coordinate design —
+  // org/team/federation need no engine change); only a malformed coordinate
+  // (spaces, uppercase, illegal chars) is rejected with an actionable error
+  // instead of silently resolving to a personal/null fallback.
+  if (!SCOPE_COORDINATE_PATTERN.test(scope)) {
+    throw new GenericConfigError(`invalid scope coordinate '${scope}'`, {
+      actionHint:
+        "use ':'-joined lowercase [a-z0-9_-] segments, e.g. `team`, `personal`, `project:fabric-v2`, `org:acme:team:platform`",
+      details: { scope },
+    });
+  }
   const input = buildResolveInput(projectRoot, globalRoot);
   if (input === null) {
     return null;

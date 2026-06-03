@@ -1,18 +1,51 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { KnowledgePromoteFailedEvent } from "@fenglimg/fabric-shared";
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
 import { reviewKnowledge } from "./review.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
+
+// v2.2 全砍 Stage 2/3 (B2 cutover): review reads/writes pending + canonical INTO
+// the resolved write-target store (no dual-root). Tests provision a
+// deterministic personal + team store so writes resolve; helpers compute the
+// store-rooted absolute paths review now reports/accepts.
+const TEST_PERSONAL_UUID = "11111111-1111-4111-8111-111111111111";
+const TEST_TEAM_UUID = "22222222-2222-4222-8222-222222222222";
+
+function provisionStores(projectRoot: string): void {
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      { store_uuid: TEST_PERSONAL_UUID, alias: "personal", personal: true, writable: true },
+      { store_uuid: TEST_TEAM_UUID, alias: "team", remote: "git@e:t.git", writable: true },
+    ],
+  });
+  mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+  );
+}
+
+function storeKnowledgeDir(layer: "team" | "personal", ...sub: string[]): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, ...sub);
+}
 
 // v2.0: redirect personal-root resolution into a tempdir so tests never touch
 // the developer's real ~/.fabric/. Mirrors knowledge-meta-builder.test.ts setup.
@@ -44,6 +77,7 @@ async function createTempProject(): Promise<string> {
   execFileSync("git", ["init", "--quiet"], { cwd: projectRoot, stdio: "pipe" });
   execFileSync("git", ["config", "user.email", "tests@example.com"], { cwd: projectRoot, stdio: "pipe" });
   execFileSync("git", ["config", "user.name", "Fabric Tests"], { cwd: projectRoot, stdio: "pipe" });
+  provisionStores(projectRoot);
   return projectRoot;
 }
 
@@ -62,7 +96,9 @@ async function seedPendingFile(
   const sourceSession = options.sourceSession ?? "sess-test";
   const summary = options.summary ?? "Test summary body.";
   const tags = options.tags ?? [];
-  const dir = join(projectRoot, ".fabric", "knowledge", "pending", type);
+  // v2.2 全砍: seed into the resolved write-target STORE's pending dir (no
+  // dual-root). review.list reports + approve accepts the absolute store path.
+  const dir = storeKnowledgeDir(layer, "pending", type);
   await mkdir(dir, { recursive: true });
 
   const tagFlow = tags.length === 0 ? "[]" : `[${tags.join(", ")}]`;
@@ -87,21 +123,11 @@ async function seedPendingFile(
     "",
   ].join("\n");
 
-  const relativePath = `.fabric/knowledge/pending/${type}/${slug}.md`;
-  await writeFile(join(projectRoot, relativePath), frontmatter, "utf8");
-
-  // Stage so that `git rm` later finds the path tracked. Approve's git rm
-  // requires the source to be in the index; for fresh-from-extract files in
-  // production they'll have been committed (or at least added) by the user
-  // before invoking review approve.
-  execFileSync("git", ["add", relativePath], { cwd: projectRoot, stdio: "pipe" });
-  execFileSync(
-    "git",
-    ["commit", "--quiet", "-m", `seed: ${slug}`],
-    { cwd: projectRoot, stdio: "pipe" },
-  );
-
-  return relativePath;
+  // Store-source pending lives in a separate store repo; review approve removes
+  // it via plain unlink (sourceIsStore), so no project-repo git staging needed.
+  const absolutePath = join(dir, `${slug}.md`);
+  await writeFile(absolutePath, frontmatter, "utf8");
+  return absolutePath;
 }
 
 describe("reviewKnowledge", () => {
@@ -119,13 +145,13 @@ describe("reviewKnowledge", () => {
     const dec = byType.get("decisions");
     const gld = byType.get("guidelines");
     expect(dec).toMatchObject({
-      pending_path: ".fabric/knowledge/pending/decisions/first-decision.md",
+      pending_path: expect.stringContaining("knowledge/pending/decisions/first-decision.md"),
       type: "decisions",
       layer: "team",
       maturity: "draft",
     });
     expect(gld).toMatchObject({
-      pending_path: ".fabric/knowledge/pending/guidelines/naming-rule.md",
+      pending_path: expect.stringContaining("knowledge/pending/guidelines/naming-rule.md"),
       type: "guidelines",
       layer: "team",
       maturity: "draft",
@@ -149,12 +175,10 @@ describe("reviewKnowledge", () => {
     expect(entry.pending_path).toBe(pendingPath);
     expect(entry.stable_id).toMatch(/^KT-DEC-\d{4}$/u);
 
-    // Pending file moved out, canonical file lives under .fabric/knowledge/decisions/.
-    expect(existsSync(join(projectRoot, pendingPath))).toBe(false);
-    const canonicalPath = join(
-      projectRoot,
-      ".fabric",
-      "knowledge",
+    // Pending file moved out, canonical file lives in the team store.
+    expect(existsSync(pendingPath)).toBe(false);
+    const canonicalPath = storeKnowledgeDir(
+      "team",
       "decisions",
       `${entry.stable_id}--rc3-promote-flow.md`,
     );
@@ -198,7 +222,7 @@ describe("reviewKnowledge", () => {
 
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
-      pending_paths: [".fabric/knowledge/pending/decisions/does-not-exist.md"],
+      pending_paths: [join(storeKnowledgeDir("team", "pending", "decisions"), "does-not-exist.md")],
     });
     expect(result.action).toBe("approve");
     if (result.action !== "approve") throw new Error("unreachable");
@@ -223,7 +247,7 @@ describe("reviewKnowledge", () => {
     );
 
     // No canonical file written, no counter increment.
-    const decisionsDir = join(projectRoot, ".fabric", "knowledge", "decisions");
+    const decisionsDir = storeKnowledgeDir("team", "decisions");
     expect(existsSync(decisionsDir)).toBe(false);
     const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
     if (existsSync(metaPath)) {
@@ -260,7 +284,7 @@ describe("reviewKnowledge", () => {
     expect(rejectedEv.reason).toMatch(/duplicate of KT-DEC-0001/u);
   });
 
-  it("reject_does_not_delete_file_in_rc3_scope", async () => {
+  it("reject_moves_entry_out_of_pending_into_rejected_dir (F15)", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "guidelines", "tentative");
 
@@ -270,8 +294,14 @@ describe("reviewKnowledge", () => {
       reason: "needs more evidence",
     });
 
-    // rc.3 contract: reject is observability-only. doctor (rc.4) owns vacuum.
-    expect(existsSync(join(projectRoot, pendingPath))).toBe(true);
+    // v2.2 全砍 F15: reject is now physically intuitive — the entry MOVES out of
+    // pending/ into a sibling rejected/ dir (preserved for audit/restore, no
+    // longer cluttering the active pending queue).
+    expect(existsSync(pendingPath)).toBe(false);
+    const rejectedPath = pendingPath.replace(`${sep}pending${sep}`, `${sep}rejected${sep}`);
+    expect(existsSync(rejectedPath)).toBe(true);
+    const moved = await readFile(rejectedPath, "utf8");
+    expect(moved).toMatch(/^status: rejected$/mu);
   });
 
   it("reject_batch_emits_one_event_per_path", async () => {
@@ -315,7 +345,7 @@ describe("reviewKnowledge", () => {
     expect(result.prior_stable_id).toBeUndefined();
     expect(result.new_stable_id).toBeUndefined();
 
-    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    const updated = await readFile(pendingPath, "utf8");
     expect(updated).toMatch(/^maturity: verified$/mu);
     expect(updated).toMatch(/^tags: \[updated, v2\]$/mu);
     // No layer-changed event since this was an in-place rewrite.
@@ -338,7 +368,7 @@ describe("reviewKnowledge", () => {
       changes: { tags: ["ok", "evil]\nmaturity: proven"] },
     });
     expect(result.action).toBe("modify");
-    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    const updated = await readFile(pendingPath, "utf8");
     // The malicious element is JSON-quoted on one line; no real newline injected.
     expect(updated).toContain('tags: [ok, "evil]\\nmaturity: proven"]');
     // The injected key must NOT appear as a standalone frontmatter line.
@@ -358,7 +388,7 @@ describe("reviewKnowledge", () => {
       changes: { summary: "drive C:\\" },
     });
     expect(result.action).toBe("modify");
-    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    const updated = await readFile(pendingPath, "utf8");
     // Backslash doubled, value properly closed — valid YAML double-quoted scalar.
     expect(updated).toContain('summary: "drive C:\\\\"');
   });
@@ -385,7 +415,7 @@ describe("reviewKnowledge", () => {
     expect(result.prior_stable_id).toBeUndefined();
     expect(result.new_stable_id).toBeUndefined();
 
-    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    const updated = await readFile(pendingPath, "utf8");
     expect(updated).toMatch(/^tags: \[edited\]$/mu);
     expect(updated).toMatch(/^layer: team$/mu); // unchanged — layer flip suppressed
     const layerEvents = await readEventLedger(projectRoot, {
@@ -405,7 +435,7 @@ describe("reviewKnowledge", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
     const priorId = approve.approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--flip-explicit.md`;
+    const canonicalRel = storeKnowledgeDir("team", "decisions", `${priorId}--flip-explicit.md`);
 
     const result = await reviewKnowledge(projectRoot, {
       action: "modify-layer",
@@ -438,7 +468,7 @@ describe("reviewKnowledge", () => {
     expect(priorId).toMatch(/^KT-DEC-\d{4}$/u);
 
     // Canonical team path lives under .fabric/knowledge/decisions/.
-    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--flip-me.md`;
+    const canonicalRel = storeKnowledgeDir("team", "decisions", `${priorId}--flip-me.md`);
 
     // Now flip to personal.
     const result = await reviewKnowledge(projectRoot, {
@@ -452,16 +482,9 @@ describe("reviewKnowledge", () => {
     expect(result.prior_stable_id).toBe(priorId);
     expect(result.new_stable_id).toMatch(/^KP-DEC-\d{4}$/u);
 
-    // Old team file is gone, new personal file lives under FABRIC_HOME.
-    expect(existsSync(join(projectRoot, canonicalRel))).toBe(false);
-    const fakeHome = process.env.FABRIC_HOME!;
-    const newAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
-      "decisions",
-      `${result.new_stable_id}--flip-me.md`,
-    );
+    // Old team-store file is gone, new file lives in the personal store.
+    expect(existsSync(canonicalRel)).toBe(false);
+    const newAbs = storeKnowledgeDir("personal", "decisions", `${result.new_stable_id}--flip-me.md`);
     expect(existsSync(newAbs)).toBe(true);
 
     // New file's frontmatter carries the new id and new layer.
@@ -485,21 +508,14 @@ describe("reviewKnowledge", () => {
     const priorId = approve.approved[0].stable_id;
     expect(priorId).toMatch(/^KP-GLD-\d{4}$/u);
 
-    const fakeHome = process.env.FABRIC_HOME!;
-    const personalAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
-      "guidelines",
-      `${priorId}--personal-tip.md`,
-    );
+    const personalAbs = storeKnowledgeDir("personal", "guidelines", `${priorId}--personal-tip.md`);
     expect(existsSync(personalAbs)).toBe(true);
 
-    // Pass the home-relative form so resolveModifyTarget walks the personal
-    // root.
+    // Pass the absolute personal-store canonical path so resolveModifyTarget
+    // walks the store.
     const result = await reviewKnowledge(projectRoot, {
       action: "modify",
-      pending_path: `~/.fabric/knowledge/guidelines/${priorId}--personal-tip.md`,
+      pending_path: personalAbs,
       changes: { layer: "team" },
     });
     if (result.action !== "modify") throw new Error("unreachable");
@@ -507,13 +523,7 @@ describe("reviewKnowledge", () => {
     expect(result.prior_stable_id).toBe(priorId);
     expect(result.new_stable_id).toMatch(/^KT-GLD-\d{4}$/u);
     expect(existsSync(personalAbs)).toBe(false);
-    const newTeamAbs = join(
-      projectRoot,
-      ".fabric",
-      "knowledge",
-      "guidelines",
-      `${result.new_stable_id}--personal-tip.md`,
-    );
+    const newTeamAbs = storeKnowledgeDir("team", "guidelines", `${result.new_stable_id}--personal-tip.md`);
     expect(existsSync(newTeamAbs)).toBe(true);
   });
 
@@ -526,7 +536,7 @@ describe("reviewKnowledge", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
     const priorId = approve.approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/pitfalls/${priorId}--watch-out.md`;
+    const canonicalRel = storeKnowledgeDir("team", "pitfalls", `${priorId}--watch-out.md`);
 
     await reviewKnowledge(projectRoot, {
       action: "modify",
@@ -567,7 +577,7 @@ describe("reviewKnowledge", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
     const stableId = approve.approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--canonical-target.md`;
+    const canonicalRel = storeKnowledgeDir("team", "decisions", `${stableId}--canonical-target.md`);
 
     // Same-layer modify with relevance fields — exercises the in-place path
     // against a canonical (post-approve) entry.
@@ -584,7 +594,7 @@ describe("reviewKnowledge", () => {
     expect(result.prior_stable_id).toBeUndefined();
     expect(result.new_stable_id).toBeUndefined();
 
-    const updated = await readFile(join(projectRoot, canonicalRel), "utf8");
+    const updated = await readFile(canonicalRel, "utf8");
     expect(updated).toMatch(/^relevance_scope: narrow$/mu);
     expect(updated).toMatch(/^relevance_paths: \[src\/auth\/\*\*, packages\/auth\/\]$/mu);
 
@@ -608,7 +618,7 @@ describe("reviewKnowledge", () => {
     });
     if (result.action !== "modify") throw new Error("unreachable");
 
-    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    const updated = await readFile(pendingPath, "utf8");
     expect(updated).toMatch(/^relevance_scope: narrow$/mu);
     expect(updated).toMatch(/^relevance_paths: \[src\/ui\/\*\*\]$/mu);
   });
@@ -632,7 +642,7 @@ describe("reviewKnowledge", () => {
     if (approve.action !== "approve") throw new Error("unreachable");
     const priorId = approve.approved[0].stable_id;
     expect(priorId).toMatch(/^KT-DEC-\d{4}$/u);
-    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--narrow-team.md`;
+    const canonicalRel = storeKnowledgeDir("team", "decisions", `${priorId}--narrow-team.md`);
 
     // Flip team → personal. Narrow + team→personal → auto-degrade.
     const result = await reviewKnowledge(projectRoot, {
@@ -645,14 +655,7 @@ describe("reviewKnowledge", () => {
     expect(result.new_stable_id).toMatch(/^KP-DEC-\d{4}$/u);
 
     // New personal file frontmatter: scope=broad, paths=[].
-    const fakeHome = process.env.FABRIC_HOME!;
-    const newAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
-      "decisions",
-      `${result.new_stable_id}--narrow-team.md`,
-    );
+    const newAbs = storeKnowledgeDir("personal", "decisions", `${result.new_stable_id}--narrow-team.md`);
     const newContent = await readFile(newAbs, "utf8");
     expect(newContent).toMatch(/^relevance_scope: broad$/mu);
     expect(newContent).toMatch(/^relevance_paths: \[\]$/mu);
@@ -684,7 +687,7 @@ describe("reviewKnowledge", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
     const priorId = approve.approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--broad-team.md`;
+    const canonicalRel = storeKnowledgeDir("team", "decisions", `${priorId}--broad-team.md`);
 
     await reviewKnowledge(projectRoot, {
       action: "modify",
@@ -718,7 +721,7 @@ describe("reviewKnowledge", () => {
     if (approve.action !== "approve") throw new Error("unreachable");
     const priorId = approve.approved[0].stable_id;
     expect(priorId).toMatch(/^KP-GLD-\d{4}$/u);
-    const personalRel = `~/.fabric/knowledge/guidelines/${priorId}--narrow-personal.md`;
+    const personalRel = storeKnowledgeDir("personal", "guidelines", `${priorId}--narrow-personal.md`);
 
     const result = await reviewKnowledge(projectRoot, {
       action: "modify",
@@ -734,13 +737,7 @@ describe("reviewKnowledge", () => {
     expect(degraded.events).toHaveLength(0);
 
     // New team file should preserve the original narrow paths verbatim.
-    const newAbs = join(
-      projectRoot,
-      ".fabric",
-      "knowledge",
-      "guidelines",
-      `${result.new_stable_id}--narrow-personal.md`,
-    );
+    const newAbs = storeKnowledgeDir("team", "guidelines", `${result.new_stable_id}--narrow-personal.md`);
     const newContent = await readFile(newAbs, "utf8");
     expect(newContent).toMatch(/^relevance_scope: narrow$/mu);
     expect(newContent).toMatch(/^relevance_paths: \[src\/ui\/\*\*\]$/mu);
@@ -932,25 +929,16 @@ describe("reviewKnowledge", () => {
 
   it("approve_emits_promote_failed_when_pending_file_lacks_type_frontmatter", async () => {
     const projectRoot = await createTempProject();
-    // Write a pending file with no/invalid frontmatter type so approveOne
+    // Write a store pending file with no/invalid frontmatter type so approveOne
     // throws immediately and emits knowledge_promote_failed.
-    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    const dir = storeKnowledgeDir("team", "pending", "decisions");
     await mkdir(dir, { recursive: true });
-    const relativePath = ".fabric/knowledge/pending/decisions/no-type.md";
-    await writeFile(
-      join(projectRoot, relativePath),
-      "---\nmaturity: draft\nlayer: team\n---\n\nbody\n",
-      "utf8",
-    );
-    execFileSync("git", ["add", relativePath], { cwd: projectRoot, stdio: "pipe" });
-    execFileSync("git", ["commit", "--quiet", "-m", "seed: no-type"], {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
+    const absPath = join(dir, "no-type.md");
+    await writeFile(absPath, "---\nmaturity: draft\nlayer: team\n---\n\nbody\n", "utf8");
 
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
-      pending_paths: [relativePath],
+      pending_paths: [absPath],
     });
     if (result.action !== "approve") throw new Error("unreachable");
     expect(result.approved).toHaveLength(0);
@@ -975,49 +963,30 @@ describe("reviewKnowledge", () => {
     if (result.action !== "approve") throw new Error("unreachable");
     expect(result.approved).toHaveLength(1);
     expect(result.approved[0].stable_id).toMatch(/^KP-DEC-\d{4}$/u);
-    expect(existsSync(join(projectRoot, pendingPath))).toBe(false);
+    expect(existsSync(pendingPath)).toBe(false);
 
-    const fakeHome = process.env.FABRIC_HOME!;
-    const personalAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
+    const personalAbs = storeKnowledgeDir(
+      "personal",
       "decisions",
       `${result.approved[0].stable_id}--personal-flow.md`,
     );
     expect(existsSync(personalAbs)).toBe(true);
   });
 
-  it("approve_falls_back_to_unlink_when_pending_path_is_not_in_git_index", async () => {
-    // Seed a pending file but DO NOT git-add/commit it. The approve path
-    // should swallow the git rm failure and fall back to fs.unlink.
+  it("approve_removes_store_pending_source_via_fs_unlink", async () => {
+    // v2.2 全砍 Stage 2: store-source pending lives in a separate store repo, so
+    // approve always removes it via fs.unlink (never the project-repo `git rm`).
     const projectRoot = await createTempProject();
-    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
-    await mkdir(dir, { recursive: true });
-    const relativePath = ".fabric/knowledge/pending/decisions/untracked.md";
-    const fm = [
-      "---",
-      "type: decisions",
-      "maturity: draft",
-      "layer: team",
-      `created_at: ${new Date().toISOString()}`,
-      "source_session: sess-untracked",
-      "tags: []",
-      "---",
-      "",
-      "Body.",
-      "",
-    ].join("\n");
-    await writeFile(join(projectRoot, relativePath), fm, "utf8");
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "untracked");
 
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
-      pending_paths: [relativePath],
+      pending_paths: [pendingPath],
     });
     if (result.action !== "approve") throw new Error("unreachable");
     expect(result.approved).toHaveLength(1);
-    // Source removed via fs.unlink fallback.
-    expect(existsSync(join(projectRoot, relativePath))).toBe(false);
+    // Source removed via fs.unlink.
+    expect(existsSync(pendingPath)).toBe(false);
   });
 
   it("modify_throws_when_target_does_not_exist", async () => {
@@ -1070,14 +1039,14 @@ describe("reviewKnowledge", () => {
       },
     });
 
-    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    const updated = await readFile(pendingPath, "utf8");
     expect(updated).toMatch(/^title: "title with: colon"$/mu);
     expect(updated).toMatch(/^summary: plain summary$/mu);
     // unrelated frontmatter (source_session) preserved.
     expect(updated).toMatch(/^source_session: sess-test$/mu);
   });
 
-  it("search_includes_personal_canonical_entries_with_home_relative_path", async () => {
+  it("search_includes_personal_canonical_entries_from_personal_store", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "decisions", "personal-search", {
       layer: "personal",
@@ -1095,7 +1064,9 @@ describe("reviewKnowledge", () => {
       filters: undefined,
     });
     if (result.action !== "search") throw new Error("unreachable");
-    const personal = result.items.find((i) => i.path.startsWith("~/"));
+    // v2.2 全砍: personal canonical lives in the personal store; reported by
+    // absolute path under that store.
+    const personal = result.items.find((i) => i.path.includes(TEST_PERSONAL_UUID));
     expect(personal).toBeDefined();
     expect(personal!.layer).toBe("personal");
   });
@@ -1235,9 +1206,8 @@ describe("reviewKnowledge", () => {
     // case "title" / case "summary" / case "tags" branches that aren't hit by
     // seedPendingFile (which omits title/summary).
     const projectRoot = await createTempProject();
-    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    const dir = storeKnowledgeDir("team", "pending", "decisions");
     await mkdir(dir, { recursive: true });
-    const relativePath = ".fabric/knowledge/pending/decisions/with-title.md";
     const fm = [
       "---",
       "type: decisions",
@@ -1251,7 +1221,7 @@ describe("reviewKnowledge", () => {
       "Body.",
       "",
     ].join("\n");
-    await writeFile(join(projectRoot, relativePath), fm, "utf8");
+    await writeFile(join(dir, "with-title.md"), fm, "utf8");
 
     const result = await reviewKnowledge(projectRoot, {
       action: "search",
@@ -1284,7 +1254,7 @@ describe("reviewKnowledge", () => {
     });
     expect(result.action).toBe("modify");
 
-    const written = await readFile(join(projectRoot, relPath), "utf8");
+    const written = await readFile(relPath, "utf8");
     // Frontmatter block must remain a clean ---...--- envelope; the embedded
     // newline must be JSON-escaped to \n inside a quoted scalar (no raw
     // newline leaking out of the title line).
@@ -1318,7 +1288,7 @@ describe("reviewKnowledge", () => {
     });
     expect(result.action).toBe("modify");
 
-    const written = await readFile(join(projectRoot, relPath), "utf8");
+    const written = await readFile(relPath, "utf8");
     const fmMatch = /^---\n([\s\S]*?)\n---/u.exec(written);
     expect(fmMatch).not.toBeNull();
     const block = fmMatch![1]!;
@@ -1340,7 +1310,7 @@ describe("reviewKnowledge", () => {
     // Seed two entries with explicit created_at — older + newer relative to
     // a fixed threshold. seedPendingFile uses Date.now() so we hand-roll
     // these to control timestamps.
-    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    const dir = storeKnowledgeDir("team", "pending", "decisions");
     await mkdir(dir, { recursive: true });
     const oldEntry = [
       "---",
@@ -1378,14 +1348,12 @@ describe("reviewKnowledge", () => {
     });
     if (result.action !== "list") throw new Error("unreachable");
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].pending_path).toBe(
-      ".fabric/knowledge/pending/decisions/new.md",
-    );
+    expect(result.items[0].pending_path).toContain("knowledge/pending/decisions/new.md");
   });
 
   it("search_with_created_after_filters_older_entries", async () => {
     const projectRoot = await createTempProject();
-    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    const dir = storeKnowledgeDir("team", "pending", "decisions");
     await mkdir(dir, { recursive: true });
     for (const [name, ts] of [
       ["before.md", "2026-01-15T12:00:00.000Z"],
@@ -1424,9 +1392,7 @@ describe("reviewKnowledge", () => {
     });
     if (filtered.action !== "search") throw new Error("unreachable");
     expect(filtered.items).toHaveLength(1);
-    expect(filtered.items[0].path).toBe(
-      ".fabric/knowledge/pending/decisions/after.md",
-    );
+    expect(filtered.items[0].path).toContain("knowledge/pending/decisions/after.md");
   });
 
   // -------------------------------------------------------------------------
@@ -1442,8 +1408,8 @@ describe("reviewKnowledge", () => {
     slug: string,
     options: { layer?: "team" | "personal"; tags?: string[] } = {},
   ): Promise<{ relPath: string; absPath: string }> {
-    const fakeHome = process.env.FABRIC_HOME!;
-    const dir = join(fakeHome, ".fabric", "knowledge", "pending", type);
+    // v2.2 全砍: personal pending lives in the PERSONAL store (no dual-root).
+    const dir = storeKnowledgeDir("personal", "pending", type);
     await mkdir(dir, { recursive: true });
     const layer = options.layer ?? "personal";
     const tags = options.tags ?? [];
@@ -1466,8 +1432,9 @@ describe("reviewKnowledge", () => {
     ].join("\n");
     const absPath = join(dir, `${slug}.md`);
     await writeFile(absPath, fm, "utf8");
-    const relPath = `~/.fabric/knowledge/pending/${type}/${slug}.md`;
-    return { relPath, absPath };
+    // Store entries are referenced by absolute path (what list reports + approve
+    // accepts) — there is no `~/` dual-root form anymore.
+    return { relPath: absPath, absPath };
   }
 
   it("test_review_list_dual_root_merge", async () => {
@@ -1488,7 +1455,7 @@ describe("reviewKnowledge", () => {
     expect(teamItem).toBeDefined();
     expect(personalItem).toBeDefined();
 
-    expect(teamItem!.pending_path).toBe(".fabric/knowledge/pending/decisions/team-side.md");
+    expect(teamItem!.pending_path).toContain("knowledge/pending/decisions/team-side.md");
     expect(teamItem!.layer).toBe("team");
     expect(teamItem!.origin).toBe("team");
 
@@ -1509,7 +1476,7 @@ describe("reviewKnowledge", () => {
     if (result.action !== "list") throw new Error("unreachable");
     expect(result.items).toHaveLength(1);
     expect(result.items[0].origin).toBe("personal");
-    expect(result.items[0].pending_path).toMatch(/^~\//u);
+    expect(result.items[0].pending_path).toContain(TEST_PERSONAL_UUID);
   });
 
   it("list_skips_missing_personal_pending_root_silently", async () => {
@@ -1543,26 +1510,20 @@ describe("reviewKnowledge", () => {
     // Pending file removed from the personal root.
     expect(existsSync(personal.absPath)).toBe(false);
 
-    // Canonical file lives under ~/.fabric/knowledge/decisions/, NOT in workspace.
-    const fakeHome = process.env.FABRIC_HOME!;
-    const canonicalAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
+    // Canonical file lives in the PERSONAL store, NOT the team store.
+    const canonicalAbs = storeKnowledgeDir(
+      "personal",
       "decisions",
       `${result.approved[0].stable_id}--personal-approve.md`,
     );
     expect(existsSync(canonicalAbs)).toBe(true);
 
-    // Workspace canonical decisions dir untouched.
-    const workspaceCanonical = join(
-      projectRoot,
-      ".fabric",
-      "knowledge",
+    const teamCanonical = storeKnowledgeDir(
+      "team",
       "decisions",
       `${result.approved[0].stable_id}--personal-approve.md`,
     );
-    expect(existsSync(workspaceCanonical)).toBe(false);
+    expect(existsSync(teamCanonical)).toBe(false);
   });
 
   it("approve_team_pending_with_personal_frontmatter_routes_to_personal_canonical", async () => {
@@ -1584,14 +1545,11 @@ describe("reviewKnowledge", () => {
     expect(result.approved[0].stable_id).toMatch(/^KP-GLD-\d{4}$/u);
 
     // Pending file in workspace is gone.
-    expect(existsSync(join(projectRoot, pendingPath))).toBe(false);
+    expect(existsSync(pendingPath)).toBe(false);
 
-    // Canonical destination is under FABRIC_HOME (personal root).
-    const fakeHome = process.env.FABRIC_HOME!;
-    const canonicalAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
+    // Canonical destination is the PERSONAL store (per fm.layer).
+    const canonicalAbs = storeKnowledgeDir(
+      "personal",
       "guidelines",
       `${result.approved[0].stable_id}--boundary-flip.md`,
     );

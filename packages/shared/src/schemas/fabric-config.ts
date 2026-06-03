@@ -244,6 +244,13 @@ export const fabricConfigSchema = z.object({
   // (default 30; 0 = unbounded).
   cite_recall_nudge: z.boolean().optional().default(true),
   cite_recall_window_minutes: z.number().int().min(0).optional().default(30),
+  // F2: glob exemptions for the cite nudge (cite-policy-evict.cjs). Edit paths
+  // matching any glob skip the "改前先 fab_recall" nudge — meta/orchestration
+  // files (e.g. `.workflow/` scratchpads) are not source the cite policy
+  // governs. MERGED with the hook's built-in [".workflow/**"] default; an
+  // omitted/empty value keeps just that default. `*` = within a path segment,
+  // `**` = across segments.
+  cite_nudge_ignore_globs: z.array(z.string()).optional(),
   // v2.1 ④ conflict-detection (P4): bm25 content-similarity threshold (0..1)
   // for the knowledge-conflict lint (`fabric doctor --lint-conflicts`). A
   // same-(type,layer) pair whose normalized bm25 similarity reaches this floor

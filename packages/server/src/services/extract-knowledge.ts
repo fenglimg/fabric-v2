@@ -23,7 +23,6 @@ import {
   sha256,
 } from "./_shared.js";
 
-const TEAM_PENDING_REL = ".fabric/knowledge/pending";
 const SLUG_MAX_LENGTH = 40;
 
 // v2.0.0-rc.37 NEW-31: prompt-injection sanitization for archived KB bodies.
@@ -131,19 +130,12 @@ function sanitizeInjectionFields<T extends Record<string, unknown>>(
 // ---------------------------------------------------------------------------
 
 export function pendingBase(layer: "team" | "personal", projectRoot: string): string {
-  // v2.1 global-refactor (W1-T2): route into the resolved write-target store
-  // when one is mounted + selected (personal store for personal scope; active
-  // write store for team scope). Falls through to the dual-root co-location
-  // default (byte-identical) when no store target resolves — see
-  // resolveStorePendingBase for the exact null conditions.
-  const storeBase = resolveStorePendingBase(layer, projectRoot);
-  if (storeBase !== null) {
-    return storeBase;
-  }
-  if (layer === "personal") {
-    return join(resolvePersonalRoot(), ".fabric", "knowledge", "pending");
-  }
-  return join(projectRoot, TEAM_PENDING_REL);
+  // v2.2 全砍 Stage 2 (B2 cutover): the write path is store-only. Route into the
+  // resolved write-target store (personal store for personal scope; active write
+  // store for team scope). resolveStorePendingBase throws an actionable
+  // StoreWriteTargetUnresolvedError when no target resolves — no dual-root
+  // fallback. See cross-store-write.ts.
+  return resolveStorePendingBase(layer, projectRoot);
 }
 
 function resolvePersonalRoot(): string {
@@ -374,9 +366,11 @@ export async function extractKnowledge(
       primarySession,
       baseIdempotencyKey: idempotencyKey,
     });
-  const reportedPath = layer === "personal"
-    ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
-    : relative(projectRoot, absolutePath);
+  // v2.2 全砍 Stage 2: both layers now write into a store under ~/.fabric/stores,
+  // so the reported path is the `~/` home-relative form for both (the old
+  // project-relative team form described a dual-root location that no longer
+  // exists).
+  const reportedPath = `~/${relative(resolvePersonalRoot(), absolutePath)}`;
 
   // Rebind the upper-scope variables so downstream renderers / event
   // payloads use the disambiguated slug + matching idempotency_key.

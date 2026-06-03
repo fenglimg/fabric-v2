@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -9,6 +9,7 @@ import {
   detachMountedStore,
   explainStore,
   initStore,
+  STORES_ROOT_DIR,
   storeRelativePath,
   type FabricConfig,
   type GlobalConfig,
@@ -44,12 +45,126 @@ export function storeList(globalRoot: string = resolveGlobalRoot()): MountedStor
   return requireConfig(globalRoot).stores;
 }
 
+// v2.2 全砍 C3 — by-alias readability layer. The store's PHYSICAL identity stays
+// the intrinsic UUID directory (KT-DEC-0004, path-decoupled), but `cd`-ing into
+// `~/.fabric/stores/<uuid>` is opaque. This maintains a sibling
+// `~/.fabric/stores/by-alias/<alias>` symlink → `../<uuid>` for human/tooling
+// observability, derived purely from the registry (UUID never changes, so a
+// rename/remount just re-points the link). Best-effort + cross-platform-safe:
+// symlink creation that fails (e.g. unprivileged Windows) is swallowed — the
+// UUID dir and `store list` alias column remain the source of truth. Idempotent:
+// re-running reconciles links to exactly match the registry (this IS the doctor
+// heal). Returns the reconciliation delta for diagnostics.
+export const STORE_BY_ALIAS_DIR = "by-alias";
+
+export interface AliasLinkSync {
+  created: string[];
+  removed: string[];
+  errors: string[];
+}
+
+export function syncStoreAliasLinks(globalRoot: string = resolveGlobalRoot()): AliasLinkSync {
+  const result: AliasLinkSync = { created: [], removed: [], errors: [] };
+  const config = loadGlobalConfig(globalRoot);
+  if (config === null) {
+    return result;
+  }
+  const byAliasDir = join(globalRoot, STORES_ROOT_DIR, STORE_BY_ALIAS_DIR);
+  const desired = new Map(config.stores.map((s) => [s.alias, s.store_uuid]));
+
+  try {
+    mkdirSync(byAliasDir, { recursive: true });
+  } catch {
+    return result; // can't create the dir at all → nothing to reconcile.
+  }
+
+  // Remove stale links (alias no longer mounted, or not a symlink we manage).
+  let existing: string[] = [];
+  try {
+    existing = readdirSync(byAliasDir);
+  } catch {
+    existing = [];
+  }
+  for (const name of existing) {
+    if (desired.has(name)) {
+      continue;
+    }
+    try {
+      rmSync(join(byAliasDir, name), { force: true, recursive: false });
+      result.removed.push(name);
+    } catch {
+      result.errors.push(name);
+    }
+  }
+
+  // Create / re-point links for every mounted store.
+  for (const [alias, uuid] of desired) {
+    const link = join(byAliasDir, alias);
+    const target = join("..", uuid); // relative → stores/<uuid>
+    try {
+      let current: string | null = null;
+      try {
+        if (lstatSync(link).isSymbolicLink()) {
+          current = readlinkSync(link);
+        }
+      } catch {
+        current = null;
+      }
+      if (current === target) {
+        continue; // already correct.
+      }
+      rmSync(link, { force: true });
+      symlinkSync(target, link);
+      result.created.push(alias);
+    } catch {
+      // Best-effort: unprivileged Windows / unsupported FS — skip silently.
+      result.errors.push(alias);
+    }
+  }
+
+  return result;
+}
+
+// C3 read-only drift detector for `fabric doctor`: aliases whose by-alias link
+// is missing or points at the wrong uuid. `fabric doctor --fix` calls
+// syncStoreAliasLinks to repair. Returns [] when there's nothing mounted or the
+// platform/FS can't represent symlinks (best-effort — never a hard failure).
+export function detectAliasLinkDrift(globalRoot: string = resolveGlobalRoot()): string[] {
+  const config = loadGlobalConfig(globalRoot);
+  if (config === null) {
+    return [];
+  }
+  const byAliasDir = join(globalRoot, STORES_ROOT_DIR, STORE_BY_ALIAS_DIR);
+  // The by-alias layer is opt-in/best-effort: when the dir doesn't exist at all
+  // (fresh machine, pre-C3, or a platform where symlinks aren't usable) that is
+  // NOT drift to nag about — `fabric doctor --fix` / the next store mutation
+  // materializes it unconditionally. Only flag per-link drift once the layer
+  // exists (a link went missing or points at the wrong uuid).
+  if (!existsSync(byAliasDir)) {
+    return [];
+  }
+  const drifted: string[] = [];
+  for (const store of config.stores) {
+    const link = join(byAliasDir, store.alias);
+    const target = join("..", store.store_uuid);
+    try {
+      if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
+        drifted.push(store.alias);
+      }
+    } catch {
+      drifted.push(store.alias); // missing link
+    }
+  }
+  return drifted;
+}
+
 export function storeAdd(
   store: MountedStore,
   globalRoot: string = resolveGlobalRoot(),
 ): GlobalConfig {
   const next = addMountedStore(requireConfig(globalRoot), store);
   saveGlobalConfig(next, globalRoot);
+  syncStoreAliasLinks(globalRoot); // C3: keep the by-alias readability layer current.
   return next;
 }
 
@@ -102,6 +217,7 @@ export function storeCreate(
       : { store_uuid: uuid, alias, remote: options.remote };
   const next = addMountedStore(config, mounted);
   saveGlobalConfig(next, globalRoot);
+  syncStoreAliasLinks(globalRoot); // C3: mint the by-alias readability link.
   return { config: next, store_uuid: uuid, storeDir };
 }
 
@@ -184,6 +300,7 @@ export function storeRemove(
 ): { config: GlobalConfig; detached: MountedStore | null } {
   const result = detachMountedStore(requireConfig(globalRoot), alias);
   saveGlobalConfig(result.config, globalRoot);
+  syncStoreAliasLinks(globalRoot); // C3: drop the detached store's by-alias link.
   return result;
 }
 
@@ -246,4 +363,26 @@ export function missingRequiredStores(
     (global?.stores ?? []).flatMap((s) => [s.alias, s.store_uuid]),
   );
   return project.required_stores.filter((r) => !mounted.has(r.id));
+}
+
+// Onboarding nudge core (Wave A): the INVERSE of missingRequiredStores — which
+// mounted non-personal stores has this project NOT yet declared as required.
+// Drives the post-install + doctor nudge to `fabric store bind <alias>` so a
+// mounted team/shared store stops being invisible to the project's read-set
+// (the F3/D4 onboarding cliff). Personal stores are implicit (always in the
+// read-set) and never need binding, so they are excluded. Empty global config
+// ⇒ nothing mounted ⇒ nothing to bind.
+export function unboundAvailableStores(
+  projectRoot: string,
+  globalRoot: string = resolveGlobalRoot(),
+): MountedStore[] {
+  const global = loadGlobalConfig(globalRoot);
+  if (global === null) {
+    return [];
+  }
+  const project = loadProjectConfig(projectRoot);
+  const declared = new Set((project?.required_stores ?? []).map((r) => r.id));
+  return global.stores.filter(
+    (s) => s.personal !== true && !declared.has(s.alias) && !declared.has(s.store_uuid),
+  );
 }

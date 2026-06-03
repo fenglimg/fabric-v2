@@ -36,6 +36,63 @@ import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-bui
 // anti-shadowing — the cite-line-parser already accepts `alias:id`).
 // ---------------------------------------------------------------------------
 
+// One walked store entry: its store-qualified id + on-disk file + derived layer.
+interface CrossStoreEntry {
+  qualifiedId: string; // `<alias>:<stableId>`
+  file: string; // absolute path inside the store
+  alias: string;
+  layer: "team" | "personal";
+  source: string; // raw markdown (read once during the walk)
+}
+
+// Walk every store in the project's read-set, returning each entry with its
+// store-qualified id + file + raw source. Shared by buildCrossStoreRawItems
+// (candidate descriptions for recall) and buildCrossStoreBodyIndex (id → file
+// for F7 body delivery in get_sections). Returns [] (never throws) when there
+// is no global config / no mounted store / a store walk fails — both callers are
+// on read paths that must degrade gracefully, never crash.
+function walkReadSetStores(projectRoot: string): CrossStoreEntry[] {
+  const resolveInput = buildStoreResolveInput(projectRoot);
+  if (resolveInput === null) {
+    return [];
+  }
+  const readSet = createStoreResolver().resolveReadSet(resolveInput);
+  if (readSet.stores.length === 0) {
+    return [];
+  }
+  // store_uuid → "personal" | "team" for layer tagging (the read-set entry does
+  // not carry the personal flag; the resolver input's mountedStores does).
+  const personalUuids = new Set(
+    resolveInput.mountedStores.filter((s) => s.personal).map((s) => s.store_uuid),
+  );
+  const globalRoot = resolveGlobalRoot();
+  const dirs: MountedStoreDir[] = readSet.stores.map((entry) => ({
+    store_uuid: entry.store_uuid,
+    alias: entry.alias,
+    dir: join(globalRoot, storeRelativePath(entry.store_uuid)),
+  }));
+
+  const entries: CrossStoreEntry[] = [];
+  for (const ref of readKnowledgeAcrossStores(dirs)) {
+    let source: string;
+    try {
+      source = readFileSync(ref.file, "utf8");
+    } catch {
+      continue; // store file vanished between walk and read — skip, don't crash.
+    }
+    const stableId = deriveRuleIdentity(ref.file, source, undefined).stableId;
+    const layer = personalUuids.has(ref.store_uuid) ? "personal" : "team";
+    entries.push({
+      qualifiedId: `${ref.alias}:${stableId}`,
+      file: ref.file,
+      alias: ref.alias,
+      layer,
+      source,
+    });
+  }
+  return entries;
+}
+
 /**
  * Build recall candidates from every store in the project's read-set.
  *
@@ -47,48 +104,69 @@ import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-bui
 export async function buildCrossStoreRawItems(
   projectRoot: string,
 ): Promise<RuleDescriptionIndexItem[]> {
-  const resolveInput = buildStoreResolveInput(projectRoot);
-  if (resolveInput === null) {
-    return [];
-  }
-
-  const readSet = createStoreResolver().resolveReadSet(resolveInput);
-  if (readSet.stores.length === 0) {
-    return [];
-  }
-
-  // store_uuid → "personal" | "team" for layer tagging (the read-set entry does
-  // not carry the personal flag; the resolver input's mountedStores does).
-  const personalUuids = new Set(
-    resolveInput.mountedStores.filter((s) => s.personal).map((s) => s.store_uuid),
-  );
-
-  const globalRoot = resolveGlobalRoot();
-  const dirs: MountedStoreDir[] = readSet.stores.map((entry) => ({
-    store_uuid: entry.store_uuid,
-    alias: entry.alias,
-    dir: join(globalRoot, storeRelativePath(entry.store_uuid)),
-  }));
-
   const items: RuleDescriptionIndexItem[] = [];
-  for (const ref of readKnowledgeAcrossStores(dirs)) {
-    let source: string;
-    try {
-      source = readFileSync(ref.file, "utf8");
-    } catch {
-      continue; // store file vanished between walk and read — skip, don't crash.
-    }
-    const baseDescription = extractRuleDescription(source);
+  for (const entry of walkReadSetStores(projectRoot)) {
+    const baseDescription = extractRuleDescription(entry.source);
     if (baseDescription === undefined) {
       continue; // no frontmatter description → no selection signal.
     }
-    const stableId = deriveRuleIdentity(ref.file, source, undefined).stableId;
-    const layer = personalUuids.has(ref.store_uuid) ? "personal" : "team";
     items.push({
-      stable_id: `${ref.alias}:${stableId}`,
-      description: { ...baseDescription, knowledge_layer: layer },
+      stable_id: entry.qualifiedId,
+      description: { ...baseDescription, knowledge_layer: entry.layer },
     });
   }
-
   return items;
+}
+
+// v2.2 全砍 F7 (HIGH): store-qualified body delivery. Cross-store recall surfaces
+// candidates as `<alias>:<stableId>` but their bodies live in the store, NOT in
+// the project's agents.meta — so get_sections could only SKIP them (the body was
+// never delivered, only the summary was ever visible). This index maps every
+// read-set store entry's qualified id → its on-disk file so get_sections can
+// read + return the real body, closing the recall→fetch round-trip for store
+// (personal + team) knowledge. Returns an empty map (never throws) when no store
+// is in the read-set.
+export interface CrossStoreBodyRef {
+  file: string;
+  layer: "team" | "personal";
+}
+
+export function buildCrossStoreBodyIndex(
+  projectRoot: string,
+): Map<string, CrossStoreBodyRef> {
+  const index = new Map<string, CrossStoreBodyRef>();
+  for (const entry of walkReadSetStores(projectRoot)) {
+    if (!index.has(entry.qualifiedId)) {
+      index.set(entry.qualifiedId, { file: entry.file, layer: entry.layer });
+    }
+  }
+  return index;
+}
+
+// v2.2 全砍 F10: doctor's opaque-summary lint historically only scanned the
+// project agents.meta (team co-location). Post-cutover, canonical knowledge
+// lives in stores (team + personal) which carry no agents.meta — so the lint
+// would miss every store entry, including the personal layer the dogfood F10
+// flagged. This collector reads the read-set stores' knowledge frontmatter
+// (store-qualified id + summary) so the opacity inspection can fold them in.
+export interface StoreKnowledgeSummary {
+  stableId: string; // store-qualified `<alias>:<id>`
+  summary: string;
+  layer: "team" | "personal";
+}
+
+export function collectStoreKnowledgeSummaries(projectRoot: string): StoreKnowledgeSummary[] {
+  const out: StoreKnowledgeSummary[] = [];
+  for (const entry of walkReadSetStores(projectRoot)) {
+    const description = extractRuleDescription(entry.source);
+    if (description === undefined) {
+      continue;
+    }
+    out.push({
+      stableId: entry.qualifiedId,
+      summary: description.summary ?? "",
+      layer: entry.layer,
+    });
+  }
+  return out;
 }

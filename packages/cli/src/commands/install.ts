@@ -22,6 +22,8 @@ import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
+import { loadGlobalConfig } from "../store/global-config-io.js";
+import { unboundAvailableStores } from "../store/store-ops.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
 import { buildForensicReport } from "../scanner/forensic.js";
@@ -526,6 +528,16 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     logger(step);
   }
 
+  // v2.2 全砍 Stage 1 (1a): the write path is going store-only — a per-repo
+  // install MUST guarantee a global config + personal store exists, otherwise
+  // the first knowledge write would hard-fail with no resolvable target. Mint
+  // the global home (uid + personal store + config) idempotently when absent.
+  // runGlobalInstall is a no-op ("already installed") when it is already there.
+  if (loadGlobalConfig() === null) {
+    logger("no global Fabric config found — minting ~/.fabric (uid + personal store)");
+    await runGlobalInstall({});
+  }
+
   const supports = detectClientSupports(intent.target);
   const basePlan = await buildInitExecutionPlan({
     target: intent.target,
@@ -559,6 +571,22 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     console.log(t("cli.install.next-steps"));
     console.log("");
     console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+
+    // Wave A (D4/F3 onboarding nudge): a team/shared store is mounted globally
+    // but this project never bound it, so its knowledge stays invisible to
+    // recall and team writes fall back to the deprecated co-location path.
+    // Surface a reminder pointing at `store bind` (+ switch-write). Reminder
+    // only — never blocks the install (KT-DEC-0007).
+    const unboundStores = unboundAvailableStores(resolution.target);
+    if (unboundStores.length > 0) {
+      console.log("");
+      console.log(
+        t("cli.install.store-bind-nudge", {
+          aliases: unboundStores.map((s) => `'${s.alias}'`).join(", "),
+          first: unboundStores[0].alias,
+        }),
+      );
+    }
 
     // v2.1 ③ vector-chinese-model (P3): opt-in semantic-search enable step.
     // Skip path (default): never touches embed config. When --enable-embed is
@@ -996,17 +1024,9 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     }
   }
 
-  // Personal-root mirror — best-effort. A read-only home / unusual FABRIC_HOME
-  // override must not block init; knowledge-meta-builder will retry the mkdir on
-  // its first scan.
-  try {
-    mkdirSync(plan.personalKnowledgeDir, { recursive: true });
-    for (const sub of KNOWLEDGE_SUBDIRS) {
-      mkdirSync(join(plan.personalKnowledgeDir, sub), { recursive: true });
-    }
-  } catch {
-    // Non-fatal — see comment above.
-  }
+  // v2.2 全砍 Stage 3 (B2 cutover): no longer scaffold the personal dual-root
+  // (~/.fabric/knowledge). Personal knowledge lives in the personal STORE,
+  // minted by `install --global`. The legacy personal-root mirror is retired.
 
   // rc.15 (formerly rc.14 TASK-002) — diff-mode write semantics for the
   // three scaffold files. drifted/user-modified states are intercepted by

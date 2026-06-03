@@ -122,6 +122,27 @@ describe("inspectKnowledgeSummaryOpaque", () => {
     expect(inspection.totalWithDescription).toBe(1);
     expect(inspection.opaqueCount).toBe(1);
   });
+
+  // v2.2 全砍 F10: store knowledge (team + personal) folded into the scan so the
+  // personal layer the dogfood flagged is no longer missed.
+  it("(F10) folds store summaries — personal store empty-shells counted as opaque", () => {
+    const meta = makeMeta({
+      n1: { file: "a.md", scope_glob: "*", hash: "h", stable_id: "KT-DEC-0001", description: { summary: "Real project summary" } },
+    });
+    const inspection = inspectKnowledgeSummaryOpaque(meta, [
+      // opaque: summary equals the bare local id (qualified id is alias-prefixed)
+      { stableId: "personal:KP-DEC-0001", summary: "KP-DEC-0001", layer: "personal" },
+      // opaque: empty summary
+      { stableId: "personal:KP-PIT-0002", summary: "", layer: "personal" },
+      // not opaque: a real team-store summary
+      { stableId: "team:KT-GLD-0009", summary: "A genuine guideline summary", layer: "team" },
+    ]);
+    // 1 project meta entry (clean) + 3 store entries (2 opaque) = 4 total, 2 opaque.
+    expect(inspection.totalWithDescription).toBe(4);
+    expect(inspection.opaqueCount).toBe(2);
+    expect(inspection.opaqueSample).toContain("personal:KP-DEC-0001");
+    expect(inspection.opaqueSample).toContain("personal:KP-PIT-0002");
+  });
 });
 
 describe("createKnowledgeSummaryOpaqueCheck", () => {

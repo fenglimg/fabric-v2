@@ -1,5 +1,7 @@
 import { defineCommand } from "citty";
 
+import { FabricError } from "@fenglimg/fabric-shared/errors";
+
 import { getProjectTranslator } from "../i18n.js";
 import { scopeExplain } from "../store/scope-explain.js";
 
@@ -19,7 +21,19 @@ export default defineCommand({
   },
   run({ args }) {
     const projectRoot = process.cwd();
-    const result = scopeExplain(projectRoot, args.scope);
+    let result;
+    try {
+      result = scopeExplain(projectRoot, args.scope);
+    } catch (error) {
+      // F21: a malformed scope coordinate fails loudly + actionably instead of
+      // silently resolving to a fallback target.
+      if (error instanceof FabricError) {
+        console.error(`${error.message}\n→ ${error.actionHint}`);
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
     if (result === null) {
       console.log(getProjectTranslator(projectRoot)("cli.cmd.no-global-config"));
       return;

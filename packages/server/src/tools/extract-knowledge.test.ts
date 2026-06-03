@@ -1,11 +1,50 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  STORE_LAYOUT,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
 
 import { registerExtractKnowledge } from "./extract-knowledge.js";
+
+// v2.2 全砍 Stage 2/3 (B2 cutover): write path is store-only. Provision a
+// deterministic personal + team store + project config so extract resolves a
+// write-target store; helpers compute the store-rooted reported/absolute paths.
+const TEST_PERSONAL_UUID = "11111111-1111-4111-8111-111111111111";
+const TEST_TEAM_UUID = "22222222-2222-4222-8222-222222222222";
+
+async function createProjectWithStores(prefix = "fabric-tools-extract-"): Promise<string> {
+  const projectRoot = await mkdtemp(join(tmpdir(), prefix));
+  tempDirs.push(projectRoot);
+  process.env.FABRIC_PROJECT_ROOT = projectRoot;
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      { store_uuid: TEST_PERSONAL_UUID, alias: "personal", personal: true, writable: true },
+      { store_uuid: TEST_TEAM_UUID, alias: "team", remote: "git@e:t.git", writable: true },
+    ],
+  });
+  await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+  await writeFile(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+  );
+  return projectRoot;
+}
+
+function pendingStoreRel(layer: "team" | "personal", type: string, slug: string): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return `~/.fabric/${storeRelativePath(uuid)}/${STORE_LAYOUT.knowledgeDir}/pending/${type}/${slug}.md`;
+}
+
+function pendingStoreAbs(reported: string): string {
+  return join(process.env.FABRIC_HOME!, reported.slice(2));
+}
 import {
   resetFirstReconcileGate,
   setFirstReconcile,
@@ -28,9 +67,14 @@ type RegisteredTool = {
 
 const tempDirs: string[] = [];
 let originalProjectRoot: string | undefined;
+let originalFabricHome: string | undefined;
 
-beforeEach(() => {
+beforeEach(async () => {
   originalProjectRoot = process.env.FABRIC_PROJECT_ROOT;
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-tools-extract-home-"));
+  tempDirs.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
 });
 
 afterEach(async () => {
@@ -38,6 +82,11 @@ afterEach(async () => {
     delete process.env.FABRIC_PROJECT_ROOT;
   } else {
     process.env.FABRIC_PROJECT_ROOT = originalProjectRoot;
+  }
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
   }
   // v2.0.0-rc.23 TASK-009 (d): reset gate state so the "no reconcile
   // registered" fast path applies cleanly to the next case.
@@ -78,9 +127,7 @@ describe("registerExtractKnowledge", () => {
   });
 
   it("invokes extractKnowledge service end-to-end and returns structured content", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
@@ -96,9 +143,7 @@ describe("registerExtractKnowledge", () => {
       slug: "tool-handler-coverage",
     });
 
-    expect(result.structuredContent.pending_path).toBe(
-      ".fabric/knowledge/pending/decisions/tool-handler-coverage.md",
-    );
+    expect(result.structuredContent.pending_path).toBe(pendingStoreRel("team", "decisions", "tool-handler-coverage"));
     expect(result.structuredContent.idempotency_key).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(result.content).toHaveLength(1);
     expect(result.content[0]?.type).toBe("text");
@@ -111,9 +156,7 @@ describe("registerExtractKnowledge", () => {
   });
 
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const enter = vi.fn();
     const exit = vi.fn();
@@ -185,9 +228,7 @@ describe("registerExtractKnowledge", () => {
   // 5s with no extra signal beyond what the unit test already provides.
   // The `failed` path resolves immediately and proves the same wiring.
   it("attaches reconcile_failed warning when first reconcile has rejected", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-gate-fail-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const failure = new Error("simulated reconcile failure");
     setFirstReconcile(Promise.reject(failure));
@@ -222,9 +263,7 @@ describe("registerExtractKnowledge", () => {
   // and persists them end-to-end through the registered handler.
   it("passes through C1 triage fields end-to-end via the tool handler", async () => {
     const { readFile } = await import("node:fs/promises");
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-c1-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
@@ -245,7 +284,7 @@ describe("registerExtractKnowledge", () => {
     });
 
     const body = await readFile(
-      join(projectRoot, result.structuredContent.pending_path),
+      pendingStoreAbs(result.structuredContent.pending_path),
       "utf8",
     );
     expect(body).toMatch(/^intent_clues: \["editing hooks\.ts"\]$/mu);
@@ -256,9 +295,7 @@ describe("registerExtractKnowledge", () => {
 
   it("omits all C1 frontmatter lines when caller omits the four fields", async () => {
     const { readFile } = await import("node:fs/promises");
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-c1-omit-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
@@ -275,7 +312,7 @@ describe("registerExtractKnowledge", () => {
     });
 
     const body = await readFile(
-      join(projectRoot, result.structuredContent.pending_path),
+      pendingStoreAbs(result.structuredContent.pending_path),
       "utf8",
     );
     expect(body).not.toMatch(/^intent_clues:/mu);
@@ -290,9 +327,7 @@ describe("registerExtractKnowledge", () => {
   // source_sessions is rejected instead of persisting a source_sessions=[]
   // contract violation.
   it("rejects input with source_sessions omitted (superRefine enforced in handler)", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-noss-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
@@ -311,9 +346,7 @@ describe("registerExtractKnowledge", () => {
   });
 
   it("rejects input with an empty source_sessions array", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-emptyss-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
@@ -333,9 +366,7 @@ describe("registerExtractKnowledge", () => {
   });
 
   it("works without a tracker (optional argument)", async () => {
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-"));
-    tempDirs.push(projectRoot);
-    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const projectRoot = await createProjectWithStores();
 
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server); // no tracker

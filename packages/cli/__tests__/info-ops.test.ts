@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { globalConfigSchema } from "@fenglimg/fabric-shared";
+import { globalConfigSchema, storeRelativePath } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
@@ -39,6 +40,25 @@ describe("whoami", () => {
     const info = whoami(globalRoot);
     expect(info?.uid).toBe("u-me");
     expect(info?.stores[0]).toEqual({ alias: "team", store_uuid: TEAM, local_only: true });
+  });
+
+  it("reports a store with a physical git remote as NOT local-only even when the registry omits remote (F4 parity with `store list`)", () => {
+    const globalRoot = join(tmp("fabric-whoami-phys-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores: [{ store_uuid: TEAM, alias: "team" }], // registry: NO remote field
+      }),
+      globalRoot,
+    );
+    // …but the on-disk store repo HAS an origin remote (what sync actually uses).
+    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    mkdirSync(storeDir, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: storeDir });
+    execFileSync("git", ["remote", "add", "origin", "git@h:team.git"], { cwd: storeDir });
+
+    // `store list` shows the remote → whoami must agree → not local-only.
+    expect(whoami(globalRoot)?.stores[0]?.local_only).toBe(false);
   });
 
   it("returns null with no global config", () => {

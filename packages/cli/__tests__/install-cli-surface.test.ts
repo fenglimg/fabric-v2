@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   cleanupFixtureRoot,
@@ -27,6 +27,14 @@ const EXPECTED_FABRIC_CONFIG_FIELDS = [
 
 const tempRoots: string[] = [];
 const restoreTtyMocks: Array<() => void> = [];
+// Capture the ambient FAB_LANG so the per-test `process.env.FAB_LANG = "en"`
+// overrides below never leak into OTHER test files' locale resolution (the
+// translator reads this env at import time). Restored in afterEach.
+let originalFabLang: string | undefined;
+
+beforeEach(() => {
+  originalFabLang = process.env.FAB_LANG;
+});
 
 afterEach(() => {
   while (restoreTtyMocks.length > 0) {
@@ -35,6 +43,12 @@ afterEach(() => {
 
   while (tempRoots.length > 0) {
     cleanupFixtureRoot(tempRoots.pop() as string);
+  }
+
+  if (originalFabLang === undefined) {
+    delete process.env.FAB_LANG;
+  } else {
+    process.env.FAB_LANG = originalFabLang;
   }
 
   vi.restoreAllMocks();

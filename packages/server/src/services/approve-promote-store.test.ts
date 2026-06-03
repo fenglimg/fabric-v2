@@ -150,64 +150,33 @@ describe("approve→store-canonical promote (NEW-APPROVE-PROMOTE)", () => {
     expect(ids).toContain(`team:${stableId}`);
   });
 
-  it("falls back to project .fabric canonical when no active write store is set", async () => {
+  it("hard-fails extract (no dual-root) when no active write store is set", async () => {
     const projectRoot = await createProject();
     mountTeamStore();
-    // required_stores present (read-set) but NO active_write_store → write-target
-    // resolves null → dual-root promote preserved byte-for-byte.
+    // required_stores present (read-set) but NO active_write_store → team
+    // write-target null → store-only write hard-fails (B2 cutover).
     await writeFile(
       join(projectRoot, ".fabric", "fabric-config.json"),
       `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
     );
 
-    const extracted = await extractKnowledge(projectRoot, extractInput);
-    expect(extracted.pending_path).not.toBe("");
-
-    const listed = await reviewKnowledge(projectRoot, { action: "list" });
-    if (listed.action !== "list") throw new Error("unreachable");
-    const pendingItem = listed.items.find((i) => i.pending_path.endsWith(".md"));
-    expect(pendingItem).toBeDefined();
-    // Dual-root team pending → workspace-relative path, not absolute.
-    expect(pendingItem!.pending_path.startsWith("/")).toBe(false);
-
-    const approved = await reviewKnowledge(projectRoot, {
-      action: "approve",
-      pending_paths: [pendingItem!.pending_path],
-    });
-    if (approved.action !== "approve") throw new Error("unreachable");
-    expect(approved.approved).toHaveLength(1);
-
-    // Canonical landed in the PROJECT .fabric, store canonical stays empty.
+    await expect(extractKnowledge(projectRoot, extractInput)).rejects.toThrow(/store-only/u);
+    // Nothing leaked into the retired project dual-root canonical dir.
     expect(
-      readdirSync(join(projectRoot, ".fabric", "knowledge", "decisions")).some((f) =>
+      readdirSync(join(projectRoot, ".fabric", "knowledge", "decisions")).filter((f) =>
         f.endsWith(".md"),
       ),
-    ).toBe(true);
-    expect(existsSync(storeCanonicalDir("decisions"))).toBe(false);
+    ).toHaveLength(0);
   });
 
-  it("falls back to project .fabric when no global config exists", async () => {
+  it("hard-fails extract (no dual-root) when no global config exists", async () => {
     const projectRoot = await createProject();
-    // No global config at all → pure dual-root behavior.
-    const extracted = await extractKnowledge(projectRoot, extractInput);
-    expect(extracted.pending_path).not.toBe("");
-
-    const listed = await reviewKnowledge(projectRoot, { action: "list" });
-    if (listed.action !== "list") throw new Error("unreachable");
-    const pendingItem = listed.items.find((i) => i.pending_path.endsWith(".md"));
-    expect(pendingItem).toBeDefined();
-
-    const approved = await reviewKnowledge(projectRoot, {
-      action: "approve",
-      pending_paths: [pendingItem!.pending_path],
-    });
-    if (approved.action !== "approve") throw new Error("unreachable");
-    expect(approved.approved).toHaveLength(1);
-
+    // No global config at all → no write-target store → store-only hard-fail.
+    await expect(extractKnowledge(projectRoot, extractInput)).rejects.toThrow(/store-only/u);
     expect(
-      readdirSync(join(projectRoot, ".fabric", "knowledge", "decisions")).some((f) =>
+      readdirSync(join(projectRoot, ".fabric", "knowledge", "decisions")).filter((f) =>
         f.endsWith(".md"),
       ),
-    ).toBe(true);
+    ).toHaveLength(0);
   });
 });

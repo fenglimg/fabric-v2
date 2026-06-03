@@ -30,6 +30,9 @@ const hook = require("../templates/hooks/cite-policy-evict.cjs") as {
   resolveSessionId: (payload: unknown, env?: unknown) => string;
   readNudgeEnabled: (cwd: string) => boolean;
   readWindowMinutes: (cwd: string) => number;
+  readIgnoreGlobs: (cwd: string) => string[];
+  globToRegExp: (glob: string) => RegExp;
+  pathIsIgnored: (p: string, globs: string[]) => boolean;
   readEventsLedger: (cwd: string) => Array<Record<string, unknown>>;
   normalizeForCompare: (p: string, root?: string) => string;
   pathsOverlap: (recall: unknown, edit: unknown, root?: string) => boolean;
@@ -328,5 +331,76 @@ describe("config readers", () => {
     const cwd = mkTemp();
     writeConfig(cwd, { cite_recall_window_minutes: 60 });
     expect(hook.readWindowMinutes(cwd)).toBe(60);
+  });
+});
+
+// F2 — meta/orchestration paths are exempt from the nudge.
+describe("F2 cite_nudge_ignore_globs", () => {
+  it("readIgnoreGlobs defaults to the built-in .workflow exemption", () => {
+    const cwd = mkTemp();
+    expect(hook.readIgnoreGlobs(cwd)).toEqual([".workflow/**"]);
+  });
+
+  it("readIgnoreGlobs MERGES user globs with the default (never shrinks it)", () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_nudge_ignore_globs: ["docs/**", ".workflow/**"] });
+    const globs = hook.readIgnoreGlobs(cwd);
+    expect(globs).toContain(".workflow/**"); // default always retained
+    expect(globs).toContain("docs/**");
+    // de-duped: the user-supplied ".workflow/**" does not appear twice
+    expect(globs.filter((g) => g === ".workflow/**").length).toBe(1);
+  });
+
+  it("globToRegExp: ** crosses segments, * stays within one", () => {
+    expect(hook.globToRegExp(".workflow/**").test(".workflow/a/b.md")).toBe(true);
+    expect(hook.globToRegExp(".workflow/**").test(".workflow/x.md")).toBe(true);
+    expect(hook.globToRegExp("*.md").test("a/b.md")).toBe(false); // * does not cross /
+    expect(hook.globToRegExp("*.md").test("b.md")).toBe(true);
+    expect(hook.globToRegExp(".workflow/**").test("src/a.ts")).toBe(false);
+  });
+
+  it("pathIsIgnored matches against the glob set", () => {
+    expect(hook.pathIsIgnored(".workflow/notes.md", [".workflow/**"])).toBe(true);
+    expect(hook.pathIsIgnored("src/a.ts", [".workflow/**"])).toBe(false);
+  });
+
+  it("main(): editing a .workflow file is silent (no recall, no nudge)", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, {});
+    writeEvents(cwd, []);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({
+      cwd,
+      payload: { tool_name: "Edit", tool_input: { file_path: ".workflow/.scratchpad/x.md" }, session_id: "S1" },
+      nowMs: NOW,
+      forceClaudeCode: true,
+      stdio: { stdout, stderr },
+    });
+    expect(stdout.joined()).toBe("");
+    expect(stderr.joined()).toBe("");
+  });
+
+  it("main(): mixed batch still nudges, naming only the non-exempt target", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, {});
+    writeEvents(cwd, []);
+    const stdout = new Capture();
+    const stderr = new Capture();
+    await hook.main({
+      cwd,
+      payload: {
+        tool_name: "MultiEdit",
+        tool_input: { edits: [{ file_path: ".workflow/meta.json" }, { file_path: "src/a.ts" }] },
+        session_id: "S1",
+      },
+      nowMs: NOW,
+      forceClaudeCode: true,
+      stdio: { stdout, stderr },
+    });
+    const out = stdout.joined();
+    expect(out).toContain("fab_recall");
+    expect(out).toContain("src/a.ts");
+    expect(out).not.toContain(".workflow/meta.json");
   });
 });

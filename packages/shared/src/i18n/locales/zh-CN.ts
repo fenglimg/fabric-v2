@@ -437,7 +437,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
   "doctor.check.events_jsonl_health.remediation":
-    "运行 `fabric doctor --fix` 触发 rotation; 重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中, 检查最近代码改动是否绕过 bumpCounter API 直接 appendEventLedgerEvent 写了 4 个 metric-managed event_type 之一。",
+    "运行 `fabric doctor --fix` —— 它会触发 rotation 并 flush metrics.jsonl(rc.2 F16: 无需重启 server 即可清出 idle 期未刷的 metric counter)。若告警仍持续, 再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中, 检查最近代码改动是否绕过 bumpCounter API 直接 appendEventLedgerEvent 写了 4 个 metric-managed event_type 之一。",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config 位置",
   "doctor.check.mcp_config_in_wrong_file.message":
     ".claude/settings.json 包含 mcpServers.fabric；此文件仅用于 hooks/permissions。运行 --fix 移除它，然后重新运行 fabric install 写入 .mcp.json。",
@@ -977,6 +977,8 @@ export const zhCNMessages: Messages = {
     "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。\n" +
     "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
     "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
+  "cli.install.store-bind-nudge":
+    "💡 检测到已挂载但未绑定本项目的知识 store: {aliases}。运行 `fabric store bind {first}` 把它的知识接入本项目, 再 `fabric store switch-write {first}` 设为团队知识的写入目标。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
   "cli.install.capabilities.header.client": "客户端",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
@@ -1366,11 +1368,15 @@ export const zhCNMessages: Messages = {
   "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
   "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
   "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
+  "cli.store.migrate.none": "没有需要迁移的项目本地知识 (dual-root 已空)",
+  "cli.store.migrate.dry-run-header": "迁移预览 (dry-run, 不写入磁盘):",
+  "cli.store.migrate.applied-header": "已迁移 {count} 条进 store:",
+  "cli.store.migrate.committed": "已在 store 仓库提交迁移变更",
+  "cli.store.migrate.remap-note": "  ↑ 因目标 store id 冲突, {oldId} 重映射为 {newId}",
+  "cli.store.migrate.skips-header": "跳过 {count} 项:",
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",
-  "cli.store.experimental-unwired":
-    "⚠️ multi-store 仍在开发中: 挂载 store 的知识当前不会被 recall 读取, 且 sync 尚未实现 push。团队知识共享请用 co-location —— 把 .fabric/knowledge 提交进项目 git 仓库。",
   "cli.metrics.invalid-since": '--since: 无效的时长 "{raw}" (示例: 24h、7d、30m)',
   "cli.metrics.window": "Fabric 指标 —— 时间窗: {window}",
   "cli.metrics.window-all-time": "全部时间",

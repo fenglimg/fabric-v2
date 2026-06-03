@@ -101,7 +101,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "type": "string",
       },
       "source_sessions": {
-        "description": "Originating session ids; correlates with Event Ledger records. Array form (T5+, rc.23 made it the sole accepted shape).",
+        "description": "Originating session ids (REQUIRED, non-empty array); correlates with Event Ledger records. Array form (T5+, rc.23 made it the sole accepted shape).",
         "items": {
           "minLength": 1,
           "type": "string",
@@ -140,6 +140,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
       },
     },
     "required": [
+      "source_sessions",
       "recent_paths",
       "user_messages_summary",
       "type",
@@ -932,7 +933,10 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
           "additionalProperties": false,
           "properties": {
             "code": {
-              "const": "missing_knowledge_metadata",
+              "enum": [
+                "missing_knowledge_metadata",
+                "unresolved_selected_id",
+              ],
               "type": "string",
             },
             "message": {

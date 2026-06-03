@@ -449,7 +449,7 @@ export const enMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
   "doctor.check.events_jsonl_health.remediation":
-    "Run `fabric doctor --fix` to trigger a rotation; restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
+    "Run `fabric doctor --fix` — it triggers a rotation AND flushes metrics.jsonl (rc.2 F16: clears idle-buffered metric counters without a server restart). If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config location",
   "doctor.check.mcp_config_in_wrong_file.message":
     ".claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fabric install to write .mcp.json.",
@@ -992,6 +992,8 @@ export const enMessages: Messages = {
     "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
     "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
     "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
+  "cli.install.store-bind-nudge":
+    "💡 Mounted store(s) not bound to this project: {aliases}. Run `fabric store bind {first}` to read their knowledge here, then `fabric store switch-write {first}` to write team knowledge into it.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
   "cli.install.capabilities.header.client": "Client",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
@@ -1390,11 +1392,15 @@ export const enMessages: Messages = {
   "cli.store.detached": "detached '{alias}' — on-disk store tree left intact (detach ≠ delete)",
   "cli.store.bound": "bound required store '{id}' ({count} required)",
   "cli.store.switch-write": "active write store set to '{alias}' for this project",
+  "cli.store.migrate.none": "no project-local knowledge to migrate (dual-root is empty)",
+  "cli.store.migrate.dry-run-header": "migration preview (dry-run, nothing written):",
+  "cli.store.migrate.applied-header": "migrated {count} entries into stores:",
+  "cli.store.migrate.committed": "committed migration changes in the store repo",
+  "cli.store.migrate.remap-note": "  ↑ remapped {oldId} → {newId} (target store id collision)",
+  "cli.store.migrate.skips-header": "skipped {count} item(s):",
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
-  "cli.store.experimental-unwired":
-    "⚠️ multi-store is still under development: knowledge in mounted stores is NOT yet read by recall, and sync does not yet push. For team knowledge sharing use co-location — commit .fabric/knowledge into your project's git repo.",
   "cli.metrics.invalid-since": '--since: invalid duration "{raw}" (expected e.g. 24h, 7d, 30m)',
   "cli.metrics.window": "Fabric metrics — window: {window}",
   "cli.metrics.window-all-time": "all-time",

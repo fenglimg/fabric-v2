@@ -3,6 +3,7 @@ import { defineCommand } from "citty";
 
 import { getProjectTranslator } from "../i18n.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
+import { migrateProjectKnowledge } from "../store/store-migrate.js";
 import {
   assertStoreMountable,
   storeAdd,
@@ -64,9 +65,6 @@ const addCommand = defineCommand({
         count: String(next.stores.length),
       }),
     );
-    // F-MULTISTORE-UNWIRED: mounting registers metadata only — recall does not
-    // yet read mounted stores. Warn so a mount isn't mistaken for live sharing.
-    console.log(t("cli.store.experimental-unwired"));
   },
 });
 
@@ -85,9 +83,6 @@ const createCommand = defineCommand({
       t("cli.store.created", { alias: args.alias, uuid: result.store_uuid, dir: result.storeDir }) +
         (args.remote === undefined ? `\n${t("cli.store.created-local-hint")}` : ""),
     );
-    // F-MULTISTORE-UNWIRED: a created store isn't yet read by recall or pushed
-    // by sync. Warn so it isn't mistaken for live team sharing.
-    console.log(t("cli.store.experimental-unwired"));
   },
 });
 
@@ -157,6 +152,55 @@ const switchWriteCommand = defineCommand({
   },
 });
 
+const migrateCommand = defineCommand({
+  meta: {
+    name: "migrate",
+    description:
+      "Move project-local (dual-root) knowledge into the resolved write-target stores",
+  },
+  args: {
+    "dry-run": {
+      type: "boolean",
+      description: "Preview the move without writing anything",
+    },
+  },
+  run({ args }) {
+    const projectRoot = process.cwd();
+    const t = getProjectTranslator(projectRoot);
+    const dryRun = args["dry-run"] === true;
+    const report = migrateProjectKnowledge(projectRoot, { dryRun });
+
+    if (report.items.length === 0 && report.skips.length === 0) {
+      console.log(t("cli.store.migrate.none"));
+      return;
+    }
+
+    console.log(
+      dryRun
+        ? t("cli.store.migrate.dry-run-header")
+        : t("cli.store.migrate.applied-header", { count: String(report.items.length) }),
+    );
+    for (const item of report.items) {
+      const id = item.newId ?? item.oldId ?? "(draft)";
+      console.log(`  ${item.layer}/${item.type}  ${id}  →  ${item.alias}`);
+      if (item.newId !== null && item.oldId !== null) {
+        console.log(
+          t("cli.store.migrate.remap-note", { oldId: item.oldId, newId: item.newId }),
+        );
+      }
+    }
+    if (report.skips.length > 0) {
+      console.log(t("cli.store.migrate.skips-header", { count: String(report.skips.length) }));
+      for (const skip of report.skips) {
+        console.log(`  ${skip.source}: ${skip.reason}`);
+      }
+    }
+    if (report.committed) {
+      console.log(t("cli.store.migrate.committed"));
+    }
+  },
+});
+
 export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
   subCommands: {
@@ -167,5 +211,6 @@ export default defineCommand({
     explain: explainCommand,
     bind: bindCommand,
     "switch-write": switchWriteCommand,
+    migrate: migrateCommand,
   },
 });

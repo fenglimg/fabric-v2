@@ -95,9 +95,9 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer \`KP-*\` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
 - **Usage**:常态走单步 \`fab_recall(paths=[...])\` 一次拿回相关 KB 正文。仅当单步正文过多致上下文过载、需精确裁剪噪音时才两步:\`fab_plan_context(paths=[...])\` 返回 \`selection_token\` + 顶层 \`candidates[]\`,再 \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<从 candidates[].stable_id 挑>...] })\` 拉全文;\`selection_token\` 必须来自最近一次 \`fab_plan_context\`,不可凭空编造。
 - **session_id**: 调用 \`fab_recall\` / \`fab_plan_context\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 archive-hint hook 准确识别跨会话 debt 状态。
-- **Write flows**:\`fabric-archive\` / \`fabric-review\` / \`fabric-import\` 三个 Skills。
+- **Skills (7)**:写流程 \`fabric-archive\` / \`fabric-review\` / \`fabric-import\`;store 流程 \`fabric-store\` / \`fabric-sync\` / \`fabric-connect\`;诊断 \`fabric-audit\`。
 - **Language**:渲染按 \`.fabric/fabric-config.json\` 的 \`fabric_language\` 字段。
-- **Archive cadence nudge** (rc.36): 每完成 5+ 次 Edit / 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
+- **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config \`archive_edit_threshold\` 一致)/ 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): \`.fabric/knowledge/pending/\` 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)

@@ -107,28 +107,25 @@ describe("cross-store write (W1-T2)", () => {
     expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(false);
   });
 
-  it("falls back to project .fabric when no active write store is selected", async () => {
+  it("hard-fails (no dual-root fallback) when no active write store is selected", async () => {
     const projectRoot = await createProject();
     mountTeamStore();
-    // required_stores present (read-set) but NO active_write_store → write-target
-    // resolves null → dual-root default preserved.
+    // required_stores present (read-set) but NO active_write_store → team
+    // write-target resolves null → store-only write hard-fails (B2 cutover).
     await writeFile(
       join(projectRoot, ".fabric", "fabric-config.json"),
       `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
     );
 
-    const result = await extractKnowledge(projectRoot, goodInput);
-    expect(result.pending_path).not.toBe("");
-
-    expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(true);
-    expect(existsSync(storePendingDir("decisions"))).toBe(false);
+    await expect(extractKnowledge(projectRoot, goodInput)).rejects.toThrow(/store-only/u);
+    // Nothing leaked into the retired project dual-root pending dir.
+    expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(false);
   });
 
-  it("falls back to project .fabric when no global config exists", async () => {
+  it("hard-fails (no dual-root fallback) when no global config exists", async () => {
     const projectRoot = await createProject();
-    // No global config at all → dual-root default.
-    const result = await extractKnowledge(projectRoot, goodInput);
-    expect(result.pending_path).not.toBe("");
-    expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(true);
+    // No global config at all → no write-target store → store-only hard-fail.
+    await expect(extractKnowledge(projectRoot, goodInput)).rejects.toThrow(/store-only/u);
+    expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
 import { loadProjectConfig } from "./project-config-io.js";
+import { storeGitRemote } from "./store-ops.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — read-only info ops backing `fabric whoami` / `fabric status`
@@ -22,7 +23,12 @@ export function whoami(globalRoot: string = resolveGlobalRoot()): WhoamiInfo | n
     stores: config.stores.map((s) => ({
       alias: s.alias,
       store_uuid: s.store_uuid,
-      local_only: s.remote === undefined,
+      // F4: parity with `fabric store list` — local-only reflects the store
+      // repo's TRUE git remote (what sync actually pushes to), not the registry
+      // metadata. A store with a physical `origin` but no registry `remote`
+      // (e.g. the personal store) was misreported as local-only by whoami while
+      // `store list` honestly showed its remote. Both now read the same source.
+      local_only: storeGitRemote(s.store_uuid, globalRoot) === undefined,
     })),
   };
 }

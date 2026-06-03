@@ -25,6 +25,7 @@ import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
+import { syncStoreAliasLinks } from "../store/store-ops.js";
 import { buildDebugBundle } from "@fenglimg/fabric-shared";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
@@ -548,6 +549,8 @@ export const doctorCommand = defineCommand({
       } else {
         fixReport = await runDoctorFix(resolution.target);
         report = fixReport.report;
+        // C3: repair the by-alias readability links (best-effort, global scope).
+        syncStoreAliasLinks();
       }
     } else {
       report = await runDoctorReport(resolution.target);

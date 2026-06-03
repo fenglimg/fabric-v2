@@ -59,7 +59,7 @@ export type RecallResult = PlanContextResult & {
   }>;
   selected_stable_ids: string[];
   diagnostics: Array<{
-    code: "missing_knowledge_metadata";
+    code: "missing_knowledge_metadata" | "unresolved_selected_id";
     severity: "warn";
     stable_id: string;
     message: string;

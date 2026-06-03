@@ -14,6 +14,7 @@ import {
 import {
   assertStoreMountable,
   missingRequiredStores,
+  unboundAvailableStores,
   storeAdd,
   storeBind,
   storeCreate,
@@ -31,6 +32,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const TEAM = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const PLATFORM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const PERSONAL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const dirs: string[] = [];
 let globalRoot: string;
@@ -249,6 +251,39 @@ describe("clone onboarding — missing required stores (S51)", () => {
     );
     const missing = missingRequiredStores(projectRoot, globalRoot);
     expect(missing.map((m) => m.id)).toEqual(["platform"]);
+  });
+});
+
+describe("onboarding nudge — unbound available stores (Wave A / D4)", () => {
+  it("lists mounted non-personal stores the project has not bound, excluding personal", () => {
+    storeAdd({ store_uuid: PERSONAL, alias: "personal", personal: true }, globalRoot);
+    storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-unbound-"));
+    dirs.push(projectRoot);
+    // Project declares no required stores → team is mounted-but-unbound.
+    saveProjectConfig({ project_id: "11111111-1111-4111-8111-111111111111" }, projectRoot);
+
+    const unbound = unboundAvailableStores(projectRoot, globalRoot);
+    expect(unbound.map((s) => s.alias)).toEqual(["team"]); // personal never needs binding
+  });
+
+  it("returns nothing once the store is bound", () => {
+    storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-bound-"));
+    dirs.push(projectRoot);
+    saveProjectConfig(
+      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      projectRoot,
+    );
+    expect(unboundAvailableStores(projectRoot, globalRoot)).toEqual([]);
+  });
+
+  it("returns nothing when there is no global config", () => {
+    const emptyGlobal = join(mkdtempSync(join(tmpdir(), "fabric-noglobal-")), ".fabric");
+    dirs.push(emptyGlobal);
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-ng-proj-"));
+    dirs.push(projectRoot);
+    expect(unboundAvailableStores(projectRoot, emptyGlobal)).toEqual([]);
   });
 });
 

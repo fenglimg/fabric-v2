@@ -46,6 +46,24 @@ import {
   FabReviewOutputSchema,
   FabReviewOutputShape,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
+
+// v2.2 全砍 Stage 2/3 (B2 cutover): review reads/writes through the store.
+const TEST_PERSONAL_UUID = "11111111-1111-4111-8111-111111111111";
+const TEST_TEAM_UUID = "22222222-2222-4222-8222-222222222222";
+function storePendingDir(layer: "team" | "personal", type: string): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, "pending", type);
+}
+function storeCanonicalDir(layer: "team" | "personal", type: string): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, type);
+}
 
 import { runDoctorReport } from "../../src/services/doctor.js";
 import { readEventLedger } from "../../src/services/event-ledger.js";
@@ -109,6 +127,19 @@ async function createTempProject(): Promise<string> {
   }
   execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "pipe" });
   execFileSync("git", ["commit", "--quiet", "-m", "seed: fixture"], { cwd: projectRoot, stdio: "pipe" });
+  // v2.2 全砍: provision a personal + team store + project config so the
+  // store-only write path resolves a write-target.
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      { store_uuid: TEST_PERSONAL_UUID, alias: "personal", personal: true, writable: true },
+      { store_uuid: TEST_TEAM_UUID, alias: "team", remote: "git@e:t.git", writable: true },
+    ],
+  });
+  await writeFile(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+  );
   return projectRoot;
 }
 
@@ -128,7 +159,9 @@ async function seedPending(
   const layer = opts.layer ?? "team";
   const tags = opts.tags ?? [];
   const summary = opts.summary ?? "Test summary body.";
-  const dir = join(projectRoot, ".fabric", "knowledge", "pending", type);
+  // v2.2 全砍: seed into the layer's store pending dir; review reports/accepts
+  // the absolute store path.
+  const dir = storePendingDir(layer, type);
   await mkdir(dir, { recursive: true });
 
   const titleLine = opts.title !== undefined ? `title: ${opts.title}\n` : "";
@@ -151,14 +184,11 @@ async function seedPending(
     "",
   ].join("\n");
 
-  const relativePath = `.fabric/knowledge/pending/${type}/${slug}.md`;
-  await writeFile(join(projectRoot, relativePath), frontmatter, "utf8");
-
-  // Stage + commit so approve's `git rm` finds the path tracked. Mirrors
-  // review.test.ts:95-100 production-faithful seeding.
-  execFileSync("git", ["add", relativePath], { cwd: projectRoot, stdio: "pipe" });
-  execFileSync("git", ["commit", "--quiet", "-m", `seed: ${slug}`], { cwd: projectRoot, stdio: "pipe" });
-  return relativePath;
+  // Store-source pending lives in a separate store repo; approve removes it via
+  // fs.unlink (sourceIsStore), so no project-repo git staging is needed.
+  const absPath = join(dir, `${slug}.md`);
+  await writeFile(absPath, frontmatter, "utf8");
+  return absPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,10 +206,8 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     if (listed.action !== "list") throw new Error("unreachable");
     expect(listed.items).toHaveLength(2);
     const slugs = listed.items.map((i) => i.pending_path).sort();
-    expect(slugs).toEqual([
-      ".fabric/knowledge/pending/decisions/rc3-decision-a.md",
-      ".fabric/knowledge/pending/decisions/rc3-decision-b.md",
-    ]);
+    // Store-rooted absolute paths (a, b are the seeded store pending paths).
+    expect(slugs).toEqual([a, b].sort());
 
     // approve — both at once.
     const approved = await reviewKnowledge(projectRoot, {
@@ -196,15 +224,12 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(ids[0]).not.toBe(ids[1]);
 
     // Pending source files removed; canonical files present at expected path.
-    expect(existsSync(join(projectRoot, a))).toBe(false);
-    expect(existsSync(join(projectRoot, b))).toBe(false);
+    expect(existsSync(a)).toBe(false);
+    expect(existsSync(b)).toBe(false);
     for (const entry of approved.approved) {
       const slug = entry.pending_path.replace(/.*\//u, "").replace(/\.md$/u, "");
       const canonicalAbs = join(
-        projectRoot,
-        ".fabric",
-        "knowledge",
-        "decisions",
+        storeCanonicalDir("team", "decisions"),
         `${entry.stable_id}--${slug}.md`,
       );
       expect(existsSync(canonicalAbs)).toBe(true);
@@ -262,13 +287,17 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
       expect((ev as { reason: string }).reason).toMatch(/test rejection \(rc27\)/u);
     }
 
-    // Files retained for forensic recovery (vacuum-owned cleanup).
-    expect(existsSync(join(projectRoot, a))).toBe(true);
-    expect(existsSync(join(projectRoot, b))).toBe(true);
-    expect(existsSync(join(projectRoot, c))).toBe(true);
+    // v2.2 全砍 F15: files MOVED out of pending/ into the sibling rejected/ dir
+    // (retained for forensic recovery, but out of the active queue).
+    const { sep } = await import("node:path");
+    const toRejected = (p: string): string => p.replace(`${sep}pending${sep}`, `${sep}rejected${sep}`);
+    expect(existsSync(a)).toBe(false);
+    expect(existsSync(b)).toBe(false);
+    expect(existsSync(c)).toBe(false);
+    expect(existsSync(toRejected(a))).toBe(true);
 
-    // Frontmatter mutation: each file now carries `status: rejected`.
-    const aContent = await readFile(join(projectRoot, a), "utf8");
+    // Frontmatter mutation: the moved file carries `status: rejected`.
+    const aContent = await readFile(toRejected(a), "utf8");
     expect(aContent).toMatch(/^status:\s*rejected\s*$/mu);
 
     // Default list hides rejected entries.
@@ -301,8 +330,8 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
     const stableId = approve.approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--tweak-me.md`;
-    expect(existsSync(join(projectRoot, canonicalRel))).toBe(true);
+    const canonicalRel = join(storeCanonicalDir("team", "decisions"), `${stableId}--tweak-me.md`);
+    expect(existsSync(canonicalRel)).toBe(true);
 
     // Modify (no layer change).
     const modify = await reviewKnowledge(projectRoot, {
@@ -315,8 +344,8 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(modify.new_stable_id).toBeUndefined();
 
     // File still at same canonical path with same id; frontmatter scalars updated.
-    expect(existsSync(join(projectRoot, canonicalRel))).toBe(true);
-    const updated = await readFile(join(projectRoot, canonicalRel), "utf8");
+    expect(existsSync(canonicalRel)).toBe(true);
+    const updated = await readFile(canonicalRel, "utf8");
     expect(updated).toMatch(new RegExp(`^id: ${stableId}$`, "mu"));
     expect(updated).toMatch(/^maturity: verified$/mu);
     expect(updated).toMatch(/^tags: \[rc3-test\]$/mu);
@@ -340,8 +369,8 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
     const priorId = approve.approved[0].stable_id;
-    const teamCanonical = `.fabric/knowledge/decisions/${priorId}--flip-me.md`;
-    expect(existsSync(join(projectRoot, teamCanonical))).toBe(true);
+    const teamCanonical = join(storeCanonicalDir("team", "decisions"), `${priorId}--flip-me.md`);
+    expect(existsSync(teamCanonical)).toBe(true);
 
     // Flip to personal.
     const result = await reviewKnowledge(projectRoot, {
@@ -353,14 +382,10 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(result.prior_stable_id).toBe(priorId);
     expect(result.new_stable_id).toMatch(/^KP-DEC-\d{4}$/u);
 
-    // Old team file gone; new personal file under FABRIC_HOME.
-    expect(existsSync(join(projectRoot, teamCanonical))).toBe(false);
-    const fakeHome = process.env.FABRIC_HOME!;
+    // Old team-store file gone; new file lives in the personal store.
+    expect(existsSync(teamCanonical)).toBe(false);
     const personalAbs = join(
-      fakeHome,
-      ".fabric",
-      "knowledge",
-      "decisions",
+      storeCanonicalDir("personal", "decisions"),
       `${result.new_stable_id}--flip-me.md`,
     );
     expect(existsSync(personalAbs)).toBe(true);
@@ -412,7 +437,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     });
     if (approvePersonal.action !== "approve") throw new Error("unreachable");
     const teamGuidelineId = approvePersonal.approved[0].stable_id;
-    const teamGuidelinePath = `.fabric/knowledge/guidelines/${teamGuidelineId}--personal-glb.md`;
+    const teamGuidelinePath = join(storeCanonicalDir("team", "guidelines"), `${teamGuidelineId}--personal-glb.md`);
     await reviewKnowledge(projectRoot, {
       action: "modify",
       pending_path: teamGuidelinePath,
@@ -443,7 +468,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(personalResult.items[0].type).toBe("guidelines");
     // v2.0.0-rc.29 TASK-007 (BUG-M4): search items use `path` (with `area`
     // discriminant) instead of the misleading `pending_path`.
-    expect(personalResult.items[0].path).toMatch(/^~\/\.fabric\/knowledge\/guidelines\//u);
+    expect(personalResult.items[0].path).toContain(storeCanonicalDir("personal", "guidelines"));
     expect(personalResult.items[0].area).toBe("canonical");
 
     // search tags subset — all four entries share `topic-search`, so match by query+tag returns the 4.
@@ -488,8 +513,8 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     }
 
     // Files remain on disk — defer is observability-only.
-    expect(existsSync(join(projectRoot, a))).toBe(true);
-    expect(existsSync(join(projectRoot, b))).toBe(true);
+    expect(existsSync(a)).toBe(true);
+    expect(existsSync(b)).toBe(true);
   });
 
   // ---------------------------------------------------------------------------
@@ -728,7 +753,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
 
     // 6. modify (canonical from approved a)
     const stableId = approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--rt-action-a.md`;
+    const canonicalRel = join(storeCanonicalDir("team", "decisions"), `${stableId}--rt-action-a.md`);
     const modifyOut = await handler!({
       action: "modify",
       pending_path: canonicalRel,
@@ -778,7 +803,7 @@ describe("fab_review rc.27 §2.23 include_body", () => {
     const projectRoot = await createTempProject();
     // Seed an entry whose frontmatter says one thing but whose body carries
     // a hypothetical prompt-injection payload — only body-scan should match.
-    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    const dir = storePendingDir("team", "decisions");
     await mkdir(dir, { recursive: true });
     const filePath = join(dir, "rc27-injection-probe.md");
     await writeFile(
@@ -806,14 +831,6 @@ describe("fab_review rc.27 §2.23 include_body", () => {
       ].join("\n"),
       "utf8",
     );
-    execFileSync("git", ["add", ".fabric/knowledge/pending/decisions/rc27-injection-probe.md"], {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
-    execFileSync("git", ["commit", "--quiet", "-m", "seed: rc27-injection-probe"], {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
 
     // Default search — body-only term must NOT match.
     const defaultSearch = await reviewKnowledge(projectRoot, {

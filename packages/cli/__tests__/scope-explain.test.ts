@@ -67,4 +67,17 @@ describe("scope-explain", () => {
     dirs.push(bare);
     expect(scopeExplain(projectRoot, "team", bare)).toBeNull();
   });
+
+  // v2.2 全砍 F21: malformed scope coordinates fail loudly instead of silently
+  // resolving to a fallback target. Well-formed unknown coordinates stay valid
+  // (S20 open-coordinate design).
+  it("throws on a malformed scope coordinate (F21)", () => {
+    expect(() => scopeExplain(projectRoot, "Team!", globalRoot)).toThrow(/invalid scope coordinate/u);
+    expect(() => scopeExplain(projectRoot, "has space", globalRoot)).toThrow(/invalid scope coordinate/u);
+  });
+
+  it("accepts a well-formed unknown coordinate (S20 open coordinate)", () => {
+    // org:acme:team:platform is not a KNOWN prefix but is grammatically valid.
+    expect(() => scopeExplain(projectRoot, "org:acme:team:platform", globalRoot)).not.toThrow();
+  });
 });
