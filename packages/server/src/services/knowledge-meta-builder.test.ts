@@ -598,30 +598,17 @@ describe("knowledge-meta-builder", () => {
     expect(personalNode?.description?.knowledge_layer).toBe("personal");
   });
 
-  it("auto_mkdir_personal_root_on_first_scan — knowledge subdirs materialize under FABRIC_HOME", async () => {
-    const projectRoot = await createProject("rules-builder-v2-auto-mkdir");
+  it("does_not_materialize_personal_dual_root_on_scan — retired in v2.2 全砍", async () => {
+    const projectRoot = await createProject("rules-builder-v2-no-personal-mkdir");
     const fakeHome = process.env.FABRIC_HOME!;
 
-    // Sanity: personal root tree should NOT yet exist (beforeEach only made
-    // the empty FABRIC_HOME root).
-    const existsBefore = await readFile(
-      join(fakeHome, ".fabric/knowledge/decisions/.keep"),
-    ).then(() => true).catch(() => false);
-    expect(existsBefore).toBe(false);
-
-    // Run the scan — auto-mkdir is a side-effect of findKnowledgeFiles.
+    // v2.2 全砍 Stage 3 (B2 cutover): the scan no longer auto-creates the
+    // personal dual-root (~/.fabric/knowledge). Personal knowledge lives in the
+    // personal STORE now; the legacy root must NOT be re-materialized.
     await computeKnowledgeBasedAgentsMeta(projectRoot);
 
-    // Each canonical knowledge subdir should now exist under fake home.
-    for (const subdir of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
-      const dirPath = join(fakeHome, ".fabric", "knowledge", subdir);
-      // mkdir with recursive does not create files; we verify the dir is
-      // listable as proof of materialization.
-      const entries = await mkdir(dirPath, { recursive: true });
-      // mkdir returns undefined when the dir already exists (idempotent),
-      // which is exactly what we want to assert on the second invocation.
-      expect(entries).toBeUndefined();
-    }
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(join(fakeHome, ".fabric", "knowledge"))).toBe(false);
   });
 
   // ---------------------------------------------------------------------------

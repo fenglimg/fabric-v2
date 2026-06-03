@@ -1024,17 +1024,9 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     }
   }
 
-  // Personal-root mirror — best-effort. A read-only home / unusual FABRIC_HOME
-  // override must not block init; knowledge-meta-builder will retry the mkdir on
-  // its first scan.
-  try {
-    mkdirSync(plan.personalKnowledgeDir, { recursive: true });
-    for (const sub of KNOWLEDGE_SUBDIRS) {
-      mkdirSync(join(plan.personalKnowledgeDir, sub), { recursive: true });
-    }
-  } catch {
-    // Non-fatal — see comment above.
-  }
+  // v2.2 全砍 Stage 3 (B2 cutover): no longer scaffold the personal dual-root
+  // (~/.fabric/knowledge). Personal knowledge lives in the personal STORE,
+  // minted by `install --global`. The legacy personal-root mirror is retired.
 
   // rc.15 (formerly rc.14 TASK-002) — diff-mode write semantics for the
   // three scaffold files. drifted/user-modified states are intercepted by

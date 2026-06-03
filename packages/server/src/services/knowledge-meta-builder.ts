@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -459,18 +459,10 @@ async function findKnowledgeFiles(projectRoot: string): Promise<string[]> {
   const teamRoot = join(projectRoot, ".fabric", "knowledge");
   const personalRoot = join(resolvePersonalRoot(), ".fabric", "knowledge");
 
-  // Auto-mkdir the personal root tree on first scan (idempotent). Mirrors the
-  // doctor.ts pattern for missing knowledge subdirs — keeps the scan
-  // side-effect-free for callers but materializes the canonical layout.
-  try {
-    await mkdir(personalRoot, { recursive: true });
-    for (const sub of KNOWLEDGE_SUBDIRS) {
-      await mkdir(join(personalRoot, sub), { recursive: true });
-    }
-  } catch {
-    // Personal-root creation is best-effort: a read-only home dir or unusual
-    // FABRIC_HOME override must not block team-only repos from indexing.
-  }
+  // v2.2 全砍 Stage 3 (B2 cutover): no longer auto-create the personal dual-root
+  // tree. Personal knowledge lives in the personal STORE now; the legacy
+  // ~/.fabric/knowledge root is retired. The scan below still indexes it if it
+  // exists (back-compat for an un-migrated machine) but never re-materializes it.
 
   const files: string[] = [];
 
