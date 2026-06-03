@@ -15,6 +15,16 @@ import {
   FabReviewOutputSchema,
   FabReviewOutputShape,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
+
+// v2.2 全砍 Stage 2/3 (B2 cutover): review reads/writes through the store.
+const TEST_TEAM_UUID = "22222222-2222-4222-8222-222222222222";
+const TEST_PERSONAL_UUID = "11111111-1111-4111-8111-111111111111";
 
 type RegisteredTool = {
   name: string;
@@ -77,7 +87,9 @@ async function seedPendingFile(
   type: "decisions" | "guidelines" | "pitfalls",
   slug: string,
 ): Promise<string> {
-  const dir = join(projectRoot, ".fabric", "knowledge", "pending", type);
+  // v2.2 全砍: seed into the team store's pending dir; review reports + accepts
+  // the absolute store path.
+  const dir = join(resolveGlobalRoot(), storeRelativePath(TEST_TEAM_UUID), STORE_LAYOUT.knowledgeDir, "pending", type);
   await mkdir(dir, { recursive: true });
   const frontmatter = [
     "---",
@@ -95,11 +107,9 @@ async function seedPendingFile(
     "Body text.",
     "",
   ].join("\n");
-  const relativePath = `.fabric/knowledge/pending/${type}/${slug}.md`;
-  await writeFile(join(projectRoot, relativePath), frontmatter, "utf8");
-  execFileSync("git", ["add", relativePath], { cwd: projectRoot, stdio: "pipe" });
-  execFileSync("git", ["commit", "--quiet", "-m", `seed: ${slug}`], { cwd: projectRoot, stdio: "pipe" });
-  return relativePath;
+  const absPath = join(dir, `${slug}.md`);
+  await writeFile(absPath, frontmatter, "utf8");
+  return absPath;
 }
 
 async function makeProject(): Promise<string> {
@@ -108,6 +118,18 @@ async function makeProject(): Promise<string> {
   execFileSync("git", ["init", "--quiet"], { cwd: projectRoot, stdio: "pipe" });
   execFileSync("git", ["config", "user.email", "tests@example.com"], { cwd: projectRoot, stdio: "pipe" });
   execFileSync("git", ["config", "user.name", "Fabric Tests"], { cwd: projectRoot, stdio: "pipe" });
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      { store_uuid: TEST_PERSONAL_UUID, alias: "personal", personal: true, writable: true },
+      { store_uuid: TEST_TEAM_UUID, alias: "team", remote: "git@e:t.git", writable: true },
+    ],
+  });
+  await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+  await writeFile(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+  );
   return projectRoot;
 }
 
@@ -350,9 +372,16 @@ describe("registerReview", () => {
     const approved = (approveOut.structuredContent as { approved: Array<{ stable_id: string }> }).approved;
     expect(approved).toHaveLength(1);
 
-    // 6. modify (against the canonical entry just produced by approve).
+    // 6. modify (against the canonical entry just produced by approve — now in
+    // the team store).
     const stableId = approved[0].stable_id;
-    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--happy-a.md`;
+    const canonicalRel = join(
+      resolveGlobalRoot(),
+      storeRelativePath(TEST_TEAM_UUID),
+      STORE_LAYOUT.knowledgeDir,
+      "decisions",
+      `${stableId}--happy-a.md`,
+    );
     const modifyOut = await t.handler({
       action: "modify",
       pending_path: canonicalRel,

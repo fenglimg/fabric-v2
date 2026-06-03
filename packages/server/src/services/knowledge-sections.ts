@@ -7,6 +7,7 @@ import { McpToolError } from "@fenglimg/fabric-shared/errors";
 
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
+import { buildCrossStoreBodyIndex, type CrossStoreBodyRef } from "./cross-store-recall.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { readSelectionToken, compareStableIds } from "./plan-context.js";
 import { loadActiveMeta } from "./load-active-meta.js";
@@ -155,19 +156,27 @@ export async function getKnowledgeSections(
   // Object.entries scan per selected id. In the common rc.37 "pick all" path
   // selectedStableIds ≈ every node, so the old per-id linear scan was O(n²).
   const ruleNodeIndex = buildRuleNodeIndex(meta);
-  // Wave D (F7/F20): a selected store-qualified id (`alias:id`, surfaced by
-  // cross-store recall) has no node in the PROJECT's agents.meta — stores ship
-  // none. Skip it with a diagnostic instead of throwing, so one store entry can
-  // never crash the whole section-delivery call (the recall-hard-crash bug). A
-  // bare, colon-less project-local id that is missing still means real meta
-  // breakage → keep the rc.22 loud failure.
+  // v2.2 全砍 F7 (HIGH): store-qualified ids (`alias:id`, surfaced by cross-store
+  // recall) have no node in the PROJECT's agents.meta — stores ship none. Build
+  // the read-set body index so their bodies are delivered FROM THE STORE instead
+  // of being silently skipped (the pre-F7 behavior where only the summary was
+  // ever visible). A store id absent from the index too → genuinely unresolved
+  // (deleted / not in read-set) → warn-skip. A bare, colon-less project-local id
+  // that is missing still means real meta breakage → keep the loud failure.
+  const storeBodyIndex = buildCrossStoreBodyIndex(projectRoot);
   const unresolvedSelectedIds: string[] = [];
+  const storeSelected: Array<{ stableId: string; ref: CrossStoreBodyRef }> = [];
   const selectedRules = sortRuleNodes(
     selectedStableIds.flatMap((stableId) => {
       const entry = ruleNodeIndex.get(stableId);
       if (entry === undefined) {
         if (stableId.includes(":")) {
-          unresolvedSelectedIds.push(stableId);
+          const ref = storeBodyIndex.get(stableId);
+          if (ref !== undefined) {
+            storeSelected.push({ stableId, ref });
+          } else {
+            unresolvedSelectedIds.push(stableId);
+          }
           return [];
         }
         throw new Error(`Selected rule is not present in agents.meta.json: ${stableId}`);
@@ -175,13 +184,8 @@ export async function getKnowledgeSections(
       return [entry];
     }),
   );
-  const diagnostics: KnowledgeSectionDiagnostic[] = unresolvedSelectedIds.map((stableId) => ({
-    code: "unresolved_selected_id",
-    severity: "warn",
-    stable_id: stableId,
-    message: `Selected rule '${stableId}' is not present in the project's agents.meta.json — skipped (store-qualified id whose body is not delivered through the project-meta path).`,
-  }));
-  const rules = [];
+  const diagnostics: KnowledgeSectionDiagnostic[] = [];
+  const rules: KnowledgeSectionResult["rules"] = [];
 
   for (const rule of selectedRules) {
     const content = await readFile(resolveRuleSourcePath(projectRoot, rule.path), "utf8");
@@ -212,6 +216,35 @@ export async function getKnowledgeSections(
       level: rule.level,
       path: rule.path,
       body,
+    });
+  }
+
+  // v2.2 全砍 F7 (HIGH): deliver store-qualified bodies from the read-set store.
+  // Store entries carry no agents.meta node, so they're served as L1 with the
+  // store file path. A read failure here (file vanished between walk + read)
+  // degrades to an unresolved diagnostic rather than crashing the whole call.
+  for (const { stableId, ref } of storeSelected) {
+    let content: string;
+    try {
+      content = await readFile(ref.file, "utf8");
+    } catch {
+      unresolvedSelectedIds.push(stableId);
+      continue;
+    }
+    rules.push({
+      stable_id: stableId,
+      level: "L1",
+      path: ref.file,
+      body: extractBody(content),
+    });
+  }
+
+  for (const stableId of unresolvedSelectedIds) {
+    diagnostics.push({
+      code: "unresolved_selected_id",
+      severity: "warn",
+      stable_id: stableId,
+      message: `Selected rule '${stableId}' is not present in the project's agents.meta.json or any read-set store — skipped (deleted, layer-flipped, or its store is not bound).`,
     });
   }
 
