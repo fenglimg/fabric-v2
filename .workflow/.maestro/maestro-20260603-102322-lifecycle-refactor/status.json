@@ -1,0 +1,200 @@
+{
+  "session_id": "maestro-20260603-102322-lifecycle-refactor",
+  "created_at": "2026-06-03T02:23:22Z",
+  "updated_at": "2026-06-03T02:23:22Z",
+  "source": "maestro",
+  "intent": "落地重构 20260602-lifecycle-concept/lifecycle-concept-final.md 收敛设计：Fabric 知识层全生命周期(8 hook + events.jsonl 单总账 + doctor 后台重建 + cite 诚实拆分 + telemetry 三点闭环 + 隐私物理隔离 + 图谱 F-EFF-1 真闭环)",
+  "task_type": "refactor",
+  "chain_name": "lifecycle-refactor-phased",
+  "phase": null,
+  "milestone": null,
+  "lifecycle_position": null,
+  "auto_mode": false,
+  "exec_mode": "internal",
+  "cli_tool": "claude",
+  "context": {
+    "design_source": ".workflow/.maestro/20260602-lifecycle-concept/lifecycle-concept-final.md",
+    "repo": "fabric-monorepo@2.2.0-rc.1",
+    "hook_template_root": "packages/cli/templates/hooks/",
+    "installed_hooks": ".claude/hooks/",
+    "event_schema": "packages/shared/src/schemas/event-ledger.ts",
+    "doctor": "packages/cli/src/commands/doctor.ts",
+    "subagent_economy": "规划主线完成零子Agent; 执行期优先主线串行 Edit/Write/Bash, 仅 Wave 内多模块真并行冲突时才 worktree 隔离子Agent"
+  },
+  "goal_checklist_path": ".workflow/.maestro/maestro-20260603-102322-lifecycle-refactor/goal-checklist.md",
+  "boundary_contract": {
+    "in_scope": [
+      "final.md §5 八 hook 终态中『裁定为保留/增强/激活』的 5 个: SessionStart(增强)、SessionEnd(激活 marker)、Stop(增强)、PreToolUse(保留窄+telemetry)、PostToolUse(激活落 mutation)",
+      "§3 cite 诚实拆分: doctor --cite-coverage 拆 cite:applied(explicit) vs cite:exposed_and_mutated, 独立字段不合并",
+      "§4 telemetry 三点闭环: 修 hook_surface_emitted=0 (SessionStart/PreToolUse 记 surfaced + PostToolUse 记 edited + doctor 对账)",
+      "§7 图谱 F-EFF-1 真闭环: 生成(skill+doctor 共现)+消费(二阶召回)+维护(边 decay)",
+      "§4 隐私物理隔离: KT→./.fabric, KP→~/.fabric, leak guard 硬编码进 skill pre-flight, doctor 唯一跨轨合并",
+      "§2 store 轴切面: cite/event/recall 的 store-qualified 标签 (team:KT-*/personal:KP-*)",
+      "改动面: packages/cli (doctor.ts) + packages/shared (event-ledger.ts) + hook 模板 + 同步安装拷贝"
+    ],
+    "out_of_scope": [
+      "改 FROZEN 不变量 (events.jsonl 单总账 / hook=nudge 非 gate KT-DEC-0007 / 前台 O(1) / advisory-lock)",
+      "hook 层 clean-slate 重写 (定为增量加 append 点)",
+      "激活 UserPromptSubmit / StopFailure / PostToolUseFailure (设计判定保持盲/不可接)",
+      "Todo lifecycle (保持盲, 8 hook 无 todo-transition 事件)",
+      "multi-store 接线主体 (属 global-refactor 另一条线; 本计划只做其 telemetry/cite/隐私的 store-qualified 切面, 不做读写路由接线)"
+    ],
+    "constraints": [
+      "不破 v2.2.0-rc.1 既有行为; 增量加点不重写",
+      "改 hook 改模板 packages/cli/templates/hooks/ 再同步, 不只改 .claude/hooks/ 安装拷贝",
+      "改 event-ledger.ts 后必须 pnpm --filter @fenglimg/fabric-shared build (防 runtime invalid_union)",
+      "release/收口前本地 pnpm -r exec tsc --noEmit 过 (本地 build ≠ CI tsc)",
+      "所有 join/funnel/边生成下沉 doctor; 前台 hook 只 O(1) append",
+      "隐私铁律: KP 的 id/引用/计数/拓扑边绝不落 ./.fabric/",
+      "分波 commit: 先开 feature 分支, 每 wave 收口 git commit + sha 回填 git_commits[]"
+    ]
+  },
+  "execution_criteria": [
+    "FROZEN 不变量不可破: 任何改动若违反 events.jsonl 单总账/hook=nudge/前台 O(1)/advisory-lock → block 并报告",
+    "增量加 append 点, 不重写 hook; hook 改动落模板 packages/cli/templates/hooks/ 再同步安装拷贝",
+    "改 packages/shared/src/schemas/event-ledger.ts 后立即 pnpm --filter @fenglimg/fabric-shared build, 否则 runtime invalid_union_discriminator",
+    "所有 join/funnel/边生成下沉 doctor.ts; 前台 hook 只 O(1) append 绝不遍历账本",
+    "隐私: personal(KP) id/引用/计数/拓扑边绝不写 ./.fabric/; leak guard 硬编码进 fabric-archive/import skill pre-flight (hook 拦不住 skill 写入)",
+    "每 task done_when 优先 deterministic(events.jsonl 内容断言 / doctor 输出 / grep 泄露=0); 非确定的走 dogfood round-trip"
+  ],
+  "task_decomposition": [
+    {
+      "id": "W1-T1", "round": 1, "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "SessionStart broad hook_surface_emitted emit (verify-before-fix 反转: 源码已存在)",
+      "done_when": "REFRAMED: broad emit 源码已实现且已提交@b85f48f (knowledge-hint-broad.cjs:938-974), 非新工作; 真实 repo 账本 0 行 = orthogonal install-drift (.claude/hooks/ 整体相对模板 stale, 连未触碰的 cite-policy-evict 都 DIFFER, b85f48f 当时只更模板没更安装拷贝)。本 task 收口为: 实证 broad emit 在源码层真 work + 记录反转, 不重复实现 (避免 reimplemented-noop)",
+      "ship_criteria_alignment": ["F-EFF-4 telemetry 三点闭环"], "alignment_strength": "direct",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "临时目录 harness 跑 broad main(env.payload 注入 entries) → events.jsonl", "evidence": "harness 输出 1 条 hook_surface_emitted{hook_name:knowledge-hint-broad, client:cc, rendered_ids:[KT-DEC-0001,KT-DEC-0007], delivery_status:delivered}; schema 吻合 hookSurfaceEmittedEventSchema", "verified_at": "2026-06-03T02:36:00Z" }
+    },
+    {
+      "id": "W1-T2", "round": 1, "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "PreToolUse(narrow) 补 hook_surface_emitted emit 点 (surfaced→edited join 左半)",
+      "done_when": "knowledge-hint-narrow.cjs render 出口后 append hook_surface_emitted(rendered_ids=surfaced narrow stable_ids, 真 payload session_id 作 join key, client enum 必填→detectClient 不可测时 skip); 只在所有 gate 过+lines 渲染后 emit(非 bloat)。narrow 原本只 emit edit_intent_checked(join 右半=edited path), 本 task 补左半=surfaced ids",
+      "ship_criteria_alignment": ["F-EFF-4 telemetry 三点闭环"], "alignment_strength": "direct",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "npx vitest run knowledge-hint-narrow.test.ts (新增 3 测试) + 临时目录 harness", "evidence": "98/98 通过(95 既有+3 新); harness 实证 1 条 hook_surface_emitted{hook_name:knowledge-hint-narrow, session_id:test-sess-W1T2, rendered_ids:[KT-DEC-0099,KT-PIT-0042], client:cc}; 空集不 emit; client 不可测时 skip", "verified_at": "2026-06-03T02:36:00Z" }
+    },
+    {
+      "id": "W1-T3", "round": 1, "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "cite 诚实拆分 explicit vs exposed (doctor --cite-coverage)",
+      "done_when": "doctor.ts --cite-coverage 把 cite:applied(explicit)=人写 KB: 与 cite:exposed_and_mutated=曝光且路径变更 拆成两独立字段分列, 禁合并稀释; exposed 命中需三条件(narrow PreToolUse surfaced + contract glob 特异排除 **/*&通用 guidelines + 本轮未 dismissed); deterministic test 断言两字段不合并",
+      "ship_criteria_alignment": ["F-EFF-3 cite 2.5% 诚实拆分"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "fabric doctor --cite-coverage 输出两列; unit test", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W1-T4", "round": 1, "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "Wave1 producer-consumer 验证 (确定性替代 dogfood)",
+      "done_when": "REFRAMED: 活体 dogfood 需新会话触发 SessionStart + 先 fabric install 刷新本 repo stale 安装资产(orthogonal, 非阻塞 follow-up)。改用确定性 harness 验证两 producer(broad+narrow)均 emit schema-valid hook_surface_emitted; consumer 侧(doctor cite split)归 W1-T3。依赖 W1-T3 完成后整体收口",
+      "ship_criteria_alignment": ["F-EFF-4", "F-EFF-3"], "alignment_strength": "direct",
+      "status": "blocked",
+      "verification": { "method": "deterministic", "verifier": "broad+narrow harness 已过(见 W1-T1/T2); 等 W1-T3 cite split 后做 producer→consumer 整链", "evidence": "producer 侧两 hook emit 已确定性证实; consumer 侧待 W1-T3", "verified_at": null },
+      "followup": "INSTALL-REFRESH: 本 repo .claude/hooks/ 整体相对模板 stale → 需 fabric install 刷新才能活体 dogfood; orthogonal install-drift, 非 lifecycle 重构本体, 非阻塞"
+    },
+    {
+      "id": "W2-T1", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "event-ledger.ts 加 4 新 event 类型 + rebuild dist",
+      "done_when": "schema 加 session_ended / file_mutated / precompact_observed / graph_edge_candidate_requested 的 z.literal 分支(带各自字段); pnpm --filter @fenglimg/fabric-shared build 通过; 新事件能过 union 校验",
+      "ship_criteria_alignment": ["F-EFF-4", "F-EFF-1"], "alignment_strength": "infrastructure",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "shared build + schema parse test", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W2-T2", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "激活 SessionEnd hook → append session_ended (仅 marker)",
+      "done_when": "SessionEnd 触发只 append session_ended(session_id+ts, 零计算); 所有 surfaced→cited→edited funnel 对账下沉 doctor 不在 hook 内 join; 守前台 O(1)",
+      "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "SessionEnd → grep session_ended; 确认 hook 无 join", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W2-T3", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "激活 PostToolUse hook → append file_mutated (落 mutation 闭环)",
+      "done_when": "Edit|Write|MultiEdit 后 PostToolUse append file_mutated(edited path + tool_call_id, per-call key 防并行竞态); PreToolUse↔PostToolUse per-call key 配对闭 mutation 环(守 FROZEN); 归因主键 store_id+stable_id+source_event_id 防多 store 双计",
+      "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "Edit 触发 → grep file_mutated 带 tool_call_id", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W2-T4", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "doctor 侧 surfaced→cited→edited funnel 重建 + mutation_pool",
+      "done_when": "doctor.ts 从 events.jsonl 重建 funnel(surfaced join edited); git diff 仅升 low-confidence mutation_pool(需 session shell event+baseline+source_event_id 才升 fallback, 否则 unattributed_workspace_dirty); 前台 hook 仍零遍历账本",
+      "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "fabric doctor 重建 funnel 输出; 确认前台 O(1)", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W2-T5", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "Wave2 doctor 重建 round-trip 验证",
+      "done_when": "dogfood 产生 session_ended/file_mutated/hook_surface_emitted 全套 → doctor 端重建出完整 surfaced→edited funnel, 数据真跨缝流通(非 scaffolding false-green)",
+      "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "dogfood", "verifier": "real session events → doctor funnel round-trip", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W3-T1", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "图谱生成: skill LLM 抽 related + doctor 共现补边 (store-qualified, 禁 KT→KP)",
+      "done_when": "archive/import skill 内 LLM 抽 related 边(有上下文); doctor 后台共现补边; 边 store-qualified; KT→KP 拓扑边被拒(隐私护栏); graph_edge_candidate_requested 由 Stop hook 在 archive 成功后 append",
+      "ship_criteria_alignment": ["F-EFF-1 图谱真闭环"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "archive → related 边产生; KT→KP 被拒 test", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W3-T2", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "图谱消费: SessionStart/PreToolUse 沿 related 二阶召回",
+      "done_when": "召回沿 related 边追加对端节点(标 reason: related-to-{id}); 边=0 时诚实 no-op 显示 graph empty(不假装有图)",
+      "ship_criteria_alignment": ["F-EFF-1"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "有边→二阶召回; 空图→graph empty", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W3-T3", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "隐私物理隔离 + leak guard pre-flight",
+      "done_when": "KT artifacts(events/counter/keyed/cite) 落 ./.fabric; KP 落 ~/.fabric; leak guard 硬编码进 fabric-archive/import skill pre-flight; doctor 唯一跨轨合并者合并态留本地不回写项目; grep ./.fabric 含任何 KP-* id/引用/计数/拓扑边 = 0",
+      "ship_criteria_alignment": ["F-EFF-2 multi-store", "隐私铁律"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep ./.fabric KP-* 泄露 = 0; pre-flight guard test", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W3-T4", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "store-qualified cite + provenance",
+      "done_when": "cite 解析要求 store 前缀(team:KT-*/personal:KP-*); read-set = required_stores ∪ personal; doctor --cite-coverage 按 store 分列; MCP recall provenance 标 store",
+      "ship_criteria_alignment": ["F-EFF-2", "§2 store 轴"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "cite 解析 store-qualified test; doctor 分 store 输出", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "W3-T5", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "Wave3 隐私审计 + 图谱闭环 dogfood 验证",
+      "done_when": "grep ./.fabric 物理目录 KP 泄露=0(隐私审计); 真实 archive→related 边→二阶召回 round-trip 闭环; 全计划收口前 pnpm -r exec tsc --noEmit 过",
+      "ship_criteria_alignment": ["F-EFF-1", "F-EFF-2", "隐私铁律"], "alignment_strength": "direct",
+      "status": "open",
+      "verification": { "method": "dogfood", "verifier": "隐私 grep 审计 + 图谱 round-trip + tsc --noEmit", "evidence": null, "verified_at": null }
+    }
+  ],
+  "post_goal_audit": { "type": "decision", "decision": "post-goal-audit", "retry_count": 0, "max_retries": 2 },
+  "ground_truth_findings": [
+    { "id": "GT-1", "round": 1, "oracle": "declared-vs-impl",
+      "finding": "设计 F-EFF-4 'hook_surface_emitted=0' 在 broad 侧已被 b85f48f 修复(模板有 emit), 真实 0 行根因是 .claude/hooks/ 整体 install-drift, 非源码缺失",
+      "impact": "W1-T1 从'实现 broad emit'重定性为'实证+记录', 避免 reimplemented-noop (verify-before-fix doctrine)",
+      "verify": "grep 模板 emit=3 / 安装拷贝=0; b85f48f --stat 只动模板; cite-policy-evict(未触碰)亦 template vs installed DIFFER" },
+    { "id": "GT-2", "round": 1, "oracle": "declared-vs-impl",
+      "finding": "narrow hook 原本已 emit edit_intent_checked(1406 行, =surfaced→edited join 右半/edited path), 但确实缺 hook_surface_emitted(左半/surfaced ids) — 计划'narrow 全空白'假设部分有误",
+      "impact": "W1-T2 收窄为'补左半 emit', 复用 broad 既有 surfaceEvent 形状; join key 用真 payload session_id 对齐 edit_intent_checked",
+      "verify": "narrow grep edit_intent_checked 构造存在; hook_surface_emitted 无; 实现后 98/98 test 过" },
+    { "id": "GT-3", "round": 1, "oracle": "invariant",
+      "finding": "hook_surface_emitted schema 的 client 是必填 enum(cc|codex|cursor)非 optional → narrow emit 必须 detectClient, 不可省略, 不可测时须 skip 整条(否则 read 期 schema 校验失败)",
+      "impact": "narrow 加 client-adapter require; client 不可测→skip emit(测试覆盖此分支)",
+      "verify": "event-ledger.ts:711 client: z.enum([...]) 无 .optional()" }
+  ],
+  "git_commits": [],
+  "needs_adjudication": [],
+  "waves": [
+    { "wave": 1, "title": "可观测性地基", "tasks": ["W1-T1", "W1-T2", "W1-T3", "W1-T4"], "shippable": true },
+    { "wave": 2, "title": "活化休眠 hook + doctor 重建", "tasks": ["W2-T1", "W2-T2", "W2-T3", "W2-T4", "W2-T5"], "shippable": true },
+    { "wave": 3, "title": "图谱真闭环 + 隐私物理隔离 + store-qualified", "tasks": ["W3-T1", "W3-T2", "W3-T3", "W3-T4", "W3-T5"], "shippable": true }
+  ],
+  "current_step": 0,
+  "current_round": 1,
+  "status": "running"
+}

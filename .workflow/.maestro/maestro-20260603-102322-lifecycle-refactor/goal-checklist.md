@@ -1,0 +1,53 @@
+# goal-checklist — lifecycle-refactor（mode① 计划驱动 / maestro 分解）
+
+> status.json 真源，本文件投影视图。推进入口：`/maestro-ralph continue`（或 `/goal-mode continue`）。
+> 设计真源：`.workflow/.maestro/20260602-lifecycle-concept/lifecycle-concept-final.md`（5 轮多-LLM 收敛）。
+
+## 目标
+把已收敛的 Fabric 知识层全生命周期设计**落地为代码重构**：8 hook 终态 + events.jsonl 单总账 + doctor 后台重建因果 + cite 诚实拆分 + telemetry 三点闭环（修 `hook_surface_emitted=0`）+ 隐私物理隔离 + 图谱 F-EFF-1 真闭环。**地基优先分波 + 增量加 append 点**。
+
+## 边界契约
+- **in**：§5 五个『保留/增强/激活』hook(SessionStart/SessionEnd/Stop/PreToolUse/PostToolUse) · §3 cite 拆 explicit/exposed · §4 telemetry 三点闭环 · §7 图谱闭环 · §4 隐私隔离 · §2 store-qualified 切面。改 `packages/cli`(doctor.ts) + `packages/shared`(event-ledger.ts) + hook 模板。
+- **out**：改 FROZEN 不变量 · hook 层 clean-slate 重写 · 激活 UserPromptSubmit/StopFailure/PostToolUseFailure · Todo lifecycle · **multi-store 接线主体**（global-refactor 另一条线，本计划只做其 telemetry/cite/隐私的 store-qualified 切面）。
+- **约束**：增量加点不重写 · 改 hook 改模板再同步 · 改 event-ledger.ts 必 rebuild shared dist · 下沉 doctor 守前台 O(1) · KP 绝不落 ./.fabric · 分波 commit。
+
+## 执行准则（命令式）
+1. FROZEN 不变量违反即 block：events.jsonl 单总账 / hook=nudge 非 gate(KT-DEC-0007) / 前台 O(1) / advisory-lock。
+2. hook 改动落模板 `packages/cli/templates/hooks/` 再同步安装拷贝，不只改 `.claude/hooks/`。
+3. 改 `event-ledger.ts` → 立即 `pnpm --filter @fenglimg/fabric-shared build`（防 runtime invalid_union）。
+4. 所有 join/funnel/边生成下沉 `doctor.ts`；前台 hook 只 O(1) append。
+5. 隐私：KP 的 id/引用/计数/拓扑边绝不落 ./.fabric；leak guard 硬编码进 skill pre-flight。
+6. done_when 优先 deterministic；非确定走 dogfood round-trip。收口前 `pnpm -r exec tsc --noEmit`。
+
+## 终止判据（mode①）
+`task_decomposition[*].status` 全部 `done`（等价：本文件末尾含 `ALL_GOALS_DONE`）。
+
+## 进度
+
+### Wave 1 — 可观测性地基（先修 `hook_surface_emitted=0`）
+- [x] **W1-T1** broad emit ✅ **verify-before-fix 反转**：源码已存在@b85f48f，0 行=orthogonal install-drift；harness 实证真 work
+- [x] **W1-T2** narrow 补 `hook_surface_emitted`（surfaced→edited join 左半）✅ 实现+3 测试+harness，98/98 过
+- [ ] **W1-T3** cite 诚实拆 explicit vs exposed（doctor `--cite-coverage` 两独立字段不合并）← **下一步**
+- [~] **W1-T4** producer-consumer 验证：producer 侧两 hook 已确定性证实；consumer 侧等 W1-T3；活体 dogfood 需 `fabric install` 刷新 stale 安装资产（orthogonal 非阻塞）
+
+> **GT 反转记录**（见 status.json `ground_truth_findings`）：计划假设「telemetry 全空白」部分被 ground-truth 推翻——broad emit 已存在、narrow 已记 edited path。真代码空白只剩 narrow 的 surfaced ids（已修）+ cite split（W1-T3）。
+
+### Wave 2 — 活化休眠 hook + doctor 重建
+- [ ] **W2-T1** `event-ledger.ts` 加 4 新 event 类型 + rebuild shared dist
+- [ ] **W2-T2** 激活 SessionEnd → `session_ended`（仅 marker，零计算）
+- [ ] **W2-T3** 激活 PostToolUse → `file_mutated`（per-call key 闭 mutation 环）
+- [ ] **W2-T4** doctor 侧 funnel 重建 + low-confidence `mutation_pool`
+- [ ] **W2-T5** Wave2 doctor 重建 round-trip 验证
+
+### Wave 3 — 图谱真闭环 + 隐私物理隔离 + store-qualified
+- [ ] **W3-T1** 图谱生成：skill 抽 related + doctor 共现补边（store-qualified，禁 KT→KP）
+- [ ] **W3-T2** 图谱消费：沿 related 二阶召回（空图诚实 graph empty）
+- [ ] **W3-T3** 隐私物理隔离 + leak guard pre-flight（grep ./.fabric KP 泄露=0）
+- [ ] **W3-T4** store-qualified cite + provenance（team:/personal: 前缀）
+- [ ] **W3-T5** Wave3 隐私审计 + 图谱闭环 dogfood + tsc --noEmit 收口
+
+## 协调风险（非阻塞）
+- 当前有进行中的 multi-store 接线工作（`feat/multistore-wiring` 已并、`fix/multistore-unwired-warning`）。本计划的 §2 store-qualified 切面与 §4 隐私隔离与之**有重叠**——执行 Wave3 前先 `git log`/`fab_recall` 对齐，避免双改冲突。本计划只做 telemetry/cite/隐私的 store 切面，不碰读写路由接线主体。
+
+## Resume
+中断后：读本 checklist + `status.json` 取手册，调 `/maestro-ralph continue`（或 `/goal-mode continue`）推进下一步；严禁越界。
