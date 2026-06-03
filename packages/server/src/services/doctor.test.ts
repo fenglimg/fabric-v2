@@ -28,6 +28,7 @@ import {
 } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
 import { readCiteRollup } from "./cite-rollup.js";
+import { bumpCounter, readMetrics } from "./metrics.js";
 import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
 
@@ -8454,6 +8455,23 @@ describe("knowledge auto-promote (rc.37 NEW-38)", () => {
     const check = after.checks.find((c) => c.name === "Knowledge auto-promote");
     expect(check?.status).toBe("ok");
     expect(check?.kind).not.toBe("info"); // no remaining candidates
+  });
+});
+
+// v2.2 全砍 F16: `fabric doctor --fix` flushes buffered metric counters to
+// metrics.jsonl, so an idle MCP process (whose 60s flush tick has stalled) no
+// longer requires a SERVER RESTART to clear a stale-metrics warning.
+describe("doctor --fix flushes metrics (F16)", () => {
+  it("drains buffered counters to metrics.jsonl on --fix (no restart needed)", async () => {
+    const target = createV2KnowledgeProject("doctor-f16-flush");
+    // Buffer a counter in memory (mirrors a recall/consume bump) WITHOUT a flush.
+    bumpCounter(target, "fabric_test_f16_counter", 3);
+
+    await runDoctorFix(target);
+
+    const rows = await readMetrics(target);
+    const drained = rows.some((r) => (r.counters?.fabric_test_f16_counter ?? 0) > 0);
+    expect(drained).toBe(true);
   });
 });
 

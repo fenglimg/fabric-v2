@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 
 import type {
   FabReviewInput,
@@ -388,7 +388,18 @@ async function listPending(
   const sources: Array<{ origin: "team" | "personal"; root: string; isStore: boolean }> = [];
   for (const origin of ["team", "personal"] as const) {
     try {
-      sources.push({ origin, root: resolveStorePendingBase(origin, projectRoot), isStore: true });
+      const pendingRoot = resolveStorePendingBase(origin, projectRoot);
+      sources.push({ origin, root: pendingRoot, isStore: true });
+      // v2.2 全砍 F15: rejected entries are MOVED to a sibling `rejected/` dir
+      // (out of the active pending queue). Surface them only when the caller
+      // opts in via include_rejected — preserving the audit/restore view.
+      if (filters?.include_rejected === true) {
+        sources.push({
+          origin,
+          root: pendingRoot.replace(`${sep}pending`, `${sep}rejected`),
+          isStore: true,
+        });
+      }
     } catch {
       // layer has no resolvable write-target store — nothing to list there.
     }
@@ -766,7 +777,22 @@ async function rejectAll(
       if (existsSync(sandboxed.abs)) {
         const content = await readFile(sandboxed.abs, "utf8");
         const merged = rewriteFrontmatterMerge(content, { status: "rejected" });
-        if (merged !== content) {
+        // v2.2 全砍 F15: reject is now physically intuitive — MOVE the entry out
+        // of pending/ into a sibling `rejected/` dir (within the same store)
+        // rather than leaving a status-flagged file sitting in the active
+        // pending queue. The pending/ dir then reflects only live proposals;
+        // rejected entries are preserved (frontmatter status + the move) for
+        // audit/restore but no longer scanned by list/recall (which only read
+        // pending/ + the 5 canonical type dirs). Falls back to in-place flag
+        // when the path isn't under a `/pending/` segment (defensive).
+        const rejectedAbs = sandboxed.abs.includes(`${sep}pending${sep}`)
+          ? sandboxed.abs.replace(`${sep}pending${sep}`, `${sep}rejected${sep}`)
+          : null;
+        if (rejectedAbs !== null) {
+          await ensureParentDirectory(rejectedAbs);
+          await atomicWriteText(rejectedAbs, merged);
+          await unlink(sandboxed.abs);
+        } else if (merged !== content) {
           await atomicWriteText(sandboxed.abs, merged);
         }
       }

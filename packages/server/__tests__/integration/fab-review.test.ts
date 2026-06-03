@@ -287,13 +287,17 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
       expect((ev as { reason: string }).reason).toMatch(/test rejection \(rc27\)/u);
     }
 
-    // Files retained for forensic recovery (vacuum-owned cleanup).
-    expect(existsSync(a)).toBe(true);
-    expect(existsSync(b)).toBe(true);
-    expect(existsSync(c)).toBe(true);
+    // v2.2 全砍 F15: files MOVED out of pending/ into the sibling rejected/ dir
+    // (retained for forensic recovery, but out of the active queue).
+    const { sep } = await import("node:path");
+    const toRejected = (p: string): string => p.replace(`${sep}pending${sep}`, `${sep}rejected${sep}`);
+    expect(existsSync(a)).toBe(false);
+    expect(existsSync(b)).toBe(false);
+    expect(existsSync(c)).toBe(false);
+    expect(existsSync(toRejected(a))).toBe(true);
 
-    // Frontmatter mutation: each file now carries `status: rejected`.
-    const aContent = await readFile(a, "utf8");
+    // Frontmatter mutation: the moved file carries `status: rejected`.
+    const aContent = await readFile(toRejected(a), "utf8");
     expect(aContent).toMatch(/^status:\s*rejected\s*$/mu);
 
     // Default list hides rejected entries.

@@ -639,11 +639,13 @@ const _sourceSessionsField = z.array(z.string().min(1)).min(1);
 // source_sessions when the field is omitted entirely.
 const _FabExtractKnowledgeInputBaseSchema = z.object({
   // v2.0.0-rc.7 T5: array form. rc.23 dropped the legacy single-string alias.
-  source_sessions: _sourceSessionsField
-    .optional()
-    .describe(
-      "Originating session ids; correlates with Event Ledger records. Array form (T5+, rc.23 made it the sole accepted shape).",
-    ),
+  // v2.2 全砍 F13: REQUIRED in the base schema (was `.optional()`) so the MCP
+  // tool's advertised inputSchema (registerTool reads `.shape`) matches the
+  // requirement the superRefine enforces. Previously a caller reading the schema
+  // saw it optional, omitted it, and got rejected at parse — a contract lie.
+  source_sessions: _sourceSessionsField.describe(
+    "Originating session ids (REQUIRED, non-empty array); correlates with Event Ledger records. Array form (T5+, rc.23 made it the sole accepted shape).",
+  ),
   recent_paths: z
     .array(z.string())
     .describe("Workspace paths recently touched in the source session — used as scope hints"),

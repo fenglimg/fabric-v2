@@ -356,14 +356,12 @@ function validateAiSelections(
         `Invalid rule selection "${stableId}": not in this token's plan-context candidates. Pass only stable_ids from fab_plan_context candidates[].stable_id.`,
       );
     }
-
-    if (aiSelectionReasons[stableId]?.trim() === "") {
-      throw new Error(`Missing AI selection reason for ${stableId}`);
-    }
-
-    if (aiSelectionReasons[stableId] === undefined) {
-      throw new Error(`Missing AI selection reason for ${stableId}`);
-    }
+    // v2.2 全砍 F8: ai_selection_reasons is OPTIONAL (audit telemetry) per the
+    // schema (`.optional().default({})` — "Omit to fetch bodies without
+    // annotating"). The server previously REQUIRED a reason per selected id,
+    // contradicting the advertised contract and rejecting a documented call
+    // shape. Reasons are now genuinely optional — a missing/empty reason is
+    // recorded as-is and never blocks body delivery.
   }
 }
 

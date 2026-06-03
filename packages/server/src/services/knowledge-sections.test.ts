@@ -388,7 +388,7 @@ describe("getKnowledgeSections", () => {
     }
   });
 
-  it("hard-errors invalid L1 selections and missing AI selection reasons", async () => {
+  it("hard-errors invalid L1 selections; AI selection reasons are optional (F8)", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
     const selectionToken = mintTokenFromPlan(
@@ -403,11 +403,15 @@ describe("getKnowledgeSections", () => {
       ai_selection_reasons: { "unknown-l1": "not selectable" },
     })).rejects.toThrow(/Invalid rule selection/u);
 
-    await expect(getKnowledgeSections(projectRoot, {
+    // v2.2 全砍 F8: omitting a reason for a VALID selection no longer throws —
+    // ai_selection_reasons is optional audit telemetry (matches the schema's
+    // `.optional().default({})` contract). The body is delivered regardless.
+    const noReason = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {},
-    })).rejects.toThrow(/Missing AI selection reason/u);
+    });
+    expect(noReason.selected_stable_ids).toContain("ui-batch-rendering");
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,

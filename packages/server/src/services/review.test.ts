@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -284,7 +284,7 @@ describe("reviewKnowledge", () => {
     expect(rejectedEv.reason).toMatch(/duplicate of KT-DEC-0001/u);
   });
 
-  it("reject_does_not_delete_file_in_rc3_scope", async () => {
+  it("reject_moves_entry_out_of_pending_into_rejected_dir (F15)", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "guidelines", "tentative");
 
@@ -294,8 +294,14 @@ describe("reviewKnowledge", () => {
       reason: "needs more evidence",
     });
 
-    // rc.3 contract: reject is observability-only. doctor (rc.4) owns vacuum.
-    expect(existsSync(pendingPath)).toBe(true);
+    // v2.2 全砍 F15: reject is now physically intuitive — the entry MOVES out of
+    // pending/ into a sibling rejected/ dir (preserved for audit/restore, no
+    // longer cluttering the active pending queue).
+    expect(existsSync(pendingPath)).toBe(false);
+    const rejectedPath = pendingPath.replace(`${sep}pending${sep}`, `${sep}rejected${sep}`);
+    expect(existsSync(rejectedPath)).toBe(true);
+    const moved = await readFile(rejectedPath, "utf8");
+    expect(moved).toMatch(/^status: rejected$/mu);
   });
 
   it("reject_batch_emits_one_event_per_path", async () => {
