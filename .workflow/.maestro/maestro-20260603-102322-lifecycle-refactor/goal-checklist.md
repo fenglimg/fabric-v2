@@ -46,14 +46,16 @@
 ### Wave 3 — 图谱真闭环 + 隐私物理隔离 + store-qualified
 - [x] **W3-T1** 图谱生成：KT→KP 护栏真剥离 + Stop hook emit graph_edge_candidate_requested + SKILL.md LLM 抽 related（doctor 共现补边按 §7 speculative deferred）
 - [x] **W3-T2** 图谱消费：plan-context 二阶召回透传 + hook 默认 include_related + (related-to-id) 渲染；空图诚实 no-op
-- [⚠️] **W3-T3** 隐私隔离 — **拓扑铁律 done**（KT→KP 真剥离，agents.meta.json KP=0 实测）；**`grep events.jsonl KP=296` 升 ADJ-1**（§4 vs §2 未建模张力，pre-existing，升 human）
+- [x] **W3-T3** 隐私隔离 — 拓扑铁律 done（KT→KP 真剥离，agents.meta.json KP=0）；events.jsonl KP=296 经 **ADJ-1 用户拍板 option B（精化 §4 语义）= 合规**
 - [x] **W3-T4** store-qualified：doctor cite-coverage `by_store` 独立分列（不污染 compliance）+ recall `store` provenance
-- [x] **W3-T5** 验证执行：隐私审计（拓扑 KP=0 ✓ / events KP=296→ADJ-1）+ 图谱 round-trip + 全仓 2317 passed + tsc 0
+- [x] **W3-T5** 验证执行：隐私审计 + 图谱 round-trip + 全仓 2317 passed + tsc 0
 
-**Wave 3：4/5 done，W3-T3 升 ADJ-1。进度 13/14。**
+**✅ Wave 3 完成。进度 14/14。**
 
-## ⚠️ 待裁决 ADJ-1（升 human，非阻塞）
-§4 隐私审计实测：`agents.meta.json` 拓扑边干净（KP=0，护栏生效），但 `events.jsonl` 有 296 处 KP 引用——server recall 按 §2 read-set 把 personal KB surface 进 team session 时，planning 遥测记了 personal ids 进项目账本。**§4（personal 不写项目账本）vs §2（read-set 含 personal）的未建模张力**，pre-existing 非本重构引入。三选项见 status.json `needs_adjudication[ADJ-1]`，**推荐 B（精化 §4 语义：surfacing 遥测记录 read-set 是 §2 合法结果，§4 实质守护对象是 authored 知识+cite 归因，已隔离）**。
+## ✅ ADJ-1 已裁决（用户 option B）
+§4 隐私审计暴露的 §4/§2 张力，用户拍板 **精化 §4 语义**：surfacing 遥测记录 read-set（含 personal）是 §2 read-set 的合法结果，非泄漏；§4 实质守护对象=personal 的 authored 知识 + cite 归因（已隔离：agents.meta.json KP=0 + pending 分轨写 ~/.fabric）。当前状态合规，零额外代码。
+
+ALL_GOALS_DONE
 
 ## Wave 3 census 结论（只读普查，避免重复实现已 merge 的 multi-store）
 `feat/multistore-wiring` 已 merge → 多数 W3 基础设施已存在：`include_related` 二阶召回稳健(recall.ts:19-35)、cite `store:` 前缀解析(cite-line-parser.ts)、KT/KP 路径分离(~/.fabric vs ./.fabric)、related frontmatter 解析(knowledge-meta-builder)。**真 gap**：① KT→KP 拓扑防泄漏护栏未硬编码(§4 铁律缺执行) ② Stop hook 未 emit graph_edge_candidate_requested ③ hooks 未自动 include_related + 无 graph-empty 诚实显示 ④ doctor cite-coverage 未按 store 分列 + recall provenance 无 store 字段。LLM 抽 related=skill-doc; doctor 共现补边=§7 speculative。

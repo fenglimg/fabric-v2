@@ -152,11 +152,9 @@
       "subject": "隐私物理隔离 + leak guard pre-flight",
       "done_when": "KT artifacts(events/counter/keyed/cite) 落 ./.fabric; KP 落 ~/.fabric; leak guard 硬编码进 fabric-archive/import skill pre-flight; doctor 唯一跨轨合并者合并态留本地不回写项目; grep ./.fabric 含任何 KP-* id/引用/计数/拓扑边 = 0",
       "ship_criteria_alignment": ["F-EFF-2 multi-store", "隐私铁律"], "alignment_strength": "direct",
-      "status": "needs_adjudication",
-      "adjudication_ref": "ADJ-1",
-      "partial_done": "拓扑边铁律完成+验证(isForbiddenCrossLayerEdge 真剥离, agents.meta.json KP=0 实测); 路径分离已存在(KT→./.fabric KP→~/.fabric); SKILL.md §4 pre-flight 禁令。",
-      "blocked_on": "done_when 的 'grep ./.fabric KP=0' 判据: events.jsonl 实测 296 KP refs(server recall surfacing 遥测), 触 §4 vs §2 未建模张力 → 升 ADJ-1。诚实不带泄漏标绿。",
-      "verification": { "method": "deterministic", "verifier": "拓扑部分: 主控审计 isForbiddenCrossLayerEdge 真剥离+agents.meta.json KP=0; events 部分: grep events.jsonl KP=296 → ADJ-1", "evidence": "拓扑铁律 done(实测剥离日志+meta KP=0); events.jsonl personal-id 遥测泄漏=pre-existing §4/§2 架构张力, 非本重构引入, 升 human 拍板(ADJ-1, 推荐精化 §4 语义)", "verified_at": null }
+      "status": "done",
+      "adjudication_ref": "ADJ-1 (resolved: option B)",
+      "verification": { "method": "deterministic", "verifier": "拓扑: isForbiddenCrossLayerEdge 真剥离+agents.meta.json KP=0; events.jsonl KP=296 经 ADJ-1 用户裁决=合规", "evidence": "ADJ-1 用户拍板 option B(精化 §4 语义): surfacing 遥测记录 read-set 含 personal 是 §2 合法结果, §4 实质守护对象=personal authored 知识+cite 归因(已隔离: agents.meta.json KP=0 + pending 分轨写 ~/.fabric)。故当前状态合规, 零额外代码。拓扑铁律实测剥离日志+meta KP=0", "verified_at": "2026-06-03T04:10:00Z" }
     },
     {
       "id": "W3-T4", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -216,7 +214,8 @@
         "C 中间: 项目账本遥测保留 surfaced ids 但 doctor 合并/导出时脱敏 personal(合并态留本地, §4 已有'doctor 唯一跨轨合并者')。"
       ],
       "recommendation": "倾向 B(精化语义): surfacing 遥测记录 read-set(含 personal)是 §2 的直接结果, 把它当泄漏会与 §2 观测目标冲突; §4 铁律的实质守护对象是 personal 的 authored 知识与 cite 归因(已隔离: agents.meta.json KP=0 + pending 分轨写 ~/.fabric), 而非'team session 看过哪些 personal KB'的只读遥测。但这改变 §4 文字含义, 属产品设计决策, 升你拍板。",
-      "blocking": false, "status": "pending-user" }
+      "blocking": false, "status": "resolved",
+      "resolution": "用户 2026-06-03 拍板 option B(精化 §4 语义)。§4 实质守护对象=personal authored 知识+cite 归因(已隔离), surfacing 遥测含 personal=§2 read-set 合法结果非泄漏。当前状态合规, 零额外代码。W3-T3 标 done。" }
   ],
   "waves": [
     { "wave": 1, "title": "可观测性地基", "tasks": ["W1-T1", "W1-T2", "W1-T3", "W1-T4"], "shippable": true },
@@ -225,11 +224,11 @@
   ],
   "current_step": 0,
   "current_round": 3,
-  "status": "partial-complete",
+  "status": "completed",
   "loop_exit_status": {
-    "reached": false,
-    "terminate_reason": "needs_adjudication",
-    "summary": "13/14 task done (Wave 1/2 全 done, Wave 3 4/5 done); W3-T3 升 ADJ-1(events.jsonl personal-id 遥测泄漏=§4 vs §2 未建模张力, pre-existing 非本重构引入, 升 human 拍板)。8 commit 落 feat/lifecycle-refactor, 全仓 2317 tests passed + tsc 0(8 失败文件全 pre-existing server-http-experimental 链接缺失)。",
-    "at": "2026-06-03T04:00:00Z"
+    "reached": true,
+    "terminate_reason": "ALL_GOALS_DONE",
+    "summary": "14/14 task done (Wave 1/2/3 全 done; W3-T3 经 ADJ-1 用户拍板 option B=精化 §4 语义后合规标 done)。9 commit 落 feat/lifecycle-refactor, 全仓 2317 tests passed + tsc 0(8 失败文件全 pre-existing server-http-experimental workspace 链接缺失, 本分支零改动该包)。Deferred(诚实记录): doctor 共现补边(§7 speculative); 活体 dogfood 需 fabric install 刷新本 repo stale 安装资产(orthogonal)。",
+    "at": "2026-06-03T04:10:00Z"
   }
 }
