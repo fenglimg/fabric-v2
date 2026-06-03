@@ -1058,6 +1058,20 @@ function renderCiteCoverageReport(
       `  ${dt("doctor.cite.metric.sessionsClosed")}: ${report.metrics.sessions_closed.count}`,
     );
   }
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+  // qualifying-cite breakdown on its OWN lines, strictly SEPARATE from the
+  // compliance rate above. A pure diagnostic split — never folded into adherence
+  // (honesty 铁律). Project-local cites bucket under "local". Only rendered when
+  // the server populated the map (≥1 cite observed in window).
+  if (report.metrics.by_store !== undefined) {
+    const storeKeys = Object.keys(report.metrics.by_store).sort();
+    if (storeKeys.length > 0) {
+      lines.push(`  ${dt("doctor.cite.metric.byStore")}:`);
+      for (const store of storeKeys) {
+        lines.push(`    ${store}: ${report.metrics.by_store[store].qualifying_cites}`);
+      }
+    }
+  }
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)

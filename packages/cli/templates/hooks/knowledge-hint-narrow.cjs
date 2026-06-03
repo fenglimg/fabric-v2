@@ -1172,7 +1172,15 @@ function formatEntryLine(entry, maxLen) {
   const maturity = entry.maturity || "unknown";
   const summary = truncateSummary(entry.summary, maxLen);
   const tail = summary.length > 0 ? ` ${summary}` : "";
-  return `  [${id}] (${type}/${maturity})${tail}`;
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): mark entries
+  // pulled in by a surfaced entry's one-hop `related` graph edge with their source
+  // provenance. Omitted for ordinarily-ranked entries — no fake graph annotation
+  // is ever synthesized (graph-empty honesty).
+  const provenance =
+    typeof entry.related_to === "string" && entry.related_to.length > 0
+      ? ` (related-to-${entry.related_to})`
+      : "";
+  return `  [${id}] (${type}/${maturity})${tail}${provenance}`;
 }
 
 function readSummaryMaxLen(projectRoot) {

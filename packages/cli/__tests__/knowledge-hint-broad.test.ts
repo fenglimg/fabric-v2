@@ -32,6 +32,9 @@ type NarrowEntry = {
   type: string;
   maturity: string;
   summary: string;
+  // lifecycle-refactor W3-T2 (§7 图谱消费): graph-edge provenance for entries
+  // pulled in via a surfaced entry's `related` edge. Optional.
+  related_to?: string;
 };
 
 type Payload = {
@@ -1133,6 +1136,39 @@ describe("knowledge-hint-broad.cjs — v1-receipt stance (protocol v2 cut)", () 
       expect(writes).toEqual([]);
     } finally {
       spy.mockRestore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): the broad
+// hint renders `related-to-<id>` provenance for entries pulled in by the graph
+//二阶召回, and stays an honest no-op (no annotation) for ordinarily-ranked
+// entries — graph-empty never synthesizes a fake "related" marker.
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-broad.cjs — related二阶 provenance rendering (W3-T2)", () => {
+  it("tags a graph-pulled entry with (related-to-<id>) and leaves ranked entries clean", () => {
+    const narrow: NarrowEntry[] = [
+      makeEntry("KT-DEC-0001", "decision", "proven", "ranked entry"),
+      { ...makeEntry("KT-DEC-0002", "decision", "proven", "graph neighbour"), related_to: "KT-DEC-0001" },
+    ];
+    const lines = hook.renderFull(narrow);
+    const ranked = lines.find((l) => l.includes("KT-DEC-0001"));
+    const pulled = lines.find((l) => l.includes("KT-DEC-0002"));
+    expect(pulled).toContain("(related-to-KT-DEC-0001)");
+    // The ordinarily-ranked entry never gets a fake provenance tag.
+    expect(ranked).not.toContain("related-to");
+  });
+
+  it("graph-empty honest no-op: entries with no related_to render no provenance", () => {
+    const narrow: NarrowEntry[] = [
+      makeEntry("KT-DEC-0001", "decision", "proven", "a"),
+      makeEntry("KT-DEC-0002", "decision", "proven", "b"),
+    ];
+    const lines = hook.renderFull(narrow);
+    for (const l of lines) {
+      expect(l).not.toContain("related-to");
     }
   });
 });

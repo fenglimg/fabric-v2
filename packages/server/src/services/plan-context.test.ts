@@ -1618,6 +1618,130 @@ describe("planContext BM25 model cache (ISS-024)", () => {
   });
 });
 
+// lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): planContext
+// include_related二阶召回. Seeds a registry where a high-ranking entry declares a
+// `related` edge to a low-ranking neighbour that top_k would drop; asserts the
+// neighbour is pulled back in + provenance is reported, and the graph-empty path
+// stays an honest no-op.
+describe("planContext include_related graph二阶召回 (W3-T2)", () => {
+  async function seedRelatedRegistry(
+    projectRoot: string,
+    opts: { topK?: number; withEdge?: boolean } = {},
+  ): Promise<void> {
+    const withEdge = opts.withEdge !== false;
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    if (opts.topK !== undefined) {
+      await writeFile(
+        join(projectRoot, "fabric.config.json"),
+        `${JSON.stringify({ plan_context_top_k: opts.topK }, null, 2)}\n`,
+      );
+    }
+    // KT-DEC-9201: strongly matches the intent (ranks top). KT-DEC-9202: the
+    // neighbour, irrelevant to the intent (ranks last → dropped by topK=1).
+    const topic = (id: string, file: string, summary: string, related: string[]) => ({
+      stable_id: id,
+      file,
+      content_ref: file,
+      scope_glob: "**",
+      hash: `sha256:${id}`,
+      identity_source: "declared",
+      description: {
+        summary,
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        must_read_if: "",
+        id,
+        knowledge_type: "decisions",
+        maturity: "verified",
+        knowledge_layer: "team",
+        created_at: "2026-05-10T00:00:00Z",
+        relevance_scope: "broad",
+        relevance_paths: [],
+        ...(related.length > 0 ? { related } : {}),
+      },
+    });
+    const nodes: Record<string, unknown> = {
+      "KT-DEC-9201": topic(
+        "KT-DEC-9201",
+        ".fabric/knowledge/decisions/auth.md",
+        "Authentication token refresh rotation strategy decision",
+        withEdge ? ["KT-DEC-9202"] : [],
+      ),
+      "KT-DEC-9202": topic(
+        "KT-DEC-9202",
+        ".fabric/knowledge/decisions/colors.md",
+        "Palette gradient swatch tints for marketing brochures",
+        [],
+      ),
+    };
+    for (const [id, n] of Object.entries(nodes)) {
+      const file = (n as { file: string }).file;
+      const desc = (n as { description: { summary: string; related?: string[] } }).description;
+      const summary = desc.summary;
+      // related must live in the frontmatter too — loadActiveMetaOrStale may
+      // re-derive the meta from disk, so a meta-only `related` would be dropped.
+      const relatedLine =
+        desc.related && desc.related.length > 0 ? [`related: [${desc.related.join(", ")}]`] : [];
+      await writeFile(
+        join(projectRoot, file),
+        ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", ...relatedLine, "---", `# ${id}`, ""].join("\n"),
+      );
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-related", nodes }, null, 2)}\n`,
+    );
+  }
+
+  it("appends the one-hop related neighbour dropped by top_k and reports provenance", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelatedRegistry(projectRoot, { topK: 1, withEdge: true });
+
+    // top_k=1 → only the auth decision survives ranking; its `related` edge to the
+    // colors decision pulls that neighbour back in despite ranking last.
+    const result = await planContext(projectRoot, {
+      paths: ["src/auth.ts"],
+      intent: "authentication token refresh rotation",
+      include_related: true,
+    });
+
+    const ids = result.candidates.map((c) => c.stable_id);
+    expect(ids).toContain("KT-DEC-9201"); // surfaced by ranking
+    expect(ids).toContain("KT-DEC-9202"); // pulled in via related二阶
+    expect(result.related_appended).toEqual({ "KT-DEC-9202": "KT-DEC-9201" });
+  });
+
+  it("graph-empty honest no-op: no related edge → no append, field omitted", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelatedRegistry(projectRoot, { topK: 1, withEdge: false });
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/auth.ts"],
+      intent: "authentication token refresh rotation",
+      include_related: true,
+    });
+
+    // top_k=1 + no related edge → only the top-ranked entry, no fake graph append.
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9201"]);
+    expect(result).not.toHaveProperty("related_appended");
+  });
+
+  it("include_related off (default) never appends — byte-identical to pre-W3-T2", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelatedRegistry(projectRoot, { topK: 1, withEdge: true });
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/auth.ts"],
+      intent: "authentication token refresh rotation",
+    });
+
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9201"]);
+    expect(result).not.toHaveProperty("related_appended");
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
   tempDirs.push(projectRoot);

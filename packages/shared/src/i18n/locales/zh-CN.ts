@@ -177,6 +177,8 @@ export const zhCNMessages: Messages = {
     "mutation 归因池 (经 source_event_id 的 low-confidence 归因)",
   "doctor.cite.metric.sessionsClosed":
     "已闭合 session 数 (SessionEnd marker — funnel 边界)",
+  "doctor.cite.metric.byStore":
+    "按 store 拆分的合规 cite 数 (诊断拆分 — 不计入真遵循度; 'local' = 本项目)",
   "doctor.cite.section.perClient": "按客户端拆分",
   "doctor.cite.section.dismissedReasons": "驳回原因分布",
   "doctor.cite.dismissed.scope-mismatch": "范围不符",

@@ -5380,6 +5380,74 @@ describe("rollupCiteAuditIfNeeded", () => {
   });
 });
 
+// lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): cite-coverage
+// breaks qualifying cites down per store via the cite_stores[i] qualifier, as a
+// PURE diagnostic split that never touches the compliance numerator.
+describe("cite-coverage by_store breakdown (W3-T4)", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    writeFileSync(ledgerPath, existing + events.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+  }
+  function storeTurn(
+    id: string,
+    ts: number,
+    cites: Array<{ id: string; store: string | null }>,
+  ): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `event:${id}`,
+      ts,
+      schema_version: 1,
+      session_id: `sess-${id}`,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: `KB: ${cites.map((c) => (c.store ? `${c.store}:${c.id}` : c.id)).join(", ")} [applied]`,
+      cite_ids: cites.map((c) => c.id),
+      cite_tags: cites.map(() => "applied"),
+      cite_stores: cites.map((c) => c.store),
+      client: "cc",
+      turn_id: id,
+      timestamp: new Date(ts).toISOString(),
+    };
+  }
+
+  it("buckets qualifying cites per store; bare ids fall under 'local'; never touches compliance", async () => {
+    const target = createInitializedProject("cite-by-store");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      // one team-store cite, one personal-store cite, one bare (project-local) cite.
+      storeTurn("t1", marker.marker_ts + 10, [{ id: "KT-DEC-0001", store: "team" }]),
+      storeTurn("t2", marker.marker_ts + 20, [{ id: "KP-DEC-0009", store: "personal" }]),
+      storeTurn("t3", marker.marker_ts + 30, [{ id: "KT-DEC-0002", store: null }]),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.status).toBe("ok");
+    // 3 applied cites total — the compliance count is unchanged by the split.
+    expect(report.metrics.qualifying_cites).toBe(3);
+    expect(report.metrics.by_store).toEqual({
+      team: { qualifying_cites: 1 },
+      personal: { qualifying_cites: 1 },
+      local: { qualifying_cites: 1 },
+    });
+    // by_store is a sibling of qualifying_cites — summing the buckets matches it.
+    const summed = Object.values(report.metrics.by_store ?? {}).reduce(
+      (a, b) => a + b.qualifying_cites,
+      0,
+    );
+    expect(summed).toBe(report.metrics.qualifying_cites);
+  });
+
+  it("omits by_store when no cite is observed (steady-state shape unchanged)", async () => {
+    const target = createInitializedProject("cite-by-store-empty");
+    writeFile(".fabric/events.jsonl", "", target);
+    await ensureCitePolicyActivatedMarker(target);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics).not.toHaveProperty("by_store");
+  });
+});
+
 // v2.0.0-rc.39 (P1 emit-fold): empty-shell turns fold into metrics.jsonl counter
 // rows; the live cite-coverage / emit-cadence readers add them back so the
 // metric stays invariant across the fold.

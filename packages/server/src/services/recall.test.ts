@@ -206,6 +206,35 @@ describe("recall (one-call combined service — NEW-3)", () => {
     );
   });
 
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7): recall rules
+  // carry store provenance derived from the (cross-store-stamped) `<alias>:<id>`
+  // prefix. Project-local entries (bare id) omit the field.
+  it("omits store provenance for project-local rules (bare ids)", async () => {
+    const projectRoot = await seedTwoEntryProject();
+    const result = await recall(projectRoot, { paths: ["src/index.ts"] });
+    // All rules are project-local → no `store` field synthesized.
+    expect(result.rules.length).toBeGreaterThan(0);
+    for (const rule of result.rules) {
+      expect(rule).not.toHaveProperty("store");
+    }
+  });
+
+  it("attaches store provenance derived from a `<alias>:<id>` cross-store qualifier", async () => {
+    // Unit on the pure derivation: cross-store-recall stamps `<alias>:<id>`, and
+    // attachStoreProvenance surfaces that alias as a structured field; a bare id
+    // yields no field.
+    const { attachStoreProvenance } = await import("./recall.js");
+    expect(attachStoreProvenance({ stable_id: "team:KT-DEC-0001", body: "x" })).toEqual({
+      stable_id: "team:KT-DEC-0001",
+      body: "x",
+      store: { alias: "team" },
+    });
+    expect(attachStoreProvenance({ stable_id: "KT-DEC-0001", body: "x" })).toEqual({
+      stable_id: "KT-DEC-0001",
+      body: "x",
+    });
+  });
+
   it("surfaces a truncation summary + next_steps hint when the budget omits candidates", async () => {
     const projectRoot = await seedTwoEntryProject();
     // top_k=1 over two candidates → one omitted by the retrieval budget.

@@ -574,7 +574,18 @@ function truncateSummary(raw, maxLen) {
 function formatEntryLine(entry, maxLen) {
   const id = entry.id || "(no-id)";
   const summary = truncateSummary(entry.summary, maxLen);
-  return summary.length > 0 ? `    - ${id} · ${summary}` : `    - ${id}`;
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when this
+  // entry was pulled in by following a surfaced entry's `related` graph edge,
+  // tag the line with its provenance so the agent knows it arrived via the graph,
+  // not its own ranking. Omitted entirely for ordinarily-ranked entries — no fake
+  // "related" annotation is ever synthesized (graph-empty honesty).
+  const provenance =
+    typeof entry.related_to === "string" && entry.related_to.length > 0
+      ? ` (related-to-${entry.related_to})`
+      : "";
+  return summary.length > 0
+    ? `    - ${id} · ${summary}${provenance}`
+    : `    - ${id}${provenance}`;
 }
 
 /**

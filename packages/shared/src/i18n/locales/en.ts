@@ -183,6 +183,8 @@ export const enMessages: Messages = {
     "mutation pool (low-confidence attribution via source_event_id)",
   "doctor.cite.metric.sessionsClosed":
     "sessions closed (SessionEnd markers — funnel boundary)",
+  "doctor.cite.metric.byStore":
+    "qualifying cites by store (diagnostic split — NOT counted toward adherence; 'local' = project)",
   "doctor.cite.section.perClient": "Per-client",
   "doctor.cite.section.dismissedReasons": "Dismissed reasons",
   "doctor.cite.dismissed.scope-mismatch": "Scope mismatch",

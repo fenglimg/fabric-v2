@@ -527,6 +527,15 @@ export const assistantTurnObservedEventSchema = z.object({
       skip_reason: z.string().nullable(),
     }),
   ).default([]),
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-cite store
+  // qualifier, index-aligned with cite_ids. Mirrors the cite-line-parser's
+  // `cite_stores` output (`<alias-or-uuid>:<id>` → the qualifier; a bare id →
+  // null). Persists the store provenance the parser already extracts so
+  // doctor --cite-coverage can break compliance down per store WITHOUT joining
+  // against the store registry. Additive `.optional()` (NOT `.default([])`) so
+  // existing inline event constructors stay valid without supplying it — pre-W3-T4
+  // events parse with the field absent and bucket under the project-local default.
+  cite_stores: z.array(z.string().nullable()).optional(),
   client: z.enum(["cc", "codex", "cursor"]).optional(),
   turn_id: z.string(),
   envelope_index: z.number().int().nonnegative().optional(),

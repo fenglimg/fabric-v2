@@ -222,6 +222,12 @@ export const planContextOutputSchema = z.object({
   // (field omitted) when no actionable redirects exist for the surfaced
   // candidate set. See packages/server/src/services/id-redirect.ts.
   redirects: z.record(z.string()).optional(),
+  // lifecycle-refactor W3-T2 (§7 图谱消费): related-expansion provenance map
+  // (appended id → surfaced source id). Present only when `include_related` was
+  // requested AND at least one in-corpus one-hop neighbour was appended. Omitted
+  // on the graph-empty / steady-state path. Additive — declare it here or zod
+  // strips it on output validation.
+  related_appended: z.record(z.string()).optional(),
 });
 
 export const planContextAnnotations = {
@@ -477,6 +483,14 @@ export const recallOutputSchema = z.object({
       level: z.enum(["L0", "L1", "L2"]),
       path: z.string(),
       body: z.string(),
+      // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7 物理 store
+      // 边界对 AI 可见): per-rule store provenance so the caller can trace which
+      // store each recalled entry came from. cross-store-recall already prefixes
+      // store entries `<alias>:<stable_id>`; this surfaces that as a structured
+      // field (`{ alias }`) instead of forcing the caller to parse the id. Omitted
+      // for project-local entries (no alias prefix). Additive — declare it or zod
+      // strips it on output validation.
+      store: z.object({ alias: z.string() }).optional(),
     }),
   ),
   selected_stable_ids: z.array(z.string()),

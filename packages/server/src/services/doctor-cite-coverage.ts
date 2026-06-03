@@ -299,6 +299,14 @@ export type CiteCoverageReport = {
     // sessions that appended a `session_ended` marker (funnel-closed boundary).
     // Pure observability marker — never joined into a rate.
     sessions_closed?: { count: number };
+    // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+    // breakdown of qualifying cites, keyed by the cite's `cite_stores[i]`
+    // qualifier (the project-local store collapses under the "local" key when a
+    // cite carried no `<store>:` prefix). count = `applied` cites tagged with that
+    // store. STRICTLY ADDITIVE — a pure diagnostic split of qualifying_cites that
+    // NEVER feeds cite_compliance_rate (honesty 铁律, W1-T3). Omitted when no cite
+    // was observed in window.
+    by_store?: Record<string, { qualifying_cites: number }>;
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -979,6 +987,14 @@ export async function runDoctorCiteCoverage(
   let qualifyingCites = 0;
   let recalledUnverified = 0;
 
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+  // qualifying-cite accumulator. Keyed by the cite's `cite_stores[i]` qualifier;
+  // a null/absent qualifier (project-local cite) buckets under "local". STRICTLY
+  // a diagnostic split of qualifying_cites — it is built ALONGSIDE the qualifying
+  // count and NEVER feeds the compliance numerator/denominator (honesty 铁律).
+  const STORE_LOCAL_KEY = "local";
+  const byStoreQualifying: Record<string, number> = {};
+
   for (const turn of filteredTurns) {
     totalTurns += 1;
     bumpClient(turn.client, (m) => {
@@ -1040,6 +1056,21 @@ export async function runDoctorCiteCoverage(
         default:
           break;
       }
+    }
+
+    // lifecycle-refactor W3-T4 (§2 store 轴): per-store qualifying-cite split.
+    // Walk cite_ids[i] ⋈ cite_tags[i] ⋈ cite_stores[i] (index-aligned by
+    // construction — the cite-line-parser builds all three from the same primary
+    // id group). An `applied` cite bumps its store bucket; a missing/ null
+    // qualifier (local cite) buckets under "local". This stays SEPARATE from the
+    // qualifying_cites total above and is never folded into compliance.
+    const turnCiteStores = turn.cite_stores ?? [];
+    for (let i = 0; i < turn.cite_ids.length; i += 1) {
+      const tag = turn.cite_tags[i];
+      if (categorizeCiteTag(typeof tag === "string" ? tag : "none").category !== "applied") continue;
+      const rawStore = turnCiteStores[i];
+      const storeKey = typeof rawStore === "string" && rawStore.length > 0 ? rawStore : STORE_LOCAL_KEY;
+      byStoreQualifying[storeKey] = (byStoreQualifying[storeKey] ?? 0) + 1;
     }
 
     // v2.1.0-rc.1 (ADJ-P4-1): `recalled_unverified` retains its report-contract
@@ -1325,6 +1356,16 @@ export async function runDoctorCiteCoverage(
       unattributed_workspace_dirty: unattributedWorkspaceDirty,
     },
     sessions_closed: { count: closedSessions.size },
+    // lifecycle-refactor W3-T4 (§2 store 轴): per-store qualifying-cite breakdown.
+    // Diagnostic split of qualifying_cites only — never touches compliance.
+    // Omitted when no cite was observed (empty map → no field).
+    ...(Object.keys(byStoreQualifying).length > 0
+      ? {
+          by_store: Object.fromEntries(
+            Object.entries(byStoreQualifying).map(([store, count]) => [store, { qualifying_cites: count }]),
+          ),
+        }
+      : {}),
   };
 
   // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were

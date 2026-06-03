@@ -144,8 +144,8 @@
       "subject": "图谱消费: SessionStart/PreToolUse 沿 related 二阶召回",
       "done_when": "召回沿 related 边追加对端节点(标 reason: related-to-{id}); 边=0 时诚实 no-op 显示 graph empty(不假装有图)",
       "ship_criteria_alignment": ["F-EFF-1"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "有边→二阶召回; 空图→graph empty", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控复跑 plan-context.test+hook 渲染测试 329+169 passed + tsc 0", "evidence": "verify-before-fix: include_related 二阶召回 recall.ts 已稳健存在(未重写); gap=透传链: plan-context.ts 加 include_related(top_k 后追一跳 related 邻居+provenance map), plan-context-hint CLI 默认 include_related:true, 两 hook formatEntryLine 渲染 (related-to-<id>); graph-empty 诚实: 无 in-corpus related 边时 related_appended 字段整省略+hook 无后缀, 绝不合成假 related", "verified_at": "2026-06-03T03:52:00Z" }
     },
     {
       "id": "W3-T3", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -160,8 +160,8 @@
       "subject": "store-qualified cite + provenance",
       "done_when": "cite 解析要求 store 前缀(team:KT-*/personal:KP-*); read-set = required_stores ∪ personal; doctor --cite-coverage 按 store 分列; MCP recall provenance 标 store",
       "ship_criteria_alignment": ["F-EFF-2", "§2 store 轴"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "cite 解析 store-qualified test; doctor 分 store 输出", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控复跑 doctor.test by_store 桶+recall provenance + tsc 0; 审计 by_store 独立累加器不污染 compliance", "evidence": "verify-before-fix: cite store: 前缀解析(cite-line-parser)+cross-store qualify 已存在; gap=① doctor cite-coverage 加 metrics.by_store{[alias]:{qualifying_cites}}(独立累加器 byStoreQualifying, 桶和=总数, 绝不进 compliance 分子分母, 诚实铁律) ② recall rules 加 store{alias} provenance(从 <alias>:<id> 前缀派生); 关键发现: cite_stores 被 parser 解析但未持久化进 assistant_turn_observed event → additive 加 cite_stores? optional 字段(读侧 ??[] 兜底, 历史事件归 local 不注水)", "verified_at": "2026-06-03T03:52:00Z" }
     },
     {
       "id": "W3-T5", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -195,7 +195,9 @@
     { "sha": "870bcc3", "wave": 2, "tasks": ["W2-T1", "W2-T2", "W2-T3"], "branch": "feat/lifecycle-refactor",
       "summary": "4 event 类型 + SessionEnd/PostToolUse marker hook 激活 + 三端注册/install 接线; 21 新测试+tsc 0" },
     { "sha": "7bcecae", "wave": 2, "tasks": ["W2-T4", "W2-T5"], "branch": "feat/lifecycle-refactor",
-      "summary": "doctor 消费 file_mutated 重建 mutation funnel(mutations_observed/mutation_pool/sessions_closed); i18n snapshot 回灌; doctor.test 276+tsc 0" }
+      "summary": "doctor 消费 file_mutated 重建 mutation funnel(mutations_observed/mutation_pool/sessions_closed); i18n snapshot 回灌; doctor.test 276+tsc 0" },
+    { "sha": "d755cbd", "wave": 3, "tasks": ["W3-T1", "W3-T3"], "branch": "feat/lifecycle-refactor",
+      "summary": "KT→KP 隐私护栏(§4 铁律 isForbiddenCrossLayerEdge 真剥离) + Stop hook emit graph_edge_candidate_requested + SKILL.md LLM 抽 related; 40+8 测试+tsc 0" }
   ],
   "needs_adjudication": [],
   "waves": [

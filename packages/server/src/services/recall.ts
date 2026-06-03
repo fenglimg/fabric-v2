@@ -50,6 +50,12 @@ export type RecallResult = PlanContextResult & {
     level: "L0" | "L1" | "L2";
     path: string;
     body: string;
+    // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7): per-rule
+    // store provenance. cross-store-recall stamps candidate ids `<alias>:<id>`;
+    // this surfaces that store alias as a structured field so the caller can
+    // trace each recalled entry to its origin store without re-parsing the id.
+    // Omitted for project-local entries (bare id, no alias prefix). Additive.
+    store?: { alias: string };
   }>;
   selected_stable_ids: string[];
   diagnostics: Array<{
@@ -171,11 +177,26 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
 
   return {
     ...planResult,
-    rules: sectionsResult.rules,
+    rules: sectionsResult.rules.map(attachStoreProvenance),
     selected_stable_ids: sectionsResult.selected_stable_ids,
     diagnostics: sectionsResult.diagnostics,
     ...packaging,
   };
+}
+
+// lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): derive per-rule
+// store provenance from a store-qualified stable_id. cross-store-recall stamps
+// candidate ids `<alias>:<stable_id>` (the local id is a `K[PT]-...` token that
+// never contains a colon, so the prefix before the FIRST colon is the alias).
+// A bare (project-local) id yields no `store` field. Pure + additive — only
+// attaches the optional field; never mutates the existing rule shape.
+export function attachStoreProvenance<T extends { stable_id: string }>(rule: T): T & { store?: { alias: string } } {
+  const colon = rule.stable_id.indexOf(":");
+  if (colon <= 0) {
+    return rule;
+  }
+  const alias = rule.stable_id.slice(0, colon);
+  return { ...rule, store: { alias } };
 }
 
 // v2.2 MC1-recall-pack (W2-T4): assemble the directive / next_steps / truncation
