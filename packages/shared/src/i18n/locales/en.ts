@@ -170,6 +170,11 @@ export const enMessages: Messages = {
   "doctor.cite.metric.uncorrelatableEdits": "Uncorrelatable edits (no session_id — stale hook? run `fabric install`)",
   "doctor.cite.metric.recallCoverage": "recall coverage (edits preceded by a relevant fab_recall)",
   "doctor.cite.metric.recallCoverageNA": "N/A (no correlatable edits)",
+  // v2.2.0-rc.1 W1-T3 (cite 诚实拆分): WEAK auxiliary signal, rendered separately
+  // from the compliance rate. The parenthetical MUST state it is not counted
+  // toward true adherence (honesty 铁律).
+  "doctor.cite.metric.exposedAndMutated":
+    "exposed & mutated (weak auxiliary signal — NOT counted toward true adherence)",
   "doctor.cite.section.perClient": "Per-client",
   "doctor.cite.section.dismissedReasons": "Dismissed reasons",
   "doctor.cite.dismissed.scope-mismatch": "Scope mismatch",

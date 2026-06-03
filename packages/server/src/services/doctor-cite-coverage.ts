@@ -270,6 +270,16 @@ export type CiteCoverageReport = {
     // edits). Additive — legacy first-line-`KB:` metrics are unchanged.
     recall_backed_edits?: number;
     recall_coverage_rate?: number | null;
+    // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
+    // WEAK auxiliary signal — strictly SEPARATE from cite_compliance_rate. It MUST
+    // NOT be merged into compliance (the honesty 铁律): it estimates how many
+    // narrow PreToolUse-surfaced KB ids had their SPECIFIC contract glob edited
+    // (mutated) in the same session without being [dismissed]. Three conditions
+    // (see computeExposedAndMutated): narrow-surfaced + contract glob specific
+    // (excludes `**/*` and generic guidelines) + not dismissed this round.
+    // count = distinct (session, id) pairs; ids = sorted distinct stable_ids
+    // (diagnostics only). Additive — never touches the compliance numerator.
+    exposed_and_mutated?: { count: number; ids?: string[] };
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -387,6 +397,81 @@ function recallPathOverlaps(editPath: string, recallPaths: readonly string[]): b
     if (e.startsWith(r + "/") || r.startsWith(e + "/")) return true;
   }
   return false;
+}
+
+// v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): compute the WEAK auxiliary
+// `exposed_and_mutated` signal. This is intentionally factored out of
+// runDoctorCiteCoverage so the honesty boundary is reviewable in one place: it
+// returns its own object and NEVER mutates the compliance accumulators. It must
+// stay strictly separate from cite_compliance_rate.
+//
+// A (session_id, stable_id) pair qualifies when ALL THREE conditions hold:
+//   (1) narrow-surfaced  — the id appears in the rendered_ids of a
+//       `hook_surface_emitted` event whose hook_name === "knowledge-hint-narrow"
+//       in that session (the PreToolUse narrow injection).
+//   (2) contract glob specific — the id resolves to a NARROW kb entry whose
+//       relevance_paths are specific: at least one glob that is not the `**/*`
+//       (or `**`) catch-all, AND the entry's knowledge type is not a generic
+//       guideline (guidelines/processes are excluded — they are broad-by-nature
+//       and would dilute the signal).
+//   (3) mutated, not dismissed — a later `edit_intent_checked` in the SAME
+//       session edited a path matched by that id's specific relevance_paths, and
+//       the id was NOT carried under a `dismissed` cite_tag in that session.
+//
+// `narrowSurfacedBySession` maps session_id → Set<stable_id> from condition (1);
+// `dismissedBySession` maps session_id → Set<stable_id> dismissed in that session.
+// The join walks edits and checks the id's specific glob against the edit path —
+// the "exposed AND mutated" definition (lifecycle §3: 曝光且路径变更).
+type ExposedKbEntry = {
+  relevance_paths: readonly string[];
+  relevance_scope: "narrow" | "broad";
+};
+function isSpecificGlob(glob: string): boolean {
+  const g = glob.trim();
+  if (g.length === 0) return false;
+  // Exclude the catch-all wildcards that match everything — they carry no
+  // path-specific contract and would inflate the signal.
+  return g !== "**/*" && g !== "**" && g !== "*";
+}
+export function computeExposedAndMutated(args: {
+  narrowSurfacedBySession: Map<string, Set<string>>;
+  dismissedBySession: Map<string, Set<string>>;
+  editPathsBySession: Map<string, string[]>;
+  kbIndex: Map<string, ExposedKbEntry>;
+  idTypeMap: Map<string, string>;
+}): { count: number; ids: string[] } {
+  const { narrowSurfacedBySession, dismissedBySession, editPathsBySession, kbIndex, idTypeMap } = args;
+  const qualifiedIds = new Set<string>();
+  let count = 0;
+  for (const [sessionId, surfacedIds] of narrowSurfacedBySession) {
+    const editPaths = editPathsBySession.get(sessionId);
+    if (editPaths === undefined || editPaths.length === 0) continue;
+    const dismissed = dismissedBySession.get(sessionId);
+    for (const id of surfacedIds) {
+      // (3) not dismissed this round.
+      if (dismissed !== undefined && dismissed.has(id)) continue;
+      // (2a) must resolve to a NARROW kb entry with specific relevance_paths.
+      const kb = kbIndex.get(id);
+      if (kb === undefined || kb.relevance_scope !== "narrow") continue;
+      const specificGlobs = kb.relevance_paths.filter(isSpecificGlob);
+      if (specificGlobs.length === 0) continue;
+      // (2b) exclude generic guideline/process types — broad-by-nature.
+      const type = idTypeMap.get(id);
+      if (type === "guidelines" || type === "processes") continue;
+      // (3, join) mutated: a same-session edit matched a specific glob.
+      let mutated = false;
+      for (const p of editPaths) {
+        if (matchesRelevancePath(p, specificGlobs)) {
+          mutated = true;
+          break;
+        }
+      }
+      if (!mutated) continue;
+      count += 1;
+      qualifiedIds.add(id);
+    }
+  }
+  return { count, ids: [...qualifiedIds].sort() };
 }
 
 // v2.0.0-rc.39 (P1 emit-fold reader merge): empty-shell assistant_turn_observed
@@ -598,10 +683,14 @@ export async function runDoctorCiteCoverage(
   // (target_paths + final_stable_ids + session_id) — the recall→edit overlap
   // is the recall-based citation.
   type PlannedEvent = Extract<EventLedgerEvent, { event_type: "knowledge_context_planned" }>;
+  // v2.2.0-rc.1 W1-T3: narrow PreToolUse surface events feed the WEAK
+  // exposed_and_mutated signal (condition 1).
+  type HookSurfaceEvent = Extract<EventLedgerEvent, { event_type: "hook_surface_emitted" }>;
   const assistantTurns: TurnEvent[] = [];
   const editEvents: EditEvent[] = [];
   const fetchEvents: FetchEvent[] = [];
   const plannedEvents: PlannedEvent[] = [];
+  const hookSurfaceEvents: HookSurfaceEvent[] = [];
   for (const event of ledgerEvents) {
     switch (event.event_type) {
       case "assistant_turn_observed":
@@ -615,6 +704,9 @@ export async function runDoctorCiteCoverage(
         break;
       case "knowledge_context_planned":
         plannedEvents.push(event);
+        break;
+      case "hook_surface_emitted":
+        hookSurfaceEvents.push(event);
         break;
       default:
         break;
@@ -736,6 +828,11 @@ export async function runDoctorCiteCoverage(
 
   // session_id → Set<cite_id> for expected_but_missed correlation.
   const sessionCitedKbs = new Map<string, Set<string>>();
+
+  // v2.2.0-rc.1 W1-T3: session_id → Set<cite_id> that were [dismissed] this
+  // session — condition (3) of the WEAK exposed_and_mutated signal. Populated
+  // index-aligned (cite_tags[i] ⋈ cite_ids[i]) in the turn loop below.
+  const dismissedBySession = new Map<string, Set<string>>();
 
   // v2.0.0-rc.24 TASK-08: per-session edit-path index for contract operator
   // evaluation. Built once from the edit events partition; reused across the
@@ -863,6 +960,22 @@ export async function runDoctorCiteCoverage(
         set.add(id);
       }
       sessionCitedKbs.set(sid, set);
+
+      // v2.2.0-rc.1 W1-T3: record dismissed ids for the WEAK exposed_and_mutated
+      // signal (condition 3). cite_tags[i] is index-aligned with cite_ids[i]
+      // (same parallel-array convention the contract walk relies on). A
+      // `dismissed`/`dismissed:<reason>` tag on a real id marks that id dismissed
+      // this session. Bounds-checked: a trailing `KB: none` sentinel tag has no
+      // matching cite_ids slot and is skipped.
+      for (let i = 0; i < turn.cite_tags.length; i += 1) {
+        const id = turn.cite_ids[i];
+        if (typeof id !== "string" || id.length === 0) continue;
+        if (categorizeCiteTag(turn.cite_tags[i]).category === "dismissed") {
+          const dset = dismissedBySession.get(sid) ?? new Set<string>();
+          dset.add(id);
+          dismissedBySession.set(sid, dset);
+        }
+      }
     }
 
     // -------------------------------------------------------------------
@@ -1053,6 +1166,32 @@ export async function runDoctorCiteCoverage(
   // v2.1 ⑤: recall-based coverage rate over the correlatable edit population.
   const recallCoverageRate = editsTouched > 0 ? recallBackedEdits / editsTouched : null;
 
+  // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): compute the WEAK
+  // exposed_and_mutated signal — STRICTLY SEPARATE from cite_compliance_rate.
+  // Build narrowSurfacedBySession from the narrow PreToolUse hook_surface_emitted
+  // events (condition 1), then delegate the three-condition filter to
+  // computeExposedAndMutated. This object is attached to metrics as its OWN field
+  // and never feeds the compliance numerator/denominator above.
+  const narrowSurfacedBySession = new Map<string, Set<string>>();
+  for (const surface of hookSurfaceEvents) {
+    if (surface.hook_name !== "knowledge-hint-narrow") continue;
+    if (surface.delivery_status !== "delivered") continue;
+    const sid = surface.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const set = narrowSurfacedBySession.get(sid) ?? new Set<string>();
+    for (const id of surface.rendered_ids) {
+      if (typeof id === "string" && id.length > 0) set.add(id);
+    }
+    narrowSurfacedBySession.set(sid, set);
+  }
+  const exposedAndMutated = computeExposedAndMutated({
+    narrowSurfacedBySession,
+    dismissedBySession,
+    editPathsBySession: sessionEditPaths,
+    kbIndex,
+    idTypeMap,
+  });
+
   const metrics: CiteCoverageReport["metrics"] = {
     edits_touched: editsTouched,
     qualifying_cites: qualifyingCites,
@@ -1065,6 +1204,10 @@ export async function runDoctorCiteCoverage(
     uncorrelatable_edits: uncorrelatableEdits,
     recall_backed_edits: recallBackedEdits,
     recall_coverage_rate: recallCoverageRate,
+    exposed_and_mutated: {
+      count: exposedAndMutated.count,
+      ...(exposedAndMutated.ids.length > 0 ? { ids: exposedAndMutated.ids } : {}),
+    },
   };
 
   // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were

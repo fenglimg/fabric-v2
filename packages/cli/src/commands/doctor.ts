@@ -1027,6 +1027,16 @@ function renderCiteCoverageReport(
   if (uncorrelatable > 0) {
     lines.push(`  ${dt("doctor.cite.metric.uncorrelatableEdits")}: ${uncorrelatable}`);
   }
+  // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
+  // WEAK auxiliary signal, rendered on its OWN line strictly SEPARATE from the
+  // compliance rate above. The label explicitly states it is NOT counted toward
+  // the true (explicit `KB:`) adherence rate — the honesty 铁律: this weak
+  // signal must never dilute the real compliance number.
+  if (report.metrics.exposed_and_mutated !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.exposedAndMutated")}: ${report.metrics.exposed_and_mutated.count}`,
+    );
+  }
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)

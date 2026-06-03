@@ -77,18 +77,18 @@
     {
       "id": "W1-T3", "round": 1, "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "cite 诚实拆分 explicit vs exposed (doctor --cite-coverage)",
-      "done_when": "doctor.ts --cite-coverage 把 cite:applied(explicit)=人写 KB: 与 cite:exposed_and_mutated=曝光且路径变更 拆成两独立字段分列, 禁合并稀释; exposed 命中需三条件(narrow PreToolUse surfaced + contract glob 特异排除 **/*&通用 guidelines + 本轮未 dismissed); deterministic test 断言两字段不合并",
+      "done_when": "doctor-cite-coverage.ts 新增独立 metrics.exposed_and_mutated{count,ids?}, computeExposedAndMutated 三条件过滤(narrow hook_surface_emitted surfaced + relevance_paths 特异排除 **/*&guidelines/processes + 同 session edit_intent_checked join 且未 dismissed); 绝不混入 cite_compliance_rate; CLI 独立分列标注'弱信号不计入真遵循度'; additive schema",
       "ship_criteria_alignment": ["F-EFF-3 cite 2.5% 诚实拆分"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "fabric doctor --cite-coverage 输出两列; unit test", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控独立复跑: vitest doctor.test.ts 269/269 + 全仓 pnpm -r exec tsc --noEmit exit 0", "evidence": "子 Agent 实现+7 新单测, 主控独立验证全绿; positive 用例实证 compliance 仍诚实 0% 而 exposed=1(铁律落地); 反例覆盖 **/*不计/guideline不计/dismissed不计/broad不计/glob外不计; shared+server 双 rebuild; 改 doctor-cite-coverage.ts/api-contracts.ts/doctor.ts/i18n 双语", "verified_at": "2026-06-03T02:52:00Z" }
     },
     {
       "id": "W1-T4", "round": 1, "wave": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "Wave1 producer-consumer 验证 (确定性替代 dogfood)",
-      "done_when": "REFRAMED: 活体 dogfood 需新会话触发 SessionStart + 先 fabric install 刷新本 repo stale 安装资产(orthogonal, 非阻塞 follow-up)。改用确定性 harness 验证两 producer(broad+narrow)均 emit schema-valid hook_surface_emitted; consumer 侧(doctor cite split)归 W1-T3。依赖 W1-T3 完成后整体收口",
+      "done_when": "REFRAMED: 确定性 round-trip 已闭合 — producer(broad+narrow emit hook_surface_emitted) → consumer(doctor computeExposedAndMutated 消费 narrow hook_surface_emitted 产 exposed 信号)。W1-T3 的 positive 单测正是这条 producer→consumer 链(合成 narrow hook_surface_emitted → cite-coverage exposed=1)。活体 dogfood 需 fabric install 刷新 stale 安装资产(orthogonal 非阻塞)",
       "ship_criteria_alignment": ["F-EFF-4", "F-EFF-3"], "alignment_strength": "direct",
-      "status": "blocked",
-      "verification": { "method": "deterministic", "verifier": "broad+narrow harness 已过(见 W1-T1/T2); 等 W1-T3 cite split 后做 producer→consumer 整链", "evidence": "producer 侧两 hook emit 已确定性证实; consumer 侧待 W1-T3", "verified_at": null },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "producer harness(W1-T1/T2) + consumer 单测(W1-T3 positive 用例=合成 hook_surface_emitted→exposed)", "evidence": "整链确定性闭合; 比活体 dogfood 更强(可控反例); 活体 dogfood follow-up=fabric install 刷新安装资产", "verified_at": "2026-06-03T02:52:00Z" },
       "followup": "INSTALL-REFRESH: 本 repo .claude/hooks/ 整体相对模板 stale → 需 fabric install 刷新才能活体 dogfood; orthogonal install-drift, 非 lifecycle 重构本体, 非阻塞"
     },
     {
@@ -187,7 +187,10 @@
       "impact": "narrow 加 client-adapter require; client 不可测→skip emit(测试覆盖此分支)",
       "verify": "event-ledger.ts:711 client: z.enum([...]) 无 .optional()" }
   ],
-  "git_commits": [],
+  "git_commits": [
+    { "sha": "e47105e", "wave": 1, "tasks": ["W1-T1", "W1-T2"], "branch": "feat/lifecycle-refactor",
+      "summary": "narrow hook_surface_emitted emit + 3 测试; W1-T1 broad 反转记录" }
+  ],
   "needs_adjudication": [],
   "waves": [
     { "wave": 1, "title": "可观测性地基", "tasks": ["W1-T1", "W1-T2", "W1-T3", "W1-T4"], "shippable": true },
@@ -195,6 +198,6 @@
     { "wave": 3, "title": "图谱真闭环 + 隐私物理隔离 + store-qualified", "tasks": ["W3-T1", "W3-T2", "W3-T3", "W3-T4", "W3-T5"], "shippable": true }
   ],
   "current_step": 0,
-  "current_round": 1,
+  "current_round": 2,
   "status": "running"
 }

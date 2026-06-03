@@ -1278,6 +1278,28 @@ export const citeCoverageReportSchema = z.object({
     // legacy first-line-`KB:` metrics above are unchanged (back-compat).
     recall_backed_edits: z.number().int().nonnegative().optional(),
     recall_coverage_rate: z.number().min(0).max(1).nullable().optional(),
+    // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
+    // WEAK auxiliary signal — strictly SEPARATE from cite_compliance_rate (which
+    // is the true explicit-adherence rate, currently ~2.5%). It MUST NOT be
+    // merged into compliance: it estimates "a narrow PreToolUse-surfaced KB id
+    // whose contract-specific glob was subsequently edited (mutated) in the same
+    // session, and was not [dismissed] that round". It credits NOTHING toward the
+    // real `KB:`-line compliance — it is an observational hint that surfaced
+    // knowledge influenced an edit, surfaced ONLY as its own field so the renderer
+    // can label it "weak signal, NOT counted toward true adherence". Three
+    // conditions (all required): (1) id came from a `hook_surface_emitted` with
+    // hook_name === "knowledge-hint-narrow"; (2) the id's contract glob is
+    // SPECIFIC (excludes `**/*` wildcards and generic guideline-type entries);
+    // (3) the id was not [dismissed] in the same session. `count` = number of
+    // distinct (session_id, stable_id) pairs satisfying all three; `ids` =
+    // sorted distinct stable_ids (capped, diagnostics only). Always >= 0; null/
+    // absent on degraded/skipped reports.
+    exposed_and_mutated: z
+      .object({
+        count: z.number().int().nonnegative(),
+        ids: z.array(z.string()).optional(),
+      })
+      .optional(),
   }),
   per_client: z
     .record(

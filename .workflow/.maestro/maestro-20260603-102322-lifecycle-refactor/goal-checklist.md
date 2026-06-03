@@ -27,8 +27,10 @@
 ### Wave 1 — 可观测性地基（先修 `hook_surface_emitted=0`）
 - [x] **W1-T1** broad emit ✅ **verify-before-fix 反转**：源码已存在@b85f48f，0 行=orthogonal install-drift；harness 实证真 work
 - [x] **W1-T2** narrow 补 `hook_surface_emitted`（surfaced→edited join 左半）✅ 实现+3 测试+harness，98/98 过
-- [ ] **W1-T3** cite 诚实拆 explicit vs exposed（doctor `--cite-coverage` 两独立字段不合并）← **下一步**
-- [~] **W1-T4** producer-consumer 验证：producer 侧两 hook 已确定性证实；consumer 侧等 W1-T3；活体 dogfood 需 `fabric install` 刷新 stale 安装资产（orthogonal 非阻塞）
+- [x] **W1-T3** cite 诚实拆 explicit vs exposed ✅ `metrics.exposed_and_mutated` 独立字段+三条件过滤+CLI 分列；主控复跑 269/269 + 全仓 tsc exit 0；compliance 不被稀释（实证 0% vs exposed=1）
+- [x] **W1-T4** producer-consumer 确定性 round-trip 闭合 ✅（narrow hook_surface_emitted → cite-coverage exposed=1）；活体 dogfood 需 `fabric install` 刷新 stale 安装资产（orthogonal 非阻塞）
+
+**✅ Wave 1 完成**（地基：telemetry 三点闭环左/右半 + cite 诚实拆分）。
 
 > **GT 反转记录**（见 status.json `ground_truth_findings`）：计划假设「telemetry 全空白」部分被 ground-truth 推翻——broad emit 已存在、narrow 已记 edited path。真代码空白只剩 narrow 的 surfaced ids（已修）+ cite split（W1-T3）。
 
