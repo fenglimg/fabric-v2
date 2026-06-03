@@ -36,6 +36,12 @@
  *   - `cite_recall_window_minutes` (number, default 30, >=0) — how far back a
  *     recall counts as "for this edit". 0 = unbounded (any prior in-session
  *     recall of an overlapping path counts).
+ *   - `cite_nudge_ignore_globs` (string[], default [".workflow/**"]) — F2: edit
+ *     paths matching any glob are exempt from the nudge. Orchestration / meta
+ *     files (e.g. `.workflow/` scratchpads) are not source the cite policy is
+ *     meant to govern, so editing them should never demand a recall. User globs
+ *     are MERGED with the default (not replaced), so the `.workflow/` exemption
+ *     always holds. `*` = within a segment, `**` = across segments.
  *
  * Failure invariant: every error path (stdin parse, ledger read, config read,
  * emit failure) MUST end in silent exit 0. The hook never blocks the edit on
@@ -96,6 +102,75 @@ function readWindowMinutes(cwd) {
     min: 0,
     integer: true,
   });
+}
+
+// F2: meta/orchestration paths exempt from the cite nudge by default. The cite
+// policy governs SOURCE edits ("which knowledge informed this code change");
+// editing a `.workflow/` scratchpad is not such an edit, so nudging there is
+// pure noise with no clean opt-out before F2.
+const DEFAULT_CITE_NUDGE_IGNORE_GLOBS = [".workflow/**"];
+
+/**
+ * Read `.fabric/fabric-config.json#cite_nudge_ignore_globs` (string[]) and MERGE
+ * it with the built-in defaults. Any failure path (missing file, parse error,
+ * non-array, non-string entries) → defaults only. User entries never shrink the
+ * default exemption set; they only widen it.
+ */
+function readIgnoreGlobs(cwd) {
+  const out = [...DEFAULT_CITE_NUDGE_IGNORE_GLOBS];
+  try {
+    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.cite_nudge_ignore_globs)) {
+      for (const g of parsed.cite_nudge_ignore_globs) {
+        if (typeof g === "string" && g.length > 0 && !out.includes(g)) out.push(g);
+      }
+    }
+  } catch {
+    // fall through to defaults
+  }
+  return out;
+}
+
+/**
+ * Compile a simple glob to an anchored RegExp. `**` matches across path
+ * separators, `*` matches within a single segment; all other regex-special
+ * characters are escaped. Intentionally minimal — the patterns are short path
+ * prefixes like `.workflow/**`, not a full gitignore dialect.
+ */
+function globToRegExp(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        re += ".*";
+        i++;
+      } else {
+        re += "[^/]*";
+      }
+    } else if (".+?^${}()|[]\\/".includes(c)) {
+      re += "\\" + c;
+    } else {
+      re += c;
+    }
+  }
+  return new RegExp("^" + re + "$");
+}
+
+/**
+ * True if `normPath` (project-relative, forward-slashed) matches any ignore
+ * glob. Used to drop meta/orchestration edits from the nudge.
+ */
+function pathIsIgnored(normPath, globs) {
+  if (typeof normPath !== "string" || normPath.length === 0) return false;
+  for (const g of globs) {
+    try {
+      if (globToRegExp(g).test(normPath)) return true;
+    } catch {
+      // a malformed user glob never breaks the hook — just skip it
+    }
+  }
+  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -341,6 +416,15 @@ async function main(env, stdio) {
       return; // no recognizable edit target — silent
     }
 
+    // F2: drop meta/orchestration edits (e.g. `.workflow/` scratchpads) before
+    // nudging. If EVERY target is exempt, stay silent — the cite policy does not
+    // apply to these paths. A mixed batch keeps the non-exempt targets.
+    const ignoreGlobs = readIgnoreGlobs(cwd);
+    const nudgePaths = editPaths.filter((p) => !pathIsIgnored(normalizeForCompare(p, cwd), ignoreGlobs));
+    if (nudgePaths.length === 0) {
+      return; // all edit targets are cite-exempt — silent
+    }
+
     const sessionId = resolveSessionId(payload, env);
     const nowMs = env && typeof env.nowMs === "number" ? env.nowMs : Date.now();
     const windowMs = readWindowMinutes(cwd) * 60_000;
@@ -348,7 +432,7 @@ async function main(env, stdio) {
     const events = readEventsLedger(cwd);
     const decision = evaluateRecallCite({
       events,
-      editPaths,
+      editPaths: nudgePaths,
       sessionId,
       nowMs,
       windowMs,
@@ -364,7 +448,7 @@ async function main(env, stdio) {
     // additionalContext envelope. Codex/Cursor: stderr. Never a gate.
     const streams = (env && env.stdio) || stdio || {};
     const onClaudeCode = isClaudeCode() || (env && env.forceClaudeCode === true);
-    emitContext(renderNudge(editPaths), {
+    emitContext(renderNudge(nudgePaths), {
       client: onClaudeCode ? "cc" : undefined,
       eventName: "PreToolUse",
       forceStderr: !onClaudeCode,
@@ -383,6 +467,9 @@ module.exports = {
   resolveSessionId,
   readNudgeEnabled,
   readWindowMinutes,
+  readIgnoreGlobs,
+  globToRegExp,
+  pathIsIgnored,
   readEventsLedger,
   normalizeForCompare,
   pathPairOverlaps,

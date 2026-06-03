@@ -1,12 +1,22 @@
 import { defineCommand } from "citty";
 
+import { warnUnknownFlags } from "../lib/unknown-flags.js";
 import { projectStatus } from "../store/info-ops.js";
 
 // v2.1.0-rc.1 P3 (S30/F5): `fabric status` — project's resolved store picture.
 export default defineCommand({
   meta: { name: "status", description: "Show this project's Fabric store status" },
-  run() {
+  args: {
+    // F27: `--json` machine-readable output (was silently ignored pre-F27).
+    json: { type: "boolean", description: "Emit machine-readable JSON instead of text" },
+  },
+  run({ args }: { args: { json?: boolean } }) {
+    warnUnknownFlags(["json"]);
     const status = projectStatus(process.cwd());
+    if (args.json === true) {
+      console.log(JSON.stringify(status, null, 2));
+      return;
+    }
     console.log(`uid:            ${status.uid ?? "(no global config)"}`);
     // F9: only call it "not a Fabric project" when there is genuinely no
     // project config. When the project IS initialized but project_id is unset

@@ -449,7 +449,7 @@ export const enMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
   "doctor.check.events_jsonl_health.remediation":
-    "Run `fabric doctor --fix` to trigger a rotation; restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
+    "Run `fabric doctor --fix` — it triggers a rotation AND flushes metrics.jsonl (rc.2 F16: clears idle-buffered metric counters without a server restart). If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config location",
   "doctor.check.mcp_config_in_wrong_file.message":
     ".claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fabric install to write .mcp.json.",
