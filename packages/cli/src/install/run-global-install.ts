@@ -13,6 +13,7 @@ import {
   saveGlobalConfig,
 } from "../store/global-config-io.js";
 import { deriveUid } from "../store/uid.js";
+import { syncStoreAliasLinks } from "../store/store-ops.js";
 import { installGlobalCore } from "./install-global.js";
 
 // ---------------------------------------------------------------------------
@@ -121,4 +122,8 @@ export async function runGlobalInstall(
   if (options.url !== undefined) {
     mountStoreFromRemote(options.url, globalRoot);
   }
+
+  // C3: materialize the by-alias readability links for the freshly-minted
+  // personal store (+ any cloned store). Best-effort — never blocks install.
+  syncStoreAliasLinks(globalRoot);
 }
