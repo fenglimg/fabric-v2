@@ -1368,6 +1368,12 @@ export const zhCNMessages: Messages = {
   "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
   "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
   "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
+  "cli.store.migrate.none": "没有需要迁移的项目本地知识 (dual-root 已空)",
+  "cli.store.migrate.dry-run-header": "迁移预览 (dry-run, 不写入磁盘):",
+  "cli.store.migrate.applied-header": "已迁移 {count} 条进 store:",
+  "cli.store.migrate.committed": "已在 store 仓库提交迁移变更",
+  "cli.store.migrate.remap-note": "  ↑ 因目标 store id 冲突, {oldId} 重映射为 {newId}",
+  "cli.store.migrate.skips-header": "跳过 {count} 项:",
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",

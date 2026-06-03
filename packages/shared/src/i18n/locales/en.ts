@@ -1392,6 +1392,12 @@ export const enMessages: Messages = {
   "cli.store.detached": "detached '{alias}' — on-disk store tree left intact (detach ≠ delete)",
   "cli.store.bound": "bound required store '{id}' ({count} required)",
   "cli.store.switch-write": "active write store set to '{alias}' for this project",
+  "cli.store.migrate.none": "no project-local knowledge to migrate (dual-root is empty)",
+  "cli.store.migrate.dry-run-header": "migration preview (dry-run, nothing written):",
+  "cli.store.migrate.applied-header": "migrated {count} entries into stores:",
+  "cli.store.migrate.committed": "committed migration changes in the store repo",
+  "cli.store.migrate.remap-note": "  ↑ remapped {oldId} → {newId} (target store id collision)",
+  "cli.store.migrate.skips-header": "skipped {count} item(s):",
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",

@@ -22,6 +22,7 @@ import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
+import { loadGlobalConfig } from "../store/global-config-io.js";
 import { unboundAvailableStores } from "../store/store-ops.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
@@ -525,6 +526,16 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   logger(`init target source: ${resolution.source}`);
   for (const step of resolution.chain) {
     logger(step);
+  }
+
+  // v2.2 全砍 Stage 1 (1a): the write path is going store-only — a per-repo
+  // install MUST guarantee a global config + personal store exists, otherwise
+  // the first knowledge write would hard-fail with no resolvable target. Mint
+  // the global home (uid + personal store + config) idempotently when absent.
+  // runGlobalInstall is a no-op ("already installed") when it is already there.
+  if (loadGlobalConfig() === null) {
+    logger("no global Fabric config found — minting ~/.fabric (uid + personal store)");
+    await runGlobalInstall({});
   }
 
   const supports = detectClientSupports(intent.target);
