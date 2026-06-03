@@ -838,6 +838,147 @@ describe("knowledge-meta-builder", () => {
     expect(node?.description?.related).toBeUndefined();
   });
 
+  // lifecycle-refactor W3-A1 (§4 privacy iron law): KT→KP topology leak guard.
+  // A team (KT-*) entry's `related` edge MUST NOT point at a personal (KP-*)
+  // id — that would write a personal topology pointer into the project's
+  // physical agents.meta.json (the shared ledger). The guard strips KT→KP edges
+  // while leaving KT→KT / KP→KT / KP→KP intact.
+  describe("KT→KP topology leak guard (§4 privacy iron law)", () => {
+    it("test_kt_to_kp_edge_stripped — team entry's related KP-* edge is removed from meta", async () => {
+      const projectRoot = await createProject("rules-builder-w3a1-kt-to-kp");
+      await writeProjectFile(
+        projectRoot,
+        ".fabric/knowledge/decisions/team-leaky.md",
+        [
+          "---",
+          "summary: Team decision with a forbidden personal edge",
+          "id: KT-DEC-0042",
+          "layer: team",
+          // KT-DEC-0010 is a legal team→team edge; KP-PIT-0003 is the leak.
+          "related: [KT-DEC-0010, KP-PIT-0003]",
+          "---",
+          "# Team decision",
+          "",
+        ].join("\n"),
+      );
+
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+      const node = Object.values(meta.nodes).find(
+        (n) => n.file === ".fabric/knowledge/decisions/team-leaky.md",
+      );
+
+      // The KP-* edge is stripped; the legal KT→KT edge survives.
+      expect(node?.description?.related).toEqual(["KT-DEC-0010"]);
+      // Hard assertion that the personal topology pointer is absent from the
+      // persisted project ledger — the core iron-law invariant.
+      expect(node?.description?.related ?? []).not.toContain("KP-PIT-0003");
+    });
+
+    it("test_kt_to_kp_only_edge_yields_undefined — stripping the sole KP edge leaves related undefined", async () => {
+      const projectRoot = await createProject("rules-builder-w3a1-kt-to-kp-only");
+      await writeProjectFile(
+        projectRoot,
+        ".fabric/knowledge/decisions/team-only-leak.md",
+        [
+          "---",
+          "summary: Team decision whose only edge is a forbidden personal one",
+          "id: KT-DEC-0043",
+          "related: [KP-DEC-0001]",
+          "---",
+          "# Team decision only-leak",
+          "",
+        ].join("\n"),
+      );
+
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+      const node = Object.values(meta.nodes).find(
+        (n) => n.file === ".fabric/knowledge/decisions/team-only-leak.md",
+      );
+
+      // After the single KP edge is stripped, the empty edge set collapses to
+      // undefined (mirrors the absent-related contract).
+      expect(node?.description?.related).toBeUndefined();
+    });
+
+    it("test_unlabeled_team_source_strips_kp — entry without id/layer defaults to team and strips KP", async () => {
+      const projectRoot = await createProject("rules-builder-w3a1-unlabeled");
+      await writeProjectFile(
+        projectRoot,
+        ".fabric/knowledge/decisions/unlabeled.md",
+        [
+          "---",
+          "summary: Unlabeled decision carrying a personal edge",
+          "related: [KT-GLD-0001, KP-MOD-0002]",
+          "---",
+          "# Unlabeled decision",
+          "",
+        ].join("\n"),
+      );
+
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+      const node = Object.values(meta.nodes).find(
+        (n) => n.file === ".fabric/knowledge/decisions/unlabeled.md",
+      );
+
+      // Fail-safe: no declared layer/id ⇒ source treated as team ⇒ KP edge stripped.
+      expect(node?.description?.related).toEqual(["KT-GLD-0001"]);
+    });
+
+    it("test_kt_to_kt_preserved — team→team related edges survive untouched", async () => {
+      const projectRoot = await createProject("rules-builder-w3a1-kt-to-kt");
+      await writeProjectFile(
+        projectRoot,
+        ".fabric/knowledge/decisions/team-clean.md",
+        [
+          "---",
+          "summary: Team decision with only legal team edges",
+          "id: KT-DEC-0044",
+          "related: [KT-DEC-0010, KT-PIT-0011]",
+          "---",
+          "# Team clean",
+          "",
+        ].join("\n"),
+      );
+
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+      const node = Object.values(meta.nodes).find(
+        (n) => n.file === ".fabric/knowledge/decisions/team-clean.md",
+      );
+
+      expect(node?.description?.related).toEqual(["KT-DEC-0010", "KT-PIT-0011"]);
+    });
+
+    it("test_kp_to_kt_preserved — personal entry may point at team ids", async () => {
+      // Personal entries live under the personal root (FABRIC_HOME is redirected
+      // to a tempdir in beforeEach), so write there directly.
+      const personalRoot = process.env.FABRIC_HOME as string;
+      await mkdir(join(personalRoot, ".fabric/knowledge/decisions"), { recursive: true });
+      await writeFile(
+        join(personalRoot, ".fabric/knowledge/decisions/personal-linked.md"),
+        [
+          "---",
+          "summary: Personal decision pointing at a team id",
+          "id: KP-DEC-0001",
+          "layer: personal",
+          // KP→KT (allowed) and KP→KP (allowed).
+          "related: [KT-DEC-0010, KP-PIT-0009]",
+          "---",
+          "# Personal linked",
+          "",
+        ].join("\n"),
+      );
+
+      const projectRoot = await createProject("rules-builder-w3a1-kp-to-kt");
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+      const node = Object.values(meta.nodes).find((n) =>
+        n.file.includes("personal-linked.md"),
+      );
+
+      // Both KP→KT and KP→KP edges pass through untouched.
+      expect(node?.description?.related).toEqual(["KT-DEC-0010", "KP-PIT-0009"]);
+    });
+  });
+
   it("test_malformed_value_falls_back_to_default — bogus relevance_scope falls back to broad", async () => {
     const projectRoot = await createProject("rules-builder-rc5-c1-malformed");
     await writeProjectFile(

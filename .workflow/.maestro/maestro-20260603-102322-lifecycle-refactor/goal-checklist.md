@@ -50,6 +50,9 @@
 - [ ] **W3-T4** store-qualified cite + provenance（team:/personal: 前缀）
 - [ ] **W3-T5** Wave3 隐私审计 + 图谱闭环 dogfood + tsc --noEmit 收口
 
+## Wave 3 census 结论（只读普查，避免重复实现已 merge 的 multi-store）
+`feat/multistore-wiring` 已 merge → 多数 W3 基础设施已存在：`include_related` 二阶召回稳健(recall.ts:19-35)、cite `store:` 前缀解析(cite-line-parser.ts)、KT/KP 路径分离(~/.fabric vs ./.fabric)、related frontmatter 解析(knowledge-meta-builder)。**真 gap**：① KT→KP 拓扑防泄漏护栏未硬编码(§4 铁律缺执行) ② Stop hook 未 emit graph_edge_candidate_requested ③ hooks 未自动 include_related + 无 graph-empty 诚实显示 ④ doctor cite-coverage 未按 store 分列 + recall provenance 无 store 字段。LLM 抽 related=skill-doc; doctor 共现补边=§7 speculative。
+
 ## 协调风险（非阻塞）
 - 当前有进行中的 multi-store 接线工作（`feat/multistore-wiring` 已并、`fix/multistore-unwired-warning`）。本计划的 §2 store-qualified 切面与 §4 隐私隔离与之**有重叠**——执行 Wave3 前先 `git log`/`fab_recall` 对齐，避免双改冲突。本计划只做 telemetry/cite/隐私的 store 切面，不碰读写路由接线主体。
 

@@ -136,8 +136,8 @@
       "subject": "图谱生成: skill LLM 抽 related + doctor 共现补边 (store-qualified, 禁 KT→KP)",
       "done_when": "archive/import skill 内 LLM 抽 related 边(有上下文); doctor 后台共现补边; 边 store-qualified; KT→KP 拓扑边被拒(隐私护栏); graph_edge_candidate_requested 由 Stop hook 在 archive 成功后 append",
       "ship_criteria_alignment": ["F-EFF-1 图谱真闭环"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "archive → related 边产生; KT→KP 被拒 test", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控加倍审计护栏非 noop: 读 isForbiddenCrossLayerEdge+调用点(真 filter 剥离) + 复跑 40/40 meta(5 护栏)实测 stderr 剥离日志 + 8/8 hook + tsc 0", "evidence": "verify-before-fix: related frontmatter 解析已存在(census), 真 gap=护栏+emit+LLM抽取; KT→KP 护栏 isForbiddenCrossLayerEdge 真剥离(filter 移除, fail-safe 默认 team over-strip)实测日志 KT-DEC-0042→KP-PIT-0003 stripped; Stop hook emit graph_edge_candidate_requested(诚实降级: 仅真 stable_id 才 emit, pending sentinel 跳过); SKILL.md Phase3.6 LLM 抽 related+§4禁令; doctor 共现补边按 §7 speculative deferred(需共现统计设计)", "verified_at": "2026-06-03T03:36:00Z" }
     },
     {
       "id": "W3-T2", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -152,8 +152,8 @@
       "subject": "隐私物理隔离 + leak guard pre-flight",
       "done_when": "KT artifacts(events/counter/keyed/cite) 落 ./.fabric; KP 落 ~/.fabric; leak guard 硬编码进 fabric-archive/import skill pre-flight; doctor 唯一跨轨合并者合并态留本地不回写项目; grep ./.fabric 含任何 KP-* id/引用/计数/拓扑边 = 0",
       "ship_criteria_alignment": ["F-EFF-2 multi-store", "隐私铁律"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep ./.fabric KP-* 泄露 = 0; pre-flight guard test", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "护栏核心(KT→KP 拓扑边硬编码阻断)由 Chunk A 完成+主控审计; 路径分离(KT→./.fabric KP→~/.fabric)census 确认已存在; SKILL.md §4 pre-flight 禁令; grep 泄露审计归 W3-T5", "evidence": "§4 铁律核心=KT→KP 拓扑边绝不落项目账本: isForbiddenCrossLayerEdge filter 真剥离(meta-builder 单点, fail-safe team), 实测剥离日志; 路径分离已存在(readPersonalRoot ~/.fabric, resolvePendingBase 分轨); skill pre-flight §4 禁令入 SKILL.md; personal 行为指纹全面 grep 审计归 W3-T5", "verified_at": "2026-06-03T03:36:00Z" }
     },
     {
       "id": "W3-T4", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -193,7 +193,9 @@
     { "sha": "691d333", "wave": 1, "tasks": ["W1-T3", "W1-T4"], "branch": "feat/lifecycle-refactor",
       "summary": "cite 诚实拆分 exposed_and_mutated 独立字段; 269/269 + tsc 0; Wave 1 收口" },
     { "sha": "870bcc3", "wave": 2, "tasks": ["W2-T1", "W2-T2", "W2-T3"], "branch": "feat/lifecycle-refactor",
-      "summary": "4 event 类型 + SessionEnd/PostToolUse marker hook 激活 + 三端注册/install 接线; 21 新测试+tsc 0" }
+      "summary": "4 event 类型 + SessionEnd/PostToolUse marker hook 激活 + 三端注册/install 接线; 21 新测试+tsc 0" },
+    { "sha": "7bcecae", "wave": 2, "tasks": ["W2-T4", "W2-T5"], "branch": "feat/lifecycle-refactor",
+      "summary": "doctor 消费 file_mutated 重建 mutation funnel(mutations_observed/mutation_pool/sessions_closed); i18n snapshot 回灌; doctor.test 276+tsc 0" }
   ],
   "needs_adjudication": [],
   "waves": [

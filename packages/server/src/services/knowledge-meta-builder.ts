@@ -1179,6 +1179,44 @@ type KnowledgeFrontmatterFields = {
   related?: string[];
 };
 
+// lifecycle-refactor W3-A1 (§4 privacy iron law): KT→KP topology leak guard.
+//
+// The project's PHYSICAL directory (./.fabric/, incl. agents.meta.json) must
+// NEVER carry a personal (KP-*) behavioural fingerprint or topology edge. A
+// `related` graph edge whose SOURCE is a team (KT-*) entry but whose TARGET is
+// a personal (KP-*) id would write a team→personal pointer into the project
+// account ledger — leaking the existence/shape of someone's personal knowledge
+// graph into the shared repo. That edge is forbidden and stripped here.
+//
+// Allowed (returns false): KT→KT, KP→KP, KP→KT. Forbidden (returns true):
+// KT→KP only. The source layer is whatever the entry resolves to (KT prefix /
+// team layer); the target layer is decoded from the related id's KP/KT prefix.
+// A target id that is not stable-id-shaped (parseKnowledgeId → null) is NOT a
+// cross-layer leak by construction (no decodable personal target) → allowed
+// through unchanged, matching the additive "best-effort, never widen rejection"
+// contract.
+//
+// Single auditable landing point: every `related` array — from BOTH the
+// frontmatter-description path and the heading-fallback path — flows through
+// extractKnowledgeFieldsFromFrontmatter, so filtering here covers the whole
+// meta-build surface in one place.
+export function isForbiddenCrossLayerEdge(
+  sourceLayer: KnowledgeLayer | undefined,
+  targetId: string,
+): boolean {
+  // Only team-sourced edges can leak INTO the project ledger; a personal-layer
+  // source writes to ~/.fabric (never the project physical dir), so KP→anything
+  // is allowed.
+  if (sourceLayer !== "team") {
+    return false;
+  }
+  const decoded = parseKnowledgeId(targetId);
+  if (decoded === null) {
+    return false;
+  }
+  return decoded.layer === "personal";
+}
+
 function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFrontmatterFields {
   const rawId = extractScalar(frontmatter, "id");
   const rawType = extractScalar(frontmatter, "type");
@@ -1285,7 +1323,42 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
 
   // v2.2 H2-related (W1-T7): related — flow-style inline array of stable_ids.
   // Reuses extractInlineArray like tags; absent/empty → undefined.
-  const related = extractInlineArray(frontmatter, "related");
+  const rawRelated = extractInlineArray(frontmatter, "related");
+
+  // lifecycle-refactor W3-A1 (§4 privacy iron law): strip KT→KP topology edges
+  // before they ever reach agents.meta.json. The source layer is the entry's
+  // own layer — declared `knowledge_layer` wins, else decoded from the id
+  // prefix (KT→team / KP→personal). After the cross-validation above id and
+  // knowledge_layer agree, so either resolves the same source layer.
+  //
+  // FAIL-SAFE default: when an entry declares NEITHER `layer` NOR a layer-
+  // encoding `id`, we treat the source as `team`. The iron law protects the
+  // project's physical ledger, and this default can only ever strip MORE
+  // potential leaks, never manufacture one: a genuinely personal entry always
+  // carries a KP-* id (id late-bound at approve), so its source resolves to
+  // personal and its KP→KP / KP→KT edges pass through untouched. An unlabeled
+  // entry carrying a `related: [KP-*]` edge is exactly the leak shape we must
+  // refuse by default.
+  //
+  // A target KP-* id on a team-sourced entry is a leak (see
+  // isForbiddenCrossLayerEdge): it is dropped from the persisted edge set and a
+  // best-effort stderr diagnostic records the stripped edge (mirrors the
+  // existing frontmatter warning convention in this parser). KT→KT / KP→KT /
+  // KP→KP pass through.
+  const sourceLayer: KnowledgeLayer =
+    knowledge_layer ??
+    (id !== undefined ? parseKnowledgeId(id)?.layer ?? "team" : "team");
+  const related = rawRelated.filter((targetId) => {
+    if (isForbiddenCrossLayerEdge(sourceLayer, targetId)) {
+      process.stderr.write(
+        `[fabric] frontmatter: stripping forbidden cross-layer related edge ${
+          id ?? "(team entry)"
+        } → ${targetId} (KT→KP topology leak; §4 privacy iron law)\n`,
+      );
+      return false;
+    }
+    return true;
+  });
 
   return {
     id,
