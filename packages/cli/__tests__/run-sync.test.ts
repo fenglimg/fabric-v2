@@ -170,8 +170,28 @@ describe("runContinueSync / runAbortSync (resume a paused conflict)", () => {
     expect(result.settled).toBe(true);
   });
 
-  it("--continue with no session in progress throws", () => {
-    expect(() => runContinueSync({ projectRoot, globalRoot, now: NOW })).toThrow(/no sync in progress/);
+  it("--continue with no session throws an actionable FabricError, not a bare Error (F26)", () => {
+    let caught: unknown;
+    try {
+      runContinueSync({ projectRoot, globalRoot, now: NOW });
+    } catch (err) {
+      caught = err;
+    }
+    // F26: a missing-session must surface as a FabricError carrying an actionHint
+    // (rendered cleanly by the CLI), never a bare Error that leaks a stack trace.
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/no sync in progress/);
+    expect((caught as { actionHint?: string }).actionHint).toMatch(/fabric sync/);
+  });
+
+  it("--abort with no session throws an actionable FabricError (F26)", () => {
+    let caught: unknown;
+    try {
+      runAbortSync({ projectRoot, globalRoot, now: NOW });
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as { actionHint?: string }).actionHint).toMatch(/fabric sync/);
   });
 });
 

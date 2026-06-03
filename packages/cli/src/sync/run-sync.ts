@@ -403,11 +403,15 @@ export function runContinueSync(options: RunSyncOptions): RunSyncResult {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   const session = loadSession(globalRoot);
   if (session === null) {
-    throw new Error(NO_SESSION);
+    throw new GenericIOError(NO_SESSION, {
+      actionHint: "Run `fabric sync` to start a sync before `--continue`/`--abort`.",
+    });
   }
   const conflicted = session.stores.find((store) => store.state === "conflict");
   if (conflicted === undefined) {
-    throw new Error(NO_CONFLICT);
+    throw new GenericIOError(NO_CONFLICT, {
+      actionHint: "The sync is not paused on a conflict; there is nothing to resume.",
+    });
   }
   const storeDirOf = (status: SyncStoreStatus): string =>
     join(globalRoot, storeRelativePath(status.store_uuid));
@@ -449,11 +453,15 @@ export function runAbortSync(options: RunSyncOptions): RunSyncResult {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   const session = loadSession(globalRoot);
   if (session === null) {
-    throw new Error(NO_SESSION);
+    throw new GenericIOError(NO_SESSION, {
+      actionHint: "Run `fabric sync` to start a sync before `--continue`/`--abort`.",
+    });
   }
   const conflicted = session.stores.find((store) => store.state === "conflict");
   if (conflicted === undefined) {
-    throw new Error(NO_CONFLICT);
+    throw new GenericIOError(NO_CONFLICT, {
+      actionHint: "The sync is not paused on a conflict; there is nothing to resume.",
+    });
   }
   const storeDirOf = (status: SyncStoreStatus): string =>
     join(globalRoot, storeRelativePath(status.store_uuid));
