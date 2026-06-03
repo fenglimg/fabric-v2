@@ -142,3 +142,31 @@ export function buildCrossStoreBodyIndex(
   }
   return index;
 }
+
+// v2.2 全砍 F10: doctor's opaque-summary lint historically only scanned the
+// project agents.meta (team co-location). Post-cutover, canonical knowledge
+// lives in stores (team + personal) which carry no agents.meta — so the lint
+// would miss every store entry, including the personal layer the dogfood F10
+// flagged. This collector reads the read-set stores' knowledge frontmatter
+// (store-qualified id + summary) so the opacity inspection can fold them in.
+export interface StoreKnowledgeSummary {
+  stableId: string; // store-qualified `<alias>:<id>`
+  summary: string;
+  layer: "team" | "personal";
+}
+
+export function collectStoreKnowledgeSummaries(projectRoot: string): StoreKnowledgeSummary[] {
+  const out: StoreKnowledgeSummary[] = [];
+  for (const entry of walkReadSetStores(projectRoot)) {
+    const description = extractRuleDescription(entry.source);
+    if (description === undefined) {
+      continue;
+    }
+    out.push({
+      stableId: entry.qualifiedId,
+      summary: description.summary ?? "",
+      layer: entry.layer,
+    });
+  }
+  return out;
+}

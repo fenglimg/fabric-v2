@@ -44,6 +44,7 @@ import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
+import { collectStoreKnowledgeSummaries, type StoreKnowledgeSummary } from "./cross-store-recall.js";
 import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
@@ -1419,7 +1420,13 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // werewolf-eval failure mode where description.summary == stable_id so
     // hint output is "KT-PIT-0001 · KT-PIT-0001" (AI skips fetch). Built
     // from the same MetaInspection so no extra disk reads.
-    createKnowledgeSummaryOpaqueCheck(t, inspectKnowledgeSummaryOpaque(meta)),
+    createKnowledgeSummaryOpaqueCheck(
+      t,
+      // v2.2 全砍 F10: also scan the read-set stores (team + personal) so opaque
+      // store summaries — the personal layer the dogfood flagged — are caught,
+      // not just the project agents.meta entries.
+      inspectKnowledgeSummaryOpaque(meta, collectStoreKnowledgeSummaries(target)),
+    ),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null
@@ -4878,6 +4885,12 @@ export type KnowledgeSummaryOpaqueInspection = {
 
 export function inspectKnowledgeSummaryOpaque(
   meta: MetaInspection,
+  // v2.2 全砍 F10: post-cutover canonical knowledge lives in stores (team +
+  // personal) which carry no agents.meta, so the project-meta scan alone misses
+  // them. The caller passes the read-set stores' (qualified id + summary) so
+  // both layers — especially the personal store the dogfood flagged — are
+  // inspected. Defaults to [] for back-compat / meta-only callers.
+  storeSummaries: StoreKnowledgeSummary[] = [],
 ): KnowledgeSummaryOpaqueInspection {
   const baseline = {
     totalWithDescription: 0,
@@ -4901,6 +4914,19 @@ export function inspectKnowledgeSummaryOpaque(
     const summary = (description.summary ?? "").trim();
     if (summary === stableId.trim()) {
       opaqueIds.push(stableId);
+    }
+  }
+  // Fold in store knowledge (team + personal). A store entry is opaque when its
+  // summary is empty or equals its id (qualified `alias:id` or the bare local
+  // id), the same empty-shell signature the project-meta scan catches.
+  for (const entry of storeSummaries) {
+    total += 1;
+    const summary = entry.summary.trim();
+    const localId = entry.stableId.includes(":")
+      ? entry.stableId.slice(entry.stableId.indexOf(":") + 1)
+      : entry.stableId;
+    if (summary.length === 0 || summary === entry.stableId.trim() || summary === localId.trim()) {
+      opaqueIds.push(entry.stableId);
     }
   }
   if (total === 0) {
