@@ -247,3 +247,25 @@ export function missingRequiredStores(
   );
   return project.required_stores.filter((r) => !mounted.has(r.id));
 }
+
+// Onboarding nudge core (Wave A): the INVERSE of missingRequiredStores — which
+// mounted non-personal stores has this project NOT yet declared as required.
+// Drives the post-install + doctor nudge to `fabric store bind <alias>` so a
+// mounted team/shared store stops being invisible to the project's read-set
+// (the F3/D4 onboarding cliff). Personal stores are implicit (always in the
+// read-set) and never need binding, so they are excluded. Empty global config
+// ⇒ nothing mounted ⇒ nothing to bind.
+export function unboundAvailableStores(
+  projectRoot: string,
+  globalRoot: string = resolveGlobalRoot(),
+): MountedStore[] {
+  const global = loadGlobalConfig(globalRoot);
+  if (global === null) {
+    return [];
+  }
+  const project = loadProjectConfig(projectRoot);
+  const declared = new Set((project?.required_stores ?? []).map((r) => r.id));
+  return global.stores.filter(
+    (s) => s.personal !== true && !declared.has(s.alias) && !declared.has(s.store_uuid),
+  );
+}

@@ -992,6 +992,8 @@ export const enMessages: Messages = {
     "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
     "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
     "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
+  "cli.install.store-bind-nudge":
+    "💡 Mounted store(s) not bound to this project: {aliases}. Run `fabric store bind {first}` to read their knowledge here, then `fabric store switch-write {first}` to write team knowledge into it.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
   "cli.install.capabilities.header.client": "Client",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
@@ -1393,8 +1395,6 @@ export const enMessages: Messages = {
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
-  "cli.store.experimental-unwired":
-    "⚠️ multi-store is still under development: knowledge in mounted stores is NOT yet read by recall, and sync does not yet push. For team knowledge sharing use co-location — commit .fabric/knowledge into your project's git repo.",
   "cli.metrics.invalid-since": '--since: invalid duration "{raw}" (expected e.g. 24h, 7d, 30m)',
   "cli.metrics.window": "Fabric metrics — window: {window}",
   "cli.metrics.window-all-time": "all-time",

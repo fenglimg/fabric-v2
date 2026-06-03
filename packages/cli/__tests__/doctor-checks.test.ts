@@ -79,6 +79,28 @@ describe("doctor store checks", () => {
     expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);
   });
 
+  it("nudges (info) a mounted store the project has not bound, never personal", () => {
+    const globalRoot = join(tmp("dr-g5-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true },
+          { store_uuid: TEAM, alias: "team", remote: "git@h:team.git" },
+        ],
+      }),
+      globalRoot,
+    );
+    // Project declares NO required stores → team is mounted-but-unbound.
+    const projectRoot = tmp("dr-p5-");
+    saveProjectConfig({ project_id: "11111111-1111-4111-8111-111111111111" }, projectRoot);
+
+    const diags = storeDoctorChecks(projectRoot, globalRoot);
+    const unbound = diags.filter((d) => d.code === "unbound_available_store");
+    expect(unbound.map((d) => d.ref)).toEqual(["team"]); // personal excluded
+    expect(unbound[0]?.severity).toBe("info");
+  });
+
   it("warns when a mounted store smuggles an executable/hook file (S65 RCE defense)", () => {
     const globalRoot = join(tmp("dr-g4-"), ".fabric");
     saveGlobalConfig(

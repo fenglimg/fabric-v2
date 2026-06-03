@@ -22,6 +22,7 @@ import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
+import { unboundAvailableStores } from "../store/store-ops.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
 import { buildForensicReport } from "../scanner/forensic.js";
@@ -559,6 +560,22 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     console.log(t("cli.install.next-steps"));
     console.log("");
     console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+
+    // Wave A (D4/F3 onboarding nudge): a team/shared store is mounted globally
+    // but this project never bound it, so its knowledge stays invisible to
+    // recall and team writes fall back to the deprecated co-location path.
+    // Surface a reminder pointing at `store bind` (+ switch-write). Reminder
+    // only — never blocks the install (KT-DEC-0007).
+    const unboundStores = unboundAvailableStores(resolution.target);
+    if (unboundStores.length > 0) {
+      console.log("");
+      console.log(
+        t("cli.install.store-bind-nudge", {
+          aliases: unboundStores.map((s) => `'${s.alias}'`).join(", "),
+          first: unboundStores[0].alias,
+        }),
+      );
+    }
 
     // v2.1 ③ vector-chinese-model (P3): opt-in semantic-search enable step.
     // Skip path (default): never touches embed config. When --enable-embed is

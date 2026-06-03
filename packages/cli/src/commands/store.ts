@@ -64,9 +64,6 @@ const addCommand = defineCommand({
         count: String(next.stores.length),
       }),
     );
-    // F-MULTISTORE-UNWIRED: mounting registers metadata only — recall does not
-    // yet read mounted stores. Warn so a mount isn't mistaken for live sharing.
-    console.log(t("cli.store.experimental-unwired"));
   },
 });
 
@@ -85,9 +82,6 @@ const createCommand = defineCommand({
       t("cli.store.created", { alias: args.alias, uuid: result.store_uuid, dir: result.storeDir }) +
         (args.remote === undefined ? `\n${t("cli.store.created-local-hint")}` : ""),
     );
-    // F-MULTISTORE-UNWIRED: a created store isn't yet read by recall or pushed
-    // by sync. Warn so it isn't mistaken for live team sharing.
-    console.log(t("cli.store.experimental-unwired"));
   },
 });
 

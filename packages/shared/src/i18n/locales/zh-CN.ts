@@ -977,6 +977,8 @@ export const zhCNMessages: Messages = {
     "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。\n" +
     "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
     "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
+  "cli.install.store-bind-nudge":
+    "💡 检测到已挂载但未绑定本项目的知识 store: {aliases}。运行 `fabric store bind {first}` 把它的知识接入本项目, 再 `fabric store switch-write {first}` 设为团队知识的写入目标。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
   "cli.install.capabilities.header.client": "客户端",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
@@ -1369,8 +1371,6 @@ export const zhCNMessages: Messages = {
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",
-  "cli.store.experimental-unwired":
-    "⚠️ multi-store 仍在开发中: 挂载 store 的知识当前不会被 recall 读取, 且 sync 尚未实现 push。团队知识共享请用 co-location —— 把 .fabric/knowledge 提交进项目 git 仓库。",
   "cli.metrics.invalid-since": '--since: 无效的时长 "{raw}" (示例: 24h、7d、30m)',
   "cli.metrics.window": "Fabric 指标 —— 时间窗: {window}",
   "cli.metrics.window-all-time": "全部时间",
