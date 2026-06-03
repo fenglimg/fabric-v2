@@ -346,7 +346,7 @@ export const knowledgeSectionsOutputSchema = z.object({
     // for un-migrated v1.x entries (no knowledge_type AND no knowledge_layer
     // in frontmatter). Does NOT block selection.
     z.object({
-      code: z.literal("missing_knowledge_metadata"),
+      code: z.enum(["missing_knowledge_metadata", "unresolved_selected_id"]),
       severity: z.literal("warn"),
       stable_id: z.string(),
       message: z.string(),
@@ -496,7 +496,7 @@ export const recallOutputSchema = z.object({
   selected_stable_ids: z.array(z.string()),
   diagnostics: z.array(
     z.object({
-      code: z.literal("missing_knowledge_metadata"),
+      code: z.enum(["missing_knowledge_metadata", "unresolved_selected_id"]),
       severity: z.literal("warn"),
       stable_id: z.string(),
       message: z.string(),

@@ -44,7 +44,9 @@ type KnowledgeSectionDiagnostic = {
   // v2.0: warn-level signal that a fetched rule lacks knowledge metadata
   // (no `type` AND no `layer` in frontmatter). Surfaces un-migrated v1.x
   // files without breaking selection — the rule is still returned.
-  code: "missing_knowledge_metadata";
+  // Wave D (F7): `unresolved_selected_id` — a store-qualified id surfaced by
+  // cross-store recall has no project-meta node; skipped instead of crashing.
+  code: "missing_knowledge_metadata" | "unresolved_selected_id";
   severity: "warn";
   stable_id: string;
   message: string;
@@ -153,16 +155,32 @@ export async function getKnowledgeSections(
   // Object.entries scan per selected id. In the common rc.37 "pick all" path
   // selectedStableIds ≈ every node, so the old per-id linear scan was O(n²).
   const ruleNodeIndex = buildRuleNodeIndex(meta);
+  // Wave D (F7/F20): a selected store-qualified id (`alias:id`, surfaced by
+  // cross-store recall) has no node in the PROJECT's agents.meta — stores ship
+  // none. Skip it with a diagnostic instead of throwing, so one store entry can
+  // never crash the whole section-delivery call (the recall-hard-crash bug). A
+  // bare, colon-less project-local id that is missing still means real meta
+  // breakage → keep the rc.22 loud failure.
+  const unresolvedSelectedIds: string[] = [];
   const selectedRules = sortRuleNodes(
-    selectedStableIds.map((stableId) => {
+    selectedStableIds.flatMap((stableId) => {
       const entry = ruleNodeIndex.get(stableId);
       if (entry === undefined) {
+        if (stableId.includes(":")) {
+          unresolvedSelectedIds.push(stableId);
+          return [];
+        }
         throw new Error(`Selected rule is not present in agents.meta.json: ${stableId}`);
       }
-      return entry;
+      return [entry];
     }),
   );
-  const diagnostics: KnowledgeSectionDiagnostic[] = [];
+  const diagnostics: KnowledgeSectionDiagnostic[] = unresolvedSelectedIds.map((stableId) => ({
+    code: "unresolved_selected_id",
+    severity: "warn",
+    stable_id: stableId,
+    message: `Selected rule '${stableId}' is not present in the project's agents.meta.json — skipped (store-qualified id whose body is not delivered through the project-meta path).`,
+  }));
   const rules = [];
 
   for (const rule of selectedRules) {

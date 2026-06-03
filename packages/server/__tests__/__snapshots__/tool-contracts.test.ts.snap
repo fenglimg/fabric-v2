@@ -932,7 +932,10 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
           "additionalProperties": false,
           "properties": {
             "code": {
-              "const": "missing_knowledge_metadata",
+              "enum": [
+                "missing_knowledge_metadata",
+                "unresolved_selected_id",
+              ],
               "type": "string",
             },
             "message": {

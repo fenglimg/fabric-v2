@@ -126,6 +126,32 @@ describe("getKnowledgeSections", () => {
     expect((err as { actionHint?: string }).actionHint).toMatch(/fab_plan_context/);
   });
 
+  it("skips a selected store-qualified id absent from project meta instead of crashing (F7)", async () => {
+    const projectRoot = await createSectionProject();
+    const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    // A store-qualified id (`team:...`) surfaced by cross-store recall is in the
+    // token's selectable set but has NO node in the project's agents.meta — it
+    // must be skipped with a diagnostic, never throw and crash the whole call.
+    const selectionToken = mintTokenFromPlan(plan, [], ["ui-batch-rendering", "team:KT-DEC-9999"]);
+
+    const result = await getKnowledgeSections(projectRoot, {
+      selection_token: selectionToken,
+      ai_selected_stable_ids: ["ui-batch-rendering", "team:KT-DEC-9999"],
+      ai_selection_reasons: {
+        "ui-batch-rendering": "valid project-local pick",
+        "team:KT-DEC-9999": "store entry the AI also chose",
+      },
+      correlation_id: "corr-f7",
+      session_id: "session-f7",
+    });
+
+    // The valid project-local rule is still delivered; the store id is skipped.
+    expect(result.rules.map((r) => r.stable_id)).toEqual(["ui-batch-rendering"]);
+    const unresolved = result.diagnostics.filter((d) => d.code === "unresolved_selected_id");
+    expect(unresolved.map((d) => d.stable_id)).toEqual(["team:KT-DEC-9999"]);
+    expect(unresolved[0]!.severity).toBe("warn");
+  });
+
   it("merges required L0/L2 with AI-selected L1 and returns requested sections", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
