@@ -200,7 +200,11 @@
     { "sha": "7bcecae", "wave": 2, "tasks": ["W2-T4", "W2-T5"], "branch": "feat/lifecycle-refactor",
       "summary": "doctor 消费 file_mutated 重建 mutation funnel(mutations_observed/mutation_pool/sessions_closed); i18n snapshot 回灌; doctor.test 276+tsc 0" },
     { "sha": "d755cbd", "wave": 3, "tasks": ["W3-T1", "W3-T3"], "branch": "feat/lifecycle-refactor",
-      "summary": "KT→KP 隐私护栏(§4 铁律 isForbiddenCrossLayerEdge 真剥离) + Stop hook emit graph_edge_candidate_requested + SKILL.md LLM 抽 related; 40+8 测试+tsc 0" }
+      "summary": "KT→KP 隐私护栏(§4 铁律 isForbiddenCrossLayerEdge 真剥离) + Stop hook emit graph_edge_candidate_requested + SKILL.md LLM 抽 related; 40+8 测试+tsc 0" },
+    { "sha": "ae2c6df", "wave": 3, "tasks": ["W3-T2", "W3-T4"], "branch": "feat/lifecycle-refactor",
+      "summary": "图谱二阶消费透传(plan-context include_related+hook 默认开+related-to 渲染) + store-qualified 观测(doctor by_store 独立分列 + recall store provenance + cite_stores 持久化); 329+169 测试+tsc 0" },
+    { "sha": "6672d28", "wave": 3, "tasks": ["W3-T5"], "branch": "feat/lifecycle-refactor",
+      "summary": "W3-T5 验证收口 + W3-T3 升 ADJ-1; 全仓 2317 passed+tsc 0; partial-complete" }
   ],
   "needs_adjudication": [
     { "id": "ADJ-1", "round": 3, "from_task": "W3-T3", "adjudication_reason": "unmodeled-tradeoff",
