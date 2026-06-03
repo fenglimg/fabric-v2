@@ -96,24 +96,24 @@
       "subject": "event-ledger.ts 加 4 新 event 类型 + rebuild dist",
       "done_when": "schema 加 session_ended / file_mutated / precompact_observed / graph_edge_candidate_requested 的 z.literal 分支(带各自字段); pnpm --filter @fenglimg/fabric-shared build 通过; 新事件能过 union 校验",
       "ship_criteria_alignment": ["F-EFF-4", "F-EFF-1"], "alignment_strength": "infrastructure",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "shared build + schema parse test", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "4 schema 定义 + discriminatedUnion 数组 + TS type union/exports 全更; shared rebuild; node safeParse 4 事件; tsc", "evidence": "4 事件全过 discriminatedUnion safeParse(OK); file_mutated 带 tool_call_id per-call key + source_event_id/store_id 归因主键; shared rebuild + tsc exit 0", "verified_at": "2026-06-03T03:00:00Z" }
     },
     {
       "id": "W2-T2", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "激活 SessionEnd hook → append session_ended (仅 marker)",
       "done_when": "SessionEnd 触发只 append session_ended(session_id+ts, 零计算); 所有 surfaced→cited→edited funnel 对账下沉 doctor 不在 hook 内 join; 守前台 O(1)",
       "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "SessionEnd → grep session_ended; 确认 hook 无 join", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控复跑: session-end-marker.test.ts 9 passed + grep 确认零账本遍历(readLedger=0) + 三端 config 注册有效", "evidence": "新建 session-end-marker.cjs(140 行, 零计算/零 join/best-effort 静默/advisory-lock); 三端 config 注册 SessionEnd; install+uninstall+bootstrap 全接线; 测试 import shared schema safeParse 断言 marker 合法", "verified_at": "2026-06-03T03:08:00Z" }
     },
     {
       "id": "W2-T3", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "激活 PostToolUse hook → append file_mutated (落 mutation 闭环)",
       "done_when": "Edit|Write|MultiEdit 后 PostToolUse append file_mutated(edited path + tool_call_id, per-call key 防并行竞态); PreToolUse↔PostToolUse per-call key 配对闭 mutation 环(守 FROZEN); 归因主键 store_id+stable_id+source_event_id 防多 store 双计",
       "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "Edit 触发 → grep file_mutated 带 tool_call_id", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控复跑: post-tooluse-mutation.test.ts 12 passed + tsc 0 + O(1) grep", "evidence": "新建 post-tooluse-mutation.cjs(285 行); per-call key tool_call_id 从 Claude Code payload tool_use_id 取(fallback:<uuid> 兜底仍 append); N path 共享 tool_call_id; 零账本遍历零 git diff(归因主键 work 下沉 doctor W2-T4); 三端注册+install/uninstall 全接线", "verified_at": "2026-06-03T03:08:00Z" }
     },
     {
       "id": "W2-T4", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -189,7 +189,9 @@
   ],
   "git_commits": [
     { "sha": "e47105e", "wave": 1, "tasks": ["W1-T1", "W1-T2"], "branch": "feat/lifecycle-refactor",
-      "summary": "narrow hook_surface_emitted emit + 3 测试; W1-T1 broad 反转记录" }
+      "summary": "narrow hook_surface_emitted emit + 3 测试; W1-T1 broad 反转记录" },
+    { "sha": "691d333", "wave": 1, "tasks": ["W1-T3", "W1-T4"], "branch": "feat/lifecycle-refactor",
+      "summary": "cite 诚实拆分 exposed_and_mutated 独立字段; 269/269 + tsc 0; Wave 1 收口" }
   ],
   "needs_adjudication": [],
   "waves": [

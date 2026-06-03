@@ -198,6 +198,36 @@ export async function removeCitePolicyEvictHook(
   );
 }
 
+/**
+ * lifecycle-refactor W2-T2: inverse of `installSessionEndMarkerHook`. Removes
+ * the `session-end-marker.cjs` script from each client's `.<client>/hooks/`
+ * directory.
+ */
+export async function removeSessionEndMarkerHook(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeHookScripts(
+    "hook-session-end-script",
+    HOOK_SCRIPT_DESTINATIONS.sessionEndMarker,
+    projectRoot,
+  );
+}
+
+/**
+ * lifecycle-refactor W2-T3: inverse of `installPostTooluseMutationHook`. Removes
+ * the `post-tooluse-mutation.cjs` script from each client's `.<client>/hooks/`
+ * directory.
+ */
+export async function removePostTooluseMutationHook(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeHookScripts(
+    "hook-post-tooluse-script",
+    HOOK_SCRIPT_DESTINATIONS.postTooluseMutation,
+    projectRoot,
+  );
+}
+
 async function removeHookScripts(
   step: string,
   rels: readonly string[],
@@ -588,6 +618,13 @@ export async function uninstallBootstrapStage(
   // F3: cite-policy-evict.cjs (rc.34 TASK-06) was installed but never removed.
   await runAndCollect(results, "hook-cite-policy-evict-script", projectRoot, () =>
     removeCitePolicyEvictHook(projectRoot),
+  );
+  // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hook scripts.
+  await runAndCollect(results, "hook-session-end-script", projectRoot, () =>
+    removeSessionEndMarkerHook(projectRoot),
+  );
+  await runAndCollect(results, "hook-post-tooluse-script", projectRoot, () =>
+    removePostTooluseMutationHook(projectRoot),
   );
 
   // 5. Skill files (reverse of install order: connect → audit → sync → import → review → archive)

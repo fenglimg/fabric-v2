@@ -16,6 +16,8 @@ import {
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
   installCitePolicyEvictHook,
+  installSessionEndMarkerHook,
+  installPostTooluseMutationHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
@@ -117,6 +119,12 @@ export async function installHooks(
   // and Cursor lack the event registration. Default OFF; user opt-in via
   // fabric-config.json#cite_evict_interval.
   results.push(...await runStep(() => installCitePolicyEvictHook(normalizedTarget)));
+  // lifecycle-refactor W2-T2: SessionEnd marker hook (session_ended append).
+  // lifecycle-refactor W2-T3: PostToolUse mutation marker hook (file_mutated
+  // append). Both copy across all three clients (chmod 0o755 on POSIX) BEFORE
+  // the config merge so validateHookPaths finds the scripts on disk.
+  results.push(...await runStep(() => installSessionEndMarkerHook(normalizedTarget)));
+  results.push(...await runStep(() => installPostTooluseMutationHook(normalizedTarget)));
   // rc.16 TASK-004 (F2-tests): copy shared lib/*.cjs helpers (banner-i18n,
   // session-digest-writer) into each client's <client>/hooks/lib/ dir. The
   // hook scripts above hard-require these via `./lib/<name>.cjs` and crash
@@ -166,6 +174,9 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
     { stepSuffix: "", hookFile: "fabric-hint.cjs" },
     { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
     { stepSuffix: "-narrow", hookFile: "knowledge-hint-narrow.cjs" },
+    // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.
+    { stepSuffix: "-session-end", hookFile: "session-end-marker.cjs" },
+    { stepSuffix: "-post-tooluse", hookFile: "post-tooluse-mutation.cjs" },
   ];
   const clients: Array<{ client: string; configRel: string; hookDir: string }> = [
     {

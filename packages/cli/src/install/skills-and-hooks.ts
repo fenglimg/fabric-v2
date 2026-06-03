@@ -95,6 +95,14 @@ const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
 const HOOK_NARROW_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-narrow.cjs";
 // v2.0.0-rc.34 TASK-06: cite-policy long-session evict sidecar.
 const HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL = "hooks/cite-policy-evict.cjs";
+// lifecycle-refactor W2-T2: SessionEnd marker hook (zero-compute session_ended
+// append). Sibling to knowledge-hint-*.cjs — same install/copy plumbing,
+// registered against the SessionEnd event in each client config.
+const HOOK_SESSION_END_SCRIPT_TEMPLATE_REL = "hooks/session-end-marker.cjs";
+// lifecycle-refactor W2-T3: PostToolUse mutation marker hook (file_mutated
+// append, per-call key). Sibling to the narrow hook — same install/copy
+// plumbing, registered against PostToolUse with Edit|Write|MultiEdit matchers.
+const HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL = "hooks/post-tooluse-mutation.cjs";
 // rc.16 TASK-004 (F2-tests): shared `.cjs` helpers consumed by the three
 // hook scripts at runtime via `require("./lib/<name>.cjs")`. Currently
 // houses banner-i18n.cjs (rc.16 TASK-001) and session-digest-writer.cjs
@@ -203,6 +211,18 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".codex/hooks/cite-policy-evict.cjs",
     ".cursor/hooks/cite-policy-evict.cjs",
   ],
+  // lifecycle-refactor W2-T2: SessionEnd marker hook — all three clients.
+  sessionEndMarker: [
+    ".claude/hooks/session-end-marker.cjs",
+    ".codex/hooks/session-end-marker.cjs",
+    ".cursor/hooks/session-end-marker.cjs",
+  ],
+  // lifecycle-refactor W2-T3: PostToolUse mutation marker hook — all three.
+  postTooluseMutation: [
+    ".claude/hooks/post-tooluse-mutation.cjs",
+    ".codex/hooks/post-tooluse-mutation.cjs",
+    ".cursor/hooks/post-tooluse-mutation.cjs",
+  ],
 } as const;
 
 /**
@@ -256,9 +276,19 @@ export const HOOK_CONFIG_ARRAY_PATHS = {
   // ships a UserPromptSubmit cite-policy hook, so without this path deepMerge
   // array-REPLACEs (instead of append-with-dedupe) on re-install, silently
   // clobbering any user-defined UserPromptSubmit hook.
-  claudeCode: ["hooks.Stop", "hooks.SessionStart", "hooks.PreToolUse", "hooks.UserPromptSubmit"],
-  codex: ["events.Stop", "events.SessionStart", "events.PreToolUse"],
-  cursor: ["hooks.stop", "hooks.sessionStart", "hooks.preToolUse"],
+  // lifecycle-refactor W2-T2/T3: PostToolUse + SessionEnd arrays added so
+  // deepMerge append-with-dedupes them on re-install (omitting them would
+  // array-REPLACE, clobbering any user-defined entries in those slots).
+  claudeCode: [
+    "hooks.Stop",
+    "hooks.SessionStart",
+    "hooks.PreToolUse",
+    "hooks.UserPromptSubmit",
+    "hooks.PostToolUse",
+    "hooks.SessionEnd",
+  ],
+  codex: ["events.Stop", "events.SessionStart", "events.PreToolUse", "events.PostToolUse", "events.SessionEnd"],
+  cursor: ["hooks.stop", "hooks.sessionStart", "hooks.preToolUse", "hooks.postToolUse", "hooks.sessionEnd"],
 } as const;
 
 /**
@@ -275,18 +305,25 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
     // F3: the UserPromptSubmit cite-policy-evict hook must be a known fabric
     // command so uninstall prunes it (matches the literal in claude-code.json).
     citePolicyEvict: "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs",
+    // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.
+    sessionEndMarker: "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-end-marker.cjs",
+    postTooluseMutation: "${CLAUDE_PROJECT_DIR}/.claude/hooks/post-tooluse-mutation.cjs",
   },
   codex: {
     fabricHint: "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\"",
     knowledgeHintBroad: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\"",
     knowledgeHintNarrow: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\"",
     citePolicyEvict: "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\"",
+    sessionEndMarker: "\"$(git rev-parse --show-toplevel)/.codex/hooks/session-end-marker.cjs\"",
+    postTooluseMutation: "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\"",
   },
   cursor: {
     fabricHint: ".cursor/hooks/fabric-hint.cjs",
     knowledgeHintBroad: ".cursor/hooks/knowledge-hint-broad.cjs",
     knowledgeHintNarrow: ".cursor/hooks/knowledge-hint-narrow.cjs",
     citePolicyEvict: ".cursor/hooks/cite-policy-evict.cjs",
+    sessionEndMarker: ".cursor/hooks/session-end-marker.cjs",
+    postTooluseMutation: ".cursor/hooks/post-tooluse-mutation.cjs",
   },
 } as const;
 
@@ -872,6 +909,64 @@ export async function installCitePolicyEvictHook(
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     const result = await copyTextIdempotent("hook-cite-evict-script", source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * lifecycle-refactor W2-T2: copy templates/hooks/session-end-marker.cjs into
+ * all three clients' hooks directories (.claude/.codex/.cursor). chmod 0o755 on
+ * POSIX. Sibling installer to {@link installKnowledgeHintNarrowHook}; same copy
+ * plumbing, differs only in which hook event the per-client config wires it to
+ * (SessionEnd). The script is a pure marker — appends one `session_ended` event
+ * per session teardown (zero compute, advisory-locked append).
+ */
+export async function installSessionEndMarkerHook(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(HOOK_SESSION_END_SCRIPT_TEMPLATE_REL);
+  const targets = HOOK_SCRIPT_DESTINATIONS.sessionEndMarker.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const result = await copyTextIdempotent("hook-session-end-script", source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * lifecycle-refactor W2-T3: copy templates/hooks/post-tooluse-mutation.cjs into
+ * all three clients' hooks directories (.claude/.codex/.cursor). chmod 0o755 on
+ * POSIX. Sibling installer to {@link installKnowledgeHintNarrowHook}; same copy
+ * plumbing, registered against PostToolUse with Edit|Write|MultiEdit matchers.
+ * The script appends one `file_mutated` event per edited path (per-call key
+ * pairs with the PreToolUse narrow hint; advisory-locked append).
+ */
+export async function installPostTooluseMutationHook(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL);
+  const targets = HOOK_SCRIPT_DESTINATIONS.postTooluseMutation.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const result = await copyTextIdempotent("hook-post-tooluse-script", source, target);
     if (result.status === "written" && process.platform !== "win32") {
       try {
         chmodSync(target, 0o755);

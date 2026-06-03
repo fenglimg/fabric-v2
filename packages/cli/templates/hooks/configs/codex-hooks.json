@@ -19,6 +19,17 @@
         "matcher": "Edit|Write|MultiEdit",
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\""
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\""
+      }
+    ],
+    "SessionEnd": [
+      {
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/session-end-marker.cjs\""
+      }
     ]
   }
 }
