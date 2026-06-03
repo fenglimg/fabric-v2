@@ -1,0 +1,127 @@
+{
+  "session_id": "maestro-20260603-154738-fabric-full-closure",
+  "created_at": "2026-06-03T15:47:38+08:00",
+  "intent": "一程收尾 Fabric 全部 dogfood 体验优化:全砍 dual-root 三阶段迁移(含 F7 store-body 完整化)+ 审计尾巴 ~15 条孤儿(含 HIGH F16 metric leak)+ 核心打磨。承接上会话已交付 A/B1/D1/F26/F4 共 5 commit(分支 feat/multistore-abcd)。",
+  "task_type": "execute",
+  "chain_name": "fabric-full-closure",
+  "phase": null,
+  "auto_mode": false,
+  "exec_mode": "internal",
+  "cli_tool": "claude",
+  "context": {
+    "branch": "feat/multistore-abcd",
+    "cutover_spec": ".workflow/.maestro/maestro-20260603-145942-fabric-multistore-abcd/B2-dualroot-cutover-spec.md",
+    "dogfood_issues": ".workflow/.scratchpad/rc2-dogfood-experience-issues.md",
+    "prior_session": "maestro-20260603-145942-fabric-multistore-abcd",
+    "prior_commits": ["42ab733 A+B1(F3/F28)", "dec6e01 D1(F7 crash/F20)", "31be901 F26", "c4c2002 F4"],
+    "user_decisions": "B2=全砍(Option A); C1=defer(不建 per-project store, 留 scope 接口); C3=保 UUID + by-alias 可读层; 全收尾(含审计长尾)",
+    "cost_discipline": "exec=internal, 主线串行 Edit/Bash 优先, 不 spawn Agent 替代实际工作; 每 stage/簇收口即 commit + sha 回填",
+    "data_risk": "pcf 自身 22 条 committed 项目本地知识 + 20 测试断言 dual-root — S1 迁移工具必须先于 S2 翻写, 防孤儿化/丢数据"
+  },
+  "source": "maestro",
+  "updated_at": "2026-06-03T17:55:00+08:00",
+  "milestone": null,
+  "lifecycle_position": null,
+  "target": null,
+  "waves": [],
+  "steps": [
+    { "index": 0, "skill": "internal-execute", "args": "S1 全砍-地基: install 保证 store + migrate 工具 + 迁移 pcf 22 条", "type": "skill", "status": "completed", "goal_ref": "S1" },
+    { "index": 1, "skill": "internal-execute", "args": "S2 全砍-翻写: 写侧 store-only + 硬失败 + F7 store-body 完整化", "type": "skill", "status": "completed", "goal_ref": "S2" },
+    { "index": 2, "skill": "internal-execute", "args": "S3 全砍-收尾: 重写 ~20 测试 + 删空目录", "type": "skill", "status": "completed", "goal_ref": "S3" },
+    { "index": 3, "skill": "internal-execute", "args": "S4 核心打磨: C3 可读层 + cite 闭环 + F10 + 文案 + 测试污染", "type": "skill", "status": "completed", "goal_ref": "S4" },
+    { "index": 4, "skill": "internal-execute", "args": "S5 真 bug 清扫: F16/F8/F13/F21/F23/F15", "type": "skill", "status": "completed", "goal_ref": "S5" },
+    { "index": 5, "skill": "internal-execute", "args": "S6 琐碎+边角+收口: F1/F6/F19/F27/F2/F12/F18/F24/F25 + Part A 余", "type": "skill", "status": "completed", "goal_ref": "S6" },
+    { "index": 6, "skill": "decision", "args": "post-goal-audit: dogfood 清单全 finding 逐条核对已 resolved/wontfix", "type": "decision", "status": "completed", "decision": "post-goal-audit", "retry_count": 0, "max_retries": 3, "goal_ref": null }
+  ],
+  "current_step": 7,
+  "status": "done",
+  "boundary_contract": {
+    "in_scope": [
+      "packages/{cli,server,shared}/src: 全砍写侧迁移 + 审计尾巴全部 finding 修复",
+      "20 dual-root 路径断言测试重写 + 各 finding 新行为测试",
+      "一次性迁移 pcf 22 条项目本地知识进 store(验证 recall 命中)",
+      "bootstrap-canonical 文案同步(F17 AGENTS.md skill 数量等)"
+    ],
+    "out_of_scope": [
+      "org/联邦 + per-project 多库(C1 decided=defer, 仅留 scope 接口)",
+      "重写 5type/3maturity schema 基本盘",
+      "向量/embedding install onboarding(单列)"
+    ],
+    "constraints": [
+      "严格 S1→S2→S3 顺序(全砍迁移链); S4/S5/S6 可在全砍后并行推进但各自 commit",
+      "S1 迁移工具必须先于 S2 翻写(防丢数据)",
+      "主线串行 Edit/Bash 优先, 不 spawn Agent 替代实际工作",
+      "每簇 typecheck + 相关 test 绿才 commit; sha 回填",
+      "改 shared schema 后 rebuild dist; 破坏性操作必须 dry-run; fix 不 hide",
+      "低值/维护者侧项(F18 hook 体积/F12 session_id)允许 done_when = 修复 OR 显式 document 为 wontfix + rationale(不强行改)",
+      "每条 finding 实施前 grep 验证现状(防 reimplement noop / 已被前 commit 覆盖)"
+    ]
+  },
+  "execution_criteria": [
+    "S1 先建迁移安全网, 不孤儿化 pcf 22 条知识",
+    "每条 finding 先对 dogfood 清单 + grep 现状, 确认未被 A/B1/D1/F26/F4 覆盖再做",
+    "无 store 可写 → 友好 FabricError 引导(install --global + store bind), 非 stack 非静默",
+    "每簇末全相关测试绿 + tsc 绿才收口 commit",
+    "收口 audit: 对 dogfood 清单 Part A/B/C 每条标 resolved(commit)/wontfix(rationale), 无遗漏"
+  ],
+  "task_decomposition": [
+    {
+      "id": "S1",
+      "outcome": "全砍地基:install 保证 store + migrate 工具 + 迁移 pcf 22 条",
+      "done_when": "per-repo install 无 global config/personal store 时自动 mint 或引导, 写目标恒可解析;新增 store migrate(项目本地 .fabric/knowledge/** → store, stable_id 重映射 + git, 带 dry-run);迁移 pcf 22 条后 recall 仍命中;幂等;dry-run 不写;test 绿",
+      "status": "done",
+      "completed_at": "2026-06-03T16:05:00+08:00",
+      "evidence": "commit 7e5e0e4; store-migrate.ts + 5 单测绿; install 1a (loadGlobalConfig null → runGlobalInstall); pcf 真实 22+12 条端到端: writeTarget 解析 team, migrate 34 条, 源清零, store 22+12, 迁移后 scope-explain readSet 含 team store(recall 读路径=readKnowledgeAcrossStores(readSet.stores) → 命中), 幂等, dry-run 不写。NOTE: pcf 仓内就地迁移(删项目本地 22 条)挪到 S3 dual-root 移除阶段执行 — 避免 live session 中 agents.meta.json 孤儿化触发 F7 recall 崩溃(F7 fix 在 S5)"
+    },
+    {
+      "id": "S2",
+      "outcome": "全砍翻写:写侧 store-only + 硬失败 + F7 完整化",
+      "done_when": "pendingBase/resolveStoreCanonicalBase 移除 dual-root fallback;有 store→写 store, 无 store→actionable FabricError;extract-knowledge+review 全改;**F7 完整: store-qualified 个人/团队层 body 真能投递(get_sections 从 store 取 body, 不只跳过)**;test 绿",
+      "status": "done",
+      "completed_at": "2026-06-03T16:35:00+08:00",
+      "evidence": "commit 284d1cd; cross-store-write 两 resolve 函数无 target 即抛 StoreWriteTargetUnresolvedError; extract-knowledge+review 写路径全 store-only; modify-layer flip 目标改 store; F7: buildCrossStoreBodyIndex + get_sections 从 store 取 body(recall+get_sections 双路径); list/search 读侧 defensive 扫 store; server 818 全绿"
+    },
+    {
+      "id": "S3",
+      "outcome": "全砍收尾:测试重写 + 删空目录",
+      "done_when": "~20 dual-root 路径断言测试改 store 路径/硬失败断言全绿;删 ~/.fabric/knowledge 空目录 + 停止创建它的代码;全仓 grep 无 dual-root 写入残留;全测试套件绿",
+      "status": "done",
+      "completed_at": "2026-06-03T16:45:00+08:00",
+      "evidence": "commit 4422f20 (+ 284d1cd 测试主体); ~110 测试重写为 store 路径/硬失败; 删 meta-builder+install 的 personal-root auto-mkdir; 删空 ~/.fabric/knowledge; grep 无 dual-root 知识 body 写残留; server 818+cli 944 全绿。pcf 仓 22 条就地迁移=最后操作步(post-S6, 需重启 MCP 避免 old-server 孤儿崩)"
+    },
+    {
+      "id": "S4",
+      "outcome": "核心打磨:C3 可读层 + cite 闭环 + F10 + 文案 + 测试污染",
+      "done_when": "C3 by-alias 可读层(UUID 不变, 跨平台稳妥+doctor heal);cite 记账闭环 D1 后可写实证(F20/F22, Edit 触达数>0);F10 doctor summary 透明度也扫 personal 层 + 空壳可见提示;F17 AGENTS.md '3→实际 skill 数'文案对齐(bootstrap-canonical 同步);install-cli-surface 跨测试 translator 污染修复;各有 test 绿",
+      "status": "done",
+      "completed_at": "2026-06-03T17:00:00+08:00",
+      "evidence": "commits d721b52 (F17 7-skill 文案 + F10 doctor opacity 扫 store/personal +9测试) + 26deb21 (C3 by-alias symlink + doctor heal +5测试; install-cli-surface FAB_LANG restore); cite 闭环 F20/F22 根因(recall 崩)已 D1+F7 修, cite 记账机制 63 测试全绿(实证 Edit触达数>0 属重启 server 后操作验证); server 819 + cli 949 全绿"
+    },
+    {
+      "id": "S5",
+      "outcome": "真 bug 清扫(含 HIGH)",
+      "done_when": "F16 metric event 不再泄漏进 audit ledger(根因修, 非重启治标);F8 ai_selection_reasons schema 标注与实际一致;F13 extract_knowledge schema required 与实际一致(source_sessions);F21 scope-explain 校验 scope 名(非法不静默 fallback);F23 --fix-knowledge 加 dry-run 预览;F15 review reject 语义直观(移出 pending/ 或显式标注);各 finding 回归测试绿",
+      "status": "done",
+      "completed_at": "2026-06-03T17:30:00+08:00",
+      "evidence": "commit 2e0eb44; F8 server 删强制 reason(对齐 optional schema); F13 source_sessions base required; F21 scope 语法校验抛 actionable(S20 unknown 仍通过); F15 reject 移 pending/→rejected/ + list include_rejected 扫之; F16 doctor --fix flushMetrics 免重启 + 推翻 metric-leak 框定(knowledge_context_planned 是 cite-audit 非 metric, turn-event-is-cite-audit-not-metric 决策); F23 --fix-knowledge --dry-run 已存在(verify-only, grep-before-fix 防 noop); 回归测试各更新/新增; server 820 + cli 951 全绿"
+    },
+    {
+      "id": "S6",
+      "outcome": "琐碎+边角+收口 audit",
+      "done_when": "F1 doctor rotation 文案据实(随 F16);F6 serve --help+顶层列 serve;F19 archive 阈值 doc=config;F27 whoami/status --json 真输出 JSON + 未知 flag 不静默吞;F2 cite nudge 对 .workflow 噪音可消除;F12/F18/F24/F25 + Part A #3(payload)/#8-Warn2(SKILL.md token)逐条 fix 或 wontfix+rationale;**收口: dogfood 清单 Part A/B/C 每条标 resolved/wontfix, 无遗漏**",
+      "status": "done",
+      "completed_at": "2026-06-03T17:55:00+08:00",
+      "evidence": "commit 918f1bb (F1/F2/F19/F27 真修) + S6-closure-audit.md 收口对账。F1: doctor remediation 文案补 --fix 也 flush metrics(zh+en)。F2: cite-policy-evict.cjs cite_nudge_ignore_globs(默认 .workflow/**, config merge 扩展)+schema 注册+7测试。F19: bootstrap-canonical archive cadence 文案引用 config archive_edit_threshold(默认20)消魔数漂移。F27: whoami/status 加 --json + warnUnknownFlags 非阻塞警告+1测试。F6=resolved-by-quarantine(serve 不在 allCommands)。F24/F25=resolved-via-dep(F7/F10/F3 live-verified)。F12/F18/A#3/#8-Warn2=WONTFIX+rationale(见 audit)。收口: Part A 10 + Part B 23 + Part C 8 逐条标 resolved/wontfix/deferred/out-of-scope 无遗漏; A#5/#6/#7 out-of-scope(install 能力摘要/向量 onboarding 单列); D3/D6b deferred(C1)。tsc 全绿; shared 568 + server 820 + cli 963 测试绿"
+    }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/maestro-20260603-154738-fabric-full-closure/goal-checklist.md",
+  "git_commits": [
+    { "sha": "7e5e0e4", "goal_ref": "S1", "summary": "store migrate 工具 + install 保证 store (1a/1b)" },
+    { "sha": "284d1cd", "goal_ref": "S2", "summary": "写侧 store-only + 硬失败 + F7 body 投递 + ~110 测试重写" },
+    { "sha": "4422f20", "goal_ref": "S3", "summary": "停止创建 dual-root + 删空 ~/.fabric/knowledge + grep clean" },
+    { "sha": "d721b52", "goal_ref": "S4", "summary": "F17 skill 文案 + F10 doctor opacity 扫 store/personal" },
+    { "sha": "26deb21", "goal_ref": "S4", "summary": "C3 by-alias 可读层 + doctor heal + install translator 污染修复" },
+    { "sha": "2e0eb44", "goal_ref": "S5", "summary": "F8/F13/F21/F15/F16 真 bug 清扫 (F23 已存在)" },
+    { "sha": "918f1bb", "goal_ref": "S6", "summary": "F1/F2/F19/F27 真修簇 — doctor 文案 + cite ignore + 阈值对齐 + --json" }
+  ]
+}
