@@ -58,6 +58,12 @@ export interface PlanContextHintEntry {
   // server-side `shouldIncludeByRelevance` already filters narrow vs broad
   // per-path; this field forwards that scope to the CLI consumer.
   relevance_scope: "narrow" | "broad";
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when this
+  // entry was pulled into the hint by following a surfaced entry's one-hop
+  // `related` graph edge (NOT by its own ranking), this carries the source id.
+  // Hooks render it as `related-to-<id>` provenance. Omitted for ordinarily-ranked
+  // entries — its presence is the honest "this came from the graph" marker.
+  related_to?: string;
 }
 
 // Protocol v2 (rc.18): renamed `narrow` → `entries` (field is mode-agnostic —
@@ -167,6 +173,12 @@ export async function runPlanContextHint(opts: {
   const resolution = resolveDevMode(opts.target, process.cwd());
   const result = await planContext(resolution.target, {
     paths: targetPaths,
+    // lifecycle-refactor W3-T2 (§7 图谱消费 / §5): default-enable graph二阶召回 for
+    // the hint path. planContext appends the one-hop `related` neighbours that
+    // ranked outside top_k of the surfaced set and reports them in
+    // `related_appended` (appended id → source id). Honest no-op when the
+    // surfaced set declares no in-corpus related edge.
+    include_related: true,
   });
 
   // v2.0.0-rc.38 UX-1: the server collapsed per-path `description_index` into a
@@ -176,13 +188,24 @@ export async function runPlanContextHint(opts: {
   // relevance_scope are read off `description.*`.
   const candidates = result.candidates;
 
-  const entries: PlanContextHintEntry[] = candidates.map((item) => ({
-    id: item.stable_id,
-    type: item.description.knowledge_type ?? "",
-    maturity: item.description.maturity ?? "",
-    summary: item.description.summary,
-    relevance_scope: item.description.relevance_scope ?? "broad",
-  }));
+  // lifecycle-refactor W3-T2 (§7): related-expansion provenance. Omitted by the
+  // server on the graph-empty / steady-state path, so this stays empty and no
+  // entry gets a fake `related_to` marker.
+  const relatedAppended: Record<string, string> = result.related_appended ?? {};
+
+  const entries: PlanContextHintEntry[] = candidates.map((item) => {
+    const relatedTo = relatedAppended[item.stable_id];
+    return {
+      id: item.stable_id,
+      type: item.description.knowledge_type ?? "",
+      maturity: item.description.maturity ?? "",
+      summary: item.description.summary,
+      relevance_scope: item.description.relevance_scope ?? "broad",
+      // Only set when this entry was pulled in via a graph edge — its presence
+      // is the honest signal, never synthesized for ordinarily-ranked entries.
+      ...(typeof relatedTo === "string" ? { related_to: relatedTo } : {}),
+    };
+  });
 
   // v2.0.0-rc.27 TASK-002: compute split totals from the result entries so
   // hook consumers can drop the deprecated `broad_count` (which conflated

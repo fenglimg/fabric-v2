@@ -165,6 +165,20 @@ export const zhCNMessages: Messages = {
   "doctor.cite.metric.uncorrelatableEdits": "无法关联的 edit (缺 session_id — hook 过期? 请跑 `fabric install`)",
   "doctor.cite.metric.recallCoverage": "recall 覆盖率 (改前有相关 fab_recall 的 edit 占比)",
   "doctor.cite.metric.recallCoverageNA": "N/A (无可关联 edit)",
+  // v2.2.0-rc.1 W1-T3 (cite 诚实拆分): 弱辅助信号, 与真遵循率分列展示。括注必须
+  // 明确「不计入真遵循度」(诚实铁律)。
+  "doctor.cite.metric.exposedAndMutated":
+    "曝光且路径变更 (弱辅助信号 — 不计入真遵循度)",
+  // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse mutation funnel +
+  // SessionEnd 边界。均为可观测性 marker, 不计入真遵循度。
+  "doctor.cite.metric.mutationsObserved":
+    "mutation 观测数 (PostToolUse file_mutated — 权威信号, 不计入真遵循度)",
+  "doctor.cite.metric.mutationPool":
+    "mutation 归因池 (经 source_event_id 的 low-confidence 归因)",
+  "doctor.cite.metric.sessionsClosed":
+    "已闭合 session 数 (SessionEnd marker — funnel 边界)",
+  "doctor.cite.metric.byStore":
+    "按 store 拆分的合规 cite 数 (诊断拆分 — 不计入真遵循度; 'local' = 本项目)",
   "doctor.cite.section.perClient": "按客户端拆分",
   "doctor.cite.section.dismissedReasons": "驳回原因分布",
   "doctor.cite.dismissed.scope-mismatch": "范围不符",

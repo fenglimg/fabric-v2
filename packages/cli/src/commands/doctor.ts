@@ -1027,6 +1027,51 @@ function renderCiteCoverageReport(
   if (uncorrelatable > 0) {
     lines.push(`  ${dt("doctor.cite.metric.uncorrelatableEdits")}: ${uncorrelatable}`);
   }
+  // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
+  // WEAK auxiliary signal, rendered on its OWN line strictly SEPARATE from the
+  // compliance rate above. The label explicitly states it is NOT counted toward
+  // the true (explicit `KB:`) adherence rate — the honesty 铁律: this weak
+  // signal must never dilute the real compliance number.
+  if (report.metrics.exposed_and_mutated !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.exposedAndMutated")}: ${report.metrics.exposed_and_mutated.count}`,
+    );
+  }
+  // lifecycle-refactor W2-T4 (§5 row7 PostToolUse mutation funnel / §0 下沉 doctor):
+  // surface the offline-rebuilt mutation signals on their OWN lines, strictly
+  // SEPARATE from the compliance rate above (honesty 铁律 — these are observability
+  // markers, never folded into adherence). mutations_observed = authoritative
+  // PostToolUse mutation-completed count; mutation_pool splits low-confidence
+  // attribution (attributed via source_event_id vs unattributed_workspace_dirty).
+  if (report.metrics.mutations_observed !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.mutationsObserved")}: ${report.metrics.mutations_observed.count}`,
+    );
+  }
+  if (report.metrics.mutation_pool !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.mutationPool")}: ${report.metrics.mutation_pool.attributed} / ${report.metrics.mutation_pool.unattributed_workspace_dirty} (attributed / unattributed_workspace_dirty)`,
+    );
+  }
+  if (report.metrics.sessions_closed !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.sessionsClosed")}: ${report.metrics.sessions_closed.count}`,
+    );
+  }
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+  // qualifying-cite breakdown on its OWN lines, strictly SEPARATE from the
+  // compliance rate above. A pure diagnostic split — never folded into adherence
+  // (honesty 铁律). Project-local cites bucket under "local". Only rendered when
+  // the server populated the map (≥1 cite observed in window).
+  if (report.metrics.by_store !== undefined) {
+    const storeKeys = Object.keys(report.metrics.by_store).sort();
+    if (storeKeys.length > 0) {
+      lines.push(`  ${dt("doctor.cite.metric.byStore")}:`);
+      for (const store of storeKeys) {
+        lines.push(`    ${store}: ${report.metrics.by_store[store].qualifying_cites}`);
+      }
+    }
+  }
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)

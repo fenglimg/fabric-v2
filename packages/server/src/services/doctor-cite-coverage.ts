@@ -270,6 +270,43 @@ export type CiteCoverageReport = {
     // edits). Additive — legacy first-line-`KB:` metrics are unchanged.
     recall_backed_edits?: number;
     recall_coverage_rate?: number | null;
+    // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
+    // WEAK auxiliary signal — strictly SEPARATE from cite_compliance_rate. It MUST
+    // NOT be merged into compliance (the honesty 铁律): it estimates how many
+    // narrow PreToolUse-surfaced KB ids had their SPECIFIC contract glob edited
+    // (mutated) in the same session without being [dismissed]. Three conditions
+    // (see computeExposedAndMutated): narrow-surfaced + contract glob specific
+    // (excludes `**/*` and generic guidelines) + not dismissed this round.
+    // count = distinct (session, id) pairs; ids = sorted distinct stable_ids
+    // (diagnostics only). Additive — never touches the compliance numerator.
+    exposed_and_mutated?: { count: number; ids?: string[] };
+    // lifecycle-refactor W2-T4 (§5 row7 PostToolUse / §0 下沉 doctor): mutation
+    // funnel rebuilt offline from the new `file_mutated` PostToolUse marker. This
+    // is the AUTHORITATIVE "mutation completed" signal (path + tool_call_id),
+    // distinct from the PreToolUse `edit_intent_checked` EDIT-INTENT that feeds
+    // `edits_touched`. count = distinct `file_mutated` events in window
+    // (tool_call_id dedup guards the PostToolUse parallel-fire race). Strictly
+    // ADDITIVE — never folded into cite_compliance_rate (honesty 铁律).
+    mutations_observed?: { count: number };
+    // lifecycle-refactor W2-T4 (§5 row7 mutation_pool + downgrade): low-confidence
+    // attribution pool. `attributed` = a `file_mutated` whose `source_event_id`
+    // links to a `hook_surface_emitted` in window (attribution key = store_id +
+    // stable_id + source_event_id, distinct-dedup'd so multi-store never
+    // double-counts). Everything else → `unattributed_workspace_dirty`. The §9
+    // git-diff fallback is SPECULATIVE and deliberately NOT run (doctor read-only).
+    mutation_pool?: { attributed: number; unattributed_workspace_dirty: number };
+    // lifecycle-refactor W2-T4 (§5 row2 SessionEnd 对账下沉 doctor): distinct
+    // sessions that appended a `session_ended` marker (funnel-closed boundary).
+    // Pure observability marker — never joined into a rate.
+    sessions_closed?: { count: number };
+    // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+    // breakdown of qualifying cites, keyed by the cite's `cite_stores[i]`
+    // qualifier (the project-local store collapses under the "local" key when a
+    // cite carried no `<store>:` prefix). count = `applied` cites tagged with that
+    // store. STRICTLY ADDITIVE — a pure diagnostic split of qualifying_cites that
+    // NEVER feeds cite_compliance_rate (honesty 铁律, W1-T3). Omitted when no cite
+    // was observed in window.
+    by_store?: Record<string, { qualifying_cites: number }>;
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -387,6 +424,81 @@ function recallPathOverlaps(editPath: string, recallPaths: readonly string[]): b
     if (e.startsWith(r + "/") || r.startsWith(e + "/")) return true;
   }
   return false;
+}
+
+// v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): compute the WEAK auxiliary
+// `exposed_and_mutated` signal. This is intentionally factored out of
+// runDoctorCiteCoverage so the honesty boundary is reviewable in one place: it
+// returns its own object and NEVER mutates the compliance accumulators. It must
+// stay strictly separate from cite_compliance_rate.
+//
+// A (session_id, stable_id) pair qualifies when ALL THREE conditions hold:
+//   (1) narrow-surfaced  — the id appears in the rendered_ids of a
+//       `hook_surface_emitted` event whose hook_name === "knowledge-hint-narrow"
+//       in that session (the PreToolUse narrow injection).
+//   (2) contract glob specific — the id resolves to a NARROW kb entry whose
+//       relevance_paths are specific: at least one glob that is not the `**/*`
+//       (or `**`) catch-all, AND the entry's knowledge type is not a generic
+//       guideline (guidelines/processes are excluded — they are broad-by-nature
+//       and would dilute the signal).
+//   (3) mutated, not dismissed — a later `edit_intent_checked` in the SAME
+//       session edited a path matched by that id's specific relevance_paths, and
+//       the id was NOT carried under a `dismissed` cite_tag in that session.
+//
+// `narrowSurfacedBySession` maps session_id → Set<stable_id> from condition (1);
+// `dismissedBySession` maps session_id → Set<stable_id> dismissed in that session.
+// The join walks edits and checks the id's specific glob against the edit path —
+// the "exposed AND mutated" definition (lifecycle §3: 曝光且路径变更).
+type ExposedKbEntry = {
+  relevance_paths: readonly string[];
+  relevance_scope: "narrow" | "broad";
+};
+function isSpecificGlob(glob: string): boolean {
+  const g = glob.trim();
+  if (g.length === 0) return false;
+  // Exclude the catch-all wildcards that match everything — they carry no
+  // path-specific contract and would inflate the signal.
+  return g !== "**/*" && g !== "**" && g !== "*";
+}
+export function computeExposedAndMutated(args: {
+  narrowSurfacedBySession: Map<string, Set<string>>;
+  dismissedBySession: Map<string, Set<string>>;
+  editPathsBySession: Map<string, string[]>;
+  kbIndex: Map<string, ExposedKbEntry>;
+  idTypeMap: Map<string, string>;
+}): { count: number; ids: string[] } {
+  const { narrowSurfacedBySession, dismissedBySession, editPathsBySession, kbIndex, idTypeMap } = args;
+  const qualifiedIds = new Set<string>();
+  let count = 0;
+  for (const [sessionId, surfacedIds] of narrowSurfacedBySession) {
+    const editPaths = editPathsBySession.get(sessionId);
+    if (editPaths === undefined || editPaths.length === 0) continue;
+    const dismissed = dismissedBySession.get(sessionId);
+    for (const id of surfacedIds) {
+      // (3) not dismissed this round.
+      if (dismissed !== undefined && dismissed.has(id)) continue;
+      // (2a) must resolve to a NARROW kb entry with specific relevance_paths.
+      const kb = kbIndex.get(id);
+      if (kb === undefined || kb.relevance_scope !== "narrow") continue;
+      const specificGlobs = kb.relevance_paths.filter(isSpecificGlob);
+      if (specificGlobs.length === 0) continue;
+      // (2b) exclude generic guideline/process types — broad-by-nature.
+      const type = idTypeMap.get(id);
+      if (type === "guidelines" || type === "processes") continue;
+      // (3, join) mutated: a same-session edit matched a specific glob.
+      let mutated = false;
+      for (const p of editPaths) {
+        if (matchesRelevancePath(p, specificGlobs)) {
+          mutated = true;
+          break;
+        }
+      }
+      if (!mutated) continue;
+      count += 1;
+      qualifiedIds.add(id);
+    }
+  }
+  return { count, ids: [...qualifiedIds].sort() };
 }
 
 // v2.0.0-rc.39 (P1 emit-fold reader merge): empty-shell assistant_turn_observed
@@ -598,10 +710,21 @@ export async function runDoctorCiteCoverage(
   // (target_paths + final_stable_ids + session_id) — the recall→edit overlap
   // is the recall-based citation.
   type PlannedEvent = Extract<EventLedgerEvent, { event_type: "knowledge_context_planned" }>;
+  // v2.2.0-rc.1 W1-T3: narrow PreToolUse surface events feed the WEAK
+  // exposed_and_mutated signal (condition 1).
+  type HookSurfaceEvent = Extract<EventLedgerEvent, { event_type: "hook_surface_emitted" }>;
+  // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse `file_mutated` (the
+  // authoritative mutation-completed marker) + SessionEnd `session_ended`
+  // (funnel-closed boundary). New events, zero prior consumers — see plan.
+  type FileMutatedEvent = Extract<EventLedgerEvent, { event_type: "file_mutated" }>;
+  type SessionEndedEvent = Extract<EventLedgerEvent, { event_type: "session_ended" }>;
   const assistantTurns: TurnEvent[] = [];
   const editEvents: EditEvent[] = [];
   const fetchEvents: FetchEvent[] = [];
   const plannedEvents: PlannedEvent[] = [];
+  const hookSurfaceEvents: HookSurfaceEvent[] = [];
+  const fileMutatedEvents: FileMutatedEvent[] = [];
+  const sessionEndedEvents: SessionEndedEvent[] = [];
   for (const event of ledgerEvents) {
     switch (event.event_type) {
       case "assistant_turn_observed":
@@ -615,6 +738,15 @@ export async function runDoctorCiteCoverage(
         break;
       case "knowledge_context_planned":
         plannedEvents.push(event);
+        break;
+      case "hook_surface_emitted":
+        hookSurfaceEvents.push(event);
+        break;
+      case "file_mutated":
+        fileMutatedEvents.push(event);
+        break;
+      case "session_ended":
+        sessionEndedEvents.push(event);
         break;
       default:
         break;
@@ -737,6 +869,11 @@ export async function runDoctorCiteCoverage(
   // session_id → Set<cite_id> for expected_but_missed correlation.
   const sessionCitedKbs = new Map<string, Set<string>>();
 
+  // v2.2.0-rc.1 W1-T3: session_id → Set<cite_id> that were [dismissed] this
+  // session — condition (3) of the WEAK exposed_and_mutated signal. Populated
+  // index-aligned (cite_tags[i] ⋈ cite_ids[i]) in the turn loop below.
+  const dismissedBySession = new Map<string, Set<string>>();
+
   // v2.0.0-rc.24 TASK-08: per-session edit-path index for contract operator
   // evaluation. Built once from the edit events partition; reused across the
   // turn loop. Each session maps to its observed edit paths (normalized).
@@ -850,6 +987,14 @@ export async function runDoctorCiteCoverage(
   let qualifyingCites = 0;
   let recalledUnverified = 0;
 
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+  // qualifying-cite accumulator. Keyed by the cite's `cite_stores[i]` qualifier;
+  // a null/absent qualifier (project-local cite) buckets under "local". STRICTLY
+  // a diagnostic split of qualifying_cites — it is built ALONGSIDE the qualifying
+  // count and NEVER feeds the compliance numerator/denominator (honesty 铁律).
+  const STORE_LOCAL_KEY = "local";
+  const byStoreQualifying: Record<string, number> = {};
+
   for (const turn of filteredTurns) {
     totalTurns += 1;
     bumpClient(turn.client, (m) => {
@@ -863,6 +1008,22 @@ export async function runDoctorCiteCoverage(
         set.add(id);
       }
       sessionCitedKbs.set(sid, set);
+
+      // v2.2.0-rc.1 W1-T3: record dismissed ids for the WEAK exposed_and_mutated
+      // signal (condition 3). cite_tags[i] is index-aligned with cite_ids[i]
+      // (same parallel-array convention the contract walk relies on). A
+      // `dismissed`/`dismissed:<reason>` tag on a real id marks that id dismissed
+      // this session. Bounds-checked: a trailing `KB: none` sentinel tag has no
+      // matching cite_ids slot and is skipped.
+      for (let i = 0; i < turn.cite_tags.length; i += 1) {
+        const id = turn.cite_ids[i];
+        if (typeof id !== "string" || id.length === 0) continue;
+        if (categorizeCiteTag(turn.cite_tags[i]).category === "dismissed") {
+          const dset = dismissedBySession.get(sid) ?? new Set<string>();
+          dset.add(id);
+          dismissedBySession.set(sid, dset);
+        }
+      }
     }
 
     // -------------------------------------------------------------------
@@ -895,6 +1056,21 @@ export async function runDoctorCiteCoverage(
         default:
           break;
       }
+    }
+
+    // lifecycle-refactor W3-T4 (§2 store 轴): per-store qualifying-cite split.
+    // Walk cite_ids[i] ⋈ cite_tags[i] ⋈ cite_stores[i] (index-aligned by
+    // construction — the cite-line-parser builds all three from the same primary
+    // id group). An `applied` cite bumps its store bucket; a missing/ null
+    // qualifier (local cite) buckets under "local". This stays SEPARATE from the
+    // qualifying_cites total above and is never folded into compliance.
+    const turnCiteStores = turn.cite_stores ?? [];
+    for (let i = 0; i < turn.cite_ids.length; i += 1) {
+      const tag = turn.cite_tags[i];
+      if (categorizeCiteTag(typeof tag === "string" ? tag : "none").category !== "applied") continue;
+      const rawStore = turnCiteStores[i];
+      const storeKey = typeof rawStore === "string" && rawStore.length > 0 ? rawStore : STORE_LOCAL_KEY;
+      byStoreQualifying[storeKey] = (byStoreQualifying[storeKey] ?? 0) + 1;
     }
 
     // v2.1.0-rc.1 (ADJ-P4-1): `recalled_unverified` retains its report-contract
@@ -1053,6 +1229,109 @@ export async function runDoctorCiteCoverage(
   // v2.1 ⑤: recall-based coverage rate over the correlatable edit population.
   const recallCoverageRate = editsTouched > 0 ? recallBackedEdits / editsTouched : null;
 
+  // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): compute the WEAK
+  // exposed_and_mutated signal — STRICTLY SEPARATE from cite_compliance_rate.
+  // Build narrowSurfacedBySession from the narrow PreToolUse hook_surface_emitted
+  // events (condition 1), then delegate the three-condition filter to
+  // computeExposedAndMutated. This object is attached to metrics as its OWN field
+  // and never feeds the compliance numerator/denominator above.
+  const narrowSurfacedBySession = new Map<string, Set<string>>();
+  for (const surface of hookSurfaceEvents) {
+    if (surface.hook_name !== "knowledge-hint-narrow") continue;
+    if (surface.delivery_status !== "delivered") continue;
+    const sid = surface.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const set = narrowSurfacedBySession.get(sid) ?? new Set<string>();
+    for (const id of surface.rendered_ids) {
+      if (typeof id === "string" && id.length > 0) set.add(id);
+    }
+    narrowSurfacedBySession.set(sid, set);
+  }
+  const exposedAndMutated = computeExposedAndMutated({
+    narrowSurfacedBySession,
+    dismissedBySession,
+    editPathsBySession: sessionEditPaths,
+    kbIndex,
+    idTypeMap,
+  });
+
+  // lifecycle-refactor W2-T4 (§5 row7 PostToolUse mutation funnel + mutation_pool
+  // downgrade / §0 下沉 doctor): consume the new `file_mutated` PostToolUse marker
+  // OFFLINE here (前台 hook only O(1)-appended it). This rebuild is strictly
+  // ADDITIVE — it stands ALONGSIDE the W1-T3 exposed_and_mutated join and the
+  // edit_intent_checked `edits_touched` count, touching NEITHER. Three derived
+  // signals:
+  //   - mutations_observed.count: distinct `file_mutated` events (dedup on
+  //     tool_call_id, the per-call key that pairs Pre/Post and guards the
+  //     PostToolUse parallel-fire race). This is the AUTHORITATIVE
+  //     mutation-COMPLETED count, vs the PreToolUse edit-INTENT `edits_touched`.
+  //   - mutation_pool.attributed: a file_mutated whose `source_event_id` resolves
+  //     to a `hook_surface_emitted` (surfaced knowledge) in window. Attribution
+  //     key = store_id + stable_id + source_event_id (distinct-dedup'd so
+  //     multi-store never double-counts the same surfaced id).
+  //   - mutation_pool.unattributed_workspace_dirty: every file_mutated that does
+  //     NOT attribute (no source_event_id, or a source_event_id that resolves to
+  //     no surfaced event). §9 git-diff fallback to upgrade these via a session
+  //     shell event + baseline is SPECULATIVE and deliberately NOT implemented —
+  //     doctor stays read-only (no git diff / no disk write); the events.jsonl
+  //     source_event_id link is the sole attribution path here.
+  //     TODO(§9 future): git-diff + session shell baseline fallback to reclaim
+  //     unattributed_workspace_dirty into fallback-attributed. Out of scope (W2-T4
+  //     keeps doctor read-only).
+  // surfacedEventIds: the envelope `id` of every hook_surface_emitted in window —
+  // the link target of file_mutated.source_event_id. surfacedIdsByEvent maps that
+  // event id → its rendered_ids (the stable_ids surfaced), used to build the
+  // distinct attribution key.
+  const surfacedIdsByEvent = new Map<string, readonly string[]>();
+  for (const surface of hookSurfaceEvents) {
+    surfacedIdsByEvent.set(surface.id, surface.rendered_ids);
+  }
+  const seenMutationKeys = new Set<string>(); // tool_call_id dedup
+  const attributionKeys = new Set<string>(); // store_id|stable_id|source_event_id
+  let mutationsObserved = 0;
+  let unattributedWorkspaceDirty = 0;
+  for (const mutation of fileMutatedEvents) {
+    // Distinct mutation count keyed by tool_call_id (per-call key). A repeated
+    // tool_call_id (e.g. a duplicated append on retry) collapses to one.
+    if (seenMutationKeys.has(mutation.tool_call_id)) continue;
+    seenMutationKeys.add(mutation.tool_call_id);
+    mutationsObserved += 1;
+
+    const sourceEventId = mutation.source_event_id;
+    const surfacedRenderedIds =
+      typeof sourceEventId === "string" && sourceEventId.length > 0
+        ? surfacedIdsByEvent.get(sourceEventId)
+        : undefined;
+    if (surfacedRenderedIds === undefined || surfacedRenderedIds.length === 0) {
+      // No source_event_id, or it links to no surfaced event → low confidence.
+      unattributedWorkspaceDirty += 1;
+      continue;
+    }
+    // Attributed: register one distinct attribution key per surfaced stable_id.
+    // store_id is optional (single-store default) — collapse undefined to "" so
+    // the key stays stable; the triple still prevents cross-store double-count
+    // when store_id IS present.
+    const storeId = mutation.store_id ?? "";
+    for (const stableId of surfacedRenderedIds) {
+      if (typeof stableId !== "string" || stableId.length === 0) continue;
+      attributionKeys.add(`${storeId}|${stableId}|${sourceEventId}`);
+    }
+  }
+  const mutationPoolAttributed = attributionKeys.size;
+
+  // lifecycle-refactor W2-T4 (§5 row2 SessionEnd funnel-closed boundary): count
+  // distinct sessions that appended a `session_ended` marker. Pure observability
+  // boundary — never joined into any rate. Falls back to the event id when an
+  // event carries no session_id (degraded marker) so each marker still counts.
+  const closedSessions = new Set<string>();
+  for (const ended of sessionEndedEvents) {
+    const sid =
+      typeof ended.session_id === "string" && ended.session_id.length > 0
+        ? ended.session_id
+        : ended.id;
+    closedSessions.add(sid);
+  }
+
   const metrics: CiteCoverageReport["metrics"] = {
     edits_touched: editsTouched,
     qualifying_cites: qualifyingCites,
@@ -1065,6 +1344,28 @@ export async function runDoctorCiteCoverage(
     uncorrelatable_edits: uncorrelatableEdits,
     recall_backed_edits: recallBackedEdits,
     recall_coverage_rate: recallCoverageRate,
+    exposed_and_mutated: {
+      count: exposedAndMutated.count,
+      ...(exposedAndMutated.ids.length > 0 ? { ids: exposedAndMutated.ids } : {}),
+    },
+    // lifecycle-refactor W2-T4: PostToolUse mutation funnel (own fields, NEVER
+    // folded into cite_compliance_rate — honesty 铁律).
+    mutations_observed: { count: mutationsObserved },
+    mutation_pool: {
+      attributed: mutationPoolAttributed,
+      unattributed_workspace_dirty: unattributedWorkspaceDirty,
+    },
+    sessions_closed: { count: closedSessions.size },
+    // lifecycle-refactor W3-T4 (§2 store 轴): per-store qualifying-cite breakdown.
+    // Diagnostic split of qualifying_cites only — never touches compliance.
+    // Omitted when no cite was observed (empty map → no field).
+    ...(Object.keys(byStoreQualifying).length > 0
+      ? {
+          by_store: Object.fromEntries(
+            Object.entries(byStoreQualifying).map(([store, count]) => [store, { qualifying_cites: count }]),
+          ),
+        }
+      : {}),
   };
 
   // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were

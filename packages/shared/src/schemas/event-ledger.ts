@@ -527,6 +527,15 @@ export const assistantTurnObservedEventSchema = z.object({
       skip_reason: z.string().nullable(),
     }),
   ).default([]),
+  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-cite store
+  // qualifier, index-aligned with cite_ids. Mirrors the cite-line-parser's
+  // `cite_stores` output (`<alias-or-uuid>:<id>` → the qualifier; a bare id →
+  // null). Persists the store provenance the parser already extracts so
+  // doctor --cite-coverage can break compliance down per store WITHOUT joining
+  // against the store registry. Additive `.optional()` (NOT `.default([])`) so
+  // existing inline event constructors stay valid without supplying it — pre-W3-T4
+  // events parse with the field absent and bucket under the project-local default.
+  cite_stores: z.array(z.string().nullable()).optional(),
   client: z.enum(["cc", "codex", "cursor"]).optional(),
   turn_id: z.string(),
   envelope_index: z.number().int().nonnegative().optional(),
@@ -821,6 +830,58 @@ export const clientCapabilitySnapshotEventSchema = z.object({
   version: z.string(),
 });
 
+// ---------------------------------------------------------------------------
+// lifecycle-refactor Wave 2 — dormant-hook activation markers.
+// The previously-inert SessionEnd / PostToolUse / PreCompact hooks append these
+// so doctor can reconstruct the surfaced→cited→edited funnel OFFLINE. Front-stage
+// stays O(1): hooks only append; ALL join/funnel work is doctor-side (KT-DEC-0007:
+// hook = nudge/marker, never a gate).
+// ---------------------------------------------------------------------------
+
+// session_ended — SessionEnd marker. Zero compute: the hook only stamps that a
+// session boot ended (session_id + ts via the envelope). doctor reconciles the
+// per-session funnel offline; the hook does no join.
+export const sessionEndedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("session_ended"),
+});
+
+// file_mutated — PostToolUse marker closing the mutation env opened by the
+// PreToolUse narrow hint. tool_call_id is the per-call key (pairs Pre/Post,
+// guards parallel-fire races). source_event_id (optional) links back to the
+// hook_surface_emitted that surfaced knowledge for this edit; store_id scopes
+// attribution so multi-store never double-counts (attribution key =
+// store_id + stable_id + source_event_id, per design §5#7).
+export const fileMutatedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("file_mutated"),
+  path: z.string(),
+  tool_call_id: z.string(),
+  tool_name: z.string().optional(),
+  source_event_id: z.string().optional(),
+  store_id: z.string().optional(),
+});
+
+// precompact_observed — PreCompact marker. The injection capability is not yet
+// grounded, so this is an inert observation marker only (no payload): it lets
+// doctor see compaction cadence without the hook computing anything.
+export const precompactObservedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("precompact_observed"),
+});
+
+// graph_edge_candidate_requested — emitted by the Stop hook after a successful
+// archive. The hook only REQUESTS edge extraction (KT-DEC-0007); the `related`
+// edges are produced by the archive/import skill or doctor co-occurrence, never
+// by the hook. stable_id = the archived entry whose edges need extraction;
+// store qualifies it (edges are store-scoped; KT→KP is forbidden downstream).
+export const graphEdgeCandidateRequestedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("graph_edge_candidate_requested"),
+  stable_id: z.string(),
+  store: z.string().optional(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -914,6 +975,11 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   skillTriggerCandidateEventSchema,
   llmJudgeRunEventSchema,
   clientCapabilitySnapshotEventSchema,
+  // lifecycle-refactor Wave 2 — dormant-hook activation markers.
+  sessionEndedEventSchema,
+  fileMutatedEventSchema,
+  precompactObservedEventSchema,
+  graphEdgeCandidateRequestedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -971,6 +1037,11 @@ export type SkillPhaseTransitionEvent = z.infer<typeof skillPhaseTransitionEvent
 export type SkillTriggerCandidateEvent = z.infer<typeof skillTriggerCandidateEventSchema>;
 export type LlmJudgeRunEvent = z.infer<typeof llmJudgeRunEventSchema>;
 export type ClientCapabilitySnapshotEvent = z.infer<typeof clientCapabilitySnapshotEventSchema>;
+// lifecycle-refactor Wave 2 — dormant-hook activation markers.
+export type SessionEndedEvent = z.infer<typeof sessionEndedEventSchema>;
+export type FileMutatedEvent = z.infer<typeof fileMutatedEventSchema>;
+export type PrecompactObservedEvent = z.infer<typeof precompactObservedEventSchema>;
+export type GraphEdgeCandidateRequestedEvent = z.infer<typeof graphEdgeCandidateRequestedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -1025,7 +1096,11 @@ export type EventLedgerEvent =
   | SkillPhaseTransitionEvent
   | SkillTriggerCandidateEvent
   | LlmJudgeRunEvent
-  | ClientCapabilitySnapshotEvent;
+  | ClientCapabilitySnapshotEvent
+  | SessionEndedEvent
+  | FileMutatedEvent
+  | PrecompactObservedEvent
+  | GraphEdgeCandidateRequestedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

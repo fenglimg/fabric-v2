@@ -1355,6 +1355,12 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         },
         "type": "object",
       },
+      "related_appended": {
+        "additionalProperties": {
+          "type": "string",
+        },
+        "type": "object",
+      },
       "revision_hash": {
         "type": "string",
       },

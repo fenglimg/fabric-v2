@@ -1655,3 +1655,96 @@ describe("knowledge-hint-narrow.cjs — rc.27 §2.5 broad-leak filter", () => {
     expect(writes).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// lifecycle-refactor W1-T2 — hook_surface_emitted (surfaced→edited join, left half)
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-narrow.cjs — hook_surface_emitted emit", () => {
+  const EVENTS_REL = join(".fabric", "events.jsonl");
+
+  function readSurfaceRows(root: string): Array<Record<string, unknown>> {
+    const file = join(root, EVENTS_REL);
+    if (!existsSync(file)) return [];
+    return readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((e) => e.event_type === "hook_surface_emitted");
+  }
+
+  let savedClientEnv: string | undefined;
+  beforeEach(() => {
+    savedClientEnv = process.env.FABRIC_HINT_CLIENT;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+  });
+  afterEach(() => {
+    if (savedClientEnv === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedClientEnv;
+  });
+
+  it("appends one hook_surface_emitted row carrying the surfaced narrow ids + real session_id", () => {
+    const root = mkRoot("narrow-surface-emit");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    captureStderr({
+      cwd: root,
+      now: new Date(1780000000000),
+      payload: {
+        session_id: "sess-W1T2",
+        tool_name: "Edit",
+        tool_input: { file_path: join(root, "src/foo.ts") },
+      },
+      cliResult: makeCliPayload([
+        makeEntry("KT-DEC-0099", "decisions", "proven", "narrow A"),
+        makeEntry("KT-PIT-0042", "pitfalls", "proven", "narrow B"),
+      ]),
+    });
+    const rows = readSurfaceRows(root);
+    expect(rows.length).toBe(1);
+    expect(rows[0].hook_name).toBe("knowledge-hint-narrow");
+    expect(rows[0].client).toBe("cc");
+    expect(rows[0].session_id).toBe("sess-W1T2");
+    expect(rows[0].event_type).toBe("hook_surface_emitted");
+    expect(rows[0].delivery_status).toBe("delivered");
+    expect(rows[0].rendered_ids).toEqual(["KT-DEC-0099", "KT-PIT-0042"]);
+  });
+
+  it("does not emit when the narrow set is empty (nothing surfaced)", () => {
+    const root = mkRoot("narrow-surface-noemit");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    captureStderr({
+      cwd: root,
+      now: new Date(1780000000000),
+      payload: {
+        session_id: "sess-empty",
+        tool_name: "Edit",
+        tool_input: { file_path: join(root, "src/foo.ts") },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    expect(readSurfaceRows(root).length).toBe(0);
+  });
+
+  it("skips the emit when the client is undetectable (schema requires the client enum)", () => {
+    delete process.env.FABRIC_HINT_CLIENT;
+    const savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+    delete process.env.CLAUDE_PROJECT_DIR;
+    try {
+      const root = mkRoot("narrow-surface-noclient");
+      mkdirSync(join(root, ".fabric"), { recursive: true });
+      captureStderr({
+        cwd: root,
+        now: new Date(1780000000000),
+        payload: {
+          session_id: "sess-noclient",
+          tool_name: "Edit",
+          tool_input: { file_path: join(root, "src/foo.ts") },
+        },
+        cliResult: makeCliPayload([makeEntry("KT-DEC-0099", "decisions", "proven", "narrow A")]),
+      });
+      expect(readSurfaceRows(root).length).toBe(0);
+    } finally {
+      if (savedProjDir !== undefined) process.env.CLAUDE_PROJECT_DIR = savedProjDir;
+    }
+  });
+});

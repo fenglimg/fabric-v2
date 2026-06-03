@@ -298,3 +298,58 @@ describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/�
     expect(output.narrow_count).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): the CLI
+// projects the server's `related_appended` map onto per-entry `related_to`
+// provenance, and stays an honest no-op when the server appended nothing.
+// ---------------------------------------------------------------------------
+
+describe("plan-context-hint — related二阶 provenance projection (W3-T2)", () => {
+  it("projects related_appended onto the appended entry's related_to", async () => {
+    const surfaced = makeIndexItem({ id: "KT-DEC-0001", scope: "broad" });
+    const neighbour = makeIndexItem({ id: "KT-DEC-0002", scope: "broad" });
+    mockServer({
+      revision_hash: "rev-related",
+      stale: false,
+      selection_token: "tok-related",
+      entries: [],
+      candidates: [surfaced, neighbour],
+      preflight_diagnostics: [],
+      // server reports the neighbour was pulled in via the surfaced entry's edge.
+      related_appended: { "KT-DEC-0002": "KT-DEC-0001" },
+    } as unknown as Parameters<typeof mockServer>[0]);
+
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    const byId = Object.fromEntries(output.entries.map((e) => [e.id, e]));
+    // The graph-pulled neighbour carries provenance; the ranked entry does not.
+    expect(byId["KT-DEC-0002"]?.related_to).toBe("KT-DEC-0001");
+    expect(
+      Object.prototype.hasOwnProperty.call(byId["KT-DEC-0001"] ?? {}, "related_to"),
+    ).toBe(false);
+  });
+
+  it("graph-empty honest no-op: no related_appended → no related_to on any entry", async () => {
+    const item = makeIndexItem({ id: "KT-DEC-0001", scope: "broad" });
+    mockServer({
+      revision_hash: "rev-no-graph",
+      stale: false,
+      selection_token: "tok-no-graph",
+      entries: [],
+      candidates: [item],
+      preflight_diagnostics: [],
+      // no related_appended field — the steady-state / graph-empty path.
+    });
+
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    for (const e of output.entries) {
+      expect(Object.prototype.hasOwnProperty.call(e, "related_to")).toBe(false);
+    }
+  });
+});

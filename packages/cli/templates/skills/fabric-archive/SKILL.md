@@ -113,6 +113,12 @@ Assign `relevance_scope` ∈ {narrow, broad} + derive `relevance_paths` BEFORE b
 
 `Read ref/phase-3-5-scope.md` for the 6-step relevance_paths derivation pseudocode (COLLECT → DEDUPE → BLACKLIST → PUBLIC-PREFIX GENERALIZE → SCOPE GATE → ATTACH READ-ONLY EVIDENCE), worked example (5 sample paths → glob + literal output), and narrow↔broad inline-edit re-derivation rules.
 
+### Phase 3.6 — Related-edge Extraction (§7 graph generation)
+
+For each candidate, identify the **`related`** graph edges to other KB entries — the store-qualified `stable_id`s this entry semantically links to (the decision it supersedes, the pitfall it explains, the model it instantiates). You discovered these ids during the session via `fab_recall` / plan-context, so cite the ones you actually saw, NEVER invent stable_ids. Because `fab_extract_knowledge` has no dedicated `related` input, record the candidate edges as one line inside `session_context` (e.g. `related: team:KT-DEC-0007, team:KT-PIT-0011`) so they survive to approve-time frontmatter authoring (`fabric-review` writes the canonical `related: [...]` frontmatter).
+
+**§4 privacy iron law — KT→KP is FORBIDDEN.** A **team** (`KT-*`) entry's `related` MUST NOT point at a **personal** (`KP-*`) id: that would write a personal-knowledge topology pointer into the project's shared physical ledger (`./.fabric/agents.meta.json`). Allowed: `KT→KT`, `KP→KP`, `KP→KT`. Forbidden: `KT→KP` only. When unsure whether a target is personal, OMIT the edge. (The meta-builder also strips any KT→KP edge that slips through, but do not rely on that — author clean edges.)
+
 ### Phase 4 — Persist via MCP
 
 For each user-confirmed candidate, call `fab_extract_knowledge` ONCE (NEVER batch). Required: `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `layer`, `relevance_scope`, `relevance_paths[]`, `proposed_reason` (enum), `session_context` (3-5 line narrative). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
@@ -155,7 +161,7 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - v2.0.0-rc.37 NEW-7 widened Phase 3.5: `edit_paths` ∪ `user_mentioned_paths` drives `relevance_paths`; `read_paths` flows separately to `evidence_paths` (structured frontmatter, not body markdown). NEVER lift body regex / symbol extraction into `relevance_paths` — those remain reserved for v2.1+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
 
 ## Worked Examples / E5 Cron / Dry-run (ref-only)
 

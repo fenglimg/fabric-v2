@@ -53,6 +53,15 @@ export type PlanContextInput = {
   // fabric.config.json#default_layer_filter. Personal/team layer per candidate
   // comes from its content_ref-inferred `knowledge_layer`.
   layer_filter?: "team" | "personal" | "both";
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when true,
+  // append the one-hop `related` graph neighbours of the top_k-surfaced set that
+  // ranked OUTSIDE the top_k cut but are present in the full ranked corpus. The
+  // appended ids are reported in `related_appended` (appended id → the surfaced
+  // source id) so consumers (the SessionStart/PreToolUse hint hooks) can render a
+  // `related-to-<id>` provenance. STRICTLY ADDITIVE: false/omitted → byte-identical
+  // pre-W3-T2 behaviour. Honest no-op when the surfaced set declares no in-corpus
+  // related edges — nothing is appended and `related_appended` is omitted.
+  include_related?: boolean;
 };
 
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired. The profile
@@ -124,6 +133,13 @@ export type PlanContextResult = {
   // entry to a stable_id present in the current description_index. Empty
   // mappings are omitted to keep the steady-state wire shape minimal.
   redirects?: Record<string, string>;
+  // lifecycle-refactor W3-T2 (§7 图谱消费): when `include_related` appended any
+  // one-hop graph neighbour that ranked outside top_k, this maps each appended
+  // stable_id → the surfaced source id whose `related` edge pulled it in. Omitted
+  // (undefined) when include_related was off OR the surfaced set had no in-corpus
+  // related edge to follow (honest graph-empty no-op). Additive — steady-state
+  // callers never see it.
+  related_appended?: Record<string, string>;
 };
 
 export type SelectionTokenState = {
@@ -415,7 +431,37 @@ export async function planContext(
   // loss, so the dependency order is load-bearing.
   const topK = readPlanContextTopK(projectRoot);
   const omittedCandidateCount = Math.max(0, rankedCandidates.length - topK);
-  const candidates = omittedCandidateCount > 0 ? rankedCandidates.slice(0, topK) : rankedCandidates;
+  const topKCandidates = omittedCandidateCount > 0 ? rankedCandidates.slice(0, topK) : rankedCandidates;
+
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when
+  // include_related is on, follow the one-hop `related` graph edges of the
+  // top_k-surfaced set and pull back in any neighbour that ranked OUTSIDE the cut
+  // but exists in the full ranked corpus. Bounded to rankedCandidates (every
+  // appended id is a real, fetchable entry); ids already inside top_k are not
+  // re-added. The `related_appended` map records appended id → source id so the
+  // hint layer can render `related-to-<source>`. Honest no-op: if the surfaced
+  // set declares no in-corpus related edge, `candidates === topKCandidates` and
+  // `relatedAppended` stays empty (no fake "related" output downstream).
+  let candidates = topKCandidates;
+  const relatedAppended: Record<string, string> = {};
+  if (input.include_related === true) {
+    const inTopK = new Set(topKCandidates.map((item) => item.stable_id));
+    const rankedById = new Map(rankedCandidates.map((item) => [item.stable_id, item]));
+    const appended: RuleDescriptionIndexItem[] = [];
+    for (const surfaced of topKCandidates) {
+      for (const rel of surfaced.description.related ?? []) {
+        if (inTopK.has(rel)) continue; // already surfaced — nothing to pull in
+        if (relatedAppended[rel] !== undefined) continue; // first source wins, no dupes
+        const neighbour = rankedById.get(rel);
+        if (neighbour === undefined) continue; // edge points outside the corpus — skip (honest)
+        relatedAppended[rel] = surfaced.stable_id;
+        appended.push(neighbour);
+      }
+    }
+    if (appended.length > 0) {
+      candidates = [...topKCandidates, ...appended];
+    }
+  }
 
   const entries: PlanContextEntry[] = uniquePaths.map((path) => ({
     path,
@@ -469,6 +515,10 @@ export async function planContext(
         }
       : {}),
     ...(redirects !== undefined ? { redirects } : {}),
+    // lifecycle-refactor W3-T2 (§7): surface the related-expansion provenance map
+    // ONLY when at least one neighbour was actually appended. Empty (graph-empty
+    // no-op) → field omitted, steady-state wire shape unchanged.
+    ...(Object.keys(relatedAppended).length > 0 ? { related_appended: relatedAppended } : {}),
   };
 
   // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. The audit event still

@@ -5380,6 +5380,74 @@ describe("rollupCiteAuditIfNeeded", () => {
   });
 });
 
+// lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): cite-coverage
+// breaks qualifying cites down per store via the cite_stores[i] qualifier, as a
+// PURE diagnostic split that never touches the compliance numerator.
+describe("cite-coverage by_store breakdown (W3-T4)", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    writeFileSync(ledgerPath, existing + events.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+  }
+  function storeTurn(
+    id: string,
+    ts: number,
+    cites: Array<{ id: string; store: string | null }>,
+  ): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `event:${id}`,
+      ts,
+      schema_version: 1,
+      session_id: `sess-${id}`,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: `KB: ${cites.map((c) => (c.store ? `${c.store}:${c.id}` : c.id)).join(", ")} [applied]`,
+      cite_ids: cites.map((c) => c.id),
+      cite_tags: cites.map(() => "applied"),
+      cite_stores: cites.map((c) => c.store),
+      client: "cc",
+      turn_id: id,
+      timestamp: new Date(ts).toISOString(),
+    };
+  }
+
+  it("buckets qualifying cites per store; bare ids fall under 'local'; never touches compliance", async () => {
+    const target = createInitializedProject("cite-by-store");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      // one team-store cite, one personal-store cite, one bare (project-local) cite.
+      storeTurn("t1", marker.marker_ts + 10, [{ id: "KT-DEC-0001", store: "team" }]),
+      storeTurn("t2", marker.marker_ts + 20, [{ id: "KP-DEC-0009", store: "personal" }]),
+      storeTurn("t3", marker.marker_ts + 30, [{ id: "KT-DEC-0002", store: null }]),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.status).toBe("ok");
+    // 3 applied cites total — the compliance count is unchanged by the split.
+    expect(report.metrics.qualifying_cites).toBe(3);
+    expect(report.metrics.by_store).toEqual({
+      team: { qualifying_cites: 1 },
+      personal: { qualifying_cites: 1 },
+      local: { qualifying_cites: 1 },
+    });
+    // by_store is a sibling of qualifying_cites — summing the buckets matches it.
+    const summed = Object.values(report.metrics.by_store ?? {}).reduce(
+      (a, b) => a + b.qualifying_cites,
+      0,
+    );
+    expect(summed).toBe(report.metrics.qualifying_cites);
+  });
+
+  it("omits by_store when no cite is observed (steady-state shape unchanged)", async () => {
+    const target = createInitializedProject("cite-by-store-empty");
+    writeFile(".fabric/events.jsonl", "", target);
+    await ensureCitePolicyActivatedMarker(target);
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics).not.toHaveProperty("by_store");
+  });
+});
+
 // v2.0.0-rc.39 (P1 emit-fold): empty-shell turns fold into metrics.jsonl counter
 // rows; the live cite-coverage / emit-cadence readers add them back so the
 // metric stays invariant across the fold.
@@ -5854,6 +5922,16 @@ describe("runDoctorCiteCoverage", () => {
       // v2.1 ⑤ cite-redesign (P5): recall-based口径 — 0 edits → 0 backed, null rate.
       recall_backed_edits: 0,
       recall_coverage_rate: null,
+      // v2.2.0-rc.1 W1-T3 (cite 诚实拆分): WEAK exposed_and_mutated signal —
+      // always emitted (count 0 here, no narrow surface events). `ids` omitted
+      // when empty.
+      exposed_and_mutated: { count: 0 },
+      // lifecycle-refactor W2-T4: PostToolUse mutation funnel — always emitted
+      // (zero here, no file_mutated/session_ended events). Observability markers,
+      // never folded into compliance.
+      mutations_observed: { count: 0 },
+      mutation_pool: { attributed: 0, unattributed_workspace_dirty: 0 },
+      sessions_closed: { count: 0 },
     });
   });
 
@@ -7255,6 +7333,610 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       skip_count: {},
     });
     expect(report.layer_filter).toBe("all");
+  });
+});
+
+// v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated WEAK
+// auxiliary signal. Locks the honesty 铁律 (this weak signal NEVER contaminates
+// cite_compliance_rate) and the three-condition join filter:
+//   (1) narrow-surfaced — hook_surface_emitted with hook_name=knowledge-hint-narrow
+//   (2) contract glob specific — narrow kb, relevance_paths not `**/*`, type not guideline
+//   (3) mutated + not dismissed — same-session edit hit the specific glob, id not [dismissed]
+describe("runDoctorCiteCoverage (W1-T3 exposed_and_mutated weak signal)", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  function seedMeta(
+    target: string,
+    nodes: Array<{
+      stable_id: string;
+      knowledge_type: "decisions" | "pitfalls" | "models" | "guidelines" | "processes";
+      relevance_paths?: readonly string[];
+      relevance_scope?: "narrow" | "broad";
+    }>,
+  ): void {
+    const metaNodes: Record<string, unknown> = {};
+    for (const node of nodes) {
+      metaNodes[node.stable_id] = {
+        file: `.fabric/knowledge/${node.knowledge_type}/${node.stable_id}.md`,
+        content_ref: `.fabric/knowledge/${node.knowledge_type}/${node.stable_id}.md`,
+        scope_glob: "**",
+        hash: "deadbeef",
+        stable_id: node.stable_id,
+        identity_source: "declared",
+        description: {
+          summary: "test",
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "always",
+          knowledge_type: node.knowledge_type,
+          relevance_scope: node.relevance_scope ?? "broad",
+          relevance_paths: node.relevance_paths ?? [],
+        },
+      };
+    }
+    writeFileSync(
+      join(target, ".fabric", "agents.meta.json"),
+      JSON.stringify({ revision: "test-revision", nodes: metaNodes }, null, 2),
+      "utf8",
+    );
+  }
+
+  function mkNarrowSurface(opts: {
+    sessionId: string;
+    ids: string[];
+    ts: number;
+    hookName?: string;
+    deliveryStatus?: "delivered" | "suppressed" | "error";
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:surface:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "hook_surface_emitted",
+      hook_name: opts.hookName ?? "knowledge-hint-narrow",
+      client: "cc",
+      target_channel: "preToolUse",
+      rendered_ids: opts.ids,
+      delivery_status: opts.deliveryStatus ?? "delivered",
+    };
+  }
+
+  function mkEdit(opts: { path: string; ts: number; sessionId: string }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:edit:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "edit_intent_checked",
+      path: opts.path,
+      compliant: true,
+      intent: "test edit",
+      ledger_entry_id: `ledger:${randomUUID()}`,
+      matched_rule_context_ts: null,
+      window_ms: 60_000,
+    };
+  }
+
+  function mkTurn(opts: {
+    sessionId: string;
+    citeIds: string[];
+    citeTags: string[];
+    ts: number;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:turn:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      cite_ids: opts.citeIds,
+      cite_tags: opts.citeTags,
+      cite_commitments: [],
+      client: "cc",
+      turn_id: `turn-${randomUUID()}`,
+      timestamp: new Date(opts.ts).toISOString(),
+    };
+  }
+
+  // Positive case: narrow-surfaced + specific glob (decisions) + same-session
+  // edit hit + not dismissed → count=1, id captured. AND the explicit
+  // compliance rate is untouched (no `KB:` cite written this round).
+  it("counts a qualifying exposed_and_mutated pair WITHOUT polluting compliance", async () => {
+    const target = createInitializedProject("cite-exposed-positive");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-DEC-0001",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**"],
+      },
+    ]);
+    seedEvents(target, [
+      mkNarrowSurface({ sessionId: "sess-X", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 10 }),
+      mkEdit({ path: "src/auth/login.ts", sessionId: "sess-X", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.exposed_and_mutated).toEqual({
+      count: 1,
+      ids: ["KT-DEC-0001"],
+    });
+    // Honesty 铁律: no explicit `KB:` cite was written. The narrow KB WAS
+    // applicable + edited but uncited → it correctly registers as a missed
+    // explicit obligation (expected_but_missed=1, compliance=0/1=0%). The weak
+    // exposed_and_mutated=1 signal does NOT credit toward — nor dilute — that
+    // true compliance number: compliance stays an honest 0%, never inflated.
+    expect(report.metrics.qualifying_cites).toBe(0);
+    expect(report.metrics.compliant_cites).toBe(0);
+    expect(report.metrics.expected_but_missed).toBe(1);
+    expect(report.metrics.noncompliant_cites).toBe(1);
+    expect(report.metrics.cite_compliance_rate).toBe(0);
+  });
+
+  // Negative (condition 2): relevance_paths is the `**/*` catch-all → not
+  // specific → excluded even though surfaced + edited.
+  it("does NOT count a `**/*` wildcard glob (not specific)", async () => {
+    const target = createInitializedProject("cite-exposed-wildcard");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-DEC-0002",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["**/*"],
+      },
+    ]);
+    seedEvents(target, [
+      mkNarrowSurface({ sessionId: "sess-W", ids: ["KT-DEC-0002"], ts: marker.marker_ts + 10 }),
+      mkEdit({ path: "src/auth/login.ts", sessionId: "sess-W", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.exposed_and_mutated).toEqual({ count: 0 });
+  });
+
+  // Negative (condition 2): guideline-type entry is broad-by-nature → excluded
+  // even with a specific glob + surface + edit.
+  it("does NOT count a generic guideline-type entry", async () => {
+    const target = createInitializedProject("cite-exposed-guideline");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-GLD-0001",
+        knowledge_type: "guidelines",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**"],
+      },
+    ]);
+    seedEvents(target, [
+      mkNarrowSurface({ sessionId: "sess-G", ids: ["KT-GLD-0001"], ts: marker.marker_ts + 10 }),
+      mkEdit({ path: "src/auth/login.ts", sessionId: "sess-G", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.exposed_and_mutated).toEqual({ count: 0 });
+  });
+
+  // Negative (condition 3): the id was [dismissed] this session → excluded.
+  it("does NOT count an id dismissed in the same session", async () => {
+    const target = createInitializedProject("cite-exposed-dismissed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-DEC-0003",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**"],
+      },
+    ]);
+    seedEvents(target, [
+      mkNarrowSurface({ sessionId: "sess-D", ids: ["KT-DEC-0003"], ts: marker.marker_ts + 10 }),
+      mkEdit({ path: "src/auth/login.ts", sessionId: "sess-D", ts: marker.marker_ts + 20 }),
+      // index-aligned: cite_ids[0] dismissed
+      mkTurn({
+        sessionId: "sess-D",
+        citeIds: ["KT-DEC-0003"],
+        citeTags: ["dismissed"],
+        ts: marker.marker_ts + 30,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.exposed_and_mutated).toEqual({ count: 0 });
+  });
+
+  // Negative (condition 1): the surface came from the BROAD hook, not the
+  // narrow PreToolUse hook → excluded even with specific glob + edit.
+  it("does NOT count a non-narrow (broad) surface", async () => {
+    const target = createInitializedProject("cite-exposed-broad-surface");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-DEC-0004",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**"],
+      },
+    ]);
+    seedEvents(target, [
+      mkNarrowSurface({
+        sessionId: "sess-B",
+        ids: ["KT-DEC-0004"],
+        ts: marker.marker_ts + 10,
+        hookName: "knowledge-hint-broad",
+      }),
+      mkEdit({ path: "src/auth/login.ts", sessionId: "sess-B", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.exposed_and_mutated).toEqual({ count: 0 });
+  });
+
+  // Negative (join): surfaced + specific glob but the same-session edit did NOT
+  // hit the glob path → not mutated → excluded.
+  it("does NOT count when the edit path is outside the specific glob", async () => {
+    const target = createInitializedProject("cite-exposed-no-mutation");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-DEC-0005",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**"],
+      },
+    ]);
+    seedEvents(target, [
+      mkNarrowSurface({ sessionId: "sess-M", ids: ["KT-DEC-0005"], ts: marker.marker_ts + 10 }),
+      // edit a path NOT under src/auth
+      mkEdit({ path: "src/billing/charge.ts", sessionId: "sess-M", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.exposed_and_mutated).toEqual({ count: 0 });
+  });
+
+  // Honesty cross-check: a real explicit cite (compliance) AND a separate
+  // exposed_and_mutated pair coexist in the same report — neither inflates the
+  // other. Compliance counts the cited id; exposed counts only the surfaced-but-
+  // uncited id, on its own field.
+  it("keeps compliance and exposed_and_mutated as independent counts", async () => {
+    const target = createInitializedProject("cite-exposed-independence");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedMeta(target, [
+      {
+        stable_id: "KT-DEC-0010",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**"],
+      },
+      {
+        stable_id: "KT-DEC-0011",
+        knowledge_type: "decisions",
+        relevance_scope: "narrow",
+        relevance_paths: ["src/pay/**"],
+      },
+    ]);
+    seedEvents(target, [
+      // explicit applied cite for KT-DEC-0010 (compliance signal)
+      mkTurn({
+        sessionId: "sess-I",
+        citeIds: ["KT-DEC-0010"],
+        citeTags: ["applied"],
+        ts: marker.marker_ts + 5,
+      }),
+      // KT-DEC-0011 surfaced-but-uncited + mutated (exposed signal only)
+      mkNarrowSurface({ sessionId: "sess-I", ids: ["KT-DEC-0011"], ts: marker.marker_ts + 10 }),
+      mkEdit({ path: "src/pay/charge.ts", sessionId: "sess-I", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    // explicit compliance credits ONLY the applied cite
+    expect(report.metrics.qualifying_cites).toBe(1);
+    // exposed weak signal credits ONLY the surfaced-but-uncited id
+    expect(report.metrics.exposed_and_mutated).toEqual({
+      count: 1,
+      ids: ["KT-DEC-0011"],
+    });
+  });
+});
+
+// lifecycle-refactor W2-T4 (§5 row7 PostToolUse / row2 SessionEnd / §0 下沉 doctor):
+// doctor consumes the new `file_mutated` + `session_ended` markers OFFLINE.
+// Locks: (1) mutations_observed counts distinct file_mutated (tool_call_id dedup);
+// (2) mutation_pool splits attributed (source_event_id → surfaced) vs
+// unattributed_workspace_dirty; (3) attribution key store_id+stable_id+source_event_id
+// dedups multi-store; (4) sessions_closed counts distinct session_ended;
+// (5) the honesty 铁律 — none of these touch cite_compliance_rate.
+describe("runDoctorCiteCoverage (W2-T4 PostToolUse mutation funnel)", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  // A narrow surface event with a KNOWN envelope id so file_mutated can link to
+  // it via source_event_id. Returns { event, id } so the caller wires the link.
+  function mkSurface(opts: {
+    sessionId: string;
+    ids: string[];
+    ts: number;
+  }): { event: object; id: string } {
+    const id = `event:surface:${randomUUID()}`;
+    return {
+      id,
+      event: {
+        kind: "fabric-event",
+        id,
+        ts: opts.ts,
+        schema_version: 1,
+        session_id: opts.sessionId,
+        event_type: "hook_surface_emitted",
+        hook_name: "knowledge-hint-narrow",
+        client: "cc",
+        target_channel: "preToolUse",
+        rendered_ids: opts.ids,
+        delivery_status: "delivered",
+      },
+    };
+  }
+
+  function mkFileMutated(opts: {
+    sessionId: string;
+    path: string;
+    toolCallId: string;
+    ts: number;
+    sourceEventId?: string;
+    storeId?: string;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:mutated:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "file_mutated",
+      path: opts.path,
+      tool_call_id: opts.toolCallId,
+      tool_name: "Edit",
+      ...(opts.sourceEventId !== undefined ? { source_event_id: opts.sourceEventId } : {}),
+      ...(opts.storeId !== undefined ? { store_id: opts.storeId } : {}),
+    };
+  }
+
+  function mkSessionEnded(opts: { sessionId: string; ts: number }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:ended:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "session_ended",
+    };
+  }
+
+  function mkTurn(opts: {
+    sessionId: string;
+    citeIds: string[];
+    citeTags: string[];
+    ts: number;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:turn:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      cite_ids: opts.citeIds,
+      cite_tags: opts.citeTags,
+      cite_commitments: [],
+      client: "cc",
+      turn_id: `turn-${randomUUID()}`,
+      timestamp: new Date(opts.ts).toISOString(),
+    };
+  }
+
+  // mutations_observed counts every distinct file_mutated; tool_call_id dedups.
+  it("counts distinct file_mutated events with tool_call_id dedup", async () => {
+    const target = createInitializedProject("mut-observed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkFileMutated({ sessionId: "s1", path: "a.ts", toolCallId: "call-1", ts: marker.marker_ts + 10 }),
+      mkFileMutated({ sessionId: "s1", path: "b.ts", toolCallId: "call-2", ts: marker.marker_ts + 20 }),
+      // duplicate tool_call_id (retry append) → collapses to one
+      mkFileMutated({ sessionId: "s1", path: "a.ts", toolCallId: "call-1", ts: marker.marker_ts + 30 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutations_observed).toEqual({ count: 2 });
+  });
+
+  // No source_event_id → unattributed_workspace_dirty, never attributed.
+  it("downgrades a file_mutated without source_event_id to unattributed_workspace_dirty", async () => {
+    const target = createInitializedProject("mut-unattributed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkFileMutated({ sessionId: "s1", path: "a.ts", toolCallId: "call-1", ts: marker.marker_ts + 10 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutations_observed).toEqual({ count: 1 });
+    expect(report.metrics.mutation_pool).toEqual({
+      attributed: 0,
+      unattributed_workspace_dirty: 1,
+    });
+  });
+
+  // source_event_id linking to a real surfaced event → attributed.
+  it("attributes a file_mutated whose source_event_id resolves to a surfaced event", async () => {
+    const target = createInitializedProject("mut-attributed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const surface = mkSurface({ sessionId: "s1", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 5 });
+    seedEvents(target, [
+      surface.event,
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: surface.id,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutations_observed).toEqual({ count: 1 });
+    expect(report.metrics.mutation_pool).toEqual({
+      attributed: 1,
+      unattributed_workspace_dirty: 0,
+    });
+  });
+
+  // A source_event_id that links to NO surfaced event (dangling) → unattributed.
+  it("downgrades a file_mutated whose source_event_id resolves to nothing", async () => {
+    const target = createInitializedProject("mut-dangling-source");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkFileMutated({
+        sessionId: "s1",
+        path: "a.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: "event:surface:does-not-exist",
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutation_pool).toEqual({
+      attributed: 0,
+      unattributed_workspace_dirty: 1,
+    });
+  });
+
+  // Attribution key = store_id + stable_id + source_event_id: two file_mutated
+  // events from DIFFERENT stores sharing the same surfaced id + source must count
+  // as TWO attributions (cross-store), while a true duplicate (same store + id +
+  // source) collapses to one.
+  it("dedups attribution by store_id+stable_id+source_event_id (no multi-store double-count collapse)", async () => {
+    const target = createInitializedProject("mut-multistore-key");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const surface = mkSurface({ sessionId: "s1", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 5 });
+    seedEvents(target, [
+      surface.event,
+      // store team
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: surface.id,
+        storeId: "team",
+      }),
+      // store other — same surfaced id + source but different store → distinct key
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-2",
+        ts: marker.marker_ts + 11,
+        sourceEventId: surface.id,
+        storeId: "other",
+      }),
+      // exact duplicate of the team one (different tool_call_id so it's a distinct
+      // mutation, but same store+id+source) → attribution key collapses to one
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-3",
+        ts: marker.marker_ts + 12,
+        sourceEventId: surface.id,
+        storeId: "team",
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    // 3 distinct tool_call_ids → 3 mutations observed
+    expect(report.metrics.mutations_observed).toEqual({ count: 3 });
+    // attribution keys: team|KT-DEC-0001|src + other|KT-DEC-0001|src = 2 distinct
+    expect(report.metrics.mutation_pool?.attributed).toBe(2);
+    expect(report.metrics.mutation_pool?.unattributed_workspace_dirty).toBe(0);
+  });
+
+  // sessions_closed counts distinct session_ended markers.
+  it("counts distinct session_ended markers as sessions_closed", async () => {
+    const target = createInitializedProject("mut-sessions-closed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkSessionEnded({ sessionId: "s1", ts: marker.marker_ts + 10 }),
+      mkSessionEnded({ sessionId: "s2", ts: marker.marker_ts + 20 }),
+      // duplicate session_ended for s1 → same session, counts once
+      mkSessionEnded({ sessionId: "s1", ts: marker.marker_ts + 30 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.sessions_closed).toEqual({ count: 2 });
+  });
+
+  // Honesty 铁律: the mutation funnel NEVER feeds cite_compliance_rate. An
+  // explicit applied cite stands alone; file_mutated/session_ended add no
+  // compliance credit and no contamination.
+  it("keeps the mutation funnel strictly separate from cite_compliance_rate", async () => {
+    const target = createInitializedProject("mut-honesty");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const surface = mkSurface({ sessionId: "s1", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 5 });
+    seedEvents(target, [
+      // one explicit applied cite → compliance = 1/1 = 100%
+      mkTurn({ sessionId: "s1", citeIds: ["KT-DEC-0001"], citeTags: ["applied"], ts: marker.marker_ts + 6 }),
+      // a fully attributed mutation + a session close — pure observability, no
+      // compliance effect
+      surface.event,
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: surface.id,
+      }),
+      mkSessionEnded({ sessionId: "s1", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    // mutation funnel populated
+    expect(report.metrics.mutations_observed).toEqual({ count: 1 });
+    expect(report.metrics.mutation_pool).toEqual({ attributed: 1, unattributed_workspace_dirty: 0 });
+    expect(report.metrics.sessions_closed).toEqual({ count: 1 });
+    // compliance untouched: still 1 qualifying cite, 0 missed, 100%
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
+    expect(report.metrics.cite_compliance_rate).toBe(1);
   });
 });
 

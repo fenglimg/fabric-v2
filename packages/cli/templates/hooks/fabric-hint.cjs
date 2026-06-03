@@ -1271,6 +1271,101 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
   };
 }
 
+// lifecycle-refactor W3-A2 (§7 graph generation signal): after a successful
+// archive the Stop hook REQUESTS edge extraction by emitting one
+// graph_edge_candidate_requested{stable_id, store?}. The hook never PRODUCES
+// edges (that is the archive/import skill's or doctor co-occurrence's job,
+// KT-DEC-0007) — it only flags "this entry just landed; someone should extract
+// its `related` edges". FROZEN-safe: O(1) tail scan, best-effort silent, single
+// advisory-locked appendLockedLine (same primitive the rest of this hook uses).
+//
+// HONEST stable_id sourcing — the deliberate limitation: pending entries (the
+// fabric-archive → extractKnowledge path) carry NO canonical stable_id (id is
+// late-bound at fab_review approve), so their knowledge_proposed event omits
+// stable_id (or sets the `pending:<key>` sentinel). A graph edge between
+// id-less pending drafts is meaningless, so we DO NOT fabricate one. We emit
+// ONLY when the most-recent knowledge_proposed event carries a real
+// K[TP]-XXX-NNNN stable_id (the approve/promote path) — i.e. an entry that
+// actually has a canonical node to attach edges to. When the latest proposed
+// is id-less we honestly skip; the request will fire on the approve event that
+// allocates the id. A session-scoped sidecar de-dupes so repeated Stop fires in
+// one session don't re-request the same id.
+const STABLE_ID_RE = /^K[TP]-[A-Z]{3}-\d{4}$/;
+const GRAPH_EDGE_REQUESTED_SIDECAR = ".fabric/.cache/graph-edge-requested";
+
+function emitGraphEdgeCandidateBestEffort(cwd, events, sessionId) {
+  try {
+    if (!Array.isArray(events) || events.length === 0) return;
+    const fabricDir = join(cwd, FABRIC_DIR);
+    if (!existsSync(fabricDir)) return;
+
+    // O(1)-amortized tail scan for the newest knowledge_proposed carrying a
+    // real (non-sentinel) stable_id. Stop at the first knowledge_proposed we
+    // see — if the latest archive is id-less, we honestly skip rather than
+    // reaching back to an older approved entry (that older entry's edges were
+    // already requested when IT landed).
+    let stableId = null;
+    let store;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (!ev || ev.event_type !== EVENT_TYPE_PROPOSED) continue;
+      const candidate = typeof ev.stable_id === "string" ? ev.stable_id : null;
+      if (candidate && STABLE_ID_RE.test(candidate)) {
+        stableId = candidate;
+        if (typeof ev.store === "string" && ev.store.length > 0) store = ev.store;
+      }
+      // First knowledge_proposed encountered (newest) decides; do not walk past
+      // it to an older one.
+      break;
+    }
+    if (stableId === null) return;
+
+    // Session-scoped de-dup: skip if we already requested edges for this exact
+    // stable_id this session. Sidecar is a single line holding the last id.
+    const sidecarPath = join(cwd, sessionScopedCacheFile(GRAPH_EDGE_REQUESTED_SIDECAR, sessionId));
+    try {
+      if (existsSync(sidecarPath)) {
+        const prev = readFileSync(sidecarPath, "utf8").trim();
+        if (prev === stableId) return;
+      }
+    } catch {
+      // unreadable sidecar → fall through and (re)emit; de-dup is best-effort.
+    }
+
+    let idSuffix;
+    try {
+      idSuffix = require("node:crypto").randomUUID();
+    } catch {
+      idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    const event = {
+      kind: "fabric-event",
+      id: `event:${idSuffix}`,
+      ts: Date.now(),
+      schema_version: 1,
+      event_type: "graph_edge_candidate_requested",
+      stable_id: stableId,
+    };
+    if (store !== undefined) event.store = store;
+    if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
+    appendLockedLine(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n");
+
+    // Record the de-dup marker (best-effort; atomic when state-store lib loaded).
+    try {
+      if (stateStore && typeof stateStore.atomicWrite === "function") {
+        stateStore.atomicWrite(sidecarPath, stableId);
+      } else {
+        mkdirSync(dirname(sidecarPath), { recursive: true });
+        writeFileSync(sidecarPath, stableId);
+      }
+    } catch {
+      // de-dup marker write failed — at worst we re-request next Stop; harmless.
+    }
+  } catch {
+    // best-effort §7 signal — never block the Stop hook (KT-DEC-0007).
+  }
+}
+
 // v2.1 NEW-N-3 (ADJ-NEWN-3): hook_signal_emitted instrumentation. Writes ONE
 // best-effort ledger row at the point a nudge is actually delivered (post-
 // cooldown), so the join key measures nudge-trigger logic (which signal fired,
@@ -1877,6 +1972,17 @@ function main(env, stdio) {
     );
 
     const events = readLedger(cwd);
+
+    // lifecycle-refactor W3-A2 (§7): request graph-edge extraction for a freshly
+    // archived canonical entry. Runs UNCONDITIONALLY here (before the nudge
+    // cooldown/dismiss early-returns) so the §7 signal is independent of whether
+    // a reminder banner is shown this Stop. Best-effort, never throws.
+    try {
+      emitGraphEdgeCandidateBestEffort(cwd, events, resolveHookSessionId(stdinPayload));
+    } catch {
+      // never block the Stop hook
+    }
+
     let pendingStats;
     try {
       pendingStats = readPendingStats(cwd, now);
@@ -2146,6 +2252,9 @@ module.exports = {
   // of the contract-missing emission contract). The lib module itself is
   // also exported indirectly via the reminder helper.
   emitCiteContractRemindersBestEffort,
+  // lifecycle-refactor W3-A2 (§7): graph-edge-candidate request emitter
+  // (exported for unit testing of the honest stable_id-gating + de-dup).
+  emitGraphEdgeCandidateBestEffort,
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
@@ -2183,6 +2292,8 @@ module.exports = {
     // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
     IMPORT_STATE_FILE_REL,
     IMPORT_IN_FLIGHT_MAX_AGE_HOURS,
+    // lifecycle-refactor W3-A2 (§7): graph-edge-request de-dup sidecar.
+    GRAPH_EDGE_REQUESTED_SIDECAR,
   },
 };
 

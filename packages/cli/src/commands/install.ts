@@ -40,6 +40,8 @@ import {
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
+  installSessionEndMarkerHook,
+  installPostTooluseMutationHook,
   installSharedSkillLib,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
@@ -1272,6 +1274,12 @@ async function executeInitStagePlan(
         // stage) left configs pointing at a missing file. Inlined here too,
         // mirroring the cursor-hook-config note below.
         installResults.push(...await runBestEffort("hook-cite-policy-evict-script", () => installCitePolicyEvictHook(plan.target)));
+        // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hook
+        // scripts. Mirror the sibling hook-script copies (config merges below
+        // register these events; the SCRIPT must be on disk for a bootstrap-
+        // only install too, else configs point at a missing file).
+        installResults.push(...await runBestEffort("hook-session-end-script", () => installSessionEndMarkerHook(plan.target)));
+        installResults.push(...await runBestEffort("hook-post-tooluse-script", () => installPostTooluseMutationHook(plan.target)));
         // rc.16 TASK-004 (F2-tests): copy shared hook-lib helpers
         // (banner-i18n.cjs, session-digest-writer.cjs) into each client's
         // <client>/hooks/lib/ directory. Same best-effort discipline as the

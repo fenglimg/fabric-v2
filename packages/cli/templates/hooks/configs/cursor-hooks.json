@@ -16,6 +16,15 @@
         "matcher": "Edit|Write|MultiEdit",
         "command": ".cursor/hooks/cite-policy-evict.cjs"
       }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": ".cursor/hooks/post-tooluse-mutation.cjs"
+      }
+    ],
+    "sessionEnd": [
+      { "command": ".cursor/hooks/session-end-marker.cjs" }
     ]
   }
 }

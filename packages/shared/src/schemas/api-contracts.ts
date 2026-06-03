@@ -222,6 +222,12 @@ export const planContextOutputSchema = z.object({
   // (field omitted) when no actionable redirects exist for the surfaced
   // candidate set. See packages/server/src/services/id-redirect.ts.
   redirects: z.record(z.string()).optional(),
+  // lifecycle-refactor W3-T2 (§7 图谱消费): related-expansion provenance map
+  // (appended id → surfaced source id). Present only when `include_related` was
+  // requested AND at least one in-corpus one-hop neighbour was appended. Omitted
+  // on the graph-empty / steady-state path. Additive — declare it here or zod
+  // strips it on output validation.
+  related_appended: z.record(z.string()).optional(),
 });
 
 export const planContextAnnotations = {
@@ -477,6 +483,14 @@ export const recallOutputSchema = z.object({
       level: z.enum(["L0", "L1", "L2"]),
       path: z.string(),
       body: z.string(),
+      // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7 物理 store
+      // 边界对 AI 可见): per-rule store provenance so the caller can trace which
+      // store each recalled entry came from. cross-store-recall already prefixes
+      // store entries `<alias>:<stable_id>`; this surfaces that as a structured
+      // field (`{ alias }`) instead of forcing the caller to parse the id. Omitted
+      // for project-local entries (no alias prefix). Additive — declare it or zod
+      // strips it on output validation.
+      store: z.object({ alias: z.string() }).optional(),
     }),
   ),
   selected_stable_ids: z.array(z.string()),
@@ -1278,6 +1292,68 @@ export const citeCoverageReportSchema = z.object({
     // legacy first-line-`KB:` metrics above are unchanged (back-compat).
     recall_backed_edits: z.number().int().nonnegative().optional(),
     recall_coverage_rate: z.number().min(0).max(1).nullable().optional(),
+    // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
+    // WEAK auxiliary signal — strictly SEPARATE from cite_compliance_rate (which
+    // is the true explicit-adherence rate, currently ~2.5%). It MUST NOT be
+    // merged into compliance: it estimates "a narrow PreToolUse-surfaced KB id
+    // whose contract-specific glob was subsequently edited (mutated) in the same
+    // session, and was not [dismissed] that round". It credits NOTHING toward the
+    // real `KB:`-line compliance — it is an observational hint that surfaced
+    // knowledge influenced an edit, surfaced ONLY as its own field so the renderer
+    // can label it "weak signal, NOT counted toward true adherence". Three
+    // conditions (all required): (1) id came from a `hook_surface_emitted` with
+    // hook_name === "knowledge-hint-narrow"; (2) the id's contract glob is
+    // SPECIFIC (excludes `**/*` wildcards and generic guideline-type entries);
+    // (3) the id was not [dismissed] in the same session. `count` = number of
+    // distinct (session_id, stable_id) pairs satisfying all three; `ids` =
+    // sorted distinct stable_ids (capped, diagnostics only). Always >= 0; null/
+    // absent on degraded/skipped reports.
+    exposed_and_mutated: z
+      .object({
+        count: z.number().int().nonnegative(),
+        ids: z.array(z.string()).optional(),
+      })
+      .optional(),
+    // lifecycle-refactor W2-T4 (§5 row7 PostToolUse / §0 下沉 doctor): mutation
+    // funnel rebuilt offline from the new `file_mutated` PostToolUse marker —
+    // the权威 signal that a mutation actually completed (path + tool_call_id),
+    // distinct from the PreToolUse `edit_intent_checked` EDIT-INTENT signal that
+    // feeds `edits_touched`. mutations_observed.count = number of distinct
+    // `file_mutated` events in window (per-call tool_call_id dedup guards the
+    // PostToolUse parallel-fire race). Strictly ADDITIVE — never folded into
+    // cite_compliance_rate (honesty 铁律, mirrors exposed_and_mutated). Absent on
+    // degraded/skipped reports.
+    mutations_observed: z
+      .object({
+        count: z.number().int().nonnegative(),
+      })
+      .optional(),
+    // lifecycle-refactor W2-T4 (§5 row7 mutation_pool + downgrade): low-confidence
+    // mutation attribution pool. A `file_mutated` event is `attributed` ONLY when
+    // its `source_event_id` links back to a `hook_surface_emitted` (surfaced/cited
+    // knowledge) in window — attribution key = store_id + stable_id +
+    // source_event_id (distinct dedup so multi-store never double-counts). Every
+    // other mutation (no source_event_id, or a source_event_id that does not
+    // resolve to a surfaced event) downgrades to `unattributed_workspace_dirty`.
+    // NOTE: this is the events.jsonl-only attribution. The §9 git-diff fallback
+    // (升 fallback via session shell event + baseline) is a SPECULATIVE
+    // implementation note — deliberately NOT run here (doctor stays read-only,
+    // no git diff / no disk write). Additive; absent on degraded/skipped reports.
+    mutation_pool: z
+      .object({
+        attributed: z.number().int().nonnegative(),
+        unattributed_workspace_dirty: z.number().int().nonnegative(),
+      })
+      .optional(),
+    // lifecycle-refactor W2-T4 (§5 row2 SessionEnd funnel 对账下沉 doctor): the
+    // SessionEnd hook only O(1)-appends a `session_ended` marker; this counts the
+    // distinct sessions that emitted one (funnel "closed" boundary). Purely an
+    // observability marker — not joined into any rate. Additive.
+    sessions_closed: z
+      .object({
+        count: z.number().int().nonnegative(),
+      })
+      .optional(),
   }),
   per_client: z
     .record(
