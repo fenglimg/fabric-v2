@@ -1037,6 +1037,27 @@ function renderCiteCoverageReport(
       `  ${dt("doctor.cite.metric.exposedAndMutated")}: ${report.metrics.exposed_and_mutated.count}`,
     );
   }
+  // lifecycle-refactor W2-T4 (§5 row7 PostToolUse mutation funnel / §0 下沉 doctor):
+  // surface the offline-rebuilt mutation signals on their OWN lines, strictly
+  // SEPARATE from the compliance rate above (honesty 铁律 — these are observability
+  // markers, never folded into adherence). mutations_observed = authoritative
+  // PostToolUse mutation-completed count; mutation_pool splits low-confidence
+  // attribution (attributed via source_event_id vs unattributed_workspace_dirty).
+  if (report.metrics.mutations_observed !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.mutationsObserved")}: ${report.metrics.mutations_observed.count}`,
+    );
+  }
+  if (report.metrics.mutation_pool !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.mutationPool")}: ${report.metrics.mutation_pool.attributed} / ${report.metrics.mutation_pool.unattributed_workspace_dirty} (attributed / unattributed_workspace_dirty)`,
+    );
+  }
+  if (report.metrics.sessions_closed !== undefined) {
+    lines.push(
+      `  ${dt("doctor.cite.metric.sessionsClosed")}: ${report.metrics.sessions_closed.count}`,
+    );
+  }
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)

@@ -1300,6 +1300,46 @@ export const citeCoverageReportSchema = z.object({
         ids: z.array(z.string()).optional(),
       })
       .optional(),
+    // lifecycle-refactor W2-T4 (§5 row7 PostToolUse / §0 下沉 doctor): mutation
+    // funnel rebuilt offline from the new `file_mutated` PostToolUse marker —
+    // the权威 signal that a mutation actually completed (path + tool_call_id),
+    // distinct from the PreToolUse `edit_intent_checked` EDIT-INTENT signal that
+    // feeds `edits_touched`. mutations_observed.count = number of distinct
+    // `file_mutated` events in window (per-call tool_call_id dedup guards the
+    // PostToolUse parallel-fire race). Strictly ADDITIVE — never folded into
+    // cite_compliance_rate (honesty 铁律, mirrors exposed_and_mutated). Absent on
+    // degraded/skipped reports.
+    mutations_observed: z
+      .object({
+        count: z.number().int().nonnegative(),
+      })
+      .optional(),
+    // lifecycle-refactor W2-T4 (§5 row7 mutation_pool + downgrade): low-confidence
+    // mutation attribution pool. A `file_mutated` event is `attributed` ONLY when
+    // its `source_event_id` links back to a `hook_surface_emitted` (surfaced/cited
+    // knowledge) in window — attribution key = store_id + stable_id +
+    // source_event_id (distinct dedup so multi-store never double-counts). Every
+    // other mutation (no source_event_id, or a source_event_id that does not
+    // resolve to a surfaced event) downgrades to `unattributed_workspace_dirty`.
+    // NOTE: this is the events.jsonl-only attribution. The §9 git-diff fallback
+    // (升 fallback via session shell event + baseline) is a SPECULATIVE
+    // implementation note — deliberately NOT run here (doctor stays read-only,
+    // no git diff / no disk write). Additive; absent on degraded/skipped reports.
+    mutation_pool: z
+      .object({
+        attributed: z.number().int().nonnegative(),
+        unattributed_workspace_dirty: z.number().int().nonnegative(),
+      })
+      .optional(),
+    // lifecycle-refactor W2-T4 (§5 row2 SessionEnd funnel 对账下沉 doctor): the
+    // SessionEnd hook only O(1)-appends a `session_ended` marker; this counts the
+    // distinct sessions that emitted one (funnel "closed" boundary). Purely an
+    // observability marker — not joined into any rate. Additive.
+    sessions_closed: z
+      .object({
+        count: z.number().int().nonnegative(),
+      })
+      .optional(),
   }),
   per_client: z
     .record(

@@ -175,6 +175,14 @@ export const enMessages: Messages = {
   // toward true adherence (honesty 铁律).
   "doctor.cite.metric.exposedAndMutated":
     "exposed & mutated (weak auxiliary signal — NOT counted toward true adherence)",
+  // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse mutation funnel +
+  // SessionEnd boundary. Observability markers, NOT folded into adherence.
+  "doctor.cite.metric.mutationsObserved":
+    "mutations observed (PostToolUse file_mutated — authoritative, NOT counted toward adherence)",
+  "doctor.cite.metric.mutationPool":
+    "mutation pool (low-confidence attribution via source_event_id)",
+  "doctor.cite.metric.sessionsClosed":
+    "sessions closed (SessionEnd markers — funnel boundary)",
   "doctor.cite.section.perClient": "Per-client",
   "doctor.cite.section.dismissedReasons": "Dismissed reasons",
   "doctor.cite.dismissed.scope-mismatch": "Scope mismatch",

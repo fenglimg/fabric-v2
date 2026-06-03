@@ -280,6 +280,25 @@ export type CiteCoverageReport = {
     // count = distinct (session, id) pairs; ids = sorted distinct stable_ids
     // (diagnostics only). Additive — never touches the compliance numerator.
     exposed_and_mutated?: { count: number; ids?: string[] };
+    // lifecycle-refactor W2-T4 (§5 row7 PostToolUse / §0 下沉 doctor): mutation
+    // funnel rebuilt offline from the new `file_mutated` PostToolUse marker. This
+    // is the AUTHORITATIVE "mutation completed" signal (path + tool_call_id),
+    // distinct from the PreToolUse `edit_intent_checked` EDIT-INTENT that feeds
+    // `edits_touched`. count = distinct `file_mutated` events in window
+    // (tool_call_id dedup guards the PostToolUse parallel-fire race). Strictly
+    // ADDITIVE — never folded into cite_compliance_rate (honesty 铁律).
+    mutations_observed?: { count: number };
+    // lifecycle-refactor W2-T4 (§5 row7 mutation_pool + downgrade): low-confidence
+    // attribution pool. `attributed` = a `file_mutated` whose `source_event_id`
+    // links to a `hook_surface_emitted` in window (attribution key = store_id +
+    // stable_id + source_event_id, distinct-dedup'd so multi-store never
+    // double-counts). Everything else → `unattributed_workspace_dirty`. The §9
+    // git-diff fallback is SPECULATIVE and deliberately NOT run (doctor read-only).
+    mutation_pool?: { attributed: number; unattributed_workspace_dirty: number };
+    // lifecycle-refactor W2-T4 (§5 row2 SessionEnd 对账下沉 doctor): distinct
+    // sessions that appended a `session_ended` marker (funnel-closed boundary).
+    // Pure observability marker — never joined into a rate.
+    sessions_closed?: { count: number };
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -686,11 +705,18 @@ export async function runDoctorCiteCoverage(
   // v2.2.0-rc.1 W1-T3: narrow PreToolUse surface events feed the WEAK
   // exposed_and_mutated signal (condition 1).
   type HookSurfaceEvent = Extract<EventLedgerEvent, { event_type: "hook_surface_emitted" }>;
+  // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse `file_mutated` (the
+  // authoritative mutation-completed marker) + SessionEnd `session_ended`
+  // (funnel-closed boundary). New events, zero prior consumers — see plan.
+  type FileMutatedEvent = Extract<EventLedgerEvent, { event_type: "file_mutated" }>;
+  type SessionEndedEvent = Extract<EventLedgerEvent, { event_type: "session_ended" }>;
   const assistantTurns: TurnEvent[] = [];
   const editEvents: EditEvent[] = [];
   const fetchEvents: FetchEvent[] = [];
   const plannedEvents: PlannedEvent[] = [];
   const hookSurfaceEvents: HookSurfaceEvent[] = [];
+  const fileMutatedEvents: FileMutatedEvent[] = [];
+  const sessionEndedEvents: SessionEndedEvent[] = [];
   for (const event of ledgerEvents) {
     switch (event.event_type) {
       case "assistant_turn_observed":
@@ -707,6 +733,12 @@ export async function runDoctorCiteCoverage(
         break;
       case "hook_surface_emitted":
         hookSurfaceEvents.push(event);
+        break;
+      case "file_mutated":
+        fileMutatedEvents.push(event);
+        break;
+      case "session_ended":
+        sessionEndedEvents.push(event);
         break;
       default:
         break;
@@ -1192,6 +1224,83 @@ export async function runDoctorCiteCoverage(
     idTypeMap,
   });
 
+  // lifecycle-refactor W2-T4 (§5 row7 PostToolUse mutation funnel + mutation_pool
+  // downgrade / §0 下沉 doctor): consume the new `file_mutated` PostToolUse marker
+  // OFFLINE here (前台 hook only O(1)-appended it). This rebuild is strictly
+  // ADDITIVE — it stands ALONGSIDE the W1-T3 exposed_and_mutated join and the
+  // edit_intent_checked `edits_touched` count, touching NEITHER. Three derived
+  // signals:
+  //   - mutations_observed.count: distinct `file_mutated` events (dedup on
+  //     tool_call_id, the per-call key that pairs Pre/Post and guards the
+  //     PostToolUse parallel-fire race). This is the AUTHORITATIVE
+  //     mutation-COMPLETED count, vs the PreToolUse edit-INTENT `edits_touched`.
+  //   - mutation_pool.attributed: a file_mutated whose `source_event_id` resolves
+  //     to a `hook_surface_emitted` (surfaced knowledge) in window. Attribution
+  //     key = store_id + stable_id + source_event_id (distinct-dedup'd so
+  //     multi-store never double-counts the same surfaced id).
+  //   - mutation_pool.unattributed_workspace_dirty: every file_mutated that does
+  //     NOT attribute (no source_event_id, or a source_event_id that resolves to
+  //     no surfaced event). §9 git-diff fallback to upgrade these via a session
+  //     shell event + baseline is SPECULATIVE and deliberately NOT implemented —
+  //     doctor stays read-only (no git diff / no disk write); the events.jsonl
+  //     source_event_id link is the sole attribution path here.
+  //     TODO(§9 future): git-diff + session shell baseline fallback to reclaim
+  //     unattributed_workspace_dirty into fallback-attributed. Out of scope (W2-T4
+  //     keeps doctor read-only).
+  // surfacedEventIds: the envelope `id` of every hook_surface_emitted in window —
+  // the link target of file_mutated.source_event_id. surfacedIdsByEvent maps that
+  // event id → its rendered_ids (the stable_ids surfaced), used to build the
+  // distinct attribution key.
+  const surfacedIdsByEvent = new Map<string, readonly string[]>();
+  for (const surface of hookSurfaceEvents) {
+    surfacedIdsByEvent.set(surface.id, surface.rendered_ids);
+  }
+  const seenMutationKeys = new Set<string>(); // tool_call_id dedup
+  const attributionKeys = new Set<string>(); // store_id|stable_id|source_event_id
+  let mutationsObserved = 0;
+  let unattributedWorkspaceDirty = 0;
+  for (const mutation of fileMutatedEvents) {
+    // Distinct mutation count keyed by tool_call_id (per-call key). A repeated
+    // tool_call_id (e.g. a duplicated append on retry) collapses to one.
+    if (seenMutationKeys.has(mutation.tool_call_id)) continue;
+    seenMutationKeys.add(mutation.tool_call_id);
+    mutationsObserved += 1;
+
+    const sourceEventId = mutation.source_event_id;
+    const surfacedRenderedIds =
+      typeof sourceEventId === "string" && sourceEventId.length > 0
+        ? surfacedIdsByEvent.get(sourceEventId)
+        : undefined;
+    if (surfacedRenderedIds === undefined || surfacedRenderedIds.length === 0) {
+      // No source_event_id, or it links to no surfaced event → low confidence.
+      unattributedWorkspaceDirty += 1;
+      continue;
+    }
+    // Attributed: register one distinct attribution key per surfaced stable_id.
+    // store_id is optional (single-store default) — collapse undefined to "" so
+    // the key stays stable; the triple still prevents cross-store double-count
+    // when store_id IS present.
+    const storeId = mutation.store_id ?? "";
+    for (const stableId of surfacedRenderedIds) {
+      if (typeof stableId !== "string" || stableId.length === 0) continue;
+      attributionKeys.add(`${storeId}|${stableId}|${sourceEventId}`);
+    }
+  }
+  const mutationPoolAttributed = attributionKeys.size;
+
+  // lifecycle-refactor W2-T4 (§5 row2 SessionEnd funnel-closed boundary): count
+  // distinct sessions that appended a `session_ended` marker. Pure observability
+  // boundary — never joined into any rate. Falls back to the event id when an
+  // event carries no session_id (degraded marker) so each marker still counts.
+  const closedSessions = new Set<string>();
+  for (const ended of sessionEndedEvents) {
+    const sid =
+      typeof ended.session_id === "string" && ended.session_id.length > 0
+        ? ended.session_id
+        : ended.id;
+    closedSessions.add(sid);
+  }
+
   const metrics: CiteCoverageReport["metrics"] = {
     edits_touched: editsTouched,
     qualifying_cites: qualifyingCites,
@@ -1208,6 +1317,14 @@ export async function runDoctorCiteCoverage(
       count: exposedAndMutated.count,
       ...(exposedAndMutated.ids.length > 0 ? { ids: exposedAndMutated.ids } : {}),
     },
+    // lifecycle-refactor W2-T4: PostToolUse mutation funnel (own fields, NEVER
+    // folded into cite_compliance_rate — honesty 铁律).
+    mutations_observed: { count: mutationsObserved },
+    mutation_pool: {
+      attributed: mutationPoolAttributed,
+      unattributed_workspace_dirty: unattributedWorkspaceDirty,
+    },
+    sessions_closed: { count: closedSessions.size },
   };
 
   // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were

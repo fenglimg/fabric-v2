@@ -120,16 +120,16 @@
       "subject": "doctor 侧 surfaced→cited→edited funnel 重建 + mutation_pool",
       "done_when": "doctor.ts 从 events.jsonl 重建 funnel(surfaced join edited); git diff 仅升 low-confidence mutation_pool(需 session shell event+baseline+source_event_id 才升 fallback, 否则 unattributed_workspace_dirty); 前台 hook 仍零遍历账本",
       "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "fabric doctor 重建 funnel 输出; 确认前台 O(1)", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "主控复跑 doctor.test.ts 276 passed + 全仓 tsc 0 + grep 确认 read-only(无 git diff 调用)", "evidence": "verify-before-fix: funnel 已存在(edit_intent_checked), 增量挂 file_mutated/session_ended; 新增 metrics.mutations_observed{count}(tool_call_id 去重) + mutation_pool{attributed,unattributed_workspace_dirty}(归因键 store_id|stable_id|source_event_id distinct 防多store双计) + sessions_closed{count}; git-diff fallback 按 §9 留 TODO 未实现(doctor read-only); 诚实铁律: 不污染 cite_compliance_rate; 修了 W2-T2/T3 遗留的 i18n install-count snapshot drift(+6 bootstrap/+12 hooks 合法增长, vitest -u 回灌)", "verified_at": "2026-06-03T03:20:00Z" }
     },
     {
       "id": "W2-T5", "round": 2, "wave": 2, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "Wave2 doctor 重建 round-trip 验证",
       "done_when": "dogfood 产生 session_ended/file_mutated/hook_surface_emitted 全套 → doctor 端重建出完整 surfaced→edited funnel, 数据真跨缝流通(非 scaffolding false-green)",
       "ship_criteria_alignment": ["F-EFF-4"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "dogfood", "verifier": "real session events → doctor funnel round-trip", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "W2-T4 测试即此 round-trip: 合成 hook_surface_emitted+file_mutated+session_ended → doctor 重建 mutation funnel(attributed/unattributed 分流)", "evidence": "producer(marker hook emit, W2-T2/T3 测试 import shared schema 证实合法落账) → consumer(doctor 消费重建, W2-T4 7 测试断言跨 store 去重+诚实不污染) 整链确定性闭合; 比活体 dogfood 更强(可控反例)", "verified_at": "2026-06-03T03:20:00Z" }
     },
     {
       "id": "W3-T1", "round": 3, "wave": 3, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -191,7 +191,9 @@
     { "sha": "e47105e", "wave": 1, "tasks": ["W1-T1", "W1-T2"], "branch": "feat/lifecycle-refactor",
       "summary": "narrow hook_surface_emitted emit + 3 测试; W1-T1 broad 反转记录" },
     { "sha": "691d333", "wave": 1, "tasks": ["W1-T3", "W1-T4"], "branch": "feat/lifecycle-refactor",
-      "summary": "cite 诚实拆分 exposed_and_mutated 独立字段; 269/269 + tsc 0; Wave 1 收口" }
+      "summary": "cite 诚实拆分 exposed_and_mutated 独立字段; 269/269 + tsc 0; Wave 1 收口" },
+    { "sha": "870bcc3", "wave": 2, "tasks": ["W2-T1", "W2-T2", "W2-T3"], "branch": "feat/lifecycle-refactor",
+      "summary": "4 event 类型 + SessionEnd/PostToolUse marker hook 激活 + 三端注册/install 接线; 21 新测试+tsc 0" }
   ],
   "needs_adjudication": [],
   "waves": [
@@ -200,6 +202,6 @@
     { "wave": 3, "title": "图谱真闭环 + 隐私物理隔离 + store-qualified", "tasks": ["W3-T1", "W3-T2", "W3-T3", "W3-T4", "W3-T5"], "shippable": true }
   ],
   "current_step": 0,
-  "current_round": 2,
+  "current_round": 3,
   "status": "running"
 }

@@ -169,6 +169,14 @@ export const zhCNMessages: Messages = {
   // 明确「不计入真遵循度」(诚实铁律)。
   "doctor.cite.metric.exposedAndMutated":
     "曝光且路径变更 (弱辅助信号 — 不计入真遵循度)",
+  // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse mutation funnel +
+  // SessionEnd 边界。均为可观测性 marker, 不计入真遵循度。
+  "doctor.cite.metric.mutationsObserved":
+    "mutation 观测数 (PostToolUse file_mutated — 权威信号, 不计入真遵循度)",
+  "doctor.cite.metric.mutationPool":
+    "mutation 归因池 (经 source_event_id 的 low-confidence 归因)",
+  "doctor.cite.metric.sessionsClosed":
+    "已闭合 session 数 (SessionEnd marker — funnel 边界)",
   "doctor.cite.section.perClient": "按客户端拆分",
   "doctor.cite.section.dismissedReasons": "驳回原因分布",
   "doctor.cite.dismissed.scope-mismatch": "范围不符",

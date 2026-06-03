@@ -5858,6 +5858,12 @@ describe("runDoctorCiteCoverage", () => {
       // always emitted (count 0 here, no narrow surface events). `ids` omitted
       // when empty.
       exposed_and_mutated: { count: 0 },
+      // lifecycle-refactor W2-T4: PostToolUse mutation funnel — always emitted
+      // (zero here, no file_mutated/session_ended events). Observability markers,
+      // never folded into compliance.
+      mutations_observed: { count: 0 },
+      mutation_pool: { attributed: 0, unattributed_workspace_dirty: 0 },
+      sessions_closed: { count: 0 },
     });
   });
 
@@ -7584,6 +7590,285 @@ describe("runDoctorCiteCoverage (W1-T3 exposed_and_mutated weak signal)", () => 
       count: 1,
       ids: ["KT-DEC-0011"],
     });
+  });
+});
+
+// lifecycle-refactor W2-T4 (§5 row7 PostToolUse / row2 SessionEnd / §0 下沉 doctor):
+// doctor consumes the new `file_mutated` + `session_ended` markers OFFLINE.
+// Locks: (1) mutations_observed counts distinct file_mutated (tool_call_id dedup);
+// (2) mutation_pool splits attributed (source_event_id → surfaced) vs
+// unattributed_workspace_dirty; (3) attribution key store_id+stable_id+source_event_id
+// dedups multi-store; (4) sessions_closed counts distinct session_ended;
+// (5) the honesty 铁律 — none of these touch cite_compliance_rate.
+describe("runDoctorCiteCoverage (W2-T4 PostToolUse mutation funnel)", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  // A narrow surface event with a KNOWN envelope id so file_mutated can link to
+  // it via source_event_id. Returns { event, id } so the caller wires the link.
+  function mkSurface(opts: {
+    sessionId: string;
+    ids: string[];
+    ts: number;
+  }): { event: object; id: string } {
+    const id = `event:surface:${randomUUID()}`;
+    return {
+      id,
+      event: {
+        kind: "fabric-event",
+        id,
+        ts: opts.ts,
+        schema_version: 1,
+        session_id: opts.sessionId,
+        event_type: "hook_surface_emitted",
+        hook_name: "knowledge-hint-narrow",
+        client: "cc",
+        target_channel: "preToolUse",
+        rendered_ids: opts.ids,
+        delivery_status: "delivered",
+      },
+    };
+  }
+
+  function mkFileMutated(opts: {
+    sessionId: string;
+    path: string;
+    toolCallId: string;
+    ts: number;
+    sourceEventId?: string;
+    storeId?: string;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:mutated:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "file_mutated",
+      path: opts.path,
+      tool_call_id: opts.toolCallId,
+      tool_name: "Edit",
+      ...(opts.sourceEventId !== undefined ? { source_event_id: opts.sourceEventId } : {}),
+      ...(opts.storeId !== undefined ? { store_id: opts.storeId } : {}),
+    };
+  }
+
+  function mkSessionEnded(opts: { sessionId: string; ts: number }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:ended:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "session_ended",
+    };
+  }
+
+  function mkTurn(opts: {
+    sessionId: string;
+    citeIds: string[];
+    citeTags: string[];
+    ts: number;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:turn:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      cite_ids: opts.citeIds,
+      cite_tags: opts.citeTags,
+      cite_commitments: [],
+      client: "cc",
+      turn_id: `turn-${randomUUID()}`,
+      timestamp: new Date(opts.ts).toISOString(),
+    };
+  }
+
+  // mutations_observed counts every distinct file_mutated; tool_call_id dedups.
+  it("counts distinct file_mutated events with tool_call_id dedup", async () => {
+    const target = createInitializedProject("mut-observed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkFileMutated({ sessionId: "s1", path: "a.ts", toolCallId: "call-1", ts: marker.marker_ts + 10 }),
+      mkFileMutated({ sessionId: "s1", path: "b.ts", toolCallId: "call-2", ts: marker.marker_ts + 20 }),
+      // duplicate tool_call_id (retry append) → collapses to one
+      mkFileMutated({ sessionId: "s1", path: "a.ts", toolCallId: "call-1", ts: marker.marker_ts + 30 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutations_observed).toEqual({ count: 2 });
+  });
+
+  // No source_event_id → unattributed_workspace_dirty, never attributed.
+  it("downgrades a file_mutated without source_event_id to unattributed_workspace_dirty", async () => {
+    const target = createInitializedProject("mut-unattributed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkFileMutated({ sessionId: "s1", path: "a.ts", toolCallId: "call-1", ts: marker.marker_ts + 10 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutations_observed).toEqual({ count: 1 });
+    expect(report.metrics.mutation_pool).toEqual({
+      attributed: 0,
+      unattributed_workspace_dirty: 1,
+    });
+  });
+
+  // source_event_id linking to a real surfaced event → attributed.
+  it("attributes a file_mutated whose source_event_id resolves to a surfaced event", async () => {
+    const target = createInitializedProject("mut-attributed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const surface = mkSurface({ sessionId: "s1", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 5 });
+    seedEvents(target, [
+      surface.event,
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: surface.id,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutations_observed).toEqual({ count: 1 });
+    expect(report.metrics.mutation_pool).toEqual({
+      attributed: 1,
+      unattributed_workspace_dirty: 0,
+    });
+  });
+
+  // A source_event_id that links to NO surfaced event (dangling) → unattributed.
+  it("downgrades a file_mutated whose source_event_id resolves to nothing", async () => {
+    const target = createInitializedProject("mut-dangling-source");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkFileMutated({
+        sessionId: "s1",
+        path: "a.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: "event:surface:does-not-exist",
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.mutation_pool).toEqual({
+      attributed: 0,
+      unattributed_workspace_dirty: 1,
+    });
+  });
+
+  // Attribution key = store_id + stable_id + source_event_id: two file_mutated
+  // events from DIFFERENT stores sharing the same surfaced id + source must count
+  // as TWO attributions (cross-store), while a true duplicate (same store + id +
+  // source) collapses to one.
+  it("dedups attribution by store_id+stable_id+source_event_id (no multi-store double-count collapse)", async () => {
+    const target = createInitializedProject("mut-multistore-key");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const surface = mkSurface({ sessionId: "s1", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 5 });
+    seedEvents(target, [
+      surface.event,
+      // store team
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: surface.id,
+        storeId: "team",
+      }),
+      // store other — same surfaced id + source but different store → distinct key
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-2",
+        ts: marker.marker_ts + 11,
+        sourceEventId: surface.id,
+        storeId: "other",
+      }),
+      // exact duplicate of the team one (different tool_call_id so it's a distinct
+      // mutation, but same store+id+source) → attribution key collapses to one
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-3",
+        ts: marker.marker_ts + 12,
+        sourceEventId: surface.id,
+        storeId: "team",
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    // 3 distinct tool_call_ids → 3 mutations observed
+    expect(report.metrics.mutations_observed).toEqual({ count: 3 });
+    // attribution keys: team|KT-DEC-0001|src + other|KT-DEC-0001|src = 2 distinct
+    expect(report.metrics.mutation_pool?.attributed).toBe(2);
+    expect(report.metrics.mutation_pool?.unattributed_workspace_dirty).toBe(0);
+  });
+
+  // sessions_closed counts distinct session_ended markers.
+  it("counts distinct session_ended markers as sessions_closed", async () => {
+    const target = createInitializedProject("mut-sessions-closed");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkSessionEnded({ sessionId: "s1", ts: marker.marker_ts + 10 }),
+      mkSessionEnded({ sessionId: "s2", ts: marker.marker_ts + 20 }),
+      // duplicate session_ended for s1 → same session, counts once
+      mkSessionEnded({ sessionId: "s1", ts: marker.marker_ts + 30 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.metrics.sessions_closed).toEqual({ count: 2 });
+  });
+
+  // Honesty 铁律: the mutation funnel NEVER feeds cite_compliance_rate. An
+  // explicit applied cite stands alone; file_mutated/session_ended add no
+  // compliance credit and no contamination.
+  it("keeps the mutation funnel strictly separate from cite_compliance_rate", async () => {
+    const target = createInitializedProject("mut-honesty");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    const surface = mkSurface({ sessionId: "s1", ids: ["KT-DEC-0001"], ts: marker.marker_ts + 5 });
+    seedEvents(target, [
+      // one explicit applied cite → compliance = 1/1 = 100%
+      mkTurn({ sessionId: "s1", citeIds: ["KT-DEC-0001"], citeTags: ["applied"], ts: marker.marker_ts + 6 }),
+      // a fully attributed mutation + a session close — pure observability, no
+      // compliance effect
+      surface.event,
+      mkFileMutated({
+        sessionId: "s1",
+        path: "src/auth/login.ts",
+        toolCallId: "call-1",
+        ts: marker.marker_ts + 10,
+        sourceEventId: surface.id,
+      }),
+      mkSessionEnded({ sessionId: "s1", ts: marker.marker_ts + 20 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    // mutation funnel populated
+    expect(report.metrics.mutations_observed).toEqual({ count: 1 });
+    expect(report.metrics.mutation_pool).toEqual({ attributed: 1, unattributed_workspace_dirty: 0 });
+    expect(report.metrics.sessions_closed).toEqual({ count: 1 });
+    // compliance untouched: still 1 qualifying cite, 0 missed, 100%
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
+    expect(report.metrics.cite_compliance_rate).toBe(1);
   });
 });
 

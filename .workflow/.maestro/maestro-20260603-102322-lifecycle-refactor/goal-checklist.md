@@ -34,12 +34,14 @@
 
 > **GT 反转记录**（见 status.json `ground_truth_findings`）：计划假设「telemetry 全空白」部分被 ground-truth 推翻——broad emit 已存在、narrow 已记 edited path。真代码空白只剩 narrow 的 surfaced ids（已修）+ cite split（W1-T3）。
 
-### Wave 2 — 活化休眠 hook + doctor 重建
-- [ ] **W2-T1** `event-ledger.ts` 加 4 新 event 类型 + rebuild shared dist
-- [ ] **W2-T2** 激活 SessionEnd → `session_ended`（仅 marker，零计算）
-- [ ] **W2-T3** 激活 PostToolUse → `file_mutated`（per-call key 闭 mutation 环）
-- [ ] **W2-T4** doctor 侧 funnel 重建 + low-confidence `mutation_pool`
-- [ ] **W2-T5** Wave2 doctor 重建 round-trip 验证
+### Wave 2 — 活化休眠 hook + doctor 重建 ✅
+- [x] **W2-T1** 加 4 event 类型(session_ended/file_mutated/precompact_observed/graph_edge_candidate_requested) + rebuild shared；4 全过 safeParse
+- [x] **W2-T2** 激活 SessionEnd → `session_ended` marker（零计算/O(1)/三端注册+install 全接线）
+- [x] **W2-T3** 激活 PostToolUse → `file_mutated`（per-call key tool_use_id，三端注册）
+- [x] **W2-T4** doctor 消费 file_mutated → `mutations_observed`/`mutation_pool{attributed,unattributed_workspace_dirty}`/`sessions_closed`；归因键防多store双计；git-diff §9 留 TODO（read-only）
+- [x] **W2-T5** producer→consumer round-trip 确定性闭合（marker emit → doctor 重建）；含 i18n install-count snapshot 回灌
+
+**✅ Wave 2 完成**（休眠 hook 激活 + doctor 离线重建因果，前台守 O(1)）。进度 **9/14**。
 
 ### Wave 3 — 图谱真闭环 + 隐私物理隔离 + store-qualified
 - [ ] **W3-T1** 图谱生成：skill 抽 related + doctor 共现补边（store-qualified，禁 KT→KP）
