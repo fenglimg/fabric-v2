@@ -985,64 +985,11 @@ describe("extractKnowledge", () => {
     expect(r3.idempotency_key).toBe(r1.idempotency_key);
   });
 
-  // ---------------------------------------------------------------------------
-  // v2.0.0-rc.22 Scope D T-D2 (TASK-009): meta auto-heal on extract entry.
-  //
-  // extract-knowledge calls loadActiveMeta at the start so the persisted meta
-  // is rebuilt to match the on-disk knowledge tree BEFORE any pending file
-  // lands. The downstream review/approve path then sees a counter envelope
-  // that is consistent with the actual knowledge surface — this is the
-  // "fresh counter post-heal" guarantee the task plan calls out.
-  //
-  // Missing on-disk meta is the documented exception (extract is often the
-  // first-touch entry on un-initialized projects) so the existing test suite
-  // above keeps running without seeding a meta. The auto-heal contract is
-  // only meaningful when there IS a meta to heal.
-  // ---------------------------------------------------------------------------
-
-  it("extractKnowledge_uses_fresh_counter_post_heal — stale meta is healed before pending lands", async () => {
-    const projectRoot = await createTempProject();
-
-    // Seed a knowledge tree + baseline meta, then drift the tree so the
-    // on-disk meta is stale relative to the real files.
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), {
-      recursive: true,
-    });
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "foo.md"),
-      "# Foo\n",
-    );
-    const baseline = await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
-    const baselineRevision = baseline.meta.revision;
-
-    // Drift: add a second knowledge file but do not persist a new meta.
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "bar.md"),
-      "# Bar\n",
-    );
-
-    await extractKnowledge(
-      projectRoot,
-      buildInput({
-        source_sessions: ["sess-heal"],
-        slug: "post-heal-counter",
-        type: "decisions",
-        user_messages_summary: "Verifying extract triggers auto-heal.",
-      }),
-    );
-
-    // After extract, the persisted meta MUST have been rewritten to match
-    // the drifted tree — its revision differs from the pre-extract baseline.
-    const metaAfter = JSON.parse(
-      await readFile(
-        join(projectRoot, ".fabric", "agents.meta.json"),
-        "utf8",
-      ),
-    ) as { revision: string };
-    expect(metaAfter.revision).not.toBe(baselineRevision);
-    expect(metaAfter.revision).toEqual(expect.any(String));
-  });
+  // v2.2 W5 R3 (读侧 cutover): the "extractKnowledge_uses_fresh_counter_post_heal"
+  // test was removed alongside the extract-entry agents.meta auto-heal. extract
+  // no longer rebuilds a co-location meta — id allocation moved to per-store
+  // committed counters.json (W4), so there is no co-location counter envelope to
+  // pre-heal and no agents.meta rewrite to assert.
 
   // -------------------------------------------------------------------------
   // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields

@@ -12,10 +12,7 @@ import {
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 import { hasSecrets } from "@fenglimg/fabric-shared";
 
-import { AgentsMetaFileMissingError } from "../meta-reader.js";
-
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { loadActiveMeta } from "./load-active-meta.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
 import {
   atomicWriteText,
@@ -161,26 +158,12 @@ export async function extractKnowledge(
   projectRoot: string,
   input: FabExtractKnowledgeInput,
 ): Promise<FabExtractKnowledgeOutput> {
-  // v2.0.0-rc.22 Scope D T-D2: STRICT meta auto-heal at extract entry. extract
-  // itself never reads agents.meta.json — id allocation happens at review/
-  // approve time. But review's KnowledgeIdAllocator pulls its counter directly
-  // from the persisted meta, so if a stale meta survives until approve, the
-  // counter advance starts from the wrong base. Re-healing here keeps the
-  // counter / nodes envelope consistent with the on-disk knowledge tree the
-  // moment a new pending entry is proposed. Build failures (e.g. transient
-  // fs errors during the rebuild) propagate loudly — that's the strict
-  // contract. Missing on-disk meta is the ONE exception: extract is the
-  // first-touch entry for many "import knowledge from session" flows where
-  // doctor-init hasn't run yet, and refusing to write a pending until the
-  // baseline exists would break those onboarding paths. So we swallow
-  // AgentsMetaFileMissingError specifically; every other failure is loud.
-  try {
-    await loadActiveMeta(projectRoot, { caller: "extractKnowledge" });
-  } catch (error) {
-    if (!(error instanceof AgentsMetaFileMissingError)) {
-      throw error;
-    }
-  }
+  // v2.2 W5 R3 (读侧 cutover): the co-location agents.meta auto-heal at extract
+  // entry is retired. Its sole purpose was to keep the co-location counter base
+  // consistent for review's KnowledgeIdAllocator — but W4 moved id allocation to
+  // per-store committed counters.json (reconcileStoreCounters), so there is no
+  // co-location counter envelope left to pre-heal here. extract never read
+  // agents.meta for its own logic; pending entries are written directly.
 
   // v2.0.0-rc.37 NEW-31: prompt-injection sanitization. Strip dangerous
   // patterns from every user-text field BEFORE any downstream consumer reads

@@ -1,16 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
-import { deriveAgentsMetaLayer, type AgentsLayer } from "@fenglimg/fabric-shared";
+import { type AgentsLayer } from "@fenglimg/fabric-shared";
 import { McpToolError } from "@fenglimg/fabric-shared/errors";
 
-import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { buildCrossStoreBodyIndex, type CrossStoreBodyRef } from "./cross-store-recall.js";
-import { normalizeKnowledgePath } from "./get-knowledge.js";
-import { readSelectionToken, compareStableIds } from "./plan-context.js";
-import { loadActiveMeta } from "./load-active-meta.js";
+import { buildCrossStoreBodyIndex, computeReadSetRevision, type CrossStoreBodyRef } from "./cross-store-recall.js";
+import { readSelectionToken } from "./plan-context.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 // ISS-017: extractBody is now the single shared implementation in _shared.ts.
@@ -68,22 +63,6 @@ export type KnowledgeSectionResult = {
   // post-flip canonical id before fetching. Maps OLD id → NEW id so the
   // caller can refresh its cached selection. Omitted when no rewrites fired.
   redirect_to?: { stable_id: string } | Record<string, string>;
-};
-
-type NodePriority = NonNullable<AgentsMeta["nodes"][string]["priority"]>;
-
-type RuleNodeEntry = {
-  stable_id: string;
-  level: AgentsLayer;
-  path: string;
-  priority: NodePriority;
-  node: AgentsMeta["nodes"][string];
-};
-
-const PRIORITY_ORDER: Record<NodePriority, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
 };
 
 /**
@@ -146,83 +125,34 @@ export async function getKnowledgeSections(
 
   validateAiSelections(token.ai_selectable_stable_ids, rewrittenAiSelected, rewrittenReasons);
 
-  // v2.0.0-rc.22 Scope D T-D2: strict meta-load. Section delivery is an
-  // authoritative id-based lookup; serving stale meta would mean handing back
-  // bodies for ids that no longer exist or missing newly-resolved ones. We
-  // want a loud failure (vs. silent staleness) when buildKnowledgeMeta breaks.
-  const { meta } = await loadActiveMeta(projectRoot, { caller: "getKnowledgeSections" });
+  // v2.2 W5 R3 (读侧 cutover): co-location agents.meta retired. ALL knowledge now
+  // lives in the read-set stores (team + personal), which ship no agents.meta —
+  // so every selected id is resolved through the cross-store body index and its
+  // body is read FROM THE STORE. The old project-meta path (loadActiveMeta →
+  // buildRuleNodeIndex → throw on a bare colon-less id) is gone: there is no
+  // project node table anymore. An id absent from the store index → genuinely
+  // unresolved (deleted / not in read-set / stale client cache) → warn-skip,
+  // never a hard throw, because the canonical store set is the only authority.
+  const revision = computeReadSetRevision(projectRoot);
   const selectedStableIds = [...token.required_stable_ids, ...rewrittenAiSelected];
-  // ISS-008: build the stable_id → node index ONCE (O(nodes)) instead of a full
-  // Object.entries scan per selected id. In the common rc.37 "pick all" path
-  // selectedStableIds ≈ every node, so the old per-id linear scan was O(n²).
-  const ruleNodeIndex = buildRuleNodeIndex(meta);
-  // v2.2 全砍 F7 (HIGH): store-qualified ids (`alias:id`, surfaced by cross-store
-  // recall) have no node in the PROJECT's agents.meta — stores ship none. Build
-  // the read-set body index so their bodies are delivered FROM THE STORE instead
-  // of being silently skipped (the pre-F7 behavior where only the summary was
-  // ever visible). A store id absent from the index too → genuinely unresolved
-  // (deleted / not in read-set) → warn-skip. A bare, colon-less project-local id
-  // that is missing still means real meta breakage → keep the loud failure.
   const storeBodyIndex = buildCrossStoreBodyIndex(projectRoot);
   const unresolvedSelectedIds: string[] = [];
   const storeSelected: Array<{ stableId: string; ref: CrossStoreBodyRef }> = [];
-  const selectedRules = sortRuleNodes(
-    selectedStableIds.flatMap((stableId) => {
-      const entry = ruleNodeIndex.get(stableId);
-      if (entry === undefined) {
-        if (stableId.includes(":")) {
-          const ref = storeBodyIndex.get(stableId);
-          if (ref !== undefined) {
-            storeSelected.push({ stableId, ref });
-          } else {
-            unresolvedSelectedIds.push(stableId);
-          }
-          return [];
-        }
-        throw new Error(`Selected rule is not present in agents.meta.json: ${stableId}`);
-      }
-      return [entry];
-    }),
-  );
+  for (const stableId of selectedStableIds) {
+    const ref = storeBodyIndex.get(stableId);
+    if (ref !== undefined) {
+      storeSelected.push({ stableId, ref });
+    } else {
+      unresolvedSelectedIds.push(stableId);
+    }
+  }
   const diagnostics: KnowledgeSectionDiagnostic[] = [];
   const rules: KnowledgeSectionResult["rules"] = [];
 
-  for (const rule of selectedRules) {
-    const content = await readFile(resolveRuleSourcePath(projectRoot, rule.path), "utf8");
-    // v2.0.0-rc.23 TASK-013 (F8b): the API now returns the full markdown body
-    // (frontmatter stripped). Section-name discipline is a writer convention,
-    // not an API contract — callers scan for B-set headings as needed.
-    const body = extractBody(content);
-
-    // v2.0: emit a warn-level diagnostic when a fetched rule has neither
-    // `knowledge_type` nor `knowledge_layer` in its description — these are
-    // un-migrated v1.x entries surviving in the index. Does not block delivery.
-    const description = rule.node.description;
-    if (
-      description !== undefined &&
-      description.knowledge_type === undefined &&
-      description.knowledge_layer === undefined
-    ) {
-      diagnostics.push({
-        code: "missing_knowledge_metadata",
-        severity: "warn",
-        stable_id: rule.stable_id,
-        message: `Rule ${rule.stable_id} has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.`,
-      });
-    }
-
-    rules.push({
-      stable_id: rule.stable_id,
-      level: rule.level,
-      path: rule.path,
-      body,
-    });
-  }
-
-  // v2.2 全砍 F7 (HIGH): deliver store-qualified bodies from the read-set store.
-  // Store entries carry no agents.meta node, so they're served as L1 with the
-  // store file path. A read failure here (file vanished between walk + read)
-  // degrades to an unresolved diagnostic rather than crashing the whole call.
+  // v2.2 全砍 F7 (HIGH) + W5 R3: deliver bodies from the read-set store. Store
+  // entries are served as L1 with the store file path. A read failure here (file
+  // vanished between walk + read) degrades to an unresolved diagnostic rather
+  // than crashing the whole call.
   for (const { stableId, ref } of storeSelected) {
     let content: string;
     try {
@@ -249,7 +179,7 @@ export async function getKnowledgeSections(
   }
 
   const result: KnowledgeSectionResult = {
-    revision_hash: meta.revision,
+    revision_hash: revision,
     selected_stable_ids: rules.map((rule) => rule.stable_id),
     rules,
     diagnostics,
@@ -365,77 +295,12 @@ function validateAiSelections(
   }
 }
 
-// ISS-008: one-pass index of stable_id → resolved RuleNodeEntry. Preserves the
-// previous linear-scan semantics exactly: first occurrence wins on a duplicate
-// stable_id (Object.entries iteration order), so we never overwrite an existing
-// key. Resolution of level/path/priority is identical to the old findRuleNode.
-function buildRuleNodeIndex(meta: AgentsMeta): Map<string, RuleNodeEntry> {
-  const index = new Map<string, RuleNodeEntry>();
-  for (const [nodeId, node] of Object.entries(meta.nodes)) {
-    const nodeStableId = node.stable_id ?? nodeId;
-    if (index.has(nodeStableId)) {
-      continue; // first-match-wins, mirroring the original scan's early return.
-    }
-    // v2.0.0-rc.30 TASK-003 (B.1 前置): 三段 fallback `node.level ?? node.layer
-    // ?? "L2"` 简化为 `node.level ?? deriveAgentsMetaLayer(node.file)` —
-    // 删 `node.layer` 中间段,移除对即将被 TASK-004 删除的 passthrough field
-    // 的依赖。`node.level` declared 优先依然成立,fixture / 用户显式标的 level
-    // 仍生效;只在节点未声明 level 时走 derive 而非吃 v1.x 残留 layer 字段。
-    // `priority` 同理保留 declared 优先 — fixture 依赖 priority sort,
-    // 提早全硬编码 "medium" 会破现有测试契约。
-    const level: AgentsLayer = node.level ?? deriveAgentsMetaLayer(node.file);
-    index.set(nodeStableId, {
-      stable_id: nodeStableId,
-      level,
-      path: normalizeKnowledgePath(node.content_ref ?? node.file),
-      priority: node.priority ?? "medium",
-      node,
-    });
-  }
-  return index;
-}
-
-function sortRuleNodes(rules: RuleNodeEntry[]): RuleNodeEntry[] {
-  return [...rules].sort((left, right) => {
-    const levelDelta = outputLevelOrder(left.level) - outputLevelOrder(right.level);
-    if (levelDelta !== 0) {
-      return levelDelta;
-    }
-
-    const priorityDelta = PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority];
-    if (priorityDelta !== 0) {
-      return priorityDelta;
-    }
-
-    // ISS-029: numeric-aware so a 5-digit counter sorts after 9999, not before.
-    return compareStableIds(left.stable_id, right.stable_id);
-  });
-}
-
-function outputLevelOrder(level: AgentsLayer): number {
-  switch (level) {
-    case "L0":
-      return 0;
-    case "L1":
-      return 1;
-    case "L2":
-      return 2;
-  }
-}
-
-/**
- * v2.0: Resolve a content_ref/path captured in agents.meta.json to an absolute
- * filesystem path. Personal-layer entries are persisted as `~/.fabric/...`
- * and live outside the project root; team-layer entries stay project-relative.
- * Mirrors `resolveContentRefPath` in knowledge-meta-builder.ts.
- */
-function resolveRuleSourcePath(projectRoot: string, contentRef: string): string {
-  if (contentRef.startsWith("~/.fabric/knowledge/")) {
-    const home = process.env.FABRIC_HOME ?? homedir();
-    return join(home, ".fabric", "knowledge", contentRef.slice("~/.fabric/knowledge/".length));
-  }
-  return join(projectRoot, contentRef);
-}
+// v2.2 W5 R3 (读侧 cutover): buildRuleNodeIndex / sortRuleNodes / outputLevelOrder
+// / resolveRuleSourcePath were the co-location project-meta delivery path (node
+// table lookup, L0/L1/L2 priority sort, content_ref→abs-path resolution). All
+// retired — store-qualified bodies are resolved via buildCrossStoreBodyIndex and
+// read directly from `ref.file` (an absolute store path), so no node index, no
+// level/priority sort, and no content_ref resolution are needed anymore.
 
 function pickSelectionReasons(
   selectedStableIds: string[],
