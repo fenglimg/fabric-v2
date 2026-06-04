@@ -1,6 +1,12 @@
 #!/usr/bin/env node
-const { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
+const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
+
+// W1-01 (ISS-012): Stop / SessionStart hooks append to shared, non-session-scoped
+// ledgers (events.jsonl, metrics.jsonl). Under multi-window concurrency a bare
+// appendFileSync can interleave a partial write; route through the advisory-lock
+// primitive (drop-on-contention, best-effort — matches injection-log).
+const { appendLockedLine } = require("./lib/injection-log.cjs");
 
 // v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
 // on failure — see contract in lib/session-digest-writer.cjs).
@@ -79,6 +85,27 @@ try {
   stateStore = require("./lib/state-store.cjs");
 } catch {
   stateStore = null;
+}
+
+// v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
+// resolved-bindings snapshot. The Stop hint surfaces the read-set stores
+// (per-store, NOT aggregated into one pile) without re-resolving / walking
+// store trees. Best-effort — a missing lib/snapshot omits the store line.
+let bindingsSnapshotReader = null;
+try {
+  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+} catch {
+  bindingsSnapshotReader = null;
+}
+
+// Read the project's own `project_id` (the snapshot key) from its config.
+function readProjectId(cwd) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
 }
 
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
@@ -762,6 +789,11 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       reason,
       signal: "archive",
       recommended_skill: "fabric-archive",
+      // v2.1 NEW-N-3: surface the firing sub-signal's numbers for the
+      // hook_signal_emitted ledger row main() writes. Dual trigger (24h OR
+      // N-edits): report the hours pair when it fired, else the edit-count pair.
+      threshold: triggerByHours ? archiveHintHours : editStats.threshold,
+      actual_value: triggerByHours ? hoursElapsed : editStats.editsSinceLastProposed,
     };
   }
 
@@ -798,6 +830,10 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       reason,
       signal: "review",
       recommended_skill: "fabric-review",
+      // v2.1 NEW-N-3: dual trigger (pending-count OR oldest-age). Report the
+      // count pair when it fired, else the oldest-age-in-days pair.
+      threshold: triggerByPendingCount ? reviewHintPendingCount : reviewHintPendingAgeDays,
+      actual_value: triggerByPendingCount ? stats.count : stats.oldestAgeMs / MS_PER_DAY,
     };
   }
 
@@ -848,6 +884,10 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       reason,
       signal: "import",
       recommended_skill: "fabric-import",
+      // v2.1 NEW-N-3: underseed corpus trigger — node-count vs threshold. The
+      // "import" signal collapses to schema signal_type "other" in main().
+      threshold: underseed.threshold,
+      actual_value: underseed.nodeCount,
     };
   }
 
@@ -944,8 +984,34 @@ function readUnderseedThreshold(projectRoot) {
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
-function readShownCache(projectRoot) {
-  const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
+// F13 (ISS-20260531-038): the reminder cooldown sidecars were process-global
+// (one file per project, no session key), so in concurrent multi-window sessions
+// one window firing a nudge wrote the cooldown and silenced that nudge in EVERY
+// other window. Scope the sidecar filename by sessionId — mirrors the already-
+// session-scoped dismiss sidecar (sessionDismissFileName). Backward-compatible:
+// a null/absent sessionId falls back to the legacy non-scoped path (upgrade +
+// pre-session-id callers), so existing on-disk state and tests are unaffected;
+// the Stop hook always passes the real session_id from its stdin payload.
+function resolveHookSessionId(payload) {
+  return payload && typeof payload.session_id === "string" && payload.session_id.length > 0
+    ? payload.session_id
+    : null;
+}
+
+function sessionScopedCacheFile(baseRelPath, sessionId) {
+  if (sessionId === undefined || sessionId === null || String(sessionId).length === 0) {
+    return baseRelPath;
+  }
+  const safe = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, "-");
+  const lastSlash = baseRelPath.lastIndexOf("/");
+  const dot = baseRelPath.lastIndexOf(".");
+  return dot > lastSlash
+    ? `${baseRelPath.slice(0, dot)}-${safe}${baseRelPath.slice(dot)}`
+    : `${baseRelPath}-${safe}`;
+}
+
+function readShownCache(projectRoot, sessionId) {
+  const cachePath = join(projectRoot, sessionScopedCacheFile(SHOWN_CACHE_FILE, sessionId));
   if (!existsSync(cachePath)) return {};
   try {
     const parsed = JSON.parse(readFileSync(cachePath, "utf8"));
@@ -955,11 +1021,17 @@ function readShownCache(projectRoot) {
   }
 }
 
-function writeShownCache(projectRoot, cache) {
-  const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
+function writeShownCache(projectRoot, cache, sessionId) {
+  const cachePath = join(projectRoot, sessionScopedCacheFile(SHOWN_CACHE_FILE, sessionId));
   try {
-    mkdirSync(dirname(cachePath), { recursive: true });
-    writeFileSync(cachePath, JSON.stringify(cache));
+    // ISS-016: atomic tmp+rename so a crash never leaves a truncated shown-cache.
+    // Falls back to a plain write only if the shared lib failed to load.
+    if (stateStore && typeof stateStore.atomicWrite === "function") {
+      stateStore.atomicWrite(cachePath, JSON.stringify(cache));
+    } else {
+      mkdirSync(dirname(cachePath), { recursive: true });
+      writeFileSync(cachePath, JSON.stringify(cache));
+    }
   } catch {
     // Silent — cache failure must never block the hook.
   }
@@ -1077,8 +1149,8 @@ function findLastDoctorRunTs(events) {
  * v2.0.0-rc.7 T10: read the Signal-D cooldown sidecar timestamp (epoch ms).
  * Missing file / parse failure → null (allow signal to fire).
  */
-function readMaintenanceLastEmit(projectRoot) {
-  const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
+function readMaintenanceLastEmit(projectRoot, sessionId) {
+  const p = join(projectRoot, sessionScopedCacheFile(MAINTENANCE_HINT_LAST_EMIT_FILE, sessionId));
   if (!existsSync(p)) return null;
   try {
     const raw = readFileSync(p, "utf8").trim();
@@ -1093,11 +1165,16 @@ function readMaintenanceLastEmit(projectRoot) {
   return null;
 }
 
-function writeMaintenanceLastEmit(projectRoot, nowMs) {
-  const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
+function writeMaintenanceLastEmit(projectRoot, nowMs, sessionId) {
+  const p = join(projectRoot, sessionScopedCacheFile(MAINTENANCE_HINT_LAST_EMIT_FILE, sessionId));
   try {
-    mkdirSync(dirname(p), { recursive: true });
-    writeFileSync(p, new Date(nowMs).toISOString());
+    // ISS-016: atomic tmp+rename (see writeShownCache).
+    if (stateStore && typeof stateStore.atomicWrite === "function") {
+      stateStore.atomicWrite(p, new Date(nowMs).toISOString());
+    } else {
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, new Date(nowMs).toISOString());
+    }
   } catch {
     // Silent — sidecar failure must never block the hook.
   }
@@ -1186,7 +1263,157 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
     signal: "maintenance",
     // CLI recommendation rather than Skill — doctor is a CLI surface.
     recommended_skill: null,
+    // v2.1 NEW-N-3: staleness trigger. threshold=days; actual=ageDays. When
+    // lint was NEVER run ageDays is null — main() skips the signal emit rather
+    // than fabricate a number (honest gap over fake telemetry).
+    threshold: days,
+    actual_value: ageDays,
   };
+}
+
+// lifecycle-refactor W3-A2 (§7 graph generation signal): after a successful
+// archive the Stop hook REQUESTS edge extraction by emitting one
+// graph_edge_candidate_requested{stable_id, store?}. The hook never PRODUCES
+// edges (that is the archive/import skill's or doctor co-occurrence's job,
+// KT-DEC-0007) — it only flags "this entry just landed; someone should extract
+// its `related` edges". FROZEN-safe: O(1) tail scan, best-effort silent, single
+// advisory-locked appendLockedLine (same primitive the rest of this hook uses).
+//
+// HONEST stable_id sourcing — the deliberate limitation: pending entries (the
+// fabric-archive → extractKnowledge path) carry NO canonical stable_id (id is
+// late-bound at fab_review approve), so their knowledge_proposed event omits
+// stable_id (or sets the `pending:<key>` sentinel). A graph edge between
+// id-less pending drafts is meaningless, so we DO NOT fabricate one. We emit
+// ONLY when the most-recent knowledge_proposed event carries a real
+// K[TP]-XXX-NNNN stable_id (the approve/promote path) — i.e. an entry that
+// actually has a canonical node to attach edges to. When the latest proposed
+// is id-less we honestly skip; the request will fire on the approve event that
+// allocates the id. A session-scoped sidecar de-dupes so repeated Stop fires in
+// one session don't re-request the same id.
+const STABLE_ID_RE = /^K[TP]-[A-Z]{3}-\d{4}$/;
+const GRAPH_EDGE_REQUESTED_SIDECAR = ".fabric/.cache/graph-edge-requested";
+
+function emitGraphEdgeCandidateBestEffort(cwd, events, sessionId) {
+  try {
+    if (!Array.isArray(events) || events.length === 0) return;
+    const fabricDir = join(cwd, FABRIC_DIR);
+    if (!existsSync(fabricDir)) return;
+
+    // O(1)-amortized tail scan for the newest knowledge_proposed carrying a
+    // real (non-sentinel) stable_id. Stop at the first knowledge_proposed we
+    // see — if the latest archive is id-less, we honestly skip rather than
+    // reaching back to an older approved entry (that older entry's edges were
+    // already requested when IT landed).
+    let stableId = null;
+    let store;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (!ev || ev.event_type !== EVENT_TYPE_PROPOSED) continue;
+      const candidate = typeof ev.stable_id === "string" ? ev.stable_id : null;
+      if (candidate && STABLE_ID_RE.test(candidate)) {
+        stableId = candidate;
+        if (typeof ev.store === "string" && ev.store.length > 0) store = ev.store;
+      }
+      // First knowledge_proposed encountered (newest) decides; do not walk past
+      // it to an older one.
+      break;
+    }
+    if (stableId === null) return;
+
+    // Session-scoped de-dup: skip if we already requested edges for this exact
+    // stable_id this session. Sidecar is a single line holding the last id.
+    const sidecarPath = join(cwd, sessionScopedCacheFile(GRAPH_EDGE_REQUESTED_SIDECAR, sessionId));
+    try {
+      if (existsSync(sidecarPath)) {
+        const prev = readFileSync(sidecarPath, "utf8").trim();
+        if (prev === stableId) return;
+      }
+    } catch {
+      // unreadable sidecar → fall through and (re)emit; de-dup is best-effort.
+    }
+
+    let idSuffix;
+    try {
+      idSuffix = require("node:crypto").randomUUID();
+    } catch {
+      idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    const event = {
+      kind: "fabric-event",
+      id: `event:${idSuffix}`,
+      ts: Date.now(),
+      schema_version: 1,
+      event_type: "graph_edge_candidate_requested",
+      stable_id: stableId,
+    };
+    if (store !== undefined) event.store = store;
+    if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
+    appendLockedLine(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n");
+
+    // Record the de-dup marker (best-effort; atomic when state-store lib loaded).
+    try {
+      if (stateStore && typeof stateStore.atomicWrite === "function") {
+        stateStore.atomicWrite(sidecarPath, stableId);
+      } else {
+        mkdirSync(dirname(sidecarPath), { recursive: true });
+        writeFileSync(sidecarPath, stableId);
+      }
+    } catch {
+      // de-dup marker write failed — at worst we re-request next Stop; harmless.
+    }
+  } catch {
+    // best-effort §7 signal — never block the Stop hook (KT-DEC-0007).
+  }
+}
+
+// v2.1 NEW-N-3 (ADJ-NEWN-3): hook_signal_emitted instrumentation. Writes ONE
+// best-effort ledger row at the point a nudge is actually delivered (post-
+// cooldown), so the join key measures nudge-trigger logic (which signal fired,
+// at what threshold vs. actual). Emitted at delivery rather than at
+// threshold-cross so it inherits the cooldown gate — a fired-but-cooled signal
+// does not spam the ledger every session. Skips silently when threshold /
+// actual_value are not finite numbers (e.g. maintenance "never run" → null
+// age). Never blocks the hook (KT-DEC-0007).
+const SIGNAL_TYPE_ENUM = new Set(["archive", "review", "maintenance", "other"]);
+function emitSignalFiredEvent(cwd, sessionId, result) {
+  try {
+    if (!result || typeof result.signal !== "string") return;
+    const threshold = result.threshold;
+    const actualValue = result.actual_value;
+    if (
+      typeof threshold !== "number" ||
+      !Number.isFinite(threshold) ||
+      typeof actualValue !== "number" ||
+      !Number.isFinite(actualValue)
+    ) {
+      return;
+    }
+    const fabricDir = join(cwd, FABRIC_DIR);
+    if (!existsSync(fabricDir)) return;
+    // "import" / any non-canonical signal collapses to schema's catch-all "other".
+    const signalType = SIGNAL_TYPE_ENUM.has(result.signal) ? result.signal : "other";
+    let idSuffix;
+    try {
+      idSuffix = require("node:crypto").randomUUID();
+    } catch {
+      idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    const event = {
+      kind: "fabric-event",
+      id: `event:${idSuffix}`,
+      ts: Date.now(),
+      schema_version: 1,
+      event_type: "hook_signal_emitted",
+      signal_type: signalType,
+      threshold,
+      actual_value: actualValue,
+      fired: true,
+    };
+    if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
+    appendLockedLine(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n");
+  } catch {
+    // best-effort telemetry — never block the hook
+  }
 }
 
 /**
@@ -1393,7 +1620,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           timestamp: new Date().toISOString(),
         };
         if (client !== undefined) event.client = client;
-        appendFileSync(ledgerPath, JSON.stringify(event) + "\n", "utf8");
+        appendLockedLine(ledgerPath, JSON.stringify(event) + "\n");
       } catch {
         // Per-turn failure must not abort the remaining turns; the Stop hook
         // contract is "never block on hook failure". Best-effort continues.
@@ -1418,7 +1645,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           counters: { [counterKey]: emptyShellCount },
         };
         const metricsPath = join(fabricDir, METRICS_LEDGER_FILE);
-        appendFileSync(metricsPath, JSON.stringify(metricsRow) + "\n", "utf8");
+        appendLockedLine(metricsPath, JSON.stringify(metricsRow) + "\n");
       } catch {
         // metrics fold is observability-only; never block the hook on failure.
       }
@@ -1745,6 +1972,17 @@ function main(env, stdio) {
     );
 
     const events = readLedger(cwd);
+
+    // lifecycle-refactor W3-A2 (§7): request graph-edge extraction for a freshly
+    // archived canonical entry. Runs UNCONDITIONALLY here (before the nudge
+    // cooldown/dismiss early-returns) so the §7 signal is independent of whether
+    // a reminder banner is shown this Stop. Best-effort, never throws.
+    try {
+      emitGraphEdgeCandidateBestEffort(cwd, events, resolveHookSessionId(stdinPayload));
+    } catch {
+      // never block the Stop hook
+    }
+
     let pendingStats;
     try {
       pendingStats = readPendingStats(cwd, now);
@@ -1877,7 +2115,7 @@ function main(env, stdio) {
     // for the prompt to be actionable.
     if (result === null) {
       try {
-        const lastEmit = readMaintenanceLastEmit(cwd);
+        const lastEmit = readMaintenanceLastEmit(cwd, resolveHookSessionId(stdinPayload));
         result = evaluateMaintenanceSignal(
           events,
           now,
@@ -1907,12 +2145,34 @@ function main(env, stdio) {
       result.reason = `${result.reason}\n${renderDismissOption(result.signal, variant)}`;
     }
 
+    // v2.1.0-rc.1 P4 (F4/S63): surface the read-set stores on the Stop hint so
+    // backlog/maintenance nudges are read per-store, not as one undifferentiated
+    // pile. Best-effort; missing snapshot / single-store omits the line.
+    if (bindingsSnapshotReader !== null && typeof result.reason === "string") {
+      try {
+        const projectId = readProjectId(cwd);
+        if (projectId) {
+          const label = bindingsSnapshotReader.formatStoreLabels(
+            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+          );
+          if (label) {
+            result.reason = `${result.reason}\n${label}`;
+          }
+        }
+      } catch {
+        // store label is decorative provenance — never crash the hook
+      }
+    }
+
     // v2.0.0-rc.7 T10: Signal D uses its own cooldown sidecar (day-based,
     // see MAINTENANCE_HINT_LAST_EMIT_FILE). The A/B/C shared cooldown cache
     // uses hours, so we branch here to avoid mixing semantics.
     if (result.signal === "maintenance") {
+      emitSignalFiredEvent(cwd, sessionId, result);
+      delete result.threshold;
+      delete result.actual_value;
       out.write(JSON.stringify(result));
-      writeMaintenanceLastEmit(cwd, nowMs);
+      writeMaintenanceLastEmit(cwd, nowMs, resolveHookSessionId(stdinPayload));
       return;
     }
 
@@ -1920,7 +2180,7 @@ function main(env, stdio) {
     // archive_hint_cooldown_hours (default 12h) regardless of state drift.
     // Pure reminder-noise reduction; the underlying trigger logic is unchanged.
     const cooldownMs = readCooldownHours(cwd) * MS_PER_HOUR;
-    const cache = readShownCache(cwd);
+    const cache = readShownCache(cwd, resolveHookSessionId(stdinPayload));
     const lastShown = cache[result.signal];
     // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastShown
     // (backward clock skew) bypasses cooldown — sidecar treated as expired.
@@ -1932,9 +2192,12 @@ function main(env, stdio) {
       return; // Still in cooldown — silent.
     }
 
+    emitSignalFiredEvent(cwd, sessionId, result);
+    delete result.threshold;
+    delete result.actual_value;
     out.write(JSON.stringify(result));
     cache[result.signal] = nowMs;
-    writeShownCache(cwd, cache);
+    writeShownCache(cwd, cache, resolveHookSessionId(stdinPayload));
   } catch {
     // Silent — never block on hook failure.
   }
@@ -1989,6 +2252,9 @@ module.exports = {
   // of the contract-missing emission contract). The lib module itself is
   // also exported indirectly via the reminder helper.
   emitCiteContractRemindersBestEffort,
+  // lifecycle-refactor W3-A2 (§7): graph-edge-candidate request emitter
+  // (exported for unit testing of the honest stable_id-gating + de-dup).
+  emitGraphEdgeCandidateBestEffort,
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
@@ -2026,6 +2292,8 @@ module.exports = {
     // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
     IMPORT_STATE_FILE_REL,
     IMPORT_IN_FLIGHT_MAX_AGE_HOURS,
+    // lifecycle-refactor W3-A2 (§7): graph-edge-request de-dup sidecar.
+    GRAPH_EDGE_REQUESTED_SIDECAR,
   },
 };
 

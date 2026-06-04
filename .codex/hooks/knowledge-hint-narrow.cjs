@@ -66,7 +66,6 @@
 const { spawnSync } = require("node:child_process");
 const { createHash, randomUUID } = require("node:crypto");
 const {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -85,6 +84,36 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
 const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
+// W1-01 (ISS-011): the PreToolUse hook is the highest-frequency, most
+// concurrency-exposed write surface in Fabric. Multi-window edits spawn
+// concurrent hook processes that all append to the SAME non-session-scoped
+// ledger/counter files; a bare appendFileSync can interleave a partial write
+// and corrupt a line. Route every shared-file append through the advisory-lock
+// primitive (drop-on-contention, best-effort — matches injection-log).
+const { appendLockedLine } = require("./lib/injection-log.cjs");
+// lifecycle-refactor W1-T2: client discriminator for the hook_surface_emitted
+// event (schema requires the `client` enum). Mirrors the broad hook's import.
+const { detectClient } = require("./lib/client-adapter.cjs");
+// v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
+// resolved-bindings snapshot. Store-aware hint surfaces the write-target store
+// for the edited file WITHOUT re-resolving or walking store trees. Best-effort.
+let bindingsSnapshotReader = null;
+try {
+  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+} catch {
+  // Lib missing (old install) — store labels degrade to silent absence.
+}
+
+// Read the project's own `project_id` (the snapshot key) from its config. Not a
+// store-tree read — it is how the hook learns which snapshot to fetch.
+function readProjectId(cwd) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
+}
 
 // -----------------------------------------------------------------------------
 // CONSTANTS
@@ -407,7 +436,7 @@ function appendEditIntentToLedger(projectRoot, now, paths, toolName, sessionId) 
         window_ms: 0,
       }))
       .join("\n") + "\n";
-    appendFileSync(join(fabricDir, EVENTS_LEDGER_FILE), lines, "utf8");
+    appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), lines);
   } catch {
     // Silent — events ledger failure must never block the edit.
   }
@@ -451,7 +480,7 @@ function appendEditCounter(projectRoot, now, paths) {
           .filter((p) => typeof p === "string" && p.length > 0)
       : [];
     const line = JSON.stringify({ ts: iso, paths: pathList });
-    appendFileSync(file, `${line}\n`, "utf8");
+    appendLockedLine(file, `${line}\n`);
   } catch {
     // Silent — sidecar failure must never block the edit.
   }
@@ -481,7 +510,7 @@ function appendHintSilenceCounter(projectRoot, now) {
       mkdirSync(dir, { recursive: true });
     }
     const iso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
-    appendFileSync(file, `${iso}\n`, "utf8");
+    appendLockedLine(file, `${iso}\n`);
   } catch {
     // Silent — sidecar failure must never block the edit.
   }
@@ -1143,7 +1172,15 @@ function formatEntryLine(entry, maxLen) {
   const maturity = entry.maturity || "unknown";
   const summary = truncateSummary(entry.summary, maxLen);
   const tail = summary.length > 0 ? ` ${summary}` : "";
-  return `  [${id}] (${type}/${maturity})${tail}`;
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): mark entries
+  // pulled in by a surfaced entry's one-hop `related` graph edge with their source
+  // provenance. Omitted for ordinarily-ranked entries — no fake graph annotation
+  // is ever synthesized (graph-empty honesty).
+  const provenance =
+    typeof entry.related_to === "string" && entry.related_to.length > 0
+      ? ` (related-to-${entry.related_to})`
+      : "";
+  return `  [${id}] (${type}/${maturity})${tail}${provenance}`;
 }
 
 function readSummaryMaxLen(projectRoot) {
@@ -1466,9 +1503,70 @@ function main(env, stdio) {
     const lines = renderSummary({ ...cliPayload, entries: resolvedEntries }, summaryMaxLen);
     if (lines.length === 0) return;
 
+    // v2.1.0-rc.1 P4 (F4/S63): store-aware hint — append the write-target store
+    // so the edit-time hint says WHERE a derived knowledge entry would land.
+    // Best-effort; missing snapshot / single-store setup omits the line.
+    if (bindingsSnapshotReader !== null) {
+      try {
+        const projectId = readProjectId(cwd);
+        if (projectId) {
+          const snapshot = bindingsSnapshotReader.readBindingsSnapshot(projectId);
+          const writeAlias =
+            snapshot && snapshot.write_target && snapshot.write_target.alias;
+          if (writeAlias) {
+            lines.push(`[fabric] writes here land in store '${writeAlias}'`);
+          }
+        }
+      } catch {
+        // store label is decorative provenance — never crash the hook
+      }
+    }
+
     // Stderr: human-facing breadcrumb + legacy contract.
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // lifecycle-refactor W1-T2: hook_surface_emitted — record WHICH narrow-scoped
+    // stable_ids this PreToolUse fire surfaced into the edit, so doctor can join
+    // surfaced→edited (this is the join's LEFT half; the edit_intent_checked event
+    // appended above supplies the edited path / RIGHT half, keyed on the same
+    // real payload session_id). Fires only after all gates passed and lines were
+    // rendered (so it tracks genuinely-surfaced hints, never bloat). Best-effort,
+    // never blocks the edit (KT-DEC-0007); the schema's `client` is a required
+    // enum, so skip when the client is undetectable rather than emit an invalid
+    // row. Mirrors the broad SessionStart emit (knowledge-hint-broad.cjs).
+    try {
+      const surfaceClient = detectClient();
+      const fabricDir = join(cwd, FABRIC_DIR_REL);
+      if (surfaceClient !== undefined && existsSync(fabricDir)) {
+        const renderedIds = resolvedEntries
+          .map((e) => (e && typeof e.id === "string" ? e.id : null))
+          .filter((x) => x !== null);
+        const realSessionId =
+          payload &&
+          typeof payload === "object" &&
+          typeof payload.session_id === "string" &&
+          payload.session_id.length > 0
+            ? payload.session_id
+            : null;
+        const surfaceEvent = {
+          kind: "fabric-event",
+          id: `event:${randomUUID()}`,
+          ts: nowMs,
+          schema_version: 1,
+          ...(realSessionId ? { session_id: realSessionId } : {}),
+          event_type: "hook_surface_emitted",
+          hook_name: "knowledge-hint-narrow",
+          client: surfaceClient,
+          target_channel: "stderr",
+          rendered_ids: renderedIds,
+          delivery_status: "delivered",
+        };
+        appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), JSON.stringify(surfaceEvent) + "\n");
+      }
+    } catch {
+      // best-effort telemetry — never block the edit
     }
 
     // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
