@@ -95,10 +95,16 @@ fabric install                         # 默认:确保三层就位,wizard 引导
    - `bindCreatedStoreToProject`(新建本地, 与 W1 `bindRemoteStoreToProject` 对称, 含 git remote 接线)+ `promptStoreOnboarding`(post-setup 交互, 已有写入 store 则不重复问, 取消=干净 no-op 守 KT-DEC-0007)。
    - 非交互对偶:`--url`(join)+ `store create` 子命令(create)。
    - **遗留**:prompt 文案为硬编码英文(与 W1 一致),i18n key 化下沉留作 cleanup;交互 prompt 在 post-setup 而非 wizard group 内(UX 顺序略后置,但绑定需 scaffold 后的 project config,功能正确)。
-3. **W3**:`--global` 由侧门收成「只 L1」修饰符;清 fast-path return。
-4. **W4**:砍 install.ts repo `.fabric/knowledge/` co-location 脚手架(1017-1025)+ repo 级 agents.meta.json。读侧核心已 store-only;残留消费者(doctor / plan-context 路径处理 / tests)逐个排查后清。clean-slate 硬删,无迁移 shim(KT-DEC-0002)。
-5. **W5**:L3 embed 步骤并入 wizard,删 `--enable-embed/--embed-model` 顶层 flag;删 `--force-*-only`。
-6. **W6 收口 oracle**:producer→consumer round-trip——install 新 repo → `--url` 挂团队 store → recall 在新 repo 命中那条团队知识。绿了才算真接通(不靠 census 全绿)。
+3. **W3 ✅ 已实现**:`--global` 正名为「只 L1」修饰符(注释 + 语义收口;bare install 已 ensure L1→L2/L3,fast-path 即此层语义,无需结构改动)。
+4. **W4 ⛔ 阻塞 — 不在本批次做(2026-06-04 验证)**:砍 repo co-location 不是删脚手架,是一整套读侧迁移。硬证据:
+   - `loadActiveMeta`/`buildKnowledgeMeta` 在**热读路径**(plan-context/get-knowledge/extract)仍读 repo `agents.meta.json`(`readAgentsMeta` 缺文件即抛)+ 派生自 repo `.fabric/knowledge/` 树。
+   - `doctor.ts` ~30 处读 repo `.fabric/knowledge/`;`inspectKnowledgeDirMissing` 缺子目录即告警。
+   - `agents.meta.json` 被 10 个 server 服务消费(knowledge-id-allocator/load-active-meta/extract-knowledge/cross-store-recall/get-knowledge/review/knowledge-sync/doctor-cite-coverage…)。
+   - 故砍脚手架会**断热读路径 + doctor 每次告警**。W4 = 把这些消费者迁到 store-based 读,属北极星主线的独立多 wave 迁移,需 TDD 逐服务搬。**留独立 goal**。
+5. **W5 部分完成**:
+   - ✅ **W5a**:L3 embed 步骤并入 wizard(`promptSemanticSearch`,confirm 默认关;`enableSemanticSearchAndReport` 共享 flag/wizard 两入口)。`--enable-embed/--embed-model` flag 保留作非交互喂答案(设计本意)。
+   - ⏳ **W5b**:删 `--force-skills-only/--force-hooks-only`(替代=幂等全装,既有 idempotency 测试证零 diff+保用户定制)。
+6. **W6 ✅ 已实现**:install→recall round-trip oracle。recall 半段由 `server/cross-store-recall.test.ts`(store 条目→`team:`候选)证;install 半段新增 `install-url-bind.test.ts` W6 用例(bind helper→`scopeExplain` readSet 含 team + writeTarget=team)。两半在同一 `required_stores:[{id}]` contract 相接,无 false-green 缝。
 
 ---
 

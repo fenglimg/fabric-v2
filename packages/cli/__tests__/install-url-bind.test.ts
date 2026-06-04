@@ -10,6 +10,7 @@ import { bindCreatedStoreToProject, bindRemoteStoreToProject } from "../src/comm
 import { loadGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { runGlobalInstall } from "../src/install/run-global-install.js";
+import { scopeExplain } from "../src/store/scope-explain.js";
 
 // W1 — `fabric install --url=<remote>` top-level "join a team store" flow:
 // mount the remote store globally, bind it to the project, set it as the active
@@ -129,5 +130,30 @@ describe("install (bindCreatedStoreToProject)", () => {
     const team = loadGlobalConfig(globalRoot)?.stores.find((s) => s.alias === "team");
     expect(team?.remote).toBe("git@h:team.git");
     expect(loadProjectConfig(projectRoot)?.required_stores?.[0]?.suggested_remote).toBe("git@h:team.git");
+  });
+});
+
+// W6 — install → recall round-trip oracle (install side).
+//
+// The recall consumer side is proven by server/cross-store-recall.test.ts (a
+// store entry surfaces as a `team:`-qualified candidate GIVEN the project's
+// required_stores binding). This seals the OTHER half: a store bound by the
+// install path resolves — through the SAME resolver recall walks — into the
+// team read-set + write target. The two halves meet at the identical
+// `required_stores: [{id}]` contract, so the producer→consumer round-trip
+// (store knowledge → recall hit via install-produced config) has no false-green
+// gap between install and recall.
+describe("install → recall round-trip oracle (W6)", () => {
+  it("a store bound by install resolves into the team read-set + write target", async () => {
+    const { globalRoot, projectRoot } = setupGlobalAndProject();
+    await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
+
+    bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
+
+    const explained = scopeExplain(projectRoot, "team", globalRoot);
+    // the bound store enters the read-set that cross-store recall walks...
+    expect(explained?.readSet.stores.map((s) => s.alias)).toContain("team");
+    // ...and is the resolved write target for team-scope writes.
+    expect(explained?.writeTarget?.alias).toBe("team");
   });
 });

@@ -487,8 +487,12 @@ export async function runHooksOnlyRefresh(targetInput: string): Promise<void> {
 export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
 
-  // v2.1.0-rc.1 P3 (S4/S8): `fabric install --global [<url>]` fast-path — global
-  // multi-store setup, independent of the per-repo install pipeline below.
+  // W3: `--global` is the "Layer 1 only" modifier — set up the machine-wide
+  // global home (uid + personal store + config) and, with a url, mount a shared
+  // store machine-wide. It does NOT touch any project (no scaffold / bind /
+  // client wiring). A bare `fabric install` (below) instead ensures Layer 1
+  // exists (minting it when absent, 1a) and then runs the per-repo Layer 2/3.
+  // So global is not a separate command — it is one layer of the same install.
   if (args.global === true) {
     await runGlobalInstall({ url: args.url });
     return;
@@ -607,23 +611,50 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
       );
     }
 
-    // v2.1 ③ vector-chinese-model (P3): opt-in semantic-search enable step.
-    // Skip path (default): never touches embed config. When --enable-embed is
-    // set, idempotently flip embed_enabled + pin embed_model, then print the
-    // host-side fastembed install + cache-warm + reindex instructions.
+    // v2.1 ③ vector-chinese-model (P3): opt-in semantic search (L3 step).
+    // Default OFF (never touches embed config). Two entry points:
+    //   - non-interactive: `--enable-embed` flag (optionally `--embed-model`).
+    //   - interactive (W5): a wizard step offering to enable it.
     if (args["enable-embed"] === true) {
-      const enabled = enableSemanticSearch(resolution.target, { model: args["embed-model"] });
-      console.log("");
-      if (enabled.alreadyEnabled) {
-        console.log(paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`));
-      } else {
-        for (const line of renderSemanticSearchInstructions(enabled.model)) {
-          console.log(line);
-        }
-      }
+      enableSemanticSearchAndReport(resolution.target, args["embed-model"]);
+    } else if (intent.wizardEnabled) {
+      await promptSemanticSearch(resolution.target);
     }
   }
   return result;
+}
+
+/**
+ * Idempotently enable vector semantic search (flip embed config) and print the
+ * host-side install instructions. Shared by the `--enable-embed` flag path and
+ * the interactive wizard step so both behave identically.
+ */
+function enableSemanticSearchAndReport(projectRoot: string, model?: string): void {
+  const enabled = enableSemanticSearch(projectRoot, model === undefined ? {} : { model });
+  console.log("");
+  if (enabled.alreadyEnabled) {
+    console.log(paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`));
+    return;
+  }
+  for (const line of renderSemanticSearchInstructions(enabled.model)) {
+    console.log(line);
+  }
+}
+
+/**
+ * W5 (install embed step) — interactive "enable semantic search?" prompt. Off by
+ * default; cancelling / declining is a clean no-op. The non-interactive
+ * equivalent is the `--enable-embed` flag.
+ */
+async function promptSemanticSearch(projectRoot: string): Promise<void> {
+  const enable = await confirm({
+    message: "Enable vector semantic search? (downloads an embedding model on first use)",
+    initialValue: false,
+  });
+  if (isCancel(enable) || !enable) {
+    return;
+  }
+  enableSemanticSearchAndReport(projectRoot);
 }
 
 /**
