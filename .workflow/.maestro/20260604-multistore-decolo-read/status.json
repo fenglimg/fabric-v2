@@ -127,24 +127,27 @@
       "subject": "doctor 的 inspectMeta / index-drift / counter-reconcile 重定向 per-store(复用 reconcileStoreCounters)",
       "done_when": "doctor 不再 co-location agents.meta reconcile; counter-reconcile/index-drift 走 per-store counters.json; 删 co-location-only check",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + tsc + doctor 测试", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "净新 doctor-store-counters.ts(inspectStoreCounters/fixStoreCounters, disk-max floor 守 KT-DEC-0004)。判断扩展(自决): knowledge_dir_unindexed + knowledge_test_index 一并退役(唯一 --fix 是被删的 reconcileKnowledge, 留着=fixable_error 无 fix 路径)。i18n orphan key 留 Z1 清。inspectKnowledgeSummaryOpaque 保留(喂 EMPTY_META_INSPECTION 走 store)。",
+      "verification": { "method": "deterministic", "verifier": "server tsc 0 err + doctor.test 262 绿 + doctor-store-counters disk-max-floor 守卫测试 + 自审 floor 逻辑", "evidence": "a3e4f76", "verified_at": "2026-06-04" }
     },
     {
-      "id": "R5", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "cache meta watch 改 store(cache.ts invalidation watch 指向 store knowledge 而非 co-location agents.meta)",
-      "done_when": "cache invalidation watch 监 store 路径; co-location agents.meta watch 移除",
-      "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + tsc + cache 测试", "evidence": null, "verified_at": null }
+      "id": "R5", "round": 1, "parent_id": "R2", "relationship": "similar-but-distinct", "subdivision_depth": 0,
+      "subject": "cache meta watch 改 store — 实证 moot, 并入 R2 清理",
+      "done_when": "cache.ts 'meta'/'context' slot 在 R2 退役其消费者后清理(无 live watcher 可 repoint)",
+      "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "infrastructure",
+      "status": "done",
+      "note": "实证(grep): 无 live chokidar watcher(knowledge-sync.ts:6 注释明说 'Does NOT wire any watchers'=文档意图非实现); cache.ts content-agnostic 通用缓存, 'meta' slot 仅 meta-reader 用(R2退役)、'context' slot 仅 get-knowledge 用(R2退役)。故无 watch 可 repoint; cache slot 清理在 R2 随消费者退役一并处理。R5 作为独立任务 moot。",
+      "verification": { "method": "deterministic", "verifier": "grep 实证无 watcher + slot 消费者", "evidence": "并入 R2", "verified_at": "2026-06-04" }
     },
     {
       "id": "R6", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "MCP tools 读侧确认(review/recall/archive-scan/knowledge-sections/plan-context/extract-knowledge 包装层)+ http-experimental api 读侧",
-      "done_when": "MCP tool 包装层 + server-http-exp(api/knowledge,api/ledger,http,api/events,bearer-auth) 无 co-location agents.meta 读",
+      "subject": "MCP tools 读侧确认 + doctor-conflict/doctor-cite-coverage cutover(R4 漏网真消费者)",
+      "done_when": "MCP tool 包装层无直接读; doctor-conflict/cite-coverage 改 store; recall 经 planContext store-only",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + tsc", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "R4 漏网: doctor-conflict(loadConflictEntries)+ doctor-cite-coverage(kbIndex+idTypeMap/loadKbIdTypeMap)仍读 agents.meta → 新 collectStoreCanonicalEntries cutover。recall=planContext wrapper(已 store-only); MCP tools 无直接读; http-exp quarantine 不入 G-GREEN。**R2 发现**: reconcileKnowledge 仍 4 caller(index.ts:309 startup + review.ts 724/1122 post-approve/modify + sync 539); startup reconcile 会在 Z1 删档后重建 agents.meta → R2 必须退役 reconcileKnowledge + get-knowledge, 触及启动+review 流, 比预估纠缠。",
+      "verification": { "method": "deterministic", "verifier": "server tsc 0 err + doctor-conflict 5 绿 + grep MCP/recall", "evidence": "4f9a08b", "verified_at": "2026-06-04" }
     },
     {
       "id": "R7", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,

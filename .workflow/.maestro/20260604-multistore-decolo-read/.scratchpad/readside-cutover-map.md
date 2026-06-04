@@ -74,6 +74,18 @@
 **测试**: doctor.test.ts(20 agents.meta refs)→ 删纯 co-location 检查的测试 + counter 测试迁 per-store fixture。可委派子代理。
 **风险**: doctor 主流程(runDoctor ~1139)按顺序跑 checks; 删 check 要同步删其在报告 assembly + i18n 串的引用, 否则 tsc/lint 断。
 
+## ⚠️ R2 reconcileKnowledge 纠缠发现(2026-06-04, 比原计划大)
+`reconcileKnowledge`(knowledge-sync.ts:593, 重建 co-location agents.meta)仍有 4 真 caller:
+- **index.ts:309** server 启动 `trigger:"startup"` —— **Z1 删 agents.meta 后启动会重建它**(破坏删档验证), 必删
+- **review.ts:724** post-approve · **review.ts:1122** post-modify —— 写后重建 co-location 派生索引(已无人读)
+- **knowledge-sync.ts:539** 内部 auto-heal-after-drift
+退役策略: 4 处调用全删 + reconcileKnowledge 函数退役 + 其用的 buildKnowledgeMeta/writeKnowledgeMeta/readAgentsMeta(knowledge-sync 内)退役。review 写侧已 store-only(W4 cross-store-write), post-approve/modify 的 reconcile 是多余的 co-location 派生维护, 删即可(写已落 store)。**sync open question 由此关闭: sync 的 co-location reconcile 整体退役。** first-reconcile-gate.ts(startup gate)可能也需调整/退役。
+**R7 连带破**: knowledge-sync.test / review.test / get-knowledge.test / rehydrate-state.test / mcp-server.test + 删 knowledge-meta-builder.test / load-active-meta.test / knowledge-id-allocator.test。
+
+## 已完成读侧(6 commit 全绿)
+M 12bac23 · R0/R1 f21ff79 · R3 0f3cd9e · R4 a3e4f76 · R6 4f9a08b · (R5 absorbed)
+读路径 cutover 完毕: plan-context/knowledge-sections/get-knowledge-sections/extract/doctor 检查/doctor-conflict/doctor-cite-coverage 全 store-only。剩 R2(退役+startup/review reconcile)→ R7(测试)→ I1/I2(install)→ Z1(green)。
+
 ## R2 退役簇(R4/R5 后, 零 consumer 时)
 - 删 load-active-meta.ts(loadActiveMeta/loadActiveMetaOrStale)
 - 删/瘦 knowledge-meta-builder.ts: buildKnowledgeMeta/writeKnowledgeMeta 退役; **保留** deriveRuleIdentity + extractRuleDescription(cross-store-recall.ts 用!)
