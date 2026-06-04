@@ -12,6 +12,8 @@ import {
   storeExplain,
   storeGitRemote,
   storeList,
+  storeProjectCreate,
+  storeProjectList,
   storeRemove,
   storeSwitchWrite,
 } from "../store/store-ops.js";
@@ -122,12 +124,20 @@ const bindCommand = defineCommand({
   args: {
     id: { type: "positional", required: true, description: "Store alias/UUID to require" },
     remote: { type: "string", description: "Suggested remote for clone onboarding" },
+    project: {
+      type: "string",
+      description: "Bind this repo to a project:<id> in the store (must already exist)",
+    },
   },
   run({ args }) {
     const entry =
       args.remote === undefined ? { id: args.id } : { id: args.id, suggested_remote: args.remote };
     const projectRoot = process.cwd();
-    const next = storeBind(projectRoot, entry);
+    const next = storeBind(
+      projectRoot,
+      entry,
+      args.project === undefined ? {} : { project: args.project },
+    );
     console.log(
       getProjectTranslator(projectRoot)("cli.store.bound", {
         id: args.id,
@@ -201,6 +211,49 @@ const migrateCommand = defineCommand({
   },
 });
 
+// W1/A2 — store-internal project registry. `store project list <alias>` /
+// `store project create <alias> <id>` enumerate / register the projects a store
+// serves (the `<id>` segments forming `project:<id>` coordinates).
+const projectListCommand = defineCommand({
+  meta: { name: "list", description: "List projects registered in a store" },
+  args: {
+    store: { type: "positional", required: true, description: "Store alias/UUID" },
+  },
+  run({ args }) {
+    const projects = storeProjectList(args.store);
+    if (projects.length === 0) {
+      console.log(`store '${args.store}' has no registered projects.`);
+      return;
+    }
+    for (const p of projects) {
+      console.log(`${p.id}${p.name === undefined ? "" : `\t${p.name}`}`);
+    }
+  },
+});
+
+const projectCreateCommand = defineCommand({
+  meta: { name: "create", description: "Register a new project in a store" },
+  args: {
+    store: { type: "positional", required: true, description: "Store alias/UUID" },
+    id: { type: "positional", required: true, description: "Project id (single [a-z0-9_-] segment)" },
+    name: { type: "string", description: "Optional human-facing label" },
+  },
+  run({ args }) {
+    const project = storeProjectCreate(args.store, args.id, new Date().toISOString(), {
+      ...(args.name === undefined ? {} : { name: args.name }),
+    });
+    console.log(`registered project '${project.id}' in store '${args.store}'.`);
+  },
+});
+
+const projectCommand = defineCommand({
+  meta: { name: "project", description: "Manage the projects a store serves" },
+  subCommands: {
+    list: projectListCommand,
+    create: projectCreateCommand,
+  },
+});
+
 export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
   subCommands: {
@@ -212,5 +265,6 @@ export default defineCommand({
     bind: bindCommand,
     "switch-write": switchWriteCommand,
     migrate: migrateCommand,
+    project: projectCommand,
   },
 });

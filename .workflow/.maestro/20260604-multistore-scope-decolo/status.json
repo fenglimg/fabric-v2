@@ -37,16 +37,16 @@
       "subject": "store 内 project 实体/registry(可列举/创建/binding 时指定)",
       "done_when": "fabric store 有 project list/create 能力;bindRemoteStoreToProject 可指定 project:<id> 写进 config;指定不存在的 project 被拦",
       "ship_criteria_alignment": ["G-PROJECT"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": {"method": "deterministic", "verifier": "新增 store-project test + cli-surface snapshot", "evidence": null, "verified_at": null}
+      "status": "done",
+      "verification": {"method": "deterministic", "verifier": "新增 store-project test + cli-surface snapshot", "evidence": "store-project-registry.test.ts 9/9 绿(create/list/dup-reject/invalid-id/bind --project 校验+active_project 落 config+不存在 project 被拦);cli-surface+install-cli-surface 16/16 绿;cli tsc --noEmit clean。schema: storeProjectSchema+projects.json(STORE_LAYOUT.projectsFile)+active_project on fabric-config;core: readStoreProjects/addStoreProject/storeHasProject;cli: storeProjectList/Create/resolveStoreDir+storeBind project 校验+citty store project list/create+bind --project", "verified_at": "2026-06-04"}
     },
     {
       "id": "A1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "写入落 semantic_scope + visibility_store(三态 个人/项目/团队 抉择 + AI 自归档判定 + 默认值)",
       "done_when": "extract-knowledge.ts 与 review.ts approve 写出的 frontmatter 含 semantic_scope + visibility_store;personal 默认 personal store,team/project 默认 active_write_store;写 personal scope 进 shared store 被 isPersonalScope lint 拒",
       "ship_criteria_alignment": ["G-WRITE-SCOPE"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": {"method": "deterministic", "verifier": "extract/review 写入 test 断言 scope 字段 + 泄露拒绝 test", "evidence": null, "verified_at": null}
+      "status": "done",
+      "verification": {"method": "deterministic", "verifier": "extract/review 写入 test 断言 scope 字段 + 泄露拒绝 test", "evidence": "write-scope-meta.test.ts 4/4(team→semantic_scope:team+visibility_store:write-store;active_project→project:<id>;personal→落 personal store;isPersonalLeakIntoSharedStore lint 4 组合);approve-promote-store.test.ts +1 断言 approve 后 canonical 仍含 semantic_scope+visibility_store(rewriteFrontmatterForPromote verbatim 保留);新增 resolveWriteScopeMeta(cross-store-write.ts)+ PersonalScopeLeakError;server tsc clean", "verified_at": "2026-06-04"}
     },
     {
       "id": "A3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,

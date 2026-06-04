@@ -16,7 +16,7 @@ import { AgentsMetaFileMissingError } from "../meta-reader.js";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { loadActiveMeta } from "./load-active-meta.js";
-import { resolveStorePendingBase } from "./cross-store-write.js";
+import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
 import {
   atomicWriteText,
   ensureParentDirectory,
@@ -377,6 +377,12 @@ export async function extractKnowledge(
   const effectiveSanitizedSlug = chosenSlug;
   const effectiveIdempotencyKey = chosenKey;
 
+  // v2.1 global-refactor (W1/A1): the scope coordinate + physical store the entry
+  // is written into. Resolved from the SAME write-target the pending file lands in
+  // (baseDir above), so frontmatter `visibility_store` matches the entry's home.
+  // Throws PersonalScopeLeakError if a personal scope would land in a shared store.
+  const writeScopeMeta = resolveWriteScopeMeta(layer, projectRoot);
+
   await ensureParentDirectory(absolutePath);
 
   if (existsSync(absolutePath)) {
@@ -409,6 +415,8 @@ export async function extractKnowledge(
         summary,
         recentPaths: input.recent_paths,
         layer,
+        semanticScope: writeScopeMeta.semantic_scope,
+        visibilityStore: writeScopeMeta.visibility_store,
         proposedReason: input.proposed_reason,
         sessionContext: input.session_context,
         relevanceScope,
@@ -453,6 +461,8 @@ export async function extractKnowledge(
     summary,
     recentPaths: input.recent_paths,
     layer,
+    semanticScope: writeScopeMeta.semantic_scope,
+    visibilityStore: writeScopeMeta.visibility_store,
     proposedReason: input.proposed_reason,
     sessionContext: input.session_context,
     relevanceScope,
@@ -561,6 +571,11 @@ type FreshEntryArgs = {
   summary: string;
   recentPaths: string[];
   layer: "team" | "personal";
+  // v2.1 global-refactor (W1/A1): scope coordinate + physical store the entry
+  // lands in. Resolved by resolveWriteScopeMeta from the SAME write-target the
+  // pending file is written into.
+  semanticScope: string;
+  visibilityStore: string;
   proposedReason: ProposedReason;
   sessionContext: string;
   // v2.0.0-rc.8 A1: optional relevance fields. When undefined, the YAML
@@ -614,6 +629,12 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     `type: ${args.type}`,
     "maturity: draft",
     `layer: ${args.layer}`,
+    // v2.1 global-refactor (W1/A1): scope coordinate (resolution axis) + the
+    // physical store this entry lives in. `layer` is retained for back-compat
+    // during the co-location retirement; `semantic_scope`/`visibility_store` are
+    // the v2.1 source of truth (scope ⊥ store).
+    `semantic_scope: ${args.semanticScope}`,
+    `visibility_store: ${quoteRelevancePath(args.visibilityStore)}`,
     `created_at: ${createdAt}`,
     `source_sessions: [${args.sourceSessions.map((s) => JSON.stringify(s)).join(", ")}]`,
     `proposed_reason: ${args.proposedReason}`,

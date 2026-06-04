@@ -5,10 +5,15 @@ import {
   STORE_PENDING_DIR,
   buildStoreResolveInput,
   createStoreResolver,
+  isPersonalLeakIntoSharedStore,
+  loadProjectConfig,
   resolveGlobalRoot,
   storeRelativePath,
 } from "@fenglimg/fabric-shared";
-import { StoreWriteTargetUnresolvedError } from "@fenglimg/fabric-shared/errors";
+import {
+  PersonalScopeLeakError,
+  StoreWriteTargetUnresolvedError,
+} from "@fenglimg/fabric-shared/errors";
 
 // ---------------------------------------------------------------------------
 // v2.1 global-refactor (W1-T2) — cross-store write-side wiring.
@@ -67,4 +72,64 @@ export function resolveStorePendingBase(layer: "team" | "personal", projectRoot:
 // extract→approve→recall round-trip entirely inside the store.
 export function resolveStoreCanonicalBase(layer: "team" | "personal", projectRoot: string): string {
   return join(resolveWriteTargetStoreDir(layer, projectRoot), STORE_LAYOUT.knowledgeDir);
+}
+
+// ---------------------------------------------------------------------------
+// v2.1 global-refactor (W1/A1) — scope metadata an entry's frontmatter records.
+//
+//   semantic_scope   — WHO the entry is for (the resolution axis, schemas/scope.ts):
+//                        personal layer → "personal"
+//                        team layer     → "project:<active_project>" when the repo
+//                                          is bound to a project (A2), else "team".
+//   visibility_store — the alias of the store the entry PHYSICALLY lands in (the
+//                      resolved write-target). Decouples scope from storage (S42).
+//
+// R5#3 RED LINE: a personal-scope entry must never resolve to a SHARED store.
+// The resolver already routes personal scope → the personal store, so the happy
+// path can't leak; this is the explicit refusal for any path that would force a
+// personal scope into a shared target (e.g. a forced team-layer write carrying a
+// personal coordinate). Throws PersonalScopeLeakError in that case.
+// ---------------------------------------------------------------------------
+export interface WriteScopeMeta {
+  semantic_scope: string;
+  visibility_store: string;
+}
+
+export function resolveWriteScopeMeta(
+  layer: "team" | "personal",
+  projectRoot: string,
+): WriteScopeMeta {
+  const input = buildStoreResolveInput(projectRoot);
+  if (input === null) {
+    throw writeTargetUnresolved(layer);
+  }
+  const scope = layer === "personal" ? "personal" : "team";
+  const { target } = createStoreResolver().resolveWriteTarget(input, scope);
+  if (target === null) {
+    throw writeTargetUnresolved(layer);
+  }
+
+  // Project-grained coordinate when the repo is bound to a project (A2).
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  const semantic_scope =
+    layer === "personal"
+      ? "personal"
+      : activeProject !== undefined && activeProject.length > 0
+        ? `project:${activeProject}`
+        : "team";
+
+  // R5#3 guard: the resolved store's visibility (personal store carries
+  // personal=true; everything else is shared). A personal scope into a shared
+  // store is refused.
+  const targetIsPersonal =
+    input.mountedStores.find((s) => s.store_uuid === target.store_uuid)?.personal === true;
+  const targetVisibility = targetIsPersonal ? "personal" : "shared";
+  if (isPersonalLeakIntoSharedStore(layer, targetVisibility)) {
+    throw new PersonalScopeLeakError(
+      `refusing to write personal-scope knowledge into shared store '${target.alias}' (R5#3 privacy boundary)`,
+      { actionHint: "personal knowledge lives only in your personal store; do not force it into a shared write-target", details: { store: target.alias } },
+    );
+  }
+
+  return { semantic_scope, visibility_store: target.alias };
 }
