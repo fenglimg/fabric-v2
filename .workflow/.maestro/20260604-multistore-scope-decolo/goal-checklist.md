@@ -44,5 +44,18 @@ W5 守卫+工具            A6(doctor lint) A7(re-scope/promote)    → G-GUARD 
 
 ## Resume
 
-续跑:调 `/goal-mode continue`(推进一个 task → 跑 verification → 原子更新 status.json → 重检 gate)。
-当前:round 1,12 任务全 open,从 **W1 / A2(store project registry)** 起手。
+**状态(2026-06-04):partial-complete — 用户决策先收口 W1–W3,W4/W5 另起专注 goal。**
+
+已完成(5/9 门全绿,3 commit):
+- W1 `ab12edb` — A2 store project registry + A1 写入落 semantic_scope/visibility_store → G-PROJECT / G-WRITE-SCOPE
+- W2 `a33228e` — A3 recall project 过滤 + A4 resolveCandidates 排序 → G-FILTER / G-RANK
+- W3 `ead4339` — A5 scope-backfill 工具 + repo 22 条回填 → G-MIGRATE
+- 全量 tsc clean + 2375 测试(shared568/server828/cli979)0 fail
+
+Deferred → **W4 followup goal**(大型地基重构,单独一轮):
+- B1 doctor 读 store · B2 ~20 工具读 store(loop-until-dry)· B3 agents.meta 退役 · B4 install 不建空柜子 → G-DECOLO / G-INSTALL
+- A6 doctor scope lint(缺 scope/personal 泄露/dangling project ref)· A7 re-scope/promote 工具 → G-GUARD
+- Z1 9/9 完整收口 + dogfood → G-GREEN
+- **难点锚**:agents.meta 是 counter/id 账本(KT-DEC-0004)+ 旧召回索引,~20 生产文件 + 800+ 测试深度依赖;退役需把 counter 改 per-store 派生(store-migrate.buildStoreIdIndex 已有雏形)+ plan-context 去 projectRawItems + doctor/id-allocator/sync 全切 store。
+
+续 W4:新开 `/goal-mode "退役 Fabric co-location/agents.meta,doctor+工具全读 store,install 不建空柜子"`(mode③,gate=G-DECOLO/G-INSTALL/G-GUARD/G-GREEN)。
