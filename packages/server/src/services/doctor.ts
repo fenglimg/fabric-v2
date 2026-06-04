@@ -10,12 +10,8 @@ import { minimatch } from "minimatch";
 import { ZodError } from "zod";
 
 import {
-  agentsMetaSchema,
-  AgentsMetaCountersSchema,
   createTranslator,
   forensicReportSchema,
-  parseKnowledgeId,
-  knowledgeTestIndexSchema,
   LEGACY_KB_REGEX,
   BOOTSTRAP_CANONICAL,
   BOOTSTRAP_MARKER_BEGIN,
@@ -24,10 +20,8 @@ import {
   ONBOARD_SLOT_NAMES,
   ONBOARD_SLOT_TOTAL,
   type AgentsMeta,
-  type AgentsMetaCounters,
   type EventLedgerEvent,
   type ForensicReport,
-  type KnowledgeTestIndex,
   type OnboardSlot,
   resolveFabricLocale,
   type Translator,
@@ -41,11 +35,24 @@ import {
 import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-loader.js";
 
 import { contextCache } from "../cache.js";
-import { atomicWriteJson, atomicWriteText, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
-import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
-import { collectStoreKnowledgeSummaries, type StoreKnowledgeSummary } from "./cross-store-recall.js";
+// v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
+// co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
+// readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
+// Knowledge lives in stores; per-store counters health goes through
+// doctor-store-counters.ts.
+import {
+  collectStoreKnowledgeSummaries,
+  computeReadSetRevision,
+  type StoreKnowledgeSummary,
+} from "./cross-store-recall.js";
 import { lintStoreScopes, type ScopeLintViolation } from "./doctor-scope-lint.js";
+import {
+  fixStoreCounters,
+  inspectStoreCounters,
+  type StoreCounterDrift,
+} from "./doctor-store-counters.js";
 import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
@@ -57,9 +64,7 @@ import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./
 import type { CiteRollupRow } from "./cite-rollup.js";
 import { flushMetrics, readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
-import { reconcileKnowledge, resolveContentRefPath } from "./knowledge-sync.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
-import { readAgentsMeta } from "../meta-reader.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
 import {
   inspectEventsJsonlGates,
@@ -322,6 +327,25 @@ type MetaInspection =
       readError: string;
     };
 
+// v2.2 W5 R4 (agents.meta decolo): a valid-but-empty MetaInspection. `inspectMeta`
+// (which read the retired co-location agents.meta.json) is gone, but the exported
+// `inspectKnowledgeSummaryOpaque` still takes a MetaInspection as its first arg
+// (back-compat with its own test). Feeding this empty-valid value makes the
+// project-node loop a no-op so the lint runs purely over the read-set stores —
+// the post-decolo canonical knowledge home.
+const EMPTY_META_INSPECTION: MetaInspection = {
+  present: true,
+  valid: true,
+  meta: { revision: "", nodes: {} } as unknown as AgentsMeta,
+  revision: "",
+  computedRevision: null,
+  ruleCount: 0,
+  missingContentRefs: [],
+  invalidContentRefs: [],
+  stale: false,
+  changed: false,
+};
+
 type EventLedgerInspection = {
   exists: boolean;
   writable: boolean;
@@ -454,46 +478,9 @@ type CiteGoodhartInspection = {
   fired: Array<{ pattern: "G1" | "G2" | "G5"; detail: string }>;
 };
 
-type KnowledgeTestIndexInspection =
-  | {
-      present: true;
-      valid: true;
-      stale: boolean;
-      linkCount: number;
-      orphanCount: number;
-      error?: undefined;
-    }
-  | {
-      present: false;
-      valid: false;
-      stale: true;
-      linkCount: 0;
-      orphanCount: 0;
-      error: string;
-    }
-  | {
-      present: true;
-      valid: false;
-      stale: true;
-      linkCount: 0;
-      orphanCount: 0;
-      error: string;
-    };
-
 type McpConfigInWrongFileInspection = {
   hasWrongEntry: boolean;
   settingsPath: string;
-};
-
-type MetaManuallyDivergedInspection = {
-  extraMetaEntries: string[];
-  hashMismatchEntries: string[];
-  readable: boolean;
-  error?: string;
-};
-
-type RulesDirUnindexedInspection = {
-  unindexedFiles: string[];
 };
 
 type KnowledgeDirMissingInspection = {
@@ -519,19 +506,6 @@ type StableIdCollision = {
 
 type StableIdCollisionInspection = {
   collisions: StableIdCollision[];
-};
-
-type CounterDesyncEntry = {
-  layer: "KP" | "KT";
-  type: "MOD" | "DEC" | "GLD" | "PIT" | "PRO";
-  observed: number;
-  current: number;
-};
-
-type CounterDesyncInspection = {
-  desyncs: CounterDesyncEntry[];
-  // Snapshot of the corrected counters (post-fix view) used by --fix to rewrite agents.meta.json.
-  correctedCounters: AgentsMetaCounters | null;
 };
 
 type BootstrapAnchorInspection = {
@@ -873,29 +847,6 @@ type LayerMismatchInspection = {
   mismatches: LayerMismatchEntry[];
 };
 
-type IndexDriftEntry = {
-  // KP/KT prefix codes mirror agents.meta.json counters envelope keys.
-  layer: "KP" | "KT";
-  type: "MOD" | "DEC" | "GLD" | "PIT" | "PRO";
-  // Counter currently recorded in agents.meta.json.counters[layer][type].
-  // Treated as "highest already-allocated counter" — next allocate yields
-  // counter+1 (see allocateKnowledgeId in shared/agents-meta.ts).
-  counter: number;
-  // Highest counter observed in canonical filenames for this (layer, type)
-  // across both physical trees. The drift condition is `counter < max+1`,
-  // i.e. there exists at least one canonical file whose counter exceeds the
-  // meta envelope's record.
-  max_observed: number;
-  // Proposed `counters[layer][type]` value after the TASK-003 --apply-lint
-  // mutation: `max_observed + 1`. Encoded explicitly so the proposal text is
-  // machine-parseable without reapplying the +1 rule downstream.
-  proposed_after: number;
-};
-
-type IndexDriftInspection = {
-  drifts: IndexDriftEntry[];
-};
-
 // Inactivity thresholds (in days) keyed by maturity tier. Beyond this age with
 // no fetch / promote / proposal event the entry is a demote candidate.
 const ORPHAN_DEMOTE_THRESHOLD_DAYS: Record<LintMaturity, number> = {
@@ -1082,7 +1033,7 @@ const BASELINE_FILENAME_LINT_BASELINE_IDS = new Set<string>([
 const BASELINE_ID_PREFIXED_FILENAME_PATTERN = /^KT-[A-Z]+-\d+--.+\.md$/u;
 
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
-const COUNTER_TYPE_CODES = ["MOD", "DEC", "GLD", "PIT", "PRO"] as const;
+// v2.2 W5 R4 (agents.meta decolo): `COUNTER_TYPE_CODES` removed (only the retired counter_desync / index_drift checks used it).
 
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
@@ -1127,21 +1078,22 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const entryPoints = collectEntryPoints(projectRoot);
   const [
     forensic,
-    meta,
     eventLedger,
     eventsJsonlGates,
-    knowledgeTestIndex,
     bootstrapMarkerMigration,
     l1BootstrapSnapshotDrift,
     l2ManagedBlockDrift,
   ] = await Promise.all([
     inspectForensic(projectRoot),
-    inspectMeta(projectRoot),
+    // v2.2 W5 R4 (agents.meta decolo): `inspectMeta` (read co-location
+    // agents.meta.json) and `inspectKnowledgeTestIndex` (its derived
+    // .fabric/.cache test-link index) are retired — knowledge lives in stores
+    // now; the project co-location agents.meta + test-index machinery (and the
+    // reconcileKnowledge rebuild behind their --fix) is gone.
     inspectEventLedger(projectRoot),
     // v2.0.0-rc.37 Wave B (B5): composite hard-gate inspection (G7 size /
     // G8 metric leak / G9 metrics stale / G10 rotation overdue).
     inspectEventsJsonlGates(projectRoot),
-    inspectKnowledgeTestIndex(projectRoot),
     // v2.0.0-rc.19 TASK-004: one-time fabric:knowledge-base → fabric:bootstrap
     // marker migration scan. Inspect runs in this Promise.all block to keep
     // performance parity with the other I/O-bound inspections.
@@ -1176,8 +1128,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
   // in the last 30 days — drift detection runs but no consumption pipeline.
   const driftUnconsumed = await inspectDriftUnconsumed(projectRoot);
-  const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
-  const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
+  // v2.2 W5 R4 (agents.meta decolo): `meta_manually_diverged` and
+  // `knowledge_dir_unindexed` retired — both compared the project co-location
+  // `.fabric/knowledge` against agents.meta.json (no longer authoritative;
+  // knowledge lives in stores) and their only --fix was reconcileKnowledge.
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
   // v2.0.0-rc.22 TASK-006: baseline filename format hard error. Detects
   // legacy bare-slug baseline files. rc.23 TASK-012 (F8a) deleted the
@@ -1186,7 +1140,18 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // manual deletion of the offending file. manual_error kind, no --fix path.
   const baselineFilenameFormat = inspectBaselineFilenameFormat(projectRoot);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
-  const counterDesync = inspectCounterDesync(meta);
+  // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
+  // `index_drift` checks (against agents.meta.json#counters) are retired. The
+  // monotonic stable_id counter now lives per-store in committed counters.json
+  // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
+  // replacement — disk-max FLOOR semantics over every read-set store.
+  const storeCounterDrift = inspectStoreCounters(projectRoot);
+  // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
+  // post-decolo canonical knowledge source. Summaries feed the opacity lint;
+  // the count + corpus revision hash replace the retired agents.meta-derived
+  // `ruleCount` / `metaRevision` summary fields.
+  const storeKnowledgeSummaries = collectStoreKnowledgeSummaries(projectRoot);
+  const storeRevision = computeReadSetRevision(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
   // rc.3 TASK-005: filesystem-edit fallback. Synthesizes knowledge_promoted
@@ -1210,7 +1175,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // rather than time-based maturity thresholds.
   const stableIdDuplicate = inspectStableIdDuplicate(projectRoot);
   const layerMismatch = inspectLayerMismatch(projectRoot);
-  const indexDrift = inspectIndexDrift(projectRoot, meta);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a synchronous filesystem count, not a
   // time-decayed signal. Runs alongside the rc.4 integrity inspections so the
@@ -1320,13 +1284,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
-    createMetaCheck(t, meta, globalCliVersion),
-    createRuleContentRefCheck(t, meta),
+    // v2.2 W5 R4 (agents.meta decolo): `createMetaCheck` (agents_meta_*),
+    // `createRuleContentRefCheck` (content_ref_*) and
+    // `createKnowledgeTestIndexCheck` (the co-location test-link index) retired
+    // — they inspected the project co-location agents.meta.json / its derived
+    // cache, which is no longer authoritative (knowledge lives in stores).
     // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
     // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
     // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
     // lint suite for the new knowledge frontmatter contract.
-    createKnowledgeTestIndexCheck(t, knowledgeTestIndex),
     createEventLedgerCheck(t, eventLedger),
     createEventLedgerPartialWriteCheck(t, eventLedger),
     createEventsJsonlHealthCheck(t, eventsJsonlGates),
@@ -1347,25 +1313,26 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
     createDriftUnconsumedCheck(t, driftUnconsumed),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
-    createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
-    createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
     createStableIdCollisionCheck(t, stableIdCollision),
-    createCounterDesyncCheck(t, counterDesync),
+    // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
+    // replaced by the store-aware `store_counter_drift` (per-store committed
+    // counters.json, disk-max FLOOR / KT-DEC-0004). Registered below alongside
+    // the scope lint, the other store-scoped doctor check.
+    createStoreCounterCheck(t, storeCounterDrift),
     createFilesystemEditFallbackCheck(t, filesystemEditFallback),
     // rc.4 TASK-001: read-side lint checks #16-18. Findings only — mutation
     // + event emission lands in TASK-003 behind --apply-lint.
     createOrphanDemoteCheck(t, orphanDemote),
     createStaleArchiveCheck(t, staleArchive),
     createPendingOverdueCheck(t, pendingOverdue),
-    // rc.4 TASK-002: read-side integrity checks #19-21. Stable_id duplicate
-    // runs first in this trio — it is the most critical integrity break and
-    // surfaces ahead of layer-mismatch / index-drift in the report so a
-    // human operator triages the collision before reasoning about counter
-    // state. Index drift is the only fixable_error of the three; stable_id
-    // duplicate and layer mismatch require manual triage (rename / move).
+    // rc.4 TASK-002: read-side integrity checks #19-20. Stable_id duplicate
+    // runs first — it is the most critical integrity break and surfaces ahead
+    // of layer-mismatch so a human operator triages the collision before
+    // reasoning about counter state. Both require manual triage (rename / move).
+    // v2.2 W5 R4: the co-location `index_drift` check (agents.meta#counters vs
+    // disk) is retired — its store-aware successor is `store_counter_drift`.
     createStableIdDuplicateCheck(t, stableIdDuplicate),
     createLayerMismatchCheck(t, layerMismatch),
-    createIndexDriftCheck(t, indexDrift),
     // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
     // does not bump report status. Recommends running the fabric-import skill
     // to backfill knowledge when the corpus is below the threshold floor.
@@ -1423,10 +1390,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // from the same MetaInspection so no extra disk reads.
     createKnowledgeSummaryOpaqueCheck(
       t,
-      // v2.2 全砍 F10: also scan the read-set stores (team + personal) so opaque
-      // store summaries — the personal layer the dogfood flagged — are caught,
-      // not just the project agents.meta entries.
-      inspectKnowledgeSummaryOpaque(meta, collectStoreKnowledgeSummaries(target)),
+      // v2.2 全砍 F10 + W5 R4 (agents.meta decolo): the opacity scan is now
+      // store-only — canonical knowledge lives in the read-set stores (team +
+      // personal), which is exactly the surface this lint must cover. The legacy
+      // project agents.meta source is retired, so we feed an empty-but-valid meta
+      // (zero project nodes) and let the store-summary fold drive the result.
+      inspectKnowledgeSummaryOpaque(EMPTY_META_INSPECTION, storeKnowledgeSummaries),
     ),
     // v2.2 W4 (G-GUARD / A6): scope lint over the read-set stores — missing
     // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
@@ -1469,9 +1438,14 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
         subkind: framework.subkind,
       },
       entryPoints,
-      metaRevision: meta.revision,
-      computedMetaRevision: meta.computedRevision,
-      ruleCount: meta.ruleCount,
+      // v2.2 W5 R4 (agents.meta decolo): co-location agents.meta is retired.
+      // `metaRevision` now carries the read-set store-corpus revision hash
+      // (computeReadSetRevision — the same content fingerprint the recall path
+      // uses); `computedMetaRevision` no longer has a separate "recomputed vs
+      // stored" axis, so it is null; `ruleCount` counts the store corpus.
+      metaRevision: storeRevision,
+      computedMetaRevision: null,
+      ruleCount: storeKnowledgeSummaries.length,
       eventLedgerPath: eventLedger.path,
       fixableErrorCount: fixableErrors.length,
       manualErrorCount: manualErrors.length,
@@ -1570,83 +1544,22 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.fixable_errors, "event_ledger_missing"));
   }
 
-  // counter_desync MUST run before reconcileKnowledge: the counters envelope is
-  // preserved verbatim across a reconcile rebuild (knowledge-meta-builder copies
-  // `previousMeta.counters` through), so bumping first means the correction
-  // survives even when reconcile rewrites the nodes graph.
-  if (before.fixable_errors.some((issue) => issue.code === "counter_desync")) {
-    await fixCounterDesync(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "counter_desync"));
-    contextCache.invalidate("meta_write", projectRoot);
-  }
-
-  // rc.22 TASK-012: agents_meta_stale is now a `warning` tier (engine
-  // auto-heals on next MCP call), but `fabric doctor --fix` must still reconcile
-  // it explicitly. We look in both `fixable_errors` and `warnings` so the
-  // demotion doesn't break the existing fix-path.
+  // v2.2 W5 R4 (agents.meta decolo): the co-location reconcile fix-path is
+  // retired. It rebuilt the project `.fabric/agents.meta.json` (+ its derived
+  // knowledge-test index) from `.fabric/knowledge`, which is no longer the
+  // canonical knowledge home (knowledge lives in stores). The checks that drove
+  // it — agents_meta_* / content_ref_missing / knowledge_dir_unindexed /
+  // knowledge_test_index_* / meta_manually_diverged — and the co-location
+  // `counter_desync` are all retired in runDoctorReport.
   //
-  // v2.0.0-rc.27 TASK-004 (audit §2.14): `meta_manually_diverged` added.
-  // Before rc.27 this warning surfaced a remediation message that said "run
-  // fabric doctor --fix" but the --fix arm took no reconcile path — the warning
-  // remained on every subsequent run (self-referential loop documented in
-  // audit §2.14). reconcileKnowledge rebuilds nodes from disk ground-truth
-  // so dangling meta entries (nodes for which no file exists) are dropped
-  // and hash-mismatch entries get fresh hashes.
-  // rc.31 NEW-3: `agents_meta_invalid` joins reconcileCodes so doctor --fix
-  // unblocks the double-error deadlock with `knowledge_dir_unindexed` (which
-  // sits in fixable_errors but couldn't run while invalid meta blocked it).
-  // Paired with rc.31 NEW-1 (schema z.preprocess for singular knowledge_type)
-  // the load layer now tolerates legacy values, and reconcile rewrites the
-  // on-disk file in the canonical plural form — so a single --fix invocation
-  // is sufficient. The check also looks in `manual_errors` because invalid
-  // meta is currently classified as `manual_error` in runDoctorReport.
-  const reconcileCodes = [
-    "agents_meta_missing",
-    "agents_meta_stale",
-    "agents_meta_invalid",
-    "knowledge_test_index_missing",
-    "knowledge_test_index_stale",
-    "content_ref_missing",
-    "knowledge_dir_unindexed",
-    "meta_manually_diverged",
-  ];
-  if (
-    before.fixable_errors.some((issue) => reconcileCodes.includes(issue.code))
-    || before.warnings.some((issue) => reconcileCodes.includes(issue.code))
-    || before.manual_errors.some((issue) => reconcileCodes.includes(issue.code))
-  ) {
-    // D22: doctor's role is now consistency repairer, not baseline promoter.
-    // reconcileKnowledge rewrites agents.meta.json from disk ground-truth and emits
-    // a 'meta_reconciled' ledger event (trigger='doctor').
-    // content_ref_missing: reconcile drops stale refs that no longer have a backing file.
-    // knowledge_dir_unindexed: reconcile incorporates any .md files not yet in the index.
-    await reconcileKnowledge(projectRoot, { trigger: "doctor" });
-    for (const issue of before.fixable_errors.filter((candidate) =>
-      reconcileCodes.includes(candidate.code),
-    )) {
-      fixed.push(issue);
-    }
-    for (const issue of before.warnings.filter((candidate) =>
-      reconcileCodes.includes(candidate.code),
-    )) {
-      fixed.push(issue);
-    }
-    // rc.31 NEW-3: also record manual_error → fixed transitions so the
-    // doctor --fix exit-status / remaining_manual_errors reflect reality.
-    for (const issue of before.manual_errors.filter((candidate) =>
-      reconcileCodes.includes(candidate.code),
-    )) {
-      fixed.push(issue);
-    }
-    contextCache.invalidate("meta_write", projectRoot);
-
-    // Post-reconcile counter sync: reconcileKnowledge carries over previousMeta.counters
-    // verbatim (knowledge-meta-builder never bumps counters during indexing). If any
-    // newly-indexed knowledge file declared a stable_id whose counter exceeds the
-    // preserved envelope, the counters are now desynced. Fix that here so a single
-    // `doctor --fix` invocation is sufficient — the caller does not need to run
-    // --fix twice to get consistent state.
-    await fixCounterDesync(projectRoot);
+  // `store_counter_drift` is the store-aware successor to counter_desync /
+  // index_drift: it floors each read-set store's committed counters.json at the
+  // highest stable_id observed on disk (KT-DEC-0004 — floor never lowers, so the
+  // monotonic invariant holds and the next allocation in that store cannot
+  // re-mint an existing id).
+  if (before.fixable_errors.some((issue) => issue.code === "store_counter_drift")) {
+    fixStoreCounters(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "store_counter_drift"));
     contextCache.invalidate("meta_write", projectRoot);
   }
 
@@ -1793,13 +1706,16 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   // (created ≥14d ago, never flagged drifted) graduate draft → verified so they
   // stop inflating the draft_backlog ratio. Runs unconditionally — promotable
   // drafts surface as an info check (not a fixable_error), so there is no gate
-  // in `before` to key off. reconcileKnowledge after the rewrites keeps
-  // agents.meta.json maturity + hashes consistent with the new frontmatter.
+  // in `before` to key off.
+  //
+  // v2.2 W5 R4 (agents.meta decolo): the post-rewrite reconcileKnowledge that
+  // re-synced agents.meta maturity/hashes is dropped — applyDraftAutoPromote
+  // rewrites the frontmatter in place and there is no co-location meta index to
+  // keep consistent anymore.
   const autoPromote = await inspectDraftAutoPromote(projectRoot);
   if (autoPromote.candidates.length > 0) {
     const { promoted } = await applyDraftAutoPromote(projectRoot, autoPromote.candidates);
     if (promoted.length > 0) {
-      await reconcileKnowledge(projectRoot, { trigger: "doctor" });
       const tFix = createTranslator(resolveFabricLocale(projectRoot));
       fixed.push({
         code: "draft_auto_promotable",
@@ -1959,12 +1875,23 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     // Silent — observability only.
   }
 
-  // Index drift: re-read meta after any prior mutations (none touch
-  // agents.meta.json, but readability over assumption).
-  const meta = await inspectMeta(projectRoot);
-  const indexDrift = inspectIndexDrift(projectRoot, meta);
-  if (indexDrift.drifts.length > 0) {
-    mutations.push(await applyIndexDriftFix(projectRoot, indexDrift));
+  // v2.2 W5 R4 (agents.meta decolo): the co-location `index_drift` apply-lint
+  // mutation (bump agents.meta.json#counters) is retired. Its store-aware
+  // successor floors every read-set store's committed counters.json at disk-max
+  // (KT-DEC-0004 — floor never lowers). One aggregate mutation row per drifted
+  // store reconciled.
+  const storeCounterDrifts = inspectStoreCounters(projectRoot);
+  if (storeCounterDrifts.length > 0) {
+    const reconciled = fixStoreCounters(projectRoot);
+    const detail = storeCounterDrifts
+      .map((d) => `${d.store_alias}:${d.layer}.${d.type} ${d.current} -> ${d.disk_max}`)
+      .join("; ");
+    mutations.push({
+      kind: "knowledge_index_drift",
+      path: "stores/*/counters.json",
+      detail: detail || "(no store counters processed)",
+      applied: reconciled.length > 0,
+    });
   }
 
   contextCache.invalidate("meta_write", projectRoot);
@@ -2402,49 +2329,9 @@ async function applySessionHintsStaleCleanup(
   }
 }
 
-async function applyIndexDriftFix(
-  projectRoot: string,
-  inspection: IndexDriftInspection,
-): Promise<DoctorApplyLintMutation> {
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const detailParts: string[] = [];
-  try {
-    // F30 (ISS-20260531-007): this counter read-modify-write must serialize
-    // against KnowledgeIdAllocator.allocate(), which bumps the same counters
-    // under `withFileLock(${metaPath}.lock)`. Otherwise a concurrent allocate
-    // (another window / the live MCP server) racing this --fix overwrites the
-    // bumped counter with a stale lower value → duplicate stable_id.
-    await withFileLock(`${metaPath}.lock`, async () => {
-      const meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
-      const baseCounters = AgentsMetaCountersSchema.parse(meta.counters ?? undefined);
-      // Defensive deep clone so we do not mutate the parsed object in place.
-      const updatedCounters: AgentsMetaCounters = {
-        KP: { ...baseCounters.KP },
-        KT: { ...baseCounters.KT },
-      };
-      for (const drift of inspection.drifts) {
-        updatedCounters[drift.layer][drift.type] = drift.proposed_after;
-        detailParts.push(`${drift.layer}.${drift.type}: ${drift.counter} -> ${drift.proposed_after}`);
-      }
-      const updated: AgentsMeta = { ...meta, counters: updatedCounters };
-      await atomicWriteJson(metaPath, updated, { indent: 2 });
-    });
-    return {
-      kind: "knowledge_index_drift",
-      path: "agents.meta.json#counters",
-      detail: detailParts.join("; "),
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_index_drift",
-      path: "agents.meta.json#counters",
-      detail: detailParts.join("; ") || "(no counters processed)",
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
+// v2.2 W5 R4 (agents.meta decolo): `applyIndexDriftFix` removed — it bumped the
+// retired co-location agents.meta.json#counters. Store counter flooring now goes
+// through fixStoreCounters (doctor-store-counters.ts).
 
 function truncateErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -2494,117 +2381,12 @@ function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileI
   }
 }
 
-async function inspectMeta(projectRoot: string): Promise<MetaInspection> {
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const built = await tryBuildRuleMeta(projectRoot);
-
-  try {
-    const raw = await readFile(metaPath, "utf8");
-    const meta = agentsMetaSchema.parse(JSON.parse(raw));
-    const contentRefIssues = inspectContentRefs(projectRoot, meta);
-    const changed = built === null ? false : built.changed;
-
-    return {
-      present: true,
-      valid: true,
-      meta,
-      revision: meta.revision,
-      computedRevision: built?.meta.revision ?? null,
-      ruleCount: Object.values(meta.nodes).filter((node) => {
-        const ref = node.content_ref ?? node.file;
-        return ref.startsWith(".fabric/knowledge/") || ref.startsWith("~/.fabric/knowledge/");
-      }).length,
-      missingContentRefs: contentRefIssues.missing,
-      invalidContentRefs: contentRefIssues.invalid,
-      stale: changed || (built !== null && meta.revision !== built.meta.revision),
-      changed,
-    };
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      return {
-        present: false,
-        valid: false,
-        meta: null,
-        revision: null,
-        computedRevision: built?.meta.revision ?? null,
-        ruleCount: 0,
-        missingContentRefs: [],
-        invalidContentRefs: [],
-        stale: true,
-        changed: built?.changed ?? true,
-      };
-    }
-    // rc.35 TASK-09 (P0-14): classify the parse failure so createMetaCheck
-    // can render a human sentence instead of dumping the raw ZodError JSON.
-    let readErrorKind: "zod" | "json" | "other" = "other";
-    let readErrorZodIssues: Array<{ path: string; message: string }> | undefined;
-    if (error instanceof ZodError) {
-      readErrorKind = "zod";
-      readErrorZodIssues = error.issues.slice(0, 3).map((issue) => ({
-        path: issue.path.length > 0 ? issue.path.join(".") : "<root>",
-        message: issue.message,
-      }));
-    } else if (error instanceof SyntaxError) {
-      readErrorKind = "json";
-    }
-    return {
-      present: true,
-      valid: false,
-      meta: null,
-      revision: null,
-      computedRevision: built?.meta.revision ?? null,
-      ruleCount: 0,
-      readErrorKind,
-      readErrorZodIssues,
-      missingContentRefs: [],
-      invalidContentRefs: [],
-      stale: true,
-      changed: built?.changed ?? true,
-      readError: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function tryBuildRuleMeta(projectRoot: string): Promise<Awaited<ReturnType<typeof buildKnowledgeMeta>> | null> {
-  try {
-    return await buildKnowledgeMeta(projectRoot);
-  } catch {
-    return null;
-  }
-}
-
-function inspectContentRefs(projectRoot: string, meta: AgentsMeta): { missing: string[]; invalid: string[] } {
-  const missing: string[] = [];
-  const invalid: string[] = [];
-
-  for (const node of Object.values(meta.nodes)) {
-    const contentRef = normalizePath(node.content_ref ?? node.file);
-
-    // v2.0: valid content_refs live under .fabric/knowledge/ (team) or
-    // ~/.fabric/knowledge/ (personal). v1.x legacy paths are no longer
-    // recognized.
-    const isPersonalKnowledge = contentRef.startsWith("~/.fabric/knowledge/");
-    const isTeamKnowledge = contentRef.startsWith(".fabric/knowledge/");
-
-    if (!isPersonalKnowledge && !isTeamKnowledge) {
-      invalid.push(contentRef);
-      continue;
-    }
-
-    // Personal-root entries are not directly validated against the project
-    // tree — their existence is verified by the personal-root scan in
-    // knowledge-meta-builder.ts. We only check team-root and legacy entries here.
-    if (isPersonalKnowledge) {
-      continue;
-    }
-
-    if (!existsSync(join(projectRoot, contentRef))) {
-      missing.push(contentRef);
-    }
-  }
-
-  return { missing, invalid };
-}
+// v2.2 W5 R4 (agents.meta decolo): `inspectMeta` / `tryBuildRuleMeta` /
+// `inspectContentRefs` removed. They read the retired co-location
+// `.fabric/agents.meta.json` (+ rebuilt it via buildKnowledgeMeta to compute a
+// stale/changed signal). Knowledge now lives in stores; the agents_meta_* /
+// content_ref_* checks they fed are retired. The `MetaInspection` type is kept
+// (EMPTY_META_INSPECTION + the still-exported inspectKnowledgeSummaryOpaque).
 
 async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspection> {
   const path = getEventLedgerPath(projectRoot);
@@ -3168,34 +2950,11 @@ function inspectKnowledgeTagsEmpty(projectRoot: string): EmptyTagsInspection {
   };
 }
 
-async function inspectKnowledgeTestIndex(projectRoot: string): Promise<KnowledgeTestIndexInspection> {
-  const path = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
-  const built = await tryBuildRuleMeta(projectRoot);
-
-  try {
-    const index = knowledgeTestIndexSchema.parse(JSON.parse(await readFile(path, "utf8")));
-    return {
-      present: true,
-      valid: true,
-      stale: built === null ? false : !isSameKnowledgeTestIndex(index, built.knowledgeTestIndex),
-      linkCount: index.links.length,
-      orphanCount: index.orphan_annotations.length,
-    };
-  } catch (error) {
-    return {
-      present: !isMissingFileError(error),
-      valid: false,
-      stale: true,
-      linkCount: 0,
-      orphanCount: 0,
-      error: isMissingFileError(error)
-        ? ".fabric/.cache/knowledge-test.index.json is missing."
-        : error instanceof Error
-          ? error.message
-          : String(error),
-    };
-  }
-}
+// v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
+// `.fabric/.cache/knowledge-test.index.json` was derived from the co-location
+// `.fabric/knowledge` via buildKnowledgeMeta (its staleness diffed against a
+// rebuilt index, its --fix was reconcileKnowledge) — all retired now that
+// knowledge lives in stores.
 
 function inspectBootstrapAnchor(projectRoot: string): BootstrapAnchorInspection {
   return {
@@ -3646,181 +3405,10 @@ function createForensicCheck(
 // v2.0: `createInitContextCheck` removed alongside `inspectInitContext` —
 // see comment at the call site in `runDoctorReport`.
 
-function createMetaCheck(
-  t: Translator,
-  meta: MetaInspection,
-  globalCli?: GlobalCliInspection,
-): DoctorCheck {
-  if (!meta.present) {
-    return issueCheck(
-      t("doctor.check.agents_meta.name"),
-      "error",
-      "fixable_error",
-      "agents_meta_missing",
-      t("doctor.check.agents_meta.message.missing"),
-      t("doctor.check.agents_meta.remediation.missing"),
-    );
-  }
-  if (!meta.valid) {
-    // rc.35 TASK-09 (P0-14): swap the raw ZodError JSON dump for a human
-    // sentence. Three message paths:
-    //   1. Global CLI is outdated (TASK-04 already detected it) → prioritise
-    //      the version-mismatch story because it is the most common root
-    //      cause of schema errors against rc.31+ projects.
-    //   2. ZodError → format up to 3 issues as `field=value reason`.
-    //   3. JSON syntax error or other → keep the original message but wrap
-    //      it with the standard remediation pointer.
-    if (globalCli && globalCli.status === "outdated") {
-      return issueCheck(
-        t("doctor.check.agents_meta.name"),
-        "error",
-        "manual_error",
-        "agents_meta_invalid_global_cli_outdated",
-        t("doctor.check.agents_meta.message.invalid-from-old-cli", {
-          version: globalCli.version,
-          minVersion: globalCli.minVersion,
-        }),
-        t("doctor.check.global_cli_outdated.remediation"),
-      );
-    }
-    if (meta.readErrorKind === "zod" && meta.readErrorZodIssues && meta.readErrorZodIssues.length > 0) {
-      const formatted = meta.readErrorZodIssues
-        .map((issue) => `${issue.path}: ${issue.message}`)
-        .join("; ");
-      return issueCheck(
-        t("doctor.check.agents_meta.name"),
-        "error",
-        "manual_error",
-        "agents_meta_invalid",
-        t("doctor.check.agents_meta.message.invalid-zod", { issues: formatted }),
-        t("doctor.check.agents_meta.remediation.invalid"),
-      );
-    }
-    return issueCheck(
-      t("doctor.check.agents_meta.name"),
-      "error",
-      "manual_error",
-      "agents_meta_invalid",
-      meta.readError ?? t("doctor.check.agents_meta.message.invalid-default"),
-      t("doctor.check.agents_meta.remediation.invalid"),
-    );
-  }
-  if (meta.stale) {
-    // rc.22 TASK-012: demoted error → warning. The engine auto-heals stale meta
-    // on the next plan-context / get-sections MCP call (lazy reconcile), so a
-    // detected drift is benign by the time a human looks at it. We keep the
-    // check visible (operator wants to see drift for transient debugging) but
-    // exit code 0 unless --strict is set. The fix path at the warnings guard
-    // (see runDoctorFix) still reconciles when --fix is invoked explicitly.
-    //
-    // rc.36 TASK-07 (P1-2): byte-equal revisions but stale=true (driven by
-    // `changed` flag, e.g. mtime-only drift) — show a clearer message that
-    // explains the hashes are identical and the staleness is non-content.
-    const revision = meta.revision;
-    const computedRevision = meta.computedRevision ?? "<unknown>";
-    const messageKey =
-      revision !== null && revision === meta.computedRevision
-        ? "doctor.check.agents_meta.message.stale_hash_equal"
-        : "doctor.check.agents_meta.message.stale";
-    return issueCheck(
-      t("doctor.check.agents_meta.name"),
-      "warn",
-      "warning",
-      "agents_meta_stale",
-      t(messageKey, { revision, computedRevision }),
-      t("doctor.check.agents_meta.remediation.stale"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.agents_meta.name"),
-    t("doctor.check.agents_meta.ok", { revision: meta.revision }),
-  );
-}
-
-function createRuleContentRefCheck(t: Translator, meta: MetaInspection): DoctorCheck {
-  if (!meta.valid) {
-    return issueCheck(
-      t("doctor.check.rule_content_refs.name"),
-      "error",
-      "manual_error",
-      "content_refs_unavailable",
-      t("doctor.check.rule_content_refs.message.unavailable"),
-      t("doctor.check.rule_content_refs.remediation.unavailable"),
-    );
-  }
-
-  if (meta.invalidContentRefs.length > 0) {
-    const count = meta.invalidContentRefs.length;
-    return issueCheck(
-      t("doctor.check.rule_content_refs.name"),
-      "error",
-      "manual_error",
-      "content_ref_outside_rules",
-      t(`doctor.check.rule_content_refs.message.outside.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-      }),
-      t("doctor.check.rule_content_refs.remediation.outside"),
-    );
-  }
-
-  if (meta.missingContentRefs.length > 0) {
-    // content_ref_missing is fixable: reconcileKnowledge rebuilds agents.meta.json from
-    // the physical .fabric/knowledge/**/*.md files, dropping any stale refs automatically.
-    const count = meta.missingContentRefs.length;
-    return issueCheck(
-      t("doctor.check.rule_content_refs.name"),
-      "error",
-      "fixable_error",
-      "content_ref_missing",
-      t(`doctor.check.rule_content_refs.message.missing.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-      }),
-      t("doctor.check.rule_content_refs.remediation.missing"),
-    );
-  }
-
-  return okCheck(t("doctor.check.rule_content_refs.name"), t("doctor.check.rule_content_refs.ok"));
-}
-
-function createKnowledgeTestIndexCheck(t: Translator, index: KnowledgeTestIndexInspection): DoctorCheck {
-  if (!index.present) {
-    return issueCheck(
-      t("doctor.check.knowledge_test_index.name"),
-      "error",
-      "fixable_error",
-      "knowledge_test_index_missing",
-      index.error,
-      t("doctor.check.knowledge_test_index.remediation.missing"),
-    );
-  }
-  if (!index.valid) {
-    return issueCheck(
-      t("doctor.check.knowledge_test_index.name"),
-      "error",
-      "manual_error",
-      "knowledge_test_index_invalid",
-      index.error,
-      t("doctor.check.knowledge_test_index.remediation.invalid"),
-    );
-  }
-  if (index.stale) {
-    return issueCheck(
-      t("doctor.check.knowledge_test_index.name"),
-      "error",
-      "fixable_error",
-      "knowledge_test_index_stale",
-      t("doctor.check.knowledge_test_index.message.stale"),
-      t("doctor.check.knowledge_test_index.remediation.stale"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.knowledge_test_index.name"),
-    t(
-      `doctor.check.knowledge_test_index.ok.${index.linkCount === 1 ? "link_singular" : "link_plural"}.${index.orphanCount === 1 ? "orphan_singular" : "orphan_plural"}`,
-      { linkCount: String(index.linkCount), orphanCount: String(index.orphanCount) },
-    ),
-  );
-}
+// v2.2 W5 R4 (agents.meta decolo): `createMetaCheck` (agents_meta_*),
+// `createRuleContentRefCheck` (content_ref_*) and `createKnowledgeTestIndexCheck`
+// removed — they rendered checks over the retired co-location agents.meta.json
+// and its derived knowledge-test index. Knowledge lives in stores now.
 
 // v2.0.0-rc.37 Wave B (B5): composite hard-gate check for events.jsonl /
 // metrics.jsonl health. Surfaces G7 (size) / G8 (metric leak) /
@@ -5083,129 +4671,8 @@ function findIssue(issues: DoctorIssue[], code: string): DoctorIssue {
   };
 }
 
-async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaManuallyDivergedInspection> {
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-
-  if (!existsSync(metaPath)) {
-    return { extraMetaEntries: [], hashMismatchEntries: [], readable: false };
-  }
-
-  let meta: AgentsMeta;
-  try {
-    const raw = await readFile(metaPath, "utf8");
-    meta = agentsMetaSchema.parse(JSON.parse(raw));
-  } catch (error) {
-    return {
-      extraMetaEntries: [],
-      hashMismatchEntries: [],
-      readable: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
-  const extraMetaEntries: string[] = [];
-  const hashMismatchEntries: string[] = [];
-
-  for (const node of Object.values(meta.nodes)) {
-    const contentRef = node.content_ref ?? node.file;
-    // Dual-root layout (KT-DEC-0003): personal nodes carry a `~/.fabric/knowledge/`
-    // content_ref that resolves against the personal root, not projectRoot. A bare
-    // join() would point at <repo>/~/.fabric/... — a path that never exists — and
-    // flag every personal mirror node as a permanent false-positive divergence.
-    const absPath = resolveContentRefPath(projectRoot, contentRef);
-
-    if (!existsSync(absPath)) {
-      extraMetaEntries.push(contentRef);
-      continue;
-    }
-
-    try {
-      const content = readFileSync(absPath, "utf8");
-      const diskHash = sha256(content);
-      if (node.hash !== "" && node.hash !== diskHash) {
-        hashMismatchEntries.push(contentRef);
-      }
-    } catch {
-      extraMetaEntries.push(contentRef);
-    }
-  }
-
-  return { extraMetaEntries, hashMismatchEntries, readable: true };
-}
-
-function inspectKnowledgeDirUnindexed(projectRoot: string, meta: MetaInspection): RulesDirUnindexedInspection {
-  // v2.0 layout: iterate .fabric/knowledge/{type}/ and surface any .md file
-  // not yet present in agents.meta.json so reconcileKnowledge can rebuild the
-  // index. The legacy v1.x rules collection was dropped in rc.2.
-  const physicalMdFiles = new Set<string>();
-  collectMdFilesUnder(physicalMdFiles, projectRoot, join(projectRoot, ".fabric", "knowledge"), ".fabric/knowledge");
-
-  if (physicalMdFiles.size === 0) {
-    return { unindexedFiles: [] };
-  }
-
-  // Collect all content_refs/file paths tracked in meta.
-  const indexedRefs = new Set<string>();
-  if (meta.valid && meta.meta !== null) {
-    for (const node of Object.values(meta.meta.nodes)) {
-      const ref = normalizePath(node.content_ref ?? node.file);
-      indexedRefs.add(ref);
-    }
-  }
-
-  const unindexedFiles = [...physicalMdFiles].filter((f) => !indexedRefs.has(f)).sort();
-  return { unindexedFiles };
-}
-
-function collectMdFilesUnder(
-  out: Set<string>,
-  projectRoot: string,
-  rootDir: string,
-  relPrefix: string,
-): void {
-  if (!existsSync(rootDir)) {
-    return;
-  }
-  const stack: string[] = [rootDir];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    if (dir === undefined) {
-      continue;
-    }
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== "pending" && entry.name !== "archive") {
-          stack.push(abs);
-        }
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        const rel = posix.join(relPrefix, abs.slice(rootDir.length + 1).replace(/\\/gu, "/"));
-        out.add(rel);
-      }
-    }
-  }
-}
-
-function createKnowledgeDirUnindexedCheck(t: Translator, inspection: RulesDirUnindexedInspection): DoctorCheck {
-  if (inspection.unindexedFiles.length > 0) {
-    const count = inspection.unindexedFiles.length;
-    return issueCheck(
-      t("doctor.check.knowledge_dir_unindexed.name"),
-      "error",
-      "fixable_error",
-      "knowledge_dir_unindexed",
-      t(`doctor.check.knowledge_dir_unindexed.message.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-      }),
-      t("doctor.check.knowledge_dir_unindexed.remediation"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.knowledge_dir_unindexed.name"),
-    t("doctor.check.knowledge_dir_unindexed.ok"),
-  );
-}
-
+// v2.2 W5 R4 (agents.meta decolo): `inspectMetaManuallyDiverged` removed (compared co-location agents.meta against disk).
+// v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeDirUnindexed` / `collectMdFilesUnder` / `createKnowledgeDirUnindexedCheck` removed (pure co-location agents.meta-vs-disk check).
 async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
   // v2.0: stable_ids are declared in YAML frontmatter `id: K[PT]-XXX-NNNN`
   // inside .fabric/knowledge/{type}/*.md. The v1.x HTML-comment marker
@@ -5278,93 +4745,7 @@ function extractKnowledgeFrontmatterId(source: string): string | null {
   return idMatch === null ? null : idMatch[2];
 }
 
-function inspectCounterDesync(meta: MetaInspection): CounterDesyncInspection {
-  // counter_desync: a node has stable_id KP-DEC-0007 but agents.meta.json's
-  // counters.KP.DEC says 5 (i.e. less than the observed counter). The fix is
-  // to bump counters[layer][type] to max(observed, current) for every (layer,
-  // type) pair where a desync is detected. We only report when:
-  //   - meta is valid AND
-  //   - at least one observed counter exceeds its current value.
-  if (!meta.valid || meta.meta === null) {
-    return { desyncs: [], correctedCounters: null };
-  }
-
-  // Establish the current counters envelope (use schema defaults when omitted).
-  const current = AgentsMetaCountersSchema.parse(meta.meta.counters ?? undefined);
-  const observed: Record<"KP" | "KT", Record<"MOD" | "DEC" | "GLD" | "PIT" | "PRO", number>> = {
-    KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-    KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-  };
-
-  for (const node of Object.values(meta.meta.nodes)) {
-    const id = node.stable_id;
-    if (id === undefined) {
-      continue;
-    }
-    const parsed = parseKnowledgeId(id);
-    if (parsed === null) {
-      continue;
-    }
-    const layer = parsed.layer === "personal" ? "KP" : "KT";
-    const typeCode = ([
-      ["models", "MOD"],
-      ["decisions", "DEC"],
-      ["guidelines", "GLD"],
-      ["pitfalls", "PIT"],
-      ["processes", "PRO"],
-    ] as const).find(([t]) => t === parsed.type)?.[1];
-    if (typeCode === undefined) {
-      continue;
-    }
-    if (parsed.counter > observed[layer][typeCode]) {
-      observed[layer][typeCode] = parsed.counter;
-    }
-  }
-
-  const desyncs: CounterDesyncEntry[] = [];
-  const corrected: AgentsMetaCounters = {
-    KP: { ...current.KP },
-    KT: { ...current.KT },
-  };
-  for (const layer of ["KP", "KT"] as const) {
-    for (const code of COUNTER_TYPE_CODES) {
-      const obs = observed[layer][code];
-      const cur = current[layer][code];
-      if (obs > cur) {
-        desyncs.push({ layer, type: code, observed: obs, current: cur });
-        corrected[layer][code] = obs;
-      }
-    }
-  }
-
-  return {
-    desyncs,
-    correctedCounters: desyncs.length === 0 ? null : corrected,
-  };
-}
-
-function createCounterDesyncCheck(t: Translator, inspection: CounterDesyncInspection): DoctorCheck {
-  if (inspection.desyncs.length > 0) {
-    const first = inspection.desyncs[0];
-    const observedId = `K${first.layer === "KP" ? "P" : "T"}-${first.type}-${String(first.observed).padStart(4, "0")}`;
-    const count = inspection.desyncs.length;
-    return issueCheck(
-      t("doctor.check.counter_desync.name"),
-      "error",
-      "fixable_error",
-      "counter_desync",
-      t(`doctor.check.counter_desync.message.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-        counterPath: `counters.${first.layer}.${first.type}`,
-        current: String(first.current),
-        observedId,
-      }),
-      t("doctor.check.counter_desync.remediation"),
-    );
-  }
-  return okCheck(t("doctor.check.counter_desync.name"), t("doctor.check.counter_desync.ok"));
-}
-
+// v2.2 W5 R4 (agents.meta decolo): `inspectCounterDesync` / `createCounterDesyncCheck` removed — replaced by store_counter_drift (doctor-store-counters.ts).
 function createStableIdCollisionCheck(t: Translator, inspection: StableIdCollisionInspection): DoctorCheck {
   if (inspection.collisions.length > 0) {
     const first = inspection.collisions[0];
@@ -5386,49 +4767,36 @@ function createStableIdCollisionCheck(t: Translator, inspection: StableIdCollisi
   return okCheck(t("doctor.check.stable_id_collision.name"), t("doctor.check.stable_id_collision.ok"));
 }
 
-function createMetaManuallyDivergedCheck(t: Translator, inspection: MetaManuallyDivergedInspection): DoctorCheck {
-  if (!inspection.readable) {
-    // meta unreadable is already surfaced by createMetaCheck; skip here
-    return okCheck(
-      t("doctor.check.meta_manually_diverged.name"),
-      t("doctor.check.meta_manually_diverged.ok.unreadable"),
-    );
-  }
-
-  if (inspection.extraMetaEntries.length > 0) {
-    const count = inspection.extraMetaEntries.length;
+// v2.2 W5 R4 (agents.meta decolo): store-aware successor to the retired
+// co-location `counter_desync` / `index_drift` checks. `drifts` is the flat
+// list of (store, layer, type) whose committed counters.json is BELOW the
+// store's on-disk max stable_id — the only condition under which the next
+// allocation would re-mint an existing id (KT-DEC-0004). fixable_error;
+// `doctor --fix` floors each drifted store's counters.json (never lowers).
+function createStoreCounterCheck(t: Translator, drifts: StoreCounterDrift[]): DoctorCheck {
+  if (drifts.length > 0) {
+    const first = drifts[0];
+    const detail = `${first.store_alias}: counters.${first.layer}.${first.type}=${first.current} but disk max is ${first.disk_max}`;
+    const count = drifts.length;
     return issueCheck(
-      t("doctor.check.meta_manually_diverged.name"),
-      "warn",
-      "warning",
-      "meta_manually_diverged",
-      t(`doctor.check.meta_manually_diverged.message.extra.${count === 1 ? "singular" : "plural"}`, {
+      t("doctor.check.store_counter_drift.name"),
+      "error",
+      "fixable_error",
+      "store_counter_drift",
+      t(`doctor.check.store_counter_drift.message.${count === 1 ? "singular" : "plural"}`, {
         count: String(count),
+        detail,
       }),
-      t("doctor.check.meta_manually_diverged.remediation.extra"),
+      t("doctor.check.store_counter_drift.remediation"),
     );
   }
-
-  if (inspection.hashMismatchEntries.length > 0) {
-    const count = inspection.hashMismatchEntries.length;
-    return issueCheck(
-      t("doctor.check.meta_manually_diverged.name"),
-      "warn",
-      "warning",
-      "meta_manually_diverged",
-      t(`doctor.check.meta_manually_diverged.message.hash.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-      }),
-      t("doctor.check.meta_manually_diverged.remediation.hash"),
-    );
-  }
-
   return okCheck(
-    t("doctor.check.meta_manually_diverged.name"),
-    t("doctor.check.meta_manually_diverged.ok.consistent"),
+    t("doctor.check.store_counter_drift.name"),
+    t("doctor.check.store_counter_drift.ok"),
   );
 }
 
+// v2.2 W5 R4 (agents.meta decolo): `createMetaManuallyDivergedCheck` removed (co-location agents.meta vs disk).
 function inspectPreexistingRootFiles(projectRoot: string): PreexistingRootFilesInspection {
   const candidates = ["CLAUDE.md", "AGENTS.md"];
   const detected = candidates.filter((name) => existsSync(join(projectRoot, name)));
@@ -7919,71 +7287,7 @@ function inspectLayerMismatch(projectRoot: string): LayerMismatchInspection {
   return { mismatches };
 }
 
-// Inspection #21: index drift. agents.meta.json carries a `counters` envelope
-// per (layer, type) recording the highest already-allocated counter (next
-// allocateKnowledgeId() returns counter + 1; see shared/agents-meta.ts).
-// If a canonical file on disk has a counter strictly exceeding that
-// envelope, the next allocate would collide. Drift condition: meta counter
-// `< max_observed`. When equal, the slot is synced and the next allocate
-// is collision-free. The TASK-003 mutation bumps the slot to
-// `max_observed + 1` so post-fix the next allocate yields a fresh id one
-// past every observed counter.
-//
-// NOTE: this is intentionally distinct from inspectCounterDesync (the
-// pre-existing rc.1 check). counter_desync reads from `meta.nodes[*].stable_id`
-// — i.e. it requires the indexed envelope to know about the file. index_drift
-// reads directly from the filesystem, so it catches drift even when the file
-// is not yet indexed in agents.meta.json.nodes (e.g. a hand-dropped file
-// before reconcileKnowledge has run).
-function inspectIndexDrift(
-  projectRoot: string,
-  meta: MetaInspection,
-): IndexDriftInspection {
-  if (!meta.valid || meta.meta === null) {
-    return { drifts: [] };
-  }
-  const counters = AgentsMetaCountersSchema.parse(meta.meta.counters ?? undefined);
-
-  // Walk filesystem, track max counter per (layer-prefix, type-code).
-  const observed: Record<"KP" | "KT", Record<ParsedCanonicalFilename["typeCode"], number>> = {
-    KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-    KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-  };
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const { prefix, typeCode, counter } = visit.parsed;
-    if (counter > observed[prefix][typeCode]) {
-      observed[prefix][typeCode] = counter;
-    }
-  }
-
-  const drifts: IndexDriftEntry[] = [];
-  for (const layer of ["KP", "KT"] as const) {
-    for (const code of COUNTER_TYPE_CODES) {
-      const max = observed[layer][code];
-      if (max === 0) {
-        // No canonical files of this (layer,type) on disk — drift cannot be
-        // observed against a meta counter even if it's non-zero. Per task
-        // spec: "missing counter (no entries of that type) → ok (no drift
-        // on absent counter)". Equivalently: skip when max_observed is 0.
-        continue;
-      }
-      const current = counters[layer][code];
-      if (current < max) {
-        drifts.push({
-          layer,
-          type: code,
-          counter: current,
-          max_observed: max,
-          proposed_after: max + 1,
-        });
-      }
-    }
-  }
-  drifts.sort((a, b) =>
-    a.layer === b.layer ? a.type.localeCompare(b.type) : a.layer.localeCompare(b.layer),
-  );
-  return { drifts };
-}
+// v2.2 W5 R4 (agents.meta decolo): `inspectIndexDrift` removed — its store-aware successor is inspectStoreCounters (doctor-store-counters.ts).
 
 function createStableIdDuplicateCheck(t: Translator, inspection: StableIdDuplicateInspection): DoctorCheck {
   if (inspection.duplicates.length === 0) {
@@ -8031,28 +7335,7 @@ function createLayerMismatchCheck(t: Translator, inspection: LayerMismatchInspec
   );
 }
 
-function createIndexDriftCheck(t: Translator, inspection: IndexDriftInspection): DoctorCheck {
-  if (inspection.drifts.length === 0) {
-    return okCheck(
-      t("doctor.check.index_drift.name"),
-      t("doctor.check.index_drift.ok"),
-    );
-  }
-  const first = inspection.drifts[0];
-  const detail = `${first.layer}.${first.type} counter=${first.counter} but max_observed=${first.max_observed} (would propose counters.${first.layer}.${first.type}=${first.proposed_after})`;
-  const count = inspection.drifts.length;
-  return issueCheck(
-    t("doctor.check.index_drift.name"),
-    "error",
-    "fixable_error",
-    "knowledge_index_drift",
-    t(`doctor.check.index_drift.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.index_drift.remediation"),
-  );
-}
+// v2.2 W5 R4 (agents.meta decolo): `createIndexDriftCheck` removed (co-location agents.meta#counters drift).
 
 // v2/rc.2: Removed `inspectClaudeSkillLegacyPath`, `inspectClaudeHookLegacyPath`,
 // `inspectCodexSkillLegacyPath` and their `create*Check` / `fix*` siblings.
@@ -8286,48 +7569,7 @@ async function ensureKnowledgeSubdirs(projectRoot: string): Promise<void> {
   }
 }
 
-async function fixCounterDesync(projectRoot: string): Promise<void> {
-  // Read current agents.meta.json, recompute the corrected counters envelope
-  // from observed stable_ids, and write the meta back atomically. Stops if
-  // meta is missing or unparseable (other doctor checks will surface those).
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  if (!existsSync(metaPath)) {
-    return;
-  }
-  // F30 (ISS-20260531-007) / F31 (ISS-20260531-008): hold the allocator's lock
-  // across the whole read→re-derive→write so a concurrent
-  // KnowledgeIdAllocator.allocate() (or another --fix) cannot interleave and
-  // clobber the freshly-bumped counter back to a stale value.
-  await withFileLock(`${metaPath}.lock`, async () => {
-    let meta: AgentsMeta;
-    try {
-      meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
-    } catch {
-      return;
-    }
-
-    // Re-derive corrected counters using the same algorithm as inspectCounterDesync.
-    const synthetic: MetaInspection = {
-      present: true,
-      valid: true,
-      meta,
-      revision: meta.revision,
-      computedRevision: null,
-      ruleCount: 0,
-      missingContentRefs: [],
-      invalidContentRefs: [],
-      stale: false,
-      changed: false,
-    };
-    const desync = inspectCounterDesync(synthetic);
-    if (desync.desyncs.length === 0 || desync.correctedCounters === null) {
-      return;
-    }
-
-    const updated: AgentsMeta = { ...meta, counters: desync.correctedCounters };
-    await atomicWriteJson(metaPath, updated, { indent: 2 });
-  });
-}
+// v2.2 W5 R4 (agents.meta decolo): `fixCounterDesync` removed — store counters floor via fixStoreCounters (doctor-store-counters.ts).
 
 async function ensureEventLedger(projectRoot: string): Promise<void> {
   const path = getEventLedgerPath(projectRoot);

@@ -596,6 +596,15 @@ export const enMessages: Messages = {
     "Run `fabric doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope is consistent with observed stable_ids.",
+  "doctor.check.store_counter_drift.name": "Store counter drift",
+  "doctor.check.store_counter_drift.message.singular":
+    "{count} store counter is below its on-disk max stable_id ({detail}). The next allocation in that store would re-mint an existing id. Run `fabric doctor --fix` to floor the store counters.json.",
+  "doctor.check.store_counter_drift.message.plural":
+    "{count} store counters are below their on-disk max stable_id ({detail}). The next allocation in those stores would re-mint an existing id. Run `fabric doctor --fix` to floor the store counters.json.",
+  "doctor.check.store_counter_drift.remediation":
+    "Run `fabric doctor --fix` to floor each store's counters.json at the highest stable_id observed on disk (the floor never lowers — KT-DEC-0004 monotonic invariant).",
+  "doctor.check.store_counter_drift.ok":
+    "Every read-set store's counters.json is floored at its on-disk max stable_id.",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "No CLAUDE.md or AGENTS.md detected at project root.",
   "doctor.check.preexisting_root_files.message":

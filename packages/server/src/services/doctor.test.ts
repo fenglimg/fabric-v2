@@ -12,7 +12,12 @@ import {
   BOOTSTRAP_MARKER_END,
   LEGACY_KB_MARKER_BEGIN,
   LEGACY_KB_MARKER_END,
+  STORE_LAYOUT,
   fabricConfigSchema,
+  readStoreCounters,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
 } from "@fenglimg/fabric-shared";
 
 import {
@@ -93,19 +98,19 @@ describe("runDoctorReport", () => {
     });
     // v2.0: bootstrap_anchor_missing replaces bootstrap_missing; knowledge_dir_missing
     // replaces taxonomy_missing.
+    // v2.2 W5 R4 (agents.meta decolo): `agents_meta_missing` /
+    // `knowledge_test_index_missing` fixable errors and the
+    // `content_refs_unavailable` manual error are retired — they were raised by
+    // the co-location agents.meta.json checks.
     expect(report.fixable_errors.map((issue) => issue.code)).toEqual([
       "bootstrap_anchor_missing",
       "knowledge_dir_missing",
-      "agents_meta_missing",
-      "knowledge_test_index_missing",
       "event_ledger_missing",
     ]);
-    expect(report.manual_errors.map((issue) => issue.code)).toContain("content_refs_unavailable");
     // v2.0 follow-up: `init_context_missing` removed from doctor — that
     // artifact is owned by the AI-side client init skill, not by init CLI.
     expect(report.manual_errors.map((issue) => issue.code)).toEqual([
       "forensic_missing",
-      "content_refs_unavailable",
     ]);
   });
 
@@ -161,9 +166,9 @@ describe("runDoctorReport", () => {
       // Knowledge layout check (both are knowledge-layout invariants).
       "Baseline filename format",
       "Scan evidence",
-      "Agents metadata",
-      "Rule content refs",
-      "Knowledge-test index",
+      // v2.2 W5 R4 (agents.meta decolo): "Agents metadata" / "Rule content refs"
+      // / "Knowledge-test index" removed — they inspected the retired
+      // co-location agents.meta.json + its derived test-link cache.
       "Event ledger",
       "Event ledger partial write",
       "Events ledger health (rc.37 Plan B 5 hard gate)",
@@ -186,17 +191,20 @@ describe("runDoctorReport", () => {
       // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
       "Knowledge drift unconsumed",
       "Claude MCP config location",
-      "Meta manual divergence",
-      "Knowledge dir unindexed",
+      // v2.2 W5 R4 (agents.meta decolo): "Meta manual divergence" /
+      // "Knowledge dir unindexed" removed (co-location agents.meta-vs-disk).
       "Stable ID collision",
-      "Knowledge counter desync",
+      // v2.2 W5 R4: co-location "Knowledge counter desync" replaced by the
+      // store-aware "Store counter drift" (per-store committed counters.json).
+      "Store counter drift",
       "Filesystem-edit fallback",
       "Knowledge orphan demote",
       "Knowledge stale archive",
       "Knowledge pending overdue",
       "Knowledge stable_id duplicate",
       "Knowledge layer mismatch",
-      "Knowledge index drift",
+      // v2.2 W5 R4 (agents.meta decolo): "Knowledge index drift" removed —
+      // its store-aware successor is "Store counter drift" (registered above).
       "Knowledge underseeded",
       "Knowledge narrow without paths",
       "Knowledge relevance_paths dangling",
@@ -247,7 +255,11 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(54);
+    // v2.2 W5 R4 (agents.meta decolo): 54 → 48. Removed 6 co-location checks
+    // (Agents metadata / Rule content refs / Knowledge-test index / Meta manual
+    // divergence / Knowledge dir unindexed / Knowledge index drift); "Knowledge
+    // counter desync" renamed to "Store counter drift" (net -6).
+    expect(report.checks).toHaveLength(48);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -845,23 +857,8 @@ describe("runDoctorReport", () => {
     });
   });
 
-  it("--fix calls reconcileKnowledge and emits meta_reconciled event", async () => {
-    const target = createInitializedProject("doctor-reconcile-fix");
-    // Drop a new knowledge file (not yet indexed) so reconcile must run.
-    writeFile(".fabric/knowledge/guidelines/extra.md", "<!-- fab:rule-id rules/extra -->\n# Extra\n\n## [MANDATORY_INJECTION]\nUse extras.\n", target);
-    writeFile(".fabric/events.jsonl", "", target);
-
-    const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((issue) => issue.code)).toContain("knowledge_dir_unindexed");
-
-    await runDoctorFix(target);
-
-    const { events } = await readEventLedger(target);
-    expect(events.map((event) => event.event_type)).toContain("meta_reconciled");
-
-    const metaReconciled = events.find((e) => e.event_type === "meta_reconciled");
-    expect(metaReconciled).toMatchObject({ event_type: "meta_reconciled", trigger: "doctor" });
-  });
+  // v2.2 W5 R4 (agents.meta decolo): the `--fix calls reconcileKnowledge` test
+  // removed — doctor no longer rebuilds the retired co-location agents.meta.json.
 
   it("backward-compat: old baseline_synced events from ledger replay are skipped as unrecognized (v2 schema deletion)", async () => {
     // v2/rc.2 TASK-006: baseline_synced was deleted from the discriminated union.
@@ -893,212 +890,13 @@ describe("runDoctorReport", () => {
     expect(warnings.length).toBeGreaterThanOrEqual(0); // warn or silently skip — both acceptable
   });
 
-  it("meta_manually_diverged: detects meta entries with no backing file on disk", async () => {
-    const target = createInitializedProject("doctor-meta-diverged-missing");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
+  // v2.2 W5 R4 (agents.meta decolo): the meta_manually_diverged tests + the
+  // injectPersonalNode helper removed — the check compared co-location
+  // agents.meta.json nodes against disk, which is no longer authoritative.
 
-    // Remove the knowledge file but leave the meta entry intact
-    rmSync(join(target, ".fabric", "knowledge", "decisions", "server.md"), { force: true });
-
-    const report = await runDoctorReport(target);
-
-    expect(report.warnings.map((w) => w.code)).toContain("meta_manually_diverged");
-    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("warn");
-    const warningMsg = report.checks.find((c) => c.name === "Meta manual divergence")?.message ?? "";
-    expect(warningMsg).toContain("no backing file");
-  });
-
-  it("meta_manually_diverged: detects hash mismatch between meta and disk", async () => {
-    const target = createInitializedProject("doctor-meta-diverged-hash");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // Overwrite knowledge file content so hash no longer matches what's in meta
-    writeFileSync(
-      join(target, ".fabric", "knowledge", "decisions", "server.md"),
-      "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nHand-edited content.\n",
-      "utf8",
-    );
-
-    const report = await runDoctorReport(target);
-
-    expect(report.warnings.map((w) => w.code)).toContain("meta_manually_diverged");
-    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("warn");
-    const warningMsg = report.checks.find((c) => c.name === "Meta manual divergence")?.message ?? "";
-    expect(warningMsg).toContain("hash does not match");
-  });
-
-  it("meta_manually_diverged: passes when meta and filesystem are consistent", async () => {
-    const target = createInitializedProject("doctor-meta-consistent");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    const report = await runDoctorReport(target);
-
-    expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
-    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
-  });
-
-  // Dual-root layout (KT-DEC-0003): a personal node's content_ref carries the
-  // `~/.fabric/knowledge/` prefix and resolves against the personal root, not
-  // projectRoot. Before the resolveContentRefPath fix, the check joined the ref
-  // onto projectRoot — yielding <repo>/~/.fabric/... — and flagged every personal
-  // mirror node as a permanent false-positive divergence that --fix could not clear.
-  function injectPersonalNode(target: string, content: string): void {
-    const relRef = "~/.fabric/knowledge/processes/KP-PRO-0001--foo.md";
-    const metaPath = join(target, ".fabric", "agents.meta.json");
-    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
-    meta.nodes["KP-PRO-0001"] = {
-      file: relRef,
-      content_ref: relRef,
-      scope_glob: relRef,
-      hash: sha256(content),
-      stable_id: "KP-PRO-0001",
-    };
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
-  }
-
-  it("meta_manually_diverged: does not false-positive on personal nodes whose ~/.fabric file exists", async () => {
-    const target = createInitializedProject("doctor-meta-personal-ok");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    const content = "---\nid: KP-PRO-0001\nlayer: personal\n---\n# stub\n";
-    const personalDir = join(process.env.FABRIC_HOME!, ".fabric", "knowledge", "processes");
-    mkdirSync(personalDir, { recursive: true });
-    writeFileSync(join(personalDir, "KP-PRO-0001--foo.md"), content, "utf8");
-    injectPersonalNode(target, content);
-
-    const report = await runDoctorReport(target);
-
-    expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
-    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
-  });
-
-  it("meta_manually_diverged: still flags a personal node whose ~/.fabric file is missing", async () => {
-    const target = createInitializedProject("doctor-meta-personal-missing");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // Inject the meta node but never write the backing personal file.
-    injectPersonalNode(target, "---\nid: KP-PRO-0001\nlayer: personal\n---\n# stub\n");
-
-    const report = await runDoctorReport(target);
-
-    expect(report.warnings.map((w) => w.code)).toContain("meta_manually_diverged");
-    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("warn");
-  });
-
-  // rc.22 TASK-012 (Scope D T-D5): agents_meta_stale demoted from error → warning.
-  // Auto-heal on next plan-context/get-sections MCP call means a detected drift is
-  // benign; doctor exit code stays 0 (unless --strict). `fabric doctor --fix` still
-  // reconciles explicitly via the warnings-aware guard in runDoctorFix.
-  describe("rc.22 TASK-012: agents_meta_stale severity demotion", () => {
-    it("meta_check_stale_emits_warning_not_error: stale meta surfaces as warning, not fixable_error", async () => {
-      const target = createInitializedProject("doctor-stale-meta-warning");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      // Trigger meta.stale by editing the body of an indexed knowledge file —
-      // recomputed revision differs from stored revision.
-      writeFileSync(
-        join(target, ".fabric", "knowledge", "decisions", "server.md"),
-        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Edited body to force stale meta.\n",
-        "utf8",
-      );
-
-      const report = await runDoctorReport(target);
-
-      expect(report.warnings.map((w) => w.code)).toContain("agents_meta_stale");
-      expect(report.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
-      const check = report.checks.find((c) => c.name === "Agents metadata");
-      expect(check?.status).toBe("warn");
-      expect(check?.kind).toBe("warning");
-      expect(check?.code).toBe("agents_meta_stale");
-      expect(check?.fixable).toBe(false);
-    });
-
-    it("doctor_exits_zero_with_stale_meta: report.status is 'warn' (not 'error') so non-strict CLI exits 0", async () => {
-      const target = createInitializedProject("doctor-stale-meta-exit-zero");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      writeFileSync(
-        join(target, ".fabric", "knowledge", "decisions", "server.md"),
-        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Edited body for exit-zero test.\n",
-        "utf8",
-      );
-
-      const report = await runDoctorReport(target);
-
-      // The demoted `agents_meta_stale` itself must no longer contribute an
-      // "error" status — it must surface as a "warn" check.
-      const metaCheck = report.checks.find((c) => c.code === "agents_meta_stale");
-      expect(metaCheck?.status).toBe("warn");
-      // Equivalent assertion from the report rollup: agents_meta_stale must
-      // NOT appear among fixable_errors / manual_errors any more.
-      expect(report.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
-      expect(report.manual_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
-    });
-
-    it("doctor_fix_still_reconciles_stale: --fix runs reconcile and clears agents_meta_stale via warnings-path", async () => {
-      const target = createInitializedProject("doctor-stale-meta-fix");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      // Mutate the seeded knowledge file's body so the recomputed revision
-      // differs from the stored revision AND reconcileKnowledge detects a
-      // real hash change (events.length > 0 → writeKnowledgeMeta rewrites
-      // meta with the fresh revision).
-      writeFileSync(
-        join(target, ".fabric", "knowledge", "decisions", "server.md"),
-        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Hand-edited body for rc.22 stale-meta fix test.\n",
-        "utf8",
-      );
-
-      const before = await runDoctorReport(target);
-      expect(before.warnings.map((w) => w.code)).toContain("agents_meta_stale");
-      expect(before.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
-
-      const fix = await runDoctorFix(target);
-      const after = await runDoctorReport(target);
-
-      // The warnings-aware fix guard should pick up the stale code and
-      // include it in the `fixed` set, even though it's now a warning.
-      expect(fix.fixed.map((e) => e.code)).toContain("agents_meta_stale");
-      expect(after.warnings.map((w) => w.code)).not.toContain("agents_meta_stale");
-      expect(after.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
-
-      // meta_reconciled event must be written to the ledger.
-      const { events } = await readEventLedger(target);
-      expect(events.map((event) => event.event_type)).toContain("meta_reconciled");
-    });
-
-    it("meta_check_resolution_references_auto_heal: actionHint mentions auto-heal + --fix path", async () => {
-      const target = createInitializedProject("doctor-stale-meta-resolution-text");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      writeFileSync(
-        join(target, ".fabric", "knowledge", "decisions", "server.md"),
-        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Edited body for resolution-text test.\n",
-        "utf8",
-      );
-
-      const report = await runDoctorReport(target);
-
-      const check = report.checks.find((c) => c.name === "Agents metadata");
-      expect(check?.code).toBe("agents_meta_stale");
-      // Resolution text now communicates: (a) drift is benign, (b) engine
-      // auto-heals on next read-side MCP call, (c) --fix is the explicit
-      // reconcile escape hatch.
-      expect(check?.actionHint).toContain("Benign");
-      expect(check?.actionHint).toContain("auto-heals");
-      expect(check?.actionHint).toContain("plan-context/get-sections");
-      expect(check?.actionHint).toContain("fabric doctor --fix");
-    });
-  });
+  // v2.2 W5 R4 (agents.meta decolo): the `rc.22 TASK-012: agents_meta_stale severity
+  // demotion` describe block removed — agents_meta_stale was the staleness signal
+  // of the retired co-location agents.meta.json check (auto-healed by reconcile).
 
   it("TASK-032: all doctor checks with issues have a non-empty actionHint", async () => {
     // Minimal project that triggers most issue checks
@@ -1153,57 +951,11 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Stable ID collision")?.status).toBe("ok");
   });
 
-  it("TASK-030 / v2.0: knowledge_dir_unindexed detected when .md exists in knowledge tree but not in meta", async () => {
-    const target = createInitializedProject("doctor-unindexed-detect");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // Drop an unindexed knowledge file (not reconciled into meta)
-    writeFile(".fabric/knowledge/guidelines/ui.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
-
-    const report = await runDoctorReport(target);
-
-    expect(report.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
-    expect(report.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("error");
-  });
-
-  it("TASK-030 / v2.0: --fix incorporates unindexed knowledge files via reconcileKnowledge", async () => {
-    const target = createInitializedProject("doctor-unindexed-fix");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // Drop a new knowledge file that reconcile will pick up
-    writeFile(".fabric/knowledge/guidelines/ui.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
-
-    const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
-
-    const fix = await runDoctorFix(target);
-    const after = await runDoctorReport(target);
-
-    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_unindexed");
-    expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_unindexed");
-    expect(after.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("ok");
-  });
-
-  it("TASK-029: content_ref_missing is fixable — --fix via reconcileKnowledge drops stale refs", async () => {
-    const target = createInitializedProject("doctor-content-ref-fix");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // Remove the knowledge file so its content_ref becomes missing in meta
-    const { rmSync: nodeRmSync } = await import("node:fs");
-    nodeRmSync(join(target, ".fabric", "knowledge", "decisions", "server.md"), { force: true });
-
-    const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((e) => e.code)).toContain("content_ref_missing");
-
-    const fix = await runDoctorFix(target);
-    const after = await runDoctorReport(target);
-
-    expect(fix.fixed.map((e) => e.code)).toContain("content_ref_missing");
-    expect(after.fixable_errors.map((e) => e.code)).not.toContain("content_ref_missing");
-  });
+  // v2.2 W5 R4 (agents.meta decolo): TASK-030 (knowledge_dir_unindexed) and
+  // TASK-029 (content_ref_missing) tests removed alongside their checks. Both
+  // compared the project co-location `.fabric/knowledge` against agents.meta.json
+  // and were fixed by reconcileKnowledge — all retired now that knowledge lives
+  // in stores.
 
   // v2/rc.2: TASK-033 (claude_skill_legacy_path / claude_hook_legacy_path /
   // codex_skill_legacy_path) tests removed alongside their checks. They
@@ -1300,107 +1052,106 @@ describe("runDoctorReport", () => {
     }
   });
 
-  it("v2.0 / counter_desync: detected when stable_id counter exceeds counters envelope", async () => {
-    // Use a minimal v2.0 fixture (no .fabric/rules/) so reconcileKnowledge is not
-    // triggered by stale-meta during --fix; this test focuses purely on the
-    // counter_desync emission and downstream fix path.
-    const target = createV2KnowledgeProject("doctor-counter-desync-detect");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+  // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
+  // `index_drift` tests (which seeded agents.meta.json#counters below the
+  // observed stable_id) are replaced by `store_counter_drift` — the store-aware
+  // successor. The monotonic stable_id counter now lives per-store in a
+  // committed counters.json (KT-DEC-0004); doctor floors it at the highest
+  // stable_id observed on disk (floor never lowers).
+  describe("v2.2 W5 R4: store_counter_drift (per-store counters.json)", () => {
+    const STORE_UUID = "44444444-4444-4444-8444-444444444444";
 
-    const metaPath = join(target, ".fabric", "agents.meta.json");
-    const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
-    const nodes = meta.nodes as Record<string, Record<string, unknown>>;
-    nodes["L0/manual-knowledge"] = {
-      file: ".fabric/knowledge/decisions/example.md",
-      content_ref: ".fabric/knowledge/decisions/example.md",
-      scope_glob: "**",
-      deps: [],
-      priority: "medium",
-      level: "L0",
-      layer: "L0",
-      topology_type: "mirror",
-      hash: "deadbeef",
-      stable_id: "KP-DEC-0007",
-      identity_source: "declared",
-    };
-    meta.counters = { KP: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 }, KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 } };
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
-
-    const report = await runDoctorReport(target);
-    expect(report.fixable_errors.map((e) => e.code)).toContain("counter_desync");
-    const check = report.checks.find((c) => c.name === "Knowledge counter desync");
-    expect(check?.status).toBe("error");
-    expect(check?.message).toContain("KP.DEC");
-  });
-
-  it("v2.0 / counter_desync: --fix bumps counters.KP.DEC to max(observed, current)", async () => {
-    const target = createV2KnowledgeProject("doctor-counter-desync-fix");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-
-    const metaPath = join(target, ".fabric", "agents.meta.json");
-    const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
-    const nodes = meta.nodes as Record<string, Record<string, unknown>>;
-    nodes["L0/manual-knowledge"] = {
-      file: ".fabric/knowledge/decisions/example.md",
-      content_ref: ".fabric/knowledge/decisions/example.md",
-      scope_glob: "**",
-      deps: [],
-      priority: "medium",
-      level: "L0",
-      layer: "L0",
-      topology_type: "mirror",
-      hash: "deadbeef",
-      stable_id: "KP-DEC-0007",
-      identity_source: "declared",
-    };
-    meta.counters = { KP: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 }, KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 } };
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
-
-    const fix = await runDoctorFix(target);
-    expect(fix.fixed.map((e) => e.code)).toContain("counter_desync");
-
-    const updated = JSON.parse(readFileSync(metaPath, "utf8")) as { counters: { KP: { DEC: number } } };
-    expect(updated.counters.KP.DEC).toBe(7);
-  });
-
-  it("counter_desync regression: single --fix run reconciles counters when manually-authored files are unindexed", async () => {
-    // Reproduce the TASK-007 dogfood bug: knowledge files authored outside
-    // init-scan are on disk but NOT in agents.meta.json. The first --fix
-    // indexes them via reconcileKnowledge (knowledge_dir_unindexed), but
-    // reconcileKnowledge carries over previousMeta.counters verbatim. A second
-    // --fix was previously required to sync counters. This test asserts that
-    // a single --fix call is sufficient.
-    const target = createV2KnowledgeProject("doctor-counter-desync-unindexed-regression");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-
-    // Seed 5 decision files with v2 frontmatter stable_ids — not yet indexed.
-    const frontmatterTemplate = (n: number) =>
-      `---\nid: KT-DEC-${String(n).padStart(4, "0")}\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Decision ${n}\n`;
-    for (let i = 1; i <= 5; i++) {
-      writeFile(`.fabric/knowledge/decisions/KT-DEC-${String(i).padStart(4, "0")}.md`, frontmatterTemplate(i), target);
+    // Project bound to STORE_UUID as a required team store (no co-location meta).
+    function createStoreBoundProject(name: string): string {
+      const target = createProject(name);
+      writeFile("package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }, null, 2), target);
+      writeFile("src/main.ts", "export const boot = true;\n", target);
+      writeFile("AGENTS.md", "# AGENTS\n", target);
+      writeFile(".fabric/events.jsonl", "", target);
+      writeFile(
+        ".fabric/fabric-config.json",
+        JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2),
+        target,
+      );
+      return target;
     }
 
-    // Before fix: counters.KT.DEC is 0 (default); files are unindexed.
-    const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
-    // counter_desync is NOT visible yet — files are not in nodes, so no stable_ids
-    // to compare against. The desync emerges only after reconciliation indexes them.
-    expect(before.fixable_errors.map((e) => e.code)).not.toContain("counter_desync");
+    function storeDir(): string {
+      return join(resolveGlobalRoot(), storeRelativePath(STORE_UUID));
+    }
 
-    // Single --fix run: must both index the files AND reconcile counters.
-    const fix = await runDoctorFix(target);
-    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_unindexed");
+    // Seed the team store with one decision entry whose stable_id counter is
+    // `diskCounter`, and write counters.json with KT.DEC = `ledgerCounter`.
+    function seedStore(diskCounter: number, ledgerCounter: number): void {
+      const sd = storeDir();
+      const decisionsDir = join(sd, STORE_LAYOUT.knowledgeDir, "decisions");
+      mkdirSync(decisionsDir, { recursive: true });
+      const id = `KT-DEC-${String(diskCounter).padStart(4, "0")}`;
+      const entry = `---\nid: ${id}\ntype: decision\nlayer: team\nsemantic_scope: team\nvisibility_store: "team"\nmaturity: proven\ncreated_at: 2026-06-04T00:00:00.000Z\nsummary: A genuine store decision summary for counter drift coverage.\n---\n# ${id}\n\nBody.\n`;
+      writeFileSync(join(decisionsDir, `${id}.md`), entry, "utf8");
+      writeFileSync(
+        join(sd, STORE_LAYOUT.countersFile),
+        `${JSON.stringify({ KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 }, KT: { MOD: 0, DEC: ledgerCounter, GLD: 0, PIT: 0, PRO: 0 } }, null, 2)}\n`,
+        "utf8",
+      );
+      saveGlobalConfig({
+        uid: "test-uid",
+        stores: [{ store_uuid: STORE_UUID, alias: "team", remote: "git@e:t.git" }],
+      });
+    }
 
-    // Counters MUST be updated on disk after a single --fix (regression assertion).
-    const metaPath = join(target, ".fabric", "agents.meta.json");
-    const updated = JSON.parse(readFileSync(metaPath, "utf8")) as { counters: { KT: { DEC: number } } };
-    expect(updated.counters.KT.DEC).toBe(5);
+    it("detected when a store's counters.json trails the on-disk max stable_id", async () => {
+      const target = createStoreBoundProject("doctor-store-counter-detect");
+      // Disk has KT-DEC-0005 but counters.json records KT.DEC=3 → drift (a next
+      // allocation would mint 0004, re-minting below the existing 0005).
+      seedStore(5, 3);
 
-    // Doctor must report clean after a single --fix — no second run needed.
-    const after = await runDoctorReport(target);
-    expect(after.fixable_errors.map((e) => e.code)).not.toContain("counter_desync");
-    expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_unindexed");
-    expect(after.status).toBe("ok");
+      const report = await runDoctorReport(target);
+      expect(report.fixable_errors.map((e) => e.code)).toContain("store_counter_drift");
+      const check = report.checks.find((c) => c.name === "Store counter drift");
+      expect(check?.status).toBe("error");
+      expect(check?.message).toContain("KT.DEC");
+    });
+
+    it("--fix floors counters.json at disk-max (3 -> 5) and clears the drift", async () => {
+      const target = createStoreBoundProject("doctor-store-counter-fix");
+      seedStore(5, 3);
+
+      const fix = await runDoctorFix(target);
+      expect(fix.fixed.map((e) => e.code)).toContain("store_counter_drift");
+
+      // counters.json floored to the highest stable_id observed on disk.
+      expect(readStoreCounters(storeDir()).KT.DEC).toBe(5);
+
+      const after = await runDoctorReport(target);
+      expect(after.fixable_errors.map((e) => e.code)).not.toContain("store_counter_drift");
+    });
+
+    it("does NOT flag a counter ABOVE disk-max (KT-DEC-0004: floor never lowers)", async () => {
+      const target = createStoreBoundProject("doctor-store-counter-above-max");
+      // Disk has KT-DEC-0005 but counters.json already advanced to 9 (the
+      // highest entry was deleted, freeing no slot). This is correct, not drift.
+      seedStore(5, 9);
+
+      const report = await runDoctorReport(target);
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("store_counter_drift");
+      expect(report.checks.find((c) => c.name === "Store counter drift")?.status).toBe("ok");
+      // --fix must not lower the counter below its advanced value.
+      await runDoctorFix(target);
+      expect(readStoreCounters(storeDir()).KT.DEC).toBe(9);
+    });
+
+    it("--apply-lint floors drifted store counters", async () => {
+      const target = createStoreBoundProject("doctor-store-counter-applylint");
+      seedStore(7, 2);
+
+      const { runDoctorApplyLint } = await import("./doctor.js");
+      const result = await runDoctorApplyLint(target);
+      const driftMutation = result.mutations.find((m) => m.kind === "knowledge_index_drift");
+      expect(driftMutation?.applied).toBe(true);
+      expect(driftMutation?.detail).toContain("team:KT.DEC 2 -> 7");
+      expect(readStoreCounters(storeDir()).KT.DEC).toBe(7);
+    });
   });
 
   it("v2.0 / bootstrap_anchor_missing: passes when AGENTS.md or CLAUDE.md exists at repo root", async () => {
@@ -2329,89 +2080,10 @@ describe("runDoctorReport", () => {
 
     // ---- Check #21: index drift -----------------------------------------
 
-    function readMeta(target: string): Record<string, unknown> {
-      return JSON.parse(
-        readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8"),
-      ) as Record<string, unknown>;
-    }
-
-    function setMetaCounter(
-      target: string,
-      counters: { KP?: Record<string, number>; KT?: Record<string, number> },
-    ): void {
-      const meta = readMeta(target);
-      const existing = (meta.counters as Record<string, Record<string, number>> | undefined) ?? {
-        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-        KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-      };
-      const merged = {
-        KP: { ...existing.KP, ...(counters.KP ?? {}) },
-        KT: { ...existing.KT, ...(counters.KT ?? {}) },
-      };
-      meta.counters = merged;
-      writeFileSync(
-        join(target, ".fabric", "agents.meta.json"),
-        JSON.stringify(meta, null, 2),
-        "utf8",
-      );
-    }
-
-    it("index_drift: ok when meta counter equals the highest existing canonical counter", async () => {
-      const target = createInitializedProject("doctor-rc4-drift-synced");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0005--five.md");
-      setMetaCounter(target, { KT: { DEC: 5 } });
-
-      const report = await runDoctorReport(target);
-      const check = report.checks.find((c) => c.name === "Knowledge index drift");
-      expect(check?.status).toBe("ok");
-      expect(check?.kind).toBeUndefined();
-      expect(report.fixable_errors.map((e) => e.code)).not.toContain("knowledge_index_drift");
-    });
-
-    it("index_drift: emits fixable_error when meta counter trails the observed maximum", async () => {
-      const target = createInitializedProject("doctor-rc4-drift-lagging");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      // Seed counter=5 + canonical file KT-DEC-0007 → drift, proposed_after=8.
-      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0007--seven.md");
-      setMetaCounter(target, { KT: { DEC: 5 } });
-
-      const report = await runDoctorReport(target);
-      const check = report.checks.find((c) => c.name === "Knowledge index drift");
-      expect(check?.status).toBe("error");
-      expect(check?.kind).toBe("fixable_error");
-      expect(check?.code).toBe("knowledge_index_drift");
-      expect(check?.fixable).toBe(true);
-      expect(check?.message).toContain("KT.DEC counter=5");
-      expect(check?.message).toContain("max_observed=7");
-      expect(check?.message).toContain("counters.KT.DEC=8");
-      expect(report.fixable_errors.map((e) => e.code)).toContain("knowledge_index_drift");
-    });
-
-    it("index_drift: ignores (layer, type) pairs with no canonical files even when meta counter is non-zero", async () => {
-      const target = createInitializedProject("doctor-rc4-drift-absent");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      // Set a non-zero counter for KT.PIT but never seed any pitfall file.
-      // Per task spec: "missing counter (no entries of that type) → ok".
-      // Equivalently here: max_observed=0 means no drift detected even with
-      // a populated meta counter (the counter is in front of, not behind,
-      // observed reality).
-      setMetaCounter(target, { KT: { PIT: 4 } });
-      // Seed an unrelated (KT, DEC) entry with synced counter so the report
-      // does not fire on a different slot.
-      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--one.md");
-      setMetaCounter(target, { KT: { DEC: 1 } });
-
-      const report = await runDoctorReport(target);
-      const check = report.checks.find((c) => c.name === "Knowledge index drift");
-      expect(check?.status).toBe("ok");
-    });
+    // v2.2 W5 R4 (agents.meta decolo): readMeta / setMetaCounter helpers and the
+    // three index_drift tests removed — index_drift inspected the retired
+    // co-location agents.meta.json#counters. Store counter health is covered by
+    // the `store_counter_drift` describe block above (per-store counters.json).
   });
 
   // rc.5 TASK-010: read-side underseeded-corpus lint check (#22). Counts
@@ -2809,66 +2481,11 @@ describe("runDoctorReport", () => {
       expect(archivedEvent.reason).toContain(".fabric/.archive/decisions/");
     });
 
-    it("index_drift: bumps agents.meta.json counters[layer][type] to max_observed + 1", async () => {
-      const target = createInitializedProject("doctor-rc4-applylint-drift");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      // Seed counter=5 + canonical KT-DEC-0007 → drift detected, bump to 8.
-      writeFile(
-        ".fabric/knowledge/decisions/KT-DEC-0007--seven.md",
-        `---\nid: KT-DEC-0007\nslug: seven\nmaturity: stable\nlayer: team\n---\n# stub\n`,
-        target,
-      );
-      const metaPath = join(target, ".fabric", "agents.meta.json");
-      const metaBefore = JSON.parse(readFileSync(metaPath, "utf8"));
-      const existingCounters = metaBefore.counters ?? {
-        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-        KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-      };
-      metaBefore.counters = {
-        KP: { ...existingCounters.KP },
-        KT: { ...existingCounters.KT, DEC: 5 },
-      };
-      writeFileSync(metaPath, JSON.stringify(metaBefore, null, 2), "utf8");
-
-      const result = await runApplyLint(target);
-      expect(result.aborted).toBe(false);
-      const driftMutation = result.mutations.find((m) => m.kind === "knowledge_index_drift");
-      expect(driftMutation?.applied).toBe(true);
-      expect(driftMutation?.detail).toContain("KT.DEC: 5 -> 8");
-
-      const metaAfter = JSON.parse(readFileSync(metaPath, "utf8"));
-      expect(metaAfter.counters.KT.DEC).toBe(8);
-    });
-
-    it("index_drift: does NOT emit any knowledge_demoted or knowledge_archived event (counter fix is meta-mutation only)", async () => {
-      const target = createInitializedProject("doctor-rc4-applylint-drift-no-event");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      writeFile(
-        ".fabric/knowledge/decisions/KT-DEC-0009--nine.md",
-        `---\nid: KT-DEC-0009\nslug: nine\nmaturity: stable\nlayer: team\n---\n# stub\n`,
-        target,
-      );
-      const metaPath = join(target, ".fabric", "agents.meta.json");
-      const metaBefore = JSON.parse(readFileSync(metaPath, "utf8"));
-      metaBefore.counters = {
-        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-        KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
-      };
-      metaBefore.counters.KT.DEC = 3;
-      writeFileSync(metaPath, JSON.stringify(metaBefore, null, 2), "utf8");
-
-      await runApplyLint(target);
-
-      const { events: demoted } = await readEventLedger(target, { event_type: "knowledge_demoted" });
-      const { events: archived } = await readEventLedger(target, { event_type: "knowledge_archived" });
-      expect(demoted).toHaveLength(0);
-      expect(archived).toHaveLength(0);
-    });
-
+    // v2.2 W5 R4 (agents.meta decolo): the two apply-lint index_drift tests
+    // (bump agents.meta.json#counters; no demote/archive event) removed — store
+    // counter flooring via apply-lint is covered in the `store_counter_drift`
+    // describe block above (asserts the knowledge_index_drift mutation + floored
+    // counters.json).
     it("aborts and skips ALL mutations when manual_error finding (stable_id_duplicate) is present", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-dup-blocks");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });

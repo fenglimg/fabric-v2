@@ -584,6 +584,15 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 将 agents.meta.json counters 提升到观测到的最大 counter 值。",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope 与观测到的 stable_ids 一致。",
+  "doctor.check.store_counter_drift.name": "Store counter drift",
+  "doctor.check.store_counter_drift.message.singular":
+    "{count} 个 store counter 低于磁盘上的最大 stable_id（{detail}）。该 store 下一次铸号会复用已存在的 id。运行 `fabric doctor --fix` 将 store counters.json 提升到磁盘最大值。",
+  "doctor.check.store_counter_drift.message.plural":
+    "{count} 个 store counter 低于磁盘上的最大 stable_id（{detail}）。这些 store 下一次铸号会复用已存在的 id。运行 `fabric doctor --fix` 将 store counters.json 提升到磁盘最大值。",
+  "doctor.check.store_counter_drift.remediation":
+    "运行 `fabric doctor --fix` 将每个 store 的 counters.json 提升（floor）到磁盘上观测到的最大 stable_id（floor 只升不降——KT-DEC-0004 单调不变量）。",
+  "doctor.check.store_counter_drift.ok":
+    "read-set 内每个 store 的 counters.json 都已 floor 到磁盘最大 stable_id。",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "project root 未检测到 CLAUDE.md 或 AGENTS.md。",
   "doctor.check.preexisting_root_files.message":
