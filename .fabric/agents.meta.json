@@ -1,47 +1,6 @@
 {
-  "revision": "sha256:a0a45821452c94d635c744ef4e4aa3a6c5a9fa4b67be8500ae5a8df0637df94b",
+  "revision": "sha256:1b5d119f34f629ed8e0e3eaa98d7e37908eada7bdda46e458cafd1425554ca72",
   "nodes": {
-    "KP-PRO-0001": {
-      "file": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
-      "content_ref": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
-      "scope_glob": "processes/KP-PRO-0001--stale-git-lock-safe-removal/**",
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:5088a2d71bbf044dd90def318beec1e7a70820557260f34acb46f5d83e9d8a54",
-      "stable_id": "KP-PRO-0001",
-      "identity_source": "declared",
-      "description": {
-        "summary": "macOS git stale .git/index.lock 安全删除流程：lsof 无持有进程 + lock 0 字节 + ps 无活 git 进程 + 时间戳陈旧，四项同时满足才 rm，然后 stash→pull→pop 恢复工作。",
-        "intent_clues": [],
-        "tech_stack": [],
-        "impact": [],
-        "must_read_if": "macOS git stale .git/index.lock 安全删除流程：lsof 无持有进程 + lock 0 字节 + ps 无活 git 进程 + 时间戳陈旧，四项同时满足才 rm，然后 stash→pull→pop 恢复工作。",
-        "entities": [],
-        "id": "KP-PRO-0001",
-        "knowledge_type": "processes",
-        "maturity": "draft",
-        "knowledge_layer": "personal",
-        "created_at": "2026-05-18T07:59:28.459Z",
-        "tags": [
-          "git",
-          "index-lock",
-          "macos",
-          "troubleshooting"
-        ],
-        "relevance_scope": "broad",
-        "relevance_paths": []
-      },
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
-    },
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0001.md",
@@ -857,13 +816,13 @@
       "DEC": 0,
       "GLD": 0,
       "PIT": 0,
-      "PRO": 1
+      "PRO": 0
     },
     "KT": {
       "MOD": 0,
-      "DEC": 9004,
-      "GLD": 4,
-      "PIT": 9105,
+      "DEC": 0,
+      "GLD": 0,
+      "PIT": 0,
       "PRO": 0
     }
   }

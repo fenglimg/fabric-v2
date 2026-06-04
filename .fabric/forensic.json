@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-05-21T04:50:43.325Z",
-  "generated_by": "fab-cli@2.0.0-rc.27",
+  "generated_at": "2026-06-03T12:03:08.262Z",
+  "generated_by": "fabric-cli@2.2.0-rc.3",
   "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
   "framework": {
@@ -13,32 +13,37 @@
     ]
   },
   "topology": {
-    "total_files": 1241,
+    "total_files": 1746,
     "by_ext": {
-      ".cjs": 31,
+      ".cjs": 24,
       ".csv": 75,
+      ".gz": 5,
       ".html": 4,
-      ".json": 595,
-      ".jsonl": 5,
-      ".md": 256,
-      ".mdc": 1,
+      ".json": 671,
+      ".jsonl": 9,
+      ".log": 11,
+      ".md": 486,
       ".meta": 3,
-      ".mjs": 11,
+      ".mjs": 12,
       ".ndjson": 6,
       ".py": 3,
       ".pyc": 5,
+      ".sh": 4,
       ".snap": 7,
       ".svg": 2,
-      ".ts": 226,
-      ".txt": 2,
+      ".ts": 374,
+      ".txt": 32,
       ".yaml": 2,
       ".yml": 3,
-      "[none]": 4
+      "[none]": 8
     },
     "key_dirs": [
       ".claude/skills/ui-ux-pro-max/scripts",
+      ".workflow/.scratchpad/rc34-werewolf-eval/scripts",
+      ".workflow/.scratchpad/rc36-werewolf-eval/scripts",
       "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
       "packages/cli/src",
+      "packages/server-http-experimental/src",
       "packages/server/src",
       "packages/shared/src",
       "scripts"
@@ -146,8 +151,8 @@
         }
       ],
       "coverage": {
-        "ratio": 0.013,
-        "total": 226,
+        "ratio": 0.008,
+        "total": 374,
         "matched": 3,
         "co_occurring_patterns": [
           "meta-sidecar"
@@ -235,8 +240,8 @@
   },
   "readme": {
     "quality": "ok",
-    "line_count": 308,
-    "has_contributing": false
+    "line_count": 325,
+    "has_contributing": true
   },
   "recommendations_for_skill": [
     "未检测到明确框架,建议先让用户确认技术栈和主要入口。"
