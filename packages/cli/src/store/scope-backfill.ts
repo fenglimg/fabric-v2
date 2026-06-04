@@ -49,16 +49,18 @@ export interface BackfillOptions {
   dryRun?: boolean;
 }
 
-const FRONTMATTER_RE = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u;
+// Exported for reuse by the W4/A7 re-scope/promote tool (store-rescope.ts) — the
+// same flat-scalar frontmatter surgery both tools perform.
+export const FRONTMATTER_RE = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u;
 
-function readKey(block: string, key: string): string | undefined {
+export function readKey(block: string, key: string): string | undefined {
   const m = new RegExp(`^${key}:\\s*"?([^"\\n]+?)"?\\s*$`, "mu").exec(block);
   return m?.[1];
 }
 
 // Insert or replace a `key: value` line in the frontmatter block, anchored after
 // `anchorKey` when the key is absent (keeps related scope fields grouped).
-function setKey(block: string, key: string, value: string, anchorKey: string): string {
+export function setKey(block: string, key: string, value: string, anchorKey: string): string {
   const lines = block.split(/\r?\n/u);
   const idx = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
   if (idx !== -1) {
