@@ -88,6 +88,15 @@
       "verification": { "method": "dogfood", "verifier": "fab_recall round-trip", "evidence": "team:KT-DEC-0001/KT-GLD-0001 body 从 ~/.fabric/stores/152a5f20/ 路径返回, store.alias=team; cross-store-recall 读侧已 store-only", "verified_at": "2026-06-04" }
     },
     {
+      "id": "R0", "round": 1, "parent_id": "R1", "relationship": "incomplete-resolution", "subdivision_depth": 1,
+      "subject": "新建 store-corpus revision helper(computeReadSetRevision)— over walkReadSetStores (qualifiedId+content sha) 排序哈希",
+      "done_when": "shared/cross-store 暴露 revision helper; 替代 meta.revision 用于 BM25 cache key/selection_token 绑定/响应 revision_hash/stale 检测; token round-trip(plan-context emit ↔ get-knowledge-sections validate)两端同源",
+      "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "infrastructure",
+      "status": "open",
+      "note": "census 暴露的 R1 前置(承重设计): co-location 空后 meta.revision=sha256(''); 详见 .scratchpad/readside-cutover-map.md 承重设计决策段",
+      "verification": { "method": "deterministic", "verifier": "token round-trip 测试 + tsc", "evidence": null, "verified_at": null }
+    },
+    {
       "id": "R1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "plan-context 去 meta.nodes co-location 源, 只留 cross-store(buildCrossStoreRawItems/BodyIndex 范式)",
       "done_when": "plan-context.ts 不再读 co-location agents.meta nodes; 候选全来自 cross-store on-the-fly 索引",
@@ -175,9 +184,9 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 12,
+      "round_task_actual": 13,
       "convergence_status": "converging",
-      "newly_discovered_this_round": [],
+      "newly_discovered_this_round": ["R0 store-corpus revision helper — census 暴露的 R1 前置承重设计(co-location 空后 meta.revision=sha256(''), 需 store 派生 revision 保 selection_token round-trip)"],
       "carried_in": [],
       "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
       "drift_checks": [],
