@@ -7,7 +7,7 @@
   "intent": "退役 Fabric co-location agents.meta 读侧统一收尾 — 承接 W4 partial(counter 侧 + G-GUARD 已交付)。store migrate 22 条 + ~18 readAgentsMeta 消费者改读 store + install 不 scaffold + 收口全绿。",
   "goal": "agents.meta.json co-location 模型彻底退役: 团队 KB 迁入 team store(152a5f20), ~18 个生产消费者读 store 而非 co-location agents.meta, install 不再 scaffold agents.meta+空柜, shared rebuild + 全量 tsc --noEmit + 全测试 0 fail + 旧柜删净。store-only 无分叉。",
   "mode": "3",
-  "current_phase": "execute",
+  "current_phase": "final",
   "current_round": 1,
   "branch": "feat/multistore-scope-decolo",
   "push_policy": "G-GREEN 全绿后再推远端(用户决策待确认; 默认绿后推)",
@@ -48,26 +48,26 @@
     {
       "name": "G-DECOLO-READ",
       "target": "~18 readAgentsMeta 生产消费者零 co-location 读(测试/schema 除外)",
-      "actual": null,
-      "verifier_cmd": "PROBE: grep -rn 'readAgentsMeta|loadActiveMeta|agents.meta.json' packages/*/src --include=*.ts | grep -v __tests__ | grep -v schemas/agents-meta — 首轮探测确定精确白名单(schema 定义 + counter envelope 复用是合法残留)",
+      "actual": "生产代码零 readAgentsMeta()/buildKnowledgeMeta()/loadActiveMeta()/reconcileKnowledge() 调用(grep 实证); 剩余仅 install.ts scaffold WRITE(=I1, 非读)+ 测试 fixture + 注释。读路径全 store-only(plan-context/knowledge-sections/get_sections/extract/doctor/conflict/cite-coverage)。全 server 套件 747/747 绿。",
+      "verifier_cmd": "grep -rn 'readAgentsMeta(|buildKnowledgeMeta(|loadActiveMeta(|reconcileKnowledge(' packages/*/src | grep -v test|//|install.ts → 空",
       "verification_method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-04"
     },
     {
       "name": "G-INSTALL",
       "target": "install 不 scaffold agents.meta.json + 空 knowledge 柜; 保留 AGENTS.md/fabric-config.json",
-      "actual": null,
-      "verifier_cmd": "PROBE: grep install.ts scaffold agents.meta + install integration test 验证生成物清单",
+      "actual": "install.ts 删 agents.meta scaffold(createInitialMeta)+ 空 knowledge 柜创建; 留 AGENTS.md/config/events/forensic/gitignore/skills/hooks。cli tsc 0 err + cli 985/985 绿(install/uninstall 测试改为断言不创建)。",
+      "verifier_cmd": "grep install.ts 无 createInitialMeta/agents.meta write + cli vitest run",
       "verification_method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-04"
     },
     {
       "name": "G-GREEN",
       "target": "shared rebuild + 全量 tsc --noEmit 0 err + 全测试 0 fail + 旧柜(.fabric/knowledge + .fabric/agents.meta.json)删净",
-      "actual": null,
+      "actual": "shared build 0 + pnpm -r tsc --noEmit 0 err + 全测试 2311/2311 绿(shared 579 + server 747 + cli 985)+ .fabric/agents.meta.json & .fabric/knowledge 删净(.fabric 留 AGENTS.md/config/账本)。e2e dogfood: 构建 dist 跑 planContext 无 agents.meta 仍返 22 team store 候选 + store-corpus revision。",
       "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared build && pnpm -r exec tsc --noEmit && pnpm -r test && ls .fabric/knowledge .fabric/agents.meta.json 2>&1",
       "verification_method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-04"
     }
   ],
   "task_decomposition": [
@@ -106,12 +106,12 @@
     },
     {
       "id": "R2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "load-active-meta / buildKnowledgeMeta(knowledge-meta-builder) + get-knowledge(R3 改判纳入) 退役",
-      "done_when": "loadActiveMetaOrStale + buildKnowledgeMeta + getKnowledge 无生产消费者; 删除或仅留 counter-envelope shim; 保留 normalizeKnowledgePath(plan-context 用)",
+      "subject": "reconcileKnowledge 维护器 + load-active-meta/get-knowledge/knowledge-id-allocator 退役",
+      "done_when": "co-location agents.meta 无生产读者/维护器; 保留 deriveRuleIdentity/extractRuleDescription/normalizeKnowledgePath/ensureKnowledgeFresh",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
-      "status": "open",
-      "note": "get-knowledge 从 R3 改判纳入(非 MCP 工具, path-glob co-location 模型, 仅 quarantined http-exp 消费)。R4/R5 cut 完后此簇收尾。",
-      "verification": { "method": "deterministic", "verifier": "grep 消费者 + tsc", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "reconcileKnowledge 4 site 全删(startup+review×2+sync)+ 函数退役; 删 load-active-meta/knowledge-id-allocator/get-knowledge(瘦留 normalizeKnowledgePath); knowledge-sync 留 ensureKnowledgeFresh。修 R6 cite-coverage dual-key 双计 bug。保守保留 first-reconcile-gate(无 producer→ready)/meta-reader(resolveProjectRoot)/AgentsMeta 类型/cache.ts/knowledge-meta-builder 函数本体(仅 doctor.test fixture-seed)— gate 无碍, Z1 follow-up。R7 连带迁移含其中(knowledge-sync/recall/mcp-server/doctor.test)。",
+      "verification": { "method": "deterministic", "verifier": "server tsc 0 err + 全 server 套件 747/747 绿 + 审 startup/review diff", "evidence": "a9e5210", "verified_at": "2026-06-04" }
     },
     {
       "id": "R3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -154,32 +154,35 @@
       "subject": "读侧 fixture 海量从 co-location 迁 store(测试用例 setup 改建 store knowledge 而非 .fabric/agents.meta+co-location 柜)",
       "done_when": "受影响测试 fixture 改用 store 布局; 测试全绿",
       "ship_criteria_alignment": ["G-DECOLO-READ", "G-GREEN"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "pnpm -r test", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "随各 R 簇就地迁移: plan-context(R0/R1, 38)、knowledge-sections(R3, 15)、extract(R3)、doctor.test(R4, 262)、doctor-conflict(R6, 5)、knowledge-sync/recall/mcp-server(R2)。删除类: load-active-meta/knowledge-meta-builder/knowledge-id-allocator/get-knowledge.test。全 server 套件 747/747 绿。cli install 测试 = I1。",
+      "verification": { "method": "deterministic", "verifier": "全 server 套件 747/747 绿(a9e5210)", "evidence": "随 R 簇 commit", "verified_at": "2026-06-04" }
     },
     {
       "id": "I1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "install 不再 scaffold .fabric/agents.meta.json + 空 knowledge 柜(保留 AGENTS.md/fabric-config.json bootstrap)",
       "done_when": "install.ts 不写 agents.meta + 空柜; install integration test 断言生成物清单不含它们",
       "ship_criteria_alignment": ["G-INSTALL"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "install 测试", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "follow-up: uninstall.ts FABRIC_STATE_FILES 仍硬编 agents.meta+6 gitkeep(现 no-op absent), Z1 可清",
+      "verification": { "method": "deterministic", "verifier": "cli tsc 0 + cli 985/985 绿", "evidence": "2dc8741", "verified_at": "2026-06-04" }
     },
     {
       "id": "I2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "agents.meta.json 零生产读者验证(grep census, 测试/schema 定义除外)",
       "done_when": "grep readAgentsMeta/agents.meta.json 生产读者 = 0(仅留 schema 定义 + counter-envelope 复用 + 测试)",
       "ship_criteria_alignment": ["G-DECOLO-READ", "G-INSTALL"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep census", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep 实证生产零 readAgentsMeta() 调用", "evidence": "随 R2 a9e5210", "verified_at": "2026-06-04" }
     },
     {
       "id": "Z1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "收口: shared rebuild + 全量 tsc --noEmit + 全测试 0 fail + 删旧柜(.fabric/knowledge + agents.meta.json)验证",
       "done_when": "pnpm --filter shared build 绿 + pnpm -r exec tsc --noEmit 0 err + pnpm -r test 0 fail + .fabric/knowledge & agents.meta.json 不存在",
       "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "build+tsc+test+ls", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "follow-up(非阻塞, 记给用户): (1) uninstall.ts FABRIC_STATE_FILES 仍硬编 agents.meta+6 gitkeep(no-op); (2) knowledge-meta-builder 函数本体 orphaned(仅 doctor.test fixture-seed); (3) first-reconcile-gate 无 producer; (4) KT-DEC-0004/0003 知识正文 drift; (5) 实时 MCP server 需重装重启拾新 dist; (6) store entry 'endorsed' maturity warning(既有数据)。",
+      "verification": { "method": "deterministic", "verifier": "build+tsc+test+删柜 e2e dogfood", "evidence": "Z1", "verified_at": "2026-06-04" }
     }
   ],
   "needs_adjudication": [],
@@ -203,6 +206,11 @@
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260604-multistore-decolo-read/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "all-named-gates-green",
+    "summary": "4 命名门全绿: G-MIGRATE-DOGFOOD(34 条迁 team store + recall round-trip)/ G-DECOLO-READ(生产零 readAgentsMeta, 读路径全 store-only)/ G-INSTALL(install 不 scaffold agents.meta+空柜)/ G-GREEN(shared build + 全量 tsc 0 err + 2311 测试全绿 + 删旧柜 e2e dogfood). 13 任务 done(M1/M2/R0-R7/I1/I2/Z1, R5 absorbed→R2). 9 commit(12bac23 迁移→a9e5210 R2→2dc8741 I1→Z1). co-location agents.meta 读侧彻底退役, store-only 无分叉。",
+    "at": "2026-06-04"
+  }
 }
