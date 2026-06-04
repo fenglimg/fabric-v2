@@ -226,6 +226,43 @@ export function computeReadSetRevision(projectRoot: string): string {
   return sha256(revisionSource);
 }
 
+// v2.2 W5 R6 (读侧 cutover): canonical (non-pending) store entries with their
+// LOCAL stable_id, store-qualified id, layer, raw body, and parsed frontmatter
+// description. Replaces the co-location `readAgentsMeta().nodes` walk that
+// doctor-conflict (knowledge_type + body for the conflict lint) and
+// doctor-cite-coverage (relevance_paths / relevance_scope for the cite
+// denominator) used to do. Skips pending drafts (curated corpus only) and any
+// entry with no parseable frontmatter description. Never throws — degrades to []
+// when no store is in the read-set, mirroring the other collectors here.
+export interface StoreCanonicalEntry {
+  stableId: string; // LOCAL stable_id (e.g. "KT-DEC-0001"), from frontmatter id
+  qualifiedId: string; // `<alias>:<stableId>`
+  layer: "team" | "personal";
+  body: string; // raw markdown (frontmatter included; callers strip as needed)
+  description: NonNullable<ReturnType<typeof extractRuleDescription>>;
+}
+
+export function collectStoreCanonicalEntries(projectRoot: string): StoreCanonicalEntry[] {
+  const out: StoreCanonicalEntry[] = [];
+  for (const entry of walkReadSetStores(projectRoot)) {
+    if (entry.file.includes("/knowledge/pending/")) {
+      continue; // curated corpus only — drafts are not canonical.
+    }
+    const description = extractRuleDescription(entry.source);
+    if (description === undefined) {
+      continue;
+    }
+    out.push({
+      stableId: entry.qualifiedId.slice(entry.alias.length + 1),
+      qualifiedId: entry.qualifiedId,
+      layer: entry.layer,
+      body: entry.source,
+      description,
+    });
+  }
+  return out;
+}
+
 export function collectStoreKnowledgeSummaries(projectRoot: string): StoreKnowledgeSummary[] {
   const out: StoreKnowledgeSummary[] = [];
   for (const entry of walkReadSetStores(projectRoot)) {

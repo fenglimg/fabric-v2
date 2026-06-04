@@ -49,7 +49,7 @@ import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-load
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
-import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
+import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
@@ -63,7 +63,6 @@ import { readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
 import { reconcileKnowledge, resolveContentRefPath } from "./knowledge-sync.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
-import { readAgentsMeta } from "../meta-reader.js";
 
 import { inspectL1BootstrapSnapshotDrift, normalizePath } from "./doctor.js";
 import type { DoctorIssue, DoctorReport, LintMaturity } from "./doctor.js";
@@ -608,11 +607,21 @@ export async function runDoctorCiteCoverage(
   // current BOOTSTRAP_CANONICAL we refuse activation, so contract metrics
   // surface as 'skipped:bootstrap_drift' until the user reruns `fabric install`.
   const contractMarker = await ensureCiteContractPolicyActivatedMarker(projectRoot);
-  // idTypeMap loaded once per invocation — typical corpora <200 entries so
-  // <5ms, no caching needed. An empty map (no meta or read failure) collapses
-  // every cite into the cite_id_unresolved bucket which is the correct
-  // degraded mode (operators can fix by running `fabric doctor --fix`).
-  const idTypeMap = await loadKbIdTypeMap(projectRoot);
+  // v2.2 W5 R6 (读侧 cutover): id→knowledge_type map built from the read-set
+  // STORES (cross-store on-the-fly), replacing the retired co-location
+  // loadKbIdTypeMap(agents.meta). Indexed under BOTH the local stable_id and the
+  // store-qualified id so a cite line in either form resolves. Walked once per
+  // invocation — typical corpora <200 entries so <5ms, no caching needed. An
+  // empty read-set collapses every cite into the cite_id_unresolved bucket,
+  // which is the correct degraded mode.
+  const canonicalEntries = collectStoreCanonicalEntries(projectRoot);
+  const idTypeMap = new Map<string, string>();
+  for (const entry of canonicalEntries) {
+    const kt = entry.description.knowledge_type;
+    if (typeof kt !== "string" || kt.length === 0) continue;
+    idTypeMap.set(entry.stableId, kt);
+    idTypeMap.set(entry.qualifiedId, kt);
+  }
   const generatedAt = new Date().toISOString();
   const zeroMetrics: CiteCoverageReport["metrics"] = {
     edits_touched: 0,
@@ -800,24 +809,24 @@ export async function runDoctorCiteCoverage(
   // turn data alone.
   type KbEntry = { relevance_paths: readonly string[]; relevance_scope: "narrow" | "broad" };
   const kbIndex = new Map<string, KbEntry>();
-  try {
-    const meta = await readAgentsMeta(projectRoot);
-    for (const node of Object.values(meta.nodes)) {
-      const stableId = node.stable_id;
-      if (typeof stableId !== "string" || stableId.length === 0) continue;
-      const description = node.description;
-      if (description === undefined) continue;
-      const paths = description.relevance_paths ?? [];
-      const scope = description.relevance_scope ?? "broad";
-      kbIndex.set(stableId, {
-        relevance_paths: paths,
-        // A broad entry with no paths is the safe default. A narrow entry must
-        // carry at least one path; an empty-paths narrow is treated as broad.
-        relevance_scope: scope === "narrow" && paths.length > 0 ? "narrow" : "broad",
-      });
-    }
-  } catch {
-    // No meta file or invalid — kbIndex stays empty.
+  // v2.2 W5 R6 (读侧 cutover): build the kb relevance index from the read-set
+  // STORES (cross-store on-the-fly) instead of the retired co-location
+  // agents.meta nodes. Index under BOTH the local stable_id and the
+  // store-qualified id (`<alias>:<id>`) so a cite line in either form (bare or
+  // store-qualified per the v2.1 multi-store cite policy) resolves to the same
+  // relevance metadata. An empty read-set collapses to an empty index — the
+  // narrow denominator becomes zero, broad logic still functions on turn data.
+  for (const entry of canonicalEntries) {
+    const paths = entry.description.relevance_paths ?? [];
+    const scope = entry.description.relevance_scope ?? "broad";
+    const kbEntry: KbEntry = {
+      relevance_paths: paths,
+      // A broad entry with no paths is the safe default. A narrow entry must
+      // carry at least one path; an empty-paths narrow is treated as broad.
+      relevance_scope: scope === "narrow" && paths.length > 0 ? "narrow" : "broad",
+    };
+    kbIndex.set(entry.stableId, kbEntry);
+    kbIndex.set(entry.qualifiedId, kbEntry);
   }
 
   // Per-session lookup of fetch events for recalled_unverified correlation.
