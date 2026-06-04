@@ -4,7 +4,7 @@ import * as childProcess from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
+import { cancel, confirm, group, intro, isCancel, log, note, outro, select, text } from "@clack/prompts";
 import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
@@ -23,8 +23,9 @@ import { installHooks } from "../install/hooks-orchestrator.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
 import { mountStoreFromRemote, runGlobalInstall } from "../install/run-global-install.js";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
-import { storeBind, storeList, storeSwitchWrite, unboundAvailableStores } from "../store/store-ops.js";
+import { storeBind, storeCreate, storeList, storeSwitchWrite, unboundAvailableStores } from "../store/store-ops.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
+import { loadProjectConfig } from "../store/project-config-io.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
 import { buildForensicReport } from "../scanner/forensic.js";
@@ -583,6 +584,11 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     // not then reported as unbound.
     if (typeof args.url === "string" && args.url.length > 0) {
       bindRemoteStoreToProject(resolution.target, args.url);
+    } else if (intent.wizardEnabled) {
+      // W2: interactive store onboarding. Only in the guided (TTY, non --yes)
+      // flow and only when --url did not already handle it. The non-interactive
+      // equivalents are `--url` (join) and the `store create` subcommand.
+      await promptStoreOnboarding(resolution.target);
     }
 
     // Wave A (D4/F3 onboarding nudge): a team/shared store is mounted globally
@@ -655,6 +661,99 @@ export function bindRemoteStoreToProject(
       `bound store '${mounted.alias}' to this project and set it as the write target.`,
     ),
   );
+}
+
+/**
+ * W2 (install store onboarding) — create a brand-new LOCAL store, bind it to this
+ * project, and set it as the active write target in one step. The "start a new
+ * team store" counterpart to {@link bindRemoteStoreToProject} ("join an existing
+ * one"). `remote`, when given, is wired into the new store's git repo so it can
+ * push/pull later (F-SYNC-REMOTE).
+ *
+ * Composes the existing `store create` / `bind` / `switch-write` primitives so
+ * the interactive install wizard's store step is a single call. `globalRoot` is
+ * injectable for tests (mirrors the sibling helpers).
+ */
+export function bindCreatedStoreToProject(
+  projectRoot: string,
+  alias: string,
+  options: { remote?: string; globalRoot?: string } = {},
+): void {
+  const globalRoot = options.globalRoot ?? resolveGlobalRoot();
+  storeCreate(alias, new Date().toISOString(), {
+    ...(options.remote === undefined ? {} : { remote: options.remote }),
+    globalRoot,
+  });
+  storeBind(
+    projectRoot,
+    options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
+  );
+  storeSwitchWrite(projectRoot, alias);
+  regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
+  console.log("");
+  console.log(
+    paint.success(
+      `created store '${alias}', bound it to this project, and set it as the write target.`,
+    ),
+  );
+}
+
+/**
+ * W2 (install store onboarding) — interactive "set up a team store" step.
+ *
+ * Runs in the post-setup phase (project config already scaffolded, so bind
+ * works). Offers three branches: skip (personal-only, the default), join an
+ * existing shared store from a git remote, or create a fresh local store
+ * (optionally remote-backed). Each non-skip branch composes the existing store
+ * primitives via {@link bindRemoteStoreToProject} / {@link bindCreatedStoreToProject}.
+ *
+ * Idempotent: skipped entirely when this project already has an active write
+ * store (a re-install must not re-prompt). Cancelling any prompt is a clean
+ * no-op — store onboarding is optional, never a gate (KT-DEC-0007).
+ */
+async function promptStoreOnboarding(projectRoot: string): Promise<void> {
+  const config = loadProjectConfig(projectRoot);
+  if (typeof config?.active_write_store === "string" && config.active_write_store.length > 0) {
+    return; // already onboarded a team/shared write store — do not re-prompt.
+  }
+
+  const choice = await select({
+    message: "Set up a team / shared knowledge store for this project?",
+    initialValue: "skip",
+    options: [
+      { value: "skip", label: "skip", hint: "personal store only (default)" },
+      { value: "join", label: "join existing", hint: "clone + bind a shared store from a git remote" },
+      { value: "create", label: "create new", hint: "start a fresh local store (optionally remote-backed)" },
+    ],
+  });
+  if (isCancel(choice) || choice === "skip") {
+    return;
+  }
+
+  if (choice === "join") {
+    const url = await text({
+      message: "Shared store git remote (url):",
+      placeholder: "git@github.com:org/knowledge.git",
+    });
+    if (isCancel(url) || typeof url !== "string" || url.length === 0) {
+      return;
+    }
+    bindRemoteStoreToProject(projectRoot, url);
+    return;
+  }
+
+  // choice === "create"
+  const alias = await text({ message: "Local alias for the new store:", initialValue: "team" });
+  if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
+    return;
+  }
+  const remote = await text({
+    message: "Git remote to back it (optional — leave blank to skip):",
+    placeholder: "git@github.com:org/knowledge.git",
+  });
+  const remoteStr =
+    !isCancel(remote) && typeof remote === "string" && remote.length > 0 ? remote : undefined;
+  bindCreatedStoreToProject(projectRoot, alias, remoteStr === undefined ? {} : { remote: remoteStr });
 }
 
 /**

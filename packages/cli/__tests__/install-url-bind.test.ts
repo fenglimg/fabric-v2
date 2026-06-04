@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { initStore } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { bindRemoteStoreToProject } from "../src/commands/install.js";
+import { bindCreatedStoreToProject, bindRemoteStoreToProject } from "../src/commands/install.js";
 import { loadGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { runGlobalInstall } from "../src/install/run-global-install.js";
@@ -96,5 +96,38 @@ describe("install --url (bindRemoteStoreToProject)", () => {
     expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
     // bind dedupes by id → still a single required store.
     expect(loadProjectConfig(projectRoot)?.required_stores).toHaveLength(1);
+  });
+});
+
+describe("install (bindCreatedStoreToProject)", () => {
+  it("creates a new local store, binds it to the project, and sets it as write target", async () => {
+    const { globalRoot, projectRoot } = setupGlobalAndProject();
+    await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
+
+    bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
+
+    // mounted globally: personal + the freshly-created local store.
+    const global = loadGlobalConfig(globalRoot);
+    expect(global?.stores).toHaveLength(2);
+    expect(global?.stores.some((s) => s.alias === "team")).toBe(true);
+
+    // bound to the project + active write target.
+    const project = loadProjectConfig(projectRoot);
+    expect(project?.required_stores?.[0]?.id).toBe("team");
+    expect(project?.active_write_store).toBe("team");
+  });
+
+  it("wires a git remote into the created store when one is given", async () => {
+    const { globalRoot, projectRoot } = setupGlobalAndProject();
+    await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
+
+    bindCreatedStoreToProject(projectRoot, "team", {
+      globalRoot,
+      remote: "git@h:team.git",
+    });
+
+    const team = loadGlobalConfig(globalRoot)?.stores.find((s) => s.alias === "team");
+    expect(team?.remote).toBe("git@h:team.git");
+    expect(loadProjectConfig(projectRoot)?.required_stores?.[0]?.suggested_remote).toBe("git@h:team.git");
   });
 });

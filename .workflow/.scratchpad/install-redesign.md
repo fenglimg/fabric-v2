@@ -91,7 +91,10 @@ fabric install                         # 默认:确保三层就位,wizard 引导
 
 0. **W0 ✅ 已完成**(rc.3 multistore 接线收口):write-path store-only + recall 跨 store。2026-06-04 验证。**跳过**。
 1. **W1(进行中)**:`--url` 顶层化 = 挂载 remote store + 绑定本 repo + 设写入目标,一步到位(删 `--global` 才能用 url 的耦合)。primitives: `mountStoreFromRemote`/`storeBind`/`storeSwitchWrite` 全现成。
-2. **W2**:install wizard 加交互式 store 步骤(跳过/加入 url/新建本地 `storeCreate`)→ 自动 bind + switch-write(并入 census #2+#3+#4+#5)。
+2. **W2 ✅ 已实现**:install wizard 加交互式 store 步骤(跳过/加入 url/新建本地 `storeCreate`)→ 自动 bind + switch-write(并入 census #2+#3+#4+#5)。
+   - `bindCreatedStoreToProject`(新建本地, 与 W1 `bindRemoteStoreToProject` 对称, 含 git remote 接线)+ `promptStoreOnboarding`(post-setup 交互, 已有写入 store 则不重复问, 取消=干净 no-op 守 KT-DEC-0007)。
+   - 非交互对偶:`--url`(join)+ `store create` 子命令(create)。
+   - **遗留**:prompt 文案为硬编码英文(与 W1 一致),i18n key 化下沉留作 cleanup;交互 prompt 在 post-setup 而非 wizard group 内(UX 顺序略后置,但绑定需 scaffold 后的 project config,功能正确)。
 3. **W3**:`--global` 由侧门收成「只 L1」修饰符;清 fast-path return。
 4. **W4**:砍 install.ts repo `.fabric/knowledge/` co-location 脚手架(1017-1025)+ repo 级 agents.meta.json。读侧核心已 store-only;残留消费者(doctor / plan-context 路径处理 / tests)逐个排查后清。clean-slate 硬删,无迁移 shim(KT-DEC-0002)。
 5. **W5**:L3 embed 步骤并入 wizard,删 `--enable-embed/--embed-model` 顶层 flag;删 `--force-*-only`。
