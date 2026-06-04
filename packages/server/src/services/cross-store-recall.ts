@@ -14,6 +14,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
+import { sha256 } from "./_shared.js";
 
 // ---------------------------------------------------------------------------
 // v2.1 global-refactor (W1-T1) — cross-store read-side wiring.
@@ -200,6 +201,29 @@ export interface StoreKnowledgeSummary {
   stableId: string; // store-qualified `<alias>:<id>`
   summary: string;
   layer: "team" | "personal";
+}
+
+// v2.2 W5 R0 (读侧 cutover): store-corpus revision hash. Replaces the
+// co-location `meta.revision` (= sha256 of agents.meta nodes) once co-location
+// is retired. Hashes the read-set stores' (qualified id + content sha) in
+// sorted order, EXCLUDING pending drafts — structurally mirrors
+// knowledge-meta-builder.computeRevision so the value keeps the same semantics:
+// a content fingerprint that moves whenever any non-pending knowledge changes.
+//
+// Consumers: (a) plan-context BM25 corpus cache key (must invalidate when store
+// content changes), (b) client stale-detection compare (client_hash !== rev).
+// It is NOT load-bearing for the selection_token round-trip: get_sections
+// validates against the in-memory token state (ai_selectable_stable_ids), never
+// by re-deriving + comparing the revision — so the empty-string fallback
+// (sha256("") when no store is in the read-set) is a safe degrade, identical to
+// the pre-cutover empty-meta behavior.
+export function computeReadSetRevision(projectRoot: string): string {
+  const revisionSource = walkReadSetStores(projectRoot)
+    .filter((entry) => !entry.file.includes("/knowledge/pending/"))
+    .map((entry) => `${entry.qualifiedId}|${sha256(entry.source)}`)
+    .sort()
+    .join("\n");
+  return sha256(revisionSource);
 }
 
 export function collectStoreKnowledgeSummaries(projectRoot: string): StoreKnowledgeSummary[] {
