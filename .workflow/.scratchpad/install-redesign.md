@@ -103,7 +103,7 @@ fabric install                         # 默认:确保三层就位,wizard 引导
    - 故砍脚手架会**断热读路径 + doctor 每次告警**。W4 = 把这些消费者迁到 store-based 读,属北极星主线的独立多 wave 迁移,需 TDD 逐服务搬。**留独立 goal**。
 5. **W5 部分完成**:
    - ✅ **W5a**:L3 embed 步骤并入 wizard(`promptSemanticSearch`,confirm 默认关;`enableSemanticSearchAndReport` 共享 flag/wizard 两入口)。`--enable-embed/--embed-model` flag 保留作非交互喂答案(设计本意)。
-   - ⏳ **W5b**:删 `--force-skills-only/--force-hooks-only`(替代=幂等全装,既有 idempotency 测试证零 diff+保用户定制)。
+   - ✅ **W5b**:删 `--force-skills-only/--force-hooks-only`(arg/函数/早返回/专属测试全清 + cli-surface 快照 regen)。替代=幂等全装(既有 install-skills-and-hooks idempotency 测试证零 diff + 保用户定制)。`--enable-embed/--embed-model` 按设计保留(非交互喂答案)。
 6. **W6 ✅ 已实现**:install→recall round-trip oracle。recall 半段由 `server/cross-store-recall.test.ts`(store 条目→`team:`候选)证;install 半段新增 `install-url-bind.test.ts` W6 用例(bind helper→`scopeExplain` readSet 含 team + writeTarget=team)。两半在同一 `required_stores:[{id}]` contract 相接,无 false-green 缝。
 
 ---

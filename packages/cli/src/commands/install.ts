@@ -67,19 +67,12 @@ type InitArgs = {
   // clones + mounts that shared store. Fast-paths before the per-repo pipeline.
   global?: boolean;
   url?: string;
-  // rc.35 TASK-08 (P0-5/6): skills-only refresh path. Reruns ONLY the
-  // template/skills/* copy stage; skips bootstrap / mcp / hooks /
-  // settings.json merges. Designed for the rc.34 W1 SKILL-description-update
-  // scenario where a project owner wants the new SKILL.md without touching
-  // their customised hooks/settings/MCP wiring.
-  "force-skills-only"?: boolean;
-  // v2.0.0-rc.37 NEW-26: hooks-only refresh path (analogous to skills-only).
-  // Reruns the hook scripts + per-client hook config merges; skips bootstrap
-  // / MCP wiring / skill templates / settings.json (beyond the hooks block).
-  // Used when an upgrade ships new hook scripts (e.g. rc.37 NEW-21 added
-  // cite-policy-evict.cjs to Codex / Cursor) and the operator wants to absorb
-  // them without re-running the whole pipeline.
-  "force-hooks-only"?: boolean;
+  // W5b: the `--force-skills-only` / `--force-hooks-only` single-slice refresh
+  // flags were removed. A plain `fabric install` re-run is idempotent (the
+  // install-skills-and-hooks idempotency test proves zero diff in .claude/
+  // .codex/.cursor and preservation of user permissions + custom hook entries),
+  // so it is the safe way to absorb new skill/hook templates — no dedicated
+  // escape hatch needed.
   // v2.1 ③ vector-chinese-model (P3): opt-in "enable semantic search" step.
   // Default OFF (skip path). When set, flips embed_enabled + pins embed_model in
   // fabric.config.json and prints the fastembed install + cache-warm + reindex
@@ -335,16 +328,6 @@ export const installCommand = defineCommand({
       description: t("cli.install.args.yes.description"),
       default: false,
     },
-    "force-skills-only": {
-      type: "boolean",
-      description: t("cli.install.args.force-skills-only.description"),
-      default: false,
-    },
-    "force-hooks-only": {
-      type: "boolean",
-      description: t("cli.install.args.force-hooks-only.description"),
-      default: false,
-    },
     global: {
       type: "boolean",
       description: "Set up global Fabric (~/.fabric: uid + personal store + config)",
@@ -372,117 +355,6 @@ export const installCommand = defineCommand({
 
 export default installCommand;
 
-/**
- * rc.35 TASK-08 (P0-5/6) — `fabric install --force-skills-only`.
- *
- * Reruns ONLY the 3 fabric Skill template copies + the deprecated-skill
- * cleanup. Skips bootstrap pointer writes, MCP wiring, hook script copies,
- * settings.json merges, and AGENTS.md managed-block updates.
- *
- * Used when a project owner wants to absorb a SKILL.md description update
- * (e.g. rc.34 W1) without re-running the full install pipeline that
- * potentially overwrites customised hooks/settings.
- *
- * Failure modes:
- *   - target uninitialised (.fabric/agents.meta.json absent) → exits 1 with
- *     an actionable message pointing to `fabric install` (full).
- *   - All other failures bubble up from the underlying install helpers
- *     (which already use the InstallStepResult shape).
- */
-export async function runSkillsOnlyRefresh(targetInput: string): Promise<void> {
-  const target = normalizeTarget(targetInput);
-  const metaPath = join(target, ".fabric", "agents.meta.json");
-  if (!existsSync(metaPath)) {
-    const message = t("cli.install.force-skills-only.uninitialised.message");
-    const hint = t("cli.install.force-skills-only.uninitialised.hint");
-    process.stderr.write(`${message}\n${hint}\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log(formatInitStageHeader(t("cli.install.force-skills-only.banner")));
-  const results: InstallStepResult[] = [];
-  results.push(...(await cleanupDeprecatedSkills(target)));
-  results.push(...(await installFabricArchiveSkill(target)));
-  results.push(...(await installFabricReviewSkill(target)));
-  results.push(...(await installFabricImportSkill(target)));
-  // 升级项 c: refresh ALL 7 skills (was only archive/review/import). A
-  // SKILL.md doc update to sync/store/audit/connect was unreachable via
-  // --force-skills-only, forcing a full re-install. Mirror the bootstrap/
-  // installHooks full set incl. the shared skill lib.
-  results.push(...(await installFabricSyncSkill(target)));
-  results.push(...(await installFabricStoreSkill(target)));
-  results.push(...(await installFabricAuditSkill(target)));
-  results.push(...(await installFabricConnectSkill(target)));
-  results.push(...(await installSharedSkillLib(target)));
-
-  let written = 0;
-  let skipped = 0;
-  let errors = 0;
-  for (const r of results) {
-    if (r.status === "written") written += 1;
-    else if (r.status === "skipped") skipped += 1;
-    else if (r.status === "error") errors += 1;
-  }
-  console.log(
-    t("cli.install.force-skills-only.summary", {
-      written: String(written),
-      skipped: String(skipped),
-      errors: String(errors),
-    }),
-  );
-  if (errors > 0) {
-    for (const r of results) {
-      if (r.status === "error") {
-        process.stderr.write(`  ${r.step} ${r.path}: ${r.message ?? "error"}\n`);
-      }
-    }
-    process.exitCode = 1;
-  }
-}
-
-/**
- * v2.0.0-rc.37 NEW-26 — `fabric install --force-hooks-only`.
- *
- * Reruns ONLY the hook scripts + per-client hook config merges. Skips
- * bootstrap snapshot rewrite, MCP wiring, skill templates, and settings.json
- * merges beyond what the hook installers themselves touch.
- *
- * Used when an upgrade ships new hook scripts (rc.37 NEW-21: cite-policy-
- * evict.cjs landed in Codex / Cursor SessionStart slots) and the operator
- * wants the new hooks without re-running the full pipeline.
- *
- * Failure modes mirror --force-skills-only: uninitialised target exits 1
- * with a clear pointer to `fabric install` (full).
- */
-export async function runHooksOnlyRefresh(targetInput: string): Promise<void> {
-  const target = normalizeTarget(targetInput);
-  const metaPath = join(target, ".fabric", "agents.meta.json");
-  if (!existsSync(metaPath)) {
-    const message = t("cli.install.force-hooks-only.uninitialised.message");
-    const hint = t("cli.install.force-hooks-only.uninitialised.hint");
-    process.stderr.write(`${message}\n${hint}\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log(formatInitStageHeader(t("cli.install.force-hooks-only.banner")));
-  const result = await installHooks(target);
-
-  console.log(
-    t("cli.install.force-hooks-only.summary", {
-      written: String(result.installed.length),
-      skipped: String(result.skipped.length),
-      errors: String(result.errors.length),
-    }),
-  );
-  if (result.errors.length > 0) {
-    for (const err of result.errors) {
-      process.stderr.write(`  ${err}\n`);
-    }
-    process.exitCode = 1;
-  }
-}
 
 export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
@@ -500,27 +372,10 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
 
   const resolution = resolveDevMode(args.target, process.cwd());
 
-  // rc.35 TASK-08 (P0-5/6): --force-skills-only fast-path. Short-circuits
-  // the full install pipeline (bootstrap / mcp / hooks / settings merges)
-  // and ONLY refreshes the 3 fabric Skill templates into .claude/.codex/
-  // .cursor/ on a project that's already initialised. Surfaces a clear
-  // error when target is uninitialised — bootstrap can't be safely skipped
-  // without an existing .fabric/agents.meta.json contract.
-  if (args["force-skills-only"] === true) {
-    await runSkillsOnlyRefresh(resolution.target);
-    return;
-  }
-
-  // v2.0.0-rc.37 NEW-26: --force-hooks-only mirror of --force-skills-only.
-  // Reruns the hook scripts + per-client hook config merges only — skips
-  // bootstrap snapshot rewrite, MCP wiring, skill templates, AGENTS.md
-  // managed-block updates. Designed for absorbing rc.37 NEW-21 cite-policy-
-  // evict.cjs additions to Codex/Cursor SessionStart slots without touching
-  // unrelated install state.
-  if (args["force-hooks-only"] === true) {
-    await runHooksOnlyRefresh(resolution.target);
-    return;
-  }
+  // W5b: the --force-skills-only / --force-hooks-only single-slice fast-paths
+  // were removed. Absorbing new skill/hook templates is done by re-running the
+  // full `fabric install`, which is idempotent (zero diff on unchanged
+  // artifacts, preserves user-customised hooks/settings).
 
   const intent = resolveInitCliIntent(args, resolution.target);
 
