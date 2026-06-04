@@ -57,7 +57,11 @@ function gitClone(url: string, dest: string): void {
   }
 }
 
-function mountStoreFromRemote(url: string, globalRoot: string): void {
+// W1 (install --url top-level): exported so `fabric install --url=<remote>` can
+// reuse the exact clone+mount path (the per-repo flow then binds the returned
+// store to the project + sets it as the write target). Returns the mounted
+// store's intrinsic identity so the caller never re-derives it from the remote.
+export function mountStoreFromRemote(url: string, globalRoot: string): { store_uuid: string; alias: string } {
   const storesRoot = join(globalRoot, STORES_ROOT_DIR);
   mkdirSync(storesRoot, { recursive: true });
 
@@ -91,6 +95,7 @@ function mountStoreFromRemote(url: string, globalRoot: string): void {
     globalRoot,
   );
   console.log(`mounted store '${alias}' (${identity.store_uuid}) from ${url}`);
+  return { store_uuid: identity.store_uuid, alias };
 }
 
 export async function runGlobalInstall(

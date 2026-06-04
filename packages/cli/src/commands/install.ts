@@ -21,9 +21,10 @@ import { t } from "../i18n.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
-import { runGlobalInstall } from "../install/run-global-install.js";
-import { loadGlobalConfig } from "../store/global-config-io.js";
-import { unboundAvailableStores } from "../store/store-ops.js";
+import { mountStoreFromRemote, runGlobalInstall } from "../install/run-global-install.js";
+import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
+import { storeBind, storeList, storeSwitchWrite, unboundAvailableStores } from "../store/store-ops.js";
+import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
 import { buildForensicReport } from "../scanner/forensic.js";
@@ -350,7 +351,8 @@ export const installCommand = defineCommand({
     },
     url: {
       type: "string",
-      description: "With --global: clone + mount this shared store remote",
+      description:
+        "Clone + mount a shared store remote. In a project install: also binds it to this project and sets it as the write target. With --global: mounts it machine-wide only.",
     },
     "enable-embed": {
       type: "boolean",
@@ -572,6 +574,17 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     console.log("");
     console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
 
+    // W1 (install --url top-level): one-command "join a team store". Mount the
+    // remote store globally (idempotent — reuse an already-mounted clone of the
+    // same remote), bind it to this project, and set it as the active write
+    // target. Replaces the old two-step
+    // `install --global --url … && store bind … && store switch-write …`.
+    // Runs BEFORE the unbound-store nudge below so the freshly-bound store is
+    // not then reported as unbound.
+    if (typeof args.url === "string" && args.url.length > 0) {
+      bindRemoteStoreToProject(resolution.target, args.url);
+    }
+
     // Wave A (D4/F3 onboarding nudge): a team/shared store is mounted globally
     // but this project never bound it, so its knowledge stays invisible to
     // recall and team writes fall back to the deprecated co-location path.
@@ -605,6 +618,43 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     }
   }
   return result;
+}
+
+/**
+ * W1 (install --url top-level) — mount a shared store from a git remote, bind it
+ * to this project, and set it as the active write target in one step.
+ *
+ * This is the "join my team's knowledge store" flow. The primitives already
+ * existed as separate `store` subcommands (`add` / `bind` / `switch-write`);
+ * install just wires them together so the common onboarding path is a single
+ * command instead of three the user must sequence by hand.
+ *
+ * Idempotent: a re-run with the same remote reuses the already-mounted clone
+ * (matched by `remote` url) rather than cloning again. The global config is
+ * guaranteed to exist by the caller (runInitCommand mints it before the per-repo
+ * pipeline), so the resolved global root always points at a valid install.
+ *
+ * `globalRoot` is injectable (mirrors `storeAdd` / `storeBind` convention) so the
+ * flow is testable against an isolated global root.
+ */
+export function bindRemoteStoreToProject(
+  projectRoot: string,
+  url: string,
+  globalRoot: string = resolveGlobalRoot(),
+): void {
+  const already = storeList(globalRoot).find((store) => store.remote === url);
+  const mounted = already ?? mountStoreFromRemote(url, globalRoot);
+  storeBind(projectRoot, { id: mounted.alias, suggested_remote: url });
+  storeSwitchWrite(projectRoot, mounted.alias);
+  // Refresh the resolved-bindings snapshot so P4 hooks read a consistent
+  // read-set / write-target without re-resolving (mirrors `store bind`).
+  regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
+  console.log("");
+  console.log(
+    paint.success(
+      `bound store '${mounted.alias}' to this project and set it as the write target.`,
+    ),
+  );
 }
 
 /**
