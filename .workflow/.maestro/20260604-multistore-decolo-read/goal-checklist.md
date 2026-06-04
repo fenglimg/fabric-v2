@@ -6,11 +6,13 @@
 ## 目标
 agents.meta.json co-location 模型彻底退役: 团队 KB 迁 team store + ~18 消费者读 store + install 不 scaffold + 全绿。store-only 无分叉。
 
-## 命名门(终止判据 — 全绿即 completed)
-- [ ] **G-MIGRATE-DOGFOOD** — 22 条迁入 team store(152a5f20)+ recall 实际命中 [dogfood]
-- [ ] **G-DECOLO-READ** — ~18 readAgentsMeta 生产消费者零 co-location 读(测试/schema 除外)[grep]
-- [ ] **G-INSTALL** — install 不 scaffold agents.meta + 空柜, 留 AGENTS.md/config [test]
-- [ ] **G-GREEN** — shared rebuild + 全量 tsc --noEmit 0 err + 全测试 0 fail + 旧柜删净 [det]
+## 命名门(终止判据 — 全绿 ✅ COMPLETED）
+- [x] **G-MIGRATE-DOGFOOD** — 34 条(22+12 pending)迁入 team store 152a5f20 + recall round-trip 命中 ✅
+- [x] **G-DECOLO-READ** — 生产零 readAgentsMeta()/buildKnowledgeMeta()/loadActiveMeta()/reconcileKnowledge() 调用, 读路径全 store-only ✅
+- [x] **G-INSTALL** — install 不 scaffold agents.meta + 空柜, 留 AGENTS.md/config ✅
+- [x] **G-GREEN** — shared build + 全量 tsc 0 err + 2311 测试全绿 + 删旧柜 e2e dogfood ✅
+
+**9 commit**: 12bac23(M 迁移)· f21ff79(R0/R1)· 0f3cd9e(R3)· a3e4f76(R4)· 4f9a08b(R6)· a9e5210(R2)· 2dc8741(I1)· 3c6e589(Z1)· + 3 ledger chore。全本地 feat/multistore-scope-decolo（含 W4 5 个共 ~17 未推，待用户决定推送）。
 
 ## Round 1 任务(ceiling 14, 当前 12)
 - [ ] **M1** 落盘 store migrate (22+12 pending → team) + counters.json auto-seed → G-MIGRATE-DOGFOOD
