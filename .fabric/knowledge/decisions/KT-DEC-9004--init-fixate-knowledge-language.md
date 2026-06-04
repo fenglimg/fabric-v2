@@ -3,6 +3,8 @@ id: KT-DEC-9004
 type: decisions
 maturity: verified
 layer: team
+semantic_scope: team
+visibility_store: "team"
 created_at: 2026-05-14T02:58:43.499Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]
 proposed_reason: decision-confirmation

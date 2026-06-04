@@ -3,6 +3,8 @@ id: KT-PIT-9103
 type: pitfalls
 maturity: draft
 layer: team
+semantic_scope: team
+visibility_store: "team"
 created_at: 2026-05-18T02:31:58.929Z
 source_sessions: ["8baa566e-4561-408e-acac-b5fc7cbca9e3"]
 proposed_reason: diagnostic-then-fix

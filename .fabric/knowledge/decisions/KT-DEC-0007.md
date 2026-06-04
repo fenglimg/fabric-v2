@@ -3,6 +3,8 @@ id: KT-DEC-0007
 type: decision
 maturity: proven
 layer: team
+semantic_scope: team
+visibility_store: "team"
 layer_reason: architecture decision from v2.0 design review (grill-me 2026-05-10)
 created_at: 2026-05-10T05:24:25.000Z
 tags: [hooks-design, ux-design]

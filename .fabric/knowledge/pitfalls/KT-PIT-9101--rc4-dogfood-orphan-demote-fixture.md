@@ -3,6 +3,8 @@ id: KT-PIT-9101
 type: pitfalls
 maturity: endorsed
 layer: team
+semantic_scope: team
+visibility_store: "team"
 created_at: 2026-01-30T16:58:49.587Z
 source_session: WFS-rc4-dogfood-2026-05-10
 tags: [dogfood, fixture, rc4]

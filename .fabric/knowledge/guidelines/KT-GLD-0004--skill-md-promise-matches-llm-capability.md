@@ -3,6 +3,8 @@ id: KT-GLD-0004
 type: guidelines
 maturity: verified
 layer: team
+semantic_scope: team
+visibility_store: "team"
 created_at: 2026-05-14T02:59:02.636Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]
 proposed_reason: decision-confirmation

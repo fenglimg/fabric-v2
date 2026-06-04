@@ -3,6 +3,8 @@ id: KT-DEC-9003
 type: decisions
 maturity: draft
 layer: team
+semantic_scope: team
+visibility_store: "team"
 created_at: 2026-05-18T02:31:46.087Z
 source_sessions: ["1bced005-71b4-4d95-8798-611c3dfcf5ae", "36f76853-d78d-4f6e-9028-303d404e93ca"]
 proposed_reason: decision-confirmation

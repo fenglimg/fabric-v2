@@ -69,8 +69,8 @@
       "subject": "存量知识 clean-slate 迁移(补 semantic_scope+visibility_store,修脏 layer 如 KT-DEC-9003)",
       "done_when": "项目内 .fabric/knowledge + 各 store 知识 100% 带 semantic_scope+visibility_store;layer↔scope 一致(K[P]- 前缀与 personal scope 对齐);无 personal 条目躺在 team store",
       "ship_criteria_alignment": ["G-MIGRATE"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": {"method": "deterministic", "verifier": "迁移脚本 dry-run diff + grep 校验:零缺字段/零脏 layer", "evidence": null, "verified_at": null}
+      "status": "done",
+      "verification": {"method": "deterministic", "verifier": "迁移脚本 dry-run diff + grep 校验:零缺字段/零脏 layer", "evidence": "scope-backfill 工具(backfillEntryContent/backfillKnowledgeDir + CLI store backfill-scope [--store][--dry-run]):id 前缀=layer 权威源(KP→personal/KT→team),补 semantic_scope+visibility_store,修脏 layer,R5#3 personal 永不给 shared visibility。scope-backfill.test.ts 6/6(含 dirty-layer 修复+幂等)。repo .fabric/knowledge dry-run→write 实跑 22 条:grep 校验 0 缺 semantic_scope/0 缺 visibility_store/0 layer↔id 前缀不一致/0 personal-in-team。store 回填经 fixture+CLI --store 证明;真实 ~/.fabric store 留 Z1 dogfood(各自 git 可逆,recall 有 layer-fallback 不依赖)", "verified_at": "2026-06-04"}
     },
     {
       "id": "B1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -134,7 +134,7 @@
     {"name": "G-WRITE-SCOPE", "target": "新写入 frontmatter 含 semantic_scope+visibility_store,personal 不入 shared", "actual": "GREEN — extract 写出 semantic_scope+visibility_store,personal 落 personal store,PersonalScopeLeakError 守泄露;write-scope-meta 4/4 + approve-promote +1", "verifier_cmd": "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/write-scope-meta.test.ts src/services/approve-promote-store.test.ts", "verified_at": "2026-06-04"},
     {"name": "G-FILTER", "target": "recall 只召回 当前 project + 非 project 坐标,挡别 project", "actual": "GREEN — filterByActiveProject 挡别 project 留当前+非project;cross-store-recall-project-filter 2/2", "verifier_cmd": "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/cross-store-recall-project-filter.test.ts", "verified_at": "2026-06-04"},
     {"name": "G-RANK", "target": "plan-context 排序消费 resolveCandidates(project>team>personal)", "actual": "GREEN — buildScopeRankMap 消费 resolveCandidates 作同分 tie-break;plan-context-scope-rank 2/2;resolution.ts 不再零调用", "verifier_cmd": "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/plan-context-scope-rank.test.ts", "verified_at": "2026-06-04"},
-    {"name": "G-MIGRATE", "target": "存量 100% 带 scope 字段 + 零脏 layer + 零 personal 混 team", "actual": null, "verifier_cmd": "PROBE: grep 校验脚本", "verified_at": null},
+    {"name": "G-MIGRATE", "target": "存量 100% 带 scope 字段 + 零脏 layer + 零 personal 混 team", "actual": "GREEN — repo .fabric/knowledge 22 条全回填(grep 0 缺字段/0 脏 layer/0 personal-in-team);scope-backfill 工具+CLI store backfill-scope 同治 store(fixture 证);scope-backfill.test.ts 6/6", "verifier_cmd": "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/scope-backfill.test.ts; grep -rL semantic_scope .fabric/knowledge/**/*.md", "verified_at": "2026-06-04"},
     {"name": "G-DECOLO", "target": "agents.meta.json 零读者(测试/迁移除外)+ doctor/工具全读 store", "actual": null, "verifier_cmd": "PROBE: grep agents.meta 读者 + 回归 test", "verified_at": null},
     {"name": "G-INSTALL", "target": "install 不再建 co-location 空柜子", "actual": null, "verifier_cmd": "PROBE: install test 断言无空柜子", "verified_at": null},
     {"name": "G-GUARD", "target": "doctor 三类 scope lint 生效 + re-scope/promote 工具可用", "actual": null, "verifier_cmd": "PROBE: lint + 工具 test", "verified_at": null},
@@ -160,7 +160,8 @@
   "status": "running",
   "loop_exit_status": null,
   "git_commits": [
-    {"wave": "W1", "sha": "ab12edb", "subject": "feat(scope): W1 写入侧接线 — store project registry(A2)+ 写入落 semantic_scope/visibility_store(A1)", "tasks": ["A2", "A1"], "at": "2026-06-04"}
+    {"wave": "W1", "sha": "ab12edb", "subject": "feat(scope): W1 写入侧接线 — store project registry(A2)+ 写入落 semantic_scope/visibility_store(A1)", "tasks": ["A2", "A1"], "at": "2026-06-04"},
+    {"wave": "W2", "sha": "a33228e", "subject": "feat(scope): W2 读取侧接线 — recall project 过滤(A3)+ resolveCandidates 排序(A4)", "tasks": ["A3", "A4"], "at": "2026-06-04"}
   ],
   "branch": "feat/multistore-scope-decolo",
   "base_head": "318a149",

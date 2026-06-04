@@ -3,6 +3,8 @@ id: KT-DEC-9001
 type: decisions
 maturity: verified
 layer: team
+semantic_scope: team
+visibility_store: "team"
 created_at: 2026-05-10T15:28:03.164Z
 source_session: WFS-rc3-dogfood-2026-05-10
 tags: [dogfood, fallback]

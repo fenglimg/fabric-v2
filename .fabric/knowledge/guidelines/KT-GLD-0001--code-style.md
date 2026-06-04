@@ -2,6 +2,8 @@
 id: KT-GLD-0001
 type: guideline
 layer: team
+semantic_scope: team
+visibility_store: "team"
 maturity: verified
 layer_reason: "project artifact (deterministic init scan)"
 created_at: 2026-05-10T05:24:25.169Z

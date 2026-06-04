@@ -2,7 +2,11 @@ import type { MountedStore } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
 import { getProjectTranslator } from "../i18n.js";
+import { join } from "node:path";
+
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
+import { backfillKnowledgeDir } from "../store/scope-backfill.js";
+import { loadProjectConfig } from "../store/project-config-io.js";
 import { migrateProjectKnowledge } from "../store/store-migrate.js";
 import {
   assertStoreMountable,
@@ -16,7 +20,9 @@ import {
   storeProjectList,
   storeRemove,
   storeSwitchWrite,
+  resolveStoreDir,
 } from "../store/store-ops.js";
+import { STORE_LAYOUT } from "@fenglimg/fabric-shared";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric store` command group (S57/E4/S7).
@@ -254,6 +260,50 @@ const projectCommand = defineCommand({
   },
 });
 
+// W3/A5 — clean-slate scope backfill. Adds semantic_scope + visibility_store to
+// existing entries and repairs dirty layer. Targets the project's co-location
+// knowledge by default, or a mounted store via `--store <alias>`.
+const backfillScopeCommand = defineCommand({
+  meta: {
+    name: "backfill-scope",
+    description: "Backfill semantic_scope + visibility_store on existing knowledge (repairs dirty layer)",
+  },
+  args: {
+    store: { type: "string", description: "Backfill a mounted store's knowledge instead of the project" },
+    "dry-run": { type: "boolean", description: "Preview changes without writing" },
+  },
+  run({ args }) {
+    const dryRun = args["dry-run"] === true;
+    let knowledgeDir: string;
+    let visibilityStore: string;
+    if (typeof args.store === "string" && args.store.length > 0) {
+      const storeDir = resolveStoreDir(args.store);
+      if (storeDir === null) {
+        console.error(`no mounted store '${args.store}'`);
+        process.exitCode = 1;
+        return;
+      }
+      knowledgeDir = join(storeDir, STORE_LAYOUT.knowledgeDir);
+      visibilityStore = args.store;
+    } else {
+      const projectRoot = process.cwd();
+      knowledgeDir = join(projectRoot, ".fabric", "knowledge");
+      visibilityStore = loadProjectConfig(projectRoot)?.active_write_store ?? "team";
+    }
+    const report = backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun });
+    if (report.changes.length === 0) {
+      console.log(`scope backfill: nothing to do (${report.unchanged} already consistent).`);
+      return;
+    }
+    console.log(
+      `${dryRun ? "[dry-run] " : ""}scope backfill: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
+    );
+    for (const c of report.changes) {
+      console.log(`  ${c.id ?? "(no id)"}  [${c.changed.join(", ")}]`);
+    }
+  },
+});
+
 export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
   subCommands: {
@@ -265,6 +315,7 @@ export default defineCommand({
     bind: bindCommand,
     "switch-write": switchWriteCommand,
     migrate: migrateCommand,
+    "backfill-scope": backfillScopeCommand,
     project: projectCommand,
   },
 });
