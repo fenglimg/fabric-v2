@@ -1,4 +1,12 @@
-import { type RuleDescription, type RuleDescriptionIndexItem, tokenize } from "@fenglimg/fabric-shared";
+import {
+  buildStoreResolveInput,
+  createStoreResolver,
+  resolveCandidates,
+  type ResolutionCandidate,
+  type RuleDescription,
+  type RuleDescriptionIndexItem,
+  tokenize,
+} from "@fenglimg/fabric-shared";
 
 import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
@@ -32,6 +40,11 @@ type ScoringContext = {
   // planContext and reused across the vector + BM25 paths so documentTextForItem
   // (a multi-array join) is not rebuilt per consumer.
   docTexts?: Map<string, string>;
+  // v2.1 global-refactor (W2/A4): stable_id → scope-resolution rank from
+  // resolveCandidates (scope-specificity project>team>personal + store
+  // tie-break). Used as the tie-break under EQUAL relevance score so a more
+  // specific scope outranks a broader one without overriding BM25 relevance.
+  scopeRank?: Map<string, number>;
 };
 
 export type PlanContextInput = {
@@ -394,6 +407,12 @@ export async function planContext(
     scoringContext.bm25 = getOrBuildBm25Model(meta.revision, rawItems, docTexts);
   }
 
+  // v2.1 global-refactor (W2/A4): scope-resolution rank for the equal-relevance
+  // tie-break. resolveCandidates (resolution.ts) is now an actual consumer — a
+  // more specific scope (project:x) outranks a broader one (team/personal) only
+  // when BM25/locality is tied, so relevance stays primary.
+  scoringContext.scopeRank = buildScopeRankMap(rawItems, projectRoot);
+
   // v2.2 C2-vector (W2-T7): OPTIONAL semantic recall supplement. Default OFF —
   // only runs when `embed_enabled` is set AND the optional fastembed package
   // loads AND a query exists. buildVectorScores returns null (→ text-only) on
@@ -727,6 +746,70 @@ export function compareStableIds(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 
+// v2.1 global-refactor (W2/A4): consume the resolver's double-axis ordering
+// (scope-specificity project>team>personal + store tie-break) and project it to
+// a stable_id → rank map. Used ONLY as the tie-break under equal relevance —
+// BM25/locality stays the primary key, so a more specific scope wins only when
+// content relevance is tied. Each candidate's semantic_scope comes from its
+// frontmatter (cross-store items) or falls back to its knowledge_layer; the
+// store axis is keyed off the read-set store order so the active write store
+// breaks ties first (S53).
+function buildScopeRankMap(
+  items: RuleDescriptionIndexItem[],
+  projectRoot: string,
+): Map<string, number> {
+  const input = buildStoreResolveInput(projectRoot);
+  const aliasToUuid = new Map<string, string>();
+  let storeOrder: string[] = [];
+  if (input !== null) {
+    for (const s of input.mountedStores) {
+      aliasToUuid.set(s.alias, s.store_uuid);
+    }
+    storeOrder = createStoreResolver()
+      .resolveReadSet(input)
+      .stores.map((s) => s.store_uuid);
+  }
+
+  const candidates: ResolutionCandidate[] = items.map((it) => {
+    const colon = it.stable_id.indexOf(":");
+    const alias = colon === -1 ? "" : it.stable_id.slice(0, colon);
+    const localId = colon === -1 ? it.stable_id : it.stable_id.slice(colon + 1);
+    const semanticScope =
+      it.description.semantic_scope ?? it.description.knowledge_layer ?? "team";
+    return {
+      global_ref: it.stable_id,
+      store_uuid: aliasToUuid.get(alias) ?? alias,
+      alias,
+      local_id: localId,
+      semantic_scope: semanticScope,
+    };
+  });
+
+  const { resolved } = resolveCandidates(candidates, { storeOrder });
+  const map = new Map<string, number>();
+  for (const r of resolved) {
+    map.set(r.global_ref, r.rank);
+  }
+  return map;
+}
+
+// Tie-break (under equal relevance score): a more specific scope ranks first via
+// the resolveCandidates rank map; stable_id is the final deterministic fallback.
+function compareScopeThenId(
+  left: RuleDescriptionIndexItem,
+  right: RuleDescriptionIndexItem,
+  scopeRank: Map<string, number> | undefined,
+): number {
+  if (scopeRank !== undefined) {
+    const lr = scopeRank.get(left.stable_id);
+    const rr = scopeRank.get(right.stable_id);
+    if (lr !== undefined && rr !== undefined && lr !== rr) {
+      return lr - rr; // lower rank = more specific scope / earlier store → first
+    }
+  }
+  return compareStableIds(left.stable_id, right.stable_id);
+}
+
 function sortDescriptionItems(
   rawItems: RuleDescriptionIndexItem[],
   scoringContext?: ScoringContext,
@@ -749,7 +832,7 @@ function sortDescriptionItems(
   scored.sort((left, right) =>
     left.score !== right.score
       ? right.score - left.score // descending
-      : compareStableIds(left.item.stable_id, right.item.stable_id),
+      : compareScopeThenId(left.item, right.item, scoringContext.scopeRank), // W2/A4 scope tie-break
   );
   return scored.map((entry) => entry.item);
 }
