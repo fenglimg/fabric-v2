@@ -64,6 +64,11 @@ function storeCanonicalDir(layer: "team" | "personal", type: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
   return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, type);
 }
+// W4 decolo: counter lives in the store's committed counters.json.
+function storeCountersFile(layer: "team" | "personal"): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.countersFile);
+}
 
 import { runDoctorReport } from "../../src/services/doctor.js";
 import { readEventLedger } from "../../src/services/event-ledger.js";
@@ -248,11 +253,12 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
       .sort();
     expect(promotedIds).toEqual(ids);
 
-    // Counter persisted: KT.DEC === 2.
-    const meta = JSON.parse(
-      await readFile(join(projectRoot, ".fabric", "agents.meta.json"), "utf8"),
-    ) as { counters?: { KT?: { DEC?: number } } };
-    expect(meta.counters?.KT?.DEC).toBe(2);
+    // Counter persisted to the team store's committed counters.json: KT.DEC === 2
+    // (W4 decolo — co-location agents.meta counter retired).
+    const counters = JSON.parse(
+      await readFile(storeCountersFile("team"), "utf8"),
+    ) as { KT?: { DEC?: number } };
+    expect(counters.KT?.DEC).toBe(2);
   });
 
   // ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ export * from "./resolver/store-disk-reader.js";
 export * from "./resolver/store-qualified-id.js";
 export * from "./resolver/resolution.js";
 export * from "./store/core.js";
+export * from "./store/store-counters.js";
 export * from "./store/global-config-io.js";
 export * from "./store/project-config-io.js";
 export * from "./store/resolve-input.js";

@@ -159,6 +159,14 @@ export const STORE_LAYOUT = {
   identityFile: "store.json",
   // Store-internal project registry (W1/A2). Committed parallel to store.json.
   projectsFile: "projects.json",
+  // v2.2 W4 (agents.meta decolo) — per-store monotonic stable_id counters.
+  // COMMITTED parallel to store.json/projects.json (NOT gitignored like the
+  // derived agents.meta) because the counter ledger is non-derivable state that
+  // must travel with the store on clone: a fresh clone rebuilding from disk-max
+  // would re-mint a deleted entry's id and corrupt cite history (KT-DEC-0004
+  // monotonic invariant). Replaces the retired co-location
+  // <projectRoot>/.fabric/agents.meta.json#counters.
+  countersFile: "counters.json",
   knowledgeDir: "knowledge",
   bindingsDir: "bindings",
   stateDir: "state",

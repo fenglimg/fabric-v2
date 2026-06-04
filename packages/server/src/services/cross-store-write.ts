@@ -45,7 +45,12 @@ function writeTargetUnresolved(layer: "team" | "personal"): StoreWriteTargetUnre
   );
 }
 
-function resolveWriteTargetStoreDir(layer: "team" | "personal", projectRoot: string): string {
+// Absolute directory of the write-target store for a layer (the store root, not
+// its knowledge subdir). Exposed for the stable_id counter allocation (W4 decolo):
+// a newly-minted id's per-store `counters.json` must live in the SAME store the
+// entry physically lands in. Throws StoreWriteTargetUnresolvedError when no
+// target resolves (B2 cutover — no dual-root fallback).
+export function resolveWriteTargetStoreDir(layer: "team" | "personal", projectRoot: string): string {
   const input = buildStoreResolveInput(projectRoot);
   if (input === null) {
     throw writeTargetUnresolved(layer);

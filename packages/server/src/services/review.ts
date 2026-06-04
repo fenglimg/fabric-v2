@@ -12,9 +12,13 @@ import type {
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
+import { allocateStoreKnowledgeId } from "@fenglimg/fabric-shared";
 import { reconcileKnowledge } from "./knowledge-sync.js";
-import { resolveStoreCanonicalBase, resolveStorePendingBase } from "./cross-store-write.js";
+import {
+  resolveStoreCanonicalBase,
+  resolveStorePendingBase,
+  resolveWriteTargetStoreDir,
+} from "./cross-store-write.js";
 import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.js";
 
 // v2.2 全砍 Stage 2 (B2 cutover): store-only pending root. extract-knowledge
@@ -507,14 +511,10 @@ async function approveAll(
   projectRoot: string,
   pendingPaths: string[],
 ): Promise<Array<{ pending_path: string; stable_id: string }>> {
-  const allocator = new KnowledgeIdAllocator(
-    join(projectRoot, ".fabric", "agents.meta.json"),
-  );
-
   const approved: Array<{ pending_path: string; stable_id: string }> = [];
 
   for (const pendingPath of pendingPaths) {
-    const result = await approveOne(projectRoot, pendingPath, allocator);
+    const result = await approveOne(projectRoot, pendingPath);
     if (result !== null) {
       approved.push(result);
     }
@@ -526,7 +526,6 @@ async function approveAll(
 async function approveOne(
   projectRoot: string,
   pendingPath: string,
-  allocator: KnowledgeIdAllocator,
 ): Promise<{ pending_path: string; stable_id: string } | null> {
   // Defense-in-depth: confine the caller-supplied pending path to the pending
   // tree of EITHER root.
@@ -625,7 +624,15 @@ async function approveOne(
 
     // rc.29 BUG-C1: KnowledgeType is now plural; pluralType is the canonical
     // value passed straight to the allocator.
-    const stableId = await allocator.allocate(layer, pluralType);
+    // W4 decolo: mint the id from the write-target STORE's committed counters.json
+    // (same store the entry lands in below) — the co-location agents.meta counter
+    // is retired. resolveWriteTargetStoreDir throws the same actionable
+    // StoreWriteTargetUnresolvedError as resolveStoreCanonicalBase on no target.
+    const stableId = await allocateStoreKnowledgeId(
+      layer,
+      pluralType,
+      resolveWriteTargetStoreDir(layer, projectRoot),
+    );
     allocatedId = stableId;
 
     const newFilename = `${stableId}--${slug}.md`;
@@ -989,12 +996,15 @@ async function modifyLayerFlip(
   const shouldAutoDegrade =
     fromScope === "narrow" && fromLayer === "team" && toLayer === "personal";
 
-  const allocator = new KnowledgeIdAllocator(
-    join(projectRoot, ".fabric", "agents.meta.json"),
-  );
   // rc.29 BUG-C1: KnowledgeType is now plural; pluralType is the canonical
   // value passed straight to the allocator.
-  const newStableId = await allocator.allocate(toLayer, pluralType);
+  // W4 decolo: layer-flip mints the new id from the destination layer's
+  // write-target STORE counters (same store the flipped entry lands in below).
+  const newStableId = await allocateStoreKnowledgeId(
+    toLayer,
+    pluralType,
+    resolveWriteTargetStoreDir(toLayer, projectRoot),
+  );
 
   // v2.2 全砍 Stage 2 (B2 cutover): the layer-flip destination is the NEW layer's
   // write-target store canonical dir (no dual-root). resolveStoreCanonicalBase
