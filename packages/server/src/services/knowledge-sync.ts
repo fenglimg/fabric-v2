@@ -1,17 +1,23 @@
 /**
  * knowledge-sync.ts — Rule-sync orchestrator framework (R28, TASK-011)
  *
- * Public surface: ensureKnowledgeFresh, reconcileKnowledge + exported types.
+ * Public surface: ensureKnowledgeFresh + exported types.
  * Internal helpers are co-located in this file.
  * Does NOT wire any consumers (MCP tools, doctor, watchers).
  *
- * Distinction between the two public entry points:
+ * `ensureKnowledgeFresh` detects drift between disk and the co-location
+ * `agents.meta.json` index, emits ledger events, and invalidates the cache.
+ * It does NOT rewrite agents.meta.json. Optimised for hot-path consumers
+ * (MCP tools).
  *
- * - `ensureKnowledgeFresh`: detects drift, emits ledger events, invalidates cache.
- *   Does NOT rewrite agents.meta.json. Optimised for hot-path consumers (MCP tools).
- *
- * - `reconcileKnowledge`: full scan + rewrites agents.meta.json (via knowledge-meta-builder)
- *   + emits ledger events. Used by startup (TASK-022) and doctor repair (TASK-023).
+ * v2.2 W5 R2 (agents.meta decolo): the `reconcileKnowledge` entry point —
+ * which rebuilt the co-location `agents.meta.json` from disk via
+ * knowledge-meta-builder — has been retired. Knowledge now lives in mounted
+ * stores; the co-location index has no readers (read paths cut over to the
+ * cross-store model) and is removed at decolo close-out, so periodically
+ * rebuilding it served no consumer. Drift *detection* (`ensureKnowledgeFresh`)
+ * is kept for its ledger-event side effects; drift *repair* (rewriting the
+ * dead index) is gone.
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -22,10 +28,8 @@ import { join } from "node:path";
 import { RuleValidationError } from "@fenglimg/fabric-shared/errors";
 
 import { contextCache } from "../cache.js";
-import { readAgentsMeta, AgentsMetaFileMissingError, AgentsMetaInvalidError } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { sha256 } from "./_shared.js";
-import { buildKnowledgeMeta, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 
 // v2.0 dual-root knowledge layout — content_ref prefixes mirror
 // knowledge-meta-builder.ts so meta entries and rule-sync scans share the
@@ -85,16 +89,15 @@ export interface KnowledgeSyncOptions {
   /** When true, invalid frontmatter throws RuleValidationError (default: false — collect as warning). */
   throwOnInvalidFrontmatter?: boolean;
   /**
-   * v2.0.0-rc.29 TASK-005 (BUG-G1): when true, `ensureKnowledgeFresh`
-   * synchronously follows a drift detection with a `reconcileKnowledge`
-   * call to materialize the auto-heal (rewrite agents.meta.json + emit a
-   * paired `knowledge_meta_auto_healed` event). Default false preserves
-   * the rc.28 hot-path semantics where drift detection never blocks the
-   * MCP read on a meta rebuild. Opt-in is intended for callers that can
-   * tolerate ~tens-of-ms extra latency in exchange for the invariant
-   * "every knowledge_drift_detected has a paired heal event in the same
-   * tail window." Audit (BUG-G1) found 5/72 drifts healed on this repo
-   * (~7%) because the hot path emitted detect-only events.
+   * v2.0.0-rc.29 TASK-005 (BUG-G1): originally opted the hot path into a
+   * follow-up `reconcileKnowledge` (rewrite agents.meta.json) so every
+   * detected drift got a paired heal event.
+   *
+   * v2.2 W5 R2 (agents.meta decolo): retained as a NO-OP for backward
+   * compatibility — the co-location agents.meta.json it used to rebuild no
+   * longer exists (knowledge lives in stores; read paths cut over to the
+   * cross-store model). MCP tool call sites still pass `autoHealOnDrift: true`;
+   * it is now ignored.
    */
   autoHealOnDrift?: boolean;
 }
@@ -527,22 +530,12 @@ export async function ensureKnowledgeFresh(
   // the next call re-verifies quickly instead of returning stale cached fresh.
   freshSyncCooldown.delete(projectRoot);
 
-  // v2.0.0-rc.29 TASK-005 (BUG-G1): when the caller opts in, immediately
-  // chain a reconcileKnowledge so the drift detected above gets paired with
-  // a `meta_reconciled` summary event + the implied heal observed through
-  // loadActiveMetaOrStale on the next read. This is the structural answer
-  // to "only 7% of drifts auto-heal" — the hot path emitted drift-only
-  // events because heal was a separate caller's responsibility. Opt-in
-  // (default off) so the existing hot-path latency contract is preserved.
-  if (opts?.autoHealOnDrift === true && events.length > 0) {
-    try {
-      await reconcileKnowledge(projectRoot, { trigger: "auto-heal-after-drift" });
-    } catch {
-      // Heal failures must not propagate — the caller already has the
-      // detected events, and a subsequent reconcileKnowledge call (doctor,
-      // startup) will close the gap on the next pass.
-    }
-  }
+  // v2.2 W5 R2 (agents.meta decolo): the rc.29 BUG-G1 `autoHealOnDrift` chain
+  // into `reconcileKnowledge` is gone — there is no co-location agents.meta.json
+  // left to rebuild. `ensureKnowledgeFresh` still detects drift and emits the
+  // `knowledge_drift_detected` ledger events above; the `autoHealOnDrift` option
+  // is retained on the input type as a no-op for backward compatibility with the
+  // MCP tool call sites that still pass it.
 
   const status = warnings.length > 0 ? "errors" : "reconciled";
 
@@ -551,198 +544,5 @@ export async function ensureKnowledgeFresh(
     events,
     warnings,
     reconciled_files: events.map((e) => e.path),
-  };
-}
-
-export interface ReconcileKnowledgeOptions {
-  /**
-   * Identifies who triggered the reconcile; controls which summary ledger event is written.
-   *
-   * v2.0.0-rc.23 TASK-005 (a-B): `auto-heal-description` added so plan_context
-   * can drive a full reconcile when it detects nodes with `description === undefined`
-   * (legacy meta drift the revision-hash gate cannot detect).
-   *
-   * v2.0.0-rc.27 TASK-001 (§2.9 root): `post-approve` / `post-modify` added so
-   * `fab_review` approve/modify-layer-flip can drive an immediate meta rebuild
-   * — without this the new entry's `nodes[id]` stays empty until the next
-   * plan_context call's auto-heal, which leaves the entry undiscoverable in
-   * the description_index window between approve and the next hint call.
-   */
-  // v2.0.0-rc.29 TASK-005 (BUG-G1): `auto-heal-after-drift` added so the
-  // ensureKnowledgeFresh hot-path can chain a reconcile that closes the
-  // drift→heal gap without leaking a separate trigger label into the audit.
-  trigger?:
-    | "startup"
-    | "doctor"
-    | "manual"
-    | "auto-heal-description"
-    | "auto-heal-after-drift"
-    | "post-approve"
-    | "post-modify";
-}
-
-/**
- * Full scan + rewrites agents.meta.json with ground-truth disk state + emits
- * ledger events. Used by startup (TASK-022) and doctor repair (TASK-023).
- * Returns reconciled_files listing all paths whose meta was updated.
- *
- * When `opts.trigger` is `'startup'`, a `meta_reconciled_on_startup` summary
- * ledger event is appended after per-file drift events. Other trigger values
- * append a `meta_reconciled` event. Omitting the trigger skips the summary.
- */
-export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKnowledgeOptions): Promise<KnowledgeSyncReport> {
-  // Full scan — always clears the cooldown so ensureKnowledgeFresh re-checks on
-  // the next MCP call after reconcile completes (avoids stale-fresh after write).
-  freshSyncCooldown.delete(projectRoot);
-
-  const trigger = opts?.trigger;
-  const startTime = Date.now();
-  const source = "reconcileKnowledge" as const;
-  const events: KnowledgeSyncLedgerEvent[] = [];
-  const warnings: StructuredWarning[] = [];
-
-  const metaEntries = await readMetaEntries(projectRoot);
-  const ruleFiles = await findRuleFiles(projectRoot);
-  // ISS-009: O(1) membership for the removal scan below.
-  const ruleFileSet = new Set(ruleFiles);
-
-  // Full scan — process every rule file
-  for (const relPath of ruleFiles) {
-    const metaEntry = metaEntries.get(relPath);
-    const result = await processSingleFile(projectRoot, relPath, metaEntry, source, false);
-
-    if (result.event !== null) {
-      events.push(result.event);
-    }
-
-    if (result.warning !== null) {
-      warnings.push(result.warning);
-    }
-  }
-
-  // Check for removals. v2.0.0-rc.22 TASK-014: resolve dual-root paths.
-  for (const [relPath, entry] of metaEntries) {
-    if (!ruleFileSet.has(relPath)) {
-      const absPath = resolveContentRefPath(projectRoot, relPath);
-      if (!existsSync(absPath)) {
-        events.push({
-          type: "rule_removed",
-          stable_id: entry.stable_id,
-          path: relPath,
-          prev_hash: entry.content_hash,
-          new_hash: null,
-          changed_fields: ["content"],
-          source,
-        });
-      }
-    }
-  }
-
-  // v2.0.0-rc.22 TASK-014 (Scope E): top-level revision-drift detection.
-  //
-  // The per-file content-hash gate above is necessary but not sufficient: it
-  // only fires when SOME knowledge file's bytes diverge from its meta entry.
-  // Top-level schema/revision drift (e.g. old meta with null knowledge_type
-  // from a v1.x baseline, or revision-string corruption) leaves every per-file
-  // hash matching while the agents.meta.json envelope is still stale.
-  //
-  // Recompute the meta from disk, compare its revision against the on-disk
-  // copy, and force a write when they diverge. This is the symmetric
-  // counterpart to loadActiveMeta's auto-heal on the read path: read-side
-  // auto-heal closes the gap when no one calls reconcile; this closes the
-  // gap when something explicitly calls reconcile (doctor --fix, startup,
-  // manual).
-  //
-  // We deliberately call buildKnowledgeMeta + readAgentsMeta directly rather
-  // than reusing loadActiveMeta. loadActiveMeta would also persist on drift
-  // (good) — but it lives in load-active-meta.ts which itself imports from
-  // this module's neighbour (knowledge-meta-builder.ts). Going through
-  // loadActiveMeta here would invert the dependency direction in a way that
-  // risks future circular imports. The direct comparison keeps the
-  // dependency arrow stable: knowledge-sync depends only on
-  // knowledge-meta-builder + meta-reader.
-  let revisionDrift = false;
-  try {
-    const derived = await buildKnowledgeMeta(projectRoot);
-    const onDisk = await readAgentsMeta(projectRoot);
-    revisionDrift = onDisk.revision !== derived.meta.revision;
-  } catch (error) {
-    // Missing/invalid on-disk meta is NOT a revisionDrift case for this
-    // gate — the higher-level doctor/startup flows handle agents_meta_missing
-    // / agents_meta_invalid separately. Per-file events (if any) will still
-    // trigger writeKnowledgeMeta below, which creates the meta from scratch.
-    if (
-      !(error instanceof AgentsMetaFileMissingError) &&
-      !(error instanceof AgentsMetaInvalidError)
-    ) {
-      throw error;
-    }
-  }
-
-  // v2.0.0-rc.23 TASK-005 (a-B): the `auto-heal-description` trigger forces a
-  // writeKnowledgeMeta even when neither per-file content nor top-level
-  // revision drift is detected. Rationale: `computeRevision` hashes only
-  // `id|hash|stable_id|identity_source`, so stripping or never-populating the
-  // `description` field on an entry leaves the revision unchanged. The
-  // per-file and revision-drift gates above both miss this case. plan_context
-  // detects it on the read path (any node with `description === undefined`)
-  // and calls in here to drive an unconditional rebuild from disk.
-  const forceWriteForDescriptionHeal = trigger === "auto-heal-description";
-
-  // High 2: Rewrite agents.meta.json with ground-truth disk state when drift
-  // detected (either per-file or top-level revision drift). writeKnowledgeMeta
-  // rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
-  if (events.length > 0 || revisionDrift || forceWriteForDescriptionHeal) {
-    await writeKnowledgeMeta(projectRoot, { source: "sync_meta" });
-    if (events.length > 0) {
-      await appendRuleSyncEvents(projectRoot, events);
-    }
-    contextCache.invalidate("file_watch", projectRoot);
-    // The contextCache "meta" slot was populated by readAgentsMeta above; bust
-    // it so subsequent reads see the freshly-written meta.
-    contextCache.invalidate("meta_write", projectRoot);
-  }
-
-  const duration_ms = Date.now() - startTime;
-  const reconciledFiles = events.map((e) => e.path);
-
-  // Emit summary ledger event when a trigger is specified and ANY write
-  // happened (per-file drift OR top-level revision drift OR the rc.23
-  // description-heal force-write). The force_write_reason field disambiguates
-  // revision-only writes from standard per-file flows so the audit trail is
-  // unambiguous.
-  if (trigger !== undefined && (events.length > 0 || revisionDrift || forceWriteForDescriptionHeal)) {
-    if (trigger === "startup") {
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "meta_reconciled_on_startup",
-        reconciled_files: reconciledFiles,
-        duration_ms,
-        source: "reconcileKnowledge",
-      });
-    } else {
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "meta_reconciled",
-        reconciled_files: reconciledFiles,
-        duration_ms,
-        trigger,
-        source: "reconcileKnowledge",
-        ...(events.length === 0 && revisionDrift
-          ? { force_write_reason: "revision_drift" as const }
-          : {}),
-      });
-    }
-  }
-
-  if (events.length === 0 && warnings.length === 0 && !revisionDrift) {
-    return { status: "fresh", events: [], warnings: [] };
-  }
-
-  const status = warnings.length > 0 ? "errors" : "reconciled";
-
-  return {
-    status,
-    events,
-    warnings,
-    reconciled_files: reconciledFiles,
   };
 }

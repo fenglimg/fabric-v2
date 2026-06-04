@@ -5390,6 +5390,14 @@ describe("runDoctorCiteCoverage", () => {
     writeFileSync(ledgerPath, existing + newlines, "utf8");
   }
 
+  // v2.2 W5 R2/R7 (agents.meta decolo): the cite-coverage kb relevance index is
+  // built from the read-set STORES, not the retired co-location agents.meta.json.
+  // Seed each node as a real store .md carrying the relevance frontmatter the
+  // cite denominator reads, bind the project to the team store, and register it.
+  // The index is keyed under both the local stable_id and `team:<id>`, so the
+  // bare cite ids these tests emit still resolve.
+  const CITE_STORE_UUID_A = "55555555-5555-4555-8555-555555555555";
+
   function seedAgentsMeta(
     target: string,
     nodes: Array<{
@@ -5398,37 +5406,43 @@ describe("runDoctorCiteCoverage", () => {
       relevance_scope?: "narrow" | "broad";
     }>,
   ): void {
-    // Minimal agents.meta.json shape that `readAgentsMeta` will parse without
-    // tripping `agentsMetaSchema`. Each node carries the four required base
-    // fields (file/scope_glob/hash) plus a description{} carrying the
-    // relevance_paths / relevance_scope the cite-coverage aggregator reads.
-    const metaNodes: Record<string, unknown> = {};
+    writeFileSync(
+      join(target, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const dir = join(
+      resolveGlobalRoot(),
+      storeRelativePath(CITE_STORE_UUID_A),
+      STORE_LAYOUT.knowledgeDir,
+      "decisions",
+    );
+    mkdirSync(dir, { recursive: true });
     for (const node of nodes) {
-      const key = node.stable_id;
-      metaNodes[key] = {
-        file: `.fabric/knowledge/decisions/${node.stable_id}.md`,
-        content_ref: `.fabric/knowledge/decisions/${node.stable_id}.md`,
-        scope_glob: "**",
-        hash: "deadbeef",
-        stable_id: node.stable_id,
-        identity_source: "declared",
-        description: {
-          summary: "test",
-          intent_clues: [],
-          tech_stack: [],
-          impact: [],
-          must_read_if: "always",
-          relevance_scope: node.relevance_scope ?? "broad",
-          relevance_paths: node.relevance_paths ?? [],
-        },
-      };
+      const lines = [
+        "---",
+        `id: ${node.stable_id}`,
+        "type: decision",
+        "layer: team",
+        "maturity: proven",
+        "created_at: 2026-06-04T00:00:00.000Z",
+        `relevance_scope: ${node.relevance_scope ?? "broad"}`,
+        `relevance_paths: [${(node.relevance_paths ?? []).join(", ")}]`,
+        `summary: Cite-coverage fixture for ${node.stable_id}`,
+        "---",
+        `# ${node.stable_id}`,
+        "",
+        "Body.",
+        "",
+      ];
+      writeFileSync(join(dir, `${node.stable_id}.md`), lines.join("\n"), "utf8");
     }
-    const meta = {
-      revision: "test-revision",
-      nodes: metaNodes,
-    };
-    const metaPath = join(target, ".fabric", "agents.meta.json");
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
+
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [{ store_uuid: CITE_STORE_UUID_A, alias: "team", remote: "git@e:cite-a.git" }],
+    });
   }
 
   function mkTurnEvent(opts: {
@@ -6227,6 +6241,15 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
   }
 
+  // v2.2 W5 R2/R7 (agents.meta decolo): the cite-coverage kb relevance index is
+  // built from the read-set STORES (cross-store canonical entries), not the
+  // retired co-location agents.meta.json. This helper writes each node as a real
+  // store .md (with the relevance frontmatter the cite denominator reads), binds
+  // the project to the team store, and registers it in the global config. The
+  // index is keyed under both the local stable_id and `team:<id>`, so the bare
+  // cite ids these tests emit still resolve.
+  const CITE_STORE_UUID = "33333333-3333-4333-8333-333333333333";
+
   function seedAgentsMetaWithTypes(
     target: string,
     nodes: Array<{
@@ -6236,33 +6259,43 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       relevance_scope?: "narrow" | "broad";
     }>,
   ): void {
-    const metaNodes: Record<string, unknown> = {};
-    for (const node of nodes) {
-      metaNodes[node.stable_id] = {
-        file: `.fabric/knowledge/${node.knowledge_type}s/${node.stable_id}.md`,
-        content_ref: `.fabric/knowledge/${node.knowledge_type}s/${node.stable_id}.md`,
-        scope_glob: "**",
-        hash: "deadbeef",
-        stable_id: node.stable_id,
-        identity_source: "declared",
-        description: {
-          summary: "test",
-          intent_clues: [],
-          tech_stack: [],
-          impact: [],
-          must_read_if: "always",
-          knowledge_type: node.knowledge_type,
-          relevance_scope: node.relevance_scope ?? "broad",
-          relevance_paths: node.relevance_paths ?? [],
-        },
-      };
-    }
-    const meta = { revision: "test-revision", nodes: metaNodes };
+    // Bind the project to the team store (idempotent — safe to re-write).
     writeFileSync(
-      join(target, ".fabric", "agents.meta.json"),
-      JSON.stringify(meta, null, 2),
+      join(target, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
       "utf8",
     );
+
+    const storeRoot = join(resolveGlobalRoot(), storeRelativePath(CITE_STORE_UUID));
+    // knowledge_type is the plural subdir form ("decisions"); the singular
+    // frontmatter `type` drops the trailing "s".
+    for (const node of nodes) {
+      const dir = join(storeRoot, STORE_LAYOUT.knowledgeDir, node.knowledge_type);
+      mkdirSync(dir, { recursive: true });
+      const singularType = node.knowledge_type.replace(/s$/u, "");
+      const lines = [
+        "---",
+        `id: ${node.stable_id}`,
+        `type: ${singularType}`,
+        "layer: team",
+        "maturity: proven",
+        "created_at: 2026-06-04T00:00:00.000Z",
+        `relevance_scope: ${node.relevance_scope ?? "broad"}`,
+        `relevance_paths: [${(node.relevance_paths ?? []).join(", ")}]`,
+        `summary: Cite-coverage fixture for ${node.stable_id}`,
+        "---",
+        `# ${node.stable_id}`,
+        "",
+        "Body.",
+        "",
+      ];
+      writeFileSync(join(dir, `${node.stable_id}.md`), lines.join("\n"), "utf8");
+    }
+
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [{ store_uuid: CITE_STORE_UUID, alias: "team", remote: "git@e:cite.git" }],
+    });
   }
 
   type ContractOperator = { kind: "edit" | "not_edit" | "require" | "forbid"; target: string };
@@ -6971,6 +7004,12 @@ describe("runDoctorCiteCoverage (W1-T3 exposed_and_mutated weak signal)", () => 
     writeFileSync(ledgerPath, existing + newlines, "utf8");
   }
 
+  // v2.2 W5 R2/R7 (agents.meta decolo): cite-coverage reads its kb relevance
+  // index from the read-set STORES. Seed each node as a store .md, bind the
+  // project to the team store, and register it. Index is keyed under both the
+  // local stable_id and `team:<id>`, so bare cite ids still resolve.
+  const CITE_STORE_UUID_W1T3 = "66666666-6666-4666-8666-666666666666";
+
   function seedMeta(
     target: string,
     nodes: Array<{
@@ -6980,32 +7019,40 @@ describe("runDoctorCiteCoverage (W1-T3 exposed_and_mutated weak signal)", () => 
       relevance_scope?: "narrow" | "broad";
     }>,
   ): void {
-    const metaNodes: Record<string, unknown> = {};
-    for (const node of nodes) {
-      metaNodes[node.stable_id] = {
-        file: `.fabric/knowledge/${node.knowledge_type}/${node.stable_id}.md`,
-        content_ref: `.fabric/knowledge/${node.knowledge_type}/${node.stable_id}.md`,
-        scope_glob: "**",
-        hash: "deadbeef",
-        stable_id: node.stable_id,
-        identity_source: "declared",
-        description: {
-          summary: "test",
-          intent_clues: [],
-          tech_stack: [],
-          impact: [],
-          must_read_if: "always",
-          knowledge_type: node.knowledge_type,
-          relevance_scope: node.relevance_scope ?? "broad",
-          relevance_paths: node.relevance_paths ?? [],
-        },
-      };
-    }
     writeFileSync(
-      join(target, ".fabric", "agents.meta.json"),
-      JSON.stringify({ revision: "test-revision", nodes: metaNodes }, null, 2),
+      join(target, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
       "utf8",
     );
+
+    const storeRoot = join(resolveGlobalRoot(), storeRelativePath(CITE_STORE_UUID_W1T3));
+    for (const node of nodes) {
+      const dir = join(storeRoot, STORE_LAYOUT.knowledgeDir, node.knowledge_type);
+      mkdirSync(dir, { recursive: true });
+      const singularType = node.knowledge_type.replace(/s$/u, "");
+      const lines = [
+        "---",
+        `id: ${node.stable_id}`,
+        `type: ${singularType}`,
+        "layer: team",
+        "maturity: proven",
+        "created_at: 2026-06-04T00:00:00.000Z",
+        `relevance_scope: ${node.relevance_scope ?? "broad"}`,
+        `relevance_paths: [${(node.relevance_paths ?? []).join(", ")}]`,
+        `summary: Cite-coverage fixture for ${node.stable_id}`,
+        "---",
+        `# ${node.stable_id}`,
+        "",
+        "Body.",
+        "",
+      ];
+      writeFileSync(join(dir, `${node.stable_id}.md`), lines.join("\n"), "utf8");
+    }
+
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [{ store_uuid: CITE_STORE_UUID_W1T3, alias: "team", remote: "git@e:cite-w1t3.git" }],
+    });
   }
 
   function mkNarrowSurface(opts: {

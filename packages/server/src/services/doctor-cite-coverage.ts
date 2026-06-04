@@ -61,7 +61,6 @@ import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./
 import type { CiteRollupRow } from "./cite-rollup.js";
 import { readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
-import { reconcileKnowledge, resolveContentRefPath } from "./knowledge-sync.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 
 import { inspectL1BootstrapSnapshotDrift, normalizePath } from "./doctor.js";
@@ -816,6 +815,11 @@ export async function runDoctorCiteCoverage(
   // store-qualified per the v2.1 multi-store cite policy) resolves to the same
   // relevance metadata. An empty read-set collapses to an empty index — the
   // narrow denominator becomes zero, broad logic still functions on turn data.
+  // Reverse map: each distinct KbEntry → the set of index keys (local +
+  // qualified) that point at it. Lets the expected_but_missed walk treat the
+  // entry as a single unit — count it once and suppress when a cite used EITHER
+  // of its keys.
+  const kbEntryKeys = new Map<KbEntry, string[]>();
   for (const entry of canonicalEntries) {
     const paths = entry.description.relevance_paths ?? [];
     const scope = entry.description.relevance_scope ?? "broad";
@@ -827,6 +831,7 @@ export async function runDoctorCiteCoverage(
     };
     kbIndex.set(entry.stableId, kbEntry);
     kbIndex.set(entry.qualifiedId, kbEntry);
+    kbEntryKeys.set(kbEntry, [entry.stableId, entry.qualifiedId]);
   }
 
   // Per-session lookup of fetch events for recalled_unverified correlation.
@@ -1214,10 +1219,24 @@ export async function runDoctorCiteCoverage(
     }
 
     const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
-    for (const [kbId, kb] of kbIndex) {
+    // v2.2 W5 R6/R2 (agents.meta decolo): the kb index keys every store entry
+    // under BOTH its local stable_id and its store-qualified id (`<alias>:<id>`)
+    // — both pointing at the SAME KbEntry object — so a cite line in either form
+    // resolves. The expected_but_missed walk must therefore count each distinct
+    // kb entry once per edit, not once per index key; track counted entries by
+    // object identity to avoid the dual-key double-count. A cite in EITHER form
+    // (citedSet may hold either key) suppresses the miss.
+    const countedThisEdit = new Set<KbEntry>();
+    for (const [, kb] of kbIndex) {
       if (kb.relevance_scope !== "narrow") continue;
       if (!matchesRelevancePath(edit.path, kb.relevance_paths)) continue;
-      if (!citedSet.has(kbId)) {
+      if (countedThisEdit.has(kb)) continue;
+      countedThisEdit.add(kb);
+      // Suppress the miss when a cite used EITHER of this entry's keys (local
+      // stable_id or store-qualified id).
+      const keys = kbEntryKeys.get(kb) ?? [];
+      const citedInAnyForm = keys.some((k) => citedSet.has(k));
+      if (!citedInAnyForm) {
         expectedButMissed += 1;
       }
     }
