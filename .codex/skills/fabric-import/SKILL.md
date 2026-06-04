@@ -40,6 +40,10 @@ Read `.fabric/fabric-config.json` for tunables (defaults if absent):
 
 First-run vs re-run by state file (ENOENT or `phase != complete && proposed == 0` → first-run window).
 
+### Store routing (v2.1 multi-store)
+
+Import requires an **explicit target store** (E7) — mined entries are NOT auto-routed. Resolve candidates via `fabric scope-explain team` (writable stores in the read-set); if more than one writable store exists, `AskUserQuestion` for the target store alias before persisting (header/question translate, the alias options stay English routing keys). Single writable store → use it. Persist through `fab_extract_knowledge` with the chosen store; echo the target alias. Never write to a store the project did not declare (read-set bound).
+
 ## UX i18n Policy
 
 Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Emit prose per variant. Protected tokens NEVER translate (`fab_extract_knowledge`, `fab_review`, `.fabric/.import-state.json`, all enum strings, `MUST`/`NEVER`). Full 5-class taxonomy → `Read .../ref/i18n-policy.md`.
