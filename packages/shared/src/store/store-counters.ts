@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { atomicWriteJson, withFileLock } from "../node/atomic-write.js";
@@ -8,8 +8,14 @@ import {
   defaultAgentsMetaCounters,
   type AgentsMetaCounters,
 } from "../schemas/agents-meta.js";
-import type { KnowledgeType, Layer, StableId } from "../schemas/api-contracts.js";
-import { STORE_LAYOUT } from "../schemas/store.js";
+import {
+  KNOWLEDGE_TYPE_CODES,
+  type KnowledgeType,
+  type Layer,
+  parseKnowledgeId,
+  type StableId,
+} from "../schemas/api-contracts.js";
+import { STORE_KNOWLEDGE_TYPE_DIRS, STORE_LAYOUT } from "../schemas/store.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 W4 (agents.meta decolo) — per-store monotonic stable_id counters.
@@ -78,4 +84,68 @@ export async function allocateStoreKnowledgeId(
     await atomicWriteJson(countersPath, nextCounters, { indent: 2 });
     return id;
   });
+}
+
+// The `id:` frontmatter line, falling back to the `<id>--slug.md` filename prefix
+// (the two id carriers the migrate/disk-reader paths already trust).
+function readEntryId(file: string): string | null {
+  let content: string;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  const match = content.match(/^id:\s*(\S+)\s*$/mu);
+  if (match) {
+    return match[1] ?? null;
+  }
+  const stem = file.slice(file.lastIndexOf("/") + 1).replace(/\.md$/u, "");
+  const idPart = stem.split("--")[0];
+  return idPart.length > 0 ? idPart : null;
+}
+
+/**
+ * Floor a store's `counters.json` at the highest stable_id actually present on
+ * disk, persisting and returning the reconciled envelope.
+ *
+ * This is the producer↔consumer bridge (W4 F1): a BULK import (`store migrate`)
+ * writes entries whose ids were minted elsewhere (collision-remapped from
+ * disk-max) WITHOUT advancing this store's counters.json. Without reconciliation
+ * the next `allocateStoreKnowledgeId` would start from a stale zero and re-mint
+ * an already-present id. Flooring is also the self-heal `doctor` runs to repair a
+ * drifted ledger.
+ *
+ * Floor — never lower — preserves the monotonic invariant (KT-DEC-0004): a slot
+ * already advanced past disk-max (because the highest entry was deleted) keeps
+ * its higher value. Sync write (no lock) because the only callers run in
+ * exclusive one-shot contexts (post-migrate CLI step, `doctor --fix`).
+ */
+export function reconcileStoreCounters(storeDir: string): AgentsMetaCounters {
+  const current = readStoreCounters(storeDir);
+  const next: AgentsMetaCounters = {
+    KP: { ...current.KP },
+    KT: { ...current.KT },
+  };
+
+  for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+    const dir = join(storeDir, STORE_LAYOUT.knowledgeDir, type);
+    if (!existsSync(dir)) {
+      continue;
+    }
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".md")) {
+        continue;
+      }
+      const parsed = parseKnowledgeId(readEntryId(join(dir, name)) ?? "");
+      if (parsed === null) {
+        continue;
+      }
+      const layerKey: "KP" | "KT" = parsed.layer === "personal" ? "KP" : "KT";
+      const typeCode = KNOWLEDGE_TYPE_CODES[parsed.type];
+      next[layerKey][typeCode] = Math.max(next[layerKey][typeCode], parsed.counter);
+    }
+  }
+
+  writeFileSync(storeCountersPath(storeDir), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
 }

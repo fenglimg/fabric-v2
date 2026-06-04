@@ -1,13 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { defaultAgentsMetaCounters } from "../schemas/agents-meta.js";
+import { STORE_LAYOUT } from "../schemas/store.js";
 import {
   allocateStoreKnowledgeId,
   readStoreCounters,
+  reconcileStoreCounters,
   storeCountersPath,
 } from "./store-counters.js";
 
@@ -20,6 +22,18 @@ function makeStoreDir(): string {
   const dir = mkdtempSync(join(os.tmpdir(), "fabric-store-counters-"));
   created.push(dir);
   return dir;
+}
+
+// Write a canonical knowledge entry into the store's knowledge/<type> dir, as a
+// bulk import (`store migrate`) would — its id is NOT reflected in counters.json.
+function seedKnowledgeEntry(storeDir: string, type: string, id: string): void {
+  const dir = join(storeDir, STORE_LAYOUT.knowledgeDir, type);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${id}--seeded.md`),
+    `---\nid: ${id}\ntype: ${type}\nlayer: team\nmaturity: proven\n---\n\n# seeded\n`,
+    "utf8",
+  );
 }
 
 afterEach(() => {
@@ -101,6 +115,51 @@ describe("store-counters", () => {
     const dir = makeStoreDir();
     writeFileSync(storeCountersPath(dir), "{ not valid json", "utf8");
     expect(readStoreCounters(dir)).toEqual(defaultAgentsMetaCounters());
+  });
+
+  it("reconcileStoreCounters floors counters at the highest id present on disk", () => {
+    const dir = makeStoreDir();
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0001");
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0005");
+    seedKnowledgeEntry(dir, "pitfalls", "KT-PIT-0002");
+    seedKnowledgeEntry(dir, "decisions", "KP-DEC-0003"); // personal id co-resident
+
+    const counters = reconcileStoreCounters(dir);
+    expect(counters.KT.DEC).toBe(5);
+    expect(counters.KT.PIT).toBe(2);
+    expect(counters.KP.DEC).toBe(3);
+    // persisted
+    expect(readStoreCounters(dir).KT.DEC).toBe(5);
+  });
+
+  it("reconcile never lowers a counter below its persisted value (monotonic floor)", () => {
+    const dir = makeStoreDir();
+    writeFileSync(
+      storeCountersPath(dir),
+      JSON.stringify({
+        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+        KT: { MOD: 0, DEC: 9, GLD: 0, PIT: 0, PRO: 0 },
+      }),
+      "utf8",
+    );
+    // disk only has up to 0002, but the persisted counter already advanced to 9
+    // (e.g. 0003..0009 were deleted) — reconcile must keep 9, not collapse to 2.
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0002");
+    expect(reconcileStoreCounters(dir).KT.DEC).toBe(9);
+  });
+
+  it("F1 producer→consumer: after a bulk import + reconcile, allocate mints the NEXT free id (no collision)", async () => {
+    const dir = makeStoreDir();
+    // Simulate `store migrate` importing 3 entries WITHOUT touching counters.json.
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0001");
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0002");
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0003");
+    // Pre-reconcile, the stale zero counter WOULD collide on the first id:
+    expect(readStoreCounters(dir).KT.DEC).toBe(0);
+    // The migrate path's seed step:
+    reconcileStoreCounters(dir);
+    // Runtime allocation now continues the sequence instead of re-minting 0001.
+    expect(await allocateStoreKnowledgeId("team", "decisions", dir)).toBe("KT-DEC-0004");
   });
 
   it("round-trips an externally-written counters envelope", async () => {
