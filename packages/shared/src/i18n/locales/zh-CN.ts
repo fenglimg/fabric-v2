@@ -820,6 +820,14 @@ export const zhCNMessages: Messages = {
     "{opaque}/{total} 个 entry ({pct}%) 的 description.summary 等于 stable_id，超过 {threshold}% 阈值。narrow hint 输出会变成 `<id> · <id>` 而非真实概要，AI 看不到信息会主动跳过 fetch。首批不透明: {sample}。",
   "doctor.check.knowledge_summary_opaque.remediation":
     "调 fabric-review skill 重写不透明 summary 为一句人类可读的概要。rc.35 hint renderer fallback (TASK-06) 也会从 entry 的 `## Summary` 段自动合成临时 summary。",
+  // v2.2 W4 (G-GUARD / A6): store scope lint。
+  "doctor.check.store_scope_lint.name": "Store scope lint",
+  "doctor.check.store_scope_lint.ok":
+    "read-set 内所有 store 条目 scope 元数据齐备(semantic_scope + visibility_store,无 personal 泄漏,无 dangling project)。",
+  "doctor.check.store_scope_lint.message":
+    "{total} 个 store scope 问题: {breakdown}。例如 {sample}。",
+  "doctor.check.store_scope_lint.remediation":
+    "调 `fabric store backfill-scope` 补缺失的 semantic_scope/visibility_store;`fabric store re-scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

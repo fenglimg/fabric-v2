@@ -832,6 +832,14 @@ export const enMessages: Messages = {
     "{opaque}/{total} entries ({pct}%) have description.summary equal to their stable_id, exceeding the {threshold}% threshold. Narrow-hint output renders as `<id> · <id>`, signaling nothing useful, and AI clients skip the fetch. First opaque: {sample}.",
   "doctor.check.knowledge_summary_opaque.remediation":
     "Run the fabric-review skill to rewrite opaque summaries with one short human-readable phrase. The rc.35 hint renderer fallback (TASK-06) will also synthesize a temporary summary from the entry's `## Summary` section.",
+  // v2.2 W4 (G-GUARD / A6): store scope lint.
+  "doctor.check.store_scope_lint.name": "Store scope lint",
+  "doctor.check.store_scope_lint.ok":
+    "All read-set store entries carry valid scope metadata (semantic_scope + visibility_store, no personal leak, no dangling project).",
+  "doctor.check.store_scope_lint.message":
+    "{total} store scope issue(s): {breakdown}. e.g. {sample}.",
+  "doctor.check.store_scope_lint.remediation":
+    "Run `fabric store backfill-scope` to add missing semantic_scope/visibility_store; `fabric store re-scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

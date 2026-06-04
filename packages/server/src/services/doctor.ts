@@ -45,6 +45,7 @@ import { atomicWriteJson, atomicWriteText, withFileLock } from "@fenglimg/fabric
 import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { collectStoreKnowledgeSummaries, type StoreKnowledgeSummary } from "./cross-store-recall.js";
+import { lintStoreScopes, type ScopeLintViolation } from "./doctor-scope-lint.js";
 import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
@@ -1427,6 +1428,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       // not just the project agents.meta entries.
       inspectKnowledgeSummaryOpaque(meta, collectStoreKnowledgeSummaries(target)),
     ),
+    // v2.2 W4 (G-GUARD / A6): scope lint over the read-set stores — missing
+    // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
+    // only stores (the post-decolo knowledge home); never throws.
+    createScopeLintCheck(t, lintStoreScopes(projectRoot)),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null
@@ -4993,6 +4998,47 @@ export function createKnowledgeSummaryOpaqueCheck(
       sample: inspection.opaqueSample.join(", "),
     }),
     t("doctor.check.knowledge_summary_opaque.remediation"),
+  );
+}
+
+// v2.2 W4 (G-GUARD / A6): roll the three store scope lints into one doctor check.
+// personal-leak-in-shared-store is a privacy red line → manual error; missing
+// scope fields / dangling project refs are advisory warnings (fixable via the
+// store backfill-scope / re-scope tooling).
+export function createScopeLintCheck(
+  t: Translator,
+  violations: ScopeLintViolation[],
+): DoctorCheck {
+  if (violations.length === 0) {
+    return okCheck(
+      t("doctor.check.store_scope_lint.name"),
+      t("doctor.check.store_scope_lint.ok"),
+    );
+  }
+  const leaks = violations.filter((v) => v.code === "personal_leak_in_shared_store").length;
+  const missing = violations.filter((v) => v.code === "missing_scope_fields").length;
+  const dangling = violations.filter((v) => v.code === "dangling_project_ref").length;
+  const breakdown = [
+    leaks > 0 ? `${leaks} personal-leak` : null,
+    missing > 0 ? `${missing} missing-scope` : null,
+    dangling > 0 ? `${dangling} dangling-project` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(", ");
+  const first = violations[0];
+  const sample = `${first.code} — ${first.detail} (${first.stable_id ?? first.file})`;
+  const isError = leaks > 0;
+  return issueCheck(
+    t("doctor.check.store_scope_lint.name"),
+    isError ? "error" : "warn",
+    isError ? "manual_error" : "warning",
+    "store_scope_lint",
+    t("doctor.check.store_scope_lint.message", {
+      total: String(violations.length),
+      breakdown,
+      sample,
+    }),
+    t("doctor.check.store_scope_lint.remediation"),
   );
 }
 

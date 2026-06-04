@@ -238,13 +238,16 @@ describe("runDoctorReport", () => {
       // werewolf-eval failure mode where description.summary == stable_id.
       // Built from the same MetaInspection so no extra disk reads.
       "Knowledge summary opacity",
+      // v2.2 W4 (G-GUARD / A6): store scope lint — missing scope fields /
+      // personal-leak-in-shared-store / dangling project ref over read-set stores.
+      "Store scope lint",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(53);
+    expect(report.checks).toHaveLength(54);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
