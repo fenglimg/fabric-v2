@@ -52,5 +52,46 @@
 9. I1/I2 install
 10. Z1 收口
 
+## 进度 (2026-06-04 W5 loop)
+- ✅ M(migrate+dogfood)= G-MIGRATE-DOGFOOD 绿 · commit 12bac23
+- ✅ R0(computeReadSetRevision)+ R1(plan-context store-only)+ plan-context.test 38 绿 · f21ff79
+- ✅ R3(knowledge-sections + extract-knowledge 读 store; get-knowledge 改判归 R2)· 0f3cd9e
+- ⏳ R4 doctor(下一步, 见下)→ R5 cache → R6 MCP/http 确认 → R2 退役簇 → R7 余 fixture → I1/I2 → Z1
+
+## R4 doctor.ts 精确 cutover 计划(~58 触点, 8000+ 行, load-bearing)
+**原则**: co-location agents.meta(Z1 会删)→ 读它的 doctor 检查要么删(纯 co-location)要么重定向 per-store。
+**纯 co-location 检查 → 删除/退役**(检查的文件 Z1 后不存在):
+- `inspectMeta`(2497)读 `.fabric/agents.meta.json` → 退役(或返空)
+- `inspectIndexDrift`(7922-, createIndexDriftCheck 1368, applyIndexDriftFix 1967)→ agents.meta.nodes vs disk 漂移检查, co-location 专属 → 删
+- `inspectMetaManuallyDiverged`(5086)→ 同上删
+- `reconcileKnowledge`(doctor 触发 1623/1802)→ 重建 co-location nodes, 退役
+- content_ref_missing(3767)→ co-location node content_ref 检查, 删
+- `tryBuildRuleMeta`/`buildKnowledgeMeta`(2568)→ 退役
+**counter 类 → 重定向 per-store**(W4 已给 reconcileStoreCounters):
+- counter_desync(2409, 5282)读 agents.meta.json#counters → 改读 per-store counters.json(reconcileStoreCounters)
+- counter index-drift fix(8290 rewriteCountersEnvelope)→ per-store
+**已 store-aware(W4-A6, 保留)**: doctor-scope-lint.ts(lintStoreScopes)
+**测试**: doctor.test.ts(20 agents.meta refs)→ 删纯 co-location 检查的测试 + counter 测试迁 per-store fixture。可委派子代理。
+**风险**: doctor 主流程(runDoctor ~1139)按顺序跑 checks; 删 check 要同步删其在报告 assembly + i18n 串的引用, 否则 tsc/lint 断。
+
+## R2 退役簇(R4/R5 后, 零 consumer 时)
+- 删 load-active-meta.ts(loadActiveMeta/loadActiveMetaOrStale)
+- 删/瘦 knowledge-meta-builder.ts: buildKnowledgeMeta/writeKnowledgeMeta 退役; **保留** deriveRuleIdentity + extractRuleDescription(cross-store-recall.ts 用!)
+- 删 meta-reader.ts(readAgentsMeta) 或仅留 AgentsMeta 类型 + counter envelope schema 复用
+- get-knowledge.ts: 删 getKnowledge/loadGetKnowledgeContext/resolveKnowledgeForPath/matchRuleNodes; **保留 normalizeKnowledgePath**(plan-context/其他用); 同步处理 quarantined http-exp/api/knowledge-context.ts 的 import(可删该 endpoint)
+- 删测试: knowledge-id-allocator.test.ts(整删, allocator co-location 退役)· knowledge-meta-builder.test.ts(瘦/删)· load-active-meta.test.ts(删)
+- knowledge-sync.ts(666-667 buildKnowledgeMeta+readAgentsMeta reconcile): 见 sync open question
+
+## R7 余 fixture 迁移面(R4/R2 触发的测试破)
+doctor.test.ts(20)· knowledge-sync.test.ts(7)· rehydrate-state.test.ts(4)· review.test.ts(2)· recall.test.ts(1)· mcp-server.test.ts(2)· doctor-audience-tag.test.ts(2)· doctor-meta-error-humanize.test.ts(1)· cross-store-recall*.test(已 store, 应不破)。删除类: knowledge-id-allocator.test / knowledge-meta-builder.test / load-active-meta.test。
+**模板**: plan-context.test.ts + knowledge-sections.test.ts(已迁, store fixture helper 范例)。可批量委派子代理。
+
+## I1/I2 install
+- install.ts: 不再 scaffold .fabric/agents.meta.json + 空 knowledge 柜(保留 AGENTS.md/fabric-config.json bootstrap)。grep install.ts 的 agents.meta + knowledge dir scaffold 点。
+- install integration test 断言生成物清单不含 agents.meta + 空柜。
+
+## Z1 收口
+pnpm --filter shared build + pnpm -r exec tsc --noEmit + pnpm -r test 0 fail + 删 .fabric/knowledge & .fabric/agents.meta.json 验证。
+
 ## sync 边界 open question
 knowledge-sync.ts 用 buildKnowledgeMeta+readAgentsMeta 做 reconcile。用户 scope 列了 "doctor counter-reconcile 重定向" 但没明列 sync。sync 是 store 间 push/pull,reconcile meta 可能是其内部一致性步骤。R 簇推进到此时判:若 sync reconcile 依赖 co-location meta → 一并 cut;若已 store-aware → 不动。记录待 R6 时定。

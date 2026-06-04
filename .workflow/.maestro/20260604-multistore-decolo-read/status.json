@@ -92,33 +92,35 @@
       "subject": "新建 store-corpus revision helper(computeReadSetRevision)— over walkReadSetStores (qualifiedId+content sha) 排序哈希",
       "done_when": "shared/cross-store 暴露 revision helper; 替代 meta.revision 用于 BM25 cache key/selection_token 绑定/响应 revision_hash/stale 检测; token round-trip(plan-context emit ↔ get-knowledge-sections validate)两端同源",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "infrastructure",
-      "status": "open",
-      "note": "census 暴露的 R1 前置(承重设计): co-location 空后 meta.revision=sha256(''); 详见 .scratchpad/readside-cutover-map.md 承重设计决策段",
-      "verification": { "method": "deterministic", "verifier": "token round-trip 测试 + tsc", "evidence": null, "verified_at": null }
+      "note": "census 暴露的 R1 前置(承重设计): co-location 空后 meta.revision=sha256(''); 详见 .scratchpad/readside-cutover-map.md 承重设计决策段。实现实证: token round-trip 不依赖 revision(get-sections 校验走内存 token state 非 revision 重算), 风险证伪",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "computeReadSetRevision in cross-store-recall.ts + server tsc 0 err + plan-context.test.ts 38 绿", "evidence": "f21ff79", "verified_at": "2026-06-04" }
     },
     {
       "id": "R1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "plan-context 去 meta.nodes co-location 源, 只留 cross-store(buildCrossStoreRawItems/BodyIndex 范式)",
       "done_when": "plan-context.ts 不再读 co-location agents.meta nodes; 候选全来自 cross-store on-the-fly 索引",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + tsc + plan-context 测试", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep + tsc + plan-context 测试", "evidence": "f21ff79: loadActiveMetaOrStale/projectRawItems/auto-heal 全删; plan-context.test.ts 38 绿; server tsc 0 err", "verified_at": "2026-06-04" }
     },
     {
       "id": "R2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "load-active-meta / buildKnowledgeMeta(knowledge-meta-builder) 退役",
-      "done_when": "loadActiveMetaOrStale + buildKnowledgeMeta 无生产消费者; 删除或仅留 counter-envelope shim",
+      "subject": "load-active-meta / buildKnowledgeMeta(knowledge-meta-builder) + get-knowledge(R3 改判纳入) 退役",
+      "done_when": "loadActiveMetaOrStale + buildKnowledgeMeta + getKnowledge 无生产消费者; 删除或仅留 counter-envelope shim; 保留 normalizeKnowledgePath(plan-context 用)",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
       "status": "open",
+      "note": "get-knowledge 从 R3 改判纳入(非 MCP 工具, path-glob co-location 模型, 仅 quarantined http-exp 消费)。R4/R5 cut 完后此簇收尾。",
       "verification": { "method": "deterministic", "verifier": "grep 消费者 + tsc", "evidence": null, "verified_at": null }
     },
     {
       "id": "R3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "knowledge-sections / get-knowledge / extract-knowledge 读 store(cross-store on-the-fly)",
-      "done_when": "三个 service 不读 co-location agents.meta; 走 cross-store body index",
+      "subject": "knowledge-sections / extract-knowledge 读 store(cross-store on-the-fly); get-knowledge 改判归 R2",
+      "done_when": "knowledge-sections 走 cross-store body index; extract 删 obsolete heal",
       "ship_criteria_alignment": ["G-DECOLO-READ"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + tsc + 各 service 测试", "evidence": null, "verified_at": null }
+      "status": "done",
+      "note": "get-knowledge 改判: path-glob co-location 模型 + 非 MCP 工具 + 仅 quarantined http-exp(workspace 排除)消费 → 退役非重建, 归 R2 簇(保留被 plan-context 用的 normalizeKnowledgePath)。决策偏离用户字面'get-knowledge 读 store', 理由见 commit 0f3cd9e",
+      "verification": { "method": "deterministic", "verifier": "knowledge-sections.test 15 绿 + extract 46 绿 + server tsc 0 err", "evidence": "0f3cd9e", "verified_at": "2026-06-04" }
     },
     {
       "id": "R4", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
