@@ -108,11 +108,12 @@ describe("init-atomic: events.jsonl created as raw file and populated by install
 
 describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
   // v2.0: legacy `.fabric/bootstrap/README.md` and `.fabric/INITIAL_TAXONOMY.md`
-  // are no longer produced. rc.23 TASK-012 (F8a) also removed the baseline-emit
-  // stage, so the remaining atomic writes only target `agents.meta.json` and
-  // `forensic.json` on a fresh install — no knowledge .md files are placed.
+  // are no longer produced. rc.23 TASK-012 (F8a) removed the baseline-emit
+  // stage. W5 I1 retired the co-location agents.meta.json scaffold + knowledge
+  // cabinet, so the only atomic JSON write on a fresh install targets
+  // `forensic.json` — no knowledge .md files and no agents.meta are placed.
 
-  it("atomicWriteJson is called for agents.meta.json", async () => {
+  it("agents.meta.json is NOT scaffolded (W5 I1 co-location retired)", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-meta");
     tempRoots.push(target);
 
@@ -121,9 +122,8 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
     await initFabric(target);
 
     const calls = spy.mock.calls.filter(([p]) => p.endsWith("agents.meta.json"));
-    // Single scaffold-stage write (empty meta). rc.23 TASK-012 (F8a) removed
-    // the post-scan registerKnowledgeNodesInMeta mutation.
-    expect(calls.length).toBeGreaterThanOrEqual(1);
+    expect(calls).toHaveLength(0);
+    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
   });
 
   it("atomicWriteJson is called for forensic.json", async () => {
@@ -158,19 +158,6 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
 });
 
 describe("init-atomic: artifact content correctness after atomic lift", () => {
-  it("agents.meta.json is valid JSON with trailing newline after atomic write", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-meta-content");
-    tempRoots.push(target);
-
-    await initFabric(target);
-
-    const metaPath = join(target, ".fabric", "agents.meta.json");
-    expect(existsSync(metaPath)).toBe(true);
-    const raw = readFileSync(metaPath, "utf8");
-    expect(raw.endsWith("\n")).toBe(true);
-    expect(() => JSON.parse(raw)).not.toThrow();
-  });
-
   it("forensic.json is valid JSON with trailing newline after atomic write", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-forensic-content");
     tempRoots.push(target);
@@ -226,17 +213,17 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     expect(existsSync(join(fabricDir, "fabric-config.json"))).toBe(true);
   });
 
-  it("knowledge subdirs contain .gitkeep markers after init", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-gitkeep");
+  it("does NOT scaffold a co-location knowledge cabinet (W5 I1)", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-no-cabinet");
     tempRoots.push(target);
 
     await initFabric(target);
 
+    // W5 I1: the .fabric/knowledge/{decisions,...}/ cabinet (with .gitkeep
+    // markers) is no longer scaffolded. Team knowledge lives in mounted stores.
+    expect(existsSync(join(target, ".fabric", "knowledge"))).toBe(false);
     for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
-      const dir = join(target, ".fabric", "knowledge", sub);
-      expect(existsSync(dir)).toBe(true);
-      // .gitkeep is the canonical empty-directory marker.
-      expect(existsSync(join(dir, ".gitkeep"))).toBe(true);
+      expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(false);
     }
   });
 

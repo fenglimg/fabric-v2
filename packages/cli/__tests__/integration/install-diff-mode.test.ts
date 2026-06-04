@@ -8,8 +8,8 @@
  *      writes (byte-identical snapshot before/after).
  *   2. missing file auto-applies: deleting a managed hook script then
  *      re-running install restores it.
- *   3. drift aborts with a helpful message: byte-modifying a managed
- *      scaffold file (agents.meta.json) then re-running install throws
+ *   3. drift aborts with a helpful message: occupying a managed scaffold file
+ *      location (events.jsonl) with a directory then re-running install throws
  *      an error mentioning `fabric doctor` AND `fabric uninstall && fabric install`.
  *   4. --dry-run on existing workspace works: runInit with planOnly=true on
  *      a post-install fixture does NOT throw and emits no writes. Output
@@ -20,13 +20,19 @@
  * Source path: packages/cli/src/commands/install.ts — classifyFreshPath,
  * buildInitFabricPlan, executeInitExecutionPlan (drift-abort gate).
  *
+ * W5 I1 retired the co-location knowledge cabinet (.fabric/knowledge/*) and
+ * agents.meta.json scaffold — install now only scaffolds the event ledgers
+ * (events.jsonl + forensic.json) plus AGENTS.md / client bootstrap. The drift
+ * scenarios that previously drove structural drift via agents.meta.json now use
+ * the events.jsonl scaffold path (presence/file-type detection).
+ *
  * Scenarios 5 (--force legacy bypass) and 7 (events.jsonl as directory +
  * --force) were retired in rc.15 alongside the --force/--reapply flags.
  * The recovery path for both pathological cases is now `fabric uninstall &&
  * fabric install`, surfaced by the drift-abort message.
  */
 
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,7 +41,6 @@ import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
-  seedDriftedFile,
   seedMissingFile,
   snapshotTree,
 } from "../helpers/init-test-utils.ts";
@@ -84,6 +89,14 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
     tempRoots.push(target);
 
     await runInit(target);
+    // W5 I1: install no longer scaffolds the co-location knowledge cabinet
+    // nor agents.meta.json — assert they are absent after a real install.
+    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", "knowledge"))).toBe(false);
+    // The event ledgers ARE scaffolded.
+    expect(existsSync(join(target, ".fabric", "events.jsonl"))).toBe(true);
+    expect(existsSync(join(target, ".fabric", "forensic.json"))).toBe(true);
+
     const snapshot1Fabric = snapshotTree(target, ".fabric");
     const snapshot1Claude = snapshotTree(target, ".claude");
     const snapshot1Codex = snapshotTree(target, ".codex");
@@ -110,13 +123,14 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
     expect(snapshot2Codex).toEqual(snapshot1Codex);
     expect(snapshot2Cursor).toEqual(snapshot1Cursor);
 
-    // .fabric/agents.meta.json must be byte-stable (present-canonical → no
-    // write under diff-mode; rc.23 TASK-012 (F8a) removed the post-install
-    // baseline scan that previously mutated this file).
-    const metaBefore = snapshot1Fabric[".fabric/agents.meta.json"];
-    expect(metaBefore).toBeDefined();
-    const metaAfter = readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8");
-    expect(metaAfter).toBe(metaBefore);
+    // .fabric/forensic.json is a snapshot regenerated every run; events.jsonl
+    // grows by one install_diff_applied line per non-canonical run. The
+    // remaining managed config (fabric-config.json, .gitignore) must be
+    // byte-stable on a canonical re-run.
+    const configBefore = snapshot1Fabric[".fabric/fabric-config.json"];
+    expect(configBefore).toBeDefined();
+    const configAfter = readFileSync(join(target, ".fabric", "fabric-config.json"), "utf8");
+    expect(configAfter).toBe(configBefore);
   });
 });
 
@@ -155,8 +169,11 @@ describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", 
 
     await runInit(target);
 
-    // Strip schema fields so the structural classifier flags drift.
-    seedDriftedFile(target, ".fabric/agents.meta.json", () => "{}\n");
+    // Occupy a managed scaffold FILE location (events.jsonl) with a directory
+    // so the per-file classifier flags it as user-modified (not a file).
+    const eventsPath = join(target, ".fabric", "events.jsonl");
+    rmSync(eventsPath, { force: true });
+    mkdirSync(eventsPath, { recursive: true });
 
     let thrown: Error | null = null;
     try {
@@ -166,7 +183,7 @@ describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", 
     }
 
     expect(thrown).not.toBeNull();
-    expect(thrown!.message).toMatch(/agents\.meta\.json/);
+    expect(thrown!.message).toMatch(/events\.jsonl/);
     expect(thrown!.message).toMatch(/fabric doctor/);
     expect(thrown!.message).toMatch(/fabric uninstall/);
   });
@@ -211,7 +228,7 @@ describe("rc.14 TASK-002 install-diff-mode: --dry-run on existing workspace", ()
     await runInit(target);
 
     // Delete a managed scaffold file so classification surfaces "missing".
-    seedMissingFile(target, ".fabric/agents.meta.json");
+    seedMissingFile(target, ".fabric/events.jsonl");
 
     const captured = captureStdio();
     try {
@@ -221,7 +238,7 @@ describe("rc.14 TASK-002 install-diff-mode: --dry-run on existing workspace", ()
     }
 
     // The file is still missing — dry-run wrote nothing.
-    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", "events.jsonl"))).toBe(false);
     const allOutput = [...captured.stdout, ...captured.stderr].join("\n");
     expect(allOutput).toMatch(/missing|缺失/);
   });

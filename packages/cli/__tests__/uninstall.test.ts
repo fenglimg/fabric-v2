@@ -16,7 +16,7 @@
  * idempotency on missing artifacts is exercised by case (f).
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -109,20 +109,30 @@ describe("uninstall plan enumeration", () => {
     expect(plan.stages.find((s) => s.name === "scaffold")?.skipped).toBe(false);
     expect(plan.stages.find((s) => s.name === "bootstrap")?.skipped).toBe(false);
 
-    // Scaffold entries: every FABRIC_STATE_FILES + every knowledge subdir
-    // .gitkeep must be in the entry list and existsSync must return true on a
-    // freshly-init'd fixture (so absent: false).
+    // Scaffold entries: the uninstall command still enumerates every
+    // FABRIC_STATE_FILES + every knowledge subdir .gitkeep. W5 I1 retired the
+    // co-location agents.meta.json + .gitkeep cabinet scaffold in install, so
+    // on a freshly-init'd fixture those entries now report absent: true (the
+    // would-be removals are no-ops), while events.jsonl / forensic.json (still
+    // scaffolded) report absent: false.
     const stateFilePaths = plan.scaffold.entries.filter((e) => e.kind === "state-file");
     expect(stateFilePaths.map((e) => e.path).sort()).toEqual(
       ["agents.meta.json", "events.jsonl", "forensic.json"]
         .map((name) => join(target, ".fabric", name))
         .sort(),
     );
-    expect(stateFilePaths.every((e) => e.absent === false)).toBe(true);
+    const absentByName = new Map(
+      stateFilePaths.map((e) => [e.path, e.absent] as const),
+    );
+    expect(absentByName.get(join(target, ".fabric", "agents.meta.json"))).toBe(true);
+    expect(absentByName.get(join(target, ".fabric", "events.jsonl"))).toBe(false);
+    expect(absentByName.get(join(target, ".fabric", "forensic.json"))).toBe(false);
 
     const gitkeepEntries = plan.scaffold.entries.filter((e) => e.kind === "gitkeep");
     expect(gitkeepEntries.length).toBe(6); // decisions, pitfalls, guidelines, models, processes, pending
-    expect(gitkeepEntries.every((e) => e.absent === false)).toBe(true);
+    // W5 I1: install no longer writes the .gitkeep cabinet, so every gitkeep
+    // candidate is absent on a fresh install.
+    expect(gitkeepEntries.every((e) => e.absent === true)).toBe(true);
 
     // rc.15 TASK-002 — --purge gone; entry kinds collapse to state-file + gitkeep.
     // Knowledge subdir contents and the .fabric/ directory itself are unconditionally
@@ -186,10 +196,17 @@ describe("uninstall default scaffold execution", () => {
 
     await initFabric(target);
 
-    // Pre-conditions: state files + knowledge .gitkeep markers must exist.
-    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(true);
+    // Pre-conditions: the event-ledger state files are scaffolded by install.
+    // W5 I1 retired the agents.meta.json scaffold, so it is absent post-install.
+    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
     expect(existsSync(join(target, ".fabric", "events.jsonl"))).toBe(true);
     expect(existsSync(join(target, ".fabric", "forensic.json"))).toBe(true);
+
+    // Seed a user-authored knowledge tree (created on-demand, not by install)
+    // to verify default uninstall preserves it.
+    for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
+      mkdirSync(join(target, ".fabric", "knowledge", sub), { recursive: true });
+    }
 
     vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -205,11 +222,9 @@ describe("uninstall default scaffold execution", () => {
     expect(existsSync(join(target, ".fabric", "forensic.json"))).toBe(false);
 
     // Knowledge directory tree is preserved (default uninstall keeps user
-    // knowledge entries). The .gitkeep markers themselves are removed by the
-    // default scaffold, but the subdir directories survive.
+    // knowledge entries). The subdir directories survive.
     expect(existsSync(join(target, ".fabric", "knowledge"))).toBe(true);
     for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
-      // Subdir survives even though its .gitkeep is gone.
       expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(true);
     }
   });
