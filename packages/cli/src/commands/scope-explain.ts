@@ -5,12 +5,13 @@ import { FabricError } from "@fenglimg/fabric-shared/errors";
 import { getProjectTranslator } from "../i18n.js";
 import { scopeExplain } from "../store/scope-explain.js";
 
+// DEPRECATED: Use `fabric info scope <path>` instead. Will be removed in v3.
 // v2.1.0-rc.1 P3 (F5): `fabric scope-explain <scope>` — show the resolved
 // read-set + write target for a scope in the current project.
 export default defineCommand({
   meta: {
     name: "scope-explain",
-    description: "Explain the resolved read-set and write target for a scope",
+    description: "[DEPRECATED] Use 'fabric info scope <path>' instead",
   },
   args: {
     scope: {
@@ -20,6 +21,8 @@ export default defineCommand({
     },
   },
   run({ args }) {
+    // Emit deprecation warning to stderr (non-blocking)
+    console.error("⚠️  DEPRECATED: 'fabric scope-explain' is deprecated. Use 'fabric info scope <path>' instead.");
     const projectRoot = process.cwd();
     let result;
     try {

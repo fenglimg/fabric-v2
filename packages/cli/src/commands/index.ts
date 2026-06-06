@@ -4,12 +4,16 @@
 // longer wired into the main CLI; restore via the package README's restoration
 // recipe if a future web UI surface re-introduces it.
 export const allCommands = {
-  install: () => import("./install.js").then((module) => module.default),
+  // v2.2.0-rc.5: pipeline-based install with TUI renderer (EPIC-005/006/007/008)
+  install: () => import("./install-v2.js").then((module) => module.installCommand),
   // v2.1.0-rc.1 P3: multi-store lifecycle command group (list/add/remove/explain).
   store: () => import("./store.js").then((module) => module.default),
   // v2.1.0-rc.1 P3 (S9/S17/S37): multi-store pull --rebase + push, conflict resume.
   sync: () => import("./sync.js").then((module) => module.default),
+  // EPIC-010: Unified info command (replaces whoami/status/scope-explain).
+  info: () => import("./info.js").then((module) => module.default),
   // v2.1.0-rc.1 P3 (F5): read-only identity/status info commands.
+  // DEPRECATED: Use `fabric info` instead. These will be removed in v3.
   whoami: () => import("./whoami.js").then((module) => module.default),
   status: () => import("./status.js").then((module) => module.default),
   "scope-explain": () => import("./scope-explain.js").then((module) => module.default),

@@ -35,6 +35,20 @@ export const zhCNMessages: Messages = {
   "cli.shared.invalid-port": "无效端口：{value}",
   "cli.shared.error": "错误",
 
+  // EPIC-011: 分组帮助显示 i18n 键
+  "cli.help.group.setup.install": "在当前仓库初始化 Fabric",
+  "cli.help.group.setup.config": "配置 Fabric 设置",
+  "cli.help.group.daily.sync": "与远程 store 同步团队知识",
+  "cli.help.group.daily.info": "显示项目状态",
+  "cli.help.group.diagnostic.doctor": "检查 Fabric 健康状态并修复问题",
+  "cli.help.group.advanced.store": "管理知识 store (详见: fabric store --help)",
+  "cli.help.group.advanced.whoami": "显示机器标识",
+  "cli.help.group.advanced.whoami.deprecated": "已弃用 → info --global",
+  "cli.help.group.advanced.status": "显示项目状态",
+  "cli.help.group.advanced.status.deprecated": "已弃用 → info",
+  "cli.help.group.advanced.scope-explain": "解释 scope",
+  "cli.help.group.advanced.scope-explain.deprecated": "已弃用 → info scope",
+
   "cli.approve.description": "从命令行批准已漂移的 human-lock 记录。",
   "cli.approve.args.all.description": "不提示，批准所有已漂移的 human-lock 记录。",
   "cli.approve.args.interactive.description": "逐条提示后批准已漂移的 human-lock 记录。",

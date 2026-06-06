@@ -4,9 +4,10 @@ import { getProjectTranslator } from "../i18n.js";
 import { warnUnknownFlags } from "../lib/unknown-flags.js";
 import { whoami } from "../store/info-ops.js";
 
+// DEPRECATED: Use `fabric info --global` instead. Will be removed in v3.
 // v2.1.0-rc.1 P3 (F5): `fabric whoami` — machine uid + mounted stores.
 export default defineCommand({
-  meta: { name: "whoami", description: "Show this machine's Fabric uid and mounted stores" },
+  meta: { name: "whoami", description: "[DEPRECATED] Use 'fabric info --global' instead" },
   args: {
     // F27: `--json` machine-readable output (was silently ignored — the command
     // declared no args, so citty swallowed the flag and still printed text).
@@ -14,6 +15,8 @@ export default defineCommand({
   },
   run({ args }: { args: { json?: boolean } }) {
     warnUnknownFlags(["json"]);
+    // Emit deprecation warning to stderr (non-blocking)
+    console.error("⚠️  DEPRECATED: 'fabric whoami' is deprecated. Use 'fabric info --global' instead.");
     const info = whoami();
     if (args.json === true) {
       console.log(JSON.stringify(info, null, 2));
