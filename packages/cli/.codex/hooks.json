@@ -1,0 +1,35 @@
+{
+  "events": {
+    "Stop": [
+      {
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\""
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\""
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\""
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\""
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\""
+      }
+    ],
+    "SessionEnd": [
+      {
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/session-end-marker.cjs\""
+      }
+    ]
+  }
+}

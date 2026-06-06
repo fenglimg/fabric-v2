@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "fabric": {
+      "command": "C:\\dev\\nvm\\v20.16.0\\node.exe",
+      "args": [
+        "C:\\Project\\fabric-v2\\packages\\server\\dist\\index.js"
+      ]
+    }
+  }
+}

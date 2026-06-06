@@ -1,0 +1,91 @@
+{
+  "session_id": "maestro-20260605-deferred-audit",
+  "created_at": "2026-06-05T10:30:00.000Z",
+  "intent": "多Agent审计验证所有deferred事项的实际代码实现状态，一一对比用实际代码佐证看是否完成了",
+  "task_type": "analyze",
+  "chain_name": "team_coordinate",
+  "source": "maestro",
+  "ralph_protocol_version": "1",
+  "active_step_index": 0,
+  "auto_mode": true,
+  "cli_tool": "claude",
+  "context": {
+    "scratch_dir": null,
+    "plan_dir": null,
+    "analysis_dir": null,
+    "brainstorm_dir": null
+  },
+  "steps": [
+    {
+      "index": 0,
+      "skill": "team-coordinate",
+      "args": "\"验证v2.2-Wave1候选集代码状态: MC3-fix-guidance/A-INFRA-1-BM25/A-INFRA-2-CJK/A-INFRA-3-topk\"",
+      "type": "skill",
+      "status": "in_progress",
+      "started_at": "2026-06-05T10:30:00.000Z"
+    },
+    {
+      "index": 1,
+      "skill": "team-coordinate",
+      "args": "\"验证v2.1全局化B1-B4 deferred事项: agents.meta退役/doctor改读store/内部工具改读store\"",
+      "type": "skill",
+      "status": "pending"
+    },
+    {
+      "index": 2,
+      "skill": "team-coordinate",
+      "args": "\"验证hollow-feature-audit F1/F2/F3空壳状态: multi-store读侧/sync零push/store读写断开\"",
+      "type": "skill",
+      "status": "pending"
+    },
+    {
+      "index": 3,
+      "skill": "team-coordinate",
+      "args": "\"验证rc.x遗留项: LLM-judge/Cursor-capture/i18n-keys/werewolf回归\"",
+      "type": "skill",
+      "status": "pending"
+    }
+  ],
+  "waves": [],
+  "current_step": 0,
+  "status": "running",
+  "boundary_contract": {
+    "in_scope": [
+      "逐一grep/read实际代码验证每项deferred声称",
+      "对比规划文档中的描述与当前代码真实状态",
+      "标记已完成但文档未更新、真正未完成、已过时应删除三类"
+    ],
+    "out_of_scope": [
+      "修复任何发现的bug",
+      "更新规划文档"
+    ]
+  },
+  "execution_criteria": [
+    "每个agent负责一个主题，并行验证后汇总",
+    "验证必须引用具体file:line代码证据",
+    "最终产出对比报告，明确每项的实际状态"
+  ],
+  "task_decomposition": [
+    {
+      "id": "T1",
+      "subject": "验证v2.2 Wave 1 (MC3/BM25/CJK/topk) 代码状态",
+      "status": "in_progress",
+      "done_when": "每个候选项都有grep/read代码证据证明实现或未实现"
+    },
+    {
+      "id": "T2",
+      "subject": "验证v2.1全局化 B1-B4 deferred状态",
+      "status": "pending"
+    },
+    {
+      "id": "T3",
+      "subject": "验证hollow-feature F1/F2/F3空壳状态",
+      "status": "pending"
+    },
+    {
+      "id": "T4",
+      "subject": "验证rc.x遗留项状态",
+      "status": "pending"
+    }
+  ]
+}
