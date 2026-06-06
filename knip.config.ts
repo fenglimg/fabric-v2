@@ -29,6 +29,10 @@ const config: KnipConfig = {
     'picocolors',
     'string-width',
     'tree-sitter-typescript',
+    // CLI TUI: ink + @inkjs/ui are imported from .tsx files which knip --strict
+    // does not trace as dependency consumers (TSX not in default resolve set).
+    'ink',
+    '@inkjs/ui',
     // Server: used inside services but missed via workspace dep chain under --strict.
     'express',
     'chokidar',
