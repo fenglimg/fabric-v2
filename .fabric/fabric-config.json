@@ -9,7 +9,7 @@
     }
   ],
   "active_write_store": "team",
-  "fabric_language": "zh-CN",
+  "fabric_language": "zh-CN-hybrid",
   "default_layer_filter": "both",
   "archive_hint_cooldown_hours": 12,
   "underseed_node_threshold": 10,

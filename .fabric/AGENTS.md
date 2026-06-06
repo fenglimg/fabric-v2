@@ -35,9 +35,9 @@
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer `KP-*` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
 - **Usage**:常态走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 正文。仅当单步正文过多致上下文过载、需精确裁剪噪音时才两步:`fab_plan_context(paths=[...])` 返回 `selection_token` + 顶层 `candidates[]`,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<从 candidates[].stable_id 挑>...] })` 拉全文;`selection_token` 必须来自最近一次 `fab_plan_context`,不可凭空编造。
 - **session_id**: 调用 `fab_recall` / `fab_plan_context` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 archive-hint hook 准确识别跨会话 debt 状态。
-- **Skills (7)**:写流程 `fabric-archive` / `fabric-review` / `fabric-import`;store 流程 `fabric-store` / `fabric-sync` / `fabric-connect`;诊断 `fabric-audit`。
+- **Write flows**:`fabric-archive` / `fabric-review` / `fabric-import` 三个 Skills。
 - **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
-- **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config `archive_edit_threshold` 一致)/ 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
+- **Archive cadence nudge** (rc.36): 每完成 5+ 次 Edit / 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): `.fabric/knowledge/pending/` 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
@@ -68,12 +68,10 @@
 
   Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
 
-## Cite policy (v2.1 ⑤ recall-based: 自动记账优先, 首行 KB: 可选 override)
+## Cite policy (v2.0.0-rc.37 NEW-1: 简化 4-state → 2-state)
 
-- **核心 (recall-first 自动记账)**: 改任何文件前先 `fab_recall(paths=[<被改文件>])`。系统按"本 session 近期 recall 命中的 path 与编辑目标重叠"自动把召回的 KB 关联为该次 edit 的引用 —— **无需手写回复首行**。PreToolUse hook 在检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007);改前 recall 过(或已手写 cite)即静默。为什么不再逼首行:先想后说,recall 才是引用发生的真实信号,手写首行违背 CoT 且 `KB: none` 逃逸使旧规则形同虚设。
-- **可选 override (首行 KB:)**: 仍可在回复首行手写 `KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]` 或 `KB: none [<reason>]` 来显式标注/精确化引用;cite-line 解析器保留(向后兼容),旧习惯不破。
-- **`[applied]` 验证义务**: 引用任何 id(自动或手写)的前提是先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
-- **store 前缀 (v2.1, 多 store)**: 当 read-set 含多个 store 且同一 local id 在多 store 间 shadow 时,cite 必须 store-qualified: `KB: <store-alias>:<id> ...`(如 `KB: team:KT-DEC-0001 (auth) [applied]`);alias 用户自定/canonical,底层 UUID。单 store 或无歧义时裸 `KB: <id>` 仍 valid。personal-only 条目 cite 进团队产物=强 warning(接 P2 写路径防泄漏 R5#3)。
+- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 `KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]` 或 `KB: none [<reason>]`。
+- **`[applied]` 验证义务**: 引用任何 id 前必须先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
 - **contract 语法**: decisions/pitfalls 类 `[applied]` cite 尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
 - **skip reason 词典**: `sequencing | conditional | semantic | aesthetic | architectural | other:<text>`。
 - **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
@@ -82,4 +80,3 @@
 - **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_recall` / `fab_plan_context`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
 - **稽核**: `fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出 cite 覆盖率,含 `KB: none` sentinel 拆分。本规则不阻断你工作,只记录。
 - **Backward compat**: 解析器同时接受老 4-state tags (`planned` / `recalled` / `chained-from <id>`) — 都映射到 `[applied]` 语义,gradually 迁到新简化形态即可,旧 session 留下的 cite 仍然计入 cite-coverage。
-- **完整参考下沉** (v2.2 SK5): contract operator / skip·dismissed 词典 / 类型路由 / 稽核口径 / **裁决阶梯** (AI自决 → 多-LLM 含零上下文冷评 → 非阻塞队列) 的权威详参在 `fabric-review` skill 的 `ref/cite-contract.md` —— bootstrap 只留可执行 core,治理细节归 ref 不再撑大 bootstrap。

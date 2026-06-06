@@ -3,16 +3,15 @@
 // Reads `.fabric/agents.meta.json` to build a stable_id → knowledge_type lookup
 // map, then scans summarised assistant turns (cite_ids + cite_tags +
 // cite_commitments parallel arrays produced by lib/cite-line-parser.cjs) for
-// turns that cited a decision-class or pitfall-class id with [applied] tag
-// but no operator commitment and no skip:<reason>. (v2.1.0-rc.1 ADJ-P4-1:
-// legacy [recalled] is remapped to [applied] by the parser upstream.)
+// turns that cited a decision-class or pitfall-class id with [recalled] tag
+// but no operator commitment and no skip:<reason>.
 //
 // Emits one reminder line per offending id (deduplicated across the turn
 // summary). Non-blocking — caller writes the lines to stderr; failure to
 // load the meta file or absence of offenders means zero output.
 //
 // Reminder template (rc.24 lock B2 / L1 enforcement layer):
-//   ⚠ KB: <id> cited as [applied] but missing contract; add → edit:<glob>
+//   ⚠ KB: <id> cited as [recalled] but missing contract; add → edit:<glob>
 //     or → skip:<reason> next turn
 //
 // Type filter rationale: only `decision` and `pitfall` types are contract-
@@ -35,7 +34,7 @@ const { join } = require("node:path");
 const FABRIC_DIR = ".fabric";
 const AGENTS_META_FILE = "agents.meta.json";
 
-// Knowledge types that require contract commitments on [applied] cites.
+// Knowledge types that require contract commitments on [recalled] cites.
 // Matches the singular form persisted by `withDerivedAgentsMetaNodeDefaults`
 // in packages/shared/src/schemas/agents-meta.ts. We accept both singular
 // and plural defensively so a future schema change to plurals doesn't
@@ -99,17 +98,13 @@ function readKnowledgeTypeMap(projectRoot) {
  * don't, returning the reminder lines to emit.
  *
  * Filter (all must hold for a given index i within a turn):
- *   1. cite_tags includes "applied" (turn-level — applies to the cited id)
+ *   1. cite_tags includes "recalled" (turn-level — applies to the cited id)
  *   2. cite_commitments[i].operators is empty AND cite_commitments[i].skip_reason is null
  *   3. idTypeMap.get(cite_ids[i]) is in {decision, pitfall}
  *
- * v2.1.0-rc.1 (ADJ-P4-1, full remap): the gate is the rc.37 NEW-1 `applied`
- * tag. Legacy [recalled] cites are remapped to [applied] by the parser before
- * they reach here, so gating on "applied" covers both old and new authoring.
- *
  * Tag-level filter clarification: rc.20 cite_tags is parallel to ALL parsed
  * lines (including sentinels), but for the contract-missing reminder we use
- * the turn-level semantic — if the assistant tagged the cite as [applied],
+ * the turn-level semantic — if the assistant tagged the cite as [recalled],
  * the operator-or-skip contract applies. Per TASK-04 invariant, cite_ids and
  * cite_commitments are parallel index-aligned arrays (length-N each).
  *
@@ -136,9 +131,8 @@ function formatContractMissingReminders({ assistant_turns, idTypeMap }) {
     const citeTags = Array.isArray(turn.cite_tags) ? turn.cite_tags : [];
     const commitments = Array.isArray(turn.cite_commitments) ? turn.cite_commitments : [];
 
-    // Turn-level: the [applied] tag must appear in the turn's tag set
-    // (v2.1.0-rc.1 ADJ-P4-1: legacy [recalled] is remapped to [applied]).
-    if (!citeTags.includes("applied")) continue;
+    // Turn-level: the [recalled] tag must appear in the turn's tag set.
+    if (!citeTags.includes("recalled")) continue;
 
     // Iterate by cite_ids.length — sentinel entries don't have ids so they
     // contribute zero iterations even if cite_tags carries "none".
@@ -166,7 +160,7 @@ function formatContractMissingReminders({ assistant_turns, idTypeMap }) {
   const reminders = [];
   for (const id of offenders) {
     reminders.push(
-      `⚠ KB: ${id} cited as [applied] but missing contract; add \`→ edit:<glob>\` or \`→ skip:<reason>\` next turn`,
+      `⚠ KB: ${id} cited as [recalled] but missing contract; add \`→ edit:<glob>\` or \`→ skip:<reason>\` next turn`,
     );
   }
   return reminders;

@@ -1,481 +1,229 @@
 #!/usr/bin/env node
 /**
- * v2.1 ⑤ cite-redesign (P5) — recall-based cite accounting hook.
+ * v2.0.0-rc.34 TASK-06 — cite-policy long-session evict sidecar.
  *
- * PreToolUse(Edit/Write/MultiEdit) hook (all three clients). REPLACES the
- * rc.34 turn-counter UserPromptSubmit reminder: instead of demanding a
- * hand-written `KB:` first line (which the cold-eval converged 2/5 weakest —
- * it forces the agent to declare a citation before it has thought, and the
- * `KB: none` escape hatch made the rule inert), this hook infers the citation
- * from REAL behavior.
+ * UserPromptSubmit hook (Claude Code only). Drives periodic cite-policy
+ * reminder injection in long sessions where attention decay erodes contract
+ * adherence (rc.32 Batch 1: 3.1% cite coverage baseline).
  *
- * Core idea: the audit value of a cite = "which knowledge informed this edit".
- * That fact is observable WITHOUT the agent hand-writing anything: if the
- * agent ran `fab_recall(paths)` / `fab_plan_context(paths)` whose target paths
- * overlap the file it is now editing, the server already logged a
- * `knowledge_context_planned` event (target_paths + final_stable_ids +
- * session_id) into `.fabric/events.jsonl`. The recall→edit path overlap IS the
- * citation — doctor `--cite-coverage` (C3) reconstructs it by joining
- * knowledge_context_planned ⋈ edit_intent_checked. No ledger write is needed
- * here; the join is the accounting.
+ * Strategy: **turn-count window** (locked decision per rc.34 plan 2026-05-26;
+ * time-based and token-budget strategies pushed to rc.35). The hook maintains
+ * a per-session counter in `.fabric/.cache/cite-evict-state.json`; on each
+ * UserPromptSubmit, increment the counter and — when
+ * `turn_count % cite_evict_interval == 0` AND `cite_evict_interval > 0` —
+ * emit a compact cite-contract reminder via Claude Code's stdout JSON
+ * envelope (hookSpecificOutput.additionalContext, same channel as rc.33 W2
+ * knowledge-hint-broad reminder-to-context).
  *
- * Hook responsibility (runtime, this file): the NUDGE. On a PreToolUse edit:
- *   - recall-backed (a recent in-session knowledge_context_planned overlaps the
- *     edit path) → silent. The edit is informed; nothing to remind.
- *   - manual override (the agent already wrote a `KB:` line this session →
- *     observed as an assistant_turn_observed event carrying cite_ids) → silent.
- *     The legacy hand-written cite path is still honored (back-compat).
- *   - otherwise → soft nudge: "改前先 fab_recall(paths)". NUDGE, never a gate
- *     (KT-DEC-0007): Claude Code receives it as a PreToolUse additionalContext
- *     envelope on stdout; Codex/Cursor as stderr. The edit always proceeds.
+ * Config: `cite_evict_interval` (number, default 0 = OFF, opt-in). Recommend
+ * 10-20 for active sessions; 5 for high-contract-criticality projects.
  *
- * Config (.fabric/fabric-config.json):
- *   - `cite_recall_nudge` (boolean, default true) — master switch. Set false to
- *     silence the nudge entirely (mirrors the cite_evict_interval=0 opt-out
- *     convention of the rc.34 hook this replaces).
- *   - `cite_recall_window_minutes` (number, default 30, >=0) — how far back a
- *     recall counts as "for this edit". 0 = unbounded (any prior in-session
- *     recall of an overlapping path counts).
- *   - `cite_nudge_ignore_globs` (string[], default [".workflow/**"]) — F2: edit
- *     paths matching any glob are exempt from the nudge. Orchestration / meta
- *     files (e.g. `.workflow/` scratchpads) are not source the cite policy is
- *     meant to govern, so editing them should never demand a recall. User globs
- *     are MERGED with the default (not replaced), so the `.workflow/` exemption
- *     always holds. `*` = within a segment, `**` = across segments.
+ * State sidecar shape:
+ *   { session_id: string, turn_count: number }
  *
- * Failure invariant: every error path (stdin parse, ledger read, config read,
- * emit failure) MUST end in silent exit 0. The hook never blocks the edit on
- * its own malfunction.
+ * Session-boundary semantics: when incoming `session_id` (read from stdin
+ * payload) differs from sidecar's `session_id`, the counter resets to 1 (new
+ * session always starts at 1, never 0 — first turn is "turn 1" not "turn 0").
  *
- * Cross-client: PreToolUse(Edit|Write|MultiEdit) is registered on all three
- * clients (Claude Code / Codex CLI / Cursor) — see hooks/configs/*.json. This
- * is strictly better parity than the rc.34 hook, which was Claude-Code-only
- * for the per-turn window and SessionStart-only for Codex/Cursor.
+ * Failure invariant: any error path (sidecar I/O failure, stdin parse error,
+ * config read failure) MUST end in silent exit 0. The hook never blocks user
+ * prompt submission on its own malfunction.
+ *
+ * Cross-client scope: Claude Code only (relies on hookSpecificOutput contract
+ * + UserPromptSubmit event registration). Codex CLI and Cursor don't have an
+ * equivalent event hook; cite-coverage telemetry there relies on Stop-hook
+ * fabric-hint and SessionStart knowledge-hint-broad (rc.33 W2 channel).
  */
 
-const { readFileSync } = require("node:fs");
-const { isAbsolute, join, relative } = require("node:path");
-
-// Shared config read + client-aware emit (Claude Code stdout envelope vs
-// Codex/Cursor stderr). The installer copies every lib/*.cjs alongside the hook.
+// v2.0.0-rc.37 NEW-19: config + sidecar I/O now flow through shared libs so
+// the read-config-or-default and read/write-sidecar boilerplate lives in one
+// canonical place. Unguarded require mirrors knowledge-hint-broad's
+// banner-i18n import — the installer copies every lib/*.cjs alongside the hook.
 const { readConfigNumber } = require("./lib/config-cache.cjs");
+const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
+// v2.0.0-rc.37 NEW-30: client detect + stdin + channel-aware emit now flow
+// through the shared adapter (Claude Code stdout envelope vs Codex/Cursor
+// stderr). Replaces the local isClaudeCode + readStdinJson + inline emits.
 const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
 
-const EVENTS_LEDGER_REL = join(".fabric", "events.jsonl");
+// Sidecar basename resolved under .fabric/.cache/ by state-store.
+const EVICT_STATE_FILE_NAME = "cite-evict-state.json";
 
-// Tool names that trigger the recall-nudge branch. PreToolUse fires on many
-// tool names across clients; we only react to file-edit tools (mirrors
-// knowledge-hint-narrow.cjs EDIT_TOOL_NAMES).
-const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
-
-// Default recency window: a fab_recall within the last 30 minutes counts as
-// "informing" the edit. Generous — a long edit session after one recall sweep
-// should not re-nudge on every file.
-const DEFAULT_CITE_RECALL_WINDOW_MINUTES = 30;
-
-// -----------------------------------------------------------------------------
-// Config
-// -----------------------------------------------------------------------------
+// Default OFF (opt-in). Mirrors hint_broad_cooldown_hours and
+// archive_hint_cooldown_hours convention of "feature exists but inert until
+// user enables it." Schema in packages/shared/src/schemas/fabric-config.ts
+// caps at sensible bounds (positive int).
+// v2.0.0-rc.37 NEW-18: default flipped 0 (opt-in OFF) → 10 (default ON every
+// 10 turns) so users get cite-policy nudges out-of-the-box. Operators on
+// short / scripted sessions can still set `cite_evict_interval: 0` in
+// .fabric/fabric-config.json to opt back out. Per-NEW-1 reminder body now
+// uses the simplified 2-state vocabulary ([applied] / [dismissed:<reason>]).
+const DEFAULT_CITE_EVICT_INTERVAL = 10;
 
 /**
- * Read `.fabric/fabric-config.json#cite_recall_nudge`. Default true (ON).
- * Any failure path (missing file, parse error, non-boolean) → default.
+ * Read .fabric/fabric-config.json#cite_evict_interval. Returns the parsed
+ * positive integer OR DEFAULT_CITE_EVICT_INTERVAL on any failure path
+ * (missing file, parse error, non-numeric value, negative). Mirrors the
+ * defensive config-read pattern in knowledge-hint-broad.cjs readBroadCooldownHours.
  */
-function readNudgeEnabled(cwd) {
-  try {
-    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
-    if (parsed && typeof parsed === "object" && typeof parsed.cite_recall_nudge === "boolean") {
-      return parsed.cite_recall_nudge;
-    }
-  } catch {
-    // fall through to default
-  }
-  return true;
-}
-
-/**
- * Read `.fabric/fabric-config.json#cite_recall_window_minutes`. Default 30,
- * floor 0 (0 = unbounded). Reuses the shared defensive numeric reader.
- */
-function readWindowMinutes(cwd) {
-  return readConfigNumber(cwd, "cite_recall_window_minutes", DEFAULT_CITE_RECALL_WINDOW_MINUTES, {
+function readEvictInterval(cwd) {
+  return readConfigNumber(cwd, "cite_evict_interval", DEFAULT_CITE_EVICT_INTERVAL, {
     min: 0,
     integer: true,
   });
 }
 
-// F2: meta/orchestration paths exempt from the cite nudge by default. The cite
-// policy governs SOURCE edits ("which knowledge informed this code change");
-// editing a `.workflow/` scratchpad is not such an edit, so nudging there is
-// pure noise with no clean opt-out before F2.
-const DEFAULT_CITE_NUDGE_IGNORE_GLOBS = [".workflow/**"];
-
 /**
- * Read `.fabric/fabric-config.json#cite_nudge_ignore_globs` (string[]) and MERGE
- * it with the built-in defaults. Any failure path (missing file, parse error,
- * non-array, non-string entries) → defaults only. User entries never shrink the
- * default exemption set; they only widen it.
+ * Read prior state sidecar. Returns `null` on first-run or any failure;
+ * callers treat null as "no prior state" (caller will write fresh state
+ * with turn_count=1).
  */
-function readIgnoreGlobs(cwd) {
-  const out = [...DEFAULT_CITE_NUDGE_IGNORE_GLOBS];
-  try {
-    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.cite_nudge_ignore_globs)) {
-      for (const g of parsed.cite_nudge_ignore_globs) {
-        if (typeof g === "string" && g.length > 0 && !out.includes(g)) out.push(g);
-      }
-    }
-  } catch {
-    // fall through to defaults
-  }
-  return out;
+function readEvictState(cwd) {
+  return readJsonState(
+    cwd,
+    EVICT_STATE_FILE_NAME,
+    (parsed) =>
+      parsed &&
+      typeof parsed.session_id === "string" &&
+      typeof parsed.turn_count === "number" &&
+      Number.isInteger(parsed.turn_count) &&
+      parsed.turn_count >= 0,
+  );
+}
+
+function writeEvictState(cwd, sessionId, turnCount) {
+  // best-effort — counter loss is acceptable, hook never blocks
+  writeJsonState(cwd, EVICT_STATE_FILE_NAME, { session_id: sessionId, turn_count: turnCount });
 }
 
 /**
- * Compile a simple glob to an anchored RegExp. `**` matches across path
- * separators, `*` matches within a single segment; all other regex-special
- * characters are escaped. Intentionally minimal — the patterns are short path
- * prefixes like `.workflow/**`, not a full gitignore dialect.
- */
-function globToRegExp(glob) {
-  let re = "";
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i];
-    if (c === "*") {
-      if (glob[i + 1] === "*") {
-        re += ".*";
-        i++;
-      } else {
-        re += "[^/]*";
-      }
-    } else if (".+?^${}()|[]\\/".includes(c)) {
-      re += "\\" + c;
-    } else {
-      re += c;
-    }
-  }
-  return new RegExp("^" + re + "$");
-}
-
-/**
- * True if `normPath` (project-relative, forward-slashed) matches any ignore
- * glob. Used to drop meta/orchestration edits from the nudge.
- */
-function pathIsIgnored(normPath, globs) {
-  if (typeof normPath !== "string" || normPath.length === 0) return false;
-  for (const g of globs) {
-    try {
-      if (globToRegExp(g).test(normPath)) return true;
-    } catch {
-      // a malformed user glob never breaks the hook — just skip it
-    }
-  }
-  return false;
-}
-
-// -----------------------------------------------------------------------------
-// Payload parsing (mirror of knowledge-hint-narrow.cjs conventions)
-// -----------------------------------------------------------------------------
-
-function extractToolName(payload) {
-  if (!payload || typeof payload !== "object") return null;
-  if (typeof payload.tool_name === "string") return payload.tool_name;
-  if (typeof payload.tool === "string") return payload.tool;
-  return null;
-}
-
-function extractToolInput(payload) {
-  if (!payload || typeof payload !== "object") return null;
-  if (payload.tool_input && typeof payload.tool_input === "object") return payload.tool_input;
-  if (payload.input && typeof payload.input === "object") return payload.input;
-  return null;
-}
-
-/**
- * Pull edit target paths from a tool_input object. Handles scalar file_path,
- * array file_paths, and MultiEdit edits[]. Deduped, first-occurrence order.
- */
-function extractPaths(toolInput) {
-  if (!toolInput || typeof toolInput !== "object") return [];
-  const collected = [];
-  if (typeof toolInput.file_path === "string" && toolInput.file_path.length > 0) {
-    collected.push(toolInput.file_path);
-  }
-  if (Array.isArray(toolInput.file_paths)) {
-    for (const p of toolInput.file_paths) {
-      if (typeof p === "string" && p.length > 0) collected.push(p);
-    }
-  }
-  if (Array.isArray(toolInput.edits)) {
-    for (const edit of toolInput.edits) {
-      if (edit && typeof edit === "object" && typeof edit.file_path === "string" && edit.file_path.length > 0) {
-        collected.push(edit.file_path);
-      }
-    }
-  }
-  const seen = new Set();
-  const out = [];
-  for (const p of collected) {
-    if (seen.has(p)) continue;
-    seen.add(p);
-    out.push(p);
-  }
-  return out;
-}
-
-function resolveSessionId(payload, env) {
-  if (payload && typeof payload === "object" && typeof payload.session_id === "string" && payload.session_id.length > 0) {
-    return payload.session_id;
-  }
-  const envBag = (env && env.processEnv) || process.env;
-  if (envBag && typeof envBag.FABRIC_SESSION_ID === "string" && envBag.FABRIC_SESSION_ID.length > 0) {
-    return envBag.FABRIC_SESSION_ID;
-  }
-  return "anonymous";
-}
-
-// -----------------------------------------------------------------------------
-// Path overlap
-// -----------------------------------------------------------------------------
-
-/**
- * Normalize a path for overlap comparison: project-relative when possible,
- * forward-slashed, leading "./" and "/" stripped. Absolute paths inside the
- * project become relative; absolute paths outside collapse to a basename-style
- * tail so an abs-vs-rel suffix match still works.
- */
-function normalizeForCompare(p, projectRoot) {
-  if (typeof p !== "string" || p.length === 0) return "";
-  let s = p;
-  if (isAbsolute(s) && typeof projectRoot === "string" && projectRoot.length > 0) {
-    const rel = relative(projectRoot, s);
-    if (rel.length > 0 && !rel.startsWith("..")) s = rel;
-  }
-  s = s.split("\\").join("/");
-  while (s.startsWith("./")) s = s.slice(2);
-  while (s.startsWith("/")) s = s.slice(1);
-  return s;
-}
-
-/**
- * Does `editNorm` fall within the scope a recall asked for (`recallNorm`)?
- * True when they are equal, when one is a path-boundary suffix of the other
- * (handles abs-vs-rel skew), or when one is an ancestor directory of the
- * other. Conservative — avoids basename-only matches that would over-fire.
- */
-function pathPairOverlaps(editNorm, recallNorm) {
-  if (editNorm.length === 0 || recallNorm.length === 0) return false;
-  if (editNorm === recallNorm) return true;
-  if (editNorm.endsWith("/" + recallNorm) || recallNorm.endsWith("/" + editNorm)) return true;
-  if (editNorm.startsWith(recallNorm + "/") || recallNorm.startsWith(editNorm + "/")) return true;
-  return false;
-}
-
-function pathsOverlap(recallPaths, editPaths, projectRoot) {
-  if (!Array.isArray(recallPaths) || !Array.isArray(editPaths)) return false;
-  const edits = editPaths.map((e) => normalizeForCompare(e, projectRoot)).filter((e) => e.length > 0);
-  const recalls = recallPaths.map((r) => normalizeForCompare(r, projectRoot)).filter((r) => r.length > 0);
-  for (const e of edits) {
-    for (const r of recalls) {
-      if (pathPairOverlaps(e, r)) return true;
-    }
-  }
-  return false;
-}
-
-// -----------------------------------------------------------------------------
-// Events ledger read
-// -----------------------------------------------------------------------------
-
-/**
- * Read + parse `.fabric/events.jsonl` best-effort. Returns an array of parsed
- * line objects (only those with a numeric `ts`). Never throws — a missing or
- * corrupt ledger yields []. Lines that fail JSON.parse are skipped.
- */
-function readEventsLedger(cwd) {
-  try {
-    const raw = readFileSync(join(cwd, EVENTS_LEDGER_REL), "utf8");
-    if (raw.length === 0) return [];
-    const out = [];
-    for (const line of raw.split("\n")) {
-      const t = line.trim();
-      if (t.length === 0) continue;
-      try {
-        const obj = JSON.parse(t);
-        if (obj && typeof obj === "object" && typeof obj.ts === "number") out.push(obj);
-      } catch {
-        // skip malformed line
-      }
-    }
-    return out;
-  } catch {
-    return [];
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Decision
-// -----------------------------------------------------------------------------
-
-/**
- * Pure decision helper (unit-testable). Given the ledger events, the edit
- * target paths, the session id, the current time and the recency window,
- * decide whether the edit is recall-backed and/or manually cited.
- *
- * @returns {{ recallBacked: boolean, recalledIds: string[],
- *             matchedRecallTs: number|null, manualCited: boolean }}
+ * Pure helper for unit-testing. Given current `turnCount` (post-increment)
+ * and `interval`, decide whether to emit the reminder.
  *
  * Contract:
- *   - Only events with matching `session_id` are considered.
- *   - windowMs <= 0 → unbounded (any prior in-session event counts).
- *   - recallBacked: a `knowledge_context_planned` event whose `target_paths`
- *     overlap `editPaths` exists in-window. recalledIds = its final_stable_ids
- *     (union across all matching recalls). matchedRecallTs = the latest match.
- *   - manualCited: an `assistant_turn_observed` event with a non-empty
- *     `cite_ids` array exists in-window (the legacy hand-written-`KB:` path).
+ *   - interval <= 0 → never emit (feature off)
+ *   - turnCount <= 0 → never emit (guard against bogus state)
+ *   - emit iff turnCount % interval === 0
+ *
+ * Examples:
+ *   evaluateCiteEvict(10, 10) → true  (10 % 10 === 0)
+ *   evaluateCiteEvict(20, 10) → true
+ *   evaluateCiteEvict(15, 10) → false
+ *   evaluateCiteEvict(5, 0)   → false (off)
+ *   evaluateCiteEvict(0, 10)  → false (no turns yet)
  */
-function evaluateRecallCite({ events, editPaths, sessionId, nowMs, windowMs, projectRoot }) {
-  const result = { recallBacked: false, recalledIds: [], matchedRecallTs: null, manualCited: false };
-  if (!Array.isArray(events) || events.length === 0) return result;
-  const sinceMs = typeof windowMs === "number" && windowMs > 0 ? nowMs - windowMs : null;
-  const recalledSet = new Set();
-  for (const ev of events) {
-    if (ev.session_id !== sessionId) continue;
-    if (typeof ev.ts !== "number") continue;
-    if (sinceMs !== null && ev.ts < sinceMs) continue;
-    // Future events (ts > nowMs) are ignored — a recall cannot inform an edit
-    // that happened before it.
-    if (ev.ts > nowMs) continue;
-
-    if (ev.event_type === "knowledge_context_planned") {
-      if (pathsOverlap(ev.target_paths, editPaths, projectRoot)) {
-        result.recallBacked = true;
-        if (result.matchedRecallTs === null || ev.ts > result.matchedRecallTs) {
-          result.matchedRecallTs = ev.ts;
-        }
-        const ids = Array.isArray(ev.final_stable_ids) ? ev.final_stable_ids : [];
-        for (const id of ids) {
-          if (typeof id === "string" && id.length > 0) recalledSet.add(id);
-        }
-      }
-    } else if (ev.event_type === "assistant_turn_observed") {
-      const ids = Array.isArray(ev.cite_ids) ? ev.cite_ids : [];
-      if (ids.some((id) => typeof id === "string" && id.length > 0)) {
-        result.manualCited = true;
-      }
-    }
-  }
-  result.recalledIds = [...recalledSet];
-  return result;
+function evaluateCiteEvict(turnCount, interval) {
+  if (typeof interval !== "number" || interval <= 0) return false;
+  if (typeof turnCount !== "number" || turnCount <= 0) return false;
+  return turnCount % interval === 0;
 }
 
-// -----------------------------------------------------------------------------
-// Nudge rendering
-// -----------------------------------------------------------------------------
-
 /**
- * Build the soft nudge body. Compact, non-blocking — it tells the agent to
- * recall BEFORE editing so the citation is auto-accounted. NUDGE not gate.
+ * Build the cite-contract reminder body. Compact — under 10 lines. The
+ * fully-specified contract lives in `.fabric/AGENTS.md` Cite policy section;
+ * the reminder is a tactical re-anchor, not the canonical reference.
+ *
+ * Returns a multi-line string ready for hookSpecificOutput.additionalContext.
  */
-function renderNudge(editPaths) {
-  const target = Array.isArray(editPaths) && editPaths.length > 0
-    ? editPaths.slice(0, 3).join(", ") + (editPaths.length > 3 ? ` (+${editPaths.length - 3})` : "")
-    : "this file";
+function renderReminder(turnCount, interval) {
+  // v2.0.0-rc.37 NEW-1: cite policy simplified 4-state → 2-state.
+  // [applied] consolidates planned/recalled/chained-from; dismissed:<reason>
+  // unchanged. Old tags still parse for back-compat.
   return [
-    `[fabric cite] 改 ${target} 前未检测到相关 fab_recall —`,
-    "建议先调 fab_recall(paths=[<被改文件>]) 让系统自动记账引用的 KB(无需手写首行 KB:)。",
-    "已 recall 过可忽略本提示。仍可手写首行 `KB: <id> [applied]` 显式 override。",
-    "(nudge only — 不阻塞本次编辑;cite 覆盖率见 fabric doctor --cite-coverage)",
+    `[fabric cite-evict] long-session reminder (turn ${turnCount}, interval ${interval}):`,
+    "Before edit / decide / propose plan, write KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>] OR KB: none [<reason>].",
+    "Verify [applied] by actually fetching KB body via fab_recall(paths) or fab_plan_context → fab_get_knowledge_sections (no fabricated ids).",
+    "decisions/pitfalls [applied] cite MUST end with contract: → <operator> [<operator>...] where operator ∈ {edit:<glob> !edit:<glob> require:<symbol> forbid:<symbol> skip:<reason>}.",
+    "skip reasons: sequencing | conditional | semantic | aesthetic | architectural | other:<text>.",
+    "KB: none sentinels: [no-relevant] (queried but nothing matched) | [not-applicable] (pure exploration / read-only / user Q&A).",
+    "Audit: fabric doctor --cite-coverage — this rule does not block work, only records.",
   ].join("\n");
 }
 
-// -----------------------------------------------------------------------------
-// Main
-// -----------------------------------------------------------------------------
-
-async function main(env, stdio) {
+async function main(env) {
   try {
     const cwd =
       (env && typeof env.cwd === "string" && env.cwd) ||
       process.env.CLAUDE_PROJECT_DIR ||
       process.cwd();
 
-    if (!readNudgeEnabled(cwd)) {
-      return; // feature off — silent
+    const interval = readEvictInterval(cwd);
+    if (interval <= 0) {
+      return; // feature off — silent exit
     }
 
+    // Read stdin payload (Claude Code passes hook_event_name; Codex/Cursor
+    // SessionStart payloads are smaller but still JSON). Tests inject
+    // env.payload to bypass the stdin read.
     const payload = env && env.payload !== undefined ? env.payload : await readStdinJson();
 
-    const toolName = extractToolName(payload);
-    if (!toolName || !EDIT_TOOL_NAMES.has(toolName)) {
-      return; // not a file-edit tool — silent
-    }
+    // v2.0.0-rc.37 NEW-21: SessionStart-mode parity for Codex/Cursor.
+    // When the hook fires on SessionStart (instead of UserPromptSubmit),
+    // emit ONE unconditional cite-policy reminder to stderr. This gives
+    // Codex/Cursor users the cite-contract nudge at session boot — lower
+    // cadence than Claude Code's per-prompt UserPromptSubmit window, but
+    // strictly better than 0 (rc.32 cite-coverage baseline 3.1% measured
+    // when Codex/Cursor had no cite-reminder surface at all).
+    const eventName =
+      payload && typeof payload.hook_event_name === "string"
+        ? payload.hook_event_name
+        : null;
+    const sessionStartMode =
+      (env && env.forceSessionStart === true) || eventName === "SessionStart";
 
-    const editPaths = extractPaths(extractToolInput(payload));
-    if (editPaths.length === 0) {
-      return; // no recognizable edit target — silent
-    }
+    const streams = (env && env.stdio) || {};
 
-    // F2: drop meta/orchestration edits (e.g. `.workflow/` scratchpads) before
-    // nudging. If EVERY target is exempt, stay silent — the cite policy does not
-    // apply to these paths. A mixed batch keeps the non-exempt targets.
-    const ignoreGlobs = readIgnoreGlobs(cwd);
-    const nudgePaths = editPaths.filter((p) => !pathIsIgnored(normalizeForCompare(p, cwd), ignoreGlobs));
-    if (nudgePaths.length === 0) {
-      return; // all edit targets are cite-exempt — silent
-    }
-
-    const sessionId = resolveSessionId(payload, env);
-    const nowMs = env && typeof env.nowMs === "number" ? env.nowMs : Date.now();
-    const windowMs = readWindowMinutes(cwd) * 60_000;
-
-    const events = readEventsLedger(cwd);
-    const decision = evaluateRecallCite({
-      events,
-      editPaths: nudgePaths,
-      sessionId,
-      nowMs,
-      windowMs,
-      projectRoot: cwd,
-    });
-
-    // Recall-backed or manually cited → the edit is informed; stay silent.
-    if (decision.recallBacked || decision.manualCited) {
+    if (sessionStartMode) {
+      // One-shot stderr emit (knowledge-hint-broad convention). forceStderr
+      // pins stderr even on Claude Code — Codex/Cursor parse stderr; CC
+      // SessionStart also surfaces stderr to the user.
+      emitContext(renderReminder(/* turnCount = */ 0, interval), {
+        forceStderr: true,
+        streams,
+      });
       return;
     }
 
-    // No recall, no manual cite → soft nudge. Claude Code: PreToolUse stdout
-    // additionalContext envelope. Codex/Cursor: stderr. Never a gate.
-    const streams = (env && env.stdio) || stdio || {};
-    const onClaudeCode = isClaudeCode() || (env && env.forceClaudeCode === true);
-    emitContext(renderNudge(nudgePaths), {
-      client: onClaudeCode ? "cc" : undefined,
-      eventName: "PreToolUse",
-      forceStderr: !onClaudeCode,
+    // Claude Code UserPromptSubmit path (unchanged from rc.34 TASK-06).
+    // Skip Claude Code-specific stdout envelope on Codex/Cursor when not
+    // in SessionStart mode (no UserPromptSubmit event registration there).
+    if (!isClaudeCode() && !(env && env.forceClaudeCode === true)) {
+      return;
+    }
+
+    const sessionId =
+      payload && typeof payload.session_id === "string" && payload.session_id.length > 0
+        ? payload.session_id
+        : "anonymous";
+
+    const prior = readEvictState(cwd);
+    const turnCount = prior && prior.session_id === sessionId ? prior.turn_count + 1 : 1;
+    writeEvictState(cwd, sessionId, turnCount);
+
+    if (!evaluateCiteEvict(turnCount, interval)) {
+      return; // not on a window boundary — silent
+    }
+
+    // Claude Code UserPromptSubmit: stdout JSON envelope. client:'cc' forces
+    // the envelope since the isClaudeCode/forceClaudeCode gate above already
+    // confirmed this is the Claude Code path.
+    emitContext(renderReminder(turnCount, interval), {
+      client: "cc",
+      eventName: "UserPromptSubmit",
       streams,
     });
   } catch {
-    // Silent — never block the edit on hook failure.
+    // Silent — never block user prompt on hook failure.
   }
 }
 
 module.exports = {
   main,
-  extractToolName,
-  extractToolInput,
-  extractPaths,
-  resolveSessionId,
-  readNudgeEnabled,
-  readWindowMinutes,
-  readIgnoreGlobs,
-  globToRegExp,
-  pathIsIgnored,
-  readEventsLedger,
-  normalizeForCompare,
-  pathPairOverlaps,
-  pathsOverlap,
-  evaluateRecallCite,
-  renderNudge,
+  evaluateCiteEvict,
+  renderReminder,
+  readEvictInterval,
+  readEvictState,
+  writeEvictState,
 };
 
 if (require.main === module) {

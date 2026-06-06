@@ -28,3 +28,4 @@ coverage/
 packages/*/.fabric/
 
 .antigravitycli
+.ace-tool/

@@ -1,8 +1,8 @@
 {
   "version": "1.0",
-  "generated_at": "2026-06-03T12:03:08.262Z",
-  "generated_by": "fabric-cli@2.2.0-rc.3",
-  "target": "/Users/wepie/Desktop/personal-projects/pcf",
+  "generated_at": "2026-06-06T02:56:06.708Z",
+  "generated_by": "fabric-cli@2.0.1",
+  "target": "C:\\Project\\fabric-v2",
   "project_name": "fabric-monorepo",
   "framework": {
     "kind": "unknown",
@@ -13,29 +13,31 @@
     ]
   },
   "topology": {
-    "total_files": 1746,
+    "total_files": 1951,
     "by_ext": {
-      ".cjs": 24,
+      ".cjs": 120,
       ".csv": 75,
       ".gz": 5,
       ".html": 4,
-      ".json": 671,
-      ".jsonl": 9,
+      ".json": 685,
+      ".jsonl": 8,
       ".log": 11,
-      ".md": 486,
+      ".md": 575,
+      ".mdc": 2,
       ".meta": 3,
       ".mjs": 12,
       ".ndjson": 6,
+      ".onnx": 1,
       ".py": 3,
       ".pyc": 5,
       ".sh": 4,
       ".snap": 7,
       ".svg": 2,
-      ".ts": 374,
-      ".txt": 32,
+      ".ts": 380,
+      ".txt": 33,
       ".yaml": 2,
       ".yml": 3,
-      "[none]": 8
+      "[none]": 5
     },
     "key_dirs": [
       ".claude/skills/ui-ux-pro-max/scripts",
@@ -54,7 +56,7 @@
     {
       "path": "scripts/lint-protected-tokens.ts",
       "reason": "top-level script",
-      "size_bytes": 7689
+      "size_bytes": 7945
     }
   ],
   "code_samples": [
@@ -152,7 +154,7 @@
       ],
       "coverage": {
         "ratio": 0.008,
-        "total": 374,
+        "total": 380,
         "matched": 3,
         "co_occurring_patterns": [
           "meta-sidecar"

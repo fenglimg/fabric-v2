@@ -8,6 +8,9 @@
     ],
     "sessionStart": [
       {
+        "command": ".cursor/hooks/cite-policy-evict.cjs"
+      },
+      {
         "command": ".cursor/hooks/knowledge-hint-broad.cjs"
       }
     ],
