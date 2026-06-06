@@ -72,14 +72,18 @@ const config: KnipConfig = {
       entry: [
         'src/index.ts',
         'src/commands/**/*.ts',
+        'src/commands/**/*.tsx',
         'src/config/**/*.ts',
         'src/scanner/**/*.ts',
         'src/bootstrap-guide.ts',
         'src/dev-mode.ts',
         'src/colors.ts',
-        'src/i18n.ts'
+        'src/i18n.ts',
+        'src/tui/**/*.ts',
+        'src/tui/**/*.tsx',
+        'src/install/**/*.ts'
       ],
-      project: ['src/**/*.ts'],
+      project: ['src/**/*.ts', 'src/**/*.tsx'],
       ignore: ['src/**/__tests__/**', 'templates/**']
     },
     'packages/server': {
