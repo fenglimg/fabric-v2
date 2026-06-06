@@ -110,6 +110,37 @@ type FixKnowledgePlan = {
 
 const PLAN_PREVIEW_LIMIT = 12;
 
+// ---------------------------------------------------------------------------
+// EPIC-009: Hidden flags configuration
+// ---------------------------------------------------------------------------
+// Flags exposed to users (shown in --help).
+const EXPOSED_FLAGS = new Set([
+  "target",
+  "fix",
+  "fix-knowledge",
+  "json",
+  "verbose",
+]);
+
+// All flags that should be hidden from --help but remain functional.
+// These are internal/report/debug flags that advanced users can still use.
+const HIDDEN_FLAGS = new Set([
+  "strict",
+  "debug-bundle",
+  "yes",
+  "cite-coverage",
+  "since",
+  "client",
+  "layer",
+  "enrich-descriptions",
+  "auto",
+  "dry-run",
+  "archive-history",
+  "history",
+  "lint-conflicts",
+  "deep",
+]);
+
 export const doctorCommand = defineCommand({
   meta: {
     name: "doctor",
@@ -135,40 +166,28 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.json.description"),
       default: false,
     },
-    strict: {
-      type: "boolean",
-      description: t("cli.doctor.args.strict.description"),
-      default: false,
-    },
     // v2.1.0-rc.1 P6 (S40): emit a redacted diagnostic bundle (config + store
     // diagnostics; events excluded by default). Every string is secret-redacted
     // so the bundle is safe to paste into a bug report. Read-only.
+    // EPIC-009: hidden flag (internal debug tool).
     "debug-bundle": {
       type: "boolean",
       description: "Emit a redacted diagnostic bundle (config + store health) for bug reports",
       default: false,
     },
-    // rc.7 T11: skip the safety confirm before mutations. Required for any
-    // non-tty invocation that wants to run --fix-knowledge without setting
-    // FABRIC_NONINTERACTIVE=1 in the environment.
+    // EPIC-009: hidden flag (CI automation).
     yes: {
       type: "boolean",
       description: t("cli.doctor.args.yes.description"),
       default: false,
     },
-    // rc.35 TASK-12 (P0-11): expose maintainer-audience actionHints. By
-    // default the renderer folds remediation strings that target Fabric
-    // contributors (edit `packages/cli/templates/...`, interpret G1-G5
-    // cite-goodhart codes, etc.) since npm end users have no actionable
-    // lever for them. --verbose shows them.
+    // EPIC-009: hidden flag (advanced output).
     verbose: {
       type: "boolean",
       description: t("cli.doctor.args.verbose.description"),
       default: false,
     },
-    // rc.20 TASK-05: cite policy adherence report (read-only). Skips standard
-    // inspections entirely — different output surface. Mutually exclusive
-    // with --fix / --fix-knowledge (enforced in run()).
+    // EPIC-009: hidden flags (report surfaces).
     "cite-coverage": {
       type: "boolean",
       description: t("cli.doctor.args.cite-coverage.description"),
@@ -185,18 +204,12 @@ export const doctorCommand = defineCommand({
       default: "all",
       valueHint: "cc|codex|cursor|all",
     },
-    // v2.0.0-rc.24 TASK-10: --layer filter for the cite contract audit. Pairs
-    // with --cite-coverage. Validated against {'team','personal','all'} at
-    // command entry; rejects 'both' (rc.20 plan-context vocabulary) explicitly.
     layer: {
       type: "string",
       description: t("cli.doctor.args.layer.description"),
       default: "all",
       valueHint: "team|personal|all",
     },
-    // rc.23 TASK-007 (a-C2): description-grade back-fill flag set. Read-side
-    // by default; `--auto` flips the writer arm on. Mutually exclusive with
-    // --fix / --fix-knowledge / --cite-coverage (different mutation surfaces).
     "enrich-descriptions": {
       type: "boolean",
       description: t("cli.doctor.args.enrich-descriptions.description"),
@@ -212,25 +225,16 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.dry-run.description"),
       default: false,
     },
-    // v2.0.0-rc.25 TASK-10: --archive-history flag (parallel to rc.20
-    // --cite-coverage). Read-only; reads session_archive_attempted events
-    // and renders a per-session table. Pairs with the shared `--since` flag.
     "archive-history": {
       type: "boolean",
       description: t("cli.doctor.args.archive-history.description"),
       default: false,
     },
-    // rc.37 NEW-33: unified history view across archive / fix / all surfaces.
-    // Mode = `archive | fix | all` (the `archive` mode delegates to the
-    // existing runDoctorArchiveHistory; `fix` aggregates doctor_run events;
-    // `all` rolls up both into a per-day count table). Read-only; mutex
-    // with the mutation arms.
     history: {
       type: "string",
       description: t("cli.doctor.args.history.description"),
       valueHint: "archive|fix|all",
     },
-    // v2.1 ④ conflict-detection (P4): knowledge-conflict lint surface.
     "lint-conflicts": {
       type: "boolean",
       description: t("cli.doctor.args.lint-conflicts.description"),
@@ -239,6 +243,12 @@ export const doctorCommand = defineCommand({
     deep: {
       type: "boolean",
       description: t("cli.doctor.args.deep.description"),
+      default: false,
+    },
+    // EPIC-009: hidden flag (strict mode for CI).
+    strict: {
+      type: "boolean",
+      description: t("cli.doctor.args.strict.description"),
       default: false,
     },
   },
@@ -1537,4 +1547,49 @@ function formatTimestampForTable(iso: string): string {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(
     d.getUTCHours(),
   )}:${pad(d.getUTCMinutes())}`;
+}
+
+// ---------------------------------------------------------------------------
+// EPIC-009: Custom help renderer that hides internal/report flags
+// ---------------------------------------------------------------------------
+// citty's default usage renderer shows ALL args with no filtering capability.
+// This custom renderer only shows EXPOSED_FLAGS, keeping the output clean.
+// Hidden flags remain functional for advanced users who know them.
+export function renderDoctorFilteredHelp(): void {
+  const lines: string[] = [];
+
+  // Header
+  lines.push(paint.ai("fabric doctor") + " — Diagnose and fix Fabric workspace issues");
+  lines.push("");
+
+  // Usage
+  lines.push(`${paint.human("USAGE")}`);
+  lines.push(`  fabric doctor [OPTIONS]`);
+  lines.push("");
+
+  // Exposed options only
+  lines.push(`${paint.human("OPTIONS")}`);
+  lines.push("");
+
+  const exposedOptions: Array<[string, string]> = [
+    ["--target <path>", "Override project root (defaults to cwd)"],
+    ["--fix", "Auto-fix derived-state issues (agents.meta.json)"],
+    ["--fix-knowledge", "Auto-fix knowledge entry issues (frontmatter + git mv)"],
+    ["--json", "Output as JSON for programmatic consumption"],
+    ["--verbose", "Show maintainer-audience action hints"],
+  ];
+
+  for (const [flag, desc] of exposedOptions) {
+    lines.push(`  ${paint.ai(flag)}  ${desc}`);
+  }
+
+  lines.push("");
+  lines.push(`${paint.human("EXAMPLES")}`);
+  lines.push(`  ${paint.ai("fabric doctor")}                  # Run diagnostics`);
+  lines.push(`  ${paint.ai("fabric doctor --fix")}            # Fix derived-state issues`);
+  lines.push(`  ${paint.ai("fabric doctor --fix-knowledge")}  # Fix knowledge entry issues`);
+  lines.push("");
+  lines.push(paint.human("Run `fabric doctor` to see a full diagnostic report with 48 checks."));
+
+  writeStdout(lines.join("\n"));
 }
