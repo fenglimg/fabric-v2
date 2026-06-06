@@ -49,28 +49,6 @@ export const zhCNMessages: Messages = {
   "cli.help.group.advanced.scope-explain": "解释 scope",
   "cli.help.group.advanced.scope-explain.deprecated": "已弃用 → info scope",
 
-  "cli.approve.description": "从命令行批准已漂移的 human-lock 记录。",
-  "cli.approve.args.all.description": "不提示，批准所有已漂移的 human-lock 记录。",
-  "cli.approve.args.interactive.description": "逐条提示后批准已漂移的 human-lock 记录。",
-  "cli.approve.args.target.description": "目标项目路径，默认为当前工作目录。",
-  "cli.approve.no-drift": "未发现漂移记录。",
-  "cli.approve.prompt": "批准此记录？[y/N] ",
-  "cli.approve.approved-one": "已批准 {location}",
-  "cli.approve.skipped-one": "已跳过 {location}",
-  "cli.approve.summary": "已批准 {approved}/{total} 条漂移记录。已跳过 {skipped} 条。",
-  "cli.approve.table.expected": "预期",
-  "cli.approve.table.current": "当前",
-
-  "cli.bootstrap.description": "为支持的 AI 客户端安装 Fabric 引导提示模板。",
-  "cli.bootstrap.install.description": "将 Fabric 引导模板复制到各客户端的原生位置。",
-  "cli.bootstrap.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 claude,cursor,codex。",
-  "cli.bootstrap.install.no-targets":
-    "未检测到可安装的 bootstrap 目标。可显式传入 --clients claude,cursor,codex。",
-  "cli.bootstrap.install.installed": "已安装 {path}",
-  "cli.bootstrap.install.skipped-header": "已跳过 {path}：Fabric Bootstrap 头部已存在。",
-  "cli.bootstrap.install.prepended": "已前置写入 {path}",
-  "cli.bootstrap.errors.unknown-client":
-    "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 claude,cursor,codex。",
 
   "cli.config.description":
     "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。\n" +
@@ -889,23 +867,6 @@ export const zhCNMessages: Messages = {
   "doctor.history.header": "Doctor 历史 (mode={mode}, 近 {sinceLabel}, 共 {days} 天)",
   "doctor.history.empty": "--since={sinceLabel} 窗口内无 doctor 或 archive 活动 (mode={mode})。",
 
-  "cli.hooks.description": "管理 Fabric Git 钩子模板。",
-  "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",
-  "cli.hooks.install.args.target.description": "目标项目路径，默认为当前工作目录。",
-  "cli.hooks.errors.package-json-required": "安装 hooks 需要 package.json：{path}",
-  "cli.hooks.install.hook-skipped": "{path} 中已存在 Fabric hook，已跳过。",
-  "cli.hooks.install.hook-appended": "已向现有 {path} 追加 Fabric hook",
-  "cli.hooks.install.hook-created": "已创建 {path}",
-  "cli.hooks.install.prepare-left": "保留 {path} 中原有的 prepare 脚本不变",
-  "cli.hooks.install.prepare-added": "已向 {path} 添加 prepare 脚本",
-
-  "cli.human-lint.description": "验证锁定的人工编辑区块。",
-  "cli.human-lint.args.target.description": "目标项目路径，默认为当前工作目录。",
-  "cli.human-lint.drift-detected": "检测到 human-lock 内容漂移。请回退编辑，或在提交前更新已批准的哈希。",
-  "cli.human-lint.table.location": "位置",
-  "cli.human-lint.table.expected": "预期",
-  "cli.human-lint.table.got": "实际",
-
   "cli.install.description":
     "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。\n" +
     "\n" +
@@ -1100,44 +1061,7 @@ export const zhCNMessages: Messages = {
   "cli.uninstall.confirm.proceed": "确认从 {target} 卸载 Fabric？[y/N]",
   "cli.uninstall.errors.target-not-directory": "目标必须是已存在的目录：{path}",
 
-  "cli.ledger-append.description": "向 Fabric 意图日志追加一条记录。",
-  "cli.ledger-append.args.target.description": "目标项目路径，默认为当前工作目录。",
-  "cli.ledger-append.args.staged.description": "从暂存变更推导记录（用于 pre-commit 阶段）。",
-  "cli.ledger-append.requires-staged": "pre-commit 场景下必须传入 --staged",
-  "cli.ledger-append.intent.auto": "自动：{head}{suffix}",
-  "cli.ledger-append.intent.auto-more": " 等 {count} 项",
 
-  "cli.pre-commit.description":
-    "复合 pre-commit 钩子：在单个 Node 进程中依次执行 sync-meta --check-only、human-lint、ledger-append --staged。",
-  "cli.pre-commit.args.target.description": "项目根目录，默认取当前目录或 EXTERNAL_FIXTURE_PATH。",
-  "cli.pre-commit.run-failed": "fabric pre-commit：{name} 失败 - {message}",
-
-  "cli.scan.description": "扫描项目以检测 Fabric 引导候选模块。",
-  "cli.scan.args.target.description":
-    "目标绝对路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
-  "cli.scan.args.debug.description": "以格式化输出打印检测证据。",
-  "cli.scan.args.json.description": "以 JSON 格式输出诊断报告。",
-  "cli.scan.error.missing-forensic":
-    "未找到 forensic.json（路径 {path}）；请先运行 `fabric install` 生成项目快照。",
-  "cli.scan.summary.created": "已写入 {count} 条知识条目至 .fabric/knowledge/。",
-  "cli.scan.summary.skipped": "无差异；{count} 条已存在的条目保持不变。",
-  "cli.scan.report.title": "Fabric 扫描报告",
-  "cli.scan.report.target": "目标",
-  "cli.scan.report.framework": "框架",
-  "cli.scan.report.evidence": "证据",
-  "cli.scan.report.readme-quality": "README 质量",
-  "cli.scan.report.contributing": "CONTRIBUTING.md",
-  "cli.scan.report.files-counted": "文件数",
-  "cli.scan.report.ignored-entries": "忽略项",
-  "cli.scan.report.existing-fabric": "现有 Fabric 文件",
-  "cli.scan.report.recommendations": "建议：",
-  "cli.scan.readme-quality.ok": "良好",
-  "cli.scan.readme-quality.stub": "草稿",
-  "cli.scan.recommendation.init": "L0：运行 fabric install，在 .fabric/AGENTS.md 生成 Fabric 引导规范内容。",
-  "cli.scan.recommendation.readme": "L0：先补充 README.md，再把项目事实整理到 Fabric 参考文件中。",
-  "cli.scan.recommendation.contributing": "L0：添加 CONTRIBUTING.md，或在 bootstrap 中留下贡献流程的 TODO 说明。",
-  "cli.scan.recommendation.unknown-framework": "L1：当前未检测到框架标记，需要手动补充技术栈说明。",
-  "cli.scan.recommendation.framework-dirs": "L1：检查 {framework} 目录，后续为其补充对应作用域的 Fabric 规则文件。",
 
   // v2.0.0-rc.37 Wave A2 Part 2: cli.serve.* + FABRIC_AUTH_TOKEN keys removed
   // alongside `fabric serve` quarantine to packages/server-http-experimental/
@@ -1152,19 +1076,9 @@ export const zhCNMessages: Messages = {
   "cli.onboard-coverage.args.target.description":
     "覆盖项目根目录（默认为当前工作目录）。",
 
-  "cli.update.description": "刷新 MCP 主机配置和 git hooks，不重新创建 Fabric 文件。",
-  "cli.update.args.target.description":
-    "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
-  "cli.update.args.no-mcp.description": "跳过重新配置 MCP 客户端",
-  "cli.update.args.no-hooks.description": "跳过重新安装 git hooks",
 
-  "cli.sync-meta.description": "从内部规则文件同步 Fabric 元数据。",
-  "cli.sync-meta.args.target.description": "目标项目路径，默认为当前工作目录。",
-  "cli.sync-meta.args.check-only.description": "如果 .fabric/agents.meta.json 已过期，则以代码 1 退出。",
-  "cli.sync-meta.drift-detected": "检测到 Fabric 元数据漂移。请运行 fabric sync-meta 进行更新。",
-  "cli.sync-meta.updated": "{label} {path}",
+  "dashboard.app.nav.aria-label": "仪表盘视图",
 
-  "dashboard.app.nav.aria-label": "仪表盘视图导航",
   "dashboard.app.nav.readiness.label": "准备情况",
   "dashboard.app.nav.readiness.label-bilingual": "准备情况 Readiness",
   "dashboard.app.nav.readiness.subtitle": "项目状态",
