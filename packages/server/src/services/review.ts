@@ -12,9 +12,12 @@ import type {
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
-import { reconcileKnowledge } from "./knowledge-sync.js";
-import { resolveStoreCanonicalBase, resolveStorePendingBase } from "./cross-store-write.js";
+import { allocateStoreKnowledgeId } from "@fenglimg/fabric-shared";
+import {
+  resolveStoreCanonicalBase,
+  resolveStorePendingBase,
+  resolveWriteTargetStoreDir,
+} from "./cross-store-write.js";
 import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.js";
 
 // v2.2 全砍 Stage 2 (B2 cutover): store-only pending root. extract-knowledge
@@ -507,14 +510,10 @@ async function approveAll(
   projectRoot: string,
   pendingPaths: string[],
 ): Promise<Array<{ pending_path: string; stable_id: string }>> {
-  const allocator = new KnowledgeIdAllocator(
-    join(projectRoot, ".fabric", "agents.meta.json"),
-  );
-
   const approved: Array<{ pending_path: string; stable_id: string }> = [];
 
   for (const pendingPath of pendingPaths) {
-    const result = await approveOne(projectRoot, pendingPath, allocator);
+    const result = await approveOne(projectRoot, pendingPath);
     if (result !== null) {
       approved.push(result);
     }
@@ -526,7 +525,6 @@ async function approveAll(
 async function approveOne(
   projectRoot: string,
   pendingPath: string,
-  allocator: KnowledgeIdAllocator,
 ): Promise<{ pending_path: string; stable_id: string } | null> {
   // Defense-in-depth: confine the caller-supplied pending path to the pending
   // tree of EITHER root.
@@ -625,7 +623,15 @@ async function approveOne(
 
     // rc.29 BUG-C1: KnowledgeType is now plural; pluralType is the canonical
     // value passed straight to the allocator.
-    const stableId = await allocator.allocate(layer, pluralType);
+    // W4 decolo: mint the id from the write-target STORE's committed counters.json
+    // (same store the entry lands in below) — the co-location agents.meta counter
+    // is retired. resolveWriteTargetStoreDir throws the same actionable
+    // StoreWriteTargetUnresolvedError as resolveStoreCanonicalBase on no target.
+    const stableId = await allocateStoreKnowledgeId(
+      layer,
+      pluralType,
+      resolveWriteTargetStoreDir(layer, projectRoot),
+    );
     allocatedId = stableId;
 
     const newFilename = `${stableId}--${slug}.md`;
@@ -699,25 +705,12 @@ async function approveOne(
       reason: `approve:${slug}`,
     });
 
-    // v2.0.0-rc.27 TASK-001 (§2.9 root): synchronously rebuild agents.meta.json
-    // so the newly-promoted entry's frontmatter description flows into
-    // `nodes[id].description` immediately. Without this, the new entry's node
-    // stays empty (`{}`) — KnowledgeIdAllocator only mutates `counters` —
-    // until the next plan_context call's auto-heal fires. That gap (between
-    // approve and the next hint call) leaves the entry invisible to the L1
-    // cite-contract reminder + description_index window, which was the
-    // observable symptom in audit §2.1 / §2.11.
-    //
-    // Best-effort: a reconcile failure must NOT roll back the approve. The
-    // event ledger pair (promote_started + promoted) is the source of truth
-    // for the operation; reconcile is an observability flush. The next
-    // plan_context call's auto-heal will eventually catch up on its own
-    // schedule even if this synchronous attempt fails.
-    try {
-      await reconcileKnowledge(projectRoot, { trigger: "post-approve" });
-    } catch {
-      // Swallow — see comment above.
-    }
+    // v2.2 W5 R2 (agents.meta decolo): the rc.27 post-approve
+    // `reconcileKnowledge` (which rebuilt the co-location agents.meta.json so
+    // the promoted entry's description flowed into `nodes[id]`) is retired.
+    // The approved entry is written into its store above; the cross-store recall
+    // path builds descriptions on the fly from the store markdown at read time,
+    // so there is no project-local index to flush post-approve.
 
     return { pending_path: pendingPath, stable_id: stableId };
   } catch (err) {
@@ -989,12 +982,15 @@ async function modifyLayerFlip(
   const shouldAutoDegrade =
     fromScope === "narrow" && fromLayer === "team" && toLayer === "personal";
 
-  const allocator = new KnowledgeIdAllocator(
-    join(projectRoot, ".fabric", "agents.meta.json"),
-  );
   // rc.29 BUG-C1: KnowledgeType is now plural; pluralType is the canonical
   // value passed straight to the allocator.
-  const newStableId = await allocator.allocate(toLayer, pluralType);
+  // W4 decolo: layer-flip mints the new id from the destination layer's
+  // write-target STORE counters (same store the flipped entry lands in below).
+  const newStableId = await allocateStoreKnowledgeId(
+    toLayer,
+    pluralType,
+    resolveWriteTargetStoreDir(toLayer, projectRoot),
+  );
 
   // v2.2 全砍 Stage 2 (B2 cutover): the layer-flip destination is the NEW layer's
   // write-target store canonical dir (no dual-root). resolveStoreCanonicalBase
@@ -1102,17 +1098,11 @@ async function modifyLayerFlip(
     ? relative(projectRoot, toAbs)
     : `~/${relative(resolvePersonalRoot(), toAbs)}`;
 
-  // v2.0.0-rc.27 TASK-001 (§2.9 mirror): like approve, the layer-flip creates
-  // a new canonical entry with a fresh stable_id under the destination
-  // layer's counter space. The destination's `nodes[id]` is uninitialized
-  // until a meta rebuild runs; trigger one synchronously so the new id is
-  // immediately visible to plan_context / cite-contract consumers. Same
-  // best-effort contract as approve (event ledger is the durable record).
-  try {
-    await reconcileKnowledge(projectRoot, { trigger: "post-modify" });
-  } catch {
-    // Swallow — see post-approve reconcile call.
-  }
+  // v2.2 W5 R2 (agents.meta decolo): the rc.27 post-modify layer-flip
+  // `reconcileKnowledge` is retired alongside post-approve — the flipped entry
+  // is written to its destination store above, and cross-store recall builds
+  // its description from store markdown at read time. No co-location index to
+  // rebuild.
 
   return {
     action: "modify",

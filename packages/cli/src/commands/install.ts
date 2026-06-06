@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import * as childProcess from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select, text } from "@clack/prompts";
-import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 // v2.0.0-rc.37 Wave A2: serve-lock preflight import removed. With `fabric serve`
@@ -107,9 +105,9 @@ type InitWriteAction = "created" | "overwritten";
 //                           (byte-mismatch or structural-mismatch); the run
 //                           aborts unconditionally with a helpful message
 //   - "user-modified"     : managed location holds something canonically
-//                           unexpected (e.g. .fabric/ is a file, agents.meta
-//                           .json fails to parse as AgentsMeta); same abort
-//                           semantics as "drifted"
+//                           unexpected (e.g. .fabric/ is a file, or a managed
+//                           file location is occupied by a directory); same
+//                           abort semantics as "drifted"
 export type DiffFileState =
   | "missing"
   | "present-canonical"
@@ -121,16 +119,14 @@ export type DiffFileState =
 //
 //   - "presence"       : any existing file is canonical (e.g. events.jsonl
 //                        which is an append-only ledger)
-//   - "structural"     : parse as JSON, sanity-check schema fields; do NOT
-//                        byte-compare (e.g. agents.meta.json which is the
-//                        canonical counter envelope; post-install AI-driven
-//                        knowledge promotions add nodes but the structural
-//                        sanity-check is preserved)
 //   - "always-rewrite" : the file is a snapshot, never user-edited — always
 //                        treat the existing file as canonical for diff but
 //                        always rewrite at the write boundary (e.g.
 //                        forensic.json)
-type DiffDetectStrategy = "presence" | "structural" | "always-rewrite";
+//
+// The "structural" strategy (JSON schema sanity-check for the retired
+// agents.meta.json) was removed in W5 I1 alongside the agents.meta scaffold.
+type DiffDetectStrategy = "presence" | "always-rewrite";
 
 type ClassifiedFreshPathResult = {
   path: string;
@@ -160,19 +156,14 @@ type InitStageRecord = {
 };
 
 export type InitScaffoldResult = {
-  // v2.0 layout: knowledge subdirs (.gitkeep markers) + agents.meta.json
-  // (counters envelope) + events.jsonl + forensic.json. Knowledge entries
-  // are created on-demand by the fabric-archive / fabric-import / fabric-review
-  // Skill flows (rc.23 TASK-012 (F8a) removed the legacy init-scan baseline
-  // stage). AGENTS.md is also written at the repo root as the universal
-  // anchor (idempotent on re-run).
+  // v2.0 layout: events.jsonl + forensic.json event ledgers. W5 I1 retired the
+  // co-location knowledge cabinet (.fabric/knowledge/*) and agents.meta.json
+  // scaffold — team knowledge now lives in a mounted store (~/.fabric/stores/
+  // <uuid>/knowledge) created by `fabric store create` / `install --global`,
+  // and the read path reads the store directly. AGENTS.md is also written at
+  // the repo root as the universal anchor (idempotent on re-run).
   agentsMdPath: string;
   agentsMdAction: AgentsMdAction;
-  knowledgeDir: string;
-  knowledgeDirAction: InitWriteAction;
-  personalKnowledgeDir: string;
-  metaPath: string;
-  metaAction: InitWriteAction;
   eventsPath: string;
   eventsAction: InitWriteAction;
   forensicPath: string;
@@ -245,15 +236,6 @@ export type InitScaffoldPlan = {
   // AgentsMdAction comment above for rationale.
   agentsMdPath: string;
   agentsMdAction: AgentsMdAction;
-  // v2.0 knowledge layout (team root): .fabric/knowledge/{decisions,pitfalls,
-  // guidelines,models,processes,pending}/. The personal root mirrors the same
-  // subdirs under ~/.fabric/knowledge/ (overridable via FABRIC_HOME).
-  knowledgeDir: string;
-  knowledgeDirAction: InitWriteAction;
-  personalKnowledgeDir: string;
-  metaPath: string;
-  metaAction: InitWriteAction;
-  meta: AgentsMeta;
   eventsPath: string;
   eventsAction: InitWriteAction;
   forensicPath: string;
@@ -264,7 +246,6 @@ export type InitScaffoldPlan = {
   // table without writing), (b) the drift-abort gate inside
   // executeInitExecutionPlan, and (c) the diff-mode summary printed on the
   // canonical-no-op happy path.
-  metaState: DiffFileState;
   eventsState: DiffFileState;
   forensicState: DiffFileState;
 };
@@ -855,7 +836,6 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   // of drift; for the mutation path we abort unconditionally if drift is
   // detected.
   const scaffoldStates: Array<{ path: string; state: DiffFileState }> = [
-    { path: plan.scaffold.metaPath, state: plan.scaffold.metaState },
     { path: plan.scaffold.eventsPath, state: plan.scaffold.eventsState },
     { path: plan.scaffold.forensicPath, state: plan.scaffold.forensicState },
   ];
@@ -874,7 +854,7 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   // rc.15 (formerly rc.14 TASK-004 Finding 1) — type-collision pre-check.
   // If `.fabric` itself exists as a non-directory (regular file, symlink to
   // a non-dir, etc.), the per-inner-file classifier marks every inner path
-  // as "missing" (because existsSync(".fabric/agents.meta.json") returns
+  // as "missing" (because existsSync(".fabric/events.jsonl") returns
   // false when ".fabric" is a file), which bypasses the per-file drift-abort
   // gate below and leads to mkdirSync raising native ENOTDIR/EEXIST at
   // write time. Surface the friendly drift-abort message instead — recovery
@@ -942,14 +922,6 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   };
 }
 
-// v2.0 knowledge subdirs (team + personal). The list is shared with rule-meta
-// and doctor; mirrored here to keep init dependency-free.
-const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
-
-function resolvePersonalFabricRoot(): string {
-  return process.env.FABRIC_HOME ?? homedir();
-}
-
 export async function buildInitFabricPlan(target: string, options?: InitOptions): Promise<InitScaffoldPlan> {
   assertExistingDirectory(target);
 
@@ -960,24 +932,18 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   // existing content. Capturing the action up front keeps the result schema
   // deterministic for callers/tests.
   const agentsMdAction: AgentsMdAction = existsSync(agentsMdPath) ? "preserved" : "created";
-  const knowledgeDir = join(fabricDir, "knowledge");
-  const personalKnowledgeDir = join(resolvePersonalFabricRoot(), ".fabric", "knowledge");
   const forensicPath = join(fabricDir, "forensic.json");
   const eventsPath = join(fabricDir, "events.jsonl");
-  const metaPath = join(fabricDir, "agents.meta.json");
 
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
-  const knowledgeDirAction: InitWriteAction = existsSync(knowledgeDir) ? "overwritten" : "created";
 
   // rc.15 (formerly rc.14 TASK-002) — diff-mode classification. NEVER throws
   // during planning. The drift-abort gate inside `executeInitExecutionPlan`
   // is the single throw site, and it only fires when actually writing
   // (i.e. not planOnly) and at least one path is drifted/user-modified.
-  const metaClassification = classifyFreshPath(metaPath, "structural");
   const eventsClassification = classifyFreshPath(eventsPath, "presence");
   const forensicClassification = classifyFreshPath(forensicPath, "always-rewrite");
 
-  const metaAction = diffStateToWriteAction(metaClassification.state);
   const eventsAction = diffStateToWriteAction(eventsClassification.state);
   const forensicAction = diffStateToWriteAction(forensicClassification.state);
 
@@ -994,8 +960,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   if (showScanProgress) {
     process.stderr.write(`${t("cli.install.scan-complete")}\n`);
   }
-  const meta = createInitialMeta();
-
   return {
     target,
     options,
@@ -1003,18 +967,11 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     replaceFabricDir,
     agentsMdPath,
     agentsMdAction,
-    knowledgeDir,
-    knowledgeDirAction,
-    personalKnowledgeDir,
-    metaPath,
-    metaAction,
-    meta,
     eventsPath,
     eventsAction,
     forensicPath,
     forensicAction,
     forensicReport,
-    metaState: metaClassification.state,
     eventsState: eventsClassification.state,
     forensicState: forensicClassification.state,
   };
@@ -1046,39 +1003,26 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // still computed and surfaced through the install reporter for parity
   // with other anchors, but the file itself is created downstream.
 
-  // v2.0 stage (a) bootstrap: materialize knowledge subdirs (team + personal)
-  // with .gitkeep markers so a fresh repo carries the canonical layout even
-  // before the first knowledge entry is added.
-  mkdirSync(plan.knowledgeDir, { recursive: true });
-  for (const sub of KNOWLEDGE_SUBDIRS) {
-    const teamSubDir = join(plan.knowledgeDir, sub);
-    mkdirSync(teamSubDir, { recursive: true });
-    const teamGitkeep = join(teamSubDir, ".gitkeep");
-    if (!existsSync(teamGitkeep)) {
-      writeFileSync(teamGitkeep, "", "utf8");
-    }
-  }
-
-  // v2.2 全砍 Stage 3 (B2 cutover): no longer scaffold the personal dual-root
-  // (~/.fabric/knowledge). Personal knowledge lives in the personal STORE,
-  // minted by `install --global`. The legacy personal-root mirror is retired.
+  // W5 I1: no longer scaffold the co-location knowledge cabinet
+  // (.fabric/knowledge/{decisions,pitfalls,...}/ with .gitkeep markers) nor
+  // the empty agents.meta.json counter envelope. Team knowledge now lives in
+  // a mounted store (~/.fabric/stores/<uuid>/knowledge) created by
+  // `fabric store create` / `install --global`; the read path reads the store
+  // directly. The retired co-location agents.meta derived index had no writer
+  // and no reader after the W5 read-side cutover, so scaffolding it produced a
+  // dead artifact. The personal dual-root (~/.fabric/knowledge) was already
+  // retired in v2.2 (B2 cutover) — personal knowledge lives in the personal
+  // STORE minted by `install --global`.
 
   // rc.15 (formerly rc.14 TASK-002) — diff-mode write semantics for the
-  // three scaffold files. drifted/user-modified states are intercepted by
-  // the drift-abort gate upstream; only missing → write, present-canonical
+  // two remaining scaffold files. drifted/user-modified states are intercepted
+  // by the drift-abort gate upstream; only missing → write, present-canonical
   // → skip survives here.
   //
-  //   agents.meta.json: write the empty initial meta when missing; skip on
-  //                     present-canonical (idempotent re-run). Skill-driven
-  //                     knowledge promotions keep it in sync post-install.
   //   events.jsonl:     presence-canonical. Existing files are preserved
   //                     verbatim (append-only ledger). Only create when missing.
   //   forensic.json:    always-rewrite. The file is a snapshot regenerated
   //                     every run regardless of diff classification.
-  if (plan.metaState === "missing") {
-    preparePlannedPath(plan.metaPath, plan.metaAction);
-    await atomicWriteJson(plan.metaPath, plan.meta);
-  }
 
   // events.jsonl preservation: under diff-mode default we preserve any
   // existing file byte-identically. Only create when missing.
@@ -1093,11 +1037,9 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
   await atomicWriteJson(plan.forensicPath, plan.forensicReport);
 
-  // rc.23 TASK-012 (F8a): the legacy baseline-emit stage was removed
-  // clean-slate. KB on fresh install is intentionally empty — the onboard
-  // phase (F8c) and the fabric-archive / fabric-import / fabric-review Skill
-  // paths are now the sole sources of knowledge entries. Re-runs no longer
-  // mutate agents.meta.json post-install.
+  // W5 I1: install no longer scaffolds any knowledge cabinet or agents.meta
+  // index. KB on fresh install lives in mounted stores; the install scaffold
+  // is purely the event ledgers + AGENTS.md anchor + client bootstrap.
 
   // rc.15 (formerly rc.14 TASK-002) — diff-mode emits install_diff_applied
   // with a per-file breakdown so doctor/forensic tooling can see whether
@@ -1107,7 +1049,6 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     const canonical: string[] = [];
     const drifted: string[] = [];
     for (const entry of [
-      { path: plan.metaPath, state: plan.metaState },
       { path: plan.eventsPath, state: plan.eventsState },
       { path: plan.forensicPath, state: plan.forensicState },
     ]) {
@@ -1125,11 +1066,6 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   return {
     agentsMdPath: plan.agentsMdPath,
     agentsMdAction: plan.agentsMdAction,
-    knowledgeDir: plan.knowledgeDir,
-    knowledgeDirAction: plan.knowledgeDirAction,
-    personalKnowledgeDir: plan.personalKnowledgeDir,
-    metaPath: plan.metaPath,
-    metaAction: plan.metaAction,
     eventsPath: plan.eventsPath,
     eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
@@ -1194,8 +1130,6 @@ function exhaustiveInitStagePlan(value: never): never {
 
 function printInitScaffoldResult(created: InitScaffoldResult): void {
   console.log(formatAgentsMdAction(created.agentsMdPath, created.agentsMdAction));
-  console.log(formatInitPathAction(created.knowledgeDir, created.knowledgeDirAction));
-  console.log(formatInitPathAction(created.metaPath, created.metaAction));
   console.log(formatInitPathAction(created.eventsPath, created.eventsAction));
   console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
 }
@@ -1260,11 +1194,6 @@ function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult
   return {
     agentsMdPath: plan.agentsMdPath,
     agentsMdAction: plan.agentsMdAction,
-    knowledgeDir: plan.knowledgeDir,
-    knowledgeDirAction: plan.knowledgeDirAction,
-    personalKnowledgeDir: plan.personalKnowledgeDir,
-    metaPath: plan.metaPath,
-    metaAction: plan.metaAction,
     eventsPath: plan.eventsPath,
     eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
@@ -1446,17 +1375,13 @@ function shouldReplaceWritableDirectory(path: string, _options?: InitOptions): b
  *
  * Per-file detection strategies are picked by callers:
  *   - "presence"       : the file is canonical-by-presence (events.jsonl)
- *   - "structural"     : the file is JSON, sanity-check its shape only
- *                        (agents.meta.json — its content may mutate post-
- *                        install via Skill-driven knowledge promotions, so
- *                        byte-compare would flag false drift)
  *   - "always-rewrite" : the file is a snapshot regenerated every run, so any
  *                        existing copy is treated as canonical for the diff
  *                        (forensic.json)
  */
 function classifyFreshPath(
   path: string,
-  strategy: DiffDetectStrategy,
+  _strategy: DiffDetectStrategy,
 ): ClassifiedFreshPathResult {
   if (!existsSync(path)) {
     return { path, state: "missing" };
@@ -1478,47 +1403,11 @@ function classifyFreshPath(
     return { path, state: "user-modified", reason: "expected a file" };
   }
 
-  if (strategy === "presence" || strategy === "always-rewrite") {
-    // Any present, well-formed file is canonical. events.jsonl is append-
-    // only (preserve verbatim); forensic.json is a snapshot (always
-    // rewritten at the write boundary regardless of diff classification).
-    return { path, state: "present-canonical" };
-  }
-
-  // Structural compare for agents.meta.json. Verifies it parses as JSON and
-  // exposes the schema_version-equivalent fields (revision + nodes +
-  // counters) — does NOT byte-compare against createInitialMeta() because
-  // AI-driven Skill flows may add nodes post-install, so any canonical
-  // post-install state diverges byte-wise from the initial empty template.
-  try {
-    const raw = readFileSync(path, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { path, state: "user-modified", reason: "not a JSON object" };
-    }
-    const record = parsed as Record<string, unknown>;
-    const hasRevision = typeof record["revision"] === "string";
-    const hasNodes =
-      record["nodes"] !== undefined
-      && record["nodes"] !== null
-      && typeof record["nodes"] === "object"
-      && !Array.isArray(record["nodes"]);
-    const hasCounters =
-      record["counters"] !== undefined
-      && record["counters"] !== null
-      && typeof record["counters"] === "object"
-      && !Array.isArray(record["counters"]);
-    if (!hasRevision || !hasNodes || !hasCounters) {
-      return { path, state: "drifted", reason: "missing required AgentsMeta fields" };
-    }
-    return { path, state: "present-canonical" };
-  } catch (error: unknown) {
-    return {
-      path,
-      state: "user-modified",
-      reason: error instanceof Error ? error.message : String(error),
-    };
-  }
+  // Both remaining strategies ("presence", "always-rewrite") treat any present,
+  // well-formed file as canonical. events.jsonl is append-only (preserve
+  // verbatim); forensic.json is a snapshot (always rewritten at the write
+  // boundary regardless of diff classification).
+  return { path, state: "present-canonical" };
 }
 
 /**
@@ -1777,19 +1666,6 @@ function installLocalFabricServer(target: string, manager: "pnpm" | "npm" | "yar
   });
 }
 
-function createInitialMeta(): AgentsMeta {
-  // v2.0: agents.meta.json starts empty (`nodes: {}`) with a zeroed counters
-  // envelope. AI-driven Skill flows (fabric-archive / fabric-review) add
-  // nodes/counters via writeKnowledgeMeta when promoting entries; rule-meta
-  // synchronization keeps the file in sync. rc.23 TASK-012 (F8a) removed
-  // the legacy baseline init-scan stage that previously seeded entries.
-  return {
-    revision: "sha256:initial",
-    nodes: {},
-    counters: defaultAgentsMetaCounters(),
-  };
-}
-
 /**
  * rc.15 (formerly rc.14 TASK-002) — emit `install_diff_applied` per install run.
  *
@@ -1930,8 +1806,6 @@ function printInitPlanSummary(
     }),
   );
   console.log(t("cli.install.plan.writes"));
-  console.log(`  - ${target}/.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/`);
-  console.log(`  - ${target}/.fabric/agents.meta.json`);
   console.log(`  - ${target}/.fabric/events.jsonl`);
   console.log(`  - ${target}/.fabric/forensic.json`);
   console.log(`  - ${target}/.fabric/fabric-config.json`);

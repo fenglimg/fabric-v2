@@ -10,6 +10,7 @@ import {
   createStoreResolver,
   formatKnowledgeId,
   parseKnowledgeId,
+  reconcileStoreCounters,
   resolveGlobalRoot,
   storeRelativePath,
   type KnowledgeType,
@@ -331,6 +332,17 @@ export function migrateProjectKnowledge(
   // Remove sources only after every write succeeded (move semantics).
   for (const item of items) {
     rmSync(item.source, { force: true });
+  }
+
+  // W4 F1 (producer↔consumer): seed each target store's counters.json to the
+  // floor of the ids just imported, so the runtime allocator
+  // (allocateStoreKnowledgeId) mints the NEXT free id instead of re-minting an
+  // imported one. Done before the git commit so counters.json is committed with
+  // the moved entries.
+  for (const info of Object.values(targets)) {
+    if (items.some((i) => i.storeUuid === info.uuid)) {
+      reconcileStoreCounters(info.dir);
+    }
   }
 
   let committed = false;

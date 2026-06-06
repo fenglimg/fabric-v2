@@ -64,6 +64,49 @@ export const storeIdentitySchema = z
 export type StoreIdentity = z.infer<typeof storeIdentitySchema>;
 
 // ---------------------------------------------------------------------------
+// v2.1 global-refactor (W1/A2) — store-internal project registry.
+//
+// A store serves knowledge for one OR MORE projects. An entry tags WHICH
+// project it belongs to via the `project:<id>` semantic_scope coordinate
+// (schemas/scope.ts); the `<id>` segment is one of the projects enumerated
+// here. The registry lives in a committed `projects.json` at the store root
+// (parallel to store.json) — separate from the mint-once identity file so the
+// mutable project list can grow without touching immutable identity (S55).
+//
+// A project `id` is a SINGLE scope segment (`[a-z0-9_-]+`, no ':') so that
+// `project:<id>` is a well-formed coordinate. Binding a repo to a project
+// (CLI `store bind --project <id>`) validates `<id>` against this registry so
+// a typo can't silently route writes/recall to a non-existent project.
+// ---------------------------------------------------------------------------
+export const STORE_PROJECT_ID_PATTERN = /^[a-z0-9_-]+$/u;
+
+export const storeProjectSchema = z
+  .object({
+    // Single scope segment forming the `project:<id>` coordinate. Immutable.
+    id: z
+      .string()
+      .regex(STORE_PROJECT_ID_PATTERN, "project id must be a single lowercase [a-z0-9_-] segment"),
+    // Optional human-facing label surfaced in `store project list`.
+    name: z.string().optional(),
+    // ISO-8601. When the project was first registered in this store.
+    created_at: z.string(),
+  })
+  .strict();
+
+export type StoreProject = z.infer<typeof storeProjectSchema>;
+
+// The committed `projects.json` file at a store root. Empty/absent ⇒ the store
+// has no enumerated projects yet (a store can still hold team/personal-scoped
+// knowledge that is not project-specific).
+export const storeProjectsFileSchema = z
+  .object({
+    projects: z.array(storeProjectSchema).default([]),
+  })
+  .strict();
+
+export type StoreProjectsFile = z.infer<typeof storeProjectsFileSchema>;
+
+// ---------------------------------------------------------------------------
 // required_stores — a PROJECT-level config field (`.fabric/fabric-config.json`)
 // listing the stores a repo expects to be mounted. `id` is the canonical alias
 // or UUID the project references; `suggested_remote` is a hint used by `clone`
@@ -114,6 +157,16 @@ export const STORE_KNOWLEDGE_TYPE_DIRS = [
 // storeIdentitySchema; these constants give readers the canonical sub-paths.
 export const STORE_LAYOUT = {
   identityFile: "store.json",
+  // Store-internal project registry (W1/A2). Committed parallel to store.json.
+  projectsFile: "projects.json",
+  // v2.2 W4 (agents.meta decolo) — per-store monotonic stable_id counters.
+  // COMMITTED parallel to store.json/projects.json (NOT gitignored like the
+  // derived agents.meta) because the counter ledger is non-derivable state that
+  // must travel with the store on clone: a fresh clone rebuilding from disk-max
+  // would re-mint a deleted entry's id and corrupt cite history (KT-DEC-0004
+  // monotonic invariant). Replaces the retired co-location
+  // <projectRoot>/.fabric/agents.meta.json#counters.
+  countersFile: "counters.json",
   knowledgeDir: "knowledge",
   bindingsDir: "bindings",
   stateDir: "state",

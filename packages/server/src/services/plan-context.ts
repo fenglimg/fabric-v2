@@ -1,12 +1,17 @@
-import { type RuleDescription, type RuleDescriptionIndexItem, tokenize } from "@fenglimg/fabric-shared";
+import {
+  buildStoreResolveInput,
+  createStoreResolver,
+  resolveCandidates,
+  type ResolutionCandidate,
+  type RuleDescription,
+  type RuleDescriptionIndexItem,
+  tokenize,
+} from "@fenglimg/fabric-shared";
 
 import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
-import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
-import { loadActiveMetaOrStale } from "./load-active-meta.js";
-import { buildCrossStoreRawItems } from "./cross-store-recall.js";
-import { reconcileKnowledge } from "./knowledge-sync.js";
+import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 import { buildBm25Model, buildQueryTerms, type Bm25Model } from "./bm25.js";
@@ -32,6 +37,11 @@ type ScoringContext = {
   // planContext and reused across the vector + BM25 paths so documentTextForItem
   // (a multi-array join) is not rebuilt per consumer.
   docTexts?: Map<string, string>;
+  // v2.1 global-refactor (W2/A4): stable_id → scope-resolution rank from
+  // resolveCandidates (scope-specificity project>team>personal + store
+  // tie-break). Used as the tie-break under EQUAL relevance score so a more
+  // specific scope outranks a broader one without overriding BM25 relevance.
+  scopeRank?: Map<string, number>;
 };
 
 export type PlanContextInput = {
@@ -265,67 +275,19 @@ export async function planContext(
     }
   }
 
-  // v2.0.0-rc.22 Scope D T-D2: graceful meta-load. planContext is a hint-time
-  // advisor — when buildKnowledgeMeta fails transiently we'd rather return a
-  // slightly stale broad-scope hint than surface an fs-error to the caller.
-  // loadActiveMetaOrStale degrades to the on-disk meta in that case and flags
-  // the response via `stale: true` so consumers can warn.
-  let metaResult = await loadActiveMetaOrStale(projectRoot, { caller: "planContext" });
-  let meta = metaResult.meta;
-
-  // v2.0.0-rc.23 TASK-005 (a-B): description-undefined auto-heal.
-  //
-  // Symmetric to rc.22 D2 read-side auto-heal, but covers a case the
-  // revision-hash gate cannot detect: an older agents.meta.json was authored
-  // before frontmatter descriptions were required and the on-disk knowledge
-  // tree has no descriptive frontmatter to populate them. Such entries
-  // serve `description: undefined` to the LLM and degrade hint quality —
-  // they collapse to "KB: none" in cite enforcement. Revision hashes match,
-  // so loadActiveMetaOrStale's auto-heal stays silent.
-  //
-  // We probe the freshly-loaded meta for any node missing BOTH the structured
-  // description and the legacy activation.description summary. On hit, we
-  // drive a full reconcile (which re-derives frontmatter from disk and writes
-  // a new meta), then reload. The guard `metaResult.auto_healed !== true`
-  // prevents an infinite loop: if loadActiveMetaOrStale already healed once
-  // this call and we STILL see undefined descriptions, that means the
-  // knowledge .md files genuinely lack frontmatter — a second reconcile would
-  // not change anything. We accept the degraded state and surface the
-  // existing preflight_diagnostics warning instead.
-  //
-  // No threshold (grill decision): any single undefined description triggers
-  // the heal. A threshold would introduce a confusing middle state where
-  // some legacy entries get healed and others don't.
-  let firstSeenPreviousRevision = metaResult.previous_revision_hash;
-  let autoHealedAccumulated = metaResult.auto_healed;
-  if (
-    metaResult.auto_healed !== true &&
-    hasUndefinedDescription(meta)
-  ) {
-    try {
-      await reconcileKnowledge(projectRoot, { trigger: "auto-heal-description" });
-      // Re-read the meta after the reconcile rebuild. Use loadActiveMetaOrStale
-      // again rather than readAgentsMeta directly so the same graceful-degrade
-      // semantics apply if the post-reconcile load fails.
-      const healedResult = await loadActiveMetaOrStale(projectRoot, { caller: "planContext" });
-      meta = healedResult.meta;
-      autoHealedAccumulated = true;
-      // Preserve the ORIGINAL pre-call revision so the response always
-      // carries the oldest known hash. healedResult.previous_revision_hash
-      // would be the post-reconcile revision (same as the current one),
-      // which is not useful for downstream "what changed under me?" audit.
-      firstSeenPreviousRevision = metaResult.previous_revision_hash;
-      metaResult = healedResult;
-    } catch {
-      // Best-effort heal — never propagate. The hint path must remain
-      // available even when reconcile encounters fs errors; the original
-      // meta is still usable and the preflight_diagnostics warning will
-      // surface the missing descriptions to the caller.
-    }
-  }
-  const stale =
-    metaResult.degraded === true ||
-    (input.client_hash !== undefined && input.client_hash !== meta.revision);
+  // v2.2 W5 R1 (读侧 cutover): co-location agents.meta retired. There is no
+  // project-local knowledge tree to derive a meta from anymore — candidates come
+  // exclusively from the read-set stores (cross-store on-the-fly, below). The old
+  // loadActiveMetaOrStale + buildKnowledgeMeta(.fabric/knowledge) + description
+  // auto-heal machinery is gone: stores hold the canonical knowledge and ship no
+  // agents.meta, and once .fabric/agents.meta.json is deleted (Z1) reading it
+  // would throw. The revision is now a store-corpus content fingerprint
+  // (computeReadSetRevision) — it drives the BM25 corpus cache key and the
+  // client stale-detection compare, exactly as meta.revision did. Auto-heal is
+  // obsolete: buildCrossStoreRawItems reads frontmatter descriptions live, so
+  // there is no stored derived index that can drift out of sync with disk.
+  const revision = computeReadSetRevision(projectRoot);
+  const stale = input.client_hash !== undefined && input.client_hash !== revision;
   const uniquePaths = dedupePaths(input.paths);
   // v2.0.0-rc.33 W2-3 / W2-4: pass scoring context so workspace-wide sort
   // pulls recency-boosted + path-local entries to the top. Uses the same
@@ -349,20 +311,18 @@ export async function planContext(
     queryTerms: buildQueryTerms(queryText),
   };
 
-  // v2.0.0-rc.38 UX-1/UX-2: build the single candidate index once. The per-path
-  // filters (shouldIncludeIndexItemForPath / shouldIncludeByRelevance) have been
-  // no-ops since rc.37 A1, so there is no per-path narrowing to do — every path
-  // sees the same candidates. We dedupe by stable_id and surface empty-shell
-  // suppressions as a preflight diagnostic.
-  const { rawItems: projectRawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
-
-  // v2.1 global-refactor (W1-T1): merge candidates from every mounted store in
-  // the project's read-set (required_stores ∪ implicit personal). Store entries
-  // are store-qualified (`<alias>:<id>`) and flow through the SAME layer-filter /
+  // v2.1 global-refactor (W1-T1) + v2.2 W5 R1: candidates come SOLELY from the
+  // read-set stores (required_stores ∪ implicit personal). Store entries are
+  // store-qualified (`<alias>:<id>`) and flow through the SAME layer-filter /
   // BM25 / vector / sort / dedup / top_k pipeline below. best-effort: a
-  // multi-store hiccup degrades to project-only recall, never crashes the hint.
+  // multi-store hiccup degrades to an empty candidate set, never crashes the
+  // hint. The co-location project source (buildRawDescriptionItems over
+  // agents.meta nodes) was retired here — there is no project knowledge tree
+  // anymore. Empty-shell suppression (summary === stable_id, no selection
+  // signal) is preserved via partitionEmptyShells so store drafts get the same
+  // quality gate the project-meta path applied (and the same preflight warning).
   const storeRawItems = await buildCrossStoreRawItems(projectRoot).catch(() => []);
-  const allRawItems = [...projectRawItems, ...storeRawItems];
+  const { rawItems: allRawItems, suppressedStableIds } = partitionEmptyShells(storeRawItems);
 
   // F54 (ISS-20260531-090): honor the declared `layer_filter`. The per-call
   // value wins; otherwise fabric.config.json#default_layer_filter; "all"/"both"
@@ -391,8 +351,14 @@ export async function planContext(
   // whole corpus on every query-bearing call. queryTerms vary per call but only
   // feed scoreDoc (cheap); the model is corpus-only.
   if (scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
-    scoringContext.bm25 = getOrBuildBm25Model(meta.revision, rawItems, docTexts);
+    scoringContext.bm25 = getOrBuildBm25Model(revision, rawItems, docTexts);
   }
+
+  // v2.1 global-refactor (W2/A4): scope-resolution rank for the equal-relevance
+  // tie-break. resolveCandidates (resolution.ts) is now an actual consumer — a
+  // more specific scope (project:x) outranks a broader one (team/personal) only
+  // when BM25/locality is tied, so relevance stays primary.
+  scoringContext.scopeRank = buildScopeRankMap(rawItems, projectRoot);
 
   // v2.2 C2-vector (W2-T7): OPTIONAL semantic recall supplement. Default OFF —
   // only runs when `embed_enabled` is set AND the optional fastembed package
@@ -478,7 +444,7 @@ export async function planContext(
   // up with the operator's chosen lifetime. Hot-path safe: readSelectionTokenTtlMs
   // is best-effort and returns undefined on any read/parse failure.
   const ttlMs = readSelectionTokenTtlMs(projectRoot) ?? SELECTION_TOKEN_TTL_DEFAULT_MS;
-  const selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds, Date.now(), ttlMs);
+  const selectionToken = createSelectionToken(revision, uniquePaths, [], sharedStableIds, Date.now(), ttlMs);
 
   // v2.0.0-rc.37 NEW-24: load recent knowledge_id_redirect events and
   // surface only the (old → new) mappings whose `new` id is in the current
@@ -496,24 +462,18 @@ export async function planContext(
   }
 
   const result: PlanContextResult = {
-    revision_hash: meta.revision,
+    revision_hash: revision,
     stale,
     selection_token: selectionToken,
     entries,
     candidates,
     ...(omittedCandidateCount > 0 ? { omitted_candidate_count: omittedCandidateCount } : {}),
-    preflight_diagnostics: buildPreflightDiagnostics(meta, suppressedStableIds),
-    // v2.0.0-rc.22 Scope D T-D2 + rc.23 TASK-005 (a-B): surface auto-heal pair
-    // only when a heal actually fired (either revision-drift heal in
-    // loadActiveMetaOrStale or description-undefined heal driven from here).
-    // Keeping these fields absent on the steady-state path means existing
-    // consumers see the same wire shape they always have.
-    ...(autoHealedAccumulated
-      ? {
-          auto_healed: true,
-          previous_revision_hash: firstSeenPreviousRevision,
-        }
-      : {}),
+    preflight_diagnostics: buildPreflightDiagnostics(suppressedStableIds),
+    // v2.2 W5 R1: the auto_healed / previous_revision_hash pair was tied to the
+    // co-location loadActiveMetaOrStale read-path auto-heal, which is retired.
+    // Store-backed recall reads frontmatter live, so there is no stored derived
+    // index to heal — these fields are never emitted now (the response schema
+    // keeps them optional for backward compat with cached client state).
     ...(redirects !== undefined ? { redirects } : {}),
     // lifecycle-refactor W3-T2 (§7): surface the related-expansion provenance map
     // ONLY when at least one neighbour was actually appended. Empty (graph-empty
@@ -637,39 +597,25 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 // empty intent_clues/tech_stack/impact) carry zero selection signal — they are
 // dropped from `items` and their ids returned in `suppressedStableIds` so the
 // caller can raise a data-quality diagnostic.
-// v2.2 C2-vector (W2-T7): split out the raw (unsorted) item build so planContext
-// can compute optional vector scores over the candidate texts BEFORE the sort.
-function buildRawDescriptionItems(meta: AgentsMeta): {
+// v2.2 W5 R1 (读侧 cutover): partition cross-store candidates into surfaced items
+// vs suppressed empty shells (summary === stable_id, no selection signal). This
+// preserves the quality gate the retired buildRawDescriptionItems(meta) applied
+// to project-meta nodes, now over store-qualified candidates. buildCrossStoreRawItems
+// already drops entries with NO frontmatter description and backfills knowledge_layer
+// from the store-derived layer, so the only remaining gate here is empty-shell
+// suppression (which still feeds the empty_shell_suppressed preflight warning).
+function partitionEmptyShells(items: RuleDescriptionIndexItem[]): {
   rawItems: RuleDescriptionIndexItem[];
   suppressedStableIds: string[];
 } {
   const suppressedStableIds: string[] = [];
-  const rawItems = Object.entries(meta.nodes).flatMap(([nodeId, node]) => {
-    const baseDescription = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
-    if (baseDescription === undefined) {
-      return [];
+  const rawItems = items.filter((item) => {
+    if (isEmptyShellDescription(item.description, item.stable_id)) {
+      suppressedStableIds.push(item.stable_id);
+      return false;
     }
-
-    const stableId = node.stable_id ?? nodeId;
-
-    // fold ②: suppress signal-less shells.
-    if (isEmptyShellDescription(baseDescription, stableId)) {
-      suppressedStableIds.push(stableId);
-      return [];
-    }
-
-    // Backfill the path-inferred knowledge layer (team vs personal from the
-    // content_ref/file root) when frontmatter left it unset, so MCP clients
-    // always see a layer without a separate top-level mirror.
-    const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
-    const description =
-      baseDescription.knowledge_layer === undefined && inferredLayer !== undefined
-        ? { ...baseDescription, knowledge_layer: inferredLayer }
-        : baseDescription;
-
-    return [{ stable_id: stableId, description }];
+    return true;
   });
-
   return { rawItems, suppressedStableIds };
 }
 
@@ -727,6 +673,70 @@ export function compareStableIds(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 
+// v2.1 global-refactor (W2/A4): consume the resolver's double-axis ordering
+// (scope-specificity project>team>personal + store tie-break) and project it to
+// a stable_id → rank map. Used ONLY as the tie-break under equal relevance —
+// BM25/locality stays the primary key, so a more specific scope wins only when
+// content relevance is tied. Each candidate's semantic_scope comes from its
+// frontmatter (cross-store items) or falls back to its knowledge_layer; the
+// store axis is keyed off the read-set store order so the active write store
+// breaks ties first (S53).
+function buildScopeRankMap(
+  items: RuleDescriptionIndexItem[],
+  projectRoot: string,
+): Map<string, number> {
+  const input = buildStoreResolveInput(projectRoot);
+  const aliasToUuid = new Map<string, string>();
+  let storeOrder: string[] = [];
+  if (input !== null) {
+    for (const s of input.mountedStores) {
+      aliasToUuid.set(s.alias, s.store_uuid);
+    }
+    storeOrder = createStoreResolver()
+      .resolveReadSet(input)
+      .stores.map((s) => s.store_uuid);
+  }
+
+  const candidates: ResolutionCandidate[] = items.map((it) => {
+    const colon = it.stable_id.indexOf(":");
+    const alias = colon === -1 ? "" : it.stable_id.slice(0, colon);
+    const localId = colon === -1 ? it.stable_id : it.stable_id.slice(colon + 1);
+    const semanticScope =
+      it.description.semantic_scope ?? it.description.knowledge_layer ?? "team";
+    return {
+      global_ref: it.stable_id,
+      store_uuid: aliasToUuid.get(alias) ?? alias,
+      alias,
+      local_id: localId,
+      semantic_scope: semanticScope,
+    };
+  });
+
+  const { resolved } = resolveCandidates(candidates, { storeOrder });
+  const map = new Map<string, number>();
+  for (const r of resolved) {
+    map.set(r.global_ref, r.rank);
+  }
+  return map;
+}
+
+// Tie-break (under equal relevance score): a more specific scope ranks first via
+// the resolveCandidates rank map; stable_id is the final deterministic fallback.
+function compareScopeThenId(
+  left: RuleDescriptionIndexItem,
+  right: RuleDescriptionIndexItem,
+  scopeRank: Map<string, number> | undefined,
+): number {
+  if (scopeRank !== undefined) {
+    const lr = scopeRank.get(left.stable_id);
+    const rr = scopeRank.get(right.stable_id);
+    if (lr !== undefined && rr !== undefined && lr !== rr) {
+      return lr - rr; // lower rank = more specific scope / earlier store → first
+    }
+  }
+  return compareStableIds(left.stable_id, right.stable_id);
+}
+
 function sortDescriptionItems(
   rawItems: RuleDescriptionIndexItem[],
   scoringContext?: ScoringContext,
@@ -749,7 +759,7 @@ function sortDescriptionItems(
   scored.sort((left, right) =>
     left.score !== right.score
       ? right.score - left.score // descending
-      : compareStableIds(left.item.stable_id, right.item.stable_id),
+      : compareScopeThenId(left.item, right.item, scoringContext.scopeRank), // W2/A4 scope tie-break
   );
   return scored.map((entry) => entry.item);
 }
@@ -783,67 +793,16 @@ function isEmptyShellDescription(description: RuleDescription, stableId: string)
   );
 }
 
-function inferKnowledgeLayerFromContentRef(contentRef: string | undefined): "team" | "personal" | undefined {
-  if (contentRef === undefined) {
-    return undefined;
-  }
-  if (contentRef.startsWith("~/.fabric/knowledge/")) {
-    return "personal";
-  }
-  if (contentRef.startsWith(".fabric/knowledge/")) {
-    return "team";
-  }
-  return undefined;
-}
-
-function descriptionFromLegacyActivation(summary: string | undefined): RuleDescription | undefined {
-  if (summary === undefined) {
-    return undefined;
-  }
-
-  return {
-    summary,
-    intent_clues: [],
-    tech_stack: [],
-    impact: [],
-    must_read_if: summary,
-  };
-}
-
-/**
- * v2.0.0-rc.23 TASK-005 (a-B): detector for description-undefined drift.
- *
- * Returns true if ANY node in the meta lacks both the structured description
- * AND the legacy activation.description summary. Matches the exact predicate
- * used by buildPreflightDiagnostics so the detector and the diagnostic stay in
- * lockstep: every entry that would surface a `missing_description` warning
- * also drives the auto-heal trigger.
- *
- * No threshold — any single undefined description triggers heal. See the
- * call-site comment in planContext for the rationale.
- */
-function hasUndefinedDescription(meta: AgentsMeta): boolean {
-  return Object.values(meta.nodes).some(
-    (node) => node.description === undefined && node.activation?.description === undefined,
-  );
-}
-
-function buildPreflightDiagnostics(meta: AgentsMeta, suppressedStableIds: string[]): PreflightDiagnostic[] {
+// v2.2 W5 R1 (读侧 cutover): preflight diagnostics over the store-backed
+// candidate set. The old `missing_description` warning was derived from
+// agents.meta nodes (a node present in the index but lacking a description) —
+// that path is retired: buildCrossStoreRawItems simply DROPS store entries with
+// no frontmatter description (they carry no selection signal and are never
+// surfaced as candidates), so there is no "present-but-undefined" state left to
+// warn about. The empty_shell_suppressed warning (summary === stable_id)
+// survives via partitionEmptyShells.
+function buildPreflightDiagnostics(suppressedStableIds: string[]): PreflightDiagnostic[] {
   const diagnostics: PreflightDiagnostic[] = [];
-
-  const missingDescriptionStableIds = Object.entries(meta.nodes)
-    .filter(([, node]) => node.description === undefined && node.activation?.description === undefined)
-    .map(([nodeId, node]) => node.stable_id ?? nodeId)
-    .sort();
-
-  if (missingDescriptionStableIds.length > 0) {
-    diagnostics.push({
-      code: "missing_description",
-      severity: "warn",
-      stable_ids: missingDescriptionStableIds,
-      message: `Resolved registry includes ${missingDescriptionStableIds.length} node(s) without structured descriptions.`,
-    });
-  }
 
   // v2.0.0-rc.38 UX-2: surface signal-less shells suppressed from `candidates`
   // so the user can enrich them (fabric doctor --enrich-descriptions).

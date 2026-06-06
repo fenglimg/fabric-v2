@@ -4,18 +4,37 @@ import { tmpdir } from "node:os";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+  type GlobalConfig,
+} from "@fenglimg/fabric-shared";
+
 import { createSelectionToken, planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
 import { extractBody, getKnowledgeSections } from "./knowledge-sections.js";
 import { contextCache } from "../cache.js";
 
-// v2.0-rc.7 T9: planContext() always emits a selection_token, but the token
-// it mints carries `required_stable_ids = []` (the L0/L1/L2 selection
-// ceremony was retired in rc.5 A3 and the planning surface no longer
-// distinguishes required vs selectable). The two-stage selection tests below
-// still need a token that ENFORCES specific required ids (e.g. global-
-// protocol), so they mint a fresh token directly via createSelectionToken
-// with the test-supplied lists rather than reusing plan.selection_token.
+// v2.2 W5 R3+R7 (读侧退役): getKnowledgeSections no longer reads the project's
+// co-location `.fabric/agents.meta.json`. Every selected id is resolved through
+// buildCrossStoreBodyIndex against the MOUNTED stores in the read-set, and the
+// body is read straight from the store file. Selected ids must be
+// store-qualified (`team:KT-DEC-0001` / `personal:KP-...`); a bare colon-less id
+// no longer matches any store entry → it lands in an `unresolved_selected_id`
+// diagnostic (warn-skip) instead of throwing.
+//
+// FABRIC_HOME is repointed to an isolated fake home in beforeEach so the
+// developer's real ~/.fabric/stores never leak into the fixture, and the seeded
+// stores land under that fake home.
+
+// v2.0-rc.7 T9: planContext() always emits a selection_token, but the token it
+// mints carries `required_stable_ids = []`. The two-stage selection tests below
+// still need a token that ENFORCES specific required ids, so they mint a fresh
+// token directly via createSelectionToken with the test-supplied lists rather
+// than reusing plan.selection_token. The candidate paths come from the plan so
+// the token's target_paths stay consistent with the planning surface.
 function mintTokenFromPlan(
   plan: Awaited<ReturnType<typeof planContext>>,
   requiredStableIds: string[],
@@ -32,9 +51,12 @@ function mintTokenFromPlan(
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
 
-// v2.0.0-rc.22 Scope D T-D2: isolate FABRIC_HOME so loadActiveMeta's dual-root
-// scan does not pull in the developer's personal knowledge entries while the
-// fixture's hand-crafted meta is being auto-healed against the team root only.
+// Fixed store UUIDs reused across the fixtures below. The team store backs the
+// required_stores read-set; the personal store is auto-included via its
+// `personal: true` flag (S11 implicit personal).
+const TEAM_STORE = "11111111-1111-4111-8111-111111111111";
+const PERSONAL_STORE = "22222222-2222-4222-8222-222222222222";
+
 beforeEach(async () => {
   originalFabricHome = process.env.FABRIC_HOME;
   const fakeHome = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-home-"));
@@ -85,7 +107,7 @@ type: decision
   });
 
   it("strips a leading UTF-8 BOM even when frontmatter is absent", () => {
-    const body = extractBody(`\uFEFF# Heading\n\nbody\n`);
+    const body = extractBody(`﻿# Heading\n\nbody\n`);
     expect(body.charCodeAt(0)).not.toBe(0xfeff);
     expect(body.startsWith("# Heading")).toBe(true);
   });
@@ -95,7 +117,7 @@ type: decision
   // body UNTRIMMED; the trim policy is per-consumer (review applies `.trim()`
   // at its list/search call sites). This locks the unified semantics so the
   // two call sites can't silently re-fork.
-  it("returns the body UNTRIMMED (consumers trim explicitly) \u2014 single shared impl", () => {
+  it("returns the body UNTRIMMED (consumers trim explicitly) — single shared impl", () => {
     const source = `---\nid: KT-DEC-0001\n---\n  ## Body with surrounding whitespace  \n\n`;
     const body = extractBody(source);
     // Untrimmed: the body's own leading spaces and trailing newlines are kept.
@@ -126,120 +148,85 @@ describe("getKnowledgeSections", () => {
     expect((err as { actionHint?: string }).actionHint).toMatch(/fab_plan_context/);
   });
 
-  it("skips a selected store-qualified id absent from project meta instead of crashing (F7)", async () => {
+  it("skips a selected store-qualified id absent from the read-set instead of crashing (F7)", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
-    // A store-qualified id (`team:...`) surfaced by cross-store recall is in the
-    // token's selectable set but has NO node in the project's agents.meta — it
-    // must be skipped with a diagnostic, never throw and crash the whole call.
-    const selectionToken = mintTokenFromPlan(plan, [], ["ui-batch-rendering", "team:KT-DEC-9999"]);
+    // `team:KT-DEC-9999` is in the token's selectable set but has NO entry in any
+    // mounted store — it must be skipped with a diagnostic, never throw and crash
+    // the whole call. The valid store id `team:KT-GLD-0001` is still delivered.
+    const selectionToken = mintTokenFromPlan(plan, [], ["team:KT-GLD-0001", "team:KT-DEC-9999"]);
 
     const result = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-batch-rendering", "team:KT-DEC-9999"],
+      ai_selected_stable_ids: ["team:KT-GLD-0001", "team:KT-DEC-9999"],
       ai_selection_reasons: {
-        "ui-batch-rendering": "valid project-local pick",
+        "team:KT-GLD-0001": "valid store pick",
         "team:KT-DEC-9999": "store entry the AI also chose",
       },
       correlation_id: "corr-f7",
       session_id: "session-f7",
     });
 
-    // The valid project-local rule is still delivered; the store id is skipped.
-    expect(result.rules.map((r) => r.stable_id)).toEqual(["ui-batch-rendering"]);
+    // The valid store rule is still delivered; the missing store id is skipped.
+    expect(result.rules.map((r) => r.stable_id)).toEqual(["team:KT-GLD-0001"]);
     const unresolved = result.diagnostics.filter((d) => d.code === "unresolved_selected_id");
     expect(unresolved.map((d) => d.stable_id)).toEqual(["team:KT-DEC-9999"]);
     expect(unresolved[0]!.severity).toBe("warn");
   });
 
-  it("merges required L0/L2 with AI-selected L1 and returns requested sections", async () => {
+  it("merges required ids with AI-selected ids and returns store-backed bodies", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering"],
+      ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+      ["team:KT-GLD-0001"],
     );
 
     const result = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-batch-rendering"],
+      ai_selected_stable_ids: ["team:KT-GLD-0001"],
       ai_selection_reasons: {
-        "ui-batch-rendering": "BattleView.ts touches UI rendering nodes and labels.",
+        "team:KT-GLD-0001": "BattleView.ts touches UI rendering nodes and labels.",
       },
       correlation_id: "corr-sections",
       session_id: "session-sections",
     });
 
-    // v2.0.0-rc.22 Scope D T-D2: revision_hash is now sourced from the
-    // auto-healed meta. The "rev-sections" literal in the fixture drifts the
-    // moment buildKnowledgeMeta rescans the seeded .md files, so we assert
-    // shape only — the auto-heal contract is exercised by the dedicated
-    // stale-meta tests below.
+    // v2.2 W5 R3: revision_hash is now the store-corpus content fingerprint
+    // (computeReadSetRevision) — assert shape only, not a literal.
     expect(result.revision_hash).toEqual(expect.any(String));
     expect(result.revision_hash.length).toBeGreaterThan(0);
-    expect(result.selected_stable_ids).toEqual(["global-protocol", "ui-batch-rendering", "battle-view-local"]);
-    // v2.0.0-rc.23 TASK-013 (F8b): the API now returns the full markdown body
-    // (frontmatter stripped). We assert shape + signature substrings rather
-    // than exact whole-file equality — the fixture markdown carries an h1
-    // heading + the legacy `## [MANDATORY_INJECTION]` heading verbatim.
+    // Final order = [required..., ai_selected...].
+    expect(result.selected_stable_ids).toEqual([
+      "team:KT-DEC-0001",
+      "team:KT-DEC-0002",
+      "team:KT-GLD-0001",
+    ]);
+    // v2.0.0-rc.23 TASK-013 (F8b): the API returns the full markdown body
+    // (frontmatter stripped). We assert shape + signature substrings.
     expect(result.rules.map((r) => r.stable_id)).toEqual([
-      "global-protocol",
-      "ui-batch-rendering",
-      "battle-view-local",
+      "team:KT-DEC-0001",
+      "team:KT-DEC-0002",
+      "team:KT-GLD-0001",
     ]);
-    expect(result.rules[0]!.body).toContain("# Global");
+    expect(result.rules[0]!.body).toContain("# KT-DEC-0001");
     expect(result.rules[0]!.body).toContain("Global mandatory.");
-    expect(result.rules[1]!.body).toContain("# UI");
-    expect(result.rules[1]!.body).toContain("UI mandatory.");
-    expect(result.rules[1]!.body).toContain("UI context.");
-    expect(result.rules[2]!.body).toContain("# Battle");
-    expect(result.rules[2]!.body).toContain("BattleView owns combat UI lifecycle boundaries.");
-    expect(result.rules[2]!.body).toContain("BL-BATTLE-001");
-    expect(result.rules[2]!.body).toContain("BattleView context.");
-    // v2.0.0-rc.23 TASK-013 (F8b): `missing_section` diagnostics retired
-    // along with the A-set enum. Only `missing_knowledge_metadata` warnings
-    // remain — fixture nodes have no knowledge_type/knowledge_layer.
-    expect(result.diagnostics).toEqual([
-      {
-        code: "missing_knowledge_metadata",
-        severity: "warn",
-        stable_id: "global-protocol",
-        message: "Rule global-protocol has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
-      },
-      {
-        code: "missing_knowledge_metadata",
-        severity: "warn",
-        stable_id: "ui-batch-rendering",
-        message: "Rule ui-batch-rendering has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
-      },
-      {
-        code: "missing_knowledge_metadata",
-        severity: "warn",
-        stable_id: "battle-view-local",
-        message: "Rule battle-view-local has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
-      },
-    ]);
-    // v2.0 rc.5 TASK-014 (C5): event ledger now also receives
-    // knowledge_consumed events (one per resolved stable_id, deduped per
-    // request) after knowledge_sections_fetched. Use slice/find rather than
-    // a brittle exact-array match.
+    expect(result.rules[1]!.body).toContain("# KT-DEC-0002");
+    expect(result.rules[1]!.body).toContain("BattleView owns combat UI lifecycle boundaries.");
+    expect(result.rules[2]!.body).toContain("# KT-GLD-0001");
+    expect(result.rules[2]!.body).toContain("UI mandatory.");
+    // v2.2 W5 R3: the project-meta `missing_knowledge_metadata` diagnostic is
+    // gone (it lived on the co-location node-table path). Store-backed reads
+    // surface no metadata diagnostic — every selected id resolved cleanly.
+    expect(result.diagnostics).toEqual([]);
+    // v2.0 rc.5 TASK-014 (C5): event ledger receives knowledge_consumed events
+    // (one per resolved stable_id, deduped per request) after
+    // knowledge_sections_fetched. Use slice/find rather than a brittle exact-
+    // array match.
     const allEvents = (await readEventLedger(projectRoot)).events;
-    // v2.0.0-rc.22 Scope D T-D2: loadActiveMeta now fires auto-heal on stale
-    // fixtures. The heal pipeline emits side events (knowledge_drift_detected
-    // / baseline_synced / knowledge_meta_auto_healed) which are NOT part of
-    // the selection lifecycle this test pins. Filter them out so the strict
-    // ordering assertion below stays focused on the planContext →
-    // getKnowledgeSections flow.
-    const HEAL_EVENT_TYPES = new Set([
-      "knowledge_drift_detected",
-      "baseline_synced",
-      "knowledge_meta_auto_healed",
-    ]);
     const lifecycleEvents = allEvents.filter(
-      (e) =>
-        e.event_type !== "knowledge_consumed" &&
-        !HEAL_EVENT_TYPES.has(e.event_type),
+      (e) => e.event_type !== "knowledge_consumed",
     );
     expect(lifecycleEvents).toEqual([
       expect.objectContaining({
@@ -250,12 +237,12 @@ describe("getKnowledgeSections", () => {
         event_type: "knowledge_selection",
         selection_token: selectionToken,
         target_paths: ["assets/scripts/ui/BattleView.ts"],
-        required_stable_ids: ["global-protocol", "battle-view-local"],
-        ai_selectable_stable_ids: ["ui-batch-rendering"],
-        ai_selected_stable_ids: ["ui-batch-rendering"],
-        final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
+        required_stable_ids: ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+        ai_selectable_stable_ids: ["team:KT-GLD-0001"],
+        ai_selected_stable_ids: ["team:KT-GLD-0001"],
+        final_stable_ids: ["team:KT-DEC-0001", "team:KT-DEC-0002", "team:KT-GLD-0001"],
         ai_selection_reasons: {
-          "ui-batch-rendering": "BattleView.ts touches UI rendering nodes and labels.",
+          "team:KT-GLD-0001": "BattleView.ts touches UI rendering nodes and labels.",
         },
         correlation_id: "corr-sections",
         session_id: "session-sections",
@@ -267,8 +254,8 @@ describe("getKnowledgeSections", () => {
         // rc.23 F8b: `requested_sections` is now always emitted as []
         // (the `sections` input parameter was removed).
         requested_sections: [],
-        final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
-        ai_selected_stable_ids: ["ui-batch-rendering"],
+        final_stable_ids: ["team:KT-DEC-0001", "team:KT-DEC-0002", "team:KT-GLD-0001"],
+        ai_selected_stable_ids: ["team:KT-GLD-0001"],
         diagnostics: result.diagnostics,
         correlation_id: "corr-sections",
         session_id: "session-sections",
@@ -278,7 +265,7 @@ describe("getKnowledgeSections", () => {
     expect(consumed).toHaveLength(3);
     expect(
       consumed.map((e) => (e as { stable_id: string }).stable_id).sort(),
-    ).toEqual(["battle-view-local", "global-protocol", "ui-batch-rendering"]);
+    ).toEqual(["team:KT-DEC-0001", "team:KT-DEC-0002", "team:KT-GLD-0001"]);
   });
 
   // -----------------------------------------------------------------------
@@ -290,15 +277,15 @@ describe("getKnowledgeSections", () => {
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering"],
+      ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+      ["team:KT-GLD-0001"],
     );
 
     const before = Date.now();
     await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-batch-rendering"],
-      ai_selection_reasons: { "ui-batch-rendering": "BattleView touches UI rendering." },
+      ai_selected_stable_ids: ["team:KT-GLD-0001"],
+      ai_selection_reasons: { "team:KT-GLD-0001": "BattleView touches UI rendering." },
       correlation_id: "corr-consume",
       session_id: "session-consume",
       client_hash: "rev-sections",
@@ -312,7 +299,7 @@ describe("getKnowledgeSections", () => {
     const stableIds = consumed
       .map((e) => (e as { stable_id: string }).stable_id)
       .sort();
-    expect(stableIds).toEqual(["battle-view-local", "global-protocol", "ui-batch-rendering"]);
+    expect(stableIds).toEqual(["team:KT-DEC-0001", "team:KT-DEC-0002", "team:KT-GLD-0001"]);
 
     for (const event of consumed) {
       const e = event as {
@@ -331,28 +318,21 @@ describe("getKnowledgeSections", () => {
   });
 
   it("dedupes knowledge_consumed within a single request — duplicate stable_ids emit once", async () => {
-    // Force a corpus where the same stable_id surfaces twice in the resolved
-    // rule list by selecting one L1 id and seeding it as both required and
-    // ai-selectable. The service uses a Set keyed by stable_id so the second
-    // appearance is suppressed.
+    // For a 3-rule fetch we must see exactly 3 events (not 4+): the service
+    // builds selected_stable_ids by [required, ...ai_selected] and dedupes on a
+    // Set keyed by stable_id, so a single id maps to a single event.
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
-    // Mint a token where global-protocol is BOTH required and (artificially)
-    // re-listed in selected_stable_ids upstream — but since the service builds
-    // selected_stable_ids by [required, ...ai_selected] and dedupes on insert
-    // via the Set, the cleanest reproduction is asserting a single id maps to
-    // a single event regardless of pipeline shape: just check that for a
-    // 3-rule fetch we see exactly 3 events (not 4+).
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering"],
+      ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+      ["team:KT-GLD-0001"],
     );
 
     await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-batch-rendering"],
-      ai_selection_reasons: { "ui-batch-rendering": "UI." },
+      ai_selected_stable_ids: ["team:KT-GLD-0001"],
+      ai_selection_reasons: { "team:KT-GLD-0001": "UI." },
       client_hash: "rev-sections",
     });
 
@@ -369,14 +349,14 @@ describe("getKnowledgeSections", () => {
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering"],
+      ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+      ["team:KT-GLD-0001"],
     );
 
     await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-batch-rendering"],
-      ai_selection_reasons: { "ui-batch-rendering": "UI." },
+      ai_selected_stable_ids: ["team:KT-GLD-0001"],
+      ai_selection_reasons: { "team:KT-GLD-0001": "UI." },
       // No client_hash passed — service should default to "".
     });
 
@@ -388,19 +368,19 @@ describe("getKnowledgeSections", () => {
     }
   });
 
-  it("hard-errors invalid L1 selections; AI selection reasons are optional (F8)", async () => {
+  it("hard-errors invalid selections; AI selection reasons are optional (F8)", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering"],
+      ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+      ["team:KT-GLD-0001"],
     );
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["unknown-l1"],
-      ai_selection_reasons: { "unknown-l1": "not selectable" },
+      ai_selected_stable_ids: ["team:not-selectable"],
+      ai_selection_reasons: { "team:not-selectable": "not selectable" },
     })).rejects.toThrow(/Invalid rule selection/u);
 
     // v2.2 全砍 F8: omitting a reason for a VALID selection no longer throws —
@@ -408,15 +388,17 @@ describe("getKnowledgeSections", () => {
     // `.optional().default({})` contract). The body is delivered regardless.
     const noReason = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-batch-rendering"],
+      ai_selected_stable_ids: ["team:KT-GLD-0001"],
       ai_selection_reasons: {},
     });
-    expect(noReason.selected_stable_ids).toContain("ui-batch-rendering");
+    expect(noReason.selected_stable_ids).toContain("team:KT-GLD-0001");
 
+    // A required id is not in the token's ai_selectable set → selecting it as an
+    // AI pick is still rejected.
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["global-protocol"],
-      ai_selection_reasons: { "global-protocol": "L0 cannot be selected by AI." },
+      ai_selected_stable_ids: ["team:KT-DEC-0001"],
+      ai_selection_reasons: { "team:KT-DEC-0001": "cannot be AI-selected." },
     })).rejects.toThrow(/Invalid rule selection/u);
   });
 
@@ -430,300 +412,211 @@ describe("getKnowledgeSections", () => {
     })).rejects.toThrow(/selection_token is missing or expired/u);
   });
 
-  it("sorts priority only within the same layer while keeping deterministic final order", async () => {
-    const projectRoot = await createSectionProject({
-      extraL1: true,
-    });
+  it("delivers every selected store id deterministically in [required, ...ai_selected] order", async () => {
+    const projectRoot = await createSectionProject({ extraGuideline: true });
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering", "ui-low-priority"],
+      ["team:KT-DEC-0001", "team:KT-DEC-0002"],
+      ["team:KT-GLD-0001", "team:KT-GLD-0002"],
     );
 
     const result = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-low-priority", "ui-batch-rendering"],
+      ai_selected_stable_ids: ["team:KT-GLD-0002", "team:KT-GLD-0001"],
       ai_selection_reasons: {
-        "ui-low-priority": "Also touches UI rendering.",
-        "ui-batch-rendering": "Primary UI rendering rule.",
+        "team:KT-GLD-0002": "Also touches UI rendering.",
+        "team:KT-GLD-0001": "Primary UI rendering rule.",
       },
     });
+    // Required ids come first (token order), then ai-selected ids in the order
+    // the caller supplied them.
     expect(result.selected_stable_ids).toEqual([
-      "global-protocol",
-      "ui-batch-rendering",
-      "ui-low-priority",
-      "battle-view-local",
+      "team:KT-DEC-0001",
+      "team:KT-DEC-0002",
+      "team:KT-GLD-0002",
+      "team:KT-GLD-0001",
     ]);
   });
 
   // ---------------------------------------------------------------------------
-  // v2.0 diagnostic: missing_knowledge_metadata (TASK-005)
+  // v2.2 W5 R3: a bare (colon-less) id is no longer a hard throw. With the
+  // co-location node table retired, a bare id matches no store entry → it is
+  // warn-skipped via the unresolved_selected_id diagnostic, and any valid
+  // store-qualified ids in the same call are still delivered.
   // ---------------------------------------------------------------------------
 
-  it("emits_missing_knowledge_metadata_diagnostic — flags un-migrated v1.x entries (warn, not error)", async () => {
-    // Build a project where the global rule HAS v2.0 knowledge fields and the
-    // UI rule does NOT — verify the diagnostic only fires for the un-migrated
-    // entry while selection still completes successfully.
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-v2-"));
-    tempDirs.push(projectRoot);
-
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "human-lock.json"),
-      `${JSON.stringify({ locked: [] }, null, 2)}\n`,
-    );
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
-    // v2.0.0-rc.22 Scope D T-D2: global.md gets v2.0 knowledge frontmatter so
-    // auto-heal's extractRuleDescription returns a description with
-    // knowledge_type/knowledge_layer (no missing-metadata diagnostic). ui.md
-    // is deliberately heading-only so the heading-only fallback in
-    // extractRuleDescription sets knowledge_type=undefined, which IS the
-    // un-migrated v1.x signature the diagnostic targets.
-    // Note: no `id:` line — declaring KT-DEC-0001 here would rewrite the
-    // node's stable_id and break the test's "global-protocol" lookup. The
-    // node carries identity_source:"declared" in the hand-crafted meta which
-    // preserves the legacy id through deriveRuleIdentity.
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
-      [
-        "---",
-        "summary: Global protocol",
-        "type: decision",
-        "maturity: verified",
-        "layer: team",
-        "---",
-        "# Global",
-        "",
-        "## [MANDATORY_INJECTION]",
-        "Global mandatory.",
-        "",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"),
-      "# UI\n\n## [MANDATORY_INJECTION]\nUI mandatory.\n",
-    );
-
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-knowledge-diag",
-        nodes: {
-          "L0/global": {
-            stable_id: "global-protocol",
-            // v2.0.0-rc.22 Scope D T-D2: identity_source:"declared" preserves
-            // the legacy "global-protocol" stable_id across auto-heal rebuild.
-            identity_source: "declared",
-            file: ".fabric/knowledge/decisions/global.md",
-            content_ref: ".fabric/knowledge/decisions/global.md",
-            scope_glob: "**",
-            deps: [],
-            priority: "high",
-            level: "L0",
-            layer: "L0",
-            topology_type: "global",
-            hash: "sha256:global",
-            description: {
-              summary: "Global protocol",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "any edit",
-              // v2.0 frontmatter present — should NOT trigger diagnostic.
-              id: "KT-DEC-0001",
-              knowledge_type: "decisions",
-              maturity: "verified",
-              knowledge_layer: "team",
-            },
-          },
-          "L1/ui": {
-            stable_id: "ui-rule",
-            // v2.0.0-rc.22 Scope D T-D2: preserve legacy stable_id past heal.
-            identity_source: "declared",
-            file: ".fabric/knowledge/guidelines/ui.md",
-            content_ref: ".fabric/knowledge/guidelines/ui.md",
-            scope_glob: "**",
-            deps: [],
-            priority: "medium",
-            level: "L1",
-            layer: "L1",
-            topology_type: "domain",
-            hash: "sha256:ui",
-            description: {
-              summary: "UI rule",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "UI rule",
-              // No knowledge_type / knowledge_layer — should trigger diagnostic.
-            },
-          },
-        },
-      }, null, 2)}\n`,
-    );
-
-    const plan = await planContext(projectRoot, { paths: ["src/index.ts"] });
-    const selectionToken = mintTokenFromPlan(plan, ["global-protocol"], ["ui-rule"]);
-    const result = await getKnowledgeSections(projectRoot, {
-      selection_token: selectionToken,
-      ai_selected_stable_ids: ["ui-rule"],
-      ai_selection_reasons: { "ui-rule": "ui touch" },
-    });
-
-    // Selection still completes — both rules surface.
-    expect(result.selected_stable_ids).toEqual(["global-protocol", "ui-rule"]);
-
-    const knowledgeDiagnostics = result.diagnostics.filter(
-      (d): d is Extract<typeof d, { code: "missing_knowledge_metadata" }> =>
-        d.code === "missing_knowledge_metadata",
-    );
-    // Diagnostic fires ONLY for the un-migrated entry, at warn severity.
-    expect(knowledgeDiagnostics).toEqual([
-      {
-        code: "missing_knowledge_metadata",
-        severity: "warn",
-        stable_id: "ui-rule",
-        message:
-          "Rule ui-rule has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
-      },
-    ]);
-  });
-
-  // ---------------------------------------------------------------------------
-  // v2.0.0-rc.22 Scope D T-D2 (TASK-009): STRICT mode — build failure throws.
-  //
-  // getKnowledgeSections is an authoritative id-based lookup. When the meta
-  // rebuild fails (transient fs error, corrupt knowledge file, etc.) we MUST
-  // surface a loud error rather than silently serve potentially-wrong bodies
-  // from a stale on-disk snapshot. The strict variant of loadActiveMeta
-  // propagates that build failure unchanged.
-  // ---------------------------------------------------------------------------
-
-  it("getKnowledgeSections_strict_throws_on_build_failure", async () => {
+  it("warn-skips a bare colon-less id (no store match) instead of throwing", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    // `legacy-bare-id` is selectable in the token but is NOT store-qualified, so
+    // buildCrossStoreBodyIndex never resolves it → unresolved diagnostic. The
+    // store-qualified id alongside it is still delivered.
     const selectionToken = mintTokenFromPlan(
       plan,
-      ["global-protocol", "battle-view-local"],
-      ["ui-batch-rendering"],
+      [],
+      ["team:KT-GLD-0001", "legacy-bare-id"],
     );
 
-    const knowledgeMetaBuilder = await import("./knowledge-meta-builder.js");
-    vi.spyOn(knowledgeMetaBuilder, "buildKnowledgeMeta").mockRejectedValueOnce(
-      new Error("synthetic build failure"),
+    const result = await getKnowledgeSections(projectRoot, {
+      selection_token: selectionToken,
+      ai_selected_stable_ids: ["team:KT-GLD-0001", "legacy-bare-id"],
+      ai_selection_reasons: {
+        "team:KT-GLD-0001": "valid store pick",
+        "legacy-bare-id": "un-qualified legacy id",
+      },
+    });
+
+    expect(result.rules.map((r) => r.stable_id)).toEqual(["team:KT-GLD-0001"]);
+    const unresolved = result.diagnostics.filter((d) => d.code === "unresolved_selected_id");
+    expect(unresolved.map((d) => d.stable_id)).toEqual(["legacy-bare-id"]);
+    expect(unresolved[0]!.severity).toBe("warn");
+    // No missing_knowledge_metadata diagnostic (project-meta path retired).
+    expect(result.diagnostics.some((d) => d.code === "missing_knowledge_metadata")).toBe(false);
+  });
+
+  it("resolves a personal-store id alongside team ids (implicit personal read-set)", async () => {
+    const projectRoot = await createSectionProject({ personal: true });
+    const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    const selectionToken = mintTokenFromPlan(
+      plan,
+      ["team:KT-DEC-0001"],
+      ["personal:KP-GLD-0001"],
     );
 
-    await expect(
-      getKnowledgeSections(projectRoot, {
-        selection_token: selectionToken,
-          ai_selected_stable_ids: ["ui-batch-rendering"],
-        ai_selection_reasons: {
-          "ui-batch-rendering": "BattleView touches UI.",
-        },
-      }),
-    ).rejects.toThrow("synthetic build failure");
+    const result = await getKnowledgeSections(projectRoot, {
+      selection_token: selectionToken,
+      ai_selected_stable_ids: ["personal:KP-GLD-0001"],
+      ai_selection_reasons: { "personal:KP-GLD-0001": "personal style pick" },
+    });
+
+    expect(result.selected_stable_ids).toEqual(["team:KT-DEC-0001", "personal:KP-GLD-0001"]);
+    const personalRule = result.rules.find((r) => r.stable_id === "personal:KP-GLD-0001");
+    expect(personalRule?.body).toContain("# KP-GLD-0001");
+    expect(result.diagnostics).toEqual([]);
   });
 });
 
-async function createSectionProject(options: { extraL1?: boolean } = {}): Promise<string> {
-  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-"));
-  tempDirs.push(projectRoot);
+// ---------------------------------------------------------------------------
+// Store fixture helpers (mirror plan-context.test.ts). createSectionProject
+// seeds a team store (and optionally a personal store) with the entries the
+// getKnowledgeSections tests select, writes the project's fabric-config.json
+// declaring the team store as required, and mounts the stores in the global
+// config. NO .fabric/agents.meta.json is written — the read side is store-only.
+// ---------------------------------------------------------------------------
 
-  await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-  await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
-  await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-  await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"), `# Global
+type StoreEntryFields = {
+  id: string;
+  summary: string;
+  type?: string;
+  layer?: "team" | "personal";
+  body?: string;
+};
 
-## [MANDATORY_INJECTION]
-Global mandatory.
-`);
-  await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"), `# UI
-
-## [MANDATORY_INJECTION]
-UI mandatory.
-
-## [CONTEXT_INFO]
-UI context.
-`);
-  await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "battle-view.md"), `# Battle
-
-## [MISSION_STATEMENT]
-BattleView owns combat UI lifecycle boundaries.
-
-## [MANDATORY_INJECTION]
-BattleView mandatory.
-
-## [BUSINESS_LOGIC_CHUNKS]
-### ID: BL-BATTLE-001
-- **Anchor**: \`BL-BATTLE-001\`
-- **Intent**: Avoid flicker when tabs switch quickly.
-- **Scars**: Releasing assets immediately caused black frames.
-- **Constraint**: Keep delayed release.
-
-## [CONTEXT_INFO]
-BattleView context.
-`);
-  if (options.extraL1 === true) {
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui-low.md"), `# UI Low
-
-## [MANDATORY_INJECTION]
-UI low mandatory.
-`);
-  }
-  await writeFile(
-    join(projectRoot, ".fabric", "agents.meta.json"),
-    `${JSON.stringify({
-      revision: "rev-sections",
-      nodes: {
-        "L0/global": ruleNode("global-protocol", "L0", ".fabric/knowledge/decisions/global.md", "**"),
-        "L1/ui": ruleNode("ui-batch-rendering", "L1", ".fabric/knowledge/guidelines/ui.md", "**"),
-        ...(options.extraL1 === true
-          ? {
-              "L1/ui-low": {
-                ...ruleNode("ui-low-priority", "L1", ".fabric/knowledge/guidelines/ui-low.md", "**"),
-                priority: "low",
-              },
-            }
-          : {}),
-        "L2/battle-view": ruleNode(
-          "battle-view-local",
-          "L2",
-          ".fabric/knowledge/guidelines/battle-view.md",
-          "assets/scripts/ui/BattleView.ts",
-        ),
-      },
-    }, null, 2)}\n`,
-  );
-
-  return projectRoot;
+/** Render a full-frontmatter knowledge .md body for a store entry. */
+function entryMd(f: StoreEntryFields): string {
+  const layer = f.layer ?? "team";
+  return [
+    "---",
+    `id: ${f.id}`,
+    `type: ${f.type ?? "decision"}`,
+    `layer: ${layer}`,
+    "semantic_scope: team",
+    `visibility_store: "${layer}"`,
+    "maturity: proven",
+    "created_at: 2026-06-04T00:00:00.000Z",
+    `summary: ${f.summary}`,
+    "---",
+    "",
+    `# ${f.id}`,
+    "",
+    f.body ?? `Body for ${f.id}.`,
+    "",
+  ].join("\n");
 }
 
-function ruleNode(stableId: string, level: "L0" | "L1" | "L2", file: string, scopeGlob: string) {
-  return {
-    stable_id: stableId,
-    // v2.0.0-rc.22 Scope D T-D2: marking identity_source as "declared" tells
-    // deriveRuleIdentity to preserve the hand-crafted stable_id across the
-    // auto-heal rebuild — without this, the helper falls through to
-    // path-derived ids ("decisions/global" etc.) and the test's stable_id
-    // lookups break.
-    identity_source: "declared" as const,
-    file,
-    content_ref: file,
-    scope_glob: scopeGlob,
-    deps: [],
-    priority: "medium",
-    level,
-    layer: level,
-    topology_type: level === "L0" ? "global" : level === "L1" ? "domain" : "local",
-    hash: `sha256:${stableId}`,
-    description: {
-      summary: stableId,
-      intent_clues: [],
-      tech_stack: [],
-      impact: [],
-      must_read_if: stableId,
-    },
-  };
+/** Write a knowledge .md into a store under the isolated ~/.fabric. */
+async function writeStoreEntry(
+  storeUuid: string,
+  type: string,
+  f: StoreEntryFields,
+): Promise<void> {
+  const dir = join(
+    resolveGlobalRoot(),
+    storeRelativePath(storeUuid),
+    STORE_LAYOUT.knowledgeDir,
+    type,
+  );
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${f.id}.md`), entryMd({ type: type.replace(/s$/u, ""), ...f }));
+}
+
+async function createSectionProject(
+  options: { extraGuideline?: boolean; personal?: boolean } = {},
+): Promise<string> {
+  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-"));
+  tempDirs.push(projectRoot);
+  await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+  await writeFile(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
+  );
+
+  // Team store entries.
+  await writeStoreEntry(TEAM_STORE, "decisions", {
+    id: "KT-DEC-0001",
+    summary: "Global protocol",
+    body: "## [MANDATORY_INJECTION]\nGlobal mandatory.",
+  });
+  await writeStoreEntry(TEAM_STORE, "decisions", {
+    id: "KT-DEC-0002",
+    summary: "BattleView local decision",
+    body: [
+      "## [MISSION_STATEMENT]",
+      "BattleView owns combat UI lifecycle boundaries.",
+      "",
+      "## [BUSINESS_LOGIC_CHUNKS]",
+      "### ID: BL-BATTLE-001",
+      "- **Anchor**: `BL-BATTLE-001`",
+      "- **Intent**: Avoid flicker when tabs switch quickly.",
+    ].join("\n"),
+  });
+  await writeStoreEntry(TEAM_STORE, "guidelines", {
+    id: "KT-GLD-0001",
+    type: "guideline",
+    summary: "UI batch rendering",
+    body: "## [MANDATORY_INJECTION]\nUI mandatory.\n\n## [CONTEXT_INFO]\nUI context.",
+  });
+  if (options.extraGuideline === true) {
+    await writeStoreEntry(TEAM_STORE, "guidelines", {
+      id: "KT-GLD-0002",
+      type: "guideline",
+      summary: "UI low priority guideline",
+      body: "## [MANDATORY_INJECTION]\nUI low mandatory.",
+    });
+  }
+
+  const stores: GlobalConfig["stores"] = [
+    { store_uuid: TEAM_STORE, alias: "team", remote: "git@e:team.git" },
+  ];
+
+  if (options.personal === true) {
+    await writeStoreEntry(PERSONAL_STORE, "guidelines", {
+      id: "KP-GLD-0001",
+      type: "guideline",
+      layer: "personal",
+      summary: "Personal coding style",
+      body: "## [MANDATORY_INJECTION]\nPersonal mandatory.",
+    });
+    stores.push({
+      store_uuid: PERSONAL_STORE,
+      alias: "personal",
+      remote: "git@e:personal.git",
+      personal: true,
+    });
+  }
+
+  saveGlobalConfig({ uid: "test-uid", stores });
+
+  return projectRoot;
 }

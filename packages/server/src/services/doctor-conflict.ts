@@ -6,10 +6,7 @@
 // --lint-conflicts`) rather than folded into the default report so the large
 // runDoctorReport check-set contract stays byte-stable.
 
-import { readFile } from "node:fs/promises";
-
-import { readAgentsMeta } from "../meta-reader.js";
-import { resolveContentRefPath } from "./knowledge-sync.js";
+import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 import {
   lintConflicts,
   DEFAULT_CONFLICT_SIMILARITY_THRESHOLD,
@@ -41,39 +38,24 @@ function stripFrontmatter(content: string): string {
 }
 
 /**
- * Load canonical knowledge entries with bodies from the agents.meta node index.
- * Skips pending/draft staging entries (conflict detection targets the curated
- * corpus) and any node missing a stable_id or knowledge_type. Bodies are read
- * best-effort — an unreadable file contributes no entry.
+ * v2.2 W5 R6 (读侧 cutover): load canonical knowledge entries with bodies from
+ * the read-set STORES (cross-store on-the-fly) instead of the retired
+ * co-location agents.meta node index. Skips pending/draft staging entries
+ * (conflict detection targets the curated corpus) and any entry missing a
+ * knowledge_type. collectStoreCanonicalEntries already reads each store entry's
+ * body + parsed frontmatter and degrades to [] when no store is in the read-set.
  */
 export async function loadConflictEntries(projectRoot: string): Promise<ConflictEntry[]> {
-  let meta;
-  try {
-    meta = await readAgentsMeta(projectRoot);
-  } catch {
-    return [];
-  }
   const entries: ConflictEntry[] = [];
-  for (const node of Object.values(meta.nodes)) {
-    const stableId = node.stable_id;
-    if (typeof stableId !== "string" || stableId.length === 0) continue;
-    // The on-disk path lives in content_ref (the node KEY is the stable_id).
-    const contentRef = node.content_ref;
-    if (typeof contentRef !== "string" || contentRef.length === 0) continue;
-    if (contentRef.includes("/pending/")) continue; // skip drafts
-    const knowledgeType = node.description?.knowledge_type;
+  for (const entry of collectStoreCanonicalEntries(projectRoot)) {
+    const knowledgeType = entry.description.knowledge_type;
     if (typeof knowledgeType !== "string" || knowledgeType.length === 0) continue;
-    // Layer from the stable_id prefix (KT-* = team, KP-* = personal) — the
-    // authoritative signal per KT-DEC-0004. knowledge_layer is often unset on
-    // freshly built meta, so don't depend on it.
-    const layer = stableId.startsWith("KP-") ? "personal" : "team";
-    let body: string;
-    try {
-      body = await readFile(resolveContentRefPath(projectRoot, contentRef), "utf8");
-    } catch {
-      continue;
-    }
-    entries.push({ stable_id: stableId, knowledge_type: knowledgeType, layer, text: stripFrontmatter(body) });
+    entries.push({
+      stable_id: entry.stableId,
+      knowledge_type: knowledgeType,
+      layer: entry.layer,
+      text: stripFrontmatter(entry.body),
+    });
   }
   return entries;
 }

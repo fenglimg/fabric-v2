@@ -13,9 +13,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
-import { setFirstReconcile } from "./services/first-reconcile-gate.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
-import { reconcileKnowledge } from "./services/knowledge-sync.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRecall } from "./tools/recall.js";
@@ -64,21 +62,14 @@ export {
   type ConflictPair,
   type ConflictVerdict,
 } from "./services/conflict-lint.js";
-export {
-  buildKnowledgeMeta,
-  computeKnowledgeTestIndex,
-  computeKnowledgeBasedAgentsMeta,
-  deriveKnowledgeMetaLayer,
-  deriveKnowledgeMetaTopologyType,
-  isSameKnowledgeTestIndex,
-  loadKbIdTypeMap,
-  stableStringify,
-  writeKnowledgeMeta,
-  type KnowledgeMetaBuildResult,
-  type KnowledgeMetaBuildSource,
-  type WriteKnowledgeMetaOptions,
-} from "./services/knowledge-meta-builder.js";
-export { KnowledgeIdAllocator } from "./services/knowledge-id-allocator.js";
+// v2.2 W5 R2 (agents.meta decolo): the co-location agents.meta build/write
+// surface (buildKnowledgeMeta / writeKnowledgeMeta / computeKnowledgeBasedAgentsMeta
+// / computeKnowledgeTestIndex / loadKbIdTypeMap / isSameKnowledgeTestIndex /
+// stableStringify / deriveKnowledgeMeta* + KnowledgeIdAllocator) is no longer
+// re-exported — knowledge lives in mounted stores, the read paths read the
+// cross-store model, and id minting goes through per-store committed counters
+// (W4 allocateStoreKnowledgeId). cross-store-recall still consumes
+// deriveRuleIdentity / extractRuleDescription directly from the module.
 export { extractKnowledge } from "./services/extract-knowledge.js";
 export { reviewKnowledge } from "./services/review.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
@@ -132,9 +123,11 @@ export { contextCache } from "./cache.js";
 export { readEventLedger } from "./services/event-ledger.js";
 export { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
 export { rehydrateAgentsMetaAt } from "./services/rehydrate-state.js";
-export { getKnowledge } from "./services/get-knowledge.js";
 export { resolveLedgerPaths, readLedger } from "./services/read-ledger.js";
-export { readAgentsMeta } from "./meta-reader.js";
+// v2.2 W5 R2 (agents.meta decolo): `getKnowledge` (the path-glob co-location
+// injection model) and `readAgentsMeta` (the co-location index reader) are no
+// longer re-exported — both were consumed only by the quarantined
+// server-http-experimental package, which is out of the main workspace.
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
@@ -169,9 +162,7 @@ export { flushAndSyncEventLedger } from "./services/event-ledger.js";
 export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 export {
   ensureKnowledgeFresh,
-  reconcileKnowledge,
   type LedgerEvent,
-  type ReconcileKnowledgeOptions,
   type KnowledgeSyncLedgerEvent,
   type KnowledgeSyncOptions,
   type KnowledgeSyncReport,
@@ -280,17 +271,17 @@ export async function startStdioServer(): Promise<void> {
   const server = createFabricServer(tracker);
   const transport = new StdioServerTransport();
 
-  // v2.0.0-rc.23 TASK-009 (d): connect the MCP handshake BEFORE running
-  // reconcile. Previously `reconcileKnowledge` ran synchronously here and
-  // could take 2-15s on large knowledge trees — long enough for
-  // `claude mcp list` to mark the server as unreachable even when tools
-  // themselves worked fine. Decoupling handshake from reconcile removes
-  // the diagnostic mismatch.
+  // v2.0.0-rc.23 TASK-009 (d): connect the MCP handshake immediately so MCP
+  // clients (`claude mcp list`) see the server as available the moment stdio is
+  // wired up.
   //
-  // Reconcile is kicked off as a tracked background promise. Each tool
-  // handler awaits it via `awaitFirstReconcileGate` with a 5s deadline —
-  // see `services/first-reconcile-gate.ts` for the fail-loud contract
-  // (`meta_stale` / `reconcile_failed` warnings).
+  // v2.2 W5 R2 (agents.meta decolo): the background startup `reconcileKnowledge`
+  // pass — which rebuilt the co-location `agents.meta.json` index — is retired.
+  // Knowledge now lives in mounted stores and the read paths read those stores
+  // directly, so there is no project-local index to rebuild on startup. The
+  // `first-reconcile-gate` is left wired into the tool handlers; with no
+  // producer registered it fast-paths to `ready` (no warning), preserving the
+  // handler shape without doing dead work.
   await server.connect(transport);
 
   // v2.0.0-rc.37 Wave B (B3): kick the metrics flush timer once the MCP
@@ -303,23 +294,6 @@ export async function startStdioServer(): Promise<void> {
   // fired on doctor --fix; a long-lived stdio server that never sees
   // doctor invocations let the ledger grow unchecked.
   startRotationTick(projectRoot);
-
-  const syncStart = Date.now();
-  const backgroundReconcile = (async () => {
-    const reconcileResult = await reconcileKnowledge(projectRoot, { trigger: "startup" });
-    const syncDurationMs = Date.now() - syncStart;
-    process.stderr.write(
-      `[startup] rule sync: status=${reconcileResult.status}, events=${reconcileResult.events.length}, ${syncDurationMs}ms\n`,
-    );
-  })().catch((error: unknown) => {
-    // Fail-loud: write a stderr banner so operators see the failure even
-    // before any tool call surfaces a `reconcile_failed` warning. We
-    // rethrow so the gate observes the rejection and caches it.
-    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    process.stderr.write(`[startup] rule sync FAILED: ${message}\n`);
-    throw error;
-  });
-  setFirstReconcile(backgroundReconcile);
 
   const closeServer = async (): Promise<void> => {
     await server.close();

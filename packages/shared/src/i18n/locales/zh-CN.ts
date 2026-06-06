@@ -584,6 +584,15 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 将 agents.meta.json counters 提升到观测到的最大 counter 值。",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope 与观测到的 stable_ids 一致。",
+  "doctor.check.store_counter_drift.name": "Store counter drift",
+  "doctor.check.store_counter_drift.message.singular":
+    "{count} 个 store counter 低于磁盘上的最大 stable_id（{detail}）。该 store 下一次铸号会复用已存在的 id。运行 `fabric doctor --fix` 将 store counters.json 提升到磁盘最大值。",
+  "doctor.check.store_counter_drift.message.plural":
+    "{count} 个 store counter 低于磁盘上的最大 stable_id（{detail}）。这些 store 下一次铸号会复用已存在的 id。运行 `fabric doctor --fix` 将 store counters.json 提升到磁盘最大值。",
+  "doctor.check.store_counter_drift.remediation":
+    "运行 `fabric doctor --fix` 将每个 store 的 counters.json 提升（floor）到磁盘上观测到的最大 stable_id（floor 只升不降——KT-DEC-0004 单调不变量）。",
+  "doctor.check.store_counter_drift.ok":
+    "read-set 内每个 store 的 counters.json 都已 floor 到磁盘最大 stable_id。",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "project root 未检测到 CLAUDE.md 或 AGENTS.md。",
   "doctor.check.preexisting_root_files.message":
@@ -820,6 +829,14 @@ export const zhCNMessages: Messages = {
     "{opaque}/{total} 个 entry ({pct}%) 的 description.summary 等于 stable_id，超过 {threshold}% 阈值。narrow hint 输出会变成 `<id> · <id>` 而非真实概要，AI 看不到信息会主动跳过 fetch。首批不透明: {sample}。",
   "doctor.check.knowledge_summary_opaque.remediation":
     "调 fabric-review skill 重写不透明 summary 为一句人类可读的概要。rc.35 hint renderer fallback (TASK-06) 也会从 entry 的 `## Summary` 段自动合成临时 summary。",
+  // v2.2 W4 (G-GUARD / A6): store scope lint。
+  "doctor.check.store_scope_lint.name": "Store scope lint",
+  "doctor.check.store_scope_lint.ok":
+    "read-set 内所有 store 条目 scope 元数据齐备(semantic_scope + visibility_store,无 personal 泄漏,无 dangling project)。",
+  "doctor.check.store_scope_lint.message":
+    "{total} 个 store scope 问题: {breakdown}。例如 {sample}。",
+  "doctor.check.store_scope_lint.remediation":
+    "调 `fabric store backfill-scope` 补缺失的 semantic_scope/visibility_store;`fabric store re-scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

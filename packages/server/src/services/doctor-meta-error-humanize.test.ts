@@ -15,76 +15,22 @@
  * tmp directory to keep the test surface tight.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createTranslator } from "@fenglimg/fabric-shared";
 
 import {
   createGlobalCliVersionCheck,
   inspectGlobalCliVersion,
-  runDoctorReport,
 } from "./doctor.js";
 
-function makeFabricProject(metaContent: string): string {
-  const root = mkdtempSync(join(tmpdir(), "fab-meta-humanize-"));
-  mkdirSync(join(root, ".fabric"), { recursive: true });
-  mkdirSync(join(root, ".fabric", "knowledge", "decisions"), { recursive: true });
-  writeFileSync(join(root, ".fabric", "agents.meta.json"), metaContent, "utf8");
-  return root;
-}
-
-const cleanup: string[] = [];
-
-afterEach(() => {
-  while (cleanup.length > 0) {
-    const p = cleanup.pop();
-    if (p && existsSync(p)) rmSync(p, { recursive: true, force: true });
-  }
-});
-
-describe("createMetaCheck humanisation (TASK-09)", () => {
-  it("(b) ZodError → human sentence with field paths, no raw JSON dump", async () => {
-    // Schema-invalid file — `nodes` is required to be an object; passing a
-    // string forces a ZodError out of agentsMetaSchema.parse.
-    const broken = JSON.stringify({
-      revision: "abc",
-      nodes: "not-an-object",
-      counters: { knowledge_team: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRC: 0 } },
-    });
-    const root = makeFabricProject(broken);
-    cleanup.push(root);
-
-    const report = await runDoctorReport(root);
-    const metaCheck = report.checks.find((c) => c.name.includes("Agents metadata"));
-    expect(metaCheck).toBeDefined();
-    expect(metaCheck?.status).toBe("error");
-    // Must NOT contain raw zod JSON dump artifacts like `"code":"invalid_type"`.
-    expect(metaCheck?.message ?? "").not.toContain('"code":"');
-    expect(metaCheck?.message ?? "").not.toContain('"path":[');
-    // Must contain at least one field path token (e.g. `nodes`).
-    expect(metaCheck?.message ?? "").toContain("nodes");
-  });
-
-  it("(c) JSON syntax error fall-back surfaces something readable + remediation pointer", async () => {
-    const root = makeFabricProject("{not valid json");
-    cleanup.push(root);
-
-    const report = await runDoctorReport(root);
-    const metaCheck = report.checks.find((c) => c.name.includes("Agents metadata"));
-    expect(metaCheck?.status).toBe("error");
-    expect(metaCheck?.actionHint ?? "").toContain("fabric doctor --fix");
-  });
-});
+// v2.2 W5 R4 (agents.meta decolo): the (b) ZodError + (c) JSON-syntax-error
+// humanisation tests are removed. They exercised `createMetaCheck`'s
+// `agents_meta_invalid` rendering over a hand-broken co-location
+// agents.meta.json — the entire agents_meta check (and inspectMeta) is retired
+// now that knowledge lives in stores, so there is no "Agents metadata" check to
+// render. The (a) global-CLI-outdated branch was a sanity check on the still-
+// live global-CLI helpers, retained below.
 
 describe("inspectGlobalCliVersion + createGlobalCliVersionCheck sanity", () => {
   // Sanity check that the helpers used by the (a) branch still exist and

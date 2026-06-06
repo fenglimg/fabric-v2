@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -136,6 +136,12 @@ describe("approve→store-canonical promote (NEW-APPROVE-PROMOTE)", () => {
     const canonicalDir = storeCanonicalDir("decisions");
     expect(existsSync(canonicalDir)).toBe(true);
     expect(readdirSync(canonicalDir).some((f) => f.endsWith(".md"))).toBe(true);
+    // W1/A1: approve preserves the scope frontmatter verbatim — the promoted
+    // canonical entry carries semantic_scope + visibility_store.
+    const canonicalFile = readdirSync(canonicalDir).find((f) => f.endsWith(".md"))!;
+    const canonicalContent = readFileSync(join(canonicalDir, canonicalFile), "utf8");
+    expect(canonicalContent).toMatch(/^semantic_scope: team$/mu);
+    expect(canonicalContent).toMatch(/^visibility_store: "team"$/mu);
     // ...and NOT in the project's dual-root canonical dir.
     expect(
       readdirSync(join(projectRoot, ".fabric", "knowledge", "decisions")).filter((f) =>

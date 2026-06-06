@@ -5,13 +5,13 @@
  *   I2 — default `fabric install` on already-init canonical workspace is a no-op
  *        success (no throw); drift on a managed file aborts with a helpful
  *        message pointing to `fabric doctor` and `fabric uninstall && fabric install`
- *   I3 — default-install idempotency: byte-identical agents.meta.json across
- *        re-runs.
+ *   I3 — default-install idempotency: byte-identical fabric-config.json across
+ *        re-runs. (W5 I1 retired the co-location agents.meta.json scaffold.)
  *   T4 — preexisting root markdown files are not modified by init
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,7 +21,6 @@ import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
-  seedDriftedFile,
   writeFixtureFile,
 } from "../helpers/init-test-utils.ts";
 
@@ -59,10 +58,12 @@ describe("I2: init guard — diff-mode behavior", () => {
 
     await runInit(target);
 
-    // Byte-modify a managed scaffold file (.fabric/agents.meta.json) so the
-    // classifier detects drift. We strip a required schema field so the
-    // structural detector classifies it as drifted/user-modified.
-    seedDriftedFile(target, ".fabric/agents.meta.json", () => "{}\n");
+    // Occupy a managed scaffold FILE location (.fabric/events.jsonl) with a
+    // directory so the per-file classifier detects user-modification.
+    // (W5 I1 retired the agents.meta.json scaffold that previously drove this.)
+    const eventsPath = join(target, ".fabric", "events.jsonl");
+    rmSync(eventsPath, { force: true });
+    mkdirSync(eventsPath, { recursive: true });
 
     let thrownError: Error | null = null;
     try {
@@ -74,7 +75,7 @@ describe("I2: init guard — diff-mode behavior", () => {
     expect(thrownError).not.toBeNull();
     // The thrown error must mention the conflicting path, fabric doctor, and
     // the fabric uninstall + fabric install reset suggestion.
-    expect(thrownError!.message).toMatch(/agents\.meta\.json/);
+    expect(thrownError!.message).toMatch(/events\.jsonl/);
     expect(thrownError!.message).toMatch(/fabric doctor/);
     expect(thrownError!.message).toMatch(/fabric uninstall/);
   });
@@ -93,26 +94,22 @@ describe("I2: init guard — diff-mode behavior", () => {
   });
 });
 
-// I3 — default-install idempotency. agents.meta.json and events.jsonl are
-// byte-stable across re-runs under default `fabric install`. (The legacy
-// --reapply path that lived here in rc.14 was retired with the flag in rc.15.)
+// I3 — default-install idempotency. fabric-config.json and the events.jsonl
+// prefix are byte-stable across re-runs under default `fabric install`. (The
+// legacy --reapply path that lived here in rc.14 was retired with the flag in
+// rc.15; W5 I1 retired the co-location agents.meta.json scaffold.)
 describe("I3: init default-install idempotency", () => {
-  it("produces byte-identical agents.meta.json on second `fabric install` (no flags)", async () => {
-    const target = createWerewolfFixtureRoot("itg-init-idem-meta");
+  it("produces byte-identical fabric-config.json on second `fabric install` (no flags)", async () => {
+    const target = createWerewolfFixtureRoot("itg-init-idem-config");
     tempRoots.push(target);
 
     await runInit(target);
 
-    // Put a knowledge file under a canonical type subdir to exercise the
-    // meta-preservation path on idempotent re-run.
-    mkdirSync(join(target, ".fabric", "knowledge", "decisions"), { recursive: true });
-    writeFixtureFile(target, ".fabric/knowledge/decisions/my-rule.md", "# My Rule\n");
+    await runInit(target);
+    const hash1 = sha256(readFileSync(join(target, ".fabric", "fabric-config.json")));
 
     await runInit(target);
-    const hash1 = sha256(readFileSync(join(target, ".fabric", "agents.meta.json")));
-
-    await runInit(target);
-    const hash2 = sha256(readFileSync(join(target, ".fabric", "agents.meta.json")));
+    const hash2 = sha256(readFileSync(join(target, ".fabric", "fabric-config.json")));
 
     expect(hash1).toBe(hash2);
   });

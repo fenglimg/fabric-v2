@@ -87,6 +87,15 @@ export const fabricConfigSchema = z.object({
   // activeWriteAlias. Absent → no active write store yet. Personal-scope
   // writes always target the implicit personal store regardless (R5#3).
   active_write_store: z.string().optional(),
+  // v2.1 global-refactor (W1/A2 — store project registry): the project this repo
+  // currently participates in, as the SINGLE scope segment forming the
+  // `project:<id>` coordinate (schemas/scope.ts). Set by `store bind --project
+  // <id>` (validated against the bound store's projects.json). Drives:
+  //   - write: project-scoped writes get `semantic_scope: project:<active_project>`.
+  //   - recall: keep `project:<active_project>` + non-project coords, drop other
+  //     `project:*` entries (G-FILTER).
+  // Absent → the repo has no project binding; recall does not project-filter.
+  active_project: z.string().optional(),
   // rc.17 (R-cut): the dev/test fixture-path config field was removed
   // end-to-end. The `EXTERNAL_FIXTURE_PATH` env var is now the sole source
   // consumed by `resolveDevMode()`. No z.preprocess alias — pre-rc.17

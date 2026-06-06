@@ -271,8 +271,11 @@ describe("TASK-005 uninstall round-trip: T3 knowledge preserved without --purge"
 
     await runInit(target);
 
-    // Seed a user-authored knowledge entry.
-    const entryPath = join(target, ".fabric", "knowledge", "decisions", "my-decision.md");
+    // Seed a user-authored knowledge entry. W5 I1: install no longer scaffolds
+    // the .fabric/knowledge cabinet, so the user creates the dir on demand.
+    const decisionsDir = join(target, ".fabric", "knowledge", "decisions");
+    mkdirSync(decisionsDir, { recursive: true });
+    const entryPath = join(decisionsDir, "my-decision.md");
     const entryContent = "# My decision\n\nUser-authored, must survive default uninstall.\n";
     writeFileSync(entryPath, entryContent, "utf8");
 
@@ -319,7 +322,10 @@ describe("TASK-005 uninstall round-trip: T4 personal root always preserved", () 
     await runInit(target);
 
     // Seed a project-local knowledge entry to verify team knowledge survives.
-    const projectEntry = join(target, ".fabric", "knowledge", "decisions", "project.md");
+    // W5 I1: install no longer scaffolds the cabinet — create the dir on demand.
+    const projectDecisionsDir = join(target, ".fabric", "knowledge", "decisions");
+    mkdirSync(projectDecisionsDir, { recursive: true });
+    const projectEntry = join(projectDecisionsDir, "project.md");
     const projectContent = "# Project\n\nMust survive default uninstall.\n";
     writeFileSync(projectEntry, projectContent, "utf8");
 

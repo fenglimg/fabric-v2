@@ -47,6 +47,13 @@ function storeKnowledgeDir(layer: "team" | "personal", ...sub: string[]): string
   return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, ...sub);
 }
 
+// W4 decolo: the stable_id counter now lives in the write-target STORE's
+// committed counters.json, not the retired co-location agents.meta.json.
+function storeCountersFile(layer: "team" | "personal"): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.countersFile);
+}
+
 // v2.0: redirect personal-root resolution into a tempdir so tests never touch
 // the developer's real ~/.fabric/. Mirrors knowledge-meta-builder.test.ts setup.
 beforeEach(async () => {
@@ -191,10 +198,11 @@ describe("reviewKnowledge", () => {
     expect(promotedContent).toMatch(new RegExp(`^id: ${entry.stable_id}$`, "mu"));
     expect(promotedContent).not.toMatch(/^x-fabric-idempotency-key:/mu);
 
-    // Counter persisted to agents.meta.json.
-    const metaRaw = await readFile(join(projectRoot, ".fabric", "agents.meta.json"), "utf8");
-    const meta = JSON.parse(metaRaw) as { counters?: { KT?: { DEC?: number } } };
-    expect(meta.counters?.KT?.DEC).toBe(1);
+    // Counter persisted to the team store's committed counters.json (W4 decolo —
+    // the co-location agents.meta counter is retired).
+    const countersRaw = await readFile(storeCountersFile("team"), "utf8");
+    const counters = JSON.parse(countersRaw) as { KT?: { DEC?: number } };
+    expect(counters.KT?.DEC).toBe(1);
 
     // Event ledger has BOTH knowledge_promote_started AND knowledge_promoted.
     const startedEvents = await readEventLedger(projectRoot, {

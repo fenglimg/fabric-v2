@@ -2,21 +2,39 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
 import { planContext, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 
+// v2.2 W5 R1/R7 (读侧退役): planContext no longer reads the project's
+// co-location `.fabric/knowledge/` tree or `.fabric/agents.meta.json`. Candidates
+// come SOLELY from the mounted stores in the read-set (required_stores ∪ implicit
+// personal), assembled live by buildCrossStoreRawItems. Every candidate id is
+// store-qualified (`<alias>:<stable_id>`). revision_hash is a store-corpus
+// content fingerprint (computeReadSetRevision), not the agents.meta revision.
+//
+// FABRIC_HOME is repointed to an isolated fake home in beforeEach so the
+// developer's real ~/.fabric/stores never leak into the fixture, and the seeded
+// stores land under that fake home.
+
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
 
-// v2.0.0-rc.22 Scope D T-D2: planContext now routes through
-// loadActiveMetaOrStale which calls buildKnowledgeMeta — that scan walks BOTH
-// the team root (.fabric/knowledge/) and the personal root
-// (~/.fabric/knowledge/). Without FABRIC_HOME isolation the developer's real
-// personal knowledge leaks into the fixture's derived meta and corrupts
-// description_index assertions. Mirror load-active-meta.test.ts setup.
+// Fixed store UUIDs reused across the fixtures below. The team store backs the
+// required_stores read-set; the personal store is auto-included via its
+// `personal: true` flag (S11 implicit personal).
+const TEAM_STORE = "11111111-1111-4111-8111-111111111111";
+const PERSONAL_STORE = "22222222-2222-4222-8222-222222222222";
+
 beforeEach(async () => {
   originalFabricHome = process.env.FABRIC_HOME;
   const fakeHome = await mkdtemp(join(tmpdir(), "fabric-plan-context-home-"));
@@ -26,7 +44,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   if (originalFabricHome === undefined) {
     delete process.env.FABRIC_HOME;
   } else {
@@ -37,53 +54,113 @@ afterEach(async () => {
   }));
 });
 
+// ---------------------------------------------------------------------------
+// Store fixture helpers (mirror plan-context-scope-rank.test.ts).
+// ---------------------------------------------------------------------------
+
+/** mkdtemp a project root and write its fabric-config.json. No agents.meta. */
+async function createProject(config: object): Promise<string> {
+  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-proj-"));
+  tempDirs.push(projectRoot);
+  await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+  await writeFile(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify(config, null, 2)}\n`,
+  );
+  return projectRoot;
+}
+
+/** The default project — declares the team store as required. */
+async function createTeamProject(extra: object = {}): Promise<string> {
+  return createProject({ required_stores: [{ id: "team" }], ...extra });
+}
+
+type StoreEntryFields = {
+  id: string;
+  summary: string;
+  type?: string;
+  layer?: "team" | "personal";
+  semantic_scope?: string;
+  maturity?: string;
+  created_at?: string;
+  intent_clues?: string[];
+  tech_stack?: string[];
+  impact?: string[];
+  relevance_scope?: "broad" | "narrow";
+  relevance_paths?: string[];
+  related?: string[];
+};
+
+/** Render a full-frontmatter knowledge .md body for a store entry. */
+function entryMd(f: StoreEntryFields): string {
+  const lines = [
+    "---",
+    `id: ${f.id}`,
+    `type: ${f.type ?? "decision"}`,
+    `layer: ${f.layer ?? "team"}`,
+  ];
+  if (f.semantic_scope !== undefined) lines.push(`semantic_scope: ${f.semantic_scope}`);
+  lines.push(`visibility_store: "${f.layer ?? "team"}"`);
+  lines.push(`maturity: ${f.maturity ?? "proven"}`);
+  lines.push(`created_at: ${f.created_at ?? "2026-06-04T00:00:00.000Z"}`);
+  if (f.intent_clues !== undefined) lines.push(`intent_clues: [${f.intent_clues.join(", ")}]`);
+  if (f.tech_stack !== undefined) lines.push(`tech_stack: [${f.tech_stack.join(", ")}]`);
+  if (f.impact !== undefined) lines.push(`impact: [${f.impact.join(", ")}]`);
+  if (f.relevance_scope !== undefined) lines.push(`relevance_scope: ${f.relevance_scope}`);
+  if (f.relevance_paths !== undefined) lines.push(`relevance_paths: [${f.relevance_paths.join(", ")}]`);
+  if (f.related !== undefined && f.related.length > 0) lines.push(`related: [${f.related.join(", ")}]`);
+  lines.push(`summary: ${f.summary}`);
+  lines.push("---", "", `# ${f.id}`, "", `Body for ${f.id}.`, "");
+  return lines.join("\n");
+}
+
+/** Write a knowledge .md into a store under the isolated ~/.fabric. */
+async function writeStoreEntry(
+  storeUuid: string,
+  type: string,
+  f: StoreEntryFields,
+): Promise<void> {
+  const dir = join(
+    resolveGlobalRoot(),
+    storeRelativePath(storeUuid),
+    STORE_LAYOUT.knowledgeDir,
+    type,
+  );
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${f.id}.md`), entryMd({ type: type.replace(/s$/u, ""), ...f }));
+}
+
+/** Register the team store (and optionally a personal store) in the global config. */
+function mountStores(opts: { personal?: boolean } = {}): void {
+  const stores = [
+    { store_uuid: TEAM_STORE, alias: "team", remote: "git@e:team.git" },
+  ];
+  if (opts.personal === true) {
+    stores.push({
+      store_uuid: PERSONAL_STORE,
+      alias: "personal",
+      remote: "git@e:personal.git",
+      // @ts-expect-error — personal flag is optional on the config store shape.
+      personal: true,
+    });
+  }
+  saveGlobalConfig({ uid: "test-uid", stores });
+}
+
 describe("planContext", () => {
-  it("returns a neutral requirement profile and a description index sorted by stable_id", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    // v2.0.0-rc.22 Scope D T-D2: only seed files that have hand-crafted meta
-    // nodes — auto-heal would otherwise mint a fresh node (with derived id)
-    // for the orphan battle-view.md and pollute the description_index.
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"), "# Global\n");
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"), "# UI\n");
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-neutral",
-        nodes: {
-          "global-protocol": {
-            stable_id: "global-protocol",
-            file: ".fabric/knowledge/decisions/global.md",
-            content_ref: ".fabric/knowledge/decisions/global.md",
-            scope_glob: "**",
-            hash: "sha256:global",
-            description: {
-              summary: "Global protocol",
-              intent_clues: [],
-              tech_stack: ["Fabric"],
-              impact: [],
-              must_read_if: "before any edit",
-            },
-          },
-          "ui-batch-rendering": {
-            stable_id: "ui-batch-rendering",
-            file: ".fabric/knowledge/guidelines/ui.md",
-            content_ref: ".fabric/knowledge/guidelines/ui.md",
-            scope_glob: "**",
-            hash: "sha256:ui",
-            description: {
-              summary: "UI batch rendering",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "when editing UI",
-            },
-          },
-        },
-      }, null, 2)}\n`,
-    );
+  it("returns a neutral requirement profile and store-qualified candidates sorted by stable_id", async () => {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "Global protocol",
+      tech_stack: ["Fabric"],
+    });
+    await writeStoreEntry(TEAM_STORE, "guidelines", {
+      id: "KT-GLD-0001",
+      type: "guideline",
+      summary: "UI batch rendering",
+    });
+    mountStores();
 
     const result = await planContext(projectRoot, {
       paths: ["src/index.ts"],
@@ -96,16 +173,10 @@ describe("planContext", () => {
       session_id: "session-plan",
     });
 
-    // v2.0.0-rc.22 Scope D T-D2: revision_hash is now auto-healed from the
-    // on-disk knowledge tree by loadActiveMetaOrStale. The "rev-neutral"
-    // sentinel in the seeded meta drifts away the moment buildKnowledgeMeta
-    // sees the real .md files, so we assert shape (non-empty string) rather
-    // than a literal — the heal pipeline is exercised by the dedicated
-    // auto-heal tests below.
+    // revision_hash is the store-corpus content fingerprint
+    // (computeReadSetRevision) — deterministic but we assert shape, not literal.
     expect(result.revision_hash).toEqual(expect.any(String));
     expect(result.revision_hash.length).toBeGreaterThan(0);
-    expect(result.auto_healed).toBe(true);
-    expect(result.previous_revision_hash).toBe("rev-neutral");
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]?.path).toBe("src/index.ts");
     expect(result.entries[0]?.requirement_profile).toMatchObject({
@@ -136,7 +207,13 @@ describe("planContext", () => {
     expect(result.entries[0]).not.toHaveProperty("description_index");
 
     const index = result.candidates;
-    expect(index.map((item) => item.stable_id)).toEqual(["global-protocol", "ui-batch-rendering"]);
+    // The intent "rendering tweak" floats the "UI batch rendering" guideline
+    // above the unrelated "Global protocol" decision via BM25 (content leads).
+    // Ids are store-qualified now.
+    expect(index.map((item) => item.stable_id)).toEqual([
+      "team:KT-GLD-0001",
+      "team:KT-DEC-0001",
+    ]);
 
     // v2.0-rc.7 T9: symmetric output — every response carries a
     // selection_token and the `candidates_full_content` field is gone.
@@ -154,27 +231,18 @@ describe("planContext", () => {
   });
 
   it("marks the response stale when the client hash does not match the current revision", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-current",
-        nodes: {},
-      }, null, 2)}\n`,
-    );
+    const projectRoot = await createTeamProject();
+    // No store entries seeded → empty corpus, deterministic revision.
+    mountStores();
 
     const result = await planContext(projectRoot, {
       paths: ["src/index.ts"],
       client_hash: "rev-old",
     });
 
-    // v2.0.0-rc.22 Scope D T-D2: empty knowledge tree → derived meta has
-    // nodes:{} and a deterministic revision based on `computeRevision({})`.
-    // We don't pin the literal — just verify the staleness contract: a
-    // client_hash that does not match the current (post-heal) revision flips
-    // `stale: true`.
+    // Empty read-set corpus → computeReadSetRevision is a deterministic hash. We
+    // don't pin the literal — just the staleness contract: a client_hash that
+    // does not match the current revision flips `stale: true`.
     expect(result.revision_hash).toEqual(expect.any(String));
     expect(result.revision_hash).not.toBe("rev-old");
     expect(result.stale).toBe(true);
@@ -187,189 +255,69 @@ describe("planContext", () => {
     expect(result.candidates).toEqual([]);
     expect(result.preflight_diagnostics).toEqual([]);
     // v2.0-rc.7 T9: symmetric output — selection_token issued even for an
-    // empty description_index; candidates_full_content field is gone.
+    // empty candidate set; candidates_full_content field is gone.
     expect(result.selection_token).toEqual(expect.any(String));
     expect(result).not.toHaveProperty("candidates_full_content");
   });
 
   // ---------------------------------------------------------------------------
-  // v2.0 dual-root knowledge-field passthrough (TASK-005 / TASK-007)
+  // knowledge-field passthrough — type/maturity/layer surface on description.*
   // ---------------------------------------------------------------------------
 
-  it("passes_through_knowledge_fields_to_description_index — type/maturity/layer + inferred layer fallback", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    // v2.0.0-rc.22 Scope D T-D2: auto-heal now scans the on-disk knowledge
-    // tree. Seed the .md files this fixture used to reference only by meta
-    // so buildKnowledgeMeta preserves the hand-crafted description blobs via
-    // its `...existing?.node` carry-over. The personal entry lives under
-    // FABRIC_HOME (set in beforeEach) — its dual-root scan picks it up.
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "pending"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "team-auth.md"),
-      [
-        "---",
-        "summary: Team JWT decision",
-        "id: KT-DEC-0001",
-        "type: decision",
-        "maturity: verified",
-        "layer: team",
-        "layer_reason: shared across services",
-        "---",
-        "# Team JWT decision",
-        "",
-      ].join("\n"),
-    );
-    // legacy.md intentionally has NO frontmatter — exercises the heading-only
-    // fallback path where extractRuleDescription synthesizes a description
-    // with type=undefined / maturity=undefined / layer=undefined.
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "pending", "legacy.md"), "# Legacy v1.x entry\n");
-    const fakeHome = process.env.FABRIC_HOME!;
-    await mkdir(join(fakeHome, ".fabric", "knowledge", "guidelines"), { recursive: true });
-    await writeFile(
-      join(fakeHome, ".fabric", "knowledge", "guidelines", "personal-style.md"),
-      [
-        "---",
-        "summary: Personal coding style",
-        "id: KP-GLD-0001",
-        "type: guideline",
-        "maturity: draft",
-        "layer: personal",
-        "---",
-        "# Personal coding style",
-        "",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-v2-passthrough",
-        nodes: {
-          "KT-DEC-0001": {
-            stable_id: "KT-DEC-0001",
-            file: ".fabric/knowledge/decisions/team-auth.md",
-            content_ref: ".fabric/knowledge/decisions/team-auth.md",
-            scope_glob: "**",
-            hash: "sha256:team-auth",
-            identity_source: "declared",
-            description: {
-              summary: "Team JWT decision",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "Team JWT decision",
-              id: "KT-DEC-0001",
-              knowledge_type: "decisions",
-              maturity: "verified",
-              knowledge_layer: "team",
-              layer_reason: "shared across services",
-              created_at: "2026-05-10T08:00:00Z",
-            },
-          },
-          "KP-GLD-0001": {
-            stable_id: "KP-GLD-0001",
-            file: "~/.fabric/knowledge/guidelines/personal-style.md",
-            content_ref: "~/.fabric/knowledge/guidelines/personal-style.md",
-            scope_glob: "**",
-            hash: "sha256:personal-style",
-            identity_source: "declared",
-            description: {
-              summary: "Personal coding style",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "Personal coding style",
-              id: "KP-GLD-0001",
-              knowledge_type: "guidelines",
-              maturity: "draft",
-              knowledge_layer: "personal",
-              created_at: "2026-05-10T08:00:00Z",
-            },
-          },
-          "legacy-v1": {
-            stable_id: "legacy-v1",
-            file: ".fabric/knowledge/pending/legacy.md",
-            content_ref: ".fabric/knowledge/pending/legacy.md",
-            scope_glob: "**",
-            hash: "sha256:legacy",
-            description: {
-              summary: "Legacy v1.x entry",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "Legacy v1.x entry",
-            },
-          },
-        },
-      }, null, 2)}\n`,
-    );
+  it("passes_through_knowledge_fields_to_candidates — type/maturity/layer on description", async () => {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "Team JWT decision",
+      maturity: "verified",
+      layer: "team",
+    });
+    await writeStoreEntry(PERSONAL_STORE, "guidelines", {
+      id: "KP-GLD-0001",
+      type: "guideline",
+      summary: "Personal coding style",
+      maturity: "draft",
+      layer: "personal",
+    });
+    mountStores({ personal: true });
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     const indexById = new Map(result.candidates.map((item) => [item.stable_id, item] as const));
 
-    // v2.0.0-rc.38 UX-3: top-level type/maturity/layer mirrors removed — these
-    // now live only on description.*, and the inferred layer is backfilled into
-    // description.knowledge_layer.
-    expect(indexById.get("KT-DEC-0001")?.description).toMatchObject({
+    // v2.0.0-rc.38 UX-3: type/maturity/layer live only on description.*.
+    expect(indexById.get("team:KT-DEC-0001")?.description).toMatchObject({
       knowledge_type: "decisions",
       maturity: "verified",
       knowledge_layer: "team",
-      layer_reason: "shared across services",
     });
-    expect(indexById.get("KT-DEC-0001")).not.toHaveProperty("type");
-    expect(indexById.get("KT-DEC-0001")).not.toHaveProperty("layer");
+    expect(indexById.get("team:KT-DEC-0001")).not.toHaveProperty("type");
+    expect(indexById.get("team:KT-DEC-0001")).not.toHaveProperty("layer");
 
-    expect(indexById.get("KP-GLD-0001")?.description).toMatchObject({
+    expect(indexById.get("personal:KP-GLD-0001")?.description).toMatchObject({
       knowledge_type: "guidelines",
       maturity: "draft",
       knowledge_layer: "personal",
     });
-
-    // legacy-v1 had no knowledge_type/knowledge_layer in frontmatter; the layer
-    // is backfilled from the (team-rooted) content_ref, type stays undefined.
-    expect(indexById.get("legacy-v1")?.description.knowledge_type).toBeUndefined();
-    expect(indexById.get("legacy-v1")?.description.maturity).toBeUndefined();
-    expect(indexById.get("legacy-v1")?.description.knowledge_layer).toBe("team");
   });
 
-  // F54 (ISS-20260531-090): layer_filter was declared in planContextInputSchema
-  // (and recallInputSchema) but the tool callbacks never forwarded it and the
-  // service never applied it — every layer leaked into every result. These
-  // assert the param now actually narrows the candidate corpus by layer.
+  // F54 (ISS-20260531-090): layer_filter narrows the candidate corpus by layer.
+  // The team store backs `team`; the implicit personal store backs `personal`.
   async function seedDualLayerProject(): Promise<string> {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "team-auth.md"), "# Team JWT\n");
-    const fakeHome = process.env.FABRIC_HOME!;
-    await mkdir(join(fakeHome, ".fabric", "knowledge", "guidelines"), { recursive: true });
-    await writeFile(join(fakeHome, ".fabric", "knowledge", "guidelines", "personal-style.md"), "# Personal style\n");
-    const mkDesc = (summary: string, id: string, layer: "team" | "personal", type: string) => ({
-      summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: summary,
-      id, knowledge_type: type, maturity: "draft", knowledge_layer: layer,
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "Team JWT decision",
+      maturity: "draft",
+      layer: "team",
     });
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-layerfilter",
-        nodes: {
-          "KT-DEC-0001": {
-            stable_id: "KT-DEC-0001", file: ".fabric/knowledge/decisions/team-auth.md",
-            content_ref: ".fabric/knowledge/decisions/team-auth.md", scope_glob: "**",
-            hash: "sha256:team", identity_source: "declared",
-            description: mkDesc("Team JWT decision", "KT-DEC-0001", "team", "decisions"),
-          },
-          "KP-GLD-0001": {
-            stable_id: "KP-GLD-0001", file: "~/.fabric/knowledge/guidelines/personal-style.md",
-            content_ref: "~/.fabric/knowledge/guidelines/personal-style.md", scope_glob: "**",
-            hash: "sha256:personal", identity_source: "declared",
-            description: mkDesc("Personal coding style", "KP-GLD-0001", "personal", "guidelines"),
-          },
-        },
-      }, null, 2)}\n`,
-    );
+    await writeStoreEntry(PERSONAL_STORE, "guidelines", {
+      id: "KP-GLD-0001",
+      type: "guideline",
+      summary: "Personal coding style",
+      maturity: "draft",
+      layer: "personal",
+    });
+    mountStores({ personal: true });
     return projectRoot;
   }
 
@@ -377,67 +325,42 @@ describe("planContext", () => {
     const projectRoot = await seedDualLayerProject();
     const result = await planContext(projectRoot, { paths: ["src/index.ts"], layer_filter: "team" });
     const ids = result.candidates.map((c) => c.stable_id);
-    expect(ids).toContain("KT-DEC-0001");
-    expect(ids).not.toContain("KP-GLD-0001");
+    expect(ids).toContain("team:KT-DEC-0001");
+    expect(ids).not.toContain("personal:KP-GLD-0001");
   });
 
   it("layer_filter=personal surfaces only personal candidates, dropping team (KT-*)", async () => {
     const projectRoot = await seedDualLayerProject();
     const result = await planContext(projectRoot, { paths: ["src/index.ts"], layer_filter: "personal" });
     const ids = result.candidates.map((c) => c.stable_id);
-    expect(ids).toContain("KP-GLD-0001");
-    expect(ids).not.toContain("KT-DEC-0001");
+    expect(ids).toContain("personal:KP-GLD-0001");
+    expect(ids).not.toContain("team:KT-DEC-0001");
   });
 
   it("layer_filter omitted (default both) surfaces every layer", async () => {
     const projectRoot = await seedDualLayerProject();
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     const ids = result.candidates.map((c) => c.stable_id);
-    expect(ids).toContain("KT-DEC-0001");
-    expect(ids).toContain("KP-GLD-0001");
+    expect(ids).toContain("team:KT-DEC-0001");
+    expect(ids).toContain("personal:KP-GLD-0001");
   });
 
   // ---------------------------------------------------------------------------
-  // v2.0-rc.7 T9: degenerate single-stage mode removed. Output is now
-  // symmetric across all candidate counts — description_index + selection_token,
-  // no candidates_full_content. See docs/decisions/rc5-a3-superseded.md.
+  // v2.0-rc.7 T9: symmetric output across all candidate counts —
+  // candidates + selection_token, no candidates_full_content.
   // ---------------------------------------------------------------------------
 
-  it("test_plan_context_symmetric_small_set — 5 entries return description_index + selection_token (no inline bodies)", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-
-    const nodes: Record<string, unknown> = {};
+  it("test_plan_context_symmetric_small_set — 5 entries return candidates + selection_token (no inline bodies)", async () => {
+    const projectRoot = await createTeamProject();
     for (let i = 0; i < 5; i += 1) {
       const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
-      const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
-      await writeFile(join(projectRoot, file), `# Decision ${i + 1}\n\nBody for ${id}.\n`);
-      nodes[id] = {
-        stable_id: id,
-        file,
-        content_ref: file,
-        scope_glob: "**",
-        hash: `sha256:d${i + 1}`,
-        identity_source: "declared",
-        description: {
-          summary: `Decision ${i + 1}`,
-          intent_clues: [],
-          tech_stack: [],
-          impact: [],
-          must_read_if: "",
-          id,
-          knowledge_type: "decisions",
-          maturity: "verified",
-          knowledge_layer: "team",
-          created_at: "2026-05-10T00:00:00Z",
-        },
-      };
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id,
+        summary: `Decision ${i + 1}`,
+        maturity: "verified",
+      });
     }
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-small", nodes }, null, 2)}\n`,
-    );
+    mountStores();
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
@@ -447,48 +370,17 @@ describe("planContext", () => {
     expect(result).not.toHaveProperty("candidates_full_content");
   });
 
-  it("test_plan_context_symmetric_large_set — 100 entries return same shape as small set", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-
-    const nodes: Record<string, unknown> = {};
-    // 100 stub entries — well above the legacy degenerate threshold. Shape
-    // must match the small-set response exactly.
-    // v2.0.0-rc.22 Scope D T-D2: each stub needs a backing .md file so
-    // buildKnowledgeMeta (now invoked by auto-heal) preserves the hand-crafted
-    // description blob via `...existing?.node`. Without the file the node is
-    // dropped from the rebuilt meta and the description_index shrinks below
-    // 100.
+  it("test_plan_context_symmetric_large_set — 100 entries cap to top_k with omitted count", async () => {
+    const projectRoot = await createTeamProject();
     for (let i = 0; i < 100; i += 1) {
       const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
-      const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
-      await writeFile(join(projectRoot, file), `# Decision ${i + 1}\n`);
-      nodes[id] = {
-        stable_id: id,
-        file,
-        content_ref: file,
-        scope_glob: "**",
-        hash: `sha256:d${i + 1}`,
-        identity_source: "declared",
-        description: {
-          summary: `Decision ${i + 1}`,
-          intent_clues: [],
-          tech_stack: [],
-          impact: [],
-          must_read_if: "",
-          id,
-          knowledge_type: "decisions",
-          maturity: "verified",
-          knowledge_layer: "team",
-          created_at: "2026-05-10T00:00:00Z",
-        },
-      };
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id,
+        summary: `Decision ${i + 1}`,
+        maturity: "verified",
+      });
     }
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-large", nodes }, null, 2)}\n`,
-    );
+    mountStores();
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
@@ -505,166 +397,52 @@ describe("planContext", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // v2.0-rc.5 C3 (TASK-012): relevance_paths filter
-  //
-  // Build a mixed registry with broad + narrow entries and assert filter
-  // semantics against various target_paths inputs:
-  //   * broad always passes (filter is a no-op for cross-cutting entries)
-  //   * narrow passes ONLY when its relevance_paths globs match a target
-  //   * narrow fails when no glob matches any target_paths
-  //   * empty target_paths → narrow fails open (every narrow passes too)
+  // v2.0-rc.5 C3 (TASK-012) → Wave A1: server returns ALL candidates regardless
+  // of relevance_scope/relevance_paths match — the LLM decides via descriptions.
   // ---------------------------------------------------------------------------
 
-  async function seedRelevanceRegistry(projectRoot: string): Promise<void> {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    // v2.0.0-rc.22 Scope D T-D2: seed real YAML frontmatter so auto-heal's
-    // extractRuleDescription parses the same relevance_scope / relevance_paths
-    // the hand-crafted meta declared. Heading-only fallback would default to
-    // broad+[] and silently flip every narrow entry to fail-open.
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "guidelines", "broad.md"),
-      [
-        "---",
-        "summary: Broad cross-cutting guideline",
-        "id: KT-GLD-0001",
-        "type: guideline",
-        "maturity: verified",
-        "layer: team",
-        "relevance_scope: broad",
-        "relevance_paths: []",
-        "---",
-        "# Broad",
-        "",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "guidelines", "ui-narrow.md"),
-      [
-        "---",
-        "summary: Narrow UI guideline",
-        "id: KT-GLD-0002",
-        "type: guideline",
-        "maturity: verified",
-        "layer: team",
-        "relevance_scope: narrow",
-        `relevance_paths: ["src/ui/**", "packages/ui/"]`,
-        "---",
-        "# UI Narrow",
-        "",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "auth-narrow.md"),
-      [
-        "---",
-        "summary: Narrow auth decision",
-        "id: KT-DEC-0001",
-        "type: decision",
-        "maturity: verified",
-        "layer: team",
-        "relevance_scope: narrow",
-        `relevance_paths: ["src/auth/**"]`,
-        "---",
-        "# Auth Narrow",
-        "",
-      ].join("\n"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-relevance",
-        nodes: {
-          "KT-GLD-0001": {
-            stable_id: "KT-GLD-0001",
-            file: ".fabric/knowledge/guidelines/broad.md",
-            content_ref: ".fabric/knowledge/guidelines/broad.md",
-            scope_glob: "**",
-            hash: "sha256:broad",
-            identity_source: "declared",
-            description: {
-              summary: "Broad cross-cutting guideline",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "",
-              id: "KT-GLD-0001",
-              knowledge_type: "guidelines",
-              maturity: "verified",
-              knowledge_layer: "team",
-              created_at: "2026-05-10T00:00:00Z",
-              relevance_scope: "broad",
-              relevance_paths: [],
-            },
-          },
-          "KT-GLD-0002": {
-            stable_id: "KT-GLD-0002",
-            file: ".fabric/knowledge/guidelines/ui-narrow.md",
-            content_ref: ".fabric/knowledge/guidelines/ui-narrow.md",
-            scope_glob: "**",
-            hash: "sha256:ui-narrow",
-            identity_source: "declared",
-            description: {
-              summary: "Narrow UI guideline",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "",
-              id: "KT-GLD-0002",
-              knowledge_type: "guidelines",
-              maturity: "verified",
-              knowledge_layer: "team",
-              created_at: "2026-05-10T00:00:00Z",
-              relevance_scope: "narrow",
-              relevance_paths: ["src/ui/**", "packages/ui/"],
-            },
-          },
-          "KT-DEC-0001": {
-            stable_id: "KT-DEC-0001",
-            file: ".fabric/knowledge/decisions/auth-narrow.md",
-            content_ref: ".fabric/knowledge/decisions/auth-narrow.md",
-            scope_glob: "**",
-            hash: "sha256:auth-narrow",
-            identity_source: "declared",
-            description: {
-              summary: "Narrow auth decision",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "",
-              id: "KT-DEC-0001",
-              knowledge_type: "decisions",
-              maturity: "verified",
-              knowledge_layer: "team",
-              created_at: "2026-05-10T00:00:00Z",
-              relevance_scope: "narrow",
-              relevance_paths: ["src/auth/**"],
-            },
-          },
-        },
-      }, null, 2)}\n`,
-    );
+  async function seedRelevanceRegistry(): Promise<string> {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "guidelines", {
+      id: "KT-GLD-0001",
+      type: "guideline",
+      summary: "Broad cross-cutting guideline",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    await writeStoreEntry(TEAM_STORE, "guidelines", {
+      id: "KT-GLD-0002",
+      type: "guideline",
+      summary: "Narrow UI guideline",
+      maturity: "verified",
+      relevance_scope: "narrow",
+      relevance_paths: ["src/ui/**", "packages/ui/"],
+    });
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "Narrow auth decision",
+      maturity: "verified",
+      relevance_scope: "narrow",
+      relevance_paths: ["src/auth/**"],
+    });
+    mountStores();
+    return projectRoot;
   }
 
   it("test_plan_context_returns_all_even_unrelated_path — Wave A1: unrelated path still returns ALL entries (no filter)", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelevanceRegistry(projectRoot);
+    const projectRoot = await seedRelevanceRegistry();
 
-    // Pre-Wave-A1: src/unrelated/ did not match any narrow relevance_paths
-    // → only broad survived.
-    // Wave A1: server returns ALL, LLM decides via descriptions.
     const result = await planContext(projectRoot, {
       paths: ["src/unrelated/index.ts"],
       target_paths: ["src/unrelated/index.ts"],
     });
     const ids = result.candidates.map((item) => item.stable_id).sort();
-    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
+    expect(ids).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001", "team:KT-GLD-0002"]);
   });
 
   it("test_plan_context_returns_all_for_ui_path — Wave A1: src/ui path still returns ALL entries (broad + both narrows)", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelevanceRegistry(projectRoot);
+    const projectRoot = await seedRelevanceRegistry();
 
     const result = await planContext(projectRoot, {
       paths: ["src/ui/Button.tsx"],
@@ -672,14 +450,11 @@ describe("planContext", () => {
     });
     const ids = result.candidates.map((item) => item.stable_id).sort();
     // Wave A1: server returns ALL candidates with descriptions; LLM picks.
-    // Pre-Wave-A1 this would have been [KT-GLD-0001, KT-GLD-0002] (broad +
-    // ui-narrow only, auth-narrow excluded).
-    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
+    expect(ids).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001", "team:KT-GLD-0002"]);
   });
 
   it("test_plan_context_no_narrow_filter — Wave A1: server returns ALL candidates regardless of relevance_scope/relevance_paths match", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelevanceRegistry(projectRoot);
+    const projectRoot = await seedRelevanceRegistry();
 
     const result = await planContext(projectRoot, {
       paths: ["src/auth/login.ts"],
@@ -688,71 +463,39 @@ describe("planContext", () => {
     const ids = result.candidates.map((item) => item.stable_id).sort();
     // Wave A1 (per KB [[no-server-side-kb-filter]]): no server-side relevance
     // filter — broad + ALL narrow entries returned, LLM picks via descriptions.
-    // Pre-Wave-A1 behavior excluded ui-narrow when its relevance_paths did not
-    // anchor against the target_paths; that filter is now disabled.
-    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
+    expect(ids).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001", "team:KT-GLD-0002"]);
   });
 
   it("test_plan_context_no_paths_returns_all — empty target_paths fails open (narrow included)", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelevanceRegistry(projectRoot);
+    const projectRoot = await seedRelevanceRegistry();
 
-    // Explicit empty target_paths → fail-open: include broad AND every narrow.
     const result = await planContext(projectRoot, {
       paths: ["**"],
       target_paths: [],
     });
     const ids = result.candidates.map((item) => item.stable_id).sort();
-    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
+    expect(ids).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001", "team:KT-GLD-0002"]);
   });
 
   it("test_plan_context_returns_all_for_dir_anchored_path — Wave A1: dir-anchored path still returns ALL entries", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelevanceRegistry(projectRoot);
+    const projectRoot = await seedRelevanceRegistry();
 
-    // Pre-Wave-A1: packages/ui/ → packages/ui/** matched ui-narrow only.
-    // Wave A1: server returns ALL, LLM decides relevance from descriptions.
     const result = await planContext(projectRoot, {
       paths: ["packages/ui/Card.tsx"],
       target_paths: ["packages/ui/Card.tsx"],
     });
     const ids = result.candidates.map((item) => item.stable_id).sort();
-    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
+    expect(ids).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001", "team:KT-GLD-0002"]);
   });
 
   it("test_plan_context_drops_cocos_fields — output schema lacks Cocos + L0/L1/L2 ceremony fields", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "g.md"), "# G\n");
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-cocos-drop",
-        nodes: {
-          "KT-DEC-0001": {
-            stable_id: "KT-DEC-0001",
-            file: ".fabric/knowledge/decisions/g.md",
-            content_ref: ".fabric/knowledge/decisions/g.md",
-            scope_glob: "**",
-            hash: "sha256:g",
-            identity_source: "declared",
-            description: {
-              summary: "G",
-              intent_clues: [],
-              tech_stack: [],
-              impact: [],
-              must_read_if: "",
-              id: "KT-DEC-0001",
-              knowledge_type: "decisions",
-              maturity: "verified",
-              knowledge_layer: "team",
-              created_at: "2026-05-10T00:00:00Z",
-            },
-          },
-        },
-      }, null, 2)}\n`,
-    );
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "G",
+      maturity: "verified",
+    });
+    mountStores();
 
     // Use a Cocos-flavored path + Chinese performance intent to confirm
     // neither triggers the (removed) hardcoded inference.
@@ -773,252 +516,23 @@ describe("planContext", () => {
     expect(result).not.toHaveProperty("ai_selectable_stable_ids");
   });
 
-  // ---------------------------------------------------------------------------
-  // v2.0.0-rc.22 Scope D T-D2 (TASK-009): auto-heal banner + graceful degrade
-  //
-  // The two paths under test:
-  //   1. fresh meta + matching tree → no auto_healed field in the response
-  //      (omitting the field on the steady-state path keeps the wire shape
-  //      minimal — downstream renderers branch only when the field is true).
-  //   2. graceful degrade when buildKnowledgeMeta throws → response carries
-  //      stale:true and falls back to the on-disk meta, never throws.
-  //
-  // The stale → auto_healed:true path is exercised by the very first test in
-  // this file (revision_hash + auto_healed + previous_revision_hash); no need
-  // to re-prove the heal pipeline here.
-  // ---------------------------------------------------------------------------
-
-  it("planContext_no_auto_healed_field_when_fresh — steady-state response omits auto_healed", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "foo.md"),
-      "# Foo\n",
-    );
-    // Build the meta from the real on-disk tree so its revision matches the
-    // derived revision — no drift → no heal.
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+  it("steady-state response omits auto_healed / previous_revision_hash (auto-heal retired)", async () => {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "Foo",
+    });
+    mountStores();
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
+    // v2.2 W5 R1: the auto_healed / previous_revision_hash pair was tied to the
+    // co-location loadActiveMetaOrStale auto-heal, which is retired. Store-backed
+    // recall reads frontmatter live, so these fields are never emitted now.
     expect(result.auto_healed).toBeUndefined();
     expect(result.previous_revision_hash).toBeUndefined();
     // stale stays false on the steady-state path — no client_hash was sent.
     expect(result.stale).toBe(false);
-  });
-
-  // ---------------------------------------------------------------------------
-  // v2.0.0-rc.23 TASK-005 (a-B): description-undefined auto-heal
-  //
-  // Symmetric to rc.22 D2 but covers the case where revision hashes match
-  // (no revision drift) yet on-disk meta carries nodes with
-  // description === undefined. Such legacy meta degrades hint quality and
-  // collapses to "KB: none" in cite enforcement. Three cases:
-  //   1. Undefined-description present → reconcile fires + auto_healed:true,
-  //      meta_reconciled event emitted with trigger:'auto-heal-description'.
-  //   2. All-fresh KB → no reconcile, auto_healed stays absent.
-  //   3. Idempotent re-run on already-healed KB → no second reconcile.
-  // ---------------------------------------------------------------------------
-
-  it("planContext_auto_heals_when_description_is_undefined — fires reconcile + auto_healed:true", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    // Seed an .md file WITH frontmatter so the reconcile rebuild can populate
-    // a real description for it — the heal must be observably effective.
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
-      [
-        "---",
-        "stable_id: DEC-001",
-        "knowledge_type: decision",
-        "maturity: verified",
-        "knowledge_layer: team",
-        "description:",
-        "  summary: Global protocol",
-        "  intent_clues: []",
-        "  tech_stack: [Fabric]",
-        "  impact: []",
-        "  must_read_if: before any edit",
-        "---",
-        "# Global",
-        "",
-      ].join("\n"),
-    );
-
-    // Seed an on-disk meta whose revision matches the derived revision
-    // (so loadActiveMetaOrStale does NOT trigger its own auto-heal) but whose
-    // node lacks `description`. To do that we first let writeKnowledgeMeta
-    // compute the canonical meta, then surgically strip the description.
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
-
-    const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-    const fs = await import("node:fs/promises");
-    const raw = await fs.readFile(metaPath, "utf8");
-    const parsed = JSON.parse(raw) as {
-      revision: string;
-      nodes: Record<string, { description?: unknown; activation?: { description?: unknown } }>;
-    };
-    const originalRevision = parsed.revision;
-    // Strip both description surfaces from every node so the predicate
-    // (description===undefined && activation?.description===undefined) is hit.
-    for (const node of Object.values(parsed.nodes)) {
-      delete node.description;
-      if (node.activation !== undefined) {
-        delete node.activation.description;
-      }
-    }
-    await fs.writeFile(metaPath, `${JSON.stringify(parsed, null, 2)}\n`);
-
-    // Bust the meta cache so the next read sees our doctored bytes.
-    contextCache.invalidate("meta_write", projectRoot);
-
-    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
-
-    // Auto-heal banner surfaced.
-    expect(result.auto_healed).toBe(true);
-    expect(result.previous_revision_hash).toBe(originalRevision);
-
-    // Post-heal meta on disk has description populated again.
-    const healedRaw = await fs.readFile(metaPath, "utf8");
-    const healedParsed = JSON.parse(healedRaw) as {
-      nodes: Record<string, { description?: unknown }>;
-    };
-    const healedNodes = Object.values(healedParsed.nodes);
-    expect(healedNodes.length).toBeGreaterThan(0);
-    for (const node of healedNodes) {
-      expect(node.description).toBeDefined();
-    }
-
-    // Ledger captured the trigger.
-    const ledger = await readEventLedger(projectRoot, { event_type: "meta_reconciled" });
-    const triggers = ledger.events.map((e) => (e as { trigger?: string }).trigger);
-    expect(triggers).toContain("auto-heal-description");
-  });
-
-  it("planContext_no_heal_when_descriptions_all_defined — auto_healed stays absent", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
-      [
-        "---",
-        "stable_id: DEC-001",
-        "knowledge_type: decision",
-        "maturity: verified",
-        "knowledge_layer: team",
-        "description:",
-        "  summary: Global protocol",
-        "  intent_clues: []",
-        "  tech_stack: [Fabric]",
-        "  impact: []",
-        "  must_read_if: before any edit",
-        "---",
-        "# Global",
-        "",
-      ].join("\n"),
-    );
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
-
-    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
-
-    // No drift on either axis → wire shape stays minimal.
-    expect(result.auto_healed).toBeUndefined();
-    expect(result.previous_revision_hash).toBeUndefined();
-
-    // And no auto-heal-description event in the ledger.
-    const ledger = await readEventLedger(projectRoot, { event_type: "meta_reconciled" });
-    const triggers = ledger.events.map((e) => (e as { trigger?: string }).trigger);
-    expect(triggers).not.toContain("auto-heal-description");
-  });
-
-  it("planContext_idempotent_after_description_heal — second call does not re-trigger", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
-      [
-        "---",
-        "stable_id: DEC-001",
-        "knowledge_type: decision",
-        "maturity: verified",
-        "knowledge_layer: team",
-        "description:",
-        "  summary: Global protocol",
-        "  intent_clues: []",
-        "  tech_stack: [Fabric]",
-        "  impact: []",
-        "  must_read_if: before any edit",
-        "---",
-        "# Global",
-        "",
-      ].join("\n"),
-    );
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
-
-    // Strip descriptions to set up the drift, same way as the first test.
-    const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-    const fs = await import("node:fs/promises");
-    const raw = await fs.readFile(metaPath, "utf8");
-    const parsed = JSON.parse(raw) as {
-      nodes: Record<string, { description?: unknown; activation?: { description?: unknown } }>;
-    };
-    for (const node of Object.values(parsed.nodes)) {
-      delete node.description;
-      if (node.activation !== undefined) {
-        delete node.activation.description;
-      }
-    }
-    await fs.writeFile(metaPath, `${JSON.stringify(parsed, null, 2)}\n`);
-    contextCache.invalidate("meta_write", projectRoot);
-
-    // First call heals.
-    const first = await planContext(projectRoot, { paths: ["src/index.ts"] });
-    expect(first.auto_healed).toBe(true);
-
-    // Second call must NOT heal again — meta is fresh now.
-    const second = await planContext(projectRoot, { paths: ["src/index.ts"] });
-    expect(second.auto_healed).toBeUndefined();
-    expect(second.previous_revision_hash).toBeUndefined();
-
-    // Ledger holds exactly one auto-heal-description event from the first call.
-    const ledger = await readEventLedger(projectRoot, { event_type: "meta_reconciled" });
-    const autoHealEvents = ledger.events.filter(
-      (e) => (e as { trigger?: string }).trigger === "auto-heal-description",
-    );
-    expect(autoHealEvents).toHaveLength(1);
-  });
-
-  it("planContext_degrades_on_build_failure — graceful return with stale:true", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "foo.md"),
-      "# Foo\n",
-    );
-    const knowledgeMetaBuilder = await import("./knowledge-meta-builder.js");
-    await knowledgeMetaBuilder.writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
-
-    // Inject a synthetic build failure. loadActiveMetaOrStale must return the
-    // on-disk meta with degraded:true (we only see the surface via stale:true).
-    vi.spyOn(knowledgeMetaBuilder, "buildKnowledgeMeta").mockRejectedValueOnce(
-      new Error("synthetic build failure"),
-    );
-
-    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
-
-    // Graceful path — no exception, response shape preserved, stale flag set.
-    expect(result.stale).toBe(true);
-    // No auto-heal happened (build threw before any write), so the banner
-    // pair stays absent.
-    expect(result.auto_healed).toBeUndefined();
-    expect(result.previous_revision_hash).toBeUndefined();
-    // The on-disk meta is still served — revision_hash is non-empty.
-    expect(result.revision_hash).toEqual(expect.any(String));
-    expect(result.revision_hash.length).toBeGreaterThan(0);
   });
 });
 
@@ -1031,28 +545,28 @@ describe("planContext", () => {
 
 describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
   it("rejects absolute paths in input.paths", async () => {
-    const projectRoot = await createTempProject();
+    const projectRoot = await createProject({});
     await expect(
       planContext(projectRoot, { paths: ["/etc/passwd"] }),
     ).rejects.toThrow(/absolute paths are not allowed/u);
   });
 
   it("rejects `..` traversal in input.paths", async () => {
-    const projectRoot = await createTempProject();
+    const projectRoot = await createProject({});
     await expect(
       planContext(projectRoot, { paths: ["../../../etc/passwd"] }),
     ).rejects.toThrow(/traversal is not allowed/u);
   });
 
   it("rejects `~/` shell sigil in input.paths", async () => {
-    const projectRoot = await createTempProject();
+    const projectRoot = await createProject({});
     await expect(
       planContext(projectRoot, { paths: ["~/.ssh/id_rsa"] }),
     ).rejects.toThrow(/shell sigil/u);
   });
 
   it("rejects `..` traversal in input.target_paths", async () => {
-    const projectRoot = await createTempProject();
+    const projectRoot = await createProject({});
     await expect(
       planContext(projectRoot, {
         paths: ["src/index.ts"],
@@ -1062,12 +576,7 @@ describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
   });
 
   it("accepts the `**` global sentinel without throwing", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      JSON.stringify({ revision: "init", nodes: {} }),
-    );
+    const projectRoot = await createProject({});
     const result = await planContext(projectRoot, { paths: ["**"] });
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]?.path).toBe("**");
@@ -1075,106 +584,65 @@ describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// v2.0.0-rc.38 UX-2 (fold ②): empty-shell suppression
+// v2.0.0-rc.38 UX-2 (fold ②): empty-shell suppression — now over store entries.
 // ---------------------------------------------------------------------------
 
 describe("planContext empty-shell suppression (UX-2)", () => {
   it("drops signal-less shells from candidates and surfaces them via empty_shell_suppressed", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    // Seed real YAML frontmatter so auto-heal's re-derivation reproduces the
-    // same descriptions (heading-only files would let reconcile rewrite them).
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "real.md"),
-      [
-        "---",
-        "summary: A real decision with signal",
-        "id: KT-DEC-0001",
-        "type: decision",
-        "maturity: proven",
-        "layer: team",
-        "intent_clues: [when wiring auth]",
-        "---",
-        "# Real",
-        "",
-      ].join("\n"),
-    );
-    // Empty shell: summary === stable_id, all signal arrays empty.
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "shell.md"),
-      [
-        "---",
-        "summary: KT-DEC-9001",
-        "id: KT-DEC-9001",
-        "type: decision",
-        "maturity: draft",
-        "layer: team",
-        "---",
-        "# Shell",
-        "",
-      ].join("\n"),
-    );
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    const projectRoot = await createTeamProject();
+    // A real decision with selection signal.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-0001",
+      summary: "A real decision with signal",
+      maturity: "proven",
+      intent_clues: ["when wiring auth"],
+    });
+    // Empty shell: summary === store-qualified stable_id, all signal arrays empty.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9001",
+      summary: "team:KT-DEC-9001",
+      maturity: "draft",
+    });
+    mountStores();
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
     const ids = result.candidates.map((item) => item.stable_id);
-    expect(ids).toContain("KT-DEC-0001");
-    expect(ids).not.toContain("KT-DEC-9001");
+    expect(ids).toContain("team:KT-DEC-0001");
+    expect(ids).not.toContain("team:KT-DEC-9001");
 
     const suppressed = result.preflight_diagnostics.find((d) => d.code === "empty_shell_suppressed");
     expect(suppressed).toBeDefined();
-    expect(suppressed?.stable_ids).toContain("KT-DEC-9001");
+    expect(suppressed?.stable_ids).toContain("team:KT-DEC-9001");
   });
 });
 
 // ---------------------------------------------------------------------------
 // v2.0.0-rc.38 UX-1 / UX-4 (fold ①): payload no longer scales per-path, and a
 // realistic single-path payload stays well under the 4000-token budget
-// (G-MCP-PAYLOAD). Baseline before the fold: ~11900 tokens on this repo.
+// (G-MCP-PAYLOAD).
 // ---------------------------------------------------------------------------
 
 describe("planContext payload size (UX-1/UX-4 regression)", () => {
-  async function seedRealisticRegistry(projectRoot: string, count: number): Promise<void> {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    const nodes: Record<string, unknown> = {};
+  async function seedRealisticRegistry(count: number): Promise<string> {
+    const projectRoot = await createTeamProject();
     for (let i = 0; i < count; i += 1) {
       const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
-      const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
-      await writeFile(join(projectRoot, file), `# Decision ${i + 1}\n\nBody for ${id}.\n`);
-      nodes[id] = {
-        stable_id: id,
-        file,
-        content_ref: file,
-        scope_glob: "**",
-        hash: `sha256:d${i + 1}`,
-        identity_source: "declared",
-        description: {
-          summary: `Decision ${i + 1}: a representative architecture decision with a realistic summary length`,
-          intent_clues: ["when touching the relevant module"],
-          tech_stack: ["TypeScript"],
-          impact: ["affects downstream consumers"],
-          must_read_if: "before editing the relevant area",
-          id,
-          knowledge_type: "decisions",
-          maturity: "proven",
-          knowledge_layer: "team",
-          created_at: "2026-05-10T00:00:00Z",
-        },
-      };
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id,
+        summary: `Decision ${i + 1}: a representative architecture decision with a realistic summary length`,
+        maturity: "proven",
+        intent_clues: ["when touching the relevant module"],
+        tech_stack: ["TypeScript"],
+        impact: ["affects downstream consumers"],
+      });
     }
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: `rev-${count}`, nodes }, null, 2)}\n`,
-    );
+    mountStores();
+    return projectRoot;
   }
 
   it("single-path payload stays under the 4000-token budget (~25 typical entries)", async () => {
-    const projectRoot = await createTempProject();
-    await seedRealisticRegistry(projectRoot, 25);
+    const projectRoot = await seedRealisticRegistry(25);
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     const serialized = JSON.stringify(result);
@@ -1184,8 +652,7 @@ describe("planContext payload size (UX-1/UX-4 regression)", () => {
   });
 
   it("payload does not scale per-path (fold ① — N paths != N copies of candidates)", async () => {
-    const projectRoot = await createTempProject();
-    await seedRealisticRegistry(projectRoot, 25);
+    const projectRoot = await seedRealisticRegistry(25);
 
     const one = JSON.stringify(await planContext(projectRoot, { paths: ["src/a.ts"] })).length;
     const ten = JSON.stringify(
@@ -1204,56 +671,28 @@ describe("planContext payload size (UX-1/UX-4 regression)", () => {
 // floats it above the other — and that, absent any intent, the ordering falls
 // back to the pre-BM25 stable_id sort (backward compatibility).
 describe("planContext BM25 content ranking (W1-T2)", () => {
-  async function seedTwoTopicRegistry(projectRoot: string): Promise<void> {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    const node = (stableId: string, file: string, summary: string) => ({
-      stable_id: stableId,
-      file,
-      content_ref: file,
-      scope_glob: "**",
-      hash: `sha256:${stableId}`,
-      identity_source: "declared",
-      description: {
-        summary,
-        intent_clues: [],
-        tech_stack: [],
-        impact: [],
-        must_read_if: "",
-        id: stableId,
-        knowledge_type: "decisions",
-        maturity: "verified",
-        knowledge_layer: "team",
-        created_at: "2026-05-10T00:00:00Z",
-        relevance_scope: "broad",
-        relevance_paths: [],
-      },
+  async function seedTwoTopicRegistry(): Promise<string> {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9001",
+      summary: "Vector embedding semantic retrieval over the knowledge base",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
     });
-    const frontmatter = (id: string, summary: string) =>
-      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "vector.md"),
-      frontmatter("KT-DEC-9001", "Vector embedding semantic retrieval over the knowledge base"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "archive.md"),
-      frontmatter("KT-DEC-9002", "Git lifecycle archive cadence deprecation nudge"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-bm25",
-        nodes: {
-          "KT-DEC-9001": node("KT-DEC-9001", ".fabric/knowledge/decisions/vector.md", "Vector embedding semantic retrieval over the knowledge base"),
-          "KT-DEC-9002": node("KT-DEC-9002", ".fabric/knowledge/decisions/archive.md", "Git lifecycle archive cadence deprecation nudge"),
-        },
-      }, null, 2)}\n`,
-    );
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9002",
+      summary: "Git lifecycle archive cadence deprecation nudge",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    mountStores();
+    return projectRoot;
   }
 
   it("floats the content-matching entry to the top when intent is supplied", async () => {
-    const projectRoot = await createTempProject();
-    await seedTwoTopicRegistry(projectRoot);
+    const projectRoot = await seedTwoTopicRegistry();
 
     const result = await planContext(projectRoot, {
       paths: ["src/retrieval.ts"],
@@ -1262,30 +701,28 @@ describe("planContext BM25 content ranking (W1-T2)", () => {
 
     // BM25 ranks the vector entry first despite KT-DEC-9002 sorting earlier
     // alphabetically — content relevance leads.
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9001", "KT-DEC-9002"]);
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9001", "team:KT-DEC-9002"]);
   });
 
   it("falls back to stable_id order when no intent is supplied (BM25 disabled)", async () => {
-    const projectRoot = await createTempProject();
-    await seedTwoTopicRegistry(projectRoot);
+    const projectRoot = await seedTwoTopicRegistry();
 
     const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
 
     // No query terms → BM25 contributes 0 → both entries tie on content and
     // the alphabetic stable_id tiebreaker restores deterministic order.
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9001", "KT-DEC-9002"]);
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9001", "team:KT-DEC-9002"]);
   });
 
   it("ranks the archive entry first when the intent matches it instead", async () => {
-    const projectRoot = await createTempProject();
-    await seedTwoTopicRegistry(projectRoot);
+    const projectRoot = await seedTwoTopicRegistry();
 
     const result = await planContext(projectRoot, {
       paths: ["src/lifecycle.ts"],
       intent: "git archive deprecation cadence",
     });
 
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-9002", "KT-DEC-9001"]);
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9002", "team:KT-DEC-9001"]);
   });
 });
 
@@ -1294,60 +731,34 @@ describe("planContext BM25 content ranking (W1-T2)", () => {
 // the dropped entry is the least content-relevant one (not an alphabetic tail)
 // and that the omitted count is surfaced.
 describe("planContext top_k truncation (W1-T3)", () => {
-  async function seedThreeTopicRegistry(projectRoot: string, topK?: number): Promise<void> {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+  async function seedThreeTopicRegistry(topK?: number): Promise<string> {
+    const projectRoot = await createTeamProject();
     if (topK !== undefined) {
       await writeFile(
         join(projectRoot, "fabric.config.json"),
         `${JSON.stringify({ plan_context_top_k: topK }, null, 2)}\n`,
       );
     }
-    const topics: Array<[string, string, string]> = [
-      ["KT-DEC-9101", "vector.md", "Vector embedding semantic retrieval over the knowledge base"],
-      ["KT-DEC-9102", "bm25.md", "BM25 content relevance scoring tokenization"],
-      ["KT-DEC-9103", "archive.md", "Git lifecycle archive cadence deprecation nudge"],
+    const topics: Array<[string, string]> = [
+      ["KT-DEC-9101", "Vector embedding semantic retrieval over the knowledge base"],
+      ["KT-DEC-9102", "BM25 content relevance scoring tokenization"],
+      ["KT-DEC-9103", "Git lifecycle archive cadence deprecation nudge"],
     ];
-    const node = (stableId: string, file: string, summary: string) => ({
-      stable_id: stableId,
-      file,
-      content_ref: file,
-      scope_glob: "**",
-      hash: `sha256:${stableId}`,
-      identity_source: "declared",
-      description: {
+    for (const [id, summary] of topics) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id,
         summary,
-        intent_clues: [],
-        tech_stack: [],
-        impact: [],
-        must_read_if: "",
-        id: stableId,
-        knowledge_type: "decisions",
         maturity: "verified",
-        knowledge_layer: "team",
-        created_at: "2026-05-10T00:00:00Z",
         relevance_scope: "broad",
         relevance_paths: [],
-      },
-    });
-    const nodes: Record<string, unknown> = {};
-    for (const [id, fileName, summary] of topics) {
-      const file = `.fabric/knowledge/decisions/${fileName}`;
-      await writeFile(
-        join(projectRoot, file),
-        ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n"),
-      );
-      nodes[id] = node(id, file, summary);
+      });
     }
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-topk", nodes }, null, 2)}\n`,
-    );
+    mountStores();
+    return projectRoot;
   }
 
   it("caps candidates to plan_context_top_k after BM25 ranking and surfaces the omitted count", async () => {
-    const projectRoot = await createTempProject();
-    await seedThreeTopicRegistry(projectRoot, 2);
+    const projectRoot = await seedThreeTopicRegistry(2);
 
     const result = await planContext(projectRoot, {
       paths: ["src/retrieval.ts"],
@@ -1360,14 +771,13 @@ describe("planContext top_k truncation (W1-T3)", () => {
     expect(result.candidates).toHaveLength(2);
     expect(result.omitted_candidate_count).toBe(1);
     const ids = result.candidates.map((item) => item.stable_id);
-    expect(ids).toContain("KT-DEC-9101");
-    expect(ids).toContain("KT-DEC-9102");
-    expect(ids).not.toContain("KT-DEC-9103");
+    expect(ids).toContain("team:KT-DEC-9101");
+    expect(ids).toContain("team:KT-DEC-9102");
+    expect(ids).not.toContain("team:KT-DEC-9103");
   });
 
   it("omits the count field entirely when nothing is truncated", async () => {
-    const projectRoot = await createTempProject();
-    await seedThreeTopicRegistry(projectRoot); // no cap → default 24 > 3
+    const projectRoot = await seedThreeTopicRegistry(); // no cap → default 24 > 3
 
     const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
 
@@ -1382,69 +792,46 @@ describe("planContext top_k truncation (W1-T3)", () => {
 // the intent never outranks a low-maturity entry that DOES (content leads).
 describe("planContext salience tie-breaker (W2-T1)", () => {
   async function seedMaturityRegistry(
-    projectRoot: string,
-    entries: Array<{ id: string; file: string; summary: string; maturity: "draft" | "verified" | "proven" }>,
-  ): Promise<void> {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    const nodes: Record<string, unknown> = {};
+    entries: Array<{ id: string; summary: string; maturity: "draft" | "verified" | "proven" }>,
+  ): Promise<string> {
+    const projectRoot = await createTeamProject();
     for (const e of entries) {
-      const file = `.fabric/knowledge/decisions/${e.file}`;
-      await writeFile(
-        join(projectRoot, file),
-        ["---", `summary: ${e.summary}`, `id: ${e.id}`, "type: decision", `maturity: ${e.maturity}`, "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${e.id}`, ""].join("\n"),
-      );
-      nodes[e.id] = {
-        stable_id: e.id,
-        file,
-        content_ref: file,
-        scope_glob: "**",
-        hash: `sha256:${e.id}`,
-        identity_source: "declared",
-        description: {
-          summary: e.summary,
-          intent_clues: [],
-          tech_stack: [],
-          impact: [],
-          must_read_if: "",
-          id: e.id,
-          knowledge_type: "decisions",
-          maturity: e.maturity,
-          knowledge_layer: "team",
-          created_at: "2026-05-10T00:00:00Z",
-          relevance_scope: "broad",
-          relevance_paths: [],
-        },
-      };
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id: e.id,
+        summary: e.summary,
+        maturity: e.maturity,
+        relevance_scope: "broad",
+        relevance_paths: [],
+      });
     }
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-salience", nodes }, null, 2)}\n`,
-    );
+    mountStores();
+    return projectRoot;
   }
 
   it("floats higher maturity up among entries with identical content relevance", async () => {
-    const projectRoot = await createTempProject();
     // Same summary text → identical BM25 + locality; only maturity differs.
-    await seedMaturityRegistry(projectRoot, [
-      { id: "KT-DEC-7001", file: "draft.md", summary: "Shared lifecycle governance topic", maturity: "draft" },
-      { id: "KT-DEC-7002", file: "proven.md", summary: "Shared lifecycle governance topic", maturity: "proven" },
-      { id: "KT-DEC-7003", file: "verified.md", summary: "Shared lifecycle governance topic", maturity: "verified" },
+    const projectRoot = await seedMaturityRegistry([
+      { id: "KT-DEC-7001", summary: "Shared lifecycle governance topic", maturity: "draft" },
+      { id: "KT-DEC-7002", summary: "Shared lifecycle governance topic", maturity: "proven" },
+      { id: "KT-DEC-7003", summary: "Shared lifecycle governance topic", maturity: "verified" },
     ]);
 
     const result = await planContext(projectRoot, { paths: ["src/x.ts"] });
 
     // proven (15) > verified (8) > draft (0).
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-7002", "KT-DEC-7003", "KT-DEC-7001"]);
+    expect(result.candidates.map((item) => item.stable_id)).toEqual([
+      "team:KT-DEC-7002",
+      "team:KT-DEC-7003",
+      "team:KT-DEC-7001",
+    ]);
   });
 
   it("never lets high maturity override content relevance (防高成熟低相关压过正文)", async () => {
-    const projectRoot = await createTempProject();
-    await seedMaturityRegistry(projectRoot, [
+    const projectRoot = await seedMaturityRegistry([
       // draft but matches the intent
-      { id: "KT-DEC-7101", file: "match.md", summary: "Vector embedding semantic retrieval", maturity: "draft" },
+      { id: "KT-DEC-7101", summary: "Vector embedding semantic retrieval", maturity: "draft" },
       // proven but unrelated to the intent
-      { id: "KT-DEC-7102", file: "mature.md", summary: "Git archive deprecation cadence", maturity: "proven" },
+      { id: "KT-DEC-7102", summary: "Git archive deprecation cadence", maturity: "proven" },
     ]);
 
     const result = await planContext(projectRoot, {
@@ -1454,7 +841,7 @@ describe("planContext salience tie-breaker (W2-T1)", () => {
 
     // The draft content-match outranks the proven non-match: BM25 (~50+/term)
     // dwarfs the 15-point salience gap.
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["KT-DEC-7101", "KT-DEC-7102"]);
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-7101", "team:KT-DEC-7102"]);
   });
 });
 
@@ -1470,29 +857,32 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
     },
   };
 
-  async function seedTwoOpaqueEntries(projectRoot: string): Promise<void> {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    const mk = (id: string, file: string, summary: string) => ({
-      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
-      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: [] },
-    });
-    const fm = (id: string, summary: string) => ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
+  async function seedTwoOpaqueEntries(): Promise<string> {
+    const projectRoot = await createTeamProject();
     // KT-DEC-9301 (b-heavy) sorts FIRST alphabetically; KT-DEC-9302 (a-heavy) second.
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "bbb.md"), fm("KT-DEC-9301", "bbbb bottle buzz"));
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "aaa.md"), fm("KT-DEC-9302", "aaaa apple aardvark"));
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-vec", nodes: { "KT-DEC-9301": mk("KT-DEC-9301", ".fabric/knowledge/decisions/bbb.md", "bbbb bottle buzz"), "KT-DEC-9302": mk("KT-DEC-9302", ".fabric/knowledge/decisions/aaa.md", "aaaa apple aardvark") } }, null, 2)}\n`,
-    );
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9301",
+      summary: "bbbb bottle buzz",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9302",
+      summary: "aaaa apple aardvark",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    mountStores();
+    return projectRoot;
   }
 
   it("re-ranks by vector similarity when embeddings are enabled (BM25 silent)", async () => {
     const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
     __resetEmbedderForTesting(fakeEmbedder);
     try {
-      const projectRoot = await createTempProject();
-      await seedTwoOpaqueEntries(projectRoot);
+      const projectRoot = await seedTwoOpaqueEntries();
       // embed_weight defaults to 30 (≤49 cap). BM25 is 0 for both candidates
       // (no shared token), so any positive vector weight is the deciding signal.
       await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true })}\n`);
@@ -1502,7 +892,7 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
       const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
 
       // The 'a'-heavy entry (alphabetically SECOND) floats to the top via vectors.
-      expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9302", "KT-DEC-9301"]);
+      expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9302", "team:KT-DEC-9301"]);
     } finally {
       __resetEmbedderForTesting(undefined);
     }
@@ -1512,11 +902,10 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
     const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
     __resetEmbedderForTesting(fakeEmbedder); // available, but config keeps it OFF
     try {
-      const projectRoot = await createTempProject();
-      await seedTwoOpaqueEntries(projectRoot);
+      const projectRoot = await seedTwoOpaqueEntries();
       // No embed_enabled → vector path never runs → alphabetic stable_id order.
       const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
-      expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9301", "KT-DEC-9302"]);
+      expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9301", "team:KT-DEC-9302"]);
     } finally {
       __resetEmbedderForTesting(undefined);
     }
@@ -1529,26 +918,24 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
 // that accidentally lets locality/recency/salience trample content is caught.
 describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
   it("a strong multi-term content match outranks a perfect-locality non-match", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    const node = (id: string, file: string, summary: string, relevancePaths: string[]) => ({
-      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
-      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: relevancePaths },
-    });
-    const fm = (id: string, summary: string, rp: string) =>
-      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", `relevance_paths: [${rp}]`, "---", `# ${id}`, ""].join("\n");
+    const projectRoot = await createTeamProject();
     // CONTENT: matches the rare query terms, but NO locality (no relevance_paths).
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "content.md"), fm("KT-DEC-8001", "zephyr quokka nimbus retrieval", ""));
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8001",
+      summary: "zephyr quokka nimbus retrieval",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
     // LOCALITY: perfect same-file locality but ZERO content overlap with the query.
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "local.md"), fm("KT-DEC-8002", "unrelated bottle topic", "src/target.ts"));
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-cal", nodes: {
-        "KT-DEC-8001": node("KT-DEC-8001", ".fabric/knowledge/decisions/content.md", "zephyr quokka nimbus retrieval", []),
-        "KT-DEC-8002": node("KT-DEC-8002", ".fabric/knowledge/decisions/local.md", "unrelated bottle topic", ["src/target.ts"]),
-      } }, null, 2)}\n`,
-    );
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8002",
+      summary: "unrelated bottle topic",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: ["src/target.ts"],
+    });
+    mountStores();
 
     const result = await planContext(projectRoot, {
       paths: ["src/target.ts"],
@@ -1557,43 +944,43 @@ describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
     });
 
     // Content match (BM25 ~3 rare terms × 50) beats perfect same-file locality (100).
-    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-8001", "KT-DEC-8002"]);
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-8001", "team:KT-DEC-8002"]);
   });
 });
 
-// W4-02 (ISS-024): the BM25 model is corpus-keyed (meta.revision) and reused
+// W4-02 (ISS-024): the BM25 model is corpus-keyed (read-set revision) and reused
 // across queries — repeated query-bearing recalls over the same KB must NOT
 // re-tokenize + re-index the whole corpus.
 describe("planContext BM25 model cache (ISS-024)", () => {
-  // `marker` varies the KB content so two projects produce DIFFERENT healed
-  // revisions (planContext re-hashes the .md files; the seeded revision literal
-  // is overwritten by the auto-heal).
-  async function seedQueryableProject(marker: string): Promise<string> {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+  // `marker` varies the KB content so two projects produce DIFFERENT
+  // computeReadSetRevision fingerprints.
+  async function seedQueryableProject(marker: string, storeUuid: string): Promise<string> {
+    const projectRoot = await createTeamProject();
     const summaryA = `zephyr quokka nimbus retrieval ${marker}`;
-    const fm = (id: string, summary: string) =>
-      ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", "---", `# ${id}`, ""].join("\n");
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "a.md"), fm("KT-DEC-7001", summaryA));
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "b.md"), fm("KT-DEC-7002", "unrelated bottle topic widget"));
-    const node = (id: string, file: string, summary: string) => ({
-      stable_id: id, file, content_ref: file, scope_glob: "**", hash: `sha256:${id}`, identity_source: "declared",
-      description: { summary, intent_clues: [], tech_stack: [], impact: [], must_read_if: "", id, knowledge_type: "decisions", maturity: "verified", knowledge_layer: "team", created_at: "2026-05-10T00:00:00Z", relevance_scope: "broad", relevance_paths: [] },
+    await writeStoreEntry(storeUuid, "decisions", {
+      id: "KT-DEC-7001",
+      summary: summaryA,
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
     });
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: `seed-${marker}`, nodes: {
-        "KT-DEC-7001": node("KT-DEC-7001", ".fabric/knowledge/decisions/a.md", summaryA),
-        "KT-DEC-7002": node("KT-DEC-7002", ".fabric/knowledge/decisions/b.md", "unrelated bottle topic widget"),
-      } }, null, 2)}\n`,
-    );
+    await writeStoreEntry(storeUuid, "decisions", {
+      id: "KT-DEC-7002",
+      summary: "unrelated bottle topic widget",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [{ store_uuid: storeUuid, alias: "team", remote: "git@e:team.git" }],
+    });
     return projectRoot;
   }
 
   it("builds the model once across multiple query-bearing calls over the same KB", async () => {
     __resetBm25Cache();
-    const projectRoot = await seedQueryableProject("same");
+    const projectRoot = await seedQueryableProject("same", TEAM_STORE);
 
     const r1 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr quokka" });
     const r2 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "nimbus retrieval bottle" });
@@ -1602,35 +989,35 @@ describe("planContext BM25 model cache (ISS-024)", () => {
     // corpus (and thus the BM25 model) is identical → built exactly once.
     expect(__bm25CacheStats().builds).toBe(1);
     // Content-relevant entry still ranks first for both queries (correctness).
-    expect(r1.candidates[0]?.stable_id).toBe("KT-DEC-7001");
-    expect(r2.candidates.map((c) => c.stable_id).sort()).toEqual(["KT-DEC-7001", "KT-DEC-7002"]);
+    expect(r1.candidates[0]?.stable_id).toBe("team:KT-DEC-7001");
+    expect(r2.candidates.map((c) => c.stable_id).sort()).toEqual(["team:KT-DEC-7001", "team:KT-DEC-7002"]);
   });
 
   it("rebuilds when the corpus revision changes", async () => {
     __resetBm25Cache();
-    const p1 = await seedQueryableProject("alpha");
+    const p1 = await seedQueryableProject("alpha", TEAM_STORE);
     await planContext(p1, { paths: ["src/x.ts"], intent: "zephyr" });
     expect(__bm25CacheStats().builds).toBe(1);
 
-    const p2 = await seedQueryableProject("beta-distinct-content");
+    // Distinct content under a DIFFERENT store uuid (the prior store still lives
+    // in the shared fake home) → different read-set revision → rebuild.
+    const p2 = await seedQueryableProject("beta-distinct-content", PERSONAL_STORE);
     await planContext(p2, { paths: ["src/x.ts"], intent: "zephyr" });
     expect(__bm25CacheStats().builds).toBe(2);
   });
 });
 
 // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): planContext
-// include_related二阶召回. Seeds a registry where a high-ranking entry declares a
-// `related` edge to a low-ranking neighbour that top_k would drop; asserts the
-// neighbour is pulled back in + provenance is reported, and the graph-empty path
-// stays an honest no-op.
+// include_related二阶召回. Seeds a store where a high-ranking entry declares a
+// `related` edge (store-qualified) to a low-ranking neighbour that top_k would
+// drop; asserts the neighbour is pulled back in + provenance is reported, and the
+// graph-empty path stays an honest no-op.
 describe("planContext include_related graph二阶召回 (W3-T2)", () => {
   async function seedRelatedRegistry(
-    projectRoot: string,
     opts: { topK?: number; withEdge?: boolean } = {},
-  ): Promise<void> {
+  ): Promise<string> {
     const withEdge = opts.withEdge !== false;
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const projectRoot = await createTeamProject();
     if (opts.topK !== undefined) {
       await writeFile(
         join(projectRoot, "fabric.config.json"),
@@ -1639,65 +1026,28 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     }
     // KT-DEC-9201: strongly matches the intent (ranks top). KT-DEC-9202: the
     // neighbour, irrelevant to the intent (ranks last → dropped by topK=1).
-    const topic = (id: string, file: string, summary: string, related: string[]) => ({
-      stable_id: id,
-      file,
-      content_ref: file,
-      scope_glob: "**",
-      hash: `sha256:${id}`,
-      identity_source: "declared",
-      description: {
-        summary,
-        intent_clues: [],
-        tech_stack: [],
-        impact: [],
-        must_read_if: "",
-        id,
-        knowledge_type: "decisions",
-        maturity: "verified",
-        knowledge_layer: "team",
-        created_at: "2026-05-10T00:00:00Z",
-        relevance_scope: "broad",
-        relevance_paths: [],
-        ...(related.length > 0 ? { related } : {}),
-      },
+    // The `related` edge is store-qualified to match the candidate's qualified id.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9201",
+      summary: "Authentication token refresh rotation strategy decision",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+      ...(withEdge ? { related: ["team:KT-DEC-9202"] } : {}),
     });
-    const nodes: Record<string, unknown> = {
-      "KT-DEC-9201": topic(
-        "KT-DEC-9201",
-        ".fabric/knowledge/decisions/auth.md",
-        "Authentication token refresh rotation strategy decision",
-        withEdge ? ["KT-DEC-9202"] : [],
-      ),
-      "KT-DEC-9202": topic(
-        "KT-DEC-9202",
-        ".fabric/knowledge/decisions/colors.md",
-        "Palette gradient swatch tints for marketing brochures",
-        [],
-      ),
-    };
-    for (const [id, n] of Object.entries(nodes)) {
-      const file = (n as { file: string }).file;
-      const desc = (n as { description: { summary: string; related?: string[] } }).description;
-      const summary = desc.summary;
-      // related must live in the frontmatter too — loadActiveMetaOrStale may
-      // re-derive the meta from disk, so a meta-only `related` would be dropped.
-      const relatedLine =
-        desc.related && desc.related.length > 0 ? [`related: [${desc.related.join(", ")}]`] : [];
-      await writeFile(
-        join(projectRoot, file),
-        ["---", `summary: ${summary}`, `id: ${id}`, "type: decision", "maturity: verified", "layer: team", "relevance_scope: broad", "relevance_paths: []", ...relatedLine, "---", `# ${id}`, ""].join("\n"),
-      );
-    }
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-related", nodes }, null, 2)}\n`,
-    );
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-9202",
+      summary: "Palette gradient swatch tints for marketing brochures",
+      maturity: "verified",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    mountStores();
+    return projectRoot;
   }
 
   it("appends the one-hop related neighbour dropped by top_k and reports provenance", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelatedRegistry(projectRoot, { topK: 1, withEdge: true });
+    const projectRoot = await seedRelatedRegistry({ topK: 1, withEdge: true });
 
     // top_k=1 → only the auth decision survives ranking; its `related` edge to the
     // colors decision pulls that neighbour back in despite ranking last.
@@ -1708,14 +1058,13 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     });
 
     const ids = result.candidates.map((c) => c.stable_id);
-    expect(ids).toContain("KT-DEC-9201"); // surfaced by ranking
-    expect(ids).toContain("KT-DEC-9202"); // pulled in via related二阶
-    expect(result.related_appended).toEqual({ "KT-DEC-9202": "KT-DEC-9201" });
+    expect(ids).toContain("team:KT-DEC-9201"); // surfaced by ranking
+    expect(ids).toContain("team:KT-DEC-9202"); // pulled in via related二阶
+    expect(result.related_appended).toEqual({ "team:KT-DEC-9202": "team:KT-DEC-9201" });
   });
 
   it("graph-empty honest no-op: no related edge → no append, field omitted", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelatedRegistry(projectRoot, { topK: 1, withEdge: false });
+    const projectRoot = await seedRelatedRegistry({ topK: 1, withEdge: false });
 
     const result = await planContext(projectRoot, {
       paths: ["src/auth.ts"],
@@ -1724,26 +1073,19 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     });
 
     // top_k=1 + no related edge → only the top-ranked entry, no fake graph append.
-    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9201"]);
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9201"]);
     expect(result).not.toHaveProperty("related_appended");
   });
 
   it("include_related off (default) never appends — byte-identical to pre-W3-T2", async () => {
-    const projectRoot = await createTempProject();
-    await seedRelatedRegistry(projectRoot, { topK: 1, withEdge: true });
+    const projectRoot = await seedRelatedRegistry({ topK: 1, withEdge: true });
 
     const result = await planContext(projectRoot, {
       paths: ["src/auth.ts"],
       intent: "authentication token refresh rotation",
     });
 
-    expect(result.candidates.map((c) => c.stable_id)).toEqual(["KT-DEC-9201"]);
+    expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9201"]);
     expect(result).not.toHaveProperty("related_appended");
   });
 });
-
-async function createTempProject(): Promise<string> {
-  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
-  tempDirs.push(projectRoot);
-  return projectRoot;
-}

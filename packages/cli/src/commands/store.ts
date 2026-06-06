@@ -2,8 +2,17 @@ import type { MountedStore } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
 import { getProjectTranslator } from "../i18n.js";
+import { join } from "node:path";
+
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
+import { backfillKnowledgeDir } from "../store/scope-backfill.js";
+import { loadProjectConfig } from "../store/project-config-io.js";
 import { migrateProjectKnowledge } from "../store/store-migrate.js";
+import {
+  promoteProjectToTeam,
+  rescopeStore,
+  type RescopeReport,
+} from "../store/store-rescope.js";
 import {
   assertStoreMountable,
   storeAdd,
@@ -12,9 +21,17 @@ import {
   storeExplain,
   storeGitRemote,
   storeList,
+  storeProjectCreate,
+  storeProjectList,
   storeRemove,
   storeSwitchWrite,
+  resolveStoreDir,
 } from "../store/store-ops.js";
+import {
+  STORE_LAYOUT,
+  loadGlobalConfig,
+  resolveGlobalRoot,
+} from "@fenglimg/fabric-shared";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric store` command group (S57/E4/S7).
@@ -122,12 +139,20 @@ const bindCommand = defineCommand({
   args: {
     id: { type: "positional", required: true, description: "Store alias/UUID to require" },
     remote: { type: "string", description: "Suggested remote for clone onboarding" },
+    project: {
+      type: "string",
+      description: "Bind this repo to a project:<id> in the store (must already exist)",
+    },
   },
   run({ args }) {
     const entry =
       args.remote === undefined ? { id: args.id } : { id: args.id, suggested_remote: args.remote };
     const projectRoot = process.cwd();
-    const next = storeBind(projectRoot, entry);
+    const next = storeBind(
+      projectRoot,
+      entry,
+      args.project === undefined ? {} : { project: args.project },
+    );
     console.log(
       getProjectTranslator(projectRoot)("cli.store.bound", {
         id: args.id,
@@ -201,6 +226,186 @@ const migrateCommand = defineCommand({
   },
 });
 
+// W1/A2 — store-internal project registry. `store project list <alias>` /
+// `store project create <alias> <id>` enumerate / register the projects a store
+// serves (the `<id>` segments forming `project:<id>` coordinates).
+const projectListCommand = defineCommand({
+  meta: { name: "list", description: "List projects registered in a store" },
+  args: {
+    store: { type: "positional", required: true, description: "Store alias/UUID" },
+  },
+  run({ args }) {
+    const projects = storeProjectList(args.store);
+    if (projects.length === 0) {
+      console.log(`store '${args.store}' has no registered projects.`);
+      return;
+    }
+    for (const p of projects) {
+      console.log(`${p.id}${p.name === undefined ? "" : `\t${p.name}`}`);
+    }
+  },
+});
+
+const projectCreateCommand = defineCommand({
+  meta: { name: "create", description: "Register a new project in a store" },
+  args: {
+    store: { type: "positional", required: true, description: "Store alias/UUID" },
+    id: { type: "positional", required: true, description: "Project id (single [a-z0-9_-] segment)" },
+    name: { type: "string", description: "Optional human-facing label" },
+  },
+  run({ args }) {
+    const project = storeProjectCreate(args.store, args.id, new Date().toISOString(), {
+      ...(args.name === undefined ? {} : { name: args.name }),
+    });
+    console.log(`registered project '${project.id}' in store '${args.store}'.`);
+  },
+});
+
+const projectCommand = defineCommand({
+  meta: { name: "project", description: "Manage the projects a store serves" },
+  subCommands: {
+    list: projectListCommand,
+    create: projectCreateCommand,
+  },
+});
+
+// W3/A5 — clean-slate scope backfill. Adds semantic_scope + visibility_store to
+// existing entries and repairs dirty layer. Targets the project's co-location
+// knowledge by default, or a mounted store via `--store <alias>`.
+const backfillScopeCommand = defineCommand({
+  meta: {
+    name: "backfill-scope",
+    description: "Backfill semantic_scope + visibility_store on existing knowledge (repairs dirty layer)",
+  },
+  args: {
+    store: { type: "string", description: "Backfill a mounted store's knowledge instead of the project" },
+    "dry-run": { type: "boolean", description: "Preview changes without writing" },
+  },
+  run({ args }) {
+    const dryRun = args["dry-run"] === true;
+    let knowledgeDir: string;
+    let visibilityStore: string;
+    if (typeof args.store === "string" && args.store.length > 0) {
+      const storeDir = resolveStoreDir(args.store);
+      if (storeDir === null) {
+        console.error(`no mounted store '${args.store}'`);
+        process.exitCode = 1;
+        return;
+      }
+      knowledgeDir = join(storeDir, STORE_LAYOUT.knowledgeDir);
+      visibilityStore = args.store;
+    } else {
+      const projectRoot = process.cwd();
+      knowledgeDir = join(projectRoot, ".fabric", "knowledge");
+      visibilityStore = loadProjectConfig(projectRoot)?.active_write_store ?? "team";
+    }
+    const report = backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun });
+    if (report.changes.length === 0) {
+      console.log(`scope backfill: nothing to do (${report.unchanged} already consistent).`);
+      return;
+    }
+    console.log(
+      `${dryRun ? "[dry-run] " : ""}scope backfill: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
+    );
+    for (const c of report.changes) {
+      console.log(`  ${c.id ?? "(no id)"}  [${c.changed.join(", ")}]`);
+    }
+  },
+});
+
+// W4/A7 — re-scope + promote. Resolve a mounted store's dir + visibility (the
+// `personal` flag drives the R5#3 refusal inside rescopeStore).
+function resolveStoreDirAndVisibility(
+  aliasOrUuid: string,
+): { dir: string; visibility: "shared" | "personal" } | null {
+  const dir = resolveStoreDir(aliasOrUuid);
+  if (dir === null) {
+    return null;
+  }
+  const store = loadGlobalConfig(resolveGlobalRoot())?.stores.find(
+    (s) => s.alias === aliasOrUuid || s.store_uuid === aliasOrUuid,
+  );
+  return { dir, visibility: store?.personal === true ? "personal" : "shared" };
+}
+
+function printRescopeReport(report: RescopeReport): void {
+  const prefix = report.dryRun ? "[dry-run] " : "";
+  if (report.changes.length === 0 && report.refusals.length === 0) {
+    console.log(`re-scope: nothing to do (${report.unchanged} already at '${report.toScope}').`);
+  } else if (report.changes.length > 0) {
+    console.log(
+      `${prefix}re-scope → ${report.toScope}: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
+    );
+    for (const c of report.changes) {
+      console.log(`  ${c.id ?? "(no id)"}  ${c.fromScope ?? "(none)"} → ${c.toScope}`);
+    }
+  }
+  if (report.refusals.length > 0) {
+    console.error(`${report.refusals.length} entr${report.refusals.length === 1 ? "y" : "ies"} refused:`);
+    for (const r of report.refusals) {
+      console.error(`  ${r.id ?? "(no id)"}: ${r.reason}`);
+    }
+    process.exitCode = 1;
+  }
+}
+
+const rescopeCommand = defineCommand({
+  meta: {
+    name: "re-scope",
+    description: "Rewrite knowledge entries' semantic_scope coordinate in a store",
+  },
+  args: {
+    store: { type: "positional", required: true, description: "Target store alias or uuid" },
+    to: { type: "string", required: true, description: "New semantic_scope (e.g. team, project:alpha)" },
+    id: { type: "string", description: "Only the entry with this stable_id" },
+    from: { type: "string", description: "Only entries currently at this semantic_scope" },
+    "dry-run": { type: "boolean", description: "Preview changes without writing" },
+  },
+  run({ args }) {
+    const resolved = resolveStoreDirAndVisibility(args.store);
+    if (resolved === null) {
+      console.error(`no mounted store '${args.store}'`);
+      process.exitCode = 1;
+      return;
+    }
+    printRescopeReport(
+      rescopeStore(resolved.dir, args.to, {
+        id: args.id,
+        fromScope: args.from,
+        storeVisibility: resolved.visibility,
+        dryRun: args["dry-run"] === true,
+      }),
+    );
+  },
+});
+
+const promoteCommand = defineCommand({
+  meta: {
+    name: "promote",
+    description: "Promote project-scoped entries to team scope (project absorption)",
+  },
+  args: {
+    store: { type: "positional", required: true, description: "Target store alias or uuid" },
+    project: { type: "string", description: "Only this project's entries (default: all project:*)" },
+    "dry-run": { type: "boolean", description: "Preview changes without writing" },
+  },
+  run({ args }) {
+    const resolved = resolveStoreDirAndVisibility(args.store);
+    if (resolved === null) {
+      console.error(`no mounted store '${args.store}'`);
+      process.exitCode = 1;
+      return;
+    }
+    printRescopeReport(
+      promoteProjectToTeam(resolved.dir, {
+        projectId: args.project,
+        storeVisibility: resolved.visibility,
+        dryRun: args["dry-run"] === true,
+      }),
+    );
+  },
+});
+
 export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
   subCommands: {
@@ -212,5 +417,9 @@ export default defineCommand({
     bind: bindCommand,
     "switch-write": switchWriteCommand,
     migrate: migrateCommand,
+    "backfill-scope": backfillScopeCommand,
+    "re-scope": rescopeCommand,
+    promote: promoteCommand,
+    project: projectCommand,
   },
 });

@@ -4,12 +4,28 @@ import { tmpdir } from "node:os";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
+
 import { recall } from "./recall.js";
 import { readEventLedger } from "./event-ledger.js";
 import { contextCache } from "../cache.js";
 
+// v2.2 W5 R2/R7 (agents.meta decolo): recall delegates to planContext, which no
+// longer reads the project's co-location `.fabric/knowledge/` tree or
+// `agents.meta.json`. Candidates come SOLELY from the mounted stores in the
+// read-set, assembled live by buildCrossStoreRawItems, and every candidate id is
+// store-qualified (`<alias>:<stable_id>`). The fixtures below seed knowledge
+// .md files directly into a team store under an isolated ~/.fabric.
+
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
+
+const TEAM_STORE = "11111111-1111-4111-8111-111111111111";
 
 beforeEach(async () => {
   originalFabricHome = process.env.FABRIC_HOME;
@@ -33,60 +49,72 @@ afterEach(async () => {
   );
 });
 
+/** mkdtemp a project root declaring the team store as required. */
 async function createTempProject(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "fabric-recall-proj-"));
   tempDirs.push(root);
+  await mkdir(join(root, ".fabric"), { recursive: true });
+  await writeFile(
+    join(root, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
+  );
+  await writeFile(
+    join(root, ".fabric", "human-lock.json"),
+    `${JSON.stringify({ locked: [] }, null, 2)}\n`,
+  );
   return root;
+}
+
+/** Register the team store in the global config. */
+function mountStores(): void {
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [{ store_uuid: TEAM_STORE, alias: "team", remote: "git@e:team.git" }],
+  });
+}
+
+/** Write a knowledge .md into the team store under the isolated ~/.fabric. */
+async function writeStoreEntry(type: string, id: string, lines: string[]): Promise<void> {
+  const dir = join(
+    resolveGlobalRoot(),
+    storeRelativePath(TEAM_STORE),
+    STORE_LAYOUT.knowledgeDir,
+    type,
+  );
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${id}.md`), lines.join("\n"));
 }
 
 async function seedTwoEntryProject(): Promise<string> {
   const projectRoot = await createTempProject();
-  await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-  await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
-  await writeFile(
-    join(projectRoot, ".fabric", "human-lock.json"),
-    `${JSON.stringify({ locked: [] }, null, 2)}\n`,
-  );
-  await writeFile(
-    join(projectRoot, ".fabric", "knowledge", "decisions", "auth.md"),
-    [
-      "---",
-      "stable_id: decisions/auth",
-      "knowledge_type: decision",
-      "maturity: verified",
-      "knowledge_layer: team",
-      "description:",
-      "  summary: Auth decision",
-      "  intent_clues: [auth]",
-      "  tech_stack: [TypeScript]",
-      "  impact: []",
-      "  must_read_if: editing auth",
-      "---",
-      "# Auth body",
-      "",
-    ].join("\n"),
-  );
-  await writeFile(
-    join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"),
-    [
-      "---",
-      "stable_id: guidelines/ui",
-      "knowledge_type: guideline",
-      "maturity: verified",
-      "knowledge_layer: team",
-      "description:",
-      "  summary: UI guideline",
-      "  intent_clues: [ui]",
-      "  tech_stack: []",
-      "  impact: []",
-      "  must_read_if: editing UI",
-      "---",
-      "# UI body",
-      "",
-    ].join("\n"),
-  );
-  const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-  await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+  await writeStoreEntry("decisions", "KT-DEC-0001", [
+    "---",
+    "id: KT-DEC-0001",
+    "type: decision",
+    "layer: team",
+    "maturity: verified",
+    "created_at: 2026-06-04T00:00:00.000Z",
+    "intent_clues: [auth]",
+    "tech_stack: [TypeScript]",
+    "summary: Auth decision",
+    "---",
+    "# Auth body",
+    "",
+  ]);
+  await writeStoreEntry("guidelines", "KT-GLD-0001", [
+    "---",
+    "id: KT-GLD-0001",
+    "type: guideline",
+    "layer: team",
+    "maturity: verified",
+    "created_at: 2026-06-04T00:00:00.000Z",
+    "intent_clues: [ui]",
+    "summary: UI guideline",
+    "---",
+    "# UI body",
+    "",
+  ]);
+  mountStores();
   return projectRoot;
 }
 
@@ -106,17 +134,17 @@ describe("recall (one-call combined service — NEW-3)", () => {
     expect(result.selection_token).toEqual(expect.any(String));
     expect(result.entries).toHaveLength(1);
     expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
-      "decisions/auth",
-      "guidelines/ui",
+      "team:KT-DEC-0001",
+      "team:KT-GLD-0001",
     ]);
 
     // Bodies fetched for ALL surfaced ids
-    expect(result.selected_stable_ids.sort()).toEqual(["decisions/auth", "guidelines/ui"]);
+    expect(result.selected_stable_ids.sort()).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001"]);
     expect(result.rules.map((rule) => rule.stable_id).sort()).toEqual([
-      "decisions/auth",
-      "guidelines/ui",
+      "team:KT-DEC-0001",
+      "team:KT-GLD-0001",
     ]);
-    const authRule = result.rules.find((rule) => rule.stable_id === "decisions/auth");
+    const authRule = result.rules.find((rule) => rule.stable_id === "team:KT-DEC-0001");
     expect(authRule?.body).toContain("# Auth body");
 
     // Ledger emitted both plan + sections + consumed events
@@ -126,8 +154,8 @@ describe("recall (one-call combined service — NEW-3)", () => {
     expect(fetched.events).toHaveLength(1);
     const consumed = await readEventLedger(projectRoot, { event_type: "knowledge_consumed" });
     expect(consumed.events.map((e) => (e as { stable_id?: string }).stable_id).sort()).toEqual([
-      "decisions/auth",
-      "guidelines/ui",
+      "team:KT-DEC-0001",
+      "team:KT-GLD-0001",
     ]);
   });
 
@@ -136,38 +164,54 @@ describe("recall (one-call combined service — NEW-3)", () => {
 
     const result = await recall(projectRoot, {
       paths: ["src/index.ts"],
-      ids: ["decisions/auth", "non-existent-id"],
+      ids: ["team:KT-DEC-0001", "non-existent-id"],
     });
 
     // Only the intersection of `ids` and surfaced candidates loads.
-    expect(result.selected_stable_ids).toEqual(["decisions/auth"]);
-    expect(result.rules.map((rule) => rule.stable_id)).toEqual(["decisions/auth"]);
+    expect(result.selected_stable_ids).toEqual(["team:KT-DEC-0001"]);
+    expect(result.rules.map((rule) => rule.stable_id)).toEqual(["team:KT-DEC-0001"]);
     // But the shared description_index still shows the full candidate set —
     // callers can re-fetch the skipped ones via fab_get_knowledge_sections
     // against the same selection_token.
     expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
-      "decisions/auth",
-      "guidelines/ui",
+      "team:KT-DEC-0001",
+      "team:KT-GLD-0001",
     ]);
   });
 
   // v2.2 MC1-recall-pack (W2-T4): packaging increments + include_related.
+  // The `related` graph edge references the store-qualified id of the neighbour
+  // (cross-store candidates carry `<alias>:<id>`; recall matches related ids
+  // against the surfaced candidate set, which is store-qualified).
   async function seedRelatedProject(): Promise<string> {
     const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
     // auth declares a top-level `related` graph edge to the ui guideline.
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "decisions", "auth.md"),
-      ["---", "stable_id: decisions/auth", "summary: Auth decision", "type: decision", "maturity: verified", "layer: team", "related: [guidelines/ui]", "---", "# Auth body", ""].join("\n"),
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"),
-      ["---", "stable_id: guidelines/ui", "summary: UI guideline", "type: guideline", "maturity: verified", "layer: team", "---", "# UI body", ""].join("\n"),
-    );
-    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
-    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    await writeStoreEntry("decisions", "KT-DEC-0001", [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "related: [team:KT-GLD-0001]",
+      "summary: Auth decision",
+      "---",
+      "# Auth body",
+      "",
+    ]);
+    await writeStoreEntry("guidelines", "KT-GLD-0001", [
+      "---",
+      "id: KT-GLD-0001",
+      "type: guideline",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "summary: UI guideline",
+      "---",
+      "# UI body",
+      "",
+    ]);
+    mountStores();
     return projectRoot;
   }
 
@@ -183,12 +227,12 @@ describe("recall (one-call combined service — NEW-3)", () => {
     // Scope to auth only, but ask for its related graph neighbours.
     const result = await recall(projectRoot, {
       paths: ["src/index.ts"],
-      ids: ["decisions/auth"],
+      ids: ["team:KT-DEC-0001"],
       include_related: true,
     });
 
-    // auth + its related guidelines/ui both fetched.
-    expect(result.selected_stable_ids.sort()).toEqual(["decisions/auth", "guidelines/ui"]);
+    // auth + its related ui guideline both fetched.
+    expect(result.selected_stable_ids.sort()).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001"]);
   });
 
   it("hints via next_steps that related entries exist when not included", async () => {
@@ -196,11 +240,11 @@ describe("recall (one-call combined service — NEW-3)", () => {
 
     const result = await recall(projectRoot, {
       paths: ["src/index.ts"],
-      ids: ["decisions/auth"],
+      ids: ["team:KT-DEC-0001"],
     });
 
     // Only auth fetched, but the packaging nudges include_related.
-    expect(result.selected_stable_ids).toEqual(["decisions/auth"]);
+    expect(result.selected_stable_ids).toEqual(["team:KT-DEC-0001"]);
     expect(result.next_steps ?? []).toEqual(
       expect.arrayContaining([expect.stringMatching(/include_related:true/)]),
     );
@@ -208,14 +252,15 @@ describe("recall (one-call combined service — NEW-3)", () => {
 
   // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7): recall rules
   // carry store provenance derived from the (cross-store-stamped) `<alias>:<id>`
-  // prefix. Project-local entries (bare id) omit the field.
-  it("omits store provenance for project-local rules (bare ids)", async () => {
+  // prefix. v2.2 W5 R2 (agents.meta decolo): post-cutover ALL recall is
+  // store-backed, so every surfaced rule carries its store alias. (The bare-id
+  // omission branch is covered by the attachStoreProvenance unit below.)
+  it("attaches store provenance for store-backed rules", async () => {
     const projectRoot = await seedTwoEntryProject();
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
-    // All rules are project-local → no `store` field synthesized.
     expect(result.rules.length).toBeGreaterThan(0);
     for (const rule of result.rules) {
-      expect(rule).not.toHaveProperty("store");
+      expect(rule.store).toEqual({ alias: "team" });
     }
   });
 

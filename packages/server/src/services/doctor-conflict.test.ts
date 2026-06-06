@@ -1,9 +1,11 @@
 // v2.1 ④ conflict-detection (P4): doctor-conflict integration test.
 //
-// Exercises the real disk → agents.meta → loadConflictEntries → lint pipeline:
-// seed two near-duplicate opposite-conclusion decisions + one unrelated, build
-// meta, then assert the conflict lint surfaces the pair (cheap pass) and the
-// injected judge escalates it (deep pass).
+// v2.2 W5 R6 (读侧 cutover): exercises the real disk → READ-SET STORE →
+// loadConflictEntries → lint pipeline. Seeds two near-duplicate
+// opposite-conclusion decisions + one unrelated into a mounted team store, then
+// asserts the conflict lint surfaces the pair (cheap pass) and the injected
+// judge escalates it (deep pass). The co-location agents.meta source is retired;
+// loadConflictEntries now walks the project's read-set stores.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,22 +13,37 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
-import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
+
 import { loadConflictEntries, runDoctorConflictLint } from "./doctor-conflict.js";
 import type { ConflictJudge } from "./conflict-lint.js";
 
 const tempRoots: string[] = [];
-// Isolate the personal layer (~/.fabric) so the host's real KP-* entries never
-// leak into the fixture corpus.
+// Isolate the global root (~/.fabric, where mounted stores live) so the host's
+// real stores never leak into the fixture corpus.
 const fakeHome = mkdtempSync(join(tmpdir(), "conflict-lint-home-"));
 const prevFabricHome = process.env.FABRIC_HOME;
 process.env.FABRIC_HOME = fakeHome;
+
+const STORE = "33333333-3333-4333-8333-333333333333";
+
+function storeKnowledgeDir(): string {
+  return join(resolveGlobalRoot(), storeRelativePath(STORE), STORE_LAYOUT.knowledgeDir);
+}
 
 afterEach(() => {
   while (tempRoots.length > 0) {
     const d = tempRoots.pop();
     if (d) rmSync(d, { recursive: true, force: true });
   }
+  // Reset the store knowledge between tests so entries never accumulate across
+  // cases (the global root / fakeHome is shared at module scope).
+  rmSync(join(resolveGlobalRoot(), storeRelativePath(STORE)), { recursive: true, force: true });
 });
 
 afterAll(() => {
@@ -48,6 +65,8 @@ function decision(id: string, slug: string, body: string): string {
     "type: decision",
     "maturity: proven",
     "layer: team",
+    "semantic_scope: team",
+    `visibility_store: "team"`,
     "created_at: 2026-05-10T00:00:00.000Z",
     "---",
     "",
@@ -59,15 +78,29 @@ function decision(id: string, slug: string, body: string): string {
   ].join("\n");
 }
 
+// Seed a project that requires the team store, mount the store in the global
+// registry, and return the project root. Knowledge entries are written into the
+// store via writeStoreEntry (NOT the project's co-location .fabric/knowledge).
 async function seedProject(name: string): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), `conflict-lint-${name}-`));
   tempRoots.push(root);
   wf(root, "package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }));
   wf(root, "AGENTS.md", "# AGENTS\nFabric v2.0 bootstrap anchor.\n");
-  for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
-    mkdirSync(join(root, ".fabric", "knowledge", sub), { recursive: true });
-  }
+  wf(root, ".fabric/fabric-config.json", JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2));
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [{ store_uuid: STORE, alias: "team", remote: "git@e:conflict.git" }],
+  });
   return root;
+}
+
+// Write a knowledge entry markdown into the mounted team store. `rel` is the
+// path under the store's knowledge dir (e.g. "decisions/KT-DEC-0001--auth.md"
+// or "pending/decisions/KT-DEC-0099--draft.md").
+function writeStoreEntry(rel: string, content: string): void {
+  const p = join(storeKnowledgeDir(), rel);
+  mkdirSync(join(p, ".."), { recursive: true });
+  writeFileSync(p, content, "utf8");
 }
 
 const JWT_BODY =
@@ -80,10 +113,9 @@ const UNRELATED_BODY =
 describe("runDoctorConflictLint (v2.1 ④)", () => {
   it("cheap pass surfaces the near-duplicate opposite-conclusion pair as a candidate", async () => {
     const root = await seedProject("cheap");
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0003--build-tooling.md", decision("KT-DEC-0003", "build-tooling", UNRELATED_BODY));
-    await writeKnowledgeMeta(root, { source: "doctor_fix" });
+    writeStoreEntry("decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
+    writeStoreEntry("decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
+    writeStoreEntry("decisions/KT-DEC-0003--build-tooling.md", decision("KT-DEC-0003", "build-tooling", UNRELATED_BODY));
 
     const report = await runDoctorConflictLint(root);
     expect(report.status).toBe("ok");
@@ -99,9 +131,8 @@ describe("runDoctorConflictLint (v2.1 ④)", () => {
 
   it("deep pass with an injected judge escalates a real conflict", async () => {
     const root = await seedProject("deep");
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
-    await writeKnowledgeMeta(root, { source: "doctor_fix" });
+    writeStoreEntry("decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
+    writeStoreEntry("decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
 
     const judge: ConflictJudge = vi.fn(async () => ({ isConflict: true, rationale: "JWT vs session — contradiction" }));
     const report = await runDoctorConflictLint(root, { deep: true, judge });
@@ -113,9 +144,8 @@ describe("runDoctorConflictLint (v2.1 ④)", () => {
 
   it("deep flag without a judge stays cheap (no escalation)", async () => {
     const root = await seedProject("deep-nojudge");
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
-    await writeKnowledgeMeta(root, { source: "doctor_fix" });
+    writeStoreEntry("decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
+    writeStoreEntry("decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
 
     const report = await runDoctorConflictLint(root, { deep: true });
     expect(report.deep).toBe(false);
@@ -124,10 +154,9 @@ describe("runDoctorConflictLint (v2.1 ④)", () => {
 
   it("config threshold (very high) suppresses candidates", async () => {
     const root = await seedProject("threshold");
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
-    wf(root, ".fabric/fabric-config.json", JSON.stringify({ conflict_lint_similarity_threshold: 0.99 }));
-    await writeKnowledgeMeta(root, { source: "doctor_fix" });
+    writeStoreEntry("decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
+    writeStoreEntry("decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
+    wf(root, ".fabric/fabric-config.json", JSON.stringify({ required_stores: [{ id: "team" }], conflict_lint_similarity_threshold: 0.99 }));
 
     const report = await runDoctorConflictLint(root);
     expect(report.threshold).toBe(0.99);
@@ -136,9 +165,8 @@ describe("runDoctorConflictLint (v2.1 ④)", () => {
 
   it("loadConflictEntries skips pending drafts", async () => {
     const root = await seedProject("pending");
-    wf(root, ".fabric/knowledge/decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
-    wf(root, ".fabric/knowledge/pending/decisions/KT-DEC-0099--draft.md", decision("KT-DEC-0099", "draft", SESSION_BODY));
-    await writeKnowledgeMeta(root, { source: "doctor_fix" });
+    writeStoreEntry("decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
+    writeStoreEntry("pending/decisions/KT-DEC-0099--draft.md", decision("KT-DEC-0099", "draft", SESSION_BODY));
 
     const entries = await loadConflictEntries(root);
     const ids = entries.map((e) => e.stable_id);

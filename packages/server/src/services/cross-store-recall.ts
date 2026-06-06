@@ -4,14 +4,17 @@ import { join } from "node:path";
 import {
   buildStoreResolveInput,
   createStoreResolver,
+  loadProjectConfig,
   readKnowledgeAcrossStores,
   resolveGlobalRoot,
+  scopeRoot,
   storeRelativePath,
   type MountedStoreDir,
   type RuleDescriptionIndexItem,
 } from "@fenglimg/fabric-shared";
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
+import { sha256 } from "./_shared.js";
 
 // ---------------------------------------------------------------------------
 // v2.1 global-refactor (W1-T1) — cross-store read-side wiring.
@@ -42,7 +45,45 @@ interface CrossStoreEntry {
   file: string; // absolute path inside the store
   alias: string;
   layer: "team" | "personal";
+  // v2.1 global-refactor (W2/A3): the entry's scope coordinate (resolution axis,
+  // schemas/scope.ts). Read from frontmatter `semantic_scope`; falls back to the
+  // store-derived layer for not-yet-migrated entries (A5 backfills these).
+  semanticScope: string;
   source: string; // raw markdown (read once during the walk)
+}
+
+// Read the `semantic_scope` frontmatter line, falling back to the layer-derived
+// coordinate when absent (pre-migration entries). Line-regex (not full YAML) to
+// match the write-side emit shape + the other frontmatter scanners in this repo.
+const SEMANTIC_SCOPE_LINE = /^semantic_scope:\s*"?([^"\n]+?)"?\s*$/mu;
+function readSemanticScope(source: string, layer: "team" | "personal"): string {
+  const match = SEMANTIC_SCOPE_LINE.exec(source);
+  return match?.[1] ?? layer;
+}
+
+// v2.1 global-refactor (W2/A3) — project-grained recall filter. Given the repo's
+// active project (A2 binding), keep only entries whose scope is the CURRENT
+// `project:<active>` plus every NON-project coordinate (team/personal/org/...),
+// dropping entries专属 to OTHER projects. When the repo has no project binding,
+// the filter is a no-op (S20 open-coordinate — an unbound repo sees its read-set
+// verbatim). Pure function over the walked entries.
+function filterByActiveProject(
+  entries: CrossStoreEntry[],
+  activeProject: string | undefined,
+): CrossStoreEntry[] {
+  if (activeProject === undefined || activeProject.length === 0) {
+    return entries;
+  }
+  const current = `project:${activeProject}`;
+  return entries.filter(
+    (e) => scopeRoot(e.semanticScope) !== "project" || e.semanticScope === current,
+  );
+}
+
+// The repo's active project coordinate segment (A2), or undefined when unbound.
+function activeProjectOf(projectRoot: string): string | undefined {
+  const ap = loadProjectConfig(projectRoot)?.active_project;
+  return ap !== undefined && ap.length > 0 ? ap : undefined;
 }
 
 // Walk every store in the project's read-set, returning each entry with its
@@ -87,6 +128,7 @@ function walkReadSetStores(projectRoot: string): CrossStoreEntry[] {
       file: ref.file,
       alias: ref.alias,
       layer,
+      semanticScope: readSemanticScope(source, layer),
       source,
     });
   }
@@ -105,14 +147,19 @@ export async function buildCrossStoreRawItems(
   projectRoot: string,
 ): Promise<RuleDescriptionIndexItem[]> {
   const items: RuleDescriptionIndexItem[] = [];
-  for (const entry of walkReadSetStores(projectRoot)) {
+  const activeProject = activeProjectOf(projectRoot);
+  for (const entry of filterByActiveProject(walkReadSetStores(projectRoot), activeProject)) {
     const baseDescription = extractRuleDescription(entry.source);
     if (baseDescription === undefined) {
       continue; // no frontmatter description → no selection signal.
     }
     items.push({
       stable_id: entry.qualifiedId,
-      description: { ...baseDescription, knowledge_layer: entry.layer },
+      description: {
+        ...baseDescription,
+        knowledge_layer: entry.layer,
+        semantic_scope: entry.semanticScope,
+      },
     });
   }
   return items;
@@ -135,7 +182,8 @@ export function buildCrossStoreBodyIndex(
   projectRoot: string,
 ): Map<string, CrossStoreBodyRef> {
   const index = new Map<string, CrossStoreBodyRef>();
-  for (const entry of walkReadSetStores(projectRoot)) {
+  const activeProject = activeProjectOf(projectRoot);
+  for (const entry of filterByActiveProject(walkReadSetStores(projectRoot), activeProject)) {
     if (!index.has(entry.qualifiedId)) {
       index.set(entry.qualifiedId, { file: entry.file, layer: entry.layer });
     }
@@ -153,6 +201,66 @@ export interface StoreKnowledgeSummary {
   stableId: string; // store-qualified `<alias>:<id>`
   summary: string;
   layer: "team" | "personal";
+}
+
+// v2.2 W5 R0 (读侧 cutover): store-corpus revision hash. Replaces the
+// co-location `meta.revision` (= sha256 of agents.meta nodes) once co-location
+// is retired. Hashes the read-set stores' (qualified id + content sha) in
+// sorted order, EXCLUDING pending drafts — structurally mirrors
+// knowledge-meta-builder.computeRevision so the value keeps the same semantics:
+// a content fingerprint that moves whenever any non-pending knowledge changes.
+//
+// Consumers: (a) plan-context BM25 corpus cache key (must invalidate when store
+// content changes), (b) client stale-detection compare (client_hash !== rev).
+// It is NOT load-bearing for the selection_token round-trip: get_sections
+// validates against the in-memory token state (ai_selectable_stable_ids), never
+// by re-deriving + comparing the revision — so the empty-string fallback
+// (sha256("") when no store is in the read-set) is a safe degrade, identical to
+// the pre-cutover empty-meta behavior.
+export function computeReadSetRevision(projectRoot: string): string {
+  const revisionSource = walkReadSetStores(projectRoot)
+    .filter((entry) => !entry.file.includes("/knowledge/pending/"))
+    .map((entry) => `${entry.qualifiedId}|${sha256(entry.source)}`)
+    .sort()
+    .join("\n");
+  return sha256(revisionSource);
+}
+
+// v2.2 W5 R6 (读侧 cutover): canonical (non-pending) store entries with their
+// LOCAL stable_id, store-qualified id, layer, raw body, and parsed frontmatter
+// description. Replaces the co-location `readAgentsMeta().nodes` walk that
+// doctor-conflict (knowledge_type + body for the conflict lint) and
+// doctor-cite-coverage (relevance_paths / relevance_scope for the cite
+// denominator) used to do. Skips pending drafts (curated corpus only) and any
+// entry with no parseable frontmatter description. Never throws — degrades to []
+// when no store is in the read-set, mirroring the other collectors here.
+export interface StoreCanonicalEntry {
+  stableId: string; // LOCAL stable_id (e.g. "KT-DEC-0001"), from frontmatter id
+  qualifiedId: string; // `<alias>:<stableId>`
+  layer: "team" | "personal";
+  body: string; // raw markdown (frontmatter included; callers strip as needed)
+  description: NonNullable<ReturnType<typeof extractRuleDescription>>;
+}
+
+export function collectStoreCanonicalEntries(projectRoot: string): StoreCanonicalEntry[] {
+  const out: StoreCanonicalEntry[] = [];
+  for (const entry of walkReadSetStores(projectRoot)) {
+    if (entry.file.includes("/knowledge/pending/")) {
+      continue; // curated corpus only — drafts are not canonical.
+    }
+    const description = extractRuleDescription(entry.source);
+    if (description === undefined) {
+      continue;
+    }
+    out.push({
+      stableId: entry.qualifiedId.slice(entry.alias.length + 1),
+      qualifiedId: entry.qualifiedId,
+      layer: entry.layer,
+      body: entry.source,
+      description,
+    });
+  }
+  return out;
 }
 
 export function collectStoreKnowledgeSummaries(projectRoot: string): StoreKnowledgeSummary[] {

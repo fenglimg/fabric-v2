@@ -21,7 +21,9 @@
  * acceptable — the hook never blocks user flow on sidecar I/O, KT-DEC-0007).
  */
 
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+// Namespace import (not destructured) so the atomic write goes through a single
+// mutable fs reference — also what the atomicity tests spy on (ISS-016).
+const fs = require("node:fs");
 const { dirname, join } = require("node:path");
 
 const CACHE_DIR_REL = join(".fabric", ".cache");
@@ -30,11 +32,31 @@ function cachePath(projectRoot, fileName) {
   return join(projectRoot, CACHE_DIR_REL, fileName);
 }
 
+// ISS-016: write to a unique temp file then rename over the target. rename is
+// atomic on POSIX, so a reader sees either the old or the new file in full —
+// never a truncated/garbled write from a crash or concurrent writer. The temp
+// suffix (pid + clock) keeps concurrent windows from colliding on the temp.
+function atomicWrite(path, data) {
+  fs.mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tmp, data);
+    fs.renameSync(tmp, path);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    } catch {
+      // best-effort temp cleanup
+    }
+    throw err;
+  }
+}
+
 function readJsonState(projectRoot, fileName, validate) {
   const path = cachePath(projectRoot, fileName);
-  if (!existsSync(path)) return null;
+  if (!fs.existsSync(path)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(path, "utf8"));
     if (typeof validate === "function" && !validate(parsed)) return null;
     return parsed;
   } catch {
@@ -43,10 +65,8 @@ function readJsonState(projectRoot, fileName, validate) {
 }
 
 function writeJsonState(projectRoot, fileName, value) {
-  const path = cachePath(projectRoot, fileName);
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(value));
+    atomicWrite(cachePath(projectRoot, fileName), JSON.stringify(value));
     return true;
   } catch {
     return false;
@@ -55,19 +75,17 @@ function writeJsonState(projectRoot, fileName, value) {
 
 function readTextState(projectRoot, fileName) {
   const path = cachePath(projectRoot, fileName);
-  if (!existsSync(path)) return null;
+  if (!fs.existsSync(path)) return null;
   try {
-    return readFileSync(path, "utf8").trim();
+    return fs.readFileSync(path, "utf8").trim();
   } catch {
     return null;
   }
 }
 
 function writeTextState(projectRoot, fileName, text) {
-  const path = cachePath(projectRoot, fileName);
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, String(text));
+    atomicWrite(cachePath(projectRoot, fileName), String(text));
     return true;
   } catch {
     return false;
@@ -80,5 +98,6 @@ module.exports = {
   writeJsonState,
   readTextState,
   writeTextState,
+  atomicWrite,
   CACHE_DIR_REL,
 };

@@ -596,6 +596,15 @@ export const enMessages: Messages = {
     "Run `fabric doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope is consistent with observed stable_ids.",
+  "doctor.check.store_counter_drift.name": "Store counter drift",
+  "doctor.check.store_counter_drift.message.singular":
+    "{count} store counter is below its on-disk max stable_id ({detail}). The next allocation in that store would re-mint an existing id. Run `fabric doctor --fix` to floor the store counters.json.",
+  "doctor.check.store_counter_drift.message.plural":
+    "{count} store counters are below their on-disk max stable_id ({detail}). The next allocation in those stores would re-mint an existing id. Run `fabric doctor --fix` to floor the store counters.json.",
+  "doctor.check.store_counter_drift.remediation":
+    "Run `fabric doctor --fix` to floor each store's counters.json at the highest stable_id observed on disk (the floor never lowers — KT-DEC-0004 monotonic invariant).",
+  "doctor.check.store_counter_drift.ok":
+    "Every read-set store's counters.json is floored at its on-disk max stable_id.",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "No CLAUDE.md or AGENTS.md detected at project root.",
   "doctor.check.preexisting_root_files.message":
@@ -832,6 +841,14 @@ export const enMessages: Messages = {
     "{opaque}/{total} entries ({pct}%) have description.summary equal to their stable_id, exceeding the {threshold}% threshold. Narrow-hint output renders as `<id> · <id>`, signaling nothing useful, and AI clients skip the fetch. First opaque: {sample}.",
   "doctor.check.knowledge_summary_opaque.remediation":
     "Run the fabric-review skill to rewrite opaque summaries with one short human-readable phrase. The rc.35 hint renderer fallback (TASK-06) will also synthesize a temporary summary from the entry's `## Summary` section.",
+  // v2.2 W4 (G-GUARD / A6): store scope lint.
+  "doctor.check.store_scope_lint.name": "Store scope lint",
+  "doctor.check.store_scope_lint.ok":
+    "All read-set store entries carry valid scope metadata (semantic_scope + visibility_store, no personal leak, no dangling project).",
+  "doctor.check.store_scope_lint.message":
+    "{total} store scope issue(s): {breakdown}. e.g. {sample}.",
+  "doctor.check.store_scope_lint.remediation":
+    "Run `fabric store backfill-scope` to add missing semantic_scope/visibility_store; `fabric store re-scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

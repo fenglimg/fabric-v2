@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { readStoreIdentity } from "../resolver/store-disk-reader.js";
@@ -8,6 +8,9 @@ import {
   STORE_LAYOUT,
   type StoreIdentity,
   storeIdentitySchema,
+  type StoreProject,
+  storeProjectSchema,
+  storeProjectsFileSchema,
 } from "../schemas/store.js";
 
 // ---------------------------------------------------------------------------
@@ -130,6 +133,54 @@ export function listStoreKnowledge(store: MountedStoreDir): StoreKnowledgeRef[] 
 // different stores stay distinct (their global_ref differs, S61).
 export function readKnowledgeAcrossStores(stores: MountedStoreDir[]): StoreKnowledgeRef[] {
   return stores.flatMap((store) => listStoreKnowledge(store));
+}
+
+// ---------------------------------------------------------------------------
+// Store-internal project registry (W1/A2). The committed `projects.json` at the
+// store root enumerates the projects this store serves. Read returns [] when the
+// file is absent (a store with no enumerated projects is valid). Add refuses a
+// duplicate id (idempotent registration is the caller's concern via storeHasProject).
+// ---------------------------------------------------------------------------
+
+function storeProjectsPath(storeDir: string): string {
+  return join(storeDir, STORE_LAYOUT.projectsFile);
+}
+
+// Enumerate the projects registered in a store. Absent/unreadable/invalid
+// projects.json ⇒ [] (a store need not have any projects).
+export function readStoreProjects(storeDir: string): StoreProject[] {
+  const path = storeProjectsPath(storeDir);
+  if (!existsSync(path)) {
+    return [];
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return [];
+  }
+  const parsed = storeProjectsFileSchema.safeParse(raw);
+  return parsed.success ? parsed.data.projects : [];
+}
+
+// True when `id` is a registered project in this store.
+export function storeHasProject(storeDir: string, id: string): boolean {
+  return readStoreProjects(storeDir).some((p) => p.id === id);
+}
+
+// Register a new project in the store (writes projects.json). Refuses a
+// duplicate id so a typo never silently overwrites an existing project's
+// metadata. Returns the full project list after the add.
+export function addStoreProject(storeDir: string, project: StoreProject): StoreProject[] {
+  const parsed = storeProjectSchema.parse(project);
+  const existing = readStoreProjects(storeDir);
+  if (existing.some((p) => p.id === parsed.id)) {
+    throw new Error(`project '${parsed.id}' already exists in store at ${storeDir}`);
+  }
+  const next = [...existing, parsed];
+  const validated = storeProjectsFileSchema.parse({ projects: next });
+  writeFileSync(storeProjectsPath(storeDir), `${JSON.stringify(validated, null, 2)}\n`, "utf8");
+  return validated.projects;
 }
 
 // Cross-store pending aggregation API (roadmap gemini#3) — the底座 P2 fab_review

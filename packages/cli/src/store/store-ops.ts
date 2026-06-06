@@ -5,17 +5,21 @@ import { join } from "node:path";
 
 import {
   addMountedStore,
+  addStoreProject,
   bindRequiredStore,
   detachMountedStore,
   explainStore,
   initStore,
+  readStoreProjects,
   STORES_ROOT_DIR,
+  storeHasProject,
   storeRelativePath,
   type FabricConfig,
   type GlobalConfig,
   type MountedStore,
   type RequiredStoreEntry,
   type StoreExplain,
+  type StoreProject,
 } from "@fenglimg/fabric-shared";
 
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "./global-config-io.js";
@@ -322,16 +326,94 @@ function requireProjectConfig(projectRoot: string): FabricConfig {
   return config;
 }
 
-// `fabric store bind <id>`: declare a required store on the PROJECT config
-// (drives the read-set + clone onboarding). Dedupes by id (S59).
+// Resolve a mounted store's on-disk directory by its alias or UUID. Null when
+// no store with that alias/uuid is registered in the global config.
+export function resolveStoreDir(
+  aliasOrUuid: string,
+  globalRoot: string = resolveGlobalRoot(),
+): string | null {
+  const config = loadGlobalConfig(globalRoot);
+  if (config === null) {
+    return null;
+  }
+  const store = config.stores.find(
+    (s) => s.alias === aliasOrUuid || s.store_uuid === aliasOrUuid,
+  );
+  if (store === undefined) {
+    return null;
+  }
+  return join(globalRoot, storeRelativePath(store.store_uuid));
+}
+
+// `fabric store project list <alias>`: enumerate a store's registered projects
+// (W1/A2). Throws when the alias/uuid is not a mounted store.
+export function storeProjectList(
+  aliasOrUuid: string,
+  globalRoot: string = resolveGlobalRoot(),
+): StoreProject[] {
+  const storeDir = resolveStoreDir(aliasOrUuid, globalRoot);
+  if (storeDir === null) {
+    throw new Error(`no mounted store '${aliasOrUuid}' — run \`fabric store list\` to see mounts`);
+  }
+  return readStoreProjects(storeDir);
+}
+
+// `fabric store project create <alias> <id>`: register a new project in a store
+// (W1/A2). `id` is the single scope segment forming `project:<id>`. Refuses a
+// duplicate id (addStoreProject) or an unmounted store.
+export function storeProjectCreate(
+  aliasOrUuid: string,
+  id: string,
+  now: string,
+  options: { name?: string; globalRoot?: string } = {},
+): StoreProject {
+  const globalRoot = options.globalRoot ?? resolveGlobalRoot();
+  const storeDir = resolveStoreDir(aliasOrUuid, globalRoot);
+  if (storeDir === null) {
+    throw new Error(`no mounted store '${aliasOrUuid}' — run \`fabric store list\` to see mounts`);
+  }
+  const project: StoreProject =
+    options.name === undefined
+      ? { id, created_at: now }
+      : { id, name: options.name, created_at: now };
+  addStoreProject(storeDir, project);
+  return project;
+}
+
+// `fabric store bind <id> [--project <p>]`: declare a required store on the
+// PROJECT config (drives the read-set + clone onboarding; dedupes by id, S59).
+// When `project` is given it is validated against the bound store's projects.json
+// (W1/A2) — binding to a non-existent project is REFUSED so a typo can't route
+// writes/recall to a phantom project — and recorded as the repo's
+// `active_project` coordinate segment.
 export function storeBind(
   projectRoot: string,
   entry: RequiredStoreEntry,
+  options: { project?: string; globalRoot?: string } = {},
 ): FabricConfig {
   const config = requireProjectConfig(projectRoot);
+  let activeProject = config.active_project;
+  if (options.project !== undefined) {
+    const globalRoot = options.globalRoot ?? resolveGlobalRoot();
+    const storeDir = resolveStoreDir(entry.id, globalRoot);
+    if (storeDir === null) {
+      throw new Error(
+        `cannot bind project '${options.project}': store '${entry.id}' is not mounted — ` +
+          `mount it first (\`fabric store add\` / \`fabric install --global --url <remote>\`)`,
+      );
+    }
+    if (!storeHasProject(storeDir, options.project)) {
+      throw new Error(
+        `cannot bind to project '${options.project}': not registered in store '${entry.id}' — ` +
+          `create it first with \`fabric store project create ${entry.id} ${options.project}\``,
+      );
+    }
+    activeProject = options.project;
+  }
   const next: FabricConfig = {
     ...config,
     required_stores: bindRequiredStore(config.required_stores ?? [], entry),
+    ...(activeProject === undefined ? {} : { active_project: activeProject }),
   };
   saveProjectConfig(next, projectRoot);
   return next;

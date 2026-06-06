@@ -12,11 +12,8 @@ import {
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 import { hasSecrets } from "@fenglimg/fabric-shared";
 
-import { AgentsMetaFileMissingError } from "../meta-reader.js";
-
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { loadActiveMeta } from "./load-active-meta.js";
-import { resolveStorePendingBase } from "./cross-store-write.js";
+import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
 import {
   atomicWriteText,
   ensureParentDirectory,
@@ -161,26 +158,12 @@ export async function extractKnowledge(
   projectRoot: string,
   input: FabExtractKnowledgeInput,
 ): Promise<FabExtractKnowledgeOutput> {
-  // v2.0.0-rc.22 Scope D T-D2: STRICT meta auto-heal at extract entry. extract
-  // itself never reads agents.meta.json — id allocation happens at review/
-  // approve time. But review's KnowledgeIdAllocator pulls its counter directly
-  // from the persisted meta, so if a stale meta survives until approve, the
-  // counter advance starts from the wrong base. Re-healing here keeps the
-  // counter / nodes envelope consistent with the on-disk knowledge tree the
-  // moment a new pending entry is proposed. Build failures (e.g. transient
-  // fs errors during the rebuild) propagate loudly — that's the strict
-  // contract. Missing on-disk meta is the ONE exception: extract is the
-  // first-touch entry for many "import knowledge from session" flows where
-  // doctor-init hasn't run yet, and refusing to write a pending until the
-  // baseline exists would break those onboarding paths. So we swallow
-  // AgentsMetaFileMissingError specifically; every other failure is loud.
-  try {
-    await loadActiveMeta(projectRoot, { caller: "extractKnowledge" });
-  } catch (error) {
-    if (!(error instanceof AgentsMetaFileMissingError)) {
-      throw error;
-    }
-  }
+  // v2.2 W5 R3 (读侧 cutover): the co-location agents.meta auto-heal at extract
+  // entry is retired. Its sole purpose was to keep the co-location counter base
+  // consistent for review's KnowledgeIdAllocator — but W4 moved id allocation to
+  // per-store committed counters.json (reconcileStoreCounters), so there is no
+  // co-location counter envelope left to pre-heal here. extract never read
+  // agents.meta for its own logic; pending entries are written directly.
 
   // v2.0.0-rc.37 NEW-31: prompt-injection sanitization. Strip dangerous
   // patterns from every user-text field BEFORE any downstream consumer reads
@@ -377,6 +360,12 @@ export async function extractKnowledge(
   const effectiveSanitizedSlug = chosenSlug;
   const effectiveIdempotencyKey = chosenKey;
 
+  // v2.1 global-refactor (W1/A1): the scope coordinate + physical store the entry
+  // is written into. Resolved from the SAME write-target the pending file lands in
+  // (baseDir above), so frontmatter `visibility_store` matches the entry's home.
+  // Throws PersonalScopeLeakError if a personal scope would land in a shared store.
+  const writeScopeMeta = resolveWriteScopeMeta(layer, projectRoot);
+
   await ensureParentDirectory(absolutePath);
 
   if (existsSync(absolutePath)) {
@@ -409,6 +398,8 @@ export async function extractKnowledge(
         summary,
         recentPaths: input.recent_paths,
         layer,
+        semanticScope: writeScopeMeta.semantic_scope,
+        visibilityStore: writeScopeMeta.visibility_store,
         proposedReason: input.proposed_reason,
         sessionContext: input.session_context,
         relevanceScope,
@@ -453,6 +444,8 @@ export async function extractKnowledge(
     summary,
     recentPaths: input.recent_paths,
     layer,
+    semanticScope: writeScopeMeta.semantic_scope,
+    visibilityStore: writeScopeMeta.visibility_store,
     proposedReason: input.proposed_reason,
     sessionContext: input.session_context,
     relevanceScope,
@@ -561,6 +554,11 @@ type FreshEntryArgs = {
   summary: string;
   recentPaths: string[];
   layer: "team" | "personal";
+  // v2.1 global-refactor (W1/A1): scope coordinate + physical store the entry
+  // lands in. Resolved by resolveWriteScopeMeta from the SAME write-target the
+  // pending file is written into.
+  semanticScope: string;
+  visibilityStore: string;
   proposedReason: ProposedReason;
   sessionContext: string;
   // v2.0.0-rc.8 A1: optional relevance fields. When undefined, the YAML
@@ -614,6 +612,12 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     `type: ${args.type}`,
     "maturity: draft",
     `layer: ${args.layer}`,
+    // v2.1 global-refactor (W1/A1): scope coordinate (resolution axis) + the
+    // physical store this entry lives in. `layer` is retained for back-compat
+    // during the co-location retirement; `semantic_scope`/`visibility_store` are
+    // the v2.1 source of truth (scope ⊥ store).
+    `semantic_scope: ${args.semanticScope}`,
+    `visibility_store: ${quoteRelevancePath(args.visibilityStore)}`,
     `created_at: ${createdAt}`,
     `source_sessions: [${args.sourceSessions.map((s) => JSON.stringify(s)).join(", ")}]`,
     `proposed_reason: ${args.proposedReason}`,
