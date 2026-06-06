@@ -35,29 +35,11 @@ export const enMessages: Messages = {
   "cli.shared.invalid-port": "Invalid port: {value}",
   "cli.shared.error": "Error",
 
-  "cli.approve.description": "Approve drifted human-lock entries from the command line.",
-  "cli.approve.args.all.description": "Approve all drifted human-lock entries without prompting.",
-  "cli.approve.args.interactive.description": "Prompt before approving each drifted human-lock entry.",
-  "cli.approve.args.target.description": "Target project path, default is the current working directory.",
-  "cli.approve.no-drift": "No drift entries found.",
-  "cli.approve.prompt": "Approve this entry? [y/N] ",
-  "cli.approve.approved-one": "Approved {location}",
-  "cli.approve.skipped-one": "Skipped {location}",
-  "cli.approve.summary": "Approved {approved}/{total} drift entries. Skipped {skipped}.",
-  "cli.approve.table.expected": "Expected",
-  "cli.approve.table.current": "Current",
-
-  "cli.bootstrap.description": "Install Fabric bootstrap prompts for supported AI clients.",
-  "cli.bootstrap.install.description": "Copy Fabric bootstrap templates into native client locations.",
-  "cli.bootstrap.install.args.clients.description":
-    "Optional comma-separated client filter, for example claude,cursor,codex.",
-  "cli.bootstrap.install.no-targets":
-    "No bootstrap targets detected. Pass --clients claude,cursor,codex to install explicitly.",
-  "cli.bootstrap.install.installed": "Installed {path}",
-  "cli.bootstrap.install.skipped-header": "Skipped {path}: Fabric Bootstrap header already present.",
-  "cli.bootstrap.install.prepended": "Prepended {path}",
-  "cli.bootstrap.errors.unknown-client":
-    "Unknown client \"{client}\". Use a comma-separated list such as claude,cursor,codex.",
+  // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
+  // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI
+  // surface in v2.0.0-rc.18. Keys intentionally retained for backward compat
+  // with external tooling that may still reference them. Remove in v2.2
+  // if no external consumers surface.
 
   "cli.config.description":
     "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).\n" +
@@ -889,24 +871,6 @@ export const enMessages: Messages = {
   "doctor.history.header": "Doctor history (mode={mode}, last {sinceLabel}, {days} day(s))",
   "doctor.history.empty": "No doctor or archive activity within the --since={sinceLabel} window (mode={mode}).",
 
-  "cli.hooks.description": "Manage Fabric Git hook templates.",
-  "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",
-  "cli.hooks.install.args.target.description": "Target project path, default is the current working directory.",
-  "cli.hooks.errors.package-json-required": "package.json is required to install hooks: {path}",
-  "cli.hooks.install.hook-skipped": "Fabric hook already present in {path}, skipped.",
-  "cli.hooks.install.hook-appended": "Appended Fabric hook to existing {path}",
-  "cli.hooks.install.hook-created": "Created {path}",
-  "cli.hooks.install.prepare-left": "Left existing prepare script unchanged in {path}",
-  "cli.hooks.install.prepare-added": "Added prepare script to {path}",
-
-  "cli.human-lint.description": "Validate locked human-edit regions.",
-  "cli.human-lint.args.target.description": "Target project path, default is the current working directory.",
-  "cli.human-lint.drift-detected":
-    "Human-locked content drift detected. Revert the edit or update approved hashes before committing.",
-  "cli.human-lint.table.location": "Location",
-  "cli.human-lint.table.expected": "Expected",
-  "cli.human-lint.table.got": "Got",
-
   "cli.install.description":
     "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).\n" +
     "\n" +
@@ -1104,48 +1068,6 @@ export const enMessages: Messages = {
   "cli.uninstall.confirm.proceed": "Proceed with uninstalling Fabric from {target}? [y/N]",
   "cli.uninstall.errors.target-not-directory": "Target must be an existing directory: {path}",
 
-  "cli.ledger-append.description": "Append an entry to the Fabric intent ledger.",
-  "cli.ledger-append.args.target.description": "Target project path, default is the current working directory.",
-  "cli.ledger-append.args.staged.description": "Derive the entry from staged changes (used during pre-commit).",
-  "cli.ledger-append.requires-staged": "requires --staged in pre-commit context",
-  "cli.ledger-append.intent.auto": "auto: {head}{suffix}",
-  "cli.ledger-append.intent.auto-more": " +{count} more",
-
-  "cli.pre-commit.description":
-    "Composite pre-commit hook: runs sync-meta --check-only, human-lint, and ledger-append --staged in one Node process.",
-  "cli.pre-commit.args.target.description": "Project root directory, defaults to cwd or EXTERNAL_FIXTURE_PATH.",
-  "cli.pre-commit.run-failed": "fabric pre-commit: {name} failed - {message}",
-
-  "cli.scan.description": "Scan the project to detect Fabric bootstrap candidates.",
-  "cli.scan.args.target.description":
-    "Target absolute path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.scan.args.debug.description": "Print detection evidence in formatted output.",
-  "cli.scan.args.json.description": "Print the diagnostic report as JSON.",
-  "cli.scan.error.missing-forensic":
-    "forensic.json not found at {path}; run `fabric install` first to produce the deterministic project snapshot.",
-  "cli.scan.summary.created": "Wrote {count} knowledge entries to .fabric/knowledge/.",
-  "cli.scan.summary.skipped": "No changes detected; {count} entries already up-to-date.",
-  "cli.scan.report.title": "Fabric scan report",
-  "cli.scan.report.target": "Target",
-  "cli.scan.report.framework": "Framework",
-  "cli.scan.report.evidence": "Evidence",
-  "cli.scan.report.readme-quality": "README quality",
-  "cli.scan.report.contributing": "CONTRIBUTING.md",
-  "cli.scan.report.files-counted": "Files counted",
-  "cli.scan.report.ignored-entries": "Ignored entries",
-  "cli.scan.report.existing-fabric": "Existing Fabric files",
-  "cli.scan.report.recommendations": "Recommendations:",
-  "cli.scan.readme-quality.ok": "ok",
-  "cli.scan.readme-quality.stub": "stub",
-  "cli.scan.recommendation.init": "L0: Run fabric install to scaffold `.fabric/AGENTS.md` with the canonical Fabric bootstrap content.",
-  "cli.scan.recommendation.readme":
-    "L0: Expand README.md before promoting project facts into Fabric references.",
-  "cli.scan.recommendation.contributing":
-    "L0: Add CONTRIBUTING.md or leave a bootstrap TODO reference for contribution flow.",
-  "cli.scan.recommendation.unknown-framework":
-    "L1: Add tech-stack TODOs manually because no framework marker was detected.",
-  "cli.scan.recommendation.framework-dirs": "L1: Review {framework} directories for future scoped Fabric rule files.",
-
   // v2.0.0-rc.37 Wave A2 Part 2: cli.serve.* + FABRIC_AUTH_TOKEN keys removed
   // alongside `fabric serve` quarantine to packages/server-http-experimental/
   // per [[fabric-serve-quarantine-not-delete]]. Restore from git history when
@@ -1158,19 +1080,6 @@ export const enMessages: Messages = {
     "Emit machine-readable JSON to stdout instead of the human table.",
   "cli.onboard-coverage.args.target.description":
     "Override the project root (defaults to cwd).",
-
-  "cli.update.description": "Refresh MCP host configuration and git hooks without re-creating Fabric files.",
-  "cli.update.args.target.description":
-    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.update.args.no-mcp.description": "Skip re-configuring MCP clients",
-  "cli.update.args.no-hooks.description": "Skip re-installing git hooks",
-
-  "cli.sync-meta.description": "Sync Fabric metadata from internal rule files.",
-  "cli.sync-meta.args.target.description": "Target project path, default is the current working directory.",
-  "cli.sync-meta.args.check-only.description":
-    "Exit with code 1 when .fabric/agents.meta.json is out of date.",
-  "cli.sync-meta.drift-detected": "Fabric metadata drift detected. Run fabric sync-meta to update.",
-  "cli.sync-meta.updated": "{label} {path}",
 
   "dashboard.app.nav.aria-label": "Dashboard views",
   "dashboard.app.nav.readiness.label": "Readiness",

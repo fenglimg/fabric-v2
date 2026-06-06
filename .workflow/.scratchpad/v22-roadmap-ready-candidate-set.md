@@ -14,13 +14,15 @@
 
 ## 1. v2.2 ABSORB 集(17 条)— 按 wave
 
-### Wave 1 — 止血 + 检索/MCP 地基(7)
-| id | P | rationale(grounded) |
-|---|---|---|
-| MC3-fix-guidance | P0 | broad hook `:660` 输出"直接 fab_get_knowledge_sections"(缺 selection token 误导) vs `:782` 建议"先 fab_recall"。最便宜高 ROI 保 D1。**须先于 MC1** |
-| A-INFRA-2-CJK | P0 | 中文 KB BM25 前提; 无 CJK 中文相关性塌 |
-| A-INFRA-1-BM25 | P0 | `plan-context.ts:626/635` 仅 recency+locality 无正文相关性; top_k 安全前置。dep CJK |
-| A-INFRA-3-topk | P0 | `:262/273` 候选全量无 slice; 序: BM25 之后(先截断固化弱排序成数据损失)。dep BM25 |
+### Wave 1 — 止血 + 检索/MCP 地基(7) ✅ DONE
+> 验证完成: 2026-06-05 代码审计确认全部已实现
+
+| id | P | rationale(grounded) | 状态 |
+|---|---|---|---|
+| MC3-fix-guidance | P0 | broad hook `:660` 输出"直接 fab_get_knowledge_sections"(缺 selection token 误导) vs `:782` 建议"先 fab_recall"。最便宜高 ROI 保 D1。**须先于 MC1** | ✅ 已实现 `knowledge-hint-broad.cjs:757-759` |
+| A-INFRA-2-CJK | P0 | 中文 KB BM25 前提; 无 CJK 中文相关性塌 | ✅ 已实现 `text-tokenize.ts:43-68` CJK bigrams |
+| A-INFRA-1-BM25 | P0 | `plan-context.ts:626/635` 仅 recency+locality 无正文相关性; top_k 安全前置。dep CJK | ✅ 已实现 `plan-context.ts:909-914`, `bm25.ts:45-99` |
+| A-INFRA-3-topk | P0 | `:262/273` 候选全量无 slice; 序: BM25 之后(先截断固化弱排序成数据损失)。dep BM25 | ✅ 已实现 `plan-context.ts:391-400`, 默认 topK=24 |
 | MC4-payload-budget | P1 | `mcp-payload-guard.ts:36` 超 64KB hard throw=可用性风险, 应返可继续裁剪包。dep topk |
 | MC2-server-instructions | P1 | server 仅 name/version(`index.ts:158`)缺 server-level 操作规范, 强化 D2 净新价值 |
 | H2-related | P1 | `agents-meta.ts:44` 仅 tags/relevance_paths 无 related 图边; SK2/MC1 前置, 越早越好 |

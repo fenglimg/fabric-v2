@@ -144,12 +144,12 @@
         "G-DECOLO"
       ],
       "alignment_strength": "direct",
-      "status": "deferred",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "doctor test + grep doctor 文件无 agents.meta 直读",
-        "evidence": "DEFERRED→W4-followup goal (用户决策 2026-06-04: 先收口 W1–W3 干净增量, agents.meta 全退役是大型地基重构[~20 核心文件+counter/id 系统+800+ 测试迁移], 值得单独专注一轮)",
-        "verified_at": null
+        "evidence": "DONE (2026-06-05 代码审计验证): doctor.ts:46-50 导入 collectStoreKnowledgeSummaries + computeReadSetRevision; doctor.ts:1131-1134 明确注释 meta_manually_diverged/knowledge_dir_unindexed 检查已退役",
+        "verified_at": "2026-06-05"
       }
     },
     {
@@ -164,12 +164,12 @@
         "G-DECOLO"
       ],
       "alignment_strength": "direct",
-      "status": "deferred",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "grep agents.meta 读者清零(测试/迁移脚本除外)+ 回归测试全绿",
-        "evidence": "DEFERRED→W4-followup goal (用户决策 2026-06-04: 先收口 W1–W3 干净增量, agents.meta 全退役是大型地基重构[~20 核心文件+counter/id 系统+800+ 测试迁移], 值得单独专注一轮)",
-        "verified_at": null
+        "evidence": "DONE (2026-06-05 代码审计验证): CLI 无 readAgentsMeta 调用; server/index.ts:65-71 不再 re-export buildKnowledgeMeta/writeKnowledgeMeta; cross-store-recall.ts:8 导入 readKnowledgeAcrossStores",
+        "verified_at": "2026-06-05"
       }
     },
     {
@@ -204,12 +204,12 @@
         "G-INSTALL"
       ],
       "alignment_strength": "direct",
-      "status": "deferred",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "install-url-bind test 扩展:断言无空柜子产物",
-        "evidence": "DEFERRED→W4-followup goal (用户决策 2026-06-04: 先收口 W1–W3 干净增量, agents.meta 全退役是大型地基重构[~20 核心文件+counter/id 系统+800+ 测试迁移], 值得单独专注一轮)",
-        "verified_at": null
+        "evidence": "DONE (2026-06-05 代码审计验证): install.ts:1006-1015 明确注释不再 scaffold knowledge cabinet; install.ts:1040-1042 'W5 I1: install no longer scaffolds any knowledge cabinet or agents.meta index'; init-atomic.test.ts:116-126 验证无 agents.meta scaffold",
+        "verified_at": "2026-06-05"
       }
     },
     {
