@@ -97,6 +97,39 @@ describe("runStartSync", () => {
     expect(readBindingsSnapshot(globalRoot, PROJECT_ID)).not.toBeNull();
   });
 
+  it("uses mount_name as the git working directory when a store has one", () => {
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true, writable: true },
+          {
+            store_uuid: TEAM,
+            alias: "team",
+            mount_name: "team-kb",
+            remote: "git@h:team.git",
+            writable: true,
+          },
+        ],
+      }),
+      globalRoot,
+    );
+    const seen: string[] = [];
+
+    runStartSync({
+      projectRoot,
+      globalRoot,
+      now: NOW,
+      pull: (storeDir) => {
+        seen.push(storeDir);
+        return "clean";
+      },
+      push: () => "clean",
+    });
+
+    expect(seen).toEqual([join(globalRoot, "stores", "team-kb")]);
+  });
+
   it("offline store defers its push but the session still settles (S17)", () => {
     const result = runStartSync({
       projectRoot,

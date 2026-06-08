@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { GLOBAL_STATE_DIR, storeRelativePath } from "@fenglimg/fabric-shared";
+import { GLOBAL_STATE_DIR, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
@@ -369,8 +369,7 @@ export function runStartSync(options: RunSyncOptions): RunSyncResult {
   const session = planSync(
     syncable.map((store) => ({ alias: store.alias, store_uuid: store.store_uuid })),
   );
-  const storeDirOf = (status: SyncStoreStatus): string =>
-    join(globalRoot, storeRelativePath(status.store_uuid));
+  const storeDirOf = makeStoreDirResolver(globalRoot, config.stores);
   const pushableAliases = pushableAliasesOf(config);
   const walked = walkPending(
     session,
@@ -397,6 +396,21 @@ function pushableAliasesOf(config: {
   );
 }
 
+function makeStoreDirResolver(
+  globalRoot: string,
+  stores: Array<{ store_uuid: string; mount_name?: string }>,
+): (status: SyncStoreStatus) => string {
+  return (status) =>
+    join(
+      globalRoot,
+      storeRelativePathForMount(
+        stores.find((store) => store.store_uuid === status.store_uuid) ?? {
+          store_uuid: status.store_uuid,
+        },
+      ),
+    );
+}
+
 // `fabric sync --continue`: the user resolved the conflict; advance that store
 // (git rebase --continue) and resume the walk over any remaining pending stores.
 export function runContinueSync(options: RunSyncOptions): RunSyncResult {
@@ -413,14 +427,14 @@ export function runContinueSync(options: RunSyncOptions): RunSyncResult {
       actionHint: "The sync is not paused on a conflict; there is nothing to resume.",
     });
   }
-  const storeDirOf = (status: SyncStoreStatus): string =>
-    join(globalRoot, storeRelativePath(status.store_uuid));
+  const resumeConfig = loadGlobalConfig(globalRoot) ?? { stores: [] };
+  const storeDirOf = makeStoreDirResolver(globalRoot, resumeConfig.stores);
   (options.rebaseContinue ?? defaultRebaseContinue)(storeDirOf(conflicted));
   // The conflicted store, now rebased clean, must also be pushed — and so must
   // any remaining pending stores. Recompute pushable aliases from the config
   // (the resumed session carries only state, not write intent). A missing/null
   // config (store unmounted between sessions) degrades to pull-only — never crash.
-  const pushableAliases = pushableAliasesOf(loadGlobalConfig(globalRoot) ?? { stores: [] });
+  const pushableAliases = pushableAliasesOf(resumeConfig);
   const push = options.push ?? defaultPush;
   // Push the just-resolved store (the state machine's walkPending only processes
   // `pending` stores; the conflicted store moves straight to synced/offline via
@@ -463,13 +477,13 @@ export function runAbortSync(options: RunSyncOptions): RunSyncResult {
       actionHint: "The sync is not paused on a conflict; there is nothing to resume.",
     });
   }
-  const storeDirOf = (status: SyncStoreStatus): string =>
-    join(globalRoot, storeRelativePath(status.store_uuid));
+  const resumeConfig = loadGlobalConfig(globalRoot) ?? { stores: [] };
+  const storeDirOf = makeStoreDirResolver(globalRoot, resumeConfig.stores);
   (options.rebaseAbort ?? defaultRebaseAbort)(storeDirOf(conflicted));
   // The aborted store is abandoned (no push); remaining pending stores still
   // pull+push. Recompute pushable aliases from config (degrade to pull-only on
   // a missing config).
-  const pushableAliases = pushableAliasesOf(loadGlobalConfig(globalRoot) ?? { stores: [] });
+  const pushableAliases = pushableAliasesOf(resumeConfig);
   const resumed = walkPending(
     abortSync(session),
     storeDirOf,

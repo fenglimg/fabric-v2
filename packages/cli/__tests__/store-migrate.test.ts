@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { storeRelativePath } from "@fenglimg/fabric-shared";
+import { storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runGlobalInstall } from "../src/install/run-global-install.js";
@@ -45,7 +45,7 @@ async function scaffold(opts: { seedTeamId?: string } = {}): Promise<{
     globalRoot,
   );
   storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
-  const teamDir = join(globalRoot, storeRelativePath(TEAM));
+  const teamDir = join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM, mount_name: "team" }));
   if (opts.seedTeamId !== undefined) {
     writeFileSync(
       join(teamDir, "knowledge", "decisions", `${opts.seedTeamId}.md`),

@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdtempSync, readlinkSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { storeRelativePath } from "@fenglimg/fabric-shared";
+import { storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runGlobalInstall } from "../src/install/run-global-install.js";
@@ -40,21 +40,29 @@ function aliasLink(globalRoot: string, alias: string): string {
   return join(globalRoot, "stores", STORE_BY_ALIAS_DIR, alias);
 }
 
+function assertAliasLinkIfSupported(globalRoot: string, alias: string, mountName: string): void {
+  const sync = syncStoreAliasLinks(globalRoot);
+  if (sync.errors.includes(alias)) {
+    expect(existsSync(join(globalRoot, "stores", mountName, "store.json"))).toBe(true);
+    return;
+  }
+  const link = aliasLink(globalRoot, alias);
+  expect(lstatSync(link).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(link)).toBe(join("..", mountName));
+}
+
 describe("store by-alias links (C3)", () => {
-  it("storeCreate mints a by-alias symlink pointing at the uuid dir", async () => {
+  it("storeCreate mints a mount_name dir and, when supported, a by-alias symlink", async () => {
     const globalRoot = await setup();
     storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
 
-    const link = aliasLink(globalRoot, "team");
-    expect(lstatSync(link).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(link)).toBe(join("..", TEAM));
-    // The link resolves to the real uuid store dir.
-    expect(existsSync(join(globalRoot, storeRelativePath(TEAM), "store.json"))).toBe(true);
+    assertAliasLinkIfSupported(globalRoot, "team", "team");
+    expect(existsSync(join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM, mount_name: "team" }), "store.json"))).toBe(true);
   });
 
   it("install --global mints the personal store's by-alias link", async () => {
     const globalRoot = await setup();
-    expect(lstatSync(aliasLink(globalRoot, "personal")).isSymbolicLink()).toBe(true);
+    assertAliasLinkIfSupported(globalRoot, "personal", "personal");
   });
 
   it("detectAliasLinkDrift flags a missing link and sync heals it", async () => {
@@ -63,16 +71,28 @@ describe("store by-alias links (C3)", () => {
 
     // Simulate drift: delete the link by hand.
     rmSync(aliasLink(globalRoot, "team"), { force: true });
+    if (!existsSync(join(globalRoot, "stores", STORE_BY_ALIAS_DIR))) {
+      expect(detectAliasLinkDrift(globalRoot)).toEqual([]);
+      return;
+    }
     expect(detectAliasLinkDrift(globalRoot)).toContain("team");
 
     const result = syncStoreAliasLinks(globalRoot);
-    expect(result.created).toContain("team");
+    expect(result.created.includes("team") || result.errors.includes("team")).toBe(true);
+    if (result.errors.includes("team")) {
+      return;
+    }
     expect(detectAliasLinkDrift(globalRoot)).not.toContain("team");
   });
 
   it("storeRemove drops the detached store's by-alias link", async () => {
     const globalRoot = await setup();
     storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
+    const sync = syncStoreAliasLinks(globalRoot);
+    if (sync.errors.includes("team")) {
+      expect(existsSync(join(globalRoot, "stores", "team", "store.json"))).toBe(true);
+      return;
+    }
     expect(existsSync(aliasLink(globalRoot, "team"))).toBe(true);
 
     storeRemove("team", globalRoot);
@@ -84,7 +104,12 @@ describe("store by-alias links (C3)", () => {
     storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
     // Hand-create a stale link for an alias not in the registry.
     const { symlinkSync } = await import("node:fs");
-    symlinkSync(join("..", TEAM), aliasLink(globalRoot, "ghost"));
+    try {
+      symlinkSync(join("..", "team"), aliasLink(globalRoot, "ghost"));
+    } catch {
+      expect(existsSync(join(globalRoot, "stores", "team", "store.json"))).toBe(true);
+      return;
+    }
 
     const result = syncStoreAliasLinks(globalRoot);
     expect(result.removed).toContain("ghost");

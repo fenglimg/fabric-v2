@@ -1,12 +1,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  STORES_ROOT_DIR,
-  globalConfigSchema,
-  initStore,
-  type GlobalConfig,
-} from "@fenglimg/fabric-shared";
+import { globalConfigSchema, initStore, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
 
 import { globalConfigPath, loadGlobalConfig, saveGlobalConfig } from "../store/global-config-io.js";
 import { runInstallTransaction, type InstallReceipt } from "./transaction.js";
@@ -57,7 +52,13 @@ export async function installGlobalCore(
   }
 
   const alias = options.personalAlias ?? "personal";
-  const personalDir = join(options.globalRoot, STORES_ROOT_DIR, options.personalStoreUuid);
+  const personalStore = {
+    store_uuid: options.personalStoreUuid,
+    alias,
+    mount_name: alias,
+    personal: true,
+  };
+  const personalDir = join(options.globalRoot, storeRelativePathForMount(personalStore));
   let config: GlobalConfig | null = null;
 
   const receipt = await runInstallTransaction([
@@ -83,7 +84,7 @@ export async function installGlobalCore(
       apply: () => {
         const next = globalConfigSchema.parse({
           uid: options.uid,
-          stores: [{ store_uuid: options.personalStoreUuid, alias, personal: true }],
+          stores: [personalStore],
         });
         saveGlobalConfig(next, options.globalRoot);
         config = next;
