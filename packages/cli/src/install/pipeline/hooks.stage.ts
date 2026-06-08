@@ -4,6 +4,7 @@ import { installHooks, validateHookPaths } from "../hooks-orchestrator.js";
 import {
   cleanupDeprecatedSkills,
   installFabricArchiveSkill,
+  installFabricSkill,
   installFabricReviewSkill,
   installFabricImportSkill,
   installFabricSyncSkill,
@@ -39,7 +40,7 @@ import { paint } from "../../colors.js";
  *
  * Responsibilities:
  * 1. Clean up deprecated skills
- * 2. Install all Fabric skills (archive, review, import, sync, store, audit, connect)
+ * 2. Install all Fabric skills (entry router, archive, review, import, sync, store, audit, connect)
  * 3. Install shared skill library
  * 4. Install hook scripts (fabric-hint, knowledge-hint-broad/narrow, cite-policy-evict, etc.)
  * 5. Install hook libs
@@ -66,6 +67,7 @@ export class HooksStage implements Stage {
 
       // Install all skills
       installResults.push(...await this.runBestEffort("skill-install", () => installFabricArchiveSkill(target)));
+      installResults.push(...await this.runBestEffort("skill-fabric-install", () => installFabricSkill(target)));
       installResults.push(...await this.runBestEffort("skill-review-install", () => installFabricReviewSkill(target)));
       installResults.push(...await this.runBestEffort("skill-import-install", () => installFabricImportSkill(target)));
       installResults.push(...await this.runBestEffort("skill-sync-install", () => installFabricSyncSkill(target)));

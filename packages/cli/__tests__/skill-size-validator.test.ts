@@ -118,7 +118,7 @@ describe("rc.34 TASK-02: smoke test on actual canonical SKILL.md templates", () 
   // validateSkillCanonicalSize so install never aborts in CI / dogfood. If
   // this fails, a release was about to ship oversized canonicals and the
   // install pre-check would refuse to deploy — the test catches it earlier.
-  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"] as const;
+  const skillSlugs = ["fabric", "fabric-archive", "fabric-review", "fabric-import"] as const;
   for (const slug of skillSlugs) {
     it(`canonical templates/skills/${slug}/SKILL.md passes pre-check`, async () => {
       const { readFile } = await import("node:fs/promises");

@@ -33,6 +33,16 @@
       }
     },
     {
+      "id": "skill.fabric",
+      "surface": "skill",
+      "description": "Entry-layer Fabric router that classifies user intent and delegates to the specialized fabric-* skills.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric" },
+        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric" },
+        "cursor": { "supported": true, "mechanism": "Cursor reads .claude/.codex skills for back-compat" }
+      }
+    },
+    {
       "id": "skill.fabric-archive",
       "surface": "skill",
       "description": "Archive flow writes to the active write store and echoes written_to_store.",

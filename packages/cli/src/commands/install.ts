@@ -33,6 +33,7 @@ import {
   installArchiveHintHook,
   installCitePolicyEvictHook,
   installFabricArchiveSkill,
+  installFabricSkill,
   installFabricAuditSkill,
   installFabricConnectSkill,
   installFabricImportSkill,
@@ -1234,6 +1235,7 @@ async function executeInitStagePlan(
         // upgraders see deprecation cleanup as part of the install diff.
         installResults.push(...await runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(plan.target)));
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-fabric-install", () => installFabricSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-import-install", () => installFabricImportSkill(plan.target)));
         // F7: the bootstrap stage previously installed only archive/review/import
