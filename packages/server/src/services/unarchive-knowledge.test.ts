@@ -14,7 +14,7 @@
  * scope per TASK-05 commit message; this file pins the primitive contract.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,10 +24,32 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readEventLedger } from "./event-ledger.js";
 import { unarchiveKnowledge } from "./unarchive-knowledge.js";
 import type { KnowledgeUnarchivedEvent } from "@fenglimg/fabric-shared";
+import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
 
 const tempDirs: string[] = [];
+let originalFabricHome: string | undefined;
+
+const TEST_PERSONAL_UUID = "11111111-1111-4111-8111-111111111111";
+const TEST_TEAM_UUID = "22222222-2222-4222-8222-222222222222";
+
+beforeEach(async () => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-unarchive-home-"));
+  tempDirs.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
+});
 
 afterEach(async () => {
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir) {
@@ -39,7 +61,33 @@ afterEach(async () => {
 async function makeProjectRoot(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "rc34-task05-unarchive-"));
   tempDirs.push(dir);
+  provisionStores(dir);
   return dir;
+}
+
+function provisionStores(projectRoot: string): void {
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      { store_uuid: TEST_PERSONAL_UUID, alias: "personal", personal: true, writable: true },
+      { store_uuid: TEST_TEAM_UUID, alias: "team", remote: "git@e:t.git", writable: true },
+    ],
+  });
+  mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+  );
+}
+
+function storeKnowledgeDir(layer: "team" | "personal", ...sub: string[]): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, ...sub);
+}
+
+function storeDisplayPath(layer: "team" | "personal", ...sub: string[]): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return ["~/.fabric", storeRelativePath(uuid).replace(/\\/gu, "/"), STORE_LAYOUT.knowledgeDir, ...sub].join("/");
 }
 
 async function seedArchivedFile(
@@ -74,11 +122,13 @@ describe("unarchiveKnowledge — dry-run (rc.34 TASK-05)", () => {
     expect(result.applied).toBe(false);
     expect(result.stableId).toBe("KT-D-0007");
     expect(result.restoredTo).toBe(
-      ".fabric/knowledge/team/decisions/KT-D-0007--single-cjs-hook.md",
+      storeDisplayPath("team", "decisions", "KT-D-0007--single-cjs-hook.md"),
     );
 
     expect(existsSync(join(projectRoot, archiveRel))).toBe(true);
-    expect(existsSync(join(projectRoot, result.restoredTo!))).toBe(false);
+    expect(existsSync(storeKnowledgeDir("team", "decisions", "KT-D-0007--single-cjs-hook.md"))).toBe(
+      false,
+    );
 
     const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_unarchived" });
     expect(ledger.events).toHaveLength(0);
@@ -94,7 +144,7 @@ describe("unarchiveKnowledge — dry-run (rc.34 TASK-05)", () => {
 
     expect(result.ok).toBe(true);
     expect(result.restoredTo).toBe(
-      ".fabric/knowledge/personal/guidelines/KP-G-0003--indent-style.md",
+      storeDisplayPath("personal", "guidelines", "KP-G-0003--indent-style.md"),
     );
   });
 });
@@ -122,7 +172,7 @@ describe("unarchiveKnowledge — apply (rc.34 TASK-05)", () => {
     expect(result.dryRun).toBe(false);
     expect(result.stableId).toBe("KT-P-0011");
 
-    const restoredPath = join(projectRoot, result.restoredTo!);
+    const restoredPath = storeKnowledgeDir("team", "pitfalls", "KT-P-0011--deepmerge-array-trap.md");
     expect(existsSync(restoredPath)).toBe(true);
     expect(existsSync(join(projectRoot, archiveRel))).toBe(false);
 
@@ -168,7 +218,7 @@ describe("unarchiveKnowledge — apply (rc.34 TASK-05)", () => {
     });
     expect(result.ok).toBe(true);
     expect(result.restoredTo).toBe(
-      ".fabric/knowledge/personal/guidelines/KT-G-0099--cross-project-style.md",
+      storeDisplayPath("personal", "guidelines", "KT-G-0099--cross-project-style.md"),
     );
   });
 });
@@ -207,7 +257,7 @@ describe("unarchiveKnowledge — defensive failures (rc.34 TASK-05)", () => {
       "KT-D-0007--single-cjs-hook.md",
     );
     // Seed a "live" entry at the canonical path so the unarchive would clobber.
-    const liveDir = join(projectRoot, ".fabric", "knowledge", "team", "decisions");
+    const liveDir = storeKnowledgeDir("team", "decisions");
     await mkdir(liveDir, { recursive: true });
     await writeFile(
       join(liveDir, "KT-D-0007--single-cjs-hook.md"),
@@ -254,7 +304,7 @@ describe("unarchiveKnowledge — defensive failures (rc.34 TASK-05)", () => {
     expect(result.ok).toBe(true);
     expect(result.stableId).toBe("KT-D-0007");
     expect(result.restoredTo).toBe(
-      ".fabric/knowledge/team/decisions/KT-D-0007--single-cjs-hook.md",
+      storeDisplayPath("team", "decisions", "KT-D-0007--single-cjs-hook.md"),
     );
   });
 });
