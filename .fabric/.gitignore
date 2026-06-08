@@ -1,9 +1,0 @@
-# Fabric per-dev activity ledgers & caches — auto-generated, not shared.
-# Managed by `fabric install`; edit freely (re-install never overwrites this).
-events.jsonl
-metrics.jsonl
-cite-rollup.jsonl
-injections.jsonl
-.cache/
-*.lock
-*.corrupted.*
