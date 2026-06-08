@@ -191,8 +191,9 @@ Fabric splits cleanly across three entry points; pick by who's in the loop:
   `fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
   `fab_archive_scan`, `fab_review`.
 
-→ See [`docs/surfaces.md`](./docs/surfaces.md) for the full table, decision
-rule, and flow examples.
+→ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and
+[`docs/RUNTIME-CONTRACTS.md`](./docs/RUNTIME-CONTRACTS.md) for the current
+surface boundary and code-backed contract entry points.
 
 ## Quick Start
 
@@ -201,10 +202,11 @@ rule, and flow examples.
 pnpm dlx @fenglimg/fabric-cli install
 ```
 
-`install` scans your repo (tech stack, build config, code style, CI), installs
-the `fabric-archive` / `fabric-review` / `fabric-import` Skills + Stop hooks
-for each detected client, and writes a baseline `.fabric/` tree with 4-7 seed
-entries.
+`install` prepares the project for Fabric: it writes the managed bootstrap,
+configures client MCP stdio entries, installs hook and Skill templates, and
+guides store binding. Knowledge entries live in mounted stores under
+`~/.fabric/stores/`; new entries are proposed through Fabric Skills and reviewed
+before promotion.
 
 ```bash
 fabric install                    # install hooks + Skills + bootstrap + MCP client config
@@ -216,9 +218,9 @@ fabric uninstall                  # remove Fabric-managed artifacts (knowledge s
 A healthy install reports zero fixable findings from `fabric doctor`. The MCP
 server runs over **stdio transport only** — `fabric install` writes each
 client's MCP config so the client spawns `node packages/server/dist/index.js`
-on session start; there is no separate `fabric serve` process to run. (The
+on session start; there is no separate `fabric serve` process to run. The
 v1.8-era HTTP server was quarantined to `packages/server-http-experimental/`
-in v2.0.0-rc.37; see [KB decision `fabric-serve-quarantine-not-delete`](./.fabric/knowledge/team/decisions/fabric-serve-quarantine-not-delete.md).)
+in v2.0.0-rc.37.
 
 **Restart the client after `fabric install`** — already-running Claude Code /
 Cursor / Codex CLI sessions won't pick up the new MCP config until restart;
@@ -282,12 +284,12 @@ is report-only.
 
 ## Documentation
 
-- [Knowledge Types](./docs/knowledge-types.md) — semantic definitions of the 5
-  entry types, decision criteria, examples.
-- [Initialization](./docs/initialization.md) — what `fabric install` does, what
-  it produces, how to re-run safely.
-- [Roadmap](./docs/roadmap.md) — v2.0 (current), v2.1 (team-knowledge.git +
-  permissions), v2.x (semantic search, federated teams).
+- [Quickstart](./docs/USER-QUICKSTART.md) — 5 minute user onboarding.
+- [Architecture](./docs/ARCHITECTURE.md) — current package / surface / install
+  pipeline map.
+- [Runtime Contracts](./docs/RUNTIME-CONTRACTS.md) — CLI, MCP, schema and
+  config contract entry points.
+- [Testing](./docs/TESTING.md) — test strategy, drift gates and test seed role.
 - [Changelog](./CHANGELOG.md) — release history.
 
 ## Project Layout
@@ -314,9 +316,8 @@ Contributors: clone, `pnpm install`, `pnpm -r build`, `pnpm -r test`.
 
 ## Status
 
-**v2.0.0 GA** — first stable release of the stdio-only knowledge-server line.
-Upgrading from `v2.0.0-rc.x`? See [docs/migration-rc-to-ga.md](./docs/migration-rc-to-ga.md).
-See [CHANGELOG.md](./CHANGELOG.md) for the GA highlights + rc chain summary.
+**v2.2.0-rc.5** — active development line. See [docs/UPGRADE.md](./docs/UPGRADE.md)
+for supported upgrade notes and [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 Repository: https://github.com/fenglimg/fabric
 

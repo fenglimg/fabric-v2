@@ -125,7 +125,7 @@ export const fabricConfigSchema = z.object({
   mcpPayloadLimits: mcpPayloadLimitsSchema,
   // Backward-compat: both fields are optional with defaults so existing
   // fabric-config.json files (pre-grill-followup) parse unchanged. The default
-  // values themselves are load-bearing — see docs/data-schema.md.
+  // values themselves are load-bearing — see docs/RUNTIME-CONTRACTS.md.
   fabric_language: fabricLanguageSchema.optional().default("match-existing"),
   default_layer_filter: defaultLayerFilterSchema.optional().default("both"),
   // Cooldown for the fabric-hint Stop hook (formerly archive-hint, renamed in
@@ -159,16 +159,16 @@ export const fabricConfigSchema = z.object({
   // rc.7 T7: hours-since-last-knowledge_proposed cutoff for Signal A's
   // time branch. Was hardcoded as 24 in fabric-hint.cjs's THRESHOLD_HOURS;
   // externalized so chatty workspaces can lower the bar and quiet ones can
-  // raise it. Default 24 preserves rc.6 behavior. See docs/configuration.md.
+  // raise it. Default 24 preserves rc.6 behavior. See docs/RUNTIME-CONTRACTS.md.
   archive_hint_hours: z.number().int().positive().optional().default(24),
   // rc.7 T7: pending-count cutoff for Signal B (review skill). Was
   // hardcoded as 10 in fabric-hint.cjs's THRESHOLD_PENDING_COUNT.
-  // Default 10 preserves rc.6 behavior. See docs/configuration.md for
+  // Default 10 preserves rc.6 behavior. See docs/RUNTIME-CONTRACTS.md for
   // small/medium/large repo recommendations.
   review_hint_pending_count: z.number().int().positive().optional().default(10),
   // rc.7 T7: pending-age cutoff (in days) for Signal B (review skill).
   // Was hardcoded as 7 in fabric-hint.cjs's THRESHOLD_PENDING_AGE_DAYS.
-  // Default 7 preserves rc.6 behavior. See docs/configuration.md.
+  // Default 7 preserves rc.6 behavior. See docs/RUNTIME-CONTRACTS.md.
   review_hint_pending_age_days: z.number().int().positive().optional().default(7),
   // rc.7 T7 + T10 pre-wiring: days-since-last-doctor cutoff for the future
   // Signal D (maintenance hint). T10 will consume this to decide when the
