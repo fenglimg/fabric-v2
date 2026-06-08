@@ -21,7 +21,7 @@ const STAGE_DESCRIPTIONS: Record<StageName, string> = {
   env: "扫描客户端特征，准备 .fabric/ 配置与项目运行文件。",
   store: "检查 global stores，绑定当前项目的 read/write store 与 project 坐标。",
   hooks: "安装跨客户端 hooks、skills 与 bootstrap managed block。",
-  mcp: "写入 Claude Code / Cursor / Codex CLI 的 MCP 配置。",
+  mcp: "写入 Claude Code / Cursor / Codex 的 MCP 配置。",
   validate: "确认 hooks、.fabric 与运行配置可用。",
   guidance: "可选功能、重启提示与客户端能力摘要。",
 };

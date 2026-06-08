@@ -5,7 +5,8 @@ import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
-// v2.0: Fabric scope is locked to Claude Code, Cursor, and Codex CLI.
+// v2.0: Fabric scope is locked to Claude Code, Cursor, Codex CLI, and their
+// desktop variants where the client shares the same project/global surface.
 // Unknown clientPaths keys (e.g. windsurf, rooCode, geminiCLI from v1.x) are
 // rejected at parse time via .strict() — there is no soft-deprecation path.
 // Adding a new client requires extending this schema explicitly.
@@ -15,6 +16,7 @@ export const clientPathsSchema = z
     claudeCodeDesktop: z.string().optional(),
     cursor: z.string().optional(),
     codexCLI: z.string().optional(),
+    codexDesktop: z.string().optional(),
   })
   .strict();
 

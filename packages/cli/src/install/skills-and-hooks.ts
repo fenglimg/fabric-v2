@@ -123,9 +123,10 @@ const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
  * slashes; callers must run them through `join(projectRoot, ...)` to obtain
  * absolute, OS-normalized targets.
  *
- * Client coverage: Skills are only meaningful for Claude Code and Codex CLI
- * (the two clients that surface a Skills directory); Cursor is intentionally
- * absent because it has no Skills concept.
+ * Physical write coverage: Fabric installs Skill files into the Claude and
+ * Codex project skill trees. Claude/Codex Desktop share those trees with their
+ * CLI siblings; Cursor consumes them for back-compat instead of owning a
+ * separate `.cursor/skills` directory.
  */
 export const SKILL_DESTINATIONS = {
   fabricArchive: [
@@ -163,9 +164,9 @@ export const SKILL_DESTINATIONS = {
     ".claude/skills/fabric-connect/SKILL.md",
     ".codex/skills/fabric-connect/SKILL.md",
   ],
-  // Fabric entry-layer router. Cursor has no first-class Skills directory in
-  // the install contract; parity is satisfied by its back-compat read of the
-  // Claude/Codex skill trees.
+  // Fabric entry-layer router. Cursor has no first-class `.cursor/skills`
+  // directory in the install contract; parity is satisfied by its back-compat
+  // read of the Claude/Codex skill trees.
   fabric: [
     ".claude/skills/fabric/SKILL.md",
     ".codex/skills/fabric/SKILL.md",
@@ -188,8 +189,9 @@ export const DEPRECATED_SKILL_DIRS = [
 /**
  * Project-root-relative destination paths for the three cross-client hook
  * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
- * `fabric install` (install) and `fabric uninstall` (removal). All three clients —
- * Claude Code, Codex CLI, and Cursor — receive every script.
+ * `fabric install` (install) and `fabric uninstall` (removal). The physical
+ * hook directories are `.claude`, `.codex`, and `.cursor`; desktop variants
+ * share their sibling CLI surface.
  */
 export const HOOK_SCRIPT_DESTINATIONS = {
   fabricHint: [

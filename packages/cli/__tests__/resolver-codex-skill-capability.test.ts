@@ -2,8 +2,9 @@
 // with a stale comment, so `fabric install` always reported Codex skills as
 // uninstalled — even right after installing them. It must probe the real
 // `.codex/skills/` directory (mirroring the `.codex/hooks.json` hook probe).
-// Cursor similarly supports Fabric hooks through `.cursor/hooks.json`, but has
-// no first-class Skills directory in Fabric's install surface.
+// Cursor and Codex Desktop support Fabric skills through shared install
+// surfaces: Cursor reads the Claude/Codex skill trees, while Codex Desktop
+// shares the `.codex` surface with Codex CLI.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +26,9 @@ function codexEntry(root: string) {
 function cursorEntry(root: string) {
   return detectClientSupports(root).find((c) => c.clientKind === "Cursor");
 }
+function codexDesktopEntry(root: string) {
+  return detectClientSupports(root).find((c) => c.clientKind === "CodexDesktop");
+}
 
 describe("Codex installedCapabilities.skill probe (F6)", () => {
   it("reports skill=false when .codex/skills is absent", () => {
@@ -40,13 +44,20 @@ describe("Codex installedCapabilities.skill probe (F6)", () => {
 });
 
 describe("Cursor hook capability probe", () => {
-  it("advertises hook support but not first-class skill support", () => {
+  it("advertises hook and skill support through shared skill trees", () => {
     const root = tmp();
     mkdirSync(join(root, ".cursor"), { recursive: true });
     const cursor = cursorEntry(root);
     expect(cursor?.capabilities.hook).toBe(true);
-    expect(cursor?.capabilities.skill).toBe(false);
+    expect(cursor?.capabilities.skill).toBe(true);
     expect(cursor?.installedCapabilities?.skill).toBe(false);
+  });
+
+  it("reports skill=true once a shared Claude or Codex skill tree exists", () => {
+    const root = tmp();
+    mkdirSync(join(root, ".cursor"), { recursive: true });
+    mkdirSync(join(root, ".codex", "skills", "fabric"), { recursive: true });
+    expect(cursorEntry(root)?.installedCapabilities?.skill).toBe(true);
   });
 
   it("reports hook=true once .cursor/hooks.json exists", () => {
@@ -55,5 +66,21 @@ describe("Cursor hook capability probe", () => {
     expect(cursorEntry(root)?.installedCapabilities?.hook).toBe(false);
     writeFileSync(join(root, ".cursor", "hooks.json"), "{}\n");
     expect(cursorEntry(root)?.installedCapabilities?.hook).toBe(true);
+  });
+});
+
+describe("Codex Desktop shared surface probe", () => {
+  it("uses the Codex install surface for hook and skill status", () => {
+    const root = tmp();
+    mkdirSync(join(root, ".codex", "skills", "fabric"), { recursive: true });
+    writeFileSync(join(root, ".codex", "hooks.json"), "{}\n");
+
+    const desktop = codexDesktopEntry(root);
+    expect(desktop?.label).toBe("Codex Desktop");
+    expect(desktop?.capabilities.mcp).toBe(true);
+    expect(desktop?.capabilities.hook).toBe(true);
+    expect(desktop?.capabilities.skill).toBe(true);
+    expect(desktop?.installedCapabilities?.hook).toBe(true);
+    expect(desktop?.installedCapabilities?.skill).toBe(true);
   });
 });

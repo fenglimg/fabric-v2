@@ -82,6 +82,12 @@ export function resolveClients(
     (configuredPath) => new CodexTOMLConfigWriter(configuredPath),
     hasExplicitPath(clientPaths, "codexCLI") ? clientPaths!.codexCLI : undefined,
   );
+  addIfDetected(
+    writers,
+    false,
+    (configuredPath) => new CodexTOMLConfigWriter(configuredPath, "CodexDesktop"),
+    hasExplicitPath(clientPaths, "codexDesktop") ? clientPaths!.codexDesktop : undefined,
+  );
 
   return writers;
 }
@@ -95,6 +101,10 @@ export function detectClientSupports(
   const claudeDesktopDetected = existsSync(getClaudeDesktopConfigPath());
   const cursorDetected = existsSync(join(workspaceRoot, ".cursor"));
   const codexDetected = existsSync(join(homedir(), ".codex"));
+  const claudeHookInstalled = existsSync(join(workspaceRoot, ".claude", "settings.json"));
+  const claudeSkillInstalled = existsSync(join(workspaceRoot, ".claude", "skills"));
+  const codexHookInstalled = existsSync(join(workspaceRoot, ".codex", "hooks.json"));
+  const codexSkillInstalled = existsSync(join(workspaceRoot, ".codex", "skills"));
 
   return [
     {
@@ -109,8 +119,8 @@ export function detectClientSupports(
         skill: true,
       },
       installedCapabilities: {
-        hook: true,
-        skill: true,
+        hook: claudeHookInstalled,
+        skill: claudeSkillInstalled,
       },
     },
     {
@@ -121,8 +131,12 @@ export function detectClientSupports(
       capabilities: {
         bootstrap: true,
         mcp: true,
-        hook: false,
-        skill: false,
+        hook: true,
+        skill: true,
+      },
+      installedCapabilities: {
+        hook: claudeHookInstalled,
+        skill: claudeSkillInstalled,
       },
     },
     {
@@ -134,13 +148,12 @@ export function detectClientSupports(
         bootstrap: true,
         mcp: true,
         hook: true,
-        skill: false,
+        skill: true,
       },
       installedCapabilities: {
         hook: existsSync(join(workspaceRoot, ".cursor", "hooks.json")),
-        // Cursor has no first-class Skills directory in Fabric's install
-        // surface; it consumes the Claude/Codex skill trees for back-compat.
-        skill: false,
+        // Cursor consumes the Claude/Codex skill trees for back-compat.
+        skill: claudeSkillInstalled || codexSkillInstalled,
       },
     },
     {
@@ -155,12 +168,28 @@ export function detectClientSupports(
         skill: true,
       },
       installedCapabilities: {
-        hook: existsSync(join(workspaceRoot, ".codex", "hooks.json")),
+        hook: codexHookInstalled,
         // F6: the v2 skills (fabric-archive/review/import/…) DO install to
         // `.codex/skills/` now, so probe that directory instead of the stale
         // hardcoded `false` (which made `fabric install` always re-report Codex
         // skills as uninstalled even right after installing them).
-        skill: existsSync(join(workspaceRoot, ".codex", "skills")),
+        skill: codexSkillInstalled,
+      },
+    },
+    {
+      clientKind: "CodexDesktop",
+      label: "Codex Desktop",
+      detected: codexDetected || hasExplicitPath(clientPaths, "codexDesktop"),
+      configPath: "~/.codex/config.toml",
+      capabilities: {
+        bootstrap: true,
+        mcp: true,
+        hook: true,
+        skill: true,
+      },
+      installedCapabilities: {
+        hook: codexHookInstalled,
+        skill: codexSkillInstalled,
       },
     },
   ];

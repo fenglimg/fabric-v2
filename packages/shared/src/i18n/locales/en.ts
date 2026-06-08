@@ -938,7 +938,7 @@ export const enMessages: Messages = {
   "cli.install.next-step": "{label} {message}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language_preference_hint":
-    "Fabric language preference: {value}. To change, edit `fabric_language` in `.fabric/fabric-config.json` (values: zh-CN | en).",
+    "Fabric language preference: {value}. To change, edit `fabric_language` in `.fabric/fabric-config.json` (values: match-existing | zh-CN | en | zh-CN-hybrid).",
   "cli.install.plan.title": "Fabric install plan",
   "cli.install.plan.mode-banner.default": "[mode: apply] Standard install execution",
   "cli.install.plan.mode-banner.plan": "[mode: plan] Dry run only, no files will be written",
@@ -969,16 +969,22 @@ export const enMessages: Messages = {
   "cli.install.wizard.invalid-select": "Invalid value. Use one of: {options}.",
   "cli.install.wizard.cancelled": "Fabric install cancelled before execution.",
   "cli.install.capabilities.title": "Client capability summary",
-  // v2.0.0-rc.37 NEW-22: post-install restart banner. The MCP server is
-  // spawned by the client; already-running Claude Code / Cursor / Codex
-  // sessions won't pick up the new mcp config until they restart.
+  // post-install restart banner. The MCP server is spawned by the client;
+  // already-running Claude Code / Cursor / Codex sessions won't pick up new
+  // MCP / Hook / Bootstrap config until they restart.
   "cli.install.restart-banner":
-    "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
+    "Restart hint: any already-running Claude Code / Cursor / Codex session must restart to pick up the new MCP / Hook / Bootstrap config; new sessions will use the Fabric tools.",
+  "cli.install.architecture-reference": "Reference: docs/ARCHITECTURE.md explains the CLI / Skill / MCP boundaries.",
+  "cli.install.semantic.already-enabled":
+    "Semantic search is enabled: embed_model={model}\nConfig unchanged: {configPath}",
+  "cli.install.semantic.prompt": "Enable vector semantic search? Downloads an embedding model on first use.",
   "cli.install.next-steps":
-    "Next steps — get your first value:\n" +
-    "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
-    "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
-    "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
+    "Next steps — verify Fabric is connected:\n" +
+    "  1. Restart any running AI client; new sessions load the latest MCP / Hook / Bootstrap config.\n" +
+    "  2. Confirm the write target: new knowledge writes to the active write store and starts in knowledge/pending/.\n" +
+    "  3. Capture knowledge as you work; use fabric-archive for decisions or pitfalls, and fabric-import for history backfill.\n" +
+    "  4. Promote knowledge with fabric-review; pending entries become canonical only after review.\n" +
+    "  5. Verify state with `fabric doctor`, or ask a restarted client \"what does Fabric know about this repo?\".",
   "cli.install.store-bind-nudge":
     "💡 Mounted store(s) not bound to this project: {aliases}. Run `fabric store bind {first}` to read their knowledge here, then `fabric store switch-write {first}` to write team knowledge into it.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
@@ -995,9 +1001,9 @@ export const enMessages: Messages = {
   "cli.install.capabilities.status.skipped": "skipped",
   "cli.install.capabilities.status.failed": "failed",
   "cli.install.capabilities.status.na": "n/a",
-  "cli.install.capabilities.follow-up.ready": "continue in client",
+  "cli.install.capabilities.follow-up.ready": "ready after restart",
   "cli.install.capabilities.follow-up.install": "install client assets",
-  "cli.install.capabilities.follow-up.manual": "manual step required",
+  "cli.install.capabilities.follow-up.manual": "check client config",
   "cli.install.next-step.message": "run fabric install --reapply --yes to refresh Fabric-managed hooks and client config.",
   "cli.install.reason-message.installable-body":
     ".fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",

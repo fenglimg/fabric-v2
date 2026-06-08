@@ -920,7 +920,7 @@ export const zhCNMessages: Messages = {
   "cli.install.next-step": "{label} {message}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language_preference_hint":
-    "Fabric 语言偏好：{value}。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：zh-CN | en）。",
+    "Fabric 语言偏好：{value}。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：match-existing | zh-CN | en | zh-CN-hybrid）。",
   "cli.install.plan.title": "Fabric 安装计划",
   "cli.install.plan.mode-banner.default": "[mode: apply] 标准安装执行",
   "cli.install.plan.mode-banner.plan": "[mode: plan] 仅预览，不会写入文件",
@@ -951,16 +951,21 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.invalid-select": "无效输入。可选值：{options}。",
   "cli.install.wizard.cancelled": "Fabric 安装已在执行前取消。",
   "cli.install.capabilities.title": "客户端能力摘要",
-  // v2.0.0-rc.37 NEW-22: post-install 重启提示。MCP server 在 client 启动
-  // 时 spawn, 已运行的 Claude Code / Cursor / Codex session 不会自动加载
-  // 新 mcp config — 必须重启才能拿到 Fabric tools。
+  // post-install 重启提示。MCP server 在 client 启动时 spawn, 已运行的
+  // Claude Code / Cursor / Codex session 不会自动加载新 mcp config。
   "cli.install.restart-banner":
-    "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
+    "重启提示：已运行的 Claude Code / Cursor / Codex session 需重启才能加载新的 MCP / Hook / Bootstrap 配置；新会话会使用 Fabric tools。",
+  "cli.install.architecture-reference": "参考：docs/ARCHITECTURE.md 说明 CLI / Skill / MCP 的边界。",
+  "cli.install.semantic.already-enabled":
+    "语义搜索已启用：embed_model={model}\n配置未改动：{configPath}",
+  "cli.install.semantic.prompt": "是否启用向量语义搜索？首次使用会下载 embedding model。",
   "cli.install.next-steps":
-    "下一步 —— 拿到第一份价值:\n" +
-    "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。\n" +
-    "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
-    "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
+    "下一步 —— 验证 Fabric 已接入：\n" +
+    "  1. 重启正在运行的 AI 客户端；新会话才会加载最新 MCP / Hook / Bootstrap 配置。\n" +
+    "  2. 确认知识写入目标：新知识会写入 active write store，并先进入 knowledge/pending/。\n" +
+    "  3. 开始沉淀知识：正常工作即可；有决策、踩坑或历史回灌需求时，使用 fabric-archive / fabric-import。\n" +
+    "  4. 审核入库：用 fabric-review 审核 pending 条目后，知识才会进入正式知识库。\n" +
+    "  5. 验证状态：运行 `fabric doctor`，或在重启后的客户端询问「Fabric 对这个 repo 知道些什么？」。",
   "cli.install.store-bind-nudge":
     "💡 检测到已挂载但未绑定本项目的知识 store: {aliases}。运行 `fabric store bind {first}` 把它的知识接入本项目, 再 `fabric store switch-write {first}` 设为团队知识的写入目标。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
@@ -977,9 +982,9 @@ export const zhCNMessages: Messages = {
   "cli.install.capabilities.status.skipped": "已跳过",
   "cli.install.capabilities.status.failed": "失败",
   "cli.install.capabilities.status.na": "不适用",
-  "cli.install.capabilities.follow-up.ready": "可在客户端继续",
+  "cli.install.capabilities.follow-up.ready": "重启后可用",
   "cli.install.capabilities.follow-up.install": "安装客户端资产",
-  "cli.install.capabilities.follow-up.manual": "需要手动后续处理",
+  "cli.install.capabilities.follow-up.manual": "检查客户端配置",
   "cli.install.next-step.message": "运行 fabric install --reapply --yes 以刷新 Fabric 管理的 hooks 与客户端配置。",
   "cli.install.reason-message.installable-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
   "cli.install.reason-message.manual-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端尚未安装 Fabric skill，需要手动完成后续安装。",

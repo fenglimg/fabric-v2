@@ -169,11 +169,12 @@ async function readTomlConfigText(configPath: string): Promise<string> {
 }
 
 export class CodexTOMLConfigWriter implements ClientConfigWriter {
-  readonly clientKind = "CodexCLI" as const;
+  readonly clientKind: "CodexCLI" | "CodexDesktop";
   private readonly configuredPath?: string;
 
-  constructor(configuredPath?: string) {
+  constructor(configuredPath?: string, clientKind: "CodexCLI" | "CodexDesktop" = "CodexCLI") {
     this.configuredPath = configuredPath;
+    this.clientKind = clientKind;
   }
 
   async detect(_workspaceRoot: string, overridePath?: string): Promise<string | null> {

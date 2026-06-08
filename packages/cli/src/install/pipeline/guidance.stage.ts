@@ -51,16 +51,16 @@ export class GuidanceStage implements Stage {
 
       // Handle semantic search
       if (context.args["enable-embed"]) {
-        this.enableSemanticSearchAndReport(context.target, context.args["embed-model"]);
+        this.enableSemanticSearchAndReport(context, context.args["embed-model"]);
       } else if (context.wizardEnabled) {
-        await this.promptSemanticSearch(context.target);
+        await this.promptSemanticSearch(context);
       }
 
       // Print final next steps only after all optional prompts have completed.
       console.log("");
       console.log(translate("cli.install.next-steps"));
       console.log("");
-      console.log(paint.muted("More: docs/ARCHITECTURE.md explains CLI / Skill / MCP boundaries."));
+      console.log(paint.muted(translate("cli.install.architecture-reference")));
 
       // Print restart banner
       console.log("");
@@ -83,12 +83,15 @@ export class GuidanceStage implements Stage {
     }
   }
 
-  private enableSemanticSearchAndReport(projectRoot: string, model?: string): void {
-    const enabled = enableSemanticSearch(projectRoot, model === undefined ? {} : { model });
+  private enableSemanticSearchAndReport(context: InstallContext, model?: string): void {
+    const enabled = enableSemanticSearch(context.target, model === undefined ? {} : { model });
     console.log("");
     if (enabled.alreadyEnabled) {
       console.log(
-        paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`),
+        paint.muted(context.translate("cli.install.semantic.already-enabled", {
+          model: enabled.model,
+          configPath: enabled.configPath,
+        })),
       );
       return;
     }
@@ -97,15 +100,15 @@ export class GuidanceStage implements Stage {
     }
   }
 
-  private async promptSemanticSearch(projectRoot: string): Promise<void> {
+  private async promptSemanticSearch(context: InstallContext): Promise<void> {
     const enable = await confirm({
-      message: "Enable vector semantic search? (downloads an embedding model on first use)",
+      message: context.translate("cli.install.semantic.prompt"),
       initialValue: false,
     });
     if (isCancel(enable) || !enable) {
       return;
     }
-    this.enableSemanticSearchAndReport(projectRoot);
+    this.enableSemanticSearchAndReport(context);
   }
 
   private printCapabilitySummary(
