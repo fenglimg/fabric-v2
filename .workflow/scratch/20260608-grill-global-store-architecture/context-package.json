@@ -1,0 +1,31 @@
+{
+  "schema": "context-package/1.0",
+  "id": "GRL-global-store-architecture",
+  "type": "grill",
+  "title": "Global Store Architecture",
+  "created_at": "2026-06-08T00:00:00.000Z",
+  "summary": "Stress-tested global Fabric store architecture. Verdict: use stable human-readable mount names under stores/, keep store_uuid as immutable identity, split physical stores into personal and shared/org, support personal + N shared read-set, route non-personal writes by semantic_scope, and keep personal scope physically isolated forever.",
+  "decisions": [
+    "A project may read from multiple shared/org stores plus implicit personal.",
+    "Non-personal writes should route by semantic_scope, not one global active_write_store.",
+    "stores/ should use stable human-readable mount_name directories, not UUID directories as the primary UX path.",
+    "Personal-scope knowledge must always physically live in the personal store."
+  ],
+  "risks": [
+    "Existing active_write_store single-alias field is too coarse for multi shared-store write routing.",
+    "Current stores/<uuid> disk layout conflicts with desired human-facing shape.",
+    "The semantic scope 'team' is currently overloaded with the shared store alias.",
+    "Migration must handle orphan UUID dirs and store.json/dir-name mismatches."
+  ],
+  "artifacts": {
+    "report": ".workflow/scratch/20260608-grill-global-store-architecture/grill-report.md",
+    "terminology": ".workflow/scratch/20260608-grill-global-store-architecture/terminology.md"
+  },
+  "recommended_next": [
+    "Create architecture spec for mount_name + scope-aware write_routes.",
+    "Supersede or reject pending single-git-kb-all-scopes decision.",
+    "Plan migration from stores/<uuid> to stores/<mount_name> with UUID validation.",
+    "Upgrade fabric info to explain read-set and write target per scope."
+  ]
+}
+

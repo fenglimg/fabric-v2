@@ -1,0 +1,11 @@
+{
+  "worktree": true,
+  "milestone_num": "global-store-topology",
+  "milestone": "Global Store Topology",
+  "owned_phases": ["analysis", "plan", "execute", "verify"],
+  "phase_dependencies": {},
+  "main_worktree": "C:/Project/fabric-v2",
+  "branch": "milestone/global-store-topology",
+  "base_commit": "df837ed163a2c94b3c70846e1e7af202248a14c7",
+  "created_at": "2026-06-08T00:00:00+08:00"
+}
