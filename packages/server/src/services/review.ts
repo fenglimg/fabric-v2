@@ -216,7 +216,7 @@ function resolveSandboxedPath(
     if (storeRoots.some((root) => isUnder(abs, root))) {
       return { abs, isInProjectTree: false };
     }
-    throw new Error(`path escapes knowledge root: ${candidate}`);
+    throw new Error(`path escapes store knowledge root: ${candidate}`);
   }
 
   // Project-relative legacy non-store paths are retired. Only admit a relative

@@ -47,6 +47,10 @@ function storeKnowledgeDir(layer: "team" | "personal", ...sub: string[]): string
   return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, ...sub);
 }
 
+function toPosixPath(value: string): string {
+  return value.replace(/\\/gu, "/");
+}
+
 // W4 decolo: the stable_id counter now lives in the write-target STORE's
 // committed counters.json, not the retired co-location agents.meta.json.
 function storeCountersFile(layer: "team" | "personal"): string {
@@ -152,18 +156,22 @@ describe("reviewKnowledge", () => {
     const dec = byType.get("decisions");
     const gld = byType.get("guidelines");
     expect(dec).toMatchObject({
-      pending_path: expect.stringContaining("knowledge/pending/decisions/first-decision.md"),
       type: "decisions",
       layer: "team",
       maturity: "draft",
     });
+    expect(toPosixPath(dec?.pending_path ?? "")).toContain(
+      "knowledge/pending/decisions/first-decision.md",
+    );
     expect(gld).toMatchObject({
-      pending_path: expect.stringContaining("knowledge/pending/guidelines/naming-rule.md"),
       type: "guidelines",
       layer: "team",
       maturity: "draft",
       tags: ["style"],
     });
+    expect(toPosixPath(gld?.pending_path ?? "")).toContain(
+      "knowledge/pending/guidelines/naming-rule.md",
+    );
   });
 
   it("approve_happy_path_allocates_id_and_emits_two_phase_events", async () => {
@@ -1002,24 +1010,22 @@ describe("reviewKnowledge", () => {
     await expect(
       reviewKnowledge(projectRoot, {
         action: "modify",
-        pending_path: ".fabric/knowledge/pending/decisions/missing.md",
+        pending_path: storeKnowledgeDir("team", "pending", "decisions", "missing.md"),
         changes: { maturity: "verified" },
       }),
     ).rejects.toThrow(/modify target not found/u);
   });
 
   it("modify_layer_flip_throws_when_type_cannot_be_inferred", async () => {
-    // Place a file under .fabric/knowledge/ but in a directory whose name is
-    // NOT a known plural type, AND whose frontmatter omits 'type'. The flip
-    // path then has no way to infer pluralType and must throw. The file lives
-    // inside the sandboxed root so resolveSandboxedPath accepts it; the type
-    // inference is what fails.
+    // Place a file under a store knowledge root but in a directory whose name is
+    // NOT a known plural type, AND whose frontmatter omits 'type'. The flip path
+    // then has no way to infer pluralType and must throw.
     const projectRoot = await createTempProject();
-    const dir = join(projectRoot, ".fabric", "knowledge", "experiments");
+    const dir = storeKnowledgeDir("team", "experiments");
     await mkdir(dir, { recursive: true });
-    const relativePath = ".fabric/knowledge/experiments/no-type-inferable.md";
+    const absPath = join(dir, "no-type-inferable.md");
     await writeFile(
-      join(projectRoot, relativePath),
+      absPath,
       "---\nmaturity: draft\nlayer: team\n---\n\nbody\n",
       "utf8",
     );
@@ -1027,7 +1033,7 @@ describe("reviewKnowledge", () => {
     await expect(
       reviewKnowledge(projectRoot, {
         action: "modify",
-        pending_path: relativePath,
+        pending_path: absPath,
         changes: { layer: "personal" },
       }),
     ).rejects.toThrow(/layer-flip requires a known type/u);
@@ -1105,8 +1111,8 @@ describe("reviewKnowledge", () => {
       "utf8",
     );
 
-    // Use a path that resolves outside .fabric/knowledge/pending via ../
-    const evil = ".fabric/knowledge/pending/decisions/../../../" + outsideRel;
+    // Use a store path that resolves outside knowledge/pending via ../
+    const evil = join(storeKnowledgeDir("team", "pending", "decisions"), "..", "..", "..", outsideRel);
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
       pending_paths: [evil],
@@ -1123,7 +1129,7 @@ describe("reviewKnowledge", () => {
     });
     expect(failedEvents.events).toHaveLength(1);
     expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
-      /escapes knowledge root|outside .fabric\/knowledge\/pending/u,
+      /escapes store knowledge root|outside the resolved store knowledge\/pending/u,
     );
   });
 
@@ -1158,12 +1164,12 @@ describe("reviewKnowledge", () => {
   });
 
   it("approve_rejects_path_outside_pending_but_inside_knowledge", async () => {
-    // .fabric/knowledge/decisions/foo.md is inside the sandbox but not under
-    // .fabric/knowledge/pending/. approve must reject it.
+    // A canonical store path is inside the sandbox but not under
+    // knowledge/pending/. approve must reject it.
     const projectRoot = await createTempProject();
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
-      pending_paths: [".fabric/knowledge/decisions/foo.md"],
+      pending_paths: [storeKnowledgeDir("team", "decisions", "foo.md")],
     });
     if (result.action !== "approve") throw new Error("unreachable");
     expect(result.approved).toHaveLength(0);
@@ -1172,7 +1178,7 @@ describe("reviewKnowledge", () => {
     });
     expect(failedEvents.events).toHaveLength(1);
     expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
-      /outside .fabric\/knowledge\/pending\//u,
+      /outside the resolved store knowledge\/pending\/ roots/u,
     );
   });
 
@@ -1190,9 +1196,8 @@ describe("reviewKnowledge", () => {
   });
 
   it("approve_rejects_personal_root_traversal_above_pending", async () => {
-    // rc.5 B1: approve now accepts personal pending paths (~/.fabric/knowledge/
-    // pending/<type>/...) as legitimate sources for dual-root flow. Path
-    // traversal via `~/../...` must still be rejected by the sandbox.
+    // Legacy `~/...` knowledge paths are retired; store entries must be passed
+    // as absolute store paths returned by list/search.
     const projectRoot = await createTempProject();
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
@@ -1205,7 +1210,7 @@ describe("reviewKnowledge", () => {
     });
     expect(failedEvents.events).toHaveLength(1);
     expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
-      /escapes personal knowledge root|outside .fabric\/knowledge\/pending/u,
+      /legacy personal knowledge root is retired/u,
     );
   });
 
@@ -1356,7 +1361,9 @@ describe("reviewKnowledge", () => {
     });
     if (result.action !== "list") throw new Error("unreachable");
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].pending_path).toContain("knowledge/pending/decisions/new.md");
+    expect(toPosixPath(result.items[0].pending_path)).toContain(
+      "knowledge/pending/decisions/new.md",
+    );
   });
 
   it("search_with_created_after_filters_older_entries", async () => {
@@ -1400,7 +1407,9 @@ describe("reviewKnowledge", () => {
     });
     if (filtered.action !== "search") throw new Error("unreachable");
     expect(filtered.items).toHaveLength(1);
-    expect(filtered.items[0].path).toContain("knowledge/pending/decisions/after.md");
+    expect(toPosixPath(filtered.items[0].path)).toContain(
+      "knowledge/pending/decisions/after.md",
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -1463,7 +1472,9 @@ describe("reviewKnowledge", () => {
     expect(teamItem).toBeDefined();
     expect(personalItem).toBeDefined();
 
-    expect(teamItem!.pending_path).toContain("knowledge/pending/decisions/team-side.md");
+    expect(toPosixPath(teamItem!.pending_path)).toContain(
+      "knowledge/pending/decisions/team-side.md",
+    );
     expect(teamItem!.layer).toBe("team");
     expect(teamItem!.origin).toBe("team");
 
