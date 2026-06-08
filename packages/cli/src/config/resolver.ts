@@ -133,7 +133,13 @@ export function detectClientSupports(
       capabilities: {
         bootstrap: true,
         mcp: true,
-        hook: false,
+        hook: true,
+        skill: false,
+      },
+      installedCapabilities: {
+        hook: existsSync(join(workspaceRoot, ".cursor", "hooks.json")),
+        // Cursor has no first-class Skills directory in Fabric's install
+        // surface; it consumes the Claude/Codex skill trees for back-compat.
         skill: false,
       },
     },

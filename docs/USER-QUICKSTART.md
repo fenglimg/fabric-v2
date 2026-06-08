@@ -7,17 +7,17 @@
 
 A **cross-client knowledge layer** for AI coding agents (Claude Code,
 Codex CLI, Cursor). Decisions / pitfalls / guidelines / models / processes
-your team accumulates get stored as markdown under `.fabric/knowledge/`,
-and **hook scripts surface the relevant ones** to your AI mid-session so
-it stops re-arguing every architecture decision from scratch.
+your team accumulates get stored as markdown in mounted stores under
+`~/.fabric/stores/`, and **hook scripts surface the relevant ones** to your AI
+mid-session so it stops re-arguing every architecture decision from scratch.
 
 ## What you (the developer) do — and don't do
 
 | You DO | You DON'T |
 | --- | --- |
-| Run `fabric install` once per repo | Hand-edit `.fabric/agents.meta.json` |
+| Run `fabric install` once per repo | Hand-edit Fabric-managed hook/bootstrap artifacts |
 | Run `fabric doctor` when something feels off | Hand-edit hook scripts under `.claude/hooks/` |
-| Author markdown under `.fabric/knowledge/<type>/` | Worry about `Phase 0.4 / E3 / cite policy` (those are AI-side concepts) |
+| Use `fabric store bind` / `fabric store switch-write` and the Fabric Skills to manage knowledge | Hand-write project-local `.fabric/knowledge/<type>/` roots |
 | `npm install -g @fenglimg/fabric-cli@latest` to upgrade | Memorise the 35 doctor lint codes |
 
 ## The 4-step flow
@@ -30,9 +30,9 @@ it stops re-arguing every architecture decision from scratch.
   │                                                                │
   │  fabric install   →  AI works  →  AI proposes  →  you review   │
   │  (once per repo)     normally     a knowledge      via the     │
-  │                      (hooks fire  entry; goes      fabric-     │
-  │                      on session   to               review     │
-  │                      start +      .fabric/         skill      │
+  │  + bind store        (hooks fire  entry; goes      fabric-     │
+  │                      on session   to current       review     │
+  │                      start +      write store's    skill      │
   │                      every Edit)  knowledge/                  │
   │                                   pending/                    │
   │                                                                │
@@ -57,7 +57,7 @@ signal in the conversation, calls the `fabric-archive` skill, and proposes
 a pending pitfall entry:
 
 ```yaml
-# .fabric/knowledge/pending/pitfalls/KT-PIT-0001--atlas-premultiplyalpha.md
+# <active-write-store>/knowledge/pending/pitfalls/KT-PIT-0001--atlas-premultiplyalpha.md
 id: KT-PIT-0001
 knowledge_type: pitfalls
 maturity: draft

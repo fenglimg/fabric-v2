@@ -2,7 +2,9 @@
 // with a stale comment, so `fabric install` always reported Codex skills as
 // uninstalled — even right after installing them. It must probe the real
 // `.codex/skills/` directory (mirroring the `.codex/hooks.json` hook probe).
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+// Cursor similarly supports Fabric hooks through `.cursor/hooks.json`, but has
+// no first-class Skills directory in Fabric's install surface.
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +22,9 @@ function tmp(): string {
 function codexEntry(root: string) {
   return detectClientSupports(root).find((c) => c.clientKind === "CodexCLI");
 }
+function cursorEntry(root: string) {
+  return detectClientSupports(root).find((c) => c.clientKind === "Cursor");
+}
 
 describe("Codex installedCapabilities.skill probe (F6)", () => {
   it("reports skill=false when .codex/skills is absent", () => {
@@ -31,5 +36,24 @@ describe("Codex installedCapabilities.skill probe (F6)", () => {
     const root = tmp();
     mkdirSync(join(root, ".codex", "skills", "fabric-archive"), { recursive: true });
     expect(codexEntry(root)?.installedCapabilities?.skill).toBe(true);
+  });
+});
+
+describe("Cursor hook capability probe", () => {
+  it("advertises hook support but not first-class skill support", () => {
+    const root = tmp();
+    mkdirSync(join(root, ".cursor"), { recursive: true });
+    const cursor = cursorEntry(root);
+    expect(cursor?.capabilities.hook).toBe(true);
+    expect(cursor?.capabilities.skill).toBe(false);
+    expect(cursor?.installedCapabilities?.skill).toBe(false);
+  });
+
+  it("reports hook=true once .cursor/hooks.json exists", () => {
+    const root = tmp();
+    mkdirSync(join(root, ".cursor"), { recursive: true });
+    expect(cursorEntry(root)?.installedCapabilities?.hook).toBe(false);
+    writeFileSync(join(root, ".cursor", "hooks.json"), "{}\n");
+    expect(cursorEntry(root)?.installedCapabilities?.hook).toBe(true);
   });
 });

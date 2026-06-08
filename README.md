@@ -30,18 +30,17 @@ a hook-driven reminder layer so the knowledge actually fires when it matters.
         └──────────────────────┼──────────────────────┘
                                ▼
                   ┌────────────────────────┐
-                  │  .fabric/   (team)     │
-                  │  ~/.fabric/ (personal) │
-                  │  ├── knowledge/        │
+                  │  ~/.fabric/stores/     │
+                  │  ├── <store>/knowledge │
                   │  │   ├── decisions/    │
                   │  │   ├── pitfalls/     │
                   │  │   ├── guidelines/   │
                   │  │   ├── models/       │
-                  │  │   └── processes/    │
-                  │  ├── pending/          │
-                  │  ├── .archive/         │
-                  │  ├── agents.meta.json  │
-                  │  └── events.jsonl      │
+                  │  │   ├── processes/    │
+                  │  │   └── pending/      │
+                  │  └── events/metrics    │
+                  │  <repo>/.fabric anchors│
+                  │  policy + config only  │
                   └────────────────────────┘
 ```
 
@@ -212,7 +211,7 @@ before promotion.
 fabric install                    # install hooks + Skills + bootstrap + MCP client config
 fabric doctor                     # run 48 lints, report only (--fix applies auto-fixable)
 fabric metrics                    # text dashboard from .fabric/metrics.jsonl (rc.37 NEW-34)
-fabric uninstall                  # remove Fabric-managed artifacts (knowledge stays; ~/.fabric/knowledge/ is never touched)
+fabric uninstall                  # remove Fabric-managed artifacts (mounted stores are never touched)
 ```
 
 A healthy install reports zero fixable findings from `fabric doctor`. The MCP
@@ -228,13 +227,15 @@ new sessions autoload it.
 
 Supported clients (v2.0):
 
-- **Claude Code** — Stop hook + UserPromptSubmit cite-policy hook + Skill templates + MCP stdio
-- **Cursor** — Stop hook + Skill templates + MCP stdio
-- **Codex CLI** — Stop hook (via `codex` hook config) + Skill templates + MCP stdio
+- **Claude Code** — managed bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
+- **Cursor** — managed rule bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + MCP stdio; Fabric does not install a `.cursor/skills` tree
+- **Codex CLI** — managed `AGENTS.md` bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
 
 ## How It Works
 
-Fabric exposes six MCP tools and three Skills.
+Fabric exposes six MCP tools and eight Skill templates: the `fabric` router plus
+`fabric-archive`, `fabric-review`, `fabric-import`, `fabric-store`,
+`fabric-sync`, `fabric-connect`, and `fabric-audit`.
 
 **MCP tools** (called by clients, served by `fabric-knowledge-server`):
 
@@ -250,9 +251,9 @@ Fabric exposes six MCP tools and three Skills.
   per fetched `stable_id` (deduped within a request) so decay metrics use real
   consumption, not bare references.
 - `fab_extract_knowledge` — propose new pending entries from the current
-  session. Personal-layer entries land in `~/.fabric/knowledge/pending/<type>/`;
-  team entries land in `<repo>/.fabric/knowledge/pending/<type>/`. Nothing
-  reaches canonical knowledge without review.
+  session. Entries land under the active write store's
+  `knowledge/pending/<type>/` tree. Nothing reaches canonical knowledge without
+  review.
 - `fab_archive_scan` — scan recent work/session history for archive-worthy
   candidates before a Skill decides what to persist.
 - `fab_review` — list, search, approve, reject, modify, defer pending and
@@ -272,8 +273,10 @@ Fabric exposes six MCP tools and three Skills.
   into proposed entries (default `relevance_scope: broad`, narrowing deferred
   to review). Resumable via `.fabric/.import-state.json`.
 
-**Hooks** install per client but point at a single Node script
-(`fabric-hint.cjs`). One implementation, three configs.
+**Hooks** install per client but point at shared Node scripts copied into each
+client's hook directory. `fabric-hint.cjs` owns Stop-time backlog nudges;
+SessionStart, PreToolUse, PostToolUse, and SessionEnd use their own shared
+scripts so all three clients see the same lifecycle.
 
 **Lifecycle** — `fabric doctor` runs 48 checks in one pass: orphan demotion
 driven by `last_consumed_at` (from `knowledge_consumed` events), stale archive,
@@ -305,7 +308,7 @@ This is a pnpm monorepo:
 - `packages/server-http-experimental` — the v1.8-era HTTP/REST/SSE server +
   Dashboard package, quarantined v2.0.0-rc.37. Not built / not tested; restoration
   recipe in its README.
-- `packages/cli/templates/skills/` — the three Skill templates
+- `packages/cli/templates/skills/` — the Fabric Skill templates
   (`fabric-archive`, `fabric-review`, `fabric-import`) shipped to clients on
   `fabric install`.
 - `packages/cli/templates/hooks/` — `fabric-hint.cjs` + `knowledge-hint-broad.cjs`

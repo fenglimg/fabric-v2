@@ -14,11 +14,11 @@
     "preToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
-        "command": ".cursor/hooks/cite-policy-evict.cjs"
+        "command": ".cursor/hooks/knowledge-hint-narrow.cjs"
       },
       {
         "matcher": "Edit|Write|MultiEdit",
-        "command": ".cursor/hooks/knowledge-hint-narrow.cjs"
+        "command": ".cursor/hooks/cite-policy-evict.cjs"
       }
     ],
     "postToolUse": [
