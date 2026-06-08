@@ -1,0 +1,217 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "brainstorm",
+    "artifact_id": "brainstorm-fabric-install-ux-ink-tui",
+    "session_path": ".workflow/scratch/20260606-brainstorm-fabric-install-ux-ink-tui",
+    "generated_at": "2026-06-06T04:30:00Z"
+  },
+  "requirements": [
+    {
+      "id": "F-001",
+      "title": "Install Stage Refactor",
+      "description": "Refactor install.ts into 7 discrete stages with clear scope boundaries",
+      "priority": "must",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-002",
+      "title": "Ink Output Layer",
+      "description": "Create OutputRenderer abstraction with ink components",
+      "priority": "must",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-003",
+      "title": "Store Onboarding Wizard",
+      "description": "Implement interactive store wizard with Skip/Join/Create paths",
+      "priority": "must",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-004",
+      "title": "Uninstall Symmetry",
+      "description": "Add store-binding-cleanup stage to uninstall.ts",
+      "priority": "must",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-005",
+      "title": "Visual Anchor System",
+      "description": "Implement step counter, separators, branding",
+      "priority": "should",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-006",
+      "title": "Summary Card",
+      "description": "Compress final output into boxen card",
+      "priority": "should",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-007",
+      "title": "Error Presentation",
+      "description": "Upgrade error visual weight with box styling",
+      "priority": "should",
+      "ref": "guidance-specification.md#§10"
+    },
+    {
+      "id": "F-008",
+      "title": "Progress Feedback",
+      "description": "Add spinner and timing for long operations",
+      "priority": "may",
+      "ref": "guidance-specification.md#§10"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C-001",
+      "area": "architecture",
+      "constraint": "MUST use ink@^4.0.0 + @inkjs/ui@^2.0.0",
+      "rationale": "ESM-first, stable, matches React 18 patterns",
+      "status": "locked",
+      "ref": "guidance-specification.md#§12 G-003"
+    },
+    {
+      "id": "C-002",
+      "area": "architecture",
+      "constraint": "MUST refactor install.ts from 2000+ lines to 7 discrete stages",
+      "rationale": "Clear scope boundaries, per-stage testing",
+      "status": "locked",
+      "ref": "guidance-specification.md#§4 SA-01"
+    },
+    {
+      "id": "C-003",
+      "area": "ux",
+      "constraint": "Summary card MUST stay under 15 lines height",
+      "rationale": "Cognitive load constraint",
+      "status": "locked",
+      "ref": "guidance-specification.md#§5 UX-E3"
+    },
+    {
+      "id": "C-004",
+      "area": "ux",
+      "constraint": "Error card MUST prioritize recovery over diagnosis",
+      "rationale": "User needs actionable guidance, not technical details",
+      "status": "locked",
+      "ref": "guidance-specification.md#§5 UX-E2"
+    },
+    {
+      "id": "C-005",
+      "area": "architecture",
+      "constraint": "Each stage MUST be idempotent",
+      "rationale": "Repeat execution safe for recovery",
+      "status": "locked",
+      "ref": "guidance-specification.md#§4 SA-01"
+    },
+    {
+      "id": "C-006",
+      "area": "testing",
+      "constraint": "MUST test wizard branching with mock state machine",
+      "rationale": "3+ paths require state machine validation",
+      "status": "locked",
+      "ref": "guidance-specification.md#§7 TD-006"
+    }
+  ],
+  "domain": {
+    "problem_statement": "Fabric CLI install/uninstall flow has functional decoupling but weak user guidance. console.log/clack/writeStderr mixed system lacks visual anchors. Need unified ink TUI approach.",
+    "terminology": [
+      {
+        "term": "ink",
+        "definition": "React for CLI - Declarative component framework for terminal apps",
+        "ref": "guidance-specification.md#§2"
+      },
+      {
+        "term": "Store",
+        "definition": "Knowledge repository - Git-backed team knowledge storage",
+        "ref": "guidance-specification.md#§2"
+      },
+      {
+        "term": "Pipeline Stage",
+        "definition": "Atomic execution unit with defined scope, actions, idempotency, failure_mode",
+        "ref": "guidance-specification.md#§2"
+      },
+      {
+        "term": "OutputRenderer",
+        "definition": "Unified rendering abstraction - Single component system for all CLI output",
+        "ref": "guidance-specification.md#§2"
+      }
+    ],
+    "audience": "Fabric CLI users (solo developers, team members, project owners)",
+    "industry": "Developer Tools"
+  },
+  "non_goals": [
+    {
+      "title": "Backward compatibility",
+      "rationale": "Zero users stated - no migration path needed",
+      "ref": "guidance-specification.md#§3"
+    },
+    {
+      "title": "Alias commands (fabric join/setup)",
+      "rationale": "User feedback: unnecessary - keep single fabric install entry point",
+      "ref": "guidance-specification.md#§3"
+    },
+    {
+      "title": "Non-CLI GUI",
+      "rationale": "Explicit TUI scope - browser/desktop UI out of scope",
+      "ref": "guidance-specification.md#§3"
+    }
+  ],
+  "insights": [
+    {
+      "role": "system-architect",
+      "area": "stage-decomposition",
+      "summary": "Current install.ts has 6 stages, not 7. Need to split global-layer from project-scaffold.",
+      "ref": "system-architect/analysis.md#§3"
+    },
+    {
+      "role": "ux-expert",
+      "area": "wizard-idempotency",
+      "summary": "Wizard MUST NOT re-prompt when active_write_store already exists.",
+      "ref": "ux-expert/analysis.md#§2"
+    },
+    {
+      "role": "ui-designer",
+      "area": "component-mapping",
+      "summary": "OutputRenderer interface maps 1:1 to UI components (stepHeader→StepCounter, summaryCard→SummaryCard).",
+      "ref": "ui-designer/analysis.md#§3"
+    },
+    {
+      "role": "test-strategist",
+      "area": "test-patterns",
+      "summary": "Reuse uninstall.test.ts patterns for idempotency/dry-run testing.",
+      "ref": "test-strategist/analysis.md#§3"
+    }
+  ],
+  "open_questions": [
+    {
+      "area": "architecture",
+      "question": "Should OutputRenderer support streaming output for long operations?",
+      "options": ["Yes - use ink streaming", "No - use spinner only"],
+      "ref": "guidance-specification.md#§4 SA-04"
+    }
+  ],
+  "references": [
+    {
+      "type": "guidance",
+      "path": "guidance-specification.md"
+    },
+    {
+      "type": "role-analysis",
+      "path": "system-architect/analysis.md"
+    },
+    {
+      "type": "role-analysis",
+      "path": "ux-expert/analysis.md"
+    },
+    {
+      "type": "role-analysis",
+      "path": "ui-designer/analysis.md"
+    },
+    {
+      "type": "role-analysis",
+      "path": "test-strategist/analysis.md"
+    }
+  ]
+}
