@@ -110,8 +110,6 @@ export class HooksStage implements Stage {
       const skipped = installResults.filter((r) => r.status === "skipped").map((r) => r.path);
       const errors = installResults.filter((r) => r.status === "error").map((r) => `${r.step}: ${r.message}`);
 
-      // Print stage header and result
-      console.log(this.formatStageHeader(translate("cli.install.stages.hooks"), translate));
       console.log(this.formatStageResult("hooks", "completed", installed.length, skipped.length, translate));
 
       return stageRan("hooks", installed, skipped);
@@ -152,11 +150,6 @@ export class HooksStage implements Stage {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-  }
-
-  private formatStageHeader(message: string, translate: InstallContext["translate"]): string {
-    const nextLabel = () => paint.ai(translate("cli.shared.next"));
-    return `${nextLabel()} ${paint.muted(message)}`;
   }
 
   private formatStageResult(

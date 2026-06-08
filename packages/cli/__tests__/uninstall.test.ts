@@ -198,13 +198,18 @@ describe("uninstall default scaffold execution", () => {
       mkdirSync(join(target, ".fabric", "knowledge", sub), { recursive: true });
     }
 
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((value?: unknown) => {
+      lines.push(value === undefined ? "" : String(value));
+    });
 
     const plan = await buildUninstallExecutionPlan(target, {
       skipBootstrap: true,
       skipMcp: true,
     });
     await executeUninstallExecutionPlan(plan);
+
+    expect(lines).toContain("[1/3] 项目 runtime 清理 Removing scaffold artifacts...");
 
     // State files removed.
     expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);

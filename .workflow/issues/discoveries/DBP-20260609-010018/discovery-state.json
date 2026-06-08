@@ -1,0 +1,27 @@
+{
+  "id": "DBP-20260609-010018",
+  "mode": "by-prompt",
+  "status": "completed",
+  "started_at": "2026-06-09T01:00:18.3055005+08:00",
+  "completed_at": "2026-06-09T01:25:00+08:00",
+  "perspectives_completed": [
+    "legacy-project-local-knowledge-paths",
+    "legacy-fallback-and-migration-shims",
+    "docs-skills-bootstrap-store-only-drift",
+    "runtime-store-resolution-bypass",
+    "tests-fixtures-snapshots-stale-contracts"
+  ],
+  "issues_found": 6,
+  "issues_deduplicated": 4,
+  "issues_created": [
+    "ISS-20260609-001",
+    "ISS-20260609-002",
+    "ISS-20260609-003",
+    "ISS-20260609-004"
+  ],
+  "deduped_existing": [
+    "ISS-20260608-046",
+    "ISS-20260608-059",
+    "ISS-20260608-060"
+  ]
+}

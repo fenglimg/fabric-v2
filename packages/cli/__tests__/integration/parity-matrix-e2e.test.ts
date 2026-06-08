@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import {
   MCP_STORE_AWARE_CONTRACTS,
+  PARITY_CLIENTS,
   parityMatrixSchema,
   type ParityCapability,
   type ParityClient,
@@ -11,10 +12,10 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { createWerewolfFixtureRoot, runInit } from "../helpers/init-test-utils.ts";
 
-// v2.1.0-rc.1 P5 — three-client parity E2E (S14/S29 parity-E2E; closes the
+// v2.1.0-rc.1 P5 — client parity E2E (S14/S29 parity-E2E; closes the
 // P0→P5 parity-matrix chain). The P0 contract stub at
 // packages/shared/src/parity/parity-matrix.json declares, per capability, which
-// of the 3 clients support it. This test does a single fresh install, then
+// clients support it. This test does a single fresh install, then
 // asserts EVERY (capability × supported client) cell is actually delivered —
 // 100% of the matrix, not a hand-picked subset. A new capability row or a
 // regressed installer surfaces here, not in production.
@@ -35,8 +36,10 @@ const HOOK_SCRIPT = {
 
 const CLIENT_DIR: Record<ParityClient, string> = {
   claudeCode: ".claude",
-  codexCLI: ".codex",
+  claudeCodeDesktop: ".claude",
   cursor: ".cursor",
+  codexCLI: ".codex",
+  codexDesktop: ".codex",
 };
 
 const SKILL_SLUG = {
@@ -73,9 +76,9 @@ afterEach(() => {
 
 function hookConfigText(client: ParityClient): string {
   const path =
-    client === "claudeCode"
+    client === "claudeCode" || client === "claudeCodeDesktop"
       ? join(target, ".claude/settings.json")
-      : client === "codexCLI"
+      : client === "codexCLI" || client === "codexDesktop"
         ? join(target, ".codex/hooks.json")
         : join(target, ".cursor/hooks.json");
   return existsSync(path) ? readFileSync(path, "utf8") : "";
@@ -94,8 +97,8 @@ function assertDelivered(cap: ParityCapability, client: ParityClient): void {
   }
   if (cap.surface === "skill") {
     const slug = SKILL_SLUG[cap.id as keyof typeof SKILL_SLUG];
-    // Cursor reads .claude/.codex skills for back-compat (parity-matrix
-    // mechanism), so a Cursor cell is satisfied by the Claude skill file.
+    // Cursor reads .claude/.codex skills for back-compat; desktop variants
+    // share their sibling CLI install surface.
     const probeDir = client === "cursor" ? ".claude" : dir;
     expect(
       existsSync(join(target, probeDir, "skills", slug, "SKILL.md")),
@@ -106,7 +109,7 @@ function assertDelivered(cap: ParityCapability, client: ParityClient): void {
   if (cap.surface === "mcp") {
     // ADJ-NEWN-2: assert THIS tool's own store-aware contract exists (per-tool,
     // not a homogeneous "any contract" check). Same MCP stdio surface serves all
-    // three clients, so the contract presence is the per-client deliverable.
+    // all clients, so the contract presence is the per-client deliverable.
     const key = MCP_CONTRACT_KEY[cap.id];
     expect(key, `${cap.id}: no MCP_CONTRACT_KEY mapping`).toBeDefined();
     expect(
@@ -120,15 +123,17 @@ function assertDelivered(cap: ParityCapability, client: ParityClient): void {
     // Codex/Cursor managed blocks, all sourced from .fabric/AGENTS.md.
     const renderProbe: Record<ParityClient, string> = {
       claudeCode: "CLAUDE.md",
-      codexCLI: "AGENTS.md",
+      claudeCodeDesktop: "CLAUDE.md",
       cursor: ".cursor/rules/fabric-bootstrap.mdc",
+      codexCLI: "AGENTS.md",
+      codexDesktop: "AGENTS.md",
     };
     expect(existsSync(join(target, renderProbe[client])), `${cap.id}/${client}: render`).toBe(true);
     return;
   }
 }
 
-describe("P5 — parity-matrix-driven three-client E2E (S14/S29)", () => {
+describe("P5 — parity-matrix-driven client E2E (S14/S29)", () => {
   it("parity-matrix.json validates against the P0 schema", () => {
     expect(matrix.capabilities.length).toBeGreaterThan(0);
   });
@@ -136,7 +141,7 @@ describe("P5 — parity-matrix-driven three-client E2E (S14/S29)", () => {
   it("every (capability × supported client) cell is delivered by a fresh install", () => {
     const cells: Array<{ cap: string; client: string }> = [];
     for (const cap of matrix.capabilities) {
-      for (const client of ["claudeCode", "codexCLI", "cursor"] as ParityClient[]) {
+      for (const client of PARITY_CLIENTS) {
         if (cap.clients[client]?.supported === true) {
           assertDelivered(cap, client);
           cells.push({ cap: cap.id, client });
@@ -144,6 +149,6 @@ describe("P5 — parity-matrix-driven three-client E2E (S14/S29)", () => {
       }
     }
     // Guard against an accidental empty sweep silently "passing".
-    expect(cells.length).toBe(matrix.capabilities.length * 3);
+    expect(cells.length).toBe(matrix.capabilities.length * PARITY_CLIENTS.length);
   });
 });

@@ -1,0 +1,8 @@
+{
+  "id": "1",
+  "result_status": "completed",
+  "findings": "Found 1 high-confidence gate completeness issue: rc6 gate can pass while omitting most CLI tests and documented CLI drift gates; appended one gate-completeness pattern to discoveries.ndjson.",
+  "issues_found": "[{\"title\":\"rc6 gate reports PASS while running only a CLI hook test subset\",\"severity\":\"high\",\"description\":\"The root rc6:gate script is the named release/completion gate, but scripts/rc6-coverage-gate.mjs intentionally targets only four CLI hook test files instead of the full @fenglimg/fabric-cli test suite, while still running server/shared tests and producing a PASS result. docs/TESTING.md lists the CLI surface snapshot as a drift gate, and the CLI test tree contains many non-hook suites, so CLI command/help/install/i18n drift can regress while rc6:gate remains green. This is stronger than the documented partial CLI surface limitation because the release gate omits that drift gate entirely.\",\"location\":\"scripts/rc6-coverage-gate.mjs:496\",\"fix_direction\":\"Make rc6:gate run the full @fenglimg/fabric-cli test suite or an explicit maintained CLI release-suite that includes cli-surface.test.ts and other public CLI drift/contract tests; if a subset is unavoidable, change the output/name to say it is a hook-only gate and add a separate required CLI gate in package.json/CI.\",\"affected_components\":[\"scripts/rc6-coverage-gate.mjs\",\"package.json rc6:gate\",\"packages/cli/__tests__\",\"docs/TESTING.md drift gates\"],\"perspective\":\"coverage-and-gate-completeness\"}]",
+  "severity_distribution": "{\"critical\":0,\"high\":1,\"medium\":0,\"low\":0}",
+  "error": ""
+}

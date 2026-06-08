@@ -12,6 +12,30 @@
       "created_at": "2026-06-08T23:23:00+08:00",
       "owned_phases": ["analysis", "plan", "execute", "verify"],
       "fork_session": "fork-20260608-232300"
+    },
+    {
+      "milestone_num": "install-uninstall-lifecycle",
+      "milestone": "Install Uninstall Lifecycle",
+      "slug": "install-uninstall-lifecycle",
+      "branch": "milestone/install-uninstall-lifecycle",
+      "path": "C:/Project/fabric-v2/.worktrees/m-install-uninstall-lifecycle",
+      "base_commit": "e7164cbee24192d30063d6c96edaf2c495d10390",
+      "status": "active",
+      "created_at": "2026-06-09T01:08:45+08:00",
+      "owned_phases": ["analysis", "plan", "execute", "verify"],
+      "fork_session": "fork-20260609-010845"
+    },
+    {
+      "milestone_num": "doctor-surface-hardening",
+      "milestone": "Doctor Surface Hardening",
+      "slug": "doctor-surface-hardening",
+      "branch": "milestone/doctor-surface-hardening",
+      "path": "C:/Project/fabric-v2/.worktrees/m-doctor-surface-hardening",
+      "base_commit": "f868b237057fbefb1569eea303d8393169978b5d",
+      "status": "active",
+      "created_at": "2026-06-09T02:02:08+08:00",
+      "owned_phases": ["analysis", "plan", "execute", "verify"],
+      "fork_session": "fork-20260609-020208"
     }
   ],
   "fork_sessions": [
@@ -22,6 +46,22 @@
       "milestone": "Store Reliability Hardening",
       "base_branch": "milestone/global-store-topology",
       "base_commit": "aa2bffeae83719280d3decde09733fc76eb6d8a2"
+    },
+    {
+      "session_id": "fork-20260609-010845",
+      "created_at": "2026-06-09T01:08:45+08:00",
+      "milestone_num": "install-uninstall-lifecycle",
+      "milestone": "Install Uninstall Lifecycle",
+      "base_branch": "main",
+      "base_commit": "e7164cbee24192d30063d6c96edaf2c495d10390"
+    },
+    {
+      "session_id": "fork-20260609-020208",
+      "created_at": "2026-06-09T02:02:08+08:00",
+      "milestone_num": "doctor-surface-hardening",
+      "milestone": "Doctor Surface Hardening",
+      "base_branch": "main",
+      "base_commit": "f868b237057fbefb1569eea303d8393169978b5d"
     }
   ]
 }

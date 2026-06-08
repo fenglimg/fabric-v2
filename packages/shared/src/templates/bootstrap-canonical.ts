@@ -54,7 +54,7 @@ export const LEGACY_KB_REGEX =
  * Canonical bootstrap body — byte-locked per rc.19 locked clarification 3.
  * Rendered into the managed block between {@link BOOTSTRAP_MARKER_BEGIN} and
  * {@link BOOTSTRAP_MARKER_END} by `fabric install` across all three supported
- * clients (Claude Code, Cursor, Codex CLI).
+ * clients (Claude Code, Cursor, Codex).
  *
  * Length guarantee: ≥ 800 bytes (rc.24: grew from ≥400 with cite-contract syntax).
  */
@@ -70,7 +70,7 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 
 ## 5 分钟上手 (Dev Quickstart)
 
-**Fabric 是什么**:跨客户端(Claude Code / Codex CLI / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
+**Fabric 是什么**:跨客户端(Claude Code / Codex / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
 
 **你要做的 (DO)** vs **engine 自动的 (DON'T 手动)**:
 

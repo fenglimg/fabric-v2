@@ -1,15 +1,32 @@
 {
   "version": "1",
-  "generated_for": "v2.1.0-rc.1 (P0 contract stub — P4 develops against it, P5 verifies E2E)",
+  "generated_for": "v2.2.0-rc.5 five-client parity matrix",
   "capabilities": [
     {
       "id": "hook.session-start-hint",
       "surface": "hook",
       "description": "On session start, surface broad-scoped knowledge entries grouped by store with global_ref labels.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "SessionStart hook; session_id from stdin payload" },
-        "codexCLI": { "supported": true, "mechanism": "session-start equivalent; corresponding session identifier" },
-        "cursor": { "supported": true, "mechanism": ".cursor/hooks session-start; reads same CLI JSON output" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "SessionStart hook; session_id from stdin payload"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "SessionStart hook; session_id from stdin payload; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": ".cursor/hooks session-start; reads same CLI JSON output"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "session-start equivalent; corresponding session identifier"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "session-start equivalent; corresponding session identifier; shared .codex surface"
+        }
       }
     },
     {
@@ -17,9 +34,26 @@
       "surface": "hook",
       "description": "Before an edit, emit a store-aware narrow hint for the touched file paths.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "PreToolUse hook; additionalContext JSON contract" },
-        "codexCLI": { "supported": true, "mechanism": "pre-edit equivalent hook" },
-        "cursor": { "supported": true, "mechanism": ".cursor/hooks pre-tool equivalent" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "PreToolUse hook; additionalContext JSON contract"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "PreToolUse hook; additionalContext JSON contract; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": ".cursor/hooks pre-tool equivalent"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "pre-edit equivalent hook"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "pre-edit equivalent hook; shared .codex surface"
+        }
       }
     },
     {
@@ -27,9 +61,26 @@
       "surface": "hook",
       "description": "On stop, surface per-store review/archive backlog (per-store, not aggregated).",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "Stop hook" },
-        "codexCLI": { "supported": true, "mechanism": "turn-end equivalent" },
-        "cursor": { "supported": true, "mechanism": ".cursor/hooks stop equivalent" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "Stop hook"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "Stop hook; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": ".cursor/hooks stop equivalent"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "turn-end equivalent"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "turn-end equivalent; shared .codex surface"
+        }
       }
     },
     {
@@ -37,9 +88,26 @@
       "surface": "skill",
       "description": "Entry-layer Fabric router that classifies user intent and delegates to the specialized fabric-* skills.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric" },
-        "cursor": { "supported": true, "mechanism": "Cursor reads .claude/.codex skills for back-compat" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "Cursor reads .claude/.codex skills for back-compat"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric; shared .codex surface"
+        }
       }
     },
     {
@@ -47,9 +115,26 @@
       "surface": "skill",
       "description": "Archive flow writes to the active write store and echoes written_to_store.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills (managed block)" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills" },
-        "cursor": { "supported": true, "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills (managed block)"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": ".claude/skills (managed block); shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": ".codex/skills; shared .codex surface"
+        }
       }
     },
     {
@@ -57,9 +142,23 @@
       "surface": "skill",
       "description": "Review aggregates pending across the read-set's writable stores; promotion is a normal git commit.",
       "clients": {
-        "claudeCode": { "supported": true },
-        "codexCLI": { "supported": true },
-        "cursor": { "supported": true }
+        "claudeCode": {
+          "supported": true
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true
+        },
+        "codexCLI": {
+          "supported": true
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "shared .codex surface"
+        }
       }
     },
     {
@@ -67,9 +166,26 @@
       "surface": "mcp",
       "description": "Recall returns read-set candidates, each carrying store_uuid + alias + local_id + global_ref.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "MCP stdio; cwd→project via ProjectRootResolver" },
-        "codexCLI": { "supported": true, "mechanism": "MCP stdio" },
-        "cursor": { "supported": true, "mechanism": "MCP stdio" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio; cwd→project via ProjectRootResolver"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "MCP stdio; cwd→project via ProjectRootResolver; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "MCP stdio; shared .codex surface"
+        }
       }
     },
     {
@@ -77,9 +193,26 @@
       "surface": "mcp",
       "description": "plan-context surfaces store-aware candidates (store_uuid + alias + global_ref) for the two-step recall path. ADJ-NEWN-2 coverage fill.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "MCP stdio" },
-        "codexCLI": { "supported": true, "mechanism": "MCP stdio" },
-        "cursor": { "supported": true, "mechanism": "MCP stdio" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "MCP stdio; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "MCP stdio; shared .codex surface"
+        }
       }
     },
     {
@@ -87,39 +220,107 @@
       "surface": "mcp",
       "description": "get-knowledge-sections returns store-aware section bodies (store_uuid + alias + global_ref). ADJ-NEWN-2 coverage fill.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "MCP stdio" },
-        "codexCLI": { "supported": true, "mechanism": "MCP stdio" },
-        "cursor": { "supported": true, "mechanism": "MCP stdio" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "MCP stdio; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "MCP stdio; shared .codex surface"
+        }
       }
     },
     {
       "id": "skill.fabric-import",
       "surface": "skill",
-      "description": "Cold-start import flow mines git log + docs into pending. Delivered to all three clients (SKILL_DESTINATIONS.import). ADJ-NEWN-2 coverage fill.",
+      "description": "Cold-start import flow mines git log + docs into pending. Delivered to all supported clients (SKILL_DESTINATIONS.import). ADJ-NEWN-2 coverage fill.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-import" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-import" },
-        "cursor": { "supported": true, "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-import"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-import; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-import"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-import; shared .codex surface"
+        }
       }
     },
     {
       "id": "skill.fabric-sync",
       "surface": "skill",
-      "description": "Multi-store pull+push sync flow delivered as a Skill (ADJ-NEWN-1 direction: sync semantics live in a Skill). Delivered to all three clients (SKILL_DESTINATIONS.sync). ADJ-NEWN-2 coverage fill.",
+      "description": "Multi-store pull+push sync flow delivered as a Skill (ADJ-NEWN-1 direction: sync semantics live in a Skill). Delivered to all supported clients (SKILL_DESTINATIONS.sync). ADJ-NEWN-2 coverage fill.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-sync" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-sync" },
-        "cursor": { "supported": true, "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-sync"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-sync; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-sync"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-sync; shared .codex surface"
+        }
       }
     },
     {
       "id": "skill.fabric-store",
       "surface": "skill",
-      "description": "Knowledge-store ops façade (create/add/bind/list/switch-write) delivered as a Skill (ADJ-NEWN-1/#4). Delivered to all three clients (SKILL_DESTINATIONS.store).",
+      "description": "Knowledge-store ops façade (create/add/bind/list/switch-write) delivered as a Skill (ADJ-NEWN-1/#4). Delivered to all supported clients (SKILL_DESTINATIONS.store).",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-store" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-store" },
-        "cursor": { "supported": true, "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-store"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-store; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "Cursor reads .claude/.codex skills for back-compat; Fabric does not install .cursor/skills"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-store"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-store; shared .codex surface"
+        }
       }
     },
     {
@@ -127,9 +328,26 @@
       "surface": "render",
       "description": "Plain-text / markdown minimal render set, language per project fabric_language.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "markdown in context" },
-        "codexCLI": { "supported": true, "mechanism": "markdown/plain text" },
-        "cursor": { "supported": true, "mechanism": "markdown in context" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "markdown in context"
+        },
+        "claudeCodeDesktop": {
+          "supported": true,
+          "mechanism": "markdown in context; shared Claude Code project/bootstrap surface"
+        },
+        "cursor": {
+          "supported": true,
+          "mechanism": "markdown in context"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "markdown/plain text"
+        },
+        "codexDesktop": {
+          "supported": true,
+          "mechanism": "markdown/plain text; shared .codex surface"
+        }
       }
     }
   ]

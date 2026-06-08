@@ -503,7 +503,7 @@ export async function executeUninstallExecutionPlan(
       continue;
     }
 
-    console.log(formatUninstallStageHeader(stage.name));
+    console.log(formatUninstallStageHeader(stage.name, stageResults.length + 1, plan.stages.length));
     try {
       const steps = await executeUninstallStage(plan, stage.name);
       const disposition: UninstallStageDisposition = steps.some((s) => s.status === "error") ? "failed" : "ran";
@@ -795,8 +795,19 @@ function printUninstallSummary(result: UninstallExecutionResult): void {
   }
 }
 
-function formatUninstallStageHeader(stageName: UninstallStageName): string {
-  return `${paint.ai(t("cli.shared.next"))} ${paint.muted(t(`cli.uninstall.stages.${stageName}`))}`;
+function formatUninstallStageHeader(stageName: UninstallStageName, current: number, total: number): string {
+  return `[${current}/${total}] ${uninstallStageLabel(stageName)} ${paint.muted(t(`cli.uninstall.stages.${stageName}`))}`;
+}
+
+function uninstallStageLabel(stageName: UninstallStageName): string {
+  switch (stageName) {
+    case "scaffold":
+      return "项目 runtime 清理";
+    case "bootstrap":
+      return "Bootstrap 反注册";
+    case "mcp":
+      return "MCP 客户端清理";
+  }
 }
 
 function formatUninstallStageResult(

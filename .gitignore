@@ -27,5 +27,10 @@ coverage/
 .workflow/wiki-index.json
 packages/*/.fabric/
 
+# Local milestone/worktree checkouts. The tracked registry lives in
+# .workflow/worktrees.json; do not vendor nested repositories into main.
+.worktrees/
+.claude/worktrees/
+
 .antigravitycli
 .ace-tool/

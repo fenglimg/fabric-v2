@@ -6,17 +6,17 @@
 
 这个文件是 **AI 客户端的策略与规约配置**,不是 dev onboarding。你不需要读 Self-archive / Cite / Phase 0.4 等细节。
 作为 dev 你只需要:在每个 repo 跑一次 `fabric install`,用 `fabric store bind <alias>` / `fabric store switch-write <alias>` 接入写入 store,出问题跑 `fabric doctor`。
-**严禁手动编辑 Fabric 管理的派生状态** — hook、bootstrap、ledger 与 store 索引状态由 engine/doctor 重建。
+**严禁手动编辑 `.fabric/agents.meta.json`** — 派生状态由 engine 重建。
 
 ## 5 分钟上手 (Dev Quickstart)
 
-**Fabric 是什么**:跨客户端(Claude Code / Codex CLI / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
+**Fabric 是什么**:跨客户端(Claude Code / Codex / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
 
 **你要做的 (DO)** vs **engine 自动的 (DON'T 手动)**:
 
 | 你 DO | 你 DON'T |
 | --- | --- |
-| 每个 repo 跑一次 `fabric install` | 手写非 store knowledge 根或 Fabric 派生状态 |
+| 每个 repo 跑一次 `fabric install` | 手编 `.fabric/agents.meta.json` |
 | 异常时跑 `fabric doctor` (--fix 自愈) | 手编 `.claude/hooks/` 下 `.cjs` |
 | 用 `fabric-archive` / `fabric-review` / `fabric store ...` 管理 store-backed knowledge | 手写任何非 store knowledge 根 |
 | `npm install -g @fenglimg/fabric-cli@latest` 升级 | 背 35 条 doctor lint 代码 |
@@ -29,7 +29,7 @@
 
 ## 行为规则
 - **修改任何文件前**:优先单步 `fab_recall(paths=[<被改文件>])` —— 一次调用直接拿回所有相关 KB 正文(rc.37+ 默认路径,省掉手动挑 id 的环节)。**仅当单步拉回的正文过多、导致上下文过载需精确裁剪噪音时**才走两步:先 `fab_plan_context(paths=[...])` 拿 `selection_token` + 顶层 `candidates[]`(从 `candidates[].stable_id` 挑),再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })` 取正文。
-- **不要手写非 store knowledge 根或 Fabric 派生状态**;knowledge 只通过 mounted stores 管理,显式 reconcile 跑 `fabric doctor --fix`。
+- **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fabric doctor --fix`。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer `KP-*` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。

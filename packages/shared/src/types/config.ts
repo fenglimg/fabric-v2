@@ -7,6 +7,7 @@ export interface ClientPaths {
   claudeCodeDesktop?: string;
   cursor?: string;
   codexCLI?: string;
+  codexDesktop?: string;
 }
 
 export type AuditMode = "strict" | "warn" | "off";
@@ -18,8 +19,8 @@ export interface McpPayloadLimits {
 
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: drives bilingual
 // init-scan templates. Mirrored from packages/shared/src/schemas/fabric-config.ts
-// → keep in sync. `match-existing` and `zh-CN-hybrid` are legacy-compatible
-// parse values; user-facing config now exposes only `zh-CN` and `en`.
+// → keep in sync. All four values are user-facing because install/doctor can
+// preserve or surface legacy-compatible `match-existing` and `zh-CN-hybrid`.
 export type FabricLanguage =
   | "match-existing"
   | "zh-CN"
