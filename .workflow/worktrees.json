@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "worktrees": [
+    {
+      "milestone_num": "store-reliability-hardening",
+      "milestone": "Store Reliability Hardening",
+      "slug": "store-reliability-hardening",
+      "branch": "milestone/store-reliability-hardening",
+      "path": "C:/Project/fabric-v2/.worktrees/m-store-reliability-hardening",
+      "base_commit": "35a660b",
+      "status": "active",
+      "created_at": "2026-06-08T23:17:00+08:00",
+      "owned_phases": ["analysis", "plan", "execute", "verify"],
+      "fork_session": "fork-20260608-231700"
+    }
+  ],
+  "fork_sessions": [
+    {
+      "session_id": "fork-20260608-231700",
+      "created_at": "2026-06-08T23:17:00+08:00",
+      "milestone_num": "store-reliability-hardening",
+      "milestone": "Store Reliability Hardening",
+      "base_branch": "HEAD",
+      "base_commit": "35a660b"
+    }
+  ]
+}

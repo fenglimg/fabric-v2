@@ -1,0 +1,26 @@
+{
+  "id": "2",
+  "title": "Performance Scan",
+  "perspective": "performance",
+  "result_status": "completed",
+  "findings": "Found one high-signal performance issue: the store-era recall path repeatedly walks and reads the full read-set store corpus during a single recall/section fetch.",
+  "issues_found": {
+    "title": "Store-era recall recomputes and rereads the full read-set corpus multiple times per request",
+    "severity": "high",
+    "description": "The hot recall path computes the store corpus revision, then separately builds raw candidates, and get_sections repeats the revision plus body-index build. All four calls funnel through walkReadSetStores(), which walks readKnowledgeAcrossStores() and readFileSyncs every store markdown file, so a normal fab_recall -> fab_get_knowledge_sections round trip can perform four full read-set walks/full-file reads before reading selected bodies again. Cost scales with total mounted store corpus size on every request despite the code already having the in-memory selection token and corpus revision opportunities for reuse.",
+    "location": "packages/server/src/services/cross-store-recall.ts:120",
+    "fix_direction": "Build the read-set corpus once per request (or cache it by store directory fingerprint/max mtime) and thread the entries/revision/body index through plan-context and knowledge-sections; at minimum derive computeReadSetRevision, raw items, and body index from a shared walk result so each store file is read once.",
+    "affected_components": [
+      "packages/server/src/services/cross-store-recall.ts",
+      "packages/server/src/services/plan-context.ts",
+      "packages/server/src/services/knowledge-sections.ts"
+    ]
+  },
+  "severity_distribution": {
+    "critical": 0,
+    "high": 1,
+    "medium": 0,
+    "low": 0
+  },
+  "error": ""
+}

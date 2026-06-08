@@ -1,0 +1,48 @@
+{
+  "id": "7",
+  "title": "Accessibility Scan",
+  "perspective": "accessibility",
+  "result_status": "completed",
+  "findings": "Found 3 concrete TUI accessibility gaps: status is conveyed through color/glyphs, running steps use an always-animating Braille spinner, and the exported color-disable renderer config is not honored.",
+  "issues_found": [
+    {
+      "title": "Ink TUI status states rely on color and Unicode glyphs instead of spoken text labels",
+      "severity": "medium",
+      "description": "Status rendering hard-codes color maps and symbol maps, then renders only the glyph as the status cue; running/success/error/skipped state is not emitted as text for screen readers or color-blind users. This affects install pipeline step output and TUI status messages, separate from the shared colors.ts fallback path.",
+      "location": "packages/cli/src/tui/StepCounter.tsx:28",
+      "fix_direction": "Render textual state labels such as [running], [ok], [warn], [error], [skipped] alongside glyphs in all TUI modes, or route TUI status indicators through the shared accessible symbol/label helpers.",
+      "affected_components": [
+        "packages/cli/src/tui",
+        "install pipeline TUI"
+      ]
+    },
+    {
+      "title": "Install TUI spinner animates Braille frames continuously with no reduced-motion or screen-reader-safe mode",
+      "severity": "medium",
+      "description": "Spinner defines Braille frames and advances them every 80ms, and the install pipeline renders this spinner for every running stage. There is no config or environment check to switch to static progress text for screen-reader users or reduced-motion contexts.",
+      "location": "packages/cli/src/tui/Spinner.tsx:12",
+      "fix_direction": "Add a reduced-motion/text-only mode that renders a stable 'Running: <stage>' line, and have the install pipeline or renderer choose it when color/animation is disabled or when an explicit config/env option requests accessible output.",
+      "affected_components": [
+        "packages/cli/src/tui",
+        "packages/cli/src/install/pipeline"
+      ]
+    },
+    {
+      "title": "OutputRendererConfig.colors is declared but InkOutputRenderer never applies it",
+      "severity": "low",
+      "description": "The public renderer config exposes colors?: boolean, but InkOutputRenderer only stores the config and renderComponent calls Ink render(node) without passing or propagating color preferences; child components hard-code Text color props. A caller cannot force text-only/no-color TUI output through this config.",
+      "location": "packages/cli/src/tui/InkOutputRenderer.ts:34",
+      "fix_direction": "Plumb the color flag into TUI components or renderer context, suppress Ink color props when false, and add tests proving createInkRenderer({ colors: false }) produces text-only output.",
+      "affected_components": [
+        "packages/cli/src/tui"
+      ]
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 1
+  },
+  "error": ""
+}

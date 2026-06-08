@@ -1,0 +1,61 @@
+{
+  "id": "4",
+  "perspective": "install-hook-skill-source-drift",
+  "result_status": "completed",
+  "findings": "发现 3 个新的 install/hook/skill source drift：Cursor 活跃 bootstrap 副本仍是旧长版规则；fabric-archive gate ref 与测试仍验证 retired archive-hint 名；store-backed 写路径已生效但 archive/review/import skill 热路径仍指向本地 .fabric/knowledge/pending。",
+  "issues_found": [
+    {
+      "title": "Active Cursor bootstrap managed block is stale relative to canonical store-only bootstrap",
+      "severity": "medium",
+      "description": "The checked-in active Cursor rule still contains the old long-form bootstrap block with project-local `.fabric/knowledge/pending/`, `fabric doctor --fix`, self-archive marker, optional `KB:` cite-line, and cite-coverage details. Current root AGENTS/canonical bootstrap says knowledge may only be written to mounted stores and pending entries go to the current write store. Install tests also assert Cursor's managed block body should byte-equal `BOOTSTRAP_CANONICAL`, so the repository's generated Cursor copy is drifted and will instruct Cursor users differently from Codex/AGENTS.",
+      "evidence": [
+        ".cursor/rules/fabric-bootstrap.mdc:30",
+        ".cursor/rules/fabric-bootstrap.mdc:69",
+        ".cursor/rules/fabric-bootstrap.mdc:80",
+        "AGENTS.md:19",
+        "AGENTS.md:25",
+        "packages/shared/src/templates/bootstrap-canonical.ts:84",
+        "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts:623"
+      ],
+      "fix_direction": "Regenerate or replace `.cursor/rules/fabric-bootstrap.mdc` from `BOOTSTRAP_CANONICAL`, and add a repo-level drift check for checked-in generated client bootstrap copies."
+    },
+    {
+      "title": "fabric-archive trigger-gate docs and tests still validate retired `archive-hint.cjs`",
+      "severity": "medium",
+      "description": "The active installer and hook config docs install/register `fabric-hint.cjs` and treat `archive-hint.cjs` only as a historical name, but the fabric-archive Phase 1.5 gate reference still says E1 hook_passive comes from `archive-hint.cjs`. The integration test asserts that retired name, so tests now protect stale source text instead of current install behavior.",
+      "evidence": [
+        "packages/cli/src/install/skills-and-hooks.ts:86",
+        "packages/cli/src/install/skills-and-hooks.ts:187",
+        "packages/cli/templates/hooks/configs/README.md:13",
+        "packages/cli/templates/hooks/configs/README.md:92",
+        "packages/cli/templates/skills/fabric-archive/ref/phase-1-5-onboard.md:24",
+        "packages/cli/__tests__/integration/archive-skill-trigger-gate.test.ts:20",
+        "packages/cli/__tests__/integration/archive-skill-trigger-gate.test.ts:86"
+      ],
+      "fix_direction": "Change E1 wording and regression expectations to `fabric-hint.cjs`; keep `archive-hint.cjs` only in explicitly historical migration notes."
+    },
+    {
+      "title": "Store-backed pending write path conflicts with skill templates that still glob project-local `.fabric/knowledge/pending`",
+      "severity": "medium",
+      "description": "The MCP/server path now persists and reviews pending entries under the resolved write-target store, and AGENTS says non-store knowledge roots must not be written. However fabric-review's default pending flow still tells the agent to `Glob .fabric/knowledge/pending/**/*.md`, while fabric-archive/import descriptions and guardrails still name `.fabric/knowledge/pending` as the destination. In a mounted-store project this can make review/import/archive agents look in the wrong tree or preserve obsolete protected tokens.",
+      "evidence": [
+        "AGENTS.md:5",
+        "AGENTS.md:19",
+        "packages/server/src/tools/extract-knowledge.ts:30",
+        "packages/server/src/services/review.ts:292",
+        "packages/cli/templates/skills/fabric-review/SKILL.md:76",
+        "packages/cli/templates/skills/fabric-archive/SKILL.md:3",
+        "packages/cli/templates/skills/fabric-archive/SKILL.md:156",
+        "packages/cli/templates/skills/fabric-import/SKILL.md:11"
+      ],
+      "fix_direction": "Update skill descriptions, protected-token lists, and review backlog discovery to use `fab_review action=\"list\"` / returned `pending_path` from the resolved write store, not direct project-local globbing."
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 3,
+    "low": 0
+  },
+  "error": ""
+}

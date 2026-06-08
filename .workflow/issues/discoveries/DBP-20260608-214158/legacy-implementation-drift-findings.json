@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Getting-started still teaches the retired MCP retrieval flow",
+    "severity": "high",
+    "description": "`docs/getting-started.md` 在 stdio-only 章节后，仍把 `fab_plan_context` + `fab_get_rule_sections` 说成“新流程只需要的两个 MCP tools”，并给出基于 `fab_get_rule_sections` 的验证 prompt。实际主线已经把 `fab_recall` 作为默认入口，并使用 `fab_get_knowledge_sections` 作为两步回退（`packages/server/src/index.ts:190`，`packages/server/README.md:7`）。这会让新用户按过时接口验证安装。",
+    "location": "docs/getting-started.md:91",
+    "fix_direction": "把验证流程改成 `fab_recall` 优先，统一将 `fab_get_rule_sections` 更名为 `fab_get_knowledge_sections`，仅把两步流保留为正文过大时的回退路径。",
+    "affected_components": [
+      "docs/getting-started.md",
+      "packages/server/src/index.ts",
+      "packages/server/README.md"
+    ]
+  },
+  {
+    "title": "Test seeds still encode quarantined serve/REST surfaces as active mainline intent",
+    "severity": "high",
+    "description": "种子总览仍声明 cli 的 4 个公共命令包含 `serve`，server 仍覆盖 12 个 REST endpoints 和 2 个 MCP tools（`fab_plan_context`、`fab_get_rule_sections`）；包级 server 种子还继续列 `/api/*`、`/events`、Dashboard 与 `FABRIC_AUTH_TOKEN` auth（`docs/test-seed/server.md:7`）。但主线公开命令面已经是 `install`、`scan`、`doctor`、`uninstall`，HTTP/REST/serve 已 quarantine（`docs/CODEBASE_LANDSCAPE.md:57`）。由于 test seed 是 integration-test-cycle 的意图输入，这会持续传播错误测试目标。",
+    "location": "docs/test-seed/README.md:7",
+    "fix_direction": "按 v2 主线重写 `docs/test-seed/{README,server,cli}.md`：去掉 `serve` 与 REST/Dashboard 主线职责，补入 `fab_recall` / `fab_get_knowledge_sections` 和 stdio-only 约束。",
+    "affected_components": [
+      "docs/test-seed/README.md",
+      "docs/test-seed/server.md",
+      "docs/test-seed/cli.md"
+    ]
+  },
+  {
+    "title": "Codebase landscape points maintainers at deleted mainline server services",
+    "severity": "medium",
+    "description": "`docs/CODEBASE_LANDSCAPE.md` 的 server 表仍把 `src/services/get-rules.ts` 和 `src/services/annotate-intent.ts` 列为主线文件，并把 `annotate-intent` 证据指向已 quarantine 的 `packages/server/src/api/intent.ts:4`。实际 `packages/server/src/services/` 下已不存在这两个文件（仓内文件枚举为空命中），文档把主线与 quarantine 时代的职责混写，维护者会被引到不存在的实现。",
+    "location": "docs/CODEBASE_LANDSCAPE.md:86",
+    "fix_direction": "清理 server 表中的已删条目，把历史 HTTP/intent 路径全部移到 `server-http-experimental`/历史说明区，只保留当前主线真实存在的 service 列表。",
+    "affected_components": [
+      "docs/CODEBASE_LANDSCAPE.md",
+      "packages/server/src/services",
+      "packages/server-http-experimental"
+    ]
+  },
+  {
+    "title": "Shared CLI locale strings still advertise removed `fabric serve` help text",
+    "severity": "medium",
+    "description": "`packages/shared/src/i18n/locales/en.ts` 与 `zh-CN.ts` 的 `cli.main.description` 仍把 “Run - fabric serve” 作为三步心智模型的一部分，并展示 `fabric serve --port 7373` 示例。可主线命令面文档已经明确只保留 `install`、`scan`、`doctor`、`uninstall`，`serve` 自 rc.37 起已 quarantine（`docs/CODEBASE_LANDSCAPE.md:57`）。这不是单纯旧文档，而是仍会出现在用户帮助文案里的旧迁移指引。",
+    "location": "packages/shared/src/i18n/locales/en.ts:8",
+    "fix_direction": "更新 `cli.main.description` 的中英文文案，移除 `fabric serve`/HTTP 服务示例，改成当前支持的 stdio 安装与诊断路径，并补对应快照测试。",
+    "affected_components": [
+      "packages/shared/src/i18n/locales/en.ts",
+      "packages/shared/src/i18n/locales/zh-CN.ts",
+      "CLI help surface"
+    ]
+  }
+]

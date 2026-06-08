@@ -1,0 +1,32 @@
+{
+  "session_id": "DBP-20260608-223607",
+  "mode": "by-prompt",
+  "prompt": "当前新老交替，发掘所有迷惑、上下矛盾、代码/文档不一致、不管严重与否的问题或者 bug",
+  "dimensions": [
+    {
+      "id": "1",
+      "name": "command-surface-drift",
+      "criteria": "Current CLI registry/help/tests disagree with docs, README, examples, snapshots, or migration notes."
+    },
+    {
+      "id": "2",
+      "name": "knowledge-tool-terminology-drift",
+      "criteria": "Old rule terminology or retired MCP tool names still appear as current behavior."
+    },
+    {
+      "id": "3",
+      "name": "server-http-surface-drift",
+      "criteria": "Quarantined HTTP/server surfaces are still documented, tested, or presented as mainline."
+    },
+    {
+      "id": "4",
+      "name": "install-hook-skill-source-drift",
+      "criteria": "Install, hook, bootstrap, and skill sources of truth diverge or duplicate active behavior."
+    },
+    {
+      "id": "5",
+      "name": "schema-issue-metadata-contract-drift",
+      "criteria": "Persisted issue/knowledge/schema/event contracts disagree with docs or implementation."
+    }
+  ]
+}

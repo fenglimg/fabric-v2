@@ -1,0 +1,27 @@
+{
+  "session_id": "DBP-20260608-214158",
+  "mode": "by-prompt",
+  "prompt": "发掘多版本演进后，新老代码交替、行为不符合预期、文档说明不合时宜的问题",
+  "dimensions": [
+    {
+      "id": "1",
+      "name": "legacy-implementation-drift",
+      "goal": "查找当前主线与 quarantined/legacy 实现并存后，职责重复、语义分叉、测试覆盖失配或引用关系异常的点。"
+    },
+    {
+      "id": "2",
+      "name": "command-surface-doc-drift",
+      "goal": "查找 CLI 实际命令面、README、迁移文档、架构/landscape 文档之间的行为与表述不一致。"
+    },
+    {
+      "id": "3",
+      "name": "compat-layer-staleness",
+      "goal": "查找 backward compat / deprecated 分支是否已经与当前语义脱节，或遗留兼容层未收敛导致用户预期混乱。"
+    },
+    {
+      "id": "4",
+      "name": "example-test-fixture-drift",
+      "goal": "查找测试种子、fixture、示例文档仍在传播旧路径、旧命令、旧状态布局，导致 dogfood 或用户认知偏差。"
+    }
+  ]
+}

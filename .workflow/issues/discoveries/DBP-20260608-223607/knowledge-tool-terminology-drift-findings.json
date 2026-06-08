@@ -1,0 +1,52 @@
+{
+  "id": "2",
+  "perspective": "knowledge-tool-terminology-drift",
+  "result_status": "completed",
+  "findings": "手动补扫发现 3 个 knowledge/tool terminology 漂移：MCP runtime annotation 仍叫 rule sections，protected-token lint 仍钉旧两步编辑入口，cocos fixture 仍教授 fab_get_rules/.fabric/agents。",
+  "issues_found": [
+    {
+      "title": "fab_get_knowledge_sections runtime contract still calls itself rule-section filtering",
+      "severity": "medium",
+      "description": "当前公开 MCP tool 名已经是 fab_get_knowledge_sections，server index 也把它描述为 fetch full bodies for stable_ids；但共享 annotations title 仍是 \"Filter rule sections\"，tool description 仍说 \"Fabric rules\" 和 \"full rule content\"。这不是旧文档，而是会暴露给 MCP client 的 runtime contract，会继续把 knowledge/store-era surface 混回 rule-section 心智模型。",
+      "location": "packages/shared/src/schemas/api-contracts.ts:379",
+      "fix_direction": "把 annotations title 改成类似 \"Fetch knowledge entry bodies\"，同步更新 packages/server/src/tools/knowledge-sections.ts 的 description，统一用 knowledge entries / bodies / stable_ids，不再用 rule sections / Fabric rules。",
+      "affected_components": [
+        "MCP tool annotations",
+        "fab_get_knowledge_sections",
+        "packages/server/src/tools/knowledge-sections.ts",
+        "tool-contract snapshots"
+      ]
+    },
+    {
+      "title": "Protected-token lint still protects the retired two-step edit bootstrap instead of fab_recall-first contract",
+      "severity": "medium",
+      "description": "lint-protected-tokens.ts 的 bootstrap 必备 token 仍只有 fab_plan_context、fab_get_knowledge_sections 和 .fabric/events.jsonl，并在注释中说 bootstrap 只需要标明 \"which two MCP tools to call on edit\"；对应测试的 VALID_BOOTSTRAP_SOURCE 也把 fab_plan_context -> fab_get_knowledge_sections 写成修改前必须调用的有效 bootstrap。当前 canonical bootstrap 已改成 fab_recall 优先，只有正文过多时才走两步。这个 lint 会放过缺失 fab_recall 的旧 bootstrap，并把旧流程作为 valid fixture 固化。",
+      "location": "scripts/lint-protected-tokens.ts:24",
+      "fix_direction": "把 BOOTSTRAP_REQUIRED_TOKENS 改为至少包含 fab_recall，并更新注释和测试 fixture：默认 edit 前入口是 fab_recall(paths)，fab_plan_context -> fab_get_knowledge_sections 只是回退。",
+      "affected_components": [
+        "scripts/lint-protected-tokens.ts",
+        "packages/cli/__tests__/lint-protected-tokens.test.ts",
+        "bootstrap token lint"
+      ]
+    },
+    {
+      "title": "Cocos init-context fixture still teaches the removed fab_get_rules and .fabric/agents shadow protocol",
+      "severity": "low",
+      "description": "packages/cli/__tests__/fixtures/cocos-stub/AGENTS.md 仍把 .fabric/agents/ 当作 authoritative home，并要求修改前调用 fab_get_rules(path=<target file>)。当前主线已经使用 .fabric/knowledge / mounted stores、fab_recall 和 fab_get_knowledge_sections；该 fixture 若继续作为 init-context / shadow-mirroring 测试样本，会让测试和生成文档保留 v1 shadow protocol。",
+      "location": "packages/cli/__tests__/fixtures/cocos-stub/AGENTS.md:7",
+      "fix_direction": "若该 fixture 只是历史迁移样本，文件名或注释应显式标记 legacy-v1；若仍作为当前 init-context 样本，应改成 fab_recall / mounted knowledge store 语义，并删除 .fabric/agents authoritative 描述。",
+      "affected_components": [
+        "packages/cli/__tests__/fixtures/cocos-stub",
+        "init-context tests",
+        "legacy shadow protocol fixtures"
+      ]
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 1
+  },
+  "error": ""
+}

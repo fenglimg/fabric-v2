@@ -1,0 +1,28 @@
+{
+  "id": "5",
+  "title": "Scalability Scan",
+  "perspective": "scalability",
+  "result_status": "completed",
+  "findings": "Found one new high-severity scalability issue: v2.2 store-only recall re-walks and re-reads every read-set store multiple times per fab_recall; one review-search O(N) candidate was skipped as an existing issue.",
+  "issues_found": {
+    "title": "Store-only recall re-walks and re-reads every read-set store multiple times per request",
+    "severity": "high",
+    "description": "walkReadSetStores enumerates all read-set stores via readKnowledgeAcrossStores and readFileSyncs every markdown file; planContext calls computeReadSetRevision and buildCrossStoreRawItems, then fab_recall calls getKnowledgeSections, which calls computeReadSetRevision and buildCrossStoreBodyIndex again. A normal fab_recall therefore pays roughly four full store walks/reads before reading selected bodies, so latency scales linearly with total mounted-store corpus size and is multiplied per request.",
+    "location": "packages/server/src/services/cross-store-recall.ts:95",
+    "fix_direction": "Introduce a per-request StoreCorpus snapshot containing entries, revision, raw candidates, and id-to-body refs; compute it once in planContext/recall and pass it through to getKnowledgeSections, or memoize by read-set plus directory fingerprint/mtime so unchanged stores are not re-read and re-hashed repeatedly.",
+    "affected_components": [
+      "fab_recall",
+      "fab_plan_context",
+      "fab_get_knowledge_sections",
+      "cross-store recall",
+      "multi-store read path"
+    ]
+  },
+  "severity_distribution": {
+    "critical": 0,
+    "high": 1,
+    "medium": 0,
+    "low": 0
+  },
+  "error": ""
+}

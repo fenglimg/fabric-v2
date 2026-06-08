@@ -1,0 +1,52 @@
+{
+  "id": "8",
+  "title": "Compliance Scan",
+  "perspective": "compliance",
+  "result_status": "completed",
+  "findings": "Found 3 concrete compliance issues: raw session digest retention, missing session/actor provenance on review lifecycle events, and an archive secret-scan gap for persisted path metadata.",
+  "issues_found": [
+    {
+      "title": "Session digests persist raw user transcript snippets without redaction or retention controls",
+      "severity": "medium",
+      "description": "Stop-hook transcript summarization pushes raw user message text into user_messages, then session-digest-writer writes up to 10 messages of 500 chars each under .fabric/.cache/session-digests. The writer only truncates; it does not call the existing secret/PII redaction utilities and no TTL cleanup is configured for these digest files, so sensitive prompts can linger in local cache and later feed fabric-archive context.",
+      "location": "packages/cli/templates/hooks/lib/session-digest-writer.cjs:71",
+      "fix_direction": "Run digest content through the shared redactSecrets/privacy filter before write, add a configurable TTL/cleanup for .fabric/.cache/session-digests, and prefer summaries over verbatim user-message bullets.",
+      "affected_components": [
+        "hooks",
+        "session digest cache",
+        "fabric-archive"
+      ]
+    },
+    {
+      "title": "fab_review lifecycle events lack invoker session provenance",
+      "severity": "medium",
+      "description": "FabReviewInputSchema branches for approve/reject/defer contain only pending paths/reason/until and no session_id or actor field; the service then emits knowledge_proposed, knowledge_promote_started, knowledge_promoted, knowledge_rejected, and knowledge_deferred events with timestamp/reason but no session_id/correlation_id. The ledger records that a knowledge write happened but cannot attribute it to the invoking session or operator.",
+      "location": "packages/shared/src/schemas/api-contracts.ts:907",
+      "fix_direction": "Add optional session_id/correlation_id (and, if available, actor/client) to fab_review input, thread it through reviewKnowledge, and include it on all review mutation events; add tests asserting approve/reject/defer/promote events preserve provenance.",
+      "affected_components": [
+        "fab_review",
+        "event ledger",
+        "knowledge review"
+      ]
+    },
+    {
+      "title": "Archive secret scan omits persisted path metadata fields",
+      "severity": "medium",
+      "description": "extractKnowledge gates secret-shaped content by scanning user_messages_summary, session_context, must_read_if, and intent_clues only. However recent_paths are written verbatim into the pending entry Evidence block and evidence_paths are written into frontmatter, so credential-like or PII-bearing path strings can still land in a git-backed knowledge store despite the comment that secrets must never be persisted.",
+      "location": "packages/server/src/services/extract-knowledge.ts:277",
+      "fix_direction": "Include recent_paths, evidence_paths, relevance_paths, tags, tech_stack, and impact in the secret/privacy scan before rendering; redact or reject sensitive path metadata and add regression tests covering token-looking paths.",
+      "affected_components": [
+        "fab_extract_knowledge",
+        "knowledge pending entries",
+        "secret scan"
+      ]
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 3,
+    "low": 0
+  },
+  "error": ""
+}

@@ -1,0 +1,19 @@
+{
+  "id": "DBP-20260608-215329",
+  "mode": "multi",
+  "status": "completed",
+  "started_at": "2026-06-08T21:53:29.0025567+08:00",
+  "completed_at": "2026-06-08T14:25:28.8162144Z",
+  "perspectives_completed": [
+    "security",
+    "performance",
+    "reliability",
+    "maintainability",
+    "scalability",
+    "ux",
+    "accessibility",
+    "compliance"
+  ],
+  "issues_found": 16,
+  "issues_deduplicated": 15
+}
