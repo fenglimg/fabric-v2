@@ -27,7 +27,7 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
     "fab_extract_knowledge",
     {
       description:
-        "Persist a proposed pending knowledge entry under .fabric/knowledge/pending/<type>/<slug>.md. Idempotent on (source_sessions[0], type, slug); repeat calls append evidence rather than overwrite. Skill-side tool — invoked at session-stop.",
+        "Persist a proposed pending knowledge entry into the resolved write-target store under knowledge/pending/<type>/<slug>.md. Idempotent on (source_sessions[0], type, slug); repeat calls append evidence rather than overwrite. Skill-side tool — invoked at session-stop.",
       inputSchema: FabExtractKnowledgeInputShape,
       outputSchema: FabExtractKnowledgeOutputSchema.shape,
       annotations: fabExtractKnowledgeAnnotations,

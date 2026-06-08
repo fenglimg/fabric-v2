@@ -5,24 +5,22 @@
  * Internal helpers are co-located in this file.
  * Does NOT wire any consumers (MCP tools, doctor, watchers).
  *
- * `ensureKnowledgeFresh` detects drift between disk and the co-location
- * `agents.meta.json` index, emits ledger events, and invalidates the cache.
- * It does NOT rewrite agents.meta.json. Optimised for hot-path consumers
- * (MCP tools).
+ * `ensureKnowledgeFresh` used to detect drift between disk and the co-location
+ * `agents.meta.json` index. That co-location index is retired; the public
+ * entry point is now a compatibility no-op so hot-path MCP tools do not scan
+ * project-local or legacy non-store knowledge roots.
  *
  * v2.2 W5 R2 (agents.meta decolo): the `reconcileKnowledge` entry point —
  * which rebuilt the co-location `agents.meta.json` from disk via
  * knowledge-meta-builder — has been retired. Knowledge now lives in mounted
  * stores; the co-location index has no readers (read paths cut over to the
  * cross-store model) and is removed at decolo close-out, so periodically
- * rebuilding it served no consumer. Drift *detection* (`ensureKnowledgeFresh`)
- * is kept for its ledger-event side effects; drift *repair* (rewriting the
- * dead index) is gone.
+ * rebuilding it served no consumer. Drift detection moved to store-aware
+ * surfaces; this module no longer scans the retired dual-root knowledge trees.
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { RuleValidationError } from "@fenglimg/fabric-shared/errors";
@@ -30,14 +28,6 @@ import { RuleValidationError } from "@fenglimg/fabric-shared/errors";
 import { contextCache } from "../cache.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { sha256 } from "./_shared.js";
-
-// v2.0 dual-root knowledge layout — content_ref prefixes mirror
-// knowledge-meta-builder.ts so meta entries and rule-sync scans share the
-// same path vocabulary. Keeping these constants local (rather than importing
-// from knowledge-meta-builder.ts) avoids exposing internal helpers and
-// keeps each module's surface area minimal.
-const PERSONAL_CONTENT_REF_PREFIX = "~/.fabric/knowledge/";
-const TEAM_CONTENT_REF_PREFIX = ".fabric/knowledge/";
 
 // v2.0.0-rc.22 TASK-014 Scope E: subdir whitelist for rule-sync's dual-root
 // scan. Mirrors KNOWLEDGE_SUBDIRS in knowledge-meta-builder.ts. `pending` is
@@ -53,31 +43,14 @@ const KNOWLEDGE_SUBDIRS = [
 ] as const;
 
 /**
- * Resolve the personal-layer fabric root. Test-friendly via FABRIC_HOME env
- * var; production callers fall through to os.homedir(). Mirrors the helper
- * with the same name in knowledge-meta-builder.ts — kept local here for
- * the same encapsulation reason as the PREFIX constants above.
- */
-function resolvePersonalRoot(): string {
-  return process.env.FABRIC_HOME ?? homedir();
-}
-
-/**
- * Resolve a content_ref-style path (either team-relative or personal-prefixed)
- * to an absolute filesystem path. Personal entries carry the
- * `~/.fabric/knowledge/` prefix; team entries are plain project-relative
- * paths under `.fabric/knowledge/`.
+ * Retired compatibility helper. The old content_ref resolver mapped non-store
+ * roots to disk. Store-backed read paths now resolve files through the store
+ * resolver, so accepting legacy content_ref paths here would re-open the
+ * retired local/global knowledge scan path.
  */
 export function resolveContentRefPath(projectRoot: string, relPath: string): string {
-  if (relPath.startsWith(PERSONAL_CONTENT_REF_PREFIX)) {
-    return join(
-      resolvePersonalRoot(),
-      ".fabric",
-      "knowledge",
-      relPath.slice(PERSONAL_CONTENT_REF_PREFIX.length),
-    );
-  }
-  return join(projectRoot, relPath);
+  void projectRoot;
+  throw new Error(`legacy non-store knowledge content_ref resolution is retired: ${relPath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,61 +183,12 @@ async function readMetaEntries(projectRoot: string): Promise<Map<string, MetaEnt
 }
 
 /**
- * v2.0.0-rc.22 TASK-014 (Scope E): dual-root rule scan.
- *
- * Walks BOTH the team root (`<projectRoot>/.fabric/knowledge/`) and the
- * personal root (`<resolvePersonalRoot()>/.fabric/knowledge/`), returning
- * content_ref-style paths:
- *   - Team entries:     `.fabric/knowledge/<subdir>/<file>.md`     (project-relative)
- *   - Personal entries: `~/.fabric/knowledge/<subdir>/<file>.md`   (prefixed)
- *
- * Mirrors `findKnowledgeFiles` in knowledge-meta-builder.ts so the two
- * pipelines (meta build + rule-sync drift) see the same disk vocabulary —
- * which is what makes meta_entries.path comparisons against findRuleFiles
- * output work correctly across both layers.
- *
- * Personal-root materialization is deliberately NOT performed here (unlike
- * the meta builder which calls mkdir to seed the canonical layout). Rule
- * sync is a read-only scan; missing personal directories simply contribute
- * zero entries, identical to a team-only repo on a host that never used
- * personal knowledge.
+ * Retired rule scan. Store-backed read paths walk mounted stores directly;
+ * this compatibility helper must not enumerate non-store knowledge roots.
  */
 async function findRuleFiles(projectRoot: string): Promise<string[]> {
-  const teamRoot = join(projectRoot, ".fabric", "knowledge");
-  const personalRoot = join(resolvePersonalRoot(), ".fabric", "knowledge");
-
-  const files: string[] = [];
-
-  for (const [root, prefix] of [
-    [teamRoot, TEAM_CONTENT_REF_PREFIX] as const,
-    [personalRoot, PERSONAL_CONTENT_REF_PREFIX] as const,
-  ]) {
-    if (!existsSync(root) || !statSync(root).isDirectory()) {
-      continue;
-    }
-
-    for (const subdir of KNOWLEDGE_SUBDIRS) {
-      const dir = join(root, subdir);
-      if (!existsSync(dir) || !statSync(dir).isDirectory()) {
-        continue;
-      }
-
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith(".md")) {
-          files.push(`${prefix}${subdir}/${entry.name}`);
-        }
-      }
-    }
-  }
-
-  return files.sort();
+  void projectRoot;
+  return [];
 }
 
 /**
@@ -341,8 +265,8 @@ async function processSingleFile(
   source: "ensureKnowledgeFresh" | "reconcileKnowledge",
   throwOnInvalidFrontmatter: boolean,
 ): Promise<{ event: KnowledgeSyncLedgerEvent | null; warning: StructuredWarning | null }> {
-  // v2.0.0-rc.22 TASK-014: paths may be team-relative or personal-prefixed
-  // (`~/.fabric/knowledge/...`); resolveContentRefPath handles both.
+  // Compatibility path only. resolveContentRefPath now rejects retired
+  // non-store content_refs, so this cannot read legacy roots.
   const absPath = resolveContentRefPath(projectRoot, relPath);
 
   try {
@@ -444,105 +368,17 @@ async function appendRuleSyncEvents(projectRoot: string, events: KnowledgeSyncLe
 // ---------------------------------------------------------------------------
 
 /**
- * Detects drift between disk and agents.meta.json, emits ledger events, and
- * invalidates the cache. Does NOT rewrite agents.meta.json. Optimised for
- * hot-path consumers (MCP tools).
+ * Compatibility shim for MCP hot paths. Knowledge now lives in mounted stores,
+ * and recall/plan-context read those stores directly. This deliberately does no
+ * filesystem scan so retired non-store roots are never treated as a current
+ * source of truth.
  */
 export async function ensureKnowledgeFresh(
   projectRoot: string,
   opts?: KnowledgeSyncOptions,
 ): Promise<KnowledgeSyncReport> {
-  const mode = opts?.mode ?? "incremental";
+  void opts;
+  freshSyncCooldown.set(projectRoot, Date.now() + SYNC_COOLDOWN_MS);
+  return { status: "fresh", events: [], warnings: [] };
 
-  // Global optimistic skip: if the last sync for this projectRoot returned
-  // 'fresh' within SYNC_COOLDOWN_MS and mode is not 'full', return the cached
-  // empty report without touching the filesystem at all.
-  const cooldownExpiry = freshSyncCooldown.get(projectRoot);
-  if (cooldownExpiry !== undefined && Date.now() < cooldownExpiry && mode !== "full") {
-    return { status: "fresh", events: [], warnings: [] };
-  }
-
-  const throwOnInvalidFrontmatter = opts?.throwOnInvalidFrontmatter ?? false;
-  const source = "ensureKnowledgeFresh" as const;
-  const events: KnowledgeSyncLedgerEvent[] = [];
-  const warnings: StructuredWarning[] = [];
-
-  const metaEntries = await readMetaEntries(projectRoot);
-  const ruleFiles = await findRuleFiles(projectRoot);
-  // ISS-009: O(1) membership for the removal scan below (was Array.includes,
-  // O(metaEntries × ruleFiles) when nested in the loop).
-  const ruleFileSet = new Set(ruleFiles);
-
-  // High 1 fix: Never pre-skip files based on time alone. The debounce check
-  // inside processSingleFile deduplicates correctly: it reads the disk hash first
-  // and only skips when hash-equal AND within the 500ms window.
-  // Incremental and full modes both process all files; the difference is purely
-  // about whether we re-read files we haven't seen before (incremental includes
-  // all, full also includes all — the modes are now equivalent here, kept for
-  // future use by callers that may add per-mode behaviour).
-  const filesToCheck = ruleFiles;
-
-  for (const relPath of filesToCheck) {
-    const metaEntry = metaEntries.get(relPath);
-    const result = await processSingleFile(projectRoot, relPath, metaEntry, source, throwOnInvalidFrontmatter);
-
-    if (result.event !== null) {
-      events.push(result.event);
-    }
-
-    if (result.warning !== null) {
-      warnings.push(result.warning);
-    }
-  }
-
-  // Check for removals: meta entries whose files no longer exist on disk.
-  // v2.0.0-rc.22 TASK-014: meta paths may carry the personal prefix —
-  // resolve via resolveContentRefPath to check both layers correctly.
-  for (const [relPath, entry] of metaEntries) {
-    if (!ruleFileSet.has(relPath)) {
-      const absPath = resolveContentRefPath(projectRoot, relPath);
-      if (!existsSync(absPath)) {
-        events.push({
-          type: "rule_removed",
-          stable_id: entry.stable_id,
-          path: relPath,
-          prev_hash: entry.content_hash,
-          new_hash: null,
-          changed_fields: ["content"],
-          source,
-        });
-      }
-    }
-  }
-
-  if (events.length === 0 && warnings.length === 0) {
-    // Fresh: set cooldown so rapid follow-up calls skip I/O entirely.
-    freshSyncCooldown.set(projectRoot, Date.now() + SYNC_COOLDOWN_MS);
-    return { status: "fresh", events: [], warnings: [] };
-  }
-
-  if (events.length > 0) {
-    await appendRuleSyncEvents(projectRoot, events);
-    contextCache.invalidate("file_watch", projectRoot);
-  }
-
-  // Status is 'reconciled' or 'errors' — something changed; clear cooldown so
-  // the next call re-verifies quickly instead of returning stale cached fresh.
-  freshSyncCooldown.delete(projectRoot);
-
-  // v2.2 W5 R2 (agents.meta decolo): the rc.29 BUG-G1 `autoHealOnDrift` chain
-  // into `reconcileKnowledge` is gone — there is no co-location agents.meta.json
-  // left to rebuild. `ensureKnowledgeFresh` still detects drift and emits the
-  // `knowledge_drift_detected` ledger events above; the `autoHealOnDrift` option
-  // is retained on the input type as a no-op for backward compatibility with the
-  // MCP tool call sites that still pass it.
-
-  const status = warnings.length > 0 ? "errors" : "reconciled";
-
-  return {
-    status,
-    events,
-    warnings,
-    reconciled_files: events.map((e) => e.path),
-  };
 }

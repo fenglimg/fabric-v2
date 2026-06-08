@@ -450,6 +450,18 @@ type DraftAutoPromoteInspection = {
   candidates: DraftAutoPromoteCandidate[];
 };
 
+function emptyDraftBacklogInspection(): DraftBacklogInspection {
+  return { status: "ok", draftCount: 0, totalCount: 0, ratio: 0 };
+}
+
+function emptyDraftAutoPromoteInspection(): DraftAutoPromoteInspection {
+  return { candidates: [] };
+}
+
+function emptyFilesystemEditFallbackInspection(): FilesystemEditFallbackInspection {
+  return { synthesized: 0, synthesizedStableIds: [] };
+}
+
 // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
 // over the last 7 days of `assistant_turn_observed` events.
 //
@@ -481,10 +493,6 @@ type CiteGoodhartInspection = {
 type McpConfigInWrongFileInspection = {
   hasWrongEntry: boolean;
   settingsPath: string;
-};
-
-type KnowledgeDirMissingInspection = {
-  missingSubdirs: string[];
 };
 
 // v2.0.0-rc.22 TASK-006: baseline filename format lint.
@@ -645,6 +653,22 @@ type PendingAutoArchiveInspection = {
   candidates: PendingAutoArchiveCandidate[];
 };
 
+function emptyOrphanDemoteInspection(projectRoot: string): OrphanDemoteInspection {
+  return { candidates: [], thresholds: resolveMaturityThresholds(projectRoot) };
+}
+
+function emptyStaleArchiveInspection(): StaleArchiveInspection {
+  return { candidates: [] };
+}
+
+function emptyPendingOverdueInspection(): PendingOverdueInspection {
+  return { candidates: [] };
+}
+
+function emptyPendingAutoArchiveInspection(): PendingAutoArchiveInspection {
+  return { candidates: [] };
+}
+
 // rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
 // Reports when the workspace's canonical knowledge node count is strictly
 // less than `underseed_node_threshold` (default 10, override via
@@ -722,6 +746,20 @@ type NarrowTooFewInspection = {
   telemetry_skipped: boolean;
   telemetry_flagged: boolean;
 };
+
+function emptyNarrowTooFewInspection(): NarrowTooFewInspection {
+  return {
+    total_canonical_entries: 0,
+    narrow_with_paths_count: 0,
+    narrow_ratio: 0,
+    structural_flagged: false,
+    total_edit_fires_in_window: 0,
+    silence_fires_in_window: 0,
+    silence_rate: 0,
+    telemetry_skipped: true,
+    telemetry_flagged: false,
+  };
+}
 
 // rc.5 TASK-013 (C4): read-side lint inspections #23/#24/#25 for relevance_paths
 // hygiene. All three walk canonical entries (team + personal) and inspect the
@@ -990,9 +1028,9 @@ const RELEVANCE_PATHS_DRIFT_WINDOW_DAYS = 90;
 // real promotions emitted by fab_review.approve.
 const SYNTHESIZED_PROMOTED_REASON = "[synthesized] filesystem-edit-fallback";
 
-// Knowledge subdirectories scanned by the filesystem-edit fallback check.
-// Mirrors KNOWLEDGE_SUBDIRS minus `pending` (the staging area for proposals
-// that have not yet been approved).
+// Knowledge subdirectories scanned by legacy filesystem-edit fallback checks.
+// The project-local tree is no longer required, but if legacy content exists
+// these forensic checks can still inspect it without recreating the layout.
 const KNOWLEDGE_CANONICAL_TYPE_DIRS = [
   "decisions",
   "pitfalls",
@@ -1008,8 +1046,6 @@ const KNOWLEDGE_CANONICAL_TYPE_DIRS = [
 // this check is targeting.
 const CANONICAL_KNOWLEDGE_FILENAME_PATTERN =
   /^(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})--[a-z0-9][a-z0-9-]*\.md$/u;
-
-const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
 
 // v2.0.0-rc.22 TASK-006: baseline filename format hard-error lint.
 //
@@ -1062,7 +1098,6 @@ const TARGET_FILE_PATHS = [
   ".fabric/agents.meta.json",
   ".fabric/.cache/knowledge-test.index.json",
   ".fabric/events.jsonl",
-  ".fabric/knowledge",
   // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 canonical snapshot
   // (.fabric/AGENTS.md) and optional project-rules concat source
   // (.fabric/project-rules.md). Surfaced in summary.targetFiles so --json
@@ -1119,12 +1154,22 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (reads event ledger); placed after the sync inspections so the await
   // doesn't gate them.
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
+  // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
+  // post-decolo canonical knowledge source. Summaries feed store-aware checks;
+  // the count + corpus revision hash replace retired agents.meta-derived fields.
+  const storeKnowledgeSummaries = collectStoreKnowledgeSummaries(projectRoot);
+  const storeRevision = computeReadSetRevision(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
-  const draftBacklog = inspectDraftBacklog(projectRoot);
+  const draftBacklog = emptyDraftBacklogInspection();
   // rc.37 NEW-38: auto-promote candidates (info surface; --fix does the work).
-  const draftAutoPromote = await inspectDraftAutoPromote(projectRoot);
+  const draftAutoPromote = emptyDraftAutoPromoteInspection();
   // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
-  const knowledgeTagsEmpty = inspectKnowledgeTagsEmpty(projectRoot);
+  const knowledgeTagsEmpty: EmptyTagsInspection = {
+    status: "ok",
+    emptyCount: 0,
+    totalCount: storeKnowledgeSummaries.length,
+    ratio: 0,
+  };
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
   // in the last 30 days — drift detection runs but no consumption pipeline.
   const driftUnconsumed = await inspectDriftUnconsumed(projectRoot);
@@ -1132,74 +1177,69 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // `knowledge_dir_unindexed` retired — both compared the project co-location
   // `.fabric/knowledge` against agents.meta.json (no longer authoritative;
   // knowledge lives in stores) and their only --fix was reconcileKnowledge.
-  const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
   // v2.0.0-rc.22 TASK-006: baseline filename format hard error. Detects
   // legacy bare-slug baseline files. rc.23 TASK-012 (F8a) deleted the
   // baseline-emit pipeline outright, so the lint now serves only as a
   // forensic indicator for stale pre-rc.23 workspaces; resolution is
   // manual deletion of the offending file. manual_error kind, no --fix path.
-  const baselineFilenameFormat = inspectBaselineFilenameFormat(projectRoot);
-  const stableIdCollision = await inspectStableIdCollisions(projectRoot);
+  const baselineFilenameFormat: BaselineFilenameFormatInspection = { offenders: [] };
+  const stableIdCollision: StableIdCollisionInspection = { collisions: [] };
   // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
   // `index_drift` checks (against agents.meta.json#counters) are retired. The
   // monotonic stable_id counter now lives per-store in committed counters.json
   // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
   // replacement — disk-max FLOOR semantics over every read-set store.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
-  // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
-  // post-decolo canonical knowledge source. Summaries feed the opacity lint;
-  // the count + corpus revision hash replace the retired agents.meta-derived
-  // `ruleCount` / `metaRevision` summary fields.
-  const storeKnowledgeSummaries = collectStoreKnowledgeSummaries(projectRoot);
-  const storeRevision = computeReadSetRevision(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
   // rc.3 TASK-005: filesystem-edit fallback. Synthesizes knowledge_promoted
   // for canonical entries with no matching event. Runs AFTER ledger
   // partial-write detection so we never append to a corrupt tail; it relies
   // on the existing read/append machinery to be in a consistent state.
-  const filesystemEditFallback = eventLedger.exists && eventLedger.writable && eventLedger.parseable
-    ? await inspectFilesystemEditFallback(projectRoot)
-    : { synthesized: 0, synthesizedStableIds: [] };
+  const filesystemEditFallback = emptyFilesystemEditFallbackInspection();
   // rc.4 TASK-001: read-side lint inspections (#16-18). These run after the
   // filesystem-edit fallback (which can append synthesized knowledge_promoted
   // events) so that the lastActiveAt index built by orphan-demote and
   // stale-archive sees the synthesized timestamps and does not double-count
   // a freshly-synthesized canonical entry as orphan.
   const lintNow = Date.now();
-  const orphanDemote = await inspectOrphanDemote(projectRoot, lintNow);
-  const staleArchive = await inspectStaleArchive(projectRoot, lintNow);
-  const pendingOverdue = inspectPendingOverdue(projectRoot, lintNow);
-  // rc.4 TASK-002: read-side integrity inspections (#19-21). Independent of
-  // lintNow — these inspect filesystem layout / id allocation invariants
-  // rather than time-based maturity thresholds.
-  const stableIdDuplicate = inspectStableIdDuplicate(projectRoot);
-  const layerMismatch = inspectLayerMismatch(projectRoot);
+  // v2.2 store cutover: legacy dual-root corpus lints are disabled until their
+  // walkers are rewritten against ~/.fabric/stores/*/knowledge. Do not read or
+  // mutate project-local `.fabric/knowledge` / legacy `~/.fabric/knowledge`.
+  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
+  const staleArchive = emptyStaleArchiveInspection();
+  const pendingOverdue = emptyPendingOverdueInspection();
+  const stableIdDuplicate: StableIdDuplicateInspection = { duplicates: [] };
+  const layerMismatch: LayerMismatchInspection = { mismatches: [] };
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a synchronous filesystem count, not a
   // time-decayed signal. Runs alongside the rc.4 integrity inspections so the
   // report surfaces all corpus-level findings adjacent to one another.
-  const underseeded = inspectUnderseeded(projectRoot);
+  const underseeded: UnderseededInspection = {
+    node_count: storeKnowledgeSummaries.length,
+    threshold: readUnderseedThresholdFromConfig(projectRoot),
+    underseeded: storeKnowledgeSummaries.length < readUnderseedThresholdFromConfig(projectRoot),
+  };
   // rc.5 TASK-013 (C4): relevance_paths hygiene inspections #23/#24/#25. All
   // three walk canonical entries (team + personal) and inspect frontmatter
   // relevance fields. #24 expands globs against the live filesystem; #25
   // shells out to `git log` for the drift heuristic (degrades to ok+info
   // when git is unavailable). Flag-only in rc.5 — apply-lint auto-prune
   // deferred to rc.7+.
-  const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
-  const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
-  const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
+  const narrowNoPaths: NarrowNoPathsInspection = { candidates: [] };
+  const relevancePathsDangling: RelevancePathsDanglingInspection = { entries: [] };
+  const relevancePathsDrift: RelevancePathsDriftInspection = { candidates: [], git_available: true };
   // rc.37 NEW-5: personal-layer entries whose relevance_paths match files in
   // the current project — signals layer misclassification (content is
   // project-bound, should be team-layer).
-  const personalLayerPathMisclassify = inspectPersonalLayerPathMisclassify(projectRoot);
+  const personalLayerPathMisclassify: PersonalLayerPathMisclassifyInspection = { candidates: [] };
   // rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
   // (legacy entries archived before NEW-31's sanitizer landed).
-  const suspiciousKb = inspectSuspiciousKb(projectRoot);
+  const suspiciousKb: SuspiciousKbInspection = { candidates: [] };
   // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
   // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
   // telemetry when the edit-counter has no fires in the 30d window.
-  const narrowTooFew = inspectNarrowTooFew(projectRoot, lintNow);
+  const narrowTooFew = emptyNarrowTooFewInspection();
   // rc.6 TASK-021 (E3): session-hints cache hygiene (#27). Scans
   // `.fabric/.cache/` for session-hints-*.json files older than 7 days
   // (mtime-based). Info kind — does not bump report status. apply-lint
@@ -1216,7 +1256,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // hygiene, not correctness (meta-builder falls back to the schema
   // defaults at read time). apply-lint writes the explicit defaults and
   // emits one aggregate `relevance_migration_run` event per run.
-  const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
+  const relevanceFieldsMissing: RelevanceFieldsMissingInspection = { candidates: [], scanned_count: 0 };
   // rc.12 lint #29: skill_md_yaml_invalid. Scans .claude/skills and
   // .codex/skills SKILL.md frontmatter for unquoted ': ' tokens that Codex's
   // strict YAML parser rejects (Claude Code is lenient). Warning kind —
@@ -1272,9 +1312,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔ three-end blocks).
     createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
     createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
-    createKnowledgeDirMissingCheck(t, knowledgeDirMissing),
     // v2.0.0-rc.22 TASK-006: baseline filename format. Sits adjacent to
-    // knowledge_dir_missing — both are knowledge-layout invariants. manual_error
+    // the retired local knowledge-layout checks. manual_error
     // kind; resolution is manual file deletion (rc.23 TASK-012 (F8a) removed
     // the baseline-emit pipeline, so no auto-fix exists).
     createBaselineFilenameFormatCheck(t, baselineFilenameFormat),
@@ -1534,11 +1573,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.fixable_errors, "managed_block_drift"));
   }
 
-  if (before.fixable_errors.some((issue) => issue.code === "knowledge_dir_missing")) {
-    await ensureKnowledgeSubdirs(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "knowledge_dir_missing"));
-  }
-
   if (before.fixable_errors.some((issue) => issue.code === "event_ledger_missing")) {
     await ensureEventLedger(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "event_ledger_missing"));
@@ -1712,7 +1746,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   // re-synced agents.meta maturity/hashes is dropped — applyDraftAutoPromote
   // rewrites the frontmatter in place and there is no co-location meta index to
   // keep consistent anymore.
-  const autoPromote = await inspectDraftAutoPromote(projectRoot);
+  const autoPromote = emptyDraftAutoPromoteInspection();
   if (autoPromote.candidates.length > 0) {
     const { promoted } = await applyDraftAutoPromote(projectRoot, autoPromote.candidates);
     if (promoted.length > 0) {
@@ -1796,10 +1830,11 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
 
   const now = Date.now();
 
-  // Re-run the inspection generators directly (rather than parsing back out
-  // of the report.checks summary) — we need the structured candidate lists
-  // to drive per-entry mutations.
-  const orphanDemote = await inspectOrphanDemote(projectRoot, now);
+  // v2.2 store cutover: retired dual-root knowledge lints are no longer
+  // mutation sources. Do not demote/archive entries from project-local
+  // `.fabric/knowledge` or legacy `~/.fabric/knowledge`; store-aware versions
+  // must be implemented against ~/.fabric/stores/*/knowledge before re-enabling.
+  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
   for (const candidate of orphanDemote.candidates) {
     if (candidate.next_maturity === null) {
       // Terminal (already draft) — orphan-demote does not apply, stale-archive
@@ -1811,7 +1846,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     mutations.push(await applyOrphanDemote(projectRoot, candidate, now));
   }
 
-  const staleArchive = await inspectStaleArchive(projectRoot, now);
+  const staleArchive = emptyStaleArchiveInspection();
   for (const candidate of staleArchive.candidates) {
     mutations.push(await applyStaleArchive(projectRoot, candidate, now));
   }
@@ -1822,7 +1857,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   // pending after the canonical mutation pass keeps the dual-root pending
   // walker independent of any concurrent .fabric/knowledge/<type>/ writes
   // triggered above. One mutation per stale-pending entry, per layer.
-  const pendingAutoArchive = inspectPendingAutoArchive(projectRoot, now);
+  const pendingAutoArchive = emptyPendingAutoArchiveInspection();
   for (const candidate of pendingAutoArchive.candidates) {
     mutations.push(await applyPendingAutoArchive(projectRoot, candidate, now));
   }
@@ -3249,18 +3284,6 @@ function createBootstrapAnchorCheck(t: Translator, inspection: BootstrapAnchorIn
   );
 }
 
-function inspectKnowledgeDirMissing(projectRoot: string): KnowledgeDirMissingInspection {
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  const missingSubdirs: string[] = [];
-  for (const sub of KNOWLEDGE_SUBDIRS) {
-    const path = join(knowledgeRoot, sub);
-    if (!existsSync(path)) {
-      missingSubdirs.push(`.fabric/knowledge/${sub}`);
-    }
-  }
-  return { missingSubdirs };
-}
-
 // v2.0.0-rc.22 TASK-006: scan canonical knowledge subdirs for bare-slug
 // baseline files (e.g. `code-style.md`) — the pre-rc.22 emit format. Files
 // matching the id-prefixed pattern are skipped; bare-slug files have their
@@ -3341,28 +3364,6 @@ function createBaselineFilenameFormatCheck(
       detail,
     }),
     t("doctor.check.baseline_filename_format.remediation"),
-  );
-}
-
-function createKnowledgeDirMissingCheck(t: Translator, inspection: KnowledgeDirMissingInspection): DoctorCheck {
-  if (inspection.missingSubdirs.length > 0) {
-    const list = inspection.missingSubdirs.join(", ");
-    const count = inspection.missingSubdirs.length;
-    return issueCheck(
-      t("doctor.check.knowledge_dir_missing.name"),
-      "error",
-      "fixable_error",
-      "knowledge_dir_missing",
-      t(`doctor.check.knowledge_dir_missing.message.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-        list,
-      }),
-      t("doctor.check.knowledge_dir_missing.remediation"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.knowledge_dir_missing.name"),
-    t("doctor.check.knowledge_dir_missing.ok", { count: String(KNOWLEDGE_SUBDIRS.length) }),
   );
 }
 
@@ -4377,6 +4378,7 @@ const defaultGlobalCliSpawn: GlobalCliSpawnFn = () => {
     encoding: "utf8",
     timeout: 5000,
     stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
   });
   return { error: res.error ?? null, status: res.status, stdout: res.stdout };
 };
@@ -7558,15 +7560,6 @@ async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
     source: "doctor_fix",
     removed_from: ".claude/settings.json",
   });
-}
-
-async function ensureKnowledgeSubdirs(projectRoot: string): Promise<void> {
-  // v2.0 layout: ensure all required .fabric/knowledge/{type}/ subdirectories
-  // exist. Idempotent — `mkdir({recursive: true})` succeeds when the dir is
-  // already present. Does NOT touch any user content.
-  for (const sub of KNOWLEDGE_SUBDIRS) {
-    await mkdir(join(projectRoot, ".fabric", "knowledge", sub), { recursive: true });
-  }
 }
 
 // v2.2 W5 R4 (agents.meta decolo): `fixCounterDesync` removed — store counters floor via fixStoreCounters (doctor-store-counters.ts).

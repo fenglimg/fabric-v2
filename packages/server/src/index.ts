@@ -153,7 +153,7 @@ export function formatPreexistingRootMessage(projectRoot: string): string | null
   if (existsSync(join(projectRoot, "CLAUDE.md"))) preexisting.push("CLAUDE.md");
   if (existsSync(join(projectRoot, "AGENTS.md"))) preexisting.push("AGENTS.md");
   if (preexisting.length === 0) return null;
-  return `[startup] info: detected ${preexisting.join(", ")} at project root. Note: Fabric serves knowledge from .fabric/knowledge/ via MCP — root markdown files are not auto-loaded into the AI context.`;
+  return `[startup] info: detected ${preexisting.join(", ")} at project root. Note: Fabric serves knowledge from mounted stores via MCP — root markdown files are not auto-loaded into the AI context.`;
 }
 
 export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
@@ -223,10 +223,8 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
   registerReview(server, tracker);
 
   // v2.0: the legacy bootstrap README MCP resource is preserved as a contract
-  // shim — the file no longer exists by default in v2.0 (knowledge entries
-  // under .fabric/knowledge/ are the content of record), so the handler
-  // returns an empty/synthetic response instead of throwing. Existing MCP
-  // clients that probe this URI continue to receive a well-formed reply.
+  // shim. Knowledge now lives in mounted stores; this resource returns an
+  // empty/synthetic response instead of throwing for clients that still probe it.
   server.registerResource(
     "bootstrap README",
     AGENTS_MD_RESOURCE_URI,

@@ -26,7 +26,7 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
     "fab_review",
     {
       description:
-        "Review pending knowledge entries under .fabric/knowledge/pending/. Discriminated by `action`: list (enumerate), approve (allocate stable_id and promote to canonical layer/type path), reject/modify/search/defer (TASK-002). Skill-side tool — invoked by fabric-review.",
+        "Review pending knowledge entries in resolved store-backed knowledge/pending/. Discriminated by `action`: list (enumerate), approve (allocate stable_id and promote to canonical store knowledge path), reject/modify/search/defer (TASK-002). Skill-side tool — invoked by fabric-review.",
       // Flat ZodRawShape required by MCP SDK 1.29.0 registerTool. The
       // authoritative cross-field contract still lives in FabReviewInputSchema
       // (discriminatedUnion) and is enforced inside the handler via

@@ -1,8 +1,9 @@
 /**
  * v2.0.0-rc.34 TASK-05: reverse-unarchive primitive.
  *
- * Moves a knowledge entry back from `.fabric/.archive/<type>/<filename>` to its
- * canonical layer location (`.fabric/knowledge/<layer>/<type>/<filename>`),
+ * Moves a knowledge entry back from `.fabric/.archive/<type>/<filename>` to the
+ * resolved write-target store's canonical layer location
+ * (`~/.fabric/stores/<uuid>/knowledge/<type>/<filename>`),
  * emitting one `knowledge_unarchived` ledger event per successful restore.
  *
  * Layer derivation: stable_id prefix encodes layer (KT-* = team, KP-* = personal).
@@ -29,7 +30,10 @@ import { existsSync } from "node:fs";
 import { mkdir, rename, readFile, writeFile, unlink } from "node:fs/promises";
 import { basename, dirname, join, posix } from "node:path";
 
+import { resolveGlobalRoot } from "@fenglimg/fabric-shared";
+
 import { appendEventLedgerEvent } from "./event-ledger.js";
+import { resolveStoreCanonicalBase } from "./cross-store-write.js";
 
 export type UnarchiveOptions = {
   /**
@@ -164,8 +168,21 @@ export async function unarchiveKnowledge(
     };
   }
 
-  const restoredToRel = posix.join(".fabric/knowledge", layer, type, filename);
-  const restoredToAbs = join(projectRoot, restoredToRel);
+  let restoredToAbs: string;
+  try {
+    restoredToAbs = join(resolveStoreCanonicalBase(layer, projectRoot), type, filename);
+  } catch (error) {
+    return {
+      ok: false,
+      stableId,
+      archivePath: archivePathPosix,
+      restoredTo: null,
+      applied: false,
+      dryRun,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const restoredToRel = displayStorePath(restoredToAbs);
 
   if (dryRun) {
     return {
@@ -276,4 +293,16 @@ export async function unarchiveKnowledge(
     applied: true,
     dryRun,
   };
+}
+
+function displayStorePath(absPath: string): string {
+  const normalized = normalizeToPosix(absPath);
+  const globalRoot = normalizeToPosix(resolveGlobalRoot());
+  if (normalized === globalRoot) {
+    return "~/.fabric";
+  }
+  if (normalized.startsWith(`${globalRoot}/`)) {
+    return `~/.fabric/${normalized.slice(globalRoot.length + 1)}`;
+  }
+  return normalized;
 }

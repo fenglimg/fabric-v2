@@ -7,14 +7,15 @@ export const enMessages: Messages = {
     "Three-step mental model:\n" +
     "  Install (装) - fabric install   one-shot project setup\n" +
     "  Configure (配) - fabric config  interactive configuration panel\n" +
-    "  Run (跑) - fabric serve         launch the local MCP HTTP service\n" +
-    "             fabric doctor        run target-state diagnostics\n" +
+    "  Maintain (跑) - fabric doctor   run target-state diagnostics\n" +
+    "                 fabric sync      sync mounted knowledge stores\n" +
     "\n" +
     "Examples:\n" +
     "  fabric install                  install Fabric in the current project\n" +
     "  fabric config                   open the interactive configuration panel\n" +
-    "  fabric serve --port 7373        start the MCP HTTP service\n" +
     "  fabric doctor --fix             repair derived Fabric state\n" +
+    "  fabric doctor --fix-knowledge   repair knowledge entry state\n" +
+    "  fabric sync                     pull/rebase and push mounted stores\n" +
     "  fabric uninstall --dry-run      preview uninstall without removing files",
   "cli.shared.created": "Created",
   "cli.shared.skipped": "Skipped",
@@ -140,7 +141,7 @@ export const enMessages: Messages = {
     "  fabric doctor                   read-only diagnostics report\n" +
     "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
     "  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
-    "  fabric doctor --json --strict   machine-readable output, warnings as errors",
+    "  fabric doctor --json            machine-readable output",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
@@ -341,15 +342,6 @@ export const enMessages: Messages = {
   // v2.0.0-rc.33 W3-2 (T6 #5): reference the file names from the message so users can copy-paste rm targets rather than grep for them.
   "doctor.check.baseline_filename_format.remediation":
     "Manually rm the bare-slug baseline file(s) listed in the message (e.g. `rm <file from message>`). The baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
-  "doctor.check.knowledge_dir_missing.name": "Knowledge layout",
-  "doctor.check.knowledge_dir_missing.message.singular":
-    "{count} required knowledge subdir is missing: {list}.",
-  "doctor.check.knowledge_dir_missing.message.plural":
-    "{count} required knowledge subdirs are missing: {list}.",
-  "doctor.check.knowledge_dir_missing.remediation":
-    "Run `fabric doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
-  "doctor.check.knowledge_dir_missing.ok":
-    "All {count} required .fabric/knowledge/* subdirectories exist.",
   "doctor.check.forensic.name": "Scan evidence",
   "doctor.check.forensic.message.missing.singular":
     "{error} Live scan detects {frameworkKind} with {count} entry point.",
@@ -362,7 +354,7 @@ export const enMessages: Messages = {
   "doctor.check.agents_meta.name": "Agents metadata",
   "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json is missing.",
   "doctor.check.agents_meta.remediation.missing":
-    "Run `fabric doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
+    "No action needed for store-backed knowledge. Project-local agents.meta rebuilds are retired.",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
   // rc.35 TASK-09 (P0-14): humanised parse-failure messages.
   "doctor.check.agents_meta.message.invalid-zod":
@@ -370,24 +362,24 @@ export const enMessages: Messages = {
   "doctor.check.agents_meta.message.invalid-from-old-cli":
     ".fabric/agents.meta.json fails schema validation because the GLOBAL `fabric` CLI on PATH ({version}) is older than the minimum-supported {minVersion}. The schema gained backward-compatible singular→plural normalisation in rc.31; older CLIs cannot parse the result they themselves write back.",
   "doctor.check.agents_meta.remediation.invalid":
-    "Run `fabric doctor --fix` to let reconcile rebuild agents.meta.json from the .fabric/knowledge/ disk ground-truth (rc.31+ auto-migrates legacy singular knowledge_type values to canonical plural; do NOT manually delete agents.meta.json — you would lose counters envelope and promote-ledger associations).",
+    "Project-local agents.meta is retired. Run `fabric install` to refresh client bootstrap, and keep knowledge in mounted stores under ~/.fabric/stores/.",
   "doctor.check.agents_meta.message.stale":
-    ".fabric/agents.meta.json revision {revision} does not match .fabric/knowledge derived revision {computedRevision}.",
+    ".fabric/agents.meta.json revision {revision} does not match the retired local derived revision {computedRevision}.",
   "doctor.check.agents_meta.message.stale_hash_equal":
-    ".fabric/agents.meta.json content is aligned with .fabric/knowledge (revision {revision}) but the mtime/counters derived state is out of date. Benign.",
+    ".fabric/agents.meta.json content is aligned with the retired local derived revision {revision}; this check is legacy-only.",
   "doctor.check.agents_meta.remediation.stale":
-    "Benign — engine auto-heals on next plan-context/get-sections call. Run `fabric doctor --fix` for explicit reconciliation.",
+    "No project-local reconciliation is performed anymore; mounted stores are read directly.",
   "doctor.check.agents_meta.ok":
-    ".fabric/agents.meta.json revision {revision} is aligned with .fabric/knowledge.",
+    "Legacy agents.meta revision {revision} is present; store-backed knowledge does not depend on it.",
   "doctor.check.rule_content_refs.name": "Rule content refs",
   "doctor.check.rule_content_refs.message.unavailable":
     "Cannot inspect content_ref entries until agents.meta.json is valid.",
   "doctor.check.rule_content_refs.remediation.unavailable":
     "Fix agents.meta.json first: run `fabric doctor --fix`.",
   "doctor.check.rule_content_refs.message.outside.singular":
-    "{count} content_ref entry is outside .fabric/knowledge.",
+    "{count} legacy content_ref entry is outside the retired local knowledge root.",
   "doctor.check.rule_content_refs.message.outside.plural":
-    "{count} content_ref entries are outside .fabric/knowledge.",
+    "{count} legacy content_ref entries are outside the retired local knowledge root.",
   // v2.0.0-rc.33 W3-2 (T6 #12): project rules forbid hand-editing agents.meta.json (see .fabric/AGENTS.md). Direct users through doctor --fix reconcile path instead.
   "doctor.check.rule_content_refs.remediation.outside":
     "Run `fabric doctor --fix` to let reconcile auto-prune external content_refs (rc.31+ compatible). Do NOT hand-edit agents.meta.json — the engine reconciles automatically.",
@@ -396,9 +388,9 @@ export const enMessages: Messages = {
   "doctor.check.rule_content_refs.message.missing.plural":
     "{count} content_ref targets are missing. Run `fabric doctor --fix` to reconcile.",
   "doctor.check.rule_content_refs.remediation.missing":
-    "Run `fabric doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
+    "Project-local content_ref reconciliation is retired; bind/read mounted stores instead.",
   "doctor.check.rule_content_refs.ok":
-    "All content_ref entries resolve to .fabric/knowledge files.",
+    "All legacy content_ref entries resolve; store-backed knowledge is read from mounted stores.",
   "doctor.check.knowledge_test_index.name": "Knowledge-test index",
   "doctor.check.knowledge_test_index.remediation.missing":
     "Run `fabric doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.",
@@ -555,24 +547,24 @@ export const enMessages: Messages = {
   "doctor.check.meta_manually_diverged.message.extra.plural":
     "agents.meta.json has {count} entries with no backing file on disk. Run --fix to reconcile.",
   "doctor.check.meta_manually_diverged.remediation.extra":
-    "Run `fabric doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
+    "Project-local agents.meta reconciliation is retired; mounted stores are the source of truth.",
   "doctor.check.meta_manually_diverged.message.hash.singular":
     "agents.meta.json has {count} entry whose hash does not match the file on disk. Run --fix to reconcile.",
   "doctor.check.meta_manually_diverged.message.hash.plural":
     "agents.meta.json has {count} entries whose hash does not match the file on disk. Run --fix to reconcile.",
   "doctor.check.meta_manually_diverged.remediation.hash":
-    "Run `fabric doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
+    "Project-local agents.meta reconciliation is retired; mounted stores are the source of truth.",
   "doctor.check.meta_manually_diverged.ok.consistent":
     "agents.meta.json is consistent with rule files on disk.",
   "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
   "doctor.check.knowledge_dir_unindexed.message.singular":
-    "{count} .md file in .fabric/knowledge/ not indexed in agents.meta.json. Run `fabric doctor --fix` to index the missing knowledge files.",
+    "{count} legacy local knowledge .md file is not indexed. Move it into a mounted store; non-store knowledge roots are retired.",
   "doctor.check.knowledge_dir_unindexed.message.plural":
-    "{count} .md files in .fabric/knowledge/ not indexed in agents.meta.json. Run `fabric doctor --fix` to index the missing knowledge files.",
+    "{count} legacy local knowledge .md files are not indexed. Move them into a mounted store; non-store knowledge roots are retired.",
   "doctor.check.knowledge_dir_unindexed.remediation":
-    "Run `fabric doctor --fix` to index the missing knowledge files.",
+    "Use `fabric store bind` / `fabric store switch-write`, then migrate knowledge into the store's knowledge/ tree.",
   "doctor.check.knowledge_dir_unindexed.ok":
-    "All .fabric/knowledge/ .md files are indexed in agents.meta.json.",
+    "No legacy local knowledge indexing action is needed.",
   "doctor.check.stable_id_collision.name": "Stable ID collision",
   "doctor.check.stable_id_collision.message.singular":
     "stable_id \"{stableId}\" is declared in {fileCount} files: {files}. Edit one of the knowledge files to use a unique stable_id.",
@@ -582,7 +574,7 @@ export const enMessages: Messages = {
   "doctor.check.stable_id_collision.remediation":
     "Run `/fabric-review modify <one of the colliding ids from the message>` to let the canonical id allocator reassign it (updates frontmatter + counters + historical cross-refs atomically). Do NOT hand-edit id frontmatter — it will desync counters.",
   "doctor.check.stable_id_collision.ok":
-    "No declared stable_id collisions found in .fabric/knowledge/.",
+    "No declared stable_id collisions found in mounted store knowledge.",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
   "doctor.check.counter_desync.message.singular":
     "{count} knowledge counter desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fabric doctor --fix` to bump counters.",
@@ -606,7 +598,7 @@ export const enMessages: Messages = {
   "doctor.check.preexisting_root_files.message":
     "{files} detected at project root. These root files are not auto-loaded by Fabric MCP.",
   "doctor.check.preexisting_root_files.remediation":
-    "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
+    "Move knowledge content into a mounted store's `knowledge/{type}/` tree if you want it available in MCP responses.",
   "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
   "doctor.check.filesystem_edit_fallback.ok":
     "No orphan canonical knowledge entries detected; events.jsonl promotion trail is complete.",
@@ -615,14 +607,14 @@ export const enMessages: Messages = {
   "doctor.check.filesystem_edit_fallback.message.synthesized.plural":
     "Synthesized {count} knowledge_promoted events for orphan canonical entries ({sample}{suffix}). Reason='{reason}'.",
   "doctor.check.filesystem_edit_fallback.remediation.synthesized":
-    "These entries were moved into .fabric/knowledge/<type>/ outside fab_review.approve. The synthesized events restore audit-trail completeness.",
+    "These entries were moved into store knowledge/<type>/ outside fab_review.approve. The synthesized events restore audit-trail completeness.",
   "doctor.check.orphan_demote.name": "Knowledge orphan demote",
   "doctor.check.orphan_demote.ok":
     "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
   "doctor.check.orphan_demote.message.singular":
-    "{count} canonical knowledge entry exceeds their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
+    "{count} canonical knowledge entry exceeds their maturity-keyed inactivity threshold (proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.message.plural":
-    "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
+    "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
     "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
@@ -662,7 +654,7 @@ export const enMessages: Messages = {
     "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
   // v2.0.0-rc.33 W3-2 (T6 #35): make the skill entry point explicit so users know how to invoke fabric-review.
   "doctor.check.layer_mismatch.remediation":
-    "Move the file to the correct layer root (KT-* → .fabric/knowledge/team/, KP-* → ~/.fabric/knowledge/personal/), or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
+    "Move the file to the correct write-target store or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope is at or above the highest existing canonical counter for every (layer, type) pair.",
@@ -1006,7 +998,7 @@ export const enMessages: Messages = {
   "cli.install.capabilities.follow-up.ready": "continue in client",
   "cli.install.capabilities.follow-up.install": "install client assets",
   "cli.install.capabilities.follow-up.manual": "manual step required",
-  "cli.install.next-step.message": "run fabric hooks install to add the Day 4 pre-commit pipeline.",
+  "cli.install.next-step.message": "run fabric install --reapply --yes to refresh Fabric-managed hooks and client config.",
   "cli.install.reason-message.installable-body":
     ".fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
   "cli.install.reason-message.manual-body":
@@ -1033,7 +1025,7 @@ export const enMessages: Messages = {
   "cli.install.diff.state.user-modified": "user-modified",
 
   "cli.uninstall.description":
-    "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.\n" +
+    "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.\n" +
     "\n" +
     "Examples:\n" +
     "  fabric uninstall                interactive uninstall in the current project\n" +
@@ -1051,8 +1043,7 @@ export const enMessages: Messages = {
     "Plan: scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
   "cli.uninstall.plan.detected": "Detected clients: {clients}",
   "cli.uninstall.plan.preserves": "Preserves:",
-  "cli.uninstall.plan.preserves.knowledge": "team knowledge tree (always preserved)",
-  "cli.uninstall.plan.preserves.personal": "personal root, never touched",
+  "cli.uninstall.plan.preserves.stores": "global knowledge stores, never deleted by project uninstall",
   "cli.uninstall.plan.preview-title": "Fabric uninstall dry run",
   "cli.uninstall.plan.preview-result":
     "scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
@@ -1068,7 +1059,7 @@ export const enMessages: Messages = {
   "cli.uninstall.wizard.intro": "Fabric uninstall",
   "cli.uninstall.wizard.overview.title": "Uninstall overview",
   "cli.uninstall.wizard.overview.body":
-    "Target: {target}\nThis wizard only reshapes the uninstall plan; execution still runs through the existing Fabric uninstall stages.\n.fabric/knowledge/ is always preserved. ~/.fabric/knowledge/ is never touched.",
+    "Target: {target}\nThis wizard only reshapes the uninstall plan; execution still runs through the existing Fabric uninstall stages.\nGlobal knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.",
   "cli.uninstall.wizard.step.target": "Confirm target",
   "cli.uninstall.wizard.step.plan": "Shape uninstall plan",
   "cli.uninstall.wizard.step.review": "Review final plan",
@@ -1355,11 +1346,11 @@ export const enMessages: Messages = {
   // W4-11 (ISS-021): unified project-scan recommendations (cli forensic +
   // http scan share this single i18n-keyed set).
   "scan.rec.install":
-    "Run `fabric install` to scaffold the .fabric/ knowledge layout (decisions, pitfalls, guidelines, models, processes).",
+    "Run `fabric install`, then bind/select a mounted knowledge store for decisions, pitfalls, guidelines, models, and processes.",
   "scan.rec.readme":
     "Expand README.md (project goal, run steps, no-touch zones) before promoting facts into Fabric knowledge.",
   "scan.rec.contributing":
-    "Add CONTRIBUTING.md or capture contribution-flow guidance under .fabric/knowledge/processes/.",
+    "Add CONTRIBUTING.md or capture contribution-flow guidance in a mounted store under knowledge/processes/.",
   "scan.rec.cocos.lifecycle":
     "Confirm the Cocos Creator Component lifecycle (onLoad/onEnable/start) ordering with the user.",
   "scan.rec.cocos.human-protect":

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   FabReviewInput,
@@ -152,11 +152,10 @@ export async function reviewKnowledge(
 // path-sandboxing helpers
 //
 // All caller-supplied `pending_path` / `pending_paths` values are constrained
-// to the knowledge directories under the project root (.fabric/knowledge) or
-// the personal root ($FABRIC_HOME/.fabric/knowledge). This is defense-in-depth
-// against accidental traversal — fab_review is invoked by an MCP-trusted
-// agent, but a stray `../` from a buggy skill prompt should not allow
-// reading/deleting outside the knowledge tree.
+// to the resolved write-target store knowledge roots for this project. This is
+// defense-in-depth against accidental traversal — fab_review is invoked by an
+// MCP-trusted agent, but a stray `../` from a buggy skill prompt should not
+// allow reading/deleting outside the store knowledge tree.
 //
 // Returns the resolved absolute path on success; throws on traversal attempts
 // or when the path resolves outside the allowed roots.
@@ -184,7 +183,8 @@ function storeKnowledgeRoots(projectRoot: string): string[] {
 }
 
 function isUnder(abs: string, root: string): boolean {
-  return abs === root || abs.startsWith(root + "/");
+  const rel = relative(root, abs);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 function resolveSandboxedPath(
@@ -196,30 +196,22 @@ function resolveSandboxedPath(
     throw new Error("path is empty");
   }
 
-  const projectKnowledgeRoot = resolve(projectRoot, ".fabric", "knowledge");
-  const personalKnowledgeRoot = resolve(resolvePersonalRoot(), ".fabric", "knowledge");
   // Defense-in-depth: only the EXACT store knowledge roots the resolver returns
   // for this project are admitted (never an arbitrary store path).
   const storeRoots = storeKnowledgeRoots(projectRoot);
 
-  // `~/...` form maps to FABRIC_HOME (only meaningful for modify on canonical
-  // personal entries; approve always operates on pending which is project-local).
+  // Retired non-store personal roots are not valid knowledge targets anymore.
+  // Store paths should be passed as absolute paths returned by list/search, or
+  // resolved through the exact store roots above.
   if (candidate.startsWith("~/")) {
-    if (options.allowPersonal !== true) {
-      throw new Error(`personal-root path not allowed for this action: ${candidate}`);
-    }
-    const abs = resolve(resolvePersonalRoot(), candidate.slice(2));
-    if (!isUnder(abs, personalKnowledgeRoot)) {
-      throw new Error(`path escapes personal knowledge root: ${candidate}`);
-    }
-    return { abs, isInProjectTree: false };
+    throw new Error(`legacy personal knowledge root is retired; use a store path: ${candidate}`);
   }
 
   // Absolute paths are admitted ONLY when they resolve under a resolved store
   // knowledge root (the form listPending reports for store-routed entries).
   // Store entries live outside the project's git tree (each store is its own
   // repo), so isInProjectTree is false.
-  if (candidate.startsWith("/")) {
+  if (isAbsolute(candidate)) {
     const abs = resolve(candidate);
     if (storeRoots.some((root) => isUnder(abs, root))) {
       return { abs, isInProjectTree: false };
@@ -227,23 +219,15 @@ function resolveSandboxedPath(
     throw new Error(`path escapes knowledge root: ${candidate}`);
   }
 
-  // Project-relative — must resolve under .fabric/knowledge.
+  // Project-relative legacy non-store paths are retired. Only admit a relative
+  // path if it happens to resolve under one of this project's resolved store
+  // roots (normally callers pass absolute store paths from list/search).
   const projectAbs = resolve(projectRoot, candidate);
-  if (isUnder(projectAbs, projectKnowledgeRoot)) {
-    return { abs: projectAbs, isInProjectTree: true };
+  if (storeRoots.some((root) => isUnder(projectAbs, root))) {
+    return { abs: projectAbs, isInProjectTree: false };
   }
 
-  // Modify allows resolution against personal root for raw paths too (caller
-  // may pass an absolute-looking-but-relative path like `.fabric/knowledge/...`
-  // intended for personal). Try the personal root as a fallback.
-  if (options.allowPersonal === true) {
-    const personalAbs = resolve(resolvePersonalRoot(), candidate);
-    if (isUnder(personalAbs, personalKnowledgeRoot)) {
-      return { abs: personalAbs, isInProjectTree: false };
-    }
-  }
-
-  throw new Error(`path escapes knowledge root: ${candidate}`);
+  throw new Error(`path escapes store knowledge root: ${candidate}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,9 +289,8 @@ type ListItem = {
   tags?: string[];
   title?: string;
   summary?: string;
-  // rc.5 B1: origin indicates which on-disk pending root the entry came from.
-  // team   → workspace .fabric/knowledge/pending  (path is workspace-relative)
-  // personal → ~/.fabric/knowledge/pending        (path uses `~/...` form)
+  // origin indicates which write-target store root the entry came from.
+  // Both layers now resolve to mounted store knowledge/pending/ trees.
   origin?: "team" | "personal";
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): lifecycle status surfaced when present
   // in the frontmatter. Listings filter on this by default (see
@@ -526,12 +509,8 @@ async function approveOne(
   projectRoot: string,
   pendingPath: string,
 ): Promise<{ pending_path: string; stable_id: string } | null> {
-  // Defense-in-depth: confine the caller-supplied pending path to the pending
-  // tree of EITHER root.
-  //   team     → <project>/.fabric/knowledge/pending/<type>/
-  //   personal → <FABRIC_HOME>/.fabric/knowledge/pending/<type>/  (rc.5 B1)
-  // resolveSandboxedPath with allowPersonal=true accepts both `~/...` and
-  // project-relative forms, then we narrow to pending/ specifically.
+  // Defense-in-depth: confine the caller-supplied pending path to the resolved
+  // write-target store's knowledge/pending/<type>/ tree.
   let sourceAbs: string;
   let sourceOrigin: "team" | "personal";
   // v2.1 global-refactor (NEW-APPROVE-PROMOTE): true when the resolved pending
@@ -560,7 +539,7 @@ async function approveOne(
       (sandboxed.abs === personalPendingAbs || sandboxed.abs.startsWith(personalPendingAbs + "/"));
 
     if (!inTeamPending && !inPersonalPending) {
-      throw new Error(`approve path is outside .fabric/knowledge/pending/: ${pendingPath}`);
+      throw new Error(`approve path is outside the resolved store knowledge/pending/ roots: ${pendingPath}`);
     }
     sourceAbs = sandboxed.abs;
     sourceOrigin = inPersonalPending ? "personal" : "team";
@@ -818,11 +797,10 @@ async function rejectAll(
 //      emit knowledge_layer_changed. This is the ONLY legal stable_id
 //      mutation in the rc.3 surface.
 //
-// Schema overload note: the discriminated-union field name is `pending_path`
-// but the value can reference either a pending entry (.fabric/knowledge/pending/<type>/<slug>.md)
-// OR a post-approve canonical entry (.fabric/knowledge/<type>/<id>--<slug>.md
-// for team, ~/.fabric/knowledge/<type>/<id>--<slug>.md for personal). The
-// helper `resolveModifyTarget` handles the lookup.
+// Schema overload note: the discriminated-union field name is `pending_path`,
+// but the value can reference either a store pending entry or a post-approve
+// canonical entry. The helper `resolveModifyTarget` handles the lookup inside
+// the resolved store knowledge roots.
 // ---------------------------------------------------------------------------
 
 type ModifyChanges = {
@@ -897,10 +875,9 @@ function resolveModifyTarget(
   projectRoot: string,
   pendingPath: string,
 ): ResolvedTarget | null {
-  // Defense-in-depth: constrain caller-supplied path to the knowledge roots
-  // (project's .fabric/knowledge/ or personal root .fabric/knowledge/). Reject
-  // traversal attempts. modify accepts both project-tree and personal-canonical
-  // entries, so allowPersonal=true.
+  // Defense-in-depth: constrain caller-supplied path to the resolved store
+  // knowledge roots. Reject traversal attempts. modify accepts both pending and
+  // canonical store entries.
   let sandboxed: { abs: string; isInProjectTree: boolean };
   try {
     sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });

@@ -65,6 +65,33 @@ export type WriteKnowledgeMetaOptions = {
   source: KnowledgeMetaBuildSource;
 };
 
+function createRetiredAgentsMeta(): AgentsMeta {
+  return {
+    revision: sha256("store-only-agents-meta-retired"),
+    nodes: {},
+    counters: defaultAgentsMetaCounters(),
+  };
+}
+
+function createRetiredKnowledgeTestIndex(revision: string): KnowledgeTestIndex {
+  return {
+    schema_version: KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION,
+    generated_at: new Date(0).toISOString(),
+    revision,
+    links: [],
+    orphan_annotations: [],
+  };
+}
+
+function createRetiredKnowledgeMetaBuildResult(): KnowledgeMetaBuildResult {
+  const meta = createRetiredAgentsMeta();
+  return {
+    meta,
+    knowledgeTestIndex: createRetiredKnowledgeTestIndex(meta.revision),
+    changed: false,
+  };
+}
+
 /**
  * v2.0-rc.24 TASK-07: Load a Map<stable_id, knowledge_type> from the
  * project's `.fabric/agents.meta.json`. Consumed by the doctor cite-coverage
@@ -90,50 +117,18 @@ export type WriteKnowledgeMetaOptions = {
  * mode.
  */
 export async function loadKbIdTypeMap(projectRootInput: string): Promise<Map<string, KnowledgeType>> {
-  const projectRoot = normalizeProjectRoot(projectRootInput);
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const meta = await readExistingMeta(metaPath);
-  const map = new Map<string, KnowledgeType>();
-
-  if (meta === undefined) {
-    return map;
-  }
-
-  for (const node of Object.values(meta.nodes)) {
-    const stableId = node.stable_id;
-    if (stableId === undefined || !isKnowledgeStableId(stableId)) {
-      continue;
-    }
-    const knowledgeType = node.description?.knowledge_type;
-    if (knowledgeType === undefined) {
-      continue;
-    }
-    map.set(stableId, knowledgeType);
-  }
-
-  return map;
+  normalizeProjectRoot(projectRootInput);
+  // v2.2 store-only cutover: the project-local agents.meta index is retired.
+  // Cite routing now resolves against mounted stores; this compatibility helper
+  // must not read `.fabric/agents.meta.json` or resurrect `.fabric/knowledge`.
+  return new Map<string, KnowledgeType>();
 }
 
 export async function buildKnowledgeMeta(projectRootInput: string): Promise<KnowledgeMetaBuildResult> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   assertExistingDirectory(projectRoot);
 
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
-  const existingMeta = await readExistingMeta(metaPath);
-  const existingKnowledgeTestIndex = await readExistingKnowledgeTestIndex(knowledgeTestIndexPath);
-  const meta = await computeKnowledgeBasedAgentsMeta(projectRoot, existingMeta);
-  const knowledgeTestIndex = await computeKnowledgeTestIndex(projectRoot, meta, existingKnowledgeTestIndex);
-
-  return {
-    meta,
-    knowledgeTestIndex,
-    changed:
-      existingMeta === undefined ||
-      stableStringify(existingMeta) !== stableStringify(meta) ||
-      existingKnowledgeTestIndex === undefined ||
-      !isSameKnowledgeTestIndex(existingKnowledgeTestIndex, knowledgeTestIndex),
-  };
+  return createRetiredKnowledgeMetaBuildResult();
 }
 
 export async function writeKnowledgeMeta(
@@ -141,48 +136,13 @@ export async function writeKnowledgeMeta(
   options: WriteKnowledgeMetaOptions,
 ): Promise<KnowledgeMetaBuildResult> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
-  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
-  // F39 (ISS-20260531-047) / F30 / F31: the read-rebuild-write below preserves
-  // the counters envelope verbatim (buildKnowledgeMeta copies previousMeta.counters
-  // through). KnowledgeIdAllocator.allocate() bumps those same counters inside
-  // `withFileLock(${metaPath}.lock)`. Without taking the SAME lock here, a
-  // writeKnowledgeMeta that read meta before a concurrent allocate's bump landed
-  // would atomically clobber the bumped counter back to its stale value —
-  // re-minting an already-handed-out stable_id. Hold the allocator's lock across
-  // the whole read→rebuild→write so the two operations serialize. NOTE: callers
-  // (reconcileKnowledge, doctor --fix, load-active-meta auto-heal) must NOT wrap
-  // this in the same lock — withFileLock is non-reentrant (O_EXCL) and would
-  // self-deadlock.
-  return withFileLock(`${metaPath}.lock`, async () => {
-    const existingMeta = await readExistingMeta(metaPath);
-    const result = await buildKnowledgeMeta(projectRoot);
-
-    if (!result.changed) {
-      return result;
-    }
-
-    await ensureParentDirectory(metaPath);
-    await atomicWriteText(metaPath, `${JSON.stringify(result.meta, null, 2)}\n`);
-    // v2/rc.2: cache lives under `.fabric/.cache/` (gitignored). Ensure the
-    // subdirectory exists before atomicWriteText — first scan in a fresh repo
-    // would otherwise ENOENT on the missing parent.
-    await ensureParentDirectory(knowledgeTestIndexPath);
-    await atomicWriteText(knowledgeTestIndexPath, `${JSON.stringify(result.knowledgeTestIndex, null, 2)}\n`);
-
-    if (existingMeta === undefined || stableStringify(existingMeta) !== stableStringify(result.meta)) {
-      await recordBaselineSynced(projectRoot, {
-        previousRevision: existingMeta?.revision,
-        revision: result.meta.revision,
-        syncedFiles: collectSyncedFiles(existingMeta, result.meta),
-        acceptedStableIds: collectStableIds(result.meta),
-        driftDetails: collectDriftDetails(existingMeta, result.meta),
-        source: options.source,
-      });
-    }
-
-    return result;
-  });
+  assertExistingDirectory(projectRoot);
+  void options;
+  // v2.2 store-only cutover: writeKnowledgeMeta used to rebuild
+  // `.fabric/agents.meta.json` from project/global legacy knowledge roots.
+  // That write path is retired. Keep the function as a no-op compatibility
+  // surface so old callers cannot recreate local knowledge-derived state.
+  return createRetiredKnowledgeMetaBuildResult();
 }
 
 // ISS-004: buildKnowledgeMeta (and thus this fn) runs on EVERY read path
@@ -242,66 +202,8 @@ export async function computeKnowledgeBasedAgentsMeta(
 ): Promise<AgentsMeta> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   assertExistingDirectory(projectRoot);
-
-  const previousMeta = existingMeta ?? await readExistingMeta(join(projectRoot, ".fabric", "agents.meta.json"));
-  const existingByContentRef = indexExistingNodesByContentRef(previousMeta);
-  const ruleFiles = await findKnowledgeFiles(projectRoot);
-
-  const signature = await computeKnowledgeFileSignature(projectRoot, ruleFiles, previousMeta);
-  const cached = knowledgeMetaCache.get(projectRoot);
-  if (cached !== undefined && cached.signature === signature) {
-    return cached.meta;
-  }
-
-  const nodes: Record<string, NodeMeta> = {};
-
-  // v2.0: there is no longer a single L0 anchor file. Knowledge entries
-  // under `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/`
-  // are the content of record. The L0/L1/L2 layer protocol still drives rule
-  // precedence (priority/scope_glob), but no bootstrap/README.md is required
-  // as a "default L0 node" — empty repos persist as `nodes: {}`.
-
-  for (const contentRef of ruleFiles) {
-    const source = await readFile(resolveContentRefPath(projectRoot, contentRef), "utf8");
-    __knowledgeMetaCacheStats.fileReads += 1;
-    const existing = existingByContentRef.get(contentRef);
-    const hash = sha256(source);
-    const defaults = createDefaultNodeMeta(contentRef);
-    const identity = deriveRuleIdentity(contentRef, source, existing?.node);
-    // v2.0: knowledge entries are keyed by their declared id (KP-/KT-...) so
-    // the persisted node key matches what init-scan's
-    // `registerKnowledgeNodesInMeta` writes — avoiding duplicate nodes when
-    // both pipelines see the same file. Path-keyed ids remain as a fallback
-    // for hand-authored knowledge files that have not yet been allocated a
-    // declared id (e.g. drafts).
-    const id = isKnowledgeStableId(identity.stableId) ? identity.stableId : deriveNodeId(contentRef);
-
-    nodes[id] = {
-      ...defaults,
-      ...existing?.node,
-      file: contentRef,
-      content_ref: contentRef,
-      hash,
-      stable_id: identity.stableId,
-      identity_source: identity.identitySource,
-      description: extractRuleDescription(source) ?? existing?.node.description,
-      sections: extractRuleSections(source),
-    };
-  }
-
-  // v2.0: Always serialize the counters envelope (default-zero when v1.x meta
-  // had no `counters` key) so the persisted file is forward-compatible with
-  // the KnowledgeIdAllocator.
-  const counters = previousMeta?.counters ?? defaultAgentsMetaCounters();
-
-  const meta: AgentsMeta = {
-    ...(previousMeta ?? {}),
-    revision: computeRevision(nodes),
-    nodes: sortNodes(nodes),
-    counters,
-  };
-  knowledgeMetaCache.set(projectRoot, { signature, meta });
-  return meta;
+  void existingMeta;
+  return createRetiredAgentsMeta();
 }
 
 export async function computeKnowledgeTestIndex(

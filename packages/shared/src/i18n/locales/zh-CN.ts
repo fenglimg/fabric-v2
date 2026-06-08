@@ -7,14 +7,15 @@ export const zhCNMessages: Messages = {
     "三步心智模型：\n" +
     "  装 (install) - fabric install   一键完成项目初始化\n" +
     "  配 (config)  - fabric config    打开交互式配置面板\n" +
-    "  跑 (run)     - fabric serve     启动本地 MCP HTTP 服务\n" +
-    "                fabric doctor     运行目标态诊断\n" +
+    "  维护 (run)  - fabric doctor     运行目标态诊断\n" +
+    "                fabric sync       同步已挂载的知识 store\n" +
     "\n" +
     "示例：\n" +
     "  fabric install                  在当前项目中安装 Fabric\n" +
     "  fabric config                   打开交互式配置面板\n" +
-    "  fabric serve --port 7373        启动 MCP HTTP 服务\n" +
     "  fabric doctor --fix             修复 Fabric 派生状态\n" +
+    "  fabric doctor --fix-knowledge   修复知识条目状态\n" +
+    "  fabric sync                     pull/rebase 并 push 已挂载 store\n" +
     "  fabric uninstall --dry-run      预览卸载，不删除文件",
   "cli.shared.created": "已创建",
   "cli.shared.skipped": "已跳过",
@@ -134,7 +135,7 @@ export const zhCNMessages: Messages = {
     "  fabric doctor                   只读诊断报告\n" +
     "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
     "  fabric doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
-    "  fabric doctor --json --strict   机器可读输出，warning 视为失败",
+    "  fabric doctor --json            机器可读输出",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
@@ -326,15 +327,6 @@ export const zhCNMessages: Messages = {
   // v2.0.0-rc.33 W3-2 (T6 #5): 文案显式引用 message 内已列出的 detail (file 名), 让用户直接 rm 而非自己去 grep 找。baseline pipeline 已 rc.23 移除, 没有 auto-fix。
   "doctor.check.baseline_filename_format.remediation":
     "手动删除上面 message 中列出的 bare-slug baseline file(s) (例如 `rm <message 列出的 file>`);baseline pipeline 已在 rc.23 移除, 不再提供 auto-fix 路径。",
-  "doctor.check.knowledge_dir_missing.name": "Knowledge layout",
-  "doctor.check.knowledge_dir_missing.message.singular":
-    "{count} 个必需 knowledge subdir 缺失：{list}。",
-  "doctor.check.knowledge_dir_missing.message.plural":
-    "{count} 个必需 knowledge subdir 缺失：{list}。",
-  "doctor.check.knowledge_dir_missing.remediation":
-    "运行 `fabric doctor --fix` 创建缺失的 .fabric/knowledge/* subdirectories。",
-  "doctor.check.knowledge_dir_missing.ok":
-    "全部 {count} 个必需 .fabric/knowledge/* subdirectories 均已存在。",
   "doctor.check.forensic.name": "Scan evidence",
   "doctor.check.forensic.message.missing.singular":
     "{error} 实时扫描检测到 {frameworkKind}，共有 {count} 个入口点。",
@@ -347,7 +339,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.agents_meta.name": "Agents metadata",
   "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json 缺失。",
   "doctor.check.agents_meta.remediation.missing":
-    "运行 `fabric doctor --fix` 从 .fabric/knowledge/ 重建 agents.meta.json。",
+    "store-backed knowledge 下无需处理；项目本地 agents.meta 重建路径已退休。",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json 无效。",
   // rc.35 TASK-09 (P0-14): 人话化的 schema 解析失败消息。
   "doctor.check.agents_meta.message.invalid-zod":
@@ -355,24 +347,24 @@ export const zhCNMessages: Messages = {
   "doctor.check.agents_meta.message.invalid-from-old-cli":
     ".fabric/agents.meta.json schema 校验失败,因为 PATH 上的全局 `fabric` CLI ({version}) 低于最低支持版本 {minVersion}。rc.31 引入了向后兼容的 singular→plural 归一化,旧版 CLI 写出的文件自己也无法解析。",
   "doctor.check.agents_meta.remediation.invalid":
-    "运行 `fabric doctor --fix` 让 reconcile 从 .fabric/knowledge/ 磁盘 ground-truth 重建 agents.meta.json（rc.31 起兼容历史 schema 的 singular knowledge_type 自动迁移到 plural；不要手动删除 agents.meta.json，会丢 counters envelope 与 promote ledger 关联）。",
+    "项目本地 agents.meta 已退休。运行 `fabric install` 刷新客户端 bootstrap，并把 knowledge 保持在 ~/.fabric/stores/ 下的 mounted store 中。",
   "doctor.check.agents_meta.message.stale":
-    ".fabric/agents.meta.json revision {revision} 与 .fabric/knowledge 派生 revision {computedRevision} 不一致。",
+    ".fabric/agents.meta.json revision {revision} 与已退休的本地派生 revision {computedRevision} 不一致。",
   "doctor.check.agents_meta.message.stale_hash_equal":
-    ".fabric/agents.meta.json 已与 .fabric/knowledge 内容一致（revision {revision}），但 mtime/counters 派生状态过期。可忽略。",
+    ".fabric/agents.meta.json 已与已退休的本地派生 revision {revision} 对齐；该检查仅作历史兼容。",
   "doctor.check.agents_meta.remediation.stale":
-    "可忽略；engine 会在下一次 plan-context/get-sections 调用时自动修复。需要显式 reconcile 时运行 `fabric doctor --fix`。",
+    "不再执行项目本地 reconcile；mounted stores 会被直接读取。",
   "doctor.check.agents_meta.ok":
-    ".fabric/agents.meta.json revision {revision} 已与 .fabric/knowledge 对齐。",
+    "检测到 legacy agents.meta revision {revision}；store-backed knowledge 不依赖它。",
   "doctor.check.rule_content_refs.name": "Rule content refs",
   "doctor.check.rule_content_refs.message.unavailable":
     "agents.meta.json 有效前，无法检查 content_ref entries。",
   "doctor.check.rule_content_refs.remediation.unavailable":
     "先修复 agents.meta.json：运行 `fabric doctor --fix`。",
   "doctor.check.rule_content_refs.message.outside.singular":
-    "{count} 个 content_ref entry 位于 .fabric/knowledge 外部。",
+    "{count} 个 legacy content_ref entry 位于已退休的本地 knowledge root 外部。",
   "doctor.check.rule_content_refs.message.outside.plural":
-    "{count} 个 content_ref entries 位于 .fabric/knowledge 外部。",
+    "{count} 个 legacy content_ref entries 位于已退休的本地 knowledge root 外部。",
   // v2.0.0-rc.33 W3-2 (T6 #12): 项目规则禁止手动编辑 agents.meta.json (见 .fabric/AGENTS.md); 改引导用户跑 doctor --fix 走 reconcile 路径 (rc.31+ 兼容自动剔除外部 refs)。
   "doctor.check.rule_content_refs.remediation.outside":
     "运行 `fabric doctor --fix` 让 reconcile 自动剔除外部 content_ref (rc.31+ 兼容)。严禁手动编辑 agents.meta.json — engine 会自动 reconcile。",
@@ -381,9 +373,9 @@ export const zhCNMessages: Messages = {
   "doctor.check.rule_content_refs.message.missing.plural":
     "{count} 个 content_ref targets 缺失。运行 `fabric doctor --fix` 执行 reconcile。",
   "doctor.check.rule_content_refs.remediation.missing":
-    "运行 `fabric doctor --fix` 让 agents.meta.json 与 .fabric/knowledge/ 中的现有文件 reconcile。",
+    "项目本地 content_ref reconcile 已退休；请绑定并读取 mounted stores。",
   "doctor.check.rule_content_refs.ok":
-    "所有 content_ref entries 都能解析到 .fabric/knowledge files。",
+    "所有 legacy content_ref entries 都能解析；store-backed knowledge 从 mounted stores 读取。",
   "doctor.check.knowledge_test_index.name": "Knowledge-test index",
   "doctor.check.knowledge_test_index.remediation.missing":
     "运行 `fabric doctor --fix` 重建 .fabric/.cache/knowledge-test.index.json。",
@@ -539,24 +531,24 @@ export const zhCNMessages: Messages = {
   "doctor.check.meta_manually_diverged.message.extra.plural":
     "agents.meta.json 中有 {count} 个 entries 在磁盘上没有对应文件。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.remediation.extra":
-    "运行 `fabric doctor --fix` 让 agents.meta.json 与磁盘上当前的 rule files reconcile。",
+    "项目本地 agents.meta reconcile 已退休；mounted stores 是 source of truth。",
   "doctor.check.meta_manually_diverged.message.hash.singular":
     "agents.meta.json 中有 {count} 个 entry 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.message.hash.plural":
     "agents.meta.json 中有 {count} 个 entries 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.remediation.hash":
-    "运行 `fabric doctor --fix` 让 agents.meta.json 与当前 rule file 内容 reconcile。",
+    "项目本地 agents.meta reconcile 已退休；mounted stores 是 source of truth。",
   "doctor.check.meta_manually_diverged.ok.consistent":
     "agents.meta.json 与磁盘上的 rule files 一致。",
   "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
   "doctor.check.knowledge_dir_unindexed.message.singular":
-    ".fabric/knowledge/ 中有 {count} 个 .md file 未索引到 agents.meta.json。运行 `fabric doctor --fix` 索引缺失的 knowledge files。",
+    "检测到 {count} 个 legacy local knowledge .md file 未索引。请移入 mounted store；非 store knowledge root 已退休。",
   "doctor.check.knowledge_dir_unindexed.message.plural":
-    ".fabric/knowledge/ 中有 {count} 个 .md files 未索引到 agents.meta.json。运行 `fabric doctor --fix` 索引缺失的 knowledge files。",
+    "检测到 {count} 个 legacy local knowledge .md files 未索引。请移入 mounted store；非 store knowledge root 已退休。",
   "doctor.check.knowledge_dir_unindexed.remediation":
-    "运行 `fabric doctor --fix` 索引缺失的 knowledge files。",
+    "使用 `fabric store bind` / `fabric store switch-write`，然后把 knowledge 迁入 store 的 knowledge/ tree。",
   "doctor.check.knowledge_dir_unindexed.ok":
-    "所有 .fabric/knowledge/ .md files 都已索引到 agents.meta.json。",
+    "无需执行 legacy local knowledge 索引动作。",
   "doctor.check.stable_id_collision.name": "Stable ID collision",
   "doctor.check.stable_id_collision.message.singular":
     "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中：{files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
@@ -566,7 +558,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stable_id_collision.remediation":
     "调 `/fabric-review modify <message 中列出的 colliding id 之一>`, 让 canonical id allocator 自动重分配 id (会同步更新 frontmatter + counters + 历史 cross-ref)。严禁手工编辑 id frontmatter — 会撞 counter。",
   "doctor.check.stable_id_collision.ok":
-    ".fabric/knowledge/ 中未发现已声明的 stable_id collisions。",
+    "mounted store knowledge 中未发现已声明的 stable_id collisions。",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
   "doctor.check.counter_desync.message.singular":
     "{count} 个 knowledge counter 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fabric doctor --fix` bump counters。",
@@ -590,7 +582,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.preexisting_root_files.message":
     "project root 检测到 {files}。这些 root files 不会被 Fabric MCP 自动加载。",
   "doctor.check.preexisting_root_files.remediation":
-    "如果希望这些 knowledge 内容在 MCP 响应中可用，请将其移动到 `.fabric/knowledge/{type}/`。",
+    "如果希望这些 knowledge 内容在 MCP 响应中可用，请将其移动到 mounted store 的 `knowledge/{type}/` tree。",
   "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
   "doctor.check.filesystem_edit_fallback.ok":
     "No orphan canonical knowledge entries detected；events.jsonl promotion trail 完整。",
@@ -599,14 +591,14 @@ export const zhCNMessages: Messages = {
   "doctor.check.filesystem_edit_fallback.message.synthesized.plural":
     "已为孤立 canonical entries 合成 {count} 个 knowledge_promoted events（{sample}{suffix}）。Reason='{reason}'。",
   "doctor.check.filesystem_edit_fallback.remediation.synthesized":
-    "这些 entries 是在 fab_review.approve 之外被移动到 .fabric/knowledge/<type>/ 的。合成 events 会恢复 audit-trail 完整性。",
+    "这些 entries 是在 fab_review.approve 之外被移动到 store knowledge/<type>/ 的。合成 events 会恢复 audit-trail 完整性。",
   "doctor.check.orphan_demote.name": "Knowledge orphan demote",
   "doctor.check.orphan_demote.ok":
     "没有 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold。",
   "doctor.check.orphan_demote.message.singular":
-    "{count} 个 canonical knowledge entry 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
+    "{count} 个 canonical knowledge entry 超过按 maturity 设定的 inactivity threshold（proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.message.plural":
-    "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
+    "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
     "运行 `fabric doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
@@ -646,7 +638,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
   // v2.0.0-rc.33 W3-2 (T6 #35): 加 skill 入口 (`/fabric-review modify <id>`) 让用户知道怎么 invoke。
   "doctor.check.layer_mismatch.remediation":
-    "将文件移动到正确的 layer root (KT-* → .fabric/knowledge/team/, KP-* → ~/.fabric/knowledge/personal/), 或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
+    "将文件移动到正确的 write-target store，或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope 对每个 (layer, type) pair 都大于或等于现有 canonical counter 最大值。",
@@ -988,7 +980,7 @@ export const zhCNMessages: Messages = {
   "cli.install.capabilities.follow-up.ready": "可在客户端继续",
   "cli.install.capabilities.follow-up.install": "安装客户端资产",
   "cli.install.capabilities.follow-up.manual": "需要手动后续处理",
-  "cli.install.next-step.message": "运行 fabric hooks install 以添加第 4 天的 pre-commit 流水线。",
+  "cli.install.next-step.message": "运行 fabric install --reapply --yes 以刷新 Fabric 管理的 hooks 与客户端配置。",
   "cli.install.reason-message.installable-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
   "cli.install.reason-message.manual-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端尚未安装 Fabric skill，需要手动完成后续安装。",
   "cli.install.codex-hooks.created": "{label} {path}，并写入 Codex hooks 配置（需启用 features.codex_hooks = true）。",
@@ -1013,7 +1005,7 @@ export const zhCNMessages: Messages = {
   "cli.install.diff.state.user-modified": "用户修改",
 
   "cli.uninstall.description":
-    "从目标项目中卸载 Fabric。.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。\n" +
+    "从目标项目中卸载 Fabric。项目卸载永远不会删除 ~/.fabric/stores/ 下的全局知识 store。\n" +
     "\n" +
     "示例：\n" +
     "  fabric uninstall                在当前项目中以交互模式卸载\n" +
@@ -1030,8 +1022,7 @@ export const zhCNMessages: Messages = {
     "计划：scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
   "cli.uninstall.plan.detected": "检测到的客户端：{clients}",
   "cli.uninstall.plan.preserves": "保留项：",
-  "cli.uninstall.plan.preserves.knowledge": "团队知识树（始终保留）",
-  "cli.uninstall.plan.preserves.personal": "个人根目录，永不触碰",
+  "cli.uninstall.plan.preserves.stores": "全局知识 stores，项目卸载永不删除",
   "cli.uninstall.plan.preview-title": "Fabric 卸载 dry run",
   "cli.uninstall.plan.preview-result":
     "scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
@@ -1047,7 +1038,7 @@ export const zhCNMessages: Messages = {
   "cli.uninstall.wizard.intro": "卸载 Fabric",
   "cli.uninstall.wizard.overview.title": "卸载概览",
   "cli.uninstall.wizard.overview.body":
-    "目标：{target}\n这个向导只负责调整卸载计划；真正执行仍然走现有的 Fabric uninstall 阶段。\n.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。",
+    "目标：{target}\n这个向导只负责调整卸载计划；真正执行仍然走现有的 Fabric uninstall 阶段。\n项目卸载永远不会删除 ~/.fabric/stores/ 下的全局知识 store。",
   "cli.uninstall.wizard.step.target": "确认目标",
   "cli.uninstall.wizard.step.plan": "配置卸载计划",
   "cli.uninstall.wizard.step.review": "复核最终计划",
@@ -1335,9 +1326,9 @@ export const zhCNMessages: Messages = {
 
   // W4-11 (ISS-021): 统一项目扫描推荐(cli forensic + http scan 共用此 i18n key 集)。
   "scan.rec.install":
-    "运行 `fabric install` 搭建 .fabric/ 知识层(decisions/pitfalls/guidelines/models/processes)。",
+    "运行 `fabric install`，然后绑定并选择 mounted knowledge store 来承载 decisions/pitfalls/guidelines/models/processes。",
   "scan.rec.readme": "README 信息不足,建议在初始化访谈中补齐项目目标、运行方式和禁改区域。",
-  "scan.rec.contributing": "补充 CONTRIBUTING.md,或在 .fabric/knowledge/processes/ 下记录贡献流程。",
+  "scan.rec.contributing": "补充 CONTRIBUTING.md,或在 mounted store 的 knowledge/processes/ 下记录贡献流程。",
   "scan.rec.cocos.lifecycle": "建议向用户确认 Cocos Creator Component 生命周期(onLoad/onEnable/start)顺序。",
   "scan.rec.cocos.human-protect": "建议询问 assets/prefabs 和 assets/scenes 是否属于 @HUMAN 保护区域。",
   "scan.rec.cocos.meta-lock": "检测到 .meta 文件,建议在 @HUMAN 锁定 .meta 不被 AI 改动。",
