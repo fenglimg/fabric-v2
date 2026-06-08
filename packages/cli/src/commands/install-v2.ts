@@ -1,34 +1,13 @@
-import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-
-import { cancel, confirm, group, intro, isCancel, log, note, outro, select, text } from "@clack/prompts";
 import { defineCommand } from "citty";
 
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
-import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
-import { loadGlobalConfig } from "../store/global-config-io.js";
-import { storeBind, storeCreate, storeList, storeSwitchWrite, unboundAvailableStores } from "../store/store-ops.js";
-import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
-import { loadProjectConfig } from "../store/project-config-io.js";
-import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
-import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
-import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
-import { mountStoreFromRemote } from "../install/run-global-install.js";
-import { resolveGlobalRoot } from "../store/global-config-io.js";
 import { paint } from "../colors.js";
 
 // Import the new pipeline
-import { InstallPipeline, stageRan, stageSkipped, stageFailed, stageFailedFromError } from "../install/pipeline/index.js";
-import type {
-  InitArgs,
-  InitOptions,
-  InstallContext,
-  PipelineResult,
-  StageName,
-} from "../install/pipeline/index.js";
+import { InstallPipeline } from "../install/pipeline/index.js";
+import type { InitArgs, InstallContext } from "../install/pipeline/index.js";
 import { PreflightStage } from "../install/pipeline/preflight.stage.js";
 import { EnvStage } from "../install/pipeline/env.stage.js";
 import { StoreStage } from "../install/pipeline/store.stage.js";
@@ -148,34 +127,6 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
     return;
   }
 
-  // Post-install steps (preserved from original implementation)
-  if (!context.options.planOnly) {
-    // Handle --url flag for store binding
-    if (typeof args.url === "string" && args.url.length > 0) {
-      bindRemoteStoreToProject(resolution.target, args.url);
-    } else if (context.wizardEnabled) {
-      await promptStoreOnboarding(resolution.target);
-    }
-
-    // Warn about unbound stores
-    const unboundStores = unboundAvailableStores(resolution.target);
-    if (unboundStores.length > 0) {
-      console.log("");
-      console.log(
-        t("cli.install.store-bind-nudge", {
-          aliases: unboundStores.map((s) => `'${s.alias}'`).join(", "),
-          first: unboundStores[0].alias,
-        }),
-      );
-    }
-
-    // Handle semantic search
-    if (args["enable-embed"] === true) {
-      enableSemanticSearchAndReport(resolution.target, args["embed-model"]);
-    } else if (context.wizardEnabled) {
-      await promptSemanticSearch(resolution.target);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,124 +163,4 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
 
 function isInteractiveInit(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
-}
-
-/**
- * Enable semantic search and print instructions.
- */
-function enableSemanticSearchAndReport(projectRoot: string, model?: string): void {
-  const enabled = enableSemanticSearch(projectRoot, model === undefined ? {} : { model });
-  console.log("");
-  if (enabled.alreadyEnabled) {
-    console.log(paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`));
-    return;
-  }
-  for (const line of renderSemanticSearchInstructions(enabled.model)) {
-    console.log(line);
-  }
-}
-
-/**
- * Interactive prompt for semantic search.
- */
-async function promptSemanticSearch(projectRoot: string): Promise<void> {
-  const enable = await confirm({
-    message: "Enable vector semantic search? (downloads an embedding model on first use)",
-    initialValue: false,
-  });
-  if (isCancel(enable) || !enable) {
-    return;
-  }
-  enableSemanticSearchAndReport(projectRoot);
-}
-
-/**
- * Mount and bind a remote store to the project.
- */
-export function bindRemoteStoreToProject(
-  projectRoot: string,
-  url: string,
-  globalRoot: string = resolveGlobalRoot(),
-): void {
-  const already = storeList(globalRoot).find((store) => store.remote === url);
-  const mounted = already ?? mountStoreFromRemote(url, globalRoot);
-  storeBind(projectRoot, { id: mounted.alias, suggested_remote: url });
-  storeSwitchWrite(projectRoot, mounted.alias);
-  regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
-  console.log("");
-  console.log(
-    paint.success(`bound store '${mounted.alias}' to this project and set it as the write target.`),
-  );
-}
-
-/**
- * Create and bind a new store to the project.
- */
-export function bindCreatedStoreToProject(
-  projectRoot: string,
-  alias: string,
-  options: { remote?: string; globalRoot?: string } = {},
-): void {
-  const globalRoot = options.globalRoot ?? resolveGlobalRoot();
-  storeCreate(alias, new Date().toISOString(), {
-    ...(options.remote === undefined ? {} : { remote: options.remote }),
-    globalRoot,
-  });
-  storeBind(
-    projectRoot,
-    options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
-  );
-  storeSwitchWrite(projectRoot, alias);
-  regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
-  console.log("");
-  console.log(
-    paint.success(`created store '${alias}', bound it to this project, and set it as the write target.`),
-  );
-}
-
-/**
- * Interactive store onboarding prompt.
- */
-async function promptStoreOnboarding(projectRoot: string): Promise<void> {
-  const config = loadProjectConfig(projectRoot);
-  if (typeof config?.active_write_store === "string" && config.active_write_store.length > 0) {
-    return; // already has a write store
-  }
-
-  const choice = await select({
-    message: "Set up a team / shared knowledge store for this project?",
-    initialValue: "skip",
-    options: [
-      { value: "skip", label: "skip", hint: "personal store only (default)" },
-      { value: "join", label: "join existing", hint: "clone + bind a shared store from a git remote" },
-      { value: "create", label: "create new", hint: "start a fresh local store (optionally remote-backed)" },
-    ],
-  });
-  if (isCancel(choice) || choice === "skip") {
-    return;
-  }
-
-  if (choice === "join") {
-    const url = await text({
-      message: "Shared store git remote (url):",
-      placeholder: "git@github.com:org/knowledge.git",
-    });
-    if (isCancel(url) || typeof url !== "string" || url.length === 0) {
-      return;
-    }
-    bindRemoteStoreToProject(projectRoot, url);
-    return;
-  }
-
-  // choice === "create"
-  const alias = await text({ message: "Local alias for the new store:", initialValue: "team" });
-  if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
-    return;
-  }
-  const remote = await text({
-    message: "Git remote to back it (optional — leave blank to skip):",
-    placeholder: "git@github.com:org/knowledge.git",
-  });
-  const remoteStr = !isCancel(remote) && typeof remote === "string" && remote.length > 0 ? remote : undefined;
-  bindCreatedStoreToProject(projectRoot, alias, remoteStr === undefined ? {} : { remote: remoteStr });
 }

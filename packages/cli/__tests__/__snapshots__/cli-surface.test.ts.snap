@@ -209,7 +209,7 @@ Examples:
   fabric doctor                   read-only diagnostics report
   fabric doctor --fix             repair derived state (meta + indexes)
   fabric doctor --fix-knowledge   apply lint mutations (demote / archive)
-  fabric doctor --json --strict   machine-readable output, warnings as errors",
+  fabric doctor --json            machine-readable output",
   "name": "doctor",
 }
 `;
@@ -346,7 +346,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall
       "type": "boolean",
     },
   ],
-  "description": "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.
+  "description": "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.
 
 Examples:
   fabric uninstall                interactive uninstall in the current project

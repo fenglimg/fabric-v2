@@ -1,11 +1,17 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { defineCommand } from "citty";
 
 import {
+  buildStoreResolveInput,
+  createStoreResolver,
   ONBOARD_SLOT_NAMES,
   ONBOARD_SLOT_TOTAL,
+  readKnowledgeAcrossStores,
+  resolveGlobalRoot,
+  storeRelativePath,
+  type MountedStoreDir,
   type OnboardSlot,
 } from "@fenglimg/fabric-shared";
 
@@ -14,8 +20,9 @@ import { t } from "../i18n.js";
 // ---------------------------------------------------------------------------
 // v2.0.0-rc.23 TASK-014 (F8c) — `fabric onboard-coverage`
 //
-// Walks `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes}/*.md`
-// (canonical only — pending/ ignored, since the slot only counts once the
+// Walks mounted stores in the current project's read-set
+// (`~/.fabric/stores/<uuid>/knowledge/{decisions,pitfalls,guidelines,models,processes}/*.md`,
+// canonical only — pending/ ignored, since the slot only counts once the
 // entry has been approved and lives at a stable id), parses each file's YAML
 // frontmatter for an `onboard_slot:` line, and aggregates which of the five
 // fixed S5 slot labels have been claimed.
@@ -168,40 +175,40 @@ function readOptedOutSlots(projectRoot: string): string[] {
   return slots.filter((v): v is string => typeof v === "string");
 }
 
+function readSetStoreDirs(projectRoot: string): MountedStoreDir[] {
+  const input = buildStoreResolveInput(projectRoot);
+  if (input === null) {
+    return [];
+  }
+  const readSet = createStoreResolver().resolveReadSet(input);
+  const globalRoot = resolveGlobalRoot();
+  return readSet.stores.map((store) => ({
+    store_uuid: store.store_uuid,
+    alias: store.alias,
+    dir: join(globalRoot, storeRelativePath(store.store_uuid)),
+  }));
+}
+
+function entryName(filePath: string): string {
+  return filePath.split(/[\\/]/u).at(-1) ?? filePath;
+}
+
 /**
  * Pure handler — exported for unit tests and for the server-side doctor
- * Onboard coverage advisory. Synchronous (filesystem walks are tiny: 5
- * canonical type dirs × small fanout).
+ * Onboard coverage advisory. Synchronous (filesystem walks are bounded by the
+ * mounted store read-set).
  */
 export function runOnboardCoverage(projectRoot: string): OnboardCoverageReport {
   const filled = emptyFilled();
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-
-  if (existsSync(knowledgeRoot)) {
-    for (const typeDir of KNOWLEDGE_TYPE_DIRS) {
-      const dir = join(knowledgeRoot, typeDir);
-      if (!existsSync(dir)) continue;
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        if (!entry.name.endsWith(".md")) continue;
-        const filePath = join(dir, entry.name);
-        const slot = readOnboardSlotFrontmatter(filePath);
-        if (slot === undefined) continue;
-        // Only accept slot values that match the locked S5 set. Off-spec
-        // values are silently ignored — they neither fill nor count
-        // toward missing. (A doctor lint could surface them in a future
-        // task; out of scope for F8c.)
-        if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
-        const stableId = readStableIdFrontmatter(filePath, entry.name);
-        filled[slot as OnboardSlot].push(stableId);
-      }
-    }
+  for (const ref of readKnowledgeAcrossStores(readSetStoreDirs(projectRoot))) {
+    if (!(KNOWLEDGE_TYPE_DIRS as readonly string[]).includes(ref.type)) continue;
+    const slot = readOnboardSlotFrontmatter(ref.file);
+    if (slot === undefined) continue;
+    // Only accept slot values that match the locked S5 set. Off-spec values are
+    // silently ignored — they neither fill nor count toward missing.
+    if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
+    const stableId = readStableIdFrontmatter(ref.file, entryName(ref.file));
+    filled[slot as OnboardSlot].push(`${ref.alias}:${stableId}`);
   }
 
   const optedOut = readOptedOutSlots(projectRoot);

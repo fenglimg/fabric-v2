@@ -25,19 +25,16 @@ import {
  *
  * Three-stage pipeline mirroring init (reverse order is enforced by the
  * stage helpers themselves; this orchestrator dispatches them):
- *   1. scaffold   — best-effort rm of `.fabric/agents.meta.json`,
- *                   `.fabric/events.jsonl`, `.fabric/forensic.json`, and the
- *                   `.gitkeep` markers under `.fabric/knowledge/<subdir>/`.
- *                   The knowledge subdir contents themselves are ALWAYS
- *                   preserved (and `~/.fabric/knowledge/` is never touched).
+ *   1. scaffold   — best-effort rm of project-local Fabric state files
+ *                   written by install. Knowledge lives in global stores and is
+ *                   not part of project uninstall.
  *   2. bootstrap  — Skills + hook scripts + hook-config un-merge + pointer-line
  *                   strip. Delegates to {@link uninstallBootstrapStage}.
  *   3. mcp        — Per-client `writer.remove('fabric')` against the JSON /
  *                   TOML configs.
  *
  * Hard invariants (clarifications #1, #2):
- *   - `.fabric/knowledge/` is ALWAYS preserved (rc.15 TASK-002 — --purge gone).
- *   - `~/.fabric/knowledge/` (personal root) is NEVER touched, regardless of
+ *   - Global stores under `~/.fabric/stores/` are NEVER touched, regardless of
  *     any flag — encoded as a guard in {@link buildUninstallFabricPlan}.
  *   - Best-effort everywhere: missing artifacts log as `skipped`, never throw.
  */
@@ -70,11 +67,8 @@ type UninstallStageRecord = {
 
 type UninstallScaffoldEntry = {
   path: string;
-  // `state-file` covers events.jsonl / forensic.json / agents.meta.json;
-  // `gitkeep` covers .gitkeep markers under the team knowledge subdirs.
-  // The knowledge subdir contents themselves are unconditionally preserved
-  // (rc.15 TASK-002 dropped --purge).
-  kind: "state-file" | "gitkeep";
+  // `state-file` covers project-local Fabric state written by install.
+  kind: "state-file";
   // When true, the path will be skipped because it does not exist on disk.
   absent: boolean;
 };
@@ -82,7 +76,7 @@ type UninstallScaffoldEntry = {
 export type UninstallScaffoldPlan = {
   target: string;
   fabricDir: string;
-  personalKnowledgeDir: string;
+  globalStoresDir: string;
   options: UninstallOptions;
   entries: UninstallScaffoldEntry[];
 };
@@ -154,18 +148,9 @@ type McpRemovalDetail = {
 
 const UNINSTALL_WIZARD_GROUP_CANCELLED = Symbol("uninstall-wizard-group-cancelled");
 
-const KNOWLEDGE_SUBDIRS = [
-  "decisions",
-  "pitfalls",
-  "guidelines",
-  "models",
-  "processes",
-  "pending",
-] as const;
-
 // Top-level `.fabric/` state files written by `fabric install`. The default scaffold
-// stage prunes these — knowledge subdir contents are ALWAYS preserved
-// (rc.15 TASK-002 removed --purge; team knowledge is now unconditionally kept).
+// stage prunes these. Knowledge content is stored under global stores, not under
+// the project-local `.fabric/knowledge` tree.
 const FABRIC_STATE_FILES = ["agents.meta.json", "events.jsonl", "forensic.json"] as const;
 
 export const uninstallCommand = defineCommand({
@@ -310,11 +295,8 @@ export async function buildUninstallExecutionPlan(
 
 /**
  * Enumerate scaffold artifacts that will be removed by the scaffold stage.
- * Encodes the hard invariants from clarifications #1+#2:
- *   - `.fabric/knowledge/` (team) is ALWAYS preserved (rc.15 — --purge gone).
- *   - `~/.fabric/knowledge/` (personal root) is NEVER included. Any candidate
- *     whose absolute form starts with the resolved personal root is silently
- *     filtered out as defense-in-depth.
+ * Encodes the hard invariant: global stores under `~/.fabric/stores/` are never
+ * included in a project uninstall plan.
  */
 export function buildUninstallFabricPlan(
   target: string,
@@ -322,7 +304,7 @@ export function buildUninstallFabricPlan(
 ): UninstallScaffoldPlan {
   const absTarget = normalizeTarget(target);
   const fabricDir = join(absTarget, ".fabric");
-  const personalKnowledgeDir = resolve(resolvePersonalFabricRoot(), ".fabric", "knowledge");
+  const globalStoresDir = join(resolvePersonalFabricRoot(), ".fabric", "stores");
 
   const entries: UninstallScaffoldEntry[] = [];
 
@@ -332,23 +314,16 @@ export function buildUninstallFabricPlan(
     entries.push({ path: p, kind: "state-file", absent: !existsSync(p) });
   }
 
-  // Knowledge subdir .gitkeep markers — always candidates; subdir contents
-  // themselves are unconditionally preserved (rc.15 TASK-002 dropped --purge).
-  for (const sub of KNOWLEDGE_SUBDIRS) {
-    const gk = join(fabricDir, "knowledge", sub, ".gitkeep");
-    entries.push({ path: gk, kind: "gitkeep", absent: !existsSync(gk) });
-  }
-
-  // Hard guard: refuse any path whose absolute form falls inside the personal
-  // fabric root. Defense-in-depth — the candidates above are all under
+  // Hard guard: refuse any path whose absolute form falls inside the global
+  // stores root. Defense-in-depth — the candidates above are all under
   // `target/.fabric/`, but a misconfigured FABRIC_HOME or symlink could
   // theoretically alias the two.
-  const safeEntries = entries.filter((entry) => !isInsidePersonalRoot(entry.path, personalKnowledgeDir));
+  const safeEntries = entries.filter((entry) => !isInsideGlobalStoresRoot(entry.path, globalStoresDir));
 
   return {
     target: absTarget,
     fabricDir,
-    personalKnowledgeDir,
+    globalStoresDir,
     options,
     entries: safeEntries,
   };
@@ -357,8 +332,7 @@ export function buildUninstallFabricPlan(
 /**
  * Execute the scaffold sub-plan. Best-effort: every rm is try/catch-wrapped;
  * an entry that fails contributes an `error` step result and the executor
- * proceeds to the next entry. Knowledge subdir contents are never enumerated
- * (rc.15 TASK-002 dropped --purge — team knowledge is unconditionally kept).
+ * proceeds to the next entry. Global stores are never enumerated.
  */
 export async function executeUninstallFabricPlan(
   plan: UninstallScaffoldPlan,
@@ -396,8 +370,6 @@ function scaffoldStepLabel(kind: UninstallScaffoldEntry["kind"]): string {
   switch (kind) {
     case "state-file":
       return "scaffold-state";
-    case "gitkeep":
-      return "scaffold-gitkeep";
   }
 }
 
@@ -765,8 +737,7 @@ function printUninstallPlanSummary(
     }),
   );
   console.log(t("cli.uninstall.plan.preserves"));
-  console.log(`  - ${target}/.fabric/knowledge/  ${paint.muted(t("cli.uninstall.plan.preserves.knowledge"))}`);
-  console.log(`  - ~/.fabric/knowledge/  ${paint.muted(t("cli.uninstall.plan.preserves.personal"))}`);
+  console.log(`  - ~/.fabric/stores/  ${paint.muted(t("cli.uninstall.plan.preserves.stores"))}`);
 }
 
 function printUninstallSummary(result: UninstallExecutionResult): void {
@@ -831,14 +802,14 @@ function resolvePersonalFabricRoot(): string {
 }
 
 /**
- * True when `candidate` resolves to a path that is `personalKnowledgeDir`
+ * True when `candidate` resolves to a path that is `globalStoresDir`
  * itself or sits underneath it. Used by {@link buildUninstallFabricPlan} as
- * the hard guard preventing personal-root paths from ever entering the
+ * the hard guard preventing global store paths from ever entering the
  * scaffold removal list.
  */
-function isInsidePersonalRoot(candidate: string, personalKnowledgeDir: string): boolean {
+function isInsideGlobalStoresRoot(candidate: string, globalStoresDir: string): boolean {
   const candidateAbs = resolve(candidate);
-  const rootAbs = resolve(personalKnowledgeDir);
+  const rootAbs = resolve(globalStoresDir);
   if (candidateAbs === rootAbs) {
     return true;
   }
@@ -875,4 +846,4 @@ function writeStderr(message: string): void {
 }
 
 // Expose for tests / future docs commands.
-export { assertExistingDirectory, isInsidePersonalRoot };
+export { assertExistingDirectory, isInsideGlobalStoresRoot };

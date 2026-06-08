@@ -1,8 +1,8 @@
 import type { MountedStore } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
+import { join } from "node:path";
 
 import { getProjectTranslator } from "../i18n.js";
-import { join } from "node:path";
 
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { backfillKnowledgeDir } from "../store/scope-backfill.js";
@@ -270,34 +270,41 @@ const projectCommand = defineCommand({
 });
 
 // W3/A5 — clean-slate scope backfill. Adds semantic_scope + visibility_store to
-// existing entries and repairs dirty layer. Targets the project's co-location
-// knowledge by default, or a mounted store via `--store <alias>`.
+// existing entries and repairs dirty layer. Store-only: targets an explicit
+// mounted store via `--store <alias>`, or the project's active write store.
 const backfillScopeCommand = defineCommand({
   meta: {
     name: "backfill-scope",
     description: "Backfill semantic_scope + visibility_store on existing knowledge (repairs dirty layer)",
   },
   args: {
-    store: { type: "string", description: "Backfill a mounted store's knowledge instead of the project" },
+    store: { type: "string", description: "Backfill a mounted store's knowledge" },
     "dry-run": { type: "boolean", description: "Preview changes without writing" },
   },
   run({ args }) {
     const dryRun = args["dry-run"] === true;
     let knowledgeDir: string;
     let visibilityStore: string;
-    if (typeof args.store === "string" && args.store.length > 0) {
-      const storeDir = resolveStoreDir(args.store);
+    const selectedStore =
+      typeof args.store === "string" && args.store.length > 0
+        ? args.store
+        : loadProjectConfig(process.cwd())?.active_write_store;
+    if (typeof selectedStore !== "string" || selectedStore.length === 0) {
+      console.error(
+        "no store selected for scope backfill; pass --store <alias> or run `fabric store switch-write <alias>`",
+      );
+      process.exitCode = 1;
+      return;
+    }
+    {
+      const storeDir = resolveStoreDir(selectedStore);
       if (storeDir === null) {
-        console.error(`no mounted store '${args.store}'`);
+        console.error(`no mounted store '${selectedStore}'`);
         process.exitCode = 1;
         return;
       }
       knowledgeDir = join(storeDir, STORE_LAYOUT.knowledgeDir);
-      visibilityStore = args.store;
-    } else {
-      const projectRoot = process.cwd();
-      knowledgeDir = join(projectRoot, ".fabric", "knowledge");
-      visibilityStore = loadProjectConfig(projectRoot)?.active_write_store ?? "team";
+      visibilityStore = selectedStore;
     }
     const report = backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun });
     if (report.changes.length === 0) {

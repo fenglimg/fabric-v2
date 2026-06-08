@@ -7,7 +7,7 @@
  *
  *   (a) plan enumerates expected scaffold entries against a freshly-init'd fixture
  *   (b) --dry-run mode performs no writes (snapshotTree before == after)
- *   (c) default scaffold execution removes derived state but preserves knowledge .gitkeep
+ *   (c) default scaffold execution removes derived state but leaves user-created legacy knowledge untouched
  *   (e) wizard cancellation sets exitCode=130 and emits the cancel banner exactly once
  *   (f) idempotent re-run: second run reports 100% skipped
  *
@@ -109,12 +109,9 @@ describe("uninstall plan enumeration", () => {
     expect(plan.stages.find((s) => s.name === "scaffold")?.skipped).toBe(false);
     expect(plan.stages.find((s) => s.name === "bootstrap")?.skipped).toBe(false);
 
-    // Scaffold entries: the uninstall command still enumerates every
-    // FABRIC_STATE_FILES + every knowledge subdir .gitkeep. W5 I1 retired the
-    // co-location agents.meta.json + .gitkeep cabinet scaffold in install, so
-    // on a freshly-init'd fixture those entries now report absent: true (the
-    // would-be removals are no-ops), while events.jsonl / forensic.json (still
-    // scaffolded) report absent: false.
+    // Scaffold entries: project-local Fabric state only. Knowledge lives in
+    // global stores now, so uninstall no longer enumerates any .fabric/knowledge
+    // marker cabinet.
     const stateFilePaths = plan.scaffold.entries.filter((e) => e.kind === "state-file");
     expect(stateFilePaths.map((e) => e.path).sort()).toEqual(
       ["agents.meta.json", "events.jsonl", "forensic.json"]
@@ -128,16 +125,7 @@ describe("uninstall plan enumeration", () => {
     expect(absentByName.get(join(target, ".fabric", "events.jsonl"))).toBe(false);
     expect(absentByName.get(join(target, ".fabric", "forensic.json"))).toBe(false);
 
-    const gitkeepEntries = plan.scaffold.entries.filter((e) => e.kind === "gitkeep");
-    expect(gitkeepEntries.length).toBe(6); // decisions, pitfalls, guidelines, models, processes, pending
-    // W5 I1: install no longer writes the .gitkeep cabinet, so every gitkeep
-    // candidate is absent on a fresh install.
-    expect(gitkeepEntries.every((e) => e.absent === true)).toBe(true);
-
-    // rc.15 TASK-002 — --purge gone; entry kinds collapse to state-file + gitkeep.
-    // Knowledge subdir contents and the .fabric/ directory itself are unconditionally
-    // preserved.
-    expect(plan.scaffold.entries.every((e) => e.kind === "state-file" || e.kind === "gitkeep")).toBe(true);
+    expect(plan.scaffold.entries.every((e) => e.kind === "state-file")).toBe(true);
   });
 });
 
@@ -407,34 +395,28 @@ describe("runUninstallCommand interactive confirmation", () => {
 
 });
 
-describe("buildUninstallFabricPlan personal-root guard", () => {
-  it("filters out any candidate path that resolves inside the personal fabric root", async () => {
-    // Force genuine overlap: point HOME/FABRIC_HOME at the target project itself.
-    // The project's `.fabric/knowledge/` then IS the personal-root knowledge dir,
-    // so every .gitkeep candidate enumerated under the team knowledge tree must
-    // be filtered by the personal-root guard.
+describe("buildUninstallFabricPlan global-store guard", () => {
+  it("keeps global store paths out of the project uninstall scaffold plan", async () => {
+    // Force overlap: point FABRIC_HOME at the target project itself. Even in
+    // that shape, scaffold entries must not target the global stores root.
     const target = createWerewolfFixtureRoot("fab-uninstall-guard-target");
     tempRoots.push(target);
     process.env.HOME = target;
     process.env.FABRIC_HOME = target;
 
-    const { buildUninstallFabricPlan, isInsidePersonalRoot } = await import(
+    const { buildUninstallFabricPlan, isInsideGlobalStoresRoot } = await import(
       "../src/commands/uninstall.ts"
     );
     const plan = buildUninstallFabricPlan(target);
 
-    // Personal root path resolves under the project tree.
-    expect(plan.personalKnowledgeDir).toBe(join(target, ".fabric", "knowledge"));
+    expect(plan.globalStoresDir).toBe(join(target, ".fabric", "stores"));
 
-    // No surviving entry resolves inside the personal root.
     for (const entry of plan.entries) {
-      expect(isInsidePersonalRoot(entry.path, plan.personalKnowledgeDir)).toBe(false);
+      expect(isInsideGlobalStoresRoot(entry.path, plan.globalStoresDir)).toBe(false);
     }
 
-    // Guard actually fired: every default-scaffold .gitkeep candidate is under
-    // `.fabric/knowledge/` — with personal-root overlap, none survive.
-    const knowledgePrefix = join(target, ".fabric", "knowledge");
-    const overlapping = plan.entries.filter((e) => e.path.startsWith(knowledgePrefix));
+    const storesPrefix = join(target, ".fabric", "stores");
+    const overlapping = plan.entries.filter((e) => e.path.startsWith(storesPrefix));
     expect(overlapping).toEqual([]);
   });
 });
