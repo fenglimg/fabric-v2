@@ -1,0 +1,31 @@
+{
+  "session_id": "BLP-fabric-install-ux-ink-tui-2026-06-06",
+  "seed_input": "context-package from brainstorm:brainstorm-fabric-install-ux-ink-tui",
+  "input_type": "context-package",
+  "timestamp": "2026-06-06T04:35:00Z",
+  "mode": "auto",
+  "complexity": "moderate",
+  "depth": "standard",
+  "focus_areas": ["install-pipeline", "ink-tui", "wizard-flow", "uninstall-symmetry"],
+  "spec_type": "service",
+  "iteration_count": 0,
+  "iteration_history": [],
+  "seed_analysis": {
+    "problem_statement": "Fabric CLI install/uninstall flow has functional decoupling but weak user guidance. console.log/clack/writeStderr mixed system lacks visual anchors.",
+    "target_users": ["solo-developers", "team-members", "project-owners", "fresh-machine-users"],
+    "domain": "Developer Tools / CLI UX",
+    "constraints": [
+      "MUST use ink@^4.0.0 + @inkjs/ui@^2.0.0",
+      "MUST refactor install.ts from 2000+ lines to 7 discrete stages",
+      "Each stage MUST be idempotent",
+      "Summary card MUST stay under 15 lines height"
+    ],
+    "dimensions": ["architecture", "ux", "ui", "testing"]
+  },
+  "has_codebase": true,
+  "upstream_context": ".workflow/scratch/20260606-brainstorm-fabric-install-ux-ink-tui/context-package.json",
+  "phasesCompleted": [
+    { "phase": 0, "name": "spec-study", "completed_at": "2026-06-06T04:35:00Z" },
+    { "phase": 1, "name": "discovery", "output_file": "blueprint-config.json", "completed_at": "2026-06-06T04:35:00Z" }
+  ]
+}

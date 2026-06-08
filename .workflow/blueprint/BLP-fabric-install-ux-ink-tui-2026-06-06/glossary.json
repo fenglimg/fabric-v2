@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "terms": [
+    {
+      "term": "ink",
+      "definition": "A React-based framework for building CLI apps with interactive components. Uses Yoga layout engine for flexbox-based rendering in the terminal. Version 4.x introduced hooks API and improved TypeScript support.",
+      "category": "technology",
+      "aliases": ["ink.js", "ink framework"]
+    },
+    {
+      "term": "TUI",
+      "definition": "Text User Interface. A terminal-based interface that provides interactive elements (menus, forms, progress indicators) beyond simple command-line output. Contrasts with GUI (Graphical User Interface) and CLI (Command Line Interface with no interactive elements).",
+      "category": "concept",
+      "aliases": ["Terminal UI", "text-based interface"]
+    },
+    {
+      "term": "Store",
+      "definition": "A Fabric knowledge repository at a specific location (e.g., ~/.fabric/stores/<id>/). Contains knowledge entries, metadata, and configuration. Isolated by UUID identity, independent of scope binding.",
+      "category": "architecture",
+      "aliases": ["knowledge store", "Fabric store"]
+    },
+    {
+      "term": "Store-binding",
+      "definition": "The relationship between a project workspace and a specific Store. A project MAY bind to multiple stores via required_stores configuration. Enables knowledge sharing across projects without co-location.",
+      "category": "architecture",
+      "aliases": ["store binding", "project-store binding"]
+    },
+    {
+      "term": "Pipeline Stage",
+      "definition": "A discrete, atomic unit of work in the install/uninstall flow. Each stage MUST be idempotent (can be safely re-run), MUST have defined inputs/outputs, and SHOULD have visual representation in the TUI progress indicator.",
+      "category": "process",
+      "aliases": ["stage", "pipeline step", "install phase"]
+    },
+    {
+      "term": "OutputRenderer",
+      "definition": "The central ink-based component responsible for all user-facing output during install/uninstall operations. MUST support interactive (wizard) and non-interactive (CI) modes. Routes messages to appropriate visual components (spinners, text, boxes).",
+      "category": "component",
+      "aliases": ["renderer", "output system"]
+    },
+    {
+      "term": "Wizard",
+      "definition": "An interactive, step-by-step guided flow that prompts users for input and provides contextual help. Contrasts with command-line mode that accepts all parameters via flags. MUST support --non-interactive flag to disable wizard prompts.",
+      "category": "ux",
+      "aliases": ["guided flow", "interactive wizard", "install wizard"]
+    },
+    {
+      "term": "Visual Anchor",
+      "definition": "A prominent visual element (symbol, color, or layout) that draws user attention to important state changes. Examples: ✓ checkmark for success, ✗ cross for error, ◐ spinner for in-progress. MUST be consistent across all pipeline stages.",
+      "category": "ux",
+      "aliases": ["visual indicator", "status symbol", "attention marker"]
+    },
+    {
+      "term": "RFC 2119",
+      "definition": "An IETF specification that defines standard keywords for requirement documents: MUST (mandatory), MUST NOT (prohibited), SHOULD (recommended), SHOULD NOT (not recommended), MAY (optional). Used throughout Fabric documentation to clarify normative requirements.",
+      "category": "standard",
+      "aliases": ["RFC 2119 keywords", "requirement keywords"]
+    },
+    {
+      "term": "Idempotency",
+      "definition": "The property that an operation can be applied multiple times without changing the result beyond the initial application. Pipeline stages MUST be idempotent: running `fabric install` twice MUST produce the same state as running once. Enables safe retry and resume behavior.",
+      "category": "concept",
+      "aliases": ["idempotent operation", "repeatable operation"]
+    },
+    {
+      "term": "Summary Card",
+      "definition": "A condensed output block displayed at the end of install/uninstall operations. MUST be ≤15 lines in default mode, MUST include key metrics (files changed, hooks deployed, knowledge synced, duration), and SHOULD support --full-summary flag for detailed breakdown.",
+      "category": "ux",
+      "aliases": ["completion summary", "end summary", "results card"]
+    },
+    {
+      "term": "Dry-run",
+      "definition": "A mode where the system simulates operations without making actual changes. Used for previewing uninstall effects. MUST be activated via --dry-run flag and MUST display what would happen without executing.",
+      "category": "ux",
+      "aliases": ["preview mode", "simulation mode"]
+    },
+    {
+      "term": "TTY Detection",
+      "definition": "Runtime detection of whether stdout/stderr is connected to an interactive terminal (TTY). When TTY is absent (piped to file or CI system), the OutputRenderer MUST adapt to non-interactive mode with simplified output and no ANSI color codes.",
+      "category": "technical",
+      "aliases": ["terminal detection", "isTTY check"]
+    },
+    {
+      "term": "Stage Rollback",
+      "definition": "The ability to undo changes made by a pipeline stage upon failure. Implementations SHOULD support rollback for stages that modify files. Rollback MUST restore the system to the state before the stage began.",
+      "category": "process",
+      "aliases": ["stage undo", "failure recovery"]
+    }
+  ],
+  "metadata": {
+    "project": "fabric-v2",
+    "document": "fabric-install-ux-ink-tui",
+    "created": "2026-06-06",
+    "total_terms": 14
+  }
+}
