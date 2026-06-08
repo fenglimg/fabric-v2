@@ -12,7 +12,7 @@ import {
   resolveGlobalRoot,
   STORE_KNOWLEDGE_TYPE_DIRS,
   STORE_LAYOUT,
-  storeRelativePath,
+  storeRelativePathForMount,
   type AgentsMetaCounters,
 } from "@fenglimg/fabric-shared";
 
@@ -72,7 +72,14 @@ function resolveCounterStores(projectRoot: string): StoreRef[] {
   return readSet.stores.map((entry) => ({
     uuid: entry.store_uuid,
     alias: entry.alias,
-    dir: join(globalRoot, storeRelativePath(entry.store_uuid)),
+    dir: join(
+      globalRoot,
+      storeRelativePathForMount(
+        input.mountedStores.find((s) => s.store_uuid === entry.store_uuid) ?? {
+          store_uuid: entry.store_uuid,
+        },
+      ),
+    ),
   }));
 }
 

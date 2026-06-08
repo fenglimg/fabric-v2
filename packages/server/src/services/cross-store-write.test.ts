@@ -10,7 +10,7 @@ import {
   STORE_PENDING_DIR,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
@@ -51,13 +51,14 @@ async function createProject(): Promise<string> {
   return projectRoot;
 }
 
-function mountTeamStore(): void {
+function mountTeamStore(mountName?: string): void {
   saveGlobalConfig({
     uid: "test-uid",
     stores: [
       {
         store_uuid: TEAM_STORE_UUID,
         alias: "team",
+        ...(mountName === undefined ? {} : { mount_name: mountName }),
         remote: "git@example.com:team-store.git",
         writable: true,
       },
@@ -65,10 +66,10 @@ function mountTeamStore(): void {
   });
 }
 
-function storePendingDir(type: string): string {
+function storePendingDir(type: string, mountName?: string): string {
   return join(
     resolveGlobalRoot(),
-    storeRelativePath(TEAM_STORE_UUID),
+    storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID, mount_name: mountName }),
     STORE_LAYOUT.knowledgeDir,
     STORE_PENDING_DIR,
     type,
@@ -105,6 +106,23 @@ describe("cross-store write (W1-T2)", () => {
 
     // ...and NOT in the project's dual-root pending dir.
     expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(false);
+  });
+
+  it("routes through default_write_store into the store's mount_name directory", async () => {
+    const projectRoot = await createProject();
+    mountTeamStore("platform-kb");
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], default_write_store: "team" }, null, 2)}\n`,
+    );
+
+    const result = await extractKnowledge(projectRoot, goodInput);
+    expect(result.pending_path).not.toBe("");
+
+    const mountedDir = storePendingDir("decisions", "platform-kb");
+    expect(existsSync(mountedDir)).toBe(true);
+    expect(readdirSync(mountedDir).some((f) => f.endsWith(".md"))).toBe(true);
+    expect(existsSync(storePendingDir("decisions"))).toBe(false);
   });
 
   it("hard-fails (no dual-root fallback) when no active write store is selected", async () => {

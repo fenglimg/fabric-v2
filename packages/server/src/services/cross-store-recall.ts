@@ -8,7 +8,7 @@ import {
   readKnowledgeAcrossStores,
   resolveGlobalRoot,
   scopeRoot,
-  storeRelativePath,
+  storeRelativePathForMount,
   type MountedStoreDir,
   type RuleDescriptionIndexItem,
 } from "@fenglimg/fabric-shared";
@@ -110,7 +110,14 @@ function walkReadSetStores(projectRoot: string): CrossStoreEntry[] {
   const dirs: MountedStoreDir[] = readSet.stores.map((entry) => ({
     store_uuid: entry.store_uuid,
     alias: entry.alias,
-    dir: join(globalRoot, storeRelativePath(entry.store_uuid)),
+    dir: join(
+      globalRoot,
+      storeRelativePathForMount(
+        resolveInput.mountedStores.find((s) => s.store_uuid === entry.store_uuid) ?? {
+          store_uuid: entry.store_uuid,
+        },
+      ),
+    ),
   }));
 
   const entries: CrossStoreEntry[] = [];
