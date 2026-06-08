@@ -1,0 +1,42 @@
+{
+  "id": "5",
+  "perspective": "knowledge-store-migration-tail-drift",
+  "result_status": "completed",
+  "findings": "Found 2 new medium tail-drift issues: active docs still teach project-local .fabric/knowledge as source of truth, and --fix-knowledge still advertises demote/archive git-mv repairs that store cutover currently disables.",
+  "issues_found": [
+    {
+      "title": "User and schema docs still teach project-local .fabric/knowledge as the knowledge source after store-only cutover",
+      "severity": "medium",
+      "description": "docs/USER-QUICKSTART.md:10 says team knowledge is stored under .fabric/knowledge, :20 tells developers to author .fabric/knowledge/<type>, and :60 shows pending there; docs/data-schema.md:15-16 and :26 define the same repo/home roots, while AGENTS.md:5 and :19 now require mounted stores only.",
+      "location": "docs/USER-QUICKSTART.md:10",
+      "fix_direction": "Rewrite onboarding and data-schema storage sections around mounted stores/current write store paths, remove direct authoring of project-local .fabric/knowledge, and mark any old dual-root examples as legacy migration material.",
+      "affected_components": [
+        "docs/USER-QUICKSTART.md",
+        "docs/data-schema.md",
+        "docs/SPEC_INTERNAL.md",
+        "knowledge store migration docs"
+      ]
+    },
+    {
+      "title": "doctor --fix-knowledge advertises demote/archive git-mv repairs that store cutover currently no-ops",
+      "severity": "medium",
+      "description": "packages/cli/src/commands/doctor.ts:93-97 and :1577 still advertise demote/archive/frontmatter+git mv fixes and docs/configuration.md:289-291 says --fix-knowledge rewrites maturity and relocates stale entries, but packages/server/src/services/doctor.ts:1834-1838 says store-aware versions must be implemented before re-enabling and :657-670 returns empty candidates for those inspections.",
+      "location": "packages/cli/src/commands/doctor.ts:93",
+      "fix_direction": "Either re-enable store-aware demote/stale/pending archive inspections over ~/.fabric/stores/*/knowledge, or narrow CLI help/docs/previews to the repair actions that actually still run after the store cutover.",
+      "affected_components": [
+        "packages/cli/src/commands/doctor.ts",
+        "packages/server/src/services/doctor.ts",
+        "docs/configuration.md",
+        "docs/getting-started.md",
+        "doctor --fix-knowledge"
+      ]
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 0
+  },
+  "error": ""
+}
