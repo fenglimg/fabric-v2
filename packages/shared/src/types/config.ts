@@ -18,8 +18,8 @@ export interface McpPayloadLimits {
 
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: drives bilingual
 // init-scan templates. Mirrored from packages/shared/src/schemas/fabric-config.ts
-// → keep in sync. `zh-CN-hybrid` (rc.12) renders Chinese narrative with
-// English technical terms preserved.
+// → keep in sync. `match-existing` and `zh-CN-hybrid` are legacy-compatible
+// parse values; user-facing config now exposes only `zh-CN` and `en`.
 export type FabricLanguage =
   | "match-existing"
   | "zh-CN"

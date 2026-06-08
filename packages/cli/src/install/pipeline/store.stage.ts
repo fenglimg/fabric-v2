@@ -56,7 +56,7 @@ export class StoreStage implements Stage {
 
       // Check for unbound stores. Interactive installs can bind one immediately;
       // non-interactive installs only print the nudge and keep going.
-      const unboundStores = unboundAvailableStores(context.target);
+      const unboundStores = unboundAvailableStores(context.target, globalRoot);
       if (unboundStores.length > 0) {
         if (context.wizardEnabled) {
           const bound = await this.promptBindMountedStore(context, unboundStores, globalRoot);
@@ -91,7 +91,7 @@ export class StoreStage implements Stage {
     const mounted = already ?? mountStoreFromRemote(url, globalRoot);
 
     storeBind(projectRoot, { id: mounted.alias, suggested_remote: url });
-    storeSwitchWrite(projectRoot, mounted.alias);
+    storeSwitchWrite(projectRoot, mounted.alias, { globalRoot });
     regenerateBindingsSnapshot(projectRoot, {
       now: new Date().toISOString(),
       globalRoot,
@@ -112,7 +112,7 @@ export class StoreStage implements Stage {
     globalRoot: string,
   ): string {
     storeBind(projectRoot, { id: alias });
-    storeSwitchWrite(projectRoot, alias);
+    storeSwitchWrite(projectRoot, alias, { globalRoot });
     regenerateBindingsSnapshot(projectRoot, {
       now: new Date().toISOString(),
       globalRoot,
@@ -138,7 +138,7 @@ export class StoreStage implements Stage {
       projectRoot,
       options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
     );
-    storeSwitchWrite(projectRoot, alias);
+    storeSwitchWrite(projectRoot, alias, { globalRoot: options.globalRoot });
     regenerateBindingsSnapshot(projectRoot, {
       now: new Date().toISOString(),
       globalRoot: options.globalRoot,

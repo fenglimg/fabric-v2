@@ -43,11 +43,11 @@ export const planContextTopKSchema = z.number().int().min(1).max(200);
 
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: Drives init-scan
 // baseline template language and the zh-CN body rewrite policy.
-// `match-existing` preserves whatever language the project is already
-// authoring knowledge in; explicit `zh-CN` / `en` lock the policy regardless
-// of detected content; `zh-CN-hybrid` renders Chinese narrative prose with
-// English technical terms preserved (MCP tool names, CLI commands, file
-// paths, Skill/Fabric protected tokens).
+// User-facing configuration is now the two concrete locale choices: `zh-CN`
+// and `en`. The legacy values remain parseable for existing configs:
+// `match-existing` is a pre-init placeholder and `zh-CN-hybrid` maps to the
+// zh-CN base locale while preserving protected English technical tokens in
+// renderers that still read the raw value.
 //
 // rc.12 hard rename: this used to be `knowledgeLanguageSchema` and the
 // associated config field was `knowledge_language`. There is no z.preprocess
@@ -126,7 +126,7 @@ export const fabricConfigSchema = z.object({
   // Backward-compat: both fields are optional with defaults so existing
   // fabric-config.json files (pre-grill-followup) parse unchanged. The default
   // values themselves are load-bearing — see docs/RUNTIME-CONTRACTS.md.
-  fabric_language: fabricLanguageSchema.optional().default("match-existing"),
+  fabric_language: fabricLanguageSchema.optional().default("zh-CN"),
   default_layer_filter: defaultLayerFilterSchema.optional().default("both"),
   // Cooldown for the fabric-hint Stop hook (formerly archive-hint, renamed in
   // rc.5 TASK-010). After ANY of the three signals (archive / review / import)

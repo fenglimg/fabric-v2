@@ -1,7 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
-import { t } from "../../i18n.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 
@@ -29,14 +28,14 @@ export class PreflightStage implements Stage {
 
     try {
       // Check target directory exists
-      this.assertExistingDirectory(target);
+      this.assertExistingDirectory(target, context.translate);
 
       // Store normalized target in state
       context.target = target;
       context.state.globalRoot = this.resolveGlobalRoot();
 
       // Check global root is writable (or can be created)
-      this.assertGlobalRootWritable(context.state.globalRoot);
+      this.assertGlobalRootWritable(context.state.globalRoot, context.translate);
 
       // Check target is writable
       this.assertWritable(target);
@@ -56,9 +55,12 @@ export class PreflightStage implements Stage {
     return isAbsolute(targetInput) ? targetInput : resolve(process.cwd(), targetInput);
   }
 
-  private assertExistingDirectory(target: string): void {
+  private assertExistingDirectory(
+    target: string,
+    translate: InstallContext["translate"],
+  ): void {
     if (!existsSync(target) || !statSync(target).isDirectory()) {
-      throw new Error(t("cli.shared.target-invalid", { target }));
+      throw new Error(translate("cli.shared.target-invalid", { target }));
     }
   }
 
@@ -71,12 +73,15 @@ export class PreflightStage implements Stage {
     return resolve(home, ".fabric");
   }
 
-  private assertGlobalRootWritable(globalRoot: string): void {
+  private assertGlobalRootWritable(
+    globalRoot: string,
+    translate: InstallContext["translate"],
+  ): void {
     // If exists, check it's a directory and writable
     if (existsSync(globalRoot)) {
       if (!statSync(globalRoot).isDirectory()) {
         throw new Error(
-          t("cli.install.diff.drift-abort", { path: globalRoot }),
+          translate("cli.install.diff.drift-abort", { path: globalRoot }),
         );
       }
       // Assume writable if directory exists (file ops will fail later if not)

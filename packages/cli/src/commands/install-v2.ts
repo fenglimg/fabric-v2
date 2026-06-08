@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
-import { t } from "../i18n.js";
+import { getProjectTranslator, t } from "../i18n.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
 import { paint } from "../colors.js";
 
@@ -96,8 +96,15 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
     logger(step);
   }
 
-  // Build the install context with TUI renderer
-  const renderer = isInteractiveInit() ? createInkRenderer({ verbose: args.debug }) : undefined;
+  const terminalInteractive = isInteractiveInit();
+  const wizardEnabled =
+    terminalInteractive && !args.yes && args["dry-run"] !== true;
+  // Ink and clack both own terminal cursor state. When install will prompt,
+  // keep output on the clack/plain-console path so prompts cannot appear after
+  // the rendered completion card.
+  const renderer = shouldUseInstallRenderer(args, terminalInteractive)
+    ? createInkRenderer({ verbose: args.debug })
+    : undefined;
   const context = createInstallContext(args, resolution.target, renderer);
 
   // Build and execute the pipeline
@@ -153,6 +160,7 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
     stageResults: [],
     rollbackStack: [],
     state: {},
+    translate: getProjectTranslator(target),
     renderer,
   };
 }
@@ -163,4 +171,16 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
 
 function isInteractiveInit(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+}
+
+export function shouldUseInstallRenderer(args: InitArgs, terminalInteractive: boolean): boolean {
+  if (!terminalInteractive) {
+    return false;
+  }
+  // Wizard mode uses clack prompts. Do not mix Ink rendering with clack cursor
+  // control, otherwise completion output can be flushed before later prompts.
+  if (!args.yes && args["dry-run"] !== true) {
+    return false;
+  }
+  return true;
 }
