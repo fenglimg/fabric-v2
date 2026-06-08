@@ -37,9 +37,6 @@ export class McpStage implements Stage {
       const mode = context.mcpInstallMode;
       const translate = context.translate;
 
-      // Print stage header
-      console.log(this.formatStageHeader(translate("cli.install.stages.mcp"), translate));
-
       if (mode === "local") {
         const manager = detectPackageManager(target);
         process.stderr.write(`${translate("cli.install.mcp.install.local")}\n`);
@@ -87,11 +84,6 @@ export class McpStage implements Stage {
       stdio: "inherit",
       shell: process.platform === "win32",
     });
-  }
-
-  private formatStageHeader(message: string, translate: InstallContext["translate"]): string {
-    const nextLabel = () => paint.ai(translate("cli.shared.next"));
-    return `${nextLabel()} ${paint.muted(message)}`;
   }
 
   private formatStageResult(

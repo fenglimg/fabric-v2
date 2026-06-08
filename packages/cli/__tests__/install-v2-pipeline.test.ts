@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GuidanceStage } from "../src/install/pipeline/guidance.stage.js";
 import { EnvStage } from "../src/install/pipeline/env.stage.js";
 import { StoreStage } from "../src/install/pipeline/store.stage.js";
-import type { InstallContext } from "../src/install/pipeline/types.js";
+import { InstallPipeline, stageRan } from "../src/install/pipeline/pipeline.js";
+import type { InstallContext, Stage } from "../src/install/pipeline/types.js";
 import { shouldUseInstallRenderer } from "../src/commands/install-v2.js";
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
@@ -60,6 +61,37 @@ describe("install-v2 pipeline UX", () => {
     expect(shouldUseInstallRenderer({ yes: true }, true)).toBe(true);
     expect(shouldUseInstallRenderer({ "dry-run": true }, true)).toBe(true);
     expect(shouldUseInstallRenderer({ yes: true }, false)).toBe(false);
+  });
+
+  it("renders numbered stage anchors in plain interactive output", async () => {
+    const target = await tempProject();
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((value?: unknown) => {
+      lines.push(value === undefined ? "" : String(value));
+    });
+    const fakePreflight: Stage = {
+      name: "preflight",
+      async execute() {
+        return stageRan("preflight");
+      },
+    };
+    const fakeStore: Stage = {
+      name: "store",
+      async execute() {
+        return stageRan("store");
+      },
+    };
+
+    const result = await new InstallPipeline()
+      .addStage(fakePreflight)
+      .addStage(fakeStore)
+      .execute(baseContext(target));
+
+    expect(result.success).toBe(true);
+    expect(lines).toContain("Fabric install 将按 2 个阶段执行");
+    expect(lines).toContain("[1/2] 全局与项目预检");
+    expect(lines).toContain("[2/2] 知识库拓扑");
+    expect(lines.some((line) => line.includes("绑定当前项目的 read/write store"))).toBe(true);
   });
 
   it("prints semantic-search guidance before final next steps", async () => {
