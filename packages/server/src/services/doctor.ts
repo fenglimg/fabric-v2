@@ -4682,61 +4682,6 @@ async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdC
   // knowledge roots must not influence doctor. Store collision checks need a
   // read-set implementation before this lint can produce findings again.
   return { collisions: [] };
-
-  // v2.0: stable_ids are declared in YAML frontmatter `id: K[PT]-XXX-NNNN`
-  // inside .fabric/knowledge/{type}/*.md. The v1.x HTML-comment marker
-  // (`<!-- fab:rule-id X -->`) is no longer scanned. The file path component
-  // is recorded relative to the project root using POSIX separators so
-  // messages are stable across OSes.
-  type Found = { stableId: string; relPath: string };
-  const found: Found[] = [];
-
-  // v2.0 knowledge files (frontmatter `id: ...`).
-  const knowledgeDir = join(projectRoot, ".fabric", "knowledge");
-  if (existsSync(knowledgeDir)) {
-    const stack: string[] = [knowledgeDir];
-    while (stack.length > 0) {
-      const dir = stack.pop();
-      if (dir === undefined) {
-        continue;
-      }
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const abs = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(abs);
-        } else if (entry.isFile() && entry.name.endsWith(".md")) {
-          let source: string;
-          try {
-            source = await readFile(abs, "utf8");
-          } catch {
-            continue;
-          }
-          const id = extractKnowledgeFrontmatterId(source);
-          if (id === null) {
-            continue;
-          }
-          const relPath = posix.join(".fabric/knowledge", abs.slice(knowledgeDir.length + 1).replace(/\\/gu, "/"));
-          found.push({ stableId: id, relPath });
-        }
-      }
-    }
-  }
-
-  const stableIdToFiles = new Map<string, string[]>();
-  for (const { stableId, relPath } of found) {
-    const existing = stableIdToFiles.get(stableId) ?? [];
-    existing.push(relPath);
-    stableIdToFiles.set(stableId, existing);
-  }
-
-  const collisions: StableIdCollision[] = [];
-  for (const [stable_id, files] of stableIdToFiles) {
-    if (files.length > 1) {
-      collisions.push({ stable_id, files: files.sort() });
-    }
-  }
-
-  return { collisions: collisions.sort((a, b) => a.stable_id.localeCompare(b.stable_id)) };
 }
 
 // Match a YAML frontmatter `id:` field whose value matches the v2.0 stable_id
