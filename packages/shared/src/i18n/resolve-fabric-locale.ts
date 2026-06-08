@@ -13,9 +13,10 @@ import type { Locale } from "./types.js";
  *   2. If the value is `"en"` or `"zh-CN"` (the two concrete Locale members),
  *      return it verbatim — this is the eager-resolved value `fabric init` is
  *      supposed to write back per KT-DEC-9004.
- *   3. If the value is `"match-existing"` or `"zh-CN-hybrid"` (placeholders
- *      that should NEVER survive `fabric init` per KT-DEC-9004's invariant),
- *      emit a `console.warn` and fall through to `detectNodeLocale()`.
+ *   3. If the value is `"zh-CN-hybrid"` (legacy persistent value), resolve to
+ *      the zh-CN base locale. If the value is `"match-existing"` (legacy
+ *      pre-init placeholder), emit a `console.warn` and fall through to
+ *      `detectNodeLocale()`.
  *   4. If the file is missing, unreadable, malformed JSON, or `fabric_language`
  *      is absent / has any other shape, silently fall through to
  *      `detectNodeLocale()` (env-driven: `FAB_LANG` → `LANG` → `"en"`).

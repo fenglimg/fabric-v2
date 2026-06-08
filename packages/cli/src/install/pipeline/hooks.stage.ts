@@ -28,7 +28,6 @@ import {
   type InstallStepResult,
 } from "../skills-and-hooks.js";
 import { writeFabricAgentsSnapshot } from "../write-bootstrap-snapshot.js";
-import { t } from "../../i18n.js";
 import { paint } from "../../colors.js";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +59,7 @@ export class HooksStage implements Stage {
 
     try {
       const target = context.target;
+      const translate = context.translate;
       const installResults: InstallStepResult[] = [];
 
       // Clean up deprecated skills
@@ -111,8 +111,8 @@ export class HooksStage implements Stage {
       const errors = installResults.filter((r) => r.status === "error").map((r) => `${r.step}: ${r.message}`);
 
       // Print stage header and result
-      console.log(this.formatStageHeader(t("cli.install.stages.hooks")));
-      console.log(this.formatStageResult("hooks", "completed", installed.length, skipped.length));
+      console.log(this.formatStageHeader(translate("cli.install.stages.hooks"), translate));
+      console.log(this.formatStageResult("hooks", "completed", installed.length, skipped.length, translate));
 
       return stageRan("hooks", installed, skipped);
     } catch (error) {
@@ -154,8 +154,8 @@ export class HooksStage implements Stage {
     }
   }
 
-  private formatStageHeader(message: string): string {
-    const nextLabel = () => paint.ai(t("cli.shared.next"));
+  private formatStageHeader(message: string, translate: InstallContext["translate"]): string {
+    const nextLabel = () => paint.ai(translate("cli.shared.next"));
     return `${nextLabel()} ${paint.muted(message)}`;
   }
 
@@ -164,8 +164,9 @@ export class HooksStage implements Stage {
     status: "completed" | "skipped",
     installedCount: number,
     skippedCount: number,
+    translate: InstallContext["translate"],
   ): string {
-    const completedStageLabel = () => paint.success(t("cli.install.stages.completed"));
+    const completedStageLabel = () => paint.success(translate("cli.install.stages.completed"));
     const counts = `installed=${installedCount} skipped=${skippedCount}`;
     return `${completedStageLabel()} ${stage}: ${counts}`;
   }

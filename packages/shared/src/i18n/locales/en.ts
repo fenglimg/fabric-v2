@@ -938,7 +938,7 @@ export const enMessages: Messages = {
   "cli.install.next-step": "{label} {message}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language_preference_hint":
-    "Fabric language preference: {value}. To change, edit `fabric_language` in `.fabric/fabric-config.json` (values: match-existing | zh-CN | en | zh-CN-hybrid).",
+    "Fabric language preference: {value}. To change, edit `fabric_language` in `.fabric/fabric-config.json` (values: zh-CN | en).",
   "cli.install.plan.title": "Fabric install plan",
   "cli.install.plan.mode-banner.default": "[mode: apply] Standard install execution",
   "cli.install.plan.mode-banner.plan": "[mode: plan] Dry run only, no files will be written",

@@ -356,8 +356,7 @@ export {
 
 /**
  * Read the `fabric_language` value from `.fabric/fabric-config.json` at
- * `projectRoot`. Returns the raw string value (one of `"match-existing" |
- * "zh-CN" | "en" | "zh-CN-hybrid"`) when present, else `"match-existing"` as
+ * `projectRoot`. Returns the raw string value when present, else `"zh-CN"` as
  * the documented default. Tolerant of missing files and malformed JSON: the
  * fallback keeps the install path robust even when called before the
  * fabric-config has been scaffolded (e.g. an isolated `fabric hooks install` on
@@ -370,18 +369,18 @@ export {
 export function readFabricLanguagePreference(projectRoot: string): string {
   const configPath = join(projectRoot, ".fabric", "fabric-config.json");
   if (!existsSync(configPath)) {
-    return "match-existing";
+    return "zh-CN";
   }
   try {
     const raw = readFileSync(configPath, "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return "match-existing";
+      return "zh-CN";
     }
     const value = (parsed as Record<string, unknown>)["fabric_language"];
-    return typeof value === "string" && value.length > 0 ? value : "match-existing";
+    return typeof value === "string" && value.length > 0 ? value : "zh-CN";
   } catch {
-    return "match-existing";
+    return "zh-CN";
   }
 }
 

@@ -2,7 +2,6 @@ import { join } from "node:path";
 
 import { confirm, isCancel, select, text } from "@clack/prompts";
 
-import { t } from "../../i18n.js";
 import { paint } from "../../colors.js";
 import { loadProjectConfig } from "../../store/project-config-io.js";
 import {
@@ -48,12 +47,7 @@ export class GuidanceStage implements Stage {
       if (context.options.planOnly) {
         return stageRan("guidance", [], []);
       }
-
-      // Print next steps
-      console.log("");
-      console.log(t("cli.install.next-steps"));
-      console.log("");
-      console.log(paint.muted("More: docs/ARCHITECTURE.md explains CLI / Skill / MCP boundaries."));
+      const translate = context.translate;
 
       // Handle semantic search
       if (context.args["enable-embed"]) {
@@ -62,14 +56,20 @@ export class GuidanceStage implements Stage {
         await this.promptSemanticSearch(context.target);
       }
 
+      // Print final next steps only after all optional prompts have completed.
+      console.log("");
+      console.log(translate("cli.install.next-steps"));
+      console.log("");
+      console.log(paint.muted("More: docs/ARCHITECTURE.md explains CLI / Skill / MCP boundaries."));
+
       // Print restart banner
       console.log("");
-      console.log(t("cli.install.restart-banner"));
+      console.log(translate("cli.install.restart-banner"));
 
       // Print language preference hint
       if (context.state.fabricLanguage) {
         console.log(
-          paint.muted(t("cli.install.language_preference_hint", { value: context.state.fabricLanguage })),
+          paint.muted(translate("cli.install.language_preference_hint", { value: context.state.fabricLanguage })),
         );
       }
 
@@ -113,21 +113,22 @@ export class GuidanceStage implements Stage {
     context: InstallContext,
   ): void {
     const detected = supports.filter((s) => s.detected);
+    const translate = context.translate;
     if (detected.length === 0) {
-      console.log(t("cli.install.capabilities.none"));
+      console.log(translate("cli.install.capabilities.none"));
       return;
     }
 
-    console.log(t("cli.install.capabilities.title"));
+    console.log(translate("cli.install.capabilities.title"));
 
     // Print table headers
     const headers = {
-      client: t("cli.install.capabilities.header.client"),
-      bootstrap: t("cli.install.capabilities.header.bootstrap"),
-      mcp: t("cli.install.capabilities.header.mcp"),
-      hook: t("cli.install.capabilities.header.hook"),
-      skill: t("cli.install.capabilities.header.skill"),
-      followUp: t("cli.install.capabilities.header.follow-up"),
+      client: translate("cli.install.capabilities.header.client"),
+      bootstrap: translate("cli.install.capabilities.header.bootstrap"),
+      mcp: translate("cli.install.capabilities.header.mcp"),
+      hook: translate("cli.install.capabilities.header.hook"),
+      skill: translate("cli.install.capabilities.header.skill"),
+      followUp: translate("cli.install.capabilities.header.follow-up"),
     };
 
     // Calculate column widths
@@ -165,19 +166,19 @@ export class GuidanceStage implements Stage {
     // Print rows for each client
     for (const support of detected) {
       const bootstrap = support.capabilities.bootstrap
-        ? this.capabilityStatus(context.options.skipBootstrap ? "skipped" : "ran")
-        : t("cli.install.capabilities.status.na");
+        ? this.capabilityStatus(context.options.skipBootstrap ? "skipped" : "ran", translate)
+        : translate("cli.install.capabilities.status.na");
       const mcp = support.capabilities.mcp
-        ? this.capabilityStatus(context.options.skipMcp ? "skipped" : "ran")
-        : t("cli.install.capabilities.status.na");
-      const hook = this.capabilityInstallStatus(support, "hook");
-      const skill = this.capabilityInstallStatus(support, "skill");
+        ? this.capabilityStatus(context.options.skipMcp ? "skipped" : "ran", translate)
+        : translate("cli.install.capabilities.status.na");
+      const hook = this.capabilityInstallStatus(support, "hook", translate);
+      const skill = this.capabilityInstallStatus(support, "skill", translate);
 
       const followUp = this.hasInstalledCapability(support, "skill")
-        ? t("cli.install.capabilities.follow-up.ready")
+        ? translate("cli.install.capabilities.follow-up.ready")
         : support.capabilities.skill
-          ? t("cli.install.capabilities.follow-up.install")
-          : t("cli.install.capabilities.follow-up.manual");
+          ? translate("cli.install.capabilities.follow-up.install")
+          : translate("cli.install.capabilities.follow-up.manual");
 
       const row = [
         support.label.padEnd(widths.client),
@@ -191,31 +192,35 @@ export class GuidanceStage implements Stage {
     }
   }
 
-  private capabilityStatus(disposition: "ran" | "skipped" | "failed" | null): string {
+  private capabilityStatus(
+    disposition: "ran" | "skipped" | "failed" | null,
+    translate: InstallContext["translate"],
+  ): string {
     switch (disposition) {
       case "ran":
-        return t("cli.install.capabilities.status.ready");
+        return translate("cli.install.capabilities.status.ready");
       case "skipped":
-        return t("cli.install.capabilities.status.skipped");
+        return translate("cli.install.capabilities.status.skipped");
       case "failed":
-        return t("cli.install.capabilities.status.failed");
+        return translate("cli.install.capabilities.status.failed");
       case null:
-        return t("cli.install.capabilities.status.na");
+        return translate("cli.install.capabilities.status.na");
       default:
-        return t("cli.install.capabilities.status.ready");
+        return translate("cli.install.capabilities.status.ready");
     }
   }
 
   private capabilityInstallStatus(
     support: DetectedClientSupport,
     capability: "hook" | "skill",
+    translate: InstallContext["translate"],
   ): string {
     if (!support.capabilities[capability]) {
-      return t("cli.install.capabilities.status.na");
+      return translate("cli.install.capabilities.status.na");
     }
     return this.hasInstalledCapability(support, capability)
-      ? t("cli.install.capabilities.status.installed")
-      : t("cli.install.capabilities.status.supported");
+      ? translate("cli.install.capabilities.status.installed")
+      : translate("cli.install.capabilities.status.supported");
   }
 
   private hasInstalledCapability(

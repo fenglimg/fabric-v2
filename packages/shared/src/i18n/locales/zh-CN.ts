@@ -920,7 +920,7 @@ export const zhCNMessages: Messages = {
   "cli.install.next-step": "{label} {message}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language_preference_hint":
-    "Fabric 语言偏好：{value}。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：match-existing | zh-CN | en | zh-CN-hybrid）。",
+    "Fabric 语言偏好：{value}。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：zh-CN | en）。",
   "cli.install.plan.title": "Fabric 安装计划",
   "cli.install.plan.mode-banner.default": "[mode: apply] 标准安装执行",
   "cli.install.plan.mode-banner.plan": "[mode: plan] 仅预览，不会写入文件",

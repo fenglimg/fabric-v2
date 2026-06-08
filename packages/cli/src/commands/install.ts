@@ -643,10 +643,10 @@ async function promptStoreOnboarding(projectRoot: string): Promise<void> {
  * The `fabric_language` field is fixated at init time (TASK-006 / C1):
  * we invoke `detectExistingLanguage(targetRoot)` (lib/detect-language.ts)
  * once on a fresh init, which scans `README.md` + `docs/*.md` for the CJK
- * ratio and resolves to `"zh-CN-hybrid"` (ratio > 0.3) or `"en"` (default).
+ * ratio and resolves to `"zh-CN"` (ratio > 0.3) or `"en"`.
  * The literal `"match-existing"` placeholder is no longer written — users
  * who want a different language flip the field to `"zh-CN"` or `"en"` after
- * init. The empty-repo default is `"en"` (matches `detectExistingLanguage`'s
+ * init. The empty-repo default is `"zh-CN"` (matches `detectExistingLanguage`'s
  * contract).
  *
  * Idempotent: writes ONLY when the file does not exist. NEVER merges

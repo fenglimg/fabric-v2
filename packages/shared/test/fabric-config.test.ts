@@ -12,13 +12,12 @@ import {
 // v2.0 grill-followup TASK-002 introduced two optional fields driving Q3
 // (language policy) and Q6 (layer-filter default). rc.12 broad-gate-fabric-lang
 // hard-renamed the language field from `knowledge_language` →
-// `fabric_language` and added the `zh-CN-hybrid` enum value. Both fields stay
-// `.optional().default(...)` so the new defaults still apply to minimal
-// configs.
+// `fabric_language` and added the `zh-CN-hybrid` enum value. Both legacy values
+// remain parseable, while the schema default is the concrete `zh-CN` locale.
 // ---------------------------------------------------------------------------
 
 describe("fabricConfigSchema — fabric_language", () => {
-  it("accepts all four fabric_language enum values", () => {
+  it("accepts the two current values plus legacy fabric_language values", () => {
     for (const value of [
       "match-existing",
       "zh-CN",
@@ -77,9 +76,9 @@ describe("fabricConfigSchema — default_layer_filter", () => {
 });
 
 describe("fabricConfigSchema — defaults and backward compatibility", () => {
-  it("missing fields apply defaults: match-existing / both", () => {
+  it("missing fields apply defaults: zh-CN / both", () => {
     const parsed = fabricConfigSchema.parse({});
-    expect(parsed.fabric_language).toBe("match-existing");
+    expect(parsed.fabric_language).toBe("zh-CN");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
@@ -91,7 +90,7 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
 
   it("partial config (only default_layer_filter) defaults fabric_language", () => {
     const parsed = fabricConfigSchema.parse({ default_layer_filter: "team" });
-    expect(parsed.fabric_language).toBe("match-existing");
+    expect(parsed.fabric_language).toBe("zh-CN");
     expect(parsed.default_layer_filter).toBe("team");
   });
 
@@ -119,7 +118,7 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
     });
 
     // New fields filled by defaults.
-    expect(parsed.fabric_language).toBe("match-existing");
+    expect(parsed.fabric_language).toBe("zh-CN");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
