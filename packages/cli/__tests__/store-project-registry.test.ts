@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
 import {
+  resolveStoreDir,
   storeBind,
   storeCreate,
   storeProjectCreate,
@@ -53,8 +54,10 @@ describe("store project create/list", () => {
     const listed = storeProjectList("team", globalRoot);
     expect(listed.map((p) => p.id)).toEqual(["fabric-v2"]);
     // committed parallel to store.json
+    const storeDir = resolveStoreDir("team", globalRoot);
+    expect(storeDir).not.toBeNull();
     const file = JSON.parse(
-      readFileSync(join(globalRoot, "stores", STORE, "projects.json"), "utf8"),
+      readFileSync(join(storeDir!, "projects.json"), "utf8"),
     );
     expect(file.projects[0].id).toBe("fabric-v2");
   });
