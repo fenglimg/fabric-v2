@@ -83,12 +83,14 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     await runInit(target);
 
     // Pre-conditions: fabric-owned files exist after init.
+    expect(existsSync(join(target, ".claude", "skills", "fabric", "SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".claude", "hooks", "fabric-hint.cjs"))).toBe(true);
 
     await runUninstall(target);
 
     // Fabric-owned skill files are removed.
+    expect(existsSync(join(target, ".claude", "skills", "fabric", "SKILL.md"))).toBe(false);
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(false);
     expect(existsSync(join(target, ".claude", "skills", "fabric-review", "SKILL.md"))).toBe(false);
     expect(existsSync(join(target, ".claude", "skills", "fabric-import", "SKILL.md"))).toBe(false);
@@ -134,6 +136,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       expect(path).not.toContain("fabric-hint.cjs");
       expect(path).not.toContain("knowledge-hint-broad.cjs");
       expect(path).not.toContain("knowledge-hint-narrow.cjs");
+      expect(path).not.toContain("fabric/SKILL.md");
       expect(path).not.toContain("fabric-archive/SKILL.md");
       expect(path).not.toContain("fabric-review/SKILL.md");
       expect(path).not.toContain("fabric-import/SKILL.md");
@@ -146,6 +149,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       expect(path).not.toContain("fabric-hint.cjs");
       expect(path).not.toContain("knowledge-hint-broad.cjs");
       expect(path).not.toContain("knowledge-hint-narrow.cjs");
+      expect(path).not.toContain("fabric/SKILL.md");
       expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
       expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
@@ -154,6 +158,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       expect(path).not.toContain("fabric-hint.cjs");
       expect(path).not.toContain("knowledge-hint-broad.cjs");
       expect(path).not.toContain("knowledge-hint-narrow.cjs");
+      expect(path).not.toContain("fabric/SKILL.md");
       expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
       expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
