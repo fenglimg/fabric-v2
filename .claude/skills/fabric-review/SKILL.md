@@ -4,7 +4,7 @@ description: 审 .fabric/knowledge pending+canonical (NOT PR review):approve/rej
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 
-> **Surface**: Skill (AI-driven, per-entry human-judgment routing). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
+> **Surface**: Skill (AI-driven, per-entry human-judgment routing). See [`docs/ARCHITECTURE.md`](https://github.com/fenglimg/fabric/blob/main/docs/ARCHITECTURE.md).
 
 ## Precondition
 
