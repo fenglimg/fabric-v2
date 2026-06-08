@@ -133,8 +133,8 @@ export const zhCNMessages: Messages = {
     "\n" +
     "示例：\n" +
     "  fabric doctor                   只读诊断报告\n" +
-    "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
-    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
+    "  fabric doctor --fix             修复派生状态\n" +
+    "  fabric doctor --fix-knowledge   应用 store-backed 知识库卫生变更\n" +
     "  fabric doctor --json            机器可读输出",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
@@ -220,11 +220,11 @@ export const zhCNMessages: Messages = {
   "cite-coverage.skip.other": "其他",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
-  "cli.doctor.args.fix.description": "修复 Fabric 派生状态（meta + 索引）。",
+  "cli.doctor.args.fix.description": "修复 Fabric 派生状态。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
-    "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
+    "应用 store-backed 知识库卫生变更：修正漂移的 store counters、回填 pending relevance 默认值、删除过期 session-hints cache files。默认 doctor 运行仍然只读。",
   "cli.doctor.args.yes.description":
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   // rc.35 TASK-12 (P0-11): --verbose 展开 maintainer 受众的 remediation。
@@ -233,7 +233,7 @@ export const zhCNMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — 加 `fabric doctor --verbose` 查看)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
+    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改 store-backed 知识库卫生状态；--fix 修复工作区派生状态。请分别运行。",
   // rc.20 TASK-05: --cite-coverage 报告参数；只读，与 --fix/--fix-knowledge 互斥。
   "cli.doctor.args.cite-coverage.description":
     "Cite 政策合规报告(只读;跳过标准检查)",
@@ -600,7 +600,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "运行 `fabric doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
+    "通过 fabric-review Skill 审阅陈旧 canonical entries；store-only 模式已禁用 retired local knowledge roots 的自动降级。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -609,7 +609,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
   "doctor.check.stale_archive.remediation":
-    "运行 `fabric doctor --fix-knowledge`将 stale entries 移动到 `.fabric/.archive/<type>/`。",
+    "通过 fabric-review Skill 归档或 defer 陈旧 entries；store-only 模式已禁用 retired local knowledge roots 的自动 archive move。",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "没有 pending knowledge entries 超过 14-day review threshold。",
@@ -647,7 +647,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "运行 `fabric doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
+    "运行 `fabric doctor --fix-knowledge` 将 store counters 提升到磁盘上观测到的最高 stable_id。",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",

@@ -139,8 +139,8 @@ export const enMessages: Messages = {
     "\n" +
     "Examples:\n" +
     "  fabric doctor                   read-only diagnostics report\n" +
-    "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
-    "  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
+    "  fabric doctor --fix             repair derived state\n" +
+    "  fabric doctor --fix-knowledge   apply store-backed knowledge hygiene mutations\n" +
     "  fabric doctor --json            machine-readable output",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
@@ -234,11 +234,11 @@ export const enMessages: Messages = {
   "cite-coverage.skip.other": "other",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",
+  "cli.doctor.args.fix.description": "Repair derived Fabric state.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
+    "Apply store-backed knowledge hygiene mutations: floor drifted store counters, back-fill pending relevance defaults, and delete stale session-hints cache files. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
@@ -247,7 +247,7 @@ export const enMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — re-run with `fabric doctor --verbose` to see)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
+    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates store-backed knowledge hygiene state; --fix repairs derived workspace state. Run them separately.",
   // rc.20 TASK-05: --cite-coverage report flags. Read-only; mutually exclusive with --fix/--fix-knowledge.
   "cli.doctor.args.cite-coverage.description":
     "Generate cite policy adherence report (read-only; skips standard inspections)",
@@ -616,7 +616,7 @@ export const enMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
-    "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
+    "Review stale canonical entries with the fabric-review Skill; automatic demotion from retired local knowledge roots is disabled in store-only mode.",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "No draft knowledge entries exceed the additional stale-archive quiet window.",
@@ -625,7 +625,7 @@ export const enMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
-    "Run `fabric doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
+    "Archive or defer stale entries through the fabric-review Skill; automatic archive moves from retired local knowledge roots are disabled in store-only mode.",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "No pending knowledge entries exceed the 14-day review threshold.",
@@ -663,7 +663,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fabric doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
+    "Run `fabric doctor --fix-knowledge` to floor store counters at the highest stable_id observed on disk.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
