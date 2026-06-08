@@ -63,6 +63,16 @@ export async function uninstallFabricArchiveSkill(
 }
 
 /**
+ * Inverse of `installFabricSkill`. Removes each top-level fabric router
+ * SKILL.md, then attempts to remove the parent `fabric/` directory if empty.
+ */
+export async function uninstallFabricSkill(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeSkill("skill-fabric", SKILL_DESTINATIONS.fabric, projectRoot);
+}
+
+/**
  * Inverse of `installFabricReviewSkill`. Removes each SKILL.md at
  * `SKILL_DESTINATIONS.fabricReview`, then attempts to remove the parent
  * `fabric-review/` directory if it is empty.
@@ -642,6 +652,9 @@ export async function uninstallBootstrapStage(
   );
   await runAndCollect(results, "skill-review", projectRoot, () =>
     uninstallFabricReviewSkill(projectRoot),
+  );
+  await runAndCollect(results, "skill-fabric", projectRoot, () =>
+    uninstallFabricSkill(projectRoot),
   );
   await runAndCollect(results, "skill", projectRoot, () =>
     uninstallFabricArchiveSkill(projectRoot),

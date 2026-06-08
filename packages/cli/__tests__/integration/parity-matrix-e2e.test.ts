@@ -40,6 +40,7 @@ const CLIENT_DIR: Record<ParityClient, string> = {
 };
 
 const SKILL_SLUG = {
+  "skill.fabric": "fabric",
   "skill.fabric-archive": "fabric-archive",
   "skill.fabric-review": "fabric-review",
   // ADJ-NEWN-2 coverage fill: import + sync skills are delivered too.
@@ -142,8 +143,6 @@ describe("P5 — parity-matrix-driven three-client E2E (S14/S29)", () => {
         }
       }
     }
-    // ADJ-NEWN-2: 11 capabilities × 3 clients all supported = 33 cells (was 7×3=21;
-    // +2 skills fabric-import/sync, +2 MCP plan-context/get-knowledge-sections).
     // Guard against an accidental empty sweep silently "passing".
     expect(cells.length).toBe(matrix.capabilities.length * 3);
   });

@@ -83,6 +83,8 @@ const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
 const SKILL_AUDIT_TEMPLATE_REL = "skills/fabric-audit/SKILL.md";
 // v2.2 SK2-connect (W3-T2): knowledge-graph relation skill template.
 const SKILL_CONNECT_TEMPLATE_REL = "skills/fabric-connect/SKILL.md";
+// Fabric entry-layer router over the specialized fabric-* skills.
+const SKILL_FABRIC_TEMPLATE_REL = "skills/fabric/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -160,6 +162,13 @@ export const SKILL_DESTINATIONS = {
   fabricConnect: [
     ".claude/skills/fabric-connect/SKILL.md",
     ".codex/skills/fabric-connect/SKILL.md",
+  ],
+  // Fabric entry-layer router. Cursor has no first-class Skills directory in
+  // the install contract; parity is satisfied by its back-compat read of the
+  // Claude/Codex skill trees.
+  fabric: [
+    ".claude/skills/fabric/SKILL.md",
+    ".codex/skills/fabric/SKILL.md",
   ],
 } as const;
 
@@ -462,6 +471,30 @@ export async function installFabricArchiveSkill(
     results.push(result);
   }
   results.push(...(await installSkillRefFiles(projectRoot, "fabric-archive")));
+  return results;
+}
+
+/**
+ * Install the top-level `fabric` Skill router. This is an entry layer only:
+ * it classifies user intent and delegates to archive/review/import/store/sync/
+ * audit/connect without replacing those skills' store-aware write paths.
+ */
+export async function installFabricSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_FABRIC_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric");
+  const targets = SKILL_DESTINATIONS.fabric.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-fabric", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
   return results;
 }
 

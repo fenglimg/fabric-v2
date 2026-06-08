@@ -55,7 +55,7 @@ const HOOK_SCRIPTS = [
 ];
 const HOOK_CLIENTS = [".claude", ".codex", ".cursor"];
 const SKILL_CLIENTS = [".claude", ".codex"];
-const SKILLS = ["fabric-archive", "fabric-review", "fabric-import"];
+const SKILLS = ["fabric", "fabric-archive", "fabric-review", "fabric-import"];
 
 function readIf(path: string): string | null {
   return existsSync(path) ? readFileSync(path, "utf8") : null;
