@@ -4,7 +4,7 @@ description: 归档对话洞察到 .fabric/knowledge/pending (NOT code review). 
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge
 ---
 
-> **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
+> **Surface**: Skill (LLM judgment over session digests). See [`docs/ARCHITECTURE.md`](https://github.com/fenglimg/fabric/blob/main/docs/ARCHITECTURE.md).
 
 ## Precondition
 
