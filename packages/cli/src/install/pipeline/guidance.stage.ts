@@ -53,7 +53,7 @@ export class GuidanceStage implements Stage {
       console.log("");
       console.log(t("cli.install.next-steps"));
       console.log("");
-      console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+      console.log(paint.muted("More: docs/ARCHITECTURE.md explains CLI / Skill / MCP boundaries."));
 
       // Handle semantic search
       if (context.args["enable-embed"]) {

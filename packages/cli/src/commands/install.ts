@@ -413,7 +413,7 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     console.log("");
     console.log(t("cli.install.next-steps"));
     console.log("");
-    console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+    console.log(paint.muted("More: docs/ARCHITECTURE.md explains CLI / Skill / MCP boundaries."));
 
     // W1 (install --url top-level): one-command "join a team store". Mount the
     // remote store globally (idempotent — reuse an already-mounted clone of the

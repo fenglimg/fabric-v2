@@ -83,7 +83,8 @@ pitfall in-context. The next contributor never sees the black edges.
 
 ## Further reading
 
-- `docs/getting-started.md` — install / verify / re-init in depth
-- `docs/initialization.md` — what `fabric install` actually does
-- `docs/UPGRADE.md` — rc.30 → rc.35 breaking-change checklist
+- `docs/ARCHITECTURE.md` — current package / surface / install pipeline map
+- `docs/RUNTIME-CONTRACTS.md` — CLI, MCP, schema and config contract entry
+- `docs/TESTING.md` — test strategy and drift gates
+- `docs/UPGRADE.md` — supported upgrade notes
 - `AGENTS.md` — **AI policy file** (for AI assistants, not onboarding)
