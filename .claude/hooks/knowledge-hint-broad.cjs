@@ -22,7 +22,7 @@
  *         - <id> · <summary>
  *       ...
  *     revision_hash: <hash>
- *     Use `fab_get_knowledge_sections` to fetch full content.
+ *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
  *
  *   When narrow count > 30 (grouped-truncation mode, per type):
  *     [fabric] Session start — N broad-scoped knowledge entries available (truncated):
@@ -33,7 +33,7 @@
  *       [decision] draft: 7 entries
  *       ...
  *     revision_hash: <hash>
- *     Use `fab_get_knowledge_sections` to fetch full content.
+ *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
  *
  *   When 0 entries / CLI unavailable / CLI error / parse failure:
  *     (no output — silent exit 0)
@@ -50,6 +50,12 @@ const { spawnSync } = require("node:child_process");
 const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
+// W1-01 (ISS-012): the SessionStart broad hook appends a hook_surface_emitted
+// event to the shared events.jsonl. Under multi-window concurrency a bare
+// appendFileSync can interleave a partial write; route through the advisory-lock
+// primitive (drop-on-contention, best-effort — matches injection-log).
+const { appendLockedLine } = require("./lib/injection-log.cjs");
+
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
 // (TASK-002). Variant is resolved ONCE per main() invocation via
@@ -63,11 +69,43 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 const {
   readConfigNumber,
   readConfigBoolean,
+  readConfigString,
 } = require("./lib/config-cache.cjs");
 const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
 // CLAUDE_PROJECT_DIR single-bit check below).
-const { isClaudeCode } = require("./lib/client-adapter.cjs");
+const { isClaudeCode, detectClient } = require("./lib/client-adapter.cjs");
+// v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
+// resolved-bindings snapshot. The hook NEVER re-resolves stores or walks store
+// trees — it only echoes the read-set the CLI already computed. Best-effort.
+let bindingsSnapshotReader = null;
+try {
+  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+} catch {
+  // Lib missing (old install) — store labels degrade to silent absence.
+}
+// v2.2 HK3-telemetry (W3-T1): injection-side per-inject logger. Optional require
+// so an old install lacking the lib degrades to silent absence (no telemetry,
+// hook still works).
+let injectionLog = null;
+try {
+  injectionLog = require("./lib/injection-log.cjs");
+} catch {
+  // Lib missing (old install) — injection telemetry degrades to silent absence.
+}
+
+// Read the project's own `project_id` from `.fabric/fabric-config.json` (the
+// snapshot key). Reading the PROJECT config is not a store-tree read — it is how
+// the hook learns which snapshot to fetch. Returns null on any failure.
+function readProjectId(cwd) {
+  try {
+    const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
+}
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -327,6 +365,65 @@ const CLI_TIMEOUT_MS = 2000;
 // `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 
+// v2.2 HK2-degrade (W2-T2): char budget for the rendered broad-menu BODY. The
+// hook already degrades by COUNT (hint_broad_top_k slice + TRUNCATION_THRESHOLD
+// grouped mode), but nothing bounded the total rendered SIZE — a corpus with
+// many types or long (near-maxLen) summaries could still emit a wall of text
+// that displaces the agent's working memory. Borrowing the maestro
+// context-budget idea, this is the final rung of the degradation ladder: once
+// the body exceeds the budget, the tail collapses to a single "N more omitted"
+// marker. Default 2000 chars ≈ one screenful. Overridable via
+// fabric-config.json#hint_broad_budget_chars (range 200..20000); 0 disables.
+const DEFAULT_HINT_BROAD_BUDGET_CHARS = 2000;
+
+// v2.2 C5-budget (W2-T3): bind the injection char budget to the layered retrieval
+// budget profile. Mirrors the injectionChars column of shared/retrieval-budget.ts
+// PROFILES (kept in sync — the hook cannot require the TS resolver). The explicit
+// `hint_broad_budget_chars` knob still wins; the profile only supplies the
+// default. `balanced` (and an absent/unknown profile) keeps the historical 2000.
+const RETRIEVAL_BUDGET_INJECTION_CHARS = {
+  conservative: 1000,
+  balanced: 2000,
+  generous: 4000,
+};
+
+function readBroadBudgetChars(projectRoot) {
+  const profile = readConfigString(projectRoot, "retrieval_budget_profile", "balanced");
+  const profileDefault =
+    RETRIEVAL_BUDGET_INJECTION_CHARS[profile] ?? DEFAULT_HINT_BROAD_BUDGET_CHARS;
+  return readConfigNumber(projectRoot, "hint_broad_budget_chars", profileDefault, {
+    min: 0,
+    max: 20000,
+    floor: true,
+  });
+}
+
+// v2.2 HK2-degrade (W2-T2): cap the rendered body to `budgetChars`, collapsing
+// the overflow tail into one marker line. Structural lines (banner, revision_hash,
+// footer) are appended by renderSummary AFTER this pass, so they always survive —
+// only entry/group body lines are subject to the budget. `budgetChars` of 0 or
+// undefined is a no-op (preserves the pre-HK2 unbounded behavior and all
+// existing snapshot tests).
+function capBodyToBudget(body, budgetChars) {
+  if (!budgetChars || budgetChars <= 0) return body;
+  const kept = [];
+  let total = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const line = body[i];
+    // +1 for the newline each line costs once joined.
+    if (kept.length > 0 && total + line.length + 1 > budgetChars) {
+      const remaining = body.length - i;
+      kept.push(
+        `  … ${remaining} more entr${remaining === 1 ? "y" : "ies"} omitted (injection budget ${budgetChars} chars; raise hint_broad_budget_chars or narrow scope)`,
+      );
+      return kept;
+    }
+    kept.push(line);
+    total += line.length + 1;
+  }
+  return kept;
+}
+
 function readSummaryMaxLen(projectRoot) {
   return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
     min: 40,
@@ -477,7 +574,18 @@ function truncateSummary(raw, maxLen) {
 function formatEntryLine(entry, maxLen) {
   const id = entry.id || "(no-id)";
   const summary = truncateSummary(entry.summary, maxLen);
-  return summary.length > 0 ? `    - ${id} · ${summary}` : `    - ${id}`;
+  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when this
+  // entry was pulled in by following a surfaced entry's `related` graph edge,
+  // tag the line with its provenance so the agent knows it arrived via the graph,
+  // not its own ranking. Omitted entirely for ordinarily-ranked entries — no fake
+  // "related" annotation is ever synthesized (graph-empty honesty).
+  const provenance =
+    typeof entry.related_to === "string" && entry.related_to.length > 0
+      ? ` (related-to-${entry.related_to})`
+      : "";
+  return summary.length > 0
+    ? `    - ${id} · ${summary}${provenance}`
+    : `    - ${id}${provenance}`;
 }
 
 /**
@@ -565,7 +673,7 @@ function renderTruncated(narrow, maxLen) {
  * after writing exactly one stderr breadcrumb so operators grepping a stuck-
  * banner report can diagnose the version drift without source-diving.
  */
-function renderSummary(payload, maxLen) {
+function renderSummary(payload, maxLen, budgetChars) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       try {
@@ -588,7 +696,9 @@ function renderSummary(payload, maxLen) {
     ? `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available (truncated):`
     : `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available:`;
 
-  const body = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
+  const renderedBody = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
+  // v2.2 HK2-degrade (W2-T2): final budget rung — cap the body's rendered size.
+  const body = capBodyToBudget(renderedBody, budgetChars);
 
   const lines = [banner, ...body];
   const revHash = typeof payload.revision_hash === "string" ? payload.revision_hash : null;
@@ -635,7 +745,18 @@ function renderSummary(payload, maxLen) {
     }
   }
 
-  lines.push("  Use `fab_get_knowledge_sections` to fetch full content.");
+  // v2.2 MC3-fix-guidance (W1-T5): unify the footer with the canonical recall
+  // flow. The prior text ("Use `fab_get_knowledge_sections` to fetch full
+  // content.") told the agent to call a tool that REQUIRES a selection_token it
+  // does not yet have — directly contradicting the bilingual next-step nudge
+  // (and AGENTS.md) which leads with `fab_recall`. Footer now states the same
+  // two-path model: single-step `fab_recall`, or `fab_plan_context` →
+  // `fab_get_knowledge_sections` when the bodies must be trimmed first. Keeps
+  // the `fab_get_knowledge_sections` token (downstream substring contracts) but
+  // sequences it correctly behind the token-issuing `fab_plan_context`.
+  lines.push(
+    "  Load full content: `fab_recall(paths)` (one step), or `fab_plan_context` → `fab_get_knowledge_sections` to trim first.",
+  );
   return lines;
 }
 
@@ -722,7 +843,9 @@ function main(env, stdio) {
     // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
     // hours-based cooldown via fabric-config (see gate above).
     const summaryMaxLen = readSummaryMaxLen(cwd);
-    const lines = renderSummary(resolvedPayload, summaryMaxLen);
+    // v2.2 HK2-degrade (W2-T2): thread the injection char-budget into the renderer.
+    const broadBudgetChars = readBroadBudgetChars(cwd);
+    const lines = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
 
     // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path —
     // shared between the (existing) broadImportBanner branch and the new
@@ -735,19 +858,60 @@ function main(env, stdio) {
 
     if (lines.length === 0) return; // nothing to say — silent exit
 
+    // v2.1.0-rc.1 P4 (F4/S63): append a per-store read-set label from the
+    // CLI-pre-generated bindings snapshot so the session opens aware of which
+    // stores it reads and where writes land. Best-effort, never blocks: a
+    // missing snapshot / single-store setup just omits the line.
+    if (bindingsSnapshotReader !== null) {
+      try {
+        const projectId = readProjectId(cwd);
+        if (projectId) {
+          const label = bindingsSnapshotReader.formatStoreLabels(
+            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+          );
+          if (label) lines.push(label);
+        }
+      } catch {
+        // store labels are decorative provenance — never crash the hook
+      }
+    }
+
     // v2.0.0-rc.37 NEW-23: SessionStart 索引末尾"下一步"引导。Tail line that
     // tells the AI what to do with the broad index it just received. Without
     // this, the model often parses the index and moves on without ever calling
     // fab_recall / fab_plan_context. One-line nudge, bilingual.
+    // v2.2 W1-REVIEW codex LOW-6: `description_index` was renamed to `candidates`
+    // in rc.38 UX-1; the nudge now uses the current field name so the guidance
+    // matches the actual MCP response shape.
     const nextStepNudge =
       fabricLanguageForEmit === "zh-CN"
-        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选 description_index。"
-        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the description_index first.";
+        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选描述(candidates)。"
+        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the candidate descriptions first.";
     lines.push(nextStepNudge);
 
     // Stderr: always emit (human-facing breadcrumb + legacy contract).
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // v2.2 HK3-telemetry (W3-T1): record the injection side. We just OFFERED the
+    // agent `resolvedPayload.entries` (the top_k-sliced broad menu); log their
+    // ids so the true hit rate (consumed ÷ injected) is computable against the
+    // consumption-side metrics.jsonl. Best-effort — never affects the emit.
+    if (injectionLog !== null) {
+      const injectedEntries = Array.isArray(resolvedPayload && resolvedPayload.entries)
+        ? resolvedPayload.entries
+        : [];
+      injectionLog.logInjection(cwd, {
+        surface: "broad",
+        stableIds: injectedEntries.map((e) => (e && e.id) || "").filter(Boolean),
+        count: injectedEntries.length,
+        revisionHash:
+          resolvedPayload && typeof resolvedPayload.revision_hash === "string"
+            ? resolvedPayload.revision_hash
+            : null,
+        ts: nowMs,
+      });
     }
 
     // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
@@ -780,6 +944,48 @@ function main(env, stdio) {
       } catch {
         // Best-effort — stderr is the durable contract
       }
+    }
+
+    // v2.1 NEW-N-3 (ADJ-NEWN-3): hook_surface_emitted instrumentation. One
+    // best-effort ledger row recording WHICH broad-scoped ids were surfaced
+    // into the session — the join key for measuring hook→behavior delta (did
+    // the agent fab_recall what the hook surfaced?). SessionStart fires once
+    // per session boot so this never bloats the ledger. Never blocks the hook
+    // (KT-DEC-0007): any failure (no .fabric/, undetected client, write error)
+    // degrades to silent skip. Client is omitted-by-skip when undetectable
+    // because the schema's `client` enum admits only cc/codex/cursor.
+    try {
+      const surfaceClient = detectClient();
+      const fabricDir = join(cwd, FABRIC_DIR_REL);
+      if (surfaceClient !== undefined && existsSync(fabricDir)) {
+        const renderedIds =
+          resolvedPayload && Array.isArray(resolvedPayload.entries)
+            ? resolvedPayload.entries
+                .map((e) => (e && typeof e.id === "string" ? e.id : null))
+                .filter((x) => x !== null)
+            : [];
+        let idSuffix;
+        try {
+          idSuffix = require("node:crypto").randomUUID();
+        } catch {
+          idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        }
+        const surfaceEvent = {
+          kind: "fabric-event",
+          id: `event:${idSuffix}`,
+          ts: Date.now(),
+          schema_version: 1,
+          event_type: "hook_surface_emitted",
+          hook_name: "knowledge-hint-broad",
+          client: surfaceClient,
+          target_channel: reminderToContext ? "stdout-additionalContext" : "stderr",
+          rendered_ids: renderedIds,
+          delivery_status: "delivered",
+        };
+        appendLockedLine(join(fabricDir, "events.jsonl"), JSON.stringify(surfaceEvent) + "\n");
+      }
+    } catch {
+      // best-effort telemetry — never block session start
     }
 
     // v2.0.0-rc.33 W2-5 (P1-8): record successful emit timestamp for the
