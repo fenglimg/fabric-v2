@@ -221,9 +221,9 @@ describe("doctor command", () => {
         changed: true,
         mutations: [
           {
-            kind: "knowledge_orphan_demote_required" as const,
-            path: ".fabric/knowledge/decisions/KT-DEC-1101--ancient.md",
-            detail: "stable -> endorsed",
+            kind: "knowledge_relevance_fields_missing" as const,
+            path: "stores/team/knowledge/pending/decisions/proposal.md",
+            detail: "relevance_scope: broad; relevance_paths: []",
             applied: true,
           },
         ],
@@ -265,16 +265,17 @@ describe("doctor command", () => {
       expect(applyLintSpy).toHaveBeenCalledTimes(1);
       expect(applyLintSpy).toHaveBeenCalledWith("/tmp/fabric-target");
       expect(stdout.lines.some((line) => line.includes("Applied 1 apply-lint mutation"))).toBe(true);
-      expect(stdout.lines.some((line) => line.includes("knowledge_orphan_demote_required"))).toBe(true);
-      expect(stdout.lines.some((line) => line.includes("stable -> endorsed"))).toBe(true);
+      expect(stdout.lines.some((line) => line.includes("knowledge_relevance_fields_missing"))).toBe(true);
+      expect(stdout.lines.some((line) => line.includes("relevance_scope: broad"))).toBe(true);
       expect(process.exitCode).toBe(originalExitCode);
     });
 
     // W1-11 (F8): --fix-knowledge --dry-run must NOT mutate. The mutating
     // service (runDoctorApplyLint = runDoctorFixKnowledge) is the only thing
-    // that writes frontmatter / runs git mv, so "no mutation" ⟺ that spy is
-    // never called. A read-only runDoctorReport runs instead (preview).
-    it("--fix-knowledge --dry-run does NOT invoke runDoctorApplyLint (no frontmatter write / git mv)", async () => {
+    // that writes store counters, pending defaults, or cache cleanup, so
+    // "no mutation" means that spy is never called. A read-only runDoctorReport
+    // runs instead (preview).
+    it("--fix-knowledge --dry-run does NOT invoke runDoctorApplyLint", async () => {
       const applyLintSpy = vi.fn();
       const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
       vi.doMock("@fenglimg/fabric-server", () => ({
@@ -410,9 +411,9 @@ describe("doctor command", () => {
         changed: false,
         mutations: [
           {
-            kind: "knowledge_stale_archive_required" as const,
-            path: ".fabric/knowledge/decisions/KT-DEC-1110--stale.md",
-            detail: ".fabric/.archive/decisions/KT-DEC-1110--stale.md",
+            kind: "knowledge_session_hints_stale_cleanup" as const,
+            path: ".fabric/.cache/session-hints-old.json",
+            detail: "delete stale cache file",
             applied: false,
             error: "EACCES: permission denied",
           },
@@ -456,22 +457,22 @@ describe("doctor command", () => {
     // -----------------------------------------------------------------------
 
     it("--fix-knowledge with --yes skips the confirm even when mutations are pending", async () => {
-      // Pre-flight report carries an apply-lint finding (orphan_demote warning)
-      // so plan.totalCount > 0 and the prompt would normally appear. --yes
-      // must bypass it.
+      // Pre-flight report carries a live --fix-knowledge finding. These are
+      // info-level after the store-only cutover, so the consent preview must
+      // scan infos as well as warnings/fixable errors.
       const preReport = createReport("ok");
-      preReport.warnings.push({
-        code: "knowledge_orphan_demote_required",
-        name: "Orphan demote",
-        message: "demote candidate",
-        path: ".fabric/knowledge/decisions/KT-DEC-2001--orphan.md",
+      preReport.infos.push({
+        code: "knowledge_relevance_fields_missing",
+        name: "Knowledge relevance fields missing",
+        message: "pending relevance defaults missing",
+        path: "stores/team/knowledge/pending/decisions/proposal.md",
       });
       const applyReport = {
         changed: true,
         mutations: [{
-          kind: "knowledge_orphan_demote_required" as const,
-          path: ".fabric/knowledge/decisions/KT-DEC-2001--orphan.md",
-          detail: "stable -> endorsed",
+          kind: "knowledge_relevance_fields_missing" as const,
+          path: "stores/team/knowledge/pending/decisions/proposal.md",
+          detail: "relevance_scope: broad; relevance_paths: []",
           applied: true,
         }],
         manual_errors: [],
@@ -510,10 +511,10 @@ describe("doctor command", () => {
 
     it("--fix-knowledge with FABRIC_NONINTERACTIVE=1 (no --yes) skips the confirm", async () => {
       const preReport = createReport("ok");
-      preReport.warnings.push({
-        code: "knowledge_orphan_demote_required",
-        name: "Orphan demote",
-        message: "demote candidate",
+      preReport.infos.push({
+        code: "knowledge_session_hints_stale",
+        name: "Knowledge session hints stale",
+        message: "stale cache candidate",
         path: "x.md",
       });
       const applyReport = {
@@ -560,10 +561,10 @@ describe("doctor command", () => {
 
     it("--fix-knowledge without --yes and non-tty stdin exits 1 without mutating", async () => {
       const preReport = createReport("ok");
-      preReport.warnings.push({
-        code: "knowledge_orphan_demote_required",
-        name: "Orphan demote",
-        message: "demote candidate",
+      preReport.infos.push({
+        code: "knowledge_session_hints_stale",
+        name: "Knowledge session hints stale",
+        message: "stale cache candidate",
         path: "x.md",
       });
       const applyLintSpy = vi.fn();

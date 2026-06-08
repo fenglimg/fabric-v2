@@ -38,7 +38,7 @@ mid-session so it stops re-arguing every architecture decision from scratch.
   │                                                                │
   │                                                                │
   │   ↻ knowledge maintenance: use `fabric doctor --fix-knowledge` │
-  │     for deterministic demote / archive / default backfill       │
+  │     for store counters, pending defaults, and cache cleanup      │
   │                                                                │
   └────────────────────────────────────────────────────────────────┘
 ```
@@ -66,7 +66,7 @@ description:
 relevance_paths: ["src/render/**", "assets/atlas/**"]
 ```
 
-You review it (`/fabric-review` slash command; deterministic knowledge
+You review it (`/fabric-review` slash command; deterministic store-backed
 maintenance uses `fabric doctor --fix-knowledge`),
 promote it, and now every PreToolUse Edit on `src/render/*` surfaces this
 pitfall in-context. The next contributor never sees the black edges.
