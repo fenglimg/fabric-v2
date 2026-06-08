@@ -1,17 +1,30 @@
-import { isCancel, select, text } from "@clack/prompts";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
-import { loadGlobalConfig, resolveGlobalRoot } from "../../store/global-config-io.js";
+import { isCancel, select, text } from "@clack/prompts";
+import {
+  addMountedStore,
+  initStore,
+  readStoreIdentity,
+  storeRelativePathForMount,
+} from "@fenglimg/fabric-shared";
+
+import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../store/global-config-io.js";
 import { mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
 import {
-  storeBind,
   storeCreate,
   storeList,
-  storeSwitchWrite,
+  syncStoreAliasLinks,
   unboundAvailableStores,
 } from "../../store/store-ops.js";
-import { regenerateBindingsSnapshot } from "../../store/bindings-io.js";
 import { loadProjectConfig } from "../../store/project-config-io.js";
 import { paint } from "../../colors.js";
+import {
+  ensureStoreProjectBinding,
+  suggestStoreProjectId,
+  normalizeStoreProjectId,
+} from "../store-project-onboarding.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageRan, stageFailedFromError } from "./pipeline.js";
 
@@ -39,12 +52,7 @@ export class StoreStage implements Stage {
       const globalRoot = resolveGlobalRoot();
       context.state.globalRoot = globalRoot;
 
-      // Ensure global config exists
-      const globalConfig = loadGlobalConfig(globalRoot);
-      if (globalConfig === null) {
-        await runGlobalInstall({}, globalRoot);
-        context.state.globalConfigCreated = true;
-      }
+      context.state.globalConfigCreated = await this.ensureGlobalFabric(globalRoot);
 
       // Handle --url flag: mount and bind remote store
       if (context.args.url) {
@@ -90,37 +98,88 @@ export class StoreStage implements Stage {
     const already = storeList(globalRoot).find((store) => store.remote === url);
     const mounted = already ?? mountStoreFromRemote(url, globalRoot);
 
-    storeBind(projectRoot, { id: mounted.alias, suggested_remote: url });
-    storeSwitchWrite(projectRoot, mounted.alias, { globalRoot });
-    regenerateBindingsSnapshot(projectRoot, {
-      now: new Date().toISOString(),
+    const binding = ensureStoreProjectBinding(projectRoot, mounted.alias, {
       globalRoot,
+      suggestedRemote: url,
     });
 
     console.log("");
     console.log(
       paint.success(
-        `bound store '${mounted.alias}' to this project and set it as the write target.`,
+        `bound store '${mounted.alias}' to project '${binding.active_project}' and set it as the write target.`,
       ),
     );
     return mounted.alias;
+  }
+
+  private async ensureGlobalFabric(globalRoot: string): Promise<boolean> {
+    const globalConfig = loadGlobalConfig(globalRoot);
+    if (globalConfig === null) {
+      await runGlobalInstall({}, globalRoot);
+      return true;
+    }
+
+    const personal = globalConfig.stores.find((store) => store.personal === true);
+    if (personal !== undefined) {
+      const personalDir = join(globalRoot, storeRelativePathForMount(personal));
+      const identityPath = join(personalDir, "store.json");
+      if (!existsSync(identityPath)) {
+        initStore(
+          personalDir,
+          {
+            store_uuid: personal.store_uuid,
+            created_at: new Date().toISOString(),
+            canonical_alias: personal.alias,
+          },
+        );
+        syncStoreAliasLinks(globalRoot);
+        console.log(paint.success(`repaired global personal store '${personal.alias}'.`));
+        return false;
+      }
+      if (readStoreIdentity(personalDir) === null) {
+        throw new Error(
+          `global personal store '${personal.alias}' has an invalid store.json at ${identityPath}; ` +
+            "run `fabric doctor --fix` or move the corrupt store aside before reinstalling",
+        );
+      }
+      return false;
+    }
+
+    const alias = globalConfig.stores.some((store) => store.alias === "personal")
+      ? `personal-${randomUUID().slice(0, 8)}`
+      : "personal";
+    const store_uuid = randomUUID();
+    const mounted = { store_uuid, alias, mount_name: alias, personal: true };
+    initStore(
+      join(globalRoot, storeRelativePathForMount(mounted)),
+      {
+        store_uuid,
+        created_at: new Date().toISOString(),
+        canonical_alias: alias,
+      },
+    );
+    saveGlobalConfig(addMountedStore(globalConfig, mounted), globalRoot);
+    syncStoreAliasLinks(globalRoot);
+    console.log(paint.success(`repaired global Fabric by creating personal store '${alias}'.`));
+    return false;
   }
 
   private bindMountedStoreToProject(
     projectRoot: string,
     alias: string,
     globalRoot: string,
+    projectId?: string,
   ): string {
-    storeBind(projectRoot, { id: alias });
-    storeSwitchWrite(projectRoot, alias, { globalRoot });
-    regenerateBindingsSnapshot(projectRoot, {
-      now: new Date().toISOString(),
+    const binding = ensureStoreProjectBinding(projectRoot, alias, {
       globalRoot,
+      requestedProjectId: projectId,
     });
 
     console.log("");
     console.log(
-      paint.success(`bound store '${alias}' to this project and set it as the write target.`),
+      paint.success(
+        `bound store '${alias}' to project '${binding.active_project}' and set it as the write target.`,
+      ),
     );
     return alias;
   }
@@ -134,18 +193,18 @@ export class StoreStage implements Stage {
       ...(options.remote === undefined ? {} : { remote: options.remote }),
       globalRoot: options.globalRoot,
     });
-    storeBind(
+    const binding = ensureStoreProjectBinding(
       projectRoot,
-      options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
+      alias,
+      options.remote === undefined
+        ? { globalRoot: options.globalRoot }
+        : { suggestedRemote: options.remote, globalRoot: options.globalRoot },
     );
-    storeSwitchWrite(projectRoot, alias, { globalRoot: options.globalRoot });
-    regenerateBindingsSnapshot(projectRoot, {
-      now: new Date().toISOString(),
-      globalRoot: options.globalRoot,
-    });
     console.log("");
     console.log(
-      paint.success(`created store '${alias}', bound it to this project, and set it as the write target.`),
+      paint.success(
+        `created store '${alias}', bound it to project '${binding.active_project}', and set it as the write target.`,
+      ),
     );
     return alias;
   }
@@ -171,7 +230,22 @@ export class StoreStage implements Stage {
       this.warnUnboundStores(unboundStores);
       return null;
     }
-    return this.bindMountedStoreToProject(context.target, choice, globalRoot);
+    const projectId = await this.promptStoreProjectId(context.target, choice);
+    return this.bindMountedStoreToProject(context.target, choice, globalRoot, projectId);
+  }
+
+  private async promptStoreProjectId(projectRoot: string, storeAlias: string): Promise<string | undefined> {
+    const current = loadProjectConfig(projectRoot)?.active_project;
+    const suggested = normalizeStoreProjectId(current ?? suggestStoreProjectId(projectRoot));
+    const value = await text({
+      message: `Project coordinate in store '${storeAlias}':`,
+      initialValue: suggested,
+      placeholder: suggested,
+    });
+    if (isCancel(value) || typeof value !== "string" || value.trim().length === 0) {
+      return suggested;
+    }
+    return value;
   }
 
   /**
