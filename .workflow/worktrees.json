@@ -24,18 +24,6 @@
       "created_at": "2026-06-09T01:08:45+08:00",
       "owned_phases": ["analysis", "plan", "execute", "verify"],
       "fork_session": "fork-20260609-010845"
-    },
-    {
-      "milestone_num": "doctor-surface-hardening",
-      "milestone": "Doctor Surface Hardening",
-      "slug": "doctor-surface-hardening",
-      "branch": "milestone/doctor-surface-hardening",
-      "path": "C:/Project/fabric-v2/.worktrees/m-doctor-surface-hardening",
-      "base_commit": "f868b237057fbefb1569eea303d8393169978b5d",
-      "status": "active",
-      "created_at": "2026-06-09T02:02:08+08:00",
-      "owned_phases": ["analysis", "plan", "execute", "verify"],
-      "fork_session": "fork-20260609-020208"
     }
   ],
   "fork_sessions": [
@@ -54,14 +42,6 @@
       "milestone": "Install Uninstall Lifecycle",
       "base_branch": "main",
       "base_commit": "e7164cbee24192d30063d6c96edaf2c495d10390"
-    },
-    {
-      "session_id": "fork-20260609-020208",
-      "created_at": "2026-06-09T02:02:08+08:00",
-      "milestone_num": "doctor-surface-hardening",
-      "milestone": "Doctor Surface Hardening",
-      "base_branch": "main",
-      "base_commit": "f868b237057fbefb1569eea303d8393169978b5d"
     }
   ]
 }
