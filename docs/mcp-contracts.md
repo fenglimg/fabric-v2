@@ -1,6 +1,6 @@
 # Fabric v2.0 MCP Contracts
 
-API surface specification for the four MCP tools exposed by the Fabric v2.0
+API surface specification for the six MCP tools exposed by the Fabric v2.2
 server. Updated in lock-step with `packages/shared/src/schemas/api-contracts.ts`.
 Companion to [data-schema.md](./data-schema.md), which specifies the on-disk
 shapes that these tools read and write.
@@ -13,13 +13,15 @@ For the persisted shapes themselves (frontmatter, events, counters), see
 
 ## MCP Tool Contracts
 
-Four tools form the v2.0 surface:
+Six tools form the current MCP surface:
 
 | Tool | Maturity | Purpose |
 |---|---|---|
-| `fab_plan_context` | rc.1 (extended in rc.2) | Build neutral rule-selection context for a path set. |
-| `fab_get_rule_sections` | rc.1 (extended in rc.3) | Fetch structured sections of selected rules. |
+| `fab_recall` | rc.37 | Preferred one-call recall: fetch relevant knowledge bodies for paths/intent. |
+| `fab_plan_context` | rc.1 (extended in rc.2) | Build neutral knowledge-selection context for a path set. |
+| `fab_get_knowledge_sections` | rc.23 rename / body contract | Fetch full markdown bodies for selected knowledge entries. |
 | `fab_extract_knowledge` | rc.2 (schema pre-locked) | Persist a pending knowledge entry from a session. |
+| `fab_archive_scan` | rc.37 | Scan recent work/session history for archive-worthy candidates. |
 | `fab_review` | rc.3 (schema pre-locked) | Human review loop: list / approve / reject / modify / search / defer. |
 
 All input/output shapes below are derived from the canonical Zod schemas in
@@ -29,8 +31,8 @@ frontmatter, counters, and event types referenced here.
 
 ### `fab_plan_context`
 
-Read-only, idempotent. Returns description-index entries for the supplied
-candidate paths along with required/AI-selectable splits.
+Read-only, idempotent. Returns ranked candidate descriptions for the supplied
+candidate paths and a `selection_token` for the two-step retrieval path.
 
 Input (`planContextInputSchema`):
 
@@ -99,62 +101,90 @@ Errors:
 Idempotency:
 - Pure read; safe to retry. `revision_hash` lets clients short-circuit when
   unchanged. `selection_token` is a one-shot handle for a subsequent
-  `fab_get_rule_sections` call but is itself stable for identical inputs at
+  `fab_get_knowledge_sections` call but is itself stable for identical inputs at
   identical revisions.
 
 Emits: `knowledge_context_planned` event.
 
-### `fab_get_rule_sections`
+### `fab_recall`
 
-Read-only, idempotent. Materializes structured sections for AI-selected
-rules.
+Read-only, idempotent. Preferred runtime entry point for agents. It collapses
+the common `fab_plan_context` -> `fab_get_knowledge_sections` ceremony into one
+call while still returning a reusable `selection_token`.
 
-Input (`ruleSectionsInputSchema`):
+Input (`recallInputSchema`) — abridged:
 
 ```ts
 z.object({
-  selection_token: z.string().min(1),
-  sections: z.array(z.enum([
-    "MISSION_STATEMENT",
-    "MANDATORY_INJECTION",
-    "BUSINESS_LOGIC_CHUNKS",
-    "CONTEXT_INFO",
-  ])).min(1),
-  ai_selected_stable_ids: z.array(z.string()),
-  ai_selection_reasons: z.record(z.string().min(1)),
-  correlation_id: z.string().optional(),
+  paths: z.array(z.string()).min(1),
+  intent: z.string().optional(),
+  ids: z.array(z.string()).optional(),
+  layer_filter: z.enum(["team", "personal", "both"]).optional(),
   session_id: z.string().optional(),
+  correlation_id: z.string().optional(),
 });
 ```
 
-Output (`ruleSectionsOutputSchema`) — abridged:
+Output (`recallOutputSchema`) — abridged:
 
 ```ts
 z.object({
   revision_hash: z.string(),
-  precedence: z.tuple([z.literal("L2"), z.literal("L1"), z.literal("L0")]),
+  stale: z.boolean(),
+  selection_token: z.string(),
+  rules: z.array(z.object({
+    stable_id: z.string(),
+    path: z.string(),
+    body: z.string(),
+  })),
+  warnings: z.array(structuredWarningSchema).optional(),
+});
+```
+
+Emits the same planning/selection/consumption telemetry as the two-step path.
+
+### `fab_get_knowledge_sections`
+
+Read-only, idempotent. Materializes full markdown bodies for AI-selected
+knowledge entries.
+
+Input (`knowledgeSectionsInputSchema`):
+
+```ts
+z.object({
+  selection_token: z.string().min(1),
+  ai_selected_stable_ids: z.array(z.string()),
+  ai_selection_reasons: z.record(z.string().min(1)).optional().default({}),
+  correlation_id: z.string().optional(),
+  session_id: z.string().optional(),
+  client_hash: z.string().optional(),
+});
+```
+
+Output (`knowledgeSectionsOutputSchema`) — abridged:
+
+```ts
+z.object({
+  revision_hash: z.string(),
   selected_stable_ids: z.array(z.string()),
   rules: z.array(z.object({
     stable_id: z.string(),
     level: z.enum(["L0", "L1", "L2"]),
     path: z.string(),
-    sections: z.record(z.string()),
+    body: z.string(),
   })),
   diagnostics: z.array(/* discriminated union of diagnostic codes */),
-  // v2/rc.3 (Q6 LOCKED): post-layer-flip redirect.
-  redirect_to: z.object({ stable_id: z.string() }).optional(),
+  redirect_to: z.record(z.string(), z.string()).optional(),
   warnings: z.array(structuredWarningSchema).optional(),
 });
 ```
 
 Errors and diagnostics:
-- `missing_section` (warn) — requested section absent for a rule. Does not
-  block the response; reported per `(stable_id, section)` pair.
 - `missing_knowledge_metadata` (warn) — pre-v2 entry without
   `knowledge_type`/`knowledge_layer`. Does not block selection.
-- `redirect_to: { stable_id }` — populated when a layer-flip changed an
-  entry's canonical id since the caller's `selection_token` was minted.
-  Clients should retry against `redirect_to.stable_id`. See
+- `redirect_to` — populated when a layer-flip changed an entry's canonical id
+  since the caller's `selection_token` was minted. Clients should retry against
+  the mapped new id. See
   [data-schema.md stable_id](./data-schema.md#stable-id-format) for why
   layer-flip changes the id prefix.
 - ENOENT on disk → server performs ONE meta-rebuild retry, then returns the
@@ -165,6 +195,15 @@ Idempotency:
   agents that catch it and re-resolve.
 
 Emits: `knowledge_sections_fetched` event.
+
+### `fab_archive_scan`
+
+Read-only, idempotent. Scans recent session/work history and returns
+archive-worthy candidates for a Skill to judge before calling
+`fab_extract_knowledge`.
+
+Input (`archiveScanInputSchema`) accepts optional range/session filters.
+Output (`archiveScanOutputSchema`) returns candidate summaries and warnings.
 
 ### `fab_extract_knowledge` (rc.2)
 

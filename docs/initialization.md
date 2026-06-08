@@ -23,7 +23,7 @@ fabric install
   │     → .claude/skills/  +  .codex/skills/   (Cursor reads either tree)
   │
   ├─ Phase 4: Stop-hook install
-  │     archive-hint.cjs → .claude/hooks/  +  .codex/hooks/
+  │     fabric-hint.cjs → .claude/hooks/  +  .codex/hooks/
   │     hook config → .claude/settings.json (hooks.Stop[]) + .codex/hooks.json (events.Stop[])
   │     (Cursor: no Stop-hook surface as of 2026-05; tracked in roadmap v2.1)
   │
@@ -105,10 +105,10 @@ prompt the user to archive. Two signals trigger:
 Install layout:
 
 ```text
-.claude/hooks/archive-hint.cjs        # the hook script (single source)
-.claude/settings.json                  # hooks.Stop[] += [{ command: "node .claude/hooks/archive-hint.cjs" }]
-.codex/hooks/archive-hint.cjs         # same script, copied (Codex repo skill convention)
-.codex/hooks.json                      # events.Stop[] += [{ command: "node .codex/hooks/archive-hint.cjs" }]
+.claude/hooks/fabric-hint.cjs          # the hook script (single source)
+.claude/settings.json                  # hooks.Stop[] += [{ command: "node .claude/hooks/fabric-hint.cjs" }]
+.codex/hooks/fabric-hint.cjs           # same script, copied (Codex repo skill convention)
+.codex/hooks.json                      # events.Stop[] += [{ command: "node .codex/hooks/fabric-hint.cjs" }]
 ```
 
 The same `.cjs` script serves both clients because Claude Code and Codex CLI
@@ -124,7 +124,7 @@ This is documented as `KT-DEC-0009` in the self-repo.
 The merge logic (in `packages/cli/src/install/hooks.ts`):
 
 1. Read existing `hooks.Stop[]`.
-2. Index by hook command path (e.g. `node .claude/hooks/archive-hint.cjs`).
+2. Index by hook command path (e.g. `node .claude/hooks/fabric-hint.cjs`).
 3. If Fabric's hook is already present → no-op.
 4. If absent → append Fabric's entry; preserve all other user entries.
 

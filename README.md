@@ -20,7 +20,7 @@ a hook-driven reminder layer so the knowledge actually fires when it matters.
 ```text
                 ┌─────────────────────────────┐
                 │  fabric-knowledge-server    │
-                │  (MCP, 5 tools, stdio only) │
+                │  (MCP, 6 tools, stdio only) │
                 └──────────────┬──────────────┘
                                │
         ┌──────────────────────┼──────────────────────┐
@@ -57,8 +57,8 @@ without polluting agent context.
 ### 8 truly differentiated features
 
 1. **Cross-client MCP-first surface.** One server (`fabric-knowledge-server`),
-   five tools (`fab_plan_context`, `fab_get_knowledge_sections`, `fab_recall`,
-   `fab_extract_knowledge`, `fab_review`), three clients reading and writing
+   six tools (`fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
+   `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`), three clients reading and writing
    through the same protocol via stdio. Knowledge stops being a per-client artifact.
 
 2. **Harness-agnostic by design.** No 16-stage workflow state machine, no
@@ -102,10 +102,10 @@ without polluting agent context.
    the agent knows which Skill to run next without polluting the user's
    transcript.
 
-8. **Doctor as unified lifecycle engine.** `fabric doctor` runs 25 lint checks
+8. **Doctor as unified lifecycle engine.** `fabric doctor` runs 48 lint checks
    in one pass: orphan demotion (now driven by `last_consumed_at` derived
    from `knowledge_consumed` events, not last-referenced heuristics), stale
-   archive, overdue pending with `--apply-lint` auto-archive, stable-id
+   archive, overdue pending with `--fix-knowledge` auto-archive, stable-id
    duplicates, layer-mismatch corruption, index drift, relevance-aware lints
    #23-#25, underseed lint #22. One command, one report, one place to fix
    knowledge health.
@@ -163,7 +163,7 @@ Both call the same function. Neither is a fallback for the other.
 
 Fabric shares genes with the methodology writeup from the Tencent AI team that
 helped name this problem space: five typed knowledge entries, three maturity
-tiers (`draft` / `endorsed` / `stable`), lint-driven decay discipline, and the
+tiers (`draft` / `verified` / `proven`), lint-driven decay discipline, and the
 core thesis that *knowledge sustainment, not knowledge capture, is the moat*.
 
 Where Fabric diverges:
@@ -183,11 +183,13 @@ Genes are shared. The architecture is original to this project.
 Fabric splits cleanly across three entry points; pick by who's in the loop:
 
 - **CLI** — terminal, no AI in loop: `fabric install`, `fabric doctor`,
+  `fabric store`, `fabric sync`, `fabric info`, `fabric metrics`,
   `fabric plan-context-hint`.
 - **Skill** — AI is in the conversation and needs to judge content:
   `/fabric-archive`, `/fabric-review`, `/fabric-import`.
 - **MCP** — primitives the above use internally: `fab_extract_knowledge`,
-  `fab_plan_context`, `fab_get_knowledge_sections`, `fab_review`.
+  `fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
+  `fab_archive_scan`, `fab_review`.
 
 → See [`docs/surfaces.md`](./docs/surfaces.md) for the full table, decision
 rule, and flow examples.
@@ -196,10 +198,10 @@ rule, and flow examples.
 
 ```bash
 # In your project repo:
-pnpm dlx @fenglimg/fabric-cli init
+pnpm dlx @fenglimg/fabric-cli install
 ```
 
-`init` scans your repo (tech stack, build config, code style, CI), installs
+`install` scans your repo (tech stack, build config, code style, CI), installs
 the `fabric-archive` / `fabric-review` / `fabric-import` Skills + Stop hooks
 for each detected client, and writes a baseline `.fabric/` tree with 4-7 seed
 entries.
@@ -230,7 +232,7 @@ Supported clients (v2.0):
 
 ## How It Works
 
-Fabric exposes four MCP tools and three Skills.
+Fabric exposes six MCP tools and three Skills.
 
 **MCP tools** (called by clients, served by `fabric-knowledge-server`):
 
@@ -238,14 +240,19 @@ Fabric exposes four MCP tools and three Skills.
   a candidate pool filtered by `relevance_paths`. When ≤30 candidates,
   returns full content inline (single-stage). When >30, returns a
   `description_index` plus `selection_token` for a targeted follow-up.
-- `fab_get_knowledge_sections` — drill into specific sections via the
-  `selection_token`. Emits one `knowledge_consumed` event per fetched
-  `stable_id` (deduped within a request) so decay metrics use real consumption,
-  not bare references.
+- `fab_recall` — preferred one-call read path. Given target paths and optional
+  intent/ids, returns relevant knowledge bodies directly while still backing
+  the response with a reusable `selection_token`.
+- `fab_get_knowledge_sections` — fetch full markdown bodies for selected
+  `stable_id`s via the `selection_token`. Emits one `knowledge_consumed` event
+  per fetched `stable_id` (deduped within a request) so decay metrics use real
+  consumption, not bare references.
 - `fab_extract_knowledge` — propose new pending entries from the current
   session. Personal-layer entries land in `~/.fabric/knowledge/pending/<type>/`;
   team entries land in `<repo>/.fabric/knowledge/pending/<type>/`. Nothing
   reaches canonical knowledge without review.
+- `fab_archive_scan` — scan recent work/session history for archive-worthy
+  candidates before a Skill decides what to persist.
 - `fab_review` — list, search, approve, reject, modify, defer pending and
   canonical entries. `modify` works on both layers and detects narrow-team to
   personal flips, auto-degrading scope to broad.
@@ -266,9 +273,9 @@ Fabric exposes four MCP tools and three Skills.
 **Hooks** install per client but point at a single Node script
 (`fabric-hint.cjs`). One implementation, three configs.
 
-**Lifecycle** — `fabric doctor` runs 25 lints in one pass: orphan demotion
+**Lifecycle** — `fabric doctor` runs 48 checks in one pass: orphan demotion
 driven by `last_consumed_at` (from `knowledge_consumed` events), stale archive,
-overdue pending (auto-archive with `--apply-lint`), stable-id duplicates,
+overdue pending (auto-archive with `--fix-knowledge`), stable-id duplicates,
 layer-mismatch corruption, index drift, narrow/broad bindings (#23-#25),
 underseed (#22). Mutations emit events to `.fabric/events.jsonl`; default mode
 is report-only.
@@ -287,9 +294,9 @@ is report-only.
 
 This is a pnpm monorepo:
 
-- `packages/cli` — the `fabric` CLI (`install`, `scan`, `doctor`,
-  `uninstall`, `metrics`).
-- `packages/server` — the MCP server `fabric-knowledge-server` (5 tools, stdio)
+- `packages/cli` — the `fabric` CLI (`install`, `store`, `sync`, `info`,
+  `doctor`, `uninstall`, `config`, `metrics`).
+- `packages/server` — the MCP server `fabric-knowledge-server` (6 tools, stdio)
   plus the lifecycle service (review, doctor, lint, event ledger, metrics).
 - `packages/shared` — schemas (event ledger, api contracts, knowledge
   frontmatter) shared between CLI and server.
@@ -319,6 +326,6 @@ The early Fabric design borrowed the cross-client `AGENTS.md` framing from
 Andrej Karpathy's gist on agent rule files. The v2.0 knowledge-sustainment
 direction is informed by methodology writeups from the Anthropic, Letta, and
 Tencent AI Team communities — credit to those teams for naming the lifecycle
-problem clearly. The specific shape of Fabric (4 MCP tools, 5 typed knowledge
+problem clearly. The specific shape of Fabric (6 MCP tools, 5 typed knowledge
 entries, 3-tier maturity, dual-root layout, `relevance_paths` filtering,
 hook reminder layer, lint-driven decay) is original to this project.

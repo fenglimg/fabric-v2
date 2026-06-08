@@ -21,9 +21,9 @@ edges concrete; the FAQ at the bottom handles the ambiguous ones.
 
 | Surface              | When                                                 | Trigger                  | Examples                                                                       |
 | -------------------- | ---------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
-| CLI `fabric <cmd>`   | Terminal, no AI in loop, deterministic               | User types               | `install`, `scan`, `hooks install`, `doctor`, `plan-context-hint`                 |
+| CLI `fabric <cmd>`   | Terminal, no AI in loop, deterministic               | User types               | `install`, `store`, `sync`, `info`, `doctor`, `metrics`, `plan-context-hint`      |
 | Skill `/fabric-<name>` | In AI convo, needs LLM judgment on context         | AI client loads SKILL.md | `fabric-archive`, `fabric-review`, `fabric-import`                             |
-| MCP `fab_<name>`     | Skill+Agent primitives (write / query underneath)    | tool_use                 | `fab_extract_knowledge`, `fab_review`, `fab_plan_context`, `fab_get_knowledge_sections` |
+| MCP `fab_<name>`     | Skill+Agent primitives (write / query underneath)    | tool_use                 | `fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`, `fab_extract_knowledge`, `fab_archive_scan`, `fab_review` |
 
 Each column maps to one mental model:
 
@@ -35,8 +35,8 @@ Each column maps to one mental model:
   worth archiving?", "which pending entries are duplicates?" — that a
   deterministic CLI cannot reasonably make. Skills call MCP tools to do
   their writes.
-- **MCP** is the primitive layer. Four tools (`fab_plan_context`,
-  `fab_get_knowledge_sections`, `fab_extract_knowledge`, `fab_review`)
+- **MCP** is the primitive layer. Six tools (`fab_recall`, `fab_plan_context`,
+  `fab_get_knowledge_sections`, `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`)
   expose the underlying knowledge operations. Both Skills and standalone
   agent reasoning call them; the CLI also imports the same code paths
   directly (see `fabric plan-context-hint` → `planContext()`).
@@ -92,20 +92,21 @@ A CLI would have to hard-code thresholds and would mis-archive constantly.
 
 Mid-session, your AI agent realizes it's about to edit `auth/oauth.ts` and
 should check if there are relevant pitfalls or decisions. It calls
-`fab_plan_context` directly via MCP:
+`fab_recall` directly via MCP:
 
 ```json
 {
-  "current_task": "fix OAuth refresh-token rotation bug",
+  "intent": "fix OAuth refresh-token rotation bug",
   "paths": ["packages/auth/oauth.ts"]
 }
 ```
 
-The MCP server returns a candidate index. If ≤30 entries, content is
-inlined. If >30, the agent makes a follow-up call to
-`fab_get_knowledge_sections` with a `selection_token` for targeted fetch.
-Each fetched entry emits a `knowledge_consumed` event so decay lints know
-what's actually being used.
+The MCP server returns relevant knowledge bodies in one round trip. If the
+response would be too large, the agent falls back to the two-step path:
+`fab_plan_context` returns a candidate index and `selection_token`, then
+`fab_get_knowledge_sections` fetches only the selected `stable_id`s. Each
+fetched entry emits a `knowledge_consumed` event so decay lints know what's
+actually being used.
 
 Why MCP not Skill: this is a primitive call, not a judgment task. The
 agent already knows what it wants (knowledge relevant to a path); it just

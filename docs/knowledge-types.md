@@ -20,11 +20,11 @@ quadrants in software engineering — *what we believe* (models),
 
 | # | Type | Purpose | Typical layer | Typical maturity |
 |---|------|---------|---------------|------------------|
-| 1 | `decisions` | Recorded architectural choices with rationale | team | endorsed → stable |
-| 2 | `pitfalls` | Mistakes to avoid + the reasoning that made them non-obvious | team or personal | draft → endorsed |
-| 3 | `guidelines` | Recommended patterns / conventions ("always X / never Y") | team | endorsed → stable |
-| 4 | `models` | Mental models, abstractions, domain object schemas | team | draft → stable |
-| 5 | `processes` | Multi-step workflows whose order matters | team or personal | endorsed |
+| 1 | `decisions` | Recorded architectural choices with rationale | team | verified → proven |
+| 2 | `pitfalls` | Mistakes to avoid + the reasoning that made them non-obvious | team or personal | draft → verified |
+| 3 | `guidelines` | Recommended patterns / conventions ("always X / never Y") | team | verified → proven |
+| 4 | `models` | Mental models, abstractions, domain object schemas | team | draft → proven |
+| 5 | `processes` | Multi-step workflows whose order matters | team or personal | verified |
 
 Directory layout (per dual-root):
 
@@ -231,25 +231,25 @@ Storage:
 
 ---
 
-## Maturity tiers (draft / endorsed / stable)
+## Maturity tiers (draft / verified / proven)
 
 | Tier | Meaning | Promoted by | Demoted by |
 |------|---------|-------------|------------|
-| `draft` | Newly proposed; not yet validated | author | `doctor --apply-lint` if orphaned >30 days |
-| `endorsed` | Validated by review (`fab_review approve`) | reviewer | conflicting decision lands; lint flags stale |
-| `stable` | Entrenched in practice; cited by 3+ other entries | curation | superseded decision lands |
+| `draft` | Newly proposed; not yet validated | author | `doctor --fix-knowledge` if orphaned >30 days |
+| `verified` | Validated by review (`fab_review approve`) | reviewer | conflicting decision lands; lint flags stale |
+| `proven` | Entrenched in practice; cited by 3+ other entries | curation | superseded decision lands |
 
 Demote/archive thresholds (default; configurable in v2.x):
 
 - **Orphan demote**: a `draft` entry with no `knowledge_promoted` event after
-  30 days → demoted (archived) by `doctor --apply-lint`.
-- **Stale archive**: an `endorsed` entry with no citation or update in 180
+  30 days → demoted or archived by `doctor --fix-knowledge`.
+- **Stale archive**: a `verified` entry with no citation or update in 180
   days AND superseded by a newer entry → archived.
 - **Pending overdue**: an entry sitting in `pending/` for >14 days → flagged
-  by archive-hint Stop hook as a review prompt.
+  by the `fabric-hint.cjs` Stop hook as a review prompt.
 
 The full lint check matrix is in [docs/data-schema.md](./data-schema.md) and
-implemented in `fabric doctor --lint`.
+implemented in `fabric doctor` / `fabric doctor --fix-knowledge`.
 
 ---
 

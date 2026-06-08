@@ -1,4 +1,4 @@
-# SPEC_INTERNAL: 执行流协议
+# SPEC_INTERNAL: Knowledge Execution Protocol
 
 本文是 Fabric-v2 核心执行流的当前协议说明。修改 `packages/` 中核心引擎逻辑前，必须先同步本文的逻辑变更点。
 
@@ -6,226 +6,182 @@
 
 ```text
 fabric install
-  -> 写入 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
-  -> 规则正文进入 .fabric/rules/
+  -> 写入 / 刷新 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY.md、.fabric/events.jsonl
+  -> 初始化 .fabric/knowledge/ 与客户端 hooks / skills / MCP 配置
 
-MCP server (stdio transport — v2.0.0 唯一受支持 transport)
-  -> client 通过其 MCP 配置 spawn `node packages/server/dist/index.js`，stdio 通信
-  -> client 先调用 fab_plan_context
-  -> server 返回中立 requirement_profile、L0/L1/L2 description_index、selection_token
-  -> AI 只对 L1 自行选择 stable_id，并给出 ai_selection_reasons
-  -> client 调用 fab_get_rule_sections
-  -> server 合并 required L0/L2 + AI-selected L1
-  -> server 返回结构化 sections，并写入 .fabric/events.jsonl 的 rule_selection event
-  -> AI 在取回规则段落后执行修改
-  -> MCP、doctor 自动写入 .fabric/events.jsonl typed Event Ledger
+MCP server (stdio transport — v2.0.0 起主线唯一受支持 transport)
+  -> client 通过其 MCP 配置 spawn server，stdio 通信
+  -> 默认调用 fab_recall(paths=[...])
+  -> server 内部执行 planContext + knowledgeSections 路径
+  -> 返回候选索引、selection_token、完整 markdown body 和 selected_stable_ids
+  -> AI 读取知识正文后执行修改
+  -> 如 fab_recall 响应过大，client 可改走 fab_plan_context -> fab_get_knowledge_sections
+  -> MCP、doctor、skills 写入 .fabric/events.jsonl typed Event Ledger
 ```
 
-## 分层与身份
+## 存储与身份
 
-- `stable_id` 是唯一规则身份。`description.id` 禁止出现。
-- L0 是全局协作稳定性规则。
-- L1 是领域/模块规则，由 AI 从候选 description 中选择。
-- L2 是具体脚本或资源的本地规则，由 server 自动要求。
-- 跨层 precedence 固定为 `L2 > L1 > L0`。
-- `priority` 只在同层内排序，不改变跨层 precedence。
+- `.fabric/knowledge/` 是 team knowledge 默认根；`~/.fabric/knowledge/` 是 personal knowledge 默认根。
+- 多 store 场景下，read-set 可挂载额外 store，运行时通过 store alias 区分来源。
+- `stable_id` 是知识条目的稳定身份，通常形如 `KT-DEC-0001` / `KP-PIT-0001`。
+- frontmatter 中的 `id` / `stable_id` 是身份声明；文件路径和 slug 不是身份真源。
+- 当前 maturity vocabulary 是 `draft`、`verified`、`proven`。
+- 当前 type vocabulary 是 `models`、`decisions`、`guidelines`、`pitfalls`、`processes`。
+- `.fabric/agents.meta.json` 是派生运行时索引，不是手写真源；不要直接编辑。
 
-## Registry Shape
+## Candidate Shape
 
-`.fabric/agents.meta.json` 的 rule node 关键字段：
+`fab_plan_context` 和 `fab_recall` 暴露的候选项为 `{ stable_id, description }`，其中 `description` 承载选择信号：
 
 ```ts
-type RuleDescription = {
+type KnowledgeDescription = {
   summary: string;
   intent_clues: string[];
   tech_stack: string[];
   impact: string[];
   must_read_if: string;
   entities?: string[];
-};
-
-type RuleNode = {
-  stable_id: string;
-  level: "L0" | "L1" | "L2";
-  layer: "L0" | "L1" | "L2";
-  file: string;
-  content_ref?: string;
-  scope_glob: string;
-  priority: "high" | "medium" | "low";
-  description: RuleDescription;
+  id?: string;
+  knowledge_type?: "models" | "decisions" | "guidelines" | "pitfalls" | "processes";
+  maturity?: "draft" | "verified" | "proven";
+  knowledge_layer?: "personal" | "team";
+  tags?: string[];
+  relevance_scope?: "narrow" | "broad";
+  relevance_paths?: string[];
+  related?: string[];
 };
 ```
 
-规则正文必须放在 `.fabric/rules/`，`content_ref` 指向要读取的 Markdown。`.fabric/agents.meta.json` 是派生机器索引，不是规则真源。
+旧 L0/L1/L2 selection ceremony 已退役为内部兼容细节。当前 API 不再要求客户端按层级选择，也不返回 legacy `sections` 枚举。
 
-## `fab_plan_context`
+## `fab_recall`
 
-用途：编辑或架构规划前，返回中立的规则候选索引和一次性选择 token。
+用途：编辑或架构规划前的默认读入口，一次返回相关知识候选和正文。
 
-Input：
+Input 要点：
 
 ```ts
-type PlanContextInput = {
+type RecallInput = {
   paths: string[];
   intent?: string;
   known_tech?: string[];
   detected_entities?: Record<string, string[]>;
   client_hash?: string;
+  correlation_id?: string;
+  session_id?: string;
+  layer_filter?: "team" | "personal" | "both";
+  target_paths?: string[];
+  ids?: string[];
+  include_related?: boolean;
 };
 ```
 
 Output 要点：
 
-- `selection_token`
-- 每个 path 的轻量 `requirement_profile`
-- `description_index[]`
-- `required_stable_ids[]`：L0/L2
-- `ai_selectable_stable_ids[]`：L1
-- `initial_selected_stable_ids[]`：只包含 required ids
-
-`fab_plan_context` 不返回 L1 的 `score`、`confidence`、`match_reasons`、`negative_reasons` 或 `matched_profile_fields`。L1 判断由 AI 在读取 description 后自行完成。
-
-## `fab_get_rule_sections`
-
-用途：在 AI 选择 L1 后，按结构化 section 获取真正注入上下文。
-
-Input：
-
 ```ts
-type GetRuleSectionsInput = {
+type RecallResult = {
+  revision_hash: string;
+  stale: boolean;
   selection_token: string;
-  sections: Array<
-    | "MISSION_STATEMENT"
-    | "MANDATORY_INJECTION"
-    | "BUSINESS_LOGIC_CHUNKS"
-    | "CONTEXT_INFO"
-  >;
-  ai_selected_stable_ids: string[];
-  ai_selection_reasons: Record<string, string>;
+  entries: Array<{ path: string; requirement_profile: RequirementProfile }>;
+  candidates: Array<{ stable_id: string; description: KnowledgeDescription }>;
+  rules: Array<{ stable_id: string; level: "L0" | "L1" | "L2"; path: string; body: string }>;
+  selected_stable_ids: string[];
+  diagnostics: Array<{ code: "missing_knowledge_metadata" | "unresolved_selected_id"; severity: "warn"; stable_id: string; message: string }>;
+  redirects?: Record<string, string>;
 };
 ```
 
 规则：
 
-- `selection_token` 缺失或过期是 hard error。
-- AI 只能选择 token 中的 L1 stable_ids。
-- 选择 L0/L2、未知 stable_id、或缺少 selection reason 都是 hard error。
-- server 最终合并 `required_stable_ids + ai_selected_stable_ids`。
-- 缺失 section 返回空字符串和 warning diagnostic，禁止回退全文。
-- 成功解析后追加 `rule_selection` event。
+- 常规编辑前优先调用 `fab_recall(paths=[...])`。
+- `ids` 省略时，返回 plan-context surfaced 的全部可读正文；传入 `ids` 时只取指定 stable IDs。
+- `include_related` 只追加候选集中存在的一跳 related entries。
+- `session_id` 建议传入当前 client session id，便于 archive-history 和 cross-session debt 统计。
 
-Output 要点：
+## `fab_plan_context` + `fab_get_knowledge_sections`
+
+用途：当 `fab_recall` 响应过大、噪音过多，或调用方需要精确挑选 stable IDs 时，使用两步流。
+
+`fab_plan_context` 返回：
+
+- `revision_hash`
+- `stale`
+- `selection_token`
+- `entries[]` 的 path + requirement profile
+- `candidates[]` 的 `{ stable_id, description }`
+- `omitted_candidate_count?`
+- `preflight_diagnostics[]`
+- `redirects?`
+
+`fab_get_knowledge_sections` 输入：
 
 ```ts
-type GetRuleSectionsResult = {
-  revision_hash: string;
-  precedence: ["L2", "L1", "L0"];
-  selected_stable_ids: string[];
-  rules: Array<{
-    stable_id: string;
-    level: "L0" | "L1" | "L2";
-    path: string;
-    sections: Record<string, string>;
-  }>;
-  diagnostics: Array<{
-    code: "missing_section";
-    severity: "warn";
-    stable_id: string;
-    section: string;
-    message: string;
-  }>;
+type KnowledgeSectionsInput = {
+  selection_token: string;
+  ai_selected_stable_ids: string[];
+  ai_selection_reasons?: Record<string, string>;
+  correlation_id?: string;
+  session_id?: string;
+  client_hash?: string;
 };
 ```
+
+`fab_get_knowledge_sections` 输出完整 markdown body：
+
+```ts
+type KnowledgeSectionsResult = {
+  revision_hash: string;
+  selected_stable_ids: string[];
+  rules: Array<{ stable_id: string; level: "L0" | "L1" | "L2"; path: string; body: string }>;
+  diagnostics: Array<{ code: "missing_knowledge_metadata" | "unresolved_selected_id"; severity: "warn"; stable_id: string; message: string }>;
+  redirect_to?: { stable_id: string } | Record<string, string>;
+};
+```
+
+规则：
+
+- `selection_token` 必须来自最近一次 `fab_plan_context` 或 `fab_recall`。
+- `ai_selected_stable_ids` 应从 `candidates[].stable_id` 中选择。
+- `sections` 参数已删除；调用方读取 `body` 后自行扫描需要的 heading。
+- 缺失 metadata 是 warning；未知或无法解析的 stable ID 会进入 diagnostics。
+
+## Write Tools
+
+- `fab_extract_knowledge`：从会话内容提取候选 knowledge，写入 `.fabric/knowledge/pending/<type>/`。
+- `fab_archive_scan`：为 archive skill 扫描 session / event ledger / recent paths，返回候选归档上下文。
+- `fab_review`：对 pending 或 canonical knowledge 执行 `list`、`approve`、`reject`、`modify`、`search`、`defer` 等动作。
+
+`fab_review.approve` 负责 stable ID 分配和 canonical 落盘；失败时 counter 不回滚，orphan slot 由 doctor 报告。
 
 ## Event Ledger
 
-`fab_get_rule_sections` 写入 `.fabric/events.jsonl`。这是唯一 Fabric ledger：
+`.fabric/events.jsonl` 是主 ledger。关键事件包括：
+
+- `knowledge_context_planned`：`fab_plan_context` / `fab_recall` 规划候选。
+- `knowledge_selection`：两步流或 recall 内部选择 stable IDs。
+- `knowledge_sections_fetched`：`fab_get_knowledge_sections` / `fab_recall` 读取完整正文。
+- `knowledge_proposed`：pending entry 写入。
+- `knowledge_promote_started` / `knowledge_promoted` / `knowledge_promote_failed`：review approve 事务。
+- `knowledge_layer_changed`：review modify layer flip。
+- `knowledge_rejected` / `knowledge_deferred` / `knowledge_archived`：review 或 doctor governance 动作。
+
+`fabric doctor` 检查 ledger 是否存在、可写、可解析，并可在 `--fix` / `--fix-knowledge` 模式下写入确定性治理事件。
+
+## Static Test Traceability
+
+V1 静态 traceability 仍使用 `// @fabric-verify <stable_id>` 声明测试与 stable ID 的关系。它只记录声明覆盖和 hash drift 信号，不运行测试，也不证明语义覆盖。
 
 ```ts
-type RuleSelectionAuditEntry = {
-  kind: "fabric-event";
-  event_type: "rule_selection";
-  schema_version: 1;
-  id: string;
-  ts: number;
-  selection_token: string;
-  target_paths: string[];
-  required_stable_ids: string[];
-  ai_selectable_stable_ids: string[];
-  ai_selected_stable_ids: string[];
-  final_stable_ids: string[];
-  ai_selection_reasons: Record<string, string>;
-  rejected_stable_ids: string[];
-  ignored_stable_ids: string[];
-};
-```
-
-`fabric doctor` 检查 `.fabric/events.jsonl` 是否存在、可写、可解析。
-
-`fabric doctor` also reports L2 `[BUSINESS_LOGIC_CHUNKS]` anchor health when rule nodes declare that section:
-
-- `missing`: a chunk omits a valid `Anchor`.
-- `stale`: a chunk anchor has no matching `@fabric-anchor <ID>` in source.
-- `duplicate`: the same source `@fabric-anchor <ID>` appears more than once.
-
-This is diagnostic-only. Fabric does not block commits for deleted anchors and does not dynamically prune business chunks.
-
-## RuleTestIndex V1
-
-V1 only implements static rule-test traceability. It records declared coverage and hash drift signals; it does not prove that a test passed or that the test semantically covers the rule.
-
-Tests declare a rule link with a static comment:
-
-```ts
-// @fabric-verify <stable_id>
-```
-
-Example for an L2 script test:
-
-```ts
-// @fabric-verify assets/scripts/seer
-describe("seer script contract", () => {
-  it("preserves the inspected-player result shape", () => {
-    // ordinary Jest assertions stay project-owned
+// @fabric-verify KT-DEC-0001
+describe("knowledge-visible behavior", () => {
+  it("preserves the documented contract", () => {
+    // project-owned assertions
   });
 });
 ```
 
-`fabric doctor --fix` scans test files for `@fabric-verify` comments and writes `.fabric/rule-test.index.json` as a generated sidecar. The sidecar is separate from `.fabric/agents.meta.json` so rule selection metadata stays focused on rule discovery and precedence.
-
-V1 `RuleTestIndex` entries record static facts:
-
-```ts
-type RuleTestIndexEntry = {
-  stable_id: string;
-  rule_hash: string;
-  test_path: string;
-  test_hash: string;
-  previous_rule_hash?: string;
-  previous_test_hash?: string;
-  line?: number;
-};
-```
-
-When regenerating the sidecar, `fabric doctor --fix` preserves `previous_rule_hash` and `previous_test_hash` from the last index entry. This lets `fabric doctor` distinguish ordinary coverage from drift, for example a rule hash changing while the linked test hash stayed the same.
-
-`fabric doctor` uses the sidecar for static contract checks only:
-
-- `covered`: a rule has at least one declared `@fabric-verify` entry.
-- `stale_rule`: the current rule hash differs from the indexed rule hash and the linked test did not move with it.
-- `stale_test`: the indexed test hash no longer matches the current test file.
-- `orphan`: an index entry references a stable_id that is not present in the current rule registry.
-- `missing`: a rule that requires declared coverage has no current index entry.
-
-Explicit V1 exclusions:
-
-- No Jest runner or test execution.
-- No pass/fail evidence.
-- No `.fabric/rule-test.results.jsonl`.
-- No separate acknowledgement flow outside `doctor --fix`.
-- No AI audit or test quality analysis.
-- No config hash.
-- No semantic coverage proof.
+`fabric doctor --fix` 可刷新派生 sidecar 和 deterministic metadata；`fabric doctor --fix-knowledge` 面向 knowledge lint / pending overdue / stale archive 等知识治理修复。
 
 ## Target Command And State Surface
 
@@ -233,30 +189,36 @@ Public CLI commands:
 
 ```text
 fabric install
-fabric scan
+fabric store
+fabric sync
+fabric info
 fabric doctor
 fabric uninstall
+fabric config
 ```
 
-> v1.8 时代的 `fabric serve` 已在 v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`（KB [[fabric-serve-quarantine-not-delete]]）。v2.0.0 起 client 通过 stdio MCP 直连 server，不再需要本地 HTTP 进程。
-
-Doctor modes:
+Compatibility / hidden commands:
 
 ```text
-fabric doctor --json
-fabric doctor --strict
-fabric doctor --fix
+fabric whoami
+fabric status
+fabric scope-explain
+fabric plan-context-hint
+fabric onboard-coverage
+fabric metrics
 ```
+
+> v1.x / rc 时代的 `fabric serve` 已在 v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`。v2.0.0 起 client 通过 stdio MCP 直连 server，不再需要本地 HTTP 进程。
 
 Target `.fabric/` state:
 
 - `.fabric/AGENTS.md`
 - `.fabric/INITIAL_TAXONOMY.md`
-- `.fabric/forensic.json`
-- `.fabric/init-context.json`
-- `.fabric/rules/`
-- `.fabric/agents.meta.json`
-- `.fabric/rule-test.index.json`
+- `.fabric/fabric-config.json`
+- `.fabric/knowledge/`
 - `.fabric/events.jsonl`
+- `.fabric/metrics.jsonl`
+- `.fabric/.cache/`
+- `.fabric/agents.meta.json`（派生，不手写）
 
-`.fabric/rules/` is the rule source of truth. `.fabric/events.jsonl` is the only ledger. `fabric doctor --fix` may rebuild deterministic derived state and append `rule_baseline_accepted` / `baseline_synced` typed events, but it must not repair missing rule sections, rule semantic conflicts, incomplete init-context confirmation, MCP client local config issues, or business-code-versus-rule mismatch.
+`.fabric/knowledge/` 是知识真源。`.fabric/events.jsonl` 是审计 ledger。`fabric doctor --fix` 可重建 deterministic 派生状态；`fabric doctor --fix-knowledge` 可执行明确的 knowledge maintenance 修复；二者都不能替用户裁决语义冲突或业务代码是否符合知识条目。

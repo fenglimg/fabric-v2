@@ -9,7 +9,7 @@ defaults, and recommended values for repos of different sizes.
 > - `.fabric/fabric-config.json` — JSON object, parsed at hook start. Missing
 >   file or absent field → documented default. Schema lives in
 >   `packages/shared/src/schemas/fabric-config.ts`.
-> - Environment variables — see the `--apply-lint` section.
+> - Environment variables — see the doctor knowledge-repair section.
 
 ## Repo-size cheat-sheet
 
@@ -284,9 +284,9 @@ etc.).
 Optional. Project path used by integration tests when running against an
 external fixture; ignored in production.
 
-## `--apply-lint` safety (rc.7 T11)
+## `--fix-knowledge` safety
 
-`fabric doctor --apply-lint` mutates user-knowledge state: it rewrites
+`fabric doctor --fix-knowledge` mutates user-knowledge state: it rewrites
 frontmatter (`maturity` demotions), runs `git mv` to relocate stale entries
 into `.fabric/.archive/`, deletes session-hint cache files, and bumps drifted
 counters in `agents.meta.json`. Because the surface is destructive, the
@@ -294,7 +294,7 @@ command refuses to mutate without an explicit confirmation.
 
 ### Behavior
 
-When `--apply-lint` is invoked the doctor command:
+When `--fix-knowledge` is invoked the doctor command:
 
 1. Runs a pre-flight `runDoctorReport()` to enumerate the proposed mutations.
 2. Renders a plan banner to stdout with per-code counts and a preview of up
@@ -313,7 +313,7 @@ When `--apply-lint` is invoked the doctor command:
 
 The pair `--yes` + `FABRIC_NONINTERACTIVE` is intentional and orthogonal:
 
-- `--yes` is the explicit-CLI knob (`fabric doctor --apply-lint --yes`).
+- `--yes` is the explicit-CLI knob (`fabric doctor --fix-knowledge --yes`).
 - `FABRIC_NONINTERACTIVE=1` is the environment knob (POSIX-style, mirrors
   `DEBIAN_FRONTEND=noninteractive`). It is useful when Fabric is invoked
   from a wrapping pipeline that does not have direct control over the
@@ -322,9 +322,9 @@ The pair `--yes` + `FABRIC_NONINTERACTIVE` is intentional and orthogonal:
 ### Recommended usage
 
 - **Local development (interactive)**: just run
-  `fabric doctor --apply-lint`. Read the plan, confirm if it looks right.
+  `fabric doctor --fix-knowledge`. Read the plan, confirm if it looks right.
 - **CI (workflow steps)**: use `--yes` explicitly. Example:
-  `fabric doctor --apply-lint --yes`. Prefer this over the env var because
+  `fabric doctor --fix-knowledge --yes`. Prefer this over the env var because
   the intent is visible in the workflow file.
 - **Wrapped invocations (e.g. nested doctor calls in a build pipeline)**:
   set `FABRIC_NONINTERACTIVE=1` once at the top of the pipeline and let
@@ -332,7 +332,7 @@ The pair `--yes` + `FABRIC_NONINTERACTIVE` is intentional and orthogonal:
 
 ### Plan no-op shortcut
 
-When the pre-flight report shows zero apply-lint findings the plan banner
+When the pre-flight report shows zero fix-knowledge findings the plan banner
 and the confirm prompt are both skipped. `runDoctorApplyLint()` still runs
 so the standard no-op message ("No apply-lint mutations were needed.") is
 emitted.
@@ -348,9 +348,9 @@ because `knowledge-meta-builder` already falls back to the schema defaults
 (`relevance_scope: broad`, `relevance_paths: []`) at read time
 (knowledge-meta-builder.ts:1007-1021).
 
-### `--apply-lint` behavior
+### `--fix-knowledge` behavior
 
-In `--apply-lint` mode the doctor command:
+In `--fix-knowledge` mode the doctor command:
 
 1. Walks the dual-root pending tree (team + personal) once.
 2. For every pending entry whose frontmatter is missing a field, atomically
@@ -361,7 +361,7 @@ In `--apply-lint` mode the doctor command:
    produces zero per-file mutations).
 4. Emits exactly one aggregate `relevance_migration_run` event per
    invocation (not per file) with `scanned_count` / `touched_count`.
-   The event fires unconditionally on every `--apply-lint` run — including
+   The event fires unconditionally on every `--fix-knowledge` run — including
    no-op re-runs (`touched_count: 0`) — to keep an audit-trail heartbeat in
    `events.jsonl` for migration archaeology.
 

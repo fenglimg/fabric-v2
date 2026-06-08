@@ -69,19 +69,19 @@ for which MCP tool emits which event.
 |---|---|---|---|
 | `knowledge_context_planned` | `target_paths`, `required_stable_ids`, `ai_selectable_stable_ids`, `final_stable_ids`, `selection_token?`, `client_hash?`, `intent?`, `known_tech?`, `diagnostics?` | `plan-context.ts` | Logged when the server computes which knowledge entries are required/selectable for a given file path set. |
 | `knowledge_selection` | `selection_token`, `target_paths`, `required_stable_ids`, `ai_selectable_stable_ids`, `ai_selected_stable_ids`, `final_stable_ids`, `ai_selection_reasons`, `rejected_stable_ids`, `ignored_stable_ids` | `audit-log.ts` | Records the AI's final selection decision (which L1 entries were chosen). |
-| `knowledge_sections_fetched` | `selection_token`, `target_paths?`, `requested_sections`, `final_stable_ids`, `ai_selected_stable_ids`, `diagnostics?` | `rule-sections.ts` | Records which sections of which knowledge entries were fetched for injection. |
-| `knowledge_drift_detected` | `revision?`, `drifted_stable_ids`, `missing_files`, `stale_files`, `details?` | `rule-meta-builder.ts`, `rule-sync.ts` | Emitted when on-disk hashes differ from `agents.meta.json` snapshot. |
+| `knowledge_sections_fetched` | `selection_token`, `target_paths?`, `final_stable_ids`, `ai_selected_stable_ids`, `diagnostics?` | `knowledge-sections.ts`, `recall.ts` | Records which full markdown bodies were fetched by `fab_get_knowledge_sections` or the one-step `fab_recall` shortcut. |
+| `knowledge_drift_detected` | `revision?`, `drifted_stable_ids`, `missing_files`, `stale_files`, `details?` | `knowledge-sync.ts`, `rehydrate-state.ts` | Emitted when on-disk knowledge metadata differs from the derived runtime snapshot. |
 | `edit_intent_checked` | `path`, `compliant`, `intent`, `ledger_entry_id`, `ledger_source?`, `commit_sha?`, `parent_sha?`, `parent_ledger_entry_id?`, `diff_stat?`, `annotation?`, `matched_rule_context_ts`, `window_ms` | `audit-log.ts` | Result of checking whether an edit's declared intent matches the active knowledge context window. |
 | `mcp_event` | `mcp_event_id`, `stream_id`, `message` | MCP transport layer | Raw MCP protocol event forwarded to the ledger for replay debugging. |
-| `reapply_completed` | `preserved_ledger`, `preserved_meta`, `rules_count` | init pipeline | Emitted after a non-destructive re-init (reapply mode) completes. |
+| `reapply_completed` | `preserved_ledger`, `preserved_meta`, `knowledge_count` | install pipeline | Emitted after a non-destructive reinstall / reapply mode completes. |
 | `event_ledger_truncated` | `byte_offset`, `byte_length`, `corrupted_path` | event-ledger.ts | Recovery event written when the ledger is truncated to remove a partial tail write. |
 | `mcp_config_migrated` | `source`, `removed_from` | doctor.ts | Emitted when MCP server config is migrated from a legacy file location. |
-| `meta_reconciled_on_startup` | `reconciled_files`, `duration_ms`, `source` | rule-sync.ts | Full meta reconciliation run triggered at server startup. |
-| `meta_reconciled` | `reconciled_files`, `duration_ms`, `trigger`, `source` | rule-sync.ts | Meta reconciliation triggered by `fabric doctor` or manual request. |
+| `meta_reconciled_on_startup` | `reconciled_files`, `duration_ms`, `source` | `knowledge-sync.ts` | Full knowledge metadata reconciliation run triggered at server startup. |
+| `meta_reconciled` | `reconciled_files`, `duration_ms`, `trigger`, `source` | `knowledge-sync.ts` | Knowledge metadata reconciliation triggered by `fabric doctor` or manual request. |
 | `claude_skill_path_migrated` | `from`, `to` | doctor.ts | Skill file moved from v1.x path to v2.0 path. |
 | `claude_hook_path_migrated` | `from`, `to` | doctor.ts | Hook file moved from v1.x path to v2.0 path. |
 | `codex_skill_path_migrated` | `from`, `to` | doctor.ts | Codex skill file moved from v1.x path to v2.0 path. |
-| `init_scan_completed` | `written_stable_ids`, `duration_ms`, `source?` | scan.ts | Emitted after `fabric scan` finishes writing baseline knowledge entries. |
+| `init_scan_completed` | `written_stable_ids`, `duration_ms`, `source?` | install pipeline | Historical event name retained for compatibility; emitted by install-time baseline knowledge creation, not by a public `fabric scan` command. |
 
 ### Group B — knowledge.* lifecycle (11, pre-registered for rc.2/3/4)
 
@@ -101,7 +101,7 @@ emit sites.
 | `knowledge_promote_started` | `stable_id?`, `timestamp`, `reason?` | Phase-1 of the 2-phase approve transaction. Pairs with one of `knowledge_promoted` / `knowledge_promote_failed`. |
 | `knowledge_promoted` | `stable_id?`, `timestamp`, `reason?` | Phase-2 success. `stable_id` populated post-counter-allocation. |
 | `knowledge_promote_failed` | `stable_id?`, `timestamp`, `reason` (required) | Phase-2 failure. Counter increment is NOT rolled back — the orphaned slot is reported by `fabric doctor`. |
-| `knowledge_layer_changed` | `stable_id?`, `timestamp`, `reason?`, `from_layer`, `to_layer` | Layer-flip via `fab_review/modify.changes.layer`. Triggers `redirect_to` in subsequent `fab_get_rule_sections` calls. |
+| `knowledge_layer_changed` | `stable_id?`, `timestamp`, `reason?`, `from_layer`, `to_layer` | Layer-flip via `fab_review/modify.changes.layer`. Triggers redirects in subsequent `fab_get_knowledge_sections` / `fab_recall` calls. |
 | `knowledge_slug_renamed` | `stable_id?`, `timestamp`, `reason?`, `from_slug`, `to_slug` | Explicit `git mv` keeping `id` stable. |
 | `knowledge_demoted` | `stable_id?`, `timestamp`, `reason?` | Maturity transition (e.g. `proven → verified`, `verified → draft`). |
 | `knowledge_archived` | `stable_id?`, `timestamp`, `reason?` | Entry moved to archive subtree (still discoverable via id, hidden from default selection). |
@@ -192,7 +192,7 @@ Rules:
 
 Every meta file (`agents.meta.json`) carries a top-level `revision` string
 used for stale detection in MCP responses (`fab_plan_context.client_hash`,
-`fab_get_rule_sections.stale`).
+`fab_get_knowledge_sections` / `fab_recall` redirect and stale diagnostics).
 
 ```
 revision = sha256(sorted(stable_id + ":" + frontmatter_hash))

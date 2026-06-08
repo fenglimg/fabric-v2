@@ -20,16 +20,18 @@ hardened across three AI clients.
 
 **Release signal.** `fabric install` on a clean repo produces a 4–7 entry
 baseline; the agent's Stop hook eventually prompts archival; the
-`fabric-review` Skill drains `pending/`; `fabric doctor --lint` keeps the
-tree healthy.
+`fabric-review` Skill drains `pending/`; `fabric doctor` reports health and
+`fabric doctor --fix-knowledge` applies deterministic knowledge maintenance.
 
 ### Shipped
 
-- **4 MCP tools**:
-  - `fab_plan_context` — context-shaped rule retrieval (carried from v1.x).
-  - `fab_get_rule_sections` — structured section fetch (carried from v1.x).
+- **6 MCP tools**:
+  - `fab_recall` — default one-call knowledge recall for paths / intent / ids.
+  - `fab_plan_context` — candidate planning and `selection_token` minting for large corpora.
+  - `fab_get_knowledge_sections` — full markdown body fetch for selected stable IDs.
   - `fab_extract_knowledge` — archive new entries with `(source_session,
     type, slug)` idempotency; evidence-append on duplicate.
+  - `fab_archive_scan` — archive-candidate scan over recent work/session history.
   - `fab_review` — 6 actions (list / approve / reject / modify / search /
     defer) with path-traversal sandbox.
 - **3 Skills** (installed to `.claude/skills/` and `.codex/skills/`):
@@ -40,13 +42,13 @@ tree healthy.
   - `fabric-import` — 3-phase LLM-driven enrichment with
     `.import-state.json` checkpoint.
 - **Stop hooks** for Claude Code and Codex CLI (Cursor: tracked in v2.1).
-  Single `archive-hint.cjs` script serves both clients via identical
+  Single `fabric-hint.cjs` script serves supported clients via identical
   stdout JSON shape.
-- **`fabric doctor --lint`** — 6 deterministic checks: orphan demote,
+- **`fabric doctor`** — deterministic checks: orphan demote,
   stale archive, stable_id duplicate, layer mismatch, index drift,
   pending overdue. Plus 1 filesystem-edit fallback (synthesizes
   `knowledge_promoted` for canonical files lacking provenance).
-- **`fabric doctor --apply-lint`** — applies fixes and emits
+- **`fabric doctor --fix-knowledge`** — applies knowledge-entry fixes and emits
   `knowledge_demoted` / `knowledge_archived` events.
 - **Late-bind id allocation** — `KP-` (personal) / `KT-` (team) prefix +
   type code (`DEC` / `PIT` / `GLD` / `MOD` / `PRO`) + monotonic counter
@@ -144,7 +146,7 @@ but unsettled design. Inclusion here is **not** a commitment.
   barrier for non-CLI reviewers. Open question: scope drift toward
   Notion/Obsidian competition (rejected as Boundary C in v2.0; would
   need a sharper rationale to revisit).
-- **Decay threshold configurability** — `doctor --apply-lint`
+- **Decay threshold configurability** — `doctor --fix-knowledge`
   currently uses fixed thresholds (30 days for orphan demote, 180
   days for stale archive, 14 days for pending overdue). Per-team
   configurability (in `.fabric/team.json`) is a natural extension.

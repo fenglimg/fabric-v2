@@ -16,82 +16,81 @@
 
 - CLI subcommands lazy registry：`packages/cli/src/commands/index.ts:1`。
 - Server tool registration：`packages/server/src/index.ts:49`。
-- Shared schemas 被 server 消费：`packages/server/src/tools/get-rules.ts:2`。
+- Shared schemas 被 server 消费：`packages/server/src/tools/recall.ts`、`packages/server/src/tools/knowledge-sections.ts`。
 - 历史 REST routes + Dashboard 实现：`packages/server-http-experimental/src/`（archived）。
 
-## ADR-002: MCP-first Rule Distribution
+## ADR-002: MCP-first Knowledge Distribution
 
-决策：rules 通过 MCP tools 按需分发，不预编译进每个 client prompt file。
+决策：knowledge 通过 MCP tools 按需分发，不预编译进每个 client prompt file。
 
 原因：
 
-- 保持 scoped rules 对 path 敏感。
-- 允许 clients 传入 `client_hash`，并检测 stale rule revisions。
-- 将 priority、activation、description-stub 逻辑集中在 server。
+- 保持 narrow knowledge 对 path 敏感。
+- 允许 clients 传入 `client_hash` / `session_id`，并检测 stale knowledge revisions。
+- 将 recall、selection token、description-stub 逻辑集中在 server。
 
 证据：
 
-- `fab_plan_context` 和 `fab_get_rule_sections` 是当前 MCP 编辑闭环。
-- `client_hash` stale detection：`packages/server/src/services/get-rules.ts:85`。
-- Rule matching 和 priority 位于 service：`packages/server/src/services/get-rules.ts:145`。
+- `fab_recall` 是默认编辑前召回入口；`fab_plan_context` + `fab_get_knowledge_sections` 是大响应裁剪时的两步回退。
+- `client_hash` stale detection 位于 shared/API contract 与 retrieval services。
+- Knowledge matching 和 relevance filtering 位于 `packages/server/src/services/plan-context.ts` / `packages/server/src/services/recall.ts`。
 - Bootstrap README 保持为 MCP resource：`packages/server/src/index.ts:54`。
 
-## ADR-003: `scope_glob + priority + layer` Rule Selection
+## ADR-003: `relevance_paths + maturity + layer` Knowledge Selection
 
-决策：rule node 是否适用由 metadata fields 计算，再按 priority 和 node id 排序。
+决策：knowledge entry 是否适用由 frontmatter metadata 与 target paths 计算，再按 retrieval ranking 输出。
 
 原因：
 
-- Metadata 解析和缓存成本低。
-- Priority 明确且确定。
-- Node id 作为 tie-break，保证输出稳定。
+- Frontmatter metadata 是 review 后的 canonical contract。
+- `relevance_scope` / `relevance_paths` 让 narrow knowledge 只在相关路径出现。
+- `maturity` 与 `layer` 决定条目健康和可见性边界。
 
 证据：
 
-- Node schema 要求 `scope_glob`、`priority`、`layer`、`topology_type`、`hash`：`packages/shared/src/schemas/agents-meta.ts:23`。
-- Priority 顺序是 `high`、`medium`、`low`：`packages/server/src/services/get-rules.ts:77`。
-- 先按 priority 再按 node id 排序：`packages/server/src/services/get-rules.ts:150`。
+- Frontmatter schema 要求 `knowledge_type`、`maturity`、`relevance_scope`、`relevance_paths` 等字段：`packages/shared/src/schemas/api-contracts.ts`。
+- `MaturitySchema` 当前为 `draft` / `verified` / `proven`。
+- Selection token 与 fetched body contract 位于 `packages/server/src/services/plan-context.ts` / `packages/server/src/services/knowledge-sections.ts`。
 
-## ADR-004: HTML Comment Stable ID Carrier
+## ADR-004: Frontmatter Stable ID Carrier
 
-决策：stable rule identity 使用 HTML comment header 作为声明载体：
+决策：stable knowledge identity 使用 frontmatter `stable_id` / `id` 作为声明载体：
 
-```html
-<!-- fab:rule-id scope/name -->
+```yaml
+stable_id: KT-DEC-0001
 ```
 
 原因：
 
-- 兼容 Markdown rule files 和现有 AGENTS-style documents。
-- 不需要解析 frontmatter。
-- 规则索引 builder 可以低成本提取。
-- 中文正文可以保留，同时给 clients 一个稳定英文 anchor。
+- 兼容 Markdown knowledge files 和 pending review flow。
+- frontmatter 同时承载 type、maturity、layer、relevance paths。
+- store-qualified refs 可以在多 store read-set 中消除 local id shadow。
+- 中文正文可以保留，同时给 clients 一个稳定 ID anchor。
 
 证据：
 
-- Shared schema 支持 `stable_id` 和 `identity_source`：`packages/shared/src/schemas/agents-meta.ts:31`。
-- 已有 derived fallback：`packages/shared/src/schemas/agents-meta.ts:67`。
-- 规则索引 builder 用 HTML comment regex 提取 declared id。
-- 现有 bootstrap templates 已使用 `fab:rule-id`：`templates/bootstrap/CLAUDE.md:1`, `templates/bootstrap/codex-AGENTS-header.md:1`。
+- Shared schema 支持 `StableIdSchema`：`packages/shared/src/schemas/api-contracts.ts`。
+- Multi-store stable id helpers 位于 `packages/shared/src/schemas/store-stable-id.ts`。
+- Bootstrap canonical text teaches `KB: <store-alias>:<id>` when needed。
 
 影响：
 
-- 没有 declared IDs 的 rule files 仍可路由，但 `identity_source: "derived"` 应视为 migration warning。
-- `fab_plan_context` 已经输出 `derived_identity` diagnostics：`packages/server/src/services/plan-context.ts:172`。
+- 没有 stable id 的 legacy entries 必须经 review / doctor knowledge repair 补齐或隔离。
+- `fab_recall` / `fab_get_knowledge_sections` 对 layer flip 后的 id 变化提供 redirect metadata。
 
-## ADR-005: Doctor Fix Precompiles Rule Identity
+## ADR-005: Doctor Fix Rebuilds Derived Knowledge Indexes
 
-决策：stable identity 由 `fabric doctor --fix` 从 `.fabric/rules/` 编译进 `.fabric/agents.meta.json`，不在 rule delivery hot path 中临时提取。
+决策：derived indexes 由 `fabric doctor --fix` 从 `.fabric/knowledge/` 和 mounted stores 重建，不在 hot path 中手写修复。
 
 原因：
 
-- 保持 rule delivery path 足够快。
-- 让 Dashboard、Doctor、MCP tools 和 shared bundles 消费同一份 identity metadata。
+- 保持 retrieval path 足够快。
+- 让 Doctor、MCP tools 和 hook hints 消费同一份 derived metadata。
 - Revision 可以覆盖 identity 变化。
 
 证据：
 
-- `.fabric/rules/` 是规则正文真源。
+- `.fabric/knowledge/` 和 mounted stores 是知识正文真源。
 - `.fabric/agents.meta.json` 是 derived machine index。
 - Revision source 包含 `id`、`hash`、`stable_id`、`identity_source`。
 
@@ -150,7 +149,7 @@ v2.0.0 现状：Dashboard package 与全部 HTTP routes 一同 quarantine（见 
 
 - Doctor report categories are `fixable_errors`、`manual_errors`、`warnings`。
 - Fixable state includes `.fabric/agents.meta.json`、`.fabric/rule-test.index.json`、missing `.fabric/events.jsonl`、deterministic bootstrap README、stale meta hashes。
-- Manual state includes missing rule sections、semantic conflicts、incomplete init-context confirmation、MCP client local config issues、business-code-versus-rule mismatch。
+- Manual state includes semantic knowledge conflicts、incomplete init-context confirmation、MCP client local config issues、business-code-versus-knowledge mismatch。
 
 ## ADR-011: Dashboard Static Served By Server Package（已 quarantine — v2.0.0-rc.37）
 

@@ -6,7 +6,7 @@
 
 ```text
 packages/cli
-  public command surface: install、scan、doctor、uninstall
+  public command surface: install、store、sync、info、doctor、uninstall、config、metrics
   -> 客户端通过 MCP 配置 spawn @fenglimg/fabric-server (stdio)
   -> 使用 @fenglimg/fabric-shared 的 schemas、detector、i18n
 
@@ -38,10 +38,10 @@ fabric serve  # (v2.0.0-rc.37: quarantine 到 packages/server-http-experimental/
   -> packages/server-http-experimental/src/{http,middleware/bearer-auth,services/serve-lock}.ts
   -> 详见 KB [[fabric-serve-quarantine-not-delete]]
 
-fab_plan_context / fab_get_knowledge_sections
+fab_recall / fab_plan_context / fab_get_knowledge_sections
   MCP client (stdio)
-  -> server/tools/plan-context.ts / server/tools/knowledge-sections.ts
-  -> server/services/plan-context.ts / server/services/knowledge-sections.ts
+  -> server/tools/recall.ts / server/tools/plan-context.ts / server/tools/knowledge-sections.ts
+  -> server/services/recall.ts / server/services/plan-context.ts / server/services/knowledge-sections.ts
   -> meta-reader.ts, event-ledger.ts, cache.ts
   -> 返回 structuredContent
 
@@ -54,24 +54,27 @@ fab_plan_context / fab_get_knowledge_sections
 | 文件 | 职责 | 证据 |
 | --- | --- | --- |
 | `src/index.ts` | CLI root command、version injection、main entrypoint。 | `packages/cli/src/index.ts:11` |
-| `src/commands/index.ts` | Public lazy subcommand registry；v2.0.0 public surface is `install`、`scan`、`doctor`、`uninstall`（`serve` 在 v2.0.0-rc.37 已 quarantine）。 | `packages/cli/src/commands/index.ts:1` |
-| `src/commands/init.ts` | 一站式 init state machine、wizard、scaffold plan、MCP/bootstrap/hooks phases。 | `packages/cli/src/commands/init.ts:249`, `packages/cli/src/commands/init.ts:317` |
+| `src/commands/index.ts` | Lazy subcommand registry；current public surface is `install`、`store`、`sync`、`info`、`doctor`、`uninstall`、`config`；`metrics` / `plan-context-hint` / `onboard-coverage` are hidden/internal；保留 `whoami` / `status` / `scope-explain` deprecated aliases。 | `packages/cli/src/commands/index.ts:1` |
+| `src/commands/install-v2.tsx` | Pipeline/TUI install command entry；编排 install stages、client MCP config、bootstrap、hooks。 | command registry：`packages/cli/src/commands/index.ts:7` |
 | ~~`src/commands/serve.ts`~~ | (已删 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`) | git history |
-| `src/commands/doctor.ts` | Target-state diagnosis with `--json`、`--strict`、`--fix` modes。 | command registry：`packages/cli/src/commands/index.ts:7` |
-| `src/commands/scan.ts` | 围绕 forensic report generation 的 scan command。 | command registry：`packages/cli/src/commands/index.ts:5` |
+| `src/commands/doctor.ts` | Target-state diagnosis with public `--target`、`--json`、`--fix`、`--fix-knowledge`、`--verbose` flags；`--strict` remains hidden/internal。 | command registry：`packages/cli/src/commands/index.ts:7` |
+| `src/commands/store.ts` | Multi-store lifecycle command group（list/add/remove/explain/bind/switch-write）。 | command registry：`packages/cli/src/commands/index.ts:10` |
+| `src/commands/sync.ts` | Multi-store pull --rebase + push，含冲突 resume。 | command registry：`packages/cli/src/commands/index.ts:12` |
+| `src/commands/info.ts` | Unified info command，替代 `whoami` / `status` / `scope-explain`。 | command registry：`packages/cli/src/commands/index.ts:15` |
+| `src/commands/metrics.ts` | Text dashboard over `.fabric/metrics.jsonl`。 | command registry：`packages/cli/src/commands/index.ts:36` |
 | `src/scanner/forensic.ts` | 生成 `.fabric/forensic.json`：topology、entrypoints、code samples、assertions、recommendations。 | `packages/cli/src/scanner/forensic.ts:174`, `packages/cli/src/scanner/forensic.ts:218` |
 | `src/scanner/detector.ts` | 为 CLI re-export shared framework detector。 | `packages/cli/src/scanner/detector.ts:1` |
 | `src/scanner/ignores.ts` | Scanner ignore policy。 | source file node |
 | `src/scanner/tree-sitter-probe.ts` | Tree-sitter capability probe；当前 workspace 中已有未提交改动。 | git status |
-| `src/config/resolver.ts` | 检测 client support 和 config writers。 | init 使用：`packages/cli/src/commands/init.ts:19` |
+| `src/config/resolver.ts` | 检测 client support 和 config writers。 | install 使用 |
 | `src/config/writer.ts` | Client config writer interface 与 implementations。 | bootstrap/config imports |
 | `src/config/json.ts` | JSON config 读写 helper。 | config subsystem |
 | `src/config/toml.ts` | TOML config 读写 helper。 | config subsystem |
 | `src/config/claude-code.ts` | Claude-specific config support。 | config subsystem |
-| `src/bootstrap-guide.ts` | 构造 internal bootstrap guide content。 | init 使用：`packages/cli/src/commands/init.ts:11` |
-| `src/dev-mode.ts` | Target resolution 和 dev-mode config。 | serve 使用：`packages/cli/src/commands/serve.ts:6` |
-| `src/i18n.ts` | CLI translation facade。 | serve 使用：`packages/cli/src/commands/serve.ts:7` |
-| `src/colors.ts` | CLI paint/symbol/display-width helpers。 | serve 使用：`packages/cli/src/commands/serve.ts:5` |
+| `src/bootstrap-guide.ts` | 构造 internal bootstrap guide content。 | install/bootstrap 使用 |
+| `src/dev-mode.ts` | Target resolution 和 dev-mode config。 | CLI command support |
+| `src/i18n.ts` | CLI translation facade。 | CLI command support |
+| `src/colors.ts` | CLI paint/symbol/display-width helpers。 | CLI renderer support |
 
 ## `packages/server`
 
@@ -84,15 +87,18 @@ fab_plan_context / fab_get_knowledge_sections
 | `src/meta-reader.ts` | 读取并校验 `.fabric/agents.meta.json`；解析 project root。 | `packages/server/src/meta-reader.ts:35`, `packages/server/src/meta-reader.ts:39` |
 | ~~`src/middleware/`、`src/api/*`~~ | (已移走 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/src/{middleware,api}/`) | git history |
 | `src/services/legacy-serve-lock-probe.ts` | 只读 probe（`readLockState` + `isAlive`），doctor 用它检测/清理 rc ≤36 遗留的 `.fabric/.serve.lock`。完整 lock 实现已 quarantine。 | `packages/server/src/services/legacy-serve-lock-probe.ts:1` |
-| `src/services/get-rules.ts` | Core rules resolution：context load、matching、priority sort、activation、payload。 | `packages/server/src/services/get-rules.ts:83`, `packages/server/src/services/get-rules.ts:145` |
-| `src/services/plan-context.ts` | Batch rules planning 和 shared bundle view。 | `packages/server/src/services/plan-context.ts:52` |
+| `src/services/recall.ts` | One-call recall service，复用 plan-context + knowledge-sections 路径返回正文。 | `packages/server/src/services/recall.ts` |
+| `src/services/plan-context.ts` | Batch knowledge planning 和 shared bundle view。 | `packages/server/src/services/plan-context.ts:52` |
+| `src/services/knowledge-sections.ts` | 按 selection_token + stable_id 拉取知识正文。 | `packages/server/src/services/knowledge-sections.ts` |
 | `src/services/event-ledger.ts` | `.fabric/events.jsonl` typed Event Ledger append/read model。 | server services 使用 |
-| `src/services/annotate-intent.ts` | Intent annotation service。 | 使用位置：`packages/server/src/api/intent.ts:4` |
 | `src/services/doctor.ts` | Doctor report/fix/audit service。 | re-export 位置：`packages/server/src/index.ts:17` |
 | `src/services/rehydrate-state.ts` | 为 history replay rehydrate state。 | service node |
 | `src/services/_shared.ts` | Shared server file constants、atomic write、sha256、path guard。 | `packages/server/src/services/_shared.ts:5` |
+| `src/tools/recall.ts` | `fab_recall` MCP tool wrapper。 | `packages/server/src/tools/recall.ts` |
 | `src/tools/plan-context.ts` | plan-context 的 MCP tool wrapper。 | `packages/server/src/tools/plan-context.ts:77` |
-| `src/tools/rule-sections.ts` | rule-sections 的 MCP tool wrapper。 | MCP server registration |
+| `src/tools/knowledge-sections.ts` | `fab_get_knowledge_sections` MCP tool wrapper。 | MCP server registration |
+| `src/tools/archive-scan.ts` | `fab_archive_scan` MCP tool wrapper。 | MCP server registration |
+| `src/tools/extract-knowledge.ts` / `src/tools/review.ts` | 写入 pending 与 review/triage 的 MCP tool wrappers。 | MCP server registration |
 
 ## `packages/dashboard`（v2.0.0-rc.37 移除）
 
@@ -106,7 +112,7 @@ Dashboard package 在 v2.0.0-rc.37 与 HTTP/REST/SSE 一同 quarantine；package
 | `src/node.ts` | Node-side shared exports。 | CLI detector 导入 |
 | `src/detector.ts` | Framework detection 和 tech profile contract。 | re-export 位置：`packages/cli/src/scanner/detector.ts:1` |
 | `src/schemas/agents-meta.ts` | `AgentsMeta` schema、layer/topology/stable-id derivation。 | `packages/shared/src/schemas/agents-meta.ts:12`, `packages/shared/src/schemas/agents-meta.ts:54` |
-| `src/schemas/api-contracts.ts` | MCP tool contracts（plan-context / knowledge-sections / extract-knowledge / recall / review）的 input/output schemas，外加 R24 structuredWarning。 | `packages/shared/src/schemas/api-contracts.ts` |
+| `src/schemas/api-contracts.ts` | MCP tool contracts（recall / plan-context / knowledge-sections / extract-knowledge / archive-scan / review）的 input/output schemas，外加 R24 structuredWarning。 | `packages/shared/src/schemas/api-contracts.ts` |
 | `src/schemas/events.ts` | `.fabric/events.jsonl` 的 typed event discriminated union（archive/cite/doctor 等 ledger 事件）。 | `packages/shared/src/schemas/events.ts:79` |
 | `src/schemas/fabric-config.ts` | Fabric config schema。 | shared schema node |
 | `src/schemas/forensic-report.ts` | Scanner/server events 消费的 forensic report schema。 | events 导入：`packages/server/src/api/events.ts:9` |

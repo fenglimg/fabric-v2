@@ -1,21 +1,31 @@
 # Test Seed — cli
 
-> 模块单位: 命令级（5 个公共命令；内部子例程仅作 §2/§3 支撑出现）
+> 模块单位: 命令级（当前注册的公共命令 + deprecated aliases；内部子例程仅作 §2/§3 支撑出现）
 > 维护原则: 仅在意图变更时更新（详见 ../README.md §5）
-> 最近更新: 2026-05-08 / v1.8.0
+> 最近更新: 2026-06-08 / v2.2.0-rc.5
 
 ## §1 Feature Surface
 
-### Public commands (5)
-- `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--yes`, `--dry-run`, `--force-skills-only`, `--force-hooks-only`, `--global`(v2.1 P3: 全局多 store 安装 ~/.fabric uid+personal store+config), `--url`(配合 --global: clone+mount 共享 store remote)
-- **v2.1 P3 新增命令**: `store` (子命令 list/add/remove/explain/bind/switch-write — 多 store 生命周期, detach≠delete), `whoami` (机器 uid + mounted stores, F5), `status` (项目 store 状态聚合, S30/F5), `scope-explain` (读集+写目标解析显化, S21/S53/F5)
-- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--layer`(rc.24: filter cite contract audit by KB layer — team|personal|all), `--archive-history`(rc.25: per-session archive attempt audit, reads session_archive_attempted events), `--history`(rc.37 NEW-33: 统一逐日历史视图; mode=archive|fix|all), `--debug-bundle`(v2.1 P6/S40: 输出 redaction 后的诊断 bundle — config + store health, secret 脱敏, 默认排除 events), `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fabric scan` 顶层命令）
-- `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`
+### Public commands
+- `install` — 项目脚手架、TUI/wizard、客户端 MCP stdio 配置、bootstrap 与 hook 写入。
+- `store` — 多 store 生命周期；子命令覆盖 list/add/remove/explain/bind/switch-write。
+- `sync` — 多 store `pull --rebase` + `push`，含冲突 resume。
+- `info` — 统一身份、项目状态与 scope 解释；替代 `whoami` / `status` / `scope-explain`。
+- `doctor` — 一致性自检与修复；public flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--verbose`；hidden/internal flags include `--strict` and report/debug surfaces。
 - `uninstall` — Remove Fabric-managed artifacts symmetrically to `fabric install`. Flags: `--target`, `--debug`, `--yes`, `--dry-run`.
-- `config` — rc.15 起为占位命令（rc.16 上线配置面板）；flags: `--target`。
+- `config` — 交互式配置面板；flags: `--target`。
+
+### Deprecated top-level aliases（public but migration-only）
+- `whoami` — deprecated alias；use `fabric info --global`。
+- `status` — deprecated alias；use `fabric info`。
+- `scope-explain` — deprecated alias；use `fabric info scope`。
+
+`fabric serve` 已在 v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`，主线 CLI 不再注册。`fabric scan` 顶层命令也已移除；安装与 doctor 内部仍可复用 deterministic scanner。
 
 ### Hidden top-level commands（callable but absent from `--help`）
 - `plan-context-hint` — 给 rc.6 hooks 与 `fabric-import` skill 提供 JSON 知识提示流；rc.15 起通过 `meta.hidden: true` 隐藏，但脚本调用仍可触达。
+- `onboard-coverage` — fabric-archive first-run 阶段检测未覆盖 slots。
+- `metrics` — `.fabric/metrics.jsonl` 文本 dashboard。
 
 ### Internal surface（命令支撑，不单列模块）
 - bootstrap / hooks 子例程（installHooks 现位于 `packages/cli/src/install/hooks-orchestrator.ts`）
@@ -24,20 +34,20 @@
 - MCP 配置 deep-merge with `--scope` 路由（project → `.mcp.json`，user → `~/.claude.json`）
 - 原子写入 primitives（tmp+rename，失败清理 .tmp）
 - install wizard（交互模式 + `--yes` 跳过）
-- serve-lock 检查（`install --reapply` / `doctor` / `serve` 共用 `checkLockOrThrow` / `acquireLock`）
+- legacy serve-lock probe（doctor 用于检测/清理 rc ≤36 遗留 `.fabric/.serve.lock`，完整 serve-lock 已 quarantine）
 
 ## §2 Invariants
 
-I1. `doctor` 当且仅当所有 check status=ok 时进程退出码为 0；任何 error 退出 1；`--strict` 下 warn 也退出 1。
+I1. `doctor` 当且仅当所有 check status=ok 时进程退出码为 0；任何 error 退出 1；hidden `--strict` 下 warn 也退出 1。
 I2. `install` 未带 `--force` 遇既有 fabric 文件时不覆盖、退出非 0、stderr 含可执行的 action_hint（如 "use --force"）。
 I3. `install --reapply` 在已初始化项目上幂等：连续两次产出 byte-identical 的 `agents.meta.json`（当 `rules/` 非空）和 byte-identical 的 `events.jsonl`。
 I4. `install --scope project` 写 `.mcp.json` 且不写入 `~/.claude.json`；`--scope user` 写 `~/.claude.json` 且不污染项目根。
 I5. 所有客户端配置写入采用 atomic-write：rename 步骤失败时不留 `.tmp` 残留文件。
 I6. `doctor --fix` 完成后再次运行 `doctor` 时，已修复的 fixable_error 不再出现；剩余 manual_error 在输出中显式列出。
 I7. v1.8.0 弃用客户端 (`windsurf` / `rooCode` / `geminiCLI`) 触发 `legacy_client_path_present` 警告但 doctor 不因此失败。
-I8. `scan` 在源码目录为空或不可读时不抛异常，产出有效 `forensic.json`（fileCount 可为 0，recommendations 数组存在）。
-I9. `serve` 在 `EADDRINUSE` 时释放已获取的 serve-lock 并抛带 next-port 提示的错误，不留持锁孤儿进程。
-I10. `doctor` / `serve` 在另一进程持锁时拒绝执行（rc.15: `--force` 已移除；CLI 层无逃生通道，需手动停止持锁进程）；锁条目带 PID 校验，错误消息暴露 PID 与停止指引。
+I8. install/doctor 的 deterministic scanner 在源码目录为空或不可读时不抛异常，产出有效 `forensic.json`（fileCount 可为 0，recommendations 数组存在）。
+I9. `doctor --fix` 只修复 derived state；知识条目 demote/archive/default backfill 走 `doctor --fix-knowledge`。
+I10. legacy `.fabric/.serve.lock` 仅作为 rc ≤36 遗留状态由 doctor probe 检测/清理；主线 CLI 不启动 HTTP server。
 I11. `fabric uninstall` is idempotent — re-run on already-uninstalled project: exit code 0, all step statuses `skipped`.
 I12. `fabric uninstall` never modifies `~/.fabric/knowledge/` (personal root) regardless of `--purge`.
 I13. `fabric uninstall` un-merge preserves all non-fabric entries in deep-merged hook configs verbatim.
@@ -66,19 +76,19 @@ T7. **`fabric uninstall --plan` no-write contract** — `--plan` 模式必须列
 
 ## §4 Out of Scope
 
-- server 运行时行为（HTTP/SSE/MCP tool 实现）— 见 `server.md`
+- server 运行时行为（stdio MCP tool 实现）— 见 `server.md`
 - shared 包内部 schema/error/i18n 单元行为 — 见 `shared.md`
 - dashboard 客户端 UI
 - 已弃用的 `mcp-config` 命令（v1.8.0 已移除）
-- 已弃用的顶层 `fabric scan` 命令（rc.15 已移除 — 等价行为现由 `fabric doctor --rescan` 提供）
+- 已弃用的顶层 `fabric scan` 命令（已移除；scanner 仅作为 install/doctor 内部能力）
 - 已弃用的顶层 `fabric hooks` 命令与 `fabric config {install,hooks}` 子命令（rc.15 移除；`installHooks` helper 迁至 `packages/cli/src/install/hooks-orchestrator.ts`）
 
 ## §5 Source Traceability
 
-- `packages/cli/src/commands/index.ts`（命令注册表 — rc.15 起 6 条：5 个公共 + 1 个隐藏 `plan-context-hint`）
-- `packages/cli/src/commands/{install,doctor,serve,uninstall,config,plan-context-hint}.ts`（命令定义与 args schema）
+- `packages/cli/src/commands/index.ts`（命令注册表：公共命令、deprecated aliases、隐藏命令）
+- `packages/cli/src/commands/{install-v2,store,sync,info,doctor,uninstall,config,metrics,plan-context-hint,onboard-coverage}.ts`（命令定义与 args schema）
 - `packages/cli/src/install/hooks-orchestrator.ts`（rc.15 起 `installHooks` + `validateHookPaths` 的新家；旧路径 `commands/hooks.ts` 已删除）
-- `packages/cli/src/commands/scan.ts`（不再注册 citty 命令；仅导出 `runInitScan` / `detectExistingLanguage` / `__testing__` 供 install + doctor --rescan 调用）
+- `packages/cli/src/scanner/forensic.ts`（deterministic scanner；供 install/doctor 流程复用）
 - `packages/cli/README.md`、`docs/initialization.md`、`docs/getting-started.md`
 - `CHANGELOG.md` 1.8.0 段（client trio、scope、atomic-write、legacy_client_path_present）
 - ADR-002（MCP-first）、ADR-003（scope routing）

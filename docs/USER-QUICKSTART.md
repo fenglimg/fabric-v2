@@ -32,13 +32,13 @@ it stops re-arguing every architecture decision from scratch.
   │  (once per repo)     normally     a knowledge      via the     │
   │                      (hooks fire  entry; goes      fabric-     │
   │                      on session   to               review     │
-  │                      start +      .fabric/         skill OR    │
-  │                      every Edit)  knowledge/       fab doctor  │
-  │                                   pending/         --fix       │
+  │                      start +      .fabric/         skill      │
+  │                      every Edit)  knowledge/                  │
+  │                                   pending/                    │
   │                                                                │
   │                                                                │
-  │   ↻ archive (background): old / stale entries auto-rotate      │
-  │     via `fabric doctor --fix`                                  │
+  │   ↻ knowledge maintenance: use `fabric doctor --fix-knowledge` │
+  │     for deterministic demote / archive / default backfill       │
   │                                                                │
   └────────────────────────────────────────────────────────────────┘
 ```
@@ -66,7 +66,8 @@ description:
 relevance_paths: ["src/render/**", "assets/atlas/**"]
 ```
 
-You review it (`/fabric-review` slash command or `fabric doctor --fix`),
+You review it (`/fabric-review` slash command; deterministic knowledge
+maintenance uses `fabric doctor --fix-knowledge`),
 promote it, and now every PreToolUse Edit on `src/render/*` surfaces this
 pitfall in-context. The next contributor never sees the black edges.
 
