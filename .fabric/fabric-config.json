@@ -1,11 +1,16 @@
 {
+  "project_id": "ae76530e-5239-4799-b868-03ad617821af",
   "required_stores": [
     {
       "id": "personal"
+    },
+    {
+      "id": "team"
     }
   ],
-  "active_write_store": "personal",
-  "default_write_store": "personal",
+  "active_write_store": "team",
+  "active_project": "fabric-v2",
+  "default_write_store": "team",
   "fabric_language": "zh-CN-hybrid",
   "default_layer_filter": "both",
   "archive_hint_cooldown_hours": 12,
