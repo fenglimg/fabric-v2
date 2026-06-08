@@ -102,14 +102,17 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     }
   }
   const effectiveIds = rewrittenIds ?? candidateIds;
-  const requestedIds = effectiveIds.filter((id) => candidateIds.includes(id));
+  // ISS-20260531-092 / ISS-20260531-105: keep the candidate-order contract,
+  // but use Sets for membership so explicit-id recall is O(N + M), not O(N*M).
+  const candidateIdSet = new Set(candidateIds);
+  const requestedIdSet = new Set(effectiveIds.filter((id) => candidateIdSet.has(id)));
   // De-dupe while preserving the candidate ordering — planContext already
   // dedupes via dedupeDescriptionIndex; we just preserve that order for the
   // bodies array so callers see stable response shape.
   const seen = new Set<string>();
   const orderedIds: string[] = [];
   for (const id of candidateIds) {
-    if (requestedIds.includes(id) && !seen.has(id)) {
+    if (requestedIdSet.has(id) && !seen.has(id)) {
       seen.add(id);
       orderedIds.push(id);
     }
