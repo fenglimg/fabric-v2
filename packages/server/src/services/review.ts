@@ -532,11 +532,9 @@ async function approveOne(
     const personalPendingAbs = resolvePendingBaseOrNull("personal");
 
     const inTeamPending =
-      teamPendingAbs !== null &&
-      (sandboxed.abs === teamPendingAbs || sandboxed.abs.startsWith(teamPendingAbs + "/"));
+      teamPendingAbs !== null && isUnder(sandboxed.abs, resolve(teamPendingAbs));
     const inPersonalPending =
-      personalPendingAbs !== null &&
-      (sandboxed.abs === personalPendingAbs || sandboxed.abs.startsWith(personalPendingAbs + "/"));
+      personalPendingAbs !== null && isUnder(sandboxed.abs, resolve(personalPendingAbs));
 
     if (!inTeamPending && !inPersonalPending) {
       throw new Error(`approve path is outside the resolved store knowledge/pending/ roots: ${pendingPath}`);
