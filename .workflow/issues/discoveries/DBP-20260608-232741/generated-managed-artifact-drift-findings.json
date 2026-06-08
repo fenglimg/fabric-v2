@@ -1,0 +1,54 @@
+{
+  "id": "2",
+  "perspective": "generated-managed-artifact-drift",
+  "result_status": "completed",
+  "findings": "Found 3 new managed-artifact drift issues: root AGENTS managed block stale, Codex/Cursor hook config order drift, and docs still saying Cursor hooks are pending.",
+  "issues_found": [
+    {
+      "title": "Root AGENTS managed bootstrap block is stale relative to BOOTSTRAP_CANONICAL",
+      "severity": "medium",
+      "description": "The checked-in root AGENTS.md managed block begins with a shorter store-only text at AGENTS.md:13, but the canonical installer source starts different byte-locked content at packages/shared/src/templates/bootstrap-canonical.ts:63, and install tests require the AGENTS.md managed body to byte-equal the .fabric/AGENTS.md snapshot/BOOTSTRAP_CANONICAL at packages/cli/__tests__/integration/install-skills-and-hooks.test.ts:679 and :764. This means the active Codex policy file in the repo is not what a fresh install would generate.",
+      "location": "AGENTS.md:13; packages/shared/src/templates/bootstrap-canonical.ts:63; packages/cli/__tests__/integration/install-skills-and-hooks.test.ts:764",
+      "fix_direction": "Regenerate the root AGENTS.md managed block from BOOTSTRAP_CANONICAL/.fabric/AGENTS.md and add a repo-level drift check that compares checked-in AGENTS.md managed body against the canonical snapshot.",
+      "affected_components": [
+        "AGENTS.md",
+        "packages/shared/src/templates/bootstrap-canonical.ts",
+        "bootstrap propagation",
+        "Codex managed block"
+      ]
+    },
+    {
+      "title": "Checked-in Codex and Cursor hook configs reverse the template PreToolUse hook order",
+      "severity": "low",
+      "description": "The hook config templates install knowledge-hint-narrow before cite-policy-evict for Codex and Cursor (packages/cli/templates/hooks/configs/codex-hooks.json:13, packages/cli/templates/hooks/configs/cursor-hooks.json:10), but the checked-in .codex/hooks.json and .cursor/hooks.json put cite-policy-evict first (.codex/hooks.json:14, .cursor/hooks.json:14). Installer code merges from those templates, so the dogfood configs no longer represent a fresh install.",
+      "location": ".codex/hooks.json:14; .cursor/hooks.json:14; packages/cli/templates/hooks/configs/codex-hooks.json:13; packages/cli/templates/hooks/configs/cursor-hooks.json:10",
+      "fix_direction": "Regenerate .codex/hooks.json and .cursor/hooks.json from the hook config templates, or make the intended order explicit in templates/tests and add a drift assertion for checked-in client configs.",
+      "affected_components": [
+        ".codex/hooks.json",
+        ".cursor/hooks.json",
+        "packages/cli/templates/hooks/configs",
+        "PreToolUse hook config"
+      ]
+    },
+    {
+      "title": "Docs still describe Cursor hook support as pending even though installer and checked-in configs install Cursor hooks",
+      "severity": "medium",
+      "description": "docs/initialization.md still says Phase 4 writes only .claude/.codex hooks and that Cursor has no Stop-hook surface as of 2026-05 (docs/initialization.md:25 and :222), and docs/roadmap.md still tracks Cursor Stop-hook support as pending (docs/roadmap.md:113). Current installer destinations include .cursor/hooks/fabric-hint.cjs at packages/cli/src/install/skills-and-hooks.ts:186, and the checked-in Cursor config wires stop/sessionStart/preToolUse hooks at .cursor/hooks.json:4.",
+      "location": "docs/initialization.md:25; docs/initialization.md:222; docs/roadmap.md:113; packages/cli/src/install/skills-and-hooks.ts:186; .cursor/hooks.json:4",
+      "fix_direction": "Update initialization/roadmap docs to state Cursor hooks are currently installed, including stop/sessionStart/preToolUse/postToolUse/sessionEnd as appropriate; move the old pending note to explicit historical migration context if needed.",
+      "affected_components": [
+        "docs/initialization.md",
+        "docs/roadmap.md",
+        "Cursor hook install docs",
+        "packages/cli/src/install/skills-and-hooks.ts"
+      ]
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 1
+  },
+  "error": ""
+}

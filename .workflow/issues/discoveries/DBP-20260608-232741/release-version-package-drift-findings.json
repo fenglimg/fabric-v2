@@ -1,0 +1,53 @@
+{
+  "id": "1",
+  "perspective": "release-version-package-drift",
+  "result_status": "completed",
+  "findings": "Found 3 new release/package drift issues: current 2.2.0-rc.5 manifests lack matching changelog/status, shared package is omitted from npm verification, and tag-version tooling rewrites quarantined private package versions.",
+  "issues_found": [
+    {
+      "title": "Current 2.2.0-rc.5 manifests have no matching release notes or README status",
+      "severity": "medium",
+      "description": "Root and publishable package manifests are at 2.2.0-rc.5, but the top changelog entry is still 2.0.1 GA and README status still says v2.0.0 GA; even the changelog comparison link remains anchored at v2.0.0-rc.4, so a 2.2.0-rc.5 release/tag would ship without matching public release notes or status guidance. Evidence: package.json:4, CHANGELOG.md:8, CHANGELOG.md:1469, README.md:317.",
+      "location": "package.json:4",
+      "fix_direction": "Add a 2.2.0-rc.5 changelog entry or Unreleased section with correct compare links, and update README status to the current intended release line before tagging.",
+      "affected_components": [
+        "release docs",
+        "CHANGELOG.md",
+        "README.md",
+        "package manifests"
+      ]
+    },
+    {
+      "title": "Release checklist omits @fenglimg/fabric-shared from post-publish npm verification",
+      "severity": "medium",
+      "description": "RELEASING says to verify release packages are visible on npm, but the checklist only runs npm view for @fenglimg/fabric-cli and @fenglimg/fabric-server. @fenglimg/fabric-shared is a versioned published package with files configured, so a failed or stale shared publish would not be caught by the documented gate. Evidence: RELEASING.md:48, RELEASING.md:51, RELEASING.md:52, packages/shared/package.json:2, packages/shared/package.json:3, packages/shared/package.json:67.",
+      "location": "RELEASING.md:51",
+      "fix_direction": "Add npm view @fenglimg/fabric-shared version to the post-publish checklist and keep the package list generated from the same publishable-workspace source as the version sync gate.",
+      "affected_components": [
+        "RELEASING.md",
+        "@fenglimg/fabric-shared",
+        "release verification"
+      ]
+    },
+    {
+      "title": "apply-tag-version rewrites quarantined private package versions unlike sync-versions",
+      "severity": "low",
+      "description": "sync-versions explicitly exempts private packages such as the quarantined HTTP package from the release version line, but apply-tag-version collects every packages/* directory and rewrites every manifest version. That means a tag publish mutates @fenglimg/fabric-server-http-experimental from 0.0.0-quarantine to the public tag in CI logs/working tree, contradicting the quarantine marker and the validator's own rule. Evidence: scripts/sync-versions.mjs:62, scripts/sync-versions.mjs:64, scripts/apply-tag-version.mjs:40, scripts/apply-tag-version.mjs:50, scripts/apply-tag-version.mjs:53, packages/server-http-experimental/package.json:3, packages/server-http-experimental/package.json:4.",
+      "location": "scripts/apply-tag-version.mjs:50",
+      "fix_direction": "Make apply-tag-version share the same manifest collection/filter as sync-versions, skipping private packages or at least preserving 0.0.0-quarantine for the quarantined package.",
+      "affected_components": [
+        "scripts/apply-tag-version.mjs",
+        "scripts/sync-versions.mjs",
+        "packages/server-http-experimental",
+        "release tooling"
+      ]
+    }
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 1
+  },
+  "error": ""
+}
