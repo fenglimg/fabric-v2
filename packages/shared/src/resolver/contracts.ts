@@ -152,6 +152,7 @@ export const storeResolveInputSchema = z
         .object({
           store_uuid: z.string().min(1),
           alias: z.string().min(1),
+          mount_name: z.string().min(1).optional(),
           remote: z.string().min(1).optional(),
           writable: z.boolean().default(true),
           // Marks the implicit personal store.
@@ -170,6 +171,19 @@ export const storeResolveInputSchema = z
     ),
     // Alias selected as the active write store for non-personal scopes, if any.
     activeWriteAlias: z.string().min(1).optional(),
+    // Scope-aware write routes. Exact scope wins first, then longest prefix route.
+    writeRoutes: z
+      .array(
+        z
+          .object({
+            scope: z.string().min(1),
+            store: z.string().min(1),
+          })
+          .strict(),
+      )
+      .optional()
+      .default([]),
+    defaultWriteAlias: z.string().min(1).optional(),
   })
   .strict();
 export type StoreResolveInput = z.infer<typeof storeResolveInputSchema>;

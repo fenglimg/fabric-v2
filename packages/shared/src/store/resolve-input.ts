@@ -31,6 +31,7 @@ export function buildStoreResolveInput(
     mountedStores: global.stores.map((s) => ({
       store_uuid: s.store_uuid,
       alias: s.alias,
+      ...(s.mount_name === undefined ? {} : { mount_name: s.mount_name }),
       ...(s.remote === undefined ? {} : { remote: s.remote }),
       writable: s.writable ?? true,
       personal: s.personal ?? false,
@@ -44,5 +45,9 @@ export function buildStoreResolveInput(
     ...(project?.active_write_store === undefined
       ? {}
       : { activeWriteAlias: project.active_write_store }),
+    writeRoutes: project?.write_routes ?? [],
+    ...(project?.default_write_store === undefined
+      ? {}
+      : { defaultWriteAlias: project.default_write_store }),
   };
 }

@@ -40,6 +40,22 @@ function personalEntry(input: StoreResolveInput): ReadSetEntry | undefined {
   return entry;
 }
 
+function routeMatches(routeScope: string, scope: string): boolean {
+  return scope === routeScope || scope.startsWith(`${routeScope}:`);
+}
+
+function resolveRouteAlias(input: StoreResolveInput, scope: string): string | undefined {
+  const routes = input.writeRoutes ?? [];
+  const exact = routes.find((route) => route.scope === scope);
+  if (exact !== undefined) {
+    return exact.store;
+  }
+  const prefix = routes
+    .filter((route) => routeMatches(route.scope, scope))
+    .sort((a, b) => b.scope.length - a.scope.length)[0];
+  return prefix?.store ?? input.defaultWriteAlias ?? input.activeWriteAlias;
+}
+
 export function createStoreResolver(): StoreResolver {
   return {
     resolveReadSet(input: StoreResolveInput): StoreReadSet {
@@ -108,18 +124,21 @@ export function createStoreResolver(): StoreResolver {
         return { target: { store_uuid: p.store_uuid, alias: p.alias }, warnings: [] };
       }
 
+      const routeAlias = resolveRouteAlias(input, scope);
       const active =
-        input.activeWriteAlias === undefined
+        routeAlias === undefined
           ? undefined
-          : input.mountedStores.find((m) => m.writable && m.alias === input.activeWriteAlias);
+          : input.mountedStores.find(
+              (m) => m.writable && !m.personal && (m.alias === routeAlias || m.store_uuid === routeAlias),
+            );
       if (active === undefined) {
         return {
           target: null,
           warnings: [
             {
               code: "alias_unresolved",
-              ref: input.activeWriteAlias ?? scope,
-              message: `no writable store for scope '${scope}'; set an active write store with \`fabric store switch-write\``,
+              ref: routeAlias ?? scope,
+              message: `no writable store for scope '${scope}'; set a write route or default write store`,
             },
           ],
         };
