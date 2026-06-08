@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import {
   PROPOSED_REASON_DESCRIPTIONS,
@@ -116,14 +115,12 @@ function sanitizeInjectionFields<T extends Record<string, unknown>>(
 }
 
 // ---------------------------------------------------------------------------
-// rc.5 B1: dual pending root. Layer-dependent pending base.
+// Store-only route to the resolved write-target store's pending root.
 //
-//   team     → <projectRoot>/.fabric/knowledge/pending          (workspace)
-//   personal → <FABRIC_HOME or homedir>/.fabric/knowledge/pending (home)
+//   team     → active write store / knowledge/pending
+//   personal → personal store / knowledge/pending
 //
-// The personal root mirrors knowledge-meta-builder / review.ts personal-root
-// resolution (FABRIC_HOME env override → os.homedir()) so tests can redirect
-// without polluting the developer's real home directory.
+// Tests redirect FABRIC_HOME so the global store root is isolated.
 // ---------------------------------------------------------------------------
 
 export function pendingBase(layer: "team" | "personal", projectRoot: string): string {
@@ -133,10 +130,6 @@ export function pendingBase(layer: "team" | "personal", projectRoot: string): st
   // StoreWriteTargetUnresolvedError when no target resolves — no dual-root
   // fallback. See cross-store-write.ts.
   return resolveStorePendingBase(layer, projectRoot);
-}
-
-function resolvePersonalRoot(): string {
-  return process.env.FABRIC_HOME ?? homedir();
 }
 
 /**
@@ -349,11 +342,10 @@ export async function extractKnowledge(
       primarySession,
       baseIdempotencyKey: idempotencyKey,
     });
-  // v2.2 全砍 Stage 2: both layers now write into a store under ~/.fabric/stores,
-  // so the reported path is the `~/` home-relative form for both (the old
-  // project-relative team form described a dual-root location that no longer
-  // exists).
-  const reportedPath = `~/${relative(resolvePersonalRoot(), absolutePath)}`;
+  // v2.2 全砍 Stage 2: both layers now write into a store. Return the absolute
+  // store path so the value can be passed directly to fab_review approve/reject/
+  // defer/modify; `~/...` is reserved for the retired dual-root personal path.
+  const reportedPath = absolutePath;
 
   // Rebind the upper-scope variables so downstream renderers / event
   // payloads use the disambiguated slug + matching idempotency_key.
