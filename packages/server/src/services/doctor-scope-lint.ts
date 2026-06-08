@@ -10,7 +10,7 @@ import {
   readStoreProjects,
   resolveGlobalRoot,
   scopeRoot,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 // ---------------------------------------------------------------------------
@@ -86,7 +86,11 @@ function resolveLintStores(projectRoot: string): StoreCtx[] {
   );
   const globalRoot = resolveGlobalRoot();
   return readSet.stores.map((entry) => {
-    const dir = join(globalRoot, storeRelativePath(entry.store_uuid));
+    const mounted = input.mountedStores.find((s) => s.store_uuid === entry.store_uuid);
+    const dir = join(
+      globalRoot,
+      storeRelativePathForMount(mounted ?? { store_uuid: entry.store_uuid }),
+    );
     return {
       uuid: entry.store_uuid,
       alias: entry.alias,

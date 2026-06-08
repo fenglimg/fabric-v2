@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { findStoreExecutableViolations, storeRelativePath } from "@fenglimg/fabric-shared";
+import { findStoreExecutableViolations, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 
 import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
 import { detectAliasLinkDrift, missingRequiredStores, unboundAvailableStores } from "./store-ops.js";
@@ -88,7 +88,7 @@ export function storeDoctorChecks(
     }
     // S65 RCE defense: a mounted store must be data-only. Flag any executable /
     // hook surface smuggled into the store tree (it is NEVER projected/run).
-    const violations = findStoreExecutableViolations(join(globalRoot, storeRelativePath(store.store_uuid)));
+    const violations = findStoreExecutableViolations(join(globalRoot, storeRelativePathForMount(store)));
     if (violations.length > 0) {
       diagnostics.push({
         code: "executable_in_store",

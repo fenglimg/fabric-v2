@@ -12,7 +12,7 @@ import {
   parseKnowledgeId,
   reconcileStoreCounters,
   resolveGlobalRoot,
-  storeRelativePath,
+  storeRelativePathForMount,
   type KnowledgeType,
 } from "@fenglimg/fabric-shared";
 
@@ -102,10 +102,11 @@ function resolveTargetStore(
   const alias =
     loadGlobalConfig(globalRoot)?.stores.find((s) => s.store_uuid === target.store_uuid)?.alias ??
     target.store_uuid;
+  const mounted = input.mountedStores.find((s) => s.store_uuid === target.store_uuid);
   return {
     uuid: target.store_uuid,
     alias,
-    dir: join(globalRoot, storeRelativePath(target.store_uuid)),
+    dir: join(globalRoot, storeRelativePathForMount(mounted ?? { store_uuid: target.store_uuid })),
   };
 }
 

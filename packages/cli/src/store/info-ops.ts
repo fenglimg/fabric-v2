@@ -9,7 +9,7 @@ import { storeGitRemote } from "./store-ops.js";
 
 export interface WhoamiInfo {
   uid: string;
-  stores: Array<{ alias: string; store_uuid: string; local_only: boolean }>;
+  stores: Array<{ alias: string; mount_name: string | null; store_uuid: string; local_only: boolean }>;
 }
 
 // Machine identity + mounted stores. Null when no global config exists yet.
@@ -22,13 +22,14 @@ export function whoami(globalRoot: string = resolveGlobalRoot()): WhoamiInfo | n
     uid: config.uid,
     stores: config.stores.map((s) => ({
       alias: s.alias,
+      mount_name: s.mount_name ?? null,
       store_uuid: s.store_uuid,
       // F4: parity with `fabric store list` — local-only reflects the store
       // repo's TRUE git remote (what sync actually pushes to), not the registry
       // metadata. A store with a physical `origin` but no registry `remote`
       // (e.g. the personal store) was misreported as local-only by whoami while
       // `store list` honestly showed its remote. Both now read the same source.
-      local_only: storeGitRemote(s.store_uuid, globalRoot) === undefined,
+      local_only: storeGitRemote(s.alias, globalRoot) === undefined,
     })),
   };
 }
@@ -45,6 +46,8 @@ export interface ProjectStatus {
   is_fabric_project: boolean;
   required: string[];
   active_write_store: string | null;
+  default_write_store: string | null;
+  write_routes: Array<{ scope: string; store: string }>;
 }
 
 // Cross-config project status: who am I (global) + what this project requires
@@ -62,5 +65,7 @@ export function projectStatus(
     is_fabric_project: project !== null,
     required: (project?.required_stores ?? []).map((r) => r.id),
     active_write_store: project?.active_write_store ?? null,
+    default_write_store: project?.default_write_store ?? null,
+    write_routes: project?.write_routes ?? [],
   };
 }

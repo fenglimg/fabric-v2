@@ -8,7 +8,7 @@ import {
   isPersonalLeakIntoSharedStore,
   loadProjectConfig,
   resolveGlobalRoot,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 import {
   PersonalScopeLeakError,
@@ -62,7 +62,11 @@ export function resolveWriteTargetStoreDir(layer: "team" | "personal", projectRo
   if (target === null) {
     throw writeTargetUnresolved(layer);
   }
-  return join(resolveGlobalRoot(), storeRelativePath(target.store_uuid));
+  const mounted = input.mountedStores.find((s) => s.store_uuid === target.store_uuid);
+  return join(
+    resolveGlobalRoot(),
+    storeRelativePathForMount(mounted ?? { store_uuid: target.store_uuid }),
+  );
 }
 
 // Store-rooted pending base for a layer. Throws StoreWriteTargetUnresolvedError

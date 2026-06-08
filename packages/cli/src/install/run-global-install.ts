@@ -4,7 +4,13 @@ import { mkdirSync, mkdtempSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { STORES_ROOT_DIR, addMountedStore, readStoreIdentity } from "@fenglimg/fabric-shared";
+import {
+  STORES_ROOT_DIR,
+  addMountedStore,
+  readStoreIdentity,
+  storeMountNameSchema,
+  storeRelativePathForMount,
+} from "@fenglimg/fabric-shared";
 import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 import {
@@ -78,7 +84,9 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
     });
   }
 
-  const finalDir = join(storesRoot, identity.store_uuid);
+  const alias = identity.canonical_alias ?? "team";
+  const mount_name = storeMountNameSchema.safeParse(alias).success ? alias : identity.store_uuid;
+  const finalDir = join(globalRoot, storeRelativePathForMount({ store_uuid: identity.store_uuid, mount_name }));
   renameSync(cloneDest, finalDir);
 
   const config = loadGlobalConfig(globalRoot);
@@ -89,11 +97,11 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
         "re-run `fabric install --global` to (re)create the global config, then retry mounting the store; if it persists, inspect ~/.fabric for a partial install",
     });
   }
-  const alias = identity.canonical_alias ?? "team";
   saveGlobalConfig(
-    addMountedStore(config, { store_uuid: identity.store_uuid, alias, remote: url }),
+    addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
     globalRoot,
   );
+  syncStoreAliasLinks(globalRoot);
   console.log(`mounted store '${alias}' (${identity.store_uuid}) from ${url}`);
   return { store_uuid: identity.store_uuid, alias };
 }

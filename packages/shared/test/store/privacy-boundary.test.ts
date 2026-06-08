@@ -12,15 +12,18 @@ import type { StoreResolveInput } from "../../src/resolver/contracts.js";
 
 const PERSONAL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const TEAM = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const PLATFORM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 const input: StoreResolveInput = {
   uid: "u-test",
   mountedStores: [
     { store_uuid: PERSONAL, alias: "personal", writable: true, personal: true },
     { store_uuid: TEAM, alias: "team", remote: "git@h:team.git", writable: true, personal: false },
+    { store_uuid: PLATFORM, alias: "platform", remote: "git@h:platform.git", writable: true, personal: false },
   ],
   requiredStores: [{ id: "team" }],
   activeWriteAlias: "team",
+  writeRoutes: [],
 };
 
 describe("R5#3 privacy boundary — personal never enters a shared store", () => {
@@ -47,5 +50,51 @@ describe("R5#3 privacy boundary — personal never enters a shared store", () =>
     const resolver = createStoreResolver();
     const { target } = resolver.resolveWriteTarget(input, "team");
     expect(target?.alias).toBe("team");
+  });
+
+  it("routes a project scope to the configured shared store", () => {
+    const resolver = createStoreResolver();
+    const { target } = resolver.resolveWriteTarget(
+      { ...input, writeRoutes: [{ scope: "project:fabric-v2", store: "platform" }] },
+      "project:fabric-v2",
+    );
+    expect(target?.alias).toBe("platform");
+  });
+
+  it("uses the longest matching route prefix", () => {
+    const resolver = createStoreResolver();
+    const { target } = resolver.resolveWriteTarget(
+      {
+        ...input,
+        writeRoutes: [
+          { scope: "project", store: "team" },
+          { scope: "project:fabric-v2", store: "platform" },
+        ],
+      },
+      "project:fabric-v2:docs",
+    );
+    expect(target?.alias).toBe("platform");
+  });
+
+  it("routes non-personal scopes to defaultWriteAlias before legacy activeWriteAlias", () => {
+    const resolver = createStoreResolver();
+    const { target } = resolver.resolveWriteTarget(
+      { ...input, defaultWriteAlias: "platform" },
+      "team",
+    );
+    expect(target?.alias).toBe("platform");
+  });
+
+  it("personal scope ignores write routes and default shared stores", () => {
+    const resolver = createStoreResolver();
+    const { target } = resolver.resolveWriteTarget(
+      {
+        ...input,
+        writeRoutes: [{ scope: "personal", store: "platform" }],
+        defaultWriteAlias: "platform",
+      },
+      "personal",
+    );
+    expect(target?.alias).toBe("personal");
   });
 });

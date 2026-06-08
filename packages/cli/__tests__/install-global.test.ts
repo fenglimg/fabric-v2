@@ -42,12 +42,13 @@ describe("P3 install --global core", () => {
     expect(result.config?.uid).toBe("u-derived");
 
     // Personal store is a recognizable v2.1 store on disk.
-    const personalDir = join(globalRoot, "stores", PERSONAL);
+    const personalDir = join(globalRoot, "stores", "personal");
     expect(recognizeStoreDir(personalDir)).toBe(true);
     expect(existsSync(join(personalDir, ".git"))).toBe(true);
 
     // Global config persisted with the personal store mounted.
     expect(loadGlobalConfig(globalRoot)?.stores[0]?.alias).toBe("personal");
+    expect(loadGlobalConfig(globalRoot)?.stores[0]?.mount_name).toBe("personal");
   });
 
   it("is idempotent on a second run (no-op)", async () => {

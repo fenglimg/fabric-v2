@@ -16,7 +16,9 @@ import { scrubRemoteUrl } from "./secret-scan.js";
 // ---------------------------------------------------------------------------
 
 export function findMountedStore(config: GlobalConfig, aliasOrUuid: string): MountedStore | undefined {
-  return config.stores.find((s) => s.alias === aliasOrUuid || s.store_uuid === aliasOrUuid);
+  return config.stores.find(
+    (s) => s.alias === aliasOrUuid || s.store_uuid === aliasOrUuid || s.mount_name === aliasOrUuid,
+  );
 }
 
 // Add (or idempotently update) a mounted store. Throws when the alias is already
@@ -29,6 +31,17 @@ export function addMountedStore(config: GlobalConfig, store: MountedStore): Glob
   if (aliasClash !== undefined) {
     throw new Error(
       `alias '${store.alias}' already mounts store ${aliasClash.store_uuid}; choose another alias`,
+    );
+  }
+  const mountNameClash =
+    store.mount_name === undefined
+      ? undefined
+      : config.stores.find(
+          (s) => s.mount_name === store.mount_name && s.store_uuid !== store.store_uuid,
+        );
+  if (mountNameClash !== undefined) {
+    throw new Error(
+      `mount_name '${store.mount_name}' already maps to store ${mountNameClash.store_uuid}; choose another mount_name`,
     );
   }
   // ISS-044: never persist credential userinfo into the registry.

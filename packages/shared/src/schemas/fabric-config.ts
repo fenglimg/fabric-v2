@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { requiredStoreEntrySchema } from "./store.js";
+import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
@@ -64,6 +65,17 @@ export const fabricLanguageSchema = z.enum([
 // `team` / `personal` narrow the default surface for projects that only
 // curate one layer.
 export const defaultLayerFilterSchema = z.enum(["team", "personal", "both"]);
+export const writeRouteSchema = z
+  .object({
+    scope: z
+      .string()
+      .regex(
+        SCOPE_COORDINATE_PATTERN,
+        "write route scope must be ':'-joined lowercase [a-z0-9_-] segments",
+      ),
+    store: z.string().min(1),
+  })
+  .strict();
 
 export const fabricConfigSchema = z.object({
   clientPaths: clientPathsSchema.optional(),
@@ -96,6 +108,11 @@ export const fabricConfigSchema = z.object({
   //     `project:*` entries (G-FILTER).
   // Absent → the repo has no project binding; recall does not project-filter.
   active_project: z.string().optional(),
+  // Global Store Topology: scope-aware write routing for multi shared/org stores.
+  // Personal scope ignores these routes and always resolves to the implicit
+  // personal store. `active_write_store` remains a backward-compatible fallback.
+  write_routes: z.array(writeRouteSchema).optional(),
+  default_write_store: z.string().optional(),
   // rc.17 (R-cut): the dev/test fixture-path config field was removed
   // end-to-end. The `EXTERNAL_FIXTURE_PATH` env var is now the sole source
   // consumed by `resolveDevMode()`. No z.preprocess alias — pre-rc.17

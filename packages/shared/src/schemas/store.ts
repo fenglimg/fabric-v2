@@ -79,6 +79,15 @@ export type StoreIdentity = z.infer<typeof storeIdentitySchema>;
 // a typo can't silently route writes/recall to a non-existent project.
 // ---------------------------------------------------------------------------
 export const STORE_PROJECT_ID_PATTERN = /^[a-z0-9_-]+$/u;
+export const STORE_MOUNT_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,78}[a-z0-9]$/u;
+
+export const storeMountNameSchema = z
+  .string()
+  .regex(
+    STORE_MOUNT_NAME_PATTERN,
+    "mount_name must be lowercase [a-z0-9._-], start/end with alnum, max 80 chars",
+  )
+  .refine((value) => value !== "." && value !== "..", "mount_name cannot be . or ..");
 
 export const storeProjectSchema = z
   .object({
@@ -194,6 +203,10 @@ export function storeRelativePath(storeUuid: string): string {
   return `${STORES_ROOT_DIR}/${storeUuid}`;
 }
 
+export function storeRelativePathForMount(store: { store_uuid: string; mount_name?: string }): string {
+  return `${STORES_ROOT_DIR}/${store.mount_name ?? store.store_uuid}`;
+}
+
 // ---------------------------------------------------------------------------
 // Global config (`~/.fabric/fabric-global.json`). Holds machine-wide identity
 // and the registry of locally-mounted stores. The `uid` (S33) defaults — at
@@ -205,9 +218,14 @@ export const mountedStoreSchema = z
   .object({
     // Intrinsic identity of the mounted store (matches its store.json).
     store_uuid: storeUuidSchema,
+    // Stable human-readable local directory under ~/.fabric/stores/. When absent,
+    // older uuid-named mounts stay valid and resolve to stores/<store_uuid>.
+    mount_name: storeMountNameSchema.optional(),
     // Local per-machine alias the user references this store by (resolver maps
     // alias → uuid). May differ from the store's canonical_alias.
     alias: z.string().min(1),
+    // Optional user-facing label. Does not participate in resolution.
+    display_name: z.string().optional(),
     // Git remote locator for this clone, if any. Absent = local-only store
     // (valid; doctor nudges to add a remote for backup — R5#5, P6).
     remote: z.string().min(1).optional(),

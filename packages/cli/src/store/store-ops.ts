@@ -14,12 +14,15 @@ import {
   STORES_ROOT_DIR,
   storeHasProject,
   storeRelativePath,
+  storeRelativePathForMount,
+  storeMountNameSchema,
   type FabricConfig,
   type GlobalConfig,
   type MountedStore,
   type RequiredStoreEntry,
   type StoreExplain,
   type StoreProject,
+  writeRouteSchema,
 } from "@fenglimg/fabric-shared";
 
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "./global-config-io.js";
@@ -49,6 +52,25 @@ export function storeList(globalRoot: string = resolveGlobalRoot()): MountedStor
   return requireConfig(globalRoot).stores;
 }
 
+function mountedStoreDir(store: MountedStore, globalRoot: string): string {
+  return join(globalRoot, storeRelativePathForMount(store));
+}
+
+export function resolveStoreByAliasOrUuid(
+  aliasOrUuid: string,
+  globalRoot: string = resolveGlobalRoot(),
+): MountedStore | null {
+  const config = loadGlobalConfig(globalRoot);
+  if (config === null) {
+    return null;
+  }
+  return (
+    config.stores.find(
+      (s) => s.alias === aliasOrUuid || s.store_uuid === aliasOrUuid || s.mount_name === aliasOrUuid,
+    ) ?? null
+  );
+}
+
 // v2.2 全砍 C3 — by-alias readability layer. The store's PHYSICAL identity stays
 // the intrinsic UUID directory (KT-DEC-0004, path-decoupled), but `cd`-ing into
 // `~/.fabric/stores/<uuid>` is opaque. This maintains a sibling
@@ -74,7 +96,7 @@ export function syncStoreAliasLinks(globalRoot: string = resolveGlobalRoot()): A
     return result;
   }
   const byAliasDir = join(globalRoot, STORES_ROOT_DIR, STORE_BY_ALIAS_DIR);
-  const desired = new Map(config.stores.map((s) => [s.alias, s.store_uuid]));
+  const desired = new Map(config.stores.map((s) => [s.alias, s.mount_name ?? s.store_uuid]));
 
   try {
     mkdirSync(byAliasDir, { recursive: true });
@@ -102,9 +124,9 @@ export function syncStoreAliasLinks(globalRoot: string = resolveGlobalRoot()): A
   }
 
   // Create / re-point links for every mounted store.
-  for (const [alias, uuid] of desired) {
+  for (const [alias, mountName] of desired) {
     const link = join(byAliasDir, alias);
-    const target = join("..", uuid); // relative → stores/<uuid>
+    const target = join("..", mountName); // relative → stores/<mount_name|uuid>
     try {
       let current: string | null = null;
       try {
@@ -150,7 +172,7 @@ export function detectAliasLinkDrift(globalRoot: string = resolveGlobalRoot()): 
   const drifted: string[] = [];
   for (const store of config.stores) {
     const link = join(byAliasDir, store.alias);
-    const target = join("..", store.store_uuid);
+    const target = join("..", store.mount_name ?? store.store_uuid);
     try {
       if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
         drifted.push(store.alias);
@@ -191,13 +213,15 @@ export interface StoreCreateResult {
 export function storeCreate(
   alias: string,
   now: string,
-  options: { uuid?: string; remote?: string; git?: boolean; globalRoot?: string } = {},
+  options: { uuid?: string; remote?: string; git?: boolean; globalRoot?: string; mountName?: string } = {},
 ): StoreCreateResult {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   // requireConfig first: refuse to create before `install --global` (no uid).
   const config = requireConfig(globalRoot);
   const uuid = options.uuid ?? randomUUID();
-  const storeDir = join(globalRoot, storeRelativePath(uuid));
+  const mount_name = storeMountNameSchema.parse(options.mountName ?? alias);
+  const mountedBase: MountedStore = { store_uuid: uuid, alias, mount_name };
+  const storeDir = mountedStoreDir(mountedBase, globalRoot);
 
   initStore(
     storeDir,
@@ -217,8 +241,8 @@ export function storeCreate(
 
   const mounted: MountedStore =
     options.remote === undefined
-      ? { store_uuid: uuid, alias }
-      : { store_uuid: uuid, alias, remote: options.remote };
+      ? mountedBase
+      : { ...mountedBase, remote: options.remote };
   const next = addMountedStore(config, mounted);
   saveGlobalConfig(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: mint the by-alias readability link.
@@ -257,10 +281,10 @@ function gitRemoteAdd(storeDir: string, remote: string): void {
 // F-SYNC-REMOTE fix) is honestly shown as local-only. Returns undefined when the
 // store has no origin / is not a git repo / the dir is missing.
 export function storeGitRemote(
-  uuid: string,
+  aliasOrUuid: string,
   globalRoot: string = resolveGlobalRoot(),
 ): string | undefined {
-  const storeDir = join(globalRoot, storeRelativePath(uuid));
+  const storeDir = resolveStoreDir(aliasOrUuid, globalRoot) ?? join(globalRoot, storeRelativePath(aliasOrUuid));
   if (!existsSync(storeDir)) {
     return undefined;
   }
@@ -287,8 +311,23 @@ export function storeGitRemote(
 export function assertStoreMountable(
   uuid: string,
   globalRoot: string = resolveGlobalRoot(),
+  mountName?: string,
 ): void {
-  const storeDir = join(globalRoot, storeRelativePath(uuid));
+  const registered = resolveStoreByAliasOrUuid(uuid, globalRoot);
+  const candidates =
+    mountName === undefined && registered === null
+      ? [join(globalRoot, storeRelativePath(uuid))]
+      : [
+          join(
+            globalRoot,
+            storeRelativePathForMount({
+              store_uuid: uuid,
+              mount_name: mountName ?? registered?.mount_name,
+            }),
+          ),
+          join(globalRoot, storeRelativePath(uuid)),
+        ];
+  const storeDir = candidates.find((dir) => existsSync(join(dir, "store.json"))) ?? candidates[0]!;
   if (!existsSync(join(storeDir, "store.json"))) {
     throw new Error(
       `cannot mount store ${uuid}: no store tree at ${storeDir} — ` +
@@ -332,17 +371,11 @@ export function resolveStoreDir(
   aliasOrUuid: string,
   globalRoot: string = resolveGlobalRoot(),
 ): string | null {
-  const config = loadGlobalConfig(globalRoot);
-  if (config === null) {
+  const store = resolveStoreByAliasOrUuid(aliasOrUuid, globalRoot);
+  if (store === null) {
     return null;
   }
-  const store = config.stores.find(
-    (s) => s.alias === aliasOrUuid || s.store_uuid === aliasOrUuid,
-  );
-  if (store === undefined) {
-    return null;
-  }
-  return join(globalRoot, storeRelativePath(store.store_uuid));
+  return mountedStoreDir(store, globalRoot);
 }
 
 // `fabric store project list <alias>`: enumerate a store's registered projects
@@ -421,9 +454,42 @@ export function storeBind(
 
 // `fabric store switch-write <alias>`: set the project's active write store for
 // non-personal scopes (S60). Personal-scope writes are unaffected (R5#3).
-export function storeSwitchWrite(projectRoot: string, alias: string): FabricConfig {
+export function storeSwitchWrite(
+  projectRoot: string,
+  alias: string,
+  options: { globalRoot?: string } = {},
+): FabricConfig {
   const config = requireProjectConfig(projectRoot);
-  const next: FabricConfig = { ...config, active_write_store: alias };
+  const store = resolveStoreByAliasOrUuid(alias, options.globalRoot ?? resolveGlobalRoot());
+  if (store === null || store.personal === true || store.writable === false) {
+    throw new Error(`cannot set default write store '${alias}': mount a writable shared store first`);
+  }
+  const next: FabricConfig = {
+    ...config,
+    active_write_store: alias,
+    default_write_store: alias,
+  };
+  saveProjectConfig(next, projectRoot);
+  return next;
+}
+
+export function storeSetWriteRoute(
+  projectRoot: string,
+  scope: string,
+  alias: string,
+  options: { globalRoot?: string } = {},
+): FabricConfig {
+  const config = requireProjectConfig(projectRoot);
+  const route = writeRouteSchema.parse({ scope, store: alias });
+  const store = resolveStoreByAliasOrUuid(alias, options.globalRoot ?? resolveGlobalRoot());
+  if (store === null || store.personal === true || store.writable === false) {
+    throw new Error(`cannot route scope '${scope}' to '${alias}': mount a writable shared store first`);
+  }
+  const routes = [
+    ...(config.write_routes ?? []).filter((existing) => existing.scope !== route.scope),
+    route,
+  ];
+  const next: FabricConfig = { ...config, write_routes: routes };
   saveProjectConfig(next, projectRoot);
   return next;
 }
