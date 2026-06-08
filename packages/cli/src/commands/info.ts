@@ -113,7 +113,9 @@ function runWhoami(json?: boolean) {
   console.log(t("cli.whoami.stores-label"));
   const localOnly = t("cli.shared.local-only");
   for (const store of info.stores) {
-    console.log(`  ${store.alias}\t${store.store_uuid}${store.local_only ? `\t${localOnly}` : ""}`);
+    console.log(
+      `  ${store.alias}\t${store.mount_name ?? store.store_uuid}\t${store.store_uuid}${store.local_only ? `\t${localOnly}` : ""}`,
+    );
   }
 }
 
@@ -131,7 +133,8 @@ function runStatus(json?: boolean) {
   console.log(`project_id:     ${projectIdLabel}`);
   console.log(`mounted stores: ${status.mounted.length > 0 ? status.mounted.join(", ") : "(none)"}`);
   console.log(`required:       ${status.required.length > 0 ? status.required.join(", ") : "(none)"}`);
-  console.log(`active write:   ${status.active_write_store ?? "(none — personal scope only)"}`);
+  console.log(`default write:  ${status.default_write_store ?? status.active_write_store ?? "(none — personal scope only)"}`);
+  console.log(`write routes:   ${status.write_routes.length}`);
 }
 
 function runScopeExplain(scope: string) {

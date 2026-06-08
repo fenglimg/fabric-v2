@@ -22,7 +22,9 @@ import {
   storeGitRemote,
   storeList,
   storeRemove,
+  storeSetWriteRoute,
   storeSwitchWrite,
+  resolveStoreDir,
 } from "../src/store/store-ops.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -65,6 +67,13 @@ describe("fabric store add/list", () => {
       /alias 'team' already mounts/,
     );
   });
+
+  it("rejects a mount_name collision against a different store", () => {
+    storeAdd({ store_uuid: TEAM, alias: "team", mount_name: "platform-kb" }, globalRoot);
+    expect(() =>
+      storeAdd({ store_uuid: PLATFORM, alias: "platform", mount_name: "platform-kb" }, globalRoot),
+    ).toThrow(/mount_name 'platform-kb' already maps/);
+  });
 });
 
 // ADJ-NEWN-6 (v2.1 Wave0 dogfood): `store add` registered a uuid whose store
@@ -104,8 +113,10 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
     expect(identity.canonical_alias).toBe("team");
     // knowledge scaffold exists.
     expect(existsSync(join(result.storeDir, "knowledge"))).toBe(true);
+    expect(result.storeDir).toContain(join("stores", "team"));
     // mounted into the registry.
     expect(storeList(globalRoot).map((s) => s.alias)).toContain("team");
+    expect(storeList(globalRoot)[0]?.mount_name).toBe("team");
   });
 
   it("associates a remote when provided", () => {
@@ -116,7 +127,20 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
       globalRoot,
     });
     expect(storeExplain("team", globalRoot)?.local_only).toBe(false);
-    expect(result.storeDir).toContain(PLATFORM);
+    expect(result.storeDir).toContain(join("stores", "team"));
+  });
+
+  it("uses an explicit mount_name and resolves by alias, uuid, or mount_name", () => {
+    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+      uuid: PLATFORM,
+      git: false,
+      mountName: "platform-kb",
+      globalRoot,
+    });
+    expect(result.storeDir).toBe(join(globalRoot, "stores", "platform-kb"));
+    expect(resolveStoreDir("team", globalRoot)).toBe(result.storeDir);
+    expect(resolveStoreDir(PLATFORM, globalRoot)).toBe(result.storeDir);
+    expect(resolveStoreDir("platform-kb", globalRoot)).toBe(result.storeDir);
   });
 
   it("a created store passes the phantom-mount guard (round-trip with assertStoreMountable)", () => {
@@ -224,10 +248,21 @@ describe("fabric store bind / switch-write (project config)", () => {
     expect(cfg?.required_stores?.[0]?.suggested_remote).toBe("git@h:team-2.git");
   });
 
-  it("switch-write sets the active write store", () => {
+  it("switch-write sets the legacy active write store and the new default write store", () => {
     const projectRoot = seedProject();
-    storeSwitchWrite(projectRoot, "team");
+    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    storeSwitchWrite(projectRoot, "team", { globalRoot });
     expect(loadProjectConfig(projectRoot)?.active_write_store).toBe("team");
+    expect(loadProjectConfig(projectRoot)?.default_write_store).toBe("team");
+  });
+
+  it("route-write persists a semantic scope write route", () => {
+    const projectRoot = seedProject();
+    storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
+    storeSetWriteRoute(projectRoot, "project:fabric-v2", "platform", { globalRoot });
+    expect(loadProjectConfig(projectRoot)?.write_routes).toEqual([
+      { scope: "project:fabric-v2", store: "platform" },
+    ]);
   });
 
   it("guides to `install` when the project config is absent", () => {

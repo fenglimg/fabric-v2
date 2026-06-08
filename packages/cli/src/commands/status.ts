@@ -28,6 +28,7 @@ export default defineCommand({
     console.log(`project_id:     ${projectIdLabel}`);
     console.log(`mounted stores: ${status.mounted.length > 0 ? status.mounted.join(", ") : "(none)"}`);
     console.log(`required:       ${status.required.length > 0 ? status.required.join(", ") : "(none)"}`);
-    console.log(`active write:   ${status.active_write_store ?? "(none — personal scope only)"}`);
+    console.log(`default write:  ${status.default_write_store ?? status.active_write_store ?? "(none — personal scope only)"}`);
+    console.log(`write routes:   ${status.write_routes.length}`);
   },
 });

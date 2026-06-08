@@ -39,7 +39,12 @@ describe("whoami", () => {
     );
     const info = whoami(globalRoot);
     expect(info?.uid).toBe("u-me");
-    expect(info?.stores[0]).toEqual({ alias: "team", store_uuid: TEAM, local_only: true });
+    expect(info?.stores[0]).toEqual({
+      alias: "team",
+      mount_name: null,
+      store_uuid: TEAM,
+      local_only: true,
+    });
   });
 
   it("reports a store with a physical git remote as NOT local-only even when the registry omits remote (F4 parity with `store list`)", () => {

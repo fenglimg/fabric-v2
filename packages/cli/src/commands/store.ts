@@ -24,6 +24,7 @@ import {
   storeProjectCreate,
   storeProjectList,
   storeRemove,
+  storeSetWriteRoute,
   storeSwitchWrite,
   resolveStoreDir,
 } from "../store/store-ops.js";
@@ -53,8 +54,10 @@ const listCommand = defineCommand({
       // remote, not the config metadata. A store whose config records a remote
       // but whose repo has no `origin` (created before the F-SYNC-REMOTE fix, or
       // a personal store) is honestly shown as local-only.
-      const realRemote = storeGitRemote(store.store_uuid);
-      console.log(`${store.alias}\t${store.store_uuid}\t${realRemote ?? localOnly}`);
+      const realRemote = storeGitRemote(store.alias);
+      console.log(
+        `${store.alias}\t${store.mount_name ?? store.store_uuid}\t${store.store_uuid}\t${realRemote ?? localOnly}`,
+      );
     }
   },
 });
@@ -64,16 +67,26 @@ const addCommand = defineCommand({
   args: {
     uuid: { type: "string", required: true, description: "Intrinsic store UUID" },
     alias: { type: "string", required: true, description: "Local alias for this store" },
+    "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
     remote: { type: "string", description: "Git remote locator (omit for local-only)" },
   },
   run({ args }) {
     // ADJ-NEWN-6: fail fast on a phantom mount (uuid with no on-disk tree)
     // instead of writing the registry entry and crashing later in `sync`.
-    assertStoreMountable(args.uuid);
+    assertStoreMountable(args.uuid, undefined, args["mount-name"]);
     const store: MountedStore =
       args.remote === undefined
-        ? { store_uuid: args.uuid, alias: args.alias }
-        : { store_uuid: args.uuid, alias: args.alias, remote: args.remote };
+        ? {
+            store_uuid: args.uuid,
+            alias: args.alias,
+            ...(args["mount-name"] === undefined ? {} : { mount_name: args["mount-name"] }),
+          }
+        : {
+            store_uuid: args.uuid,
+            alias: args.alias,
+            ...(args["mount-name"] === undefined ? {} : { mount_name: args["mount-name"] }),
+            remote: args.remote,
+          };
     const next = storeAdd(store);
     const t = getProjectTranslator();
     console.log(
@@ -89,10 +102,12 @@ const createCommand = defineCommand({
   meta: { name: "create", description: "Create a brand-new local knowledge store and mount it" },
   args: {
     alias: { type: "string", required: true, description: "Local alias for the new store" },
+    "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
     remote: { type: "string", description: "Git remote to associate (push target; optional)" },
   },
   run({ args }) {
     const result = storeCreate(args.alias, new Date().toISOString(), {
+      ...(args["mount-name"] === undefined ? {} : { mountName: args["mount-name"] }),
       ...(args.remote === undefined ? {} : { remote: args.remote }),
     });
     const t = getProjectTranslator();
@@ -166,7 +181,7 @@ const bindCommand = defineCommand({
 });
 
 const switchWriteCommand = defineCommand({
-  meta: { name: "switch-write", description: "Set the active write store for non-personal scopes" },
+  meta: { name: "switch-write", description: "Set the default write store for non-personal scopes" },
   args: {
     alias: { type: "positional", required: true, description: "Alias of the store to write to" },
   },
@@ -174,6 +189,19 @@ const switchWriteCommand = defineCommand({
     const projectRoot = process.cwd();
     storeSwitchWrite(projectRoot, args.alias);
     console.log(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias }));
+  },
+});
+
+const routeWriteCommand = defineCommand({
+  meta: { name: "route-write", description: "Route a semantic scope to a writable shared store" },
+  args: {
+    scope: { type: "positional", required: true, description: "Semantic scope, e.g. team or project:fabric-v2" },
+    alias: { type: "positional", required: true, description: "Alias of the shared store to write to" },
+  },
+  run({ args }) {
+    const projectRoot = process.cwd();
+    storeSetWriteRoute(projectRoot, args.scope, args.alias);
+    console.log(`write route: ${args.scope} -> ${args.alias}`);
   },
 });
 
@@ -416,6 +444,7 @@ export default defineCommand({
     explain: explainCommand,
     bind: bindCommand,
     "switch-write": switchWriteCommand,
+    "route-write": routeWriteCommand,
     migrate: migrateCommand,
     "backfill-scope": backfillScopeCommand,
     "re-scope": rescopeCommand,
