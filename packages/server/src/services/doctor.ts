@@ -43,6 +43,7 @@ import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256
 // Knowledge lives in stores; per-store counters health goes through
 // doctor-store-counters.ts.
 import {
+  collectStoreCanonicalEntries,
   collectStoreKnowledgeSummaries,
   computeReadSetRevision,
   type StoreKnowledgeSummary,
@@ -4676,6 +4677,12 @@ function findIssue(issues: DoctorIssue[], code: string): DoctorIssue {
 // v2.2 W5 R4 (agents.meta decolo): `inspectMetaManuallyDiverged` removed (compared co-location agents.meta against disk).
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeDirUnindexed` / `collectMdFilesUnder` / `createKnowledgeDirUnindexedCheck` removed (pure co-location agents.meta-vs-disk check).
 async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
+  void projectRoot;
+  // v2.2 store-only cutover: retired project-local and legacy personal
+  // knowledge roots must not influence doctor. Store collision checks need a
+  // read-set implementation before this lint can produce findings again.
+  return { collisions: [] };
+
   // v2.0: stable_ids are declared in YAML frontmatter `id: K[PT]-XXX-NNNN`
   // inside .fabric/knowledge/{type}/*.md. The v1.x HTML-comment marker
   // (`<!-- fab:rule-id X -->`) is no longer scanned. The file path component
@@ -6948,8 +6955,15 @@ function inspectOnboardCoverage(projectRoot: string): OnboardCoverageInspection 
   for (const slot of ONBOARD_SLOT_NAMES) {
     filled[slot] = [];
   }
+  for (const entry of collectStoreCanonicalEntries(projectRoot)) {
+    const slot = readFrontmatterScalar(entry.body, "onboard_slot");
+    if (slot === undefined) continue;
+    if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
+    filled[slot as OnboardSlot].push(entry.qualifiedId);
+  }
+  const scanRetiredLocalRoots = false;
   const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  if (existsSync(knowledgeRoot)) {
+  if (scanRetiredLocalRoots && existsSync(knowledgeRoot)) {
     for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS_FOR_ONBOARD) {
       const dir = join(knowledgeRoot, typeDir);
       if (!existsSync(dir)) continue;
