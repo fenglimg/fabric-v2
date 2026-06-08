@@ -119,7 +119,8 @@ export class StoreStage implements Stage {
       return true;
     }
 
-    const personal = globalConfig.stores.find((store) => store.personal === true);
+    const personal = globalConfig.stores.find((store) => store.alias === "personal" || store.mount_name === "personal")
+      ?? globalConfig.stores.find((store) => store.personal === true);
     if (personal !== undefined) {
       const personalDir = join(globalRoot, storeRelativePathForMount(personal));
       const identityPath = join(personalDir, "store.json");
@@ -132,6 +133,7 @@ export class StoreStage implements Stage {
             canonical_alias: personal.alias,
           },
         );
+        this.markOnlyPersonalStore(globalConfig, personal.store_uuid, globalRoot);
         syncStoreAliasLinks(globalRoot);
         console.log(paint.success(`repaired global personal store '${personal.alias}'.`));
         return false;
@@ -141,6 +143,14 @@ export class StoreStage implements Stage {
           `global personal store '${personal.alias}' has an invalid store.json at ${identityPath}; ` +
             "run `fabric doctor --fix` or move the corrupt store aside before reinstalling",
         );
+      }
+      if (
+        personal.personal !== true
+        || globalConfig.stores.filter((store) => store.personal === true).some((store) => store.store_uuid !== personal.store_uuid)
+      ) {
+        this.markOnlyPersonalStore(globalConfig, personal.store_uuid, globalRoot);
+        syncStoreAliasLinks(globalRoot);
+        console.log(paint.success(`repaired global personal store marker on '${personal.alias}'.`));
       }
       return false;
     }
@@ -162,6 +172,29 @@ export class StoreStage implements Stage {
     syncStoreAliasLinks(globalRoot);
     console.log(paint.success(`repaired global Fabric by creating personal store '${alias}'.`));
     return false;
+  }
+
+  private markOnlyPersonalStore(
+    globalConfig: NonNullable<ReturnType<typeof loadGlobalConfig>>,
+    storeUuid: string,
+    globalRoot: string,
+  ): void {
+    saveGlobalConfig(
+      {
+        ...globalConfig,
+        stores: globalConfig.stores.map((store) => {
+          if (store.store_uuid === storeUuid) {
+            return { ...store, personal: true };
+          }
+          if (store.personal === true) {
+            const { personal: _personal, ...rest } = store;
+            return rest;
+          }
+          return store;
+        }),
+      },
+      globalRoot,
+    );
   }
 
   private bindMountedStoreToProject(

@@ -222,4 +222,78 @@ describe("install-v2 pipeline UX", () => {
     expect(repaired?.stores.some((store) => store.alias === "personal" && store.personal === true)).toBe(true);
     expect(existsSync(join(globalRoot, "stores", "personal", "store.json"))).toBe(true);
   });
+
+  it("marks a legacy alias=personal store as personal instead of creating a duplicate", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabric-install-v2-home-"));
+    tempRoots.push(home);
+    vi.stubEnv("FABRIC_HOME", home);
+
+    const globalRoot = join(home, ".fabric");
+    const personalUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        stores: [{ store_uuid: personalUuid, alias: "personal", mount_name: "personal" }],
+      }),
+      globalRoot,
+    );
+    storeCreate("team", "2026-06-08T00:00:00.000Z", {
+      uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      git: false,
+      globalRoot,
+    });
+
+    const target = await tempProject();
+    saveProjectConfig({ fabric_language: "en" }, target);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const stage = new StoreStage();
+    const result = await stage.execute(baseContext(target));
+
+    expect(result.disposition).toBe("ran");
+    const repaired = loadGlobalConfig(globalRoot);
+    expect(repaired?.stores.filter((store) => store.personal === true).map((store) => store.alias)).toEqual(["personal"]);
+    expect(repaired?.stores.map((store) => store.alias).sort()).toEqual(["personal", "team"]);
+  });
+
+  it("prefers alias=personal and demotes accidental duplicate personal markers", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabric-install-v2-home-"));
+    tempRoots.push(home);
+    vi.stubEnv("FABRIC_HOME", home);
+
+    const globalRoot = join(home, ".fabric");
+    const personalUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        stores: [
+          { store_uuid: personalUuid, alias: "personal", mount_name: "personal" },
+          {
+            store_uuid: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            alias: "personal-dup",
+            mount_name: "personal-dup",
+            personal: true,
+          },
+        ],
+      }),
+      globalRoot,
+    );
+    storeCreate("team", "2026-06-08T00:00:00.000Z", {
+      uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      git: false,
+      globalRoot,
+    });
+
+    const target = await tempProject();
+    saveProjectConfig({ fabric_language: "en" }, target);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const stage = new StoreStage();
+    const result = await stage.execute(baseContext(target));
+
+    expect(result.disposition).toBe("ran");
+    const repaired = loadGlobalConfig(globalRoot);
+    expect(repaired?.stores.filter((store) => store.personal === true).map((store) => store.alias)).toEqual(["personal"]);
+    expect(repaired?.stores.map((store) => store.alias).sort()).toEqual(["personal", "personal-dup", "team"]);
+  });
 });
