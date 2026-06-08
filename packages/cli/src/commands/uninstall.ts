@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro } from "@clack/prompts";
 import { defineCommand } from "citty";
+import { bindingsSnapshotPath } from "@fenglimg/fabric-shared";
 // v2.0.0-rc.37 Wave A2: serve-lock preflight removed alongside fabric serve
 // quarantine — no main-line process writes `.fabric/.serve.lock` any more.
 // See KB [[fabric-serve-quarantine-not-delete]].
@@ -14,6 +15,7 @@ import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { detectClientSupports, resolveClients, type DetectedClientSupport } from "../config/resolver.js";
 import type { ClientConfigWriter, RemoveResult } from "../config/writer.js";
 import { t } from "../i18n.js";
+import { loadProjectConfig } from "../store/project-config-io.js";
 import {
   uninstallBootstrapStage,
   type UninstallOptions as BootstrapUninstallOptions,
@@ -68,7 +70,7 @@ type UninstallStageRecord = {
 type UninstallScaffoldEntry = {
   path: string;
   // `state-file` covers project-local Fabric state written by install.
-  kind: "state-file";
+  kind: "state-file" | "binding-snapshot";
   // When true, the path will be skipped because it does not exist on disk.
   absent: boolean;
 };
@@ -304,7 +306,8 @@ export function buildUninstallFabricPlan(
 ): UninstallScaffoldPlan {
   const absTarget = normalizeTarget(target);
   const fabricDir = join(absTarget, ".fabric");
-  const globalStoresDir = join(resolvePersonalFabricRoot(), ".fabric", "stores");
+  const globalRoot = join(resolvePersonalFabricRoot(), ".fabric");
+  const globalStoresDir = join(globalRoot, "stores");
 
   const entries: UninstallScaffoldEntry[] = [];
 
@@ -312,6 +315,14 @@ export function buildUninstallFabricPlan(
   for (const name of FABRIC_STATE_FILES) {
     const p = join(fabricDir, name);
     entries.push({ path: p, kind: "state-file", absent: !existsSync(p) });
+  }
+  const snapshotPath = projectBindingsSnapshotPath(absTarget, globalRoot);
+  if (snapshotPath !== null) {
+    entries.push({
+      path: snapshotPath,
+      kind: "binding-snapshot",
+      absent: !existsSync(snapshotPath),
+    });
   }
 
   // Hard guard: refuse any path whose absolute form falls inside the global
@@ -370,6 +381,20 @@ function scaffoldStepLabel(kind: UninstallScaffoldEntry["kind"]): string {
   switch (kind) {
     case "state-file":
       return "scaffold-state";
+    case "binding-snapshot":
+      return "binding-snapshot";
+  }
+}
+
+function projectBindingsSnapshotPath(projectRoot: string, globalRoot: string): string | null {
+  const projectId = loadProjectConfig(projectRoot)?.project_id;
+  if (typeof projectId !== "string" || projectId.length === 0) {
+    return null;
+  }
+  try {
+    return bindingsSnapshotPath(globalRoot, projectId);
+  } catch {
+    return null;
   }
 }
 
