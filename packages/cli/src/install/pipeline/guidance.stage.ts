@@ -44,16 +44,11 @@ export class GuidanceStage implements Stage {
 
   async execute(context: InstallContext): Promise<StageResult> {
     try {
+      const translate = ((context as { translate?: typeof t }).translate ?? t);
       // Skip guidance output if planOnly mode
       if (context.options.planOnly) {
         return stageRan("guidance", [], []);
       }
-
-      // Print next steps
-      console.log("");
-      console.log(t("cli.install.next-steps"));
-      console.log("");
-      console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
 
       // Handle semantic search
       if (context.args["enable-embed"]) {
@@ -62,14 +57,20 @@ export class GuidanceStage implements Stage {
         await this.promptSemanticSearch(context.target);
       }
 
+      // Print next steps
+      console.log("");
+      console.log(translate("cli.install.next-steps"));
+      console.log("");
+      console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+
       // Print restart banner
       console.log("");
-      console.log(t("cli.install.restart-banner"));
+      console.log(translate("cli.install.restart-banner"));
 
       // Print language preference hint
       if (context.state.fabricLanguage) {
         console.log(
-          paint.muted(t("cli.install.language_preference_hint", { value: context.state.fabricLanguage })),
+          paint.muted(translate("cli.install.language_preference_hint", { value: context.state.fabricLanguage })),
         );
       }
 

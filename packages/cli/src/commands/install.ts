@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { log } from "@clack/prompts";
@@ -419,7 +419,6 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   }
   return result;
 }
-
 
 function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {
   const target = normalizeTarget(targetInput);
@@ -1078,4 +1077,3 @@ async function runBestEffortSingle(
 function isInteractiveInit(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
 }
-

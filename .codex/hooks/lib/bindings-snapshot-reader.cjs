@@ -4,7 +4,7 @@
 // Hooks are a REMINDER layer (KT-DEC-0007) and must never block. They are also
 // FORBIDDEN from re-resolving stores or walking `.fabric` store trees directly
 // — a hook reads ONLY the CLI-pre-generated snapshot at
-// `~/.fabric/state/bindings/<project_id>_resolved.json` (written by P3
+// `~/.fabric/state/bindings/<workspace_binding_id>_resolved.json` (written by P3
 // install/sync/bind). This keeps the resolver logic in one place (the CLI) and
 // keeps hooks a thin, store-unaware-by-construction projection. Missing /
 // unreadable / malformed snapshot → null (harmless degrade; the hook proceeds
@@ -19,22 +19,22 @@ function resolveGlobalRoot() {
   return join(process.env.FABRIC_HOME || homedir(), ".fabric");
 }
 
-function bindingsSnapshotPath(projectId, globalRoot) {
+function bindingsSnapshotPath(bindingId, globalRoot) {
   return join(
     globalRoot || resolveGlobalRoot(),
     "state",
     "bindings",
-    projectId + "_resolved.json",
+    bindingId + "_resolved.json",
   );
 }
 
 // Read + shallow-validate the snapshot. Returns the parsed object, or null when
 // absent / unreadable / not the expected shape. NEVER throws.
-function readBindingsSnapshot(projectId, globalRoot) {
-  if (typeof projectId !== "string" || projectId.length === 0) {
+function readBindingsSnapshot(bindingId, globalRoot) {
+  if (typeof bindingId !== "string" || bindingId.length === 0) {
     return null;
   }
-  const path = bindingsSnapshotPath(projectId, globalRoot);
+  const path = bindingsSnapshotPath(bindingId, globalRoot);
   if (!existsSync(path)) {
     return null;
   }

@@ -97,7 +97,10 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
   }
 
   // Build the install context with TUI renderer
-  const renderer = isInteractiveInit() ? createInkRenderer({ verbose: args.debug }) : undefined;
+  const terminalInteractive = isInteractiveInit();
+  const renderer = shouldUseInstallRenderer(args, terminalInteractive)
+    ? createInkRenderer({ verbose: args.debug })
+    : undefined;
   const context = createInstallContext(args, resolution.target, renderer);
 
   // Build and execute the pipeline
@@ -163,4 +166,8 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
 
 function isInteractiveInit(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+}
+
+export function shouldUseInstallRenderer(args: InitArgs, terminalInteractive: boolean): boolean {
+  return terminalInteractive && (args.yes === true || args["dry-run"] === true);
 }

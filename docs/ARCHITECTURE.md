@@ -22,6 +22,52 @@ Fabric 有 3 个用户可见 surface：
 
 设计规则：确定性 I/O 放 CLI 或 server service；需要 LLM 判断的流程放 Skill；session 内知识读取走 MCP。
 
+## Store-Only Knowledge Architecture
+
+最终架构是 store-only：知识 source of truth 只在 mounted stores 的
+`knowledge/` tree 下。项目本地 `.fabric/knowledge` 不是 runtime 知识源；
+它只允许作为显式一次性迁移/import 的输入。
+
+Store-only 设计区分 3 个 identity：
+
+- `project_id`：代码库身份。一个 repo/worktree 家族共享它。
+- `active_project`：当前工作上下文参与的知识 project scope。运行时一次只
+  有一个 active project。
+- `workspace_binding_id`：本机 runtime binding key。默认等于
+  `project_id`；当某个 worktree 需要不同 active project / write routes /
+  hook state 时，用它隔离 `~/.fabric/state/bindings/<id>_resolved.json`。
+
+Scope 与 store 是两个轴：
+
+- `semantic_scope`：逻辑受众，例如 `personal`、`team`、
+  `project:fabric-v2`、`org:acme:team:platform`。
+- `visibility_store`：条目实际所在 store 的 alias/UUID provenance。
+- resolver 负责把 `semantic_scope` 映射到 writable store；Skill/agent 只提出
+  scope，server 负责校验和写入。
+
+Personal store 是隐式私有层，不写入项目 `required_stores`。Personal scope
+永远写入 personal store；把 personal scope 或 `KP-*` 放入 shared store 是隐私
+错误，应由 write path / doctor / sync 阻断。
+
+Shared store 写入使用 `write_routes`：
+
+```json
+{
+  "active_project": "fabric-v2",
+  "write_routes": [
+    { "scope": "project:fabric-v2", "store": "team" }
+  ]
+}
+```
+
+单 shared store onboarding 可以自动写 route；多 shared store 场景下缺少
+route 是 hard error，不能静默回退到 `active_write_store`。`switch-write` /
+`active_write_store` 只保留为兼容/默认提示，不是最终路由语义。
+
+Pending entries 是 review-only，不进入普通 `fab_recall` /
+`fab_plan_context`。Recall/plan/get_sections 只读取 canonical store entries，
+并以 `alias:id` 加 structured provenance 表达引用。
+
 ## Source Of Truth
 
 不要从 prose 文档推断当前行为。先看这些代码入口：
@@ -53,7 +99,37 @@ Fabric 有 3 个用户可见 surface：
 
 ## Knowledge Storage
 
-知识条目只生活在 mounted stores 下的 `knowledge/` tree。项目通过 `fabric store bind` 和 `fabric store switch-write` 选择 read/write store。根目录 `AGENTS.md` / `CLAUDE.md` 是 AI policy anchor，不是 MCP 自动加载的知识库。
+知识条目只生活在 mounted stores 下的 `knowledge/` tree。项目通过
+`fabric store bind` 声明 read-set，通过 `write_routes` 选择 scope-aware
+write target。根目录 `AGENTS.md` / `CLAUDE.md` 是 AI policy anchor，不是
+MCP 自动加载的知识库。
+
+## Store-Only Completion Gate
+
+Grill 后锁定的架构不是单个 resolver 改动，而是 surface alignment gate。
+完成标准：
+
+- Shared schema/resolver：`semantic_scope`、`visibility_store`、
+  `workspace_binding_id`、read-set/write-target contract 有测试。
+- CLI install/store：onboarding 写 `project:<active_project> -> store`
+  route；multi shared store 缺 route hard fail。
+- Server write/MCP：`fab_extract_knowledge` 接受 `semantic_scope`，写入
+  resolved store；MCP schema 不再描述 workspace/home pending root。
+- Hooks：只读 generated binding snapshot；snapshot key 为
+  `workspace_binding_id`，不自行解析 store tree。
+- Skills：使用 scope-first/store-only 语言，不手写旧 pending path 或 ledger
+  path。
+- Doctor/sync：阻断 personal leak、无效 route、scope metadata 缺失、stale
+  snapshot/index。
+- Derived index：store-local canonical index + binding-level filtered view；
+  markdown 仍是 source of truth。
+- Event/metrics：最终 runtime ledger 在 global state，按
+  `workspace_binding_id` 分区；project-root event files 仅是 legacy input。
+
+当前 `feat/store-only-surface-alignment` 已完成核心写路由和 binding snapshot
+切片；skills、review modify-scope、derived index、global event ledger、sync
+hard gates 仍是后续 release-gate 工作，不能在文档或 release note 中声明全
+矩阵完成。
 
 ## Update Policy
 

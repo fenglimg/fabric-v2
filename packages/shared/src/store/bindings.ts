@@ -1,15 +1,27 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import {
   GLOBAL_BINDINGS_DIR,
   GLOBAL_STATE_DIR,
+  STORE_KNOWLEDGE_TYPE_DIRS,
+  STORE_LAYOUT,
+  storeRelativePathForMount,
 } from "../schemas/store.js";
 import {
   resolvedBindingsSnapshotSchema,
   type ResolvedBindingsSnapshot,
 } from "../schemas/bindings-snapshot.js";
-import type { StoreResolveInput } from "../resolver/contracts.js";
+import type { StoreReadSet, StoreResolveInput } from "../resolver/contracts.js";
 import { createStoreResolver } from "../resolver/store-resolver.js";
 
 // ---------------------------------------------------------------------------
@@ -25,38 +37,134 @@ import { createStoreResolver } from "../resolver/store-resolver.js";
 // must never be interpolated into a filesystem path unsanitized — a value like
 // "../../etc/cron.d/x" would otherwise escape the bindings dir and let
 // writeBindingsSnapshot clobber an arbitrary file (path-traversal write).
-const SAFE_PROJECT_ID = /^[A-Za-z0-9._-]+$/;
+const SAFE_BINDING_ID = /^[A-Za-z0-9._-]+$/;
 
-function assertSafeProjectId(projectId: string): void {
-  if (!SAFE_PROJECT_ID.test(projectId) || projectId.includes("..")) {
+function assertSafeBindingId(bindingId: string): void {
+  if (!SAFE_BINDING_ID.test(bindingId) || bindingId.includes("..")) {
     throw new Error(
-      `bindingsSnapshotPath: refusing unsafe project_id ${JSON.stringify(projectId)} ` +
-        `(must match ${SAFE_PROJECT_ID} and contain no "..")`,
+      `bindingsSnapshotPath: refusing unsafe workspace_binding_id ${JSON.stringify(bindingId)} ` +
+        `(must match ${SAFE_BINDING_ID} and contain no "..")`,
     );
   }
 }
 
 // Absolute path to a project's resolved-bindings snapshot under the global home.
 // `globalRoot` is the `~/.fabric` directory (FABRIC_HOME/.fabric in tests).
-export function bindingsSnapshotPath(globalRoot: string, projectId: string): string {
-  assertSafeProjectId(projectId);
+export function bindingsSnapshotPath(globalRoot: string, bindingId: string): string {
+  assertSafeBindingId(bindingId);
   const bindingsDir = resolve(join(globalRoot, GLOBAL_STATE_DIR, GLOBAL_BINDINGS_DIR));
-  const path = resolve(join(bindingsDir, `${projectId}_resolved.json`));
+  const path = resolve(join(bindingsDir, `${bindingId}_resolved.json`));
   // Defence in depth: even a charset-clean id must resolve back inside the dir.
   if (path !== bindingsDir && !path.startsWith(bindingsDir + sep)) {
-    throw new Error(`bindingsSnapshotPath: resolved path escapes bindings dir for ${JSON.stringify(projectId)}`);
+    throw new Error(`bindingsSnapshotPath: resolved path escapes bindings dir for ${JSON.stringify(bindingId)}`);
   }
   return path;
+}
+
+export function resolveWorkspaceBindingId(config: {
+  project_id?: string;
+  workspace_binding_id?: string;
+}): string | undefined {
+  return config.workspace_binding_id ?? config.project_id;
 }
 
 export interface WriteBindingsSnapshotOptions {
   globalRoot: string;
   projectId: string;
+  workspaceBindingId?: string;
   resolveInput: StoreResolveInput;
   // Scope used to resolve the write target (non-personal default e.g. "team").
   writeScope: string;
   // ISO-8601 timestamp; injected for deterministic tests.
   now: string;
+}
+
+function countMarkdownFiles(dir: string): { count: number; oldestMtimeMs: number | null } {
+  let count = 0;
+  let oldestMtimeMs: number | null = null;
+  if (!existsSync(dir)) {
+    return { count, oldestMtimeMs };
+  }
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return { count, oldestMtimeMs };
+  }
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = countMarkdownFiles(fullPath);
+      count += nested.count;
+      if (
+        nested.oldestMtimeMs !== null &&
+        (oldestMtimeMs === null || nested.oldestMtimeMs < oldestMtimeMs)
+      ) {
+        oldestMtimeMs = nested.oldestMtimeMs;
+      }
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".md")) {
+      continue;
+    }
+    let mtimeMs;
+    try {
+      mtimeMs = statSync(fullPath).mtimeMs;
+    } catch {
+      continue;
+    }
+    count += 1;
+    if (oldestMtimeMs === null || mtimeMs < oldestMtimeMs) {
+      oldestMtimeMs = mtimeMs;
+    }
+  }
+  return { count, oldestMtimeMs };
+}
+
+function collectKnowledgeStats(globalRoot: string, resolveInput: StoreResolveInput, readSet: StoreReadSet) {
+  let pendingCount = 0;
+  let oldestPendingMtimeMs: number | null = null;
+  let canonicalCount = 0;
+
+  for (const store of readSet.stores) {
+    const mounted = resolveInput.mountedStores.find((entry) => entry.store_uuid === store.store_uuid) ?? {
+      store_uuid: store.store_uuid,
+    };
+    const storeDir = join(globalRoot, storeRelativePathForMount(mounted));
+    for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+      const canonical = countMarkdownFiles(join(storeDir, STORE_LAYOUT.knowledgeDir, type));
+      canonicalCount += canonical.count;
+    }
+    const pending = countMarkdownFiles(join(storeDir, STORE_LAYOUT.knowledgeDir, "pending"));
+    pendingCount += pending.count;
+    if (
+      pending.oldestMtimeMs !== null &&
+      (oldestPendingMtimeMs === null || pending.oldestMtimeMs < oldestPendingMtimeMs)
+    ) {
+      oldestPendingMtimeMs = pending.oldestMtimeMs;
+    }
+  }
+
+  return {
+    pending_count: pendingCount,
+    canonical_count: canonicalCount,
+    oldest_pending_mtime_ms: oldestPendingMtimeMs,
+  };
+}
+
+function atomicWriteJsonSync(path: string, value: unknown): void {
+  const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    renameSync(tmpPath, path);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // best-effort cleanup only
+    }
+    throw error;
+  }
 }
 
 // Resolve + persist the snapshot; returns the snapshot object that was written.
@@ -70,14 +178,16 @@ export function writeBindingsSnapshot(
   const snapshot: ResolvedBindingsSnapshot = resolvedBindingsSnapshotSchema.parse({
     version: 1,
     project_id: options.projectId,
+    workspace_binding_id: options.workspaceBindingId ?? options.projectId,
     generated_at: options.now,
     read_set,
     write_target: target,
+    knowledge_stats: collectKnowledgeStats(options.globalRoot, options.resolveInput, read_set),
   });
 
-  const path = bindingsSnapshotPath(options.globalRoot, options.projectId);
+  const path = bindingsSnapshotPath(options.globalRoot, snapshot.workspace_binding_id);
   mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  atomicWriteJsonSync(path, snapshot);
   return snapshot;
 }
 

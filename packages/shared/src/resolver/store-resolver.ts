@@ -56,6 +56,18 @@ function resolveRouteAlias(input: StoreResolveInput, scope: string): string | un
   return prefix?.store ?? input.defaultWriteAlias ?? input.activeWriteAlias;
 }
 
+function hasMultipleSharedStores(input: StoreResolveInput): boolean {
+  return input.mountedStores.filter((store) => !store.personal).length > 1;
+}
+
+function hasExplicitRouteOrDefault(input: StoreResolveInput, scope: string): boolean {
+  const routes = input.writeRoutes ?? [];
+  return (
+    routes.some((route) => routeMatches(route.scope, scope)) ||
+    input.defaultWriteAlias !== undefined
+  );
+}
+
 export function createStoreResolver(): StoreResolver {
   return {
     resolveReadSet(input: StoreResolveInput): StoreReadSet {
@@ -122,6 +134,19 @@ export function createStoreResolver(): StoreResolver {
           };
         }
         return { target: { store_uuid: p.store_uuid, alias: p.alias }, warnings: [] };
+      }
+
+      if (hasMultipleSharedStores(input) && !hasExplicitRouteOrDefault(input, scope)) {
+        return {
+          target: null,
+          warnings: [
+            {
+              code: "missing_write_route",
+              ref: scope,
+              message: `scope '${scope}' has no explicit write route; set \`fabric store route-write ${scope} <alias>\``,
+            },
+          ],
+        };
       }
 
       const routeAlias = resolveRouteAlias(input, scope);

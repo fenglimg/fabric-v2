@@ -17,7 +17,7 @@ mid-session so it stops re-arguing every architecture decision from scratch.
 | --- | --- |
 | Run `fabric install` once per repo | Hand-edit Fabric-managed hook/bootstrap artifacts |
 | Run `fabric doctor` when something feels off | Hand-edit hook scripts under `.claude/hooks/` |
-| Use `fabric store bind` / `fabric store switch-write` and the Fabric Skills to manage knowledge | Hand-write project-local `.fabric/knowledge/<type>/` roots |
+| Use `fabric store bind` / `fabric store route-write` and the Fabric Skills to manage knowledge | Hand-write project-local `.fabric/knowledge/<type>/` roots |
 | `npm install -g @fenglimg/fabric-cli@latest` to upgrade | Memorise the 35 doctor lint codes |
 
 ## The 4-step flow
@@ -31,8 +31,8 @@ mid-session so it stops re-arguing every architecture decision from scratch.
   │  fabric install   →  AI works  →  AI proposes  →  you review   │
   │  (once per repo)     normally     a knowledge      via the     │
   │  + bind store        (hooks fire  entry; goes      fabric-     │
-  │                      on session   to current       review     │
-  │                      start +      write store's    skill      │
+  │  + write route       on session   to routed        review     │
+  │                      start +      store's          skill      │
   │                      every Edit)  knowledge/                  │
   │                                   pending/                    │
   │                                                                │
@@ -57,7 +57,7 @@ signal in the conversation, calls the `fabric-archive` skill, and proposes
 a pending pitfall entry:
 
 ```yaml
-# <active-write-store>/knowledge/pending/pitfalls/KT-PIT-0001--atlas-premultiplyalpha.md
+# <routed-store>/knowledge/pending/pitfalls/KT-PIT-0001--atlas-premultiplyalpha.md
 id: KT-PIT-0001
 knowledge_type: pitfalls
 maturity: draft
@@ -70,6 +70,10 @@ You review it (`/fabric-review` slash command; deterministic store-backed
 maintenance uses `fabric doctor --fix-knowledge`),
 promote it, and now every PreToolUse Edit on `src/render/*` surfaces this
 pitfall in-context. The next contributor never sees the black edges.
+
+For one team store, install/onboarding writes the project route for you. For
+multiple shared stores, use `fabric store route-write <semantic_scope> <alias>`
+so Fabric knows where a scope such as `project:fabric-v2` should write.
 
 ## First 30 minutes — troubleshooting
 

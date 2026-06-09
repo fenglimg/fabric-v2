@@ -37,13 +37,9 @@ async function createProjectWithStores(prefix = "fabric-tools-extract-"): Promis
   return projectRoot;
 }
 
-function pendingStoreRel(layer: "team" | "personal", type: string, slug: string): string {
+function pendingStorePath(layer: "team" | "personal", type: string, slug: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return `~/.fabric/${storeRelativePath(uuid)}/${STORE_LAYOUT.knowledgeDir}/pending/${type}/${slug}.md`;
-}
-
-function pendingStoreAbs(reported: string): string {
-  return join(process.env.FABRIC_HOME!, reported.slice(2));
+  return join(process.env.FABRIC_HOME!, ".fabric", storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, "pending", type, `${slug}.md`);
 }
 import {
   resetFirstReconcileGate,
@@ -143,7 +139,7 @@ describe("registerExtractKnowledge", () => {
       slug: "tool-handler-coverage",
     });
 
-    expect(result.structuredContent.pending_path).toBe(pendingStoreRel("team", "decisions", "tool-handler-coverage"));
+    expect(result.structuredContent.pending_path).toBe(pendingStorePath("team", "decisions", "tool-handler-coverage"));
     expect(result.structuredContent.idempotency_key).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(result.content).toHaveLength(1);
     expect(result.content[0]?.type).toBe("text");
@@ -284,7 +280,7 @@ describe("registerExtractKnowledge", () => {
     });
 
     const body = await readFile(
-      pendingStoreAbs(result.structuredContent.pending_path),
+      result.structuredContent.pending_path,
       "utf8",
     );
     expect(body).toMatch(/^intent_clues: \["editing hooks\.ts"\]$/mu);
@@ -312,7 +308,7 @@ describe("registerExtractKnowledge", () => {
     });
 
     const body = await readFile(
-      pendingStoreAbs(result.structuredContent.pending_path),
+      result.structuredContent.pending_path,
       "utf8",
     );
     expect(body).not.toMatch(/^intent_clues:/mu);

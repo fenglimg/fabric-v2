@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -10,9 +10,14 @@ import {
   detachMountedStore,
   explainStore,
   initStore,
-  readStoreProjects,
+  STORE_GITIGNORE,
+  STORE_KNOWLEDGE_TYPE_DIRS,
+  STORE_LAYOUT,
+  STORE_PENDING_DIR,
   STORES_ROOT_DIR,
   storeHasProject,
+  storeIdentitySchema,
+  storeProjectsFileSchema,
   storeRelativePath,
   storeRelativePathForMount,
   storeMountNameSchema,
@@ -20,6 +25,7 @@ import {
   type GlobalConfig,
   type MountedStore,
   type RequiredStoreEntry,
+  type StoreIdentity,
   type StoreExplain,
   type StoreProject,
   writeRouteSchema,
@@ -223,11 +229,12 @@ export async function storeCreate(
   const mountedBase: MountedStore = { store_uuid: uuid, alias, mount_name };
   const storeDir = mountedStoreDir(mountedBase, globalRoot);
 
-  await initStore(
-    storeDir,
-    { store_uuid: uuid, created_at: now, canonical_alias: alias },
-    { git: options.git },
-  );
+  const identity = { store_uuid: uuid, created_at: now, canonical_alias: alias };
+  if (options.git === false) {
+    initStoreSync(storeDir, identity);
+  } else {
+    await initStore(storeDir, identity, { git: options.git });
+  }
 
   // v2.1 global-refactor (W2-T4, F-SYNC-REMOTE): wire the remote into the store's
   // OWN git repo, not just the config metadata. Before this, `--remote` was
@@ -247,6 +254,23 @@ export async function storeCreate(
   saveGlobalConfig(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: mint the by-alias readability link.
   return { config: next, store_uuid: uuid, storeDir };
+}
+
+function initStoreSync(absDir: string, identity: StoreIdentity): StoreIdentity {
+  const parsed = storeIdentitySchema.parse(identity);
+  const identityFile = join(absDir, STORE_LAYOUT.identityFile);
+  if (existsSync(identityFile)) {
+    throw new Error(`store already initialized at ${absDir} (store.json exists)`);
+  }
+  for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+    mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, type), { recursive: true });
+  }
+  mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
+  mkdirSync(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
+  mkdirSync(join(absDir, STORE_LAYOUT.stateDir), { recursive: true });
+  writeFileSync(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  writeFileSync(join(absDir, ".gitignore"), STORE_GITIGNORE, "utf8");
+  return parsed;
 }
 
 // `git remote add origin <remote>` in the store's repo. Idempotent: if an
@@ -380,15 +404,26 @@ export function resolveStoreDir(
 
 // `fabric store project list <alias>`: enumerate a store's registered projects
 // (W1/A2). Throws when the alias/uuid is not a mounted store.
-export async function storeProjectList(
+export function storeProjectList(
   aliasOrUuid: string,
   globalRoot: string = resolveGlobalRoot(),
-): Promise<StoreProject[]> {
+): StoreProject[] {
   const storeDir = resolveStoreDir(aliasOrUuid, globalRoot);
   if (storeDir === null) {
     throw new Error(`no mounted store '${aliasOrUuid}' — run \`fabric store list\` to see mounts`);
   }
-  return readStoreProjects(storeDir);
+  return readStoreProjectsSync(storeDir);
+}
+
+function readStoreProjectsSync(storeDir: string): StoreProject[] {
+  try {
+    const parsed = storeProjectsFileSchema.safeParse(
+      JSON.parse(readFileSync(join(storeDir, STORE_LAYOUT.projectsFile), "utf8")),
+    );
+    return parsed.success ? parsed.data.projects : [];
+  } catch {
+    return [];
+  }
 }
 
 // `fabric store project create <alias> <id>`: register a new project in a store

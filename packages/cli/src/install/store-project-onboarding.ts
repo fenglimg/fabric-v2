@@ -7,6 +7,7 @@ import {
   storeBind,
   storeProjectCreate,
   storeProjectList,
+  storeSetWriteRoute,
   storeSwitchWrite,
 } from "../store/store-ops.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
@@ -49,11 +50,11 @@ export function normalizeStoreProjectId(value: string): string {
   return normalized.length > 0 ? normalized : "project";
 }
 
-export function ensureStoreProjectBinding(
+export async function ensureStoreProjectBinding(
   projectRoot: string,
   storeAlias: string,
   options: EnsureStoreProjectBindingOptions,
-): StoreProjectBindingResult {
+): Promise<StoreProjectBindingResult> {
   const now = options.now ?? new Date().toISOString();
   const project_id = ensureProjectId(projectRoot, options.uuid);
   const currentConfig = loadProjectConfig(projectRoot);
@@ -63,10 +64,10 @@ export function ensureStoreProjectBinding(
     suggestStoreProjectId(projectRoot);
   const active_project = normalizeStoreProjectId(requested);
 
-  const projects = storeProjectList(storeAlias, options.globalRoot);
+  const projects = await storeProjectList(storeAlias, options.globalRoot);
   const project_created = !projects.some((project) => project.id === active_project);
   if (project_created) {
-    storeProjectCreate(storeAlias, active_project, now, {
+    await storeProjectCreate(storeAlias, active_project, now, {
       name: active_project,
       globalRoot: options.globalRoot,
     });
@@ -76,8 +77,11 @@ export function ensureStoreProjectBinding(
     options.suggestedRemote === undefined
       ? { id: storeAlias }
       : { id: storeAlias, suggested_remote: options.suggestedRemote };
-  storeBind(projectRoot, entry, { project: active_project, globalRoot: options.globalRoot });
+  await storeBind(projectRoot, entry, { project: active_project, globalRoot: options.globalRoot });
   storeSwitchWrite(projectRoot, storeAlias, { globalRoot: options.globalRoot });
+  storeSetWriteRoute(projectRoot, `project:${active_project}`, storeAlias, {
+    globalRoot: options.globalRoot,
+  });
   regenerateBindingsSnapshot(projectRoot, {
     now,
     globalRoot: options.globalRoot,

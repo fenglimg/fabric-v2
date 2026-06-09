@@ -146,7 +146,7 @@ export type RequiredStoreEntry = z.infer<typeof requiredStoreEntrySchema>;
 // CROSS-store volatile data — the event ledger and the resolved-binding
 // snapshots the hooks consume — lives OUTSIDE any store git, under the GLOBAL
 // `~/.fabric/state/` (events: S43/S58; resolved bindings: P3 generates
-// `~/.fabric/state/bindings/<project_id>_resolved.json`, P4 hooks read). The
+// `~/.fabric/state/bindings/<workspace_binding_id>_resolved.json`, P4 hooks read). The
 // per-store `state/` dir above is for a store's OWN local scratch, never
 // committed and never the cross-store ledger.
 //
@@ -188,7 +188,7 @@ export const STORES_ROOT_DIR = "stores";
 // Global volatile state root (events, caches, resolved bindings) — never in git.
 export const GLOBAL_STATE_DIR = "state";
 // Resolved-bindings snapshot dir under the global state root (P3 generates,
-// P4 hooks consume): `~/.fabric/state/bindings/<project_id>_resolved.json`.
+// P4 hooks consume): `~/.fabric/state/bindings/<workspace_binding_id>_resolved.json`.
 export const GLOBAL_BINDINGS_DIR = "bindings";
 
 // POSIX-join helper so readers/resolvers agree on the canonical sub-paths

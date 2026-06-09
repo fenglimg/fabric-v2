@@ -94,13 +94,13 @@ try {
   // Lib missing (old install) — injection telemetry degrades to silent absence.
 }
 
-// Read the project's own `project_id` from `.fabric/fabric-config.json` (the
-// snapshot key). Reading the PROJECT config is not a store-tree read — it is how
-// the hook learns which snapshot to fetch. Returns null on any failure.
-function readProjectId(cwd) {
+// Read the workspace binding id from `.fabric/fabric-config.json` (the snapshot
+// key). Defaults to project_id when workspace_binding_id is absent.
+function readWorkspaceBindingId(cwd) {
   try {
     const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
     const parsed = JSON.parse(raw);
+    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
   } catch {
     return null;
@@ -111,12 +111,12 @@ function readSnapshotCanonicalCount(projectRoot) {
   if (bindingsSnapshotReader === null) {
     return null;
   }
-  const projectId = readProjectId(projectRoot);
-  if (projectId === null) {
+  const bindingId = readWorkspaceBindingId(projectRoot);
+  if (bindingId === null) {
     return null;
   }
   try {
-    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(projectId);
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
     const stats = snapshot && snapshot.knowledge_stats;
     if (
       stats &&
@@ -888,10 +888,10 @@ function main(env, stdio) {
     // missing snapshot / single-store setup just omits the line.
     if (bindingsSnapshotReader !== null) {
       try {
-        const projectId = readProjectId(cwd);
-        if (projectId) {
+        const bindingId = readWorkspaceBindingId(cwd);
+        if (bindingId) {
           const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
           );
           if (label) lines.push(label);
         }

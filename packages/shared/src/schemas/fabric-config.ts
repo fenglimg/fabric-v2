@@ -87,6 +87,10 @@ export const fabricConfigSchema = z.object({
   // one on next install. `.fabric/fabric-config.json` carrying this field is
   // also the upward marker the ProjectRootResolver searches for (S15/S32).
   project_id: z.string().optional(),
+  // Store-only runtime binding identity. Defaults to project_id when omitted,
+  // but worktrees / sandboxes can set this to isolate hook/runtime state while
+  // keeping the same committed project identity.
+  workspace_binding_id: z.string().optional(),
   // v2.1.0-rc.1 P0 (S59/B3): the stores this repo expects mounted. Each entry
   // names a store by alias/UUID with an optional suggested_remote (or the
   // `$personal` sentinel). Drives the read-set (required_stores ∪ implicit

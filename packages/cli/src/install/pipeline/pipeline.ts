@@ -16,6 +16,20 @@ const STAGE_LABELS: Record<StageName, string> = {
   guidance: "Next steps",
 };
 
+const PLAIN_STAGE_LABELS: Record<StageName, string> = {
+  preflight: "全局与项目预检",
+  env: "项目环境初始化",
+  store: "知识库拓扑",
+  hooks: "Hook 与 skill 安装",
+  mcp: "MCP 服务配置",
+  validate: "安装校验",
+  guidance: "后续指引",
+};
+
+const PLAIN_STAGE_DESCRIPTIONS: Partial<Record<StageName, string>> = {
+  store: "绑定当前项目的 read/write store，刷新 resolved-bindings snapshot。",
+};
+
 /** Stage icons for visual anchors */
 const STAGE_ICONS: Record<StageName, string> = {
   preflight: "🔍",
@@ -71,6 +85,8 @@ export class InstallPipeline {
     if (renderer) {
       renderer.renderSection("Fabric Install");
       renderer.renderInfo(`Running ${totalStages} stages...`);
+    } else {
+      console.log(`Fabric install 将按 ${totalStages} 个阶段执行`);
     }
 
     for (let i = 0; i < this.stages.length; i++) {
@@ -81,6 +97,12 @@ export class InstallPipeline {
       // EPIC-005: Visual anchor — section header with icon
       if (renderer) {
         renderer.renderSection(`${STAGE_ICONS[stageName]} ${STAGE_LABELS[stageName]}`);
+      } else {
+        console.log(`[${stepNum}/${totalStages}] ${PLAIN_STAGE_LABELS[stageName]}`);
+        const description = PLAIN_STAGE_DESCRIPTIONS[stageName];
+        if (description !== undefined) {
+          console.log(`  ${description}`);
+        }
       }
 
       // EPIC-008: Progress feedback — step counter + spinner

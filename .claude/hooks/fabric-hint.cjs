@@ -98,31 +98,52 @@ try {
   bindingsSnapshotReader = null;
 }
 
-// Read the project's own `project_id` (the snapshot key) from its config.
-function readProjectId(cwd) {
+// Read the workspace binding id (snapshot key) from project config. Standard
+// repos default to project_id; worktrees can set workspace_binding_id to isolate
+// hook/runtime state without changing project identity.
+function readWorkspaceBindingId(cwd) {
   try {
     const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
   } catch {
     return null;
   }
 }
 
-function readHookStatsSnapshot(cwd) {
+function readSnapshotKnowledgeStats(projectRoot, now) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const empty = { pendingCount: 0, oldestPendingAgeMs: null, canonicalCount: 0 };
   if (bindingsSnapshotReader === null) {
     return null;
   }
-  const projectId = readProjectId(cwd);
-  if (projectId === null) {
+  const bindingId = readWorkspaceBindingId(projectRoot);
+  if (bindingId === null) {
     return null;
   }
   try {
-    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(projectId);
-    return snapshot && snapshot.hook_stats && typeof snapshot.hook_stats === "object"
-      ? snapshot.hook_stats
-      : null;
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    const stats = snapshot && snapshot.knowledge_stats;
+    if (!stats || typeof stats !== "object") {
+      return empty;
+    }
+    const pendingCount =
+      Number.isFinite(stats.pending_count) && stats.pending_count > 0
+        ? Math.floor(stats.pending_count)
+        : 0;
+    const canonicalCount =
+      Number.isFinite(stats.canonical_count) && stats.canonical_count > 0
+        ? Math.floor(stats.canonical_count)
+        : 0;
+    const oldestPendingAgeMs =
+      pendingCount > 0 &&
+      Number.isFinite(stats.oldest_pending_mtime_ms) &&
+      stats.oldest_pending_mtime_ms > 0
+        ? Math.max(0, nowMs - stats.oldest_pending_mtime_ms)
+        : null;
+    return { pendingCount, oldestPendingAgeMs, canonicalCount };
   } catch {
-    return null;
+    return empty;
   }
 }
 
@@ -290,21 +311,11 @@ function readLedger(projectRoot) {
  * `.fabric/knowledge/pending`; missing snapshot stats degrade to zero.
  */
 function readPendingStats(projectRoot, now) {
-  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const stats = readHookStatsSnapshot(projectRoot);
-  const pending = stats && stats.pending;
-  if (
-    !pending ||
-    typeof pending.count !== "number" ||
-    pending.count <= 0 ||
-    typeof pending.oldest_mtime_ms !== "number"
-  ) {
-    return { count: 0, oldestAgeMs: null };
+  const stats = readSnapshotKnowledgeStats(projectRoot, now);
+  if (stats !== null) {
+    return { count: stats.pendingCount, oldestAgeMs: stats.oldestPendingAgeMs };
   }
-  return {
-    count: pending.count,
-    oldestAgeMs: nowMs - pending.oldest_mtime_ms,
-  };
+  return { count: 0, oldestAgeMs: null };
 }
 
 /**
@@ -312,12 +323,8 @@ function readPendingStats(projectRoot, now) {
  * Missing stats degrade to zero; the CLI owns store traversal.
  */
 function countCanonicalNodes(projectRoot) {
-  const stats = readHookStatsSnapshot(projectRoot);
-  const canonical = stats && stats.canonical;
-  if (!canonical || typeof canonical.count !== "number") {
-    return 0;
-  }
-  return canonical.count;
+  const stats = readSnapshotKnowledgeStats(projectRoot);
+  return stats === null ? 0 : stats.canonicalCount;
 }
 
 /**
@@ -2116,10 +2123,10 @@ function main(env, stdio) {
     // pile. Best-effort; missing snapshot / single-store omits the line.
     if (bindingsSnapshotReader !== null && typeof result.reason === "string") {
       try {
-        const projectId = readProjectId(cwd);
-        if (projectId) {
+        const bindingId = readWorkspaceBindingId(cwd);
+        if (bindingId) {
           const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
           );
           if (label) {
             result.reason = `${result.reason}\n${label}`;

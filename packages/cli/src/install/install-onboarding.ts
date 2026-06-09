@@ -4,7 +4,13 @@ import { paint } from "../colors.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "./semantic-search.js";
 import { mountStoreFromRemote } from "./run-global-install.js";
 import { resolveGlobalRoot } from "../store/global-config-io.js";
-import { storeBind, storeCreate, storeList, storeSwitchWrite } from "../store/store-ops.js";
+import {
+  storeBind,
+  storeCreate,
+  storeList,
+  storeSetWriteRoute,
+  storeSwitchWrite,
+} from "../store/store-ops.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
 
@@ -65,8 +71,12 @@ export async function bindRemoteStoreToProject(
 ): Promise<void> {
   const already = storeList(globalRoot).find((store) => store.remote === url);
   const mounted = already ?? mountStoreFromRemote(url, globalRoot);
-  await storeBind(projectRoot, { id: mounted.alias, suggested_remote: url });
-  storeSwitchWrite(projectRoot, mounted.alias);
+  await storeBind(projectRoot, { id: mounted.alias, suggested_remote: url }, { globalRoot });
+  storeSwitchWrite(projectRoot, mounted.alias, { globalRoot });
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  if (typeof activeProject === "string" && activeProject.length > 0) {
+    storeSetWriteRoute(projectRoot, `project:${activeProject}`, mounted.alias, { globalRoot });
+  }
   // Refresh the resolved-bindings snapshot so P4 hooks read a consistent
   // read-set / write-target without re-resolving (mirrors `store bind`).
   regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
@@ -102,8 +112,13 @@ export async function bindCreatedStoreToProject(
   await storeBind(
     projectRoot,
     options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
+    { globalRoot },
   );
-  storeSwitchWrite(projectRoot, alias);
+  storeSwitchWrite(projectRoot, alias, { globalRoot });
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  if (typeof activeProject === "string" && activeProject.length > 0) {
+    storeSetWriteRoute(projectRoot, `project:${activeProject}`, alias, { globalRoot });
+  }
   regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
   console.log("");
   console.log(

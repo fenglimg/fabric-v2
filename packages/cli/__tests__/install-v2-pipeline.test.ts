@@ -189,6 +189,7 @@ describe("install-v2 pipeline UX", () => {
     expect(projectConfig?.active_project).toBe("fabric-v2");
     expect(projectConfig?.active_write_store).toBe("team");
     expect(projectConfig?.default_write_store).toBe("team");
+    expect(projectConfig?.write_routes).toEqual([{ scope: "project:fabric-v2", store: "team" }]);
     expect(storeProjectList("team", globalRoot).map((project) => project.id)).toEqual(["fabric-v2"]);
 
     const snapshot = readBindingsSnapshot(globalRoot, "project-test");
