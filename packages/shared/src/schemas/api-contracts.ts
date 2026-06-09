@@ -1029,7 +1029,7 @@ const _fabReviewListItemSchema = z.object({
   // consumers (Read tool, fs.readFile, downstream MCP servers) should prefer
   // the absolute variant — the `~` is a shell-only sigil that breaks every
   // non-shell consumer. Team entries omit this field because their
-  // `pending_path` is already project-relative and unambiguous.
+  // `pending_path` is already store-resolved and unambiguous.
   pending_path_absolute: z.string().optional(),
   type: z.enum(["decisions", "pitfalls", "guidelines", "models", "processes"]),
   layer: z.enum(["team", "personal"]),
@@ -1458,9 +1458,9 @@ export const annotateIntentRequestSchema = z.object({
 // ---------------------------------------------------------------------------
 // v2.0 Knowledge entry schema
 //
-// Frontmatter for knowledge entries written into .fabric/knowledge/ (team layer)
-// or ~/.fabric/knowledge/ (personal layer). Fields MUST stay flat scalars to
-// remain compatible with the hand-rolled regex parser at
+// Frontmatter for knowledge entries written into mounted store knowledge trees.
+// Fields MUST stay flat scalars to remain compatible with the hand-rolled
+// regex parser at
 // packages/server/src/services/knowledge-meta-builder.ts:748-785.
 // ---------------------------------------------------------------------------
 
