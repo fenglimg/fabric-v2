@@ -35,7 +35,7 @@ const BOOTSTRAP_REQUIRED_TOKENS = [
 // Tokens every SKILL.md MUST contain verbatim. v2.0 skills are intentionally
 // mixed bilingual (Chinese narrative + English protocol tokens) so the lint
 // enforces only the load-bearing English anchors, not section structure.
-const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER", ".fabric/knowledge/"];
+const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER", "knowledge/pending"];
 
 // Per-skill MCP tool that the skill wires up. Keyed by the parent directory
 // name under templates/skills/. Each entry MUST name the MCP tool(s) that
@@ -83,7 +83,6 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
 const REGISTRY_REQUIRED_TOKENS = [
   ...BOOTSTRAP_REQUIRED_TOKENS,
   ...SKILL_REQUIRED_TOKENS,
-  ".fabric/agents.meta.json",
   "fab_extract_knowledge",
   "fab_review",
   "relevance_scope",

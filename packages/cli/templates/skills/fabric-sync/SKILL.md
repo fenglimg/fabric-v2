@@ -26,7 +26,7 @@ description: 多 store git 同步辅助 — 遍历挂载的知识 store, pull --
 ## Phase 2 — AI-assisted conflict resolution (仅冲突时)
 
 冲突 store 的工作区停在 rebase 中途。辅助用户：
-1. 展示冲突文件 (store 知识树 `.fabric/knowledge/<type>/*.md` 中的 `<<<<<<<`/`=======`/`>>>>>>>` 段)。
+1. 展示冲突文件 (store 知识树 `knowledge/<type>/*.md` 中的 `<<<<<<<`/`=======`/`>>>>>>>` 段)。
 2. 对每个冲突，MUST 解释两侧 (ours = 本地草稿/晋升, theirs = 远端协作者) 并给出**合并建议**（知识条目通常可并存或取更成熟 maturity）。NEVER 擅自丢弃任一侧未经用户确认。
 3. 用户解决后 → `fabric sync --continue` (git rebase --continue + 恢复遍历剩余 store)。
 4. 用户选择放弃该 store → `fabric sync --abort` (git rebase --abort，该 store 留未同步，继续遍历其余)。

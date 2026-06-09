@@ -16,10 +16,9 @@ export const PROTECTED_TOKENS = [
   "AGENTS.md",
   ".fabric/agents/",
   ".fabric/agents/_cross/",
-  ".fabric/agents.meta.json",
   ".fabric/human-lock.json",
   ".fabric/events.jsonl",
-  ".fabric/knowledge/",
+  "knowledge/pending",
   // Event types templates reference verbatim
   "knowledge_proposed",
   // fabric-archive Phase 1.5 contract surface (rc.9 — bare `scope` was renamed)

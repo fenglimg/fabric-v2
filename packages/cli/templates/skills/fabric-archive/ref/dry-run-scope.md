@@ -4,7 +4,7 @@
 
 | Write operation | Normal mode | Dry-run mode |
 |---|---|---|
-| `fab_extract_knowledge` MCP call (Phase 4) | One call per confirmed candidate, writes to `.fabric/knowledge/pending/<slug>.md` | SKIPPED. Phase 4 renders "would write N pending entries" preview table instead. |
+| `fab_extract_knowledge` MCP call (Phase 4) | One call per confirmed candidate, writes to `knowledge/pending/<slug>.md` | SKIPPED. Phase 4 renders "would write N pending entries" preview table instead. |
 | `session_archive_attempted` event (Phase 4.5) | Appended to `.fabric/events.jsonl` for every session in scope | SKIPPED entirely. No ledger entry. |
 | `fab_review reject` (Phase 3 user-dismissed branch) | Invoked when user types `撤销` / `reject` after self-archive proposal | SKIPPED. The dismissal is rendered to console but no MCP write occurs. |
 | `fabric onboard-coverage` slot writes (Phase 1.5 fill-all / dismiss-all) | Each `Bash("fabric config dismiss-slot <slot>")` invocation runs | SKIPPED. Slot decisions are shown as "would dismiss/propose" preview. |

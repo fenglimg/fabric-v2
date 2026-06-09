@@ -36,7 +36,7 @@ These force the gate to FAIL **unless** an archive signal also fires (i.e. anti-
 1. **Typo-only edits** — the entire session is whitespace / spelling / formatting changes. No semantic content to archive.
 2. **Pure refactor** — rename / move / extract with no behavior change AND no naming convention being established.
 3. **Narrow rename request** — user asked to rename one symbol / file with no rationale. Zero generalization potential.
-4. **Duplicate of existing canonical** — v2.0.0-rc.37 NEW-4: this check is now **mandatory** (was "do a quick Glob before deciding"). Pre-PASS MUST step: for each candidate, `Glob('.fabric/knowledge/**/*.md')` keyed on slug-stem. If duplicate found → drop candidate. Silently writing a near-duplicate is the highest-noise failure mode and dwarfs the cost of one extra glob per candidate.
+4. **Duplicate of existing canonical** — v2.0.0-rc.37 NEW-4: this check is now **mandatory** (was "do a quick Glob before deciding"). Pre-PASS MUST step: for each candidate, call `fab_review action="search"` scoped by type/slug keywords so the MCP read path searches mounted stores. If duplicate found → drop candidate. Silently writing a near-duplicate is the highest-noise failure mode.
 
 ## Gate-FAIL user messages (E2 / E4 only)
 

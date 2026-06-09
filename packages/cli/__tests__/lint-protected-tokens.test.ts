@@ -18,7 +18,7 @@ description: Archive worth-keeping knowledge from the current session.
 ## Phase 2 — Persist
 
 For each user-confirmed candidate, call \`fab_extract_knowledge\` ONCE.
-The pending file lands under \`.fabric/knowledge/pending/\` (\`pending_path\` in response).
+The pending file lands under \`knowledge/pending/\` (\`pending_path\` in response).
 Each call carries \`relevance_scope\`, \`relevance_paths\`, \`source_sessions\` array,
 \`proposed_reason\` enum, and a multi-line \`session_context\` per Phase 1.5 / T6.
 
@@ -74,7 +74,7 @@ describe("validateSkillFile", () => {
   it("flags a missing per-skill MCP tool token (fabric-review must mention fab_review)", () => {
     const filePath = "/tmp/skills/fabric-review/SKILL.md";
     // Source missing fab_review entirely.
-    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters.`;
+    const source = `MUST do things. NEVER skip. knowledge/pending matters.`;
     expect(validateSkillFile(filePath, source)).toContainEqual({
       filePath,
       message: "template is missing protected token fab_review",
@@ -85,7 +85,7 @@ describe("validateSkillFile", () => {
     const filePath = "/tmp/skills/fabric-archive/SKILL.md";
     // Has the universal anchors + fab_extract_knowledge, but lacks the
     // Phase 1.5 contract surface that fabric-archive must pin verbatim.
-    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_extract_knowledge call.`;
+    const source = `MUST do things. NEVER skip. knowledge/pending matters. fab_extract_knowledge call.`;
     const violations = validateSkillFile(filePath, source);
     expect(violations).toContainEqual({
       filePath,
@@ -106,7 +106,7 @@ describe("validateSkillFile", () => {
 
   it("flags fabric-archive missing T5/T6 + layer-enum tokens (TASK-008 D1)", () => {
     const filePath = "/tmp/skills/fabric-archive/SKILL.md";
-    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_extract_knowledge call. relevance_scope. relevance_paths.`;
+    const source = `MUST do things. NEVER skip. knowledge/pending matters. fab_extract_knowledge call. relevance_scope. relevance_paths.`;
     const violations = validateSkillFile(filePath, source);
     for (const token of [
       "pending_path",
@@ -127,7 +127,7 @@ describe("validateSkillFile", () => {
 
   it("flags fabric-import missing T5/T6 contract tokens (TASK-008 D1)", () => {
     const filePath = "/tmp/skills/fabric-import/SKILL.md";
-    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_extract_knowledge call. fab_review call.`;
+    const source = `MUST do things. NEVER skip. knowledge/pending matters. fab_extract_knowledge call. fab_review call.`;
     const violations = validateSkillFile(filePath, source);
     for (const token of [
       "proposed_reason",
@@ -143,7 +143,7 @@ describe("validateSkillFile", () => {
 
   it("flags fabric-review missing scope-enum + T6 tokens (TASK-008 D1)", () => {
     const filePath = "/tmp/skills/fabric-review/SKILL.md";
-    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_review call.`;
+    const source = `MUST do things. NEVER skip. knowledge/pending matters. fab_review call.`;
     const violations = validateSkillFile(filePath, source);
     for (const token of [
       "relevance_scope",
@@ -163,7 +163,7 @@ describe("validateSkillFile", () => {
 
   it("only enforces universal SKILL tokens for unknown skill directories", () => {
     const filePath = "/tmp/skills/unknown-skill/SKILL.md";
-    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters.`;
+    const source = `MUST do things. NEVER skip. knowledge/pending matters.`;
     expect(validateSkillFile(filePath, source)).toEqual([]);
   });
 });

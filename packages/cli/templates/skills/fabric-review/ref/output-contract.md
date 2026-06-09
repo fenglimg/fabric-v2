@@ -44,7 +44,7 @@ After each invocation, the skill MUST produce a brief roll-up to the user. UX i1
 - knowledge_deferred ×D
 ```
 
-Also surface a one-line `git status` of `.fabric/knowledge/` so the user sees the file moves caused by approve / layer-flip.
+Also surface the target store alias/UUID for every mutation so the user can inspect that store repo's `git status` when needed.
 
 ## events.jsonl Constraint Note
 

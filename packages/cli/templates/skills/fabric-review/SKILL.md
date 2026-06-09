@@ -1,6 +1,6 @@
 ---
 name: fabric-review
-description: 审 .fabric/knowledge pending+canonical (NOT PR review):approve/reject/modify/revisit/defer。Triggers 审批/驳回/复审/重审/approve/reject/review pending.
+description: 审 mounted store knowledge pending+canonical (NOT PR review):approve/reject/modify/revisit/defer。Triggers 审批/驳回/复审/重审/approve/reject/review pending.
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 
@@ -25,7 +25,7 @@ This skill is `Infer-not-Ask` for mode and `Ask-when-genuine` for per-item actio
 - Per-item action (approve / reject / modify / defer) IS surfaced via AskUserQuestion — the user must judge
 - Layer-flip target (team vs personal) IS surfaced via AskUserQuestion when modify includes layer change
 
-Required preconditions before any `fab_review` call: `.fabric/` exists (or `~/.fabric/` for personal layer); `mcp__fabric__fab_review` MCP tool registered; `.fabric/agents.meta.json` present (id allocator reads it on approve); `.fabric/events.jsonl` exists (tolerate ENOENT — empty ledger normal first-run).
+Required preconditions before any `fab_review` call: `.fabric/` exists; `mcp__fabric__fab_review` MCP tool registered; a write store is resolved for mutations; `.fabric/events.jsonl` exists (tolerate ENOENT — empty ledger normal first-run).
 
 ### Config Load
 
@@ -59,7 +59,7 @@ Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emi
 
 The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc.37 NEW-12 simplified 4 → 2):
 
-- **`pending`** — triage the write-side backlog (`.fabric/knowledge/pending/`): approve / reject / modify / defer per item. The dominant entry point.
+- **`pending`** — triage the write-side backlog (`knowledge/pending/`): approve / reject / modify / defer per item. The dominant entry point.
 - **`maintain`** — sustain the EXISTING canonical KB: browse by topic (search), survey staleness/health, or revisit a specific entry. Merges the legacy `topic` + `health` + `revisit` modes — they are all "operate on already-canonical knowledge", distinct from triaging new drafts.
 
 ### 2-Step Inference Algorithm
@@ -73,7 +73,7 @@ The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc
 
 A `maintain`-row match → lock `maintain`. A `pending`-row match (or 0/ambiguous) → fall to Step 2.
 
-**Step 2 — Backlog default.** Glob `.fabric/knowledge/pending/**/*.md`:
+**Step 2 — Backlog default.** Call `fab_review action="list"`:
 
 - Count ≥ `review_hint_pending_count` (default 10) OR oldest mtime > `review_hint_pending_age_days` (default 7) → `pending` (overflow, same threshold as Stop-hook).
 - Otherwise → default `pending` (most common review entry point).
@@ -179,7 +179,7 @@ Pending entry presented for review
 
 ## Output Contract & events.jsonl Constraint (ref-only)
 
-After each invocation, produce a bilingual `# Review Summary` (en) / `# Review 汇总` (zh-CN) roll-up: listed/approved/rejected/modified/deferred/skipped counts + new stable_ids + tail of `.fabric/events.jsonl` events (`knowledge_promote_started`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_rejected`, `knowledge_deferred`). Also surface `git status` of `.fabric/knowledge/` so file moves are visible.
+After each invocation, produce a bilingual `# Review Summary` (en) / `# Review 汇总` (zh-CN) roll-up: listed/approved/rejected/modified/deferred/skipped counts + new stable_ids + tail of `.fabric/events.jsonl` events (`knowledge_promote_started`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_rejected`, `knowledge_deferred`). Also surface the target store alias/UUID for any mutation so file moves are attributable to the right store repo.
 
 events.jsonl appends MUST stay single-line + ≤4KB (POSIX `PIPE_BUF` atomicity).
 
