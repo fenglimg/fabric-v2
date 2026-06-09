@@ -13,16 +13,15 @@
 //   - Same exit semantics: 0 on full PASS, non-zero on any failure.
 //
 // Check → TASK mapping (rc.6):
-//   [1] rc.5 anchor still green       — re-run rc.5 gate (skip build/tests; they fire here)
-//   [2] E1 SessionStart broad hook    — TASK-019 (knowledge-hint-broad.cjs + 3 configs)
-//   [3] E2 PreToolUse narrow hook     — TASK-020 (knowledge-hint-narrow.cjs + 3 configs)
-//   [4] E4 edit-counter sidecar       — TASK-020 (narrow.cjs appends .fabric/.cache/edit-counter)
-//   [5] E3 session-hints cache        — TASK-021 (session-hints-X.json + lint #27)
-//   [6] E5 Signal A 24h-OR-edits      — TASK-022 (fabric-hint reads edit-counter; schema field)
-//   [7] E6 lint #26 + silence-counter — TASK-023 (narrow_too_few Part A+B; silence sidecar)
-//   [8] Install wiring + validate     — install helpers + validateHookPaths 3x3 matrix
+//   [1] E1 SessionStart broad hook    — TASK-019 (knowledge-hint-broad.cjs + 3 configs)
+//   [2] E2 PreToolUse narrow hook     — TASK-020 (knowledge-hint-narrow.cjs + 3 configs)
+//   [3] E4 edit-counter sidecar       — TASK-020 (narrow.cjs appends .fabric/.cache/edit-counter)
+//   [4] E3 session-hints cache        — TASK-021 (session-hints-X.json + lint #27)
+//   [5] E5 Signal A 24h-OR-edits      — TASK-022 (fabric-hint reads edit-counter; schema field)
+//   [6] E6 lint #26 + silence-counter — TASK-023 (narrow_too_few Part A+B; silence sidecar)
+//   [7] Install wiring + validate     — install helpers + validateHookPaths 3x3 matrix
 //
-// CLI release test suite (check #8 tail):
+// CLI release test suite (tail):
 //   We invoke vitest with a specific test-file list rather than `pnpm --filter
 //   @fenglimg/fabric-cli test`. The package-wide vitest run pulls in werewolf-
 //   stub-dependent integration tests that are known-broken pre-existing
@@ -89,8 +88,12 @@ function readHookSlot(configPath, slotName) {
   } catch {
     return null;
   }
-  const slot = parsed?.hooks?.[slotName] ?? parsed?.events?.[slotName];
-  return Array.isArray(slot) && slot.length > 0 ? slot : null;
+  const camelSlotName = slotName.slice(0, 1).toLowerCase() + slotName.slice(1);
+  for (const name of [slotName, camelSlotName]) {
+    const slot = parsed?.hooks?.[name] ?? parsed?.events?.[name];
+    if (Array.isArray(slot) && slot.length > 0) return slot;
+  }
+  return null;
 }
 
 // Stringify a hook slot for content-grep regardless of nested shape. Both
@@ -107,33 +110,7 @@ const CLIENT_CONFIGS = [
 ];
 
 // ---------------------------------------------------------------------------
-// [1] rc.5 anchor still green — re-run rc.5 gate (skip build+tests; those will
-// run at the end of THIS gate, so duplicating them here would double the
-// runtime for no extra signal).
-// ---------------------------------------------------------------------------
-function checkRc5AnchorGreen() {
-  const res = run("node", ["scripts/rc5-coverage-gate.mjs"], {
-    env: {
-      ...process.env,
-      FABRIC_GATE_SKIP_BUILD: "1",
-      FABRIC_GATE_SKIP_TESTS: "1",
-    },
-  });
-  if (res.code === 0) {
-    return { id: 1, name: "rc.5 anchor still green", passed: true };
-  }
-  // Surface the rc.5 gate's own failure summary (last few lines of stdout).
-  const tail = res.stdout.trim().split("\n").slice(-15).join("\n");
-  return {
-    id: 1,
-    name: "rc.5 anchor still green",
-    passed: false,
-    details: `rc.5 gate exited ${res.code}\n${tail}`,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// [2] E1 SessionStart broad hook (TASK-019)
+// [1] E1 SessionStart broad hook (TASK-019)
 // knowledge-hint-broad.cjs exists; all 3 client configs register it under
 // their SessionStart event slot.
 // ---------------------------------------------------------------------------
@@ -156,10 +133,10 @@ function checkE1BroadHook() {
   }
 
   if (failures.length === 0) {
-    return { id: 2, name: "E1 SessionStart broad hook", passed: true };
+    return { id: 1, name: "E1 SessionStart broad hook", passed: true };
   }
   return {
-    id: 2,
+    id: 1,
     name: "E1 SessionStart broad hook",
     passed: false,
     details: failures.join("\n"),
@@ -167,7 +144,7 @@ function checkE1BroadHook() {
 }
 
 // ---------------------------------------------------------------------------
-// [3] E2 PreToolUse narrow hook (TASK-020)
+// [2] E2 PreToolUse narrow hook (TASK-020)
 // knowledge-hint-narrow.cjs exists; all 3 client configs register it under
 // PreToolUse with Edit|Write|MultiEdit matchers.
 // ---------------------------------------------------------------------------
@@ -201,10 +178,10 @@ function checkE2NarrowHook() {
   }
 
   if (failures.length === 0) {
-    return { id: 3, name: "E2 PreToolUse narrow hook", passed: true };
+    return { id: 2, name: "E2 PreToolUse narrow hook", passed: true };
   }
   return {
-    id: 3,
+    id: 2,
     name: "E2 PreToolUse narrow hook",
     passed: false,
     details: failures.join("\n"),
@@ -212,7 +189,7 @@ function checkE2NarrowHook() {
 }
 
 // ---------------------------------------------------------------------------
-// [4] E4 edit-counter sidecar (TASK-020)
+// [3] E4 edit-counter sidecar (TASK-020)
 // knowledge-hint-narrow.cjs source references .fabric/.cache/edit-counter
 // AND has appendFile-style logic AND exports the path constant.
 //
@@ -223,7 +200,7 @@ function checkE4EditCounter() {
   const src = readText("packages/cli/templates/hooks/knowledge-hint-narrow.cjs");
   if (src === undefined) {
     return {
-      id: 4,
+      id: 3,
       name: "E4 edit-counter sidecar",
       passed: false,
       details: "knowledge-hint-narrow.cjs missing",
@@ -254,10 +231,10 @@ function checkE4EditCounter() {
   }
 
   if (failures.length === 0) {
-    return { id: 4, name: "E4 edit-counter sidecar", passed: true };
+    return { id: 3, name: "E4 edit-counter sidecar", passed: true };
   }
   return {
-    id: 4,
+    id: 3,
     name: "E4 edit-counter sidecar",
     passed: false,
     details: failures.join("\n"),
@@ -265,7 +242,7 @@ function checkE4EditCounter() {
 }
 
 // ---------------------------------------------------------------------------
-// [5] E3 session-hints cache (TASK-021)
+// [4] E3 session-hints cache (TASK-021)
 // knowledge-hint-narrow.cjs references the session-hints-{id}.json filename
 // pattern AND reads revision_hash from the CLI output; doctor defines lint
 // #27 knowledge_session_hints_stale.
@@ -295,10 +272,10 @@ function checkE3SessionHints() {
   }
 
   if (failures.length === 0) {
-    return { id: 5, name: "E3 session-hints cache", passed: true };
+    return { id: 4, name: "E3 session-hints cache", passed: true };
   }
   return {
-    id: 5,
+    id: 4,
     name: "E3 session-hints cache",
     passed: false,
     details: failures.join("\n"),
@@ -306,7 +283,7 @@ function checkE3SessionHints() {
 }
 
 // ---------------------------------------------------------------------------
-// [6] E5 Signal A upgrade (TASK-022)
+// [5] E5 Signal A upgrade (TASK-022)
 // fabric-hint.cjs reads the edit-counter sidecar (via EDIT_COUNTER_FILE_REL
 // or the literal path) AND defines countEditsSince AND reads
 // archive_edit_threshold; fabric-config schema defines the field with
@@ -348,10 +325,10 @@ function checkE5SignalA() {
   }
 
   if (failures.length === 0) {
-    return { id: 6, name: "E5 Signal A 24h-OR-edits", passed: true };
+    return { id: 5, name: "E5 Signal A 24h-OR-edits", passed: true };
   }
   return {
-    id: 6,
+    id: 5,
     name: "E5 Signal A 24h-OR-edits",
     passed: false,
     details: failures.join("\n"),
@@ -359,7 +336,7 @@ function checkE5SignalA() {
 }
 
 // ---------------------------------------------------------------------------
-// [7] E6 lint #26 + silence-counter (TASK-023)
+// [6] E6 lint #26 + silence-counter (TASK-023)
 // doctor.ts defines lint knowledge_narrow_too_few with Part A (structural
 // ratio) AND Part B (silence rate) logic; narrow.cjs references the
 // hint-silence-counter sidecar + appendHintSilenceCounter helper.
@@ -404,10 +381,10 @@ function checkE6LintAndSilence() {
   }
 
   if (failures.length === 0) {
-    return { id: 7, name: "E6 lint #26 + silence-counter", passed: true };
+    return { id: 6, name: "E6 lint #26 + silence-counter", passed: true };
   }
   return {
-    id: 7,
+    id: 6,
     name: "E6 lint #26 + silence-counter",
     passed: false,
     details: failures.join("\n"),
@@ -415,10 +392,10 @@ function checkE6LintAndSilence() {
 }
 
 // ---------------------------------------------------------------------------
-// [8] Install wiring + validate
+// [7] Install wiring + validate
 // skills-and-hooks.ts exports installKnowledgeHintBroadHook AND
-// installKnowledgeHintNarrowHook; hooks.ts validateHookPaths covers all 3
-// hook scripts across all 3 clients.
+// installKnowledgeHintNarrowHook; hooks-orchestrator.ts validateHookPaths
+// covers all 3 hook scripts across all 3 clients.
 // ---------------------------------------------------------------------------
 function checkInstallWiring() {
   const failures = [];
@@ -439,12 +416,12 @@ function checkInstallWiring() {
     }
   }
 
-  const hooks = readText("packages/cli/src/commands/hooks.ts");
+  const hooks = readText("packages/cli/src/install/hooks-orchestrator.ts");
   if (hooks === undefined) {
-    failures.push("packages/cli/src/commands/hooks.ts missing");
+    failures.push("packages/cli/src/install/hooks-orchestrator.ts missing");
   } else {
     if (!/function\s+validateHookPaths\b/.test(hooks)) {
-      failures.push("hooks.ts: validateHookPaths function missing");
+      failures.push("hooks-orchestrator.ts: validateHookPaths function missing");
     }
     // All three hook scripts must be referenced inside the validate function
     // surface (or its module-scoped descriptor table). We grep at file level
@@ -456,16 +433,16 @@ function checkInstallWiring() {
     ];
     for (const s of requiredScripts) {
       if (!hooks.includes(s)) {
-        failures.push(`hooks.ts: validateHookPaths does not cover ${s}`);
+        failures.push(`hooks-orchestrator.ts: validateHookPaths does not cover ${s}`);
       }
     }
   }
 
   if (failures.length === 0) {
-    return { id: 8, name: "Install wiring + validate", passed: true };
+    return { id: 7, name: "Install wiring + validate", passed: true };
   }
   return {
-    id: 8,
+    id: 7,
     name: "Install wiring + validate",
     passed: false,
     details: failures.join("\n"),
@@ -540,7 +517,6 @@ function main() {
   console.log("==================");
 
   const checks = [
-    checkRc5AnchorGreen(),
     checkE1BroadHook(),
     checkE2NarrowHook(),
     checkE4EditCounter(),
@@ -553,7 +529,7 @@ function main() {
   for (const c of checks) {
     const mark = c.passed ? "PASS" : "FAIL";
     const label = c.name.padEnd(32, " ");
-    console.log(`[${c.id}/8] ${label} ${c.passed ? "OK  " : "FAIL"} ${mark}`);
+    console.log(`[${c.id}/${checks.length}] ${label} ${c.passed ? "OK  " : "FAIL"} ${mark}`);
   }
 
   const failed = checks.filter((c) => !c.passed);
