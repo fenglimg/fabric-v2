@@ -27,7 +27,7 @@ Examples:
       "failed mcp: __vite_ssr_import_meta__.resolve is not a function",
     ],
     "stdout": [
-      "installed global Fabric (uid u-5235de4f5208)",
+      "installed global Fabric (uid <uid>)",
       "Created <fixture-2>/AGENTS.md",
       "Created <fixture-2>/.fabric/events.jsonl",
       "Created <fixture-2>/.fabric/forensic.json",
@@ -102,7 +102,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "失败 mcp: __vite_ssr_import_meta__.resolve is not a function",
     ],
     "stdout": [
-      "installed global Fabric (uid u-5235de4f5208)",
+      "installed global Fabric (uid <uid>)",
       "已创建 <fixture-2>/AGENTS.md",
       "已创建 <fixture-2>/.fabric/events.jsonl",
       "已创建 <fixture-2>/.fabric/forensic.json",

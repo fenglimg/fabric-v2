@@ -151,7 +151,8 @@ function sanitizeSnapshot(value: unknown): unknown {
   const replacements = tempRoots.map((root, index) => [root, `<fixture-${index + 1}>`] as const);
 
   if (typeof value === "string") {
-    return replacements.reduce((current, [from, to]) => current.replaceAll(from, to), value);
+    const withoutTempRoots = replacements.reduce((current, [from, to]) => current.replaceAll(from, to), value);
+    return withoutTempRoots.replace(/\buid u-(?:anon|[0-9a-f]{12})\b/g, "uid <uid>");
   }
 
   if (Array.isArray(value)) {
