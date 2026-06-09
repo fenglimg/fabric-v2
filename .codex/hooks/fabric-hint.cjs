@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
+const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 
 // W1-01 (ISS-012): Stop / SessionStart hooks append to shared, non-session-scoped
@@ -103,6 +103,24 @@ function readProjectId(cwd) {
   try {
     const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
+}
+
+function readHookStatsSnapshot(cwd) {
+  if (bindingsSnapshotReader === null) {
+    return null;
+  }
+  const projectId = readProjectId(cwd);
+  if (projectId === null) {
+    return null;
+  }
+  try {
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(projectId);
+    return snapshot && snapshot.hook_stats && typeof snapshot.hook_stats === "object"
+      ? snapshot.hook_stats
+      : null;
   } catch {
     return null;
   }
@@ -267,92 +285,39 @@ function readLedger(projectRoot) {
 }
 
 /**
- * Walk <projectRoot>/.fabric/knowledge/pending/<type>/*.md across all
- * PENDING_TYPES subdirs, collecting count and oldest mtime.
- *
- * Returns { count, oldestAgeMs } where:
- *   - count: total .md file count across all type subdirs
- *   - oldestAgeMs: (nowMs - oldestMtimeMs) when count>0, else null
- *
- * ENOENT / unreadable subdir / unstat-able file → silently skipped
- * (preserves the hook's never-block-on-failure invariant).
+ * Read pending backlog stats from the CLI-pre-generated bindings snapshot.
+ * Hooks do not resolve stores and do not scan retired project-local
+ * `.fabric/knowledge/pending`; missing snapshot stats degrade to zero.
  */
 function readPendingStats(projectRoot, now) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const baseDir = join(projectRoot, FABRIC_DIR, PENDING_DIR);
-
-  let count = 0;
-  let oldestMtime = null;
-
-  if (!existsSync(baseDir)) {
+  const stats = readHookStatsSnapshot(projectRoot);
+  const pending = stats && stats.pending;
+  if (
+    !pending ||
+    typeof pending.count !== "number" ||
+    pending.count <= 0 ||
+    typeof pending.oldest_mtime_ms !== "number"
+  ) {
     return { count: 0, oldestAgeMs: null };
   }
-
-  for (const type of PENDING_TYPES) {
-    const typeDir = join(baseDir, type);
-    if (!existsSync(typeDir)) continue;
-
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.endsWith(".md")) continue;
-      const filePath = join(typeDir, entry);
-      let mtime;
-      try {
-        mtime = statSync(filePath).mtimeMs;
-      } catch {
-        continue;
-      }
-      count += 1;
-      if (oldestMtime === null || mtime < oldestMtime) {
-        oldestMtime = mtime;
-      }
-    }
-  }
-
   return {
-    count,
-    oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
+    count: pending.count,
+    oldestAgeMs: nowMs - pending.oldest_mtime_ms,
   };
 }
 
 /**
- * Count canonical knowledge entries across the five canonical type subdirs
- * (decisions / pitfalls / guidelines / models / processes). Pending entries
- * are NOT counted — they are proposals, not seeded knowledge.
- *
- * Returns the integer count. ENOENT / unreadable subdir → silently treated as
- * zero (preserves never-block-on-failure invariant). Filters on `.md` suffix
- * only; the more-precise canonical filename pattern check is owned by
- * doctor.ts (the hook is a coarse signal, not a lint).
+ * Count canonical knowledge entries from the bindings snapshot hook stats.
+ * Missing stats degrade to zero; the CLI owns store traversal.
  */
 function countCanonicalNodes(projectRoot) {
-  const knowledgeRoot = join(projectRoot, FABRIC_DIR, "knowledge");
-  if (!existsSync(knowledgeRoot)) {
+  const stats = readHookStatsSnapshot(projectRoot);
+  const canonical = stats && stats.canonical;
+  if (!canonical || typeof canonical.count !== "number") {
     return 0;
   }
-  let count = 0;
-  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
-    const typeDir = join(knowledgeRoot, type);
-    if (!existsSync(typeDir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".md")) {
-        count += 1;
-      }
-    }
-  }
-  return count;
+  return canonical.count;
 }
 
 /**
@@ -1431,6 +1396,7 @@ function tryReadStdinJson() {
   try {
     // Skip the read entirely when stdin is a TTY (interactive invocation, no
     // payload). readFileSync on fd 0 would block forever in that case.
+    if (process.env.VITEST !== undefined) return null;
     if (process.stdin.isTTY === true) return null;
     const buf = readFileSync(0, "utf8");
     if (typeof buf !== "string" || buf.trim().length === 0) return null;

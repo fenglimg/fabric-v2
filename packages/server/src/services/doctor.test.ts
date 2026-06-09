@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
@@ -15,6 +15,7 @@ import {
   STORE_LAYOUT,
   fabricConfigSchema,
   readStoreCounters,
+  reconcileStoreCounters,
   resolveGlobalRoot,
   saveGlobalConfig,
   storeRelativePath,
@@ -38,6 +39,8 @@ import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
 
 const tempRoots: string[] = [];
+const projectStoreUuids = new Map<string, string>();
+const projectPersonalStoreUuids = new Map<string, string>();
 
 // rc.4 TASK-002: doctor's read-side integrity inspections walk the personal
 // knowledge root resolved via FABRIC_HOME (or homedir fallback). To prevent
@@ -75,6 +78,8 @@ afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }
+  projectStoreUuids.clear();
+  projectPersonalStoreUuids.clear();
 });
 
 describe("runDoctorReport", () => {
@@ -96,15 +101,14 @@ describe("runDoctorReport", () => {
       hard_bytes: 65536,
       source: "default",
     });
-    // v2.0: bootstrap_anchor_missing replaces bootstrap_missing; knowledge_dir_missing
-    // replaces taxonomy_missing.
+    // v2.2 store-only cutover: project-local knowledge_dir_missing is retired;
+    // mounted stores own knowledge layout.
     // v2.2 W5 R4 (agents.meta decolo): `agents_meta_missing` /
     // `knowledge_test_index_missing` fixable errors and the
     // `content_refs_unavailable` manual error are retired — they were raised by
     // the co-location agents.meta.json checks.
     expect(report.fixable_errors.map((issue) => issue.code)).toEqual([
       "bootstrap_anchor_missing",
-      "knowledge_dir_missing",
       "event_ledger_missing",
     ]);
     // v2.0 follow-up: `init_context_missing` removed from doctor — that
@@ -161,9 +165,6 @@ describe("runDoctorReport", () => {
       // (snapshot+rules ↔ three-end blocks).
       "Bootstrap snapshot drift",
       "Managed block drift",
-      "Knowledge layout",
-      // rc.22 TASK-006: baseline filename format — sits adjacent to the
-      // Knowledge layout check (both are knowledge-layout invariants).
       "Baseline filename format",
       "Scan evidence",
       // v2.2 W5 R4 (agents.meta decolo): "Agents metadata" / "Rule content refs"
@@ -255,11 +256,11 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    // v2.2 W5 R4 (agents.meta decolo): 54 → 48. Removed 6 co-location checks
+    // v2.2 W5 R4 (agents.meta decolo): 54 → 47. Removed co-location checks
     // (Agents metadata / Rule content refs / Knowledge-test index / Meta manual
     // divergence / Knowledge dir unindexed / Knowledge index drift); "Knowledge
     // counter desync" renamed to "Store counter drift" (net -6).
-    expect(report.checks).toHaveLength(48);
+    expect(report.checks).toHaveLength(47);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -936,8 +937,8 @@ describe("runDoctorReport", () => {
     const check = report.checks.find((c) => c.name === "Stable ID collision");
     expect(check?.status).toBe("warn");
     expect(check?.message).toContain("KT-DEC-0001");
-    expect(check?.message).toContain(".fabric/knowledge/decisions/a.md");
-    expect(check?.message).toContain(".fabric/knowledge/decisions/b.md");
+    expect(check?.message).toContain("team:knowledge/decisions/a.md");
+    expect(check?.message).toContain("team:knowledge/decisions/b.md");
   });
 
   it("TASK-031: stable_id_collision not reported when all stable_ids are unique", async () => {
@@ -1019,22 +1020,21 @@ describe("runDoctorReport", () => {
   // v2.0 — TASK-006: 4 v1.x-coupled checks renamed + 1 new visibility check
   // -------------------------------------------------------------------------
 
-  it("v2.0 / knowledge_dir_missing: fixable_error when any required subdir is absent", async () => {
+  it("v2.2 / retired local knowledge dirs: missing project subdirs are ignored", async () => {
     const target = createInitializedProject("doctor-knowledge-missing-detect");
     await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Remove a single required subdir to trigger the check.
+    // Retired local co-location dirs no longer participate in doctor health.
     rmSync(join(target, ".fabric", "knowledge", "pending"), { recursive: true, force: true });
 
     const report = await runDoctorReport(target);
     const codes = report.fixable_errors.map((e) => e.code);
-    expect(codes).toContain("knowledge_dir_missing");
-    const issue = report.fixable_errors.find((e) => e.code === "knowledge_dir_missing");
-    expect(issue?.message).toContain(".fabric/knowledge/pending");
+    expect(codes).not.toContain("knowledge_dir_missing");
+    expect(report.checks.find((c) => c.code === "knowledge_dir_missing")).toBeUndefined();
   });
 
-  it("v2.0 / knowledge_dir_missing: --fix creates the missing subdirs (mkdir recursive)", async () => {
+  it("v2.2 / retired local knowledge dirs: --fix does not recreate project subdirs", async () => {
     const target = createInitializedProject("doctor-knowledge-missing-fix");
     await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
@@ -1045,10 +1045,10 @@ describe("runDoctorReport", () => {
     const fix = await runDoctorFix(target);
     const after = await runDoctorReport(target);
 
-    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_missing");
+    expect(fix.fixed.map((e) => e.code)).not.toContain("knowledge_dir_missing");
     expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_missing");
     for (const sub of ["pending", "guidelines"]) {
-      expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(true);
+      expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(false);
     }
   });
 
@@ -1227,8 +1227,8 @@ describe("runDoctorReport", () => {
     expect(report.warnings.map((w) => w.code)).toContain("stable_id_collision");
     const check = report.checks.find((c) => c.name === "Stable ID collision");
     expect(check?.message).toContain("KT-DEC-0001");
-    expect(check?.message).toContain(".fabric/knowledge/decisions/a.md");
-    expect(check?.message).toContain(".fabric/knowledge/decisions/b.md");
+    expect(check?.message).toContain("team:knowledge/decisions/a.md");
+    expect(check?.message).toContain("team:knowledge/decisions/b.md");
   });
 
   // rc.3 TASK-005: filesystem-edit fallback — synthesize knowledge_promoted
@@ -1705,7 +1705,7 @@ describe("runDoctorReport", () => {
       writeFile(".fabric/events.jsonl", "", target);
       // Remove the seeded server.md so there are no canonical entries with frontmatter.
       const { rmSync: nodeRmSync } = await import("node:fs");
-      nodeRmSync(join(target, ".fabric", "knowledge", "decisions", "server.md"), { force: true });
+      nodeRmSync(knowledgeFixturePath(target, ".fabric/knowledge/decisions/server.md"), { force: true });
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
@@ -1752,7 +1752,7 @@ describe("runDoctorReport", () => {
       expect(check?.code).toBe("knowledge_stale_archive_required");
       expect(check?.status).toBe("warn");
       expect(check?.message).toContain("KT-DEC-1010");
-      expect(check?.message).toContain(".fabric/.archive/decisions/KT-DEC-1010--very-stale-draft.md");
+      expect(check?.message).toContain("team:.archive/decisions/KT-DEC-1010--very-stale-draft.md");
     });
 
     it("stale_archive: skips draft entry that is only barely past demote threshold", async () => {
@@ -1809,7 +1809,7 @@ describe("runDoctorReport", () => {
       expect(check?.kind).toBe("warning");
       expect(check?.code).toBe("knowledge_pending_overdue");
       expect(check?.status).toBe("warn");
-      expect(check?.message).toContain(".fabric/knowledge/pending/decisions/proposal.md");
+      expect(check?.message).toContain("team:knowledge/pending/decisions/proposal.md");
     });
 
     it("pending_overdue: skips recent pending entry (<14d)", async () => {
@@ -1870,15 +1870,15 @@ describe("runDoctorReport", () => {
         .split("\n")
         .filter((line) => line.trim().length > 0).length;
       const beforeOrphan = readFileSync(
-        join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2001--orphan-stable.md"),
+        knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-2001--orphan-stable.md"),
         "utf8",
       );
       const beforeStale = readFileSync(
-        join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2002--very-stale-draft.md"),
+        knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-2002--very-stale-draft.md"),
         "utf8",
       );
       const beforePending = readFileSync(
-        join(target, ".fabric", "knowledge", "pending", "decisions", "old-proposal.md"),
+        knowledgeFixturePath(target, ".fabric/knowledge/pending/decisions/old-proposal.md"),
         "utf8",
       );
 
@@ -1905,19 +1905,19 @@ describe("runDoctorReport", () => {
       // Canonical + pending file contents are byte-identical to the pre-run snapshot.
       expect(
         readFileSync(
-          join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2001--orphan-stable.md"),
+          knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-2001--orphan-stable.md"),
           "utf8",
         ),
       ).toBe(beforeOrphan);
       expect(
         readFileSync(
-          join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2002--very-stale-draft.md"),
+          knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-2002--very-stale-draft.md"),
           "utf8",
         ),
       ).toBe(beforeStale);
       expect(
         readFileSync(
-          join(target, ".fabric", "knowledge", "pending", "decisions", "old-proposal.md"),
+          knowledgeFixturePath(target, ".fabric/knowledge/pending/decisions/old-proposal.md"),
           "utf8",
         ),
       ).toBe(beforePending);
@@ -1945,16 +1945,14 @@ describe("runDoctorReport", () => {
       );
     }
 
-    function seedPersonalCanonical(filename: string, type: string): void {
-      // Drop a canonical file into the FABRIC_HOME-rooted personal tree.
-      const personalRoot = join(process.env.FABRIC_HOME!, ".fabric", "knowledge", type);
-      mkdirSync(personalRoot, { recursive: true });
+    function seedPersonalCanonical(target: string, filename: string, type: string): void {
+      // Drop a canonical file into the mounted personal store.
       const stableId = filename.split("--")[0];
       const slug = filename.split("--")[1]?.replace(/\.md$/u, "") ?? "untitled";
-      writeFileSync(
-        join(personalRoot, filename),
+      writePersonalKnowledgeFile(
+        target,
+        `${type}/${filename}`,
         `---\nid: ${stableId}\nslug: ${slug}\nmaturity: stable\nlayer: personal\n---\n# stub\n`,
-        "utf8",
       );
     }
 
@@ -1990,8 +1988,8 @@ describe("runDoctorReport", () => {
       expect(check?.kind).toBe("manual_error");
       expect(check?.code).toBe("knowledge_stable_id_duplicate");
       expect(check?.message).toContain("KT-DEC-0007");
-      expect(check?.message).toContain(".fabric/knowledge/decisions/KT-DEC-0007--alpha.md");
-      expect(check?.message).toContain(".fabric/knowledge/pitfalls/KT-DEC-0007--beta.md");
+      expect(check?.message).toContain("team:knowledge/decisions/KT-DEC-0007--alpha.md");
+      expect(check?.message).toContain("team:knowledge/pitfalls/KT-DEC-0007--beta.md");
       expect(report.manual_errors.map((e) => e.code)).toContain("knowledge_stable_id_duplicate");
     });
 
@@ -2022,7 +2020,7 @@ describe("runDoctorReport", () => {
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--team-aligned.md");
-      seedPersonalCanonical("KP-DEC-0001--personal-aligned.md", "decisions");
+      seedPersonalCanonical(target, "KP-DEC-0001--personal-aligned.md", "decisions");
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
@@ -2035,7 +2033,7 @@ describe("runDoctorReport", () => {
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
-      seedPersonalCanonical("KT-DEC-0042--wrongly-personal.md", "decisions");
+      seedPersonalCanonical(target, "KT-DEC-0042--wrongly-personal.md", "decisions");
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
@@ -2069,7 +2067,7 @@ describe("runDoctorReport", () => {
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KP-DEC-0010--kp-in-team.md");
-      seedPersonalCanonical("KT-DEC-0011--kt-in-personal.md", "decisions");
+      seedPersonalCanonical(target, "KT-DEC-0011--kt-in-personal.md", "decisions");
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
@@ -2179,12 +2177,10 @@ describe("runDoctorReport", () => {
   // project and proposes pending entries with `onboard_slot: <slot>` set.
   describe("rc.23 TASK-014: Onboard coverage advisory", () => {
     function seedOnboardEntry(target: string, type: string, filename: string, slot: string): void {
-      const dir = join(target, ".fabric", "knowledge", type);
-      mkdirSync(dir, { recursive: true });
       const id = filename.split("--")[0] ?? filename.replace(/\.md$/u, "");
       const body =
         `---\nid: ${id}\ntype: ${type}\nonboard_slot: ${slot}\n---\n\n# stub\n`;
-      writeFileSync(join(dir, filename), body, "utf8");
+      writeFile(`.fabric/knowledge/${type}/${filename}`, body, target);
     }
 
     it("emits info advisory listing missing slots when KB is empty", async () => {
@@ -2322,7 +2318,7 @@ describe("runDoctorReport", () => {
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1101--ancient-stable.md";
       seedCanonical(target, filePath, "KT-DEC-1101", "stable", 95);
 
-      const beforeSource = readFileSync(join(target, filePath), "utf8");
+      const beforeSource = readFileSync(knowledgeFixturePath(target, filePath), "utf8");
       expect(beforeSource).toContain("maturity: stable");
 
       const result = await runApplyLint(target);
@@ -2333,7 +2329,7 @@ describe("runDoctorReport", () => {
       expect(orphanMutation?.applied).toBe(true);
       expect(orphanMutation?.detail).toBe("stable -> endorsed");
 
-      const afterSource = readFileSync(join(target, filePath), "utf8");
+      const afterSource = readFileSync(knowledgeFixturePath(target, filePath), "utf8");
       expect(afterSource).toContain("maturity: endorsed");
       expect(afterSource).not.toContain("maturity: stable");
       // Round-trip preservation: id / created_at / type / layer fields are
@@ -2355,7 +2351,7 @@ describe("runDoctorReport", () => {
       expect(result.aborted).toBe(false);
       expect(result.mutations.find((m) => m.kind === "knowledge_orphan_demote_required")?.applied).toBe(true);
 
-      const afterSource = readFileSync(join(target, filePath), "utf8");
+      const afterSource = readFileSync(knowledgeFixturePath(target, filePath), "utf8");
       expect(afterSource).toContain("maturity: draft");
     });
 
@@ -2392,7 +2388,7 @@ describe("runDoctorReport", () => {
         result.mutations.find((m) => m.kind === "knowledge_orphan_demote_required")?.applied,
       ).toBe(true);
 
-      const afterSource = readFileSync(join(target, filePath), "utf8");
+      const afterSource = readFileSync(knowledgeFixturePath(target, filePath), "utf8");
       expect(afterSource).toContain("maturity: verified");
       expect(afterSource).not.toContain("maturity: proven");
       expect(afterSource).not.toContain("maturity: endorsed"); // never a legacy value in a canonical file
@@ -2439,8 +2435,8 @@ describe("runDoctorReport", () => {
       const archivePath = ".fabric/.archive/decisions/KT-DEC-1110--very-stale-draft.md";
       seedCanonical(target, filePath, "KT-DEC-1110", "draft", 110);
 
-      expect(existsSync(join(target, filePath))).toBe(true);
-      expect(existsSync(join(target, archivePath))).toBe(false);
+      expect(existsSync(knowledgeFixturePath(target, filePath))).toBe(true);
+      expect(existsSync(knowledgeFixturePath(target, archivePath))).toBe(false);
 
       const result = await runApplyLint(target);
       expect(result.aborted).toBe(false);
@@ -2449,9 +2445,9 @@ describe("runDoctorReport", () => {
       );
       expect(archiveMutation?.applied).toBe(true);
 
-      expect(existsSync(join(target, filePath))).toBe(false);
-      expect(existsSync(join(target, archivePath))).toBe(true);
-      const archived = readFileSync(join(target, archivePath), "utf8");
+      expect(existsSync(knowledgeFixturePath(target, filePath))).toBe(false);
+      expect(existsSync(knowledgeFixturePath(target, archivePath))).toBe(true);
+      const archived = readFileSync(knowledgeFixturePath(target, archivePath), "utf8");
       expect(archived).toContain("id: KT-DEC-1110");
     });
 
@@ -2478,7 +2474,7 @@ describe("runDoctorReport", () => {
       }
       expect(archivedEvent.stable_id).toBe("KT-DEC-1111");
       expect(archivedEvent.reason).toContain("lint:stale_archive");
-      expect(archivedEvent.reason).toContain(".fabric/.archive/decisions/");
+      expect(archivedEvent.reason).toContain("team:.archive/decisions/");
     });
 
     // v2.2 W5 R4 (agents.meta decolo): the two apply-lint index_drift tests
@@ -2514,7 +2510,7 @@ describe("runDoctorReport", () => {
       );
 
       const beforeSource = readFileSync(
-        join(target, ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md"),
+        knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md"),
         "utf8",
       );
 
@@ -2528,7 +2524,7 @@ describe("runDoctorReport", () => {
       // Orphan-demote candidate must remain UNTOUCHED — apply-lint refuses to
       // mutate when integrity is in question.
       const afterSource = readFileSync(
-        join(target, ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md"),
+        knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md"),
         "utf8",
       );
       expect(afterSource).toBe(beforeSource);
@@ -2575,7 +2571,7 @@ describe("runDoctorReport", () => {
       const pendingRel = ".fabric/knowledge/pending/decisions/old-proposal.md";
       writeFile(pendingRel, fmPending, target);
 
-      const beforeSource = readFileSync(join(target, pendingRel), "utf8");
+      const beforeSource = readFileSync(knowledgeFixturePath(target, pendingRel), "utf8");
 
       const result = await runApplyLint(target);
       expect(result.aborted).toBe(false);
@@ -2591,8 +2587,8 @@ describe("runDoctorReport", () => {
       ).toBeUndefined();
 
       // File unchanged, still in pending/.
-      expect(existsSync(join(target, pendingRel))).toBe(true);
-      expect(readFileSync(join(target, pendingRel), "utf8")).toBe(beforeSource);
+      expect(existsSync(knowledgeFixturePath(target, pendingRel))).toBe(true);
+      expect(readFileSync(knowledgeFixturePath(target, pendingRel), "utf8")).toBe(beforeSource);
     });
 
     // rc.5 TASK-009 (B2): pending auto-archive (>30d). Covers stale-pending
@@ -2619,10 +2615,10 @@ describe("runDoctorReport", () => {
         expect(autoArchiveMutations).toHaveLength(1);
         expect(autoArchiveMutations[0].applied).toBe(true);
         expect(autoArchiveMutations[0].path).toBe(
-          ".fabric/knowledge/pending/decisions/stale.md",
+          "team:knowledge/pending/decisions/stale.md",
         );
         expect(autoArchiveMutations[0].detail).toContain(
-          ".fabric/.archive/pending/decisions/stale.md",
+          "team:.archive/pending/decisions/stale.md",
         );
       });
 
@@ -2636,8 +2632,8 @@ describe("runDoctorReport", () => {
         const fmStale = `---\ntype: pitfall\nlayer: team\ncreated_at: ${ageDaysAgoIso(45)}\n---\n# Very Old\nBody.\n`;
         writeFile(pendingRel, fmStale, target);
 
-        expect(existsSync(join(target, pendingRel))).toBe(true);
-        expect(existsSync(join(target, archiveRel))).toBe(false);
+        expect(existsSync(knowledgeFixturePath(target, pendingRel))).toBe(true);
+        expect(existsSync(knowledgeFixturePath(target, archiveRel))).toBe(false);
 
         const result = await runApplyLint(target);
         expect(result.aborted).toBe(false);
@@ -2647,9 +2643,9 @@ describe("runDoctorReport", () => {
         expect(mutation?.applied).toBe(true);
 
         // Source removed; archive destination contains the file with body intact.
-        expect(existsSync(join(target, pendingRel))).toBe(false);
-        expect(existsSync(join(target, archiveRel))).toBe(true);
-        const archived = readFileSync(join(target, archiveRel), "utf8");
+        expect(existsSync(knowledgeFixturePath(target, pendingRel))).toBe(false);
+        expect(existsSync(knowledgeFixturePath(target, archiveRel))).toBe(true);
+        const archived = readFileSync(knowledgeFixturePath(target, archiveRel), "utf8");
         expect(archived).toContain("# Very Old");
       });
 
@@ -2672,10 +2668,10 @@ describe("runDoctorReport", () => {
           throw new Error("type narrowing failed");
         }
         expect(evt.pending_path).toBe(
-          ".fabric/knowledge/pending/guidelines/stale-gl.md",
+          "team:knowledge/pending/guidelines/stale-gl.md",
         );
         expect(evt.archived_to).toBe(
-          ".fabric/.archive/pending/guidelines/stale-gl.md",
+          "team:.archive/pending/guidelines/stale-gl.md",
         );
         expect(evt.reason).toBe("auto_archive_30d");
       });
@@ -2685,28 +2681,13 @@ describe("runDoctorReport", () => {
         await writeKnowledgeMeta(target, { source: "doctor_fix" });
         writeFile(".fabric/events.jsonl", "", target);
 
-        // Personal pending lives under FABRIC_HOME (isolated per-test).
-        const fakeHome = process.env.FABRIC_HOME!;
-        const personalPendingDir = join(
-          fakeHome,
-          ".fabric",
-          "knowledge",
-          "pending",
-          "models",
-        );
-        mkdirSync(personalPendingDir, { recursive: true });
-        const personalPendingAbs = join(personalPendingDir, "personal-stale.md");
         const fmStale = `---\ntype: model\nlayer: personal\ncreated_at: ${ageDaysAgoIso(50)}\n---\n# Personal Stale\n`;
-        writeFileSync(personalPendingAbs, fmStale, "utf8");
-
-        const personalArchiveAbs = join(
-          fakeHome,
-          ".fabric",
-          ".archive",
-          "pending",
-          "models",
-          "personal-stale.md",
+        const personalPendingAbs = writePersonalKnowledgeFile(
+          target,
+          "pending/models/personal-stale.md",
+          fmStale,
         );
+        const personalArchiveAbs = join(personalPendingAbs, "..", "..", "..", "..", ".archive", "pending", "models", "personal-stale.md");
 
         expect(existsSync(personalPendingAbs)).toBe(true);
         expect(existsSync(personalArchiveAbs)).toBe(false);
@@ -2716,14 +2697,14 @@ describe("runDoctorReport", () => {
         const mutation = result.mutations.find(
           (m) =>
             m.kind === "knowledge_pending_auto_archive" &&
-            m.path.startsWith("~/.fabric/knowledge/pending"),
+            m.path.startsWith("personal:knowledge/pending"),
         );
         expect(mutation?.applied).toBe(true);
         expect(mutation?.path).toBe(
-          "~/.fabric/knowledge/pending/models/personal-stale.md",
+          "personal:knowledge/pending/models/personal-stale.md",
         );
         expect(mutation?.detail).toContain(
-          "~/.fabric/.archive/pending/models/personal-stale.md",
+          "personal:.archive/pending/models/personal-stale.md",
         );
 
         // File physically moved on the personal root.
@@ -2740,10 +2721,10 @@ describe("runDoctorReport", () => {
           throw new Error("type narrowing failed");
         }
         expect(evt.pending_path).toBe(
-          "~/.fabric/knowledge/pending/models/personal-stale.md",
+          "personal:knowledge/pending/models/personal-stale.md",
         );
         expect(evt.archived_to).toBe(
-          "~/.fabric/.archive/pending/models/personal-stale.md",
+          "personal:.archive/pending/models/personal-stale.md",
         );
         expect(evt.reason).toBe("auto_archive_30d");
       });
@@ -2762,21 +2743,8 @@ describe("runDoctorReport", () => {
         );
 
         // Personal-layer stale.
-        const fakeHome = process.env.FABRIC_HOME!;
-        const personalDir = join(
-          fakeHome,
-          ".fabric",
-          "knowledge",
-          "pending",
-          "processes",
-        );
-        mkdirSync(personalDir, { recursive: true });
         const personalStale = `---\ntype: process\nlayer: personal\ncreated_at: ${ageDaysAgoIso(45)}\n---\n# Personal Stale\n`;
-        writeFileSync(
-          join(personalDir, "personal-stale.md"),
-          personalStale,
-          "utf8",
-        );
+        writePersonalKnowledgeFile(target, "pending/processes/personal-stale.md", personalStale);
 
         const result = await runApplyLint(target);
         expect(result.aborted).toBe(false);
@@ -2788,12 +2756,12 @@ describe("runDoctorReport", () => {
         // Both layers represented.
         expect(
           autoArchives.some((m) =>
-            m.path.startsWith(".fabric/knowledge/pending/"),
+            m.path.startsWith("team:knowledge/pending/"),
           ),
         ).toBe(true);
         expect(
           autoArchives.some((m) =>
-            m.path.startsWith("~/.fabric/knowledge/pending/"),
+            m.path.startsWith("personal:knowledge/pending/"),
           ),
         ).toBe(true);
 
@@ -2813,16 +2781,16 @@ describe("runDoctorReport", () => {
         const fmStale = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(35)}\n---\n# Old\n`;
         writeFile(pendingRel, fmStale, target);
 
-        const beforeSource = readFileSync(join(target, pendingRel), "utf8");
+        const beforeSource = readFileSync(knowledgeFixturePath(target, pendingRel), "utf8");
 
         // Read-only report path.
         await runDoctorReport(target);
 
         // File unchanged, no archive directory created.
-        expect(existsSync(join(target, pendingRel))).toBe(true);
-        expect(readFileSync(join(target, pendingRel), "utf8")).toBe(beforeSource);
+        expect(existsSync(knowledgeFixturePath(target, pendingRel))).toBe(true);
+        expect(readFileSync(knowledgeFixturePath(target, pendingRel), "utf8")).toBe(beforeSource);
         expect(
-          existsSync(join(target, ".fabric/.archive/pending/decisions/old.md")),
+          existsSync(knowledgeFixturePath(target, ".fabric/.archive/pending/decisions/old.md")),
         ).toBe(false);
 
         // No pending_auto_archived events emitted by the read-only path.
@@ -2902,13 +2870,13 @@ describe("runDoctorReport", () => {
 
       const orphanRel = ".fabric/knowledge/decisions/KT-DEC-1400--ancient-stable.md";
       seedCanonical(target, orphanRel, "KT-DEC-1400", "stable", 100);
-      const beforeSource = readFileSync(join(target, orphanRel), "utf8");
+      const beforeSource = readFileSync(knowledgeFixturePath(target, orphanRel), "utf8");
 
       // Default doctor invocation (read-only).
       await runDoctorReport(target);
 
       // File contents unchanged.
-      expect(readFileSync(join(target, orphanRel), "utf8")).toBe(beforeSource);
+      expect(readFileSync(knowledgeFixturePath(target, orphanRel), "utf8")).toBe(beforeSource);
       // No knowledge_demoted / knowledge_archived events emitted by the
       // read-only path.
       const { events: demoted } = await readEventLedger(target, { event_type: "knowledge_demoted" });
@@ -2919,9 +2887,8 @@ describe("runDoctorReport", () => {
   });
 
   // rc.4 TASK-010 (Gemini-review HIGH fix): rollback when ledger append fails
-  // after a filesystem mutation. We simulate ledger-append failure by replacing
-  // .fabric/events.jsonl with a directory at the same path (ledgerQueue.append
-  // attempts a writeFile against this path which fails with EISDIR).
+  // after a filesystem mutation. We simulate ledger-append failure with a
+  // test-only appendEventLedgerEvent guard keyed by projectRoot.
   describe("rc.4 TASK-010: apply-lint rollback on ledger-append failure", () => {
     const NOW_MS = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
@@ -2963,23 +2930,20 @@ describe("runDoctorReport", () => {
     }
 
     /**
-     * Replaces the events.jsonl file with a directory of the same name, then
-     * runs apply-lint. Any code path that calls appendEventLedgerEvent will
-     * fail (writeFile against a directory throws EISDIR). After the test, the
-     * tearDown restores the path so subsequent reads do not pollute.
+     * Forces appendEventLedgerEvent to throw for this projectRoot while the
+     * apply-lint call is in flight.
      */
     function poisonLedger(target: string): void {
-      const ledgerPath = join(target, ".fabric", "events.jsonl");
-      // Save existing contents to a sibling, replace with directory.
-      const saved = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
-      writeFileSync(join(target, ".fabric", ".events.saved"), saved, "utf8");
-      rmSync(ledgerPath, { force: true });
-      mkdirSync(ledgerPath, { recursive: false });
+      process.env.FABRIC_TEST_EVENT_LEDGER_APPEND_FAIL_ROOT = target;
     }
 
     async function runApplyLint(target: string) {
       const { runDoctorApplyLint } = await import("./doctor.js");
-      return runDoctorApplyLint(target);
+      try {
+        return await runDoctorApplyLint(target);
+      } finally {
+        delete process.env.FABRIC_TEST_EVENT_LEDGER_APPEND_FAIL_ROOT;
+      }
     }
 
     it("orphan_demote: rolls back frontmatter rewrite when ledger append fails", async () => {
@@ -2990,7 +2954,7 @@ describe("runDoctorReport", () => {
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1500--ancient-stable.md";
       seedCanonical(target, filePath, "KT-DEC-1500", "stable", 100);
 
-      const beforeSource = readFileSync(join(target, filePath), "utf8");
+      const beforeSource = readFileSync(knowledgeFixturePath(target, filePath), "utf8");
       expect(beforeSource).toContain("maturity: stable");
 
       // Replace events.jsonl with a directory to trigger append failure.
@@ -3009,7 +2973,7 @@ describe("runDoctorReport", () => {
       expect(orphanMutation?.error).toMatch(/ledger append failed/);
       expect(orphanMutation?.error).toMatch(/rolled back/);
 
-      const afterSource = readFileSync(join(target, filePath), "utf8");
+      const afterSource = readFileSync(knowledgeFixturePath(target, filePath), "utf8");
       expect(afterSource).toBe(beforeSource);
       expect(afterSource).toContain("maturity: stable");
       expect(afterSource).not.toContain("maturity: endorsed");
@@ -3024,8 +2988,8 @@ describe("runDoctorReport", () => {
       const archivePath = ".fabric/.archive/decisions/KT-DEC-1501--ancient-draft.md";
       seedCanonical(target, filePath, "KT-DEC-1501", "draft", 110);
 
-      expect(existsSync(join(target, filePath))).toBe(true);
-      expect(existsSync(join(target, archivePath))).toBe(false);
+      expect(existsSync(knowledgeFixturePath(target, filePath))).toBe(true);
+      expect(existsSync(knowledgeFixturePath(target, archivePath))).toBe(false);
 
       poisonLedger(target);
 
@@ -3041,8 +3005,8 @@ describe("runDoctorReport", () => {
 
       // The canonical file should still be at its original location AND not
       // stranded at the archive path.
-      expect(existsSync(join(target, filePath))).toBe(true);
-      expect(existsSync(join(target, archivePath))).toBe(false);
+      expect(existsSync(knowledgeFixturePath(target, filePath))).toBe(true);
+      expect(existsSync(knowledgeFixturePath(target, archivePath))).toBe(false);
     });
   });
 
@@ -3219,18 +3183,16 @@ describe("runDoctorReport", () => {
   // misclassified — the content is project-bound and likely belongs in team.
   describe("rc.37 NEW-5: personal_layer_path_misclassify lint", () => {
     function seedPersonalCanonical(
+      target: string,
       relPath: string,
       stableId: string,
       paths: string[],
     ): void {
-      const personalRoot = process.env.FABRIC_HOME!;
-      const abs = join(personalRoot, ".fabric", "knowledge", relPath);
-      mkdirSync(dirname(abs), { recursive: true });
       const pathsField = `[${paths.join(", ")}]`;
       const fm =
         `---\nid: ${stableId}\ntype: decision\nmaturity: stable\nlayer: personal\n` +
         `relevance_scope: narrow\nrelevance_paths: ${pathsField}\n---\n# ${stableId}\nBody.\n`;
-      writeFileSync(abs, fm, "utf8");
+      writePersonalKnowledgeFile(target, relPath, fm);
     }
 
     it("flags personal entry whose relevance_paths match files in the current project", async () => {
@@ -3238,7 +3200,7 @@ describe("runDoctorReport", () => {
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       // src/main.ts exists under createInitializedProject; `src/**` resolves.
-      seedPersonalCanonical("decisions/KP-DEC-9001--project-bound.md", "KP-DEC-9001", ["src/**"]);
+      seedPersonalCanonical(target, "decisions/KP-DEC-9001--project-bound.md", "KP-DEC-9001", ["src/**"]);
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Personal-layer path misclassify");
@@ -3273,7 +3235,7 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc37-new5-personal-empty");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
-      seedPersonalCanonical("decisions/KP-DEC-9003--agnostic.md", "KP-DEC-9003", []);
+      seedPersonalCanonical(target, "decisions/KP-DEC-9003--agnostic.md", "KP-DEC-9003", []);
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Personal-layer path misclassify");
@@ -3285,6 +3247,7 @@ describe("runDoctorReport", () => {
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedPersonalCanonical(
+        target,
         "decisions/KP-DEC-9004--home-anchor.md",
         "KP-DEC-9004",
         ["~/.config/**", "/etc/**"],
@@ -3993,13 +3956,13 @@ describe("runDoctorReport", () => {
       );
       expect(mutation).toBeDefined();
       expect(mutation?.applied).toBe(true);
-      expect(mutation?.path).toBe(pendingRel);
+      expect(mutation?.path).toBe("team:knowledge/pending/decisions/needs-backfill.md");
       expect(mutation?.detail).toMatch(/relevance_scope: broad/);
       expect(mutation?.detail).toMatch(/relevance_paths: \[\]/);
 
       // Verify the on-disk frontmatter now contains BOTH fields verbatim
       // (matching the regexes at doctor.ts L627-628).
-      const written = readFileSync(join(target, pendingRel), "utf8");
+      const written = readFileSync(knowledgeFixturePath(target, pendingRel), "utf8");
       expect(written).toMatch(/^relevance_scope: broad$/mu);
       expect(written).toMatch(/^relevance_paths: \[\]$/mu);
       // Original frontmatter preserved.
@@ -4091,7 +4054,7 @@ describe("runDoctorReport", () => {
 
       await runApplyLint(target);
 
-      const after = readFileSync(join(target, pendingRel), "utf8");
+      const after = readFileSync(knowledgeFixturePath(target, pendingRel), "utf8");
       // Original fields untouched.
       expect(after).toContain("type: guideline");
       expect(after).toContain("relevance_scope: narrow");
@@ -4645,7 +4608,7 @@ describe("runDoctorReport", () => {
       const report = await runDoctorReport(target);
       expect(report.manual_errors.map((e) => e.code)).toContain("lint-baseline-filename-format");
       const issue = report.manual_errors.find((e) => e.code === "lint-baseline-filename-format");
-      expect(issue?.message).toContain(".fabric/knowledge/guidelines/code-style.md");
+      expect(issue?.message).toContain("team:knowledge/guidelines/code-style.md");
       expect(issue?.message).toContain("KT-GLD-0001");
     });
 
@@ -4746,7 +4709,7 @@ describe("ensureCitePolicyActivatedMarker", () => {
     // to fail (parent dir missing for the ledger path under
     // /nonexistent-cite-policy-...). Both error paths must collapse to the
     // sentinel without throwing.
-    const result = await ensureCitePolicyActivatedMarker("/nonexistent-cite-policy-fabric-root-xyzzy");
+    const result = await ensureCitePolicyActivatedMarker(join(tmpdir(), `nonexistent-cite-policy-${randomUUID()}`));
     expect(result.marker_ts).toBe(0);
     expect(result.emitted_now).toBe(false);
   });
@@ -5346,7 +5309,7 @@ describe("runDoctorCiteCoverage (smoke)", () => {
   it("returns status:'skipped' with zero metrics when marker write degrades", async () => {
     // Same nonexistent-root trick as ensureCitePolicyActivatedMarker's failure
     // test — both ledger read and append fail, marker_ts collapses to 0.
-    const report = await runDoctorCiteCoverage("/nonexistent-cite-coverage-fabric-root-xyzzy", {
+    const report = await runDoctorCiteCoverage(join(tmpdir(), `nonexistent-cite-coverage-${randomUUID()}`), {
       since: 0,
       client: "all",
     });
@@ -5518,7 +5481,7 @@ describe("runDoctorCiteCoverage", () => {
   //    status='skipped' with zero metrics.
   it("status='skipped' when the project root has no .fabric/ tree (marker write fails)", async () => {
     const report = await runDoctorCiteCoverage(
-      "/nonexistent-cite-coverage-task-08-skipped-xyzzy",
+      join(tmpdir(), `nonexistent-cite-coverage-task-08-${randomUUID()}`),
       { since: 0, client: "all" },
     );
     expect(report.status).toBe("skipped");
@@ -6970,7 +6933,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     // the rc.20 'skipped' top-level status. We still expect the contract
     // status to surface — the early-return preserves the contract block.
     const report = await runDoctorCiteCoverage(
-      "/nonexistent-contract-coverage-fabric-root-xyzzy",
+      join(tmpdir(), `nonexistent-contract-coverage-${randomUUID()}`),
       { since: 0, client: "all" },
     );
 
@@ -7622,7 +7585,7 @@ describe("enrichDescriptions", () => {
     const withFields = overrides.withFields ?? [];
     const lines = [
       "---",
-      "id: KT-DEC-0001",
+      "id: KT-DEC-9000",
       "type: decision",
       "maturity: draft",
       "layer: team",
@@ -7663,7 +7626,7 @@ describe("enrichDescriptions", () => {
     ]);
 
     // Verify on-disk frontmatter now carries all four fields.
-    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
+    const absPath = knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
     const rewritten = readFileSync(absPath, "utf8");
     expect(rewritten).toMatch(/^intent_clues:\s*\[\]/m);
     expect(rewritten).toMatch(/^tech_stack:\s*\[\]/m);
@@ -7676,7 +7639,7 @@ describe("enrichDescriptions", () => {
     expect(enrichEvents).toHaveLength(1);
     expect(enrichEvents[0]).toMatchObject({
       mode: "auto",
-      path: ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md",
+      path: "team:knowledge/decisions/KT-DEC-0001--legacy.md",
       added_fields: ["intent_clues", "tech_stack", "impact", "must_read_if"],
     });
   });
@@ -7686,7 +7649,7 @@ describe("enrichDescriptions", () => {
     seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md", {
       withFields: ["intent_clues", "tech_stack", "impact", "must_read_if"],
     });
-    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md");
+    const absPath = knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md");
     const before = readFileSync(absPath, "utf8");
     const beforeMtime = statSync(absPath).mtimeMs;
 
@@ -7715,7 +7678,7 @@ describe("enrichDescriptions", () => {
     seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md", {
       withFields: ["intent_clues"],
     });
-    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
+    const absPath = knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
     const before = readFileSync(absPath, "utf8");
 
     const report = await enrichDescriptions(target, { auto: true, dryRun: true });
@@ -7747,7 +7710,7 @@ describe("enrichDescriptions", () => {
     seedLegacyEntry(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md", {
       withFields: ["tech_stack", "impact"],
     });
-    const absPath = join(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md");
+    const absPath = knowledgeFixturePath(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md");
     const before = readFileSync(absPath, "utf8");
 
     const report = await enrichDescriptions(target, {}); // no auto
@@ -8034,7 +7997,27 @@ function createInitializedProject(name: string): string {
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
   // v2/rc.2: seed a knowledge entry under .fabric/knowledge/ so knowledge-meta-builder
   // has something to index. The legacy `.fabric/rules/` tree is no longer scanned.
-  writeFile(".fabric/knowledge/decisions/server.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
+  writeFile(
+    ".fabric/knowledge/decisions/server.md",
+    [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "layer: team",
+      "semantic_scope: team",
+      'visibility_store: "team"',
+      "maturity: proven",
+      "summary: Server fixture rule.",
+      "---",
+      "<!-- fab:rule-id rules/server -->",
+      "# Server",
+      "",
+      "## [MANDATORY_INJECTION]",
+      "Use services.",
+      "",
+    ].join("\n"),
+    target,
+  );
   writeFile("packages/server/rules.contract.test.ts", "// @fabric-verify rules/server\nexpect(true).toBe(true);\n", target);
   return target;
 }
@@ -8091,9 +8074,9 @@ describe("knowledge auto-promote (rc.37 NEW-38)", () => {
 
     await runDoctorFix(target);
 
-    const settled = readFileSync(join(target, ".fabric/knowledge/decisions/KT-DEC-0050--settled-draft.md"), "utf8");
-    const young = readFileSync(join(target, ".fabric/knowledge/decisions/KT-DEC-0051--young-draft.md"), "utf8");
-    const drifted = readFileSync(join(target, ".fabric/knowledge/decisions/KT-DEC-0052--drifted-draft.md"), "utf8");
+    const settled = readFileSync(knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-0050--settled-draft.md"), "utf8");
+    const young = readFileSync(knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-0051--young-draft.md"), "utf8");
+    const drifted = readFileSync(knowledgeFixturePath(target, ".fabric/knowledge/decisions/KT-DEC-0052--drifted-draft.md"), "utf8");
     expect(settled).toContain("maturity: verified");
     expect(young).toContain("maturity: draft");
     expect(drifted).toContain("maturity: draft");
@@ -8175,9 +8158,165 @@ function createV2KnowledgeProject(name: string): string {
 }
 
 function writeFile(path: string, content: string, root: string): void {
-  const target = join(root, path);
+  const resolved = resolveFixtureWrite(root, path, content);
+  const target = resolved.abs;
   mkdirSync(join(target, ".."), { recursive: true });
-  writeFileSync(target, `${content.endsWith("\n") ? content : `${content}\n`}`, "utf8");
+  writeFileSync(
+    target,
+    `${resolved.content.endsWith("\n") ? resolved.content : `${resolved.content}\n`}`,
+    "utf8",
+  );
+  if (resolved.storeDirForCounters !== undefined) {
+    reconcileStoreCounters(resolved.storeDirForCounters);
+  }
+  if (resolved.mirrorAbs !== undefined) {
+    mkdirSync(join(resolved.mirrorAbs, ".."), { recursive: true });
+    rmSync(resolved.mirrorAbs, { force: true });
+    try {
+      symlinkSync(target, resolved.mirrorAbs, "file");
+    } catch {
+      try {
+        linkSync(target, resolved.mirrorAbs);
+      } catch {
+        writeFileSync(
+          resolved.mirrorAbs,
+          `${resolved.content.endsWith("\n") ? resolved.content : `${resolved.content}\n`}`,
+          "utf8",
+        );
+      }
+    }
+  }
+}
+
+function resolveFixtureWrite(
+  root: string,
+  path: string,
+  content: string,
+): { abs: string; content: string; mirrorAbs?: string; storeDirForCounters?: string } {
+  if (path === ".fabric/fabric-config.json") {
+    return { abs: join(root, path), content: ensureFixtureStoreInProjectConfig(root, content) };
+  }
+  if (path.startsWith(".fabric/knowledge/")) {
+    const storeDir = ensureFixtureTeamStore(root);
+    const rel = path.slice(".fabric/knowledge/".length).split("/").join(sep);
+    return {
+      abs: join(storeDir, STORE_LAYOUT.knowledgeDir, rel),
+      content,
+      mirrorAbs: join(root, path),
+      storeDirForCounters: storeDir,
+    };
+  }
+  return { abs: join(root, path), content };
+}
+
+function ensureFixtureTeamStore(root: string): string {
+  let storeUuid = projectStoreUuids.get(root);
+  if (storeUuid === undefined) {
+    storeUuid = randomUUID();
+    projectStoreUuids.set(root, storeUuid);
+  }
+  const storeDir = join(resolveGlobalRoot(), storeRelativePath(storeUuid));
+  mkdirSync(join(storeDir, STORE_LAYOUT.knowledgeDir), { recursive: true });
+  saveFixtureGlobalConfig(root);
+  const configPath = join(root, ".fabric", "fabric-config.json");
+  if (!existsSync(configPath)) {
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(
+      configPath,
+      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
+      "utf8",
+    );
+  }
+  return storeDir;
+}
+
+function ensureFixturePersonalStore(root: string): string {
+  let storeUuid = projectPersonalStoreUuids.get(root);
+  if (storeUuid === undefined) {
+    storeUuid = randomUUID();
+    projectPersonalStoreUuids.set(root, storeUuid);
+  }
+  const storeDir = join(resolveGlobalRoot(), storeRelativePath(storeUuid));
+  mkdirSync(join(storeDir, STORE_LAYOUT.knowledgeDir), { recursive: true });
+  saveFixtureGlobalConfig(root);
+  return storeDir;
+}
+
+function saveFixtureGlobalConfig(root: string): void {
+  const stores: Array<{
+    store_uuid: string;
+    alias: string;
+    remote: string;
+    personal?: boolean;
+  }> = [];
+  const teamUuid = projectStoreUuids.get(root);
+  if (teamUuid !== undefined) {
+    stores.push({ store_uuid: teamUuid, alias: "team", remote: "git@example.com:team.git" });
+  }
+  const personalUuid = projectPersonalStoreUuids.get(root);
+  if (personalUuid !== undefined) {
+    stores.push({
+      store_uuid: personalUuid,
+      alias: "personal",
+      remote: "git@example.com:personal.git",
+      personal: true,
+    });
+  }
+  saveGlobalConfig({ uid: "test-uid", stores });
+}
+
+function writePersonalKnowledgeFile(root: string, relPath: string, content: string): string {
+  const storeDir = ensureFixturePersonalStore(root);
+  const abs = join(storeDir, STORE_LAYOUT.knowledgeDir, relPath.split("/").join(sep));
+  mkdirSync(join(abs, ".."), { recursive: true });
+  writeFileSync(abs, `${content.endsWith("\n") ? content : `${content}\n`}`, "utf8");
+  return abs;
+}
+
+function knowledgeFixturePath(root: string, relPath: string): string {
+  const storeUuid = projectStoreUuids.get(root);
+  if (relPath.startsWith(".fabric/knowledge/")) {
+    if (storeUuid !== undefined) {
+      return join(
+        resolveGlobalRoot(),
+        storeRelativePath(storeUuid),
+        STORE_LAYOUT.knowledgeDir,
+        relPath.slice(".fabric/knowledge/".length).split("/").join(sep),
+      );
+    }
+  }
+  if (relPath.startsWith(".fabric/.archive/")) {
+    if (storeUuid !== undefined) {
+      return join(
+        resolveGlobalRoot(),
+        storeRelativePath(storeUuid),
+        ".archive",
+        relPath.slice(".fabric/.archive/".length).split("/").join(sep),
+      );
+    }
+  }
+  return join(root, relPath);
+}
+
+function ensureFixtureStoreInProjectConfig(root: string, content: string): string {
+  if (!projectStoreUuids.has(root)) {
+    return content;
+  }
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    const existing = Array.isArray(parsed.required_stores) ? parsed.required_stores : [];
+    const hasTeam = existing.some(
+      (entry) =>
+        entry !== null &&
+        typeof entry === "object" &&
+        !Array.isArray(entry) &&
+        (entry as Record<string, unknown>).id === "team",
+    );
+    parsed.required_stores = hasTeam ? existing : [...existing, { id: "team" }];
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return content;
+  }
 }
 
 function createForensic(target: string, name: string): unknown {

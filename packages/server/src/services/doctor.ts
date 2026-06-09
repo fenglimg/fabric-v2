@@ -2,15 +2,16 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
+import { isAbsolute, join, posix, resolve, sep } from "node:path";
 import { Script } from "node:vm";
 
 import { minimatch } from "minimatch";
 import { ZodError } from "zod";
 
 import {
+  buildStoreResolveInput,
   createTranslator,
+  createStoreResolver,
   forensicReportSchema,
   LEGACY_KB_REGEX,
   BOOTSTRAP_CANONICAL,
@@ -19,6 +20,9 @@ import {
   BOOTSTRAP_REGEX,
   ONBOARD_SLOT_NAMES,
   ONBOARD_SLOT_TOTAL,
+  resolveGlobalRoot,
+  STORE_LAYOUT,
+  storeRelativePathForMount,
   type AgentsMeta,
   type EventLedgerEvent,
   type ForensicReport,
@@ -575,8 +579,10 @@ export type LintMaturity = "stable" | "endorsed" | "draft";
 type OrphanDemoteCandidate = {
   // Stable id parsed out of YAML frontmatter (e.g. KT-DEC-0001).
   stable_id: string;
-  // Project-relative POSIX path of the canonical entry.
+  // Store-qualified display path of the canonical entry.
   path: string;
+  // Absolute filesystem path of the canonical entry.
+  path_abs: string;
   // Inactivity in days at the time of the check (max of frontmatter.created_at,
   // file mtime, and last matching event in events.jsonl).
   age_days: number;
@@ -599,9 +605,12 @@ type OrphanDemoteInspection = {
 type StaleArchiveCandidate = {
   stable_id: string;
   path: string;
+  path_abs: string;
   age_days: number;
-  // Proposed archive destination, project-relative POSIX.
+  // Proposed archive destination, store-qualified display path.
   archive_path: string;
+  // Absolute filesystem path of the proposed archive destination.
+  archive_path_abs: string;
 };
 
 type StaleArchiveInspection = {
@@ -622,13 +631,8 @@ type PendingOverdueInspection = {
 
 // rc.5 TASK-009 (B2): pending auto-archive candidate. Identifies a pending
 // proposal whose age (frontmatter.created_at when present, else mtime) exceeds
-// PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS. Covers BOTH the team-rooted pending
-// tree (`<projectRoot>/.fabric/knowledge/pending/<type>/`) and the
-// personal-rooted tree (`<FABRIC_HOME>/.fabric/knowledge/pending/<type>/`)
-// introduced by TASK-008 (B1). The mutation arm (--apply-lint) moves the
-// file into `.fabric/.archive/pending/<type>/` under the appropriate root
-// (git mv for team, fs.rename for personal) and emits a single
-// pending_auto_archived event per move.
+// PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS. Store-only mode scans mounted stores and
+// archives into the same store's `.archive/pending/<type>/` subtree.
 type PendingAutoArchiveCandidate = {
   layer: "team" | "personal";
   // Pending entry's knowledge type subdir (e.g. "decisions"). Mirrors
@@ -1161,9 +1165,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const storeKnowledgeSummaries = collectStoreKnowledgeSummaries(projectRoot);
   const storeRevision = computeReadSetRevision(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
-  const draftBacklog = emptyDraftBacklogInspection();
+  const draftBacklog = inspectDraftBacklog(projectRoot);
   // rc.37 NEW-38: auto-promote candidates (info surface; --fix does the work).
-  const draftAutoPromote = emptyDraftAutoPromoteInspection();
+  const draftAutoPromote = await inspectDraftAutoPromote(projectRoot);
   // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
   const knowledgeTagsEmpty: EmptyTagsInspection = {
     status: "ok",
@@ -1183,8 +1187,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // baseline-emit pipeline outright, so the lint now serves only as a
   // forensic indicator for stale pre-rc.23 workspaces; resolution is
   // manual deletion of the offending file. manual_error kind, no --fix path.
-  const baselineFilenameFormat: BaselineFilenameFormatInspection = { offenders: [] };
-  const stableIdCollision: StableIdCollisionInspection = { collisions: [] };
+  const baselineFilenameFormat = inspectBaselineFilenameFormat(projectRoot);
+  const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
   // `index_drift` checks (against agents.meta.json#counters) are retired. The
   // monotonic stable_id counter now lives per-store in committed counters.json
@@ -1197,50 +1201,46 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // for canonical entries with no matching event. Runs AFTER ledger
   // partial-write detection so we never append to a corrupt tail; it relies
   // on the existing read/append machinery to be in a consistent state.
-  const filesystemEditFallback = emptyFilesystemEditFallbackInspection();
+  const filesystemEditFallback = await inspectFilesystemEditFallback(projectRoot);
   // rc.4 TASK-001: read-side lint inspections (#16-18). These run after the
   // filesystem-edit fallback (which can append synthesized knowledge_promoted
   // events) so that the lastActiveAt index built by orphan-demote and
   // stale-archive sees the synthesized timestamps and does not double-count
   // a freshly-synthesized canonical entry as orphan.
   const lintNow = Date.now();
-  // v2.2 store cutover: legacy dual-root corpus lints are disabled until their
-  // walkers are rewritten against ~/.fabric/stores/*/knowledge. Do not read or
-  // mutate project-local `.fabric/knowledge` / legacy `~/.fabric/knowledge`.
-  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
-  const staleArchive = emptyStaleArchiveInspection();
-  const pendingOverdue = emptyPendingOverdueInspection();
-  const stableIdDuplicate: StableIdDuplicateInspection = { duplicates: [] };
-  const layerMismatch: LayerMismatchInspection = { mismatches: [] };
+  // v2.2 store cutover: corpus lints read mounted stores only. Retired
+  // project-local `.fabric/knowledge` and legacy `~/.fabric/knowledge` roots
+  // stay out of the lint surface.
+  const orphanDemote = await inspectOrphanDemote(projectRoot, lintNow);
+  const staleArchive = await inspectStaleArchive(projectRoot, lintNow);
+  const pendingOverdue = inspectPendingOverdue(projectRoot, lintNow);
+  const stableIdDuplicate = inspectStableIdDuplicate(projectRoot);
+  const layerMismatch = inspectLayerMismatch(projectRoot);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a synchronous filesystem count, not a
   // time-decayed signal. Runs alongside the rc.4 integrity inspections so the
   // report surfaces all corpus-level findings adjacent to one another.
-  const underseeded: UnderseededInspection = {
-    node_count: storeKnowledgeSummaries.length,
-    threshold: readUnderseedThresholdFromConfig(projectRoot),
-    underseeded: storeKnowledgeSummaries.length < readUnderseedThresholdFromConfig(projectRoot),
-  };
+  const underseeded = inspectUnderseeded(projectRoot);
   // rc.5 TASK-013 (C4): relevance_paths hygiene inspections #23/#24/#25. All
   // three walk canonical entries (team + personal) and inspect frontmatter
   // relevance fields. #24 expands globs against the live filesystem; #25
   // shells out to `git log` for the drift heuristic (degrades to ok+info
   // when git is unavailable). Flag-only in rc.5 — apply-lint auto-prune
   // deferred to rc.7+.
-  const narrowNoPaths: NarrowNoPathsInspection = { candidates: [] };
-  const relevancePathsDangling: RelevancePathsDanglingInspection = { entries: [] };
-  const relevancePathsDrift: RelevancePathsDriftInspection = { candidates: [], git_available: true };
+  const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
+  const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
+  const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
   // rc.37 NEW-5: personal-layer entries whose relevance_paths match files in
   // the current project — signals layer misclassification (content is
   // project-bound, should be team-layer).
-  const personalLayerPathMisclassify: PersonalLayerPathMisclassifyInspection = { candidates: [] };
+  const personalLayerPathMisclassify = inspectPersonalLayerPathMisclassify(projectRoot);
   // rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
   // (legacy entries archived before NEW-31's sanitizer landed).
-  const suspiciousKb: SuspiciousKbInspection = { candidates: [] };
+  const suspiciousKb = inspectSuspiciousKb(projectRoot);
   // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
   // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
   // telemetry when the edit-counter has no fires in the 30d window.
-  const narrowTooFew = emptyNarrowTooFewInspection();
+  const narrowTooFew = inspectNarrowTooFew(projectRoot, lintNow);
   // rc.6 TASK-021 (E3): session-hints cache hygiene (#27). Scans
   // `.fabric/.cache/` for session-hints-*.json files older than 7 days
   // (mtime-based). Info kind — does not bump report status. apply-lint
@@ -1257,7 +1257,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // hygiene, not correctness (meta-builder falls back to the schema
   // defaults at read time). apply-lint writes the explicit defaults and
   // emits one aggregate `relevance_migration_run` event per run.
-  const relevanceFieldsMissing: RelevanceFieldsMissingInspection = { candidates: [], scanned_count: 0 };
+  const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
   // rc.12 lint #29: skill_md_yaml_invalid. Scans .claude/skills and
   // .codex/skills SKILL.md frontmatter for unquoted ': ' tokens that Codex's
   // strict YAML parser rejects (Claude Code is lenient). Warning kind —
@@ -1747,7 +1747,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   // re-synced agents.meta maturity/hashes is dropped — applyDraftAutoPromote
   // rewrites the frontmatter in place and there is no co-location meta index to
   // keep consistent anymore.
-  const autoPromote = emptyDraftAutoPromoteInspection();
+  const autoPromote = await inspectDraftAutoPromote(projectRoot);
   if (autoPromote.candidates.length > 0) {
     const { promoted } = await applyDraftAutoPromote(projectRoot, autoPromote.candidates);
     if (promoted.length > 0) {
@@ -1831,11 +1831,10 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
 
   const now = Date.now();
 
-  // v2.2 store cutover: retired dual-root knowledge lints are no longer
-  // mutation sources. Do not demote/archive entries from project-local
-  // `.fabric/knowledge` or legacy `~/.fabric/knowledge`; store-aware versions
-  // must be implemented against ~/.fabric/stores/*/knowledge before re-enabling.
-  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
+  // v2.2 store cutover: mutations target mounted stores only. Retired
+  // project-local `.fabric/knowledge` and legacy `~/.fabric/knowledge` roots
+  // are never touched.
+  const orphanDemote = await inspectOrphanDemote(projectRoot, now);
   for (const candidate of orphanDemote.candidates) {
     if (candidate.next_maturity === null) {
       // Terminal (already draft) — orphan-demote does not apply, stale-archive
@@ -1847,7 +1846,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     mutations.push(await applyOrphanDemote(projectRoot, candidate, now));
   }
 
-  const staleArchive = emptyStaleArchiveInspection();
+  const staleArchive = await inspectStaleArchive(projectRoot, now);
   for (const candidate of staleArchive.candidates) {
     mutations.push(await applyStaleArchive(projectRoot, candidate, now));
   }
@@ -1858,7 +1857,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   // pending after the canonical mutation pass keeps the dual-root pending
   // walker independent of any concurrent .fabric/knowledge/<type>/ writes
   // triggered above. One mutation per stale-pending entry, per layer.
-  const pendingAutoArchive = emptyPendingAutoArchiveInspection();
+  const pendingAutoArchive = inspectPendingAutoArchive(projectRoot, now);
   for (const candidate of pendingAutoArchive.candidates) {
     mutations.push(await applyPendingAutoArchive(projectRoot, candidate, now));
   }
@@ -1932,7 +1931,13 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
 
   contextCache.invalidate("meta_write", projectRoot);
 
-  const after = await runDoctorReport(projectRoot);
+  let after: DoctorReport;
+  try {
+    after = await runDoctorReport(projectRoot);
+  } catch {
+    // Keep rollback results observable when the ledger is the failing resource.
+    after = before;
+  }
   const successCount = mutations.filter((m) => m.applied).length;
   const failureCount = mutations.length - successCount;
 
@@ -2061,7 +2066,7 @@ async function applyOrphanDemote(
     };
   }
   const detail = `${candidate.maturity} -> ${next}`;
-  const absPath = join(projectRoot, candidate.path);
+  const absPath = candidate.path_abs;
   try {
     const source = await readFile(absPath, "utf8");
     const rewritten = rewriteFrontmatterMaturity(source, next);
@@ -2140,8 +2145,8 @@ async function applyStaleArchive(
   candidate: StaleArchiveCandidate,
   now: number,
 ): Promise<DoctorApplyLintMutation> {
-  const sourceAbs = join(projectRoot, candidate.path);
-  const destAbs = join(projectRoot, candidate.archive_path);
+  const sourceAbs = candidate.path_abs;
+  const destAbs = candidate.archive_path_abs;
   const detail = `${candidate.path} -> ${candidate.archive_path}`;
   try {
     await mkdir(join(destAbs, ".."), { recursive: true });
@@ -2212,10 +2217,9 @@ async function applyStaleArchive(
   }
 }
 
-// rc.5 TASK-009 (B2): auto-archive a stale pending entry. Team-layer source
-// uses `git mv` (preserves rename detection inside the workspace git tree)
-// with an `fs.rename` fallback for non-repo / untracked cases. Personal-layer
-// source uses plain `fs.rename` (lives outside the project's git tree).
+// rc.5 TASK-009 (B2): auto-archive a stale pending entry. Store-backed entries
+// live under ~/.fabric/stores/<uuid>/, outside the project worktree, so the
+// move is a filesystem rename/copy rather than a project-root `git mv`.
 // Emits exactly one `pending_auto_archived` event per successful move with
 // `pending_path`, `archived_to`, `reason` ("auto_archive_30d").
 //
@@ -2233,41 +2237,21 @@ async function applyPendingAutoArchive(
   try {
     await mkdir(join(candidate.archived_to_abs, ".."), { recursive: true });
 
-    let moved = false;
-    if (candidate.layer === "team") {
-      // Prefer `git mv` so the workspace history threads through the rename.
-      // Falls back to plain rename when (a) not in a git repo, (b) the file
-      // is untracked, or (c) git is unavailable. Mirrors the dual-strategy
-      // pattern in review.ts approve flow.
-      try {
-        const relSource = relativePosix(projectRoot, candidate.pending_path_abs);
-        const relDest = relativePosix(projectRoot, candidate.archived_to_abs);
-        execFileSync("git", ["mv", "-f", relSource, relDest], {
-          cwd: projectRoot,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        moved = true;
-      } catch {
-        // Fall through to plain rename below.
-      }
-    }
-    if (!moved) {
-      try {
-        await rename(candidate.pending_path_abs, candidate.archived_to_abs);
-      } catch (renameError) {
-        // EXDEV fallback (cross-filesystem). Same shape as applyStaleArchive.
-        if (
-          renameError instanceof Error &&
-          "code" in renameError &&
-          (renameError as NodeJS.ErrnoException).code === "EXDEV"
-        ) {
-          const data = await readFile(candidate.pending_path_abs);
-          await writeFile(candidate.archived_to_abs, data);
-          const { unlink } = await import("node:fs/promises");
-          await unlink(candidate.pending_path_abs);
-        } else {
-          throw renameError;
-        }
+    try {
+      await rename(candidate.pending_path_abs, candidate.archived_to_abs);
+    } catch (renameError) {
+      // EXDEV fallback (cross-filesystem). Same shape as applyStaleArchive.
+      if (
+        renameError instanceof Error &&
+        "code" in renameError &&
+        (renameError as NodeJS.ErrnoException).code === "EXDEV"
+      ) {
+        const data = await readFile(candidate.pending_path_abs);
+        await writeFile(candidate.archived_to_abs, data);
+        const { unlink } = await import("node:fs/promises");
+        await unlink(candidate.pending_path_abs);
+      } else {
+        throw renameError;
       }
     }
 
@@ -2318,15 +2302,6 @@ async function applyPendingAutoArchive(
       error: truncateErrorMessage(error),
     };
   }
-}
-
-// Helper: convert an absolute path to a workspace-relative POSIX path
-// suitable for `git mv` invocation. Falls back to the absolute path when
-// the absolute is already outside projectRoot (defensive — callers only
-// pass team-layer paths here, but keep the contract clear).
-function relativePosix(projectRoot: string, absolutePath: string): string {
-  const rel = nodeRelative(projectRoot, absolutePath);
-  return rel.split(sep).join("/");
 }
 
 // rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
@@ -2796,28 +2771,30 @@ function inspectDraftBacklog(projectRoot: string): DraftBacklogInspection {
   // Walk canonical files directly with the full-vocabulary maturity extractor
   // so verified/proven entries stay in totalCount (iterateCanonicalEntries
   // skips them — it uses the legacy-only pattern for orphan-demote).
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-    const dir = join(knowledgeRoot, typeDir);
-    if (!existsSync(dir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name) === null) continue;
-      let maturity: string | null;
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
+    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+      const dir = join(knowledgeRoot, typeDir);
+      if (!existsSync(dir)) continue;
+      let entries;
       try {
-        maturity = extractMaturityFull(readFileSync(join(dir, entry.name), "utf8"));
+        entries = readdirSync(dir, { withFileTypes: true });
       } catch {
         continue;
       }
-      if (maturity === null) continue;
-      totalCount += 1;
-      if (maturity === "draft") draftCount += 1;
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name) === null) continue;
+        let maturity: string | null;
+        try {
+          maturity = extractMaturityFull(readFileSync(join(dir, entry.name), "utf8"));
+        } catch {
+          continue;
+        }
+        if (maturity === null) continue;
+        totalCount += 1;
+        if (maturity === "draft") draftCount += 1;
+      }
     }
   }
   if (totalCount < MIN_TOTAL_FOR_RATIO) {
@@ -3291,51 +3268,50 @@ function createBootstrapAnchorCheck(t: Translator, inspection: BootstrapAnchorIn
 // frontmatter `id:` parsed and are flagged only when that id is in the
 // baseline allowlist (so a user-promoted `KP-DEC-0001--slug.md` mis-named
 // `slug.md` is intentionally NOT flagged here — that's an unrelated invariant).
-// Personal-layer files outside the project root are NOT inspected (only
-// project-local `.fabric/knowledge/{canonical-type}/` is scanned).
+// Store-only cutover: scan canonical dirs from the project's read-set stores.
+// Retired project-local `.fabric/knowledge/{canonical-type}/` roots are ignored.
 function inspectBaselineFilenameFormat(projectRoot: string): BaselineFilenameFormatInspection {
   const offenders: BaselineFilenameFormatOffender[] = [];
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return { offenders };
-  }
-  for (const sub of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-    const dir = join(knowledgeRoot, sub);
-    if (!existsSync(dir)) {
-      continue;
-    }
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const entryName = entry.name;
-      if (!entry.isFile() || !entryName.endsWith(".md")) {
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
+    for (const sub of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+      const dir = join(knowledgeRoot, sub);
+      if (!existsSync(dir)) {
         continue;
       }
-      if (BASELINE_ID_PREFIXED_FILENAME_PATTERN.test(entryName)) {
-        continue;
-      }
-      const abs = join(dir, entryName);
-      let source: string;
+      let entries;
       try {
-        source = readFileSync(abs, "utf8");
+        entries = readdirSync(dir, { withFileTypes: true });
       } catch {
         continue;
       }
-      const id = extractKnowledgeFrontmatterId(source);
-      if (id === null) {
-        continue;
+      for (const entry of entries) {
+        const entryName = entry.name;
+        if (!entry.isFile() || !entryName.endsWith(".md")) {
+          continue;
+        }
+        if (BASELINE_ID_PREFIXED_FILENAME_PATTERN.test(entryName)) {
+          continue;
+        }
+        const abs = join(dir, entryName);
+        let source: string;
+        try {
+          source = readFileSync(abs, "utf8");
+        } catch {
+          continue;
+        }
+        const id = extractKnowledgeFrontmatterId(source);
+        if (id === null) {
+          continue;
+        }
+        if (!BASELINE_FILENAME_LINT_BASELINE_IDS.has(id)) {
+          continue;
+        }
+        offenders.push({
+          path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, sub, entryName),
+          stable_id: id,
+        });
       }
-      if (!BASELINE_FILENAME_LINT_BASELINE_IDS.has(id)) {
-        continue;
-      }
-      offenders.push({
-        path: posix.join(".fabric/knowledge", sub, entryName),
-        stable_id: id,
-      });
     }
   }
   offenders.sort((a, b) => a.path.localeCompare(b.path));
@@ -4677,11 +4653,49 @@ function findIssue(issues: DoctorIssue[], code: string): DoctorIssue {
 // v2.2 W5 R4 (agents.meta decolo): `inspectMetaManuallyDiverged` removed (compared co-location agents.meta against disk).
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeDirUnindexed` / `collectMdFilesUnder` / `createKnowledgeDirUnindexedCheck` removed (pure co-location agents.meta-vs-disk check).
 async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
-  void projectRoot;
-  // v2.2 store-only cutover: retired project-local and legacy personal
-  // knowledge roots must not influence doctor. Store collision checks need a
-  // read-set implementation before this lint can produce findings again.
-  return { collisions: [] };
+  const idToFiles = new Map<string, string[]>();
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
+    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+      const dir = join(knowledgeRoot, typeDir);
+      if (!existsSync(dir)) {
+        continue;
+      }
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith(".md")) {
+          continue;
+        }
+        const absPath = join(dir, entry.name);
+        let source: string;
+        try {
+          source = readFileSync(absPath, "utf8");
+        } catch {
+          continue;
+        }
+        const id = extractKnowledgeFrontmatterId(source);
+        if (id === null) {
+          continue;
+        }
+        const files = idToFiles.get(id) ?? [];
+        files.push(storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, typeDir, entry.name));
+        idToFiles.set(id, files);
+      }
+    }
+  }
+  const collisions: StableIdCollision[] = [];
+  for (const [stable_id, files] of idToFiles) {
+    if (files.length > 1) {
+      collisions.push({ stable_id, files: files.slice().sort() });
+    }
+  }
+  collisions.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
+  return { collisions };
 }
 
 // Match a YAML frontmatter `id:` field whose value matches the v2.0 stable_id
@@ -4758,47 +4772,22 @@ function inspectPreexistingRootFiles(projectRoot: string): PreexistingRootFilesI
 }
 
 async function inspectFilesystemEditFallback(projectRoot: string): Promise<FilesystemEditFallbackInspection> {
-  // Detect orphan canonical knowledge entries — files at
-  // .fabric/knowledge/<type>/<id>--<slug>.md that have no matching
-  // knowledge_promoted event in events.jsonl. This happens when a user
-  // manually `git mv` a pending proposal into its canonical location
-  // instead of using fab_review.approve. To keep the audit trail
-  // complete, doctor synthesizes a knowledge_promoted event for each
-  // orphan with reason='[synthesized] filesystem-edit-fallback'.
+  // Detect orphan canonical knowledge entries in mounted stores that have no
+  // matching knowledge_promoted event in events.jsonl. This happens when a user
+  // manually moves a pending proposal into its canonical store location instead
+  // of using fab_review.approve. To keep the audit trail complete, doctor
+  // synthesizes a knowledge_promoted event for each orphan with
+  // reason='[synthesized] filesystem-edit-fallback'.
   //
   // Side-effect by design: the synthesis happens during inspect so that
   // a subsequent `runDoctorReport` (or any other consumer reading
   // events.jsonl) sees the synthesized event and the orphan is no
   // longer reported. This preserves idempotence: the second run is a
   // no-op.
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return { synthesized: 0, synthesizedStableIds: [] };
-  }
-
   // Collect all stable_ids that have a canonical file on disk.
   const canonicalIds = new Set<string>();
-  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-    const dir = join(knowledgeRoot, typeDir);
-    if (!existsSync(dir)) {
-      continue;
-    }
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isFile()) {
-        continue;
-      }
-      const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name);
-      if (match === null) {
-        continue;
-      }
-      canonicalIds.add(match[1]);
-    }
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    canonicalIds.add(visit.parsed.stable_id);
   }
 
   if (canonicalIds.size === 0) {
@@ -5180,67 +5169,96 @@ type CanonicalEntry = {
   lastReferenceMs: number;
 };
 
+type DoctorStoreRoot = {
+  alias: string;
+  store_uuid: string;
+  dir: string;
+  layer: "team" | "personal";
+};
+
+function resolveDoctorStoreRoots(projectRoot: string): DoctorStoreRoot[] {
+  const input = buildStoreResolveInput(projectRoot);
+  if (input === null) {
+    return [];
+  }
+  const readSet = createStoreResolver().resolveReadSet(input);
+  if (readSet.stores.length === 0) {
+    return [];
+  }
+  const globalRoot = resolveGlobalRoot();
+  const personalUuids = new Set(
+    input.mountedStores.filter((store) => store.personal).map((store) => store.store_uuid),
+  );
+  return readSet.stores.map((entry) => {
+    const mounted = input.mountedStores.find((store) => store.store_uuid === entry.store_uuid);
+    return {
+      alias: entry.alias,
+      store_uuid: entry.store_uuid,
+      dir: join(
+        globalRoot,
+        storeRelativePathForMount(mounted ?? { store_uuid: entry.store_uuid }),
+      ),
+      layer: personalUuids.has(entry.store_uuid) ? "personal" : "team",
+    };
+  });
+}
+
+function storeDisplayPath(store: DoctorStoreRoot, ...parts: string[]): string {
+  return `${store.alias}:${posix.join(...parts)}`;
+}
+
 function* iterateCanonicalEntries(
   projectRoot: string,
   lastActiveIndex: Map<string, number>,
 ): Generator<CanonicalEntry> {
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return;
-  }
-  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-    const dir = join(knowledgeRoot, typeDir);
-    if (!existsSync(dir)) {
-      continue;
-    }
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isFile()) {
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
+    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+      const dir = join(knowledgeRoot, typeDir);
+      if (!existsSync(dir)) {
         continue;
       }
-      const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name);
-      if (match === null) {
-        continue;
-      }
-      const stableId = match[1];
-      const absPath = join(dir, entry.name);
-      let source: string;
+      let entries;
       try {
-        source = readFileSync(absPath, "utf8");
+        entries = readdirSync(dir, { withFileTypes: true });
       } catch {
         continue;
       }
-      const maturity = extractKnowledgeFrontmatterMaturity(source);
-      if (maturity === null) {
-        continue;
-      }
-      const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
-      const eventTs = lastActiveIndex.get(stableId) ?? 0;
-      // Activity is event-driven; mtime is only a fallback for entries that
-      // have neither frontmatter.created_at nor any event reference (which is
-      // an unusual state — most canonical entries are promoted via fab_review
-      // and therefore have at least one knowledge_promoted event). Including
-      // mtime in the max would refresh the reference every time doctor runs
-      // (file rewrites are rare but happen during tests/dogfood).
-      let lastReferenceMs = Math.max(createdAt ?? 0, eventTs);
-      if (lastReferenceMs === 0) {
-        try {
-          lastReferenceMs = statSync(absPath).mtimeMs;
-        } catch {
-          lastReferenceMs = 0;
+      for (const entry of entries) {
+        if (!entry.isFile()) {
+          continue;
         }
+        const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name);
+        if (match === null) {
+          continue;
+        }
+        const stableId = match[1];
+        const absPath = join(dir, entry.name);
+        let source: string;
+        try {
+          source = readFileSync(absPath, "utf8");
+        } catch {
+          continue;
+        }
+        const maturity = extractKnowledgeFrontmatterMaturity(source);
+        if (maturity === null) {
+          continue;
+        }
+        const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
+        const eventTs = lastActiveIndex.get(stableId) ?? lastActiveIndex.get(`${store.alias}:${stableId}`) ?? 0;
+        // Activity is event-driven; mtime is only a fallback for entries that
+        // have neither frontmatter.created_at nor any event reference.
+        let lastReferenceMs = Math.max(createdAt ?? 0, eventTs);
+        if (lastReferenceMs === 0) {
+          try {
+            lastReferenceMs = statSync(absPath).mtimeMs;
+          } catch {
+            lastReferenceMs = 0;
+          }
+        }
+        const relPath = storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, typeDir, entry.name);
+        yield { stable_id: stableId, maturity, type: typeDir, absPath, relPath, lastReferenceMs };
       }
-      const relPath = posix.join(
-        ".fabric/knowledge",
-        typeDir,
-        entry.name,
-      );
-      yield { stable_id: stableId, maturity, type: typeDir, absPath, relPath, lastReferenceMs };
     }
   }
 }
@@ -5267,6 +5285,7 @@ async function inspectOrphanDemote(
     candidates.push({
       stable_id: entry.stable_id,
       path: entry.relPath,
+      path_abs: entry.absPath,
       age_days: ageDays,
       maturity: entry.maturity,
       next_maturity: nextLowerMaturity(entry.maturity),
@@ -5301,11 +5320,14 @@ async function inspectStaleArchive(
       continue;
     }
     const filename = posix.basename(entry.relPath);
+    const archiveDisplay = `${entry.relPath.slice(0, entry.relPath.indexOf(":") + 1)}${posix.join(".archive", entry.type, filename)}`;
     candidates.push({
       stable_id: entry.stable_id,
       path: entry.relPath,
+      path_abs: entry.absPath,
       age_days: ageDays,
-      archive_path: posix.join(".fabric/.archive", entry.type, filename),
+      archive_path: archiveDisplay,
+      archive_path_abs: join(entry.absPath, "..", "..", "..", ".archive", entry.type, filename),
     });
   }
 
@@ -5327,11 +5349,9 @@ type PendingFileVisit = {
   age_days: number;
 };
 
-// Walks BOTH the team-rooted (`<projectRoot>/.fabric/knowledge/pending/`)
-// and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/pending/`) staging
-// trees and yields one visit per `.md` file. Mirrors the dual-root pattern
-// used by iterateCanonicalFilenames for the canonical knowledge trees, but
-// over the pending staging area introduced by TASK-008 (B1).
+// Walks the pending staging trees inside the project's read-set stores and
+// yields one visit per `.md` file. Retired project-local / legacy personal
+// roots are intentionally ignored in store-only mode.
 //
 // Files with no parseable created_at AND no readable mtime yield an
 // "unknown-age" visit synthesized at PENDING_OVERDUE_THRESHOLD_DAYS+1 days
@@ -5341,13 +5361,8 @@ function* iteratePendingFiles(
   projectRoot: string,
   now: number,
 ): Generator<PendingFileVisit> {
-  const teamRoot = join(projectRoot, ".fabric", "knowledge", "pending");
-  const personalRoot = join(resolvePersonalRootForPending(), ".fabric", "knowledge", "pending");
-
-  for (const [layer, root, displayPrefix] of [
-    ["team", teamRoot, ".fabric/knowledge/pending"] as const,
-    ["personal", personalRoot, "~/.fabric/knowledge/pending"] as const,
-  ]) {
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const root = join(store.dir, STORE_LAYOUT.knowledgeDir, "pending");
     if (!existsSync(root)) {
       continue;
     }
@@ -5386,16 +5401,15 @@ function* iteratePendingFiles(
           mtimeMs = 0;
         }
         const referenceMs = createdAt ?? mtimeMs;
-        const displayPath = posix.join(displayPrefix, typeDir, entry.name);
         if (referenceMs === 0) {
           // Both missing → synthesize an overdue-but-not-auto-archive age so
           // the overdue lint surfaces it for human triage; the auto-archive
           // gate (>30d) is deliberately NOT triggered without an age signal.
           yield {
-            layer,
+            layer: store.layer,
             type: typeDir,
             filename: entry.name,
-            pending_path: displayPath,
+            pending_path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, "pending", typeDir, entry.name),
             pending_path_abs: absPath,
             stable_id: undefined,
             age_days: PENDING_OVERDUE_THRESHOLD_DAYS + 1,
@@ -5405,10 +5419,10 @@ function* iteratePendingFiles(
         const ageDays = Math.floor((now - referenceMs) / MS_PER_DAY);
         const stableId = extractKnowledgeFrontmatterId(source) ?? undefined;
         yield {
-          layer,
+          layer: store.layer,
           type: typeDir,
           filename: entry.name,
-          pending_path: displayPath,
+          pending_path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, "pending", typeDir, entry.name),
           pending_path_abs: absPath,
           stable_id: stableId,
           age_days: ageDays,
@@ -5416,14 +5430,6 @@ function* iteratePendingFiles(
       }
     }
   }
-}
-
-// rc.5 TASK-009 (B2): inlined personal-root resolver mirroring
-// resolvePersonalKnowledgeRoot but anchored at `<home>` rather than
-// `<home>/.fabric/knowledge` — pending lives at `<home>/.fabric/knowledge/pending`
-// so callers want the homedir root and append the suffix themselves.
-function resolvePersonalRootForPending(): string {
-  return process.env.FABRIC_HOME ?? homedir();
 }
 
 function inspectPendingOverdue(
@@ -5447,13 +5453,8 @@ function inspectPendingOverdue(
 
 // rc.5 TASK-009 (B2): identifies pending entries whose age (frontmatter
 // created_at or mtime fallback) exceeds PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS.
-// Walks both team + personal pending roots. Auto-archive destinations mirror
-// the source layer:
-//   team:     .fabric/.archive/pending/<type>/<filename>
-//   personal: ~/.fabric/.archive/pending/<type>/<filename>
-// The mutation arm (applyPendingAutoArchive) git-mvs team files (preserving
-// rename detection inside the workspace git tree) and fs.renames personal
-// files (which live outside the project repo).
+// Store-backed auto-archive destinations live inside the same store:
+// `<alias>:.archive/pending/<type>/<filename>`.
 function inspectPendingAutoArchive(
   projectRoot: string,
   now: number,
@@ -5463,37 +5464,36 @@ function inspectPendingAutoArchive(
     if (visit.age_days <= PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS) {
       continue;
     }
+    const alias = visit.pending_path.slice(0, visit.pending_path.indexOf(":"));
+    const archivedTo = `${alias}:${posix.join(".archive/pending", visit.type, visit.filename)}`;
+    const archivedToAbs = join(
+      visit.pending_path_abs,
+      "..",
+      "..",
+      "..",
+      "..",
+      ".archive",
+      "pending",
+      visit.type,
+      visit.filename,
+    );
     if (visit.layer === "team") {
-      const archivedToRel = posix.join(".fabric/.archive/pending", visit.type, visit.filename);
       candidates.push({
         layer: "team",
         type: visit.type,
         pending_path: visit.pending_path,
         pending_path_abs: visit.pending_path_abs,
-        archived_to: archivedToRel,
-        archived_to_abs: join(projectRoot, archivedToRel),
+        archived_to: archivedTo,
+        archived_to_abs: archivedToAbs,
         age_days: visit.age_days,
       });
     } else {
-      const archivedToDisplay = posix.join(
-        "~/.fabric/.archive/pending",
-        visit.type,
-        visit.filename,
-      );
-      const archivedToAbs = join(
-        resolvePersonalRootForPending(),
-        ".fabric",
-        ".archive",
-        "pending",
-        visit.type,
-        visit.filename,
-      );
       candidates.push({
         layer: "personal",
         type: visit.type,
         pending_path: visit.pending_path,
         pending_path_abs: visit.pending_path_abs,
-        archived_to: archivedToDisplay,
+        archived_to: archivedTo,
         archived_to_abs: archivedToAbs,
         age_days: visit.age_days,
       });
@@ -5518,9 +5518,9 @@ function inspectPendingAutoArchive(
 // (#19/#20), which deal with integrity rather than corpus size.
 function inspectUnderseeded(projectRoot: string): UnderseededInspection {
   const threshold = readUnderseedThresholdFromConfig(projectRoot);
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
   let nodeCount = 0;
-  if (existsSync(knowledgeRoot)) {
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
     for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
       const dir = join(knowledgeRoot, typeDir);
       if (!existsSync(dir)) continue;
@@ -5998,19 +5998,15 @@ function* iterateRelevanceFrontmatter(
   projectRoot: string,
 ): Generator<RelevanceFrontmatterVisit> {
   for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const layerRoot = visit.layer === "team"
-      ? join(projectRoot, ".fabric", "knowledge")
-      : resolvePersonalKnowledgeRoot();
-    const absPath = join(layerRoot, visit.type, visit.filename);
     let source: string;
     try {
-      source = readFileSync(absPath, "utf8");
+      source = readFileSync(visit.absPath, "utf8");
     } catch {
       continue;
     }
     const scope = extractKnowledgeFrontmatterRelevanceScope(source);
     const paths = extractKnowledgeFrontmatterRelevancePaths(source);
-    yield { visit, scope, paths, absPath };
+    yield { visit, scope, paths, absPath: visit.absPath };
   }
 }
 
@@ -6389,13 +6385,9 @@ function createPersonalLayerPathMisclassifyCheck(
 function inspectSuspiciousKb(projectRoot: string): SuspiciousKbInspection {
   const candidates: SuspiciousKbCandidate[] = [];
   for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const layerRoot = visit.layer === "team"
-      ? join(projectRoot, ".fabric", "knowledge")
-      : resolvePersonalKnowledgeRoot();
-    const absPath = join(layerRoot, visit.type, visit.filename);
     let body: string;
     try {
-      body = readFileSync(absPath, "utf8");
+      body = readFileSync(visit.absPath, "utf8");
     } catch {
       continue;
     }
@@ -6505,8 +6497,8 @@ type RelevanceFieldsMissingInspection = {
   scanned_count: number;
 };
 
-// Walk the pending tree (both team + personal roots), parse each file's
-// frontmatter, and record entries that are missing `relevance_scope` and/or
+// Walk store-backed pending trees, parse each file's frontmatter, and record
+// entries that are missing `relevance_scope` and/or
 // `relevance_paths`. Entries without a parseable `---\n...\n---` frontmatter
 // block are skipped silently — that case is owned by other doctor lints
 // (e.g. malformed frontmatter triggers manual_error elsewhere). Read-only:
@@ -6519,18 +6511,8 @@ function inspectRelevanceFieldsMissing(
 
   const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
 
-  const teamRoot = join(projectRoot, ".fabric", "knowledge", "pending");
-  const personalRoot = join(
-    resolvePersonalRootForPending(),
-    ".fabric",
-    "knowledge",
-    "pending",
-  );
-
-  for (const [root, displayPrefix] of [
-    [teamRoot, ".fabric/knowledge/pending"] as const,
-    [personalRoot, "~/.fabric/knowledge/pending"] as const,
-  ]) {
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const root = join(store.dir, STORE_LAYOUT.knowledgeDir, "pending");
     if (!existsSync(root)) {
       continue;
     }
@@ -6575,7 +6557,7 @@ function inspectRelevanceFieldsMissing(
           continue;
         }
         candidates.push({
-          pending_path: posix.join(displayPrefix, typeDir, entry.name),
+          pending_path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, "pending", typeDir, entry.name),
           pending_path_abs: absPath,
           missing_scope: missingScope,
           missing_paths: missingPaths,
@@ -7094,22 +7076,12 @@ function createNarrowTooFewCheck(t: Translator, inspection: NarrowTooFewInspecti
 // ---------------------------------------------------------------------------
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21).
 //
-// All three inspections walk the same dual-root canonical knowledge tree
-// (team at `<projectRoot>/.fabric/knowledge/<type>/`, personal at
-// `<FABRIC_HOME>/.fabric/knowledge/<type>/`) parsing stable_ids out of the
-// canonical filename `<id>--<slug>.md` rather than YAML frontmatter — the
-// id is the path-decoupled identity, and filename-level scanning keeps the
-// inspections cheap (no file body read) for the integrity surface.
+// All three inspections walk the read-set store canonical knowledge trees,
+// parsing stable_ids out of the canonical filename `<id>--<slug>.md` rather
+// than YAML frontmatter — the id is the path-decoupled identity, and
+// filename-level scanning keeps the inspections cheap (no file body read) for
+// the integrity surface.
 // ---------------------------------------------------------------------------
-
-// Resolve the personal-layer knowledge root. Mirrors knowledge-meta-builder.ts's
-// resolvePersonalRoot but inlined to avoid pulling that module into doctor's
-// dependency graph (doctor has historically stayed self-contained on shared/
-// utilities only). Test-friendly via FABRIC_HOME override.
-function resolvePersonalKnowledgeRoot(): string {
-  const home = process.env.FABRIC_HOME ?? homedir();
-  return join(home, ".fabric", "knowledge");
-}
 
 type ParsedCanonicalFilename = {
   // Layer code parsed from the stable_id prefix.
@@ -7150,6 +7122,7 @@ type CanonicalFilenameVisit = {
   layer: CanonicalLayer;
   type: typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number];
   filename: string;
+  absPath: string;
   // Display path — project-relative POSIX for team layer; `~/.fabric/...`
   // form for personal layer (matches PERSONAL_CONTENT_REF_PREFIX in
   // knowledge-meta-builder.ts so messages render consistently with the rest of
@@ -7162,16 +7135,8 @@ type CanonicalFilenameVisit = {
 // trees. Yields only entries whose filename parses to a stable_id token —
 // other files (legacy-named, README, etc.) are silently skipped.
 function* iterateCanonicalFilenames(projectRoot: string): Generator<CanonicalFilenameVisit> {
-  const teamRoot = join(projectRoot, ".fabric", "knowledge");
-  const personalRoot = resolvePersonalKnowledgeRoot();
-
-  for (const [layer, root, displayPrefix] of [
-    ["team", teamRoot, ".fabric/knowledge"] as const,
-    ["personal", personalRoot, "~/.fabric/knowledge"] as const,
-  ]) {
-    if (!existsSync(root)) {
-      continue;
-    }
+  for (const store of resolveDoctorStoreRoots(projectRoot)) {
+    const root = join(store.dir, STORE_LAYOUT.knowledgeDir);
     for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
       const dir = join(root, typeDir);
       if (!existsSync(dir)) {
@@ -7191,11 +7156,12 @@ function* iterateCanonicalFilenames(projectRoot: string): Generator<CanonicalFil
         if (parsed === null) {
           continue;
         }
-        const displayPath = posix.join(displayPrefix, typeDir, entry.name);
+        const displayPath = storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, typeDir, entry.name);
         yield {
-          layer,
+          layer: store.layer,
           type: typeDir,
           filename: entry.name,
+          absPath: join(dir, entry.name),
           displayPath,
           parsed,
         };
@@ -7795,16 +7761,11 @@ export async function enrichDescriptions(
   let skipped = 0;
 
   for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const layerRoot =
-      visit.layer === "team"
-        ? join(projectRoot, ".fabric", "knowledge")
-        : resolvePersonalKnowledgeRoot();
-    const absPath = join(layerRoot, visit.type, visit.filename);
     scanned += 1;
 
     let source: string;
     try {
-      source = await readFile(absPath, "utf8");
+      source = await readFile(visit.absPath, "utf8");
     } catch {
       // Disappeared between readdir and read — skip silently (next doctor
       // run picks up the live state).
@@ -7883,7 +7844,7 @@ export async function enrichDescriptions(
     const rewritten =
       source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
 
-    await atomicWriteText(absPath, rewritten);
+    await atomicWriteText(visit.absPath, rewritten);
     modified += 1;
     candidates.push({
       path: visit.displayPath,

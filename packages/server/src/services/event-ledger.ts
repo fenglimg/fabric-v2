@@ -236,6 +236,9 @@ export async function appendEventLedgerEvent(
   projectRoot: string,
   event: EventLedgerEventInput,
 ): Promise<StoredEventLedgerEvent> {
+  if (process.env.FABRIC_TEST_EVENT_LEDGER_APPEND_FAIL_ROOT === projectRoot) {
+    throw new Error("simulated ledger append failure");
+  }
   const eventPath = getEventLedgerPath(projectRoot);
   // ISS-043: scrub secrets from free-text fields BEFORE truncation + validation.
   const redacted = redactSecretsInEvent(event);

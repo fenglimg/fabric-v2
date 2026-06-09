@@ -1,15 +1,18 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import {
   GLOBAL_BINDINGS_DIR,
   GLOBAL_STATE_DIR,
+  STORE_KNOWLEDGE_TYPE_DIRS,
+  STORE_LAYOUT,
+  storeRelativePathForMount,
 } from "../schemas/store.js";
 import {
   resolvedBindingsSnapshotSchema,
   type ResolvedBindingsSnapshot,
 } from "../schemas/bindings-snapshot.js";
-import type { StoreResolveInput } from "../resolver/contracts.js";
+import type { StoreReadSet, StoreResolveInput } from "../resolver/contracts.js";
 import { createStoreResolver } from "../resolver/store-resolver.js";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +62,78 @@ export interface WriteBindingsSnapshotOptions {
   now: string;
 }
 
+function countMarkdownFiles(dir: string): { count: number; oldestMtimeMs: number | null } {
+  let count = 0;
+  let oldestMtimeMs: number | null = null;
+  if (!existsSync(dir)) {
+    return { count, oldestMtimeMs };
+  }
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return { count, oldestMtimeMs };
+  }
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = countMarkdownFiles(fullPath);
+      count += nested.count;
+      if (
+        nested.oldestMtimeMs !== null &&
+        (oldestMtimeMs === null || nested.oldestMtimeMs < oldestMtimeMs)
+      ) {
+        oldestMtimeMs = nested.oldestMtimeMs;
+      }
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".md")) {
+      continue;
+    }
+    let mtimeMs;
+    try {
+      mtimeMs = statSync(fullPath).mtimeMs;
+    } catch {
+      continue;
+    }
+    count += 1;
+    if (oldestMtimeMs === null || mtimeMs < oldestMtimeMs) {
+      oldestMtimeMs = mtimeMs;
+    }
+  }
+  return { count, oldestMtimeMs };
+}
+
+function collectHookStats(globalRoot: string, resolveInput: StoreResolveInput, readSet: StoreReadSet) {
+  let pendingCount = 0;
+  let oldestPendingMtimeMs: number | null = null;
+  let canonicalCount = 0;
+
+  for (const store of readSet.stores) {
+    const mounted = resolveInput.mountedStores.find((entry) => entry.store_uuid === store.store_uuid) ?? {
+      store_uuid: store.store_uuid,
+    };
+    const storeDir = join(globalRoot, storeRelativePathForMount(mounted));
+    for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+      const canonical = countMarkdownFiles(join(storeDir, STORE_LAYOUT.knowledgeDir, type));
+      canonicalCount += canonical.count;
+    }
+    const pending = countMarkdownFiles(join(storeDir, STORE_LAYOUT.knowledgeDir, "pending"));
+    pendingCount += pending.count;
+    if (
+      pending.oldestMtimeMs !== null &&
+      (oldestPendingMtimeMs === null || pending.oldestMtimeMs < oldestPendingMtimeMs)
+    ) {
+      oldestPendingMtimeMs = pending.oldestMtimeMs;
+    }
+  }
+
+  return {
+    pending: { count: pendingCount, oldest_mtime_ms: oldestPendingMtimeMs },
+    canonical: { count: canonicalCount },
+  };
+}
+
 // Resolve + persist the snapshot; returns the snapshot object that was written.
 export function writeBindingsSnapshot(
   options: WriteBindingsSnapshotOptions,
@@ -73,6 +148,7 @@ export function writeBindingsSnapshot(
     generated_at: options.now,
     read_set,
     write_target: target,
+    hook_stats: collectHookStats(options.globalRoot, options.resolveInput, read_set),
   });
 
   const path = bindingsSnapshotPath(options.globalRoot, options.projectId);
