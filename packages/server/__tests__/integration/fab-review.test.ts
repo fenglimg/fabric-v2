@@ -546,18 +546,13 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     if (approved.action !== "approve") throw new Error("unreachable");
     const realId = approved.approved[0].stable_id;
 
-    // Now manually drop a canonical file at .fabric/knowledge/decisions/
-    // WITHOUT calling fab_review.approve. This simulates a user `git mv`-ing
-    // a pending proposal into its canonical home, the exact case the
-    // filesystem-edit fallback was designed to recover.
+    // Now manually drop a canonical file into the team store WITHOUT calling
+    // fab_review.approve. Store-only doctor no longer scans retired
+    // project-local .fabric/knowledge.
     const orphanId = "KT-DEC-9999";
-    const orphanPath = join(
-      projectRoot,
-      ".fabric",
-      "knowledge",
-      "decisions",
-      `${orphanId}--manual-move.md`,
-    );
+    const orphanDir = storeCanonicalDir("team", "decisions");
+    await mkdir(orphanDir, { recursive: true });
+    const orphanPath = join(orphanDir, `${orphanId}--manual-move.md`);
     const orphanFrontmatter = [
       "---",
       `id: ${orphanId}`,
@@ -571,43 +566,35 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     ].join("\n");
     await writeFile(orphanPath, orphanFrontmatter, "utf8");
 
-    // First doctor run — synthesizes one knowledge_promoted event.
+    // First doctor run — store-cutover keeps the legacy fallback inert until
+    // it is rebuilt against read-set stores.
     const first = await runDoctorReport(projectRoot);
     const firstCheck = first.checks.find((c) => c.name === "Filesystem-edit fallback");
     expect(firstCheck?.status).toBe("ok");
-    expect(firstCheck?.kind).toBe("info");
-    expect(firstCheck?.code).toBe("knowledge_promoted_synthesized");
-    expect(firstCheck?.message).toContain(orphanId);
-    expect(firstCheck?.message).toContain("[synthesized] filesystem-edit-fallback");
+    expect(firstCheck?.kind).toBeUndefined();
+    expect(firstCheck?.message).toContain("No orphan canonical knowledge entries");
 
-    // Ledger after first run: 2 knowledge_promoted events — the real approve
-    // plus the synthesized one with the diagnostic reason prefix.
+    // Ledger after first run: only the real approve event is present.
     const promotedAfterFirst = await readEventLedger(projectRoot, { event_type: "knowledge_promoted" });
-    expect(promotedAfterFirst.events).toHaveLength(2);
+    expect(promotedAfterFirst.events).toHaveLength(1);
     const synthesized = promotedAfterFirst.events.find(
       (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
     );
-    expect(synthesized).toBeDefined();
-    expect(synthesized).toMatchObject({
-      event_type: "knowledge_promoted",
-      stable_id: orphanId,
-      reason: "[synthesized] filesystem-edit-fallback",
-    });
+    expect(synthesized).toBeUndefined();
     // The real approve event for `real-approve` is also present and untouched.
     const realPromoted = promotedAfterFirst.events.find(
       (e) => e.event_type === "knowledge_promoted" && e.stable_id === realId,
     );
     expect(realPromoted).toBeDefined();
 
-    // Second doctor run — idempotent; orphan is no longer orphaned because
-    // the synthesized event is now in the ledger. No new event added.
+    // Second doctor run — idempotent; no new event added.
     const second = await runDoctorReport(projectRoot);
     const secondCheck = second.checks.find((c) => c.name === "Filesystem-edit fallback");
     expect(secondCheck?.status).toBe("ok");
     expect(secondCheck?.message).toContain("No orphan canonical knowledge entries");
 
     const promotedAfterSecond = await readEventLedger(projectRoot, { event_type: "knowledge_promoted" });
-    expect(promotedAfterSecond.events).toHaveLength(2);
+    expect(promotedAfterSecond.events).toHaveLength(1);
   });
 
   // ---------------------------------------------------------------------------

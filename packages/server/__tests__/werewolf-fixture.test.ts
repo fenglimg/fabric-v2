@@ -76,9 +76,11 @@ describe("werewolf-snapshot fixture (rc.37 F1)", () => {
     const metaInvalid = report.checks.find((c) => c.code === "agents_meta_invalid");
     expect(metaInvalid).toBeUndefined();
 
-    // draft_backlog (NEW-38 schema-aware counter) sees 53 draft / 57 total.
+    // Store-only cutover no longer counts retired project-local .fabric/knowledge
+    // as the canonical corpus for draft backlog.
     const draftBacklog = report.checks.find((c) => c.name === "Knowledge draft backlog");
-    expect(draftBacklog?.message).toContain("53/57");
+    expect(draftBacklog?.status).toBe("ok");
+    expect(draftBacklog?.message).not.toContain("53/57");
 
     // auto-promote info surface fires (settled drafts exist in the snapshot).
     const autoPromote = report.checks.find((c) => c.name === "Knowledge auto-promote");

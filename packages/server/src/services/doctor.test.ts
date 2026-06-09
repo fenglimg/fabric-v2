@@ -8506,7 +8506,7 @@ describe("runDoctorEmitCadenceCheck (rc.30 TASK-003 H2)", () => {
 
 describe("doctor legacy canonical iterator guardrails", () => {
   it("keeps iterateCanonicalEntries from synchronously scanning the project-local corpus", () => {
-    const source = readFileSync(join(process.cwd(), "packages/server/src/services/doctor.ts"), "utf8");
+    const source = readFileSync(new URL("./doctor.ts", import.meta.url), "utf8");
     const start = source.indexOf("function* iterateCanonicalEntries(");
     const end = source.indexOf("async function inspectOrphanDemote", start);
     expect(start).toBeGreaterThanOrEqual(0);

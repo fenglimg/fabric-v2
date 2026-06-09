@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile, mkdir, chmod } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -47,8 +47,11 @@ function pendingRel(layer: "team" | "personal", type: string, slug: string): str
   return `~/.fabric/${storeRelativePath(uuid)}/${STORE_LAYOUT.knowledgeDir}/pending/${type}/${slug}.md`;
 }
 
-// Resolve a reported `~/...` pending path to an absolute on-disk path.
+// Resolve a reported pending path to an absolute on-disk path.
 function pendingAbs(reported: string): string {
+  if (isAbsolute(reported)) {
+    return reported;
+  }
   const home = process.env.FABRIC_HOME!;
   return join(home, reported.slice(2));
 }
