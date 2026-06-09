@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 
 import { getProjectTranslator } from "../i18n.js";
+import { paint } from "../colors.js";
 import { runAbortSync, runContinueSync, runStartSync, type RunSyncResult } from "../sync/run-sync.js";
 
 // ---------------------------------------------------------------------------
@@ -23,7 +24,7 @@ function report(result: RunSyncResult, projectRoot: string): void {
   }
 }
 
-export default defineCommand({
+export const syncCommand = defineCommand({
   meta: { name: "sync", description: "Pull --rebase + push every mounted store; resume conflicts" },
   args: {
     continue: { type: "boolean", description: "Resume after resolving a rebase conflict" },
@@ -31,6 +32,12 @@ export default defineCommand({
   },
   run({ args }) {
     const projectRoot = process.cwd();
+    if (args.continue === true && args.abort === true) {
+      console.error(paint.error("fabric sync: --continue and --abort cannot be used together"));
+      process.exitCode = 1;
+      return;
+    }
+
     const options = { projectRoot, now: new Date().toISOString() };
     if (args.continue === true) {
       report(runContinueSync(options), projectRoot);
@@ -43,3 +50,5 @@ export default defineCommand({
     report(runStartSync(options), projectRoot);
   },
 });
+
+export default syncCommand;
