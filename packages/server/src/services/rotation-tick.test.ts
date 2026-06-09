@@ -58,14 +58,17 @@ describe("rotation-tick (Wave B B4)", () => {
     // Start the tick on a short interval to keep the test fast.
     startRotationTick(projectRoot, { intervalMs: 40 });
 
-    // Poll for up to 800ms for the rotation to fire + archive file to land.
+    // Poll for up to 800ms for the rotation to fire, archive file to land,
+    // and the main ledger to be rewritten with the audit event.
     const archiveDir = join(projectRoot, ".fabric", "events.archive");
     let archived: string[] = [];
+    let mainAfter = "";
     for (let i = 0; i < 20; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50));
       if (existsSync(archiveDir)) {
         archived = await readdir(archiveDir);
-        if (archived.length > 0) break;
+        mainAfter = await readFile(ledgerPath, "utf8");
+        if (archived.length > 0 && /"event_type":"events_rotated"/u.test(mainAfter)) break;
       }
     }
     stopRotationTick(projectRoot);
@@ -79,7 +82,6 @@ describe("rotation-tick (Wave B B4)", () => {
 
     // The main ledger now starts with an `events_rotated` audit event and
     // no longer contains the expired knowledge_proposed entry.
-    const mainAfter = await readFile(ledgerPath, "utf8");
     expect(mainAfter).toMatch(/"event_type":"events_rotated"/u);
     expect(mainAfter).not.toContain("rotation-tick-test");
   });
