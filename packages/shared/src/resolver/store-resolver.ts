@@ -40,6 +40,32 @@ function personalEntry(input: StoreResolveInput): ReadSetEntry | undefined {
   return entry;
 }
 
+function readSetEntryFromMounted(
+  store: StoreResolveInput["mountedStores"][number],
+): { entry: ReadSetEntry; warning?: StoreResolverWarning } {
+  const entry: ReadSetEntry = {
+    store_uuid: store.store_uuid,
+    alias: store.alias,
+    writable: store.writable,
+  };
+  if (store.remote !== undefined) {
+    entry.remote = store.remote;
+    return { entry };
+  }
+  return {
+    entry,
+    warning: {
+      code: "local_only_no_remote",
+      ref: store.alias,
+      message: `store '${store.alias}' is local-only; add a git remote to back it up (\`fabric store ... \` / doctor nudge)`,
+    },
+  };
+}
+
+function isMountedPersonal(input: StoreResolveInput, storeUuid: string): boolean {
+  return input.mountedStores.some((store) => store.store_uuid === storeUuid && store.personal);
+}
+
 function routeMatches(routeScope: string, scope: string): boolean {
   return scope === routeScope || scope.startsWith(`${routeScope}:`);
 }
@@ -61,8 +87,21 @@ export function createStoreResolver(): StoreResolver {
     resolveReadSet(input: StoreResolveInput): StoreReadSet {
       const stores: ReadSetEntry[] = [];
       const warnings: StoreResolverWarning[] = [];
+      const seenStoreUuids = new Set<string>();
 
       for (const req of input.requiredStores) {
+        if (req.suggested_remote === "$personal") {
+          const personal = findPersonal(input);
+          if (personal === undefined) {
+            warnings.push({
+              code: "missing_store",
+              ref: req.id,
+              message: `required store '${req.id}' is not mounted; run \`fabric store add\` (suggested remote: $personal)`,
+            });
+          }
+          continue;
+        }
+
         const matched = input.mountedStores.find(
           (m) => !m.personal && (m.alias === req.id || m.store_uuid === req.id),
         );
@@ -78,26 +117,21 @@ export function createStoreResolver(): StoreResolver {
           });
           continue;
         }
-        const entry: ReadSetEntry = {
-          store_uuid: matched.store_uuid,
-          alias: matched.alias,
-          writable: matched.writable,
-        };
-        if (matched.remote !== undefined) {
-          entry.remote = matched.remote;
-        } else {
-          warnings.push({
-            code: "local_only_no_remote",
-            ref: matched.alias,
-            message: `store '${matched.alias}' is local-only; add a git remote to back it up (\`fabric store ... \` / doctor nudge)`,
-          });
+        if (seenStoreUuids.has(matched.store_uuid)) {
+          continue;
+        }
+        const { entry, warning } = readSetEntryFromMounted(matched);
+        if (warning !== undefined) {
+          warnings.push(warning);
         }
         stores.push(entry);
+        seenStoreUuids.add(matched.store_uuid);
       }
 
       const personal = personalEntry(input);
-      if (personal !== undefined) {
+      if (personal !== undefined && !seenStoreUuids.has(personal.store_uuid)) {
         stores.push(personal);
+        seenStoreUuids.add(personal.store_uuid);
       }
 
       return { stores, warnings };
@@ -125,12 +159,15 @@ export function createStoreResolver(): StoreResolver {
       }
 
       const routeAlias = resolveRouteAlias(input, scope);
-      const active =
-        routeAlias === undefined
-          ? undefined
-          : input.mountedStores.find(
-              (m) => m.writable && !m.personal && (m.alias === routeAlias || m.store_uuid === routeAlias),
-            );
+      const readSet = this.resolveReadSet(input);
+      const active = routeAlias === undefined
+        ? undefined
+        : readSet.stores.find(
+          (store) =>
+            store.writable &&
+            !isMountedPersonal(input, store.store_uuid) &&
+            (store.alias === routeAlias || store.store_uuid === routeAlias),
+        );
       if (active === undefined) {
         return {
           target: null,
