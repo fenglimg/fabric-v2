@@ -1,6 +1,6 @@
 ---
 name: fabric-review
-description: 审 .fabric/knowledge pending+canonical (NOT PR review):approve/reject/modify/revisit/defer。Triggers 审批/驳回/复审/重审/approve/reject/review pending.
+description: 审 store-backed pending+canonical knowledge (NOT PR review):approve/reject/modify/revisit/defer。Triggers 审批/驳回/复审/重审/approve/reject/review pending.
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 
@@ -59,7 +59,7 @@ Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emi
 
 The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc.37 NEW-12 simplified 4 → 2):
 
-- **`pending`** — triage the write-side backlog (`.fabric/knowledge/pending/`): approve / reject / modify / defer per item. The dominant entry point.
+- **`pending`** — triage the write-side backlog returned by `fab_review action="list"` (`pending_path` identifies each store-backed entry): approve / reject / modify / defer per item. The dominant entry point.
 - **`maintain`** — sustain the EXISTING canonical KB: browse by topic (search), survey staleness/health, or revisit a specific entry. Merges the legacy `topic` + `health` + `revisit` modes — they are all "operate on already-canonical knowledge", distinct from triaging new drafts.
 
 ### 2-Step Inference Algorithm
@@ -73,7 +73,7 @@ The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc
 
 A `maintain`-row match → lock `maintain`. A `pending`-row match (or 0/ambiguous) → fall to Step 2.
 
-**Step 2 — Backlog default.** Glob `.fabric/knowledge/pending/**/*.md`:
+**Step 2 — Backlog default.** Call `fab_review action="list"` and inspect returned `items[].pending_path`:
 
 - Count ≥ `review_hint_pending_count` (default 10) OR oldest mtime > `review_hint_pending_age_days` (default 7) → `pending` (overflow, same threshold as Stop-hook).
 - Otherwise → default `pending` (most common review entry point).

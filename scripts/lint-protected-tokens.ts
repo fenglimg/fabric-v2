@@ -21,12 +21,12 @@ const PROTECTED_TOKENS_PATH = path.join(
   "protected-tokens.ts",
 );
 
-// Tokens every bootstrap template MUST contain verbatim. v2.0 bootstrap files
-// are short pointer files (the heavy lifting moved into AGENTS.md + the
-// runtime fab_get_knowledge_sections payload), so the universal contract is
-// just: which two MCP tools to call on edit, and where the event ledger lives.
+// Tokens every bootstrap template MUST contain verbatim. The default edit-time
+// entry point is the recall-first shortcut; plan_context + get_sections remain
+// protected as the fallback when the returned bodies need manual narrowing.
 // Drifting any of these silently breaks the AI-client handshake.
 const BOOTSTRAP_REQUIRED_TOKENS = [
+  "fab_recall",
   "fab_plan_context",
   "fab_get_knowledge_sections",
   ".fabric/events.jsonl",
@@ -35,7 +35,7 @@ const BOOTSTRAP_REQUIRED_TOKENS = [
 // Tokens every SKILL.md MUST contain verbatim. v2.0 skills are intentionally
 // mixed bilingual (Chinese narrative + English protocol tokens) so the lint
 // enforces only the load-bearing English anchors, not section structure.
-const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER", ".fabric/knowledge/"];
+const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER"];
 
 // Per-skill MCP tool that the skill wires up. Keyed by the parent directory
 // name under templates/skills/. Each entry MUST name the MCP tool(s) that
@@ -61,12 +61,14 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
   "fabric-import": [
     "fab_extract_knowledge",
     "fab_review",
+    "pending_path",
     "proposed_reason",
     "session_context",
     "source_sessions",
   ],
   "fabric-review": [
     "fab_review",
+    "pending_path",
     "relevance_scope",
     "relevance_paths",
     "narrow",

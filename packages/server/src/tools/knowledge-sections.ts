@@ -27,7 +27,7 @@ export function registerKnowledgeSections(server: McpServer, tracker?: InFlightT
     "fab_get_knowledge_sections",
     {
       description:
-        "Fetch the full markdown body of one or more Fabric rules picked from fab_plan_context. Returns body strings keyed by stable_id (frontmatter stripped). Use after fab_plan_context returned selectable entries to load full rule content for LLM context injection — scan the body for whatever headings the rule defines (Summary / Why proposed / Session context / Evidence, etc.).",
+        "Fetch the full markdown body of one or more Fabric knowledge entries picked from fab_plan_context. Returns body strings keyed by stable_id (frontmatter stripped). Use after fab_plan_context returned selectable entries to load entry bodies for LLM context injection — scan the body for whatever headings the entry defines (Summary / Why proposed / Session context / Evidence, etc.).",
       inputSchema: knowledgeSectionsInputSchema,
       outputSchema: knowledgeSectionsOutputSchema,
       annotations: knowledgeSectionsAnnotations,

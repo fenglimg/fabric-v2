@@ -4,61 +4,6 @@
   "jsdoc_policy": "optional-enhancer-only",
   "tools": [
     {
-      "id": "copy-dashboard-dist",
-      "path": "packages/server/scripts/copy-dashboard.mjs",
-      "owner": "@fenglimg/fabric-server",
-      "runtime": "node",
-      "category": "build",
-      "purpose": "Copy the built dashboard bundle into the server static output during the server build.",
-      "inputs": [
-        {
-          "name": "dashboard_dist",
-          "kind": "filesystem",
-          "path": "packages/dashboard/dist",
-          "required": true,
-          "description": "Built dashboard assets produced before the server packaging step."
-        },
-        {
-          "name": "server_static_output",
-          "kind": "filesystem",
-          "path": "packages/server/dist/static",
-          "required": false,
-          "description": "Target directory recreated on each run before files are copied."
-        }
-      ],
-      "outputs": [
-        {
-          "kind": "filesystem",
-          "path": "packages/server/dist/static",
-          "description": "Fresh static asset copy used by the packaged server."
-        }
-      ],
-      "side_effects": [
-        "Removes and recreates packages/server/dist/static before copying files.",
-        "Writes build-status lines to stderr."
-      ],
-      "related_rules": [
-        {
-          "anchor": "dashboard-static-serving",
-          "target": "packages/server-http-experimental/src/http.ts",
-          "description": "The copied assets are served by the Fabric HTTP server."
-        },
-        {
-          "anchor": "server-build-coupling",
-          "target": "packages/server/package.json",
-          "description": "The server build pipeline invokes this script after tsup."
-        }
-      ],
-      "maintenance": {
-        "update_when": [
-          "dashboard output location changes",
-          "server static serving path changes",
-          "copy semantics or side effects change"
-        ],
-        "change_log_expectation": "Update this manifest entry in the same change that alters the script contract."
-      }
-    },
-    {
       "id": "lint-protected-tokens",
       "path": "scripts/lint-protected-tokens.ts",
       "owner": "repo-root",

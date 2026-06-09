@@ -378,10 +378,9 @@ export function createShutdownHandler(deps: ShutdownHandlerDeps): () => void {
 
 // v2.0.0-rc.37 Wave A2: `startHttpServer` removed. The CLI surface
 // (`fabric serve`) is quarantined to packages/server-http-experimental/ per
-// KB [[fabric-serve-quarantine-not-delete]]. The Express app factory still
-// lives at `./http.ts` for tests + future restoration, but no main-line entry
-// point boots it. To restore: re-introduce this function alongside the moved
-// command file in the experimental package.
+// KB [[fabric-serve-quarantine-not-delete]]. The Express app factory, bearer
+// auth middleware, serve-lock service, and HTTP integration tests now live in
+// the experimental package; no main-line HTTP entry point remains.
 
 const entrypoint = process.argv[1];
 const currentFilePath = fileURLToPath(import.meta.url);

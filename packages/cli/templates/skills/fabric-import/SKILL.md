@@ -1,6 +1,6 @@
 ---
 name: fabric-import
-description: 冷启动从 git log + docs/*.md 回灌 .fabric/knowledge/pending (NOT code/data import). Triggers 导入历史/bootstrap fabric/mine changelog/挖掘 commit.
+description: 冷启动从 git log + docs/*.md 回灌 active write store pending knowledge (NOT code/data import). Triggers 导入历史/bootstrap fabric/mine changelog/挖掘 commit.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__fabric__fab_review
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__
 
 ## Purpose
 
-One-time per-project cold-start: lift git commits + `docs/*.md` into `.fabric/knowledge/pending/` as `team`-layer entries. Bridges `fabric install`'s 4-7 baseline → accumulated corpus. Run once on adoption or after major refactor.
+One-time per-project cold-start: lift git commits + `docs/*.md` into the active write store as `team`-layer pending entries. Bridges `fabric install`'s 4-7 baseline → accumulated corpus. Run once on adoption or after major refactor.
 
 ## Precondition
 

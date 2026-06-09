@@ -376,7 +376,7 @@ export const knowledgeSectionsAnnotations = {
   idempotentHint: true,
   destructiveHint: false,
   openWorldHint: false,
-  title: "Filter rule sections",
+  title: "Fetch knowledge entry bodies",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -398,7 +398,7 @@ export const recallInputSchema = z.object({
     .array(z.string())
     .min(1)
     .describe(
-      "Candidate file paths to recall Fabric rules for. Same semantics as fab_plan_context.paths.",
+      "Candidate file paths to recall Fabric knowledge entries for. Same semantics as fab_plan_context.paths.",
     ),
   intent: z
     .string()
@@ -596,7 +596,8 @@ export type ArchiveScanOutput = z.infer<typeof archiveScanOutputSchema>;
 // MCP tool contracts — fab_extract_knowledge (rc.2 protocol pre-lock)
 //
 // Semi-thick design: the Skill summarizes the user/session context, the MCP
-// server persists a pending knowledge entry under .fabric/knowledge/pending/.
+// server persists a pending knowledge entry in the active write store and
+// returns a store-resolved pending_path.
 // Schema lands now so consumers can target it; implementation arrives in rc.2.
 // ---------------------------------------------------------------------------
 
@@ -658,14 +659,14 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
   slug: z
     .string()
     .describe("URL-safe short identifier proposed by the Skill; server may sanitize"),
-  // rc.5 B1: dual pending root. When 'personal', the server writes to
-  // ~/.fabric/knowledge/pending/<type>/; otherwise to .fabric/knowledge/pending/<type>/.
-  // Defaults to 'team' to preserve existing call sites (Skill bumps as needed).
+  // Store-backed write routing. `personal` selects the personal write target;
+  // `team` selects the configured team write target. Defaults to `team` to
+  // preserve existing call sites (Skill bumps as needed).
   layer: z
     .enum(["team", "personal"])
     .optional()
     .describe(
-      "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
+      "Storage layer for the pending entry. 'team' writes to the configured team write store; 'personal' writes to the personal write store. Defaults to 'team'.",
     ),
   // v2.0.0-rc.7 T6: proposed_reason — required enum that drives `## Why
   // proposed` rendering. Skills (archive / import / review) infer the
@@ -1036,10 +1037,9 @@ const _fabReviewListItemSchema = z.object({
   tags: z.array(z.string()).optional(),
   title: z.string().optional(),
   summary: z.string().optional(),
-  // rc.5 B1: dual pending root. 'team' = workspace .fabric/knowledge/pending,
-  // 'personal' = ~/.fabric/knowledge/pending. Distinct from `layer` (frontmatter):
-  // origin reflects where the pending file actually lives on disk; layer reflects
-  // the declared classification that will drive the approve destination.
+  // Store-backed pending origin. Distinct from `layer` (frontmatter): origin
+  // reflects which write store produced the pending_path; layer reflects the
+  // declared classification that will drive the approve destination.
   origin: z.enum(["team", "personal"]).optional(),
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): frontmatter status markers. Default
   // "active" (or absent). `rejected` entries are excluded from list/search
@@ -1063,9 +1063,9 @@ const _fabReviewListItemSchema = z.object({
 // entries (mirrors `_fabReviewListItemSchema.pending_path_absolute`). All
 // other fields are the same as the list-item schema.
 const _fabReviewSearchItemSchema = z.object({
-  // Search hits live in one of two trees:
-  //  - "pending"   → .fabric/knowledge/pending/ (or ~/.fabric/knowledge/pending/)
-  //  - "canonical" → .fabric/knowledge/{decisions,pitfalls,...} (or personal mirror)
+  // Search hits live in one of two store-backed areas:
+  //  - "pending"   → write-store pending entries
+  //  - "canonical" → approved knowledge entries
   area: z.enum(["pending", "canonical"]),
   path: z.string(),
   path_absolute: z.string().optional(),

@@ -35,7 +35,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "type": "array",
       },
       "layer": {
-        "description": "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
+        "description": "Storage layer for the pending entry. 'team' writes to the configured team write store; 'personal' writes to the personal write store. Defaults to 'team'.",
         "enum": [
           "team",
           "personal",
@@ -878,7 +878,7 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     "idempotentHint": true,
     "openWorldHint": false,
     "readOnlyHint": true,
-    "title": "Filter rule sections",
+    "title": "Fetch knowledge entry bodies",
   },
   "inputSchema": {
     "$schema": "http://json-schema.org/draft-07/schema#",

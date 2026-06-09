@@ -1,6 +1,6 @@
 ---
 name: fabric-archive
-description: 归档对话洞察到 .fabric/knowledge/pending (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
+description: 归档对话洞察到 active write store 的 pending knowledge (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge
 ---
 
@@ -153,7 +153,7 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 ### WRITE Rules
 
 - NEVER write a knowledge entry directly to the filesystem; the only legal write path is `mcp__fabric__fab_extract_knowledge`.
-- NEVER write outside `.fabric/knowledge/pending/` — promotion to `.fabric/knowledge/<type>/` is rc.3 fab_review concern, NOT this skill.
+- NEVER infer or glob a project-local pending directory — persist through `fab_extract_knowledge` and use the returned store-resolved `pending_path`; promotion to canonical knowledge is fab_review concern, NOT this skill.
 - NEVER include an `id` field anywhere — pending entries have no id (late-bind on approve).
 - NEVER classify a candidate as `personal` when a 强 team signal applies. Default to team on ambiguity.
 - NEVER emit a non-empty `relevance_paths` when `relevance_scope=broad` — broad MUST always carry `relevance_paths=[]`.
@@ -161,7 +161,7 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - v2.0.0-rc.37 NEW-7 widened Phase 3.5: `edit_paths` ∪ `user_mentioned_paths` drives `relevance_paths`; `read_paths` flows separately to `evidence_paths` (structured frontmatter, not body markdown). NEVER lift body regex / symbol extraction into `relevance_paths` — those remain reserved for v2.1+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
 
 ## Worked Examples / E5 Cron / Dry-run (ref-only)
 

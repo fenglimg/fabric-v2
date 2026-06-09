@@ -19,7 +19,7 @@ description: 知识库语义淘汰门面 — 审计 KB 健康并以 deprecate-ov
 ## When NOT to use
 
 - 写 / 提议新知识条目 → `fabric-archive`。
-- 批量审 `.fabric/knowledge/pending/` 的 draft → `fabric-review`。
+- 批量审 pending draft → `fabric-review`（内部走 `fab_review action="list"` / `pending_path`）。
 - store 运维 / 同步 → `fabric-store` / `fabric-sync`。
 
 ## 两条红线
