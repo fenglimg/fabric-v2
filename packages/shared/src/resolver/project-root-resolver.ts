@@ -19,16 +19,6 @@ import type {
 // one project_id (S32); worktrees share the committed id (S45). See ADJ-P0-1.
 // ---------------------------------------------------------------------------
 
-// Retained for backward compat with any P0.5 red-suite import sites; no longer
-// thrown by this resolver but still used by the not-yet-implemented stubs
-// (store-disk-reader). Kept here as the canonical definition.
-export class ResolverNotImplementedError extends Error {
-  constructor(what: string) {
-    super(`${what} is not implemented yet (TDD target)`);
-    this.name = "ResolverNotImplementedError";
-  }
-}
-
 export function createProjectRootResolver(): ProjectRootResolver {
   return {
     resolve(signals: ProjectRootSignals): ProjectRootResolution | null {
