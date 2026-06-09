@@ -9,7 +9,7 @@ import { detectExistingLanguage, type ResolvedLanguage } from "../../lib/detect-
 import { buildForensicReport } from "../../scanner/forensic.js";
 import { detectClientSupports } from "../../config/resolver.js";
 import type { Stage, InstallContext, StageResult, ScaffoldResult, DiffFileState, InitWriteAction } from "./types.js";
-import { stageRan, stageFailedFromError } from "./pipeline.js";
+import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 
 // ---------------------------------------------------------------------------
 // Env Stage
@@ -43,6 +43,12 @@ export class EnvStage implements Stage {
       // Build scaffold plan
       const scaffold = await this.buildScaffoldPlan(target, context.options);
       context.state.scaffold = scaffold;
+
+      if (context.options.planOnly === true) {
+        const fabricLanguage = this.readFabricLanguagePreference(target);
+        context.state.fabricLanguage = fabricLanguage;
+        return stageSkipped("env", "dry-run: scaffold planned without writing files");
+      }
 
       // Execute scaffold (create directories and files)
       const created = await this.executeScaffold(scaffold, target);

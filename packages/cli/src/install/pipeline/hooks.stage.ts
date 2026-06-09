@@ -56,6 +56,9 @@ export class HooksStage implements Stage {
     if (context.options.skipHooks) {
       return stageSkipped("hooks", "skipped via --skipHooks");
     }
+    if (context.options.planOnly === true) {
+      return stageSkipped("hooks", "dry-run: hook and skill install planned without writing files");
+    }
 
     try {
       const target = context.target;

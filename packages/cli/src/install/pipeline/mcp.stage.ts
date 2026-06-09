@@ -32,6 +32,9 @@ export class McpStage implements Stage {
     if (context.options.skipMcp) {
       return stageSkipped("mcp", "skipped via --skipMcp");
     }
+    if (context.options.planOnly === true) {
+      return stageSkipped("mcp", "dry-run: MCP config install planned without writing files");
+    }
 
     try {
       const target = context.target;
