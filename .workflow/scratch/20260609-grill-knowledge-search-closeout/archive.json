@@ -1,0 +1,32 @@
+{
+  "$schema": "session-archive/1.0",
+  "session_id": "GRL-20260609-knowledge-search-closeout",
+  "session_type": "grill",
+  "session_path": "scratch/20260609-grill-knowledge-search-closeout",
+  "lifecycle": {
+    "status": "sealed",
+    "sealed_at": "2026-06-09T15:15:09+08:00",
+    "archived_at": null,
+    "linked_milestone": null
+  },
+  "content_refs": [
+    {
+      "type": "context-package",
+      "path": "context-package.json"
+    },
+    {
+      "type": "terminology",
+      "path": "terminology.md"
+    },
+    {
+      "type": "grill-report",
+      "path": "grill-report.md"
+    }
+  ],
+  "extraction": {
+    "harvested": false,
+    "reason": "user-skip"
+  },
+  "pruned": null
+}
+

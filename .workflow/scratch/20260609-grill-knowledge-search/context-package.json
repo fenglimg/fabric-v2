@@ -1,0 +1,149 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-20260609-knowledge-search",
+    "session_path": "scratch/20260609-grill-knowledge-search",
+    "generated_at": "2026-06-09T00:00:00+08:00"
+  },
+  "requirements": [
+    {
+      "id": "R-001",
+      "title": "Preserve store-only runtime recall",
+      "description": "Runtime retrieval must continue reading canonical knowledge from resolved mounted stores rather than project-local .fabric/knowledge roots.",
+      "priority": "must",
+      "ref": "grill-report.md#branch-8-migration--rollback"
+    },
+    {
+      "id": "R-002",
+      "title": "Keep fab_recall as default path",
+      "description": "One-step recall remains the default user-facing retrieval flow; two-step plan/fetch is for oversized context or manual selection.",
+      "priority": "must",
+      "ref": "grill-report.md#branch-1-scope--boundaries"
+    },
+    {
+      "id": "R-003",
+      "title": "Make vector retrieval observable",
+      "description": "Operators need proof whether semantic search is actually active or silently falling back to text-only.",
+      "priority": "should",
+      "ref": "grill-report.md#branch-7-observability--operations"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C-001",
+      "area": "storage",
+      "constraint": "Knowledge search MUST preserve store-qualified ids and provenance.",
+      "rationale": "Local ids can shadow across stores.",
+      "status": "locked",
+      "ref": "grill-report.md#q22-what-is-the-candidate-identity"
+    },
+    {
+      "id": "C-002",
+      "area": "retrieval",
+      "constraint": "Normal retrieval MUST NOT inject pending drafts.",
+      "rationale": "Pending entries are review-only in the architecture contract.",
+      "status": "locked",
+      "ref": "grill-report.md#q13-are-pending-entries-part-of-normal-recall"
+    },
+    {
+      "id": "C-003",
+      "area": "ranking",
+      "constraint": "Vector semantic search MUST remain supplementary to BM25, not override lexical relevance.",
+      "rationale": "embed_weight is capped below BM25_WEIGHT.",
+      "status": "locked",
+      "ref": "grill-report.md#semantic-search-verdict"
+    },
+    {
+      "id": "C-004",
+      "area": "operations",
+      "constraint": "Semantic search MUST stay opt-in and reversible by setting embed_enabled=false.",
+      "rationale": "Optional dependency and CPU/model footprint should not affect default installs.",
+      "status": "locked",
+      "ref": "grill-report.md#q83-how-should-semantic-search-be-rolled-back"
+    }
+  ],
+  "domain": {
+    "problem_statement": "Knowledge search in Fabric spans store-backed runtime recall, two-step candidate/body retrieval, and review/admin substring search. The main runtime path is mostly store-only aligned, but performance, explicit-id semantics, semantic-search observability, and surface-alignment gaps remain.",
+    "terminology": [
+      {
+        "term": "Knowledge search",
+        "definition": "Umbrella for runtime recall, two-step retrieval, and review search.",
+        "code_ref": "packages/server/src/tools/recall.ts:28",
+        "status": "locked"
+      },
+      {
+        "term": "Store-only",
+        "definition": "Knowledge source of truth is mounted stores' knowledge tree.",
+        "code_ref": "docs/ARCHITECTURE.md:25",
+        "status": "locked"
+      },
+      {
+        "term": "Vector semantic search",
+        "definition": "Optional dense vector scoring via fastembed.",
+        "code_ref": "packages/server/src/services/vector-retrieval.ts:1",
+        "status": "locked"
+      }
+    ],
+    "audience": "Fabric maintainers and AI tooling operators",
+    "industry": "AI developer tooling"
+  },
+  "non_goals": [
+    {
+      "title": "Implement code changes in this grill",
+      "rationale": "This session is an architectural stress test and evidence package.",
+      "ref": "grill-report.md#recommended-next-work"
+    }
+  ],
+  "insights": [
+    {
+      "area": "store-only",
+      "summary": "Main runtime recall is store-only aligned, but schemas/docs/comments still expose retired local paths.",
+      "evidence": "packages/server/src/services/plan-context.ts:278; packages/shared/src/schemas/api-contracts.ts:600",
+      "ref": "grill-report.md#store-only-verdict"
+    },
+    {
+      "area": "semantic-search",
+      "summary": "Config enables vectors in this repo, but runtime activation requires optional fastembed import success.",
+      "evidence": "fabric.config.json; packages/server/src/services/vector-retrieval.ts:69",
+      "ref": "grill-report.md#semantic-search-verdict"
+    },
+    {
+      "area": "performance",
+      "summary": "The largest remaining bottleneck is O(N) store walking and file reads, not just scoring.",
+      "evidence": "packages/server/src/services/cross-store-recall.ts:124; packages/server/src/services/plan-context.ts:324",
+      "ref": "grill-report.md#bottlenecks"
+    }
+  ],
+  "open_questions": [
+    {
+      "area": "explicit-id recall",
+      "question": "Should fab_recall ids bypass top_k and fetch directly from store body index?",
+      "options": ["direct lookup", "keep candidate-bounded contract", "add a separate direct-id tool"],
+      "ref": "grill-report.md#q33-what-happens-when-explicit-ids-are-outside-top_k"
+    },
+    {
+      "area": "indexing",
+      "question": "Should Fabric persist a store-local derived search index, and what invalidates it?",
+      "options": ["store-local index", "binding-level filtered view", "keep live scan"],
+      "ref": "grill-report.md#q25-is-there-a-persisted-search-index"
+    },
+    {
+      "area": "embedding",
+      "question": "Should doc vector cache be keyed by model as well as text?",
+      "options": ["model+text key", "clear cache on model change", "require restart only"],
+      "ref": "grill-report.md#q84-is-model-switching-safe"
+    }
+  ],
+  "references": [
+    {
+      "type": "grill-report",
+      "path": "grill-report.md"
+    },
+    {
+      "type": "terminology",
+      "path": "terminology.md"
+    }
+  ]
+}
+

@@ -1,0 +1,141 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-20260609-knowledge-search-closeout",
+    "session_path": "scratch/20260609-grill-knowledge-search-closeout",
+    "generated_at": "2026-06-09T15:15:09+08:00"
+  },
+  "requirements": [
+    {
+      "id": "R-001",
+      "title": "Direct id recall must bypass ranked top_k",
+      "description": "When fab_recall receives explicit ids, it must fetch known ids from the read-set store even if they were omitted from ranked candidates.",
+      "priority": "must",
+      "ref": "grill-report.md#c1-explicit-ids-are-still-not-direct-lookup"
+    },
+    {
+      "id": "R-002",
+      "title": "Related edges must normalize bare/store-qualified/redirected ids",
+      "description": "include_related must support the documented bare stable-id edge format, current store-qualified ids, and id redirects after layer flips.",
+      "priority": "must",
+      "ref": "grill-report.md#c2-include_related-only-works-with-store-qualified-related-ids"
+    },
+    {
+      "id": "R-003",
+      "title": "Vector semantic search must be observable",
+      "description": "Operators must be able to tell whether configured semantic search actually loaded fastembed and which model is active.",
+      "priority": "should",
+      "ref": "grill-report.md#c9-embedder-health-is-invisible"
+    },
+    {
+      "id": "R-004",
+      "title": "Public store-only surface must stop teaching retired roots",
+      "description": "Public schemas, installed skills, and hooks must not describe project-local .fabric/knowledge as runtime source of truth.",
+      "priority": "should",
+      "ref": "grill-report.md#c5-mcp-schemas-still-teach-retired-dual-roots"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C-001",
+      "area": "retrieval",
+      "constraint": "Explicit ids MUST be treated as direct lookup requests, not only as filters over surfaced candidates.",
+      "rationale": "Known id fetch should not depend on ranking/top_k.",
+      "status": "locked",
+      "ref": "grill-report.md#c1-explicit-ids-are-still-not-direct-lookup"
+    },
+    {
+      "id": "C-002",
+      "area": "graph",
+      "constraint": "Related-edge matching MUST resolve bare ids, store-qualified ids, and knowledge_id_redirect mappings.",
+      "rationale": "Parser contract documents bare stable ids while runtime candidates are store-qualified.",
+      "status": "locked",
+      "ref": "grill-report.md#c2-include_related-only-works-with-store-qualified-related-ids"
+    },
+    {
+      "id": "C-003",
+      "area": "security",
+      "constraint": "Team-sourced related edges MUST NOT point to personal KP targets, including store-qualified personal:KP forms.",
+      "rationale": "Avoid topology leakage from shared/team knowledge into personal graph shape.",
+      "status": "locked",
+      "ref": "grill-report.md#c4-store-qualified-personal-related-ids-can-bypass-kt---kp-leak-guard"
+    }
+  ],
+  "domain": {
+    "problem_statement": "Knowledge search is close but not done. The remaining work is mostly correctness and surface alignment before scale indexing: direct id recall, related-edge normalization, embedder health, store-only schema/template cleanup, and a few low-risk review/install fixes.",
+    "terminology": [
+      {
+        "term": "Direct id recall",
+        "definition": "Fetch a known stable id body from the read-set store without requiring ranked candidate surfacing.",
+        "code_ref": "packages/server/src/services/recall.ts:104",
+        "status": "locked"
+      },
+      {
+        "term": "Related-edge normalization",
+        "definition": "Resolve related references across bare, store-qualified, and redirected id forms.",
+        "code_ref": "packages/server/src/services/recall.ts:129",
+        "status": "locked"
+      },
+      {
+        "term": "Embedder health",
+        "definition": "Runtime observability of whether semantic vector retrieval is active or falling back.",
+        "code_ref": "packages/server/src/services/vector-retrieval.ts:69",
+        "status": "locked"
+      }
+    ],
+    "audience": "Fabric maintainers",
+    "industry": "AI developer tooling"
+  },
+  "non_goals": [
+    {
+      "title": "Do not build a vector database first",
+      "rationale": "Correctness and contract drift are higher priority than scale optimization.",
+      "ref": "grill-report.md#what-not-to-do"
+    },
+    {
+      "title": "Do not inject pending entries into normal recall",
+      "rationale": "Pending remains review-only by architecture contract.",
+      "ref": "grill-report.md#what-not-to-do"
+    }
+  ],
+  "insights": [
+    {
+      "area": "sequencing",
+      "summary": "Fix P0 direct-id and related-edge correctness before derived indexing.",
+      "evidence": "packages/server/src/services/recall.ts:104; packages/server/src/services/recall.ts:129",
+      "ref": "grill-report.md#recommended-closeout-order"
+    },
+    {
+      "area": "store-only",
+      "summary": "Runtime is mostly store-only, but public contract text still leaks retired dual-root concepts.",
+      "evidence": "packages/shared/src/schemas/api-contracts.ts:600; packages/shared/src/schemas/api-contracts.ts:1047",
+      "ref": "grill-report.md#c5-mcp-schemas-still-teach-retired-dual-roots"
+    },
+    {
+      "area": "semantic-search",
+      "summary": "Semantic search should stay enabled with the current Chinese model, but needs runtime health reporting.",
+      "evidence": "packages/server/src/services/vector-retrieval.ts:69; packages/shared/src/schemas/fabric-config.ts:472",
+      "ref": "grill-report.md#c9-embedder-health-is-invisible"
+    }
+  ],
+  "open_questions": [
+    {
+      "area": "indexing",
+      "question": "Should derived metadata index be store-local only, or store-local plus binding-level filtered view?",
+      "options": ["store-local only", "store-local plus binding view", "keep live scan"],
+      "ref": "grill-report.md#c12-store-scanread-remains-the-main-runtime-scaling-bottleneck"
+    }
+  ],
+  "references": [
+    {
+      "type": "grill-report",
+      "path": "grill-report.md"
+    },
+    {
+      "type": "terminology",
+      "path": "terminology.md"
+    }
+  ]
+}
+

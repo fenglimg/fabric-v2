@@ -1,0 +1,53 @@
+{
+  "version": "3.1",
+  "project_name": "fabric-v2-store-only-align",
+  "status": "idle",
+  "current_milestone": null,
+  "current_task_id": null,
+  "milestones": [],
+  "_milestone_schema": "{ id, name, type: 'standard'|'adhoc', status, phases[], phase_slugs{}, roadmap_ref, created_at }",
+  "artifacts": [
+    {
+      "id": "GRL-20260609-knowledge-search",
+      "type": "grill",
+      "scope": "standalone",
+      "path": "scratch/20260609-grill-knowledge-search",
+      "status": "completed",
+      "context_package": ".workflow/scratch/20260609-grill-knowledge-search/context-package.json",
+      "created_at": "2026-06-09T00:00:00+08:00",
+      "metadata": {
+        "topic": "Knowledge search architecture, store-only alignment, semantic search, and embedding model choice",
+        "depth": "deep",
+        "branches_completed": 8,
+        "decisions_locked": 31,
+        "decisions_open": 14,
+        "terms_defined": 13
+      }
+    },
+    {
+      "id": "GRL-20260609-knowledge-search-closeout",
+      "type": "grill",
+      "scope": "standalone",
+      "path": "scratch/20260609-grill-knowledge-search-closeout",
+      "status": "completed",
+      "context_package": ".workflow/scratch/20260609-grill-knowledge-search-closeout/context-package.json",
+      "created_at": "2026-06-09T15:15:09+08:00",
+      "metadata": {
+        "topic": "Knowledge search closeout recommendations",
+        "depth": "standard",
+        "branches_completed": 5,
+        "decisions_locked": 17,
+        "decisions_open": 3,
+        "terms_defined": 7
+      }
+    }
+  ],
+  "last_updated": "2026-06-09T15:15:09+08:00",
+  "accumulated_context": {
+    "key_decisions": [],
+    "blockers": [],
+    "deferred": []
+  },
+  "transition_history": [],
+  "milestone_history": []
+}
