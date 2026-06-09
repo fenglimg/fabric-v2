@@ -47,10 +47,10 @@ side-by-side so anyone editing one config knows what the others require.
 | -------------------- | ---------------------------------------- | -------------------------------------------------- | ----------------------------------------------- |
 | Settings file        | `.claude/settings.json`                  | `.codex/hooks.json`                                | `.cursor/hooks.json`                            |
 | Top-level envelope   | `hooks: { ... }` (no version)            | `events: { ... }` (no version)                     | `{ version: 1, hooks: { ... } }` (number, not string) |
-| Event-name case      | PascalCase: `Stop`, `SessionStart`, `PreToolUse`, `UserPromptSubmit` (user entries preserved; Fabric cite policy does not install here) | PascalCase: `Stop`, `SessionStart`, `PreToolUse`     | camelCase: `stop`, `sessionStart`, `preToolUse` |
+| Event-name case      | PascalCase: `Stop`, `SessionStart`, `PreToolUse`, `UserPromptSubmit` | PascalCase: `Stop`, `SessionStart`, `PreToolUse`     | camelCase: `stop`, `sessionStart`, `preToolUse` |
 | Per-entry shape      | Nested matcher: `[{matcher, hooks:[{type:"command", command}]}]` | Flat: `[{command, matcher?}]`                      | Flat: `[{command, matcher?, type?, timeout?, loop_limit?, failClosed?}]` |
 | Path interpolation   | `${CLAUDE_PROJECT_DIR}` (env var)        | `"$(git rev-parse --show-toplevel)"` (shell expansion) | project-relative (resolved by Cursor)           |
-| Cite-policy event    | `PreToolUse` edit hook, paired after `knowledge-hint-narrow.cjs` | `PreToolUse` edit hook, after `knowledge-hint-narrow.cjs` | `preToolUse` edit hook, after `knowledge-hint-narrow.cjs` |
+| Cite-policy event    | `UserPromptSubmit` (per-prompt)          | `SessionStart` 2nd entry (rc.37 NEW-21 parity)     | `sessionStart` 2nd entry (rc.37 NEW-21 parity)  |
 
 Whenever a hook is added to one config, walk this table and add the equivalent
 entry to the other two — `fabric install` merges each into its respective

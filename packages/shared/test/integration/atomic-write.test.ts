@@ -6,19 +6,20 @@
  * T5: EXDEV (cross-device rename) → error bubbles, .tmp cleaned, NO fallback copy
  */
 import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'node:fs'
-import { readFile, rename } from 'node:fs/promises'
+import { open, readFile, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.mock is hoisted — wraps node:fs/promises so we can override `rename` per-test.
-// All other exports pass through to the real implementation (writeFile, unlink, etc.),
-// so I2/I3/atomicWriteJson tests are unaffected. Only T5 swaps in EXDEV behavior.
+// All other exports pass through to the real implementation (writeFile, unlink, etc.).
+// Tests override rename for EXDEV and observe open to guard the default fsync path.
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
   return {
     ...actual,
+    open: vi.fn(actual.open),
     rename: vi.fn(actual.rename),
   }
 })
@@ -224,6 +225,38 @@ describe('T5 atomic-write: EXDEV cross-device rename', () => {
 
     const files = readdirSync(dir)
     expect(files.filter((f) => f.endsWith('.tmp'))).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Durability default — fsync is opt-out, not opt-in
+// ---------------------------------------------------------------------------
+describe('atomic-write durability default', () => {
+  const openMock = vi.mocked(open)
+
+  beforeEach(() => {
+    openMock.mockClear()
+  })
+
+  it('atomicWriteText defaults to the fd write path so datasync can run before rename', async () => {
+    const dir = makeTempDir('aw-fsync-default-')
+    const target = join(dir, 'out.txt')
+
+    await atomicWriteText(target, 'durable by default')
+
+    expect(openMock).toHaveBeenCalledOnce()
+    expect(openMock.mock.calls[0]?.[1]).toBe('w')
+    expect(readFileSync(target, 'utf8')).toBe('durable by default')
+  })
+
+  it('atomicWriteText allows explicit fsync opt-out for non-critical writes', async () => {
+    const dir = makeTempDir('aw-fsync-optout-')
+    const target = join(dir, 'out.txt')
+
+    await atomicWriteText(target, 'fast path', { fsync: false })
+
+    expect(openMock).not.toHaveBeenCalled()
+    expect(readFileSync(target, 'utf8')).toBe('fast path')
   })
 })
 

@@ -7,6 +7,10 @@ import {
   type RuleDescriptionIndexItem,
   tokenize,
 } from "@fenglimg/fabric-shared";
+import {
+  trimToPayloadBudget,
+  type PayloadGuardOptions,
+} from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
 import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
@@ -72,6 +76,24 @@ export type PlanContextInput = {
   // pre-W3-T2 behaviour. Honest no-op when the surfaced set declares no in-corpus
   // related edges — nothing is appended and `related_appended` is omitted.
   include_related?: boolean;
+  /**
+   * Internal MCP presentation budget. When supplied by the tool layer,
+   * candidates are byte-trimmed before the selection token is cached so the
+   * token cannot reference candidates omitted from the response.
+   */
+  payload_budget?: PlanContextPayloadBudget;
+};
+
+export type PlanContextPayloadWarning = {
+  code: string;
+  file?: string;
+  action_hint?: string;
+};
+
+export type PlanContextPayloadBudget = {
+  limits?: PayloadGuardOptions;
+  warnings?: PlanContextPayloadWarning[];
+  trim_warning?: PlanContextPayloadWarning;
 };
 
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired. The profile
@@ -150,6 +172,10 @@ export type PlanContextResult = {
   // related edge to follow (honest graph-empty no-op). Additive — steady-state
   // callers never see it.
   related_appended?: Record<string, string>;
+  /** Internal service→tool signal; stripped before MCP output. */
+  payload_trimmed?: boolean;
+  /** Internal service→tool signal; stripped before MCP output. */
+  payload_over_budget?: boolean;
 };
 
 export type SelectionTokenState = {
@@ -170,9 +196,11 @@ export type SelectionTokenState = {
 // `selectable=false` server-side filtering, the AI can legitimately reuse a
 // single fab_plan_context token across a longer reasoning loop (multi-tool
 // chains, iterative refinement). 5min was tuned for the single straight-through
-// plan→fetch pair; 30min covers mid-task token reuse without bloating cache
-// (tokens are still cleared on every `revision_hash` change). Operators on
-// long-running agents can override via fabric-config.selection_token_ttl_ms.
+// plan→fetch pair; 30min covers mid-task token reuse without bloating cache.
+// Tokens stay valid until TTL/LRU expiry even if the read-set revision changes;
+// get_sections validates against the minted token state, not a global revision
+// invalidation. Operators on long-running agents can override via
+// fabric-config.selection_token_ttl_ms.
 const SELECTION_TOKEN_TTL_DEFAULT_MS = 30 * 60 * 1000;
 // v2.0-rc.7 T9: degenerate-mode threshold removed — the API is now symmetric
 // across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
@@ -286,7 +314,7 @@ export async function planContext(
   // client stale-detection compare, exactly as meta.revision did. Auto-heal is
   // obsolete: buildCrossStoreRawItems reads frontmatter descriptions live, so
   // there is no stored derived index that can drift out of sync with disk.
-  const revision = computeReadSetRevision(projectRoot);
+  const revision = await computeReadSetRevision(projectRoot);
   const stale = input.client_hash !== undefined && input.client_hash !== revision;
   const uniquePaths = dedupePaths(input.paths);
   // v2.0.0-rc.33 W2-3 / W2-4: pass scoring context so workspace-wide sort
@@ -438,13 +466,47 @@ export async function planContext(
   // `fab_get_knowledge_sections` (which DOES emit the `knowledge_consumed`
   // event required for rc.5 C5 closure) to load bodies. The inline
   // `candidates_full_content` short-circuit is gone.
-  const sharedStableIds = candidates.map((item) => item.stable_id);
   // v2.0.0-rc.29 TASK-008 (BUG-F3): resolve per-workspace TTL override (if any)
   // and thread it through createSelectionToken so the token's expires_at lines
   // up with the operator's chosen lifetime. Hot-path safe: readSelectionTokenTtlMs
   // is best-effort and returns undefined on any read/parse failure.
+  const now = Date.now();
   const ttlMs = readSelectionTokenTtlMs(projectRoot) ?? SELECTION_TOKEN_TTL_DEFAULT_MS;
-  const selectionToken = createSelectionToken(revision, uniquePaths, [], sharedStableIds, Date.now(), ttlMs);
+  const selectionToken = buildSelectionToken(revision, now);
+
+  const basePreflightDiagnostics = buildPreflightDiagnostics(suppressedStableIds);
+  let payloadTrimDropped = 0;
+  let payloadOverBudget = false;
+  if (input.payload_budget !== undefined) {
+    const fullCandidateCount = candidates.length;
+    const serialize = (candidateSlice: RuleDescriptionIndexItem[]): string => {
+      const dropped = fullCandidateCount - candidateSlice.length;
+      const totalOmitted = omittedCandidateCount + dropped;
+      return JSON.stringify({
+        revision_hash: revision,
+        stale,
+        selection_token: selectionToken,
+        entries,
+        candidates: candidateSlice,
+        ...(totalOmitted > 0 ? { omitted_candidate_count: totalOmitted } : {}),
+        preflight_diagnostics: basePreflightDiagnostics,
+        warnings:
+          dropped > 0 && input.payload_budget?.trim_warning !== undefined
+            ? [...(input.payload_budget.warnings ?? []), input.payload_budget.trim_warning]
+            : input.payload_budget?.warnings,
+        ...(Object.keys(relatedAppended).length > 0 ? { related_appended: relatedAppended } : {}),
+      });
+    };
+    const trim = trimToPayloadBudget(candidates, serialize, input.payload_budget.limits);
+    if (trim.dropped > 0) {
+      candidates = trim.items;
+      payloadTrimDropped = trim.dropped;
+    }
+    payloadOverBudget = trim.overBudget;
+  }
+
+  const sharedStableIds = candidates.map((item) => item.stable_id);
+  writeSelectionTokenState(selectionToken, revision, uniquePaths, [], sharedStableIds, now, ttlMs);
 
   // v2.0.0-rc.37 NEW-24: load recent knowledge_id_redirect events and
   // surface only the (old → new) mappings whose `new` id is in the current
@@ -467,8 +529,8 @@ export async function planContext(
     selection_token: selectionToken,
     entries,
     candidates,
-    ...(omittedCandidateCount > 0 ? { omitted_candidate_count: omittedCandidateCount } : {}),
-    preflight_diagnostics: buildPreflightDiagnostics(suppressedStableIds),
+    ...(omittedCandidateCount + payloadTrimDropped > 0 ? { omitted_candidate_count: omittedCandidateCount + payloadTrimDropped } : {}),
+    preflight_diagnostics: basePreflightDiagnostics,
     // v2.2 W5 R1: the auto_healed / previous_revision_hash pair was tied to the
     // co-location loadActiveMetaOrStale read-path auto-heal, which is retired.
     // Store-backed recall reads frontmatter live, so there is no stored derived
@@ -479,6 +541,8 @@ export async function planContext(
     // ONLY when at least one neighbour was actually appended. Empty (graph-empty
     // no-op) → field omitted, steady-state wire shape unchanged.
     ...(Object.keys(relatedAppended).length > 0 ? { related_appended: relatedAppended } : {}),
+    ...(payloadTrimDropped > 0 ? { payload_trimmed: true } : {}),
+    ...(payloadOverBudget ? { payload_over_budget: true } : {}),
   };
 
   // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. The audit event still
@@ -542,7 +606,24 @@ export function createSelectionToken(
   // a small ttlMs to exercise expiry without sleeping for 5 minutes.
   ttlMs: number = SELECTION_TOKEN_TTL_DEFAULT_MS,
 ): string {
-  const token = `selection:${revisionHash}:${now.toString(36)}:${Math.random().toString(36).slice(2)}`;
+  const token = buildSelectionToken(revisionHash, now);
+  writeSelectionTokenState(token, revisionHash, targetPaths, requiredStableIds, aiSelectableStableIds, now, ttlMs);
+  return token;
+}
+
+function buildSelectionToken(revisionHash: string, now: number): string {
+  return `selection:${revisionHash}:${now.toString(36)}:${Math.random().toString(36).slice(2)}`;
+}
+
+function writeSelectionTokenState(
+  token: string,
+  revisionHash: string,
+  targetPaths: string[],
+  requiredStableIds: string[],
+  aiSelectableStableIds: string[],
+  now: number,
+  ttlMs: number,
+): void {
   // ISS-027: sweep expired + enforce the capacity cap before inserting.
   sweepAndCapSelectionTokens(now);
   selectionTokenCache.set(token, {
@@ -554,7 +635,6 @@ export function createSelectionToken(
     created_at: now,
     expires_at: now + ttlMs,
   });
-  return token;
 }
 
 function dedupePaths(paths: string[]): string[] {

@@ -52,13 +52,13 @@ export const label = {
 
 export const symbol = {
   get ok(): string {
-    return isColorEnabled() ? paint.success("✓") : "[ok]";
+    return isColorEnabled() ? paint.success("[ok] ✓") : "[ok]";
   },
   get warn(): string {
-    return isColorEnabled() ? paint.warn("!") : "[warn]";
+    return isColorEnabled() ? paint.warn("[warn] !") : "[warn]";
   },
   get error(): string {
-    return isColorEnabled() ? paint.error("x") : "[error]";
+    return isColorEnabled() ? paint.error("[error] x") : "[error]";
   },
 };
 

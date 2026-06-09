@@ -3,6 +3,7 @@ import { ledgerQuerySchema } from "@fenglimg/fabric-shared";
 import { readAgentsMeta } from "@fenglimg/fabric-server";
 import { readLedger } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";
+import { sanitizeHttpKnowledgePayload } from "./response-sanitizer.js";
 
 export function registerLedgerApi(app: FabricHttpApp, projectRoot: string): void {
   app.get("/api/ledger", async (req, res) => {
@@ -18,7 +19,7 @@ export function registerLedgerApi(app: FabricHttpApp, projectRoot: string): void
 
     try {
       await readAgentsMeta(projectRoot);
-      res.json(await readLedger(projectRoot, validation.data));
+      res.json(sanitizeHttpKnowledgePayload(await readLedger(projectRoot, validation.data)));
     } catch (error) {
       sendUnknownError(res, error);
     }

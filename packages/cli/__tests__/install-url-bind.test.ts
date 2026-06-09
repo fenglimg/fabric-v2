@@ -40,7 +40,7 @@ function git(cwd: string, args: string[]): void {
 }
 
 // Seed a bare remote holding a committed Fabric store (store.json + knowledge/).
-function makeFakeStoreRemote(storeUuid: string): string {
+async function makeFakeStoreRemote(storeUuid: string): Promise<string> {
   const remote = join(tmp("fabric-remote-"), "store.git");
   execFileSync("git", ["init", "--bare", "-b", "main", remote], { stdio: ["ignore", "ignore", "pipe"] });
   const work = join(tmp("fabric-seed-"), "w");
@@ -48,7 +48,7 @@ function makeFakeStoreRemote(storeUuid: string): string {
   git(work, ["config", "user.email", "t@f.local"]);
   git(work, ["config", "user.name", "T"]);
   git(work, ["config", "commit.gpgsign", "false"]);
-  initStore(work, { store_uuid: storeUuid, created_at: NOW, canonical_alias: "team" }, { git: false });
+  await initStore(work, { store_uuid: storeUuid, created_at: NOW, canonical_alias: "team" }, { git: false });
   git(work, ["add", "-A"]);
   git(work, ["commit", "-m", "seed"]);
   git(work, ["push", "origin", "main"]);
@@ -66,9 +66,9 @@ describe("install --url (bindRemoteStoreToProject)", () => {
   it("mounts the remote store, binds it to the project, and sets it as write target", async () => {
     const { globalRoot, projectRoot } = setupGlobalAndProject();
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
-    const remote = makeFakeStoreRemote(TEAM);
+    const remote = await makeFakeStoreRemote(TEAM);
 
-    bindRemoteStoreToProject(projectRoot, remote, globalRoot);
+    await bindRemoteStoreToProject(projectRoot, remote, globalRoot);
 
     // mounted globally: personal + the cloned team store.
     const global = loadGlobalConfig(globalRoot);
@@ -88,10 +88,10 @@ describe("install --url (bindRemoteStoreToProject)", () => {
   it("is idempotent — re-running with the same remote does not re-clone a duplicate", async () => {
     const { globalRoot, projectRoot } = setupGlobalAndProject();
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
-    const remote = makeFakeStoreRemote(TEAM);
+    const remote = await makeFakeStoreRemote(TEAM);
 
-    bindRemoteStoreToProject(projectRoot, remote, globalRoot);
-    bindRemoteStoreToProject(projectRoot, remote, globalRoot);
+    await bindRemoteStoreToProject(projectRoot, remote, globalRoot);
+    await bindRemoteStoreToProject(projectRoot, remote, globalRoot);
 
     // still personal + one team store (reused the already-mounted clone).
     expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
@@ -105,7 +105,7 @@ describe("install (bindCreatedStoreToProject)", () => {
     const { globalRoot, projectRoot } = setupGlobalAndProject();
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
 
-    bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
+    await bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
 
     // mounted globally: personal + the freshly-created local store.
     const global = loadGlobalConfig(globalRoot);
@@ -122,7 +122,7 @@ describe("install (bindCreatedStoreToProject)", () => {
     const { globalRoot, projectRoot } = setupGlobalAndProject();
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
 
-    bindCreatedStoreToProject(projectRoot, "team", {
+    await bindCreatedStoreToProject(projectRoot, "team", {
       globalRoot,
       remote: "git@h:team.git",
     });
@@ -148,7 +148,7 @@ describe("install → recall round-trip oracle (W6)", () => {
     const { globalRoot, projectRoot } = setupGlobalAndProject();
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
 
-    bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
+    await bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
 
     const explained = scopeExplain(projectRoot, "team", globalRoot);
     // the bound store enters the read-set that cross-store recall walks...

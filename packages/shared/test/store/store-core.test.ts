@@ -28,10 +28,10 @@ afterEach(() => {
 const TEAM_UUID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const PLATFORM_UUID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-function makeStore(home: ReturnType<typeof createIsolatedHome>, uuid: string, alias: string): MountedStoreDir {
+async function makeStore(home: ReturnType<typeof createIsolatedHome>, uuid: string, alias: string): Promise<MountedStoreDir> {
   const dir = join(home.storesRoot, uuid);
   mkdirSync(dir, { recursive: true });
-  initStore(dir, { store_uuid: uuid, created_at: "2026-05-30T00:00:00.000Z", canonical_alias: alias });
+  await initStore(dir, { store_uuid: uuid, created_at: "2026-05-30T00:00:00.000Z", canonical_alias: alias });
   return { store_uuid: uuid, alias, dir };
 }
 
@@ -41,27 +41,27 @@ function writeEntry(store: MountedStoreDir, type: string, name: string, body: st
 }
 
 describe("P1 store core — init", () => {
-  it("scaffolds an empty default store recognized by the disk reader", () => {
+  it("scaffolds an empty default store recognized by the disk reader", async () => {
     const home = createIsolatedHome();
-    const store = makeStore(home, TEAM_UUID, "team");
+    const store = await makeStore(home, TEAM_UUID, "team");
     expect(recognizeStoreDir(store.dir)).toBe(true);
     expect(existsSync(join(store.dir, STORE_LAYOUT.knowledgeDir, "decisions"))).toBe(true);
     expect(existsSync(join(store.dir, ".git"))).toBe(true);
   });
 
-  it("refuses to re-init over an existing store.json (mint-once identity)", () => {
+  it("refuses to re-init over an existing store.json (mint-once identity)", async () => {
     const home = createIsolatedHome();
-    const store = makeStore(home, TEAM_UUID, "team");
-    expect(() =>
+    const store = await makeStore(home, TEAM_UUID, "team");
+    await expect(
       initStore(store.dir, { store_uuid: TEAM_UUID, created_at: "x", canonical_alias: "team" }),
-    ).toThrow(/already initialized/);
+    ).rejects.toThrow(/already initialized/);
   });
 });
 
 describe("P1 store core — git excludes volatile/derived", () => {
-  it("state/ and agents.meta.json are gitignored (S43/S58/S18)", () => {
+  it("state/ and agents.meta.json are gitignored (S43/S58/S18)", async () => {
     const home = createIsolatedHome();
-    const store = makeStore(home, TEAM_UUID, "team");
+    const store = await makeStore(home, TEAM_UUID, "team");
     // Drop volatile artifacts that must never be committed.
     writeFileSync(join(store.dir, STORE_LAYOUT.stateDir, "events.jsonl"), "{}\n", "utf8");
     writeFileSync(join(store.dir, "agents.meta.json"), "{}\n", "utf8");
@@ -78,34 +78,34 @@ describe("P1 store core — git excludes volatile/derived", () => {
 });
 
 describe("P1 store core — cross-store read isolation", () => {
-  it("reads across stores without merging identity (each entry keeps store_uuid)", () => {
+  it("reads across stores without merging identity (each entry keeps store_uuid)", async () => {
     const home = createIsolatedHome();
-    const team = makeStore(home, TEAM_UUID, "team");
-    const platform = makeStore(home, PLATFORM_UUID, "platform");
+    const team = await makeStore(home, TEAM_UUID, "team");
+    const platform = await makeStore(home, PLATFORM_UUID, "platform");
     // Same local id KT-DEC-0001 in BOTH stores — must stay distinct by provenance.
     writeEntry(team, "decisions", "KT-DEC-0001.md", "# team decision\n");
     writeEntry(platform, "decisions", "KT-DEC-0001.md", "# platform decision\n");
 
-    const all = readKnowledgeAcrossStores([team, platform]);
+    const all = await readKnowledgeAcrossStores([team, platform]);
     expect(all).toHaveLength(2);
     const byStore = new Map(all.map((r) => [r.store_uuid, r]));
     expect(byStore.get(TEAM_UUID)?.alias).toBe("team");
     expect(byStore.get(PLATFORM_UUID)?.alias).toBe("platform");
     // Single-store read sees only its own entry.
-    expect(listStoreKnowledge(team)).toHaveLength(1);
+    await expect(listStoreKnowledge(team)).resolves.toHaveLength(1);
   });
 });
 
 describe("P1 store core — cross-store pending aggregation API", () => {
-  it("returns the union of pending across writable stores with provenance", () => {
+  it("returns the union of pending across writable stores with provenance", async () => {
     const home = createIsolatedHome();
-    const team = makeStore(home, TEAM_UUID, "team");
-    const platform = makeStore(home, PLATFORM_UUID, "platform");
+    const team = await makeStore(home, TEAM_UUID, "team");
+    const platform = await makeStore(home, PLATFORM_UUID, "platform");
     writeEntry(team, STORE_PENDING_DIR, "draft-a.md", "# a\n");
     writeEntry(team, STORE_PENDING_DIR, "draft-b.md", "# b\n");
     writeEntry(platform, STORE_PENDING_DIR, "draft-c.md", "# c\n");
 
-    const pending = aggregatePendingAcrossStores([team, platform]);
+    const pending = await aggregatePendingAcrossStores([team, platform]);
     expect(pending).toHaveLength(3);
     expect(pending.filter((p) => p.store_uuid === TEAM_UUID)).toHaveLength(2);
     expect(pending.filter((p) => p.store_uuid === PLATFORM_UUID)).toHaveLength(1);

@@ -17,19 +17,41 @@ export interface SecretFinding {
 interface SecretRule {
   rule: string;
   re: RegExp;
+  category: "credential" | "pii";
 }
 
-const SECRET_RULES: SecretRule[] = [
-  { rule: "aws-access-key-id", re: /\bAKIA[0-9A-Z]{16}\b/ },
-  { rule: "private-key-block", re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/ },
-  { rule: "openai-api-key", re: /\bsk-[A-Za-z0-9]{20,}\b/ },
-  { rule: "github-token", re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
-  { rule: "slack-token", re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
+const CREDENTIAL_RULES: SecretRule[] = [
+  { rule: "aws-access-key-id", re: /\bAKIA[0-9A-Z]{16}\b/, category: "credential" },
+  { rule: "private-key-block", re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/, category: "credential" },
+  { rule: "openai-api-key", re: /\bsk-[A-Za-z0-9]{20,}\b/, category: "credential" },
+  { rule: "github-token", re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/, category: "credential" },
+  { rule: "slack-token", re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/, category: "credential" },
   {
     rule: "credential-assignment",
-    re: /(?:password|passwd|secret|api[_-]?key|access[_-]?token|token)\s*[:=]\s*['"][^'"\s]{8,}['"]/i,
+    re: /(?:password|passwd|secret|api[_-]?key|access[_-]?token|token)\s*[:=]\s*(?:"[^'"\s]{8,}"|'[^'"\s]{8,}'|[A-Za-z0-9_./+=:@-]{8,})/i,
+    category: "credential",
   },
 ];
+
+const PII_RULES: SecretRule[] = [
+  {
+    rule: "email-address",
+    re: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,
+    category: "pii",
+  },
+  {
+    rule: "ipv4-address",
+    re: /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/,
+    category: "pii",
+  },
+  {
+    rule: "phone-number",
+    re: /(?<!\d)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}(?!\d)/,
+    category: "pii",
+  },
+];
+
+const SECRET_RULES: SecretRule[] = [...CREDENTIAL_RULES, ...PII_RULES];
 
 // Scan content line-by-line; returns one finding per (rule, line) hit. Ordered
 // by line then rule for determinism.
@@ -46,9 +68,18 @@ export function scanForSecrets(content: string): SecretFinding[] {
   return findings;
 }
 
-// Convenience for the viability gate: true when any secret pattern matched.
+// Convenience for the viability gate: true when a credential pattern matched.
+// PII is redacted before persistence instead of blocking otherwise valid KB.
 export function hasSecrets(content: string): boolean {
-  return scanForSecrets(content).length > 0;
+  const lines = content.split(/\r?\n/u);
+  for (const line of lines) {
+    for (const { re } of CREDENTIAL_RULES) {
+      if (re.test(line)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // v2.1.0-rc.1 P6 (S40): replace every secret-shaped match with a redaction
@@ -58,8 +89,16 @@ export function hasSecrets(content: string): boolean {
 export const REDACTION_PLACEHOLDER_PREFIX = "[REDACTED:";
 
 export function redactSecrets(content: string): string {
+  return redactByRules(content, SECRET_RULES);
+}
+
+export function redactPii(content: string): string {
+  return redactByRules(content, PII_RULES);
+}
+
+function redactByRules(content: string, rules: SecretRule[]): string {
   let out = content;
-  for (const { rule, re } of SECRET_RULES) {
+  for (const { rule, re } of rules) {
     // Global, case-insensitive variant of each rule so every occurrence on
     // every line is replaced (the scan rules are single-match by design).
     const flags = re.flags.includes("i") ? "gi" : "g";

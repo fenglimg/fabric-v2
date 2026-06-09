@@ -51,8 +51,11 @@ describe("cli colors", () => {
 
     const { symbol } = await import("../src/colors.ts");
 
+    expect(symbol.ok).toContain("[ok]");
     expect(symbol.ok).toContain("✓");
+    expect(symbol.warn).toContain("[warn]");
     expect(symbol.warn).toContain("!");
+    expect(symbol.error).toContain("[error]");
     expect(symbol.error).toContain("x");
   });
 

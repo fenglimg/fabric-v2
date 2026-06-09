@@ -1,10 +1,9 @@
 import type { Stage, InstallContext, StageResult } from "./types.js";
-import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
+import { stageFailed, stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 import { installHooks, validateHookPaths } from "../hooks-orchestrator.js";
 import {
   cleanupDeprecatedSkills,
   installFabricArchiveSkill,
-  installFabricSkill,
   installFabricReviewSkill,
   installFabricImportSkill,
   installFabricSyncSkill,
@@ -28,6 +27,7 @@ import {
   type InstallStepResult,
 } from "../skills-and-hooks.js";
 import { writeFabricAgentsSnapshot } from "../write-bootstrap-snapshot.js";
+import { t } from "../../i18n.js";
 import { paint } from "../../colors.js";
 
 // ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ import { paint } from "../../colors.js";
  *
  * Responsibilities:
  * 1. Clean up deprecated skills
- * 2. Install all Fabric skills (entry router, archive, review, import, sync, store, audit, connect)
+ * 2. Install all Fabric skills (archive, review, import, sync, store, audit, connect)
  * 3. Install shared skill library
  * 4. Install hook scripts (fabric-hint, knowledge-hint-broad/narrow, cite-policy-evict, etc.)
  * 5. Install hook libs
@@ -59,7 +59,6 @@ export class HooksStage implements Stage {
 
     try {
       const target = context.target;
-      const translate = context.translate;
       const installResults: InstallStepResult[] = [];
 
       // Clean up deprecated skills
@@ -67,7 +66,6 @@ export class HooksStage implements Stage {
 
       // Install all skills
       installResults.push(...await this.runBestEffort("skill-install", () => installFabricArchiveSkill(target)));
-      installResults.push(...await this.runBestEffort("skill-fabric-install", () => installFabricSkill(target)));
       installResults.push(...await this.runBestEffort("skill-review-install", () => installFabricReviewSkill(target)));
       installResults.push(...await this.runBestEffort("skill-import-install", () => installFabricImportSkill(target)));
       installResults.push(...await this.runBestEffort("skill-sync-install", () => installFabricSyncSkill(target)));
@@ -110,7 +108,18 @@ export class HooksStage implements Stage {
       const skipped = installResults.filter((r) => r.status === "skipped").map((r) => r.path);
       const errors = installResults.filter((r) => r.status === "error").map((r) => `${r.step}: ${r.message}`);
 
-      console.log(this.formatStageResult("hooks", "completed", installed.length, skipped.length, translate));
+      // Print stage header and result
+      console.log(this.formatStageHeader(t("cli.install.stages.hooks")));
+      if (errors.length > 0) {
+        console.log(this.formatStageResult("hooks", "failed", installed.length, skipped.length));
+        return {
+          ...stageFailed("hooks", errors),
+          installed,
+          skipped,
+          payload: { installResults },
+        };
+      }
+      console.log(this.formatStageResult("hooks", "completed", installed.length, skipped.length));
 
       return stageRan("hooks", installed, skipped);
     } catch (error) {
@@ -152,14 +161,19 @@ export class HooksStage implements Stage {
     }
   }
 
+  private formatStageHeader(message: string): string {
+    const nextLabel = () => paint.ai(t("cli.shared.next"));
+    return `${nextLabel()} ${paint.muted(message)}`;
+  }
+
   private formatStageResult(
     stage: string,
-    status: "completed" | "skipped",
+    status: "completed" | "skipped" | "failed",
     installedCount: number,
     skippedCount: number,
-    translate: InstallContext["translate"],
   ): string {
-    const completedStageLabel = () => paint.success(translate("cli.install.stages.completed"));
+    const completedStageLabel = () =>
+      status === "failed" ? paint.error("failed") : paint.success(t("cli.install.stages.completed"));
     const counts = `installed=${installedCount} skipped=${skippedCount}`;
     return `${completedStageLabel()} ${stage}: ${counts}`;
   }

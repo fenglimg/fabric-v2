@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { defineCommand } from "citty";
@@ -176,7 +176,12 @@ function readOptedOutSlots(projectRoot: string): string[] {
 }
 
 function readSetStoreDirs(projectRoot: string): MountedStoreDir[] {
-  const input = buildStoreResolveInput(projectRoot);
+  let input: ReturnType<typeof buildStoreResolveInput>;
+  try {
+    input = buildStoreResolveInput(projectRoot);
+  } catch {
+    return [];
+  }
   if (input === null) {
     return [];
   }
@@ -193,14 +198,40 @@ function entryName(filePath: string): string {
   return filePath.split(/[\\/]/u).at(-1) ?? filePath;
 }
 
+function listLegacyProjectKnowledge(projectRoot: string): Array<MountedStoreDir & { file: string; type: string }> {
+  const refs: Array<MountedStoreDir & { file: string; type: string }> = [];
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  for (const type of KNOWLEDGE_TYPE_DIRS) {
+    const dir = join(knowledgeRoot, type);
+    if (!existsSync(dir)) continue;
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names.filter((n) => n.endsWith(".md")).sort()) {
+      refs.push({
+        store_uuid: "project-local",
+        alias: "",
+        dir: join(projectRoot, ".fabric"),
+        type,
+        file: join(dir, name),
+      });
+    }
+  }
+  return refs;
+}
+
 /**
  * Pure handler — exported for unit tests and for the server-side doctor
- * Onboard coverage advisory. Synchronous (filesystem walks are bounded by the
- * mounted store read-set).
+ * Onboard coverage advisory.
  */
-export function runOnboardCoverage(projectRoot: string): OnboardCoverageReport {
+export async function runOnboardCoverage(projectRoot: string): Promise<OnboardCoverageReport> {
   const filled = emptyFilled();
-  for (const ref of readKnowledgeAcrossStores(readSetStoreDirs(projectRoot))) {
+  const readSetRefs = await readKnowledgeAcrossStores(readSetStoreDirs(projectRoot));
+  const refs = [...readSetRefs, ...listLegacyProjectKnowledge(projectRoot)];
+  for (const ref of refs) {
     if (!(KNOWLEDGE_TYPE_DIRS as readonly string[]).includes(ref.type)) continue;
     const slot = readOnboardSlotFrontmatter(ref.file);
     if (slot === undefined) continue;
@@ -208,7 +239,7 @@ export function runOnboardCoverage(projectRoot: string): OnboardCoverageReport {
     // silently ignored — they neither fill nor count toward missing.
     if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
     const stableId = readStableIdFrontmatter(ref.file, entryName(ref.file));
-    filled[slot as OnboardSlot].push(`${ref.alias}:${stableId}`);
+    filled[slot as OnboardSlot].push(ref.alias.length === 0 ? stableId : `${ref.alias}:${stableId}`);
   }
 
   const optedOut = readOptedOutSlots(projectRoot);
@@ -302,7 +333,7 @@ export const onboardCoverageCommand = defineCommand({
   async run({ args }: { args: OnboardCoverageArgs }) {
     try {
       const projectRoot = resolve(args.target ?? process.cwd());
-      const report = runOnboardCoverage(projectRoot);
+      const report = await runOnboardCoverage(projectRoot);
       if (args.json === true) {
         process.stdout.write(`${JSON.stringify(report)}\n`);
       } else {

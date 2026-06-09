@@ -64,8 +64,8 @@ export async function installGlobalCore(
   const receipt = await runInstallTransaction([
     {
       name: "init-personal-store",
-      apply: () => {
-        initStore(
+      apply: async () => {
+        await initStore(
           personalDir,
           {
             store_uuid: options.personalStoreUuid,

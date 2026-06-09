@@ -1,6 +1,5 @@
 import type { ClaudeMcpScope } from "../../config/json.js";
 import type { OutputRenderer, StepInfo } from "../../tui/types.js";
-import type { Translator } from "@fenglimg/fabric-shared";
 
 // ---------------------------------------------------------------------------
 // Install Pipeline Types
@@ -108,8 +107,6 @@ export interface InstallContext {
   rollbackStack: RollbackAction[];
   /** Shared state between stages */
   state: InstallState;
-  /** Project-aware translator for user-facing install output */
-  translate: Translator;
   /** TUI output renderer (EPIC-005/006/007/008) */
   renderer?: OutputRenderer;
 }

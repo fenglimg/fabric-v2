@@ -46,10 +46,9 @@ type DoctorArgs = {
   // report-only. Renamed from --apply-lint in rc.15 for parallel naming with
   // --fix (server-side runDoctorApplyLint kept per blast-radius decision).
   "fix-knowledge"?: boolean;
-  // rc.7 T11: skip the safety confirm before --fix-knowledge mutates store
-  // counters, pending defaults, or cache files. Required for any non-tty
-  // invocation (CI, nested pipelines) unless FABRIC_NONINTERACTIVE=1 is set in
-  // the environment.
+  // rc.7 T11: skip the safety confirm before --fix-knowledge mutates frontmatter
+  // and runs git mv. Required for any non-tty invocation (CI, nested
+  // pipelines) unless FABRIC_NONINTERACTIVE=1 is set in the environment.
   yes?: boolean;
   // rc.35 TASK-12 (P0-11): unfold maintainer-audience action hints.
   verbose?: boolean;
@@ -87,12 +86,15 @@ type DoctorArgs = {
 };
 
 // rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
-// label used in the confirm preview. Keep this list aligned with
-// runDoctorApplyLint's live mutation arms; store-only cutover retired the
-// project-local demote/archive/git-mv paths.
+// label used in the confirm preview. We derive the mutation plan from the
+// pre-flight DoctorReport (fixable_errors + warnings) so the preview can be
+// rendered BEFORE any mutation runs. Codes outside this set are not part of
+// the fix-knowledge surface and are not counted.
 const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
-  knowledge_index_drift: "store counter floor",
-  knowledge_relevance_fields_missing: "pending relevance backfill",
+  knowledge_orphan_demote_required: "demote (maturity)",
+  knowledge_stale_archive_required: "archive (git mv)",
+  knowledge_pending_auto_archive: "archive (git mv, pending)",
+  knowledge_index_drift: "counter bump (agents.meta)",
   knowledge_session_hints_stale: "cache delete",
 };
 
@@ -675,7 +677,12 @@ function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
   writeStdout("");
   writeStdout(paint.ai("store health"));
   for (const diagnostic of diagnostics) {
-    const mark = diagnostic.severity === "warn" ? symbol.warn : "[info]";
+    const mark =
+      diagnostic.severity === "error"
+        ? symbol.error
+        : diagnostic.severity === "warn"
+          ? symbol.warn
+          : "[info]";
     const ref = diagnostic.ref === undefined ? "" : ` [${diagnostic.ref}]`;
     writeStdout(`${mark}${ref} ${diagnostic.message}`);
   }
@@ -842,10 +849,9 @@ function writeStderr(message: string): void {
 
 /**
  * Derive a mutation plan summary from a DoctorReport. We count entries in
- * fixable_errors, warnings, and infos whose `code` is one of the live
- * fix-knowledge surfaces. Current store-only hygiene mutations are mostly
- * info-level, so omitting infos would hide real writes from the consent
- * preview.
+ * fixable_errors AND warnings whose `code` is one of the fix-knowledge
+ * surfaces. Some mutations (orphan demote) surface as warnings rather than
+ * fixable errors per their severity, so we must scan both lists.
  *
  * Returns zero counts when there is nothing to mutate. Caller is responsible
  * for skipping the prompt in that case (we don't ask "Proceed?" for a no-op).
@@ -855,7 +861,6 @@ function computeFixKnowledgePlan(report: DoctorReport): FixKnowledgePlan {
   const sources: DoctorIssue[] = [
     ...report.fixable_errors,
     ...report.warnings,
-    ...report.infos,
   ];
   for (const issue of sources) {
     if (FIX_KNOWLEDGE_CODE_LABELS[issue.code] === undefined) continue;
@@ -922,7 +927,7 @@ async function resolveFixKnowledgeConsent(options: {
     );
     return "abort";
   }
-  const message = `About to apply ${options.plan.totalCount} knowledge hygiene mutation(s) (store counter floors + pending frontmatter defaults + cache deletes). Proceed?`;
+  const message = `About to apply ${options.plan.totalCount} mutation(s) to knowledge entries (frontmatter writes + git mv + cache deletes). Proceed?`;
   const answer = await confirm({
     message,
     initialValue: false,
@@ -1573,8 +1578,8 @@ export function renderDoctorFilteredHelp(): void {
 
   const exposedOptions: Array<[string, string]> = [
     ["--target <path>", "Override project root (defaults to cwd)"],
-    ["--fix", "Auto-fix derived-state issues"],
-    ["--fix-knowledge", "Auto-fix store-backed knowledge hygiene issues"],
+    ["--fix", "Auto-fix derived-state issues (agents.meta.json)"],
+    ["--fix-knowledge", "Auto-fix knowledge entry issues (frontmatter + git mv)"],
     ["--json", "Output as JSON for programmatic consumption"],
     ["--verbose", "Show maintainer-audience action hints"],
   ];

@@ -18,11 +18,11 @@ import installCommand from "../src/commands/install.ts";
 import uninstallCommand from "../src/commands/uninstall.ts";
 
 // Drift gate guidance — surfaced via snapshot hint and assertion failure messages.
-// Keep in sync with docs/TESTING.md and the runtime contract docs.
+// Keep in sync with docs/test-seed/cli.md §1 Feature Surface.
 const DRIFT_HINT =
   "CLI surface drift detected. Either:\n" +
   "  - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u\n" +
-  "  - Update docs/TESTING.md if the documented drift gate changed\n" +
+  "  - Update docs/test-seed/cli.md \u00A71 if seed is now outdated\n" +
   "  - Revert command change if unintentional";
 
 type CittyArgDef = {
@@ -74,7 +74,7 @@ function commandSurface(cmd: CittyCommand): CommandSurface {
   };
 }
 
-describe("CLI surface drift gate (docs/TESTING.md)", () => {
+describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // Snapshot layer: any add/remove/rename/default-change of a flag fails CI.
   // v2.0.0-rc.37 Wave A2: `serve` row removed alongside command quarantine.
   it.each([
@@ -109,7 +109,7 @@ describe("CLI surface drift gate (docs/TESTING.md)", () => {
 
   // Critical-flag layer: even if a future refactor renames descriptions, these
   // flags MUST exist. Removing one is an intentional breaking change that
-  // requires updating docs/TESTING.md first. rc.15 contracted the
+  // requires updating docs/test-seed/cli.md §1 first. rc.15 contracted the
   // install surface to four flags; --dry-run is the canonical preview flag.
   it("install exposes critical flag --dry-run (seed §1)", () => {
     const flags = commandSurface(installCommand as CittyCommand).args.map((a) => a.name);

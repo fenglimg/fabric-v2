@@ -22,13 +22,18 @@
 //  - Idempotent flush — calling flushMetrics with zero counters is a no-op
 //    (no spurious empty rows).
 
-import { readFile } from "node:fs/promises";
+import { createReadStream, statSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
-import { createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteText, createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { ensureParentDirectory, getMetricsLedgerPath, isNodeError } from "./_shared.js";
 
 const DEFAULT_FLUSH_INTERVAL_MS = 60 * 1000;
+const METRICS_LEDGER_DEFAULT_RETENTION_DAYS = 30;
+const METRICS_LEDGER_SIZE_WARN_BYTES = 50 * 1024 * 1024;
+const METRICS_LEDGER_ARCHIVE_DIR = ".fabric/metrics.archive";
 
 // W1-01 (ISS-015): serialize appends to metrics.jsonl through the same
 // per-path write queue event-ledger uses, so concurrent flushMetrics calls on
@@ -107,6 +112,16 @@ export async function flushMetrics(
   try {
     await ensureParentDirectory(path);
     await metricsQueue.append(path, JSON.stringify(row));
+    try {
+      if (statSync(path).size > METRICS_LEDGER_SIZE_WARN_BYTES) {
+        await rotateMetricsIfNeeded(projectRoot, {
+          now,
+          maxBytes: Math.floor(METRICS_LEDGER_SIZE_WARN_BYTES / 2),
+        });
+      }
+    } catch {
+      // Metrics rotation is best-effort and must not fail a flush.
+    }
   } catch {
     // Re-seed the bucket so the failed counts survive into the next flush.
     const bucket = bucketFor(projectRoot);
@@ -157,6 +172,73 @@ export function stopMetricsFlush(projectRoot: string): void {
   }
 }
 
+export type RotateMetricsResult = {
+  rotated: boolean;
+  archivedCount: number;
+  keptCount: number;
+  archivePath?: string;
+};
+
+export async function rotateMetricsIfNeeded(
+  projectRoot: string,
+  opts: { now?: Date; retentionDays?: number; maxBytes?: number } = {},
+): Promise<RotateMetricsResult> {
+  const path = getMetricsLedgerPath(projectRoot);
+  try {
+    statSync(path);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { rotated: false, archivedCount: 0, keptCount: 0 };
+    }
+    throw error;
+  }
+
+  const now = opts.now ?? new Date();
+  const retentionDays = opts.retentionDays ?? METRICS_LEDGER_DEFAULT_RETENTION_DAYS;
+  const cutoffMs = now.getTime() - retentionDays * 86_400_000;
+  const archived: string[] = [];
+  const kept: string[] = [];
+
+  await visitCompleteMetricsLines(path, (line) => {
+    const ts = metricTimestampMs(line);
+    if (ts !== undefined && ts < cutoffMs) {
+      archived.push(line);
+    } else {
+      kept.push(line);
+    }
+  });
+
+  if (opts.maxBytes !== undefined && opts.maxBytes >= 0) {
+    let keptBytes = kept.reduce((sum, line) => sum + Buffer.byteLength(line, "utf8") + 1, 0);
+    while (keptBytes > opts.maxBytes && kept.length > 0) {
+      const oldest = kept.shift() as string;
+      archived.push(oldest);
+      keptBytes -= Buffer.byteLength(oldest, "utf8") + 1;
+    }
+  }
+
+  if (archived.length === 0) {
+    return { rotated: false, archivedCount: 0, keptCount: kept.length };
+  }
+
+  const yyyymmdd = formatUtcDate(now);
+  const archiveDirAbsolute = join(projectRoot, METRICS_LEDGER_ARCHIVE_DIR);
+  const archiveFilename = `metrics-rotated-${yyyymmdd}.jsonl`;
+  const archiveAbsolutePath = join(archiveDirAbsolute, archiveFilename);
+  const archiveRelativePath = `${METRICS_LEDGER_ARCHIVE_DIR}/${archiveFilename}`;
+
+  await mkdir(archiveDirAbsolute, { recursive: true });
+  await appendFile(archiveAbsolutePath, archived.map((line) => `${line}\n`).join(""), "utf8");
+  await atomicWriteText(path, kept.length > 0 ? `${kept.join("\n")}\n` : "");
+
+  return {
+    rotated: true,
+    archivedCount: archived.length,
+    keptCount: kept.length,
+    archivePath: archiveRelativePath,
+  };
+}
+
 /**
  * Read accumulated metrics rows from `.fabric/metrics.jsonl`. Missing file
  * returns []. Malformed rows are dropped silently (the sidecar is best-
@@ -168,31 +250,65 @@ export function stopMetricsFlush(projectRoot: string): void {
  */
 export async function readMetrics(projectRoot: string): Promise<MetricsRow[]> {
   const path = getMetricsLedgerPath(projectRoot);
-  let raw: string;
+  const rows: MetricsRow[] = [];
+
   try {
-    raw = await readFile(path, "utf8");
+    await visitCompleteMetricsLines(path, (line) => {
+      try {
+        const parsed = JSON.parse(line) as MetricsRow;
+        if (
+          typeof parsed.timestamp === "string" &&
+          typeof parsed.window === "string" &&
+          parsed.counters !== null &&
+          typeof parsed.counters === "object"
+        ) {
+          rows.push(parsed);
+        }
+      } catch {
+        // skip malformed
+      }
+    });
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") return [];
     throw error;
   }
-  const rows: MetricsRow[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    if (line.trim().length === 0) continue;
-    try {
-      const parsed = JSON.parse(line) as MetricsRow;
-      if (
-        typeof parsed.timestamp === "string" &&
-        typeof parsed.window === "string" &&
-        parsed.counters !== null &&
-        typeof parsed.counters === "object"
-      ) {
-        rows.push(parsed);
+
+  return rows;
+}
+
+async function visitCompleteMetricsLines(
+  path: string,
+  visitor: (line: string) => void,
+): Promise<void> {
+  let remainder = "";
+
+  for await (const chunk of createReadStream(path, { encoding: "utf8" })) {
+    remainder += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+
+    let newlineIndex = remainder.indexOf("\n");
+    while (newlineIndex !== -1) {
+      let line = remainder.slice(0, newlineIndex);
+      remainder = remainder.slice(newlineIndex + 1);
+      if (line.endsWith("\r")) {
+        line = line.slice(0, -1);
       }
-    } catch {
-      // skip malformed
+
+      const trimmed = line.trim();
+      if (trimmed.length > 0) {
+        visitor(trimmed);
+      }
+
+      newlineIndex = remainder.indexOf("\n");
     }
   }
-  return rows;
+
+  // A non-newline-terminated tail mirrors the old split behavior: if it is a
+  // complete JSON row it still gets parsed, while malformed partial rows are
+  // ignored by the visitor's JSON.parse guard.
+  const tail = remainder.trim();
+  if (tail.length > 0) {
+    visitor(tail);
+  }
 }
 
 /**
@@ -209,6 +325,26 @@ export function resetMetricsForTest(projectRoot?: string): void {
   }
   stopMetricsFlush(projectRoot);
   counters.delete(projectRoot);
+}
+
+function metricTimestampMs(line: string): number | undefined {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    if (typeof parsed.timestamp !== "string") {
+      return undefined;
+    }
+    const ts = Date.parse(parsed.timestamp);
+    return Number.isFinite(ts) ? ts : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatUtcDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatWindow(ms: number): string {

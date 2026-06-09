@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { createTranslator } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { log } from "@clack/prompts";
 
+import { t } from "../../i18n.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../../lib/detect-language.js";
 import { buildForensicReport } from "../../scanner/forensic.js";
 import { detectClientSupports } from "../../config/resolver.js";
@@ -41,7 +41,7 @@ export class EnvStage implements Stage {
       context.state.clientSupports = clientSupports;
 
       // Build scaffold plan
-      const scaffold = await this.buildScaffoldPlan(target, context.options, context.translate);
+      const scaffold = await this.buildScaffoldPlan(target, context.options);
       context.state.scaffold = scaffold;
 
       // Execute scaffold (create directories and files)
@@ -50,7 +50,6 @@ export class EnvStage implements Stage {
       // Detect and store language preference
       const fabricLanguage = this.readFabricLanguagePreference(target);
       context.state.fabricLanguage = fabricLanguage;
-      context.translate = createTranslator(fabricLanguage === "en" ? "en" : "zh-CN");
 
       const installed = [
         scaffold.fabricDir,
@@ -67,7 +66,6 @@ export class EnvStage implements Stage {
   private async buildScaffoldPlan(
     target: string,
     _options: InstallContext["options"],
-    translate: InstallContext["translate"],
   ): Promise<ScaffoldResult> {
     const fabricDir = join(target, ".fabric");
     const agentsMdPath = join(target, "AGENTS.md");
@@ -85,11 +83,11 @@ export class EnvStage implements Stage {
     // Build forensic report
     const showScanProgress = process.stderr.isTTY === true;
     if (showScanProgress) {
-      process.stderr.write(`${translate("cli.install.scanning")}\n`);
+      process.stderr.write(`${t("cli.install.scanning")}\n`);
     }
     const forensicReport = await buildForensicReport(target);
     if (showScanProgress) {
-      process.stderr.write(`${translate("cli.install.scan-complete")}\n`);
+      process.stderr.write(`${t("cli.install.scan-complete")}\n`);
     }
 
     return {
@@ -218,18 +216,14 @@ export class EnvStage implements Stage {
     // Read from the just-written config
     const configPath = join(projectRoot, ".fabric", "fabric-config.json");
     if (!existsSync(configPath)) {
-      return "zh-CN";
+      return "en";
     }
     try {
-      const raw = readFileSync(configPath, "utf8");
-      const config = JSON.parse(raw) as unknown;
-      if (config === null || typeof config !== "object" || Array.isArray(config)) {
-        return "zh-CN";
-      }
-      const value = (config as Record<string, unknown>).fabric_language;
-      return typeof value === "string" && value.length > 0 ? value : "zh-CN";
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const config = require(configPath);
+      return config.fabric_language ?? "en";
     } catch {
-      return "zh-CN";
+      return "en";
     }
   }
 }

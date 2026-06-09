@@ -1,8 +1,10 @@
-import { existsSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
+import { t } from "../../i18n.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
-import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
+import { stageRan, stageFailedFromError } from "./pipeline.js";
 
 // ---------------------------------------------------------------------------
 // Preflight Stage
@@ -17,7 +19,8 @@ import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
  * 3. Git is available (for store operations)
  * 4. Write permissions to target and global root
  *
- * This stage always runs (never skipped) and never writes files.
+ * This stage always runs (never skipped) and only writes short-lived probe
+ * files used to verify permissions before later stages mutate the project.
  * Failures here abort the entire pipeline.
  */
 export class PreflightStage implements Stage {
@@ -28,14 +31,14 @@ export class PreflightStage implements Stage {
 
     try {
       // Check target directory exists
-      this.assertExistingDirectory(target, context.translate);
+      this.assertExistingDirectory(target);
 
       // Store normalized target in state
       context.target = target;
       context.state.globalRoot = this.resolveGlobalRoot();
 
       // Check global root is writable (or can be created)
-      this.assertGlobalRootWritable(context.state.globalRoot, context.translate);
+      this.assertGlobalRootWritable(context.state.globalRoot);
 
       // Check target is writable
       this.assertWritable(target);
@@ -55,12 +58,9 @@ export class PreflightStage implements Stage {
     return isAbsolute(targetInput) ? targetInput : resolve(process.cwd(), targetInput);
   }
 
-  private assertExistingDirectory(
-    target: string,
-    translate: InstallContext["translate"],
-  ): void {
+  private assertExistingDirectory(target: string): void {
     if (!existsSync(target) || !statSync(target).isDirectory()) {
-      throw new Error(translate("cli.shared.target-invalid", { target }));
+      throw new Error(t("cli.shared.target-invalid", { target }));
     }
   }
 
@@ -73,30 +73,41 @@ export class PreflightStage implements Stage {
     return resolve(home, ".fabric");
   }
 
-  private assertGlobalRootWritable(
-    globalRoot: string,
-    translate: InstallContext["translate"],
-  ): void {
+  private assertGlobalRootWritable(globalRoot: string): void {
     // If exists, check it's a directory and writable
     if (existsSync(globalRoot)) {
       if (!statSync(globalRoot).isDirectory()) {
-        throw new Error(
-          translate("cli.install.diff.drift-abort", { path: globalRoot }),
-        );
+        throw new Error(`Global Fabric root is not a directory: ${globalRoot}`);
       }
-      // Assume writable if directory exists (file ops will fail later if not)
+      this.assertWritable(globalRoot, "Global Fabric root");
+      return;
     }
-    // If not exists, parent directory must be writable
-    // Assume home directory is writable
+
+    const parent = dirname(globalRoot);
+    if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+      throw new Error(`Global Fabric root parent is not a directory: ${parent}`);
+    }
+    this.assertWritable(parent, "Global Fabric root parent");
   }
 
-  private assertWritable(path: string): void {
-    // Best-effort: try to write a temp file to verify permissions
-    // If it fails, the error will surface later during actual writes
+  private assertWritable(path: string, label = "Target"): void {
+    const probePath = join(path, `.fabric-preflight-${process.pid}-${Date.now()}.tmp`);
+    try {
+      writeFileSync(probePath, "", { flag: "wx" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${label} is not writable: ${path} (${message})`);
+    } finally {
+      rmSync(probePath, { force: true });
+    }
   }
 
   private assertGitAvailable(): void {
-    // Check git is available for clone operations
-    // The actual git clone will fail later if git is missing
+    try {
+      execFileSync("git", ["--version"], { stdio: ["ignore", "ignore", "ignore"] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`git is required for --url installs but was not available: ${message}`);
+    }
   }
 }

@@ -17,15 +17,6 @@ function skill(slug: string): string {
 }
 
 describe("skills are store-aware (v2.1 P4)", () => {
-  it("fabric entry router delegates without direct store traversal", () => {
-    const md = skill("fabric");
-    expect(md).toContain("fabric-archive");
-    expect(md).toContain("fabric-review");
-    expect(md).toContain("fabric-store");
-    expect(md).toMatch(/MUST NOT.*~\/\.fabric\/stores/s);
-    expect(md).toMatch(/data-only/i);
-  });
-
   it("fabric-archive routes writes to the active write store and echoes it", () => {
     const md = skill("fabric-archive");
     expect(md).toContain("Store routing");

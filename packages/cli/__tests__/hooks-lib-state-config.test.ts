@@ -34,8 +34,12 @@ const stateStore = require("../templates/hooks/lib/state-store.cjs") as {
   cachePath: (root: string, file: string) => string;
   readJsonState: <T>(root: string, file: string, validate?: (v: unknown) => boolean) => T | null;
   writeJsonState: (root: string, file: string, value: unknown) => boolean;
+  readJsonStateAsync: <T>(root: string, file: string, validate?: (v: unknown) => boolean) => Promise<T | null>;
+  writeJsonStateAsync: (root: string, file: string, value: unknown) => Promise<boolean>;
   readTextState: (root: string, file: string) => string | null;
   writeTextState: (root: string, file: string, text: string) => boolean;
+  readTextStateAsync: (root: string, file: string) => Promise<string | null>;
+  writeTextStateAsync: (root: string, file: string, text: string) => Promise<boolean>;
 };
 
 let tempDirs: string[] = [];
@@ -142,5 +146,14 @@ describe("state-store.cjs", () => {
     expect(stateStore.writeTextState(cwd, "ts", "  1700000000000  ")).toBe(true);
     expect(stateStore.readTextState(cwd, "ts")).toBe("1700000000000");
     expect(stateStore.readTextState(cwd, "absent")).toBeNull();
+  });
+
+  it("async state helpers preserve never-throw cache semantics", async () => {
+    const cwd = mkTemp();
+    await expect(stateStore.writeJsonStateAsync(cwd, "async.json", { ok: true })).resolves.toBe(true);
+    await expect(stateStore.readJsonStateAsync(cwd, "async.json")).resolves.toEqual({ ok: true });
+    await expect(stateStore.writeTextStateAsync(cwd, "async.txt", "  value  ")).resolves.toBe(true);
+    await expect(stateStore.readTextStateAsync(cwd, "async.txt")).resolves.toBe("value");
+    await expect(stateStore.readJsonStateAsync(cwd, "missing.json")).resolves.toBeNull();
   });
 });

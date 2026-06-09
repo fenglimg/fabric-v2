@@ -74,13 +74,12 @@ function readTemplate(rel: string): string {
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fresh init", () => {
-  it("writes fabric skills + Stop + SessionStart + PreToolUse hooks + per-client configs", async () => {
+  it("writes all 16 artifacts (archive+review+import skills + Stop + SessionStart + PreToolUse hooks + per-client configs)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-fresh");
     tempRoots.push(target);
 
     await runInit(target);
 
-    const fabricSkillTemplate = readTemplate("skills/fabric/SKILL.md");
     const archiveSkillTemplate = readTemplate("skills/fabric-archive/SKILL.md");
     const reviewSkillTemplate = readTemplate("skills/fabric-review/SKILL.md");
     const importSkillTemplate = readTemplate("skills/fabric-import/SKILL.md");
@@ -95,12 +94,6 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     const codexArchiveSkill = readFileSync(join(target, ".codex/skills/fabric-archive/SKILL.md"), "utf8");
     expect(claudeArchiveSkill).toBe(archiveSkillTemplate);
     expect(codexArchiveSkill).toBe(archiveSkillTemplate);
-
-    // Fabric entry router copies — byte-identical
-    const claudeFabricSkill = readFileSync(join(target, ".claude/skills/fabric/SKILL.md"), "utf8");
-    const codexFabricSkill = readFileSync(join(target, ".codex/skills/fabric/SKILL.md"), "utf8");
-    expect(claudeFabricSkill).toBe(fabricSkillTemplate);
-    expect(codexFabricSkill).toBe(fabricSkillTemplate);
 
     // Review skill copies (rc.3) — byte-identical
     const claudeReviewSkill = readFileSync(join(target, ".claude/skills/fabric-review/SKILL.md"), "utf8");
@@ -327,11 +320,11 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     expect(existsSync(join(target, ".claude/hooks/cite-policy-evict.cjs"))).toBe(true);
   });
 
-  // W2-03 (F7): the bootstrap stage installed only 3 skills
+  // W2-03 (F7): the bootstrap stage installed only 3 of 7 skills
   // (archive/review/import); sync/store/audit/connect + the shared skill lib
   // came only from the downstream hooks stage. A bootstrap-only install must
-  // ship the complete skill set.
-  it("bootstrap-only install ships all 8 skills + shared skill lib (F7)", async () => {
+  // ship the complete 7-skill set.
+  it("bootstrap-only install ships all 7 skills + shared skill lib (F7)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-skills");
     tempRoots.push(target);
 
@@ -343,7 +336,6 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     await executeInitExecutionPlan(plan);
 
     for (const skill of [
-      "fabric",
       "fabric-archive",
       "fabric-review",
       "fabric-import",

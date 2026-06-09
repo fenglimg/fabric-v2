@@ -71,9 +71,6 @@ const CITE_POLICY_VERSION = "2.0.0-rc.20";
 export async function ensureCitePolicyActivatedMarker(
   projectRoot: string,
 ): Promise<{ marker_ts: number; emitted_now: boolean }> {
-  if (!existsSync(join(projectRoot, ".fabric"))) {
-    return { marker_ts: 0, emitted_now: false };
-  }
   let existing: { ts: number } | undefined;
   try {
     const { events } = await readEventLedger(projectRoot, { event_type: "cite_policy_activated" });
@@ -616,7 +613,7 @@ export async function runDoctorCiteCoverage(
   // invocation — typical corpora <200 entries so <5ms, no caching needed. An
   // empty read-set collapses every cite into the cite_id_unresolved bucket,
   // which is the correct degraded mode.
-  const canonicalEntries = collectStoreCanonicalEntries(projectRoot);
+  const canonicalEntries = await collectStoreCanonicalEntries(projectRoot);
   const idTypeMap = new Map<string, string>();
   for (const entry of canonicalEntries) {
     const kt = entry.description.knowledge_type;

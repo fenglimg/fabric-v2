@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, relative } from "node:path";
 
 import {
   PROPOSED_REASON_DESCRIPTIONS,
@@ -9,7 +10,7 @@ import {
   type ProposedReason,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
-import { hasSecrets } from "@fenglimg/fabric-shared";
+import { hasSecrets, redactPii } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
@@ -114,13 +115,36 @@ function sanitizeInjectionFields<T extends Record<string, unknown>>(
   return { sanitized: out as T, allRedactions };
 }
 
+function redactPiiFields<T extends Record<string, unknown>>(
+  fields: T,
+): { redacted: T; redactedFields: string[] } {
+  const out: Record<string, unknown> = { ...fields };
+  const redactedFields = new Set<string>();
+  for (const [key, value] of Object.entries(fields)) {
+    if (typeof value === "string") {
+      const cleaned = redactPii(value);
+      out[key] = cleaned;
+      if (cleaned !== value) redactedFields.add(key);
+    } else if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+      const cleaned = (value as string[]).map((entry) => redactPii(entry));
+      out[key] = cleaned;
+      if (cleaned.some((entry, index) => entry !== (value as string[])[index])) {
+        redactedFields.add(key);
+      }
+    }
+  }
+  return { redacted: out as T, redactedFields: [...redactedFields].sort() };
+}
+
 // ---------------------------------------------------------------------------
-// Store-only route to the resolved write-target store's pending root.
+// rc.5 B1: dual pending root. Layer-dependent pending base.
 //
-//   team     → active write store / knowledge/pending
-//   personal → personal store / knowledge/pending
+//   team     → <projectRoot>/.fabric/knowledge/pending          (workspace)
+//   personal → <FABRIC_HOME or homedir>/.fabric/knowledge/pending (home)
 //
-// Tests redirect FABRIC_HOME so the global store root is isolated.
+// The personal root mirrors knowledge-meta-builder / review.ts personal-root
+// resolution (FABRIC_HOME env override → os.homedir()) so tests can redirect
+// without polluting the developer's real home directory.
 // ---------------------------------------------------------------------------
 
 export function pendingBase(layer: "team" | "personal", projectRoot: string): string {
@@ -130,6 +154,14 @@ export function pendingBase(layer: "team" | "personal", projectRoot: string): st
   // StoreWriteTargetUnresolvedError when no target resolves — no dual-root
   // fallback. See cross-store-write.ts.
   return resolveStorePendingBase(layer, projectRoot);
+}
+
+function resolvePersonalRoot(): string {
+  return process.env.FABRIC_HOME ?? homedir();
+}
+
+function toPosixPath(path: string): string {
+  return path.replace(/\\/gu, "/");
 }
 
 /**
@@ -193,6 +225,43 @@ export async function extractKnowledge(
       correlation_id: primarySessionForLog,
       session_id: primarySessionForLog,
       reason: `extract_knowledge:injection-redacted:${summary}`,
+    });
+  }
+
+  const piiRedactedInputFields = redactPiiFields({
+    slug: input.slug ?? "",
+    user_messages_summary: input.user_messages_summary ?? "",
+    session_context: input.session_context ?? "",
+    must_read_if: input.must_read_if ?? "",
+    intent_clues: (input.intent_clues ?? []) as string[],
+    tags: (input.tags ?? []) as string[],
+    evidence_paths: (input.evidence_paths ?? []) as string[],
+  });
+  input = {
+    ...input,
+    slug: piiRedactedInputFields.redacted.slug,
+    user_messages_summary: piiRedactedInputFields.redacted.user_messages_summary || undefined,
+    session_context: piiRedactedInputFields.redacted.session_context || undefined,
+    must_read_if: piiRedactedInputFields.redacted.must_read_if || undefined,
+    intent_clues: piiRedactedInputFields.redacted.intent_clues.length > 0
+      ? piiRedactedInputFields.redacted.intent_clues
+      : undefined,
+    tags: piiRedactedInputFields.redacted.tags.length > 0
+      ? piiRedactedInputFields.redacted.tags
+      : undefined,
+    evidence_paths: piiRedactedInputFields.redacted.evidence_paths.length > 0
+      ? piiRedactedInputFields.redacted.evidence_paths
+      : undefined,
+  } as FabExtractKnowledgeInput;
+
+  if (piiRedactedInputFields.redactedFields.length > 0) {
+    const primarySessionForLog = (input.source_sessions ?? [])[0] ?? "";
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_archive_attempted",
+      timestamp: new Date().toISOString(),
+      correlation_id: primarySessionForLog,
+      session_id: primarySessionForLog,
+      reason: `extract_knowledge:pii-redacted:${piiRedactedInputFields.redactedFields.join(",")}`,
     });
   }
 
@@ -268,10 +337,13 @@ export async function extractKnowledge(
   // current layout and the v2.1 multi-store write target alike). Clean content
   // scans to no findings, so the hot path is unchanged.
   const secretScanTarget = [
+    input.slug ?? "",
     input.user_messages_summary ?? "",
     input.session_context ?? "",
     input.must_read_if ?? "",
     ...(input.intent_clues ?? []),
+    ...(input.tags ?? []),
+    ...(input.evidence_paths ?? []),
   ].join("\n");
   if (hasSecrets(secretScanTarget)) {
     await emitEventBestEffort(projectRoot, {
@@ -342,10 +414,11 @@ export async function extractKnowledge(
       primarySession,
       baseIdempotencyKey: idempotencyKey,
     });
-  // v2.2 全砍 Stage 2: both layers now write into a store. Return the absolute
-  // store path so the value can be passed directly to fab_review approve/reject/
-  // defer/modify; `~/...` is reserved for the retired dual-root personal path.
-  const reportedPath = absolutePath;
+  // v2.2 全砍 Stage 2: both layers now write into a store under ~/.fabric/stores,
+  // so the reported path is the `~/` home-relative form for both (the old
+  // project-relative team form described a dual-root location that no longer
+  // exists).
+  const reportedPath = `~/${toPosixPath(relative(resolvePersonalRoot(), absolutePath))}`;
 
   // Rebind the upper-scope variables so downstream renderers / event
   // payloads use the disambiguated slug + matching idempotency_key.

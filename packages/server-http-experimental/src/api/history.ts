@@ -2,6 +2,7 @@ import { historyStateQuerySchema } from "@fenglimg/fabric-shared";
 
 import { rehydrateAgentsMetaAt } from "@fenglimg/fabric-server";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";
+import { sanitizeHttpKnowledgePayload } from "./response-sanitizer.js";
 
 export function registerHistoryApi(app: FabricHttpApp, projectRoot: string): void {
   app.get("/api/history/state", async (req, res) => {
@@ -20,7 +21,7 @@ export function registerHistoryApi(app: FabricHttpApp, projectRoot: string): voi
         ? await rehydrateAgentsMetaAt(projectRoot, { ledgerEntryId: validation.data.ledger_id })
         : await rehydrateAgentsMetaAt(projectRoot, { timestamp: validation.data.ts as number });
 
-      res.json(result);
+      res.json(sanitizeHttpKnowledgePayload(result));
     } catch (error) {
       sendUnknownError(res, error);
     }
@@ -42,7 +43,7 @@ export function registerHistoryApi(app: FabricHttpApp, projectRoot: string): voi
         ? await rehydrateAgentsMetaAt(projectRoot, { ledgerEntryId: validation.data.ledger_id })
         : await rehydrateAgentsMetaAt(projectRoot, { timestamp: validation.data.ts as number });
 
-      res.json(result);
+      res.json(sanitizeHttpKnowledgePayload(result));
     } catch (error) {
       sendUnknownError(res, error);
     }

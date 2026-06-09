@@ -3,8 +3,14 @@ import path from "node:path";
 
 import { createTranslator, resolveFabricLocale } from "@fenglimg/fabric-shared";
 import { IOFabricError } from "@fenglimg/fabric-shared/errors";
+import {
+  isAlive,
+  readServeLockState,
+  serveLockPath,
+  type ServeLockState,
+} from "@fenglimg/fabric-shared/node";
 
-const LOCK_FILENAME = ".serve.lock";
+export { isAlive };
 
 // rc.15 TASK-003: i18n action-hint message for ServeLockHeldError. Replaces
 // the previous hardcoded "or run with --force to override" guidance — --force
@@ -21,34 +27,14 @@ export class ServeLockHeldError extends IOFabricError {
   readonly httpStatus = 423;
 }
 
-export interface LockState {
-  pid: number;
-  acquiredAt: number;
-  host?: string;
-}
+export type LockState = ServeLockState;
 
 export interface AcquireOptions {
   force?: boolean;
 }
 
-function lockPath(projectRoot: string): string {
-  return path.join(projectRoot, ".fabric", LOCK_FILENAME);
-}
-
-export function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0); // signal 0 = liveness check
-    return true;
-  } catch (e: unknown) {
-    const err = e as NodeJS.ErrnoException;
-    if (err.code === "ESRCH") return false; // no such process
-    if (err.code === "EPERM") return true; // process alive but not ours — be conservative
-    throw e;
-  }
-}
-
 export function acquireLock(projectRoot: string, opts?: AcquireOptions): void {
-  const p = lockPath(projectRoot);
+  const p = serveLockPath(projectRoot);
   if (fs.existsSync(p)) {
     let state: LockState | null = null;
     try {
@@ -78,7 +64,7 @@ export function acquireLock(projectRoot: string, opts?: AcquireOptions): void {
 }
 
 export function releaseLock(projectRoot: string): void {
-  const p = lockPath(projectRoot);
+  const p = serveLockPath(projectRoot);
   try {
     if (fs.existsSync(p)) {
       const state = JSON.parse(fs.readFileSync(p, "utf8")) as LockState;
@@ -92,13 +78,7 @@ export function releaseLock(projectRoot: string): void {
 }
 
 export function readLockState(projectRoot: string): LockState | null {
-  const p = lockPath(projectRoot);
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf8")) as LockState;
-  } catch {
-    return null;
-  }
+  return readServeLockState(projectRoot);
 }
 
 export function checkLockOrThrow(projectRoot: string, opts?: AcquireOptions): void {

@@ -5,13 +5,14 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  createTranslator,
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
   storeRelativePath,
 } from "@fenglimg/fabric-shared";
 
-import { lintStoreScopes } from "./doctor-scope-lint.js";
+import { createScopeLintCheck, lintStoreScopes, type ScopeLintViolation } from "./doctor-scope-lint.js";
 
 // v2.2 W4 (G-GUARD / A6) — doctor scope lint over read-set stores. Fixture
 // mirrors cross-store-recall-project-filter.test.ts (FABRIC_HOME redirect +
@@ -128,7 +129,7 @@ describe("lintStoreScopes (G-GUARD / A6)", () => {
     });
     mountTeamOnly();
 
-    expect(lintStoreScopes(projectRoot)).toEqual([]);
+    await expect(lintStoreScopes(projectRoot)).resolves.toEqual([]);
   });
 
   it("flags an entry missing semantic_scope and/or visibility_store", async () => {
@@ -140,7 +141,7 @@ describe("lintStoreScopes (G-GUARD / A6)", () => {
     });
     mountTeamOnly();
 
-    const violations = lintStoreScopes(projectRoot);
+    const violations = await lintStoreScopes(projectRoot);
     const missing = violations.filter((v) => v.code === "missing_scope_fields");
     expect(missing).toHaveLength(1);
     expect(missing[0].stable_id).toBe("KT-DEC-9001");
@@ -158,7 +159,7 @@ describe("lintStoreScopes (G-GUARD / A6)", () => {
     });
     mountTeamOnly();
 
-    const leaks = lintStoreScopes(projectRoot).filter(
+    const leaks = (await lintStoreScopes(projectRoot)).filter(
       (v) => v.code === "personal_leak_in_shared_store",
     );
     expect(leaks).toHaveLength(1);
@@ -176,7 +177,7 @@ describe("lintStoreScopes (G-GUARD / A6)", () => {
     });
     mountTeamAndPersonal();
 
-    const leaks = lintStoreScopes(projectRoot).filter(
+    const leaks = (await lintStoreScopes(projectRoot)).filter(
       (v) => v.code === "personal_leak_in_shared_store",
     );
     expect(leaks).toHaveLength(0);
@@ -197,7 +198,7 @@ describe("lintStoreScopes (G-GUARD / A6)", () => {
     });
     mountTeamOnly();
 
-    const dangling = lintStoreScopes(projectRoot).filter(
+    const dangling = (await lintStoreScopes(projectRoot)).filter(
       (v) => v.code === "dangling_project_ref",
     );
     expect(dangling).toHaveLength(1);
@@ -207,6 +208,47 @@ describe("lintStoreScopes (G-GUARD / A6)", () => {
 
   it("returns [] when the project has no mounted store (degrades, never throws)", async () => {
     const projectRoot = await createProject({});
-    expect(lintStoreScopes(projectRoot)).toEqual([]);
+    await expect(lintStoreScopes(projectRoot)).resolves.toEqual([]);
+  });
+});
+
+describe("createScopeLintCheck", () => {
+  const t = createTranslator("en");
+
+  it("renders advisory scope violations as warnings", () => {
+    const violation: ScopeLintViolation = {
+      code: "missing_scope_fields",
+      store_alias: "team",
+      store_uuid: TEAM_STORE,
+      file: "knowledge/decisions/KT-DEC-9001.md",
+      stable_id: "KT-DEC-9001",
+      detail: "missing semantic_scope frontmatter",
+    };
+
+    const check = createScopeLintCheck(t, [violation]);
+
+    expect(check.status).toBe("warn");
+    expect(check.kind).toBe("warning");
+    expect(check.code).toBe("store_scope_lint");
+    expect(check.message).toContain("missing-scope");
+    expect(check.actionHint).toContain("store backfill-scope");
+  });
+
+  it("renders personal leaks as manual errors", () => {
+    const violation: ScopeLintViolation = {
+      code: "personal_leak_in_shared_store",
+      store_alias: "team",
+      store_uuid: TEAM_STORE,
+      file: "knowledge/decisions/KP-DEC-9001.md",
+      stable_id: "KP-DEC-9001",
+      detail: "personal entry in shared store",
+    };
+
+    const check = createScopeLintCheck(t, [violation]);
+
+    expect(check.status).toBe("error");
+    expect(check.kind).toBe("manual_error");
+    expect(check.fixable).toBe(false);
+    expect(check.message).toContain("personal-leak");
   });
 });

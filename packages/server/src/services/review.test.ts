@@ -15,7 +15,11 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
-import { reviewKnowledge } from "./review.js";
+import {
+  __getReviewSearchIndexCacheStatsForTests,
+  __resetReviewSearchIndexCacheForTests,
+  reviewKnowledge,
+} from "./review.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -68,6 +72,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  __resetReviewSearchIndexCacheForTests();
   if (originalFabricHome === undefined) {
     delete process.env.FABRIC_HOME;
   } else {
@@ -639,6 +644,57 @@ describe("reviewKnowledge", () => {
     expect(updated).toMatch(/^relevance_paths: \[src\/ui\/\*\*\]$/mu);
   });
 
+  it("modify_inplace_emits_knowledge_modified_event_with_before_after_patch", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "pending-audit", {
+      tags: ["old"],
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: {
+        summary: "Updated summary for audit trail.",
+        tags: ["new", "audit"],
+        relevance_scope: "narrow",
+        relevance_paths: ["src/audit/**"],
+      },
+    });
+    expect(result.action).toBe("modify");
+
+    const modified = await readEventLedger(projectRoot, {
+      event_type: "knowledge_modified",
+    });
+    expect(modified.events).toHaveLength(1);
+    const ev = modified.events[0] as {
+      path: string;
+      changed_fields: string[];
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+      reason?: string;
+    };
+    expect(ev.path).toBe(pendingPath);
+    expect(ev.changed_fields).toEqual([
+      "summary",
+      "tags",
+      "relevance_scope",
+      "relevance_paths",
+    ]);
+    expect(ev.before).toMatchObject({
+      summary: null,
+      tags: ["old"],
+      relevance_scope: null,
+      relevance_paths: null,
+    });
+    expect(ev.after).toMatchObject({
+      summary: "Updated summary for audit trail.",
+      tags: ["new", "audit"],
+      relevance_scope: "narrow",
+      relevance_paths: ["src/audit/**"],
+    });
+    expect(ev.reason).toBe(`modify:${pendingPath}`);
+  });
+
   it("test_review_modify_layer_flip_auto_degrade — narrow team→personal flips degrade scope to broad+[]", async () => {
     const projectRoot = await createTempProject();
     // Seed pending with narrow scope + a paths array.
@@ -836,6 +892,78 @@ describe("reviewKnowledge", () => {
     const paths = result.items.map((i) => i.path);
     expect(paths.some((p) => p.includes("pending-x"))).toBe(true);
     expect(paths.some((p) => p.includes("topic-canonical"))).toBe(true);
+  });
+
+  it("search_reuses_indexed_frontmatter_between_repeated_queries", async () => {
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "auth-flow", { tags: ["auth", "core"] });
+    await seedPendingFile(projectRoot, "guidelines", "naming-rule", { tags: ["style"] });
+    await seedPendingFile(projectRoot, "pitfalls", "auth-bypass", { tags: ["auth"] });
+
+    const first = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "auth",
+      filters: undefined,
+    });
+    if (first.action !== "search") throw new Error("unreachable");
+    expect(first.items).toHaveLength(2);
+    const afterFirst = __getReviewSearchIndexCacheStatsForTests();
+    expect(afterFirst.indexedFiles).toBe(3);
+    expect(afterFirst.contentReads).toBe(3);
+
+    const second = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "style",
+      filters: undefined,
+    });
+    if (second.action !== "search") throw new Error("unreachable");
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0].path).toContain("naming-rule");
+    expect(__getReviewSearchIndexCacheStatsForTests().contentReads).toBe(afterFirst.contentReads);
+  });
+
+  it("search_reloads_only_changed_files_in_the_index", async () => {
+    const projectRoot = await createTempProject();
+    const changedPath = await seedPendingFile(projectRoot, "decisions", "alpha", { tags: ["old"] });
+    await seedPendingFile(projectRoot, "decisions", "beta", { tags: ["stable"] });
+
+    const first = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "old",
+      filters: undefined,
+    });
+    if (first.action !== "search") throw new Error("unreachable");
+    expect(first.items).toHaveLength(1);
+    expect(__getReviewSearchIndexCacheStatsForTests().contentReads).toBe(2);
+
+    await writeFile(
+      changedPath,
+      [
+        "---",
+        "type: decisions",
+        "maturity: draft",
+        "layer: team",
+        `created_at: ${new Date().toISOString()}`,
+        "source_session: sess-test",
+        "tags: [fresh]",
+        "title: changed-index-entry",
+        "---",
+        "",
+        "changed body with enough extra bytes to alter the fingerprint",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const second = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "changed-index-entry",
+      filters: undefined,
+    });
+    if (second.action !== "search") throw new Error("unreachable");
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0].path).toContain("alpha");
+    expect(__getReviewSearchIndexCacheStatsForTests().contentReads).toBe(3);
   });
 
   // -------------------------------------------------------------------------

@@ -12,7 +12,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
-import { planContext, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
+import { planContext, readSelectionToken, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 
 // v2.2 W5 R1/R7 (读侧退役): planContext no longer reads the project's
@@ -663,6 +663,41 @@ describe("planContext payload size (UX-1/UX-4 regression)", () => {
     // 10 paths add only ~10 small requirement_profile objects, NOT 10 extra
     // copies of the candidate index. Pre-fold this ratio was ~10x.
     expect(ten).toBeLessThan(one * 1.5);
+  });
+
+  it("payload trimming happens before selection token ids are cached", async () => {
+    const projectRoot = await createTeamProject();
+    const longSummary = "Payload budget regression entry ".repeat(50);
+    for (let i = 0; i < 4; i += 1) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id: `KT-DEC-8${String(i).padStart(3, "0")}`,
+        summary: `${longSummary}${i}`,
+        maturity: "proven",
+      });
+    }
+    mountStores();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      payload_budget: {
+        limits: { warnBytes: 1200, hardBytes: 2600 },
+        warnings: [],
+        trim_warning: {
+          code: "mcp_payload_trimmed",
+          file: "<response>",
+          action_hint: "trimmed for test",
+        },
+      },
+    });
+
+    expect(result.payload_trimmed).toBe(true);
+    expect(result.candidates.length).toBeLessThan(4);
+    expect(result.omitted_candidate_count).toBeGreaterThan(0);
+
+    const token = readSelectionToken(result.selection_token);
+    expect(token?.ai_selectable_stable_ids).toEqual(
+      result.candidates.map((item) => item.stable_id),
+    );
   });
 });
 

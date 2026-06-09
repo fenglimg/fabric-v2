@@ -31,6 +31,8 @@ export const enMessages: Messages = {
   "cli.shared.loading": "loading",
   "cli.shared.refresh": "Refresh",
   "cli.shared.target-invalid": "Target must be an existing directory: {target}",
+  "cli.shared.target-invalid.action-hint":
+    "Choose an existing project directory, or create it before running the command again.",
   "cli.shared.template-not-found": "Template not found: {path}",
   "cli.shared.invalid-host-empty": "Invalid host: <empty>",
   "cli.shared.invalid-port": "Invalid port: {value}",
@@ -139,8 +141,8 @@ export const enMessages: Messages = {
     "\n" +
     "Examples:\n" +
     "  fabric doctor                   read-only diagnostics report\n" +
-    "  fabric doctor --fix             repair derived state\n" +
-    "  fabric doctor --fix-knowledge   apply store-backed knowledge hygiene mutations\n" +
+    "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
+    "  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
     "  fabric doctor --json            machine-readable output",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
@@ -234,11 +236,11 @@ export const enMessages: Messages = {
   "cite-coverage.skip.other": "other",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.doctor.args.fix.description": "Repair derived Fabric state.",
+  "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply store-backed knowledge hygiene mutations: floor drifted store counters, back-fill pending relevance defaults, and delete stale session-hints cache files. Default doctor run remains report-only.",
+    "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
@@ -247,7 +249,7 @@ export const enMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — re-run with `fabric doctor --verbose` to see)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates store-backed knowledge hygiene state; --fix repairs derived workspace state. Run them separately.",
+    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
   // rc.20 TASK-05: --cite-coverage report flags. Read-only; mutually exclusive with --fix/--fix-knowledge.
   "cli.doctor.args.cite-coverage.description":
     "Generate cite policy adherence report (read-only; skips standard inspections)",
@@ -616,7 +618,7 @@ export const enMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
-    "Review stale canonical entries with the fabric-review Skill; automatic demotion from retired local knowledge roots is disabled in store-only mode.",
+    "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "No draft knowledge entries exceed the additional stale-archive quiet window.",
@@ -625,7 +627,7 @@ export const enMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
-    "Archive or defer stale entries through the fabric-review Skill; automatic archive moves from retired local knowledge roots are disabled in store-only mode.",
+    "Run `fabric doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "No pending knowledge entries exceed the 14-day review threshold.",
@@ -663,7 +665,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fabric doctor --fix-knowledge` to floor store counters at the highest stable_id observed on disk.",
+    "Run `fabric doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
@@ -744,6 +746,13 @@ export const enMessages: Messages = {
     "{count} session-hints cache files under .fabric/.cache/ are older than {days} days. First: {detail}.",
   "doctor.check.session_hints_stale.remediation":
     "Run `fabric doctor --fix-knowledge` to delete stale session-hints cache files.",
+  "doctor.check.hook_cache_writable.name": "Hook cache writable",
+  "doctor.check.hook_cache_writable.ok":
+    "Hook sidecar cache path {path} accepts write probes.",
+  "doctor.check.hook_cache_writable.message":
+    "Hook sidecar cache path {path} is not writable; hook state updates will silently fail. Error: {error}.",
+  "doctor.check.hook_cache_writable.remediation":
+    "Restore write permissions for {path}, remove a blocking file at that path, or rerun `fabric install` after fixing the filesystem state.",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "No .fabric/.serve.lock present.",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -969,22 +978,16 @@ export const enMessages: Messages = {
   "cli.install.wizard.invalid-select": "Invalid value. Use one of: {options}.",
   "cli.install.wizard.cancelled": "Fabric install cancelled before execution.",
   "cli.install.capabilities.title": "Client capability summary",
-  // post-install restart banner. The MCP server is spawned by the client;
-  // already-running Claude Code / Cursor / Codex sessions won't pick up new
-  // MCP / Hook / Bootstrap config until they restart.
+  // v2.0.0-rc.37 NEW-22: post-install restart banner. The MCP server is
+  // spawned by the client; already-running Claude Code / Cursor / Codex
+  // sessions won't pick up the new mcp config until they restart.
   "cli.install.restart-banner":
-    "Restart hint: any already-running Claude Code / Cursor / Codex session must restart to pick up the new MCP / Hook / Bootstrap config; new sessions will use the Fabric tools.",
-  "cli.install.architecture-reference": "Reference: docs/ARCHITECTURE.md explains the CLI / Skill / MCP boundaries.",
-  "cli.install.semantic.already-enabled":
-    "Semantic search is enabled: embed_model={model}\nConfig unchanged: {configPath}",
-  "cli.install.semantic.prompt": "Enable vector semantic search? Downloads an embedding model on first use.",
+    "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
   "cli.install.next-steps":
-    "Next steps — verify Fabric is connected:\n" +
-    "  1. Restart any running AI client; new sessions load the latest MCP / Hook / Bootstrap config.\n" +
-    "  2. Confirm the write target: new knowledge writes to the active write store and starts in knowledge/pending/.\n" +
-    "  3. Capture knowledge as you work; use fabric-archive for decisions or pitfalls, and fabric-import for history backfill.\n" +
-    "  4. Promote knowledge with fabric-review; pending entries become canonical only after review.\n" +
-    "  5. Verify state with `fabric doctor`, or ask a restarted client \"what does Fabric know about this repo?\".",
+    "Next steps — get your first value:\n" +
+    "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
+    "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
+    "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
   "cli.install.store-bind-nudge":
     "💡 Mounted store(s) not bound to this project: {aliases}. Run `fabric store bind {first}` to read their knowledge here, then `fabric store switch-write {first}` to write team knowledge into it.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
@@ -1001,9 +1004,9 @@ export const enMessages: Messages = {
   "cli.install.capabilities.status.skipped": "skipped",
   "cli.install.capabilities.status.failed": "failed",
   "cli.install.capabilities.status.na": "n/a",
-  "cli.install.capabilities.follow-up.ready": "ready after restart",
+  "cli.install.capabilities.follow-up.ready": "continue in client",
   "cli.install.capabilities.follow-up.install": "install client assets",
-  "cli.install.capabilities.follow-up.manual": "check client config",
+  "cli.install.capabilities.follow-up.manual": "manual step required",
   "cli.install.next-step.message": "run fabric install --reapply --yes to refresh Fabric-managed hooks and client config.",
   "cli.install.reason-message.installable-body":
     ".fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
@@ -1025,6 +1028,8 @@ export const enMessages: Messages = {
   "cli.install.diff.applying-missing": "Applying {count} missing pieces: {files}",
   "cli.install.diff.drift-abort":
     "Drift detected in {path}. Run `fabric doctor` to inspect, or `fabric uninstall && fabric install` to reset.",
+  "cli.install.diff.drift-abort.action-hint":
+    "Inspect the drift with `fabric doctor`; if the managed files should be reset, run `fabric uninstall && fabric install`.",
   "cli.install.diff.state.missing": "missing",
   "cli.install.diff.state.present-canonical": "canonical",
   "cli.install.diff.state.drifted": "drifted",
@@ -1329,12 +1334,6 @@ export const enMessages: Messages = {
   "cli.store.detached": "detached '{alias}' — on-disk store tree left intact (detach ≠ delete)",
   "cli.store.bound": "bound required store '{id}' ({count} required)",
   "cli.store.switch-write": "active write store set to '{alias}' for this project",
-  "cli.store.migrate.none": "no project-local knowledge to migrate (dual-root is empty)",
-  "cli.store.migrate.dry-run-header": "migration preview (dry-run, nothing written):",
-  "cli.store.migrate.applied-header": "migrated {count} entries into stores:",
-  "cli.store.migrate.committed": "committed migration changes in the store repo",
-  "cli.store.migrate.remap-note": "  ↑ remapped {oldId} → {newId} (target store id collision)",
-  "cli.store.migrate.skips-header": "skipped {count} item(s):",
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",

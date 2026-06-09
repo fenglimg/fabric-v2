@@ -83,8 +83,6 @@ const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
 const SKILL_AUDIT_TEMPLATE_REL = "skills/fabric-audit/SKILL.md";
 // v2.2 SK2-connect (W3-T2): knowledge-graph relation skill template.
 const SKILL_CONNECT_TEMPLATE_REL = "skills/fabric-connect/SKILL.md";
-// Fabric entry-layer router over the specialized fabric-* skills.
-const SKILL_FABRIC_TEMPLATE_REL = "skills/fabric/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -123,10 +121,9 @@ const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
  * slashes; callers must run them through `join(projectRoot, ...)` to obtain
  * absolute, OS-normalized targets.
  *
- * Physical write coverage: Fabric installs Skill files into the Claude and
- * Codex project skill trees. Claude/Codex Desktop share those trees with their
- * CLI siblings; Cursor consumes them for back-compat instead of owning a
- * separate `.cursor/skills` directory.
+ * Client coverage: Skills are only meaningful for Claude Code and Codex CLI
+ * (the two clients that surface a Skills directory); Cursor is intentionally
+ * absent because it has no Skills concept.
  */
 export const SKILL_DESTINATIONS = {
   fabricArchive: [
@@ -164,14 +161,63 @@ export const SKILL_DESTINATIONS = {
     ".claude/skills/fabric-connect/SKILL.md",
     ".codex/skills/fabric-connect/SKILL.md",
   ],
-  // Fabric entry-layer router. Cursor has no first-class `.cursor/skills`
-  // directory in the install contract; parity is satisfied by its back-compat
-  // read of the Claude/Codex skill trees.
-  fabric: [
-    ".claude/skills/fabric/SKILL.md",
-    ".codex/skills/fabric/SKILL.md",
-  ],
 } as const;
+
+type FabricSkillInstallSpec = {
+  slug: string;
+  templateRel: string;
+  destinations: readonly string[];
+  step: string;
+  includeRefFiles?: boolean;
+};
+
+const FABRIC_SKILL_INSTALL_SPECS = {
+  fabricArchive: {
+    slug: "fabric-archive",
+    templateRel: SKILL_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricArchive,
+    step: "skill",
+    includeRefFiles: true,
+  },
+  fabricReview: {
+    slug: "fabric-review",
+    templateRel: SKILL_REVIEW_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricReview,
+    step: "skill-review",
+    includeRefFiles: true,
+  },
+  fabricImport: {
+    slug: "fabric-import",
+    templateRel: SKILL_IMPORT_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricImport,
+    step: "skill-import",
+    includeRefFiles: true,
+  },
+  fabricSync: {
+    slug: "fabric-sync",
+    templateRel: SKILL_SYNC_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricSync,
+    step: "skill-sync",
+  },
+  fabricStore: {
+    slug: "fabric-store",
+    templateRel: SKILL_STORE_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricStore,
+    step: "skill-store",
+  },
+  fabricAudit: {
+    slug: "fabric-audit",
+    templateRel: SKILL_AUDIT_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricAudit,
+    step: "skill-audit",
+  },
+  fabricConnect: {
+    slug: "fabric-connect",
+    templateRel: SKILL_CONNECT_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricConnect,
+    step: "skill-connect",
+  },
+} as const satisfies Record<keyof typeof SKILL_DESTINATIONS, FabricSkillInstallSpec>;
 
 // rc.35 TASK-03 (P2-6): legacy Skill directories that `fabric install` must
 // remove. The template directory was already deleted, but rc.30-and-earlier
@@ -189,9 +235,8 @@ export const DEPRECATED_SKILL_DIRS = [
 /**
  * Project-root-relative destination paths for the three cross-client hook
  * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
- * `fabric install` (install) and `fabric uninstall` (removal). The physical
- * hook directories are `.claude`, `.codex`, and `.cursor`; desktop variants
- * share their sibling CLI surface.
+ * `fabric install` (install) and `fabric uninstall` (removal). All three clients —
+ * Claude Code, Codex CLI, and Cursor — receive every script.
  */
 export const HOOK_SCRIPT_DESTINATIONS = {
   fabricHint: [
@@ -358,7 +403,8 @@ export {
 
 /**
  * Read the `fabric_language` value from `.fabric/fabric-config.json` at
- * `projectRoot`. Returns the raw string value when present, else `"zh-CN"` as
+ * `projectRoot`. Returns the raw string value (one of `"match-existing" |
+ * "zh-CN" | "en" | "zh-CN-hybrid"`) when present, else `"match-existing"` as
  * the documented default. Tolerant of missing files and malformed JSON: the
  * fallback keeps the install path robust even when called before the
  * fabric-config has been scaffolded (e.g. an isolated `fabric hooks install` on
@@ -371,18 +417,18 @@ export {
 export function readFabricLanguagePreference(projectRoot: string): string {
   const configPath = join(projectRoot, ".fabric", "fabric-config.json");
   if (!existsSync(configPath)) {
-    return "zh-CN";
+    return "match-existing";
   }
   try {
     const raw = readFileSync(configPath, "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return "zh-CN";
+      return "match-existing";
     }
     const value = (parsed as Record<string, unknown>)["fabric_language"];
-    return typeof value === "string" && value.length > 0 ? value : "zh-CN";
+    return typeof value === "string" && value.length > 0 ? value : "match-existing";
   } catch {
-    return "zh-CN";
+    return "match-existing";
   }
 }
 
@@ -443,6 +489,28 @@ export function inspectStaleInstall(target: string, source: string): string | nu
   return null;
 }
 
+async function installFabricSkill(
+  projectRoot: string,
+  spec: FabricSkillInstallSpec,
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(spec.templateRel);
+  validateSkillCanonicalSize(source, spec.slug);
+  const targets = spec.destinations.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent(spec.step, source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
+  if (spec.includeRefFiles) {
+    results.push(...(await installSkillRefFiles(projectRoot, spec.slug)));
+  }
+  return results;
+}
+
 /**
  * Copy templates/skills/fabric-archive/SKILL.md into both .claude/skills/
  * and .codex/skills/ subtrees under the project root. Idempotent: if the
@@ -460,44 +528,7 @@ export async function installFabricArchiveSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-archive");
-  const targets = SKILL_DESTINATIONS.fabricArchive.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  results.push(...(await installSkillRefFiles(projectRoot, "fabric-archive")));
-  return results;
-}
-
-/**
- * Install the top-level `fabric` Skill router. This is an entry layer only:
- * it classifies user intent and delegates to archive/review/import/store/sync/
- * audit/connect without replacing those skills' store-aware write paths.
- */
-export async function installFabricSkill(
-  projectRoot: string,
-  _options: InstallOptions = {},
-): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_FABRIC_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric");
-  const targets = SKILL_DESTINATIONS.fabric.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-fabric", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricArchive);
 }
 
 /**
@@ -514,20 +545,7 @@ export async function installFabricReviewSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_REVIEW_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-review");
-  const targets = SKILL_DESTINATIONS.fabricReview.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-review", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  results.push(...(await installSkillRefFiles(projectRoot, "fabric-review")));
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricReview);
 }
 
 /**
@@ -545,20 +563,7 @@ export async function installFabricImportSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_IMPORT_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-import");
-  const targets = SKILL_DESTINATIONS.fabricImport.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-import", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  results.push(...(await installSkillRefFiles(projectRoot, "fabric-import")));
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricImport);
 }
 
 /**
@@ -571,19 +576,7 @@ export async function installFabricSyncSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_SYNC_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-sync");
-  const targets = SKILL_DESTINATIONS.fabricSync.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-sync", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricSync);
 }
 
 /**
@@ -596,19 +589,7 @@ export async function installFabricStoreSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_STORE_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-store");
-  const targets = SKILL_DESTINATIONS.fabricStore.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-store", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricStore);
 }
 
 /**
@@ -622,19 +603,7 @@ export async function installFabricAuditSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_AUDIT_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-audit");
-  const targets = SKILL_DESTINATIONS.fabricAudit.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-audit", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricAudit);
 }
 
 /**
@@ -647,19 +616,7 @@ export async function installFabricConnectSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(SKILL_CONNECT_TEMPLATE_REL);
-  validateSkillCanonicalSize(source, "fabric-connect");
-  const targets = SKILL_DESTINATIONS.fabricConnect.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const staleMsg = inspectStaleInstall(target, source);
-    const result = await copyTextIdempotent("skill-connect", source, target);
-    if (staleMsg && result.status === "written") {
-      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
-    }
-    results.push(result);
-  }
-  return results;
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricConnect);
 }
 
 /**

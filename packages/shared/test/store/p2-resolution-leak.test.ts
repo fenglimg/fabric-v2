@@ -4,7 +4,7 @@ import { knowledgeProvenanceSchema } from "../../src/schemas/provenance.js";
 import { resolveCandidates } from "../../src/resolver/resolution.js";
 import { resolveStoreQualifiedId } from "../../src/resolver/store-qualified-id.js";
 import { lintCrossStoreReferences } from "../../src/store/cross-store-lint.js";
-import { hasSecrets, scanForSecrets } from "../../src/store/secret-scan.js";
+import { hasSecrets, redactSecrets, scanForSecrets } from "../../src/store/secret-scan.js";
 
 // v2.1.0-rc.1 P2 — resolution + write-path leak-prevention unit tests
 // (including the required NEGATIVE tests for secret-scan and cross-store lint).
@@ -84,12 +84,36 @@ describe("P2 secret-scan viability gate (S26) — negative tests", () => {
     expect(hasSecrets("aws_key = AKIAIOSFODNN7EXAMPLE")).toBe(true);
     expect(hasSecrets("-----BEGIN RSA PRIVATE KEY-----")).toBe(true);
     expect(hasSecrets('password: "hunter2supersecret"')).toBe(true);
+    expect(hasSecrets("password=hunter2supersecret")).toBe(true);
     const findings = scanForSecrets("line1\nghp_0123456789abcdefghijABCDEFGHIJ0123\n");
     expect(findings[0]).toEqual({ rule: "github-token", line: 2 });
   });
 
   it("PASSES clean knowledge content", () => {
     expect(hasSecrets("# Decision\n\nUse bcrypt cost=12 for password hashing.\n")).toBe(false);
+  });
+
+  it("detects and redacts PII without treating it as a credential-blocking secret", () => {
+    const content = [
+      "Contact alice@example.com for follow-up.",
+      "Caller phone is (415) 555-1212.",
+      "Debug source IP 192.168.1.42.",
+    ].join("\n");
+
+    expect(scanForSecrets(content)).toEqual([
+      { rule: "email-address", line: 1 },
+      { rule: "phone-number", line: 2 },
+      { rule: "ipv4-address", line: 3 },
+    ]);
+    expect(hasSecrets(content)).toBe(false);
+
+    const redacted = redactSecrets(content);
+    expect(redacted).toContain("[REDACTED:email-address]");
+    expect(redacted).toContain("[REDACTED:phone-number]");
+    expect(redacted).toContain("[REDACTED:ipv4-address]");
+    expect(redacted).not.toContain("alice@example.com");
+    expect(redacted).not.toContain("(415) 555-1212");
+    expect(redacted).not.toContain("192.168.1.42");
   });
 });
 

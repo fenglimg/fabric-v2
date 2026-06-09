@@ -127,7 +127,8 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
     // grows by one install_diff_applied line per non-canonical run. The
     // remaining managed config (fabric-config.json, .gitignore) must be
     // byte-stable on a canonical re-run.
-    const configBefore = snapshot1Fabric[".fabric/fabric-config.json"];
+    const configKey = Object.keys(snapshot1Fabric).find((key) => key.replaceAll("\\", "/") === ".fabric/fabric-config.json");
+    const configBefore = configKey === undefined ? undefined : snapshot1Fabric[configKey];
     expect(configBefore).toBeDefined();
     const configAfter = readFileSync(join(target, ".fabric", "fabric-config.json"), "utf8");
     expect(configAfter).toBe(configBefore);
@@ -186,6 +187,8 @@ describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", 
     expect(thrown!.message).toMatch(/events\.jsonl/);
     expect(thrown!.message).toMatch(/fabric doctor/);
     expect(thrown!.message).toMatch(/fabric uninstall/);
+    expect((thrown as { actionHint?: string }).actionHint).toMatch(/fabric doctor/);
+    expect((thrown as { actionHint?: string }).actionHint).toMatch(/fabric uninstall/);
   });
 });
 
@@ -274,6 +277,8 @@ describe("rc.14 TASK-004 install-diff-mode: .fabric as regular file aborts with 
     expect(thrown!.message).toMatch(/\.fabric/);
     expect(thrown!.message).toMatch(/fabric doctor/);
     expect(thrown!.message).toMatch(/fabric uninstall/);
+    expect((thrown as { actionHint?: string }).actionHint).toMatch(/fabric doctor/);
+    expect((thrown as { actionHint?: string }).actionHint).toMatch(/fabric uninstall/);
     expect(thrown!.message).not.toMatch(/ENOTDIR|EEXIST/);
 
     // The regular file at `.fabric` is preserved verbatim — abort fires before

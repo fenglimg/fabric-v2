@@ -4,6 +4,7 @@ import {
   auditModeSchema,
   defaultLayerFilterSchema,
   fabricConfigSchema,
+  fabricLanguageSchema,
 } from "./fabric-config.js";
 
 // rc.16 TASK-005 (F1-introspect): schema-introspection helper that exposes
@@ -164,7 +165,6 @@ function pickStringDefault(key: keyof FabricConfigSchemaShape): string {
 // Panel default falls back to "warn" — the safest middle-ground choice when
 // a user opens the panel for an audit_mode-less config.
 const AUDIT_MODE_PANEL_DEFAULT = "warn";
-const USER_VISIBLE_LANGUAGE_OPTIONS = ["zh-CN", "en"] as const;
 
 /**
  * Returns the per-field metadata array driving the `fabric config` clack panel.
@@ -189,7 +189,7 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   makeEnumField(
     "fabric_language",
     "A_locale",
-    USER_VISIBLE_LANGUAGE_OPTIONS,
+    fabricLanguageSchema.options,
     pickStringDefault("fabric_language"),
   ),
   makeEnumField(

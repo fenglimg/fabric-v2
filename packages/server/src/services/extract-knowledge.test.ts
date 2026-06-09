@@ -14,7 +14,6 @@ import {
 
 import { readEventLedger } from "./event-ledger.js";
 import { extractKnowledge, pendingBase, quoteRelevancePath } from "./extract-knowledge.js";
-import { reviewKnowledge } from "./review.js";
 import type { FabExtractKnowledgeInput } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type {
   KnowledgeArchiveAttemptedEvent,
@@ -42,13 +41,16 @@ function provisionStores(projectRoot: string): void {
   );
 }
 
-function toPosixPath(value: string): string {
-  return value.replace(/\\/gu, "/");
+// Store-rooted reported pending path (the `~/` form extract-knowledge returns).
+function pendingRel(layer: "team" | "personal", type: string, slug: string): string {
+  const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
+  return `~/.fabric/${storeRelativePath(uuid)}/${STORE_LAYOUT.knowledgeDir}/pending/${type}/${slug}.md`;
 }
 
-// Store-only extract returns an absolute store path that review can consume.
+// Resolve a reported `~/...` pending path to an absolute on-disk path.
 function pendingAbs(reported: string): string {
-  return reported;
+  const home = process.env.FABRIC_HOME!;
+  return join(home, reported.slice(2));
 }
 
 // Absolute store pending dir for seeding a pre-existing pending file in tests.
@@ -180,6 +182,56 @@ describe("extractKnowledge", () => {
     expect(result.pending_path).not.toBe("");
   });
 
+  it("extractKnowledge_redacts_pii_before_persisting_pending_content", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-pii"],
+      user_messages_summary: "Follow up with alice@example.com about the auth rollout.",
+      session_context: "Caller phone was (415) 555-1212 and source IP was 192.168.1.42.",
+      must_read_if: "Investigating mail to alice@example.com.",
+      intent_clues: ["phone (415) 555-1212 appears in transcript"],
+      tags: ["owner-alice@example.com"],
+      evidence_paths: ["transcripts/(415) 555-1212.md"],
+      type: "decisions",
+      slug: "pii-redaction",
+    }));
+
+    expect(result.pending_path).not.toBe("");
+    const body = await readFile(pendingAbs(result.pending_path), "utf8");
+    expect(body).not.toContain("alice@example.com");
+    expect(body).not.toContain("(415) 555-1212");
+    expect(body).not.toContain("192.168.1.42");
+    expect(body).toContain("[REDACTED:email-address]");
+    expect(body).toContain("[REDACTED:phone-number]");
+    expect(body).toContain("[REDACTED:ipv4-address]");
+
+    const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(
+      archive.events.some((e) => ((e as { reason?: string }).reason ?? "").includes("pii-redacted")),
+    ).toBe(true);
+    expect(
+      archive.events.some((e) => ((e as { reason?: string }).reason ?? "").includes("secret_detected")),
+    ).toBe(false);
+  });
+
+  it("extractKnowledge_secret_scan_gate_blocks_credentials_in_structured_fields", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-structured-secret"],
+      user_messages_summary: "Structured fields must be scanned before writing.",
+      type: "pitfalls",
+      slug: "sk-123456789012345678901234",
+      tags: ["safe-topic"],
+      evidence_paths: ["config/password=hunter2supersecret"],
+    }));
+
+    expect(result.pending_path).toBe("");
+    const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(
+      ledger.events.some((e) => ((e as { reason?: string }).reason ?? "").includes("secret_detected")),
+    ).toBe(true);
+  });
+
   it("extractKnowledge_writes_pending_file_without_id", async () => {
     const projectRoot = await createTempProject();
 
@@ -194,7 +246,7 @@ describe("extractKnowledge", () => {
         "Session goal: lock idempotency contract.\nTurning point: chose triple-keyed sha256 over single-string hash to prevent slug collisions across sessions.",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/triple-idempotency.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/triple-idempotency.md");
     expect(result.idempotency_key).toMatch(/^sha256:[0-9a-f]{64}$/u);
 
     const fileContents = await readFile(pendingAbs(result.pending_path), "utf8");
@@ -452,7 +504,7 @@ describe("extractKnowledge", () => {
       slug: "  Multi Word //  Slug!! With    Punctuation  ",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/models/multi-word-slug-with-punctuation.md");
+    expect(result.pending_path).toContain("knowledge/pending/models/multi-word-slug-with-punctuation.md");
   });
 
   // ---- branch-coverage tests (rc.2 gate) ----
@@ -527,7 +579,7 @@ describe("extractKnowledge", () => {
       slug: "collision",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/collision-2.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/collision-2.md");
     const stalePreserved = await readFile(target, "utf8");
     expect(stalePreserved).toBe(stale);
     const freshBody = await readFile(pendingAbs(result.pending_path), "utf8");
@@ -605,7 +657,7 @@ describe("extractKnowledge", () => {
       slug: "no-frontmatter",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/no-frontmatter-2.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/no-frontmatter-2.md");
     const after = await readFile(target, "utf8");
     expect(after).toBe(original);
   });
@@ -631,7 +683,7 @@ describe("extractKnowledge", () => {
     }));
 
     // The pending file write is the source of truth — that succeeds.
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/evt-fail.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/evt-fail.md");
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
     expect(body).toMatch(/Body that succeeds writing the pending file\./u);
 
@@ -655,7 +707,7 @@ describe("extractKnowledge", () => {
       slug: longSlug,
     }));
 
-    const slugFromPath = toPosixPath(result.pending_path)
+    const slugFromPath = result.pending_path
       .replace(/.*pending\/decisions\//u, "")
       .replace(/\.md$/, "");
     expect(slugFromPath.length).toBeLessThanOrEqual(40);
@@ -673,7 +725,7 @@ describe("extractKnowledge", () => {
       type: "decisions",
       slug: "shared-slug",
     }));
-    expect(toPosixPath(first.pending_path)).toContain("knowledge/pending/decisions/shared-slug.md");
+    expect(first.pending_path).toContain("knowledge/pending/decisions/shared-slug.md");
     const originalBody = await readFile(
       pendingAbs(first.pending_path),
       "utf8",
@@ -690,7 +742,7 @@ describe("extractKnowledge", () => {
       type: "decisions",
       slug: "shared-slug",
     }));
-    expect(toPosixPath(second.pending_path)).toContain("knowledge/pending/decisions/shared-slug-2.md");
+    expect(second.pending_path).toContain("knowledge/pending/decisions/shared-slug-2.md");
     expect(second.idempotency_key).not.toBe(first.idempotency_key);
 
     // session-A entry intact.
@@ -748,7 +800,7 @@ describe("extractKnowledge", () => {
       layer: "team",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/team-write.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/team-write.md");
     const absoluteOnDisk = pendingAbs(result.pending_path);
     expect(existsSync(absoluteOnDisk)).toBe(true);
     const body = await readFile(absoluteOnDisk, "utf8");
@@ -766,41 +818,6 @@ describe("extractKnowledge", () => {
     expect(existsSync(personalPath)).toBe(false);
   });
 
-  it("extractKnowledge_returned_store_path_can_be_approved_by_review", async () => {
-    const projectRoot = await createTempProject();
-    const result = await extractKnowledge(projectRoot, buildInput({
-      source_sessions: ["sess-roundtrip"],
-      recent_paths: ["x.ts"],
-      user_messages_summary: "Round-trip body for extract then review approval.",
-      type: "decisions",
-      slug: "roundtrip-approve",
-      layer: "team",
-    }));
-
-    expect(result.pending_path).not.toMatch(/^~\//u);
-    const approved = await reviewKnowledge(projectRoot, {
-      action: "approve",
-      pending_paths: [result.pending_path],
-    });
-    expect(approved.action).toBe("approve");
-    if (approved.action !== "approve") throw new Error("unreachable");
-    expect(approved.approved).toHaveLength(1);
-
-    const stableId = approved.approved[0].stable_id;
-    expect(existsSync(result.pending_path)).toBe(false);
-    expect(
-      existsSync(
-        join(
-          resolveGlobalRoot(),
-          storeRelativePath(TEST_TEAM_UUID),
-          STORE_LAYOUT.knowledgeDir,
-          "decisions",
-          `${stableId}--roundtrip-approve.md`,
-        ),
-      ),
-    ).toBe(true);
-  });
-
   it("extractKnowledge_routes_personal_layer_write_to_home_pending", async () => {
     const projectRoot = await createTempProject();
 
@@ -813,7 +830,7 @@ describe("extractKnowledge", () => {
       layer: "personal",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/guidelines/personal-write.md");
+    expect(result.pending_path).toContain("knowledge/pending/guidelines/personal-write.md");
     // Personal-layer write lands in the PERSONAL store (not the team store).
     expect(result.pending_path).toContain(TEST_PERSONAL_UUID);
 
@@ -842,7 +859,7 @@ describe("extractKnowledge", () => {
       type: "models",
       slug: "default-layer",
     }));
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/models/default-layer.md");
+    expect(result.pending_path).toContain("knowledge/pending/models/default-layer.md");
     expect(existsSync(pendingAbs(result.pending_path))).toBe(true);
 
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
@@ -866,7 +883,7 @@ describe("extractKnowledge", () => {
       slug: "multi-session",
     }));
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/multi-session.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/multi-session.md");
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
     // Frontmatter renders the array form.
     expect(body).toMatch(/^source_sessions: \["sess-a", "sess-b", "sess-c"\]$/mu);
@@ -944,7 +961,7 @@ describe("extractKnowledge", () => {
     }));
 
     // Pending file landed in the personal store with degraded frontmatter.
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/a1-personal-narrow.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/a1-personal-narrow.md");
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
     expect(body).toMatch(/^relevance_scope: broad$/mu);
     expect(body).toMatch(/^relevance_paths: \[\]$/mu);
@@ -1215,7 +1232,7 @@ describe("extractKnowledge", () => {
       }),
     );
 
-    expect(toPosixPath(result.pending_path)).toContain("knowledge/pending/decisions/fresh-project.md");
+    expect(result.pending_path).toContain("knowledge/pending/decisions/fresh-project.md");
   });
 
   // ---------------------------------------------------------------------------

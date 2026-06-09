@@ -11,6 +11,13 @@ import {
   storeRelativePath,
 } from "@fenglimg/fabric-shared";
 
+import {
+  __readSetWalkCacheStatsForTests,
+  __resetReadSetWalkCacheForTests,
+  buildCrossStoreBodyIndex,
+  buildCrossStoreRawItems,
+  computeReadSetRevision,
+} from "./cross-store-recall.js";
 import { planContext } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 
@@ -30,6 +37,7 @@ beforeEach(async () => {
   tempDirs.push(fakeHome);
   process.env.FABRIC_HOME = fakeHome;
   contextCache.invalidate("file_watch");
+  __resetReadSetWalkCacheForTests();
 });
 
 afterEach(async () => {
@@ -38,6 +46,7 @@ afterEach(async () => {
   } else {
     process.env.FABRIC_HOME = originalFabricHome;
   }
+  __resetReadSetWalkCacheForTests();
   await Promise.all(
     tempDirs.splice(0).map(async (path) => {
       await rm(path, { recursive: true, force: true });
@@ -124,5 +133,23 @@ describe("cross-store recall (W1-T1)", () => {
     // No global config written at all.
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     expect(result.candidates.map((c) => c.stable_id)).not.toContain("team:KT-DEC-9001");
+  });
+
+  it("reuses one read-set walk across revision, raw candidates, and body index", async () => {
+    const projectRoot = await createProjectWithEmptyMeta();
+    await seedTeamStore();
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
+    );
+
+    const revision = await computeReadSetRevision(projectRoot);
+    const rawItems = await buildCrossStoreRawItems(projectRoot);
+    const bodyIndex = await buildCrossStoreBodyIndex(projectRoot);
+
+    expect(revision).toEqual(expect.any(String));
+    expect(rawItems.map((item) => item.stable_id)).toContain("team:KT-DEC-9001");
+    expect(bodyIndex.has("team:KT-DEC-9001")).toBe(true);
+    expect(__readSetWalkCacheStatsForTests().walks).toBe(1);
   });
 });

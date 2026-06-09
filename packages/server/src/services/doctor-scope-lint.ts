@@ -1,10 +1,11 @@
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
   buildStoreResolveInput,
   createStoreResolver,
   isPersonalScope,
+  type Translator,
   type MountedStoreDir,
   readKnowledgeAcrossStores,
   readStoreProjects,
@@ -12,6 +13,8 @@ import {
   scopeRoot,
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
+
+import type { DoctorCheck } from "./doctor.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 W4 (G-GUARD / A6) — doctor scope lint over the read-set stores.
@@ -72,7 +75,7 @@ interface StoreCtx {
 // Resolve the project's read-set stores with provenance + visibility + the set
 // of project ids each store registers. [] when there is no global config / no
 // mounted store (never throws).
-function resolveLintStores(projectRoot: string): StoreCtx[] {
+async function resolveLintStores(projectRoot: string): Promise<StoreCtx[]> {
   const input = buildStoreResolveInput(projectRoot);
   if (input === null) {
     return [];
@@ -85,7 +88,7 @@ function resolveLintStores(projectRoot: string): StoreCtx[] {
     input.mountedStores.filter((s) => s.personal).map((s) => s.store_uuid),
   );
   const globalRoot = resolveGlobalRoot();
-  return readSet.stores.map((entry) => {
+  return Promise.all(readSet.stores.map(async (entry) => {
     const mounted = input.mountedStores.find((s) => s.store_uuid === entry.store_uuid);
     const dir = join(
       globalRoot,
@@ -96,14 +99,14 @@ function resolveLintStores(projectRoot: string): StoreCtx[] {
       alias: entry.alias,
       dir,
       visibility: personalUuids.has(entry.store_uuid) ? "personal" : "shared",
-      projectIds: new Set(readStoreProjects(dir).map((p) => p.id)),
+      projectIds: new Set((await readStoreProjects(dir)).map((p) => p.id)),
     };
-  });
+  }));
 }
 
 // Run the three scope lints over every canonical entry in the read-set stores.
-export function lintStoreScopes(projectRoot: string): ScopeLintViolation[] {
-  const stores = resolveLintStores(projectRoot);
+export async function lintStoreScopes(projectRoot: string): Promise<ScopeLintViolation[]> {
+  const stores = await resolveLintStores(projectRoot);
   if (stores.length === 0) {
     return [];
   }
@@ -115,14 +118,14 @@ export function lintStoreScopes(projectRoot: string): ScopeLintViolation[] {
   }));
 
   const violations: ScopeLintViolation[] = [];
-  for (const ref of readKnowledgeAcrossStores(dirs)) {
+  for (const ref of await readKnowledgeAcrossStores(dirs)) {
     const store = byUuid.get(ref.store_uuid);
     if (store === undefined) {
       continue;
     }
     let source: string;
     try {
-      source = readFileSync(ref.file, "utf8");
+      source = await readFile(ref.file, "utf8");
     } catch {
       continue; // file vanished between walk and read — skip, never crash.
     }
@@ -177,4 +180,46 @@ export function lintStoreScopes(projectRoot: string): ScopeLintViolation[] {
     }
   }
   return violations;
+}
+
+// Roll the three store scope lints into one doctor check. Personal leaks are a
+// privacy red line and report as manual errors; missing fields and dangling
+// project refs remain advisory warnings.
+export function createScopeLintCheck(
+  t: Translator,
+  violations: ScopeLintViolation[],
+): DoctorCheck {
+  if (violations.length === 0) {
+    return {
+      name: t("doctor.check.store_scope_lint.name"),
+      status: "ok",
+      message: t("doctor.check.store_scope_lint.ok"),
+    };
+  }
+  const leaks = violations.filter((v) => v.code === "personal_leak_in_shared_store").length;
+  const missing = violations.filter((v) => v.code === "missing_scope_fields").length;
+  const dangling = violations.filter((v) => v.code === "dangling_project_ref").length;
+  const breakdown = [
+    leaks > 0 ? `${leaks} personal-leak` : null,
+    missing > 0 ? `${missing} missing-scope` : null,
+    dangling > 0 ? `${dangling} dangling-project` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(", ");
+  const first = violations[0];
+  const sample = `${first.code} — ${first.detail} (${first.stable_id ?? first.file})`;
+  const isError = leaks > 0;
+  return {
+    name: t("doctor.check.store_scope_lint.name"),
+    status: isError ? "error" : "warn",
+    kind: isError ? "manual_error" : "warning",
+    code: "store_scope_lint",
+    fixable: false,
+    message: t("doctor.check.store_scope_lint.message", {
+      total: String(violations.length),
+      breakdown,
+      sample,
+    }),
+    actionHint: t("doctor.check.store_scope_lint.remediation"),
+  };
 }

@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, fsyncSync, openSync, closeSync, readFileSync, statSync } from "node:fs";
+import {
+  closeSync,
+  createReadStream,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
 import { appendFile, mkdir, readFile, truncate, writeFile } from "node:fs/promises";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { join } from "node:path";
@@ -207,27 +215,43 @@ function truncateLongStrings(value: unknown): unknown {
 // by a false-positive secret match.
 const REDACTED_EVENT_FIELDS = new Set([
   "intent",
+  "kb_line_raw",
   "message",
+  "prompt",
+  "rationale",
   "reason",
   "summary",
   "user_messages_summary",
 ]);
+
+const DEEP_REDACTED_EVENT_FIELDS = new Set([
+  "ai_selection_reasons",
+  "cite_commitments",
+  "diagnostics",
+  "message",
+]);
+
+function redactSecretsDeep(value: unknown): unknown {
+  if (typeof value === "string") return redactSecrets(value);
+  if (Array.isArray(value)) return value.map((entry) => redactSecretsDeep(entry));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = redactSecretsDeep(nested);
+    }
+    return out;
+  }
+  return value;
+}
 
 function redactSecretsInEvent(event: EventLedgerEventInput): EventLedgerEventInput {
   const out: Record<string, unknown> = { ...(event as Record<string, unknown>) };
   for (const key of Object.keys(out)) {
     if (REDACTED_EVENT_FIELDS.has(key) && typeof out[key] === "string") {
       out[key] = redactSecrets(out[key] as string);
+    } else if (DEEP_REDACTED_EVENT_FIELDS.has(key)) {
+      out[key] = redactSecretsDeep(out[key]);
     }
-  }
-  // ai_selection_reasons is a record of free-text rationales (id -> reason).
-  const reasons = out.ai_selection_reasons;
-  if (reasons !== null && typeof reasons === "object" && !Array.isArray(reasons)) {
-    const scrubbed: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(reasons as Record<string, unknown>)) {
-      scrubbed[k] = typeof v === "string" ? redactSecrets(v) : v;
-    }
-    out.ai_selection_reasons = scrubbed;
   }
   return out as EventLedgerEventInput;
 }
@@ -236,9 +260,6 @@ export async function appendEventLedgerEvent(
   projectRoot: string,
   event: EventLedgerEventInput,
 ): Promise<StoredEventLedgerEvent> {
-  if (process.env.FABRIC_TEST_EVENT_LEDGER_APPEND_FAIL_ROOT === projectRoot) {
-    throw new Error("simulated ledger append failure");
-  }
   const eventPath = getEventLedgerPath(projectRoot);
   // ISS-043: scrub secrets from free-text fields BEFORE truncation + validation.
   const redacted = redactSecretsInEvent(event);
@@ -299,76 +320,38 @@ export async function readEventLedger(
   options: ReadEventLedgerOptions = {},
 ): Promise<ReadEventLedgerResult> {
   const eventPath = getEventLedgerPath(projectRoot);
-  let raw: string;
+  const warnings: LedgerWarning[] = [];
+  const events: StoredEventLedgerEvent[] = [];
+  const eventTypeFilter = options.event_type;
 
   try {
-    raw = await readFile(eventPath, "utf8");
+    await visitCompleteLedgerLines(eventPath, (line, lineIndex) => {
+      // ISS-005 pushdown: when the caller asks for one event_type (e.g.
+      // loadIdRedirectMap's rare `knowledge_id_redirect`), skip the expensive
+      // JSON.parse + Zod for lines that cannot match. A line whose raw text does
+      // not contain the event_type token cannot carry that event_type (the value
+      // appears verbatim in the JSON), so pruning it is loss-free. Substring
+      // false-positives still get parsed and dropped by the post-parse filter
+      // below — the result is byte-identical to a full scan. Warning
+      // classification for unrelated lines is intentionally skipped here; the
+      // doctor full-ledger scan passes no event_type and keeps full coverage.
+      if (eventTypeFilter !== undefined && !line.includes(eventTypeFilter)) {
+        return;
+      }
+      __eventLedgerParseStats.lineParses += 1;
+      const parsed = parseEventLedgerLine(line, lineIndex);
+      if (parsed !== null) {
+        events.push(parsed);
+        return;
+      }
+      const rejection = classifyRejection(line, lineIndex);
+      if (rejection !== null) warnings.push(rejection);
+    }, warnings);
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
       return { events: [], warnings: [] };
     }
-
     throw error;
-  }
-
-  const warnings: LedgerWarning[] = [];
-
-  // Split into lines, mirroring the SSE remainder pattern from events.ts:363-401.
-  // If the file does not end with a newline, the last fragment is a partial write.
-  const lines = raw.split(/\r?\n/);
-  const hasTrailingNewline = raw.endsWith("\n");
-  let partialLine: string | undefined;
-
-  if (!hasTrailingNewline && lines.length > 0) {
-    partialLine = lines.pop();
-  }
-
-  if (partialLine !== undefined && partialLine.trim().length > 0) {
-    // Compute byte offset: all bytes before the partial fragment.
-    const fullContentBeforePartial = raw.slice(0, raw.length - partialLine.length);
-    const byteOffset = Buffer.byteLength(fullContentBeforePartial, "utf8");
-    const byteLength = Buffer.byteLength(partialLine, "utf8");
-    warnings.push({
-      kind: "partial_write_at_tail",
-      byte_offset: byteOffset,
-      byte_length: byteLength,
-      snippet_first_120: partialLine.slice(0, 120),
-    });
-  }
-
-  // v2.0.0-rc.27 TASK-010 (audit §2.24): classify rejected lines so
-  // forward-compat warnings surface through `fabric doctor`. We walk lines once,
-  // collecting either a parsed event or a warning describing why the line
-  // failed validation (currently: schema_version mismatch or unknown
-  // event_type). Lines that fail JSON.parse OR fail Zod for unclassified
-  // reasons stay silently dropped — those are non-actionable for the operator.
-  const trimmed = lines
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const events: StoredEventLedgerEvent[] = [];
-  const eventTypeFilter = options.event_type;
-  for (let i = 0; i < trimmed.length; i++) {
-    const line = trimmed[i];
-    // ISS-005 pushdown: when the caller asks for one event_type (e.g.
-    // loadIdRedirectMap's rare `knowledge_id_redirect`), skip the expensive
-    // JSON.parse + Zod for lines that cannot match. A line whose raw text does
-    // not contain the event_type token cannot carry that event_type (the value
-    // appears verbatim in the JSON), so pruning it is loss-free. Substring
-    // false-positives still get parsed and dropped by the post-parse filter
-    // below — the result is byte-identical to a full scan. Warning
-    // classification for unrelated lines is intentionally skipped here; the
-    // doctor full-ledger scan passes no event_type and keeps full coverage.
-    if (eventTypeFilter !== undefined && !line.includes(eventTypeFilter)) {
-      continue;
-    }
-    __eventLedgerParseStats.lineParses += 1;
-    const parsed = parseEventLedgerLine(line, i);
-    if (parsed !== null) {
-      events.push(parsed);
-      continue;
-    }
-    const rejection = classifyRejection(line, i);
-    if (rejection !== null) warnings.push(rejection);
   }
 
   const filtered = events
@@ -378,6 +361,52 @@ export async function readEventLedger(
     .filter((entry) => options.session_id === undefined || entry.session_id === options.session_id);
 
   return { events: filtered, warnings };
+}
+
+async function visitCompleteLedgerLines(
+  eventPath: string,
+  visitor: (line: string, lineIndex: number) => void,
+  warnings: LedgerWarning[],
+  onPartialTail?: (line: string, byteOffset: number, byteLength: number) => void,
+): Promise<void> {
+  let remainder = "";
+  let bytesBeforeRemainder = 0;
+  let lineIndex = 0;
+
+  for await (const chunk of createReadStream(eventPath, { encoding: "utf8" })) {
+    remainder += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+
+    let newlineIndex = remainder.indexOf("\n");
+    while (newlineIndex !== -1) {
+      const consumed = remainder.slice(0, newlineIndex + 1);
+      let line = remainder.slice(0, newlineIndex);
+      remainder = remainder.slice(newlineIndex + 1);
+      bytesBeforeRemainder += Buffer.byteLength(consumed, "utf8");
+
+      if (line.endsWith("\r")) {
+        line = line.slice(0, -1);
+      }
+
+      const trimmed = line.trim();
+      if (trimmed.length > 0) {
+        visitor(trimmed, lineIndex);
+        lineIndex += 1;
+      }
+
+      newlineIndex = remainder.indexOf("\n");
+    }
+  }
+
+  if (remainder.trim().length > 0) {
+    const byteLength = Buffer.byteLength(remainder, "utf8");
+    onPartialTail?.(remainder, bytesBeforeRemainder, byteLength);
+    warnings.push({
+      kind: "partial_write_at_tail",
+      byte_offset: bytesBeforeRemainder,
+      byte_length: byteLength,
+      snippet_first_120: remainder.slice(0, 120),
+    });
+  }
 }
 
 /**
@@ -501,9 +530,8 @@ export async function rotateEventLedgerIfNeeded(
     const retentionDays = resolveRetentionDays(projectRoot, opts.retentionDays);
     const cutoffMs = now.getTime() - retentionDays * 86_400_000;
 
-    let raw: string;
     try {
-      raw = await readFile(eventPath, "utf8");
+      statSync(eventPath);
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
         return { rotated: false, archivedCount: 0, keptCount: 0 };
@@ -511,46 +539,41 @@ export async function rotateEventLedgerIfNeeded(
       throw error;
     }
 
-    if (raw.length === 0) {
-      return { rotated: false, archivedCount: 0, keptCount: 0 };
-    }
-
     // Tail tolerance: mirrors readEventLedger's partial-write handling.
     // A non-newline-terminated tail fragment is preserved as `keptTail` so
     // rotation does not silently drop a half-written line that the next
     // truncateLedgerToLastNewline pass would recover.
-    const hasTrailingNewline = raw.endsWith("\n");
-    const segments = raw.split(/\r?\n/);
     let keptTail = "";
-    if (!hasTrailingNewline && segments.length > 0) {
-      keptTail = segments.pop() ?? "";
-    }
-
     const archived: string[] = [];
     const kept: string[] = [];
 
-    for (const line of segments) {
-      const trimmed = line.trim();
-      if (trimmed.length === 0) continue;
-      // Lines that fail to parse or lack a numeric ts get kept — the
-      // rotation primitive must never throw away data it cannot classify.
-      let ts: number | undefined;
-      try {
-        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-        const candidate = parsed["ts"];
-        if (typeof candidate === "number" && Number.isFinite(candidate)) {
-          ts = candidate;
+    await visitCompleteLedgerLines(
+      eventPath,
+      (trimmed) => {
+        // Lines that fail to parse or lack a numeric ts get kept — the
+        // rotation primitive must never throw away data it cannot classify.
+        let ts: number | undefined;
+        try {
+          const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+          const candidate = parsed["ts"];
+          if (typeof candidate === "number" && Number.isFinite(candidate)) {
+            ts = candidate;
+          }
+        } catch {
+          // unparseable line — keep
         }
-      } catch {
-        // unparseable line — keep
-      }
 
-      if (ts !== undefined && ts < cutoffMs) {
-        archived.push(trimmed);
-      } else {
-        kept.push(trimmed);
-      }
-    }
+        if (ts !== undefined && ts < cutoffMs) {
+          archived.push(trimmed);
+        } else {
+          kept.push(trimmed);
+        }
+      },
+      [],
+      (partialLine) => {
+        keptTail = partialLine;
+      },
+    );
 
     // ISS-025: size-based rotation. Independent of age — archive the OLDEST
     // retained lines (front of the chronological kept[]) until the retained set

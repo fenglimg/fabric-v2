@@ -1,14 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   StreamableHTTPServerTransport,
-  type EventId,
   type EventStore,
-  type StreamId,
 } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import chokidar from "chokidar";
@@ -22,8 +19,7 @@ import { registerKnowledgeApi } from "./api/knowledge.js";
 import { registerKnowledgeContextApi } from "./api/knowledge-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { createBearerAuthMiddleware, createLoopbackDenyMiddleware } from "./middleware/bearer-auth.js";
-import { getLedgerPath, getLegacyLedgerPath } from "@fenglimg/fabric-server";
-import { appendEventLedgerEvent, readEventLedger } from "@fenglimg/fabric-server";
+import { JsonlEventStore } from "./services/jsonl-event-store.js";
 import { invalidateKnowledgeSyncCooldown } from "@fenglimg/fabric-server";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -56,13 +52,6 @@ type FabricHttpSession = {
 const SESSION_IDLE_TTL_MS = 30 * 60_000;
 const SESSION_REAP_INTERVAL_MS = 5 * 60_000;
 
-type StoredMcpEvent = {
-  kind: "mcp-event";
-  eventId: EventId;
-  streamId: StreamId;
-  message: JSONRPCMessage;
-};
-
 export type CreateFabricHttpAppOptions = {
   projectRoot: string;
   host?: string;
@@ -78,104 +67,6 @@ export type CreateFabricHttpAppOptions = {
 export type FabricHttpApp = ReturnType<typeof createMcpExpressApp> & {
   dispose: () => Promise<void>;
 };
-
-class JsonlEventStore implements EventStore {
-  constructor(private readonly projectRoot: string) {}
-
-  async storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
-    const eventId = randomUUID();
-
-    await appendEventLedgerEvent(this.projectRoot, {
-      event_type: "mcp_event",
-      mcp_event_id: eventId,
-      stream_id: streamId,
-      message,
-    });
-
-    return eventId;
-  }
-
-  async getStreamIdForEventId(eventId: EventId): Promise<StreamId | undefined> {
-    const events = await this.readEvents();
-
-    return events.find((event) => event.eventId === eventId)?.streamId;
-  }
-
-  async replayEventsAfter(
-    lastEventId: EventId,
-    { send }: { send: (eventId: EventId, message: JSONRPCMessage) => Promise<void> },
-  ): Promise<StreamId> {
-    const events = await this.readEvents();
-    const startIndex = events.findIndex((event) => event.eventId === lastEventId);
-
-    if (startIndex === -1) {
-      throw new Error(`Unknown event ID: ${lastEventId}`);
-    }
-
-    const streamId = events[startIndex]?.streamId;
-    if (streamId === undefined) {
-      throw new Error(`Missing stream for event ID: ${lastEventId}`);
-    }
-
-    for (const event of events.slice(startIndex + 1)) {
-      if (event.streamId !== streamId) {
-        continue;
-      }
-
-      await send(event.eventId, event.message);
-    }
-
-    return streamId;
-  }
-
-  private async readEvents(): Promise<StoredMcpEvent[]> {
-    const { events: eventLedgerEvents } = await readEventLedger(this.projectRoot);
-    const projectedEvents = eventLedgerEvents
-      .flatMap((event): StoredMcpEvent[] => {
-        if (event.event_type !== "mcp_event") {
-          return [];
-        }
-
-        return [{
-          kind: "mcp-event",
-          eventId: event.mcp_event_id,
-          streamId: event.stream_id,
-          message: event.message as JSONRPCMessage,
-        }];
-      });
-
-    if (projectedEvents.length > 0) {
-      return projectedEvents;
-    }
-
-    let raw: string;
-
-    try {
-      raw = await readFile(getLedgerPath(this.projectRoot), "utf8");
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        try {
-          raw = await readFile(getLegacyLedgerPath(this.projectRoot), "utf8");
-        } catch (legacyError) {
-          if (isNodeError(legacyError) && legacyError.code === "ENOENT") {
-            return [];
-          }
-
-          throw legacyError;
-        }
-      } else {
-        throw error;
-      }
-    }
-
-    return raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => parseStoredMcpEvent(line))
-      .filter((event): event is StoredMcpEvent => event !== null);
-  }
-}
 
 /**
  * Exported for unit-testing: the core logic executed on every chokidar event
@@ -454,30 +345,6 @@ function isInitializeMessage(value: unknown): value is { method: "initialize" } 
   );
 }
 
-function parseStoredMcpEvent(line: string): StoredMcpEvent | null {
-  try {
-    const parsed = JSON.parse(line) as Partial<StoredMcpEvent>;
-
-    if (
-      parsed.kind !== "mcp-event" ||
-      typeof parsed.eventId !== "string" ||
-      typeof parsed.streamId !== "string" ||
-      parsed.message === undefined
-    ) {
-      return null;
-    }
-
-    return {
-      kind: "mcp-event",
-      eventId: parsed.eventId,
-      streamId: parsed.streamId,
-      message: parsed.message,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function readHeader(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string" && value.length > 0) {
     return value;
@@ -499,8 +366,4 @@ function writeJsonRpcError(res: { status: (code: number) => { json: (payload: un
     },
     id: null,
   });
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error;
 }

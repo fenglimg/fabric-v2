@@ -1,5 +1,5 @@
 import type { Stage, InstallContext, StageResult, PipelineResult, StageName } from "./types.js";
-import type { SummaryInfo, SummaryDetailRow, ErrorInfo } from "../../tui/types.js";
+import type { StepInfo, SummaryInfo, SummaryDetailRow, ErrorInfo } from "../../tui/types.js";
 
 // ---------------------------------------------------------------------------
 // Stage visual anchors (EPIC-005)
@@ -7,23 +7,24 @@ import type { SummaryInfo, SummaryDetailRow, ErrorInfo } from "../../tui/types.j
 
 /** Human-readable stage labels for visual anchors */
 const STAGE_LABELS: Record<StageName, string> = {
-  preflight: "全局与项目预检",
-  env: "项目身份与环境",
-  store: "知识库拓扑",
-  hooks: "Hooks 与 Skills",
-  mcp: "MCP 客户端",
-  validate: "安装校验",
-  guidance: "下一步",
+  preflight: "Preflight check",
+  env: "Environment setup",
+  store: "Store configuration",
+  hooks: "Hooks & skills",
+  mcp: "MCP server",
+  validate: "Validation",
+  guidance: "Next steps",
 };
 
-const STAGE_DESCRIPTIONS: Record<StageName, string> = {
-  preflight: "确认目标目录、全局 Fabric home 与写入权限。",
-  env: "扫描客户端特征，准备 .fabric/ 配置与项目运行文件。",
-  store: "检查 global stores，绑定当前项目的 read/write store 与 project 坐标。",
-  hooks: "安装跨客户端 hooks、skills 与 bootstrap managed block。",
-  mcp: "写入 Claude Code / Cursor / Codex 的 MCP 配置。",
-  validate: "确认 hooks、.fabric 与运行配置可用。",
-  guidance: "可选功能、重启提示与客户端能力摘要。",
+/** Stage icons for visual anchors */
+const STAGE_ICONS: Record<StageName, string> = {
+  preflight: "🔍",
+  env: "🏗️",
+  store: "📦",
+  hooks: "🪝",
+  mcp: "🔌",
+  validate: "✅",
+  guidance: "📖",
 };
 
 // ---------------------------------------------------------------------------
@@ -66,11 +67,10 @@ export class InstallPipeline {
     const totalStages = this.stages.length;
     const renderer = context.renderer;
 
+    // EPIC-005: Render pipeline intro
     if (renderer) {
       renderer.renderSection("Fabric Install");
       renderer.renderInfo(`Running ${totalStages} stages...`);
-    } else {
-      this.renderPlainIntro(totalStages);
     }
 
     for (let i = 0; i < this.stages.length; i++) {
@@ -78,10 +78,9 @@ export class InstallPipeline {
       const stepNum = i + 1;
       const stageName = stage.name;
 
+      // EPIC-005: Visual anchor — section header with icon
       if (renderer) {
-        renderer.renderSection(STAGE_LABELS[stageName]);
-      } else {
-        this.renderPlainStageHeader(stageName, stepNum, totalStages);
+        renderer.renderSection(`${STAGE_ICONS[stageName]} ${STAGE_LABELS[stageName]}`);
       }
 
       // EPIC-008: Progress feedback — step counter + spinner
@@ -238,17 +237,6 @@ export class InstallPipeline {
         }
       }
     }
-  }
-
-  private renderPlainIntro(totalStages: number): void {
-    console.log("");
-    console.log(`Fabric install 将按 ${totalStages} 个阶段执行`);
-  }
-
-  private renderPlainStageHeader(stageName: StageName, current: number, total: number): void {
-    console.log("");
-    console.log(`[${current}/${total}] ${STAGE_LABELS[stageName]}`);
-    console.log(`    ${STAGE_DESCRIPTIONS[stageName]}`);
   }
 }
 

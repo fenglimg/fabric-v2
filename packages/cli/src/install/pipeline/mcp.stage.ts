@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
+import { t } from "../../i18n.js";
 import { detectPackageManager } from "../../lib/package-manager.js";
 import * as configCommand from "../../commands/config.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
@@ -35,16 +36,18 @@ export class McpStage implements Stage {
     try {
       const target = context.target;
       const mode = context.mcpInstallMode;
-      const translate = context.translate;
+
+      // Print stage header
+      console.log(this.formatStageHeader(t("cli.install.stages.mcp")));
 
       if (mode === "local") {
         const manager = detectPackageManager(target);
-        process.stderr.write(`${translate("cli.install.mcp.install.local")}\n`);
-        process.stderr.write(`${translate("cli.install.mcp.local.installing", { manager })}\n`);
+        process.stderr.write(`${t("cli.install.mcp.install.local")}\n`);
+        process.stderr.write(`${t("cli.install.mcp.local.installing", { manager })}\n`);
         this.installLocalFabricServer(target, manager);
-        process.stderr.write(`${translate("cli.install.mcp.local.installed")}\n`);
+        process.stderr.write(`${t("cli.install.mcp.local.installed")}\n`);
       } else {
-        process.stderr.write(`${translate("cli.install.mcp.install.global")}\n`);
+        process.stderr.write(`${t("cli.install.mcp.install.global")}\n`);
       }
 
       const result = await configCommand.installMcpClients(target, {
@@ -53,20 +56,11 @@ export class McpStage implements Stage {
       });
 
       if (result.details.length === 0) {
-        console.log(
-          this.formatStageResult(
-            "mcp",
-            "skipped",
-            0,
-            0,
-            translate,
-            translate("cli.config.install.no-configs"),
-          ),
-        );
+        console.log(this.formatStageResult("mcp", "skipped", 0, 0, t("cli.config.install.no-configs")));
         return stageSkipped("mcp", "no MCP configs to install");
       }
 
-      console.log(this.formatStageResult("mcp", "completed", result.installed.length, result.skipped.length, translate));
+      console.log(this.formatStageResult("mcp", "completed", result.installed.length, result.skipped.length));
 
       return stageRan("mcp", result.installed, result.skipped);
     } catch (error) {
@@ -86,16 +80,20 @@ export class McpStage implements Stage {
     });
   }
 
+  private formatStageHeader(message: string): string {
+    const nextLabel = () => paint.ai(t("cli.shared.next"));
+    return `${nextLabel()} ${paint.muted(message)}`;
+  }
+
   private formatStageResult(
     stage: string,
     status: "completed" | "skipped",
     installedCount: number,
     skippedCount: number,
-    translate: InstallContext["translate"],
     note?: string,
   ): string {
-    const completedStageLabel = () => paint.success(translate("cli.install.stages.completed"));
-    const skippedStageLabel = () => paint.muted(translate("cli.install.stages.skipped"));
+    const completedStageLabel = () => paint.success(t("cli.install.stages.completed"));
+    const skippedStageLabel = () => paint.muted(t("cli.install.stages.skipped"));
     const label = status === "completed" ? completedStageLabel() : skippedStageLabel();
     const counts = `installed=${installedCount} skipped=${skippedCount}`;
     const suffix = note ? ` ${paint.muted(`(${note})`)}` : "";

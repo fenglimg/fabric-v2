@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
 import {
-  resolveStoreDir,
   storeBind,
   storeCreate,
   storeProjectCreate,
@@ -25,7 +24,7 @@ const dirs: string[] = [];
 let globalRoot: string;
 let projectRoot: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   const home = mkdtempSync(join(tmpdir(), "fabric-a2-"));
   dirs.push(home);
   globalRoot = join(home, ".fabric");
@@ -34,7 +33,7 @@ beforeEach(() => {
   dirs.push(projectRoot);
   saveProjectConfig({ project_id: "p-test" }, projectRoot);
   // A mounted on-disk store to register projects in.
-  storeCreate("team", NOW, { uuid: STORE, git: false, globalRoot });
+  await storeCreate("team", NOW, { uuid: STORE, git: false, globalRoot });
 });
 
 afterEach(() => {
@@ -44,44 +43,42 @@ afterEach(() => {
 });
 
 describe("store project create/list", () => {
-  it("a fresh store has no registered projects", () => {
-    expect(storeProjectList("team", globalRoot)).toHaveLength(0);
+  it("a fresh store has no registered projects", async () => {
+    await expect(storeProjectList("team", globalRoot)).resolves.toHaveLength(0);
   });
 
-  it("creates a project and lists it (persisted to projects.json)", () => {
-    const created = storeProjectCreate("team", "fabric-v2", NOW, { name: "Fabric v2", globalRoot });
+  it("creates a project and lists it (persisted to projects.json)", async () => {
+    const created = await storeProjectCreate("team", "fabric-v2", NOW, { name: "Fabric v2", globalRoot });
     expect(created.id).toBe("fabric-v2");
-    const listed = storeProjectList("team", globalRoot);
+    const listed = await storeProjectList("team", globalRoot);
     expect(listed.map((p) => p.id)).toEqual(["fabric-v2"]);
     // committed parallel to store.json
-    const storeDir = resolveStoreDir("team", globalRoot);
-    expect(storeDir).not.toBeNull();
     const file = JSON.parse(
-      readFileSync(join(storeDir!, "projects.json"), "utf8"),
+      readFileSync(join(globalRoot, "stores", "team", "projects.json"), "utf8"),
     );
     expect(file.projects[0].id).toBe("fabric-v2");
   });
 
-  it("refuses a duplicate project id", () => {
-    storeProjectCreate("team", "fabric-v2", NOW, { globalRoot });
-    expect(() => storeProjectCreate("team", "fabric-v2", NOW, { globalRoot })).toThrow(
+  it("refuses a duplicate project id", async () => {
+    await storeProjectCreate("team", "fabric-v2", NOW, { globalRoot });
+    await expect(storeProjectCreate("team", "fabric-v2", NOW, { globalRoot })).rejects.toThrow(
       /already exists/,
     );
   });
 
-  it("rejects an invalid project id (not a single scope segment)", () => {
-    expect(() => storeProjectCreate("team", "Bad:Id", NOW, { globalRoot })).toThrow();
+  it("rejects an invalid project id (not a single scope segment)", async () => {
+    await expect(storeProjectCreate("team", "Bad:Id", NOW, { globalRoot })).rejects.toThrow();
   });
 
-  it("throws when the store is not mounted", () => {
-    expect(() => storeProjectList("nope", globalRoot)).toThrow(/no mounted store/);
+  it("throws when the store is not mounted", async () => {
+    await expect(storeProjectList("nope", globalRoot)).rejects.toThrow(/no mounted store/);
   });
 });
 
 describe("store bind --project <id> validation", () => {
-  it("binds to an existing project and records active_project", () => {
-    storeProjectCreate("team", "fabric-v2", NOW, { globalRoot });
-    const next = storeBind(projectRoot, { id: "team" }, { project: "fabric-v2", globalRoot });
+  it("binds to an existing project and records active_project", async () => {
+    await storeProjectCreate("team", "fabric-v2", NOW, { globalRoot });
+    const next = await storeBind(projectRoot, { id: "team" }, { project: "fabric-v2", globalRoot });
     expect(next.active_project).toBe("fabric-v2");
     // persisted
     expect(loadProjectConfig(projectRoot)?.active_project).toBe("fabric-v2");
@@ -89,22 +86,22 @@ describe("store bind --project <id> validation", () => {
     expect(next.required_stores?.map((r) => r.id)).toContain("team");
   });
 
-  it("rejects binding to a non-existent project", () => {
-    expect(() =>
+  it("rejects binding to a non-existent project", async () => {
+    await expect(
       storeBind(projectRoot, { id: "team" }, { project: "ghost", globalRoot }),
-    ).toThrow(/not registered in store/);
+    ).rejects.toThrow(/not registered in store/);
     // config untouched — no active_project leaked
     expect(loadProjectConfig(projectRoot)?.active_project).toBeUndefined();
   });
 
-  it("rejects binding a project to an unmounted store", () => {
-    expect(() =>
+  it("rejects binding a project to an unmounted store", async () => {
+    await expect(
       storeBind(projectRoot, { id: "ghost-store" }, { project: "fabric-v2", globalRoot }),
-    ).toThrow(/is not mounted/);
+    ).rejects.toThrow(/is not mounted/);
   });
 
-  it("plain bind (no --project) leaves active_project unset", () => {
-    const next = storeBind(projectRoot, { id: "team" }, { globalRoot });
+  it("plain bind (no --project) leaves active_project unset", async () => {
+    const next = await storeBind(projectRoot, { id: "team" }, { globalRoot });
     expect(next.active_project).toBeUndefined();
   });
 });

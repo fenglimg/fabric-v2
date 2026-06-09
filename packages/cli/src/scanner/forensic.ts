@@ -308,10 +308,10 @@ function collectEntryPoints(target: string, files: FileInfo[]): ForensicEntryPoi
     });
   }
 
-  // ISS-20260531-085 / ISS-20260531-089: `readGitChurnWeight` shells out to
-  // `git log`, so calling it inside the sort comparator spawned many sync git
-  // processes per scan. Precompute once per entry point, then sort in memory.
-  const churnByPath = new Map(entryPoints.map((entryPoint) => [entryPoint.path, readGitChurnWeight(target, entryPoint.path)]));
+  const churnByPath = new Map(
+    entryPoints.map((entryPoint) => [entryPoint.path, readGitChurnWeight(target, entryPoint.path)]),
+  );
+
   return entryPoints.sort((left, right) =>
     compareCandidateScore(churnByPath.get(right.path) ?? 0, churnByPath.get(left.path) ?? 0),
   );

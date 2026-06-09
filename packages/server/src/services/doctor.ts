@@ -1,28 +1,20 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { access, appendFile, mkdir, readFile, readdir as readdirAsync, rename, stat as statAsync, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { isAbsolute, join, posix, resolve, sep } from "node:path";
-import { Script } from "node:vm";
+import { homedir } from "node:os";
+import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
 
-import { minimatch } from "minimatch";
 import { ZodError } from "zod";
 
 import {
-  buildStoreResolveInput,
   createTranslator,
-  createStoreResolver,
   forensicReportSchema,
-  LEGACY_KB_REGEX,
   BOOTSTRAP_CANONICAL,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
   ONBOARD_SLOT_NAMES,
   ONBOARD_SLOT_TOTAL,
-  resolveGlobalRoot,
-  STORE_LAYOUT,
-  storeRelativePathForMount,
   type AgentsMeta,
   type EventLedgerEvent,
   type ForensicReport,
@@ -40,7 +32,25 @@ import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-load
 
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
-import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
+import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath } from "./_shared.js";
+import {
+  createGlobalCliVersionCheck,
+  inspectGlobalCliVersion,
+  type GlobalCliInspection,
+} from "./doctor-global-cli.js";
+import { computeDoctorHealth, type DoctorHealth } from "./doctor-health.js";
+import {
+  createKnowledgeSummaryOpaqueCheck,
+  inspectKnowledgeSummaryOpaque,
+} from "./doctor-summary-opaque.js";
+import {
+  createLayerMismatchCheck,
+  createStableIdCollisionCheck,
+  createStableIdDuplicateCheck,
+  type LayerMismatchInspection,
+  type StableIdCollisionInspection,
+  type StableIdDuplicateInspection,
+} from "./doctor-stable-id-collision.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -50,13 +60,12 @@ import {
   collectStoreCanonicalEntries,
   collectStoreKnowledgeSummaries,
   computeReadSetRevision,
-  type StoreKnowledgeSummary,
 } from "./cross-store-recall.js";
-import { lintStoreScopes, type ScopeLintViolation } from "./doctor-scope-lint.js";
+import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import {
+  createStoreCounterCheck,
   fixStoreCounters,
   inspectStoreCounters,
-  type StoreCounterDrift,
 } from "./doctor-store-counters.js";
 import {
   appendEventLedgerEvent,
@@ -69,12 +78,70 @@ import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./
 import type { CiteRollupRow } from "./cite-rollup.js";
 import { flushMetrics, readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
-import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
 import {
   inspectEventsJsonlGates,
   type EventsJsonlGatesReport,
 } from "./events-jsonl-gates.js";
+import {
+  createMcpConfigInWrongFileCheck,
+  createSkillDescriptionCheck,
+  createSkillMdYamlInvalidCheck,
+  createSkillRefMirrorCheck,
+  createSkillTokenBudgetCheck,
+  inspectMcpConfigInWrongFile,
+  inspectSkillDescription,
+  inspectSkillMdYamlInvalid,
+  inspectSkillRefMirror,
+  inspectSkillTokenBudget,
+} from "./doctor-skill-lints.js";
+import {
+  createHookCacheWritabilityCheck,
+  createHooksContentDriftCheck,
+  createHooksRuntimeCheck,
+  createHooksWiredCheck,
+  inspectHookCacheWritability,
+  inspectHooksContentDrift,
+  inspectHooksRuntime,
+  inspectHooksWired,
+} from "./doctor-hooks-lints.js";
+import {
+  BOOTSTRAP_MARKER_MIGRATION_TARGETS,
+  createBootstrapAnchorCheck,
+  createBootstrapMarkerMigrationCheck,
+  createL1BootstrapSnapshotDriftCheck,
+  createL2ManagedBlockDriftCheck,
+  inspectBootstrapAnchor,
+  inspectBootstrapMarkerMigration,
+  inspectL1BootstrapSnapshotDrift,
+  inspectL2ManagedBlockDrift,
+} from "./doctor-bootstrap-lints.js";
+
+export { inspectL1BootstrapSnapshotDrift } from "./doctor-bootstrap-lints.js";
+export {
+  createGlobalCliVersionCheck,
+  inspectGlobalCliVersion,
+} from "./doctor-global-cli.js";
+export type { GlobalCliInspection } from "./doctor-global-cli.js";
+export { computeDoctorHealth } from "./doctor-health.js";
+export type { DoctorHealth } from "./doctor-health.js";
+export {
+  createKnowledgeSummaryOpaqueCheck,
+  inspectKnowledgeSummaryOpaque,
+} from "./doctor-summary-opaque.js";
+export type { KnowledgeSummaryOpaqueInspection } from "./doctor-summary-opaque.js";
+export { createScopeLintCheck } from "./doctor-scope-lint.js";
+export { createStoreCounterCheck } from "./doctor-store-counters.js";
+export {
+  createLayerMismatchCheck,
+  createStableIdCollisionCheck,
+  createStableIdDuplicateCheck,
+} from "./doctor-stable-id-collision.js";
+export type {
+  LayerMismatchInspection,
+  StableIdCollisionInspection,
+  StableIdDuplicateInspection,
+} from "./doctor-stable-id-collision.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
@@ -160,52 +227,6 @@ export type DoctorSummary = {
   health: DoctorHealth;
 };
 
-// v2.2 A14-doctor-health (W3-T4): doctor health rollup. `score` is 0-100, `grade`
-// is the band, and `penalties` itemizes how each severity bucket subtracted from
-// a perfect 100 — so the number is explainable, not a black box.
-export type DoctorHealth = {
-  score: number;
-  grade: "A" | "B" | "C" | "D" | "F";
-  penalties: {
-    manual_errors: number;
-    fixable_errors: number;
-    warnings: number;
-  };
-};
-
-// Per-finding penalty weights. Manual (un-auto-fixable) errors hurt most; a
-// warning is a light nudge. Infos never penalize (they are FYI, not debt).
-const DOCTOR_HEALTH_PENALTY_MANUAL_ERROR = 15;
-const DOCTOR_HEALTH_PENALTY_FIXABLE_ERROR = 8;
-const DOCTOR_HEALTH_PENALTY_WARNING = 3;
-
-/**
- * v2.2 A14-doctor-health (W3-T4): roll the lint findings into a 0-100 score +
- * letter grade. Pure + deterministic — reuses the same counts doctor already
- * computes, so the score moves in lockstep with the lint set with no new I/O.
- */
-export function computeDoctorHealth(
-  manualErrorCount: number,
-  fixableErrorCount: number,
-  warningCount: number,
-): DoctorHealth {
-  const manualPenalty = manualErrorCount * DOCTOR_HEALTH_PENALTY_MANUAL_ERROR;
-  const fixablePenalty = fixableErrorCount * DOCTOR_HEALTH_PENALTY_FIXABLE_ERROR;
-  const warningPenalty = warningCount * DOCTOR_HEALTH_PENALTY_WARNING;
-  const score = Math.max(0, Math.min(100, 100 - manualPenalty - fixablePenalty - warningPenalty));
-  const grade: DoctorHealth["grade"] =
-    score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : score >= 40 ? "D" : "F";
-  return {
-    score,
-    grade,
-    penalties: {
-      manual_errors: manualPenalty,
-      fixable_errors: fixablePenalty,
-      warnings: warningPenalty,
-    },
-  };
-}
-
 export type DoctorReport = {
   status: DoctorStatus;
   checks: DoctorCheck[];
@@ -272,6 +293,7 @@ export type DoctorApplyLintMutation = {
 export type DoctorApplyLintReport = {
   changed: boolean;
   mutations: DoctorApplyLintMutation[];
+  warnings: DoctorIssue[];
   // Non-fixable manual errors that surfaced in the lint pass. When non-empty
   // and the corresponding code is in MANUAL_LINT_ERROR_CODES, runDoctorApplyLint
   // sets `aborted: true` and returns BEFORE applying any mutations — these
@@ -285,7 +307,7 @@ export type DoctorApplyLintReport = {
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
 
-type MetaInspection =
+export type MetaInspection =
   | {
       present: true;
       valid: true;
@@ -375,59 +397,6 @@ type EventLedgerInspection = {
   error?: string;
 };
 
-// v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL.md split moved
-// reference content from a single SKILL.md into per-skill `ref/` subdirs.
-// Both `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/` get
-// byte-identical copies via `fabric install`. A hand-edit to one client's
-// ref/ file OR a partial install (one client succeeded, the other got an
-// error mid-write) breaks mirror parity. This inspection collects the
-// drifted pairs so the doctor check can surface them.
-//
-// Detection model: mirror parity between the two client subtrees. The
-// templates/ source-of-truth is not part of the runtime workspace so it
-// cannot be the reference; the install pipeline writes the same bytes to
-// both clients, and any subsequent hand-edit shows up as parity drift.
-// Missing client subtree (e.g. user only uses Codex CLI) degrades to "ok"
-// — only files that exist in BOTH clients are compared.
-type SkillRefMirrorInspection =
-  | { status: "ok" }
-  | {
-      status: "drift";
-      driftedPaths: string[]; // relative paths reported in remediation
-    };
-
-// v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. Scans installed
-// `.claude/skills/<slug>/SKILL.md` for each known skill, estimates token
-// count via chars/3 (mixed CJK/EN markdown heuristic — conservative side of
-// chars/4 because SKILL.md is Chinese-heavy in this project). Warn > 5K
-// tokens, error > 10K tokens — aligned with Anthropic's recommendation that
-// SKILL.md hot path stay under ~3K so progressive disclosure works.
-type SkillTokenBudgetInspection = {
-  status: "ok" | "warn" | "error";
-  // Per-skill estimates surfaced in the doctor message — empty when status === "ok".
-  overSize: Array<{ slug: string; tokens: number; severity: "warn" | "error" }>;
-};
-
-// v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint. Static
-// proxy for trigger-recall — a real auto-invoke test requires a live LLM
-// (gemini ran one in W1 Verify), but a structural check catches regression
-// on the description quality contract:
-//
-//   1. description frontmatter present + non-empty
-//   2. <= 60 tokens (chars / 3) so the host's auto-invoke matcher sees a
-//      tight signal rather than a wall of prose
-//   3. contains at least one CJK trigger phrase (Chinese-speaking users
-//      should be able to trigger via natural language)
-//   4. contains at least one ASCII trigger phrase (parallel English support)
-//
-// The 20-scenario "trigger fixture" called out in PLAN W3-7 is the gemini
-// verify in W1-VERIFY-RESULT.md — re-running it here would require a live
-// model. The structural lint is the deterministic, in-process proxy.
-type SkillDescriptionLintInspection = {
-  status: "ok" | "warn";
-  issues: Array<{ slug: string; problem: "missing" | "too_long" | "no_cjk" | "no_ascii"; detail: string }>;
-};
-
 // v2.0.0-rc.33 W4-A4 (T5 P2): "draft backlog" detection. Warns when the
 // proportion of `draft`-maturity canonical entries exceeds DRAFT_BACKLOG_RATIO
 // (default 0.5). A workspace where the majority of entries never graduate
@@ -440,11 +409,9 @@ type DraftBacklogInspection = {
   ratio: number; // draftCount / totalCount, 0..1
 };
 
-// v2.0.0-rc.37 NEW-38: knowledge auto-promote candidates — canonical `draft`
-// entries created ≥ DRAFT_AUTO_PROMOTE_MIN_AGE_DAYS ago that carry no recorded
-// drift. Surfaced as an info check in the report; the --fix arm flips each to
-// `verified` + emits a knowledge_promoted event, which is what actually drains
-// the draft_backlog ratio.
+// v2.0.0-rc.37 NEW-38: knowledge auto-promote report shape. v2.2 store cutover
+// keeps the public check as an empty compatibility surface until candidate
+// discovery can operate against store-backed knowledge.
 type DraftAutoPromoteCandidate = {
   stable_id: string;
   relPath: string;
@@ -495,11 +462,6 @@ type CiteGoodhartInspection = {
   fired: Array<{ pattern: "G1" | "G2" | "G5"; detail: string }>;
 };
 
-type McpConfigInWrongFileInspection = {
-  hasWrongEntry: boolean;
-  settingsPath: string;
-};
-
 // v2.0.0-rc.22 TASK-006: baseline filename format lint.
 // Each entry records the offending project-relative path plus the baseline
 // stable_id parsed from the file's frontmatter.
@@ -510,51 +472,6 @@ type BaselineFilenameFormatOffender = {
 
 type BaselineFilenameFormatInspection = {
   offenders: BaselineFilenameFormatOffender[];
-};
-
-type StableIdCollision = {
-  stable_id: string;
-  files: string[];
-};
-
-type StableIdCollisionInspection = {
-  collisions: StableIdCollision[];
-};
-
-type BootstrapAnchorInspection = {
-  hasAgentsMd: boolean;
-  hasClaudeMd: boolean;
-};
-
-// v2.0.0-rc.19 bootstrap-consolidation TASK-004: one-time legacy marker
-// migration. `filesNeedingMigration` is the subset of the four target paths
-// (CLAUDE.md / AGENTS.md / .cursor/rules / .cursor/rules/fabric-bootstrap.mdc)
-// whose content still contains the LEGACY_KB_REGEX match. Empty array means
-// nothing to migrate (post-fix idempotency invariant).
-type BootstrapMarkerMigrationInspection = {
-  filesNeedingMigration: string[];
-};
-
-// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 = canonical bootstrap body
-// byte-compared against `.fabric/AGENTS.md` on disk. `missing` defers to the
-// existing bootstrap_anchor_missing check; `drift` means bytes differ from
-// BOOTSTRAP_CANONICAL — fixable_error.
-type L1BootstrapSnapshotDriftInspection = {
-  status: "ok" | "missing" | "drift";
-  canonical: string;
-  onDisk: string | null;
-};
-
-// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 = three-end managed block
-// bodies byte-compared against expectedBody (= .fabric/AGENTS.md + optional
-// `\n---\n` + .fabric/project-rules.md). `drifted` lists per-target paths
-// whose managed block body diverges; CLAUDE.md is checked for @-import line
-// presence (no managed block — thin shell). `no-managed-block` is returned
-// when none of the targets carry the new marker (legacy-marker pre-migration
-// state — TASK-004 already flagged it).
-type L2ManagedBlockDriftInspection = {
-  status: "ok" | "drift" | "no-managed-block";
-  drifted: Array<{ path: string; expected: string; actual: string }>;
 };
 
 type PreexistingRootFilesInspection = {
@@ -579,10 +496,8 @@ export type LintMaturity = "stable" | "endorsed" | "draft";
 type OrphanDemoteCandidate = {
   // Stable id parsed out of YAML frontmatter (e.g. KT-DEC-0001).
   stable_id: string;
-  // Store-qualified display path of the canonical entry.
+  // Project-relative POSIX path of the canonical entry.
   path: string;
-  // Absolute filesystem path of the canonical entry.
-  path_abs: string;
   // Inactivity in days at the time of the check (max of frontmatter.created_at,
   // file mtime, and last matching event in events.jsonl).
   age_days: number;
@@ -605,12 +520,9 @@ type OrphanDemoteInspection = {
 type StaleArchiveCandidate = {
   stable_id: string;
   path: string;
-  path_abs: string;
   age_days: number;
-  // Proposed archive destination, store-qualified display path.
+  // Proposed archive destination, project-relative POSIX.
   archive_path: string;
-  // Absolute filesystem path of the proposed archive destination.
-  archive_path_abs: string;
 };
 
 type StaleArchiveInspection = {
@@ -631,8 +543,13 @@ type PendingOverdueInspection = {
 
 // rc.5 TASK-009 (B2): pending auto-archive candidate. Identifies a pending
 // proposal whose age (frontmatter.created_at when present, else mtime) exceeds
-// PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS. Store-only mode scans mounted stores and
-// archives into the same store's `.archive/pending/<type>/` subtree.
+// PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS. Covers BOTH the team-rooted pending
+// tree (`<projectRoot>/.fabric/knowledge/pending/<type>/`) and the
+// personal-rooted tree (`<FABRIC_HOME>/.fabric/knowledge/pending/<type>/`)
+// introduced by TASK-008 (B1). The mutation arm (--apply-lint) moves the
+// file into `.fabric/.archive/pending/<type>/` under the appropriate root
+// (git mv for team, fs.rename for personal) and emits a single
+// pending_auto_archived event per move.
 type PendingAutoArchiveCandidate = {
   layer: "team" | "personal";
   // Pending entry's knowledge type subdir (e.g. "decisions"). Mirrors
@@ -672,6 +589,10 @@ function emptyPendingOverdueInspection(): PendingOverdueInspection {
 
 function emptyPendingAutoArchiveInspection(): PendingAutoArchiveInspection {
   return { candidates: [] };
+}
+
+function emptyRelevanceFieldsMissingInspection(): RelevanceFieldsMissingInspection {
+  return { candidates: [], scanned_count: 0 };
 }
 
 // rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
@@ -845,7 +766,7 @@ type SuspiciousKbCandidate = {
   stable_id: string;
   // ~/.fabric/... or project-relative POSIX path.
   path: string;
-  // Subset of INJECTION_PATTERNS names that matched the body.
+  // Matched prompt-injection pattern names from the retired read-side scanner.
   patterns: string[];
 };
 
@@ -863,32 +784,6 @@ type SuspiciousKbInspection = {
 // manual triage, not a deterministic doctor mutation.
 
 type CanonicalLayer = "team" | "personal";
-
-type StableIdDuplicateGroup = {
-  stable_id: string;
-  // Project-relative POSIX path for team entries; `~/.fabric/knowledge/...`
-  // form for personal entries (mirrors knowledge-meta-builder content_ref shape).
-  paths: string[];
-};
-
-type StableIdDuplicateInspection = {
-  duplicates: StableIdDuplicateGroup[];
-};
-
-type LayerMismatchEntry = {
-  // Display path: project-relative for team layer; `~/.fabric/...` for
-  // personal layer. Stable across OSes.
-  path: string;
-  // The layer the file is physically located under.
-  located_in: CanonicalLayer;
-  // The layer encoded in the stable_id prefix (KT → team, KP → personal).
-  expected_layer: CanonicalLayer;
-  stable_id: string;
-};
-
-type LayerMismatchInspection = {
-  mismatches: LayerMismatchEntry[];
-};
 
 // Inactivity thresholds (in days) keyed by maturity tier. Beyond this age with
 // no fetch / promote / proposal event the entry is a demote candidate.
@@ -908,14 +803,6 @@ const STALE_ARCHIVE_ADDITIONAL_DAYS = 90;
 
 // v2.0.0-rc.37 NEW-38: knowledge auto-promote. A canonical `draft` entry that
 // has survived this many days WITHOUT being flagged drifted has "settled" —
-// it stops inflating the draft_backlog metric by graduating draft → verified.
-// 14d mirrors the draft orphan-demote threshold: an entry that outlives the
-// demote window without going stale has demonstrated staying power.
-const DRAFT_AUTO_PROMOTE_MIN_AGE_DAYS = 14;
-// Reason prefix for the synthesized knowledge_promoted event emitted by the
-// auto-promote --fix pass (parallels SYNTHESIZED_PROMOTED_REASON).
-const AUTO_PROMOTED_REASON = "doctor auto-promote: draft settled ≥14d, no drift";
-
 // Pending entries older than this threshold (based on frontmatter.created_at
 // when present, otherwise file mtime) are flagged for human triage.
 const PENDING_OVERDUE_THRESHOLD_DAYS = 14;
@@ -1004,13 +891,6 @@ const CANONICAL_TO_LINT_MATURITY: Record<string, LintMaturity> = {
 // Regex extracting `created_at:` (ISO 8601 datetime) from YAML frontmatter.
 const CREATED_AT_LINE_PATTERN = /^created_at:\s*("?)([^"\n]+)\1\s*$/mu;
 
-// rc.36 TASK-05 (P0-8 + P2-1): regex extracting `tags:` inline-array from YAML
-// frontmatter (e.g. `tags: [foo, bar]`). Empty `tags: []` matches with body
-// `""`; missing line returns null. We deliberately ignore block-style
-// `tags:\n  - foo` since the canonical entries use inline arrays exclusively
-// (per the schema in packages/shared/src/schemas/knowledge.ts).
-const TAGS_LINE_PATTERN = /^tags:\s*\[(.*)\]\s*$/mu;
-
 // rc.5 TASK-013 (C4): regexes extracting `relevance_scope` and
 // `relevance_paths` from YAML frontmatter. Mirrors the line-based parsing
 // style used elsewhere in this module (we avoid a YAML dependency for a
@@ -1051,27 +931,6 @@ const KNOWLEDGE_CANONICAL_TYPE_DIRS = [
 // this check is targeting.
 const CANONICAL_KNOWLEDGE_FILENAME_PATTERN =
   /^(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})--[a-z0-9][a-z0-9-]*\.md$/u;
-
-// v2.0.0-rc.22 TASK-006: baseline filename format hard-error lint.
-//
-// rc.23 TASK-012 (F8a) removed the baseline-emit pipeline; this lint
-// remains as a defensive detector for any legacy baseline files that
-// survive on disk in pre-rc.23 workspaces. Any stable_id NOT in this
-// allowlist is treated as a user-promoted entry (e.g. KP-DEC-0001) and
-// intentionally left untouched — only the historical deterministic
-// baseline ids are subject to the filename invariant this lint enforces.
-const BASELINE_FILENAME_LINT_BASELINE_IDS = new Set<string>([
-  "KT-MOD-0001", // tech-stack
-  "KT-MOD-0002", // module-structure
-  "KT-MOD-0003", // readme-first-paragraph
-  "KT-PRO-0001", // build-config
-  "KT-PRO-0002", // ci-config
-  "KT-GLD-0001", // code-style
-]);
-
-// Filename pattern for the canonical id-prefixed form. Files matching this
-// pattern are already migrated and not flagged by this lint.
-const BASELINE_ID_PREFIXED_FILENAME_PATTERN = /^KT-[A-Z]+-\d+--.+\.md$/u;
 
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
 // v2.2 W5 R4 (agents.meta decolo): `COUNTER_TYPE_CODES` removed (only the retired counter_desync / index_drift checks used it).
@@ -1115,14 +974,19 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const projectRoot = normalizeTarget(target);
   const t = createTranslator(resolveFabricLocale(projectRoot));
   const framework = detectFramework(projectRoot);
-  const entryPoints = collectEntryPoints(projectRoot);
+  const entryPoints = await collectEntryPoints(projectRoot);
   const [
     forensic,
     eventLedger,
     eventsJsonlGates,
+    bootstrapAnchor,
     bootstrapMarkerMigration,
     l1BootstrapSnapshotDrift,
     l2ManagedBlockDrift,
+    mcpConfigInWrongFile,
+    skillRefMirror,
+    skillTokenBudget,
+    skillDescription,
   ] = await Promise.all([
     inspectForensic(projectRoot),
     // v2.2 W5 R4 (agents.meta decolo): `inspectMeta` (read co-location
@@ -1134,6 +998,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // v2.0.0-rc.37 Wave B (B5): composite hard-gate inspection (G7 size /
     // G8 metric leak / G9 metrics stale / G10 rotation overdue).
     inspectEventsJsonlGates(projectRoot),
+    inspectBootstrapAnchor(projectRoot),
     // v2.0.0-rc.19 TASK-004: one-time fabric:knowledge-base → fabric:bootstrap
     // marker migration scan. Inspect runs in this Promise.all block to keep
     // performance parity with the other I/O-bound inspections.
@@ -1143,18 +1008,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // Promise.all block as the other bootstrap inspections.
     inspectL1BootstrapSnapshotDrift(projectRoot),
     inspectL2ManagedBlockDrift(projectRoot),
+    inspectMcpConfigInWrongFile(projectRoot),
+    inspectSkillRefMirror(projectRoot),
+    inspectSkillTokenBudget(projectRoot),
+    inspectSkillDescription(projectRoot),
   ]);
-  const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
-  // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ mirror parity check.
-  // Pure-sync (readdirSync + readFileSync), so it lives outside the
-  // Promise.all block.
-  const skillRefMirror = inspectSkillRefMirror(projectRoot);
-  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget. Pure-sync (readFileSync
-  // + Math.ceil), so it joins the synchronous inspection block above.
-  const skillTokenBudget = inspectSkillTokenBudget(projectRoot);
-  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint
-  // (deterministic proxy for trigger-recall — see type docstring).
-  const skillDescription = inspectSkillDescription(projectRoot);
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Async
   // (reads event ledger); placed after the sync inspections so the await
   // doesn't gate them.
@@ -1162,12 +1020,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
   // post-decolo canonical knowledge source. Summaries feed store-aware checks;
   // the count + corpus revision hash replace retired agents.meta-derived fields.
-  const storeKnowledgeSummaries = collectStoreKnowledgeSummaries(projectRoot);
-  const storeRevision = computeReadSetRevision(projectRoot);
+  const storeKnowledgeSummaries = await collectStoreKnowledgeSummaries(projectRoot);
+  const storeRevision = await computeReadSetRevision(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
-  const draftBacklog = inspectDraftBacklog(projectRoot);
+  const draftBacklog = emptyDraftBacklogInspection();
   // rc.37 NEW-38: auto-promote candidates (info surface; --fix does the work).
-  const draftAutoPromote = await inspectDraftAutoPromote(projectRoot);
+  const draftAutoPromote = emptyDraftAutoPromoteInspection();
   // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
   const knowledgeTagsEmpty: EmptyTagsInspection = {
     status: "ok",
@@ -1187,65 +1045,70 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // baseline-emit pipeline outright, so the lint now serves only as a
   // forensic indicator for stale pre-rc.23 workspaces; resolution is
   // manual deletion of the offending file. manual_error kind, no --fix path.
-  const baselineFilenameFormat = inspectBaselineFilenameFormat(projectRoot);
-  const stableIdCollision = await inspectStableIdCollisions(projectRoot);
+  const baselineFilenameFormat: BaselineFilenameFormatInspection = { offenders: [] };
+  const stableIdCollision: StableIdCollisionInspection = { collisions: [] };
   // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
   // `index_drift` checks (against agents.meta.json#counters) are retired. The
   // monotonic stable_id counter now lives per-store in committed counters.json
   // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
   // replacement — disk-max FLOOR semantics over every read-set store.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
-  const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
-  const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
+  const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // rc.3 TASK-005: filesystem-edit fallback. Synthesizes knowledge_promoted
   // for canonical entries with no matching event. Runs AFTER ledger
   // partial-write detection so we never append to a corrupt tail; it relies
   // on the existing read/append machinery to be in a consistent state.
-  const filesystemEditFallback = await inspectFilesystemEditFallback(projectRoot);
+  const filesystemEditFallback = emptyFilesystemEditFallbackInspection();
   // rc.4 TASK-001: read-side lint inspections (#16-18). These run after the
   // filesystem-edit fallback (which can append synthesized knowledge_promoted
   // events) so that the lastActiveAt index built by orphan-demote and
   // stale-archive sees the synthesized timestamps and does not double-count
   // a freshly-synthesized canonical entry as orphan.
   const lintNow = Date.now();
-  // v2.2 store cutover: corpus lints read mounted stores only. Retired
-  // project-local `.fabric/knowledge` and legacy `~/.fabric/knowledge` roots
-  // stay out of the lint surface.
-  const orphanDemote = await inspectOrphanDemote(projectRoot, lintNow);
-  const staleArchive = await inspectStaleArchive(projectRoot, lintNow);
-  const pendingOverdue = inspectPendingOverdue(projectRoot, lintNow);
-  const stableIdDuplicate = inspectStableIdDuplicate(projectRoot);
-  const layerMismatch = inspectLayerMismatch(projectRoot);
+  // v2.2 store cutover: legacy dual-root corpus lints are disabled until their
+  // walkers are rewritten against ~/.fabric/stores/*/knowledge. Do not read or
+  // mutate project-local `.fabric/knowledge` / legacy `~/.fabric/knowledge`.
+  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
+  const staleArchive = emptyStaleArchiveInspection();
+  const pendingOverdue = emptyPendingOverdueInspection();
+  const stableIdDuplicate: StableIdDuplicateInspection = { duplicates: [] };
+  const layerMismatch: LayerMismatchInspection = { mismatches: [] };
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
-  // of lintNow — corpus size is a synchronous filesystem count, not a
-  // time-decayed signal. Runs alongside the rc.4 integrity inspections so the
+  // of lintNow — corpus size is a store summary count, not a time-decayed
+  // signal. Runs alongside the rc.4 integrity inspections so the
   // report surfaces all corpus-level findings adjacent to one another.
-  const underseeded = inspectUnderseeded(projectRoot);
+  const underseedThreshold = await readUnderseedThresholdFromConfig(projectRoot);
+  const underseeded: UnderseededInspection = {
+    node_count: storeKnowledgeSummaries.length,
+    threshold: underseedThreshold,
+    underseeded: storeKnowledgeSummaries.length < underseedThreshold,
+  };
   // rc.5 TASK-013 (C4): relevance_paths hygiene inspections #23/#24/#25. All
   // three walk canonical entries (team + personal) and inspect frontmatter
   // relevance fields. #24 expands globs against the live filesystem; #25
   // shells out to `git log` for the drift heuristic (degrades to ok+info
   // when git is unavailable). Flag-only in rc.5 — apply-lint auto-prune
   // deferred to rc.7+.
-  const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
-  const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
-  const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
+  const narrowNoPaths: NarrowNoPathsInspection = { candidates: [] };
+  const relevancePathsDangling: RelevancePathsDanglingInspection = { entries: [] };
+  const relevancePathsDrift: RelevancePathsDriftInspection = { candidates: [], git_available: true };
   // rc.37 NEW-5: personal-layer entries whose relevance_paths match files in
   // the current project — signals layer misclassification (content is
   // project-bound, should be team-layer).
-  const personalLayerPathMisclassify = inspectPersonalLayerPathMisclassify(projectRoot);
+  const personalLayerPathMisclassify: PersonalLayerPathMisclassifyInspection = { candidates: [] };
   // rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
   // (legacy entries archived before NEW-31's sanitizer landed).
-  const suspiciousKb = inspectSuspiciousKb(projectRoot);
+  const suspiciousKb: SuspiciousKbInspection = { candidates: [] };
   // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
   // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
   // telemetry when the edit-counter has no fires in the 30d window.
-  const narrowTooFew = inspectNarrowTooFew(projectRoot, lintNow);
+  const narrowTooFew = emptyNarrowTooFewInspection();
   // rc.6 TASK-021 (E3): session-hints cache hygiene (#27). Scans
   // `.fabric/.cache/` for session-hints-*.json files older than 7 days
   // (mtime-based). Info kind — does not bump report status. apply-lint
   // reaps matched files via unlink (no ledger event; local hot-cache).
-  const sessionHintsStale = inspectSessionHintsStale(projectRoot, lintNow);
+  const sessionHintsStale = await inspectSessionHintsStale(projectRoot, lintNow);
+  const hookCacheWritability = await inspectHookCacheWritability(projectRoot);
   // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Read-side only —
   // mutation (unlink + ledger event) is owned by runDoctorFix. Re-uses the
   // same lintNow timestamp as the other read-side hygiene inspections so a
@@ -1257,31 +1120,33 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // hygiene, not correctness (meta-builder falls back to the schema
   // defaults at read time). apply-lint writes the explicit defaults and
   // emits one aggregate `relevance_migration_run` event per run.
-  const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
+  const relevanceFieldsMissing = emptyRelevanceFieldsMissingInspection();
   // rc.12 lint #29: skill_md_yaml_invalid. Scans .claude/skills and
   // .codex/skills SKILL.md frontmatter for unquoted ': ' tokens that Codex's
   // strict YAML parser rejects (Claude Code is lenient). Warning kind —
   // manual fix only.
-  const skillMdYamlInvalid = inspectSkillMdYamlInvalid(projectRoot);
+  const skillMdYamlInvalid = await inspectSkillMdYamlInvalid(projectRoot);
   // v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory. Info kind —
   // does not bump report status. Mirrors the fabric onboard-coverage CLI
   // scanner; reports which of the 5 S5 slots are unclaimed and recommends
   // /fabric-archive (whose first-run phase tours the project and proposes
   // pending entries with `onboard_slot: <slot>` set).
-  const onboardCoverage = inspectOnboardCoverage(projectRoot);
+  const onboardCoverage = await inspectOnboardCoverage(projectRoot);
   // rc.31 BUG-M3/NEW-4: hooks_wired observability. Reads project-local
   // .claude/settings.json and verifies the three fabric Stop / SessionStart
   // / PreToolUse hooks are present. Warns when .claude/ exists (project uses
   // Claude Code) but hook references are missing — install ran but stopped
   // short, or partial-install left dangling artifacts. Skipped (ok) when
   // there is no .claude/ at all (project doesn't use Claude Code).
-  const hooksWired = inspectHooksWired(projectRoot);
+  const [hooksWired, hooksRuntime, hooksContentDrift] = await Promise.all([
+    inspectHooksWired(projectRoot),
+    inspectHooksRuntime(projectRoot),
+    inspectHooksContentDrift(projectRoot),
+  ]);
   // v2.0.0-rc.37 NEW-20: hooks_runtime closes the gap below hooks_wired —
   // shebang + Node.js syntax validity of each installed .cjs hook file.
-  const hooksRuntime = inspectHooksRuntime(projectRoot);
   // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256 parity
   // for the same hook basename across .claude/.codex/.cursor.
-  const hooksContentDrift = inspectHooksContentDrift(projectRoot);
   // rc.31 BUG-G2/G5: promote-ledger invariant check (proposed >= started >= promoted).
   // Surfaces ledger desync (e.g. werewolf-minigame rc.30 audit: proposed=17,
   // started=48, promoted=52). Warning kind — does not bump report status to
@@ -1302,6 +1167,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const globalCliVersion: GlobalCliInspection = process.env.VITEST === "true"
     ? { status: "ok", version: "test-skipped" }
     : inspectGlobalCliVersion();
+  const targetFiles = Object.fromEntries(
+    await Promise.all(
+      TARGET_FILE_PATHS.map(async (path) => [path, await pathExists(join(projectRoot, path))] as const),
+    ),
+  );
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(t, bootstrapAnchor),
     // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
@@ -1399,6 +1269,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createNarrowTooFewCheck(t, narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
     createSessionHintsStaleCheck(t, sessionHintsStale),
+    createHookCacheWritabilityCheck(t, hookCacheWritability),
     // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
     // does not bump report status. `--fix` unlinks the corpse and emits
     // `serve_lock_cleared`.
@@ -1440,7 +1311,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // v2.2 W4 (G-GUARD / A6): scope lint over the read-set stores — missing
     // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
     // only stores (the post-decolo knowledge home); never throws.
-    createScopeLintCheck(t, lintStoreScopes(projectRoot)),
+    createScopeLintCheck(t, await lintStoreScopes(projectRoot)),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null
@@ -1491,9 +1362,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       manualErrorCount: manualErrors.length,
       warningCount: warnings.length,
       infoCount: infos.length,
-      targetFiles: Object.fromEntries(
-        TARGET_FILE_PATHS.map((path) => [path, existsSync(join(projectRoot, path))]),
-      ),
+      targetFiles,
       // v2.0.0-rc.29 TASK-008 (BUG-F2): resolve and surface payload thresholds.
       // Best-effort: a corrupt fabric.config.json should not fail doctor; on
       // any read/parse error fall back to library defaults with source="default".
@@ -1525,6 +1394,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const projectRoot = normalizeTarget(target);
   const before = await runDoctorReport(projectRoot);
   const fixed: DoctorIssue[] = [];
+  const ledgerWarnings: DoctorIssue[] = [];
 
   // v2.0.0-rc.19 bootstrap-consolidation TASK-004: marker migration runs FIRST
   // so subsequent L1/L2 drift checks (TASK-05) see the post-rename state. One
@@ -1546,7 +1416,9 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
         legacy_marker: "fabric:knowledge-base",
         new_marker: "fabric:bootstrap",
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch((error) => {
+        ledgerWarnings.push(createLedgerAppendWarning(`bootstrap marker migration for ${path}`, error));
+      });
     }
   }
 
@@ -1710,7 +1582,9 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
         pid: lockInspection.pid,
         age_ms: lockInspection.ageMs,
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch((error) => {
+        ledgerWarnings.push(createLedgerAppendWarning("stale serve lock cleanup", error));
+      });
       fixed.push({
         code: "stale_serve_lock",
         name: "Serve lock",
@@ -1733,34 +1607,14 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   // imbalance accrues (which only happens through the rc.31 BUG-G2 path that
   // synth-on-approve already addresses for new approves).
   if (before.warnings.some((issue) => issue.code === "promote_ledger_invariant_violated")) {
-    await fixPromoteLedgerInvariant(projectRoot);
+    ledgerWarnings.push(...await fixPromoteLedgerInvariant(projectRoot));
     fixed.push(findIssue(before.warnings, "promote_ledger_invariant_violated"));
   }
 
-  // v2.0.0-rc.37 NEW-38: knowledge auto-promote janitorial pass. Settled drafts
-  // (created ≥14d ago, never flagged drifted) graduate draft → verified so they
-  // stop inflating the draft_backlog ratio. Runs unconditionally — promotable
-  // drafts surface as an info check (not a fixable_error), so there is no gate
-  // in `before` to key off.
-  //
-  // v2.2 W5 R4 (agents.meta decolo): the post-rewrite reconcileKnowledge that
-  // re-synced agents.meta maturity/hashes is dropped — applyDraftAutoPromote
-  // rewrites the frontmatter in place and there is no co-location meta index to
-  // keep consistent anymore.
-  const autoPromote = await inspectDraftAutoPromote(projectRoot);
-  if (autoPromote.candidates.length > 0) {
-    const { promoted } = await applyDraftAutoPromote(projectRoot, autoPromote.candidates);
-    if (promoted.length > 0) {
-      const tFix = createTranslator(resolveFabricLocale(projectRoot));
-      fixed.push({
-        code: "draft_auto_promotable",
-        name: tFix("doctor.check.draft_auto_promote.name"),
-        message: tFix("doctor.check.draft_auto_promote.fixed", { count: String(promoted.length) }),
-      });
-    }
-  }
+  // v2.2 store cutover: draft auto-promote is disabled until it can operate
+  // against store-backed knowledge instead of retired project-local entries.
 
-  const report = await runDoctorReport(projectRoot);
+  const report = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
 
   return {
     changed: fixed.length > 0,
@@ -1811,6 +1665,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   const projectRoot = normalizeTarget(target);
   const before = await runDoctorReport(projectRoot);
   const mutations: DoctorApplyLintMutation[] = [];
+  const ledgerWarnings: DoctorIssue[] = [];
 
   // Loud-error gate: stable_id_duplicate / layer_mismatch are corruption.
   // Auto-fix could delete data. Abort before any mutation.
@@ -1821,6 +1676,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     return {
       changed: false,
       mutations: [],
+      warnings: [],
       manual_errors: before.manual_errors,
       aborted: true,
       abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message} - apply-lint cannot resolve this safely; triage by hand.`,
@@ -1831,10 +1687,11 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
 
   const now = Date.now();
 
-  // v2.2 store cutover: mutations target mounted stores only. Retired
-  // project-local `.fabric/knowledge` and legacy `~/.fabric/knowledge` roots
-  // are never touched.
-  const orphanDemote = await inspectOrphanDemote(projectRoot, now);
+  // v2.2 store cutover: retired dual-root knowledge lints are no longer
+  // mutation sources. Do not demote/archive entries from project-local
+  // `.fabric/knowledge` or legacy `~/.fabric/knowledge`; store-aware versions
+  // must be implemented against ~/.fabric/stores/*/knowledge before re-enabling.
+  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
   for (const candidate of orphanDemote.candidates) {
     if (candidate.next_maturity === null) {
       // Terminal (already draft) — orphan-demote does not apply, stale-archive
@@ -1846,7 +1703,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     mutations.push(await applyOrphanDemote(projectRoot, candidate, now));
   }
 
-  const staleArchive = await inspectStaleArchive(projectRoot, now);
+  const staleArchive = emptyStaleArchiveInspection();
   for (const candidate of staleArchive.candidates) {
     mutations.push(await applyStaleArchive(projectRoot, candidate, now));
   }
@@ -1857,7 +1714,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   // pending after the canonical mutation pass keeps the dual-root pending
   // walker independent of any concurrent .fabric/knowledge/<type>/ writes
   // triggered above. One mutation per stale-pending entry, per layer.
-  const pendingAutoArchive = inspectPendingAutoArchive(projectRoot, now);
+  const pendingAutoArchive = emptyPendingAutoArchiveInspection();
   for (const candidate of pendingAutoArchive.candidates) {
     mutations.push(await applyPendingAutoArchive(projectRoot, candidate, now));
   }
@@ -1869,7 +1726,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   // cleanup is the cheapest mutation (single unlink per file); deferring it
   // to last would arbitrarily inflate the perceived apply-lint runtime if
   // an upstream mutation hangs. One mutation per stale cache file.
-  const sessionHintsStale = inspectSessionHintsStale(projectRoot, now);
+  const sessionHintsStale = await inspectSessionHintsStale(projectRoot, now);
   for (const candidate of sessionHintsStale.candidates) {
     mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
   }
@@ -1884,7 +1741,10 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   // `relevance_migration_run` event emitted unconditionally after the walk
   // so the audit trail records every --apply-lint heartbeat (matches the
   // `doctor_run` invariant — fires every run, even when no findings).
-  const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
+  // v2.2 store-only cutover: relevance back-fill previously walked retired
+  // project-local and legacy personal pending roots. Keep the aggregate no-op
+  // event below, but do not scan or mutate those roots.
+  const relevanceFieldsMissing = emptyRelevanceFieldsMissingInspection();
   let relevanceTouchedCount = 0;
   for (const candidate of relevanceFieldsMissing.candidates) {
     const mutation = await applyRelevanceFieldsMissing(candidate);
@@ -1906,8 +1766,8 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
       scanned_count: relevanceFieldsMissing.scanned_count,
       touched_count: relevanceTouchedCount,
     });
-  } catch {
-    // Silent — observability only.
+  } catch (error) {
+    ledgerWarnings.push(createLedgerAppendWarning("relevance migration aggregate event", error));
   }
 
   // v2.2 W5 R4 (agents.meta decolo): the co-location `index_drift` apply-lint
@@ -1931,19 +1791,14 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
 
   contextCache.invalidate("meta_write", projectRoot);
 
-  let after: DoctorReport;
-  try {
-    after = await runDoctorReport(projectRoot);
-  } catch {
-    // Keep rollback results observable when the ledger is the failing resource.
-    after = before;
-  }
+  const after = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
   const successCount = mutations.filter((m) => m.applied).length;
   const failureCount = mutations.length - successCount;
 
   return {
     changed: successCount > 0,
     mutations,
+    warnings: after.warnings,
     manual_errors: after.manual_errors,
     aborted: false,
     message: createApplyLintMessage(successCount, failureCount, after.manual_errors.length),
@@ -2028,28 +1883,6 @@ function rewriteFrontmatterMaturity(
 
 // v2.0.0-rc.37 NEW-38: promote rewriter. Distinct from rewriteFrontmatterMaturity
 // (which speaks the legacy stable|endorsed|draft demote vocabulary) — this one
-// flips `maturity: draft` → `maturity: verified` using the live schema
-// vocabulary (draft|verified|proven). Returns null when no `maturity: draft`
-// line is present (caller skips). Preserves BOM / line endings via slicing.
-function rewriteFrontmatterMaturityPromote(source: string): string | null {
-  const FM_PATTERN = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const block = fm[1];
-  const DRAFT_LINE = /^maturity:\s*("?)draft\1\s*$/mu;
-  if (!DRAFT_LINE.test(block)) {
-    return null;
-  }
-  const replacedBlock = block.replace(DRAFT_LINE, (line) => line.replace(/draft/u, "verified"));
-  const blockStart = source.indexOf(block);
-  if (blockStart < 0) {
-    return null;
-  }
-  return source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
-}
-
 async function applyOrphanDemote(
   projectRoot: string,
   candidate: OrphanDemoteCandidate,
@@ -2066,7 +1899,7 @@ async function applyOrphanDemote(
     };
   }
   const detail = `${candidate.maturity} -> ${next}`;
-  const absPath = candidate.path_abs;
+  const absPath = join(projectRoot, candidate.path);
   try {
     const source = await readFile(absPath, "utf8");
     const rewritten = rewriteFrontmatterMaturity(source, next);
@@ -2145,8 +1978,8 @@ async function applyStaleArchive(
   candidate: StaleArchiveCandidate,
   now: number,
 ): Promise<DoctorApplyLintMutation> {
-  const sourceAbs = candidate.path_abs;
-  const destAbs = candidate.archive_path_abs;
+  const sourceAbs = join(projectRoot, candidate.path);
+  const destAbs = join(projectRoot, candidate.archive_path);
   const detail = `${candidate.path} -> ${candidate.archive_path}`;
   try {
     await mkdir(join(destAbs, ".."), { recursive: true });
@@ -2217,9 +2050,10 @@ async function applyStaleArchive(
   }
 }
 
-// rc.5 TASK-009 (B2): auto-archive a stale pending entry. Store-backed entries
-// live under ~/.fabric/stores/<uuid>/, outside the project worktree, so the
-// move is a filesystem rename/copy rather than a project-root `git mv`.
+// rc.5 TASK-009 (B2): auto-archive a stale pending entry. Team-layer source
+// uses `git mv` (preserves rename detection inside the workspace git tree)
+// with an `fs.rename` fallback for non-repo / untracked cases. Personal-layer
+// source uses plain `fs.rename` (lives outside the project's git tree).
 // Emits exactly one `pending_auto_archived` event per successful move with
 // `pending_path`, `archived_to`, `reason` ("auto_archive_30d").
 //
@@ -2237,21 +2071,41 @@ async function applyPendingAutoArchive(
   try {
     await mkdir(join(candidate.archived_to_abs, ".."), { recursive: true });
 
-    try {
-      await rename(candidate.pending_path_abs, candidate.archived_to_abs);
-    } catch (renameError) {
-      // EXDEV fallback (cross-filesystem). Same shape as applyStaleArchive.
-      if (
-        renameError instanceof Error &&
-        "code" in renameError &&
-        (renameError as NodeJS.ErrnoException).code === "EXDEV"
-      ) {
-        const data = await readFile(candidate.pending_path_abs);
-        await writeFile(candidate.archived_to_abs, data);
-        const { unlink } = await import("node:fs/promises");
-        await unlink(candidate.pending_path_abs);
-      } else {
-        throw renameError;
+    let moved = false;
+    if (candidate.layer === "team") {
+      // Prefer `git mv` so the workspace history threads through the rename.
+      // Falls back to plain rename when (a) not in a git repo, (b) the file
+      // is untracked, or (c) git is unavailable. Mirrors the dual-strategy
+      // pattern in review.ts approve flow.
+      try {
+        const relSource = relativePosix(projectRoot, candidate.pending_path_abs);
+        const relDest = relativePosix(projectRoot, candidate.archived_to_abs);
+        execFileSync("git", ["mv", "-f", relSource, relDest], {
+          cwd: projectRoot,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        moved = true;
+      } catch {
+        // Fall through to plain rename below.
+      }
+    }
+    if (!moved) {
+      try {
+        await rename(candidate.pending_path_abs, candidate.archived_to_abs);
+      } catch (renameError) {
+        // EXDEV fallback (cross-filesystem). Same shape as applyStaleArchive.
+        if (
+          renameError instanceof Error &&
+          "code" in renameError &&
+          (renameError as NodeJS.ErrnoException).code === "EXDEV"
+        ) {
+          const data = await readFile(candidate.pending_path_abs);
+          await writeFile(candidate.archived_to_abs, data);
+          const { unlink } = await import("node:fs/promises");
+          await unlink(candidate.pending_path_abs);
+        } else {
+          throw renameError;
+        }
       }
     }
 
@@ -2302,6 +2156,15 @@ async function applyPendingAutoArchive(
       error: truncateErrorMessage(error),
     };
   }
+}
+
+// Helper: convert an absolute path to a workspace-relative POSIX path
+// suitable for `git mv` invocation. Falls back to the absolute path when
+// the absolute is already outside projectRoot (defensive — callers only
+// pass team-layer paths here, but keep the contract clear).
+function relativePosix(projectRoot: string, absolutePath: string): string {
+  const rel = nodeRelative(projectRoot, absolutePath);
+  return rel.split(sep).join("/");
 }
 
 // rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
@@ -2362,36 +2225,6 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
   }
 }
 
-// v2.0: `inspectInitContext` removed. `.fabric/init-context.json` is owned
-// by the AI-side client init skill, not by `fabric install` CLI. Its absence
-// after `fabric install` is a legitimate "skill has not run yet" state, not a
-// doctor concern.
-
-function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileInspection {
-  const settingsPath = join(projectRoot, ".claude", "settings.json");
-  if (!existsSync(settingsPath)) {
-    return { hasWrongEntry: false, settingsPath };
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { hasWrongEntry: false, settingsPath };
-    }
-
-    const settings = parsed as Record<string, unknown>;
-    const mcpServers = settings.mcpServers;
-    if (mcpServers === null || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
-      return { hasWrongEntry: false, settingsPath };
-    }
-
-    const hasWrongEntry = "fabric" in (mcpServers as Record<string, unknown>);
-    return { hasWrongEntry, settingsPath };
-  } catch {
-    return { hasWrongEntry: false, settingsPath };
-  }
-}
-
 // v2.2 W5 R4 (agents.meta decolo): `inspectMeta` / `tryBuildRuleMeta` /
 // `inspectContentRefs` removed. They read the retired co-location
 // `.fabric/agents.meta.json` (+ rebuilt it via buildKnowledgeMeta to compute a
@@ -2401,7 +2234,7 @@ function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileI
 
 async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspection> {
   const path = getEventLedgerPath(projectRoot);
-  const exists = existsSync(path);
+  const exists = await pathExists(path);
 
   if (!exists) {
     return {
@@ -2482,167 +2315,6 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-// v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): scan the three v2 skill
-// directories under `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/
-// ref/`. For every ref filename that exists in BOTH client subtrees, byte-
-// compare the contents. Any mismatch is recorded as a drifted relative
-// path. Filenames present in only one client are tolerated (the user may
-// only have one client installed), but a parity mismatch on files present
-// in both is flagged.
-function inspectSkillRefMirror(projectRoot: string): SkillRefMirrorInspection {
-  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"];
-  const driftedPaths: string[] = [];
-  for (const slug of skillSlugs) {
-    const claudeRef = join(projectRoot, ".claude", "skills", slug, "ref");
-    const codexRef = join(projectRoot, ".codex", "skills", slug, "ref");
-    let claudeFiles: string[] | null = null;
-    let codexFiles: string[] | null = null;
-    try {
-      claudeFiles = readdirSync(claudeRef).filter((n) => n.endsWith(".md"));
-    } catch {
-      // Missing client subtree — tolerated only when the OTHER client subtree
-      // is also missing OR when the user explicitly only installed one
-      // client (the asymmetric-install case). `null` here is distinct from
-      // "exists but empty" — only `null` skips the parity check.
-    }
-    try {
-      codexFiles = readdirSync(codexRef).filter((n) => n.endsWith(".md"));
-    } catch {
-      // Same.
-    }
-    // Asymmetric install — at most one client surface exists. Parity check
-    // does not apply; do not flag anything for this slug.
-    if (claudeFiles === null || codexFiles === null) continue;
-    // v2.0.0-rc.28 TASK-04 (Gemini review fix): when BOTH client subtrees
-    // exist, files present in only one side ARE drift (partial install or
-    // manual deletion). Previously the inspection filtered to the
-    // intersection, silently ignoring file-level asymmetry. The fix takes
-    // the symmetric difference and flags every missing file from either
-    // side, on top of the byte-comparison for the intersection.
-    const claudeSet = new Set(claudeFiles);
-    const codexSet = new Set(codexFiles);
-    const union = new Set([...claudeFiles, ...codexFiles]);
-    for (const fname of union) {
-      const inClaude = claudeSet.has(fname);
-      const inCodex = codexSet.has(fname);
-      if (!inClaude || !inCodex) {
-        driftedPaths.push(`skills/${slug}/ref/${fname}`);
-        continue;
-      }
-      let claudeBody: string;
-      let codexBody: string;
-      try {
-        claudeBody = readFileSync(join(claudeRef, fname), "utf8");
-      } catch {
-        continue;
-      }
-      try {
-        codexBody = readFileSync(join(codexRef, fname), "utf8");
-      } catch {
-        continue;
-      }
-      if (claudeBody !== codexBody) {
-        driftedPaths.push(`skills/${slug}/ref/${fname}`);
-      }
-    }
-  }
-  if (driftedPaths.length === 0) return { status: "ok" };
-  return { status: "drift", driftedPaths };
-}
-
-// v2.0.0-rc.33 W3-6 (P1-13): inspect each installed SKILL.md and report
-// token-budget violations. Scans `.claude/skills/<slug>/SKILL.md` only —
-// `.codex/skills/` mirror (per skill_ref_mirror) carries the same body so
-// re-scanning is redundant. When the Claude install path is missing (user
-// only installed Codex, or no fabric install yet), the slug silently degrades
-// to OK — non-existence isn't a budget violation.
-//
-// Token estimation uses chars / 3 for CJK/EN mixed markdown — between the
-// chars/2 CJK-heavy heuristic and the chars/4 English heuristic. SKILL.md
-// in this project is Chinese-heavy so chars/3 errs on the safe (over-
-// estimate) side, which is correct for a budget lint: better to nag at the
-// 4.9K-actual / 5.0K-estimated boundary than to silently miss a 5.1K-actual
-// SKILL.md that the chars/4 heuristic reports as 3.8K.
-function inspectSkillTokenBudget(projectRoot: string): SkillTokenBudgetInspection {
-  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"];
-  const WARN_TOKENS = 5_000;
-  const ERROR_TOKENS = 10_000;
-  const overSize: Array<{ slug: string; tokens: number; severity: "warn" | "error" }> = [];
-  let highestSeverity: "ok" | "warn" | "error" = "ok";
-  for (const slug of skillSlugs) {
-    const skillMdPath = join(projectRoot, ".claude", "skills", slug, "SKILL.md");
-    let body: string;
-    try {
-      body = readFileSync(skillMdPath, "utf8");
-    } catch {
-      // Skill not installed for Claude — skip (not a budget violation).
-      continue;
-    }
-    const tokens = Math.ceil(body.length / 3);
-    if (tokens > ERROR_TOKENS) {
-      overSize.push({ slug, tokens, severity: "error" });
-      highestSeverity = "error";
-    } else if (tokens > WARN_TOKENS) {
-      overSize.push({ slug, tokens, severity: "warn" });
-      if (highestSeverity !== "error") highestSeverity = "warn";
-    }
-  }
-  return { status: highestSeverity, overSize };
-}
-
-// v2.0.0-rc.33 W3-7 (P1-14): per-skill structural lint over SKILL.md
-// description frontmatter. Reads the YAML frontmatter directly (avoids
-// pulling a YAML parser into this lib) — the description field is single-
-// line in practice, so a regex on the first 200 lines is sufficient.
-function inspectSkillDescription(projectRoot: string): SkillDescriptionLintInspection {
-  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"];
-  const MAX_DESCRIPTION_TOKENS = 60;
-  const issues: SkillDescriptionLintInspection["issues"] = [];
-  // CJK range covers the bulk of common CJK ideographs + extension A. Enough
-  // for trigger-phrase detection — we are not classifying script families.
-  const CJK_PATTERN = /[㐀-䶿一-鿿]/;
-  // ASCII letter requirement is intentionally loose — any [a-zA-Z]+ run
-  // counts as an English trigger; we are not enforcing a specific lexicon.
-  const ASCII_PATTERN = /[a-zA-Z]{2,}/;
-
-  for (const slug of skillSlugs) {
-    const skillMdPath = join(projectRoot, ".claude", "skills", slug, "SKILL.md");
-    let body: string;
-    try {
-      body = readFileSync(skillMdPath, "utf8");
-    } catch {
-      continue; // Skill not installed for Claude — skip.
-    }
-
-    // YAML frontmatter (delimited by --- on the first line). Extract
-    // description: ... (single-line value in our skill contract).
-    const fmMatch = body.match(/^---\n([\s\S]*?)\n---/);
-    if (!fmMatch) {
-      issues.push({ slug, problem: "missing", detail: "no YAML frontmatter" });
-      continue;
-    }
-    const descMatch = fmMatch[1].match(/^description:\s*(.+?)\s*$/m);
-    if (!descMatch || descMatch[1].trim().length === 0) {
-      issues.push({ slug, problem: "missing", detail: "description field empty or absent" });
-      continue;
-    }
-    // YAML may quote the value; strip surrounding quotes for length / language checks.
-    const description = descMatch[1].replace(/^["'](.+)["']$/, "$1");
-    const tokens = Math.ceil(description.length / 3);
-    if (tokens > MAX_DESCRIPTION_TOKENS) {
-      issues.push({ slug, problem: "too_long", detail: `${tokens} tok (max ${MAX_DESCRIPTION_TOKENS})` });
-    }
-    if (!CJK_PATTERN.test(description)) {
-      issues.push({ slug, problem: "no_cjk", detail: "no Chinese trigger phrase" });
-    }
-    if (!ASCII_PATTERN.test(description)) {
-      issues.push({ slug, problem: "no_ascii", detail: "no English trigger phrase" });
-    }
-  }
-
-  return { status: issues.length === 0 ? "ok" : "warn", issues };
 }
 
 // v2.0.0-rc.33 W3-3 (P1-3): Goodhart inspection over 7d of cite events.
@@ -2745,121 +2417,6 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
   return { status: fired.length === 0 ? "ok" : "warn", fired };
 }
 
-// v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Reuses iterateCanonicalEntries
-// which already exposes the parsed maturity. No event-ledger read — purely
-// disk-state. Total < 10 is fail-open (small workspaces are noisy denominators).
-// v2.0.0-rc.37 NEW-38: schema-aware maturity extractor (draft|verified|proven)
-// PLUS legacy (stable|endorsed) for back-compat. Distinct from the
-// orphan-demote MATURITY_LINE_PATTERN (legacy-only) — draft_backlog MUST see
-// verified/proven entries in the denominator, otherwise promoting draft →
-// verified silently removes the entry from BOTH numerator and denominator and
-// the ratio never drops (the bug NEW-38 dogfood surfaced: 53/53 → 20/20).
-const MATURITY_LINE_PATTERN_FULL =
-  /^maturity:\s*("?)(stable|endorsed|draft|verified|proven)\1\s*$/mu;
-function extractMaturityFull(source: string): string | null {
-  const fm = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u.exec(source);
-  if (fm === null) return null;
-  const m = MATURITY_LINE_PATTERN_FULL.exec(fm[1]);
-  return m === null ? null : m[2];
-}
-
-function inspectDraftBacklog(projectRoot: string): DraftBacklogInspection {
-  const DRAFT_BACKLOG_RATIO = 0.5;
-  const MIN_TOTAL_FOR_RATIO = 10;
-  let draftCount = 0;
-  let totalCount = 0;
-  // Walk canonical files directly with the full-vocabulary maturity extractor
-  // so verified/proven entries stay in totalCount (iterateCanonicalEntries
-  // skips them — it uses the legacy-only pattern for orphan-demote).
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
-    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-      const dir = join(knowledgeRoot, typeDir);
-      if (!existsSync(dir)) continue;
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        if (CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name) === null) continue;
-        let maturity: string | null;
-        try {
-          maturity = extractMaturityFull(readFileSync(join(dir, entry.name), "utf8"));
-        } catch {
-          continue;
-        }
-        if (maturity === null) continue;
-        totalCount += 1;
-        if (maturity === "draft") draftCount += 1;
-      }
-    }
-  }
-  if (totalCount < MIN_TOTAL_FOR_RATIO) {
-    return { status: "ok", draftCount, totalCount, ratio: 0 };
-  }
-  const ratio = draftCount / totalCount;
-  return {
-    status: ratio > DRAFT_BACKLOG_RATIO ? "warn" : "ok",
-    draftCount,
-    totalCount,
-    ratio,
-  };
-}
-
-// v2.0.0-rc.37 NEW-38: union of stable_ids ever flagged by a
-// knowledge_drift_detected event (drifted_stable_ids[]). Auto-promote excludes
-// these — a drifted draft is unsettled by definition.
-async function buildDriftedStableIds(projectRoot: string): Promise<Set<string>> {
-  const set = new Set<string>();
-  try {
-    const { events } = await readEventLedger(projectRoot);
-    for (const e of events) {
-      if (e.event_type === "knowledge_drift_detected" && Array.isArray(e.drifted_stable_ids)) {
-        for (const id of e.drifted_stable_ids) {
-          if (typeof id === "string" && id.length > 0) set.add(id);
-        }
-      }
-    }
-  } catch {
-    // empty set — no ledger / unreadable → nothing excluded by drift
-  }
-  return set;
-}
-
-// v2.0.0-rc.37 NEW-38: collect auto-promote candidates. Read-only; the actual
-// frontmatter rewrite + event emission lives in the runDoctorFix arm.
-async function inspectDraftAutoPromote(
-  projectRoot: string,
-  now: number = Date.now(),
-): Promise<DraftAutoPromoteInspection> {
-  const drifted = await buildDriftedStableIds(projectRoot);
-  const minAgeMs = DRAFT_AUTO_PROMOTE_MIN_AGE_DAYS * 24 * 60 * 60 * 1000;
-  const candidates: DraftAutoPromoteCandidate[] = [];
-  for (const entry of iterateCanonicalEntries(projectRoot, new Map())) {
-    if (entry.maturity !== "draft") continue;
-    if (drifted.has(entry.stable_id)) continue;
-    let createdAt: number | null;
-    try {
-      createdAt = extractKnowledgeFrontmatterCreatedAt(readFileSync(entry.absPath, "utf8"));
-    } catch {
-      continue;
-    }
-    if (createdAt === null) continue;
-    const ageMs = now - createdAt;
-    if (ageMs < minAgeMs) continue;
-    candidates.push({
-      stable_id: entry.stable_id,
-      relPath: entry.relPath,
-      absPath: entry.absPath,
-      ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
-    });
-  }
-  return { candidates };
-}
-
 function createDraftAutoPromoteCheck(
   t: Translator,
   inspection: DraftAutoPromoteInspection,
@@ -2886,40 +2443,6 @@ function createDraftAutoPromoteCheck(
   };
 }
 
-// v2.0.0-rc.37 NEW-38: the --fix mutation. Flips each candidate draft → verified
-// and emits a knowledge_promoted event. Returns the count + promoted ids for
-// the fix report. Best-effort per entry — a single rewrite failure does not
-// abort the batch.
-async function applyDraftAutoPromote(
-  projectRoot: string,
-  candidates: DraftAutoPromoteCandidate[],
-): Promise<{ promoted: string[] }> {
-  const promoted: string[] = [];
-  for (const candidate of candidates) {
-    let source: string;
-    try {
-      source = readFileSync(candidate.absPath, "utf8");
-    } catch {
-      continue;
-    }
-    const rewritten = rewriteFrontmatterMaturityPromote(source);
-    if (rewritten === null || rewritten === source) continue;
-    try {
-      await atomicWriteText(candidate.absPath, rewritten);
-    } catch {
-      continue;
-    }
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "knowledge_promoted",
-      stable_id: candidate.stable_id,
-      timestamp: new Date().toISOString(),
-      reason: AUTO_PROMOTED_REASON,
-    }).catch(() => {});
-    promoted.push(candidate.stable_id);
-  }
-  return { promoted };
-}
-
 // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when
 // >50% of entries carry `tags: []` — clustering / topical surfacing degrades
 // when most entries are tag-less. Threshold mirrors draft_backlog (>50% with
@@ -2931,392 +2454,11 @@ type EmptyTagsInspection = {
   ratio: number;
 };
 
-function inspectKnowledgeTagsEmpty(projectRoot: string): EmptyTagsInspection {
-  const EMPTY_TAGS_RATIO_THRESHOLD = 0.5;
-  const MIN_TOTAL_FOR_RATIO = 10;
-  let emptyCount = 0;
-  let totalCount = 0;
-  for (const entry of iterateCanonicalEntries(projectRoot, new Map())) {
-    let source: string;
-    try {
-      source = readFileSync(entry.absPath, "utf8");
-    } catch {
-      continue;
-    }
-    const isEmpty = isKnowledgeFrontmatterTagsEmpty(source);
-    // null → no tags line at all (legacy); treat as empty (still degrades
-    // clustering). false → tags present, non-empty.
-    if (isEmpty === null || isEmpty === true) {
-      emptyCount += 1;
-    }
-    totalCount += 1;
-  }
-  if (totalCount < MIN_TOTAL_FOR_RATIO) {
-    return { status: "ok", emptyCount, totalCount, ratio: 0 };
-  }
-  const ratio = emptyCount / totalCount;
-  return {
-    status: ratio > EMPTY_TAGS_RATIO_THRESHOLD ? "warn" : "ok",
-    emptyCount,
-    totalCount,
-    ratio,
-  };
-}
-
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
 // `.fabric/.cache/knowledge-test.index.json` was derived from the co-location
 // `.fabric/knowledge` via buildKnowledgeMeta (its staleness diffed against a
 // rebuilt index, its --fix was reconcileKnowledge) — all retired now that
 // knowledge lives in stores.
-
-function inspectBootstrapAnchor(projectRoot: string): BootstrapAnchorInspection {
-  return {
-    hasAgentsMd: existsSync(join(projectRoot, "AGENTS.md")),
-    hasClaudeMd: existsSync(join(projectRoot, "CLAUDE.md")),
-  };
-}
-
-// v2.0.0-rc.19 TASK-004: scan the four target paths for the legacy
-// `fabric:knowledge-base` managed-block markers. Missing files are silently
-// skipped (legitimate post-clean-install state). Returns the absolute paths
-// of every file whose content still matches LEGACY_KB_REGEX so the dispatcher
-// can rewrite them in a single pass. Idempotent: re-running on a post-fix
-// tree returns an empty list (the rewrite replaces the marker tokens, so the
-// regex no longer matches).
-const BOOTSTRAP_MARKER_MIGRATION_TARGETS = [
-  "CLAUDE.md",
-  "AGENTS.md",
-  ".cursor/rules",
-  ".cursor/rules/fabric-bootstrap.mdc",
-] as const;
-
-async function inspectBootstrapMarkerMigration(
-  target: string,
-): Promise<BootstrapMarkerMigrationInspection> {
-  const filesNeedingMigration: string[] = [];
-  for (const rel of BOOTSTRAP_MARKER_MIGRATION_TARGETS) {
-    const abs = join(target, rel);
-    if (!existsSync(abs)) {
-      continue;
-    }
-    let content: string;
-    try {
-      content = await readFile(abs, "utf8");
-    } catch {
-      // Unreadable file (permission / EISDIR for the legacy `.cursor/rules`
-      // directory variant) — treat as "not a legacy-marker carrier" and skip.
-      continue;
-    }
-    if (LEGACY_KB_REGEX.test(content)) {
-      filesNeedingMigration.push(abs);
-    }
-  }
-  return { filesNeedingMigration };
-}
-
-function createBootstrapMarkerMigrationCheck(
-  t: Translator,
-  inspection: BootstrapMarkerMigrationInspection,
-): DoctorCheck {
-  if (inspection.filesNeedingMigration.length === 0) {
-    return okCheck(
-      t("doctor.check.bootstrap_marker_migration.name"),
-      t("doctor.check.bootstrap_marker_migration.ok"),
-    );
-  }
-  const list = inspection.filesNeedingMigration.join(", ");
-  const count = inspection.filesNeedingMigration.length;
-  return issueCheck(
-    t("doctor.check.bootstrap_marker_migration.name"),
-    "error",
-    "fixable_error",
-    "bootstrap_marker_migration_required",
-    t(`doctor.check.bootstrap_marker_migration.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.bootstrap_marker_migration.remediation"),
-  );
-}
-
-// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 byte-level drift.
-// Reads `.fabric/AGENTS.md` and byte-compares against BOOTSTRAP_CANONICAL.
-// CRITICAL: NO normalization — content read as raw utf8; CRLF differences MUST
-// trigger drift so an install-side line-ending bug surfaces here. The 'missing'
-// branch defers to the existing bootstrap_anchor_missing check (separate code).
-export async function inspectL1BootstrapSnapshotDrift(
-  target: string,
-): Promise<L1BootstrapSnapshotDriftInspection> {
-  const abs = join(target, ".fabric", "AGENTS.md");
-  if (!existsSync(abs)) {
-    return { status: "missing", canonical: BOOTSTRAP_CANONICAL, onDisk: null };
-  }
-  let onDisk: string;
-  try {
-    onDisk = await readFile(abs, "utf8");
-  } catch {
-    // Unreadable — treat as missing for purposes of L1 (other checks surface
-    // permission errors via the anchor-missing path).
-    return { status: "missing", canonical: BOOTSTRAP_CANONICAL, onDisk: null };
-  }
-  if (onDisk === BOOTSTRAP_CANONICAL) {
-    return { status: "ok", canonical: BOOTSTRAP_CANONICAL, onDisk };
-  }
-  return { status: "drift", canonical: BOOTSTRAP_CANONICAL, onDisk };
-}
-
-function createL1BootstrapSnapshotDriftCheck(
-  t: Translator,
-  inspection: L1BootstrapSnapshotDriftInspection,
-): DoctorCheck {
-  if (inspection.status === "drift") {
-    return issueCheck(
-      t("doctor.check.bootstrap_snapshot_drift.name"),
-      "error",
-      "fixable_error",
-      "bootstrap_snapshot_drift",
-      t("doctor.check.bootstrap_snapshot_drift.message.drift"),
-      t("doctor.check.bootstrap_snapshot_drift.remediation.drift"),
-    );
-  }
-  // 'missing' is delegated to bootstrap_anchor_missing — return ok here so we
-  // don't double-report.
-  return okCheck(
-    t("doctor.check.bootstrap_snapshot_drift.name"),
-    inspection.status === "ok"
-      ? t("doctor.check.bootstrap_snapshot_drift.ok.ok")
-      : t("doctor.check.bootstrap_snapshot_drift.ok.missing_delegated"),
-  );
-}
-
-// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 byte-level drift across
-// the three propagation targets — root AGENTS.md, .cursor/rules/fabric-bootstrap.mdc
-// (managed block bodies) and CLAUDE.md (@import line). The expected body is
-// computed once from `.fabric/AGENTS.md` (+ optional `\n---\n` + project-rules)
-// and byte-compared against each extracted block body. Files where the new
-// marker is absent BUT the legacy marker is present are skipped — TASK-04's
-// bootstrap_marker_migration_required already flagged them and migration
-// runs FIRST in the dispatcher.
-async function inspectL2ManagedBlockDrift(
-  target: string,
-): Promise<L2ManagedBlockDriftInspection> {
-  const snapshotPath = join(target, ".fabric", "AGENTS.md");
-  if (!existsSync(snapshotPath)) {
-    // No L1 → L2 has no expectedBody to compare against. Defer to L1 fix.
-    return { status: "ok", drifted: [] };
-  }
-  let snapshot: string;
-  try {
-    snapshot = await readFile(snapshotPath, "utf8");
-  } catch {
-    return { status: "ok", drifted: [] };
-  }
-  const projectRulesPath = join(target, ".fabric", "project-rules.md");
-  let expectedBody = snapshot;
-  if (existsSync(projectRulesPath)) {
-    try {
-      const projectRules = await readFile(projectRulesPath, "utf8");
-      expectedBody = `${snapshot}\n---\n${projectRules}`;
-    } catch {
-      // best-effort — fall back to snapshot-only expectedBody
-    }
-  }
-
-  const drifted: Array<{ path: string; expected: string; actual: string }> = [];
-  let anyManagedBlockFound = false;
-
-  // Managed-block targets: extract body between BOOTSTRAP_MARKER_BEGIN/END
-  // and byte-compare against expectedBody.
-  const blockTargets = [
-    join(target, "AGENTS.md"),
-    join(target, ".cursor", "rules", "fabric-bootstrap.mdc"),
-  ];
-  for (const abs of blockTargets) {
-    if (!existsSync(abs)) {
-      continue;
-    }
-    let content: string;
-    try {
-      content = await readFile(abs, "utf8");
-    } catch {
-      continue;
-    }
-    // Skip files in legacy-marker pre-migration state (TASK-04 owns those).
-    if (!BOOTSTRAP_REGEX.test(content) && LEGACY_KB_REGEX.test(content)) {
-      continue;
-    }
-    const match = content.match(BOOTSTRAP_REGEX);
-    if (match === null) {
-      // No managed block — propagator never ran for this file. L2 doesn't own
-      // the missing-block diagnostic; doctor will surface install bugs via
-      // other paths.
-      continue;
-    }
-    anyManagedBlockFound = true;
-    // Extract the body bytes between BOOTSTRAP_MARKER_BEGIN and BOOTSTRAP_MARKER_END.
-    // match[0] includes optional leading newlines + the full begin..end region.
-    const region = match[0];
-    const beginIdx = region.indexOf(BOOTSTRAP_MARKER_BEGIN);
-    const bodyStart = beginIdx + BOOTSTRAP_MARKER_BEGIN.length;
-    const endIdx = region.indexOf(BOOTSTRAP_MARKER_END, bodyStart);
-    if (bodyStart < 0 || endIdx < 0) {
-      continue;
-    }
-    // Body convention: `{BEGIN}\n{expectedBody}\n{END}` — strip exactly one
-    // leading and one trailing newline (matching the writer convention) before
-    // byte-compare. CRITICAL: no other normalization.
-    let body = region.slice(bodyStart, endIdx);
-    if (body.startsWith("\n")) body = body.slice(1);
-    if (body.endsWith("\n")) body = body.slice(0, -1);
-    if (body !== expectedBody) {
-      drifted.push({ path: abs, expected: expectedBody, actual: body });
-    }
-  }
-
-  // CLAUDE.md: thin shell — verify `@.fabric/AGENTS.md` line is present.
-  const claudeMdPath = join(target, "CLAUDE.md");
-  if (existsSync(claudeMdPath)) {
-    let claudeContent: string;
-    try {
-      claudeContent = await readFile(claudeMdPath, "utf8");
-      // Skip legacy-marker pre-migration state (TASK-04 owns).
-      if (!BOOTSTRAP_REGEX.test(claudeContent) && LEGACY_KB_REGEX.test(claudeContent)) {
-        // skip
-      } else {
-        anyManagedBlockFound = true;
-        const lines = claudeContent.split(/\r?\n/u);
-        const hasAtImport = lines.some((line) => line.trim() === "@.fabric/AGENTS.md");
-        if (!hasAtImport) {
-          drifted.push({
-            path: claudeMdPath,
-            expected: "@.fabric/AGENTS.md",
-            actual: "(line missing)",
-          });
-        }
-      }
-    } catch {
-      // best-effort
-    }
-  }
-
-  if (!anyManagedBlockFound) {
-    return { status: "no-managed-block", drifted: [] };
-  }
-  if (drifted.length === 0) {
-    return { status: "ok", drifted: [] };
-  }
-  return { status: "drift", drifted };
-}
-
-function createL2ManagedBlockDriftCheck(
-  t: Translator,
-  inspection: L2ManagedBlockDriftInspection,
-): DoctorCheck {
-  if (inspection.status === "drift") {
-    const list = inspection.drifted.map((d) => d.path).join(", ");
-    const count = inspection.drifted.length;
-    return issueCheck(
-      t("doctor.check.managed_block_drift.name"),
-      "error",
-      "fixable_error",
-      "managed_block_drift",
-      t(`doctor.check.managed_block_drift.message.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-        list,
-      }),
-      t("doctor.check.managed_block_drift.remediation"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.managed_block_drift.name"),
-    inspection.status === "ok"
-      ? t("doctor.check.managed_block_drift.ok.ok")
-      : t("doctor.check.managed_block_drift.ok.no_managed_block"),
-  );
-}
-
-function createBootstrapAnchorCheck(t: Translator, inspection: BootstrapAnchorInspection): DoctorCheck {
-  // v2.0: bootstrap is anchored at the repo root via AGENTS.md or CLAUDE.md.
-  // Either one (or both) is sufficient; missing both is a fixable_error in
-  // the sense that `fabric install` is the canonical remediation (we do not
-  // auto-write the anchor file from doctor --fix).
-  if (!inspection.hasAgentsMd && !inspection.hasClaudeMd) {
-    return issueCheck(
-      t("doctor.check.bootstrap_anchor.name"),
-      "error",
-      "fixable_error",
-      "bootstrap_anchor_missing",
-      t("doctor.check.bootstrap_anchor.message.missing"),
-      t("doctor.check.bootstrap_anchor.remediation.missing"),
-    );
-  }
-  const present = [
-    inspection.hasAgentsMd ? "AGENTS.md" : null,
-    inspection.hasClaudeMd ? "CLAUDE.md" : null,
-  ]
-    .filter((entry): entry is string => entry !== null)
-    .join(", ");
-  return okCheck(
-    t("doctor.check.bootstrap_anchor.name"),
-    t("doctor.check.bootstrap_anchor.ok", { present }),
-  );
-}
-
-// v2.0.0-rc.22 TASK-006: scan canonical knowledge subdirs for bare-slug
-// baseline files (e.g. `code-style.md`) — the pre-rc.22 emit format. Files
-// matching the id-prefixed pattern are skipped; bare-slug files have their
-// frontmatter `id:` parsed and are flagged only when that id is in the
-// baseline allowlist (so a user-promoted `KP-DEC-0001--slug.md` mis-named
-// `slug.md` is intentionally NOT flagged here — that's an unrelated invariant).
-// Store-only cutover: scan canonical dirs from the project's read-set stores.
-// Retired project-local `.fabric/knowledge/{canonical-type}/` roots are ignored.
-function inspectBaselineFilenameFormat(projectRoot: string): BaselineFilenameFormatInspection {
-  const offenders: BaselineFilenameFormatOffender[] = [];
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
-    for (const sub of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-      const dir = join(knowledgeRoot, sub);
-      if (!existsSync(dir)) {
-        continue;
-      }
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        const entryName = entry.name;
-        if (!entry.isFile() || !entryName.endsWith(".md")) {
-          continue;
-        }
-        if (BASELINE_ID_PREFIXED_FILENAME_PATTERN.test(entryName)) {
-          continue;
-        }
-        const abs = join(dir, entryName);
-        let source: string;
-        try {
-          source = readFileSync(abs, "utf8");
-        } catch {
-          continue;
-        }
-        const id = extractKnowledgeFrontmatterId(source);
-        if (id === null) {
-          continue;
-        }
-        if (!BASELINE_FILENAME_LINT_BASELINE_IDS.has(id)) {
-          continue;
-        }
-        offenders.push({
-          path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, sub, entryName),
-          stable_id: id,
-        });
-      }
-    }
-  }
-  offenders.sort((a, b) => a.path.localeCompare(b.path));
-  return { offenders };
-}
 
 function createBaselineFilenameFormatCheck(
   t: Translator,
@@ -3477,24 +2619,6 @@ function createEventLedgerCheck(t: Translator, ledger: EventLedgerInspection): D
   return okCheck(t("doctor.check.event_ledger.name"), t("doctor.check.event_ledger.ok"));
 }
 
-function createMcpConfigInWrongFileCheck(t: Translator, inspection: McpConfigInWrongFileInspection): DoctorCheck {
-  if (inspection.hasWrongEntry) {
-    return issueCheck(
-      t("doctor.check.mcp_config_in_wrong_file.name"),
-      "error",
-      "fixable_error",
-      "mcp_config_in_wrong_file",
-      t("doctor.check.mcp_config_in_wrong_file.message"),
-      t("doctor.check.mcp_config_in_wrong_file.remediation"),
-    );
-  }
-
-  return okCheck(
-    t("doctor.check.mcp_config_in_wrong_file.name"),
-    t("doctor.check.mcp_config_in_wrong_file.ok"),
-  );
-}
-
 // v2.0.0-rc.27 TASK-010 (audit §2.24): surfaces forward-compat warnings when
 // events.jsonl contains rows the current parser cannot validate (legacy
 // schema_version != 1 OR an event_type not in the discriminator set). Both
@@ -3547,70 +2671,6 @@ function createEventLedgerSchemaCompatCheck(
     "event_ledger_schema_compat",
     parts.join(" "),
     t("doctor.check.event_ledger_schema_compat.remediation"),
-  );
-}
-
-// v2.0.0-rc.28 TASK-04 (audit §3.1): doctor check that surfaces mirror-parity
-// drift between `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/`.
-// `warning` severity (not `error`): the workspace stays functional; the
-// concern is that an LLM consulting the drifted ref/ file may see different
-// content depending on which client surfaced it. `fabric install` restores
-// parity by rewriting both subtrees from the canonical templates/.
-function createSkillRefMirrorCheck(
-  t: Translator,
-  inspection: SkillRefMirrorInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.skill_ref_mirror.name"),
-      t("doctor.check.skill_ref_mirror.ok"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.skill_ref_mirror.name"),
-    "warn",
-    "warning",
-    "skill_ref_mirror_drift",
-    t("doctor.check.skill_ref_mirror.message", {
-      count: String(inspection.driftedPaths.length),
-      list: inspection.driftedPaths.join(", "),
-    }),
-    t("doctor.check.skill_ref_mirror.remediation"),
-  );
-}
-
-// v2.0.0-rc.33 W3-6 (P1-13): create the SKILL.md token budget check. Warning
-// at 5K, error at 10K — sized for Anthropic's progressive disclosure target
-// (~3K hot path). The check message lists each over-budget slug with its
-// estimated token count so the operator knows which file to split first.
-function createSkillTokenBudgetCheck(
-  t: Translator,
-  inspection: SkillTokenBudgetInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.skill_token_budget.name"),
-      t("doctor.check.skill_token_budget.ok"),
-    );
-  }
-  const list = inspection.overSize
-    .map((s) => `${s.slug}=${s.tokens} tok (${s.severity})`)
-    .join(", ");
-  const count = inspection.overSize.length;
-  return issueCheck(
-    t("doctor.check.skill_token_budget.name"),
-    inspection.status,
-    inspection.status === "error" ? "manual_error" : "warning",
-    "skill_token_budget_exceeded",
-    t(`doctor.check.skill_token_budget.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.skill_token_budget.remediation"),
-    // rc.35 TASK-12 (P0-11): maintainer audience. Remediation points at
-    // `packages/cli/templates/skills/*` source — only Fabric contributors
-    // can act. CLI renderer folds by default; --verbose unfolds.
-    "maintainer",
   );
 }
 
@@ -3766,40 +2826,6 @@ function createCiteGoodhartCheck(
   );
 }
 
-// v2.0.0-rc.33 W3-7 (P1-14): create the SKILL.md description structural lint
-// check. Always `warn` severity (never error) — a bad description hurts
-// auto-invoke recall but doesn't break correctness. The message enumerates
-// each per-slug issue so the operator can fix without re-running inspection.
-function createSkillDescriptionCheck(
-  t: Translator,
-  inspection: SkillDescriptionLintInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.skill_description.name"),
-      t("doctor.check.skill_description.ok"),
-    );
-  }
-  const list = inspection.issues
-    .map((i) => `${i.slug}: ${i.problem} (${i.detail})`)
-    .join("; ");
-  const count = inspection.issues.length;
-  return issueCheck(
-    t("doctor.check.skill_description.name"),
-    "warn",
-    "warning",
-    "skill_description_quality",
-    t(`doctor.check.skill_description.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.skill_description.remediation"),
-    // rc.35 TASK-12 (P0-11): maintainer audience. Remediation points at
-    // `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter.
-    "maintainer",
-  );
-}
-
 function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists || !ledger.writable) {
     return okCheck(
@@ -3828,373 +2854,6 @@ function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerIn
 
 function okCheck(name: string, message: string): DoctorCheck {
   return { name, status: "ok", message };
-}
-
-// rc.31 BUG-M3/NEW-4: hooks_wired inspection.
-//
-// Verifies project-local .claude/settings.json declares all three fabric hooks
-// (fabric-hint at Stop, knowledge-hint-broad at SessionStart, knowledge-hint-
-// narrow at PreToolUse). The audit symptom this addresses: `fabric install` dry-
-// run reported "hooks=是 mcp-install=global" but actual settings.json had
-// zero fabric references — the user had no way to verify the injection
-// happened. By surfacing the wired state at doctor-time, partial / corrupted
-// installs become detectable.
-//
-// Skipped (ok) when there is no .claude/ directory at all (project does not
-// use Claude Code; nothing to check). Returns "missing" when the dir exists
-// but settings.json is absent or unparseable. "incomplete" when settings is
-// parseable but one or more fabric hook references are missing.
-type HooksWiredStatus = "ok" | "skipped" | "missing-settings" | "incomplete";
-type HooksWiredInspection = {
-  status: HooksWiredStatus;
-  missingHooks: string[];
-};
-
-function inspectHooksWired(projectRoot: string): HooksWiredInspection {
-  const claudeDir = join(projectRoot, ".claude");
-  if (!existsSync(claudeDir)) {
-    return { status: "skipped", missingHooks: [] };
-  }
-  const settingsPath = join(projectRoot, ".claude", "settings.json");
-  if (!existsSync(settingsPath)) {
-    return { status: "missing-settings", missingHooks: [] };
-  }
-  let raw: string;
-  try {
-    raw = readFileSync(settingsPath, "utf8");
-  } catch {
-    return { status: "missing-settings", missingHooks: [] };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { status: "missing-settings", missingHooks: [] };
-  }
-  const required: Array<{ event: string; hookFile: string }> = [
-    { event: "Stop", hookFile: "fabric-hint.cjs" },
-    { event: "SessionStart", hookFile: "knowledge-hint-broad.cjs" },
-    { event: "PreToolUse", hookFile: "knowledge-hint-narrow.cjs" },
-  ];
-  const missing: string[] = [];
-  const hooksSection = isRecord(parsed) ? parsed.hooks : undefined;
-  for (const { event, hookFile } of required) {
-    if (!isHookWiredForEvent(hooksSection, event, hookFile)) {
-      missing.push(`${event}:${hookFile}`);
-    }
-  }
-  if (missing.length === 0) {
-    return { status: "ok", missingHooks: [] };
-  }
-  return { status: "incomplete", missingHooks: missing };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isHookWiredForEvent(hooks: unknown, event: string, hookFile: string): boolean {
-  if (!isRecord(hooks)) return false;
-  const eventEntries = hooks[event];
-  if (!Array.isArray(eventEntries)) return false;
-  for (const matcherBlock of eventEntries) {
-    if (!isRecord(matcherBlock)) continue;
-    const inner = matcherBlock.hooks;
-    if (!Array.isArray(inner)) continue;
-    for (const hookEntry of inner) {
-      if (!isRecord(hookEntry)) continue;
-      const cmd = hookEntry.command;
-      if (typeof cmd === "string" && cmd.includes(hookFile)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function createHooksWiredCheck(t: Translator, inspection: HooksWiredInspection): DoctorCheck {
-  if (inspection.status === "skipped") {
-    return okCheck(
-      t("doctor.check.hooks_wired.name"),
-      t("doctor.check.hooks_wired.ok.skipped"),
-    );
-  }
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.hooks_wired.name"),
-      t("doctor.check.hooks_wired.ok.wired"),
-    );
-  }
-  if (inspection.status === "missing-settings") {
-    return issueCheck(
-      t("doctor.check.hooks_wired.name"),
-      "warn",
-      "warning",
-      "hooks_wired_missing_settings",
-      t("doctor.check.hooks_wired.message.missing_settings"),
-      t("doctor.check.hooks_wired.remediation"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.hooks_wired.name"),
-    "warn",
-    "warning",
-    "hooks_wired_incomplete",
-    t("doctor.check.hooks_wired.message.incomplete", {
-      missing: inspection.missingHooks.join(", "),
-    }),
-    t("doctor.check.hooks_wired.remediation"),
-  );
-}
-
-// v2.0.0-rc.37 NEW-27: hook-content cross-client drift.
-//
-// `fabric install` copies the SAME canonical template into each of the three
-// client `<client>/hooks/` directories. If a user manually edits one copy
-// (debugging a hook, accidentally), drift accumulates — the same hook fires
-// differently across clients. This check verifies cross-client sha256 parity:
-// for each hook basename present in MORE than one client root, all copies
-// must hash identically.
-//
-// Distinct from hooks_runtime (rc.37 NEW-20): that one validates each file
-// in isolation (shebang + parseable). This one is the *consistency* gate:
-// hooks_runtime passes if every copy individually parses but copies have
-// silently diverged. Together they cover the fault tree.
-//
-// Note: cross-client byte-equality is the *desired* invariant — `fabric
-// install` copies the same template bytes to each client root. We don't
-// need access to the original template here; equality between deployed
-// copies is sufficient signal. Single-client workspaces (e.g. only .claude/
-// exists) trivially pass.
-type HookContentDriftPair = {
-  basename: string;
-  clients: Array<"claude" | "codex" | "cursor">;
-  hashes: Array<{ client: string; sha: string }>;
-};
-type HooksContentDriftInspection = {
-  scanned: number;
-  drifts: HookContentDriftPair[];
-};
-
-function inspectHooksContentDrift(projectRoot: string): HooksContentDriftInspection {
-  const hookFilesByBasename = new Map<
-    string,
-    Array<{ client: "claude" | "codex" | "cursor"; abs: string }>
-  >();
-  for (const { client, dir } of HOOKS_RUNTIME_CLIENT_DIRS) {
-    const absDir = join(projectRoot, dir);
-    if (!existsSync(absDir)) continue;
-    let entries: string[];
-    try {
-      entries = readdirSync(absDir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!name.endsWith(".cjs")) continue;
-      const abs = join(absDir, name);
-      let stat;
-      try {
-        stat = statSync(abs);
-      } catch {
-        continue;
-      }
-      if (!stat.isFile()) continue;
-      const arr = hookFilesByBasename.get(name) ?? [];
-      arr.push({ client, abs });
-      hookFilesByBasename.set(name, arr);
-    }
-  }
-  const drifts: HookContentDriftPair[] = [];
-  let scanned = 0;
-  for (const [basename, copies] of hookFilesByBasename) {
-    if (copies.length < 2) continue; // single-client install — nothing to compare
-    scanned += copies.length;
-    const hashes: Array<{ client: string; sha: string }> = [];
-    for (const { client, abs } of copies) {
-      try {
-        const body = readFileSync(abs);
-        hashes.push({ client, sha: sha256(body.toString("utf8")) });
-      } catch {
-        // unreadable copy — let hooks_runtime catch it; skip drift comparison
-      }
-    }
-    if (hashes.length < 2) continue;
-    const first = hashes[0].sha;
-    if (hashes.some((h) => h.sha !== first)) {
-      drifts.push({
-        basename,
-        clients: copies.map((c) => c.client),
-        hashes,
-      });
-    }
-  }
-  drifts.sort((a, b) => a.basename.localeCompare(b.basename));
-  return { scanned, drifts };
-}
-
-function createHooksContentDriftCheck(
-  t: Translator,
-  inspection: HooksContentDriftInspection,
-): DoctorCheck {
-  if (inspection.scanned === 0) {
-    return okCheck(
-      t("doctor.check.hooks_content_drift.name"),
-      t("doctor.check.hooks_content_drift.ok.skipped"),
-    );
-  }
-  if (inspection.drifts.length === 0) {
-    return okCheck(
-      t("doctor.check.hooks_content_drift.name"),
-      t("doctor.check.hooks_content_drift.ok.aligned", {
-        count: String(inspection.scanned),
-      }),
-    );
-  }
-  const first = inspection.drifts[0];
-  return issueCheck(
-    t("doctor.check.hooks_content_drift.name"),
-    "warn",
-    "warning",
-    "hooks_content_drift",
-    t("doctor.check.hooks_content_drift.message", {
-      count: String(inspection.drifts.length),
-      first_basename: first.basename,
-      first_clients: first.clients.join(", "),
-    }),
-    t("doctor.check.hooks_content_drift.remediation"),
-  );
-}
-
-// v2.0.0-rc.37 NEW-20: hooks runtime health.
-//
-// hooks_wired (above) checks that settings.json *references* the right hook
-// files. NEW-20 closes the next-layer gap: are the referenced .cjs files
-// (a) present on disk, (b) starting with a `#!` shebang, and (c) parseable
-// as Node.js? An install that wrote settings.json but left a hook file
-// corrupted will silently fail at session-start — this check catches that
-// before the user blames the client.
-//
-// Scope: scans `<client_dir>/hooks/*.cjs` for the three known client roots
-// (`.claude/`, `.codex/`, `.cursor/`). Each file:
-//   1. Must read successfully.
-//   2. Must start with `#!` (POSIX hook contract — `fabric install` always
-//      writes the `#!/usr/bin/env node` shebang).
-//   3. Must parse cleanly via `new vm.Script(code)`. Parsing is pure (no
-//      execution), so user code is never run by doctor — keeps the check
-//      cheap and safe.
-//
-// Hook files inside per-client `lib/` subdirs are skipped (they're libraries
-// loaded via require, not standalone scripts; no shebang requirement).
-type HookRuntimeIssue = {
-  path: string;
-  client: "claude" | "codex" | "cursor";
-  kind: "missing_shebang" | "parse_error" | "read_error";
-  detail: string;
-};
-type HooksRuntimeInspection = {
-  scanned: number;
-  issues: HookRuntimeIssue[];
-};
-
-const HOOKS_RUNTIME_CLIENT_DIRS: Array<{ client: "claude" | "codex" | "cursor"; dir: string }> = [
-  { client: "claude", dir: ".claude/hooks" },
-  { client: "codex", dir: ".codex/hooks" },
-  { client: "cursor", dir: ".cursor/hooks" },
-];
-
-function inspectHooksRuntime(projectRoot: string): HooksRuntimeInspection {
-  const issues: HookRuntimeIssue[] = [];
-  let scanned = 0;
-  for (const { client, dir } of HOOKS_RUNTIME_CLIENT_DIRS) {
-    const absDir = join(projectRoot, dir);
-    if (!existsSync(absDir)) continue;
-    let entries: string[];
-    try {
-      entries = readdirSync(absDir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!name.endsWith(".cjs")) continue;
-      const abs = join(absDir, name);
-      const displayPath = `${dir}/${name}`;
-      let stat;
-      try {
-        stat = statSync(abs);
-      } catch {
-        continue;
-      }
-      if (!stat.isFile()) continue;
-      scanned += 1;
-      let body: string;
-      try {
-        body = readFileSync(abs, "utf8");
-      } catch (err) {
-        issues.push({
-          path: displayPath,
-          client,
-          kind: "read_error",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        continue;
-      }
-      if (!body.startsWith("#!")) {
-        issues.push({
-          path: displayPath,
-          client,
-          kind: "missing_shebang",
-          detail: "first line is not a `#!` shebang",
-        });
-      }
-      try {
-        new Script(body, { filename: displayPath });
-      } catch (err) {
-        issues.push({
-          path: displayPath,
-          client,
-          kind: "parse_error",
-          detail: err instanceof Error ? err.message.split("\n")[0] : String(err),
-        });
-      }
-    }
-  }
-  issues.sort((a, b) => a.path.localeCompare(b.path));
-  return { scanned, issues };
-}
-
-function createHooksRuntimeCheck(
-  t: Translator,
-  inspection: HooksRuntimeInspection,
-): DoctorCheck {
-  if (inspection.scanned === 0) {
-    return okCheck(
-      t("doctor.check.hooks_runtime.name"),
-      t("doctor.check.hooks_runtime.ok.skipped"),
-    );
-  }
-  if (inspection.issues.length === 0) {
-    return okCheck(
-      t("doctor.check.hooks_runtime.name"),
-      t("doctor.check.hooks_runtime.ok.healthy", {
-        count: String(inspection.scanned),
-      }),
-    );
-  }
-  const first = inspection.issues[0];
-  const count = inspection.issues.length;
-  return issueCheck(
-    t("doctor.check.hooks_runtime.name"),
-    "warn",
-    "warning",
-    "hooks_runtime_invalid",
-    t(`doctor.check.hooks_runtime.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      first_path: first.path,
-      first_detail: `${first.kind}: ${first.detail}`,
-    }),
-    t("doctor.check.hooks_runtime.remediation"),
-  );
 }
 
 // rc.31 BUG-G2/G5: promote-ledger invariant inspection.
@@ -4277,13 +2936,14 @@ function createPromoteLedgerInvariantCheck(
  * No correlation_id / session_id is attached — these are bulk backfills, not
  * tied to any one session.
  *
- * Best-effort emits: each append failure is silently swallowed (per
- * `emitEventBestEffort` semantics). If the ledger is unwritable, the fix
- * degrades gracefully — the warning will re-surface on the next doctor run.
+ * Best-effort emits: each append failure is captured as a non-fatal doctor
+ * warning. If the ledger is unwritable, the fix degrades gracefully and the
+ * operator still sees the audit-trail gap in the mutation report.
  */
-async function fixPromoteLedgerInvariant(projectRoot: string): Promise<void> {
+async function fixPromoteLedgerInvariant(projectRoot: string): Promise<DoctorIssue[]> {
   const inspection = await inspectPromoteLedgerInvariant(projectRoot);
-  if (inspection.violation === null) return;
+  if (inspection.violation === null) return [];
+  const ledgerWarnings: DoctorIssue[] = [];
 
   // Target the MAX of the three counts. After heal: all three equal target.
   // Backfilling to the max simultaneously closes both possible violations
@@ -4303,7 +2963,9 @@ async function fixPromoteLedgerInvariant(projectRoot: string): Promise<void> {
       event_type: "knowledge_proposed",
       timestamp: new Date().toISOString(),
       reason: `doctor-fix-backfill:legacy-proposed-${i}`,
-    }).catch(() => {});
+    }).catch((error) => {
+      ledgerWarnings.push(createLedgerAppendWarning("promote ledger invariant proposed backfill", error));
+    });
   }
 
   // Emit (target - promoteStartedCount) synth promote_started events.
@@ -4313,300 +2975,23 @@ async function fixPromoteLedgerInvariant(projectRoot: string): Promise<void> {
       event_type: "knowledge_promote_started",
       timestamp: new Date().toISOString(),
       reason: `doctor-fix-backfill:legacy-started-${i}`,
-    }).catch(() => {});
+    }).catch((error) => {
+      ledgerWarnings.push(createLedgerAppendWarning("promote ledger invariant started backfill", error));
+    });
   }
   // No `knowledge_promoted` backfill — promoted is the "leaf" event;
   // emitting more promoted without corresponding files on disk would be
   // misleading.
+  return ledgerWarnings;
 }
 
-// rc.35 TASK-04 (P0-9.b): global_cli_outdated inspection.
-//
-// rc.31 introduced an `.fabric/agents.meta.json` schema fix (z.preprocess
-// singular→plural) that is incompatible with rc.30-and-earlier global CLI
-// installs. Users who upgraded their PROJECT but left the GLOBAL `fabric`
-// binary at rc.30 see hooks silently fail because the binary cannot parse
-// the new schema. Doctor previously had no visibility into the global PATH
-// CLI, so this fault was invisible to users (P0-9 root cause).
-//
-// This lint spawns `fabric -v` on PATH, parses the rc.NN suffix, and emits a
-// manual_error when the binary is older than MIN_SUPPORTED_VERSION. ENOENT
-// (no global binary on PATH) and other spawn-time failures degrade to warn —
-// the lint never blocks a doctor run.
-const MIN_SUPPORTED_GLOBAL_CLI_VERSION = "2.0.0-rc.31";
-
-type GlobalCliInspection =
-  | { status: "ok"; version: string }
-  | { status: "outdated"; version: string; minVersion: string }
-  | { status: "not-found" }
-  | { status: "unparseable"; detail: string };
-
-type GlobalCliSpawnResult = {
-  error?: NodeJS.ErrnoException | Error | null;
-  status?: number | null;
-  stdout?: string;
-};
-
-// Injectable for tests — production passes the default spawnSync wrapper.
-type GlobalCliSpawnFn = () => GlobalCliSpawnResult;
-
-const defaultGlobalCliSpawn: GlobalCliSpawnFn = () => {
-  const res = spawnSync("fabric", ["-v"], {
-    encoding: "utf8",
-    timeout: 5000,
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: process.platform === "win32",
-  });
-  return { error: res.error ?? null, status: res.status, stdout: res.stdout };
-};
-
-export function inspectGlobalCliVersion(
-  spawn: GlobalCliSpawnFn = defaultGlobalCliSpawn,
-): GlobalCliInspection {
-  let res: GlobalCliSpawnResult;
+async function pathExists(path: string): Promise<boolean> {
   try {
-    res = spawn();
-  } catch (e) {
-    return { status: "unparseable", detail: e instanceof Error ? e.message : String(e) };
+    await access(path);
+    return true;
+  } catch {
+    return false;
   }
-  if (res.error) {
-    if ((res.error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { status: "not-found" };
-    }
-    return { status: "unparseable", detail: res.error.message };
-  }
-  if (res.status !== 0) {
-    return { status: "unparseable", detail: `exit ${res.status ?? "?"}` };
-  }
-  const raw = (res.stdout ?? "").trim();
-  // Accept both prereleases ("2.2.0-rc.1") and GA releases ("2.0.1", no -rc).
-  const m = /(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?/.exec(raw);
-  if (!m) {
-    return { status: "unparseable", detail: raw.slice(0, 80) };
-  }
-  const hasRc = m[4] !== undefined;
-  const version = hasRc ? `${m[1]}.${m[2]}.${m[3]}-rc.${m[4]}` : `${m[1]}.${m[2]}.${m[3]}`;
-  // Full-semver precedence: compare base (major.minor.patch) BEFORE the rc
-  // suffix. A GA release (no -rc) outranks any prerelease of the same base, so
-  // model its rc as +Infinity. This replaces the rc-suffix-only comparison that
-  // wrongly flagged a newer base (e.g. 2.2.0-rc.1) as below an older base's rc
-  // (2.0.0-rc.31), and treated GA releases as unparseable.
-  const minM = /(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?/.exec(MIN_SUPPORTED_GLOBAL_CLI_VERSION);
-  const observed = [Number(m[1]), Number(m[2]), Number(m[3]), hasRc ? Number(m[4]) : Infinity];
-  const min = minM
-    ? [Number(minM[1]), Number(minM[2]), Number(minM[3]), minM[4] !== undefined ? Number(minM[4]) : Infinity]
-    : [0, 0, 0, 0];
-  const diffAt = observed.findIndex((v, i) => v !== min[i]);
-  if (diffAt !== -1 && observed[diffAt] < min[diffAt]) {
-    return { status: "outdated", version, minVersion: MIN_SUPPORTED_GLOBAL_CLI_VERSION };
-  }
-  return { status: "ok", version };
-}
-
-export function createGlobalCliVersionCheck(
-  t: Translator,
-  inspection: GlobalCliInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.global_cli_outdated.name"),
-      t("doctor.check.global_cli_outdated.ok", { version: inspection.version }),
-    );
-  }
-  if (inspection.status === "outdated") {
-    return issueCheck(
-      t("doctor.check.global_cli_outdated.name"),
-      "error",
-      "manual_error",
-      "global_cli_outdated",
-      t("doctor.check.global_cli_outdated.message.outdated", {
-        version: inspection.version,
-        minVersion: inspection.minVersion,
-      }),
-      t("doctor.check.global_cli_outdated.remediation"),
-    );
-  }
-  if (inspection.status === "not-found") {
-    return issueCheck(
-      t("doctor.check.global_cli_outdated.name"),
-      "warn",
-      "warning",
-      "global_cli_not_found",
-      t("doctor.check.global_cli_outdated.message.not_found"),
-      t("doctor.check.global_cli_outdated.remediation"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.global_cli_outdated.name"),
-    "warn",
-    "warning",
-    "global_cli_unparseable",
-    t("doctor.check.global_cli_outdated.message.unparseable", { detail: inspection.detail }),
-    t("doctor.check.global_cli_outdated.remediation"),
-  );
-}
-
-// rc.35 TASK-05 (P0-10.a): knowledge_summary_opaque inspection.
-//
-// P0-10 audit on werewolf-eval: 42/43 nodes had description.summary equal to
-// the stable_id itself, producing narrow-hint output like "KT-PIT-0001 ·
-// KT-PIT-0001" where the AI cannot tell what the entry is about and skips
-// fetching it. The fault was invisible to operators because doctor did not
-// inspect summary content. This lint counts nodes where
-// description.summary == stable_id (after whitespace trim) and warns when
-// the opacity ratio exceeds the threshold.
-//
-// Threshold rationale: a small handful of opaque summaries is benign (rare
-// auto-generated stubs). >30% means the corpus itself is unreadable.
-const KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD = 0.30;
-
-export type KnowledgeSummaryOpaqueInspection = {
-  status: "skipped" | "ok" | "warn";
-  totalWithDescription: number;
-  opaqueCount: number;
-  ratio: number;
-  threshold: number;
-  // First few opaque stable_ids for actionable diagnostics; capped to 5 to
-  // keep doctor output bounded.
-  opaqueSample: string[];
-};
-
-export function inspectKnowledgeSummaryOpaque(
-  meta: MetaInspection,
-  // v2.2 全砍 F10: post-cutover canonical knowledge lives in stores (team +
-  // personal) which carry no agents.meta, so the project-meta scan alone misses
-  // them. The caller passes the read-set stores' (qualified id + summary) so
-  // both layers — especially the personal store the dogfood flagged — are
-  // inspected. Defaults to [] for back-compat / meta-only callers.
-  storeSummaries: StoreKnowledgeSummary[] = [],
-): KnowledgeSummaryOpaqueInspection {
-  const baseline = {
-    totalWithDescription: 0,
-    opaqueCount: 0,
-    ratio: 0,
-    threshold: KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD,
-    opaqueSample: [] as string[],
-  };
-  if (!meta.valid || meta.meta === null) {
-    return { status: "skipped", ...baseline };
-  }
-  let total = 0;
-  const opaqueIds: string[] = [];
-  for (const node of Object.values(meta.meta.nodes)) {
-    const description = node.description;
-    const stableId = node.stable_id;
-    if (!description || typeof stableId !== "string" || stableId.length === 0) {
-      continue;
-    }
-    total += 1;
-    const summary = (description.summary ?? "").trim();
-    if (summary === stableId.trim()) {
-      opaqueIds.push(stableId);
-    }
-  }
-  // Fold in store knowledge (team + personal). A store entry is opaque when its
-  // summary is empty or equals its id (qualified `alias:id` or the bare local
-  // id), the same empty-shell signature the project-meta scan catches.
-  for (const entry of storeSummaries) {
-    total += 1;
-    const summary = entry.summary.trim();
-    const localId = entry.stableId.includes(":")
-      ? entry.stableId.slice(entry.stableId.indexOf(":") + 1)
-      : entry.stableId;
-    if (summary.length === 0 || summary === entry.stableId.trim() || summary === localId.trim()) {
-      opaqueIds.push(entry.stableId);
-    }
-  }
-  if (total === 0) {
-    return { status: "ok", ...baseline };
-  }
-  const ratio = opaqueIds.length / total;
-  const status = ratio > KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD ? "warn" : "ok";
-  return {
-    status,
-    totalWithDescription: total,
-    opaqueCount: opaqueIds.length,
-    ratio,
-    threshold: KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD,
-    opaqueSample: opaqueIds.slice(0, 5),
-  };
-}
-
-export function createKnowledgeSummaryOpaqueCheck(
-  t: Translator,
-  inspection: KnowledgeSummaryOpaqueInspection,
-): DoctorCheck {
-  if (inspection.status === "skipped") {
-    return okCheck(
-      t("doctor.check.knowledge_summary_opaque.name"),
-      t("doctor.check.knowledge_summary_opaque.ok.skipped"),
-    );
-  }
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.knowledge_summary_opaque.name"),
-      t("doctor.check.knowledge_summary_opaque.ok", {
-        opaque: String(inspection.opaqueCount),
-        total: String(inspection.totalWithDescription),
-      }),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 1000) / 10;
-  return issueCheck(
-    t("doctor.check.knowledge_summary_opaque.name"),
-    "warn",
-    "warning",
-    "knowledge_summary_opaque",
-    t("doctor.check.knowledge_summary_opaque.message.warn", {
-      opaque: String(inspection.opaqueCount),
-      total: String(inspection.totalWithDescription),
-      pct: String(pct),
-      threshold: String(Math.round(inspection.threshold * 100)),
-      sample: inspection.opaqueSample.join(", "),
-    }),
-    t("doctor.check.knowledge_summary_opaque.remediation"),
-  );
-}
-
-// v2.2 W4 (G-GUARD / A6): roll the three store scope lints into one doctor check.
-// personal-leak-in-shared-store is a privacy red line → manual error; missing
-// scope fields / dangling project refs are advisory warnings (fixable via the
-// store backfill-scope / re-scope tooling).
-export function createScopeLintCheck(
-  t: Translator,
-  violations: ScopeLintViolation[],
-): DoctorCheck {
-  if (violations.length === 0) {
-    return okCheck(
-      t("doctor.check.store_scope_lint.name"),
-      t("doctor.check.store_scope_lint.ok"),
-    );
-  }
-  const leaks = violations.filter((v) => v.code === "personal_leak_in_shared_store").length;
-  const missing = violations.filter((v) => v.code === "missing_scope_fields").length;
-  const dangling = violations.filter((v) => v.code === "dangling_project_ref").length;
-  const breakdown = [
-    leaks > 0 ? `${leaks} personal-leak` : null,
-    missing > 0 ? `${missing} missing-scope` : null,
-    dangling > 0 ? `${dangling} dangling-project` : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(", ");
-  const first = violations[0];
-  const sample = `${first.code} — ${first.detail} (${first.stable_id ?? first.file})`;
-  const isError = leaks > 0;
-  return issueCheck(
-    t("doctor.check.store_scope_lint.name"),
-    isError ? "error" : "warn",
-    isError ? "manual_error" : "warning",
-    "store_scope_lint",
-    t("doctor.check.store_scope_lint.message", {
-      total: String(violations.length),
-      breakdown,
-      sample,
-    }),
-    t("doctor.check.store_scope_lint.remediation"),
-  );
 }
 
 function issueCheck(
@@ -4650,230 +3035,40 @@ function findIssue(issues: DoctorIssue[], code: string): DoctorIssue {
   };
 }
 
+function createLedgerAppendWarning(action: string, error: unknown): DoctorIssue {
+  const detail = truncateErrorMessage(error);
+  return {
+    code: "event_ledger_append_failed",
+    name: "Event ledger append failed",
+    message: `Event ledger append failed during ${action}: ${detail}`,
+    actionHint: "Inspect .fabric/events.jsonl and its .lock sidecar, then rerun the doctor mutation command after the ledger is writable.",
+  };
+}
+
+function appendDoctorWarnings(report: DoctorReport, extraWarnings: DoctorIssue[]): DoctorReport {
+  if (extraWarnings.length === 0) {
+    return report;
+  }
+  return {
+    ...report,
+    status: report.status === "ok" ? "warn" : report.status,
+    warnings: [...report.warnings, ...extraWarnings],
+  };
+}
+
 // v2.2 W5 R4 (agents.meta decolo): `inspectMetaManuallyDiverged` removed (compared co-location agents.meta against disk).
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeDirUnindexed` / `collectMdFilesUnder` / `createKnowledgeDirUnindexedCheck` removed (pure co-location agents.meta-vs-disk check).
-async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
-  const idToFiles = new Map<string, string[]>();
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
-    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-      const dir = join(knowledgeRoot, typeDir);
-      if (!existsSync(dir)) {
-        continue;
-      }
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith(".md")) {
-          continue;
-        }
-        const absPath = join(dir, entry.name);
-        let source: string;
-        try {
-          source = readFileSync(absPath, "utf8");
-        } catch {
-          continue;
-        }
-        const id = extractKnowledgeFrontmatterId(source);
-        if (id === null) {
-          continue;
-        }
-        const files = idToFiles.get(id) ?? [];
-        files.push(storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, typeDir, entry.name));
-        idToFiles.set(id, files);
-      }
-    }
-  }
-  const collisions: StableIdCollision[] = [];
-  for (const [stable_id, files] of idToFiles) {
-    if (files.length > 1) {
-      collisions.push({ stable_id, files: files.slice().sort() });
-    }
-  }
-  collisions.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
-  return { collisions };
-}
-
-// Match a YAML frontmatter `id:` field whose value matches the v2.0 stable_id
-// shape K[PT]-{TYPE}-{COUNTER}. Returns null when no match (e.g. no frontmatter,
-// no `id` key, or non-knowledge id format).
-function extractKnowledgeFrontmatterId(source: string): string | null {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const block = fm[1];
-  const ID_LINE = /^id:\s*("?)(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})\1\s*$/mu;
-  const idMatch = ID_LINE.exec(block);
-  return idMatch === null ? null : idMatch[2];
-}
-
 // v2.2 W5 R4 (agents.meta decolo): `inspectCounterDesync` / `createCounterDesyncCheck` removed — replaced by store_counter_drift (doctor-store-counters.ts).
-function createStableIdCollisionCheck(t: Translator, inspection: StableIdCollisionInspection): DoctorCheck {
-  if (inspection.collisions.length > 0) {
-    const first = inspection.collisions[0];
-    const count = inspection.collisions.length;
-    return issueCheck(
-      t("doctor.check.stable_id_collision.name"),
-      "warn",
-      "warning",
-      "stable_id_collision",
-      t(`doctor.check.stable_id_collision.message.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-        stableId: first.stable_id,
-        fileCount: String(first.files.length),
-        files: first.files.join(", "),
-      }),
-      t("doctor.check.stable_id_collision.remediation"),
-    );
-  }
-  return okCheck(t("doctor.check.stable_id_collision.name"), t("doctor.check.stable_id_collision.ok"));
-}
-
-// v2.2 W5 R4 (agents.meta decolo): store-aware successor to the retired
-// co-location `counter_desync` / `index_drift` checks. `drifts` is the flat
-// list of (store, layer, type) whose committed counters.json is BELOW the
-// store's on-disk max stable_id — the only condition under which the next
-// allocation would re-mint an existing id (KT-DEC-0004). fixable_error;
-// `doctor --fix` floors each drifted store's counters.json (never lowers).
-function createStoreCounterCheck(t: Translator, drifts: StoreCounterDrift[]): DoctorCheck {
-  if (drifts.length > 0) {
-    const first = drifts[0];
-    const detail = `${first.store_alias}: counters.${first.layer}.${first.type}=${first.current} but disk max is ${first.disk_max}`;
-    const count = drifts.length;
-    return issueCheck(
-      t("doctor.check.store_counter_drift.name"),
-      "error",
-      "fixable_error",
-      "store_counter_drift",
-      t(`doctor.check.store_counter_drift.message.${count === 1 ? "singular" : "plural"}`, {
-        count: String(count),
-        detail,
-      }),
-      t("doctor.check.store_counter_drift.remediation"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.store_counter_drift.name"),
-    t("doctor.check.store_counter_drift.ok"),
-  );
-}
-
 // v2.2 W5 R4 (agents.meta decolo): `createMetaManuallyDivergedCheck` removed (co-location agents.meta vs disk).
-function inspectPreexistingRootFiles(projectRoot: string): PreexistingRootFilesInspection {
+async function inspectPreexistingRootFiles(projectRoot: string): Promise<PreexistingRootFilesInspection> {
   const candidates = ["CLAUDE.md", "AGENTS.md"];
-  const detected = candidates.filter((name) => existsSync(join(projectRoot, name)));
-  return { detected };
-}
-
-async function inspectFilesystemEditFallback(projectRoot: string): Promise<FilesystemEditFallbackInspection> {
-  // Detect orphan canonical knowledge entries in mounted stores that have no
-  // matching knowledge_promoted event in events.jsonl. This happens when a user
-  // manually moves a pending proposal into its canonical store location instead
-  // of using fab_review.approve. To keep the audit trail complete, doctor
-  // synthesizes a knowledge_promoted event for each orphan with
-  // reason='[synthesized] filesystem-edit-fallback'.
-  //
-  // Side-effect by design: the synthesis happens during inspect so that
-  // a subsequent `runDoctorReport` (or any other consumer reading
-  // events.jsonl) sees the synthesized event and the orphan is no
-  // longer reported. This preserves idempotence: the second run is a
-  // no-op.
-  // Collect all stable_ids that have a canonical file on disk.
-  const canonicalIds = new Set<string>();
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    canonicalIds.add(visit.parsed.stable_id);
-  }
-
-  if (canonicalIds.size === 0) {
-    return { synthesized: 0, synthesizedStableIds: [] };
-  }
-
-  // Read existing knowledge_promoted events from events.jsonl. Use the
-  // existing read API so partial-write tails are filtered consistently.
-  let promotedIds = new Set<string>();
-  try {
-    const { events } = await readEventLedger(projectRoot, { event_type: "knowledge_promoted" });
-    promotedIds = new Set(
-      events
-        .map((event) => (event.event_type === "knowledge_promoted" ? event.stable_id : undefined))
-        .filter((id): id is string => typeof id === "string"),
-    );
-  } catch {
-    // Treat read failure as "no promoted events known" — appendEventLedgerEvent
-    // will surface the underlying ledger problem via its own error path.
-    promotedIds = new Set();
-  }
-
-  const orphanIds: string[] = [];
-  for (const id of canonicalIds) {
-    if (!promotedIds.has(id)) {
-      orphanIds.push(id);
+  const detected: string[] = [];
+  for (const name of candidates) {
+    if (await pathExists(join(projectRoot, name))) {
+      detected.push(name);
     }
   }
-  orphanIds.sort();
-
-  // v2.0.0-rc.29 TASK-004 (BUG-G2 + BUG-G5): emit the full
-  // knowledge_proposed → knowledge_promote_started → knowledge_promoted
-  // lifecycle triplet for each synthesized orphan, with monotonic timestamps
-  // and a shared correlation_id, so the two-phase invariant
-  // (promoted ≤ promote_started ≤ proposed) holds in the ledger. Previously
-  // this synth path emitted only the terminal `knowledge_promoted` event
-  // (audit BUG-G2 root cause: 19 promoted > 13 promote_started in this repo).
-  for (const stable_id of orphanIds) {
-    await emitSynthesizedPromotionTriplet(projectRoot, stable_id);
-  }
-
-  return { synthesized: orphanIds.length, synthesizedStableIds: orphanIds };
-}
-
-// v2.0.0-rc.29 TASK-004 (BUG-G2 + BUG-G5): triplet emitter helper used by the
-// filesystem-edit fallback synth path. Each call writes exactly three events
-// in the canonical lifecycle order, sharing `correlation_id: doctor-synthesized`
-// and using strictly monotonic `ts` values (millisecond-step) so downstream
-// invariant checks can pair them by correlation_id + monotonic order without
-// resorting to floating-point timestamp comparisons. `session_id` mirrors the
-// correlation_id sentinel so this synth source is easy to grep out of audits.
-async function emitSynthesizedPromotionTriplet(
-  projectRoot: string,
-  stable_id: string,
-): Promise<void> {
-  const baseTs = Date.now();
-
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "knowledge_proposed",
-    stable_id,
-    timestamp: new Date(baseTs).toISOString(),
-    reason: SYNTHESIZED_PROMOTED_REASON,
-    correlation_id: "doctor-synthesized",
-    session_id: "doctor-synthesized",
-    ts: baseTs,
-  });
-
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "knowledge_promote_started",
-    stable_id,
-    timestamp: new Date(baseTs + 1).toISOString(),
-    reason: SYNTHESIZED_PROMOTED_REASON,
-    correlation_id: "doctor-synthesized",
-    session_id: "doctor-synthesized",
-    ts: baseTs + 1,
-  });
-
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "knowledge_promoted",
-    stable_id,
-    timestamp: new Date(baseTs + 2).toISOString(),
-    reason: SYNTHESIZED_PROMOTED_REASON,
-    correlation_id: "doctor-synthesized",
-    session_id: "doctor-synthesized",
-    ts: baseTs + 2,
-  });
+  return { detected };
 }
 
 function createFilesystemEditFallbackCheck(t: Translator, inspection: FilesystemEditFallbackInspection): DoctorCheck {
@@ -5121,25 +3316,6 @@ function extractKnowledgeFrontmatterMaturity(source: string): LintMaturity | nul
   return CANONICAL_TO_LINT_MATURITY[match[2] as string] ?? null;
 }
 
-// rc.36 TASK-05 (P0-8): true if the frontmatter has a `tags:` line with an
-// empty inline array, e.g. `tags: []`. Returns false for missing-line or
-// non-empty array. Whitespace-only contents (e.g. `tags: [ , ]`) count as
-// empty.
-function isKnowledgeFrontmatterTagsEmpty(source: string): boolean | null {
-  const FM_PATTERN = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const match = TAGS_LINE_PATTERN.exec(fm[1]);
-  if (match === null) {
-    return null;
-  }
-  // Strip whitespace + trailing comma; non-empty if any token remains.
-  const inner = match[1].replace(/[\s,]/g, "");
-  return inner === "";
-}
-
 function extractKnowledgeFrontmatterCreatedAt(source: string): number | null {
   const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
   const fm = FM_PATTERN.exec(source);
@@ -5169,98 +3345,18 @@ type CanonicalEntry = {
   lastReferenceMs: number;
 };
 
-type DoctorStoreRoot = {
-  alias: string;
-  store_uuid: string;
-  dir: string;
-  layer: "team" | "personal";
-};
-
-function resolveDoctorStoreRoots(projectRoot: string): DoctorStoreRoot[] {
-  const input = buildStoreResolveInput(projectRoot);
-  if (input === null) {
-    return [];
-  }
-  const readSet = createStoreResolver().resolveReadSet(input);
-  if (readSet.stores.length === 0) {
-    return [];
-  }
-  const globalRoot = resolveGlobalRoot();
-  const personalUuids = new Set(
-    input.mountedStores.filter((store) => store.personal).map((store) => store.store_uuid),
-  );
-  return readSet.stores.map((entry) => {
-    const mounted = input.mountedStores.find((store) => store.store_uuid === entry.store_uuid);
-    return {
-      alias: entry.alias,
-      store_uuid: entry.store_uuid,
-      dir: join(
-        globalRoot,
-        storeRelativePathForMount(mounted ?? { store_uuid: entry.store_uuid }),
-      ),
-      layer: personalUuids.has(entry.store_uuid) ? "personal" : "team",
-    };
-  });
-}
-
-function storeDisplayPath(store: DoctorStoreRoot, ...parts: string[]): string {
-  return `${store.alias}:${posix.join(...parts)}`;
-}
-
 function* iterateCanonicalEntries(
   projectRoot: string,
   lastActiveIndex: Map<string, number>,
 ): Generator<CanonicalEntry> {
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
-    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-      const dir = join(knowledgeRoot, typeDir);
-      if (!existsSync(dir)) {
-        continue;
-      }
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile()) {
-          continue;
-        }
-        const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name);
-        if (match === null) {
-          continue;
-        }
-        const stableId = match[1];
-        const absPath = join(dir, entry.name);
-        let source: string;
-        try {
-          source = readFileSync(absPath, "utf8");
-        } catch {
-          continue;
-        }
-        const maturity = extractKnowledgeFrontmatterMaturity(source);
-        if (maturity === null) {
-          continue;
-        }
-        const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
-        const eventTs = lastActiveIndex.get(stableId) ?? lastActiveIndex.get(`${store.alias}:${stableId}`) ?? 0;
-        // Activity is event-driven; mtime is only a fallback for entries that
-        // have neither frontmatter.created_at nor any event reference.
-        let lastReferenceMs = Math.max(createdAt ?? 0, eventTs);
-        if (lastReferenceMs === 0) {
-          try {
-            lastReferenceMs = statSync(absPath).mtimeMs;
-          } catch {
-            lastReferenceMs = 0;
-          }
-        }
-        const relPath = storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, typeDir, entry.name);
-        yield { stable_id: stableId, maturity, type: typeDir, absPath, relPath, lastReferenceMs };
-      }
-    }
-  }
+  void projectRoot;
+  void lastActiveIndex;
+  // v2.2 store cutover: legacy project-local `.fabric/knowledge` canonical
+  // walkers are retired. Current report/fix paths feed these checks with
+  // explicit empty inspections until they are rebuilt against read-set stores.
+  // Keep this private generator inert so an accidental old call site cannot
+  // reintroduce synchronous full-corpus readdir/read/stat work.
+  return;
 }
 
 async function inspectOrphanDemote(
@@ -5285,7 +3381,6 @@ async function inspectOrphanDemote(
     candidates.push({
       stable_id: entry.stable_id,
       path: entry.relPath,
-      path_abs: entry.absPath,
       age_days: ageDays,
       maturity: entry.maturity,
       next_maturity: nextLowerMaturity(entry.maturity),
@@ -5320,14 +3415,11 @@ async function inspectStaleArchive(
       continue;
     }
     const filename = posix.basename(entry.relPath);
-    const archiveDisplay = `${entry.relPath.slice(0, entry.relPath.indexOf(":") + 1)}${posix.join(".archive", entry.type, filename)}`;
     candidates.push({
       stable_id: entry.stable_id,
       path: entry.relPath,
-      path_abs: entry.absPath,
       age_days: ageDays,
-      archive_path: archiveDisplay,
-      archive_path_abs: join(entry.absPath, "..", "..", "..", ".archive", entry.type, filename),
+      archive_path: posix.join(".fabric/.archive", entry.type, filename),
     });
   }
 
@@ -5335,172 +3427,12 @@ async function inspectStaleArchive(
   return { candidates };
 }
 
-// rc.5 TASK-009 (B2): per-pending-file visit row produced by the shared dual-root
-// pending walker. Carries enough state (age + display + absolute paths) for
-// both inspectPendingOverdue (14d warning) and inspectPendingAutoArchive
-// (>30d mutation) to filter purely on age without re-walking the disk.
-type PendingFileVisit = {
-  layer: "team" | "personal";
-  type: string; // subdir name (decisions/pitfalls/...)
-  filename: string;
-  pending_path: string; // display: project-relative or `~/...`
-  pending_path_abs: string;
-  stable_id: string | undefined;
-  age_days: number;
-};
-
-// Walks the pending staging trees inside the project's read-set stores and
-// yields one visit per `.md` file. Retired project-local / legacy personal
-// roots are intentionally ignored in store-only mode.
-//
-// Files with no parseable created_at AND no readable mtime yield an
-// "unknown-age" visit synthesized at PENDING_OVERDUE_THRESHOLD_DAYS+1 days
-// (mirrors the prior single-root behavior in inspectPendingOverdue — humans
-// triage these manually rather than auto-archive without an age signal).
-function* iteratePendingFiles(
-  projectRoot: string,
-  now: number,
-): Generator<PendingFileVisit> {
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const root = join(store.dir, STORE_LAYOUT.knowledgeDir, "pending");
-    if (!existsSync(root)) {
-      continue;
-    }
-    let typeDirs: string[] = [];
-    try {
-      typeDirs = readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
-    } catch {
-      continue;
-    }
-    for (const typeDir of typeDirs) {
-      const dir = join(root, typeDir);
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith(".md")) {
-          continue;
-        }
-        const absPath = join(dir, entry.name);
-        let source = "";
-        try {
-          source = readFileSync(absPath, "utf8");
-        } catch {
-          continue;
-        }
-        const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
-        let mtimeMs = 0;
-        try {
-          mtimeMs = statSync(absPath).mtimeMs;
-        } catch {
-          mtimeMs = 0;
-        }
-        const referenceMs = createdAt ?? mtimeMs;
-        if (referenceMs === 0) {
-          // Both missing → synthesize an overdue-but-not-auto-archive age so
-          // the overdue lint surfaces it for human triage; the auto-archive
-          // gate (>30d) is deliberately NOT triggered without an age signal.
-          yield {
-            layer: store.layer,
-            type: typeDir,
-            filename: entry.name,
-            pending_path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, "pending", typeDir, entry.name),
-            pending_path_abs: absPath,
-            stable_id: undefined,
-            age_days: PENDING_OVERDUE_THRESHOLD_DAYS + 1,
-          };
-          continue;
-        }
-        const ageDays = Math.floor((now - referenceMs) / MS_PER_DAY);
-        const stableId = extractKnowledgeFrontmatterId(source) ?? undefined;
-        yield {
-          layer: store.layer,
-          type: typeDir,
-          filename: entry.name,
-          pending_path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, "pending", typeDir, entry.name),
-          pending_path_abs: absPath,
-          stable_id: stableId,
-          age_days: ageDays,
-        };
-      }
-    }
-  }
-}
-
-function inspectPendingOverdue(
-  projectRoot: string,
-  now: number,
-): PendingOverdueInspection {
-  const candidates: PendingOverdueCandidate[] = [];
-  for (const visit of iteratePendingFiles(projectRoot, now)) {
-    if (visit.age_days <= PENDING_OVERDUE_THRESHOLD_DAYS) {
-      continue;
-    }
-    candidates.push({
-      stable_id: visit.stable_id,
-      path: visit.pending_path,
-      age_days: visit.age_days,
-    });
-  }
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
-}
-
-// rc.5 TASK-009 (B2): identifies pending entries whose age (frontmatter
-// created_at or mtime fallback) exceeds PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS.
-// Store-backed auto-archive destinations live inside the same store:
-// `<alias>:.archive/pending/<type>/<filename>`.
-function inspectPendingAutoArchive(
-  projectRoot: string,
-  now: number,
-): PendingAutoArchiveInspection {
-  const candidates: PendingAutoArchiveCandidate[] = [];
-  for (const visit of iteratePendingFiles(projectRoot, now)) {
-    if (visit.age_days <= PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS) {
-      continue;
-    }
-    const alias = visit.pending_path.slice(0, visit.pending_path.indexOf(":"));
-    const archivedTo = `${alias}:${posix.join(".archive/pending", visit.type, visit.filename)}`;
-    const archivedToAbs = join(
-      visit.pending_path_abs,
-      "..",
-      "..",
-      "..",
-      "..",
-      ".archive",
-      "pending",
-      visit.type,
-      visit.filename,
-    );
-    if (visit.layer === "team") {
-      candidates.push({
-        layer: "team",
-        type: visit.type,
-        pending_path: visit.pending_path,
-        pending_path_abs: visit.pending_path_abs,
-        archived_to: archivedTo,
-        archived_to_abs: archivedToAbs,
-        age_days: visit.age_days,
-      });
-    } else {
-      candidates.push({
-        layer: "personal",
-        type: visit.type,
-        pending_path: visit.pending_path,
-        pending_path_abs: visit.pending_path_abs,
-        archived_to: archivedTo,
-        archived_to_abs: archivedToAbs,
-        age_days: visit.age_days,
-      });
-    }
-  }
-  candidates.sort((a, b) => a.pending_path.localeCompare(b.pending_path));
-  return { candidates };
+// rc.5 TASK-009 (B2): inlined personal-root resolver mirroring
+// resolvePersonalKnowledgeRoot but anchored at `<home>` rather than
+// `<home>/.fabric/knowledge` — pending lives at `<home>/.fabric/knowledge/pending`
+// so callers want the homedir root and append the suffix themselves.
+function resolvePersonalRootForPending(): string {
+  return process.env.FABRIC_HOME ?? homedir();
 }
 
 // rc.5 TASK-010: inspect lint #22 (knowledge_underseeded).
@@ -5514,26 +3446,23 @@ function inspectPendingAutoArchive(
 // We deliberately do NOT use the strict CANONICAL_KNOWLEDGE_FILENAME_PATTERN
 // here: entries without the `--<slug>` suffix or with non-canonical filenames
 // still represent knowledge content and should count toward the floor. The
-// stricter pattern is owned by inspectStableIdDuplicate / inspectLayerMismatch
-// (#19/#20), which deal with integrity rather than corpus size.
-function inspectUnderseeded(projectRoot: string): UnderseededInspection {
-  const threshold = readUnderseedThresholdFromConfig(projectRoot);
+// stricter pattern is owned by the retired stable-id integrity lints, which
+// deal with identity rather than corpus size.
+async function inspectUnderseeded(projectRoot: string): Promise<UnderseededInspection> {
+  const threshold = await readUnderseedThresholdFromConfig(projectRoot);
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
   let nodeCount = 0;
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const knowledgeRoot = join(store.dir, STORE_LAYOUT.knowledgeDir);
-    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-      const dir = join(knowledgeRoot, typeDir);
-      if (!existsSync(dir)) continue;
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith(".md")) {
-          nodeCount += 1;
-        }
+  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+    const dir = join(knowledgeRoot, typeDir);
+    let entries;
+    try {
+      entries = await readdirAsync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(".md")) {
+        nodeCount += 1;
       }
     }
   }
@@ -5545,23 +3474,20 @@ function inspectUnderseeded(projectRoot: string): UnderseededInspection {
 }
 
 // rc.6 TASK-021 (E3): inspect `.fabric/.cache/` for session-hints cache
-// files older than SESSION_HINTS_STALE_DAYS (7d default). Mirrors the
-// existing iteratePendingFiles age model — mtime-based, day-floor rounded.
+// files older than SESSION_HINTS_STALE_DAYS (7d default). Age is mtime-based
+// and day-floor rounded.
 // Read-only: candidates are surfaced as info-kind findings; the apply-lint
 // arm (applySessionHintsStaleCleanup) does the unlink. Directory absence is
 // the common-case empty-result branch (no narrow hook ever fired in this
 // workspace) — return zero candidates without an error.
-function inspectSessionHintsStale(
+async function inspectSessionHintsStale(
   projectRoot: string,
   now: number,
-): SessionHintsStaleInspection {
+): Promise<SessionHintsStaleInspection> {
   const cacheDir = join(projectRoot, ".fabric", ".cache");
-  if (!existsSync(cacheDir)) {
-    return { candidates: [] };
-  }
   let entries;
   try {
-    entries = readdirSync(cacheDir, { withFileTypes: true });
+    entries = await readdirAsync(cacheDir, { withFileTypes: true });
   } catch {
     return { candidates: [] };
   }
@@ -5573,7 +3499,7 @@ function inspectSessionHintsStale(
     const absPath = join(cacheDir, entry.name);
     let mtimeMs = 0;
     try {
-      mtimeMs = statSync(absPath).mtimeMs;
+      mtimeMs = (await statAsync(absPath)).mtimeMs;
     } catch {
       // Unreadable stat → skip rather than guess at age. The next doctor
       // run will retry (or the OS will reap a corrupted entry).
@@ -5620,108 +3546,15 @@ function inspectStaleServeLock(
   };
 }
 
-// rc.6 TASK-023 (E6): inspect narrow-scope KB hygiene via two independent
-// arms. Part A is a synchronous filesystem walk over canonical entries —
-// the same iterator used by lints #23/#24/#25 — that computes the ratio of
-// narrow-with-paths entries to the full corpus. Part B reads the two
-// counter sidecars (edit-counter from TASK-020 / E4 and hint-silence-counter
-// from TASK-023 / E6) and computes a silence rate over a rolling 30d window.
-//
-// Both arms are evaluated unconditionally; either firing flags the check.
-// Part B safely degrades to "telemetry_skipped" when the edit-counter is
-// absent or has zero in-window fires — an unused-hook workspace must not
-// produce a false-positive narrow_too_few finding.
-function inspectNarrowTooFew(
-  projectRoot: string,
-  now: number,
-): NarrowTooFewInspection {
-  // -------------------------------------------------------------------------
-  // Part A — structural: walk canonical entries (team + personal) and
-  // categorize each as narrow-with-paths vs other. Uses iterateRelevanceFrontmatter
-  // (already deployed by #23/#24/#25) so the parser surface is shared.
-  // -------------------------------------------------------------------------
-  let total = 0;
-  let narrowWithPaths = 0;
-  for (const { scope, paths } of iterateRelevanceFrontmatter(projectRoot)) {
-    total += 1;
-    if (scope === "narrow" && paths.length > 0) {
-      narrowWithPaths += 1;
-    }
-  }
-  const narrowRatio = total === 0 ? 0 : narrowWithPaths / total;
-  const structuralFlagged =
-    total >= NARROW_MIN_TOTAL && narrowRatio < NARROW_RATIO_THRESHOLD;
-
-  // -------------------------------------------------------------------------
-  // Part B — telemetry: read both counter sidecars, filter to the rolling
-  // window, and compute silence_rate = silence_count / edit_count. The
-  // edit-counter is the denominator (every PreToolUse fire). When the
-  // denominator is 0 we treat the arm as "skipped" — we cannot evaluate a
-  // ratio without a sample. The silence-counter is necessarily a subset
-  // (every silent fire also fires the edit-counter), so silence_rate <= 1.
-  // -------------------------------------------------------------------------
-  const windowStartMs = now - SILENCE_WINDOW_DAYS * MS_PER_DAY;
-  const editFires = readCounterTimestamps(
-    join(projectRoot, EDIT_COUNTER_FILE_REL),
-    windowStartMs,
-  );
-  const silenceFires = readCounterTimestamps(
-    join(projectRoot, HINT_SILENCE_COUNTER_FILE_REL),
-    windowStartMs,
-  );
-  const telemetrySkipped = editFires === 0;
-  const silenceRate = editFires === 0 ? 0 : silenceFires / editFires;
-  const telemetryFlagged =
-    !telemetrySkipped && silenceRate > SILENCE_RATE_THRESHOLD;
-
-  return {
-    total_canonical_entries: total,
-    narrow_with_paths_count: narrowWithPaths,
-    narrow_ratio: narrowRatio,
-    structural_flagged: structuralFlagged,
-    total_edit_fires_in_window: editFires,
-    silence_fires_in_window: silenceFires,
-    silence_rate: silenceRate,
-    telemetry_skipped: telemetrySkipped,
-    telemetry_flagged: telemetryFlagged,
-  };
-}
-
-// Helper: read a counter sidecar file (one ISO-8601 timestamp per line)
-// and return the count of lines whose timestamp is >= windowStartMs. Used
-// by lint #26 (E6 telemetry) to count fires inside the rolling 30d window.
-// Returns 0 for any failure (file absent, unreadable, every line malformed)
-// so the caller's safe-degrade contract is uniform.
-function readCounterTimestamps(absPath: string, windowStartMs: number): number {
-  if (!existsSync(absPath)) return 0;
-  let raw: string;
-  try {
-    raw = readFileSync(absPath, "utf8");
-  } catch {
-    return 0;
-  }
-  let count = 0;
-  for (const line of raw.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    const ts = Date.parse(trimmed);
-    if (!Number.isFinite(ts)) continue;
-    if (ts < windowStartMs) continue;
-    count += 1;
-  }
-  return count;
-}
-
 // Best-effort reader for the underseed-threshold override stored in the
 // workspace-local `.fabric/fabric-config.json`. Any failure (missing file,
 // parse error, non-positive value) returns the default. Mirrors the
 // fabric-hint hook's readUnderseedThreshold semantics one-for-one — the two
 // surfaces MUST agree on the same threshold for a given workspace.
-function readUnderseedThresholdFromConfig(projectRoot: string): number {
+async function readUnderseedThresholdFromConfig(projectRoot: string): Promise<number> {
   const configPath = join(projectRoot, ".fabric", "fabric-config.json");
-  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
   try {
-    const raw = readFileSync(configPath, "utf8");
+    const raw = await readFile(configPath, "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const v = (parsed as Record<string, unknown>).underseed_node_threshold;
@@ -5919,304 +3752,9 @@ function createStaleServeLockCheck(
   );
 }
 
-// ---------------------------------------------------------------------------
-// rc.5 TASK-013 (C4): relevance_paths hygiene lints #23/#24/#25.
-//
-// All three inspections walk the canonical knowledge trees (team + personal)
-// via iterateCanonicalFilenames, parse YAML frontmatter for the
-// `relevance_scope` / `relevance_paths` fields introduced by TASK-012, and
-// emit findings without mutating disk (rc.5 ships flag-only — apply-lint
-// auto-prune for #24 is deferred to rc.7+).
-//
-// Filesystem-walk for #24 reuses minimatch (already a server dep used by
-// plan-context.ts / get-knowledge.ts). We walk the workspace once,
-// collecting all candidate paths under projectRoot (skipping IGNORED_DIRECTORIES
-// + dotfiles other than .fabric children — `.fabric` itself is in the ignore
-// list because relevance_paths anchor user source, not Fabric internals), then
-// each glob is tested against the cached path list. This keeps the
-// inspection O(N+M) rather than O(N*M) re-walks per glob.
-//
-// #25's git heuristic shells out to `git log` via execFileSync — the same
-// pattern TASK-009 (B2) uses for apply-lint's git-mv. When the command fails
-// (not a repo, git unavailable) the inspection downgrades to ok+info with no
-// candidates rather than firing across every narrow entry.
-// ---------------------------------------------------------------------------
-
-// Pure parser: extract relevance_scope from a frontmatter block. Returns
-// "broad" as the schema-level default when the field is absent (mirrors
-// agentsMetaSchema's `.default("broad")` on the relevance_scope column).
-function extractKnowledgeFrontmatterRelevanceScope(source: string): "narrow" | "broad" {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return "broad";
-  }
-  const match = RELEVANCE_SCOPE_LINE_PATTERN.exec(fm[1]);
-  if (match === null) {
-    return "broad";
-  }
-  return match[2] as "narrow" | "broad";
-}
-
-// Pure parser: extract relevance_paths from a frontmatter block. Accepts the
-// flow-style array shape `[a, b, c]` (with or without quoted entries). Empty
-// arrays / missing field both yield []. The parser intentionally tolerates
-// whitespace + optional double-quotes; bare-strings are the convention but
-// the schema accepts both.
-function extractKnowledgeFrontmatterRelevancePaths(source: string): string[] {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return [];
-  }
-  const match = RELEVANCE_PATHS_LINE_PATTERN.exec(fm[1]);
-  if (match === null) {
-    return [];
-  }
-  const inner = match[1].trim();
-  if (inner.length === 0) {
-    return [];
-  }
-  return inner
-    .split(",")
-    .map((token) => token.trim().replace(/^"(.*)"$/u, "$1"))
-    .filter((token) => token.length > 0);
-}
-
-// Shared helper: yields {visit, scope, paths} for every canonical entry whose
-// frontmatter parses cleanly. Files without frontmatter — or with no
-// relevance_scope/relevance_paths fields — are normalized to the schema
-// defaults (scope=broad, paths=[]). Read-side only; never writes back to disk.
-type RelevanceFrontmatterVisit = {
-  visit: CanonicalFilenameVisit;
-  scope: "narrow" | "broad";
-  paths: string[];
-  absPath: string;
-};
-
-function* iterateRelevanceFrontmatter(
-  projectRoot: string,
-): Generator<RelevanceFrontmatterVisit> {
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    let source: string;
-    try {
-      source = readFileSync(visit.absPath, "utf8");
-    } catch {
-      continue;
-    }
-    const scope = extractKnowledgeFrontmatterRelevanceScope(source);
-    const paths = extractKnowledgeFrontmatterRelevancePaths(source);
-    yield { visit, scope, paths, absPath: visit.absPath };
-  }
-}
-
-// Inspection #23: narrow_no_paths. Narrow entries with empty relevance_paths
-// can never match a target_paths set (matchesAnyPath in plan-context.ts
-// short-circuits on `globs.length === 0`), so they're effectively a silent
-// recall risk. Pre-Phase-1.5 the broad default kept this case from arising;
-// post-TASK-012 a narrow-then-clear sequence can leave the entry in this
-// state. Warning kind (no auto-fix — the user must decide whether to add
-// paths or widen the scope).
-function inspectNarrowNoPaths(projectRoot: string): NarrowNoPathsInspection {
-  const candidates: NarrowNoPathsCandidate[] = [];
-  for (const { visit, scope, paths } of iterateRelevanceFrontmatter(projectRoot)) {
-    if (scope !== "narrow") {
-      continue;
-    }
-    if (paths.length > 0) {
-      continue;
-    }
-    candidates.push({
-      stable_id: visit.parsed.stable_id,
-      path: visit.displayPath,
-    });
-  }
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
-}
-
-// Inspection #24: relevance_paths_dangling. For each canonical entry with a
-// non-empty relevance_paths, test every glob against the workspace's file
-// listing. Globs that match zero paths are dangling — the entry references
-// files/dirs that no longer exist in the repo. Flag-only in rc.5 (auto-prune
-// + knowledge_path_dangled event emission deferred to rc.7+); the event
-// schema is pre-registered so future apply-lint behavior can ship without
-// schema churn.
-function inspectRelevancePathsDangling(
-  projectRoot: string,
-): RelevancePathsDanglingInspection {
-  const entries: DanglingGlobEntry[] = [];
-  // Build the candidate path list ONCE per doctor run. We collect both files
-  // and directories so directory-anchor globs (`src/foo/**`) resolve through
-  // the existing directory entry. The list is project-rooted POSIX paths,
-  // matching the convention used elsewhere in this module.
-  const workspacePaths = collectWorkspacePathsForGlobMatch(projectRoot);
-  if (workspacePaths.length === 0) {
-    return { entries };
-  }
-  for (const { visit, paths } of iterateRelevanceFrontmatter(projectRoot)) {
-    if (paths.length === 0) {
-      continue;
-    }
-    for (const rawGlob of paths) {
-      const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
-      let matched = false;
-      for (const target of workspacePaths) {
-        if (minimatch(target, glob, { dot: true, matchBase: false })) {
-          matched = true;
-          break;
-        }
-      }
-      if (matched) {
-        continue;
-      }
-      entries.push({
-        stable_id: visit.parsed.stable_id,
-        path: visit.displayPath,
-        dangling_glob: rawGlob,
-      });
-    }
-  }
-  entries.sort((a, b) => {
-    const byPath = a.path.localeCompare(b.path);
-    return byPath !== 0 ? byPath : a.dangling_glob.localeCompare(b.dangling_glob);
-  });
-  return { entries };
-}
-
-// Walk the workspace once to collect a flat list of POSIX-style relative
-// paths suitable for minimatch testing. We skip IGNORED_DIRECTORIES (the
-// same ignore list used by collectEntryPoints) so the candidate list stays
-// bounded. Both files and directories are yielded — relevance_paths globs
-// may target either (e.g. `src/foo/**` matches the directory `src/foo` plus
-// every descendant; `src/foo.ts` matches a single file).
-function collectWorkspacePathsForGlobMatch(projectRoot: string): string[] {
-  if (!existsSync(projectRoot)) {
-    return [];
-  }
-  let rootStat;
-  try {
-    rootStat = statSync(projectRoot);
-  } catch {
-    return [];
-  }
-  if (!rootStat.isDirectory()) {
-    return [];
-  }
-  const paths: string[] = [];
-  const stack: string[] = [projectRoot];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === undefined) continue;
-    let entries;
-    try {
-      entries = readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const abs = join(current, entry.name);
-      const rel = normalizePath(abs.slice(projectRoot.length + 1));
-      if (rel.length === 0) continue;
-      if (entry.isDirectory()) {
-        if (IGNORED_DIRECTORIES.has(entry.name)) {
-          continue;
-        }
-        paths.push(rel);
-        stack.push(abs);
-      } else if (entry.isFile()) {
-        paths.push(rel);
-      }
-    }
-  }
-  return paths;
-}
-
-// Inspection #25: relevance_paths_drift. For each canonical entry with
-// relevance_scope=narrow AND non-empty relevance_paths, check whether ANY of
-// the globs has been touched in the last RELEVANCE_PATHS_DRIFT_WINDOW_DAYS
-// (90d) of git history. We use `git log --since=<date> --name-only --pretty=format:`
-// to get the union of touched paths, then minimatch each glob against that
-// list. Entries whose globs touch zero recently-changed paths are flagged as
-// drift candidates (the relevance anchors may have gone stale because the
-// referenced code is no longer being modified).
-//
-// When `git` is unavailable / the workspace is not a repo, the inspection
-// downgrades to ok+info with `git_available: false`. The check renderer
-// surfaces this as an informational ok message rather than emitting false
-// positives across every narrow entry.
-function inspectRelevancePathsDrift(
-  projectRoot: string,
-): RelevancePathsDriftInspection {
-  let recentPaths: string[] | null = null;
-  try {
-    recentPaths = readRecentGitTouchedPaths(projectRoot, RELEVANCE_PATHS_DRIFT_WINDOW_DAYS);
-  } catch {
-    recentPaths = null;
-  }
-  if (recentPaths === null) {
-    return { candidates: [], git_available: false };
-  }
-  const candidates: RelevancePathsDriftCandidate[] = [];
-  for (const { visit, scope, paths } of iterateRelevanceFrontmatter(projectRoot)) {
-    if (scope !== "narrow") {
-      continue;
-    }
-    if (paths.length === 0) {
-      // narrow_no_paths owns this case (#23). Drift only applies when there
-      // ARE globs to evaluate.
-      continue;
-    }
-    let anyMatch = false;
-    for (const rawGlob of paths) {
-      const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
-      for (const target of recentPaths) {
-        if (minimatch(target, glob, { dot: true, matchBase: false })) {
-          anyMatch = true;
-          break;
-        }
-      }
-      if (anyMatch) break;
-    }
-    if (anyMatch) {
-      continue;
-    }
-    candidates.push({
-      stable_id: visit.parsed.stable_id,
-      path: visit.displayPath,
-      globs: paths.slice(),
-    });
-  }
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates, git_available: true };
-}
-
-// Shell out to `git log` and return the union of paths touched in the
-// requested window. Throws when the command fails or git is unavailable
-// (caller catches and downgrades to git_available=false). The since-date
-// is computed in JavaScript to avoid locale-dependent parsing on git's side.
-function readRecentGitTouchedPaths(
-  projectRoot: string,
-  windowDays: number,
-): string[] {
-  const since = new Date(Date.now() - windowDays * MS_PER_DAY).toISOString();
-  const stdout = execFileSync(
-    "git",
-    ["log", `--since=${since}`, "--name-only", "--pretty=format:"],
-    {
-      cwd: projectRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-      encoding: "utf8",
-    },
-  );
-  const set = new Set<string>();
-  for (const line of stdout.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    set.add(normalizePath(trimmed));
-  }
-  return Array.from(set);
-}
+// v2.2 store cutover: relevance-path read-side scanners are disabled until
+// they can operate against store-backed knowledge. Keep renderer functions so
+// the public doctor report shape stays stable with empty inspections.
 
 function createNarrowNoPathsCheck(t: Translator, inspection: NarrowNoPathsInspection): DoctorCheck {
   if (inspection.candidates.length === 0) {
@@ -6304,54 +3842,6 @@ function createRelevancePathsDriftCheck(
   );
 }
 
-// rc.37 NEW-5: inspect personal-layer entries whose relevance_paths globs
-// resolve against the current project. Signals that the entry is actually
-// project-bound and likely belongs in the team layer.
-function inspectPersonalLayerPathMisclassify(
-  projectRoot: string,
-): PersonalLayerPathMisclassifyInspection {
-  const candidates: PersonalLayerPathMisclassifyCandidate[] = [];
-  const workspacePaths = collectWorkspacePathsForGlobMatch(projectRoot);
-  if (workspacePaths.length === 0) {
-    return { candidates };
-  }
-  for (const { visit, paths } of iterateRelevanceFrontmatter(projectRoot)) {
-    if (visit.layer !== "personal") {
-      continue;
-    }
-    if (paths.length === 0) {
-      continue;
-    }
-    const matched: string[] = [];
-    for (const rawGlob of paths) {
-      // Anchors that explicitly point at the personal layer or absolute paths
-      // outside the project are excluded — they're definitionally
-      // project-agnostic. The misclassification signal is project-relative
-      // globs that resolve against THIS workspace.
-      if (rawGlob.startsWith("~/") || rawGlob.startsWith("/")) {
-        continue;
-      }
-      const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
-      for (const target of workspacePaths) {
-        if (minimatch(target, glob, { dot: true, matchBase: false })) {
-          matched.push(rawGlob);
-          break;
-        }
-      }
-    }
-    if (matched.length === 0) {
-      continue;
-    }
-    candidates.push({
-      stable_id: visit.parsed.stable_id,
-      path: visit.displayPath,
-      matched_globs: matched,
-    });
-  }
-  candidates.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
-  return { candidates };
-}
-
 function createPersonalLayerPathMisclassifyCheck(
   t: Translator,
   inspection: PersonalLayerPathMisclassifyInspection,
@@ -6376,40 +3866,6 @@ function createPersonalLayerPathMisclassifyCheck(
     }),
     t("doctor.check.personal_layer_path_misclassify.remediation"),
   );
-}
-
-// rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
-// (the same set the extract-knowledge sanitizer redacts on archive,
-// NEW-31). Surfaces legacy entries that pre-date NEW-31. Read-only; no
-// auto-fix.
-function inspectSuspiciousKb(projectRoot: string): SuspiciousKbInspection {
-  const candidates: SuspiciousKbCandidate[] = [];
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    let body: string;
-    try {
-      body = readFileSync(visit.absPath, "utf8");
-    } catch {
-      continue;
-    }
-    const matched: string[] = [];
-    for (const { name, pattern } of INJECTION_PATTERNS) {
-      // Reset lastIndex defensively (g-flagged regex state leaks across calls).
-      pattern.lastIndex = 0;
-      if (pattern.test(body)) {
-        matched.push(name);
-      }
-    }
-    if (matched.length === 0) {
-      continue;
-    }
-    candidates.push({
-      stable_id: visit.parsed.stable_id,
-      path: visit.displayPath,
-      patterns: matched,
-    });
-  }
-  candidates.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
-  return { candidates };
 }
 
 function createSuspiciousKbCheck(
@@ -6476,8 +3932,7 @@ function createSuspiciousKbCheck(
 
 type RelevanceFieldsMissingCandidate = {
   // Display path: project-relative POSIX for team layer; `~/.fabric/...`
-  // for personal layer (matches the convention used by inspectPendingOverdue
-  // and inspectPendingAutoArchive).
+        // for personal layer, matching the pending display-path convention.
   pending_path: string;
   // Absolute filesystem path of the file (used by the apply step to write
   // back the augmented frontmatter).
@@ -6496,78 +3951,6 @@ type RelevanceFieldsMissingInspection = {
   // were missing fields). Used by the aggregate event's `scanned_count`.
   scanned_count: number;
 };
-
-// Walk store-backed pending trees, parse each file's frontmatter, and record
-// entries that are missing `relevance_scope` and/or
-// `relevance_paths`. Entries without a parseable `---\n...\n---` frontmatter
-// block are skipped silently — that case is owned by other doctor lints
-// (e.g. malformed frontmatter triggers manual_error elsewhere). Read-only:
-// never writes to disk.
-function inspectRelevanceFieldsMissing(
-  projectRoot: string,
-): RelevanceFieldsMissingInspection {
-  const candidates: RelevanceFieldsMissingCandidate[] = [];
-  let scannedCount = 0;
-
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const root = join(store.dir, STORE_LAYOUT.knowledgeDir, "pending");
-    if (!existsSync(root)) {
-      continue;
-    }
-    let typeDirs: string[] = [];
-    try {
-      typeDirs = readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
-    } catch {
-      continue;
-    }
-    for (const typeDir of typeDirs) {
-      const dir = join(root, typeDir);
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith(".md")) {
-          continue;
-        }
-        const absPath = join(dir, entry.name);
-        let source: string;
-        try {
-          source = readFileSync(absPath, "utf8");
-        } catch {
-          continue;
-        }
-        const fm = FM_PATTERN.exec(source);
-        if (fm === null) {
-          // No parseable frontmatter — out of scope for #28; other doctor
-          // checks own that case.
-          continue;
-        }
-        scannedCount += 1;
-        const block = fm[1];
-        const missingScope = !RELEVANCE_SCOPE_LINE_PATTERN.test(block);
-        const missingPaths = !RELEVANCE_PATHS_LINE_PATTERN.test(block);
-        if (!missingScope && !missingPaths) {
-          continue;
-        }
-        candidates.push({
-          pending_path: storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, "pending", typeDir, entry.name),
-          pending_path_abs: absPath,
-          missing_scope: missingScope,
-          missing_paths: missingPaths,
-        });
-      }
-    }
-  }
-  candidates.sort((a, b) => a.pending_path.localeCompare(b.pending_path));
-  return { candidates, scanned_count: scannedCount };
-}
 
 // Pure helper: insert the missing relevance_* YAML lines into a frontmatter
 // block. The replacement writes the fields verbatim against the regex shape
@@ -6710,142 +4093,6 @@ function createRelevanceFieldsMissingCheck(
 }
 
 // ---------------------------------------------------------------------------
-// rc.12 lint #29: skill_md_yaml_invalid.
-//
-// Scans `<projectRoot>/.claude/skills/*/SKILL.md` and `.codex/skills/*/SKILL.md`
-// frontmatter for a plain-scalar value that contains an unquoted `: ` (colon
-// followed by whitespace) or trailing `:`. Claude Code's YAML parser is
-// lenient and tolerates it; Codex CLI's strict parser rejects the file with
-// `mapping values are not allowed in this context` and silently drops the
-// skill from the available list. The asymmetry produces cross-client
-// breakage that is hard to spot — fab_doctor surfaces it as a warning.
-//
-// Warning kind (manual fix only). Recommendation: quote the value with `"..."`
-// or rewrite the offending `key: value` token into `key=value` form.
-// ---------------------------------------------------------------------------
-
-const SKILL_MD_FRONTMATTER_ROOTS = [".claude/skills", ".codex/skills"] as const;
-const SKILL_FRONTMATTER_KEY_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*):[ \t]+(.+?)[ \t]*$/u;
-const SKILL_QUOTED_VALUE_LEADS = new Set(['"', "'", "[", "{", ">", "|"]);
-
-type SkillMdYamlInvalidCandidate = {
-  // Project-relative POSIX path to the offending SKILL.md.
-  path: string;
-  // 1-based line number inside the SKILL.md (matches editors and Codex's
-  // own error message format).
-  line: number;
-  // The frontmatter key whose value violates strict YAML (typically `description`).
-  key: string;
-  // Short value snippet centered on the offending `: ` for human triage.
-  preview: string;
-};
-
-type SkillMdYamlInvalidInspection = {
-  candidates: SkillMdYamlInvalidCandidate[];
-};
-
-function inspectSkillMdYamlInvalid(projectRoot: string): SkillMdYamlInvalidInspection {
-  const candidates: SkillMdYamlInvalidCandidate[] = [];
-  for (const rootRel of SKILL_MD_FRONTMATTER_ROOTS) {
-    const rootAbs = join(projectRoot, rootRel);
-    if (!existsSync(rootAbs)) continue;
-    let dirEntries;
-    try {
-      dirEntries = readdirSync(rootAbs, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const dirEntry of dirEntries) {
-      if (!dirEntry.isDirectory()) continue;
-      const skillFile = join(rootAbs, dirEntry.name, "SKILL.md");
-      if (!existsSync(skillFile)) continue;
-      let raw: string;
-      try {
-        raw = readFileSync(skillFile, "utf8");
-      } catch {
-        continue;
-      }
-      const frontmatter = extractSkillFrontmatterLines(raw);
-      if (frontmatter === null) continue;
-      for (const { line, lineNumber } of frontmatter) {
-        const match = SKILL_FRONTMATTER_KEY_PATTERN.exec(line);
-        if (!match) continue;
-        const [, key, value] = match;
-        if (value.length === 0) continue;
-        if (SKILL_QUOTED_VALUE_LEADS.has(value[0]!)) continue;
-        const colonSpaceIdx = value.indexOf(": ");
-        const trailingColon = value.endsWith(":");
-        if (colonSpaceIdx < 0 && !trailingColon) continue;
-        const anchor = colonSpaceIdx >= 0 ? colonSpaceIdx : value.length - 1;
-        const previewStart = Math.max(0, anchor - 25);
-        const previewEnd = Math.min(value.length, anchor + 30);
-        const preview = `${previewStart > 0 ? "…" : ""}${value.slice(previewStart, previewEnd)}${previewEnd < value.length ? "…" : ""}`;
-        candidates.push({
-          path: posix.join(rootRel, dirEntry.name, "SKILL.md"),
-          line: lineNumber,
-          key,
-          preview,
-        });
-      }
-    }
-  }
-  candidates.sort((a, b) => {
-    const byPath = a.path.localeCompare(b.path);
-    return byPath !== 0 ? byPath : a.line - b.line;
-  });
-  return { candidates };
-}
-
-// Return the lines that fall between the opening `---` (required on line 1)
-// and the next `---`. Returns null when the file has no well-formed
-// frontmatter block — the lint conservatively says nothing about such files
-// (other doctor lints already cover malformed-frontmatter cases for
-// fabric-owned files; for third-party skills we don't want false positives
-// on README-style markdown).
-function extractSkillFrontmatterLines(
-  raw: string,
-): Array<{ line: string; lineNumber: number }> | null {
-  const rawLines = raw.split(/\r?\n/u);
-  if (rawLines.length < 2) return null;
-  if (rawLines[0]?.trim() !== "---") return null;
-  const out: Array<{ line: string; lineNumber: number }> = [];
-  for (let i = 1; i < rawLines.length; i++) {
-    const line = rawLines[i]!;
-    if (line.trim() === "---") {
-      return out;
-    }
-    out.push({ line, lineNumber: i + 1 });
-  }
-  return null;
-}
-
-function createSkillMdYamlInvalidCheck(
-  t: Translator,
-  inspection: SkillMdYamlInvalidInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.skill_md_yaml_invalid.name"),
-      t("doctor.check.skill_md_yaml_invalid.ok"),
-    );
-  }
-  const first = inspection.candidates[0]!;
-  const detail = `${first.path}:${first.line} (key \`${first.key}\` value contains an unquoted ': ' — preview: \`${first.preview}\`)`;
-  const plural = inspection.candidates.length === 1;
-  return issueCheck(
-    t("doctor.check.skill_md_yaml_invalid.name"),
-    "warn",
-    "warning",
-    "skill_md_yaml_invalid",
-    t(`doctor.check.skill_md_yaml_invalid.message.${plural ? "singular" : "plural"}`, {
-      count: String(inspection.candidates.length),
-      detail,
-    }),
-    t("doctor.check.skill_md_yaml_invalid.remediation"),
-  );
-}
-
-// ---------------------------------------------------------------------------
 // v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory.
 //
 // Walks canonical knowledge frontmatter for the `onboard_slot:` key, reads
@@ -6863,65 +4110,27 @@ function createSkillMdYamlInvalidCheck(
 // flow, never an automated mutation. The advisory just informs.
 // ---------------------------------------------------------------------------
 
-const KNOWLEDGE_CANONICAL_TYPE_DIRS_FOR_ONBOARD = [
-  "decisions",
-  "pitfalls",
-  "guidelines",
-  "models",
-  "processes",
-] as const;
-
 type OnboardCoverageInspection = {
   filled: Record<OnboardSlot, string[]>;
   missing: OnboardSlot[];
   opted_out: string[];
 };
 
-function inspectOnboardCoverage(projectRoot: string): OnboardCoverageInspection {
+async function inspectOnboardCoverage(projectRoot: string): Promise<OnboardCoverageInspection> {
   const filled = {} as Record<OnboardSlot, string[]>;
   for (const slot of ONBOARD_SLOT_NAMES) {
     filled[slot] = [];
   }
-  for (const entry of collectStoreCanonicalEntries(projectRoot)) {
+  for (const entry of await collectStoreCanonicalEntries(projectRoot)) {
     const slot = readFrontmatterScalar(entry.body, "onboard_slot");
     if (slot === undefined) continue;
     if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
     filled[slot as OnboardSlot].push(entry.qualifiedId);
   }
-  const scanRetiredLocalRoots = false;
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  if (scanRetiredLocalRoots && existsSync(knowledgeRoot)) {
-    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS_FOR_ONBOARD) {
-      const dir = join(knowledgeRoot, typeDir);
-      if (!existsSync(dir)) continue;
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        if (!entry.name.endsWith(".md")) continue;
-        const filePath = join(dir, entry.name);
-        let content: string;
-        try {
-          content = readFileSync(filePath, "utf8");
-        } catch {
-          continue;
-        }
-        const slot = readFrontmatterScalar(content, "onboard_slot");
-        if (slot === undefined) continue;
-        if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
-        const stableId = readFrontmatterScalar(content, "id") ?? entry.name.replace(/\.md$/u, "");
-        filled[slot as OnboardSlot].push(stableId);
-      }
-    }
-  }
   for (const slot of ONBOARD_SLOT_NAMES) {
     filled[slot].sort();
   }
-  const optedOut = readOnboardOptedOut(projectRoot);
+  const optedOut = await readOnboardOptedOut(projectRoot);
   const missing: OnboardSlot[] = ONBOARD_SLOT_NAMES.filter((slot) => {
     if (filled[slot].length > 0) return false;
     if (optedOut.includes(slot)) return false;
@@ -6930,12 +4139,11 @@ function inspectOnboardCoverage(projectRoot: string): OnboardCoverageInspection 
   return { filled, missing, opted_out: optedOut };
 }
 
-function readOnboardOptedOut(projectRoot: string): string[] {
+async function readOnboardOptedOut(projectRoot: string): Promise<string[]> {
   const path = join(projectRoot, ".fabric", "fabric-config.json");
-  if (!existsSync(path)) return [];
   let raw: string;
   try {
-    raw = readFileSync(path, "utf8");
+    raw = await readFile(path, "utf8");
   } catch {
     return [];
   }
@@ -7076,12 +4284,22 @@ function createNarrowTooFewCheck(t: Translator, inspection: NarrowTooFewInspecti
 // ---------------------------------------------------------------------------
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21).
 //
-// All three inspections walk the read-set store canonical knowledge trees,
-// parsing stable_ids out of the canonical filename `<id>--<slug>.md` rather
-// than YAML frontmatter — the id is the path-decoupled identity, and
-// filename-level scanning keeps the inspections cheap (no file body read) for
-// the integrity surface.
+// All three inspections walk the same dual-root canonical knowledge tree
+// (team at `<projectRoot>/.fabric/knowledge/<type>/`, personal at
+// `<FABRIC_HOME>/.fabric/knowledge/<type>/`) parsing stable_ids out of the
+// canonical filename `<id>--<slug>.md` rather than YAML frontmatter — the
+// id is the path-decoupled identity, and filename-level scanning keeps the
+// inspections cheap (no file body read) for the integrity surface.
 // ---------------------------------------------------------------------------
+
+// Resolve the personal-layer knowledge root. Mirrors knowledge-meta-builder.ts's
+// resolvePersonalRoot but inlined to avoid pulling that module into doctor's
+// dependency graph (doctor has historically stayed self-contained on shared/
+// utilities only). Test-friendly via FABRIC_HOME override.
+function resolvePersonalKnowledgeRoot(): string {
+  const home = process.env.FABRIC_HOME ?? homedir();
+  return join(home, ".fabric", "knowledge");
+}
 
 type ParsedCanonicalFilename = {
   // Layer code parsed from the stable_id prefix.
@@ -7122,7 +4340,6 @@ type CanonicalFilenameVisit = {
   layer: CanonicalLayer;
   type: typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number];
   filename: string;
-  absPath: string;
   // Display path — project-relative POSIX for team layer; `~/.fabric/...`
   // form for personal layer (matches PERSONAL_CONTENT_REF_PREFIX in
   // knowledge-meta-builder.ts so messages render consistently with the rest of
@@ -7134,17 +4351,19 @@ type CanonicalFilenameVisit = {
 // Generator over all canonical knowledge filenames across both physical
 // trees. Yields only entries whose filename parses to a stable_id token —
 // other files (legacy-named, README, etc.) are silently skipped.
-function* iterateCanonicalFilenames(projectRoot: string): Generator<CanonicalFilenameVisit> {
-  for (const store of resolveDoctorStoreRoots(projectRoot)) {
-    const root = join(store.dir, STORE_LAYOUT.knowledgeDir);
+async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<CanonicalFilenameVisit> {
+  const teamRoot = join(projectRoot, ".fabric", "knowledge");
+  const personalRoot = resolvePersonalKnowledgeRoot();
+
+  for (const [layer, root, displayPrefix] of [
+    ["team", teamRoot, ".fabric/knowledge"] as const,
+    ["personal", personalRoot, "~/.fabric/knowledge"] as const,
+  ]) {
     for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
       const dir = join(root, typeDir);
-      if (!existsSync(dir)) {
-        continue;
-      }
       let entries;
       try {
-        entries = readdirSync(dir, { withFileTypes: true });
+        entries = await readdirAsync(dir, { withFileTypes: true });
       } catch {
         continue;
       }
@@ -7156,12 +4375,11 @@ function* iterateCanonicalFilenames(projectRoot: string): Generator<CanonicalFil
         if (parsed === null) {
           continue;
         }
-        const displayPath = storeDisplayPath(store, STORE_LAYOUT.knowledgeDir, typeDir, entry.name);
+        const displayPath = posix.join(displayPrefix, typeDir, entry.name);
         yield {
-          layer: store.layer,
+          layer,
           type: typeDir,
           filename: entry.name,
-          absPath: join(dir, entry.name),
           displayPath,
           parsed,
         };
@@ -7170,97 +4388,7 @@ function* iterateCanonicalFilenames(projectRoot: string): Generator<CanonicalFil
   }
 }
 
-// Inspection #19: stable_id duplicate. Two canonical files (across either
-// layer) declaring the same stable_id is a hard integrity break — the
-// path-decoupled identity model assumes each id is globally unique. Loud
-// error, no auto-fix (manual triage to rename one of the colliders).
-function inspectStableIdDuplicate(projectRoot: string): StableIdDuplicateInspection {
-  const idToPaths = new Map<string, string[]>();
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const existing = idToPaths.get(visit.parsed.stable_id) ?? [];
-    existing.push(visit.displayPath);
-    idToPaths.set(visit.parsed.stable_id, existing);
-  }
-  const duplicates: StableIdDuplicateGroup[] = [];
-  for (const [stable_id, paths] of idToPaths) {
-    if (paths.length > 1) {
-      duplicates.push({ stable_id, paths: paths.slice().sort() });
-    }
-  }
-  duplicates.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
-  return { duplicates };
-}
-
-// Inspection #20: layer mismatch. KP-* files under the team tree (or KT-*
-// files under the personal tree) violate the layer-prefix invariant — a
-// KP-prefixed entry should physically live under personal/ and vice versa.
-// Loud error, no auto-fix (the right resolution is rename + move, which is
-// review-flow territory).
-function inspectLayerMismatch(projectRoot: string): LayerMismatchInspection {
-  const mismatches: LayerMismatchEntry[] = [];
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const expected_layer: CanonicalLayer = visit.parsed.prefix === "KT" ? "team" : "personal";
-    if (expected_layer === visit.layer) {
-      continue;
-    }
-    mismatches.push({
-      path: visit.displayPath,
-      located_in: visit.layer,
-      expected_layer,
-      stable_id: visit.parsed.stable_id,
-    });
-  }
-  mismatches.sort((a, b) => a.path.localeCompare(b.path));
-  return { mismatches };
-}
-
 // v2.2 W5 R4 (agents.meta decolo): `inspectIndexDrift` removed — its store-aware successor is inspectStoreCounters (doctor-store-counters.ts).
-
-function createStableIdDuplicateCheck(t: Translator, inspection: StableIdDuplicateInspection): DoctorCheck {
-  if (inspection.duplicates.length === 0) {
-    return okCheck(
-      t("doctor.check.stable_id_duplicate.name"),
-      t("doctor.check.stable_id_duplicate.ok"),
-    );
-  }
-  const first = inspection.duplicates[0];
-  const detail = `${first.stable_id} appears in ${first.paths.length} files: ${first.paths.join(", ")}`;
-  const count = inspection.duplicates.length;
-  return issueCheck(
-    t("doctor.check.stable_id_duplicate.name"),
-    "error",
-    "manual_error",
-    "knowledge_stable_id_duplicate",
-    t(`doctor.check.stable_id_duplicate.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.stable_id_duplicate.remediation"),
-  );
-}
-
-function createLayerMismatchCheck(t: Translator, inspection: LayerMismatchInspection): DoctorCheck {
-  if (inspection.mismatches.length === 0) {
-    return okCheck(
-      t("doctor.check.layer_mismatch.name"),
-      t("doctor.check.layer_mismatch.ok"),
-    );
-  }
-  const first = inspection.mismatches[0];
-  const detail = `${first.stable_id} at ${first.path} (located in ${first.located_in}, expected ${first.expected_layer})`;
-  const count = inspection.mismatches.length;
-  return issueCheck(
-    t("doctor.check.layer_mismatch.name"),
-    "error",
-    "manual_error",
-    "knowledge_layer_mismatch",
-    t(`doctor.check.layer_mismatch.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.layer_mismatch.remediation"),
-  );
-}
 
 // v2.2 W5 R4 (agents.meta decolo): `createIndexDriftCheck` removed (co-location agents.meta#counters drift).
 
@@ -7298,7 +4426,7 @@ async function migrateBootstrapMarkers(
 
   for (const rel of BOOTSTRAP_MARKER_MIGRATION_TARGETS) {
     const abs = join(projectRoot, rel);
-    if (!existsSync(abs)) {
+    if (!(await pathExists(abs))) {
       continue;
     }
     let original: string;
@@ -7351,7 +4479,7 @@ async function migrateBootstrapMarkers(
 //     block — thin shell convention.
 async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> {
   const snapshotPath = join(projectRoot, ".fabric", "AGENTS.md");
-  if (!existsSync(snapshotPath)) {
+  if (!(await pathExists(snapshotPath))) {
     // L1 fix should have created this — defensive guard.
     return;
   }
@@ -7362,7 +4490,7 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
     return;
   }
   const projectRulesPath = join(projectRoot, ".fabric", "project-rules.md");
-  const hasProjectRules = existsSync(projectRulesPath);
+  const hasProjectRules = await pathExists(projectRulesPath);
   let expectedBody = snapshot;
   if (hasProjectRules) {
     try {
@@ -7380,7 +4508,7 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
     join(projectRoot, ".cursor", "rules", "fabric-bootstrap.mdc"),
   ];
   for (const abs of blockTargets) {
-    if (!existsSync(abs)) {
+    if (!(await pathExists(abs))) {
       continue;
     }
     let existing: string;
@@ -7417,7 +4545,7 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
   // CLAUDE.md: thin shell — idempotent line-add for `@.fabric/AGENTS.md` and
   // optionally `@.fabric/project-rules.md`. No managed block markers here.
   const claudeMdPath = join(projectRoot, "CLAUDE.md");
-  if (existsSync(claudeMdPath)) {
+  if (await pathExists(claudeMdPath)) {
     let claudeContent: string;
     try {
       claudeContent = await readFile(claudeMdPath, "utf8");
@@ -7447,13 +4575,13 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
 
 async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
   const settingsPath = join(projectRoot, ".claude", "settings.json");
-  if (!existsSync(settingsPath)) {
+  if (!(await pathExists(settingsPath))) {
     return;
   }
 
   let settings: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
+    const parsed = JSON.parse(await readFile(settingsPath, "utf8")) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
       return;
     }
@@ -7570,8 +4698,14 @@ export function normalizePath(path: string): string {
   return posix.normalize(path.split("\\").join("/"));
 }
 
-function collectEntryPoints(root: string): EntryPoint[] {
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
+async function collectEntryPoints(root: string): Promise<EntryPoint[]> {
+  let rootStat;
+  try {
+    rootStat = await statAsync(root);
+  } catch {
+    return [];
+  }
+  if (!rootStat.isDirectory()) {
     return [];
   }
 
@@ -7584,7 +4718,7 @@ function collectEntryPoints(root: string): EntryPoint[] {
       continue;
     }
 
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
+    for (const entry of await readdirAsync(current, { withFileTypes: true })) {
       const absolutePath = join(current, entry.name);
       const relativePath = normalizePath(absolutePath.slice(root.length + 1));
 
@@ -7760,12 +4894,17 @@ export async function enrichDescriptions(
   let modified = 0;
   let skipped = 0;
 
-  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+  for await (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const layerRoot =
+      visit.layer === "team"
+        ? join(projectRoot, ".fabric", "knowledge")
+        : resolvePersonalKnowledgeRoot();
+    const absPath = join(layerRoot, visit.type, visit.filename);
     scanned += 1;
 
     let source: string;
     try {
-      source = await readFile(visit.absPath, "utf8");
+      source = await readFile(absPath, "utf8");
     } catch {
       // Disappeared between readdir and read — skip silently (next doctor
       // run picks up the live state).
@@ -7844,7 +4983,7 @@ export async function enrichDescriptions(
     const rewritten =
       source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
 
-    await atomicWriteText(visit.absPath, rewritten);
+    await atomicWriteText(absPath, rewritten);
     modified += 1;
     candidates.push({
       path: visit.displayPath,

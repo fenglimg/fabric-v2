@@ -210,11 +210,11 @@ export interface StoreCreateResult {
   storeDir: string;
 }
 
-export function storeCreate(
+export async function storeCreate(
   alias: string,
   now: string,
   options: { uuid?: string; remote?: string; git?: boolean; globalRoot?: string; mountName?: string } = {},
-): StoreCreateResult {
+): Promise<StoreCreateResult> {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   // requireConfig first: refuse to create before `install --global` (no uid).
   const config = requireConfig(globalRoot);
@@ -223,7 +223,7 @@ export function storeCreate(
   const mountedBase: MountedStore = { store_uuid: uuid, alias, mount_name };
   const storeDir = mountedStoreDir(mountedBase, globalRoot);
 
-  initStore(
+  await initStore(
     storeDir,
     { store_uuid: uuid, created_at: now, canonical_alias: alias },
     { git: options.git },
@@ -380,10 +380,10 @@ export function resolveStoreDir(
 
 // `fabric store project list <alias>`: enumerate a store's registered projects
 // (W1/A2). Throws when the alias/uuid is not a mounted store.
-export function storeProjectList(
+export async function storeProjectList(
   aliasOrUuid: string,
   globalRoot: string = resolveGlobalRoot(),
-): StoreProject[] {
+): Promise<StoreProject[]> {
   const storeDir = resolveStoreDir(aliasOrUuid, globalRoot);
   if (storeDir === null) {
     throw new Error(`no mounted store '${aliasOrUuid}' — run \`fabric store list\` to see mounts`);
@@ -394,12 +394,12 @@ export function storeProjectList(
 // `fabric store project create <alias> <id>`: register a new project in a store
 // (W1/A2). `id` is the single scope segment forming `project:<id>`. Refuses a
 // duplicate id (addStoreProject) or an unmounted store.
-export function storeProjectCreate(
+export async function storeProjectCreate(
   aliasOrUuid: string,
   id: string,
   now: string,
   options: { name?: string; globalRoot?: string } = {},
-): StoreProject {
+): Promise<StoreProject> {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   const storeDir = resolveStoreDir(aliasOrUuid, globalRoot);
   if (storeDir === null) {
@@ -409,7 +409,7 @@ export function storeProjectCreate(
     options.name === undefined
       ? { id, created_at: now }
       : { id, name: options.name, created_at: now };
-  addStoreProject(storeDir, project);
+  await addStoreProject(storeDir, project);
   return project;
 }
 
@@ -419,11 +419,11 @@ export function storeProjectCreate(
 // (W1/A2) — binding to a non-existent project is REFUSED so a typo can't route
 // writes/recall to a phantom project — and recorded as the repo's
 // `active_project` coordinate segment.
-export function storeBind(
+export async function storeBind(
   projectRoot: string,
   entry: RequiredStoreEntry,
   options: { project?: string; globalRoot?: string } = {},
-): FabricConfig {
+): Promise<FabricConfig> {
   const config = requireProjectConfig(projectRoot);
   let activeProject = config.active_project;
   if (options.project !== undefined) {
@@ -435,7 +435,7 @@ export function storeBind(
           `mount it first (\`fabric store add\` / \`fabric install --global --url <remote>\`)`,
       );
     }
-    if (!storeHasProject(storeDir, options.project)) {
+    if (!(await storeHasProject(storeDir, options.project))) {
       throw new Error(
         `cannot bind to project '${options.project}': not registered in store '${entry.id}' — ` +
           `create it first with \`fabric store project create ${entry.id} ${options.project}\``,

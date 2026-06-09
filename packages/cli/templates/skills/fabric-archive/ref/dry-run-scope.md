@@ -4,12 +4,12 @@
 
 | Write operation | Normal mode | Dry-run mode |
 |---|---|---|
-| `fab_extract_knowledge` MCP call (Phase 4) | One call per confirmed candidate, writes to the active write store's `knowledge/pending/<type>/` tree | SKIPPED. Phase 4 renders "would write N pending entries" preview table instead. |
+| `fab_extract_knowledge` MCP call (Phase 4) | One call per confirmed candidate, writes to `.fabric/knowledge/pending/<slug>.md` | SKIPPED. Phase 4 renders "would write N pending entries" preview table instead. |
 | `session_archive_attempted` event (Phase 4.5) | Appended to `.fabric/events.jsonl` for every session in scope | SKIPPED entirely. No ledger entry. |
 | `fab_review reject` (Phase 3 user-dismissed branch) | Invoked when user types `撤销` / `reject` after self-archive proposal | SKIPPED. The dismissal is rendered to console but no MCP write occurs. |
 | `fabric onboard-coverage` slot writes (Phase 1.5 fill-all / dismiss-all) | Each `Bash("fabric config dismiss-slot <slot>")` invocation runs | SKIPPED. Slot decisions are shown as "would dismiss/propose" preview. |
 | `.fabric/.cache/session-digests/<session_id>.md` reads | Read freely (read-side, safe) | Read freely — same as normal. |
-| Stop-hook / fabric-hint stdin/stdout | Read-only inspection of `.fabric/events.jsonl` | Same — no change. |
+| Stop-hook / archive-hint stdin/stdout | Read-only inspection of `.fabric/events.jsonl` | Same — no change. |
 
 All user-facing output in dry-run mode MUST prefix `[DRY-RUN]` at the start of each Phase header (e.g. `[DRY-RUN] Phase 3 — Batch Review`). Exit message: `[DRY-RUN complete] would have written N entry/entries; no .fabric/ files were modified. Re-invoke without --dry-run to commit.`
 

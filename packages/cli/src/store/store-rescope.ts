@@ -64,11 +64,11 @@ export interface RescopeOptions {
 }
 
 // Validate a target scope is well-formed + safe for this store. null when ok.
-function validateToScope(
+async function validateToScope(
   toScope: string,
   storeDir: string,
   storeVisibility: "shared" | "personal",
-): string | null {
+): Promise<string | null> {
   if (!scopeCoordinateSchema.safeParse(toScope).success) {
     return `invalid scope coordinate '${toScope}'`;
   }
@@ -77,7 +77,7 @@ function validateToScope(
   }
   if (scopeRoot(toScope) === "project") {
     const projectId = toScope.split(":")[1] ?? "";
-    if (projectId.length === 0 || !readStoreProjects(storeDir).some((p) => p.id === projectId)) {
+    if (projectId.length === 0 || !(await readStoreProjects(storeDir)).some((p) => p.id === projectId)) {
       return `project '${projectId}' is not registered in this store (run \`fabric store project add ${projectId}\` first)`;
     }
   }
@@ -105,11 +105,11 @@ function matchesSelection(
 }
 
 // Re-scope every selected canonical entry in `storeDir` to `toScope`.
-export function rescopeStore(
+export async function rescopeStore(
   storeDir: string,
   toScope: string,
   options: RescopeOptions,
-): RescopeReport {
+): Promise<RescopeReport> {
   const report: RescopeReport = {
     dryRun: options.dryRun === true,
     toScope,
@@ -119,7 +119,7 @@ export function rescopeStore(
     skipped: [],
   };
   // Target validity is a store-level property (independent of which entries match).
-  const toScopeError = validateToScope(toScope, storeDir, options.storeVisibility);
+  const toScopeError = await validateToScope(toScope, storeDir, options.storeVisibility);
 
   for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
     const dir = join(storeDir, STORE_LAYOUT.knowledgeDir, type);
@@ -165,10 +165,10 @@ export function rescopeStore(
 // Promote project-scoped entries to team-wide (project:<id> → team). When
 // `projectId` is given only that project's entries graduate; otherwise every
 // `project:*` entry in the store is absorbed into team scope.
-export function promoteProjectToTeam(
+export async function promoteProjectToTeam(
   storeDir: string,
   options: { projectId?: string; storeVisibility: "shared" | "personal"; dryRun?: boolean },
-): RescopeReport {
+): Promise<RescopeReport> {
   const selection: RescopeOptions =
     options.projectId !== undefined
       ? { fromScope: `project:${options.projectId}`, storeVisibility: options.storeVisibility, dryRun: options.dryRun }

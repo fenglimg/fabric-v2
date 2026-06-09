@@ -24,14 +24,14 @@ const hook = require("../templates/hooks/knowledge-hint-narrow.cjs") as {
     sessionId: string,
     paths: string[],
     metaToken: number | null,
-  ) => unknown | null;
+  ) => Promise<unknown | null>;
   writeNarrowResultCache: (
     cwd: string,
     sessionId: string,
     paths: string[],
     metaToken: number | null,
     payload: unknown,
-  ) => void;
+  ) => Promise<void>;
 };
 
 let tempDirs: string[] = [];
@@ -60,21 +60,21 @@ describe("narrow result cache (rc.37 NEW-17)", () => {
     expect(hook.narrowResultCacheFileName("a/b..c")).toBe("narrow-result-cache-a-b..c.json");
   });
 
-  it("write then read round-trips for the same path-set + meta token", () => {
+  it("write then read round-trips for the same path-set + meta token", async () => {
     const cwd = mkRepo();
     const token = hook.metaFreshnessToken(cwd);
     expect(typeof token).toBe("number");
     const payload = { revision_hash: "r1", entries: [{ id: "K-1" }] };
-    hook.writeNarrowResultCache(cwd, "sess-1", ["x.ts"], token, payload);
-    expect(hook.readNarrowResultCache(cwd, "sess-1", ["x.ts"], token)).toEqual(payload);
+    await hook.writeNarrowResultCache(cwd, "sess-1", ["x.ts"], token, payload);
+    await expect(hook.readNarrowResultCache(cwd, "sess-1", ["x.ts"], token)).resolves.toEqual(payload);
     // order-independent hit
-    expect(hook.readNarrowResultCache(cwd, "sess-1", ["x.ts"], token)).toEqual(payload);
+    await expect(hook.readNarrowResultCache(cwd, "sess-1", ["x.ts"], token)).resolves.toEqual(payload);
   });
 
-  it("invalidates wholesale when the meta token (knowledge graph) changes", () => {
+  it("invalidates wholesale when the meta token (knowledge graph) changes", async () => {
     const cwd = mkRepo();
     const token1 = hook.metaFreshnessToken(cwd);
-    hook.writeNarrowResultCache(cwd, "s", ["x.ts"], token1, { revision_hash: "r1" });
+    await hook.writeNarrowResultCache(cwd, "s", ["x.ts"], token1, { revision_hash: "r1" });
     // Bump agents.meta.json mtime → new freshness token.
     const metaPath = join(cwd, ".fabric", "agents.meta.json");
     const later = new Date(Date.now() + 10_000);
@@ -82,25 +82,25 @@ describe("narrow result cache (rc.37 NEW-17)", () => {
     const token2 = hook.metaFreshnessToken(cwd);
     expect(token2).not.toBe(token1);
     // Old token no longer matches → miss.
-    expect(hook.readNarrowResultCache(cwd, "s", ["x.ts"], token2)).toBeNull();
+    await expect(hook.readNarrowResultCache(cwd, "s", ["x.ts"], token2)).resolves.toBeNull();
   });
 
-  it("null meta token (no agents.meta.json) bypasses the cache", () => {
+  it("null meta token (no agents.meta.json) bypasses the cache", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "rc37-new17-nometa-"));
     tempDirs.push(cwd);
     expect(hook.metaFreshnessToken(cwd)).toBeNull();
-    hook.writeNarrowResultCache(cwd, "s", ["x.ts"], null, { revision_hash: "r" });
-    expect(hook.readNarrowResultCache(cwd, "s", ["x.ts"], null)).toBeNull();
+    await hook.writeNarrowResultCache(cwd, "s", ["x.ts"], null, { revision_hash: "r" });
+    await expect(hook.readNarrowResultCache(cwd, "s", ["x.ts"], null)).resolves.toBeNull();
   });
 
-  it("caps the result map at 50 entries", () => {
+  it("caps the result map at 50 entries", async () => {
     const cwd = mkRepo();
     const token = hook.metaFreshnessToken(cwd);
     for (let i = 0; i < 55; i++) {
-      hook.writeNarrowResultCache(cwd, "s", [`f${i}.ts`], token, { revision_hash: `r${i}` });
+      await hook.writeNarrowResultCache(cwd, "s", [`f${i}.ts`], token, { revision_hash: `r${i}` });
     }
     // Earliest inserted keys evicted; the most-recent survives.
-    expect(hook.readNarrowResultCache(cwd, "s", ["f0.ts"], token)).toBeNull();
-    expect(hook.readNarrowResultCache(cwd, "s", ["f54.ts"], token)).toEqual({ revision_hash: "r54" });
+    await expect(hook.readNarrowResultCache(cwd, "s", ["f0.ts"], token)).resolves.toBeNull();
+    await expect(hook.readNarrowResultCache(cwd, "s", ["f54.ts"], token)).resolves.toEqual({ revision_hash: "r54" });
   });
 });

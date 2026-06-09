@@ -5,8 +5,7 @@ import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
-// v2.0: Fabric scope is locked to Claude Code, Cursor, Codex CLI, and their
-// desktop variants where the client shares the same project/global surface.
+// v2.0: Fabric scope is locked to Claude Code, Cursor, and Codex CLI.
 // Unknown clientPaths keys (e.g. windsurf, rooCode, geminiCLI from v1.x) are
 // rejected at parse time via .strict() — there is no soft-deprecation path.
 // Adding a new client requires extending this schema explicitly.
@@ -16,7 +15,6 @@ export const clientPathsSchema = z
     claudeCodeDesktop: z.string().optional(),
     cursor: z.string().optional(),
     codexCLI: z.string().optional(),
-    codexDesktop: z.string().optional(),
   })
   .strict();
 
@@ -45,11 +43,11 @@ export const planContextTopKSchema = z.number().int().min(1).max(200);
 
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: Drives init-scan
 // baseline template language and the zh-CN body rewrite policy.
-// User-facing configuration is now the two concrete locale choices: `zh-CN`
-// and `en`. The legacy values remain parseable for existing configs:
-// `match-existing` is a pre-init placeholder and `zh-CN-hybrid` maps to the
-// zh-CN base locale while preserving protected English technical tokens in
-// renderers that still read the raw value.
+// `match-existing` preserves whatever language the project is already
+// authoring knowledge in; explicit `zh-CN` / `en` lock the policy regardless
+// of detected content; `zh-CN-hybrid` renders Chinese narrative prose with
+// English technical terms preserved (MCP tool names, CLI commands, file
+// paths, Skill/Fabric protected tokens).
 //
 // rc.12 hard rename: this used to be `knowledgeLanguageSchema` and the
 // associated config field was `knowledge_language`. There is no z.preprocess
@@ -127,8 +125,8 @@ export const fabricConfigSchema = z.object({
   mcpPayloadLimits: mcpPayloadLimitsSchema,
   // Backward-compat: both fields are optional with defaults so existing
   // fabric-config.json files (pre-grill-followup) parse unchanged. The default
-  // values themselves are load-bearing — see docs/RUNTIME-CONTRACTS.md.
-  fabric_language: fabricLanguageSchema.optional().default("zh-CN"),
+  // values themselves are load-bearing — see docs/data-schema.md.
+  fabric_language: fabricLanguageSchema.optional().default("match-existing"),
   default_layer_filter: defaultLayerFilterSchema.optional().default("both"),
   // Cooldown for the fabric-hint Stop hook (formerly archive-hint, renamed in
   // rc.5 TASK-010). After ANY of the three signals (archive / review / import)
@@ -161,16 +159,16 @@ export const fabricConfigSchema = z.object({
   // rc.7 T7: hours-since-last-knowledge_proposed cutoff for Signal A's
   // time branch. Was hardcoded as 24 in fabric-hint.cjs's THRESHOLD_HOURS;
   // externalized so chatty workspaces can lower the bar and quiet ones can
-  // raise it. Default 24 preserves rc.6 behavior. See docs/RUNTIME-CONTRACTS.md.
+  // raise it. Default 24 preserves rc.6 behavior. See docs/configuration.md.
   archive_hint_hours: z.number().int().positive().optional().default(24),
   // rc.7 T7: pending-count cutoff for Signal B (review skill). Was
   // hardcoded as 10 in fabric-hint.cjs's THRESHOLD_PENDING_COUNT.
-  // Default 10 preserves rc.6 behavior. See docs/RUNTIME-CONTRACTS.md for
+  // Default 10 preserves rc.6 behavior. See docs/configuration.md for
   // small/medium/large repo recommendations.
   review_hint_pending_count: z.number().int().positive().optional().default(10),
   // rc.7 T7: pending-age cutoff (in days) for Signal B (review skill).
   // Was hardcoded as 7 in fabric-hint.cjs's THRESHOLD_PENDING_AGE_DAYS.
-  // Default 7 preserves rc.6 behavior. See docs/RUNTIME-CONTRACTS.md.
+  // Default 7 preserves rc.6 behavior. See docs/configuration.md.
   review_hint_pending_age_days: z.number().int().positive().optional().default(7),
   // rc.7 T7 + T10 pre-wiring: days-since-last-doctor cutoff for the future
   // Signal D (maintenance hint). T10 will consume this to decide when the

@@ -5,7 +5,6 @@ import { t } from "../i18n.js";
 import {
   installArchiveHintHook,
   installFabricArchiveSkill,
-  installFabricSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
@@ -59,21 +58,22 @@ export type InstallHooksResult = {
  * (and was historically also `fabric hooks install` until rc.15 deleted the
  * top-level command). Performs the full archive+review+import-feature install
  * in sequence (each idempotent):
- *   1. Copy Fabric Skill templates into .claude/skills/ + .codex/skills/
- *      (entry router + archive/review/import/sync/store/audit/connect)
- *   2. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/ + .cursor/hooks/
+ *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
+ *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
+ *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
+ *   4. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/ + .cursor/hooks/
  *      (rc.5 TASK-010: renamed from archive-hint.cjs; Cursor added as third client)
- *   3. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
+ *   5. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
  *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
- *   4. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
+ *   6. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
  *      (events.Stop[] array-append-with-dedupe)
- *   5. Deep-merge templates/hooks/configs/cursor-hooks.json into .cursor/hooks.json
+ *   7. Deep-merge templates/hooks/configs/cursor-hooks.json into .cursor/hooks.json
  *      (events.Stop[] array-append-with-dedupe — rc.5 TASK-010)
- *   6. Append Fabric Skill
+ *   8. Append fabric-archive, fabric-review AND fabric-import Skill
  *      pointers to CLAUDE.md/AGENTS.md/.cursor/rules when those files
  *      already exist (does not create them; each pointer is dedup-checked
  *      independently).
- *   7. Validate that every installed client hook config resolves to the
+ *   9. Validate that every installed client hook config resolves to the
  *      fabric-hint.cjs script on disk — guards against template / install
  *      drift (e.g. partial copy, manual edit of one config file).
  *
@@ -95,7 +95,6 @@ export async function installHooks(
 
   const results: InstallStepResult[] = [];
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
-  results.push(...await runStep(() => installFabricSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricSyncSkill(normalizedTarget)));

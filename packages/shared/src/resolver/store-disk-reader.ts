@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { STORE_LAYOUT, type StoreIdentity, storeIdentitySchema } from "../schemas/store.js";
@@ -24,6 +25,20 @@ export function readStoreIdentity(absDir: string): StoreIdentity | null {
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(identityFile, "utf8"));
+  } catch {
+    return null;
+  }
+  const parsed = storeIdentitySchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+// Async twin for request-time store operations. Missing/unreadable/schema-invalid
+// stores degrade to null, matching the synchronous reader contract.
+export async function readStoreIdentityAsync(absDir: string): Promise<StoreIdentity | null> {
+  const identityFile = join(absDir, STORE_LAYOUT.identityFile);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(identityFile, "utf8"));
   } catch {
     return null;
   }

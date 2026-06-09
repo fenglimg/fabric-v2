@@ -238,13 +238,10 @@ describe("rc.16 TASK-007: panel field validators reject invalid input", () => {
     const enumField = getPanelFields().find((f) => f.key === "fabric_language");
     expect(enumField).toBeDefined();
     expect(enumField!.widget).toBe("select");
-    expect(enumField!.enum_values).toEqual(["zh-CN", "en"]);
 
     const validator = enumField!.validate.bind(enumField!);
     expect(validator("en").ok).toBe(true);
     expect(validator("zh-CN").ok).toBe(true);
-    expect(validator("match-existing").ok).toBe(false);
-    expect(validator("zh-CN-hybrid").ok).toBe(false);
     expect(validator("fr-FR").ok).toBe(false);
     expect(validator("").ok).toBe(false);
   });

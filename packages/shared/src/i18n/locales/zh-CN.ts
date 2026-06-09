@@ -31,6 +31,8 @@ export const zhCNMessages: Messages = {
   "cli.shared.loading": "加载中",
   "cli.shared.refresh": "刷新",
   "cli.shared.target-invalid": "目标必须是已存在的目录：{target}",
+  "cli.shared.target-invalid.action-hint":
+    "请选择一个已存在的项目目录，或先创建该目录后再重新运行命令。",
   "cli.shared.template-not-found": "未找到模板：{path}",
   "cli.shared.invalid-host-empty": "无效 host：<empty>",
   "cli.shared.invalid-port": "无效端口：{value}",
@@ -133,8 +135,8 @@ export const zhCNMessages: Messages = {
     "\n" +
     "示例：\n" +
     "  fabric doctor                   只读诊断报告\n" +
-    "  fabric doctor --fix             修复派生状态\n" +
-    "  fabric doctor --fix-knowledge   应用 store-backed 知识库卫生变更\n" +
+    "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
+    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
     "  fabric doctor --json            机器可读输出",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
@@ -220,11 +222,11 @@ export const zhCNMessages: Messages = {
   "cite-coverage.skip.other": "其他",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
-  "cli.doctor.args.fix.description": "修复 Fabric 派生状态。",
+  "cli.doctor.args.fix.description": "修复 Fabric 派生状态（meta + 索引）。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
-    "应用 store-backed 知识库卫生变更：修正漂移的 store counters、回填 pending relevance 默认值、删除过期 session-hints cache files。默认 doctor 运行仍然只读。",
+    "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
   "cli.doctor.args.yes.description":
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   // rc.35 TASK-12 (P0-11): --verbose 展开 maintainer 受众的 remediation。
@@ -233,7 +235,7 @@ export const zhCNMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — 加 `fabric doctor --verbose` 查看)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改 store-backed 知识库卫生状态；--fix 修复工作区派生状态。请分别运行。",
+    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
   // rc.20 TASK-05: --cite-coverage 报告参数；只读，与 --fix/--fix-knowledge 互斥。
   "cli.doctor.args.cite-coverage.description":
     "Cite 政策合规报告(只读;跳过标准检查)",
@@ -600,7 +602,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "通过 fabric-review Skill 审阅陈旧 canonical entries；store-only 模式已禁用 retired local knowledge roots 的自动降级。",
+    "运行 `fabric doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -609,7 +611,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
   "doctor.check.stale_archive.remediation":
-    "通过 fabric-review Skill 归档或 defer 陈旧 entries；store-only 模式已禁用 retired local knowledge roots 的自动 archive move。",
+    "运行 `fabric doctor --fix-knowledge`将 stale entries 移动到 `.fabric/.archive/<type>/`。",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "没有 pending knowledge entries 超过 14-day review threshold。",
@@ -647,7 +649,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "运行 `fabric doctor --fix-knowledge` 将 store counters 提升到磁盘上观测到的最高 stable_id。",
+    "运行 `fabric doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
@@ -728,6 +730,13 @@ export const zhCNMessages: Messages = {
     ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
   "doctor.check.session_hints_stale.remediation":
     "运行 `fabric doctor --fix-knowledge` 删除过期的 session-hints cache files。",
+  "doctor.check.hook_cache_writable.name": "Hook cache writable",
+  "doctor.check.hook_cache_writable.ok":
+    "Hook sidecar cache 路径 {path} 可写入探针文件。",
+  "doctor.check.hook_cache_writable.message":
+    "Hook sidecar cache 路径 {path} 不可写；hook state updates 会静默失败。错误：{error}。",
+  "doctor.check.hook_cache_writable.remediation":
+    "恢复 {path} 写权限，移除占用该路径的阻塞文件，或修复文件系统状态后重新运行 `fabric install`。",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "未发现 .fabric/.serve.lock。",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -951,21 +960,16 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.invalid-select": "无效输入。可选值：{options}。",
   "cli.install.wizard.cancelled": "Fabric 安装已在执行前取消。",
   "cli.install.capabilities.title": "客户端能力摘要",
-  // post-install 重启提示。MCP server 在 client 启动时 spawn, 已运行的
-  // Claude Code / Cursor / Codex session 不会自动加载新 mcp config。
+  // v2.0.0-rc.37 NEW-22: post-install 重启提示。MCP server 在 client 启动
+  // 时 spawn, 已运行的 Claude Code / Cursor / Codex session 不会自动加载
+  // 新 mcp config — 必须重启才能拿到 Fabric tools。
   "cli.install.restart-banner":
-    "重启提示：已运行的 Claude Code / Cursor / Codex session 需重启才能加载新的 MCP / Hook / Bootstrap 配置；新会话会使用 Fabric tools。",
-  "cli.install.architecture-reference": "参考：docs/ARCHITECTURE.md 说明 CLI / Skill / MCP 的边界。",
-  "cli.install.semantic.already-enabled":
-    "语义搜索已启用：embed_model={model}\n配置未改动：{configPath}",
-  "cli.install.semantic.prompt": "是否启用向量语义搜索？首次使用会下载 embedding model。",
+    "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
   "cli.install.next-steps":
-    "下一步 —— 验证 Fabric 已接入：\n" +
-    "  1. 重启正在运行的 AI 客户端；新会话才会加载最新 MCP / Hook / Bootstrap 配置。\n" +
-    "  2. 确认知识写入目标：新知识会写入 active write store，并先进入 knowledge/pending/。\n" +
-    "  3. 开始沉淀知识：正常工作即可；有决策、踩坑或历史回灌需求时，使用 fabric-archive / fabric-import。\n" +
-    "  4. 审核入库：用 fabric-review 审核 pending 条目后，知识才会进入正式知识库。\n" +
-    "  5. 验证状态：运行 `fabric doctor`，或在重启后的客户端询问「Fabric 对这个 repo 知道些什么？」。",
+    "下一步 —— 拿到第一份价值:\n" +
+    "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。\n" +
+    "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
+    "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
   "cli.install.store-bind-nudge":
     "💡 检测到已挂载但未绑定本项目的知识 store: {aliases}。运行 `fabric store bind {first}` 把它的知识接入本项目, 再 `fabric store switch-write {first}` 设为团队知识的写入目标。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
@@ -982,9 +986,9 @@ export const zhCNMessages: Messages = {
   "cli.install.capabilities.status.skipped": "已跳过",
   "cli.install.capabilities.status.failed": "失败",
   "cli.install.capabilities.status.na": "不适用",
-  "cli.install.capabilities.follow-up.ready": "重启后可用",
+  "cli.install.capabilities.follow-up.ready": "可在客户端继续",
   "cli.install.capabilities.follow-up.install": "安装客户端资产",
-  "cli.install.capabilities.follow-up.manual": "检查客户端配置",
+  "cli.install.capabilities.follow-up.manual": "需要手动后续处理",
   "cli.install.next-step.message": "运行 fabric install --reapply --yes 以刷新 Fabric 管理的 hooks 与客户端配置。",
   "cli.install.reason-message.installable-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
   "cli.install.reason-message.manual-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端尚未安装 Fabric skill，需要手动完成后续安装。",
@@ -1004,6 +1008,8 @@ export const zhCNMessages: Messages = {
   "cli.install.diff.applying-missing": "正在补齐 {count} 个缺失项：{files}",
   "cli.install.diff.drift-abort":
     "检测到 {path} 已被修改。运行 `fabric doctor` 进行检查，或 `fabric uninstall && fabric install` 进行重置。",
+  "cli.install.diff.drift-abort.action-hint":
+    "先运行 `fabric doctor` 检查漂移；如果需要重置托管文件，运行 `fabric uninstall && fabric install`。",
   "cli.install.diff.state.missing": "缺失",
   "cli.install.diff.state.present-canonical": "规范",
   "cli.install.diff.state.drifted": "漂移",
@@ -1309,12 +1315,6 @@ export const zhCNMessages: Messages = {
   "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
   "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
   "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
-  "cli.store.migrate.none": "没有需要迁移的项目本地知识 (dual-root 已空)",
-  "cli.store.migrate.dry-run-header": "迁移预览 (dry-run, 不写入磁盘):",
-  "cli.store.migrate.applied-header": "已迁移 {count} 条进 store:",
-  "cli.store.migrate.committed": "已在 store 仓库提交迁移变更",
-  "cli.store.migrate.remap-note": "  ↑ 因目标 store id 冲突, {oldId} 重映射为 {newId}",
-  "cli.store.migrate.skips-header": "跳过 {count} 项:",
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",

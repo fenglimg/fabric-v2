@@ -4,7 +4,7 @@ description: 冷启动从 git log + docs/*.md 回灌 .fabric/knowledge/pending (
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__fabric__fab_review
 ---
 
-> **Surface**: Skill (LLM judgment over git + docs). See [`docs/ARCHITECTURE.md`](https://github.com/fenglimg/fabric/blob/main/docs/ARCHITECTURE.md).
+> **Surface**: Skill (LLM judgment over git + docs). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
 
 ## Purpose
 

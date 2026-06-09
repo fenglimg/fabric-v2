@@ -55,8 +55,7 @@ const HOOK_SCRIPTS = [
 ];
 const HOOK_CLIENTS = [".claude", ".codex", ".cursor"];
 const SKILL_CLIENTS = [".claude", ".codex"];
-const SKILLS = ["fabric", "fabric-archive", "fabric-review", "fabric-import"];
-const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const SKILLS = ["fabric-archive", "fabric-review", "fabric-import"];
 
 function readIf(path: string): string | null {
   return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -143,20 +142,5 @@ describe("cross-client install parity (rc.37 F2)", () => {
       }
     }
     expect(missing, `clients missing hook config:\n${missing.join("\n")}`).toEqual([]);
-  });
-
-  it("checked-in active Codex and Cursor hook configs keep narrow before cite policy", () => {
-    const codex = JSON.parse(readFileSync(join(REPO_ROOT, ".codex", "hooks.json"), "utf8")) as {
-      events?: { PreToolUse?: Array<{ command?: string }> };
-    };
-    const cursor = JSON.parse(readFileSync(join(REPO_ROOT, ".cursor", "hooks.json"), "utf8")) as {
-      hooks?: { preToolUse?: Array<{ command?: string }> };
-    };
-    const codexCommands = (codex.events?.PreToolUse ?? []).map((entry) => entry.command ?? "");
-    const cursorCommands = (cursor.hooks?.preToolUse ?? []).map((entry) => entry.command ?? "");
-    expect(codexCommands[0]).toContain("knowledge-hint-narrow.cjs");
-    expect(codexCommands[1]).toContain("cite-policy-evict.cjs");
-    expect(cursorCommands[0]).toContain("knowledge-hint-narrow.cjs");
-    expect(cursorCommands[1]).toContain("cite-policy-evict.cjs");
   });
 });

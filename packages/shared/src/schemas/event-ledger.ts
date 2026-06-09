@@ -283,6 +283,18 @@ export const knowledgePromoteFailedEventSchema = z.object({
   reason: z.string(),
 });
 
+export const knowledgeModifiedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_modified"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  path: z.string(),
+  changed_fields: z.array(z.string()),
+  before: z.record(z.unknown()),
+  after: z.record(z.unknown()),
+  reason: z.string().optional(),
+});
+
 export const knowledgeLayerChangedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("knowledge_layer_changed"),
@@ -907,6 +919,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgePromoteStartedEventSchema,
   knowledgePromotedEventSchema,
   knowledgePromoteFailedEventSchema,
+  knowledgeModifiedEventSchema,
   knowledgeLayerChangedEventSchema,
   // v2.0.0-rc.37 NEW-24: dedicated old→new stable_id mapping event
   knowledgeIdRedirectEventSchema,
@@ -1003,6 +1016,7 @@ export type KnowledgeProposedEvent = z.infer<typeof knowledgeProposedEventSchema
 export type KnowledgePromoteStartedEvent = z.infer<typeof knowledgePromoteStartedEventSchema>;
 export type KnowledgePromotedEvent = z.infer<typeof knowledgePromotedEventSchema>;
 export type KnowledgePromoteFailedEvent = z.infer<typeof knowledgePromoteFailedEventSchema>;
+export type KnowledgeModifiedEvent = z.infer<typeof knowledgeModifiedEventSchema>;
 export type KnowledgeLayerChangedEvent = z.infer<typeof knowledgeLayerChangedEventSchema>;
 export type KnowledgeIdRedirectEvent = z.infer<typeof knowledgeIdRedirectEventSchema>;
 export type KnowledgeSlugRenamedEvent = z.infer<typeof knowledgeSlugRenamedEventSchema>;
@@ -1064,6 +1078,7 @@ export type EventLedgerEvent =
   | KnowledgePromoteStartedEvent
   | KnowledgePromotedEvent
   | KnowledgePromoteFailedEvent
+  | KnowledgeModifiedEvent
   | KnowledgeLayerChangedEvent
   | KnowledgeIdRedirectEvent
   | KnowledgeSlugRenamedEvent

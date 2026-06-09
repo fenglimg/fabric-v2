@@ -7,7 +7,6 @@ import { getProjectTranslator } from "../i18n.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { backfillKnowledgeDir } from "../store/scope-backfill.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
-import { migrateProjectKnowledge } from "../store/store-migrate.js";
 import {
   promoteProjectToTeam,
   rescopeStore,
@@ -70,7 +69,7 @@ const addCommand = defineCommand({
     "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
     remote: { type: "string", description: "Git remote locator (omit for local-only)" },
   },
-  run({ args }) {
+  async run({ args }) {
     // ADJ-NEWN-6: fail fast on a phantom mount (uuid with no on-disk tree)
     // instead of writing the registry entry and crashing later in `sync`.
     assertStoreMountable(args.uuid, undefined, args["mount-name"]);
@@ -105,8 +104,8 @@ const createCommand = defineCommand({
     "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
     remote: { type: "string", description: "Git remote to associate (push target; optional)" },
   },
-  run({ args }) {
-    const result = storeCreate(args.alias, new Date().toISOString(), {
+  async run({ args }) {
+    const result = await storeCreate(args.alias, new Date().toISOString(), {
       ...(args["mount-name"] === undefined ? {} : { mountName: args["mount-name"] }),
       ...(args.remote === undefined ? {} : { remote: args.remote }),
     });
@@ -123,7 +122,7 @@ const removeCommand = defineCommand({
   args: {
     alias: { type: "positional", required: true, description: "Alias to detach" },
   },
-  run({ args }) {
+  async run({ args }) {
     const { detached } = storeRemove(args.alias);
     const t = getProjectTranslator();
     console.log(
@@ -159,11 +158,11 @@ const bindCommand = defineCommand({
       description: "Bind this repo to a project:<id> in the store (must already exist)",
     },
   },
-  run({ args }) {
+  async run({ args }) {
     const entry =
       args.remote === undefined ? { id: args.id } : { id: args.id, suggested_remote: args.remote };
     const projectRoot = process.cwd();
-    const next = storeBind(
+    const next = await storeBind(
       projectRoot,
       entry,
       args.project === undefined ? {} : { project: args.project },
@@ -185,9 +184,10 @@ const switchWriteCommand = defineCommand({
   args: {
     alias: { type: "positional", required: true, description: "Alias of the store to write to" },
   },
-  run({ args }) {
+  async run({ args }) {
     const projectRoot = process.cwd();
     storeSwitchWrite(projectRoot, args.alias);
+    regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
     console.log(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias }));
   },
 });
@@ -205,55 +205,6 @@ const routeWriteCommand = defineCommand({
   },
 });
 
-const migrateCommand = defineCommand({
-  meta: {
-    name: "migrate",
-    description:
-      "Move project-local (dual-root) knowledge into the resolved write-target stores",
-  },
-  args: {
-    "dry-run": {
-      type: "boolean",
-      description: "Preview the move without writing anything",
-    },
-  },
-  run({ args }) {
-    const projectRoot = process.cwd();
-    const t = getProjectTranslator(projectRoot);
-    const dryRun = args["dry-run"] === true;
-    const report = migrateProjectKnowledge(projectRoot, { dryRun });
-
-    if (report.items.length === 0 && report.skips.length === 0) {
-      console.log(t("cli.store.migrate.none"));
-      return;
-    }
-
-    console.log(
-      dryRun
-        ? t("cli.store.migrate.dry-run-header")
-        : t("cli.store.migrate.applied-header", { count: String(report.items.length) }),
-    );
-    for (const item of report.items) {
-      const id = item.newId ?? item.oldId ?? "(draft)";
-      console.log(`  ${item.layer}/${item.type}  ${id}  →  ${item.alias}`);
-      if (item.newId !== null && item.oldId !== null) {
-        console.log(
-          t("cli.store.migrate.remap-note", { oldId: item.oldId, newId: item.newId }),
-        );
-      }
-    }
-    if (report.skips.length > 0) {
-      console.log(t("cli.store.migrate.skips-header", { count: String(report.skips.length) }));
-      for (const skip of report.skips) {
-        console.log(`  ${skip.source}: ${skip.reason}`);
-      }
-    }
-    if (report.committed) {
-      console.log(t("cli.store.migrate.committed"));
-    }
-  },
-});
-
 // W1/A2 — store-internal project registry. `store project list <alias>` /
 // `store project create <alias> <id>` enumerate / register the projects a store
 // serves (the `<id>` segments forming `project:<id>` coordinates).
@@ -262,8 +213,8 @@ const projectListCommand = defineCommand({
   args: {
     store: { type: "positional", required: true, description: "Store alias/UUID" },
   },
-  run({ args }) {
-    const projects = storeProjectList(args.store);
+  async run({ args }) {
+    const projects = await storeProjectList(args.store);
     if (projects.length === 0) {
       console.log(`store '${args.store}' has no registered projects.`);
       return;
@@ -281,8 +232,8 @@ const projectCreateCommand = defineCommand({
     id: { type: "positional", required: true, description: "Project id (single [a-z0-9_-] segment)" },
     name: { type: "string", description: "Optional human-facing label" },
   },
-  run({ args }) {
-    const project = storeProjectCreate(args.store, args.id, new Date().toISOString(), {
+  async run({ args }) {
+    const project = await storeProjectCreate(args.store, args.id, new Date().toISOString(), {
       ...(args.name === undefined ? {} : { name: args.name }),
     });
     console.log(`registered project '${project.id}' in store '${args.store}'.`);
@@ -396,7 +347,7 @@ const rescopeCommand = defineCommand({
     from: { type: "string", description: "Only entries currently at this semantic_scope" },
     "dry-run": { type: "boolean", description: "Preview changes without writing" },
   },
-  run({ args }) {
+  async run({ args }) {
     const resolved = resolveStoreDirAndVisibility(args.store);
     if (resolved === null) {
       console.error(`no mounted store '${args.store}'`);
@@ -404,7 +355,7 @@ const rescopeCommand = defineCommand({
       return;
     }
     printRescopeReport(
-      rescopeStore(resolved.dir, args.to, {
+      await rescopeStore(resolved.dir, args.to, {
         id: args.id,
         fromScope: args.from,
         storeVisibility: resolved.visibility,
@@ -424,7 +375,7 @@ const promoteCommand = defineCommand({
     project: { type: "string", description: "Only this project's entries (default: all project:*)" },
     "dry-run": { type: "boolean", description: "Preview changes without writing" },
   },
-  run({ args }) {
+  async run({ args }) {
     const resolved = resolveStoreDirAndVisibility(args.store);
     if (resolved === null) {
       console.error(`no mounted store '${args.store}'`);
@@ -432,7 +383,7 @@ const promoteCommand = defineCommand({
       return;
     }
     printRescopeReport(
-      promoteProjectToTeam(resolved.dir, {
+      await promoteProjectToTeam(resolved.dir, {
         projectId: args.project,
         storeVisibility: resolved.visibility,
         dryRun: args["dry-run"] === true,
@@ -452,7 +403,6 @@ export default defineCommand({
     bind: bindCommand,
     "switch-write": switchWriteCommand,
     "route-write": routeWriteCommand,
-    migrate: migrateCommand,
     "backfill-scope": backfillScopeCommand,
     "re-scope": rescopeCommand,
     promote: promoteCommand,

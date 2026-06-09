@@ -23,9 +23,10 @@ export async function atomicWriteText(
   opts?: AtomicWriteOptions,
 ): Promise<void> {
   const tmpPath = path + makeTmpSuffix();
+  const shouldFsync = opts?.fsync ?? true;
 
   try {
-    if (opts?.fsync) {
+    if (shouldFsync) {
       const fd = await open(tmpPath, "w");
       try {
         await fd.writeFile(content, "utf8");

@@ -1,8 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
-import { readStoreIdentity } from "../resolver/store-disk-reader.js";
+import { readStoreIdentityAsync } from "../resolver/store-disk-reader.js";
 import {
   STORE_KNOWLEDGE_TYPE_DIRS,
   STORE_LAYOUT,
@@ -44,8 +45,10 @@ export const STORE_GITIGNORE = [
   "",
 ].join("\n");
 
-function git(cwd: string, args: string[]): void {
-  execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
+const execFileAsync = promisify(execFile);
+
+async function git(cwd: string, args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd });
 }
 
 export interface InitStoreOptions {
@@ -56,33 +59,38 @@ export interface InitStoreOptions {
 
 // Scaffold an empty store at `absDir`. Idempotent on the directory structure;
 // refuses to overwrite an existing store.json (identity is mint-once, S55).
-export function initStore(
+export async function initStore(
   absDir: string,
   identity: StoreIdentity,
   options: InitStoreOptions = {},
-): StoreIdentity {
+): Promise<StoreIdentity> {
   const parsed = storeIdentitySchema.parse(identity);
 
   const identityFile = join(absDir, STORE_LAYOUT.identityFile);
-  if (existsSync(identityFile)) {
+  try {
+    await access(identityFile);
     throw new Error(`store already initialized at ${absDir} (store.json exists)`);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("already initialized")) {
+      throw err;
+    }
   }
 
   for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
-    mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, type), { recursive: true });
+    await mkdir(join(absDir, STORE_LAYOUT.knowledgeDir, type), { recursive: true });
   }
-  mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
-  mkdirSync(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
-  mkdirSync(join(absDir, STORE_LAYOUT.stateDir), { recursive: true });
+  await mkdir(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
+  await mkdir(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
+  await mkdir(join(absDir, STORE_LAYOUT.stateDir), { recursive: true });
 
-  writeFileSync(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
-  writeFileSync(join(absDir, ".gitignore"), STORE_GITIGNORE, "utf8");
+  await writeFile(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  await writeFile(join(absDir, ".gitignore"), STORE_GITIGNORE, "utf8");
 
   if (options.git !== false) {
-    git(absDir, ["init", "-b", "main"]);
+    await git(absDir, ["init", "-b", "main"]);
   }
 
-  const readBack = readStoreIdentity(absDir);
+  const readBack = await readStoreIdentityAsync(absDir);
   if (readBack === null) {
     throw new Error(`store init wrote an unrecognizable store.json at ${absDir}`);
   }
@@ -99,11 +107,14 @@ export interface StoreKnowledgeRef {
   file: string; // absolute path
 }
 
-function listMarkdown(dir: string): string[] {
-  if (!existsSync(dir)) {
+async function listMarkdown(dir: string): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
     return [];
   }
-  return readdirSync(dir)
+  return entries
     .filter((name) => name.endsWith(".md"))
     .sort()
     .map((name) => join(dir, name));
@@ -118,10 +129,10 @@ export interface MountedStoreDir {
 }
 
 // Knowledge entries in one store, each tagged with the store's provenance.
-export function listStoreKnowledge(store: MountedStoreDir): StoreKnowledgeRef[] {
+export async function listStoreKnowledge(store: MountedStoreDir): Promise<StoreKnowledgeRef[]> {
   const refs: StoreKnowledgeRef[] = [];
   for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
-    for (const file of listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, type))) {
+    for (const file of await listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, type))) {
       refs.push({ store_uuid: store.store_uuid, alias: store.alias, type, file });
     }
   }
@@ -131,8 +142,9 @@ export function listStoreKnowledge(store: MountedStoreDir): StoreKnowledgeRef[] 
 // Cross-store read: union of every store's knowledge, each entry retaining its
 // own store_uuid. Reads NEVER merge across stores — same-numbered local ids in
 // different stores stay distinct (their global_ref differs, S61).
-export function readKnowledgeAcrossStores(stores: MountedStoreDir[]): StoreKnowledgeRef[] {
-  return stores.flatMap((store) => listStoreKnowledge(store));
+export async function readKnowledgeAcrossStores(stores: MountedStoreDir[]): Promise<StoreKnowledgeRef[]> {
+  const lists = await Promise.all(stores.map((store) => listStoreKnowledge(store)));
+  return lists.flat();
 }
 
 // ---------------------------------------------------------------------------
@@ -148,14 +160,11 @@ function storeProjectsPath(storeDir: string): string {
 
 // Enumerate the projects registered in a store. Absent/unreadable/invalid
 // projects.json ⇒ [] (a store need not have any projects).
-export function readStoreProjects(storeDir: string): StoreProject[] {
+export async function readStoreProjects(storeDir: string): Promise<StoreProject[]> {
   const path = storeProjectsPath(storeDir);
-  if (!existsSync(path)) {
-    return [];
-  }
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
+    raw = JSON.parse(await readFile(path, "utf8"));
   } catch {
     return [];
   }
@@ -164,35 +173,36 @@ export function readStoreProjects(storeDir: string): StoreProject[] {
 }
 
 // True when `id` is a registered project in this store.
-export function storeHasProject(storeDir: string, id: string): boolean {
-  return readStoreProjects(storeDir).some((p) => p.id === id);
+export async function storeHasProject(storeDir: string, id: string): Promise<boolean> {
+  return (await readStoreProjects(storeDir)).some((p) => p.id === id);
 }
 
 // Register a new project in the store (writes projects.json). Refuses a
 // duplicate id so a typo never silently overwrites an existing project's
 // metadata. Returns the full project list after the add.
-export function addStoreProject(storeDir: string, project: StoreProject): StoreProject[] {
+export async function addStoreProject(storeDir: string, project: StoreProject): Promise<StoreProject[]> {
   const parsed = storeProjectSchema.parse(project);
-  const existing = readStoreProjects(storeDir);
+  const existing = await readStoreProjects(storeDir);
   if (existing.some((p) => p.id === parsed.id)) {
     throw new Error(`project '${parsed.id}' already exists in store at ${storeDir}`);
   }
   const next = [...existing, parsed];
   const validated = storeProjectsFileSchema.parse({ projects: next });
-  writeFileSync(storeProjectsPath(storeDir), `${JSON.stringify(validated, null, 2)}\n`, "utf8");
+  await writeFile(storeProjectsPath(storeDir), `${JSON.stringify(validated, null, 2)}\n`, "utf8");
   return validated.projects;
 }
 
 // Cross-store pending aggregation API (roadmap gemini#3) — the底座 P2 fab_review
 // builds on instead of walking store git itself. Returns the union of pending
 // entries across the given (writable) stores, each tagged with provenance.
-export function aggregatePendingAcrossStores(stores: MountedStoreDir[]): StoreKnowledgeRef[] {
-  return stores.flatMap((store) =>
-    listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR)).map((file) => ({
+export async function aggregatePendingAcrossStores(stores: MountedStoreDir[]): Promise<StoreKnowledgeRef[]> {
+  const lists = await Promise.all(stores.map(async (store) =>
+    (await listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR))).map((file) => ({
       store_uuid: store.store_uuid,
       alias: store.alias,
       type: STORE_PENDING_DIR,
       file,
     })),
-  );
+  ));
+  return lists.flat();
 }

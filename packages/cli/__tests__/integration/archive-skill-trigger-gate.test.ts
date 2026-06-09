@@ -18,7 +18,7 @@
  * entry-context aware)`:
  *
  *   E1 hook_passive          → references stdout JSON `{decision:'block'}`
- *                              from fabric-hint.cjs
+ *                              from archive-hint.cjs
  *   E2 explicit_user_invoke  → recognises `fabric archive` /
  *                              `/fabric-archive` direct invocations
  *   E3 ai_self_trigger       → recognises self-archive policy marker
@@ -83,14 +83,14 @@ describe("TASK-11 SKILL.md Phase 0.4 trigger-gate — entry-point detection", ()
     expect(GATE_REGION.length).toBeGreaterThan(200);
   });
 
-  it("E1 hook_passive: gate documents stdout JSON {decision:'block'} from fabric-hint.cjs", () => {
+  it("E1 hook_passive: gate documents stdout JSON {decision:'block'} from archive-hint.cjs", () => {
     // E1 detection rule must reference the hook stdout payload shape so an
     // LLM reader knows to inspect it. Both substrings must appear in the
     // same region so the wording is unambiguous.
     expect(GATE_REGION).toMatch(/E1/);
     expect(GATE_REGION).toMatch(/hook_passive/);
     expect(GATE_REGION).toMatch(/decision['"]?:\s*['"]block['"]/);
-    expect(GATE_REGION).toMatch(/fabric-hint\.cjs/);
+    expect(GATE_REGION).toMatch(/archive-hint\.cjs/);
     // Gate decision MUST classify E1 as SKIP.
     expect(GATE_REGION).toMatch(/E1[\s\S]{0,200}SKIP|SKIP[\s\S]{0,200}E1/);
   });

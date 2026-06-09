@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, readdir, unlink } from "node:fs/promises";
+import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -850,6 +850,19 @@ async function modifyEntry(
   // flows through the same in-place rewrite as a scalar tag/maturity edit.
   const merged = rewriteFrontmatterMerge(content, changes);
   await atomicWriteText(target.absPath, merged);
+  const changedFields = Object.keys(changes).filter(
+    (field) => changes[field as keyof ModifyChanges] !== undefined,
+  );
+  await emitEventBestEffort(projectRoot, {
+    event_type: "knowledge_modified",
+    ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
+    timestamp: new Date().toISOString(),
+    path: pendingPath,
+    changed_fields: changedFields,
+    before: pickModifyEventValues(fm, changedFields),
+    after: pickModifyEventValues(changes, changedFields),
+    reason: `modify:${pendingPath}`,
+  });
 
   return {
     action: "modify",
@@ -868,6 +881,17 @@ type ResolvedTarget = {
   // Slug (filename without .md, with id prefix stripped if present).
   slug: string;
 };
+
+function pickModifyEventValues(
+  source: Partial<ParsedFrontmatter & ModifyChanges>,
+  fields: string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const field of fields) {
+    out[field] = source[field as keyof (ParsedFrontmatter & ModifyChanges)] ?? null;
+  }
+  return out;
+}
 
 function resolveModifyTarget(
   projectRoot: string,
@@ -1091,10 +1115,148 @@ async function modifyLayerFlip(
 // search action (TASK-002)
 //
 // Walks pending + canonical (team + personal) trees, parses frontmatter, and
-// applies filters. The query is a case-insensitive substring matched against
-// title, summary, and tag values. O(N) full scan — acceptable for current
-// corpus sizes (<500 entries); rc.4 may add a description_index accelerator.
+// applies filters. Search keeps a process-local per-file index keyed by mtime
+// and size so repeated queries do not reread and reparse the whole corpus.
 // ---------------------------------------------------------------------------
+
+type SearchSource = {
+  root: string;
+  isPending: boolean;
+  isPersonal: boolean;
+  isStore: boolean;
+};
+
+type IndexedSearchEntry = {
+  name: string;
+  absolutePath: string;
+  type: PluralType;
+  source: SearchSource;
+  fm: ParsedFrontmatter;
+  layer: Layer;
+  maturity: Maturity;
+  body: string;
+};
+
+type SearchEntryCacheRecord = {
+  fingerprint: string;
+  entry: IndexedSearchEntry;
+};
+
+type SearchDirectoryCache = {
+  files: Map<string, SearchEntryCacheRecord>;
+};
+
+const SEARCH_INDEX_CACHE_MAX_DIRS = 256;
+const searchEntryIndexCache = new Map<string, SearchDirectoryCache>();
+let searchEntryIndexContentReads = 0;
+
+export function __resetReviewSearchIndexCacheForTests(): void {
+  searchEntryIndexCache.clear();
+  searchEntryIndexContentReads = 0;
+}
+
+export function __getReviewSearchIndexCacheStatsForTests(): {
+  directories: number;
+  indexedFiles: number;
+  contentReads: number;
+} {
+  let indexedFiles = 0;
+  for (const directoryCache of searchEntryIndexCache.values()) {
+    indexedFiles += directoryCache.files.size;
+  }
+  return {
+    directories: searchEntryIndexCache.size,
+    indexedFiles,
+    contentReads: searchEntryIndexContentReads,
+  };
+}
+
+function getSearchDirectoryCache(cacheKey: string): SearchDirectoryCache {
+  const cached = searchEntryIndexCache.get(cacheKey);
+  if (cached !== undefined) {
+    searchEntryIndexCache.delete(cacheKey);
+    searchEntryIndexCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const created: SearchDirectoryCache = { files: new Map() };
+  searchEntryIndexCache.set(cacheKey, created);
+  while (searchEntryIndexCache.size > SEARCH_INDEX_CACHE_MAX_DIRS) {
+    const lru = searchEntryIndexCache.keys().next().value;
+    if (lru === undefined) break;
+    searchEntryIndexCache.delete(lru);
+  }
+  return created;
+}
+
+async function listIndexedSearchEntries(
+  source: SearchSource,
+  type: PluralType,
+): Promise<IndexedSearchEntry[]> {
+  const dir = join(source.root, type);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return [];
+  }
+
+  const cacheKey = `${dir}|${source.isPending ? "pending" : "canonical"}|${source.isPersonal ? "personal" : "team"}|${source.isStore ? "store" : "local"}`;
+  const directoryCache = getSearchDirectoryCache(cacheKey);
+  const seen = new Set<string>();
+  const indexed: IndexedSearchEntry[] = [];
+
+  for (const name of entries) {
+    if (!name.endsWith(".md")) continue;
+    const absolutePath = join(dir, name);
+    let fingerprint: string;
+    try {
+      const st = await stat(absolutePath);
+      if (!st.isFile()) continue;
+      fingerprint = `${st.size}:${st.mtimeMs}`;
+    } catch {
+      continue;
+    }
+
+    seen.add(absolutePath);
+    const cached = directoryCache.files.get(absolutePath);
+    if (cached !== undefined && cached.fingerprint === fingerprint) {
+      indexed.push(cached.entry);
+      continue;
+    }
+
+    let content: string;
+    try {
+      content = await readFile(absolutePath, "utf8");
+      searchEntryIndexContentReads += 1;
+    } catch {
+      directoryCache.files.delete(absolutePath);
+      continue;
+    }
+
+    const fm = parseFrontmatter(content);
+    const entry: IndexedSearchEntry = {
+      name,
+      absolutePath,
+      type,
+      source,
+      fm,
+      layer: fm.layer ?? (source.isPersonal ? "personal" : "team"),
+      maturity: fm.maturity ?? "draft",
+      body: extractBodyTrimmed(content),
+    };
+    directoryCache.files.set(absolutePath, { fingerprint, entry });
+    indexed.push(entry);
+  }
+
+  for (const cachedPath of directoryCache.files.keys()) {
+    if (!seen.has(cachedPath)) {
+      directoryCache.files.delete(cachedPath);
+    }
+  }
+
+  return indexed;
+}
 
 async function searchEntries(
   projectRoot: string,
@@ -1108,7 +1270,7 @@ async function searchEntries(
   // resolved write-target stores (team + personal) — no dual-root. Each layer is
   // resolved defensively so an un-onboarded layer is skipped rather than
   // crashing the read. Store entries are reported by absolute path.
-  const sources: Array<{ root: string; isPending: boolean; isPersonal: boolean; isStore: boolean }> = [];
+  const sources: SearchSource[] = [];
   for (const layer of ["team", "personal"] as const) {
     const isPersonal = layer === "personal";
     try {
@@ -1127,26 +1289,8 @@ async function searchEntries(
 
   for (const source of sources) {
     for (const type of typesToScan) {
-      const dir = join(source.root, type);
-      if (!existsSync(dir)) continue;
-      let entries: string[];
-      try {
-        entries = await readdir(dir);
-      } catch {
-        continue;
-      }
-      for (const name of entries) {
-        if (!name.endsWith(".md")) continue;
-        const absolutePath = join(dir, name);
-        let content: string;
-        try {
-          content = await readFile(absolutePath, "utf8");
-        } catch {
-          continue;
-        }
-        const fm = parseFrontmatter(content);
-        const layer: Layer = fm.layer ?? (source.isPersonal ? "personal" : "team");
-        const maturity: Maturity = fm.maturity ?? "draft";
+      for (const indexed of await listIndexedSearchEntries(source, type)) {
+        const { absolutePath, fm, layer, maturity, name } = indexed;
 
         // Filter: layer
         if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
@@ -1182,7 +1326,7 @@ async function searchEntries(
         // TASK-006 (audit §2.23): when filters.include_body=true, extend
         // the haystack to body text so reviewers can search for payload
         // strings hidden under `## Evidence`.
-        const bodyForSearch = filters?.include_body === true ? extractBodyTrimmed(content) : "";
+        const bodyForSearch = filters?.include_body === true ? indexed.body : "";
         const haystacks = [
           fm.title ?? "",
           fm.summary ?? "",

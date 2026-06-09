@@ -54,7 +54,7 @@ function assertAliasLinkIfSupported(globalRoot: string, alias: string, mountName
 describe("store by-alias links (C3)", () => {
   it("storeCreate mints a mount_name dir and, when supported, a by-alias symlink", async () => {
     const globalRoot = await setup();
-    storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
+    await storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
 
     assertAliasLinkIfSupported(globalRoot, "team", "team");
     expect(existsSync(join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM, mount_name: "team" }), "store.json"))).toBe(true);
@@ -67,7 +67,7 @@ describe("store by-alias links (C3)", () => {
 
   it("detectAliasLinkDrift flags a missing link and sync heals it", async () => {
     const globalRoot = await setup();
-    storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
+    await storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
 
     // Simulate drift: delete the link by hand.
     rmSync(aliasLink(globalRoot, "team"), { force: true });
@@ -87,7 +87,7 @@ describe("store by-alias links (C3)", () => {
 
   it("storeRemove drops the detached store's by-alias link", async () => {
     const globalRoot = await setup();
-    storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
+    await storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
     const sync = syncStoreAliasLinks(globalRoot);
     if (sync.errors.includes("team")) {
       expect(existsSync(join(globalRoot, "stores", "team", "store.json"))).toBe(true);
@@ -101,7 +101,7 @@ describe("store by-alias links (C3)", () => {
 
   it("sync removes a stale link whose alias is no longer mounted", async () => {
     const globalRoot = await setup();
-    storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
+    await storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
     // Hand-create a stale link for an alias not in the registry.
     const { symlinkSync } = await import("node:fs");
     try {

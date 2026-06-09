@@ -103,6 +103,50 @@ function makePayload(
   };
 }
 
+function writeProjectConfig(root: string, projectId: string): void {
+  mkdirSync(join(root, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(root, ".fabric", "fabric-config.json"),
+    JSON.stringify({ project_id: projectId, fabric_language: "en" }),
+    "utf8",
+  );
+}
+
+function writeBindingsSnapshot(
+  home: string,
+  projectId: string,
+  knowledgeStats?: Record<string, unknown>,
+): void {
+  mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+  writeFileSync(
+    join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
+    JSON.stringify({
+      version: 1,
+      project_id: projectId,
+      generated_at: "2026-05-30T00:00:00.000Z",
+      read_set: { stores: [] },
+      write_target: null,
+      ...(knowledgeStats === undefined
+        ? {}
+        : { knowledge_stats: knowledgeStats }),
+    }),
+    "utf8",
+  );
+}
+
+function withIsolatedFabricHome<T>(fn: (home: string) => T): T {
+  const home = mkdtempSync(join(tmpdir(), "knowledge-hint-broad-home-"));
+  const prevHome = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    if (prevHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // truncateSummary
 // ---------------------------------------------------------------------------
@@ -711,6 +755,53 @@ describe("knowledge-hint-broad.cjs — countCanonicalNodes (rc.8)", () => {
       "utf8",
     );
     expect(hook.countCanonicalNodes(tempRoot)).toBe(3);
+  });
+
+  it("ignores project-local canonical leftovers for store-era projects without snapshot stats", () => {
+    const projectId = "66666666-6666-4666-8666-666666666666";
+    writeProjectConfig(tempRoot, projectId);
+    mkdirSync(join(tempRoot, ".fabric", "knowledge", "decisions"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(
+        tempRoot,
+        ".fabric",
+        "knowledge",
+        "decisions",
+        "KT-DEC-0001--leftover.md",
+      ),
+      "x",
+      "utf8",
+    );
+
+    withIsolatedFabricHome(() => {
+      expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
+    });
+  });
+
+  it("reads canonical count from resolved-bindings snapshot for store-era projects", () => {
+    const projectId = "77777777-7777-4777-8777-777777777777";
+    writeProjectConfig(tempRoot, projectId);
+    mkdirSync(join(tempRoot, ".fabric", "knowledge", "decisions"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(
+        tempRoot,
+        ".fabric",
+        "knowledge",
+        "decisions",
+        "KT-DEC-0001--leftover.md",
+      ),
+      "x",
+      "utf8",
+    );
+
+    withIsolatedFabricHome((home) => {
+      writeBindingsSnapshot(home, projectId, { canonical_count: 9 });
+      expect(hook.countCanonicalNodes(tempRoot)).toBe(9);
+    });
   });
 });
 

@@ -11,6 +11,7 @@ import {
   flushMetrics,
   readMetrics,
   resetMetricsForTest,
+  rotateMetricsIfNeeded,
   startMetricsFlush,
 } from "./metrics.js";
 import { getMetricsLedgerPath } from "./_shared.js";
@@ -101,6 +102,63 @@ describe("metrics (Wave B B2)", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]?.counters).toEqual({ knowledge_consumed: 10 });
     expect(rows[1]?.counters).toEqual({ x: 1 });
+  });
+
+  it("rotateMetricsIfNeeded archives stale rows and keeps recent rows", async () => {
+    const projectRoot = await createTempProject();
+    const path = getMetricsLedgerPath(projectRoot);
+    const now = new Date("2026-05-27T18:00:00.000Z");
+    await writeFile(
+      path,
+      [
+        JSON.stringify({ timestamp: "2026-04-01T00:00:00.000Z", window: "1m", counters: { old: 1 } }),
+        JSON.stringify({ timestamp: "2026-05-27T17:59:00.000Z", window: "1m", counters: { fresh: 2 } }),
+        "",
+      ].join("\n"),
+    );
+
+    const result = await rotateMetricsIfNeeded(projectRoot, { now });
+
+    expect(result).toMatchObject({
+      rotated: true,
+      archivedCount: 1,
+      keptCount: 1,
+      archivePath: ".fabric/metrics.archive/metrics-rotated-2026-05-27.jsonl",
+    });
+    const archive = await readFile(join(projectRoot, result.archivePath as string), "utf8");
+    expect(archive).toContain('"old":1');
+    const rows = await readMetrics(projectRoot);
+    expect(rows.map((row) => row.counters)).toEqual([{ fresh: 2 }]);
+  });
+
+  it("rotateMetricsIfNeeded archives oldest retained rows to satisfy maxBytes", async () => {
+    const projectRoot = await createTempProject();
+    const path = getMetricsLedgerPath(projectRoot);
+    await writeFile(
+      path,
+      [
+        JSON.stringify({ timestamp: "2026-05-27T17:00:00.000Z", window: "1m", counters: { a: 1 } }),
+        JSON.stringify({ timestamp: "2026-05-27T17:01:00.000Z", window: "1m", counters: { b: 2 } }),
+        JSON.stringify({ timestamp: "2026-05-27T17:02:00.000Z", window: "1m", counters: { c: 3 } }),
+        "",
+      ].join("\n"),
+    );
+
+    const newestLine = JSON.stringify({
+      timestamp: "2026-05-27T17:02:00.000Z",
+      window: "1m",
+      counters: { c: 3 },
+    });
+    const result = await rotateMetricsIfNeeded(projectRoot, {
+      now: new Date("2026-05-27T18:00:00.000Z"),
+      maxBytes: Buffer.byteLength(newestLine, "utf8") + 1,
+    });
+
+    expect(result.rotated).toBe(true);
+    expect(result.archivedCount).toBe(2);
+    expect(result.keptCount).toBe(1);
+    const rows = await readMetrics(projectRoot);
+    expect(rows.map((row) => row.counters)).toEqual([{ c: 3 }]);
   });
 
   it("startMetricsFlush fires on interval and returns a stop handle that drains", async () => {

@@ -22,17 +22,20 @@
 //   [7] E6 lint #26 + silence-counter — TASK-023 (narrow_too_few Part A+B; silence sidecar)
 //   [8] Install wiring + validate     — install helpers + validateHookPaths 3x3 matrix
 //
-// CLI hook tests subset (check #8 tail):
+// CLI release test suite (check #8 tail):
 //   We invoke vitest with a specific test-file list rather than `pnpm --filter
 //   @fenglimg/fabric-cli test`. The package-wide vitest run pulls in werewolf-
 //   stub-dependent integration tests that are known-broken pre-existing
 //   failures from rc.5 A4 cleanup (dashboard drop). Per the TASK-024 spec we
-//   target only the hook-related suites:
+//   target the hook suites plus public CLI drift/contract suites required for a
+//   release gate:
 //
 //     - fabric-hint.test.ts           (Stop hook, E5 Signal A upgrade)
 //     - knowledge-hint-broad.test.ts  (E1 SessionStart broad)
 //     - knowledge-hint-narrow.test.ts (E2/E3/E4/E6 PreToolUse narrow + cache)
 //     - hooks-install-validate.test.ts (install wiring matrix)
+//     - cli-surface.test.ts           (public command/help snapshot drift)
+//     - install-cli-surface.test.ts   (install command contract drift)
 //
 // Each check returns { id, name, passed, details? }. The script exits 0
 // iff every check passes AND build/tests are green (or skipped via env).
@@ -493,11 +496,13 @@ function runFilterTests(filterPkg) {
   };
 }
 
-// CLI hook tests — file-targeted to dodge werewolf-stub integration suites
-// known broken from rc.5 A4 cleanup. We point vitest at the specific files
-// rather than running the whole `--filter @fenglimg/fabric-cli test`.
-function runCliHookTests() {
+// CLI release tests — file-targeted to dodge werewolf-stub integration suites
+// known broken from rc.5 A4 cleanup. We point vitest at the maintained release
+// suite rather than running the whole `--filter @fenglimg/fabric-cli test`.
+function runCliReleaseTests() {
   const files = [
+    "__tests__/cli-surface.test.ts",
+    "__tests__/install-cli-surface.test.ts",
     "__tests__/fabric-hint.test.ts",
     "__tests__/knowledge-hint-broad.test.ts",
     "__tests__/knowledge-hint-narrow.test.ts",
@@ -587,7 +592,7 @@ function main() {
 
   let serverResult = { passed: true, skipped: true };
   let sharedResult = { passed: true, skipped: true };
-  let cliHookResult = { passed: true, skipped: true };
+  let cliReleaseResult = { passed: true, skipped: true };
   if (!skipTests) {
     process.stdout.write("Server:   running pnpm --filter @fenglimg/fabric-server test ... ");
     serverResult = runFilterTests("@fenglimg/fabric-server");
@@ -614,22 +619,22 @@ function main() {
     }
 
     process.stdout.write(
-      "CLI hooks: running vitest (fabric-hint + broad + narrow + install-validate) ... ",
+      "CLI release: running vitest (cli-surface + install-cli-surface + fabric-hint + broad + narrow + install-validate) ... ",
     );
-    cliHookResult = runCliHookTests();
+    cliReleaseResult = runCliReleaseTests();
     console.log(
-      cliHookResult.passed
-        ? `${cliHookResult.passedCount ?? "?"} passed`
-        : `FAIL (exit ${cliHookResult.code})`,
+      cliReleaseResult.passed
+        ? `${cliReleaseResult.passedCount ?? "?"} passed`
+        : `FAIL (exit ${cliReleaseResult.code})`,
     );
-    if (!cliHookResult.passed) {
-      console.error(cliHookResult.stdoutTail);
-      console.error(cliHookResult.stderr);
+    if (!cliReleaseResult.passed) {
+      console.error(cliReleaseResult.stdoutTail);
+      console.error(cliReleaseResult.stderr);
     }
   } else {
     console.log("Server:   skipped (FABRIC_GATE_SKIP_TESTS=1)");
     console.log("Shared:   skipped (FABRIC_GATE_SKIP_TESTS=1)");
-    console.log("CLI hooks: skipped (FABRIC_GATE_SKIP_TESTS=1)");
+    console.log("CLI release: skipped (FABRIC_GATE_SKIP_TESTS=1)");
   }
 
   console.log("---");
@@ -638,7 +643,7 @@ function main() {
     buildResult.passed &&
     serverResult.passed &&
     sharedResult.passed &&
-    cliHookResult.passed;
+    cliReleaseResult.passed;
   if (allGreen) {
     const buildLabel = buildResult.skipped ? "skipped" : "green";
     const serverLabel = serverResult.skipped
@@ -647,11 +652,11 @@ function main() {
     const sharedLabel = sharedResult.skipped
       ? "skipped"
       : `${sharedResult.passedCount ?? "?"} passed`;
-    const cliLabel = cliHookResult.skipped
+    const cliLabel = cliReleaseResult.skipped
       ? "skipped"
-      : `${cliHookResult.passedCount ?? "?"} passed`;
+      : `${cliReleaseResult.passedCount ?? "?"} passed`;
     console.log(
-      `RESULT: PASS (${checks.length}/${checks.length} checks, build ${buildLabel}, server ${serverLabel}, shared ${sharedLabel}, cli-hooks ${cliLabel})`,
+      `RESULT: PASS (${checks.length}/${checks.length} checks, build ${buildLabel}, server ${serverLabel}, shared ${sharedLabel}, cli-release ${cliLabel})`,
     );
     process.exit(0);
   }

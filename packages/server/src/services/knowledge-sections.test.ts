@@ -15,6 +15,7 @@ import {
 import { createSelectionToken, planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
 import { extractBody, getKnowledgeSections } from "./knowledge-sections.js";
+import { computeReadSetRevision } from "./cross-store-recall.js";
 import { contextCache } from "../cache.js";
 
 // v2.2 W5 R3+R7 (读侧退役): getKnowledgeSections no longer reads the project's
@@ -172,6 +173,38 @@ describe("getKnowledgeSections", () => {
     const unresolved = result.diagnostics.filter((d) => d.code === "unresolved_selected_id");
     expect(unresolved.map((d) => d.stable_id)).toEqual(["team:KT-DEC-9999"]);
     expect(unresolved[0]!.severity).toBe("warn");
+  });
+
+  it("keeps a selection token usable across read-set revision changes until TTL expiry (ISS-061)", async () => {
+    const projectRoot = await createSectionProject();
+    const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    const selectionToken = mintTokenFromPlan(plan, [], ["team:KT-GLD-0001"]);
+    const beforeRevision = await computeReadSetRevision(projectRoot);
+
+    await writeStoreEntry(TEAM_STORE, "guidelines", {
+      id: "KT-GLD-0001",
+      type: "guideline",
+      summary: "UI batch rendering after revision change",
+      body: "## [MANDATORY_INJECTION]\nUI mandatory after revision change.",
+    });
+
+    const afterRevision = await computeReadSetRevision(projectRoot);
+    expect(beforeRevision).toBe(plan.revision_hash);
+    expect(afterRevision).not.toBe(beforeRevision);
+
+    const result = await getKnowledgeSections(projectRoot, {
+      selection_token: selectionToken,
+      ai_selected_stable_ids: ["team:KT-GLD-0001"],
+      ai_selection_reasons: {
+        "team:KT-GLD-0001": "Selection remains valid while the token TTL has not expired.",
+      },
+      correlation_id: "corr-iss-061",
+      session_id: "session-iss-061",
+    });
+
+    expect(result.revision_hash).toBe(afterRevision);
+    expect(result.rules.map((r) => r.stable_id)).toEqual(["team:KT-GLD-0001"]);
+    expect(result.rules[0]!.body).toContain("UI mandatory after revision change.");
   });
 
   it("merges required ids with AI-selected ids and returns store-backed bodies", async () => {

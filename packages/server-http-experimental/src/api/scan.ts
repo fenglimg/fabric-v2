@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared/node";
@@ -47,12 +47,12 @@ export function registerScanApi(app: FabricHttpApp, projectRoot: string): void {
 async function createScanReport(targetInput: string = process.cwd()): Promise<ScanReport> {
   const target = normalizeTarget(targetInput);
   const framework = detectFramework(target);
-  const readmeQuality = getReadmeQuality(target);
-  const hasContributing = existsSync(join(target, "CONTRIBUTING.md"));
+  const readmeQuality = await getReadmeQuality(target);
+  const hasContributing = await pathExists(join(target, "CONTRIBUTING.md"));
   // v2.0: presence of `.fabric/` is the canonical "Fabric initialized" signal —
   // the legacy `.fabric/bootstrap/README.md` is no longer authoritative.
-  const hasExistingFabric = existsSync(join(target, ".fabric"));
-  const walkResult = walkFiles(target, DEFAULT_IGNORES);
+  const hasExistingFabric = await pathExists(join(target, ".fabric"));
+  const walkResult = await walkFiles(target, DEFAULT_IGNORES);
 
   return {
     target,
@@ -78,13 +78,19 @@ function normalizeTarget(targetInput: string): string {
   return isAbsolute(targetInput) ? targetInput : resolve(process.cwd(), targetInput);
 }
 
-function getReadmeQuality(target: string): ReadmeQuality {
+async function getReadmeQuality(target: string): Promise<ReadmeQuality> {
   const readmePath = join(target, "README.md");
-  if (!existsSync(readmePath)) {
+  const contents = await readFile(readmePath, "utf8").catch((error: unknown) => {
+    if (isMissingPathError(error)) {
+      return null;
+    }
+    throw error;
+  });
+  if (contents === null) {
     return "stub";
   }
 
-  const wordCount = readFileSync(readmePath, "utf8")
+  const wordCount = contents
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
@@ -92,8 +98,14 @@ function getReadmeQuality(target: string): ReadmeQuality {
   return wordCount >= 200 ? "ok" : "stub";
 }
 
-function walkFiles(root: string, ignorePatterns: string[]): { fileCount: number; ignoredCount: number } {
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
+async function walkFiles(root: string, ignorePatterns: string[]): Promise<{ fileCount: number; ignoredCount: number }> {
+  const rootStat = await stat(root).catch((error: unknown) => {
+    if (isMissingPathError(error)) {
+      return null;
+    }
+    throw error;
+  });
+  if (rootStat === null || !rootStat.isDirectory()) {
     throw new Error(`Target must be an existing directory: ${root}`);
   }
 
@@ -107,7 +119,7 @@ function walkFiles(root: string, ignorePatterns: string[]): { fileCount: number;
       continue;
     }
 
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
       const absolutePath = join(current, entry.name);
       const relativePath = toPosixPath(relative(root, absolutePath));
 
@@ -125,6 +137,16 @@ function walkFiles(root: string, ignorePatterns: string[]): { fileCount: number;
   }
 
   return { fileCount, ignoredCount };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return access(path)
+    .then(() => true)
+    .catch(() => false);
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 function shouldIgnore(relativePath: string, isDirectory: boolean, ignorePatterns: string[]): boolean {

@@ -133,9 +133,9 @@ export async function getKnowledgeSections(
   // project node table anymore. An id absent from the store index → genuinely
   // unresolved (deleted / not in read-set / stale client cache) → warn-skip,
   // never a hard throw, because the canonical store set is the only authority.
-  const revision = computeReadSetRevision(projectRoot);
+  const revision = await computeReadSetRevision(projectRoot);
   const selectedStableIds = [...token.required_stable_ids, ...rewrittenAiSelected];
-  const storeBodyIndex = buildCrossStoreBodyIndex(projectRoot);
+  const storeBodyIndex = await buildCrossStoreBodyIndex(projectRoot);
   const unresolvedSelectedIds: string[] = [];
   const storeSelected: Array<{ stableId: string; ref: CrossStoreBodyRef }> = [];
   for (const stableId of selectedStableIds) {

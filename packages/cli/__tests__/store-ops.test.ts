@@ -1,10 +1,11 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { globalConfigSchema } from "@fenglimg/fabric-shared";
+import { globalConfigSchema, readBindingsSnapshot } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import storeCommand from "../src/commands/store.js";
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import {
   loadProjectConfig,
@@ -26,6 +27,7 @@ import {
   storeSwitchWrite,
   resolveStoreDir,
 } from "../src/store/store-ops.js";
+import { regenerateBindingsSnapshot } from "../src/store/bindings-io.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -100,8 +102,8 @@ describe("assertStoreMountable (ADJ-NEWN-6 phantom-mount guard)", () => {
 // (install --global mints only personal; --url clones existing; add only
 // registers an on-disk store). `storeCreate` scaffolds + mounts in one step.
 describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
-  it("scaffolds the store tree, writes store.json with the intrinsic uuid, and mounts it", () => {
-    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+  it("scaffolds the store tree, writes store.json with the intrinsic uuid, and mounts it", async () => {
+    const result = await storeCreate("team", "2026-05-30T00:00:00.000Z", {
       uuid: PLATFORM,
       git: false,
       globalRoot,
@@ -119,8 +121,8 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
     expect(storeList(globalRoot)[0]?.mount_name).toBe("team");
   });
 
-  it("associates a remote when provided", () => {
-    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+  it("associates a remote when provided", async () => {
+    const result = await storeCreate("team", "2026-05-30T00:00:00.000Z", {
       uuid: PLATFORM,
       git: false,
       remote: "git@h:team.git",
@@ -130,8 +132,8 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
     expect(result.storeDir).toContain(join("stores", "team"));
   });
 
-  it("uses an explicit mount_name and resolves by alias, uuid, or mount_name", () => {
-    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+  it("uses an explicit mount_name and resolves by alias, uuid, or mount_name", async () => {
+    const result = await storeCreate("team", "2026-05-30T00:00:00.000Z", {
       uuid: PLATFORM,
       git: false,
       mountName: "platform-kb",
@@ -143,8 +145,8 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
     expect(resolveStoreDir("platform-kb", globalRoot)).toBe(result.storeDir);
   });
 
-  it("a created store passes the phantom-mount guard (round-trip with assertStoreMountable)", () => {
-    storeCreate("team", "2026-05-30T00:00:00.000Z", { uuid: PLATFORM, git: false, globalRoot });
+  it("a created store passes the phantom-mount guard (round-trip with assertStoreMountable)", async () => {
+    await storeCreate("team", "2026-05-30T00:00:00.000Z", { uuid: PLATFORM, git: false, globalRoot });
     expect(() => assertStoreMountable(PLATFORM, globalRoot)).not.toThrow();
   });
 });
@@ -154,9 +156,9 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
 // just the config metadata — otherwise the store can never pull/push. And
 // `store list`'s local-only label must reflect the TRUE git remote.
 describe("storeCreate --remote git wiring (W2-T4)", () => {
-  it("runs `git remote add origin` so the store repo has a real remote", () => {
+  it("runs `git remote add origin` so the store repo has a real remote", async () => {
     const remote = "git@example.com:team-store.git";
-    const result = storeCreate("team", "2026-05-30T00:00:00.000Z", {
+    const result = await storeCreate("team", "2026-05-30T00:00:00.000Z", {
       uuid: PLATFORM,
       // git: true (default) → real `git init` + `git remote add`.
       remote,
@@ -174,8 +176,8 @@ describe("storeCreate --remote git wiring (W2-T4)", () => {
     expect(storeGitRemote(PLATFORM, globalRoot)).toBe(remote);
   });
 
-  it("a created store WITHOUT a remote has no git origin → reported local-only", () => {
-    storeCreate("solo", "2026-05-30T00:00:00.000Z", {
+  it("a created store WITHOUT a remote has no git origin → reported local-only", async () => {
+    await storeCreate("solo", "2026-05-30T00:00:00.000Z", {
       uuid: TEAM,
       globalRoot,
     });
@@ -183,12 +185,12 @@ describe("storeCreate --remote git wiring (W2-T4)", () => {
     expect(storeGitRemote(TEAM, globalRoot)).toBeUndefined();
   });
 
-  it("storeGitRemote ignores stale config metadata when the repo has no origin", () => {
+  it("storeGitRemote ignores stale config metadata when the repo has no origin", async () => {
     // Simulate a store created BEFORE the F-SYNC-REMOTE fix: config records a
     // remote but the repo never had `git remote add` run. storeGitRemote (which
     // store list uses for the F14 label) must report local-only from on-disk
     // reality, not the lying config field.
-    const result = storeCreate("stale", "2026-05-30T00:00:00.000Z", {
+    const result = await storeCreate("stale", "2026-05-30T00:00:00.000Z", {
       uuid: PLATFORM,
       git: true,
       globalRoot,
@@ -239,10 +241,10 @@ describe("fabric store bind / switch-write (project config)", () => {
     return projectRoot;
   }
 
-  it("binds a required store and persists it (dedupe by id)", () => {
+  it("binds a required store and persists it (dedupe by id)", async () => {
     const projectRoot = seedProject();
-    storeBind(projectRoot, { id: "team", suggested_remote: "git@h:team.git" });
-    storeBind(projectRoot, { id: "team", suggested_remote: "git@h:team-2.git" });
+    await storeBind(projectRoot, { id: "team", suggested_remote: "git@h:team.git" });
+    await storeBind(projectRoot, { id: "team", suggested_remote: "git@h:team-2.git" });
     const cfg = loadProjectConfig(projectRoot);
     expect(cfg?.required_stores).toHaveLength(1);
     expect(cfg?.required_stores?.[0]?.suggested_remote).toBe("git@h:team-2.git");
@@ -256,6 +258,51 @@ describe("fabric store bind / switch-write (project config)", () => {
     expect(loadProjectConfig(projectRoot)?.default_write_store).toBe("team");
   });
 
+  it("switch-write command refreshes the resolved-bindings snapshot write target", () => {
+    const projectRoot = seedProject();
+    saveProjectConfig(
+      {
+        project_id: "11111111-1111-4111-8111-111111111111",
+        fabric_language: "en",
+        required_stores: [{ id: "team" }, { id: "platform" }],
+        active_write_store: "team",
+      },
+      projectRoot,
+    );
+    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
+    regenerateBindingsSnapshot(projectRoot, {
+      globalRoot,
+      now: "2026-06-01T00:00:00.000Z",
+    });
+    expect(
+      readBindingsSnapshot(globalRoot, "11111111-1111-4111-8111-111111111111")
+        ?.write_target?.alias,
+    ).toBe("team");
+
+    const prevHome = process.env.FABRIC_HOME;
+    const prevCwd = process.cwd();
+    process.env.FABRIC_HOME = dirname(globalRoot);
+    process.chdir(projectRoot);
+    try {
+      const command = storeCommand.subCommands?.["switch-write"] as
+        | { run?: (ctx: { args: { alias: string } }) => void }
+        | undefined;
+      expect(command?.run).toBeTypeOf("function");
+      command?.run?.({ args: { alias: "platform" } });
+    } finally {
+      process.chdir(prevCwd);
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+    }
+
+    expect(loadProjectConfig(projectRoot)?.active_write_store).toBe("platform");
+    expect(
+      readBindingsSnapshot(globalRoot, "11111111-1111-4111-8111-111111111111")
+        ?.write_target?.alias,
+    ).toBe("platform");
+  });
+
   it("route-write persists a semantic scope write route", () => {
     const projectRoot = seedProject();
     storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
@@ -265,10 +312,10 @@ describe("fabric store bind / switch-write (project config)", () => {
     ]);
   });
 
-  it("guides to `install` when the project config is absent", () => {
+  it("guides to `install` when the project config is absent", async () => {
     const bare = mkdtempSync(join(tmpdir(), "fabric-store-bare-"));
     dirs.push(bare);
-    expect(() => storeBind(bare, { id: "team" })).toThrow(/install/);
+    await expect(storeBind(bare, { id: "team" })).rejects.toThrow(/install/);
   });
 });
 

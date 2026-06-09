@@ -14,7 +14,10 @@ import {
   STORE_LAYOUT,
   storeRelativePathForMount,
   type AgentsMetaCounters,
+  type Translator,
 } from "@fenglimg/fabric-shared";
+
+import type { DoctorCheck } from "./doctor.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 W5 R4 (agents.meta decolo) — per-store stable_id counter health.
@@ -189,4 +192,32 @@ export function fixStoreCounters(projectRoot: string): string[] {
     }
   }
   return reconciled;
+}
+
+// Store-aware successor to the retired co-location counter_desync/index_drift
+// checks. A drift is fixable because `doctor --fix` floors each affected
+// store's counters.json at disk max, never lowers it.
+export function createStoreCounterCheck(t: Translator, drifts: StoreCounterDrift[]): DoctorCheck {
+  if (drifts.length > 0) {
+    const first = drifts[0];
+    const detail = `${first.store_alias}: counters.${first.layer}.${first.type}=${first.current} but disk max is ${first.disk_max}`;
+    const count = drifts.length;
+    return {
+      name: t("doctor.check.store_counter_drift.name"),
+      status: "error",
+      kind: "fixable_error",
+      code: "store_counter_drift",
+      fixable: true,
+      message: t(`doctor.check.store_counter_drift.message.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+        detail,
+      }),
+      actionHint: t("doctor.check.store_counter_drift.remediation"),
+    };
+  }
+  return {
+    name: t("doctor.check.store_counter_drift.name"),
+    status: "ok",
+    message: t("doctor.check.store_counter_drift.ok"),
+  };
 }

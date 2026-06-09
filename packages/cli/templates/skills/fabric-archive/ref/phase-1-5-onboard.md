@@ -21,7 +21,7 @@ is the canonical taxonomy for this gate.
 
 | Entry | Symbol | Detection rule (LLM-native, evaluated at skill entry) |
 |-------|--------|-------------------------------------------------------|
-| **E1** | `hook_passive` | stdout JSON `{decision:'block', ...}` from `fabric-hint.cjs` detected at skill entry (the Stop-hook reminder path). |
+| **E1** | `hook_passive` | stdout JSON `{decision:'block', ...}` from `archive-hint.cjs` detected at skill entry (the Stop-hook reminder path). |
 | **E2** | `explicit_user_invoke` | User prompt is a direct invocation: `fabric archive` / `/fabric-archive` / `archive what we just did` / `归档一下` / similar imperative. |
 | **E3** | `ai_self_trigger` | AI internal marker `self-archive policy triggered by signal: <X>` present (substring match on the verbatim prefix `self-archive policy triggered by signal` per AGENTS.md self-archive policy section; `<X>` is the signal name. v2.0.0-rc.37 NEW-2 simplified the AGENTS.md taxonomy to 2 categories: `User-driven normative` / `Wrong-turn-and-revert`. Back-compat: legacy 4-state names (`Normative` / `Decision confirmation` / `Explicit dismissal`) still route correctly because the substring gate only matches the verbatim prefix and treats any text after `signal:` as the signal label.) |
 | **E4** | `user_range_rollback` | Prompt contains a **range hint** (parsed in Phase 0 — e.g. `今日` / `上周` / `rc.20`) AND the user is invoking. Sub-mode of E2. |
@@ -83,8 +83,7 @@ $ /fabric-archive
 ---
 
 After F8a removed the auto-`fabric scan` baseline pipeline, a freshly installed
-Fabric workspace can have no store-backed knowledge until stores are bound and
-reviewed entries are promoted. Five fixed
+Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree. Five fixed
 **S5 onboard slots** capture the "project tone" baseline that the AI needs
 for high-quality plan_context retrieval from day one:
 

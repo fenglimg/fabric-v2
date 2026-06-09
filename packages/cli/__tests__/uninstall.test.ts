@@ -16,10 +16,9 @@
  * idempotency on missing artifacts is exercised by case (f).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { bindingsSnapshotPath } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { initFabric } from "../src/commands/install.ts";
@@ -32,7 +31,6 @@ import {
   createWerewolfFixtureRoot,
   setProcessTty,
 } from "./helpers/init-test-utils.ts";
-import { saveProjectConfig } from "../src/store/project-config-io.ts";
 
 const tempRoots: string[] = [];
 const restoreTtyMocks: Array<() => void> = [];
@@ -198,18 +196,13 @@ describe("uninstall default scaffold execution", () => {
       mkdirSync(join(target, ".fabric", "knowledge", sub), { recursive: true });
     }
 
-    const lines: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((value?: unknown) => {
-      lines.push(value === undefined ? "" : String(value));
-    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
 
     const plan = await buildUninstallExecutionPlan(target, {
       skipBootstrap: true,
       skipMcp: true,
     });
     await executeUninstallExecutionPlan(plan);
-
-    expect(lines).toContain("[1/3] 项目 runtime 清理 Removing scaffold artifacts...");
 
     // State files removed.
     expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
@@ -222,37 +215,6 @@ describe("uninstall default scaffold execution", () => {
     for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
       expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(true);
     }
-  });
-
-  it("removes the project resolved-bindings snapshot without touching global stores", async () => {
-    const home = createWerewolfFixtureRoot("fab-uninstall-bindings-home");
-    const target = createWerewolfFixtureRoot("fab-uninstall-bindings-project");
-    tempRoots.push(home, target);
-    process.env.FABRIC_HOME = home;
-
-    const globalRoot = join(home, ".fabric");
-    const storesDir = join(globalRoot, "stores");
-    mkdirSync(storesDir, { recursive: true });
-    writeFileSync(join(storesDir, "keep.txt"), "store data", "utf8");
-    saveProjectConfig({ project_id: "project-test" }, target);
-
-    const snapshotPath = bindingsSnapshotPath(globalRoot, "project-test");
-    mkdirSync(join(snapshotPath, ".."), { recursive: true });
-    writeFileSync(snapshotPath, "{}", "utf8");
-
-    vi.spyOn(console, "log").mockImplementation(() => {});
-
-    const plan = await buildUninstallExecutionPlan(target, {
-      skipBootstrap: true,
-      skipMcp: true,
-    });
-    expect(plan.scaffold.entries.map((entry) => entry.path)).toContain(snapshotPath);
-    expect(plan.scaffold.entries.some((entry) => entry.path.startsWith(storesDir))).toBe(false);
-
-    await executeUninstallExecutionPlan(plan);
-
-    expect(existsSync(snapshotPath)).toBe(false);
-    expect(existsSync(join(storesDir, "keep.txt"))).toBe(true);
   });
 });
 

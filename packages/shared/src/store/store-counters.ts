@@ -62,6 +62,42 @@ export function readStoreCounters(storeDir: string): AgentsMetaCounters {
   return result.success ? result.data : defaultAgentsMetaCounters();
 }
 
+function preserveCorruptCounters(path: string, raw: string): string {
+  const corruptedPath = `${path}.corrupted.${Date.now()}`;
+  writeFileSync(corruptedPath, raw, "utf8");
+  return corruptedPath;
+}
+
+function readStoreCountersForAllocation(storeDir: string): AgentsMetaCounters {
+  const path = storeCountersPath(storeDir);
+  if (!existsSync(path)) {
+    return defaultAgentsMetaCounters();
+  }
+
+  const raw = readFileSync(path, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const corruptedPath = preserveCorruptCounters(path, raw);
+    throw new Error(
+      `store counters.json is corrupt; forensic copy saved to ${corruptedPath}. ` +
+        `Run doctor --fix or reconcileStoreCounters before allocating a new stable_id. ` +
+        `Parse error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const result = AgentsMetaCountersSchema.safeParse(parsed);
+  if (!result.success) {
+    const corruptedPath = preserveCorruptCounters(path, raw);
+    throw new Error(
+      `store counters.json is schema-invalid; forensic copy saved to ${corruptedPath}. ` +
+        "Run doctor --fix or reconcileStoreCounters before allocating a new stable_id.",
+    );
+  }
+  return result.data;
+}
+
 /**
  * Allocate the next stable_id for `(layer, type)` in the given store and persist
  * the advanced counter to `<storeDir>/counters.json`.
@@ -79,7 +115,7 @@ export async function allocateStoreKnowledgeId(
 ): Promise<StableId> {
   const countersPath = storeCountersPath(storeDir);
   return withFileLock(`${countersPath}.lock`, async () => {
-    const counters = readStoreCounters(storeDir);
+    const counters = readStoreCountersForAllocation(storeDir);
     const { id, nextCounters } = allocateKnowledgeId(layer, type, counters);
     await atomicWriteJson(countersPath, nextCounters, { indent: 2 });
     return id;
@@ -108,7 +144,7 @@ function readEntryId(file: string): string | null {
  * Floor a store's `counters.json` at the highest stable_id actually present on
  * disk, persisting and returning the reconciled envelope.
  *
- * This is the producer↔consumer bridge (W4 F1): a BULK import (`store migrate`)
+ * This is the producer↔consumer bridge (W4 F1): a BULK import
  * writes entries whose ids were minted elsewhere (collision-remapped from
  * disk-max) WITHOUT advancing this store's counters.json. Without reconciliation
  * the next `allocateStoreKnowledgeId` would start from a stale zero and re-mint

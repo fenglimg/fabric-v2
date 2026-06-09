@@ -1,10 +1,10 @@
 ---
 name: fabric-archive
-description: 归档对话洞察到 active write store 的 knowledge/pending (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
+description: 归档对话洞察到 .fabric/knowledge/pending (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge
 ---
 
-> **Surface**: Skill (LLM judgment over session digests). See [`docs/ARCHITECTURE.md`](https://github.com/fenglimg/fabric/blob/main/docs/ARCHITECTURE.md).
+> **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
 
 ## Precondition
 
@@ -87,7 +87,7 @@ Coarse viability check. **PASS conditions**: user_explicit_invoke OR ≥1 archiv
 2. **Reflective discovery** — AI tried path X, reflected, then took path Y (wrong-turn-and-revert); OR a long diagnostic loop (>15 min / >10 turns) surfaced a non-obvious cause; OR a reusable pattern was named in the session ("the X phase", "the Y pattern"). Legacy signals #2 + #3 + #5.
 3. **Concrete artifact change** — a new dependency was added (package.json/pyproject.toml/Cargo.toml diff), OR a load-bearing multi-step procedure was formalized in a specific order. Legacy signals #4 + #8.
 
-Pre-PASS MUST step (rc.37 NEW-4): for each candidate, check mounted store-backed knowledge for a duplicate canonical entry keyed on slug-stem / stable_id / summary. Use Fabric CLI/MCP search surfaces; do NOT glob project-local `.fabric/knowledge` roots. If duplicate found → drop candidate (treat as anti-signal #4 'duplicate of existing canonical'). This is a HARD gate, not advisory — silently writing a near-duplicate is the highest-noise failure mode.
+Pre-PASS MUST step (rc.37 NEW-4): for each candidate, run a quick `Glob` over `.fabric/knowledge/**/*.md` keyed on slug-stem to check for duplicate canonical entry. If duplicate found → drop candidate (treat as anti-signal #4 'duplicate of existing canonical'). This is a HARD gate, not advisory — silently writing a near-duplicate is the highest-noise failure mode.
 
 **FAIL → branch by entry_point**: E1/E3/E5 silent-skip (emit Phase 4.5 event `outcome='skipped_no_signal'`); E2/E4 render gate-FAIL message (emit `outcome='viability_failed'`). Gate-FAIL message for E2/E4 MUST include the "to force-archive, explicitly invoke fabric-archive" remediation pointer so the user has an unambiguous escape hatch when the gate misclassifies (zh-CN: `如需强制归档，请显式调用 fabric-archive` / en: `To force-archive, explicitly invoke fabric-archive`).
 
@@ -117,7 +117,7 @@ Assign `relevance_scope` ∈ {narrow, broad} + derive `relevance_paths` BEFORE b
 
 For each candidate, identify the **`related`** graph edges to other KB entries — the store-qualified `stable_id`s this entry semantically links to (the decision it supersedes, the pitfall it explains, the model it instantiates). You discovered these ids during the session via `fab_recall` / plan-context, so cite the ones you actually saw, NEVER invent stable_ids. Because `fab_extract_knowledge` has no dedicated `related` input, record the candidate edges as one line inside `session_context` (e.g. `related: team:KT-DEC-0007, team:KT-PIT-0011`) so they survive to approve-time frontmatter authoring (`fabric-review` writes the canonical `related: [...]` frontmatter).
 
-**§4 privacy iron law — KT→KP is FORBIDDEN.** A **team** (`KT-*`) entry's `related` MUST NOT point at a **personal** (`KP-*`) id: that would leak a personal-knowledge topology pointer into shared team knowledge. Allowed: `KT→KT`, `KP→KP`, `KP→KT`. Forbidden: `KT→KP` only. When unsure whether a target is personal, OMIT the edge. Store/index builders also strip any KT→KP edge that slips through, but do not rely on that — author clean edges.
+**§4 privacy iron law — KT→KP is FORBIDDEN.** A **team** (`KT-*`) entry's `related` MUST NOT point at a **personal** (`KP-*`) id: that would write a personal-knowledge topology pointer into the project's shared physical ledger (`./.fabric/agents.meta.json`). Allowed: `KT→KT`, `KP→KP`, `KP→KT`. Forbidden: `KT→KP` only. When unsure whether a target is personal, OMIT the edge. (The meta-builder also strips any KT→KP edge that slips through, but do not rely on that — author clean edges.)
 
 ### Phase 4 — Persist via MCP
 
@@ -153,7 +153,7 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 ### WRITE Rules
 
 - NEVER write a knowledge entry directly to the filesystem; the only legal write path is `mcp__fabric__fab_extract_knowledge`.
-- NEVER write outside the active write store's `knowledge/pending/` tree, and never write pending files by hand — use `fab_extract_knowledge`. Promotion to canonical `knowledge/<type>/` is `fab_review` concern, NOT this skill.
+- NEVER write outside `.fabric/knowledge/pending/` — promotion to `.fabric/knowledge/<type>/` is rc.3 fab_review concern, NOT this skill.
 - NEVER include an `id` field anywhere — pending entries have no id (late-bind on approve).
 - NEVER classify a candidate as `personal` when a 强 team signal applies. Default to team on ambiguity.
 - NEVER emit a non-empty `relevance_paths` when `relevance_scope=broad` — broad MUST always carry `relevance_paths=[]`.
@@ -161,7 +161,7 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - v2.0.0-rc.37 NEW-7 widened Phase 3.5: `edit_paths` ∪ `user_mentioned_paths` drives `relevance_paths`; `read_paths` flows separately to `evidence_paths` (structured frontmatter, not body markdown). NEVER lift body regex / symbol extraction into `relevance_paths` — those remain reserved for v2.1+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
 
 ## Worked Examples / E5 Cron / Dry-run (ref-only)
 

@@ -49,9 +49,9 @@ function p95(samples: number[]): number {
 }
 
 describe("recall is bounded to the read-set (S35, 不全扫)", () => {
-  it("recall over a 2-store read-set returns ONLY those stores' entries", () => {
+  it("recall over a 2-store read-set returns ONLY those stores' entries", async () => {
     const readSet = allStores.slice(0, READ_SET_SIZE);
-    const refs = readKnowledgeAcrossStores(readSet);
+    const refs = await readKnowledgeAcrossStores(readSet);
     // Scan count == read-set size, strictly less than the full 1000.
     expect(refs.length).toBe(READ_SET_SIZE * PER_STORE);
     expect(refs.length).toBeLessThan(STORES * PER_STORE);
@@ -63,7 +63,7 @@ describe("recall is bounded to the read-set (S35, 不全扫)", () => {
     }
   });
 
-  it("read-set recall p95 ≤ full-scan baseline × 1.2 (bounded work → no degradation)", () => {
+  it("read-set recall p95 ≤ full-scan baseline × 1.2 (bounded work → no degradation)", async () => {
     const readSet = allStores.slice(0, READ_SET_SIZE);
     const ITER = 30;
     const fullScan: number[] = [];
@@ -71,10 +71,10 @@ describe("recall is bounded to the read-set (S35, 不全扫)", () => {
     // Interleave to share cache/GC conditions fairly between the two.
     for (let i = 0; i < ITER; i++) {
       let t = performance.now();
-      readKnowledgeAcrossStores(allStores);
+      await readKnowledgeAcrossStores(allStores);
       fullScan.push(performance.now() - t);
       t = performance.now();
-      readKnowledgeAcrossStores(readSet);
+      await readKnowledgeAcrossStores(readSet);
       readSetScan.push(performance.now() - t);
     }
     // Baseline = full-scan p95; read-set scans 2/5 the stores so its p95 must

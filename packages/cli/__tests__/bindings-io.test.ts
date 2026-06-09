@@ -1,13 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  globalConfigSchema,
-  readBindingsSnapshot,
-  STORE_LAYOUT,
-  storeRelativePath,
-} from "@fenglimg/fabric-shared";
+import { globalConfigSchema, readBindingsSnapshot } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
@@ -62,12 +57,6 @@ afterEach(() => {
 
 describe("regenerateBindingsSnapshot (P3→P4 chain)", () => {
   it("writes a snapshot consistent with the resolver's resolution", () => {
-    const teamStore = join(globalRoot, storeRelativePath(TEAM));
-    mkdirSync(join(teamStore, STORE_LAYOUT.knowledgeDir, "decisions"), { recursive: true });
-    mkdirSync(join(teamStore, STORE_LAYOUT.knowledgeDir, "pending", "guidelines"), { recursive: true });
-    writeFileSync(join(teamStore, STORE_LAYOUT.knowledgeDir, "decisions", "KT-DEC-0001.md"), "# A\n", "utf8");
-    writeFileSync(join(teamStore, STORE_LAYOUT.knowledgeDir, "pending", "guidelines", "draft.md"), "# Draft\n", "utf8");
-
     const written = regenerateBindingsSnapshot(projectRoot, { globalRoot, now: NOW });
     expect(written).not.toBeNull();
 
@@ -85,9 +74,6 @@ describe("regenerateBindingsSnapshot (P3→P4 chain)", () => {
     expect(snapshot?.read_set.stores.map((s) => s.alias).sort()).toEqual(["personal", "team"]);
     // Non-personal (team) scope writes land in the active write store.
     expect(snapshot?.write_target?.alias).toBe("team");
-    expect(snapshot?.hook_stats?.canonical.count).toBe(1);
-    expect(snapshot?.hook_stats?.pending.count).toBe(1);
-    expect(snapshot?.hook_stats?.pending.oldest_mtime_ms).toEqual(expect.any(Number));
   });
 
   it("returns null (no snapshot) when there is no global config", () => {

@@ -47,7 +47,7 @@ function stripFrontmatter(content: string): string {
  */
 export async function loadConflictEntries(projectRoot: string): Promise<ConflictEntry[]> {
   const entries: ConflictEntry[] = [];
-  for (const entry of collectStoreCanonicalEntries(projectRoot)) {
+  for (const entry of await collectStoreCanonicalEntries(projectRoot)) {
     const knowledgeType = entry.description.knowledge_type;
     if (typeof knowledgeType !== "string" || knowledgeType.length === 0) continue;
     entries.push({

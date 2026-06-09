@@ -14,9 +14,13 @@ const require = createRequire(import.meta.url);
 const fs = require("node:fs") as typeof import("node:fs");
 const stateStore = require("../templates/hooks/lib/state-store.cjs") as {
   writeJsonState: (root: string, file: string, value: unknown) => boolean;
+  writeJsonStateAsync: (root: string, file: string, value: unknown) => Promise<boolean>;
   readJsonState: (root: string, file: string) => unknown;
+  readJsonStateAsync: (root: string, file: string) => Promise<unknown>;
   writeTextState: (root: string, file: string, text: string) => boolean;
+  writeTextStateAsync: (root: string, file: string, text: string) => Promise<boolean>;
   readTextState: (root: string, file: string) => string | null;
+  readTextStateAsync: (root: string, file: string) => Promise<string | null>;
   cachePath: (root: string, file: string) => string;
 };
 
@@ -49,6 +53,24 @@ describe("state-store atomic sidecar writes", () => {
     expect(renameSpy).toHaveBeenCalled();
     const lastCall = renameSpy.mock.calls.at(-1)!;
     expect(lastCall[1]).toBe(stateStore.cachePath(r, "c.json"));
+    const cacheDir = join(r, ".fabric", ".cache");
+    expect(readdirSync(cacheDir).some((f) => f.includes(".tmp-"))).toBe(false);
+  });
+
+  it("async APIs round-trip through the same cache layout", async () => {
+    const r = root();
+    await expect(stateStore.writeJsonStateAsync(r, "c.json", { n: 9 })).resolves.toBe(true);
+    await expect(stateStore.readJsonStateAsync(r, "c.json")).resolves.toEqual({ n: 9 });
+    await expect(stateStore.writeTextStateAsync(r, "t.txt", "hello async")).resolves.toBe(true);
+    await expect(stateStore.readTextStateAsync(r, "t.txt")).resolves.toBe("hello async");
+  });
+
+  it("async writes clean the temp file when rename fails", async () => {
+    const r = root();
+    await stateStore.writeJsonStateAsync(r, "c.json", { keep: "old" });
+    vi.spyOn(fs.promises, "rename").mockRejectedValue(new Error("simulated async rename failure"));
+    await expect(stateStore.writeJsonStateAsync(r, "c.json", { keep: "new" })).resolves.toBe(false);
+    await expect(stateStore.readJsonStateAsync(r, "c.json")).resolves.toEqual({ keep: "old" });
     const cacheDir = join(r, ".fabric", ".cache");
     expect(readdirSync(cacheDir).some((f) => f.includes(".tmp-"))).toBe(false);
   });

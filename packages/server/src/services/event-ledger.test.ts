@@ -147,6 +147,67 @@ describe("event-ledger", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("redacts PII in free-text event fields before persistence", async () => {
+    const projectRoot = await createTempProject();
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_proposed",
+      timestamp: new Date(4_250).toISOString(),
+      reason: "Follow up with alice@example.com from 192.168.1.42 or (415) 555-1212.",
+      ts: 4_250,
+    });
+
+    const raw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    expect(raw).not.toContain("alice@example.com");
+    expect(raw).not.toContain("192.168.1.42");
+    expect(raw).not.toContain("(415) 555-1212");
+    expect(raw).toContain("[REDACTED:email-address]");
+    expect(raw).toContain("[REDACTED:ipv4-address]");
+    expect(raw).toContain("[REDACTED:phone-number]");
+
+    const { events } = await readEventLedger(projectRoot, {
+      event_type: "knowledge_proposed",
+    });
+    expect((events[0] as { reason: string }).reason).toBe(
+      "Follow up with [REDACTED:email-address] from [REDACTED:ipv4-address] or [REDACTED:phone-number].",
+    );
+  });
+
+  it("redacts nested free-text event payloads before persistence", async () => {
+    const projectRoot = await createTempProject();
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-redact-nested",
+      stream_id: "stream-redact-nested",
+      message: {
+        params: {
+          note: "email alice@example.com",
+          env: "password=hunter2supersecret",
+        },
+      },
+      ts: 4_300,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: none because alice@example.com requested privacy",
+      cite_ids: [],
+      cite_tags: [],
+      cite_commitments: [{ operators: [], skip_reason: "call (415) 555-1212 first" }],
+      turn_id: "turn-redact-nested",
+      timestamp: new Date(4_301).toISOString(),
+      ts: 4_301,
+    });
+
+    const raw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    expect(raw).not.toContain("alice@example.com");
+    expect(raw).not.toContain("password=hunter2supersecret");
+    expect(raw).not.toContain("(415) 555-1212");
+    expect(raw).toContain("[REDACTED:email-address]");
+    expect(raw).toContain("[REDACTED:credential-assignment]");
+    expect(raw).toContain("[REDACTED:phone-number]");
+  });
+
   it("remaps a legacy 5-state cite_tags event on read (ADJ-P4-1 full remap)", async () => {
     const projectRoot = await createTempProject();
 

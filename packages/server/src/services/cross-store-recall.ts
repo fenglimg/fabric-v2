@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -11,6 +11,7 @@ import {
   storeRelativePathForMount,
   type MountedStoreDir,
   type RuleDescriptionIndexItem,
+  type StoreKnowledgeRef,
 } from "@fenglimg/fabric-shared";
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
@@ -50,6 +51,49 @@ interface CrossStoreEntry {
   // store-derived layer for not-yet-migrated entries (A5 backfills these).
   semanticScope: string;
   source: string; // raw markdown (read once during the walk)
+}
+
+interface ReadSetWalkCacheEntry {
+  fingerprint: string;
+  entries: CrossStoreEntry[];
+}
+
+const readSetWalkCache = new Map<string, ReadSetWalkCacheEntry>();
+let readSetWalkCount = 0;
+
+interface ReadSetSnapshot {
+  refs: StoreKnowledgeRef[];
+  personalUuids: Set<string>;
+}
+
+function readSetWalkCacheKey(projectRoot: string): string {
+  return `${projectRoot}\0${process.env.FABRIC_HOME ?? ""}`;
+}
+
+async function readSetFingerprint(refs: StoreKnowledgeRef[]): Promise<string> {
+  const parts = await Promise.all(
+    refs.map(async (ref) => {
+      try {
+        const fileStat = await stat(ref.file);
+        return `${ref.store_uuid}|${ref.alias}|${ref.file}|${fileStat.size}|${fileStat.mtimeMs}`;
+      } catch {
+        return `${ref.store_uuid}|${ref.alias}|${ref.file}|missing`;
+      }
+    }),
+  );
+  return parts.sort().join("\n");
+}
+
+export function __resetReadSetWalkCacheForTests(): void {
+  readSetWalkCache.clear();
+  readSetWalkCount = 0;
+}
+
+export function __readSetWalkCacheStatsForTests(): { walks: number; entries: number } {
+  return {
+    walks: readSetWalkCount,
+    entries: readSetWalkCache.size,
+  };
 }
 
 // Read the `semantic_scope` frontmatter line, falling back to the layer-derived
@@ -92,14 +136,14 @@ function activeProjectOf(projectRoot: string): string | undefined {
 // for F7 body delivery in get_sections). Returns [] (never throws) when there
 // is no global config / no mounted store / a store walk fails — both callers are
 // on read paths that must degrade gracefully, never crash.
-function walkReadSetStores(projectRoot: string): CrossStoreEntry[] {
+async function resolveReadSetSnapshot(projectRoot: string): Promise<ReadSetSnapshot | null> {
   const resolveInput = buildStoreResolveInput(projectRoot);
   if (resolveInput === null) {
-    return [];
+    return null;
   }
   const readSet = createStoreResolver().resolveReadSet(resolveInput);
   if (readSet.stores.length === 0) {
-    return [];
+    return null;
   }
   // store_uuid → "personal" | "team" for layer tagging (the read-set entry does
   // not carry the personal flag; the resolver input's mountedStores does).
@@ -120,26 +164,49 @@ function walkReadSetStores(projectRoot: string): CrossStoreEntry[] {
     ),
   }));
 
-  const entries: CrossStoreEntry[] = [];
-  for (const ref of readKnowledgeAcrossStores(dirs)) {
+  return {
+    refs: await readKnowledgeAcrossStores(dirs),
+    personalUuids,
+  };
+}
+
+async function walkReadSetStores(projectRoot: string): Promise<CrossStoreEntry[]> {
+  const snapshot = await resolveReadSetSnapshot(projectRoot);
+  if (snapshot === null) {
+    return [];
+  }
+  const key = readSetWalkCacheKey(projectRoot);
+  const fingerprint = await readSetFingerprint(snapshot.refs);
+  const cached = readSetWalkCache.get(key);
+  if (cached !== undefined && cached.fingerprint === fingerprint) {
+    return cached.entries.slice();
+  }
+  const entries = await walkReadSetStoresUncached(snapshot);
+  readSetWalkCache.set(key, { fingerprint, entries });
+  return entries.slice();
+}
+
+async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<CrossStoreEntry[]> {
+  readSetWalkCount += 1;
+  const entries = await Promise.all(snapshot.refs.map(async (ref): Promise<CrossStoreEntry | null> => {
     let source: string;
     try {
-      source = readFileSync(ref.file, "utf8");
+      source = await readFile(ref.file, "utf8");
     } catch {
-      continue; // store file vanished between walk and read — skip, don't crash.
+      return null; // store file vanished between walk and read — skip, don't crash.
     }
     const stableId = deriveRuleIdentity(ref.file, source, undefined).stableId;
-    const layer = personalUuids.has(ref.store_uuid) ? "personal" : "team";
-    entries.push({
+    const layer = snapshot.personalUuids.has(ref.store_uuid) ? "personal" : "team";
+    return {
       qualifiedId: `${ref.alias}:${stableId}`,
       file: ref.file,
       alias: ref.alias,
       layer,
       semanticScope: readSemanticScope(source, layer),
       source,
-    });
-  }
-  return entries;
+    };
+  }));
+  return entries.filter((entry): entry is CrossStoreEntry => entry !== null);
 }
 
 /**
@@ -155,7 +222,7 @@ export async function buildCrossStoreRawItems(
 ): Promise<RuleDescriptionIndexItem[]> {
   const items: RuleDescriptionIndexItem[] = [];
   const activeProject = activeProjectOf(projectRoot);
-  for (const entry of filterByActiveProject(walkReadSetStores(projectRoot), activeProject)) {
+  for (const entry of filterByActiveProject(await walkReadSetStores(projectRoot), activeProject)) {
     const baseDescription = extractRuleDescription(entry.source);
     if (baseDescription === undefined) {
       continue; // no frontmatter description → no selection signal.
@@ -185,12 +252,12 @@ export interface CrossStoreBodyRef {
   layer: "team" | "personal";
 }
 
-export function buildCrossStoreBodyIndex(
+export async function buildCrossStoreBodyIndex(
   projectRoot: string,
-): Map<string, CrossStoreBodyRef> {
+): Promise<Map<string, CrossStoreBodyRef>> {
   const index = new Map<string, CrossStoreBodyRef>();
   const activeProject = activeProjectOf(projectRoot);
-  for (const entry of filterByActiveProject(walkReadSetStores(projectRoot), activeProject)) {
+  for (const entry of filterByActiveProject(await walkReadSetStores(projectRoot), activeProject)) {
     if (!index.has(entry.qualifiedId)) {
       index.set(entry.qualifiedId, { file: entry.file, layer: entry.layer });
     }
@@ -224,8 +291,8 @@ export interface StoreKnowledgeSummary {
 // by re-deriving + comparing the revision — so the empty-string fallback
 // (sha256("") when no store is in the read-set) is a safe degrade, identical to
 // the pre-cutover empty-meta behavior.
-export function computeReadSetRevision(projectRoot: string): string {
-  const revisionSource = walkReadSetStores(projectRoot)
+export async function computeReadSetRevision(projectRoot: string): Promise<string> {
+  const revisionSource = (await walkReadSetStores(projectRoot))
     .filter((entry) => !entry.file.includes("/knowledge/pending/"))
     .map((entry) => `${entry.qualifiedId}|${sha256(entry.source)}`)
     .sort()
@@ -249,9 +316,9 @@ export interface StoreCanonicalEntry {
   description: NonNullable<ReturnType<typeof extractRuleDescription>>;
 }
 
-export function collectStoreCanonicalEntries(projectRoot: string): StoreCanonicalEntry[] {
+export async function collectStoreCanonicalEntries(projectRoot: string): Promise<StoreCanonicalEntry[]> {
   const out: StoreCanonicalEntry[] = [];
-  for (const entry of walkReadSetStores(projectRoot)) {
+  for (const entry of await walkReadSetStores(projectRoot)) {
     if (entry.file.includes("/knowledge/pending/")) {
       continue; // curated corpus only — drafts are not canonical.
     }
@@ -270,9 +337,9 @@ export function collectStoreCanonicalEntries(projectRoot: string): StoreCanonica
   return out;
 }
 
-export function collectStoreKnowledgeSummaries(projectRoot: string): StoreKnowledgeSummary[] {
+export async function collectStoreKnowledgeSummaries(projectRoot: string): Promise<StoreKnowledgeSummary[]> {
   const out: StoreKnowledgeSummary[] = [];
-  for (const entry of walkReadSetStores(projectRoot)) {
+  for (const entry of await walkReadSetStores(projectRoot)) {
     const description = extractRuleDescription(entry.source);
     if (description === undefined) {
       continue;

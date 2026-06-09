@@ -32,7 +32,7 @@ function git(cwd: string, args: string[]): void {
 }
 
 // Seed a fake bare remote holding a committed Fabric store (store.json).
-function makeFakeStoreRemote(storeUuid: string): string {
+async function makeFakeStoreRemote(storeUuid: string): Promise<string> {
   const remote = join(tmp("fabric-remote-"), "store.git");
   execFileSync("git", ["init", "--bare", "-b", "main", remote], { stdio: ["ignore", "ignore", "pipe"] });
   const work = join(tmp("fabric-seed-"), "w");
@@ -41,7 +41,7 @@ function makeFakeStoreRemote(storeUuid: string): string {
   git(work, ["config", "user.name", "T"]);
   git(work, ["config", "commit.gpgsign", "false"]);
   // clone already has .git → init store files only (git:false).
-  initStore(work, { store_uuid: storeUuid, created_at: "2026-05-30T00:00:00.000Z", canonical_alias: "team" }, { git: false });
+  await initStore(work, { store_uuid: storeUuid, created_at: "2026-05-30T00:00:00.000Z", canonical_alias: "team" }, { git: false });
   git(work, ["add", "-A"]);
   git(work, ["commit", "-m", "seed"]);
   git(work, ["push", "origin", "main"]);
@@ -63,7 +63,7 @@ describe("install --global", () => {
 
   it("clones + mounts a shared store from a url", async () => {
     const globalRoot = join(tmp("fabric-gi2-"), ".fabric");
-    const remote = makeFakeStoreRemote(TEAM);
+    const remote = await makeFakeStoreRemote(TEAM);
     await runGlobalInstall(
       { url: remote, uid: "u-x", personalStoreUuid: PERSONAL, now: "2026-05-30T00:00:00.000Z" },
       globalRoot,

@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 
@@ -25,7 +32,7 @@ function makeStoreDir(): string {
 }
 
 // Write a canonical knowledge entry into the store's knowledge/<type> dir, as a
-// bulk import (`store migrate`) would — its id is NOT reflected in counters.json.
+// bulk import would — its id is NOT reflected in counters.json.
 function seedKnowledgeEntry(storeDir: string, type: string, id: string): void {
   const dir = join(storeDir, STORE_LAYOUT.knowledgeDir, type);
   mkdirSync(dir, { recursive: true });
@@ -117,6 +124,47 @@ describe("store-counters", () => {
     expect(readStoreCounters(dir)).toEqual(defaultAgentsMetaCounters());
   });
 
+  it("fails closed on corrupt counters.json during allocation and preserves a sidecar", async () => {
+    const dir = makeStoreDir();
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0001");
+    writeFileSync(storeCountersPath(dir), "{ not valid json", "utf8");
+
+    await expect(allocateStoreKnowledgeId("team", "decisions", dir)).rejects.toThrow(
+      /counters\.json is corrupt/u,
+    );
+
+    expect(readFileSync(storeCountersPath(dir), "utf8")).toBe("{ not valid json");
+    expect(readdirSync(dir).some((name) => /^counters\.json\.corrupted\.\d+$/u.test(name))).toBe(
+      true,
+    );
+  });
+
+  it("fails closed on schema-invalid counters.json during allocation", async () => {
+    const dir = makeStoreDir();
+    writeFileSync(storeCountersPath(dir), JSON.stringify({ KT: { DEC: "bad" } }), "utf8");
+
+    await expect(allocateStoreKnowledgeId("team", "decisions", dir)).rejects.toThrow(
+      /schema-invalid/u,
+    );
+    expect(readdirSync(dir).some((name) => /^counters\.json\.corrupted\.\d+$/u.test(name))).toBe(
+      true,
+    );
+  });
+
+  it("allocates after reconcile repairs a corrupt counters file from disk max", async () => {
+    const dir = makeStoreDir();
+    seedKnowledgeEntry(dir, "decisions", "KT-DEC-0004");
+    writeFileSync(storeCountersPath(dir), "{ not valid json", "utf8");
+
+    await expect(allocateStoreKnowledgeId("team", "decisions", dir)).rejects.toThrow(
+      /counters\.json is corrupt/u,
+    );
+    reconcileStoreCounters(dir);
+
+    expect(readStoreCounters(dir).KT.DEC).toBe(4);
+    expect(await allocateStoreKnowledgeId("team", "decisions", dir)).toBe("KT-DEC-0005");
+  });
+
   it("reconcileStoreCounters floors counters at the highest id present on disk", () => {
     const dir = makeStoreDir();
     seedKnowledgeEntry(dir, "decisions", "KT-DEC-0001");
@@ -150,7 +198,7 @@ describe("store-counters", () => {
 
   it("F1 producer→consumer: after a bulk import + reconcile, allocate mints the NEXT free id (no collision)", async () => {
     const dir = makeStoreDir();
-    // Simulate `store migrate` importing 3 entries WITHOUT touching counters.json.
+    // Simulate a bulk import of 3 entries WITHOUT touching counters.json.
     seedKnowledgeEntry(dir, "decisions", "KT-DEC-0001");
     seedKnowledgeEntry(dir, "decisions", "KT-DEC-0002");
     seedKnowledgeEntry(dir, "decisions", "KT-DEC-0003");

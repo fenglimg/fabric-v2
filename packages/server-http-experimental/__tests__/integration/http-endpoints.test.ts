@@ -217,6 +217,22 @@ describe("HTTP integration — REST endpoints", () => {
       const body = res.body as { recommendations: string[] };
       expect(Array.isArray(body.recommendations)).toBe(true);
     });
+
+    it("counts nested files without traversing ignored directories", async () => {
+      mkdirSync(join(tempDir, "src", "nested"), { recursive: true });
+      mkdirSync(join(tempDir, "node_modules", "ignored-package"), { recursive: true });
+      writeFileSync(join(tempDir, "src", "index.ts"), "export const value = 1;\n", "utf8");
+      writeFileSync(join(tempDir, "src", "nested", "feature.ts"), "export const feature = true;\n", "utf8");
+      writeFileSync(join(tempDir, "node_modules", "ignored-package", "index.js"), "module.exports = {};\n", "utf8");
+      writeFileSync(join(tempDir, "generated.meta"), "ignored metadata\n", "utf8");
+
+      const res = await supertest(app).get("/api/scan");
+
+      expect(res.status).toBe(200);
+      const body = res.body as { fileCount: number; ignoredCount: number };
+      expect(body.fileCount).toBe(2);
+      expect(body.ignoredCount).toBeGreaterThanOrEqual(3);
+    });
   });
 
   // -------------------------------------------------------------------------

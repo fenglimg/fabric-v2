@@ -72,9 +72,9 @@ function writeConfig(root: string, content: Record<string, unknown>): void {
 }
 
 describe("runOnboardCoverage", () => {
-  it("reports all 5 slots missing on an empty workspace", () => {
+  it("reports all 5 slots missing on an empty workspace", async () => {
     const root = createProject();
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.total).toBe(5);
     expect(report.missing).toEqual([
       "tech-stack-decision",
@@ -95,21 +95,21 @@ describe("runOnboardCoverage", () => {
     }
   });
 
-  it("places a knowledge file with onboard_slot frontmatter into filled[slot]", () => {
+  it("places a knowledge file with onboard_slot frontmatter into filled[slot]", async () => {
     const root = createProject();
     seedKnowledgeFile(root, "decisions", "KT-DEC-0042--ts-stack.md", {
       id: "KT-DEC-0042",
       type: "decisions",
       onboard_slot: "tech-stack-decision",
     });
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.filled["tech-stack-decision"]).toEqual(["KT-DEC-0042"]);
     expect(report.missing).not.toContain("tech-stack-decision");
     expect(report.missing).toContain("architecture-pattern");
     expect(report.missing).toHaveLength(4);
   });
 
-  it("aggregates multiple files across all type dirs", () => {
+  it("aggregates multiple files across all type dirs", async () => {
     const root = createProject();
     seedKnowledgeFile(root, "decisions", "KT-DEC-0001--stack.md", {
       id: "KT-DEC-0001",
@@ -127,7 +127,7 @@ describe("runOnboardCoverage", () => {
       id: "KT-PRO-0001",
       onboard_slot: "build-system-idiom",
     });
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.filled["tech-stack-decision"]).toEqual(["KT-DEC-0001"]);
     expect(report.filled["architecture-pattern"]).toEqual(["KT-MOD-0001"]);
     expect(report.filled["code-style-tone"]).toEqual(["KT-GLD-0001"]);
@@ -136,12 +136,12 @@ describe("runOnboardCoverage", () => {
     expect(report.missing).toEqual(["domain-vocabulary"]);
   });
 
-  it("excludes opted-out slots from missing AND surfaces them in opted_out", () => {
+  it("excludes opted-out slots from missing AND surfaces them in opted_out", async () => {
     const root = createProject();
     writeConfig(root, {
       onboard_slots_opted_out: ["architecture-pattern", "domain-vocabulary"],
     });
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.opted_out).toEqual(["architecture-pattern", "domain-vocabulary"]);
     expect(report.missing).toEqual([
       "tech-stack-decision",
@@ -150,13 +150,13 @@ describe("runOnboardCoverage", () => {
     ]);
   });
 
-  it("silently ignores an off-spec onboard_slot value (not in locked S5 set)", () => {
+  it("silently ignores an off-spec onboard_slot value (not in locked S5 set)", async () => {
     const root = createProject();
     seedKnowledgeFile(root, "decisions", "KT-DEC-9999--bogus.md", {
       id: "KT-DEC-9999",
       onboard_slot: "release-process", // not in S5
     });
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     // Off-spec value neither fills any slot nor reduces missing.
     expect(report.missing).toHaveLength(5);
     for (const slot of [
@@ -170,33 +170,33 @@ describe("runOnboardCoverage", () => {
     }
   });
 
-  it("tolerates a missing fabric-config.json (treats opted_out as empty)", () => {
+  it("tolerates a missing fabric-config.json (treats opted_out as empty)", async () => {
     const root = createProject();
     // No fabric-config.json at all.
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.opted_out).toEqual([]);
     expect(report.missing).toHaveLength(5);
   });
 
-  it("tolerates a malformed fabric-config.json (treats opted_out as empty)", () => {
+  it("tolerates a malformed fabric-config.json (treats opted_out as empty)", async () => {
     const root = createProject();
     const dir = join(root, ".fabric");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "fabric-config.json"), "{ not: valid json", "utf8");
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.opted_out).toEqual([]);
   });
 
-  it("falls back to the bare filename (without .md) when the id: line is absent", () => {
+  it("falls back to the bare filename (without .md) when the id: line is absent", async () => {
     const root = createProject();
     seedKnowledgeFile(root, "decisions", "noid-fallback.md", {
       onboard_slot: "tech-stack-decision",
     });
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.filled["tech-stack-decision"]).toEqual(["noid-fallback"]);
   });
 
-  it("returns a deterministic shape (sorted filled lists, stable slot order)", () => {
+  it("returns a deterministic shape (sorted filled lists, stable slot order)", async () => {
     const root = createProject();
     seedKnowledgeFile(root, "decisions", "z-late.md", {
       id: "KT-DEC-0099",
@@ -206,7 +206,7 @@ describe("runOnboardCoverage", () => {
       id: "KT-DEC-0001",
       onboard_slot: "tech-stack-decision",
     });
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     // Sorted alphabetically by stable_id.
     expect(report.filled["tech-stack-decision"]).toEqual([
       "KT-DEC-0001",
@@ -214,9 +214,9 @@ describe("runOnboardCoverage", () => {
     ]);
   });
 
-  it("payload shape matches the documented contract", () => {
+  it("payload shape matches the documented contract", async () => {
     const root = createProject();
-    const report: OnboardCoverageReport = runOnboardCoverage(root);
+    const report: OnboardCoverageReport = await runOnboardCoverage(root);
     expect(Object.keys(report).sort()).toEqual([
       "filled",
       "missing",
@@ -233,11 +233,11 @@ describe("runOnboardCoverage", () => {
     ]);
   });
 
-  it("does not throw when .fabric/knowledge subtree is entirely absent", () => {
+  it("does not throw when .fabric/knowledge subtree is entirely absent", async () => {
     const root = createProject();
     // No .fabric/ at all.
     expect(existsSync(join(root, ".fabric"))).toBe(false);
-    const report = runOnboardCoverage(root);
+    const report = await runOnboardCoverage(root);
     expect(report.missing).toHaveLength(5);
   });
 });

@@ -23,7 +23,7 @@ export type StoreDiagnosticCode =
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;
-  severity: "warn" | "info";
+  severity: "error" | "warn" | "info";
   ref?: string;
   message: string;
 }

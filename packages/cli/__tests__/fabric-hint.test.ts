@@ -123,6 +123,50 @@ const HOUR_MS = 60 * 60 * 1000;
 const FIXED_NOW = new Date("2026-05-10T12:00:00.000Z");
 const NOW_MS = FIXED_NOW.getTime();
 
+function writeProjectConfig(root: string, projectId: string): void {
+  mkdirSync(join(root, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(root, ".fabric", "fabric-config.json"),
+    JSON.stringify({ project_id: projectId, fabric_language: "en" }),
+    "utf8",
+  );
+}
+
+function writeBindingsSnapshot(
+  home: string,
+  projectId: string,
+  knowledgeStats?: Record<string, unknown>,
+): void {
+  mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+  writeFileSync(
+    join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
+    JSON.stringify({
+      version: 1,
+      project_id: projectId,
+      generated_at: "2026-05-30T00:00:00.000Z",
+      read_set: { stores: [] },
+      write_target: null,
+      ...(knowledgeStats === undefined
+        ? {}
+        : { knowledge_stats: knowledgeStats }),
+    }),
+    "utf8",
+  );
+}
+
+function withIsolatedFabricHome<T>(fn: (home: string) => T): T {
+  const home = mkdtempSync(join(tmpdir(), "fabric-hint-home-"));
+  const prevHome = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    if (prevHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 function makeEvent(
   event_type: string,
   ts: number,
@@ -726,12 +770,6 @@ describe("fabric-hint.cjs — main", () => {
 
 // rc.3 TASK-004 — second-signal (pending-overflow → fabric-review skill)
 const DAY_MS = 24 * 60 * 60 * 1000;
-const SNAPSHOT_PROJECT_ID = "11111111-1111-4111-8111-111111111111";
-
-function restoreEnv(name: string, value: string | undefined): void {
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
-}
 
 function seedPendingFile(
   root: string,
@@ -750,64 +788,14 @@ function seedPendingFile(
   return filePath;
 }
 
-function seedHookStatsSnapshot(
-  root: string,
-  stats: {
-    pending?: { count: number; oldestAgeMs: number | null };
-    canonical?: { count: number };
-  },
-): void {
-  mkdirSync(join(root, ".fabric", "state", "bindings"), { recursive: true });
-  const configPath = join(root, ".fabric", "fabric-config.json");
-  let existingConfig: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
-    try {
-      const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        existingConfig = parsed as Record<string, unknown>;
-      }
-    } catch {
-      existingConfig = {};
-    }
-  }
-  writeFileSync(
-    configPath,
-    JSON.stringify({ ...existingConfig, project_id: SNAPSHOT_PROJECT_ID }),
-    "utf8",
-  );
-  const pending = stats.pending ?? { count: 0, oldestAgeMs: null };
-  writeFileSync(
-    join(root, ".fabric", "state", "bindings", `${SNAPSHOT_PROJECT_ID}_resolved.json`),
-    JSON.stringify({
-      version: 1,
-      project_id: SNAPSHOT_PROJECT_ID,
-      generated_at: "2026-05-30T00:00:00.000Z",
-      read_set: { stores: [{ store_uuid: "t", alias: "team", writable: true }], warnings: [] },
-      write_target: { store_uuid: "t", alias: "team" },
-      hook_stats: {
-        pending: {
-          count: pending.count,
-          oldest_mtime_ms: pending.oldestAgeMs === null ? null : NOW_MS - pending.oldestAgeMs,
-        },
-        canonical: stats.canonical ?? { count: 0 },
-      },
-    }),
-    "utf8",
-  );
-}
-
 describe("fabric-hint.cjs — readPendingStats", () => {
   let tempRoot: string;
-  let prevFabricHome: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-archive-hint-pending-"));
-    prevFabricHome = process.env.FABRIC_HOME;
-    process.env.FABRIC_HOME = tempRoot;
   });
 
   afterEach(() => {
-    restoreEnv("FABRIC_HOME", prevFabricHome);
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -820,20 +808,80 @@ describe("fabric-hint.cjs — readPendingStats", () => {
     expect(stats).toEqual({ count: 0, oldestAgeMs: null });
   });
 
-  it("reads pending count and oldest mtime from bindings snapshot hook_stats", () => {
-    seedHookStatsSnapshot(tempRoot, { pending: { count: 5, oldestAgeMs: 5 * DAY_MS } });
+  it("walks all five pending type subdirs and counts only .md files", () => {
+    seedPendingFile(tempRoot, "decisions", "d1", NOW_MS - 1 * DAY_MS);
+    seedPendingFile(tempRoot, "pitfalls", "p1", NOW_MS - 2 * DAY_MS);
+    seedPendingFile(tempRoot, "guidelines", "g1", NOW_MS - 3 * DAY_MS);
+    seedPendingFile(tempRoot, "models", "m1", NOW_MS - 4 * DAY_MS);
+    seedPendingFile(tempRoot, "processes", "pr1", NOW_MS - 5 * DAY_MS);
+    // Non-.md noise — must be ignored.
+    const decisionsDir = join(
+      tempRoot,
+      ".fabric",
+      "knowledge",
+      "pending",
+      "decisions",
+    );
+    writeFileSync(join(decisionsDir, "README.txt"), "ignore me", "utf8");
+
     const stats = hook.readPendingStats(tempRoot, FIXED_NOW);
     expect(stats.count).toBe(5);
+    // Oldest is the 5-day-old processes file.
     expect(stats.oldestAgeMs).not.toBeNull();
     const ageDays = (stats.oldestAgeMs as number) / DAY_MS;
     expect(ageDays).toBeGreaterThanOrEqual(4.99);
     expect(ageDays).toBeLessThanOrEqual(5.01);
   });
 
-  it("ignores retired project-local pending files when snapshot has no stats", () => {
-    seedPendingFile(tempRoot, "decisions", "legacy-local", NOW_MS - 9 * DAY_MS);
+  it("returns oldest mtime correctly when multiple files exist in same type", () => {
+    seedPendingFile(tempRoot, "decisions", "d-newest", NOW_MS - 1 * DAY_MS);
+    seedPendingFile(tempRoot, "decisions", "d-oldest", NOW_MS - 9 * DAY_MS);
+    seedPendingFile(tempRoot, "decisions", "d-middle", NOW_MS - 5 * DAY_MS);
+
     const stats = hook.readPendingStats(tempRoot, FIXED_NOW);
-    expect(stats).toEqual({ count: 0, oldestAgeMs: null });
+    expect(stats.count).toBe(3);
+    const ageDays = (stats.oldestAgeMs as number) / DAY_MS;
+    expect(ageDays).toBeGreaterThanOrEqual(8.99);
+    expect(ageDays).toBeLessThanOrEqual(9.01);
+  });
+
+  it("ignores project-local pending leftovers for store-era projects without snapshot stats", () => {
+    const projectId = "22222222-2222-4222-8222-222222222222";
+    writeProjectConfig(tempRoot, projectId);
+    seedPendingFile(
+      tempRoot,
+      "decisions",
+      "local-leftover",
+      NOW_MS - 9 * DAY_MS,
+    );
+
+    withIsolatedFabricHome(() => {
+      const stats = hook.readPendingStats(tempRoot, FIXED_NOW);
+      expect(stats).toEqual({ count: 0, oldestAgeMs: null });
+    });
+  });
+
+  it("reads pending stats from resolved-bindings snapshot for store-era projects", () => {
+    const projectId = "33333333-3333-4333-8333-333333333333";
+    writeProjectConfig(tempRoot, projectId);
+    seedPendingFile(
+      tempRoot,
+      "decisions",
+      "local-leftover",
+      NOW_MS - 2 * DAY_MS,
+    );
+
+    withIsolatedFabricHome((home) => {
+      writeBindingsSnapshot(home, projectId, {
+        pending_count: 12,
+        oldest_pending_mtime_ms: NOW_MS - 8 * DAY_MS,
+        canonical_count: 3,
+      });
+
+      const stats = hook.readPendingStats(tempRoot, FIXED_NOW);
+      expect(stats.count).toBe(12);
+      expect(stats.oldestAgeMs).toBe(8 * DAY_MS);
+    });
   });
 });
 
@@ -905,16 +953,12 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
 
 describe("fabric-hint.cjs — main (review signal integration)", () => {
   let tempRoot: string;
-  let prevFabricHome: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-archive-hint-review-"));
-    prevFabricHome = process.env.FABRIC_HOME;
-    process.env.FABRIC_HOME = tempRoot;
   });
 
   afterEach(() => {
-    restoreEnv("FABRIC_HOME", prevFabricHome);
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -923,7 +967,9 @@ describe("fabric-hint.cjs — main (review signal integration)", () => {
   });
 
   it("emits review JSON with signal:'review' when pending count >= 10 and no archive trigger", () => {
-    seedHookStatsSnapshot(tempRoot, { pending: { count: 10, oldestAgeMs: 1 * DAY_MS } });
+    for (let i = 0; i < 10; i += 1) {
+      seedPendingFile(tempRoot, "decisions", `d-${i}`, NOW_MS - 1 * DAY_MS);
+    }
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
@@ -967,16 +1013,12 @@ function seedCanonicalFile(
 
 describe("fabric-hint.cjs — countCanonicalNodes", () => {
   let tempRoot: string;
-  let prevFabricHome: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-count-"));
-    prevFabricHome = process.env.FABRIC_HOME;
-    process.env.FABRIC_HOME = tempRoot;
   });
 
   afterEach(() => {
-    restoreEnv("FABRIC_HOME", prevFabricHome);
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -984,23 +1026,47 @@ describe("fabric-hint.cjs — countCanonicalNodes", () => {
     }
   });
 
-  it("returns 0 when snapshot hook_stats are absent", () => {
+  it("returns 0 when .fabric/knowledge does not exist", () => {
     expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
   });
 
-  it("reads canonical count from bindings snapshot hook_stats", () => {
-    seedHookStatsSnapshot(tempRoot, { canonical: { count: 5 } });
-    expect(hook.countCanonicalNodes(tempRoot)).toBe(5);
-  });
-
-  it("ignores retired project-local canonical files", () => {
+  it("counts .md files across all five canonical type subdirs (excludes pending)", () => {
     seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
     seedCanonicalFile(tempRoot, "pitfalls", "KT-PIT-0001--b");
     seedCanonicalFile(tempRoot, "guidelines", "KT-GLD-0001--c");
     seedCanonicalFile(tempRoot, "models", "KT-MOD-0001--d");
     seedCanonicalFile(tempRoot, "processes", "KT-PRO-0001--e");
+    // pending/ entries MUST NOT count.
     seedCanonicalFile(tempRoot, "pending/decisions", "pending-proposal");
-    expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
+    // Non-.md noise MUST be ignored.
+    writeFileSync(
+      join(tempRoot, ".fabric", "knowledge", "decisions", "README.txt"),
+      "ignore me",
+      "utf8",
+    );
+
+    expect(hook.countCanonicalNodes(tempRoot)).toBe(5);
+  });
+
+  it("ignores project-local canonical leftovers for store-era projects without snapshot stats", () => {
+    const projectId = "44444444-4444-4444-8444-444444444444";
+    writeProjectConfig(tempRoot, projectId);
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--leftover");
+
+    withIsolatedFabricHome(() => {
+      expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
+    });
+  });
+
+  it("reads canonical count from resolved-bindings snapshot for store-era projects", () => {
+    const projectId = "55555555-5555-4555-8555-555555555555";
+    writeProjectConfig(tempRoot, projectId);
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--leftover");
+
+    withIsolatedFabricHome((home) => {
+      writeBindingsSnapshot(home, projectId, { canonical_count: 9 });
+      expect(hook.countCanonicalNodes(tempRoot)).toBe(9);
+    });
   });
 });
 
@@ -1165,16 +1231,12 @@ describe("fabric-hint.cjs — readUnderseedThreshold", () => {
 
 describe("fabric-hint.cjs — main (import signal integration)", () => {
   let tempRoot: string;
-  let prevFabricHome: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-import-"));
-    prevFabricHome = process.env.FABRIC_HOME;
-    process.env.FABRIC_HOME = tempRoot;
   });
 
   afterEach(() => {
-    restoreEnv("FABRIC_HOME", prevFabricHome);
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -1191,8 +1253,10 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
       `${JSON.stringify(initEvent)}\n`,
       "utf8",
     );
-    // Seed 3 canonical entries (< default threshold 10) via store-aware hook stats.
-    seedHookStatsSnapshot(tempRoot, { canonical: { count: 3 } });
+    // Seed 3 canonical entries (< default threshold 10).
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0002--b");
+    seedCanonicalFile(tempRoot, "pitfalls", "KT-PIT-0001--c");
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
@@ -1229,7 +1293,9 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
       `${JSON.stringify(initEvent)}\n${JSON.stringify(recentDoctor)}\n`,
       "utf8",
     );
-    seedHookStatsSnapshot(tempRoot, { canonical: { count: 12 } });
+    for (let i = 0; i < 12; i += 1) {
+      seedCanonicalFile(tempRoot, "decisions", `KT-DEC-${1000 + i}--entry-${i}`);
+    }
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
@@ -1252,7 +1318,8 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
       "utf8",
     );
     // 2 canonical entries: < threshold(3) so import fires.
-    seedHookStatsSnapshot(tempRoot, { canonical: { count: 2 } });
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0002--b");
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
@@ -1538,16 +1605,12 @@ describe("fabric-hint.cjs — findLastDoctorRunTs (rc.7 T10)", () => {
 
 describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
   let tempRoot: string;
-  let prevFabricHome: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-sigd-"));
-    prevFabricHome = process.env.FABRIC_HOME;
-    process.env.FABRIC_HOME = tempRoot;
   });
 
   afterEach(() => {
-    restoreEnv("FABRIC_HOME", prevFabricHome);
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -1556,7 +1619,11 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
   });
 
   function seedCanonical(root: string, count: number): void {
-    seedHookStatsSnapshot(root, { canonical: { count } });
+    const dir = join(root, ".fabric", "knowledge", "decisions");
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < count; i += 1) {
+      writeFileSync(join(dir, `KT-DEC-${i}.md`), "# stub\n", "utf8");
+    }
   }
 
   it("emits Signal D when no doctor_run ever AND canonical >= 5", () => {
@@ -1722,16 +1789,12 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     formatActivityOverview: (projectRoot: string, anchorTs: number | null) => string;
   };
   let tempRoot: string;
-  let prevFabricHome: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-t4-"));
-    prevFabricHome = process.env.FABRIC_HOME;
-    process.env.FABRIC_HOME = tempRoot;
   });
 
   afterEach(() => {
-    restoreEnv("FABRIC_HOME", prevFabricHome);
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -2000,10 +2063,12 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
   //   last_checkpoint_at >24h ago                → false (B fires)
   //   malformed JSON / read error                → false (B fires; never-block)
   //
-  // Each test seeds snapshot hook_stats to satisfy Signal B's count threshold
+  // Each test seeds the pending dir to satisfy Signal B's count threshold
   // (>=10 entries) so the gate is the ONLY variable under test.
   function seedTenPending(root: string): void {
-    seedHookStatsSnapshot(root, { pending: { count: 10, oldestAgeMs: 1 * DAY_MS } });
+    for (let i = 0; i < 10; i += 1) {
+      seedPendingFile(root, "decisions", `b-${i}`, NOW_MS - 1 * DAY_MS);
+    }
   }
 
   it("test_signal_b_baseline_fires_when_import_state_missing_and_pending_overflow", () => {
