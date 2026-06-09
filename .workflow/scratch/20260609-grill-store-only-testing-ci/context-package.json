@@ -1,0 +1,143 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-20260609-store-only-testing-ci",
+    "session_path": "scratch/20260609-grill-store-only-testing-ci",
+    "generated_at": "2026-06-09T18:50:36+08:00"
+  },
+  "requirements": [
+    {
+      "id": "R-001",
+      "title": "Mounted-store workflow gate",
+      "description": "Add a CI gate that exercises installed/built CLI store creation or mounting, project binding, pending write, review/promote, recall, and no project-local knowledge fallback.",
+      "priority": "must",
+      "ref": "grill-report.md#q11-is-the-current-testing-strategy-enough-for-store-only"
+    },
+    {
+      "id": "R-002",
+      "title": "Release parity",
+      "description": "Release workflow must run the same artifact-protecting gates as normal CI before publish.",
+      "priority": "must",
+      "ref": "grill-report.md#q41-does-ci-match-release-ci"
+    },
+    {
+      "id": "R-003",
+      "title": "Store-only invariant gates",
+      "description": "Add invariant tests for source-of-truth, routing, provenance, privacy, and retired dual-root behavior.",
+      "priority": "must",
+      "ref": "grill-report.md#q21-which-state-invariants-need-red-tests"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C-001",
+      "area": "testing",
+      "constraint": "Store-only readiness must be judged by invariant gates in addition to line/statement coverage.",
+      "rationale": "Known gaps are fixture realism and omitted gates, not only coverage percentage.",
+      "status": "locked",
+      "ref": "grill-report.md#q22-is-coverage-percent-the-right-primary-quality-signal"
+    },
+    {
+      "id": "C-002",
+      "area": "ci",
+      "constraint": "CI must test the packaged CLI/bin entry and at least one mounted-store flow.",
+      "rationale": "Direct dist invocation and minimal fixtures can miss user-path failures.",
+      "status": "locked",
+      "ref": "grill-report.md#q31-what-failure-would-current-ci-most-likely-miss"
+    },
+    {
+      "id": "C-003",
+      "area": "release",
+      "constraint": "Release must run cold-start perf before publish.",
+      "rationale": "Normal CI already has the p95 gate; release currently omits it.",
+      "status": "locked",
+      "ref": "grill-report.md#q52-should-perf-be-a-hard-release-gate"
+    },
+    {
+      "id": "C-004",
+      "area": "tdd",
+      "constraint": "New store-only behavior should begin with a named failing contract case or golden fixture delta.",
+      "rationale": "Resolver red-suite practice exists but is not standardized across surfaces.",
+      "status": "open",
+      "ref": "grill-report.md#q23-is-current-red-suite-practice-sufficiently-explicit"
+    }
+  ],
+  "domain": {
+    "problem_statement": "Stress-test whether Fabric's store-only architecture needs upgraded testing and CI/CD strategy, and whether TDD-style write-red discipline is sufficiently thorough.",
+    "terminology": [
+      {
+        "term": "store-only",
+        "definition": "Runtime knowledge source of truth is mounted stores under global Fabric home, not project-local .fabric/knowledge.",
+        "code_ref": ".workflow/scratch/20260609-grill-store-only-architecture/grill-report.md",
+        "status": "locked"
+      },
+      {
+        "term": "mounted-store workflow",
+        "definition": "End-to-end user path using real mounted store state.",
+        "code_ref": "packages/shared/test/helpers/test-wall.ts",
+        "status": "locked"
+      },
+      {
+        "term": "red-suite",
+        "definition": "Failing-first contract suite or fixture ratchet.",
+        "code_ref": "packages/shared/test/resolver/golden-redsuite.test.ts",
+        "status": "open"
+      }
+    ],
+    "audience": "Fabric maintainers",
+    "industry": "developer tooling"
+  },
+  "non_goals": [
+    {
+      "title": "Promote experimental HTTP to main release gate",
+      "rationale": "HTTP remains quarantined unless explicitly restored.",
+      "ref": "grill-report.md#q13-what-is-out-of-scope-for-this-upgrade"
+    }
+  ],
+  "insights": [
+    {
+      "area": "testing",
+      "summary": "The repo already has broad tests and a useful test wall; the missing layer is release-level mounted-store workflow assurance.",
+      "evidence": "packages/shared/test/helpers/test-wall.ts and packages/server/src/services/cross-store-write.test.ts",
+      "ref": "grill-report.md#assessment-summary"
+    },
+    {
+      "area": "ci",
+      "summary": "Release CI is weaker than normal CI because it omits perf and Windows smoke.",
+      "evidence": ".github/workflows/ci.yml and .github/workflows/release.yml",
+      "ref": "grill-report.md#q41-does-ci-match-release-ci"
+    },
+    {
+      "area": "tdd",
+      "summary": "Write-red discipline exists in pockets but is not a uniform store-only contribution rule.",
+      "evidence": "packages/shared/test/resolver/golden-redsuite.test.ts",
+      "ref": "grill-report.md#q23-is-current-red-suite-practice-sufficiently-explicit"
+    }
+  ],
+  "open_questions": [
+    {
+      "area": "tdd",
+      "question": "Where should new red tests be standardized?",
+      "options": ["dedicated red test files", "golden fixture deltas", "issue-linked contract tests"],
+      "ref": "grill-report.md#open-questions"
+    },
+    {
+      "area": "performance",
+      "question": "What mounted-store corpus sizes should perf fixtures use?",
+      "options": ["small only", "small/medium/stress tiers", "release-only stress tier"],
+      "ref": "grill-report.md#q53-what-scale-case-remains-open"
+    }
+  ],
+  "references": [
+    {
+      "type": "grill-report",
+      "path": "grill-report.md"
+    },
+    {
+      "type": "terminology",
+      "path": "terminology.md"
+    }
+  ]
+}
+
