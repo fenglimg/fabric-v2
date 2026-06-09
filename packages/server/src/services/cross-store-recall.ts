@@ -44,6 +44,7 @@ import { sha256 } from "./_shared.js";
 interface CrossStoreEntry {
   qualifiedId: string; // `<alias>:<stableId>`
   file: string; // absolute path inside the store
+  type: string;
   alias: string;
   layer: "team" | "personal";
   // v2.1 global-refactor (W2/A3): the entry's scope coordinate (resolution axis,
@@ -200,6 +201,7 @@ async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<Cro
     return {
       qualifiedId: `${ref.alias}:${stableId}`,
       file: ref.file,
+      type: ref.type,
       alias: ref.alias,
       layer,
       semanticScope: readSemanticScope(source, layer),
@@ -311,6 +313,8 @@ export async function computeReadSetRevision(projectRoot: string): Promise<strin
 export interface StoreCanonicalEntry {
   stableId: string; // LOCAL stable_id (e.g. "KT-DEC-0001"), from frontmatter id
   qualifiedId: string; // `<alias>:<stableId>`
+  file: string; // absolute path inside the mounted store
+  type: string; // canonical store knowledge type directory
   layer: "team" | "personal";
   body: string; // raw markdown (frontmatter included; callers strip as needed)
   description: NonNullable<ReturnType<typeof extractRuleDescription>>;
@@ -329,6 +333,8 @@ export async function collectStoreCanonicalEntries(projectRoot: string): Promise
     out.push({
       stableId: entry.qualifiedId.slice(entry.alias.length + 1),
       qualifiedId: entry.qualifiedId,
+      file: entry.file,
+      type: entry.type,
       layer: entry.layer,
       body: entry.source,
       description,

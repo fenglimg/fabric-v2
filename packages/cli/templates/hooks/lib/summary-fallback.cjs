@@ -2,8 +2,8 @@
  * rc.35 TASK-06 (P0-10.b) — summary-fallback library.
  *
  * Resolves opaque hint entries (where `entry.summary === entry.id` so the
- * AI sees no information beyond the id) by reading the entry's markdown
- * file at `.fabric/knowledge/<type>/<id>--<slug>.md`, extracting the first
+ * AI sees no information beyond the id) by reading the entry's markdown file
+ * from mounted store `knowledge/<type>/<id>--<slug>.md`, extracting the first
  * paragraph under `## Summary`, and substituting that text into the entry
  * before the hook renders it.
  *
@@ -33,11 +33,13 @@
  */
 
 const { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } = require("node:fs");
+const { homedir } = require("node:os");
 const { join } = require("node:path");
 
 const CACHE_DIR_REL = ".fabric/.cache";
 const CACHE_FILE_REL = ".fabric/.cache/summary-fallback.json";
-const KNOWLEDGE_DIR_REL = ".fabric/knowledge";
+const GLOBAL_CONFIG_FILE = "fabric-global.json";
+const PROJECT_CONFIG_REL = ".fabric/fabric-config.json";
 const SUMMARY_MAX_LEN = 80;
 const KNOWLEDGE_TYPE_DIRS = ["decisions", "pitfalls", "guidelines", "models", "processes"];
 
@@ -112,7 +114,60 @@ function _writeCache(projectRoot, payload) {
 }
 
 /**
- * Scan `.fabric/knowledge/<type>/` for the canonical `<id>--<slug>.md`
+ * Return mounted store directories in the project's read-set
+ * (`required_stores` plus implicit personal). This hook helper is deliberately
+ * tiny and best-effort: malformed config degrades to an empty read-set rather
+ * than throwing during a shell hook.
+ */
+function _readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function _globalRoot() {
+  return join(process.env.FABRIC_HOME || homedir(), ".fabric");
+}
+
+function _storeDir(globalRoot, store) {
+  return join(globalRoot, "stores", store.mount_name || store.store_uuid);
+}
+
+function _readSetStoreDirs(projectRoot) {
+  const globalRoot = _globalRoot();
+  const global = _readJson(join(globalRoot, GLOBAL_CONFIG_FILE));
+  if (!global || !Array.isArray(global.stores)) return [];
+  const project = _readJson(join(projectRoot, PROJECT_CONFIG_REL)) || {};
+  const required = Array.isArray(project.required_stores) ? project.required_stores : [];
+  const stores = [];
+
+  for (const req of required) {
+    if (!req || typeof req.id !== "string") continue;
+    const matched = global.stores.find(
+      (store) => store && !store.personal && (store.alias === req.id || store.store_uuid === req.id),
+    );
+    if (matched) stores.push(matched);
+  }
+
+  const personal = global.stores.find((store) => store && store.personal);
+  if (personal) stores.push(personal);
+
+  return stores.map((store) => ({
+    alias: typeof store.alias === "string" ? store.alias : "",
+    dir: _storeDir(globalRoot, store),
+  }));
+}
+
+function _splitQualifiedId(id) {
+  const idx = typeof id === "string" ? id.indexOf(":") : -1;
+  if (idx <= 0) return { alias: "", stableId: id };
+  return { alias: id.slice(0, idx), stableId: id.slice(idx + 1) };
+}
+
+/**
+ * Scan mounted store `knowledge/<type>/` for the canonical `<id>--<slug>.md`
  * matching `stableId`. Tries the most likely type-dir first based on the
  * entry's `type` hint, then falls back to scanning all canonical type
  * directories. Returns the absolute path or null.
@@ -121,8 +176,11 @@ function _writeCache(projectRoot, payload) {
  * once per file), so the first match wins.
  */
 function _findEntryFile(projectRoot, stableId, typeHint) {
-  const baseDir = join(projectRoot, KNOWLEDGE_DIR_REL);
-  if (!existsSync(baseDir)) return null;
+  const parsedId = _splitQualifiedId(stableId);
+  const storeDirs = _readSetStoreDirs(projectRoot).filter(
+    (store) => parsedId.alias.length === 0 || store.alias === parsedId.alias,
+  );
+  if (storeDirs.length === 0) return null;
   const tryOrder = [];
   if (typeof typeHint === "string" && typeHint.length > 0) {
     // Accept both singular and plural hints — find the plural form.
@@ -133,19 +191,23 @@ function _findEntryFile(projectRoot, stableId, typeHint) {
   for (const t of KNOWLEDGE_TYPE_DIRS) {
     if (!tryOrder.includes(t)) tryOrder.push(t);
   }
-  const prefix = `${stableId}--`;
-  for (const t of tryOrder) {
-    const typeDir = join(baseDir, t);
-    if (!existsSync(typeDir)) continue;
-    let files;
-    try {
-      files = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const f of files) {
-      if (f.startsWith(prefix) && f.endsWith(".md")) {
-        return join(typeDir, f);
+  const prefix = `${parsedId.stableId}--`;
+  for (const store of storeDirs) {
+    const baseDir = join(store.dir, "knowledge");
+    if (!existsSync(baseDir)) continue;
+    for (const t of tryOrder) {
+      const typeDir = join(baseDir, t);
+      if (!existsSync(typeDir)) continue;
+      let files;
+      try {
+        files = readdirSync(typeDir);
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        if (f.startsWith(prefix) && f.endsWith(".md")) {
+          return join(typeDir, f);
+        }
       }
     }
   }
@@ -204,6 +266,7 @@ module.exports = {
   _readCache,
   _writeCache,
   _findEntryFile,
+  _readSetStoreDirs,
   _isOpaque,
   SUMMARY_MAX_LEN,
   KNOWLEDGE_TYPE_DIRS,

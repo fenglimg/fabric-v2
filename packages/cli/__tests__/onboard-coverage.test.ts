@@ -20,17 +20,34 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  STORE_LAYOUT,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+  storeRelativePath,
+} from "@fenglimg/fabric-shared";
+import {
   runOnboardCoverage,
   type OnboardCoverageReport,
 } from "../src/commands/onboard-coverage.js";
 
 const tempRoots: string[] = [];
+let originalFabricHome: string | undefined;
+
+const TEAM_STORE_UUID = "11111111-1111-4111-8111-111111111111";
 
 beforeEach(() => {
-  // Each test owns its tempdir — no shared fixture state.
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = mkdtempSync(join(tmpdir(), "onboard-coverage-home-"));
+  tempRoots.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
 });
 
 afterEach(() => {
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }
@@ -40,6 +57,47 @@ function createProject(): string {
   const root = mkdtempSync(join(tmpdir(), "onboard-coverage-"));
   tempRoots.push(root);
   return root;
+}
+
+function bindTeamStore(root: string): void {
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      {
+        store_uuid: TEAM_STORE_UUID,
+        alias: "team",
+        remote: "git@example.com:team-store.git",
+      },
+    ],
+  });
+  writeConfig(root, {
+    required_stores: [{ id: "team" }],
+  });
+}
+
+function seedMountedStoreFile(
+  root: string,
+  type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
+  filename: string,
+  frontmatter: Record<string, string>,
+): void {
+  bindTeamStore(root);
+  const dir = join(
+    resolveGlobalRoot(),
+    storeRelativePath(TEAM_STORE_UUID),
+    STORE_LAYOUT.knowledgeDir,
+    type,
+  );
+  mkdirSync(dir, { recursive: true });
+  const lines = ["---"];
+  for (const [k, v] of Object.entries(frontmatter)) {
+    lines.push(`${k}: ${v}`);
+  }
+  lines.push("---");
+  lines.push("");
+  lines.push("# stub body");
+  lines.push("");
+  writeFileSync(join(dir, filename), lines.join("\n"), "utf8");
 }
 
 function seedKnowledgeFile(
@@ -97,13 +155,13 @@ describe("runOnboardCoverage", () => {
 
   it("places a knowledge file with onboard_slot frontmatter into filled[slot]", async () => {
     const root = createProject();
-    seedKnowledgeFile(root, "decisions", "KT-DEC-0042--ts-stack.md", {
+    seedMountedStoreFile(root, "decisions", "KT-DEC-0042--ts-stack.md", {
       id: "KT-DEC-0042",
       type: "decisions",
       onboard_slot: "tech-stack-decision",
     });
     const report = await runOnboardCoverage(root);
-    expect(report.filled["tech-stack-decision"]).toEqual(["KT-DEC-0042"]);
+    expect(report.filled["tech-stack-decision"]).toEqual(["team:KT-DEC-0042"]);
     expect(report.missing).not.toContain("tech-stack-decision");
     expect(report.missing).toContain("architecture-pattern");
     expect(report.missing).toHaveLength(4);
@@ -111,27 +169,27 @@ describe("runOnboardCoverage", () => {
 
   it("aggregates multiple files across all type dirs", async () => {
     const root = createProject();
-    seedKnowledgeFile(root, "decisions", "KT-DEC-0001--stack.md", {
+    seedMountedStoreFile(root, "decisions", "KT-DEC-0001--stack.md", {
       id: "KT-DEC-0001",
       onboard_slot: "tech-stack-decision",
     });
-    seedKnowledgeFile(root, "models", "KT-MOD-0001--layout.md", {
+    seedMountedStoreFile(root, "models", "KT-MOD-0001--layout.md", {
       id: "KT-MOD-0001",
       onboard_slot: "architecture-pattern",
     });
-    seedKnowledgeFile(root, "guidelines", "KT-GLD-0001--style.md", {
+    seedMountedStoreFile(root, "guidelines", "KT-GLD-0001--style.md", {
       id: "KT-GLD-0001",
       onboard_slot: "code-style-tone",
     });
-    seedKnowledgeFile(root, "processes", "KT-PRO-0001--build.md", {
+    seedMountedStoreFile(root, "processes", "KT-PRO-0001--build.md", {
       id: "KT-PRO-0001",
       onboard_slot: "build-system-idiom",
     });
     const report = await runOnboardCoverage(root);
-    expect(report.filled["tech-stack-decision"]).toEqual(["KT-DEC-0001"]);
-    expect(report.filled["architecture-pattern"]).toEqual(["KT-MOD-0001"]);
-    expect(report.filled["code-style-tone"]).toEqual(["KT-GLD-0001"]);
-    expect(report.filled["build-system-idiom"]).toEqual(["KT-PRO-0001"]);
+    expect(report.filled["tech-stack-decision"]).toEqual(["team:KT-DEC-0001"]);
+    expect(report.filled["architecture-pattern"]).toEqual(["team:KT-MOD-0001"]);
+    expect(report.filled["code-style-tone"]).toEqual(["team:KT-GLD-0001"]);
+    expect(report.filled["build-system-idiom"]).toEqual(["team:KT-PRO-0001"]);
     expect(report.filled["domain-vocabulary"]).toEqual([]);
     expect(report.missing).toEqual(["domain-vocabulary"]);
   });
@@ -152,7 +210,7 @@ describe("runOnboardCoverage", () => {
 
   it("silently ignores an off-spec onboard_slot value (not in locked S5 set)", async () => {
     const root = createProject();
-    seedKnowledgeFile(root, "decisions", "KT-DEC-9999--bogus.md", {
+    seedMountedStoreFile(root, "decisions", "KT-DEC-9999--bogus.md", {
       id: "KT-DEC-9999",
       onboard_slot: "release-process", // not in S5
     });
@@ -189,28 +247,28 @@ describe("runOnboardCoverage", () => {
 
   it("falls back to the bare filename (without .md) when the id: line is absent", async () => {
     const root = createProject();
-    seedKnowledgeFile(root, "decisions", "noid-fallback.md", {
+    seedMountedStoreFile(root, "decisions", "noid-fallback.md", {
       onboard_slot: "tech-stack-decision",
     });
     const report = await runOnboardCoverage(root);
-    expect(report.filled["tech-stack-decision"]).toEqual(["noid-fallback"]);
+    expect(report.filled["tech-stack-decision"]).toEqual(["team:noid-fallback"]);
   });
 
   it("returns a deterministic shape (sorted filled lists, stable slot order)", async () => {
     const root = createProject();
-    seedKnowledgeFile(root, "decisions", "z-late.md", {
+    seedMountedStoreFile(root, "decisions", "z-late.md", {
       id: "KT-DEC-0099",
       onboard_slot: "tech-stack-decision",
     });
-    seedKnowledgeFile(root, "decisions", "a-early.md", {
+    seedMountedStoreFile(root, "decisions", "a-early.md", {
       id: "KT-DEC-0001",
       onboard_slot: "tech-stack-decision",
     });
     const report = await runOnboardCoverage(root);
     // Sorted alphabetically by stable_id.
     expect(report.filled["tech-stack-decision"]).toEqual([
-      "KT-DEC-0001",
-      "KT-DEC-0099",
+      "team:KT-DEC-0001",
+      "team:KT-DEC-0099",
     ]);
   });
 
@@ -239,5 +297,18 @@ describe("runOnboardCoverage", () => {
     expect(existsSync(join(root, ".fabric"))).toBe(false);
     const report = await runOnboardCoverage(root);
     expect(report.missing).toHaveLength(5);
+  });
+
+  it("does not count retired project-local .fabric/knowledge files", async () => {
+    const root = createProject();
+    seedKnowledgeFile(root, "decisions", "KT-DEC-7777--legacy.md", {
+      id: "KT-DEC-7777",
+      onboard_slot: "tech-stack-decision",
+    });
+
+    const report = await runOnboardCoverage(root);
+
+    expect(report.filled["tech-stack-decision"]).toEqual([]);
+    expect(report.missing).toContain("tech-stack-decision");
   });
 });
