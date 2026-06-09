@@ -42,7 +42,7 @@ function measureOnce(command, args, options = {}) {
     ...options,
   });
   const elapsed = performance.now() - start;
-  return { elapsed, status: result.status, stderr: result.stderr };
+  return { elapsed, status: result.status, signal: result.signal, stderr: result.stderr };
 }
 
 function percentile(samples, p) {
@@ -93,11 +93,16 @@ function benchmarkHook(hookPath) {
   });
   const samples = [];
   for (let i = 0; i < ITERATIONS; i++) {
-    const { elapsed } = measureOnce(process.execPath, [hookPath], {
+    const { elapsed, status, signal, stderr } = measureOnce(process.execPath, [hookPath], {
       cwd: fixture,
       input: stdinPayload,
       env: { ...process.env, FABRIC_HOME: fixture },
     });
+    if (status !== 0 || signal !== null) {
+      const detail = signal !== null ? `signal ${signal}` : `status ${status}`;
+      const stderrSnippet = typeof stderr === "string" && stderr.trim().length > 0 ? `: ${stderr.trim()}` : "";
+      throw new Error(`SessionStart hook failed with ${detail}${stderrSnippet}`);
+    }
     samples.push(elapsed);
   }
   return {

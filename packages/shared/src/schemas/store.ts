@@ -30,6 +30,15 @@ export const storeUuidSchema = z
   .string()
   .regex(STORE_UUID_PATTERN, "store_uuid must be a canonical lowercase UUID");
 
+export const STORE_ALIAS_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,80}$/u;
+
+export const storeAliasSchema = z
+  .string()
+  .regex(
+    STORE_ALIAS_PATTERN,
+    "store alias must be a single [A-Za-z0-9._-] path segment, max 80 chars",
+  );
+
 // The sentinel value a project may use in place of a concrete remote URL to
 // declare "this required store is satisfied by the user's implicit personal
 // store" (S59/B3). The personal store is never shared and carries no remote.
@@ -51,7 +60,7 @@ export const storeIdentitySchema = z
     // Optional human-facing canonical alias baked into the store (e.g. the
     // team picks "platform-kb"). Local per-machine aliases are resolved by the
     // StoreResolver from config and may differ; this is the suggested default.
-    canonical_alias: z.string().optional(),
+    canonical_alias: storeAliasSchema.optional(),
     // Optional one-line description surfaced in `store list` / onboarding.
     description: z.string().optional(),
     // The semantic scopes this store is *allowed* to hold. A shared (team)
@@ -223,7 +232,7 @@ export const mountedStoreSchema = z
     mount_name: storeMountNameSchema.optional(),
     // Local per-machine alias the user references this store by (resolver maps
     // alias → uuid). May differ from the store's canonical_alias.
-    alias: z.string().min(1),
+    alias: storeAliasSchema,
     // Optional user-facing label. Does not participate in resolution.
     display_name: z.string().optional(),
     // Git remote locator for this clone, if any. Absent = local-only store

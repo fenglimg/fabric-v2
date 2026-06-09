@@ -125,6 +125,9 @@ const removeCommand = defineCommand({
   async run({ args }) {
     const { detached } = storeRemove(args.alias);
     const t = getProjectTranslator();
+    if (detached === null) {
+      process.exitCode = 1;
+    }
     console.log(
       detached === null
         ? t("cli.store.no-alias", { alias: args.alias })
@@ -140,6 +143,9 @@ const explainCommand = defineCommand({
   },
   run({ args }) {
     const explanation = storeExplain(args.alias);
+    if (explanation === null) {
+      process.exitCode = 1;
+    }
     console.log(
       explanation === null
         ? getProjectTranslator()("cli.store.no-alias", { alias: args.alias })

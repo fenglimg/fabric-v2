@@ -268,7 +268,7 @@ function assertPathInSandbox(rawPath: string): void {
   if (rawPath === "**" || rawPath === "*") return;
 
   const normalized = rawPath.replaceAll("\\", "/");
-  if (normalized.startsWith("/")) {
+  if (normalized.startsWith("/") || /^[A-Za-z]:\//u.test(normalized) || normalized.startsWith("//")) {
     throw new Error(
       `plan_context: absolute paths are not allowed (got "${rawPath}"); pass a path relative to the project root`,
     );
@@ -439,16 +439,25 @@ export async function planContext(
   let candidates = topKCandidates;
   const relatedAppended: Record<string, string> = {};
   if (input.include_related === true) {
-    const inTopK = new Set(topKCandidates.map((item) => item.stable_id));
-    const rankedById = new Map(rankedCandidates.map((item) => [item.stable_id, item]));
+    const inTopK = new Set(topKCandidates.flatMap((item) => relatedLookupKeys(item.stable_id)));
+    const rankedById = new Map<string, RuleDescriptionIndexItem>();
+    for (const item of rankedCandidates) {
+      for (const key of relatedLookupKeys(item.stable_id)) {
+        if (!rankedById.has(key)) {
+          rankedById.set(key, item);
+        }
+      }
+    }
     const appended: RuleDescriptionIndexItem[] = [];
+    const appendedIds = new Set<string>();
     for (const surfaced of topKCandidates) {
       for (const rel of surfaced.description.related ?? []) {
         if (inTopK.has(rel)) continue; // already surfaced — nothing to pull in
-        if (relatedAppended[rel] !== undefined) continue; // first source wins, no dupes
         const neighbour = rankedById.get(rel);
         if (neighbour === undefined) continue; // edge points outside the corpus — skip (honest)
-        relatedAppended[rel] = surfaced.stable_id;
+        if (appendedIds.has(neighbour.stable_id)) continue; // first source wins, no dupes
+        appendedIds.add(neighbour.stable_id);
+        relatedAppended[neighbour.stable_id] = surfaced.stable_id;
         appended.push(neighbour);
       }
     }
@@ -1080,4 +1089,10 @@ function packageRootOfPath(p: string): string {
   const segments = stem.split("/").filter(Boolean);
   if (segments.length < 2) return "";
   return segments.slice(0, 2).join("/");
+}
+
+function relatedLookupKeys(stableId: string): string[] {
+  const parts = stableId.split(":");
+  const localId = parts.at(-1);
+  return localId === undefined || localId === stableId ? [stableId] : [stableId, localId];
 }

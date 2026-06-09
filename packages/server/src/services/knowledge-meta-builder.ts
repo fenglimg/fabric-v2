@@ -1104,11 +1104,20 @@ export function isForbiddenCrossLayerEdge(
   if (sourceLayer !== "team") {
     return false;
   }
-  const decoded = parseKnowledgeId(targetId);
+  const decoded = parseKnowledgeId(localKnowledgeIdFromReference(targetId));
   if (decoded === null) {
     return false;
   }
   return decoded.layer === "personal";
+}
+
+function localKnowledgeIdFromReference(ref: string): string {
+  const direct = parseKnowledgeId(ref);
+  if (direct !== null) {
+    return ref;
+  }
+  const tail = ref.split(":").at(-1);
+  return tail ?? ref;
 }
 
 function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFrontmatterFields {

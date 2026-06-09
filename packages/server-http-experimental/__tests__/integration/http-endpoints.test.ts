@@ -11,9 +11,8 @@
  *   5. GET /api/replay
  *   6. GET /api/scan
  *   7. GET /api/doctor
- *   8. POST /api/intent/annotate
- *   9. GET /events (SSE — connection + header check)
- *  10. ALL /mcp (MCP HTTP transport — initialize handshake)
+ *   8. GET /events (SSE — connection + header check)
+ *   9. ALL /mcp (MCP HTTP transport — initialize handshake)
  *
  * Plus: 401 on each protected route when authToken is set and token is missing.
  */

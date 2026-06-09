@@ -18,7 +18,7 @@ export function isColorEnabled(): boolean {
   if (force !== undefined) {
     return force !== "0" && force.toLowerCase() !== "false";
   }
-  return Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+  return Boolean(process.stdout.isTTY);
 }
 
 function colorize(painter: PaintFn): PaintFn {

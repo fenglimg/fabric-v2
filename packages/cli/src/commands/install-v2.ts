@@ -85,6 +85,14 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
 
   // Handle --global flag: set up global home only (no project wiring)
   if (args.global === true) {
+    if (args["dry-run"] === true) {
+      console.log("Fabric install dry run: no global files will be written.");
+      console.log("Planned: ensure global Fabric config and personal store exist.");
+      if (args.url !== undefined) {
+        console.log(`Planned: clone and mount store from ${args.url}.`);
+      }
+      return;
+    }
     await runGlobalInstall({ url: args.url });
     return;
   }
@@ -164,10 +172,13 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
 // Helper Functions
 // ---------------------------------------------------------------------------
 
-function isInteractiveInit(): boolean {
-  return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+export function shouldUseInstallRenderer(args: InitArgs, terminalInteractive: boolean): boolean {
+  if (!terminalInteractive) {
+    return false;
+  }
+  return args.yes === true || args["dry-run"] === true;
 }
 
-export function shouldUseInstallRenderer(args: InitArgs, terminalInteractive: boolean): boolean {
-  return terminalInteractive && (args.yes === true || args["dry-run"] === true);
+function isInteractiveInit(): boolean {
+  return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
 }

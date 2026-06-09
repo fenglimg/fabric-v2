@@ -183,7 +183,7 @@ describe("recall (one-call combined service — NEW-3)", () => {
   // The `related` graph edge references the store-qualified id of the neighbour
   // (cross-store candidates carry `<alias>:<id>`; recall matches related ids
   // against the surfaced candidate set, which is store-qualified).
-  async function seedRelatedProject(): Promise<string> {
+  async function seedRelatedProject(edgeId = "team:KT-GLD-0001"): Promise<string> {
     const projectRoot = await createTempProject();
     // auth declares a top-level `related` graph edge to the ui guideline.
     await writeStoreEntry("decisions", "KT-DEC-0001", [
@@ -193,7 +193,7 @@ describe("recall (one-call combined service — NEW-3)", () => {
       "layer: team",
       "maturity: verified",
       "created_at: 2026-06-04T00:00:00.000Z",
-      "related: [team:KT-GLD-0001]",
+      `related: [${edgeId}]`,
       "summary: Auth decision",
       "---",
       "# Auth body",
@@ -232,6 +232,18 @@ describe("recall (one-call combined service — NEW-3)", () => {
     });
 
     // auth + its related ui guideline both fetched.
+    expect(result.selected_stable_ids.sort()).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001"]);
+  });
+
+  it("include_related expands bare local related ids against store-qualified candidates", async () => {
+    const projectRoot = await seedRelatedProject("KT-GLD-0001");
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      ids: ["team:KT-DEC-0001"],
+      include_related: true,
+    });
+
     expect(result.selected_stable_ids.sort()).toEqual(["team:KT-DEC-0001", "team:KT-GLD-0001"]);
   });
 

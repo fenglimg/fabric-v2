@@ -26,6 +26,10 @@ export class ValidateStage implements Stage {
   readonly name = "validate" as const;
 
   async execute(context: InstallContext): Promise<StageResult> {
+    if (context.options.planOnly === true) {
+      return stageSkipped("validate", "dry-run: validation skipped because no files were written");
+    }
+
     try {
       const target = context.target;
       const errors: string[] = [];

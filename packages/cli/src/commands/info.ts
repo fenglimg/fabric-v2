@@ -55,6 +55,11 @@ export default defineCommand({
         runWhoami(args.json);
         break;
       case "scope-explain":
+        if (typeof args.scope !== "string" || args.scope.length === 0) {
+          console.error("Usage: fabric info scope <scope>");
+          process.exitCode = 1;
+          break;
+        }
         runScopeExplain(args.scope!);
         break;
       case "status":

@@ -55,6 +55,14 @@ function defaultWriteScope(layer: "team" | "personal", projectRoot: string): str
     : "team";
 }
 
+function resolveSemanticWriteScope(
+  layer: "team" | "personal",
+  projectRoot: string,
+  semanticScope?: string,
+): string {
+  return semanticScope ?? defaultWriteScope(layer, projectRoot);
+}
+
 // Absolute directory of the write-target store for a layer (the store root, not
 // its knowledge subdir). Exposed for the stable_id counter allocation (W4 decolo):
 // a newly-minted id's per-store `counters.json` must live in the SAME store the
@@ -66,10 +74,10 @@ export function resolveWriteTargetStoreDir(
   semanticScope?: string,
 ): string {
   const input = buildStoreResolveInput(projectRoot);
+  const scope = resolveSemanticWriteScope(layer, projectRoot, semanticScope);
   if (input === null) {
-    throw writeTargetUnresolved(semanticScope ?? defaultWriteScope(layer, projectRoot), layer);
+    throw writeTargetUnresolved(scope, layer);
   }
-  const scope = semanticScope ?? defaultWriteScope(layer, projectRoot);
   const { target } = createStoreResolver().resolveWriteTarget(input, scope);
   if (target === null) {
     throw writeTargetUnresolved(scope, layer);
@@ -126,10 +134,10 @@ export function resolveWriteScopeMeta(
   semanticScope?: string,
 ): WriteScopeMeta {
   const input = buildStoreResolveInput(projectRoot);
+  const scope = resolveSemanticWriteScope(layer, projectRoot, semanticScope);
   if (input === null) {
-    throw writeTargetUnresolved(semanticScope ?? defaultWriteScope(layer, projectRoot), layer);
+    throw writeTargetUnresolved(scope, layer);
   }
-  const scope = semanticScope ?? defaultWriteScope(layer, projectRoot);
   const { target } = createStoreResolver().resolveWriteTarget(input, scope);
   if (target === null) {
     throw writeTargetUnresolved(scope, layer);

@@ -32,6 +32,7 @@ function getGroupedCommands(): CommandGroup[] {
       name: "Setup",
       commands: [
         { name: "install", description: t("cli.help.group.setup.install") },
+        { name: "uninstall", description: t("cli.uninstall.description").split("\n")[0] ?? "Uninstall Fabric" },
         { name: "config", description: t("cli.help.group.setup.config") },
       ],
     },

@@ -11,6 +11,7 @@ export const structuredWarningSchema = z.object({
   code: z.string(),
   file: z.string(),
   line: z.number().optional(),
+  message: z.string().optional(),
   action_hint: z.string(),
 });
 
@@ -377,7 +378,7 @@ export const knowledgeSectionsAnnotations = {
   idempotentHint: true,
   destructiveHint: false,
   openWorldHint: false,
-  title: "Filter rule sections",
+  title: "Fetch knowledge entry bodies",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -399,7 +400,7 @@ export const recallInputSchema = z.object({
     .array(z.string())
     .min(1)
     .describe(
-      "Candidate file paths to recall Fabric rules for. Same semantics as fab_plan_context.paths.",
+      "Candidate file paths to recall Fabric knowledge entries for. Same semantics as fab_plan_context.paths.",
     ),
   intent: z
     .string()
@@ -1038,7 +1039,7 @@ const _fabReviewListItemSchema = z.object({
   // consumers (Read tool, fs.readFile, downstream MCP servers) should prefer
   // the absolute variant — the `~` is a shell-only sigil that breaks every
   // non-shell consumer. Team entries omit this field because their
-  // `pending_path` is already project-relative and unambiguous.
+  // `pending_path` is already store-resolved and unambiguous.
   pending_path_absolute: z.string().optional(),
   type: z.enum(["decisions", "pitfalls", "guidelines", "models", "processes"]),
   layer: z.enum(["team", "personal"]),

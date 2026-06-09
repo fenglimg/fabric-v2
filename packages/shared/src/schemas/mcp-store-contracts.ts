@@ -12,12 +12,14 @@ import { storeUuidSchema } from "./store.js";
 // api-contracts), so composing the store-aware shapes here avoids the import
 // cycle that would arise from editing api-contracts to import provenance.
 //
-// Two store-aware additions, by tool role:
+// Store-aware additions, by tool role:
 //   - READ tools (fab_recall / fab_plan_context / fab_get_knowledge_sections /
 //     fab_review): each surfaced entry carries a `provenance` envelope and is
 //     cited by `global_ref` (store-qualified).
-//   - WRITE tools (fab_archive_scan / fab_extract_knowledge): the output echoes
+//   - WRITE tools (fab_extract_knowledge / fab_review write actions): the output echoes
 //     `written_to_store` so the AI sees WHERE the entry landed (F1).
+//   - `fab_archive_scan` is intentionally read-only: it scans the event ledger
+//     and does not surface knowledge entries or write to a store.
 // ---------------------------------------------------------------------------
 
 // The 6 store-aware MCP tools (locked surface).
@@ -73,7 +75,7 @@ export const MCP_STORE_AWARE_CONTRACTS: Record<McpStoreAwareTool, McpStoreAwareC
   fab_archive_scan: {
     tool: "fab_archive_scan",
     surfacesEntries: false,
-    echoesWrittenStore: true,
+    echoesWrittenStore: false,
   },
   fab_extract_knowledge: {
     tool: "fab_extract_knowledge",

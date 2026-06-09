@@ -50,10 +50,11 @@ This document defines the manual release path for Fabric. The workflow is intent
    ```bash
    npm view @fenglimg/fabric-cli version
    npm view @fenglimg/fabric-server version
+   npm view @fenglimg/fabric-shared version
    ```
 
 8. **Run post-publish validation / 发布后验证**
-   Validate the published artifacts against the technical onboarding path in `docs/getting-started.md`: install the published CLI, run `fabric install`, start `fabric serve`, verify MCP tools, append one ledger entry, and approve intentional human-lock drift when applicable.
+   Validate the published artifacts against the current onboarding path in `docs/USER-QUICKSTART.md` and `docs/RUNTIME-CONTRACTS.md`: install the published CLI, run `fabric install`, bind/select a mounted store, run `fabric doctor`, verify the stdio MCP tools, and archive/review one test knowledge entry when applicable.
 
 9. **Create GitHub Release / GitHub Release**
    Create a GitHub Release for the new tag, using the matching `CHANGELOG.md` notes and any known caveats from the smoke run.

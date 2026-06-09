@@ -55,7 +55,11 @@ describe("R5#3 privacy boundary — personal never enters a shared store", () =>
   it("routes a project scope to the configured shared store", () => {
     const resolver = createStoreResolver();
     const { target } = resolver.resolveWriteTarget(
-      { ...input, writeRoutes: [{ scope: "project:fabric-v2", store: "platform" }] },
+      {
+        ...input,
+        requiredStores: [{ id: "team" }, { id: "platform" }],
+        writeRoutes: [{ scope: "project:fabric-v2", store: "platform" }],
+      },
       "project:fabric-v2",
     );
     expect(target?.alias).toBe("platform");
@@ -66,6 +70,7 @@ describe("R5#3 privacy boundary — personal never enters a shared store", () =>
     const { target } = resolver.resolveWriteTarget(
       {
         ...input,
+        requiredStores: [{ id: "team" }, { id: "platform" }],
         writeRoutes: [
           { scope: "project", store: "team" },
           { scope: "project:fabric-v2", store: "platform" },
@@ -79,7 +84,7 @@ describe("R5#3 privacy boundary — personal never enters a shared store", () =>
   it("routes non-personal scopes to defaultWriteAlias before legacy activeWriteAlias", () => {
     const resolver = createStoreResolver();
     const { target } = resolver.resolveWriteTarget(
-      { ...input, defaultWriteAlias: "platform" },
+      { ...input, requiredStores: [{ id: "team" }, { id: "platform" }], defaultWriteAlias: "platform" },
       "team",
     );
     expect(target?.alias).toBe("platform");

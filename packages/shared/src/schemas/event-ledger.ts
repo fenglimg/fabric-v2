@@ -381,6 +381,7 @@ export const knowledgeDeferredEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("knowledge_deferred"),
   stable_id: z.string().optional(),
+  pending_path: z.string().optional(),
   timestamp: z.string().datetime(),
   reason: z.string().optional(),
   until: z.string().datetime().optional(),

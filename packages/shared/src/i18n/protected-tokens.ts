@@ -8,6 +8,7 @@
 
 export const PROTECTED_TOKENS = [
   // v2.0 MCP tool names
+  "fab_recall",
   "fab_plan_context",
   "fab_get_knowledge_sections",
   "fab_extract_knowledge",

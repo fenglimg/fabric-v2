@@ -551,6 +551,23 @@ describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
     ).rejects.toThrow(/absolute paths are not allowed/u);
   });
 
+  it("rejects Windows drive-letter absolute paths", async () => {
+    const projectRoot = await createProject({});
+    await expect(
+      planContext(projectRoot, { paths: ["C:\\repo\\src\\x.ts"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+    await expect(
+      planContext(projectRoot, { target_paths: ["D:/repo/src/x.ts"], paths: ["src/index.ts"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+  });
+
+  it("rejects Windows UNC absolute paths", async () => {
+    const projectRoot = await createProject({});
+    await expect(
+      planContext(projectRoot, { paths: ["\\\\server\\share\\repo\\src\\x.ts"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+  });
+
   it("rejects `..` traversal in input.paths", async () => {
     const projectRoot = await createProject({});
     await expect(
@@ -1049,9 +1066,10 @@ describe("planContext BM25 model cache (ISS-024)", () => {
 // graph-empty path stays an honest no-op.
 describe("planContext include_related graph二阶召回 (W3-T2)", () => {
   async function seedRelatedRegistry(
-    opts: { topK?: number; withEdge?: boolean } = {},
+    opts: { topK?: number; withEdge?: boolean; edgeId?: string } = {},
   ): Promise<string> {
     const withEdge = opts.withEdge !== false;
+    const edgeId = opts.edgeId ?? "team:KT-DEC-9202";
     const projectRoot = await createTeamProject();
     if (opts.topK !== undefined) {
       await writeFile(
@@ -1068,7 +1086,7 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
       maturity: "verified",
       relevance_scope: "broad",
       relevance_paths: [],
-      ...(withEdge ? { related: ["team:KT-DEC-9202"] } : {}),
+      ...(withEdge ? { related: [edgeId] } : {}),
     });
     await writeStoreEntry(TEAM_STORE, "decisions", {
       id: "KT-DEC-9202",
@@ -1095,6 +1113,19 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     const ids = result.candidates.map((c) => c.stable_id);
     expect(ids).toContain("team:KT-DEC-9201"); // surfaced by ranking
     expect(ids).toContain("team:KT-DEC-9202"); // pulled in via related二阶
+    expect(result.related_appended).toEqual({ "team:KT-DEC-9202": "team:KT-DEC-9201" });
+  });
+
+  it("also resolves bare local related ids against store-qualified candidates", async () => {
+    const projectRoot = await seedRelatedRegistry({ topK: 1, edgeId: "KT-DEC-9202" });
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/auth.ts"],
+      intent: "authentication token refresh rotation",
+      include_related: true,
+    });
+
+    expect(result.candidates.map((c) => c.stable_id)).toContain("team:KT-DEC-9202");
     expect(result.related_appended).toEqual({ "team:KT-DEC-9202": "team:KT-DEC-9201" });
   });
 

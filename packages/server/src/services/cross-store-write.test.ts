@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -110,10 +110,10 @@ function personalPendingDir(type: string): string {
   );
 }
 
-function storePendingDir(type: string, mountName?: string): string {
+function storePendingDir(type: string, mountName?: string, storeUuid = TEAM_STORE_UUID): string {
   return join(
     resolveGlobalRoot(),
-    storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID, mount_name: mountName }),
+    storeRelativePathForMount({ store_uuid: storeUuid, mount_name: mountName }),
     STORE_LAYOUT.knowledgeDir,
     STORE_PENDING_DIR,
     type,
@@ -176,6 +176,48 @@ describe("cross-store write (W1-T2)", () => {
     const mountedDir = storePendingDir("decisions", "platform-kb");
     expect(existsSync(mountedDir)).toBe(true);
     expect(readdirSync(mountedDir).some((f) => f.endsWith(".md"))).toBe(true);
+    expect(existsSync(storePendingDir("decisions"))).toBe(false);
+  });
+
+  it("honors project-scoped write_routes before the active write store", async () => {
+    const projectRoot = await createProject();
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [
+        {
+          store_uuid: TEAM_STORE_UUID,
+          alias: "team",
+          remote: "git@example.com:team-store.git",
+          writable: true,
+        },
+        {
+          store_uuid: PLATFORM_STORE_UUID,
+          alias: "platform",
+          mount_name: "platform-kb",
+          remote: "git@example.com:platform-store.git",
+          writable: true,
+        },
+      ],
+    });
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({
+        required_stores: [{ id: "team" }, { id: "platform" }],
+        active_write_store: "team",
+        active_project: "fabric-v2",
+        write_routes: [{ scope: "project:fabric-v2", store: "platform" }],
+      }, null, 2)}\n`,
+    );
+
+    await extractKnowledge(projectRoot, goodInput);
+
+    const platformDir = storePendingDir("decisions", "platform-kb", PLATFORM_STORE_UUID);
+    expect(existsSync(platformDir)).toBe(true);
+    const written = readdirSync(platformDir).find((f) => f.endsWith(".md"));
+    expect(written).toBeDefined();
+    const content = readFileSync(join(platformDir, written ?? ""), "utf8");
+    expect(content).toMatch(/^semantic_scope: project:fabric-v2$/mu);
+    expect(content).toMatch(/^visibility_store: "platform"$/mu);
     expect(existsSync(storePendingDir("decisions"))).toBe(false);
   });
 

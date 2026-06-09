@@ -18,7 +18,7 @@ import { regenerateBindingsSnapshot } from "../../store/bindings-io.js";
 import { loadProjectConfig } from "../../store/project-config-io.js";
 import { paint } from "../../colors.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
-import { stageRan, stageFailedFromError } from "./pipeline.js";
+import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 import { ensureStoreProjectBinding } from "../store-project-onboarding.js";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,10 @@ export class StoreStage implements Stage {
     try {
       const globalRoot = resolveGlobalRoot();
       context.state.globalRoot = globalRoot;
+
+      if (context.options.planOnly === true) {
+        return stageSkipped("store", "dry-run: store setup planned without global/project writes");
+      }
 
       // Ensure global config exists
       const globalConfig = loadGlobalConfig(globalRoot);

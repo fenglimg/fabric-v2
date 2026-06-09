@@ -921,7 +921,7 @@ function resolveModifyTarget(
 
 function inferTypeFromPath(path: string): PluralType | null {
   // Match `<...>/knowledge/[pending/]<type>/<file>.md`.
-  const match = /knowledge\/(?:pending\/)?([^/]+)\/[^/]+\.md$/u.exec(path);
+  const match = /(?:^|[\\/])knowledge[\\/](?:pending[\\/])?([^\\/]+)[\\/][^\\/]+\.md$/u.exec(path);
   if (match === null) return null;
   const seg = match[1];
   if (seg !== undefined && PLURAL_TYPES.includes(seg as PluralType)) {
@@ -934,6 +934,10 @@ function extractSlug(path: string): string {
   const file = basename(path).replace(/\.md$/u, "");
   // Strip canonical id prefix `KP-XXX-9999--` if present.
   return file.replace(/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d+--/u, "");
+}
+
+export function __isPendingKnowledgePathForTest(path: string): boolean {
+  return /(?:^|[\\/])knowledge[\\/]pending[\\/]/u.test(path);
 }
 
 async function modifyLayerFlip(
@@ -953,7 +957,7 @@ async function modifyLayerFlip(
   // want "promote with layer X" must approve first (which writes the
   // canonical file with the source-declared layer) and then modify the
   // canonical entry's layer.
-  if (target.absPath.includes("/pending/")) {
+  if (__isPendingKnowledgePathForTest(target.absPath)) {
     throw new Error(
       "layer-flip not allowed on pending entries; approve first, then modify the canonical entry's layer",
     );
@@ -1274,7 +1278,16 @@ async function searchEntries(
   for (const layer of ["team", "personal"] as const) {
     const isPersonal = layer === "personal";
     try {
-      sources.push({ root: resolveStorePendingBase(layer, projectRoot), isPending: true, isPersonal, isStore: true });
+      const pendingRoot = resolveStorePendingBase(layer, projectRoot);
+      sources.push({ root: pendingRoot, isPending: true, isPersonal, isStore: true });
+      if (filters?.include_rejected === true) {
+        sources.push({
+          root: pendingRoot.replace(`${sep}pending`, `${sep}rejected`),
+          isPending: true,
+          isPersonal,
+          isStore: true,
+        });
+      }
     } catch {
       // no pending store for this layer — skip.
     }
@@ -1402,12 +1415,14 @@ async function deferAll(
 ): Promise<string[]> {
   const deferred: string[] = [];
   for (const pendingPath of pendingPaths) {
+    let stableId: string | undefined;
     // Mirror reject's best-effort dual-write contract (see rejectAll for the
     // event-vs-IO priority rationale).
     try {
       const sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
       if (existsSync(sandboxed.abs)) {
         const content = await readFile(sandboxed.abs, "utf8");
+        stableId = parseFrontmatter(content).id;
         const patch: FrontmatterScalarPatch = {
           status: "deferred",
           ...(until !== undefined ? { deferred_until: until } : {}),
@@ -1423,6 +1438,8 @@ async function deferAll(
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_deferred",
       timestamp: new Date().toISOString(),
+      pending_path: pendingPath,
+      ...(stableId !== undefined ? { stable_id: stableId } : {}),
       ...(until !== undefined ? { until } : {}),
       ...(reason !== undefined ? { reason } : {}),
     });
@@ -1722,4 +1739,3 @@ async function emitEventBestEffort(
     // Event emission is observability-only.
   }
 }
-

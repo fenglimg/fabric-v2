@@ -183,6 +183,9 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
             "line": {
               "type": "number",
             },
+            "message": {
+              "type": "string",
+            },
           },
           "required": [
             "code",
@@ -623,6 +626,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 "line": {
                   "type": "number",
                 },
+                "message": {
+                  "type": "string",
+                },
               },
               "required": [
                 "code",
@@ -883,7 +889,7 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     "idempotentHint": true,
     "openWorldHint": false,
     "readOnlyHint": true,
-    "title": "Filter rule sections",
+    "title": "Fetch knowledge entry bodies",
   },
   "inputSchema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1044,6 +1050,9 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
             },
             "line": {
               "type": "number",
+            },
+            "message": {
+              "type": "string",
             },
           },
           "required": [
@@ -1394,6 +1403,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
             },
             "line": {
               "type": "number",
+            },
+            "message": {
+              "type": "string",
             },
           },
           "required": [

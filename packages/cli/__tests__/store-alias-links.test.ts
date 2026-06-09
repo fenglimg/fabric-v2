@@ -6,7 +6,7 @@ import { storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runGlobalInstall } from "../src/install/run-global-install.js";
-import { storeCreate } from "../src/store/store-ops.js";
+import { storeAdd, storeCreate } from "../src/store/store-ops.js";
 import {
   STORE_BY_ALIAS_DIR,
   detectAliasLinkDrift,
@@ -114,5 +114,15 @@ describe("store by-alias links (C3)", () => {
     const result = syncStoreAliasLinks(globalRoot);
     expect(result.removed).toContain("ghost");
     expect(existsSync(aliasLink(globalRoot, "ghost"))).toBe(false);
+  });
+
+  it("rejects path-traversal aliases before by-alias reconciliation", async () => {
+    const globalRoot = await setup();
+
+    expect(() => storeAdd({ store_uuid: TEAM, alias: "../escape" }, globalRoot)).toThrow(
+      /store alias/,
+    );
+    expect(existsSync(join(globalRoot, "escape"))).toBe(false);
+    expect(existsSync(join(globalRoot, "stores", STORE_BY_ALIAS_DIR, "..", "escape"))).toBe(false);
   });
 });

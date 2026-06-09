@@ -37,11 +37,15 @@ export class PreflightStage implements Stage {
       context.target = target;
       context.state.globalRoot = this.resolveGlobalRoot();
 
-      // Check global root is writable (or can be created)
-      this.assertGlobalRootWritable(context.state.globalRoot);
+      if (context.options.planOnly === true) {
+        this.assertGlobalRootPlannable(context.state.globalRoot);
+      } else {
+        // Check global root is writable (or can be created)
+        this.assertGlobalRootWritable(context.state.globalRoot);
 
-      // Check target is writable
-      this.assertWritable(target);
+        // Check target is writable
+        this.assertWritable(target);
+      }
 
       // Optional: check git availability (only needed for remote store operations)
       if (context.args.url) {
@@ -88,6 +92,20 @@ export class PreflightStage implements Stage {
       throw new Error(`Global Fabric root parent is not a directory: ${parent}`);
     }
     this.assertWritable(parent, "Global Fabric root parent");
+  }
+
+  private assertGlobalRootPlannable(globalRoot: string): void {
+    if (existsSync(globalRoot)) {
+      if (!statSync(globalRoot).isDirectory()) {
+        throw new Error(`Global Fabric root is not a directory: ${globalRoot}`);
+      }
+      return;
+    }
+
+    const parent = dirname(globalRoot);
+    if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+      throw new Error(`Global Fabric root parent is not a directory: ${parent}`);
+    }
   }
 
   private assertWritable(path: string, label = "Target"): void {

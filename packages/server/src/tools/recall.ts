@@ -8,6 +8,7 @@ import {
   recallOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
+import { appendPayloadWarning, type StructuredToolWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -78,7 +79,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         };
         const result = await recall(projectRoot, input);
 
-        const response: Record<string, unknown> = {
+        const response: Record<string, unknown> & { warnings: StructuredToolWarning[] } = {
           ...result,
           warnings: [
             ...(gateWarn ? [gateWarn] : []),
@@ -89,17 +90,11 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(response);
         const guardResult = enforcePayloadLimit(serialized, payloadLimits);
-        if (guardResult.warning) {
-          response.warnings = [
-            ...(response.warnings as unknown[]),
-            {
-              code: guardResult.warning.code,
-              file: '<response>',
-              action_hint:
-                'Pass an explicit `ids` array to scope fab_recall, or fall back to the two-step (fab_plan_context → fab_get_knowledge_sections) flow to fetch bodies on demand.',
-            },
-          ];
-        }
+        response.warnings = appendPayloadWarning(
+          response.warnings,
+          guardResult,
+          "Pass an explicit `ids` array to scope fab_recall, or fall back to the two-step (fab_plan_context → fab_get_knowledge_sections) flow to fetch bodies on demand.",
+        );
 
         payloadBytesOut = Buffer.byteLength(serialized, "utf8");
         return {

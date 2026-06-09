@@ -40,7 +40,7 @@ or API guidance.
 ### Highlights
 
 - **stdio MCP transport** is the only supported wire protocol. The v1.8-era `fabric serve` HTTP/REST/SSE/Dashboard server is quarantined to `packages/server-http-experimental/` (not built, not tested, restoration recipe in its README). Three clients (Claude Code / Cursor / Codex CLI) spawn the server via their own MCP config.
-- **5 MCP tools** (rc.37 adds `fab_recall`): `fab_plan_context`, `fab_get_knowledge_sections`, `fab_recall`, `fab_extract_knowledge`, `fab_review`.
+- **6 MCP tools** (rc.37 adds `fab_recall`; rc.37+ archive workflow adds `fab_archive_scan`): `fab_plan_context`, `fab_get_knowledge_sections`, `fab_recall`, `fab_archive_scan`, `fab_extract_knowledge`, `fab_review`.
 - **3 user-facing Skills**: `fabric-archive` (capture session knowledge), `fabric-review` (triage pending entries), `fabric-import` (cold-start mining from git history + docs).
 - **48 doctor lints** with i18n (zh-CN + en) covering events ledger / knowledge hygiene / hook drift / cite policy Goodhart patterns / SKILL.md token budget + structural quality.
 - **Plan B counter-rollup** for high-frequency observability events: `.fabric/metrics.jsonl` sidecar (60s flush) keeps the audit-grade `.fabric/events.jsonl` bounded; 6h rotation tick prunes > 90d entries.

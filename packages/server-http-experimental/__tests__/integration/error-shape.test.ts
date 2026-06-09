@@ -95,6 +95,24 @@ describe("I6 — REST error response unified shape", () => {
     expect(body.error.code).toBe("SERVE_LOCK_HELD");
   });
 
+  it("sendUnknownError maps FabricError-shaped objects without relying on class identity", () => {
+    const res = makeRes();
+    const err = {
+      message: "cross-bundle path escape",
+      actionHint: "Use a path within the project root",
+      httpStatus: 403,
+      code: "PATH_OUTSIDE_PROJECT_ROOT",
+      details: { path: "../outside" },
+    };
+    sendUnknownError(res as Parameters<typeof sendUnknownError>[0], err);
+
+    expect(res.statusCode).toBe(403);
+    const body = res.body as { error: { code: string; message: string; details?: unknown } };
+    expect(body.error.code).toBe("PATH_OUTSIDE_PROJECT_ROOT");
+    expect(body.error.message).toBe("cross-bundle path escape");
+    expect(body.error.details).toEqual({ path: "../outside" });
+  });
+
   it("sendUnknownError maps generic Error to 500 with INTERNAL_ERROR code", () => {
     const res = makeRes();
     sendUnknownError(res as Parameters<typeof sendUnknownError>[0], new Error("unexpected failure"));

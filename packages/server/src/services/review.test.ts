@@ -17,6 +17,7 @@ import {
 import { readEventLedger } from "./event-ledger.js";
 import {
   __getReviewSearchIndexCacheStatsForTests,
+  __isPendingKnowledgePathForTest,
   __resetReviewSearchIndexCacheForTests,
   reviewKnowledge,
 } from "./review.js";
@@ -61,6 +62,13 @@ function storeCountersFile(layer: "team" | "personal"): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
   return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.countersFile);
 }
+
+describe("review path guards", () => {
+  it("detects pending knowledge paths with Windows separators", () => {
+    expect(__isPendingKnowledgePathForTest("C:\\stores\\team\\knowledge\\pending\\decisions\\draft.md")).toBe(true);
+    expect(__isPendingKnowledgePathForTest("C:\\stores\\team\\knowledge\\decisions\\KT-DEC-0001.md")).toBe(false);
+  });
+});
 
 // v2.0: redirect personal-root resolution into a tempdir so tests never touch
 // the developer's real ~/.fabric/. Mirrors knowledge-meta-builder.test.ts setup.
@@ -323,6 +331,37 @@ describe("reviewKnowledge", () => {
     expect(existsSync(rejectedPath)).toBe(true);
     const moved = await readFile(rejectedPath, "utf8");
     expect(moved).toMatch(/^status: rejected$/mu);
+  });
+
+  it("search can surface rejected entries when include_rejected is true", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "rejected-search-target", {
+      tags: ["audit-rejected"],
+      summary: "Rejected search target.",
+    });
+
+    await reviewKnowledge(projectRoot, {
+      action: "reject",
+      pending_paths: [pendingPath],
+      reason: "audit-only",
+    });
+
+    const hidden = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "rejected-search-target",
+    });
+    if (hidden.action !== "search") throw new Error("unreachable");
+    expect(hidden.items).toHaveLength(0);
+
+    const visible = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "rejected-search-target",
+      filters: { include_rejected: true },
+    });
+    if (visible.action !== "search") throw new Error("unreachable");
+    expect(visible.items).toHaveLength(1);
+    expect(visible.items[0].status).toBe("rejected");
+    expect(visible.items[0].path).toContain(`${sep}rejected${sep}`);
   });
 
   it("reject_batch_emits_one_event_per_path", async () => {
@@ -991,6 +1030,58 @@ describe("reviewKnowledge", () => {
     const ev = deferredEvents.events[0] as { until?: string; reason?: string };
     expect(ev.until).toBe(until);
     expect(ev.reason).toBe("waiting on upstream");
+  });
+
+  it("defer_identifies_each_deferred_pending_path_even_without_until_or_reason", async () => {
+    const projectRoot = await createTempProject();
+    const first = await seedPendingFile(projectRoot, "decisions", "defer-first");
+    const second = await seedPendingFile(projectRoot, "guidelines", "defer-second");
+
+    await reviewKnowledge(projectRoot, {
+      action: "defer",
+      pending_paths: [first, second],
+    });
+
+    const deferredEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_deferred",
+    });
+    expect(deferredEvents.events).toHaveLength(2);
+    expect(deferredEvents.events.map((event) => (event as { pending_path?: string }).pending_path)).toEqual([
+      first,
+      second,
+    ]);
+    for (const event of deferredEvents.events as Array<{
+      pending_path?: string;
+      stable_id?: string;
+      until?: string;
+      reason?: string;
+    }>) {
+      expect(event.pending_path).toBeDefined();
+      expect(event.stable_id).toBeUndefined();
+      expect(event.until).toBeUndefined();
+      expect(event.reason).toBeUndefined();
+    }
+  });
+
+  it("defer_includes_stable_id_when_pending_frontmatter_has_id", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "defer-with-id");
+    const original = await readFile(pendingPath, "utf8");
+    await writeFile(pendingPath, original.replace("---\n", "---\nid: KT-DEC-0042\n"), "utf8");
+
+    await reviewKnowledge(projectRoot, {
+      action: "defer",
+      pending_paths: [pendingPath],
+    });
+
+    const deferredEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_deferred",
+    });
+    expect(deferredEvents.events).toHaveLength(1);
+    expect(deferredEvents.events[0]).toMatchObject({
+      pending_path: pendingPath,
+      stable_id: "KT-DEC-0042",
+    });
   });
 
   it("defer_emits_deferred_event_without_until_when_omitted", async () => {
