@@ -101,6 +101,63 @@
         "writeTarget": { "store_uuid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "alias": "team" },
         "writeWarnings": []
       }
+    },
+    {
+      "name": "multi-shared-write-requires-route",
+      "note": "Store-only org/team expansion: when more than one shared store is mounted, non-personal writes must use write_routes/default_write_store instead of silently falling back to active_write_store.",
+      "input": {
+        "uid": "u-abc123",
+        "mountedStores": [
+          { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true, "personal": true },
+          { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true, "personal": false },
+          { "store_uuid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "alias": "platform", "remote": "git@github.com:acme/platform-kb.git", "writable": true, "personal": false }
+        ],
+        "requiredStores": [{ "id": "team" }, { "id": "platform" }],
+        "activeWriteAlias": "team"
+      },
+      "writeScope": "project:fabric-v2",
+      "expected": {
+        "readSet": {
+          "stores": [
+            { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true },
+            { "store_uuid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "alias": "platform", "remote": "git@github.com:acme/platform-kb.git", "writable": true },
+            { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
+          ],
+          "warnings": []
+        },
+        "writeTarget": null,
+        "writeWarnings": [
+          { "code": "missing_write_route", "ref": "project:fabric-v2", "message": "scope 'project:fabric-v2' has no explicit write route; set `fabric store route-write project:fabric-v2 <alias>`" }
+        ]
+      }
+    },
+    {
+      "name": "route-write-selects-store-for-project-scope",
+      "note": "Explicit write_routes map logical semantic_scope to the physical writable store.",
+      "input": {
+        "uid": "u-abc123",
+        "mountedStores": [
+          { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true, "personal": true },
+          { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true, "personal": false },
+          { "store_uuid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "alias": "platform", "remote": "git@github.com:acme/platform-kb.git", "writable": true, "personal": false }
+        ],
+        "requiredStores": [{ "id": "team" }, { "id": "platform" }],
+        "activeWriteAlias": "team",
+        "writeRoutes": [{ "scope": "project:fabric-v2", "store": "platform" }]
+      },
+      "writeScope": "project:fabric-v2",
+      "expected": {
+        "readSet": {
+          "stores": [
+            { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true },
+            { "store_uuid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "alias": "platform", "remote": "git@github.com:acme/platform-kb.git", "writable": true },
+            { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
+          ],
+          "warnings": []
+        },
+        "writeTarget": { "store_uuid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "alias": "platform" },
+        "writeWarnings": []
+      }
     }
   ]
 }

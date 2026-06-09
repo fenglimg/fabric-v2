@@ -14,9 +14,9 @@ const require = createRequire(import.meta.url);
 const lib = require(
   fileURLToPath(new URL("../templates/hooks/lib/bindings-snapshot-reader.cjs", import.meta.url)),
 ) as {
-  readBindingsSnapshot: (projectId: string, globalRoot?: string) => unknown;
+  readBindingsSnapshot: (bindingId: string, globalRoot?: string) => unknown;
   formatStoreLabels: (snapshot: unknown) => string;
-  bindingsSnapshotPath: (projectId: string, globalRoot?: string) => string;
+  bindingsSnapshotPath: (bindingId: string, globalRoot?: string) => string;
 };
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";

@@ -9,7 +9,7 @@ import {
   type ProposedReason,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
-import { hasSecrets } from "@fenglimg/fabric-shared";
+import { hasSecrets, isPersonalScope } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
@@ -123,13 +123,17 @@ function sanitizeInjectionFields<T extends Record<string, unknown>>(
 // Tests redirect FABRIC_HOME so the global store root is isolated.
 // ---------------------------------------------------------------------------
 
-export function pendingBase(layer: "team" | "personal", projectRoot: string): string {
+export function pendingBase(
+  layer: "team" | "personal",
+  projectRoot: string,
+  semanticScope?: string,
+): string {
   // v2.2 全砍 Stage 2 (B2 cutover): the write path is store-only. Route into the
   // resolved write-target store (personal store for personal scope; active write
   // store for team scope). resolveStorePendingBase throws an actionable
   // StoreWriteTargetUnresolvedError when no target resolves — no dual-root
   // fallback. See cross-store-write.ts.
-  return resolveStorePendingBase(layer, projectRoot);
+  return resolveStorePendingBase(layer, projectRoot, semanticScope);
 }
 
 /**
@@ -293,7 +297,18 @@ export async function extractKnowledge(
   //                                                    mirrors review.ts search
   //                                                    convention for personal
   //                                                    canonical entries)
-  const layer = input.layer ?? "team";
+  const semanticScope = input.semantic_scope;
+  const scopeIsPersonal = semanticScope !== undefined && isPersonalScope(semanticScope);
+  if (
+    semanticScope !== undefined &&
+    input.layer !== undefined &&
+    scopeIsPersonal !== (input.layer === "personal")
+  ) {
+    throw new Error(
+      `semantic_scope '${semanticScope}' conflicts with compatibility layer '${input.layer}'`,
+    );
+  }
+  const layer = scopeIsPersonal ? "personal" : input.layer ?? "team";
 
   // v2.0.0-rc.8 A1: personal-implies-broad silent degrade. When the caller
   // declares both `layer: personal` and `relevance_scope: narrow`, the scope
@@ -333,7 +348,7 @@ export async function extractKnowledge(
   // path or (b) a free slot to write into. The disambiguated slug is then
   // baked into a fresh idempotency_key so subsequent re-runs with the same
   // input still deterministically hit the same -N variant.
-  const baseDir = pendingBase(layer, projectRoot);
+  const baseDir = pendingBase(layer, projectRoot, semanticScope);
   const { absolutePath, sanitizedSlug: chosenSlug, idempotencyKey: chosenKey } =
     await resolveDisambiguatedSlugPath({
       baseDir,
@@ -356,7 +371,7 @@ export async function extractKnowledge(
   // is written into. Resolved from the SAME write-target the pending file lands in
   // (baseDir above), so frontmatter `visibility_store` matches the entry's home.
   // Throws PersonalScopeLeakError if a personal scope would land in a shared store.
-  const writeScopeMeta = resolveWriteScopeMeta(layer, projectRoot);
+  const writeScopeMeta = resolveWriteScopeMeta(layer, projectRoot, semanticScope);
 
   await ensureParentDirectory(absolutePath);
 

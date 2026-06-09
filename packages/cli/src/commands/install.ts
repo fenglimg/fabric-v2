@@ -21,7 +21,14 @@ import { installHooks } from "../install/hooks-orchestrator.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "../install/semantic-search.js";
 import { mountStoreFromRemote, runGlobalInstall } from "../install/run-global-install.js";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
-import { storeBind, storeCreate, storeList, storeSwitchWrite, unboundAvailableStores } from "../store/store-ops.js";
+import {
+  storeBind,
+  storeCreate,
+  storeList,
+  storeSetWriteRoute,
+  storeSwitchWrite,
+  unboundAvailableStores,
+} from "../store/store-ops.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
@@ -518,8 +525,12 @@ export function bindRemoteStoreToProject(
 ): void {
   const already = storeList(globalRoot).find((store) => store.remote === url);
   const mounted = already ?? mountStoreFromRemote(url, globalRoot);
-  storeBind(projectRoot, { id: mounted.alias, suggested_remote: url });
-  storeSwitchWrite(projectRoot, mounted.alias);
+  storeBind(projectRoot, { id: mounted.alias, suggested_remote: url }, { globalRoot });
+  storeSwitchWrite(projectRoot, mounted.alias, { globalRoot });
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  if (typeof activeProject === "string" && activeProject.length > 0) {
+    storeSetWriteRoute(projectRoot, `project:${activeProject}`, mounted.alias, { globalRoot });
+  }
   // Refresh the resolved-bindings snapshot so P4 hooks read a consistent
   // read-set / write-target without re-resolving (mirrors `store bind`).
   regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
@@ -555,8 +566,13 @@ export function bindCreatedStoreToProject(
   storeBind(
     projectRoot,
     options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
+    { globalRoot },
   );
-  storeSwitchWrite(projectRoot, alias);
+  storeSwitchWrite(projectRoot, alias, { globalRoot });
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  if (typeof activeProject === "string" && activeProject.length > 0) {
+    storeSetWriteRoute(projectRoot, `project:${activeProject}`, alias, { globalRoot });
+  }
   regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString(), globalRoot });
   console.log("");
   console.log(
@@ -2024,4 +2040,3 @@ function failedStageLabel(): string {
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
 }
-

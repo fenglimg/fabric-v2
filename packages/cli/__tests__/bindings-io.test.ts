@@ -47,6 +47,7 @@ beforeEach(() => {
   saveProjectConfig(
     {
       project_id: PROJECT_ID,
+      workspace_binding_id: "worktree-a",
       required_stores: [{ id: "team" }],
       active_write_store: "team",
     },
@@ -71,10 +72,11 @@ describe("regenerateBindingsSnapshot (P3→P4 chain)", () => {
     const written = regenerateBindingsSnapshot(projectRoot, { globalRoot, now: NOW });
     expect(written).not.toBeNull();
 
-    // Persisted at ~/.fabric/state/bindings/<project_id>_resolved.json.
-    const snapshot = readBindingsSnapshot(globalRoot, PROJECT_ID);
+    // Persisted at ~/.fabric/state/bindings/<workspace_binding_id>_resolved.json.
+    const snapshot = readBindingsSnapshot(globalRoot, "worktree-a");
     expect(snapshot).not.toBeNull();
     expect(snapshot?.project_id).toBe(PROJECT_ID);
+    expect(snapshot?.workspace_binding_id).toBe("worktree-a");
     expect(snapshot?.generated_at).toBe(NOW);
 
     // Consistency-by-construction: snapshot == what scope-explain resolves live.

@@ -34,15 +34,25 @@ import {
 // fires on a genuinely un-onboarded write.
 // ---------------------------------------------------------------------------
 
-function writeTargetUnresolved(layer: "team" | "personal"): StoreWriteTargetUnresolvedError {
+function writeTargetUnresolved(scope: string, layer: "team" | "personal"): StoreWriteTargetUnresolvedError {
   const actionHint =
     layer === "personal"
       ? "run `fabric install --global` to mint your personal store, then retry"
-      : "mount + select a team store: `fabric install --global` then `fabric store bind <alias>` and `fabric store switch-write <alias>`, then retry";
+      : `mount + bind a shared store, then set an explicit route: \`fabric store route-write ${scope} <alias>\``;
   return new StoreWriteTargetUnresolvedError(
-    `no ${layer} write-target store resolved — knowledge writes are store-only (dual-root co-location removed)`,
-    { actionHint, fixable: true, details: { layer } },
+    `no write-target store resolved for scope '${scope}' — knowledge writes are store-only (dual-root co-location removed)`,
+    { actionHint, fixable: true, details: { layer, scope } },
   );
+}
+
+function defaultWriteScope(layer: "team" | "personal", projectRoot: string): string {
+  if (layer === "personal") {
+    return "personal";
+  }
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  return activeProject !== undefined && activeProject.length > 0
+    ? `project:${activeProject}`
+    : "team";
 }
 
 // Absolute directory of the write-target store for a layer (the store root, not
@@ -50,17 +60,19 @@ function writeTargetUnresolved(layer: "team" | "personal"): StoreWriteTargetUnre
 // a newly-minted id's per-store `counters.json` must live in the SAME store the
 // entry physically lands in. Throws StoreWriteTargetUnresolvedError when no
 // target resolves (B2 cutover — no dual-root fallback).
-export function resolveWriteTargetStoreDir(layer: "team" | "personal", projectRoot: string): string {
+export function resolveWriteTargetStoreDir(
+  layer: "team" | "personal",
+  projectRoot: string,
+  semanticScope?: string,
+): string {
   const input = buildStoreResolveInput(projectRoot);
   if (input === null) {
-    throw writeTargetUnresolved(layer);
+    throw writeTargetUnresolved(semanticScope ?? defaultWriteScope(layer, projectRoot), layer);
   }
-  // "personal" scope → personal store; any non-personal scope → active write
-  // store. The literal scope string only needs to be (non-)personal here.
-  const scope = layer === "personal" ? "personal" : "team";
+  const scope = semanticScope ?? defaultWriteScope(layer, projectRoot);
   const { target } = createStoreResolver().resolveWriteTarget(input, scope);
   if (target === null) {
-    throw writeTargetUnresolved(layer);
+    throw writeTargetUnresolved(scope, layer);
   }
   const mounted = input.mountedStores.find((s) => s.store_uuid === target.store_uuid);
   return join(
@@ -71,8 +83,12 @@ export function resolveWriteTargetStoreDir(layer: "team" | "personal", projectRo
 
 // Store-rooted pending base for a layer. Throws StoreWriteTargetUnresolvedError
 // when no write-target store resolves (B2 cutover — no dual-root fallback).
-export function resolveStorePendingBase(layer: "team" | "personal", projectRoot: string): string {
-  return join(resolveWriteTargetStoreDir(layer, projectRoot), STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR);
+export function resolveStorePendingBase(
+  layer: "team" | "personal",
+  projectRoot: string,
+  semanticScope?: string,
+): string {
+  return join(resolveWriteTargetStoreDir(layer, projectRoot, semanticScope), STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR);
 }
 
 // Store-rooted canonical knowledge base (the per-type subdir is appended by the
@@ -107,25 +123,19 @@ export interface WriteScopeMeta {
 export function resolveWriteScopeMeta(
   layer: "team" | "personal",
   projectRoot: string,
+  semanticScope?: string,
 ): WriteScopeMeta {
   const input = buildStoreResolveInput(projectRoot);
   if (input === null) {
-    throw writeTargetUnresolved(layer);
+    throw writeTargetUnresolved(semanticScope ?? defaultWriteScope(layer, projectRoot), layer);
   }
-  const scope = layer === "personal" ? "personal" : "team";
+  const scope = semanticScope ?? defaultWriteScope(layer, projectRoot);
   const { target } = createStoreResolver().resolveWriteTarget(input, scope);
   if (target === null) {
-    throw writeTargetUnresolved(layer);
+    throw writeTargetUnresolved(scope, layer);
   }
 
-  // Project-grained coordinate when the repo is bound to a project (A2).
-  const activeProject = loadProjectConfig(projectRoot)?.active_project;
-  const semantic_scope =
-    layer === "personal"
-      ? "personal"
-      : activeProject !== undefined && activeProject.length > 0
-        ? `project:${activeProject}`
-        : "team";
+  const semantic_scope = scope;
 
   // R5#3 guard: the resolved store's visibility (personal store carries
   // personal=true; everything else is shared). A personal scope into a shared

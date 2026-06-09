@@ -35,7 +35,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "type": "array",
       },
       "layer": {
-        "description": "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
+        "description": "Compatibility storage audience. 'personal' writes to the personal store; non-personal writes resolve by semantic_scope/write_routes. Defaults to 'team'.",
         "enum": [
           "team",
           "personal",
@@ -89,6 +89,11 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
           "narrow",
           "broad",
         ],
+        "type": "string",
+      },
+      "semantic_scope": {
+        "description": "Logical audience/write route coordinate for this pending entry, e.g. personal, team, project:fabric-v2, org:acme:team:platform. Server validates and resolves it through write_routes.",
+        "pattern": "^[a-z0-9_-]+(:[a-z0-9_-]+)*$",
         "type": "string",
       },
       "session_context": {

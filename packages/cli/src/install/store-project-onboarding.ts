@@ -7,6 +7,7 @@ import {
   storeBind,
   storeProjectCreate,
   storeProjectList,
+  storeSetWriteRoute,
   storeSwitchWrite,
 } from "../store/store-ops.js";
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
@@ -78,6 +79,9 @@ export function ensureStoreProjectBinding(
       : { id: storeAlias, suggested_remote: options.suggestedRemote };
   storeBind(projectRoot, entry, { project: active_project, globalRoot: options.globalRoot });
   storeSwitchWrite(projectRoot, storeAlias, { globalRoot: options.globalRoot });
+  storeSetWriteRoute(projectRoot, `project:${active_project}`, storeAlias, {
+    globalRoot: options.globalRoot,
+  });
   regenerateBindingsSnapshot(projectRoot, {
     now,
     globalRoot: options.globalRoot,

@@ -23,6 +23,8 @@ const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
 
 const TEAM_STORE_UUID = "22222222-2222-4222-8222-222222222222";
+const PLATFORM_STORE_UUID = "44444444-4444-4444-8444-444444444444";
+const PERSONAL_STORE_UUID = "55555555-5555-4555-8555-555555555555";
 
 beforeEach(async () => {
   originalFabricHome = process.env.FABRIC_HOME;
@@ -56,6 +58,12 @@ function mountTeamStore(mountName?: string): void {
     uid: "test-uid",
     stores: [
       {
+        store_uuid: PERSONAL_STORE_UUID,
+        alias: "personal",
+        personal: true,
+        writable: true,
+      },
+      {
         store_uuid: TEAM_STORE_UUID,
         alias: "team",
         ...(mountName === undefined ? {} : { mount_name: mountName }),
@@ -66,10 +74,56 @@ function mountTeamStore(mountName?: string): void {
   });
 }
 
+function mountTwoSharedStores(): void {
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [
+      {
+        store_uuid: PERSONAL_STORE_UUID,
+        alias: "personal",
+        personal: true,
+        writable: true,
+      },
+      {
+        store_uuid: TEAM_STORE_UUID,
+        alias: "team",
+        remote: "git@example.com:team-store.git",
+        writable: true,
+      },
+      {
+        store_uuid: PLATFORM_STORE_UUID,
+        alias: "platform",
+        remote: "git@example.com:platform-store.git",
+        writable: true,
+      },
+    ],
+  });
+}
+
+function personalPendingDir(type: string): string {
+  return join(
+    resolveGlobalRoot(),
+    storeRelativePathForMount({ store_uuid: PERSONAL_STORE_UUID }),
+    STORE_LAYOUT.knowledgeDir,
+    STORE_PENDING_DIR,
+    type,
+  );
+}
+
 function storePendingDir(type: string, mountName?: string): string {
   return join(
     resolveGlobalRoot(),
     storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID, mount_name: mountName }),
+    STORE_LAYOUT.knowledgeDir,
+    STORE_PENDING_DIR,
+    type,
+  );
+}
+
+function platformPendingDir(type: string): string {
+  return join(
+    resolveGlobalRoot(),
+    storeRelativePathForMount({ store_uuid: PLATFORM_STORE_UUID }),
     STORE_LAYOUT.knowledgeDir,
     STORE_PENDING_DIR,
     type,
@@ -138,6 +192,85 @@ describe("cross-store write (W1-T2)", () => {
     await expect(extractKnowledge(projectRoot, goodInput)).rejects.toThrow(/store-only/u);
     // Nothing leaked into the retired project dual-root pending dir.
     expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(false);
+  });
+
+  it("routes semantic_scope through write_routes instead of active_write_store", async () => {
+    const projectRoot = await createProject();
+    mountTwoSharedStores();
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({
+        required_stores: [{ id: "team" }, { id: "platform" }],
+        active_write_store: "team",
+        write_routes: [{ scope: "project:fabric-v2", store: "platform" }],
+      }, null, 2)}\n`,
+    );
+
+    const result = await extractKnowledge(projectRoot, {
+      ...goodInput,
+      semantic_scope: "project:fabric-v2",
+    });
+    expect(result.pending_path).not.toBe("");
+    expect(existsSync(platformPendingDir("decisions"))).toBe(true);
+    expect(readdirSync(platformPendingDir("decisions")).some((f) => f.endsWith(".md"))).toBe(true);
+    expect(existsSync(storePendingDir("decisions"))).toBe(false);
+  });
+
+  it("hard-fails multi-shared semantic writes without a write route", async () => {
+    const projectRoot = await createProject();
+    mountTwoSharedStores();
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({
+        required_stores: [{ id: "team" }, { id: "platform" }],
+        active_write_store: "team",
+      }, null, 2)}\n`,
+    );
+
+    await expect(
+      extractKnowledge(projectRoot, {
+        ...goodInput,
+        semantic_scope: "project:fabric-v2",
+      }),
+    ).rejects.toThrow(/write-target store resolved/u);
+    expect(existsSync(platformPendingDir("decisions"))).toBe(false);
+    expect(existsSync(storePendingDir("decisions"))).toBe(false);
+  });
+
+  it("semantic_scope personal without layer writes as personal compatibility layer", async () => {
+    const projectRoot = await createProject();
+    mountTeamStore();
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+    );
+
+    const result = await extractKnowledge(projectRoot, {
+      ...goodInput,
+      layer: undefined,
+      slug: "personal-semantic-scope",
+      semantic_scope: "personal",
+    });
+    expect(result.pending_path).not.toBe("");
+    expect(existsSync(personalPendingDir("decisions"))).toBe(true);
+    expect(existsSync(storePendingDir("decisions"))).toBe(false);
+  });
+
+  it("rejects conflicting semantic_scope and compatibility layer", async () => {
+    const projectRoot = await createProject();
+    mountTeamStore();
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
+    );
+
+    await expect(
+      extractKnowledge(projectRoot, {
+        ...goodInput,
+        layer: "team",
+        semantic_scope: "personal",
+      }),
+    ).rejects.toThrow(/conflicts with compatibility layer/u);
   });
 
   it("hard-fails (no dual-root fallback) when no global config exists", async () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { onboardSlotSchema } from "../onboard-slots.js";
+import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
 
 // ---------------------------------------------------------------------------
 // Shared warning schema (R24 contract)
@@ -665,7 +666,14 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .enum(["team", "personal"])
     .optional()
     .describe(
-      "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
+      "Compatibility storage audience. 'personal' writes to the personal store; non-personal writes resolve by semantic_scope/write_routes. Defaults to 'team'.",
+    ),
+  semantic_scope: z
+    .string()
+    .regex(SCOPE_COORDINATE_PATTERN)
+    .optional()
+    .describe(
+      "Logical audience/write route coordinate for this pending entry, e.g. personal, team, project:fabric-v2, org:acme:team:platform. Server validates and resolves it through write_routes.",
     ),
   // v2.0.0-rc.7 T6: proposed_reason — required enum that drives `## Why
   // proposed` rendering. Skills (archive / import / review) infer the

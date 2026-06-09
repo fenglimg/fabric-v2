@@ -98,10 +98,13 @@ try {
   bindingsSnapshotReader = null;
 }
 
-// Read the project's own `project_id` (the snapshot key) from its config.
-function readProjectId(cwd) {
+// Read the workspace binding id (snapshot key) from project config. Standard
+// repos default to project_id; worktrees can set workspace_binding_id to isolate
+// hook/runtime state without changing project identity.
+function readWorkspaceBindingId(cwd) {
   try {
     const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
   } catch {
     return null;
@@ -112,12 +115,12 @@ function readHookStatsSnapshot(cwd) {
   if (bindingsSnapshotReader === null) {
     return null;
   }
-  const projectId = readProjectId(cwd);
-  if (projectId === null) {
+  const bindingId = readWorkspaceBindingId(cwd);
+  if (bindingId === null) {
     return null;
   }
   try {
-    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(projectId);
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
     return snapshot && snapshot.hook_stats && typeof snapshot.hook_stats === "object"
       ? snapshot.hook_stats
       : null;
@@ -2116,10 +2119,10 @@ function main(env, stdio) {
     // pile. Best-effort; missing snapshot / single-store omits the line.
     if (bindingsSnapshotReader !== null && typeof result.reason === "string") {
       try {
-        const projectId = readProjectId(cwd);
-        if (projectId) {
+        const bindingId = readWorkspaceBindingId(cwd);
+        if (bindingId) {
           const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
           );
           if (label) {
             result.reason = `${result.reason}\n${label}`;

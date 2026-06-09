@@ -91,6 +91,7 @@ export const STORE_RESOLVER_WARNING_CODES = [
   "missing_store", // required_stores entry has no matching mounted store (S51)
   "local_only_no_remote", // mounted but local-only (R5#5 nudge, non-fatal)
   "alias_unresolved", // referenced alias maps to no mounted store
+  "missing_write_route", // multi/shared write requires an explicit route
 ] as const;
 export const storeResolverWarningCodeSchema = z.enum(STORE_RESOLVER_WARNING_CODES);
 export type StoreResolverWarningCode = z.infer<typeof storeResolverWarningCodeSchema>;
