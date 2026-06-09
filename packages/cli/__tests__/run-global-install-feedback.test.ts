@@ -14,6 +14,10 @@ let cloneShouldThrow = false;
 const cloneCalls: string[][] = [];
 
 vi.mock("node:child_process", () => ({
+  execFile: (_file: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null) => void) => {
+    const callback = typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback;
+    callback?.(null);
+  },
   execFileSync: (file: string, args: string[]) => {
     if (file === "git" && args[0] === "clone") {
       cloneCalls.push(args);
