@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Lightweight drift gate for docs/TESTING.md.
+// Drift gate for docs/TESTING.md.
 //
 // This does not judge coverage quality. It keeps the testing strategy entry
-// actionable by checking that required sections exist, documented root scripts
-// are real, and CI runs the strategy gate.
+// anchored to the repository's real methodology artifacts, documented root
+// scripts, and CI gates.
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -38,11 +38,28 @@ const rootPackage = JSON.parse(readText("package.json"));
 const reusableValidate = readText(".github/workflows/reusable-validate.yml");
 const ci = readText(".github/workflows/ci.yml");
 
+const methodologyArtifacts = [
+  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/test-methodology-v6.md",
+  ".workflow/.scratchpad/e2e-methodology-FINAL.md",
+  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/mainstream-research.md",
+  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/samespace-research.md",
+  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/trackd-research.md",
+  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/backtest-answer-set.md",
+  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/discovery-rubric.md",
+];
+
+for (const artifact of methodologyArtifacts) {
+  readText(artifact);
+}
+
 for (const heading of [
   "## Commands",
+  "## Authority",
   "## Package Boundaries",
+  "## Strategy Model",
   "## Scenario Matrix",
   "## TDD Write-Red Discipline",
+  "## Fabric E2E/Dogfood",
   "## Drift Gates",
   "## Gate Map",
   "## Coverage Policy",
@@ -51,8 +68,28 @@ for (const heading of [
 }
 
 for (const phrase of [
+  "test-methodology-v6.md",
+  "e2e-methodology-FINAL.md",
+  "mainstream-research.md",
+  "samespace-research.md",
+  "trackd-research.md",
+  "backtest-answer-set.md",
+  "discovery-rubric.md",
+  "四赛道",
+  "认识论轴",
+  "Phase 0 历史先验 census",
+  "Examination",
+  "Reality",
+  "Intent-interrogation",
+  "producer→consumer",
+  "J-META",
+  "J-EXP-META",
+  "T1-ledger",
+  "T3-LLM-judge",
+  "OWASP LLM Top 10",
   "write-red",
   "it.fails",
+  "Methodology backtest",
   "store-only E2E",
   "Cross-client hooks",
   "Windows smoke",
