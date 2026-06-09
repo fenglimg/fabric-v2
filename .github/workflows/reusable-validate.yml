@@ -49,6 +49,9 @@ jobs:
       - name: Run package tests with coverage
         run: pnpm -r --if-present test:coverage
 
+      - name: Testing strategy drift gate
+        run: pnpm test:strategy
+
       - name: Store-only mounted workflow E2E
         run: pnpm test:store-only-e2e
 
