@@ -551,6 +551,23 @@ describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
     ).rejects.toThrow(/absolute paths are not allowed/u);
   });
 
+  it("rejects Windows drive-letter absolute paths", async () => {
+    const projectRoot = await createProject({});
+    await expect(
+      planContext(projectRoot, { paths: ["C:\\repo\\src\\x.ts"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+    await expect(
+      planContext(projectRoot, { target_paths: ["D:/repo/src/x.ts"], paths: ["src/index.ts"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+  });
+
+  it("rejects Windows UNC absolute paths", async () => {
+    const projectRoot = await createProject({});
+    await expect(
+      planContext(projectRoot, { paths: ["\\\\server\\share\\repo\\src\\x.ts"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+  });
+
   it("rejects `..` traversal in input.paths", async () => {
     const projectRoot = await createProject({});
     await expect(

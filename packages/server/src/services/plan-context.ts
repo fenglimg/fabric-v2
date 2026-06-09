@@ -268,7 +268,7 @@ function assertPathInSandbox(rawPath: string): void {
   if (rawPath === "**" || rawPath === "*") return;
 
   const normalized = rawPath.replaceAll("\\", "/");
-  if (normalized.startsWith("/")) {
+  if (normalized.startsWith("/") || /^[A-Za-z]:\//u.test(normalized) || normalized.startsWith("//")) {
     throw new Error(
       `plan_context: absolute paths are not allowed (got "${rawPath}"); pass a path relative to the project root`,
     );

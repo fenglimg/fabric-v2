@@ -333,6 +333,37 @@ describe("reviewKnowledge", () => {
     expect(moved).toMatch(/^status: rejected$/mu);
   });
 
+  it("search can surface rejected entries when include_rejected is true", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "rejected-search-target", {
+      tags: ["audit-rejected"],
+      summary: "Rejected search target.",
+    });
+
+    await reviewKnowledge(projectRoot, {
+      action: "reject",
+      pending_paths: [pendingPath],
+      reason: "audit-only",
+    });
+
+    const hidden = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "rejected-search-target",
+    });
+    if (hidden.action !== "search") throw new Error("unreachable");
+    expect(hidden.items).toHaveLength(0);
+
+    const visible = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "rejected-search-target",
+      filters: { include_rejected: true },
+    });
+    if (visible.action !== "search") throw new Error("unreachable");
+    expect(visible.items).toHaveLength(1);
+    expect(visible.items[0].status).toBe("rejected");
+    expect(visible.items[0].path).toContain(`${sep}rejected${sep}`);
+  });
+
   it("reject_batch_emits_one_event_per_path", async () => {
     const projectRoot = await createTempProject();
     const a = await seedPendingFile(projectRoot, "decisions", "alpha");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { archiveScanAnnotations } from "../../src/schemas/api-contracts.js";
 import {
   MCP_STORE_AWARE_CONTRACTS,
   MCP_STORE_AWARE_TOOLS,
@@ -19,9 +20,11 @@ describe("P2 — 6 MCP tools carry a store edge", () => {
     for (const tool of MCP_STORE_AWARE_TOOLS) {
       const contract = MCP_STORE_AWARE_CONTRACTS[tool];
       expect(contract.tool).toBe(tool);
-      // Every tool either surfaces provenance entries or echoes a written store
-      // (fab_review does both).
-      expect(contract.surfacesEntries || contract.echoesWrittenStore).toBe(true);
+      // fab_archive_scan is read-only ledger scan; every other tool either
+      // surfaces provenance entries or echoes a written store (fab_review does both).
+      if (tool !== "fab_archive_scan") {
+        expect(contract.surfacesEntries || contract.echoesWrittenStore).toBe(true);
+      }
     }
   });
 
@@ -50,11 +53,16 @@ describe("P2 — 6 MCP tools carry a store edge", () => {
     const writeTools = MCP_STORE_AWARE_TOOLS.filter(
       (t) => MCP_STORE_AWARE_CONTRACTS[t].echoesWrittenStore,
     );
-    expect(writeTools).toContain("fab_archive_scan");
+    expect(writeTools).not.toContain("fab_archive_scan");
     expect(writeTools).toContain("fab_extract_knowledge");
 
     expect(() => writtenToStoreSchema.parse({ store_uuid: TEAM, alias: "team" })).not.toThrow();
     // bare/invalid store uuid rejected
     expect(() => writtenToStoreSchema.parse({ store_uuid: "team", alias: "team" })).toThrow();
+  });
+
+  it("keeps fab_archive_scan aligned with its read-only MCP annotation", () => {
+    expect(archiveScanAnnotations.readOnlyHint).toBe(true);
+    expect(MCP_STORE_AWARE_CONTRACTS.fab_archive_scan.echoesWrittenStore).toBe(false);
   });
 });

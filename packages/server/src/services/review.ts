@@ -1278,7 +1278,16 @@ async function searchEntries(
   for (const layer of ["team", "personal"] as const) {
     const isPersonal = layer === "personal";
     try {
-      sources.push({ root: resolveStorePendingBase(layer, projectRoot), isPending: true, isPersonal, isStore: true });
+      const pendingRoot = resolveStorePendingBase(layer, projectRoot);
+      sources.push({ root: pendingRoot, isPending: true, isPersonal, isStore: true });
+      if (filters?.include_rejected === true) {
+        sources.push({
+          root: pendingRoot.replace(`${sep}pending`, `${sep}rejected`),
+          isPending: true,
+          isPersonal,
+          isStore: true,
+        });
+      }
     } catch {
       // no pending store for this layer — skip.
     }
