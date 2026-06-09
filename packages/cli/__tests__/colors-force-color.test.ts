@@ -12,8 +12,12 @@ const originalStdoutTty = process.stdout.isTTY;
 const originalStderrTty = process.stderr.isTTY;
 
 function setTty(value: boolean): void {
-  Object.defineProperty(process.stdout, "isTTY", { value, configurable: true });
-  Object.defineProperty(process.stderr, "isTTY", { value, configurable: true });
+  setStreamTty(value, value);
+}
+
+function setStreamTty(stdout: boolean, stderr: boolean): void {
+  Object.defineProperty(process.stdout, "isTTY", { value: stdout, configurable: true });
+  Object.defineProperty(process.stderr, "isTTY", { value: stderr, configurable: true });
 }
 
 beforeEach(() => {
@@ -56,6 +60,11 @@ describe("isColorEnabled FORCE_COLOR support", () => {
     setTty(false);
     expect(isColorEnabled()).toBe(false);
     setTty(true);
+    expect(isColorEnabled()).toBe(true);
+  });
+
+  it("keeps stdout color enabled when only stderr is redirected", () => {
+    setStreamTty(true, false);
     expect(isColorEnabled()).toBe(true);
   });
 });

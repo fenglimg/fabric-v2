@@ -8,35 +8,10 @@
 // here so the UX wording reaches the user's terminal before process.exit(1).
 
 import type { Writable } from "node:stream";
+import { hasActionHint, type FabricErrorShape } from "@fenglimg/fabric-shared/errors";
 
-/**
- * Structural duck-typing for any FabricError-shaped value: the base class
- * (packages/shared/src/errors/fabric-error.ts) guarantees `message` (from
- * Error) and `actionHint` (own field). We intentionally avoid `instanceof`
- * checks against the FabricError class symbol because errors thrown by the
- * server package cross workspace boundaries — the CLI sees them as
- * structurally-shaped objects, not necessarily the same class identity.
- */
-export type FabricErrorShape = {
-  message: string;
-  actionHint: string;
-};
-
-/**
- * Type guard: returns true when `err` carries both a non-empty `message` and
- * a non-empty `actionHint` string. False for plain Errors, citty errors, or
- * any other thrown value.
- */
-export function hasActionHint(err: unknown): err is FabricErrorShape {
-  if (err === null || typeof err !== "object") return false;
-  const candidate = err as { message?: unknown; actionHint?: unknown };
-  return (
-    typeof candidate.message === "string" &&
-    candidate.message.length > 0 &&
-    typeof candidate.actionHint === "string" &&
-    candidate.actionHint.length > 0
-  );
-}
+export { hasActionHint };
+export type { FabricErrorShape };
 
 /**
  * Render a FabricError-shaped failure to a writable stream (defaults to

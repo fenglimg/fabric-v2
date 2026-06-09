@@ -28,3 +28,19 @@ export abstract class FabricError extends Error {
     }
   }
 }
+
+export type FabricErrorShape = {
+  message: string
+  actionHint: string
+}
+
+export function hasActionHint(err: unknown): err is FabricErrorShape {
+  if (err === null || typeof err !== 'object') return false
+  const candidate = err as { message?: unknown; actionHint?: unknown }
+  return (
+    typeof candidate.message === 'string' &&
+    candidate.message.length > 0 &&
+    typeof candidate.actionHint === 'string' &&
+    candidate.actionHint.length > 0
+  )
+}

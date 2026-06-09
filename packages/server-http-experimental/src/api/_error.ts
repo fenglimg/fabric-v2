@@ -1,6 +1,6 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 
-import { FabricError } from "@fenglimg/fabric-shared/errors";
+import { hasActionHint } from "@fenglimg/fabric-shared/errors";
 
 export type FabricHttpApp = ReturnType<typeof createMcpExpressApp>;
 
@@ -59,7 +59,7 @@ export function sendUnknownError(res: JsonResponse, error: unknown): void {
 }
 
 function normalizeApiError(error: unknown): KnownApiError {
-  if (error instanceof FabricError) {
+  if (isHttpFabricError(error)) {
     return {
       status: error.httpStatus,
       code: error.code,
@@ -81,4 +81,20 @@ function normalizeApiError(error: unknown): KnownApiError {
     code: "INTERNAL_ERROR",
     message: `Unexpected error: ${String(error)}`,
   };
+}
+
+function isHttpFabricError(error: unknown): error is {
+  httpStatus: number;
+  code: string;
+  message: string;
+  details?: unknown;
+} {
+  if (!hasActionHint(error)) {
+    return false;
+  }
+  const candidate = error as {
+    httpStatus?: unknown;
+    code?: unknown;
+  };
+  return typeof candidate.httpStatus === "number" && typeof candidate.code === "string";
 }
