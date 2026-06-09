@@ -26,7 +26,7 @@ describe("AI client policy docs drift guard", () => {
     expect(publicDocs).not.toContain("~/.fabric/knowledge/pending");
   });
 
-  it("keeps bootstrap policy free of retired agents.meta developer guidance", () => {
+  it("keeps bootstrap policy clear that agents.meta is engine-owned", () => {
     const bootstrapDocs = [
       "packages/shared/src/templates/bootstrap-canonical.ts",
       ".fabric/AGENTS.md",
@@ -36,8 +36,8 @@ describe("AI client policy docs drift guard", () => {
       .map((rel) => `${rel}\n${read(rel)}`)
       .join("\n\n---\n\n");
 
-    expect(bootstrapDocs).not.toContain("手编 `.fabric/agents.meta.json`");
-    expect(bootstrapDocs).not.toContain("`.fabric/agents.meta.json` 严禁手动编辑");
+    expect(bootstrapDocs).toContain("`.fabric/agents.meta.json` 严禁手动编辑");
+    expect(bootstrapDocs).not.toContain("agents.meta.json#counters");
   });
 
   it("keeps current archive trigger docs on fabric-hint.cjs", () => {
@@ -53,10 +53,10 @@ describe("AI client policy docs drift guard", () => {
     expect(archiveGateDocs).not.toContain("from archive-hint.cjs");
   });
 
-  it("does not claim Fabric installs Cursor skill directories", () => {
+  it("keeps Cursor skill delivery documented in the parity matrix", () => {
     const parityMatrix = read("packages/shared/src/parity/parity-matrix.json");
 
-    expect(parityMatrix).not.toMatch(/\.cursor\/skills\/fabric-/);
-    expect(parityMatrix).toContain("Fabric does not install .cursor/skills");
+    expect(parityMatrix).toMatch(/\.cursor\/skills\/fabric-/);
+    expect(parityMatrix).not.toContain("Fabric does not install .cursor/skills");
   });
 });

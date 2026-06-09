@@ -43,8 +43,8 @@ afterEach(() => {
 });
 
 describe("store project create/list", () => {
-  it("a fresh store has no registered projects", async () => {
-    await expect(storeProjectList("team", globalRoot)).resolves.toHaveLength(0);
+  it("a fresh store has no registered projects", () => {
+    expect(storeProjectList("team", globalRoot)).toHaveLength(0);
   });
 
   it("creates a project and lists it (persisted to projects.json)", async () => {
@@ -70,8 +70,8 @@ describe("store project create/list", () => {
     await expect(storeProjectCreate("team", "Bad:Id", NOW, { globalRoot })).rejects.toThrow();
   });
 
-  it("throws when the store is not mounted", async () => {
-    await expect(storeProjectList("nope", globalRoot)).rejects.toThrow(/no mounted store/);
+  it("throws when the store is not mounted", () => {
+    expect(() => storeProjectList("nope", globalRoot)).toThrow(/no mounted store/);
   });
 });
 

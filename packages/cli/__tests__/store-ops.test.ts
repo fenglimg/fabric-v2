@@ -266,6 +266,7 @@ describe("fabric store bind / switch-write (project config)", () => {
         fabric_language: "en",
         required_stores: [{ id: "team" }, { id: "platform" }],
         active_write_store: "team",
+        default_write_store: "team",
       },
       projectRoot,
     );
