@@ -10,6 +10,7 @@
     "dev": "pnpm -r dev",
     "test": "pnpm -r --if-present test",
     "test:coverage": "pnpm -r --if-present test:coverage",
+    "test:store-only-e2e": "node scripts/store-only-e2e.mjs",
     "rc5:gate": "node scripts/rc5-coverage-gate.mjs",
     "rc6:gate": "node scripts/rc6-coverage-gate.mjs",
     "lint": "knip --strict",

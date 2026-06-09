@@ -4,10 +4,10 @@
  * two paths most likely to bottleneck the user experience:
  *
  *   1. CLI cold start  — `node packages/cli/dist/index.js doctor --json`
- *      against a minimal fixture. Sets the floor for any interactive
+ *      against a mounted-store fixture. Sets the floor for any interactive
  *      `fabric doctor` invocation.
  *   2. Hook cold start — `node packages/cli/templates/hooks/knowledge-hint-broad.cjs`
- *      against a synthetic empty workspace. Sets the floor for SessionStart
+ *      against the same mounted-store fixture. Sets the floor for SessionStart
  *      reminder latency (the user-perceived "client takes a second to start
  *      typing" effect).
  *
@@ -33,6 +33,10 @@ import { performance } from "node:perf_hooks";
 const ITERATIONS = 10;
 const CLI_BUDGET_MS = 2000;
 const HOOK_BUDGET_MS = 500;
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+const PERSONAL_STORE_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const TEAM_STORE_UUID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const KNOWLEDGE_TYPES = ["models", "decisions", "guidelines", "pitfalls", "processes"];
 
 function measureOnce(command, args, options = {}) {
   const start = performance.now();
@@ -51,15 +55,146 @@ function percentile(samples, p) {
   return sorted[idx];
 }
 
-function setupCliFixture() {
-  const root = mkdtempSync(join(tmpdir(), "fabric-perf-cli-"));
-  mkdirSync(join(root, ".fabric"), { recursive: true });
+function writeJson(path, value) {
   writeFileSync(
-    join(root, ".fabric", "agents.meta.json"),
-    JSON.stringify({ entries: {}, counters: {}, revision: "sha256:0" }),
+    path,
+    `${JSON.stringify(value, null, 2)}\n`,
+    "utf8",
   );
-  writeFileSync(join(root, ".fabric", "events.jsonl"), "");
-  return root;
+}
+
+function setupStoreDir(globalRoot, store) {
+  const storeRoot = join(globalRoot, "stores", store.mount_name);
+  for (const type of KNOWLEDGE_TYPES) {
+    mkdirSync(join(storeRoot, "knowledge", type), { recursive: true });
+  }
+  mkdirSync(join(storeRoot, "knowledge", "pending"), { recursive: true });
+  mkdirSync(join(storeRoot, "bindings"), { recursive: true });
+  mkdirSync(join(storeRoot, "state"), { recursive: true });
+  writeJson(join(storeRoot, "store.json"), {
+    store_uuid: store.store_uuid,
+    created_at: "2026-06-09T00:00:00.000Z",
+    canonical_alias: store.alias,
+  });
+  writeFileSync(join(storeRoot, ".gitignore"), "state/\nagents.meta.json\n.cache/\n", "utf8");
+  return storeRoot;
+}
+
+function writeKnowledgeEntry(storeRoot, type, id, scope, visibilityStore, summary) {
+  const slug = summary.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+  writeFileSync(
+    join(storeRoot, "knowledge", type, `${id}--${slug}.md`),
+    [
+      "---",
+      `id: ${id}`,
+      `type: ${type}`,
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-09T00:00:00.000Z",
+      `semantic_scope: ${scope}`,
+      `visibility_store: "${visibilityStore}"`,
+      `summary: ${summary}`,
+      "intent_clues: [store-only, perf]",
+      "tech_stack: [TypeScript]",
+      "---",
+      `# ${summary}`,
+      "",
+      "Store-only benchmark fixture entry.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+}
+
+function setupCliFixture() {
+  const root = mkdtempSync(join(tmpdir(), "fabric-perf-"));
+  const home = join(root, "home");
+  const projectRoot = join(root, "project");
+  const globalRoot = join(home, ".fabric");
+  mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
+  mkdirSync(join(globalRoot, "state", "bindings"), { recursive: true });
+
+  const personal = {
+    store_uuid: PERSONAL_STORE_UUID,
+    alias: "personal",
+    mount_name: "personal",
+    personal: true,
+    writable: true,
+  };
+  const team = {
+    store_uuid: TEAM_STORE_UUID,
+    alias: "team",
+    mount_name: "team",
+    remote: "git@example.com:team-store.git",
+    writable: true,
+  };
+
+  const personalRoot = setupStoreDir(globalRoot, personal);
+  const teamRoot = setupStoreDir(globalRoot, team);
+
+  for (let i = 1; i <= 10; i++) {
+    writeKnowledgeEntry(
+      teamRoot,
+      "decisions",
+      `KT-DEC-${String(i).padStart(4, "0")}`,
+      "project:fabric-v2",
+      "team",
+      `Store-only team decision ${i}`,
+    );
+  }
+  for (let i = 1; i <= 3; i++) {
+    writeKnowledgeEntry(
+      personalRoot,
+      "guidelines",
+      `KP-GLD-${String(i).padStart(4, "0")}`,
+      "personal",
+      "personal",
+      `Store-only personal guideline ${i}`,
+    );
+  }
+
+  writeJson(join(globalRoot, "fabric-global.json"), {
+    uid: "perf-bench",
+    stores: [personal, team],
+  });
+  writeJson(join(projectRoot, ".fabric", "fabric-config.json"), {
+    project_id: PROJECT_ID,
+    active_project: "fabric-v2",
+    required_stores: [{ id: "team" }],
+    active_write_store: "team",
+    default_write_store: "team",
+    write_routes: [{ scope: "project:fabric-v2", store: "team" }],
+  });
+  // Keep the legacy event file present for doctor compatibility, but do not
+  // create a project-local knowledge tree; the fixture must stay store-only.
+  writeFileSync(join(projectRoot, ".fabric", "events.jsonl"), "", "utf8");
+
+  writeJson(join(globalRoot, "state", "bindings", `${PROJECT_ID}_resolved.json`), {
+    version: 1,
+    project_id: PROJECT_ID,
+    workspace_binding_id: PROJECT_ID,
+    generated_at: "2026-06-09T00:00:00.000Z",
+    read_set: {
+      stores: [
+        {
+          store_uuid: TEAM_STORE_UUID,
+          alias: "team",
+          remote: "git@example.com:team-store.git",
+          writable: true,
+        },
+        { store_uuid: PERSONAL_STORE_UUID, alias: "personal", writable: true },
+      ],
+      warnings: [],
+    },
+    write_target: { store_uuid: TEAM_STORE_UUID, alias: "team" },
+    knowledge_stats: {
+      pending_count: 0,
+      canonical_count: 13,
+      oldest_pending_mtime_ms: null,
+    },
+  });
+
+  return { projectRoot, fabricHome: home };
 }
 
 function benchmarkCli(cliPath) {
@@ -67,7 +202,8 @@ function benchmarkCli(cliPath) {
   const samples = [];
   for (let i = 0; i < ITERATIONS; i++) {
     const { elapsed, status } = measureOnce(process.execPath, [cliPath, "doctor", "--json"], {
-      cwd: fixture,
+      cwd: fixture.projectRoot,
+      env: { ...process.env, FABRIC_HOME: fixture.fabricHome },
     });
     if (status !== 0 && status !== 1) {
       // doctor exits 1 when there are warnings (not green). Acceptable.
@@ -94,9 +230,9 @@ function benchmarkHook(hookPath) {
   const samples = [];
   for (let i = 0; i < ITERATIONS; i++) {
     const { elapsed, status, signal, stderr } = measureOnce(process.execPath, [hookPath], {
-      cwd: fixture,
+      cwd: fixture.projectRoot,
       input: stdinPayload,
-      env: { ...process.env, FABRIC_HOME: fixture },
+      env: { ...process.env, FABRIC_HOME: fixture.fabricHome },
     });
     if (status !== 0 || signal !== null) {
       const detail = signal !== null ? `signal ${signal}` : `status ${status}`;

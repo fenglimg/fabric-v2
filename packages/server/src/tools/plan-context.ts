@@ -20,6 +20,7 @@ import {
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
 import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
+import { type StructuredToolWarning } from "./payload-warning.js";
 
 export function registerPlanContext(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -50,7 +51,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
         // by default, closing the 7% heal-coverage gap reported in rc.29 BUG-G1.
         const syncReport = await ensureKnowledgeFresh(projectRoot, { autoHealOnDrift: true });
         const payloadLimits = readPayloadLimits(projectRoot);
-        const baseWarnings = [
+        const baseWarnings: StructuredToolWarning[] = [
           ...(gateWarn ? [gateWarn] : []),
           ...syncReport.warnings,
         ];
