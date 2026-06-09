@@ -69,8 +69,8 @@ describe('I7 protected tokens: tokens preserved across locales', () => {
     expect(protectedTokensList).toContain('NEVER')
   })
 
-  it('PROTECTED_TOKENS includes .fabric/agents.meta.json', () => {
-    expect(protectedTokensList).toContain('.fabric/agents.meta.json')
+  it('PROTECTED_TOKENS includes knowledge/pending', () => {
+    expect(protectedTokensList).toContain('knowledge/pending')
   })
 })
 
