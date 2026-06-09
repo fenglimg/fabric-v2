@@ -1415,12 +1415,14 @@ async function deferAll(
 ): Promise<string[]> {
   const deferred: string[] = [];
   for (const pendingPath of pendingPaths) {
+    let stableId: string | undefined;
     // Mirror reject's best-effort dual-write contract (see rejectAll for the
     // event-vs-IO priority rationale).
     try {
       const sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
       if (existsSync(sandboxed.abs)) {
         const content = await readFile(sandboxed.abs, "utf8");
+        stableId = parseFrontmatter(content).id;
         const patch: FrontmatterScalarPatch = {
           status: "deferred",
           ...(until !== undefined ? { deferred_until: until } : {}),
@@ -1436,6 +1438,8 @@ async function deferAll(
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_deferred",
       timestamp: new Date().toISOString(),
+      pending_path: pendingPath,
+      ...(stableId !== undefined ? { stable_id: stableId } : {}),
       ...(until !== undefined ? { until } : {}),
       ...(reason !== undefined ? { reason } : {}),
     });

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -54,6 +54,20 @@ describe("findStoreExecutableViolations (S65 — store carries no executable hoo
     chmodSync(sample, 0o755);
     expect(findStoreExecutableViolations(store)).toEqual([]);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "flags symlinks without following store-controlled targets",
+    () => {
+      const store = createValidStoreDir();
+      const outside = createValidStoreDir();
+      mkdirSync(join(outside, "external"), { recursive: true });
+      writeFileSync(join(outside, "external", "evil.sh"), "#!/bin/sh\n", "utf8");
+
+      symlinkSync(join(outside, "external"), join(store, "knowledge", "linked-external"), "dir");
+
+      expect(findStoreExecutableViolations(store)).toEqual(["knowledge/linked-external"]);
+    },
+  );
 
   // W4-02→W4-06 (ISS-028): the walk is bounded so a pathologically large/deep
   // store cannot block the event loop. The bound is fail-closed — it records a

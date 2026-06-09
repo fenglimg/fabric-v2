@@ -1032,6 +1032,58 @@ describe("reviewKnowledge", () => {
     expect(ev.reason).toBe("waiting on upstream");
   });
 
+  it("defer_identifies_each_deferred_pending_path_even_without_until_or_reason", async () => {
+    const projectRoot = await createTempProject();
+    const first = await seedPendingFile(projectRoot, "decisions", "defer-first");
+    const second = await seedPendingFile(projectRoot, "guidelines", "defer-second");
+
+    await reviewKnowledge(projectRoot, {
+      action: "defer",
+      pending_paths: [first, second],
+    });
+
+    const deferredEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_deferred",
+    });
+    expect(deferredEvents.events).toHaveLength(2);
+    expect(deferredEvents.events.map((event) => (event as { pending_path?: string }).pending_path)).toEqual([
+      first,
+      second,
+    ]);
+    for (const event of deferredEvents.events as Array<{
+      pending_path?: string;
+      stable_id?: string;
+      until?: string;
+      reason?: string;
+    }>) {
+      expect(event.pending_path).toBeDefined();
+      expect(event.stable_id).toBeUndefined();
+      expect(event.until).toBeUndefined();
+      expect(event.reason).toBeUndefined();
+    }
+  });
+
+  it("defer_includes_stable_id_when_pending_frontmatter_has_id", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "defer-with-id");
+    const original = await readFile(pendingPath, "utf8");
+    await writeFile(pendingPath, original.replace("---\n", "---\nid: KT-DEC-0042\n"), "utf8");
+
+    await reviewKnowledge(projectRoot, {
+      action: "defer",
+      pending_paths: [pendingPath],
+    });
+
+    const deferredEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_deferred",
+    });
+    expect(deferredEvents.events).toHaveLength(1);
+    expect(deferredEvents.events[0]).toMatchObject({
+      pending_path: pendingPath,
+      stable_id: "KT-DEC-0042",
+    });
+  });
+
   it("defer_emits_deferred_event_without_until_when_omitted", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "decisions", "indefinite");

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -144,8 +144,12 @@ export function findStoreExecutableViolations(
       const relPath = rel === "" ? entry : `${rel}/${entry}`;
       let stat;
       try {
-        stat = statSync(abs);
+        stat = lstatSync(abs);
       } catch {
+        continue;
+      }
+      if (stat.isSymbolicLink()) {
+        violations.push(relPath);
         continue;
       }
       if (stat.isDirectory()) {
