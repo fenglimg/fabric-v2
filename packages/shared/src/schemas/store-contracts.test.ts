@@ -14,7 +14,12 @@ import {
   globalRefSchema,
   parseGlobalRef,
 } from "./store-stable-id.js";
-import { globalConfigSchema, requiredStoreEntrySchema, storeIdentitySchema } from "./store.js";
+import {
+  globalConfigSchema,
+  mountedStoreSchema,
+  requiredStoreEntrySchema,
+  storeIdentitySchema,
+} from "./store.js";
 
 // v2.1.0-rc.1 P0 — contract-layer tests. These validate the DEFINITION layer
 // only (schemas compile + stub/golden data parse). The resolver behavior these
@@ -40,6 +45,31 @@ describe("P0 store/scope/id schemas", () => {
     expect(() =>
       storeIdentitySchema.parse({ store_uuid: "not-a-uuid", created_at: "x" }),
     ).toThrow();
+  });
+
+  it("rejects store aliases that are not safe path segments", () => {
+    expect(() =>
+      mountedStoreSchema.parse({
+        store_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        alias: "team.platform-1",
+      }),
+    ).not.toThrow();
+
+    for (const alias of ["", ".", "..", "../escape", "team/escape", "team\\escape"]) {
+      expect(() =>
+        mountedStoreSchema.parse({
+          store_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          alias,
+        }),
+      ).toThrow();
+      expect(() =>
+        storeIdentitySchema.parse({
+          store_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          created_at: "2026-05-30T00:00:00.000Z",
+          canonical_alias: alias,
+        }),
+      ).toThrow();
+    }
   });
 
   it("accepts required_store entries including the $personal sentinel", () => {
