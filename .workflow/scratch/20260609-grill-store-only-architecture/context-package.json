@@ -1,0 +1,189 @@
+{
+  "$schema": "context-package/1.0",
+  "id": "GRL-20260609-store-only-architecture",
+  "type": "grill",
+  "topic": "store-only knowledge and store architecture",
+  "created_at": "2026-06-09T00:00:00+08:00",
+  "source": "interactive maestro-grill session",
+  "artifacts": {
+    "report": ".workflow/scratch/20260609-grill-store-only-architecture/grill-report.md",
+    "terminology": ".workflow/scratch/20260609-grill-store-only-architecture/terminology.md"
+  },
+  "constraints": [
+    {
+      "id": "store-only-source-of-truth",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "Knowledge source of truth lives only in mounted stores under ~/.fabric/stores; project-local .fabric/knowledge is not a runtime source."
+    },
+    {
+      "id": "implicit-personal-store",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "Personal store is an implicit private layer, not a project required_stores dependency; personal-scope writes target only the personal store."
+    },
+    {
+      "id": "scope-routing",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "Skills propose semantic_scope; server validates it and resolver maps it to visibility_store through routes/defaults."
+    },
+    {
+      "id": "readable-write-target",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "Every non-personal write target must be in the current project's read-set."
+    },
+    {
+      "id": "pending-review-only",
+      "status": "locked",
+      "area": "retrieval",
+      "statement": "Pending entries are discoverable by review/doctor/hints, but not injected into normal recall or plan-context."
+    },
+    {
+      "id": "mcp-reference-contract",
+      "status": "locked",
+      "area": "mcp",
+      "statement": "MCP user-facing references use alias:id with structured provenance including store_uuid, alias, local_id, semantic_scope, and visibility_store when known."
+    },
+    {
+      "id": "scope-tiebreak",
+      "status": "locked",
+      "area": "retrieval",
+      "statement": "Scope priority is a relevance tie-break, not a hard override; equal relevance ranks project before team before future shared org scopes before personal."
+    },
+    {
+      "id": "multi-team-routes",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "Projects bound to multiple shared/team stores require explicit write_routes for project-scoped writes; missing route is a hard write error."
+    },
+    {
+      "id": "single-active-project",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "A repo/current working context has exactly one active_project; multi-project operation switches active project rather than exposing multiple active project scopes."
+    },
+    {
+      "id": "workspace-binding-id",
+      "status": "locked",
+      "area": "worktree",
+      "statement": "Worktrees share binding by default, but explicit isolation uses workspace_binding_id to separate active_project, write_routes, event ledger, and resolved snapshot state under the same project_id."
+    },
+    {
+      "id": "derived-index",
+      "status": "locked",
+      "area": "performance",
+      "statement": "MCP discovery uses store-local canonical indexes plus binding-level filtered views, with live-scan fallback and fingerprint validation."
+    },
+    {
+      "id": "personal-leak-blocks-sync",
+      "status": "locked",
+      "area": "security",
+      "statement": "Personal-scope or KP-* entries in shared stores are privacy leaks; sync must block push until remediated."
+    },
+    {
+      "id": "global-binding-ledger",
+      "status": "locked",
+      "area": "observability",
+      "statement": "Cross-store event ledger lives in global state per workspace_binding_id, not in store git and not as project-root runtime state."
+    },
+    {
+      "id": "zero-user-clean-cut",
+      "status": "locked",
+      "area": "migration",
+      "statement": "Because the product has 0 users, legacy project-local knowledge and dual-root runtime fallbacks should be removed; only explicit one-time migration/import remains."
+    },
+    {
+      "id": "surface-alignment-gate",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "CLI, server, MCP, hooks, skills, docs/tests/i18n must be covered by a surface alignment matrix before store-only is considered complete."
+    },
+    {
+      "id": "single-shared-contract",
+      "status": "locked",
+      "area": "architecture",
+      "statement": "All surfaces use shared schemas/resolvers plus CLI/MCP generated outputs as the single source of truth; no surface hand-writes store/read-set/path rules."
+    },
+    {
+      "id": "mcp-scope-first",
+      "status": "locked",
+      "area": "mcp",
+      "statement": "MCP write/review contracts are scope-first: fab_extract_knowledge and review modify use semantic_scope as the primary input, not layer."
+    },
+    {
+      "id": "cli-routes-first",
+      "status": "locked",
+      "area": "cli",
+      "statement": "CLI onboarding writes write_routes such as project:<id> -> store; active_write_store/switch-write is removed or reduced to a route-writing compatibility alias."
+    },
+    {
+      "id": "hook-global-binding-state",
+      "status": "locked",
+      "area": "hooks",
+      "statement": "Hooks use global workspace_binding_id state for snapshots, ledgers, metrics, and stats; they do not append project-root .fabric/events.jsonl or scan .fabric/knowledge."
+    },
+    {
+      "id": "skills-same-version-scope-first",
+      "status": "locked",
+      "area": "skills",
+      "statement": "Fabric skills are updated in the same version as runtime to use semantic_scope, store-only pending/review, and global ledger semantics."
+    },
+    {
+      "id": "doctor-sync-hard-gates",
+      "status": "locked",
+      "area": "operations",
+      "statement": "Doctor/sync treat store-only contract violations as hard gates with safe --fix paths where possible; sync blocks privacy and invalid route/read-set pushes."
+    },
+    {
+      "id": "surface-row-acceptance",
+      "status": "locked",
+      "area": "quality",
+      "statement": "Every surface alignment matrix row must have unit/integration/snapshot or static forbidden-pattern acceptance coverage."
+    }
+  ],
+  "insights": [
+    {
+      "id": "identity-split",
+      "kind": "decision",
+      "summary": "Fabric needs three separate identities: project_id for codebase/workspace identity, active_project for knowledge project scope, and workspace_binding_id for local runtime binding isolation."
+    },
+    {
+      "id": "store-index-view-split",
+      "kind": "pattern",
+      "summary": "Store-local canonical index plus binding-level view supports single-store multi-project and same-project multi-worktree without duplicating indexes per worktree."
+    },
+    {
+      "id": "route-before-write",
+      "kind": "decision",
+      "summary": "A proposed semantic_scope must resolve to a readable writable store before pending creation, preventing write-success/read-invisible states."
+    },
+    {
+      "id": "pending-not-authority",
+      "kind": "decision",
+      "summary": "Pending knowledge remains a review queue and must not affect normal rule injection before approval."
+    },
+    {
+      "id": "surface-matrix-is-release-gate",
+      "kind": "decision",
+      "summary": "The architecture is not complete until CLI, server, MCP, hooks, skills, doctor/sync, indexes, ledgers, migration, and tests all pass the same store-only surface matrix."
+    },
+    {
+      "id": "routes-replace-default-mailbox",
+      "kind": "pattern",
+      "summary": "write_routes are address-based routing for semantic_scope; active_write_store is only a default mailbox model and should not drive multi-team writes."
+    }
+  ],
+  "open_questions": [],
+  "recommended_next": [
+    {
+      "command": "$maestro-analyze",
+      "reason": "Map these architectural decisions to modules, schema changes, and implementation risks."
+    },
+    {
+      "command": "$maestro-roadmap",
+      "reason": "Turn the locked architecture into phased implementation work."
+    }
+  ]
+}
