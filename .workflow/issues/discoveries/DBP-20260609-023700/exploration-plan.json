@@ -1,0 +1,25 @@
+{
+  "prompt": "挖掘所有可证据化的问题、bug 和不一致行为；自动发现、去重并写入 issue registry；迭代到没有新增 issue 或 2026-06-09 09:00 +08:00。",
+  "dimensions": [
+    {
+      "id": "declared-vs-implementation",
+      "description": "Compare commands, help text, docs, schemas, snapshots, and implementation for claimed behavior that is missing or inconsistent."
+    },
+    {
+      "id": "producer-consumer",
+      "description": "Find exported capabilities, generated artifacts, config fields, events, or snapshots that have no real consumer or incompatible consumers."
+    },
+    {
+      "id": "round-trip-invariants",
+      "description": "Check install/uninstall, bind/switch, write/read, archive/review, sync/restore, parse/render round-trip invariants for broken behavior."
+    },
+    {
+      "id": "state-error-isolation",
+      "description": "Find state leaks, env mutation, partial writes, race conditions, silent failures, and misleading degradation paths."
+    },
+    {
+      "id": "test-gate-drift",
+      "description": "Find tests, snapshots, fixtures, coverage thresholds, and release gates that assert stale or weaker contracts than production behavior."
+    }
+  ]
+}

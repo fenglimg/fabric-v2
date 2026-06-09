@@ -1,0 +1,10 @@
+{
+  "prompt": "Round 6 final-check. Read all ISS-20260609-001..065 first. Return [] unless a new root cause is clearly distinct.",
+  "dimensions": [
+    {"id":"cli-docs-final", "description":"Final no-new check over CLI and docs."},
+    {"id":"server-store-final", "description":"Final no-new check over server/store/doctor/review/recall."},
+    {"id":"shared-schema-final", "description":"Final no-new check over shared schemas/resolver/parity/i18n."},
+    {"id":"workflow-ci-final", "description":"Final no-new check over scripts/workflows/tests/coverage/release."},
+    {"id":"skills-knowledge-final", "description":"Final no-new check over skills/hooks/bootstrap/knowledge-store artifacts."}
+  ]
+}

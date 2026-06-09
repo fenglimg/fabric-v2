@@ -1,0 +1,10 @@
+{
+  "id": "3",
+  "title": "Artifacts CI Skills Dry Confirm",
+  "perspective": "artifacts-ci-skills-dry",
+  "result_status": "completed",
+  "findings": "Found 1 new non-duplicate root cause: the CI protected-token lint still requires retired store-only-era tokens, so cleanup of skill/bootstrap wording would fail the gate. Other scanned hits matched ISS-001..067.",
+  "issues_found": "[{\"title\":\"Protected-token lint enforces retired project-local knowledge tokens\",\"severity\":\"medium\",\"evidence\":\"scripts/lint-protected-tokens.ts:38 requires .fabric/knowledge/ in every SKILL.md; scripts/lint-protected-tokens.ts:86 requires .fabric/agents.meta.json in the registry; .github/workflows/ci.yml:48 and .github/workflows/release.yml:48 run this gate.\",\"root_cause\":\"The quality gate encodes obsolete project-local knowledge paths as mandatory protected tokens, which is distinct from existing issues about stale skill text or manifest input paths and can block store-only cleanup.\"}]",
+  "severity_distribution": "{\"medium\":1}",
+  "error": ""
+}

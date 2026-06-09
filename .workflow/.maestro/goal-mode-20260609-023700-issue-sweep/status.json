@@ -1,0 +1,304 @@
+{
+  "session_id": "goal-mode-20260609-023700-issue-sweep",
+  "source": "goal-mode",
+  "intent": "自动执行 manage-issue-discover，挖掘所有可证据化的问题、bug 和不一致行为，迭代到没有新增 issue 或 2026-06-09 09:00 +08:00。",
+  "mode": "2-audit",
+  "status": "completed",
+  "current_round": 9,
+  "max_rounds": null,
+  "dry_rounds_limit": 1,
+  "active_session_id": "DBP-20260609-041600",
+  "boundary_contract": {
+    "in_scope": [
+      "public command/schema/help/docs vs implementation mismatches",
+      "producer-consumer and generated artifact inconsistencies",
+      "install/store/archive/review/doctor/recall round-trip invariants",
+      "state isolation, env mutation, error handling, race risks",
+      "test, snapshot, fixture, and release gate drift"
+    ],
+    "out_of_scope": [
+      "fixing discovered issues in this discovery-only loop unless explicitly requested",
+      "editing user pre-existing modified product files"
+    ],
+    "constraints": [
+      "stop at 2026-06-09T09:00:00+08:00",
+      "stop after a completed discovery round creates 0 new distinct issues",
+      "deduplicate against .workflow/issues/issues.jsonl before appending",
+      "new issue records use source=discover"
+    ]
+  },
+  "exit_gates": [
+    "now >= 2026-06-09T09:00:00+08:00",
+    "last completed discovery round added 0 new distinct issues"
+  ],
+  "task_decomposition": [
+    "Round 1: broad inconsistency sweep across CLI/server/shared/docs/tests",
+    "Subsequent rounds: focus on clusters and uncovered surfaces from prior discoveries"
+  ],
+  "findings": [
+    "Round 1 appended 11 new issues: ISS-20260609-021..031",
+    "Round 2 appended 11 new issues: ISS-20260609-032..042",
+    "Round 3 appended 7 new issues: ISS-20260609-043..049",
+    "Round 4 appended 10 new issues: ISS-20260609-050..059",
+    "Round 5 appended 6 new issues: ISS-20260609-060..065",
+    "Round 6 appended 2 new issues: ISS-20260609-066..067",
+    "Round 7 appended 1 new issue: ISS-20260609-068",
+    "Round 8 appended 1 new issue: ISS-20260609-069",
+    "Round 9 dry pass appended 0 issues; stop gate passed"
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "session_id": "DBP-20260609-023700",
+      "status": "completed",
+      "started_at": "2026-06-09T02:37:00+08:00",
+      "completed_at": "2026-06-09T02:53:40.2725709+08:00",
+      "raw_findings": 11,
+      "new_issues": 11,
+      "issue_ids": [
+        "ISS-20260609-021",
+        "ISS-20260609-022",
+        "ISS-20260609-023",
+        "ISS-20260609-024",
+        "ISS-20260609-025",
+        "ISS-20260609-026",
+        "ISS-20260609-027",
+        "ISS-20260609-028",
+        "ISS-20260609-029",
+        "ISS-20260609-030",
+        "ISS-20260609-031"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 2,
+        "medium": 7,
+        "low": 2
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-023700/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-023700/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-inconsistency-sweep-023700/results.csv"
+      ]
+    },
+    {
+      "round": 2,
+      "session_id": "DBP-20260609-025200",
+      "status": "completed",
+      "started_at": "2026-06-09T02:54:00+08:00",
+      "completed_at": "2026-06-09T03:09:35.5363493+08:00",
+      "raw_findings": 11,
+      "new_issues": 11,
+      "issue_ids": [
+        "ISS-20260609-032",
+        "ISS-20260609-033",
+        "ISS-20260609-034",
+        "ISS-20260609-035",
+        "ISS-20260609-036",
+        "ISS-20260609-037",
+        "ISS-20260609-038",
+        "ISS-20260609-039",
+        "ISS-20260609-040",
+        "ISS-20260609-041",
+        "ISS-20260609-042"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 2,
+        "medium": 8,
+        "low": 1
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-025200/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-025200/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-cluster-followup-025200/results.csv"
+      ]
+    },
+    {
+      "round": 3,
+      "session_id": "DBP-20260609-031000",
+      "status": "completed",
+      "started_at": "2026-06-09T03:10:00+08:00",
+      "completed_at": "2026-06-09T03:21:16.6730962+08:00",
+      "raw_findings": 7,
+      "new_issues": 7,
+      "issue_ids": [
+        "ISS-20260609-043",
+        "ISS-20260609-044",
+        "ISS-20260609-045",
+        "ISS-20260609-046",
+        "ISS-20260609-047",
+        "ISS-20260609-048",
+        "ISS-20260609-049"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 6,
+        "low": 1
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-031000/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-031000/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-reverse-oracles-031000/results.csv"
+      ]
+    },
+    {
+      "round": 4,
+      "session_id": "DBP-20260609-032300",
+      "status": "completed",
+      "started_at": "2026-06-09T03:23:00+08:00",
+      "completed_at": "2026-06-09T03:35:22.4137531+08:00",
+      "raw_findings": 10,
+      "new_issues": 10,
+      "issue_ids": [
+        "ISS-20260609-050",
+        "ISS-20260609-051",
+        "ISS-20260609-052",
+        "ISS-20260609-053",
+        "ISS-20260609-054",
+        "ISS-20260609-055",
+        "ISS-20260609-056",
+        "ISS-20260609-057",
+        "ISS-20260609-058",
+        "ISS-20260609-059"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 9,
+        "low": 1
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-032300/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-032300/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-tail-sweep-032300/results.csv"
+      ]
+    },
+    {
+      "round": 5,
+      "session_id": "DBP-20260609-033400",
+      "status": "completed",
+      "started_at": "2026-06-09T03:34:00+08:00",
+      "completed_at": "2026-06-09T03:47:30.3746051+08:00",
+      "raw_findings": 9,
+      "new_issues": 6,
+      "issue_ids": [
+        "ISS-20260609-060",
+        "ISS-20260609-061",
+        "ISS-20260609-062",
+        "ISS-20260609-063",
+        "ISS-20260609-064",
+        "ISS-20260609-065"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 2,
+        "low": 4
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-033400/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-033400/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-live-state-033400/results.csv"
+      ]
+    },
+    {
+      "round": 6,
+      "session_id": "DBP-20260609-034800",
+      "status": "completed",
+      "started_at": "2026-06-09T03:48:00+08:00",
+      "completed_at": "2026-06-09T03:57:45.7451637+08:00",
+      "raw_findings": 2,
+      "new_issues": 2,
+      "issue_ids": [
+        "ISS-20260609-066",
+        "ISS-20260609-067"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 2,
+        "low": 0
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-034800/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-034800/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-final-check-034800/results.csv"
+      ]
+    },
+    {
+      "round": 7,
+      "session_id": "DBP-20260609-035800",
+      "status": "completed",
+      "started_at": "2026-06-09T03:58:00+08:00",
+      "completed_at": "2026-06-09T04:07:21.6404774+08:00",
+      "raw_findings": 1,
+      "new_issues": 1,
+      "issue_ids": [
+        "ISS-20260609-068"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 0
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-035800/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-035800/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-dry-confirm-035800/results.csv"
+      ]
+    },
+    {
+      "round": 8,
+      "session_id": "DBP-20260609-040700",
+      "status": "completed",
+      "started_at": "2026-06-09T04:07:00+08:00",
+      "completed_at": "2026-06-09T04:15:54.6158723+08:00",
+      "raw_findings": 1,
+      "new_issues": 1,
+      "issue_ids": [
+        "ISS-20260609-069"
+      ],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 0
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-040700/context.md",
+        ".workflow/issues/discoveries/DBP-20260609-040700/discovery-issues.jsonl",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-final-dry-040700/results.csv"
+      ]
+    },
+    {
+      "round": 9,
+      "session_id": "DBP-20260609-041600",
+      "status": "completed",
+      "started_at": "2026-06-09T04:16:00+08:00",
+      "completed_at": "2026-06-09T04:20:11.6385071+08:00",
+      "raw_findings": 0,
+      "new_issues": 0,
+      "issue_ids": [],
+      "severity_distribution": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "evidence": [
+        ".workflow/issues/discoveries/DBP-20260609-041600/context.md",
+        ".workflow/.csv-wave/20260609-discover-by-prompt-global-dry-041600/results.csv"
+      ]
+    }
+  ],
+  "needs_adjudication": [],
+  "loop_exit_status": {
+    "reason": "dry_gate_passed",
+    "completed_at": "2026-06-09T04:20:11.6367455+08:00",
+    "total_new_issues": 49,
+    "final_round_new_issues": 0,
+    "deadline": "2026-06-09T09:00:00+08:00"
+  }
+}

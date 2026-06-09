@@ -1,0 +1,10 @@
+{
+  "id": "1",
+  "title": "Whole Codebase Final Dry",
+  "perspective": "whole-codebase-final-dry",
+  "result_status": "completed",
+  "findings": "Scanned 496 scoped files after reading ISS-20260609-001..068. Found one distinct root cause: cite-coverage per-layer type i18n uses singular keys in CLI/tests while schema/locales define plural KnowledgeType keys, so output can render raw key strings and tests bless the fallback.",
+  "issues_found": "[{\"title\":\"Cite coverage per-layer type labels use singular i18n keys against plural schema/locales\",\"severity\":\"medium\",\"evidence\":[\"packages/shared/src/schemas/api-contracts.ts:1236-1240 says per_layer_type inner keys are plural KnowledgeType values\",\"packages/shared/src/i18n/locales/en.ts:216-221 defines only cite-coverage.contract.type.decisions/pitfalls/models/guidelines/processes/unresolved\",\"packages/cli/src/commands/doctor.ts:1178 and 1279-1283 constructs cite-coverage.contract.type.${key} while comments/tests expect singular decision/pitfall\",\"packages/cli/__tests__/integration/doctor-cite-coverage.test.ts:475-476 asserts t(\\\"cite-coverage.contract.type.decision\\\")/pitfall, which are missing keys and therefore protects raw-key fallback\"],\"root_cause\":\"CLI formatter/test contract drifted to singular type keys, but shared report schema and locale catalogs use plural KnowledgeType literals.\"}]",
+  "severity_distribution": "medium:1",
+  "error": ""
+}

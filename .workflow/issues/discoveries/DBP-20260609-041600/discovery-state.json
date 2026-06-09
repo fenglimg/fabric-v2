@@ -1,0 +1,15 @@
+{
+  "id": "DBP-20260609-041600",
+  "mode": "by-prompt",
+  "status": "completed",
+  "started_at": "2026-06-09T04:16:00+08:00",
+  "completed_at": "2026-06-09T04:20:11.6113148+08:00",
+  "perspectives_completed": [
+    "global-dry",
+    "dedup-local-zero"
+  ],
+  "issues_found": 0,
+  "issues_deduplicated": 0,
+  "csv_session": "20260609-discover-by-prompt-global-dry-041600",
+  "goal_session": "goal-mode-20260609-023700-issue-sweep"
+}

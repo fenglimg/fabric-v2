@@ -1,0 +1,12 @@
+{
+  "prompt": "Round 2 follow-up on Round 1 clusters. Find only new distinct, evidence-backed issues not already in issues.jsonl.",
+  "parent_session": "DBP-20260609-023700",
+  "focus_issue_ids": ["ISS-20260609-025", "ISS-20260609-026", "ISS-20260609-027", "ISS-20260609-030", "ISS-20260609-031"],
+  "dimensions": [
+    {"id":"mcp-store-contract-runtime", "description":"Deep-check store-aware MCP contract promises vs actual schemas/services/tests across recall, sections, extract, review, archive, and store tools."},
+    {"id":"write-routing-metadata", "description":"Deep-check active_project/write_routes/visibility_store/semantic_scope/counters/idempotency behavior across extract/review/archive/import."},
+    {"id":"related-graph-retrieval", "description":"Deep-check related graph frontmatter parsing, store-qualified/bare ids, redirects, include_related, and connect/review generated edges."},
+    {"id":"release-perf-gates", "description":"Deep-check rc gates, perf gate, doctor counts, coverage gates, scripts, CI docs, and gate labels for stale or misleading contracts."},
+    {"id":"legacy-surface-drift", "description":"Deep-check quarantined HTTP/server exports/package metadata/docs/templates for legacy co-located knowledge or removed API references."}
+  ]
+}

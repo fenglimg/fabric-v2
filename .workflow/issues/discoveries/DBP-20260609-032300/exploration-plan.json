@@ -1,0 +1,10 @@
+{
+  "prompt": "Round 4 tail sweep. Aggressively dedupe against ISS-20260609-001..049 and older registry; return [] if no genuinely new issue.",
+  "dimensions": [
+    {"id":"issue-registry-metadata", "description":"Issue registry/source/status/history/schema consistency and manage-issue discover protocol artifacts."},
+    {"id":"platform-path-tail", "description":"Windows/POSIX path separator, absolute/relative path, symlink, shell quoting, and executable boundary tail cases."},
+    {"id":"store-config-resolution-tail", "description":"Store config resolver, binding snapshots, alias/uuid/global_ref, active/default/write/read set fallback tail cases."},
+    {"id":"command-state-tail", "description":"CLI commands with hidden state, dry-run/yes/force/json/no-color, exit-code, and warning contract tail cases."},
+    {"id":"docs-runtime-contract-tail", "description":"Docs/runtime contracts/templates/package README tail drift beyond already registered tool surface and HTTP quarantine issues."}
+  ]
+}

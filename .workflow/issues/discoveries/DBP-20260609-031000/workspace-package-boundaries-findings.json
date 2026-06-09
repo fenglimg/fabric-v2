@@ -1,0 +1,10 @@
+{
+  "id": "5",
+  "title": "Workspace Package Boundary Sweep",
+  "perspective": "workspace-package-boundaries",
+  "result_status": "completed",
+  "findings": "已去重 ISS-20260609-021..042 及 workspace/package 旧 issue；扫描 pnpm-workspace、root/package manifests、package exports/imports、tsconfig、release/CI 与版本脚本。新增 1 个低危 CI/package 边界问题：Windows smoke 声称覆盖 shebang 与 --help，但实际只用 node 直跑 --version，绕过 package bin/shebang 和 help 渲染。",
+  "issues_found": "[{\"title\":\"Windows smoke bypasses the published CLI bin and promised --help coverage\",\"severity\":\"low\",\"description\":\"The Windows smoke job says it catches POSIX-only path/shebang assumptions and covers CLI --help/--version, but the only CLI command executed is `node packages/cli/dist/index.js --version`. That bypasses the package `bin` entry and shebang path that npm/pnpm users actually invoke, and it never exercises help rendering on Windows, so package-bin or Windows-only help regressions can ship while the smoke still passes.\",\"location\":\".github/workflows/ci.yml:68; .github/workflows/ci.yml:102; packages/cli/package.json:29\",\"fix_direction\":\"Run the installed package binary path on Windows, for example `pnpm --filter @fenglimg/fabric-cli exec fabric --version` plus `fabric --help`, or after build invoke the generated npm bin shim. Keep the comment and smoke command aligned so package metadata/bin and help rendering are actually covered.\",\"affected_components\":[\".github/workflows/ci.yml\",\"packages/cli/package.json\",\"@fenglimg/fabric-cli Windows package smoke\"],\"tags\":[\"workspace-package-boundaries\",\"ci-assumption-drift\",\"package-bin\",\"windows-smoke\"]}]",
+  "severity_distribution": "{\"critical\":0,\"high\":0,\"medium\":0,\"low\":1}",
+  "error": ""
+}
