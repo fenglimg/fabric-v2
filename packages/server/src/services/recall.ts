@@ -87,6 +87,14 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   const planResult = await planContext(projectRoot, input);
 
   const candidateIds = planResult.candidates.map((item) => item.stable_id);
+  const candidateLookup = new Map<string, string>();
+  for (const id of candidateIds) {
+    for (const key of relatedLookupKeys(id)) {
+      if (!candidateLookup.has(key)) {
+        candidateLookup.set(key, id);
+      }
+    }
+  }
   // v2.0.0-rc.37 NEW-24: callers passing `ids` may hand back a stale (pre
   // layer-flip) id. Rewrite via the redirect resolver so the substitution
   // happens before the intersection check; the rewritten ids are what we
@@ -130,7 +138,10 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     for (const candidate of planResult.candidates) {
       if (!seen.has(candidate.stable_id)) continue;
       for (const rel of candidate.description.related ?? []) {
-        relatedIds.add(rel);
+        const resolved = candidateLookup.get(rel);
+        if (resolved !== undefined) {
+          relatedIds.add(resolved);
+        }
       }
     }
     for (const id of candidateIds) {
@@ -145,7 +156,10 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     relatedAvailableNotIncluded = planResult.candidates.some(
       (candidate) =>
         seen.has(candidate.stable_id) &&
-        (candidate.description.related ?? []).some((rel) => candidateIds.includes(rel) && !seen.has(rel)),
+        (candidate.description.related ?? []).some((rel) => {
+          const resolved = candidateLookup.get(rel);
+          return resolved !== undefined && !seen.has(resolved);
+        }),
     );
   }
 
@@ -200,6 +214,12 @@ export function attachStoreProvenance<T extends { stable_id: string }>(rule: T):
   }
   const alias = rule.stable_id.slice(0, colon);
   return { ...rule, store: { alias } };
+}
+
+function relatedLookupKeys(stableId: string): string[] {
+  const parts = stableId.split(":");
+  const localId = parts.at(-1);
+  return localId === undefined || localId === stableId ? [stableId] : [stableId, localId];
 }
 
 // v2.2 MC1-recall-pack (W2-T4): assemble the directive / next_steps / truncation

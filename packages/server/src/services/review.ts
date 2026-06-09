@@ -921,7 +921,7 @@ function resolveModifyTarget(
 
 function inferTypeFromPath(path: string): PluralType | null {
   // Match `<...>/knowledge/[pending/]<type>/<file>.md`.
-  const match = /knowledge\/(?:pending\/)?([^/]+)\/[^/]+\.md$/u.exec(path);
+  const match = /(?:^|[\\/])knowledge[\\/](?:pending[\\/])?([^\\/]+)[\\/][^\\/]+\.md$/u.exec(path);
   if (match === null) return null;
   const seg = match[1];
   if (seg !== undefined && PLURAL_TYPES.includes(seg as PluralType)) {
@@ -934,6 +934,10 @@ function extractSlug(path: string): string {
   const file = basename(path).replace(/\.md$/u, "");
   // Strip canonical id prefix `KP-XXX-9999--` if present.
   return file.replace(/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d+--/u, "");
+}
+
+export function __isPendingKnowledgePathForTest(path: string): boolean {
+  return /(?:^|[\\/])knowledge[\\/]pending[\\/]/u.test(path);
 }
 
 async function modifyLayerFlip(
@@ -953,7 +957,7 @@ async function modifyLayerFlip(
   // want "promote with layer X" must approve first (which writes the
   // canonical file with the source-declared layer) and then modify the
   // canonical entry's layer.
-  if (target.absPath.includes("/pending/")) {
+  if (__isPendingKnowledgePathForTest(target.absPath)) {
     throw new Error(
       "layer-flip not allowed on pending entries; approve first, then modify the canonical entry's layer",
     );
@@ -1722,4 +1726,3 @@ async function emitEventBestEffort(
     // Event emission is observability-only.
   }
 }
-

@@ -17,6 +17,7 @@ import {
 import { readEventLedger } from "./event-ledger.js";
 import {
   __getReviewSearchIndexCacheStatsForTests,
+  __isPendingKnowledgePathForTest,
   __resetReviewSearchIndexCacheForTests,
   reviewKnowledge,
 } from "./review.js";
@@ -61,6 +62,13 @@ function storeCountersFile(layer: "team" | "personal"): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
   return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.countersFile);
 }
+
+describe("review path guards", () => {
+  it("detects pending knowledge paths with Windows separators", () => {
+    expect(__isPendingKnowledgePathForTest("C:\\stores\\team\\knowledge\\pending\\decisions\\draft.md")).toBe(true);
+    expect(__isPendingKnowledgePathForTest("C:\\stores\\team\\knowledge\\decisions\\KT-DEC-0001.md")).toBe(false);
+  });
+});
 
 // v2.0: redirect personal-root resolution into a tempdir so tests never touch
 // the developer's real ~/.fabric/. Mirrors knowledge-meta-builder.test.ts setup.

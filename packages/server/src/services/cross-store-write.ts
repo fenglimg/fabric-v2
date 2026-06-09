@@ -50,14 +50,25 @@ function writeTargetUnresolved(layer: "team" | "personal"): StoreWriteTargetUnre
 // a newly-minted id's per-store `counters.json` must live in the SAME store the
 // entry physically lands in. Throws StoreWriteTargetUnresolvedError when no
 // target resolves (B2 cutover — no dual-root fallback).
+function semanticWriteScope(layer: "team" | "personal", projectRoot: string): string {
+  if (layer === "personal") {
+    return "personal";
+  }
+  const activeProject = loadProjectConfig(projectRoot)?.active_project;
+  return activeProject !== undefined && activeProject.length > 0
+    ? `project:${activeProject}`
+    : "team";
+}
+
 export function resolveWriteTargetStoreDir(layer: "team" | "personal", projectRoot: string): string {
   const input = buildStoreResolveInput(projectRoot);
   if (input === null) {
     throw writeTargetUnresolved(layer);
   }
-  // "personal" scope → personal store; any non-personal scope → active write
-  // store. The literal scope string only needs to be (non-)personal here.
-  const scope = layer === "personal" ? "personal" : "team";
+  // Personal scope routes to the personal store. Team-layer entries route using
+  // the same semantic coordinate persisted into frontmatter so project-specific
+  // write_routes can select a non-default shared store.
+  const scope = semanticWriteScope(layer, projectRoot);
   const { target } = createStoreResolver().resolveWriteTarget(input, scope);
   if (target === null) {
     throw writeTargetUnresolved(layer);
@@ -112,20 +123,11 @@ export function resolveWriteScopeMeta(
   if (input === null) {
     throw writeTargetUnresolved(layer);
   }
-  const scope = layer === "personal" ? "personal" : "team";
-  const { target } = createStoreResolver().resolveWriteTarget(input, scope);
+  const semantic_scope = semanticWriteScope(layer, projectRoot);
+  const { target } = createStoreResolver().resolveWriteTarget(input, semantic_scope);
   if (target === null) {
     throw writeTargetUnresolved(layer);
   }
-
-  // Project-grained coordinate when the repo is bound to a project (A2).
-  const activeProject = loadProjectConfig(projectRoot)?.active_project;
-  const semantic_scope =
-    layer === "personal"
-      ? "personal"
-      : activeProject !== undefined && activeProject.length > 0
-        ? `project:${activeProject}`
-        : "team";
 
   // R5#3 guard: the resolved store's visibility (personal store carries
   // personal=true; everything else is shared). A personal scope into a shared
