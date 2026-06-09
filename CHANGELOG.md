@@ -5,6 +5,15 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Store-only Errata - 2026-06-09
+
+Store-backed knowledge is the current contract: canonical and pending entries
+live in mounted stores under `~/.fabric/stores/<uuid>/knowledge/`. Older
+changelog entries that mention project-local `.fabric/knowledge/`,
+`~/.fabric/knowledge/`, dual-root storage, or `.fabric/agents.meta.json`
+describe retired pre-store-only behavior and must not be used as implementation
+or API guidance.
+
 ## [2.0.1] - 2026-05-29 (GA)
 
 > Fabric v2.0.1 is the **first stable GA** of the v2 line. (`2.0.0` was burned by
@@ -159,7 +168,7 @@ rc.35 werewolf-eval-bundle release: 来自 rc.34 真实长跑测评 (`werewolf-e
 - **`fabric doctor --verbose` flag** (TASK-12 / P0-11)。展开 maintainer-audience 的 actionHint。默认渲染折叠 maintainer 提示 (源码修改类),用户级提示原样显示。
 - **Doctor lint `global_cli_outdated`** (TASK-04 / P0-9.b)。spawn `fabric -v` 检测全局 CLI 版本,低于 MIN_SUPPORTED (2.0.0-rc.31) 报 manual_error + 双语 remediation。ENOENT / 解析失败优雅降级 warn。
 - **Doctor lint `knowledge_summary_opaque`** (TASK-05 / P0-10.a)。扫 meta.nodes 的 `description.summary`,> 30% 与 `stable_id` 相等时报 warn (P0-10 audit 实测 42/43 opaque;werewolf dogfood 91.8% 完美复现)。Sample 前 5 opaque id 内联到 message。
-- **Hint renderer summary fallback** (TASK-06 / P0-10.b)。broad + narrow 两 hook 共享 `lib/summary-fallback.cjs`,opaque entry 读 `.fabric/knowledge/<type>/<id>--*.md` 的 `## Summary` 段第一句作为临时 summary;cache 到 `.fabric/.cache/summary-fallback.json` 按 revision_hash keyed,避免重复磁盘 IO。
+- **Hint renderer summary fallback** (TASK-06 / P0-10.b)。broad + narrow 两 hook 共享 `lib/summary-fallback.cjs`；store-only 后，opaque entry 只从 mounted store `knowledge/<type>/<id>--*.md` 读 `## Summary` 段第一句作为临时 summary，cache 到 `.fabric/.cache/summary-fallback.json` 按 revision_hash keyed，避免重复磁盘 IO。
 - **PreToolUse → events.jsonl edit_intent_checked** (TASK-07 / P0-2)。narrow hook 每个 Edit/Write/MultiEdit fire 写一行 `edit_intent_checked` event (`ledger_source: 'hook'`) 到 `.fabric/events.jsonl`。修复 P0-2 cite infrastructure 死亡 — 此前 18582 turn / 240 edit / 0 event,contract operator 验证形同虚设。`ledger_source` enum 新增 `"hook"`。
 - **docs/USER-QUICKSTART.md** (TASK-10 / P0-15)。88 行 5 分钟版 quickstart:定位 / DO-DON'T 表 / 4 步流程图 / werewolf KT-PIT-0001 真实例 / 5 行 troubleshoot。README.md 顶部 link 入口。
 - **docs/UPGRADE.md** (TASK-02 / P0-9)。rc.30 → rc.35 升级 checklist 短文。
@@ -367,7 +376,7 @@ Combined 12-scope release. Bootstrap + AGENTS.md realigned to the actual two-ste
 
 - **F8c — onboard phase + S5 slot mechanism** — `fabric-archive` SKILL.md grows a first-run onboard phase that proposes entries for the five "tone" slots (`tech-stack-decision` / `architecture-pattern` / `code-style-tone` / `build-system-idiom` / `domain-vocabulary`). New `fabric onboard-coverage` CLI command + `onboard_slot` frontmatter field on knowledge entries + `onboard_slots_opted_out: string[]` in `fabric-config.json` for explicit dismiss. `fabric doctor` surfaces an advisory when slots are missing and not dismissed. Closes the "新装 fabric KB 空白怎么补基调" gap left by F8a's removal of baseline-scan.
 - **a-C1 — `FabExtractKnowledge*Schema` 4 optional fields** — `intent_clues` / `tech_stack` / `impact` / `must_read_if` (all `z.string().optional()`) added to extract-knowledge input + output schemas. Carry-through to frontmatter assembly in `extract-knowledge.ts`. Backward-compatible: existing entries without these fields parse unchanged.
-- **a-C2 — `fabric doctor --enrich-descriptions`** — new doctor sub-flag that scans `.fabric/knowledge/**/*.md`, identifies entries missing the rc.23 fields, and back-fills them (stub-on-`--auto`, interactive prompt otherwise). Uses `atomicWriteText` for safe frontmatter rewrites. Audit events written to `events.jsonl`.
+- **a-C2 — `fabric doctor --enrich-descriptions`** — new doctor sub-flag that now scans mounted store canonical `knowledge/**/*.md`, identifies entries missing the rc.23 fields, and back-fills them (stub-on-`--auto`, readonly report otherwise). Uses `atomicWriteText` for safe frontmatter rewrites. Audit events written to `events.jsonl`.
 - **c — Cite sentinel enums** — `KB: none [no-relevant]` and `KB: none [not-applicable]` join the existing `[planned|recalled|chained-from|dismissed:<reason>]` enum. `KB: none` (bare) maps to `[unspecified]` for historical event-stream compatibility. `parseKbLine` extended (5-branch parser); `renderCiteCoverageReport` gains a breakdown column for the two new sentinels. Bootstrap text updated to teach the new enums.
 - **d — Non-blocking MCP startup + 5s handler gate** — `startStdioServer` now calls `server.connect` first and kicks off `reconcileKnowledge` as a fire-and-forget promise stored on `serverContext`. Each tool handler entry-point awaits the promise with a 5s timeout via `awaitWithTimeout`. On timeout, response includes `reconcile_pending: true` warning + fresh `meta_stale_at_handler` event. First-call latency budget < 100ms in the warm path.
 - **e — Stale `.serve.lock` advisory** — `fabric doctor` now reports a stale `.serve.lock` (pid dead or `>24h` old) as an advisory line. `fabric doctor --fix` unlinks the file and emits a `serve_lock_cleared` event. Never auto-cleaned — matches rc.22 "demote-to-warning" precedent.
@@ -638,7 +647,7 @@ Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner
 - Killed: `--force`, `--interactive`, `--no-bootstrap`, `--no-mcp`, `--no-scaffold`, `--purge`, `--clean-empties`
 - Renamed: `--plan` → `--dry-run`
 - `--clean-empties` behavior is now always-on default (option deleted entirely, no preservation toggle)
-- `--purge` removal makes `.fabric/knowledge/` unconditionally preserved
+- `--purge` removal historically preserved project-local `.fabric/knowledge/`; store-only installs no longer use that root.
 - Final flags symmetric with install: `--target`, `--debug`, `--yes`, `--dry-run`
 
 **`fabric doctor` flags**:
@@ -854,10 +863,9 @@ deterministic SessionStart self-check.
 
 **`fabric uninstall` command.** Symmetric inverse of `fabric init` — removes
 Fabric-managed artifacts across the same three stages (scaffold → bootstrap
-→ MCP) without touching post-init user content. Defaults preserve
-`.fabric/knowledge/` and state files (`events.jsonl`, `agents.meta.json`,
-`forensic.json`); `~/.fabric/knowledge/` (personal root) is never touched
-under any flag. Idempotent: re-running on an already-uninstalled project
+→ MCP) without touching post-init user content. This rc.9 behavior predates
+store-only storage; current store-backed knowledge under mounted stores is not
+removed by project uninstall. Idempotent: re-running on an already-uninstalled project
 exits 0 with all step statuses `skipped`.
 
 ### Added
@@ -1074,7 +1082,7 @@ files, and a path-traversal sandbox.
   vs batch review based on backlog size); per-mode flow with
   semantic-consistency check before approve; tag-filtered search.
 - Stop-hook second signal — `archive-hint.cjs` now also fires when
-  `.fabric/knowledge/pending/` accumulates ≥10 entries, recommending
+  pending knowledge accumulates ≥10 entries, recommending
   `fabric-review` Skill instead of (or in addition to) archive prompt.
 - `fabric doctor` filesystem-edit fallback — synthesizes a
   `knowledge_promoted` event for canonical knowledge files lacking
@@ -1088,10 +1096,9 @@ files, and a path-traversal sandbox.
 
 - **Critical: path-traversal sandbox in `fab_review.approve` and
   `fab_review.modify`.** Without sandboxing, a malicious or
-  malformed `pending_path` argument could escape `.fabric/knowledge/`
-  and write anywhere on the filesystem. Now: every path is resolved
-  with `path.resolve` and verified to live under
-  `<repo>/.fabric/knowledge/` before any I/O.
+  malformed `pending_path` argument could escape the knowledge root
+  and write anywhere on the filesystem. Store-only code verifies paths
+  against the resolved mounted store `knowledge/` root before any I/O.
 
 ### Deferred to rc.4
 
@@ -1115,7 +1122,7 @@ hook-config install pipeline.
 ### Added
 
 - `fab_extract_knowledge` MCP tool — writes proposed knowledge entries
-  to `.fabric/knowledge/pending/<type>/`. Idempotency key is
+  to the resolved mounted store `knowledge/pending/<type>/`. Idempotency key is
   `sha256(source_session, type, slug)`; on duplicate, evidence is
   appended to the existing entry as `## Evidence (call N)` rather
   than creating a duplicate file. Emits `knowledge_proposed` event.

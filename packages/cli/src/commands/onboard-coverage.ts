@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { defineCommand } from "citty";
@@ -198,39 +198,13 @@ function entryName(filePath: string): string {
   return filePath.split(/[\\/]/u).at(-1) ?? filePath;
 }
 
-function listLegacyProjectKnowledge(projectRoot: string): Array<MountedStoreDir & { file: string; type: string }> {
-  const refs: Array<MountedStoreDir & { file: string; type: string }> = [];
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  for (const type of KNOWLEDGE_TYPE_DIRS) {
-    const dir = join(knowledgeRoot, type);
-    if (!existsSync(dir)) continue;
-    let names: string[];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const name of names.filter((n) => n.endsWith(".md")).sort()) {
-      refs.push({
-        store_uuid: "project-local",
-        alias: "",
-        dir: join(projectRoot, ".fabric"),
-        type,
-        file: join(dir, name),
-      });
-    }
-  }
-  return refs;
-}
-
 /**
  * Pure handler — exported for unit tests and for the server-side doctor
  * Onboard coverage advisory.
  */
 export async function runOnboardCoverage(projectRoot: string): Promise<OnboardCoverageReport> {
   const filled = emptyFilled();
-  const readSetRefs = await readKnowledgeAcrossStores(readSetStoreDirs(projectRoot));
-  const refs = [...readSetRefs, ...listLegacyProjectKnowledge(projectRoot)];
+  const refs = await readKnowledgeAcrossStores(readSetStoreDirs(projectRoot));
   for (const ref of refs) {
     if (!(KNOWLEDGE_TYPE_DIRS as readonly string[]).includes(ref.type)) continue;
     const slot = readOnboardSlotFrontmatter(ref.file);

@@ -45,7 +45,7 @@ Rendering rule:
 Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,
 `narrow`, `broad`, `source_sessions`, `proposed_reason`, `session_context`,
 `pending_path`, `layer`, `team`, `personal`, `knowledge_scope_degraded`,
-`MUST`, `NEVER`, `.fabric/knowledge/`, etc.) are NEVER translated — they
+`MUST`, `NEVER`, `knowledge/pending`, etc.) are NEVER translated — they
 appear verbatim in both language variants. The bilingualization scope is
 prose ONLY.
 
@@ -108,4 +108,3 @@ the option-list invariants that downstream tooling (the Skill's own
 `switch` statements over `choice`, plus any future MCP-level audit lint
 that scans for these specific string literals) depends on. Keeping
 `options[]` English-only is contract-locked across all three skills.
-

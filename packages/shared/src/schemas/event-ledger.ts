@@ -361,8 +361,8 @@ export const knowledgeArchiveAttemptedEventSchema = z.object({
 });
 
 // v2.0.0-rc.34 TASK-05: knowledge_unarchived — reverse flow of knowledge_archived.
-// Emitted when an archived entry is moved back from .fabric/.archive/<type>/ to
-// the canonical layer path (.fabric/knowledge/<layer>/<type>/). Reason field
+// Emitted when an archived entry is moved back from archive storage to the
+// mounted store canonical knowledge/<type>/ path. Reason field
 // records the trigger (e.g. "manual:fab_review_unarchive", "ghost_cited_7d").
 // Drives the doctor 7d hint surfacing reverse-flow activity.
 export const knowledgeUnarchivedEventSchema = z.object({
@@ -373,7 +373,7 @@ export const knowledgeUnarchivedEventSchema = z.object({
   reason: z.string().optional(),
   // Pre-move archive path (e.g. ".fabric/.archive/decisions/KT-D-0007--single-cjs-hook.md").
   archive_path: z.string().optional(),
-  // Post-move canonical path (e.g. ".fabric/knowledge/team/decisions/KT-D-0007--single-cjs-hook.md").
+  // Post-move canonical path (e.g. "knowledge/decisions/KT-DEC-0007--single-cjs-hook.md" inside the resolved store).
   restored_to: z.string().optional(),
 });
 
@@ -462,8 +462,8 @@ export const knowledgePathDangledEventSchema = z.object({
 });
 
 // v2.0.0-rc.9 TASK-003 (A3): emitted by `doctor --apply-lint` after the
-// lint #26 (`relevance_fields_missing`) mutation arm finishes walking the
-// `.fabric/knowledge/pending/**/*.md` tree and back-filling missing
+// lint #26 (`relevance_fields_missing`) mutation arm finishes walking mounted
+// store `knowledge/pending/**/*.md` entries and back-filling missing
 // `relevance_scope` / `relevance_paths` frontmatter fields. One aggregate
 // event per --apply-lint invocation (NOT per file) — mirrors the
 // rc.5→rc.7 precedent for bulk-migration audit trails. Idempotent:
@@ -472,8 +472,7 @@ export const knowledgePathDangledEventSchema = z.object({
 // timestamp (matches the doctor_run heartbeat shape).
 //
 // `scanned_count`: total pending entries the walker visited (both layers
-//   — team `.fabric/knowledge/pending/` and personal `~/.fabric/knowledge/
-//   pending/`). Includes entries that already had both fields.
+//   across the resolved store read/write set). Includes entries that already had both fields.
 // `touched_count`: subset of scanned entries that received a frontmatter
 //   write back. Always <= scanned_count. Zero on a re-run with no new
 //   pending entries (idempotency invariant).
@@ -487,9 +486,7 @@ export const relevanceMigrationRunEventSchema = z.object({
 
 // v2.0 rc.5 TASK-009 (B2): emitted by `doctor --apply-lint` when a pending
 // knowledge entry exceeds the 30-day auto-archive threshold and gets moved
-// from the staging area (`.fabric/knowledge/pending/<type>/` or
-// `~/.fabric/knowledge/pending/<type>/`) into the archive subtree
-// (`.fabric/.archive/pending/<type>/` or `~/.fabric/.archive/pending/<type>/`).
+// from mounted store `knowledge/pending/<type>/` into archive storage.
 // `reason` is currently always "auto_archive_30d" but is left a free string
 // so future doctor passes (e.g. a stale-pending-after-rejection variant) can
 // reuse the same event vocabulary without schema churn. One event is appended
@@ -546,7 +543,7 @@ export const assistantTurnObservedEventSchema = z.object({
   // doctor --cite-coverage can break compliance down per store WITHOUT joining
   // against the store registry. Additive `.optional()` (NOT `.default([])`) so
   // existing inline event constructors stay valid without supplying it — pre-W3-T4
-  // events parse with the field absent and bucket under the project-local default.
+  // events parse with the field absent and bucket under the unqualified default.
   cite_stores: z.array(z.string().nullable()).optional(),
   client: z.enum(["cc", "codex", "cursor"]).optional(),
   turn_id: z.string(),
@@ -601,16 +598,9 @@ export const eventsRotatedEventSchema = z.object({
 });
 
 // v2.0.0-rc.22 Scope D T-D1: emitted by the read-path `loadActiveMeta` helper
-// when on-disk `.fabric/agents.meta.json` revision does not match the
-// derived revision computed from current knowledge files — i.e. the helper
-// rebuilt the meta file in-place to repair drift. Provides the audit trail
-// for every silent auto-heal so operators can correlate revision churn with
-// the read call that triggered it. `trigger` is currently fixed to `'read'`
-// (the only path that invokes auto-heal); future trigger sources (e.g. a
-// timed reconcile pass) can extend the literal union without a schema bump.
-// `caller` records WHICH read-side service drove the heal so per-caller
-// telemetry can be tabulated (planContext is best-effort hint; the other
-// three are authoritative read paths).
+// Historical agents_meta auto-heal event. The co-location agents.meta surface
+// is retired, but the event remains parseable so old ledgers do not break
+// event replay.
 export const knowledgeMetaAutoHealedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("knowledge_meta_auto_healed"),
@@ -685,8 +675,8 @@ export const knowledgeEnrichedEventSchema = z.object({
 // (TASK-04) renders the history report directly from this event stream.
 //
 // `outcome`: closed enum covering the four terminal states of the skill's
-//   state machine. `proposed` = at least one candidate written to
-//   `.fabric/knowledge/pending/`. `viability_failed` = Phase 0.5 gate
+//   state machine. `proposed` = at least one candidate written to a mounted
+//   store `knowledge/pending/` tree. `viability_failed` = Phase 0.5 gate
 //   rejected the run (candidates existed but failed the quality bar).
 //   `user_dismissed` = user explicitly declined to archive (we MUST NOT
 //   auto-rescan after this — respects user decision). `skipped_no_signal` =

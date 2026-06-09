@@ -83,7 +83,7 @@ $ /fabric-archive
 ---
 
 After F8a removed the auto-`fabric scan` baseline pipeline, a freshly installed
-Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree. Five fixed
+Fabric workspace ships with an EMPTY mounted store `knowledge/` tree. Five fixed
 **S5 onboard slots** capture the "project tone" baseline that the AI needs
 for high-quality plan_context retrieval from day one:
 
@@ -215,4 +215,3 @@ mcp__fabric__fab_extract_knowledge({
   the locked S5 strings (tech-stack-decision / architecture-pattern /
   code-style-tone / build-system-idiom / domain-vocabulary). The
   fab_extract_knowledge schema enum will reject anything else.
-

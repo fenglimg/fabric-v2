@@ -38,14 +38,40 @@ const summaryFallback = require_(
 };
 
 const tempRoots: string[] = [];
+let originalFabricHome: string | undefined;
+
+const TEAM_STORE_UUID = "11111111-1111-4111-8111-111111111111";
 
 function makeProjectRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "fab-summary-fallback-"));
   tempRoots.push(root);
-  // Seed minimal knowledge directory layout. Use the canonical plural type
-  // names recognised by the lib.
-  mkdirSync(join(root, ".fabric", "knowledge", "decisions"), { recursive: true });
-  mkdirSync(join(root, ".fabric", "knowledge", "pitfalls"), { recursive: true });
+  const fakeHome = mkdtempSync(join(tmpdir(), "fab-summary-fallback-home-"));
+  tempRoots.push(fakeHome);
+  originalFabricHome = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = fakeHome;
+  const fabricDir = join(root, ".fabric");
+  mkdirSync(fabricDir, { recursive: true });
+  writeFileSync(
+    join(fabricDir, "fabric-config.json"),
+    JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2),
+    "utf8",
+  );
+  const globalRoot = join(fakeHome, ".fabric");
+  mkdirSync(globalRoot, { recursive: true });
+  writeFileSync(
+    join(globalRoot, "fabric-global.json"),
+    JSON.stringify({
+      uid: "test-uid",
+      stores: [
+        {
+          store_uuid: TEAM_STORE_UUID,
+          alias: "team",
+          remote: "git@example.com:team-store.git",
+        },
+      ],
+    }, null, 2),
+    "utf8",
+  );
   return root;
 }
 
@@ -56,12 +82,27 @@ function seedEntry(
   slug: string,
   summaryParagraph: string,
 ): void {
-  const file = join(root, ".fabric", "knowledge", type, `${stableId}--${slug}.md`);
+  const file = join(
+    process.env.FABRIC_HOME ?? "",
+    ".fabric",
+    "stores",
+    TEAM_STORE_UUID,
+    "knowledge",
+    type,
+    `${stableId}--${slug}.md`,
+  );
+  mkdirSync(join(file, ".."), { recursive: true });
   const md = `---\nid: ${stableId}\n---\n\n# ${stableId}\n\n## Summary\n\n${summaryParagraph}\n\n## Other\n\nbody\n`;
   writeFileSync(file, md, "utf8");
 }
 
 afterEach(() => {
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
+  originalFabricHome = undefined;
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root && existsSync(root)) {
@@ -115,8 +156,8 @@ describe("resolveOpaqueSummaries (end-to-end)", () => {
     seedEntry(root, "pitfalls", "KT-PIT-0001", "beta", "Atlas premultiplyAlpha black-edge on transparent sprites.");
 
     const entries = [
-      { id: "KT-DEC-0001", type: "decision", summary: "KT-DEC-0001" },
-      { id: "KT-PIT-0001", type: "pitfall", summary: "KT-PIT-0001" },
+      { id: "team:KT-DEC-0001", type: "decision", summary: "team:KT-DEC-0001" },
+      { id: "team:KT-PIT-0001", type: "pitfall", summary: "team:KT-PIT-0001" },
     ];
     const resolved = summaryFallback.resolveOpaqueSummaries(entries, root, "rev-1");
 
@@ -148,13 +189,36 @@ describe("resolveOpaqueSummaries (end-to-end)", () => {
 
   it("(e) opaque entry whose .md has no ## Summary section leaves summary untouched", () => {
     const root = makeProjectRoot();
-    const file = join(root, ".fabric", "knowledge", "decisions", "KT-DEC-0001--alpha.md");
+    const file = join(
+      process.env.FABRIC_HOME ?? "",
+      ".fabric",
+      "stores",
+      TEAM_STORE_UUID,
+      "knowledge",
+      "decisions",
+      "KT-DEC-0001--alpha.md",
+    );
+    mkdirSync(join(file, ".."), { recursive: true });
     writeFileSync(file, "# Title only\n\nNo Summary section.\n", "utf8");
     const entries = [
       { id: "KT-DEC-0001", type: "decision", summary: "KT-DEC-0001" },
     ];
     const resolved = summaryFallback.resolveOpaqueSummaries(entries, root, "rev-1");
     expect(resolved[0].summary).toBe("KT-DEC-0001"); // unchanged
+  });
+
+  it("(e) does not read retired project-local .fabric/knowledge files", () => {
+    const root = makeProjectRoot();
+    const file = join(root, ".fabric", "knowledge", "decisions", "KT-DEC-0001--alpha.md");
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, "## Summary\n\nLegacy local summary must not be used.\n", "utf8");
+
+    const entries = [
+      { id: "KT-DEC-0001", type: "decision", summary: "KT-DEC-0001" },
+    ];
+    const resolved = summaryFallback.resolveOpaqueSummaries(entries, root, "rev-1");
+
+    expect(resolved[0].summary).toBe("KT-DEC-0001");
   });
 });
 

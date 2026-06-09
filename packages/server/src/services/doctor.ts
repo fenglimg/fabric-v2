@@ -924,13 +924,11 @@ const KNOWLEDGE_CANONICAL_TYPE_DIRS = [
   "processes",
 ] as const;
 
-// Filename pattern for canonical knowledge entries: `<id>--<slug>.md`. The id
-// half mirrors KNOWLEDGE_STABLE_ID_PATTERN in shared/agents-meta.ts. Files
-// without the `--<slug>` suffix (e.g. `KT-DEC-0001.md`) are silently skipped
-// — they predate the canonical convention and are not the manual-mv signal
-// this check is targeting.
+// Filename pattern for canonical knowledge entries. Prefer `<id>--<slug>.md`
+// but also accept `<id>.md` because store-era fixtures and migrated entries may
+// use bare stable-id filenames while still carrying valid frontmatter.
 const CANONICAL_KNOWLEDGE_FILENAME_PATTERN =
-  /^(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})--[a-z0-9][a-z0-9-]*\.md$/u;
+  /^(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})(?:--[a-z0-9][a-z0-9-]*)?\.md$/u;
 
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
 // v2.2 W5 R4 (agents.meta decolo): `COUNTER_TYPE_CODES` removed (only the retired counter_desync / index_drift checks used it).
@@ -4284,22 +4282,11 @@ function createNarrowTooFewCheck(t: Translator, inspection: NarrowTooFewInspecti
 // ---------------------------------------------------------------------------
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21).
 //
-// All three inspections walk the same dual-root canonical knowledge tree
-// (team at `<projectRoot>/.fabric/knowledge/<type>/`, personal at
-// `<FABRIC_HOME>/.fabric/knowledge/<type>/`) parsing stable_ids out of the
-// canonical filename `<id>--<slug>.md` rather than YAML frontmatter — the
-// id is the path-decoupled identity, and filename-level scanning keeps the
-// inspections cheap (no file body read) for the integrity surface.
+// Store-only cutover: the legacy dual-root canonical iterator is retired.
+// Enrichment now walks mounted store read-set entries via
+// collectStoreCanonicalEntries, then parses the stable_id token from each
+// canonical filename for compatibility with the old enrichment report shape.
 // ---------------------------------------------------------------------------
-
-// Resolve the personal-layer knowledge root. Mirrors knowledge-meta-builder.ts's
-// resolvePersonalRoot but inlined to avoid pulling that module into doctor's
-// dependency graph (doctor has historically stayed self-contained on shared/
-// utilities only). Test-friendly via FABRIC_HOME override.
-function resolvePersonalKnowledgeRoot(): string {
-  const home = process.env.FABRIC_HOME ?? homedir();
-  return join(home, ".fabric", "knowledge");
-}
 
 type ParsedCanonicalFilename = {
   // Layer code parsed from the stable_id prefix.
@@ -4340,6 +4327,7 @@ type CanonicalFilenameVisit = {
   layer: CanonicalLayer;
   type: typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number];
   filename: string;
+  file: string;
   // Display path — project-relative POSIX for team layer; `~/.fabric/...`
   // form for personal layer (matches PERSONAL_CONTENT_REF_PREFIX in
   // knowledge-meta-builder.ts so messages render consistently with the rest of
@@ -4348,43 +4336,28 @@ type CanonicalFilenameVisit = {
   parsed: ParsedCanonicalFilename;
 };
 
-// Generator over all canonical knowledge filenames across both physical
-// trees. Yields only entries whose filename parses to a stable_id token —
-// other files (legacy-named, README, etc.) are silently skipped.
+// Generator over canonical knowledge filenames in the project's resolved
+// store read-set. Yields only entries whose filename parses to a stable_id
+// token — other files (legacy-named, README, etc.) are silently skipped.
 async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<CanonicalFilenameVisit> {
-  const teamRoot = join(projectRoot, ".fabric", "knowledge");
-  const personalRoot = resolvePersonalKnowledgeRoot();
-
-  for (const [layer, root, displayPrefix] of [
-    ["team", teamRoot, ".fabric/knowledge"] as const,
-    ["personal", personalRoot, "~/.fabric/knowledge"] as const,
-  ]) {
-    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-      const dir = join(root, typeDir);
-      let entries;
-      try {
-        entries = await readdirAsync(dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isFile()) {
-          continue;
-        }
-        const parsed = parseStableIdFromCanonicalFilename(entry.name);
-        if (parsed === null) {
-          continue;
-        }
-        const displayPath = posix.join(displayPrefix, typeDir, entry.name);
-        yield {
-          layer,
-          type: typeDir,
-          filename: entry.name,
-          displayPath,
-          parsed,
-        };
-      }
+  for (const entry of await collectStoreCanonicalEntries(projectRoot)) {
+    if (!(KNOWLEDGE_CANONICAL_TYPE_DIRS as readonly string[]).includes(entry.type)) {
+      continue;
     }
+    const filename = posix.basename(normalizePath(entry.file));
+    const parsed = parseStableIdFromCanonicalFilename(filename);
+    if (parsed === null) {
+      continue;
+    }
+    const displayPath = `store:${entry.qualifiedId}`;
+    yield {
+      layer: entry.layer,
+      type: entry.type as typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number],
+      filename,
+      file: entry.file,
+      displayPath,
+      parsed,
+    };
   }
 }
 
@@ -4805,11 +4778,11 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
 // back into the archive Skill / manual editor.
 //
 // Scope:
-//   * `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes}/*.md`
-//     across both roots (`.fabric/knowledge/` + `<personal>/.fabric/knowledge/`)
-//   * `pending/` and `archive/` subtrees are deliberately skipped — pending
-//     entries are still in flight (the Skill owns their schema) and archived
-//     entries are immutable history.
+//   * mounted store `knowledge/{decisions,pitfalls,guidelines,models,processes}/*.md`
+//     entries in the project's resolved read-set
+//   * `pending/` and archive history are deliberately skipped — pending entries
+//     are still in flight (the Skill owns their schema) and archived entries
+//     are immutable history.
 //
 // Atomicity: the on-disk rewrite goes through `atomicWriteText` so a crash
 // mid-write never leaves a half-state. Idempotent: a file already carrying
@@ -4895,11 +4868,7 @@ export async function enrichDescriptions(
   let skipped = 0;
 
   for await (const visit of iterateCanonicalFilenames(projectRoot)) {
-    const layerRoot =
-      visit.layer === "team"
-        ? join(projectRoot, ".fabric", "knowledge")
-        : resolvePersonalKnowledgeRoot();
-    const absPath = join(layerRoot, visit.type, visit.filename);
+    const absPath = visit.file;
     scanned += 1;
 
     let source: string;

@@ -489,7 +489,7 @@ export const recallOutputSchema = z.object({
       // store each recalled entry came from. cross-store-recall already prefixes
       // store entries `<alias>:<stable_id>`; this surfaces that as a structured
       // field (`{ alias }`) instead of forcing the caller to parse the id. Omitted
-      // for project-local entries (no alias prefix). Additive — declare it or zod
+      // for unqualified/back-compat entries (no alias prefix). Additive — declare it or zod
       // strips it on output validation.
       store: z.object({ alias: z.string() }).optional(),
     }),
@@ -597,7 +597,8 @@ export type ArchiveScanOutput = z.infer<typeof archiveScanOutputSchema>;
 // MCP tool contracts — fab_extract_knowledge (rc.2 protocol pre-lock)
 //
 // Semi-thick design: the Skill summarizes the user/session context, the MCP
-// server persists a pending knowledge entry under .fabric/knowledge/pending/.
+// server persists a pending knowledge entry under the resolved write store's
+// knowledge/pending/ tree. Project-local knowledge roots are retired.
 // Schema lands now so consumers can target it; implementation arrives in rc.2.
 // ---------------------------------------------------------------------------
 
@@ -659,8 +660,9 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
   slug: z
     .string()
     .describe("URL-safe short identifier proposed by the Skill; server may sanitize"),
-  // rc.5 B1: dual pending root. When 'personal', the server writes to
-  // ~/.fabric/knowledge/pending/<type>/; otherwise to .fabric/knowledge/pending/<type>/.
+  // Store-only cutover: layer is a compatibility audience hint. The server
+  // resolves the actual write target through semantic_scope/write_routes and
+  // writes to the selected mounted store's knowledge/pending/<type>/ tree.
   // Defaults to 'team' to preserve existing call sites (Skill bumps as needed).
   layer: z
     .enum(["team", "personal"])
@@ -1044,10 +1046,9 @@ const _fabReviewListItemSchema = z.object({
   tags: z.array(z.string()).optional(),
   title: z.string().optional(),
   summary: z.string().optional(),
-  // rc.5 B1: dual pending root. 'team' = workspace .fabric/knowledge/pending,
-  // 'personal' = ~/.fabric/knowledge/pending. Distinct from `layer` (frontmatter):
-  // origin reflects where the pending file actually lives on disk; layer reflects
-  // the declared classification that will drive the approve destination.
+  // Store-only cutover: origin reflects the resolved store audience where the
+  // pending file lives; layer reflects the declared classification that will
+  // drive approval semantics.
   origin: z.enum(["team", "personal"]).optional(),
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): frontmatter status markers. Default
   // "active" (or absent). `rejected` entries are excluded from list/search
@@ -1071,9 +1072,9 @@ const _fabReviewListItemSchema = z.object({
 // entries (mirrors `_fabReviewListItemSchema.pending_path_absolute`). All
 // other fields are the same as the list-item schema.
 const _fabReviewSearchItemSchema = z.object({
-  // Search hits live in one of two trees:
-  //  - "pending"   → .fabric/knowledge/pending/ (or ~/.fabric/knowledge/pending/)
-  //  - "canonical" → .fabric/knowledge/{decisions,pitfalls,...} (or personal mirror)
+  // Search hits live in one of two store trees:
+  //  - "pending"   → mounted store `knowledge/pending/`
+  //  - "canonical" → mounted store `knowledge/{decisions,pitfalls,...}`
   area: z.enum(["pending", "canonical"]),
   path: z.string(),
   path_absolute: z.string().optional(),
@@ -1466,8 +1467,8 @@ export const annotateIntentRequestSchema = z.object({
 // ---------------------------------------------------------------------------
 // v2.0 Knowledge entry schema
 //
-// Frontmatter for knowledge entries written into .fabric/knowledge/ (team layer)
-// or ~/.fabric/knowledge/ (personal layer). Fields MUST stay flat scalars to
+// Frontmatter for knowledge entries written into mounted store `knowledge/` trees.
+// Fields MUST stay flat scalars to
 // remain compatible with the hand-rolled regex parser at
 // packages/server/src/services/knowledge-meta-builder.ts:748-785.
 // ---------------------------------------------------------------------------

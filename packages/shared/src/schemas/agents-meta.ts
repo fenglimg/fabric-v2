@@ -117,9 +117,9 @@ export const ruleDescriptionIndexItemSchema = z
 //   - else `deriveAgentsMetaLayer(file)` derives L0/L1/L2 from file path depth
 //
 // Storage layer (team vs personal) is a SEPARATE concept tracked at
-// frontmatter (`knowledge_layer`) + disk path (`.fabric/knowledge/team/*`
-// vs `~/.fabric/knowledge/personal/*`) — never the `layer` field on this
-// schema (which was always L0/L1/L2 enum, not team/personal). See
+// frontmatter (`knowledge_layer`) + mounted store provenance — never the
+// `layer` field on this schema (which was always L0/L1/L2 enum, not
+// team/personal). See
 // memory/project_l0_l1_l2_redesign_v21.md for v2.1 redesign that will
 // rename `level` to `load` and add explicit `scope: team|personal`.
 const agentsMetaNodeBaseSchema = z.object({

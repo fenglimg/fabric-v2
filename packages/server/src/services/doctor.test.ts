@@ -7639,13 +7639,35 @@ describe("runDoctorCiteCoverage (W2-T4 PostToolUse mutation funnel)", () => {
 
 // v2.0.0-rc.23 TASK-007 (a-C2): enrichDescriptions back-fill suite.
 describe("enrichDescriptions", () => {
+  const ENRICH_STORE_UUID = "77777777-7777-4777-8777-777777777777";
+
+  function createStoreBoundEnrichProject(name: string): string {
+    const target = createInitializedProject(name);
+    writeFile(
+      ".fabric/fabric-config.json",
+      JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2),
+      target,
+    );
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [{ store_uuid: ENRICH_STORE_UUID, alias: "team", remote: "git@example.com:team.git" }],
+    });
+    return target;
+  }
+
+  function storePath(...parts: string[]): string {
+    return join(
+      resolveGlobalRoot(),
+      storeRelativePath(ENRICH_STORE_UUID),
+      STORE_LAYOUT.knowledgeDir,
+      ...parts,
+    );
+  }
+
   // Helper — seed a canonical entry whose frontmatter is missing N of the
-  // four rc.23 description-grade fields. Layout matches the
-  // CANONICAL_KNOWLEDGE_FILENAME_PATTERN (`<id>--<slug>.md`) so
-  // iterateCanonicalFilenames yields the visit.
+  // four rc.23 description-grade fields in the mounted store read-set.
   function seedLegacyEntry(
-    target: string,
-    relPath: string,
+    absPath: string,
     overrides: { withFields?: string[]; body?: string } = {},
   ): void {
     const withFields = overrides.withFields ?? [];
@@ -7662,12 +7684,14 @@ describe("enrichDescriptions", () => {
     if (withFields.includes("impact")) lines.push('impact: ["baz"]');
     if (withFields.includes("must_read_if")) lines.push('must_read_if: "existing"');
     lines.push("---", overrides.body ?? "# Legacy Entry\n\nBody.\n");
-    writeFile(relPath, lines.join("\n"), target);
+    mkdirSync(dirname(absPath), { recursive: true });
+    writeFileSync(absPath, `${lines.join("\n")}\n`, "utf8");
   }
 
   it("auto mode back-fills all four fields with deterministic stubs", async () => {
-    const target = createInitializedProject("enrich-auto-missing-all");
-    seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
+    const target = createStoreBoundEnrichProject("enrich-auto-missing-all");
+    const absPath = storePath("decisions", "KT-DEC-0001--legacy.md");
+    seedLegacyEntry(absPath);
 
     const report = await enrichDescriptions(target, { auto: true });
 
@@ -7692,7 +7716,6 @@ describe("enrichDescriptions", () => {
     ]);
 
     // Verify on-disk frontmatter now carries all four fields.
-    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
     const rewritten = readFileSync(absPath, "utf8");
     expect(rewritten).toMatch(/^intent_clues:\s*\[\]/m);
     expect(rewritten).toMatch(/^tech_stack:\s*\[\]/m);
@@ -7705,17 +7728,17 @@ describe("enrichDescriptions", () => {
     expect(enrichEvents).toHaveLength(1);
     expect(enrichEvents[0]).toMatchObject({
       mode: "auto",
-      path: ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md",
+      path: "store:team:KT-DEC-0001",
       added_fields: ["intent_clues", "tech_stack", "impact", "must_read_if"],
     });
   });
 
   it("auto mode is no-op (idempotent) on entries that already have all four fields", async () => {
-    const target = createInitializedProject("enrich-auto-noop");
-    seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md", {
+    const target = createStoreBoundEnrichProject("enrich-auto-noop");
+    const absPath = storePath("decisions", "KT-DEC-0001--complete.md");
+    seedLegacyEntry(absPath, {
       withFields: ["intent_clues", "tech_stack", "impact", "must_read_if"],
     });
-    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md");
     const before = readFileSync(absPath, "utf8");
     const beforeMtime = statSync(absPath).mtimeMs;
 
@@ -7740,11 +7763,11 @@ describe("enrichDescriptions", () => {
   });
 
   it("dry-run mode reports missing fields without writing", async () => {
-    const target = createInitializedProject("enrich-dry-run");
-    seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md", {
+    const target = createStoreBoundEnrichProject("enrich-dry-run");
+    const absPath = storePath("decisions", "KT-DEC-0001--legacy.md");
+    seedLegacyEntry(absPath, {
       withFields: ["intent_clues"],
     });
-    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
     const before = readFileSync(absPath, "utf8");
 
     const report = await enrichDescriptions(target, { auto: true, dryRun: true });
@@ -7772,11 +7795,11 @@ describe("enrichDescriptions", () => {
   // ran. Legacy `"interactive"` literal is kept in the type union as a
   // deprecated alias for downstream consumers.
   it("readonly (default) mode reports missing fields without writing", async () => {
-    const target = createInitializedProject("enrich-readonly");
-    seedLegacyEntry(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md", {
+    const target = createStoreBoundEnrichProject("enrich-readonly");
+    const absPath = storePath("pitfalls", "KP-PIT-0001--gotcha.md");
+    seedLegacyEntry(absPath, {
       withFields: ["tech_stack", "impact"],
     });
-    const absPath = join(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md");
     const before = readFileSync(absPath, "utf8");
 
     const report = await enrichDescriptions(target, {}); // no auto
@@ -7794,8 +7817,8 @@ describe("enrichDescriptions", () => {
   });
 
   it("auto mode is idempotent across two runs (second pass writes nothing)", async () => {
-    const target = createInitializedProject("enrich-idempotent");
-    seedLegacyEntry(target, ".fabric/knowledge/guidelines/KT-GLD-0001--rule.md");
+    const target = createStoreBoundEnrichProject("enrich-idempotent");
+    seedLegacyEntry(storePath("guidelines", "KT-GLD-0001.md"));
 
     const first = await enrichDescriptions(target, { auto: true });
     expect(first.modified).toBe(1);
@@ -7807,15 +7830,17 @@ describe("enrichDescriptions", () => {
   });
 
   it("skips pending/ subtree (Skill owns pending shape)", async () => {
-    const target = createInitializedProject("enrich-skip-pending");
+    const target = createStoreBoundEnrichProject("enrich-skip-pending");
     // Pending entries use bare-slug filenames; iterateCanonicalFilenames is
     // scoped to KNOWLEDGE_CANONICAL_TYPE_DIRS which deliberately excludes
     // pending/. Belt-and-suspenders: even if a Skill landed a pending entry
     // missing all four fields, enrichDescriptions must not touch it.
-    writeFile(
-      ".fabric/knowledge/pending/decisions/draft.md",
+    const pendingPath = storePath("pending", "decisions", "draft.md");
+    mkdirSync(dirname(pendingPath), { recursive: true });
+    writeFileSync(
+      pendingPath,
       "---\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Draft\n",
-      target,
+      "utf8",
     );
 
     const report = await enrichDescriptions(target, { auto: true });
