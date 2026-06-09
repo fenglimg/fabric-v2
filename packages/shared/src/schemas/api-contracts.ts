@@ -10,6 +10,7 @@ export const structuredWarningSchema = z.object({
   code: z.string(),
   file: z.string(),
   line: z.number().optional(),
+  message: z.string().optional(),
   action_hint: z.string(),
 });
 

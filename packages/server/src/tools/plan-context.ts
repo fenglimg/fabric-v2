@@ -57,6 +57,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
         const trimWarning = {
           code: 'mcp_payload_trimmed' as const,
           file: '<response>',
+          message: 'Dropped lower-ranked candidate(s) to fit the MCP payload budget.',
           action_hint:
             'Dropped lower-ranked candidate(s) to fit the MCP payload budget (see omitted_candidate_count); narrow your intent or raise mcpPayloadLimits.hardBytes to surface more.',
         };
@@ -107,6 +108,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
             {
               code: 'mcp_payload_warn',
               file: '<response>',
+              message: 'Response still exceeds the hard payload budget after trimming; a single entry may be oversized.',
               action_hint: 'Response still exceeds the hard payload budget after trimming; a single entry may be oversized — raise mcpPayloadLimits.hardBytes or enrich that entry to be terser.',
             },
           ];
@@ -118,6 +120,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
               {
                 code: guardResult.warning.code,
                 file: '<response>',
+                message: guardResult.warning.message,
                 action_hint: 'Consider narrowing the request scope to reduce response size',
               },
             ];

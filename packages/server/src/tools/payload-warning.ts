@@ -14,6 +14,7 @@ export interface StructuredToolWarning {
   code: string;
   file: string;
   line?: number;
+  message?: string;
   action_hint: string;
 }
 
@@ -47,6 +48,7 @@ export function appendPayloadWarning<T extends StructuredToolWarning>(
   const warning = {
     code: guardResult.warning.code,
     file: "<response>",
+    message: guardResult.warning.message,
     action_hint: actionHint,
   } as T;
   return [...(warnings ?? []), warning];

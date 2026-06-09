@@ -19,7 +19,9 @@ describe("appendPayloadWarning (MC5 symmetric warn surfacing)", () => {
       bytes: 99999,
       warning: { code: "mcp_payload_warn", message: "big", bytes: 99999, threshold: 16384 },
     }, HINT);
-    expect(result).toEqual([{ code: "mcp_payload_warn", file: "<response>", action_hint: HINT }]);
+    expect(result).toEqual([
+      { code: "mcp_payload_warn", file: "<response>", message: "big", action_hint: HINT },
+    ]);
   });
 
   it("appends to existing warnings without dropping them", () => {
@@ -31,5 +33,6 @@ describe("appendPayloadWarning (MC5 symmetric warn surfacing)", () => {
     expect(result).toHaveLength(2);
     expect(result?.[0]).toEqual(existing[0]);
     expect(result?.[1]?.action_hint).toBe(HINT);
+    expect(result?.[1]?.message).toBe("big");
   });
 });
