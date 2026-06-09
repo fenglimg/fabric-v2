@@ -12,9 +12,9 @@ import {
   type ForensicEvidenceAnchor,
   type ForensicReport,
 } from "@fenglimg/fabric-shared";
+import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { getProjectTranslator } from "../i18n.js";
-import { detectFramework } from "./detector.js";
 
 declare const __CLI_VERSION__: string | undefined;
 
