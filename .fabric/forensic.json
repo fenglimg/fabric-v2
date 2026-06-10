@@ -1,8 +1,8 @@
 {
   "version": "1.0",
-  "generated_at": "2026-06-08T18:13:56.502Z",
-  "generated_by": "fabric-cli@2.2.0-rc.5",
-  "target": "C:\\Project\\fabric-v2",
+  "generated_at": "2026-06-10T09:32:21.185Z",
+  "generated_by": "fabric-cli@2.2.0-rc.6",
+  "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
   "framework": {
     "kind": "unknown",
@@ -13,117 +13,46 @@
     ]
   },
   "topology": {
-    "total_files": 20664,
+    "total_files": 4042,
     "by_ext": {
-      ".cjs": 1200,
-      ".csv": 810,
-      ".gz": 50,
-      ".html": 40,
-      ".json": 7152,
-      ".jsonl": 115,
-      ".log": 110,
-      ".md": 6192,
-      ".mdc": 20,
-      ".meta": 30,
-      ".mjs": 120,
-      ".ndjson": 90,
-      ".onnx": 10,
-      ".py": 30,
-      ".pyc": 50,
-      ".sh": 40,
-      ".snap": 70,
-      ".svg": 20,
-      ".ts": 3976,
-      ".tsx": 100,
-      ".txt": 330,
-      ".yaml": 20,
-      ".yml": 30,
-      "[none]": 59
+      ".cjs": 179,
+      ".csv": 180,
+      ".gz": 10,
+      ".html": 8,
+      ".json": 1481,
+      ".jsonl": 32,
+      ".log": 22,
+      ".md": 1107,
+      ".mdc": 3,
+      ".meta": 6,
+      ".mjs": 27,
+      ".ndjson": 26,
+      ".onnx": 1,
+      ".py": 6,
+      ".pyc": 10,
+      ".sh": 8,
+      ".snap": 13,
+      ".svg": 4,
+      ".ts": 817,
+      ".tsx": 10,
+      ".txt": 67,
+      ".yaml": 4,
+      ".yml": 7,
+      "[none]": 14
     },
     "key_dirs": [
       ".claude/skills/ui-ux-pro-max/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/.claude/skills/ui-ux-pro-max/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/server-http-experimental/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/server/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/shared/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/scripts",
+      ".claude/worktrees/embed-cache-config-merge/.claude/skills/ui-ux-pro-max/scripts",
+      ".claude/worktrees/embed-cache-config-merge/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
+      ".claude/worktrees/embed-cache-config-merge/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
+      ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
+      ".claude/worktrees/embed-cache-config-merge/packages/cli/src",
+      ".claude/worktrees/embed-cache-config-merge/packages/server-http-experimental/src",
+      ".claude/worktrees/embed-cache-config-merge/packages/server/src",
+      ".claude/worktrees/embed-cache-config-merge/packages/shared/src",
+      ".claude/worktrees/embed-cache-config-merge/scripts",
       ".workflow/.scratchpad/rc34-werewolf-eval/scripts",
       ".workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/ai-client-parity-fixes/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/ai-client-parity-fixes/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/ai-client-parity-fixes/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/ai-client-parity-fixes/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/ai-client-parity-fixes/packages/cli/src",
-      ".worktrees/ai-client-parity-fixes/packages/server-http-experimental/src",
-      ".worktrees/ai-client-parity-fixes/packages/server/src",
-      ".worktrees/ai-client-parity-fixes/packages/shared/src",
-      ".worktrees/ai-client-parity-fixes/scripts",
-      ".worktrees/config-unify/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/config-unify/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/config-unify/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/config-unify/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/config-unify/packages/cli/src",
-      ".worktrees/config-unify/packages/server/src",
-      ".worktrees/config-unify/packages/shared/src",
-      ".worktrees/config-unify/scripts",
-      ".worktrees/fabric-entry-skill/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/fabric-entry-skill/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/fabric-entry-skill/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/fabric-entry-skill/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/fabric-entry-skill/packages/cli/src",
-      ".worktrees/fabric-entry-skill/packages/server-http-experimental/src",
-      ".worktrees/fabric-entry-skill/packages/server/src",
-      ".worktrees/fabric-entry-skill/packages/shared/src",
-      ".worktrees/fabric-entry-skill/scripts",
-      ".worktrees/issue-sweep/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/issue-sweep/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/issue-sweep/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/issue-sweep/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/issue-sweep/packages/cli/src",
-      ".worktrees/issue-sweep/packages/server-http-experimental/src",
-      ".worktrees/issue-sweep/packages/server/src",
-      ".worktrees/issue-sweep/packages/shared/src",
-      ".worktrees/issue-sweep/scripts",
-      ".worktrees/m-doctor-surface-hardening/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/m-doctor-surface-hardening/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/m-doctor-surface-hardening/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/m-doctor-surface-hardening/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-doctor-surface-hardening/packages/cli/src",
-      ".worktrees/m-doctor-surface-hardening/packages/server-http-experimental/src",
-      ".worktrees/m-doctor-surface-hardening/packages/server/src",
-      ".worktrees/m-doctor-surface-hardening/packages/shared/src",
-      ".worktrees/m-doctor-surface-hardening/scripts",
-      ".worktrees/m-global-store-topology/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/m-global-store-topology/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/m-global-store-topology/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/m-global-store-topology/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-global-store-topology/packages/cli/src",
-      ".worktrees/m-global-store-topology/packages/server-http-experimental/src",
-      ".worktrees/m-global-store-topology/packages/server/src",
-      ".worktrees/m-global-store-topology/packages/shared/src",
-      ".worktrees/m-global-store-topology/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/packages/cli/src",
-      ".worktrees/m-install-uninstall-lifecycle/packages/server-http-experimental/src",
-      ".worktrees/m-install-uninstall-lifecycle/packages/server/src",
-      ".worktrees/m-install-uninstall-lifecycle/packages/shared/src",
-      ".worktrees/m-install-uninstall-lifecycle/scripts",
-      ".worktrees/m-store-reliability-hardening/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/m-store-reliability-hardening/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/m-store-reliability-hardening/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/m-store-reliability-hardening/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-store-reliability-hardening/packages/cli/src",
-      ".worktrees/m-store-reliability-hardening/packages/server-http-experimental/src",
-      ".worktrees/m-store-reliability-hardening/packages/server/src",
-      ".worktrees/m-store-reliability-hardening/packages/shared/src",
-      ".worktrees/m-store-reliability-hardening/scripts",
       "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
       "packages/cli/src",
       "packages/server-http-experimental/src",
@@ -137,14 +66,14 @@
     {
       "path": "scripts/lint-protected-tokens.ts",
       "reason": "top-level script",
-      "size_bytes": 7945
+      "size_bytes": 7621
     }
   ],
   "code_samples": [
     {
       "path": "scripts/lint-protected-tokens.ts",
       "lines": "1-30",
-      "snippet": "#!/usr/bin/env node\n\nimport { readdir, readFile } from \"node:fs/promises\";\nimport path from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\n\ninterface Violation {\n  filePath: string;\n  message: string;\n}\n\nconst ROOT = process.cwd();\nconst BOOTSTRAP_DIR = path.join(ROOT, \"packages\", \"cli\", \"templates\", \"bootstrap\");\nconst SKILLS_DIR = path.join(ROOT, \"packages\", \"cli\", \"templates\", \"skills\");\nconst PROTECTED_TOKENS_PATH = path.join(\n  ROOT,\n  \"packages\",\n  \"shared\",\n  \"src\",\n  \"i18n\",\n  \"protected-tokens.ts\",\n);\n\n// Tokens every bootstrap template MUST contain verbatim. v2.0 bootstrap files\n// are short pointer files (the heavy lifting moved into AGENTS.md + the\n// runtime fab_get_knowledge_sections payload), so the universal contract is\n// just: which two MCP tools to call on edit, and where the event ledger lives.\n// Drifting any of these silently breaks the AI-client handshake.\nconst BOOTSTRAP_REQUIRED_TOKENS = [\n  \"fab_plan_context\",",
+      "snippet": "#!/usr/bin/env node\n\nimport { readdir, readFile } from \"node:fs/promises\";\nimport path from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\n\ninterface Violation {\n  filePath: string;\n  message: string;\n}\n\nconst ROOT = process.cwd();\nconst BOOTSTRAP_DIR = path.join(ROOT, \"packages\", \"cli\", \"templates\", \"bootstrap\");\nconst SKILLS_DIR = path.join(ROOT, \"packages\", \"cli\", \"templates\", \"skills\");\nconst PROTECTED_TOKENS_PATH = path.join(\n  ROOT,\n  \"packages\",\n  \"shared\",\n  \"src\",\n  \"i18n\",\n  \"protected-tokens.ts\",\n);\n\n// Tokens every bootstrap template MUST contain verbatim. The default edit-time\n// entry point is the recall-first shortcut; plan_context + get_sections remain\n// protected as the fallback when the returned bodies need manual narrowing.\n// Drifting any of these silently breaks the AI-client handshake.\nconst BOOTSTRAP_REQUIRED_TOKENS = [\n  \"fab_recall\",\n  \"fab_plan_context\",",
       "pattern_hint": "source-entry"
     }
   ],
@@ -218,25 +147,25 @@
       "confidence": "LOW",
       "evidence": [
         {
-          "file": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta",
+          "file": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta sidecar present"
+          "snippet": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta sidecar present"
         },
         {
-          "file": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta",
+          "file": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta sidecar present"
+          "snippet": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta sidecar present"
         },
         {
-          "file": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta",
+          "file": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta sidecar present"
+          "snippet": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta sidecar present"
         }
       ],
       "coverage": {
         "ratio": 0.007,
-        "total": 4076,
-        "matched": 30,
+        "total": 827,
+        "matched": 6,
         "co_occurring_patterns": [
           "meta-sidecar"
         ]
@@ -277,42 +206,42 @@
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/package.json",
+      "path": ".claude/worktrees/embed-cache-config-merge/package.json",
       "family": "config",
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/package.json",
+      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/package.json",
       "family": "config",
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
+      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/__snapshots__/client-configs.test.ts.snap",
+      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/__snapshots__/client-configs.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/knip.config.ts",
+      "path": ".claude/worktrees/embed-cache-config-merge/knip.config.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/src/colors.ts",
+      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/src/colors.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/src/commands/config.ts",
+      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/src/commands/config.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     }
