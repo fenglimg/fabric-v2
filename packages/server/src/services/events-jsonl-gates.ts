@@ -22,13 +22,24 @@ import { existsSync } from "node:fs";
 
 import { getEventLedgerPath, getMetricsLedgerPath, isNodeError } from "./_shared.js";
 import { readEventLedger } from "./event-ledger.js";
-import { METRIC_COUNTER_NAMES } from "./metrics.js";
+import { LEDGER_DUAL_WRITE_METRIC_NAMES, METRIC_COUNTER_NAMES } from "./metrics.js";
 
 const EVENTS_JSONL_SIZE_WARN_BYTES = 10 * 1024 * 1024; // G7 default 10 MB
 const METRICS_STALE_WARN_MS = 10 * 60 * 1000; // G9 default 10 min
 const ROTATION_OVERDUE_WARN_MS = 90 * 24 * 60 * 60 * 1000; // G10 default 90d
 
-const METRIC_COUNTER_VALUES = new Set<string>(Object.values(METRIC_COUNTER_NAMES));
+// G8 leak scan: only PURE counters must never appear in the audit ledger. Every
+// dual-write name (see LEDGER_DUAL_WRITE_METRIC_NAMES) is intentionally appended
+// to events.jsonl because a doctor lint consumes its structured per-id/per-path
+// payload — same load-bearing-audit class as assistant_turn_observed (team
+// KT-DEC-0021). Flagging them is a false positive that fires on every fab_recall
+// / edit, so they are subtracted from the leak set. This currently empties the
+// set (all 4 counter names are dual-write-consumed → G8 dormant) but the gate
+// still fires for any future pure counter NOT in the allowlist.
+const LEDGER_DUAL_WRITE_VALUES = new Set<string>(Object.values(LEDGER_DUAL_WRITE_METRIC_NAMES));
+const METRIC_COUNTER_VALUES = new Set<string>(
+  Object.values(METRIC_COUNTER_NAMES).filter((name) => !LEDGER_DUAL_WRITE_VALUES.has(name)),
+);
 
 export type EventsJsonlGatesReport = {
   /** G7: events.jsonl actual size in bytes (0 when missing). */

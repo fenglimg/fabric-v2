@@ -359,11 +359,15 @@ export type MetricsRow = {
 };
 
 /**
- * Canonical metric counter names used by the high-frequency emitters that
- * left events.jsonl as part of the rc.37 Wave B clean-slate. Centralized
- * here so the B5 hard-gate (`metric_event_in_jsonl`) can grep for these
- * exact strings and fail when one accidentally re-appears in the audit
- * ledger emit path.
+ * Canonical metric counter names. rc.37 Wave B added a metrics.jsonl counter
+ * rollup for each (the forward-compatible signal), but — contrary to the
+ * original "these left events.jsonl" plan — every one is ALSO still appended to
+ * the audit ledger as a structured event, because a doctor lint consumes its
+ * per-id / per-path payload (see LEDGER_DUAL_WRITE_METRIC_NAMES below). The
+ * promised counter-only cutover (rc.38+; tracked by the G11 invariant test) has
+ * not happened. Centralized here so the B5 hard-gate (`metric_event_in_jsonl`)
+ * can grep for these exact strings; the gate only flags names NOT in the
+ * dual-write allowlist below.
  */
 export const METRIC_COUNTER_NAMES = {
   knowledge_consumed: "knowledge_consumed",
@@ -372,3 +376,29 @@ export const METRIC_COUNTER_NAMES = {
   knowledge_sections_fetched: "knowledge_sections_fetched",
 } as const;
 export type MetricCounterName = (typeof METRIC_COUNTER_NAMES)[keyof typeof METRIC_COUNTER_NAMES];
+
+/**
+ * Metric names whose audit-ledger presence is INTENTIONAL and load-bearing —
+ * NOT a leak. Each is dual-written (bumpCounter + appendEventLedgerEvent) because
+ * a doctor lint reads its structured per-id / per-path payload, which the bare
+ * metrics.jsonl counter cannot supply:
+ *
+ *   - knowledge_context_planned  → doctor.buildLastActiveIndex (orphan/stale recency)
+ *   - knowledge_sections_fetched → doctor.buildLastActiveIndex (orphan/stale recency)
+ *   - knowledge_consumed         → doctor.ts use-signal pass (last-active primary signal)
+ *   - edit_intent_checked        → doctor-cite-coverage (edits_touched + contract verify)
+ *
+ * The G8 leak gate (events-jsonl-gates.ts) MUST exempt these — otherwise it
+ * false-positives on every fab_recall / edit, which is the recurring
+ * `events_jsonl_health_degraded` warning. Currently this covers ALL four counter
+ * names, so the gate's active leak set is empty (dormant) until the planned
+ * rc.38+ consumer migration lets the audit events become counter-only. The gate
+ * still fires for any NEW pure counter name added to METRIC_COUNTER_NAMES but not
+ * listed here — so it keeps guarding future additions.
+ */
+export const LEDGER_DUAL_WRITE_METRIC_NAMES = {
+  knowledge_context_planned: METRIC_COUNTER_NAMES.knowledge_context_planned,
+  knowledge_sections_fetched: METRIC_COUNTER_NAMES.knowledge_sections_fetched,
+  knowledge_consumed: METRIC_COUNTER_NAMES.knowledge_consumed,
+  edit_intent_checked: METRIC_COUNTER_NAMES.edit_intent_checked,
+} as const;
