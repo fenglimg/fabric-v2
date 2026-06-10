@@ -294,6 +294,8 @@ export const enMessages: Messages = {
   // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run banner — printed before the standard report so users see no mutations were applied.
   "cli.doctor.fix-dry-run-banner":
     "[dry-run] No mutations were applied. The fixable_errors list below shows what `fabric doctor --fix` would address; rerun without --dry-run to actually fix.",
+  "cli.doctor.unbound-project-backfilled":
+    "Backfilled project-scope binding for store '{alias}' → project '{project}' (minted project_id + active_project).",
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
   "doctor.enrich.allComplete":
@@ -846,6 +848,14 @@ export const enMessages: Messages = {
     "{total} store scope issue(s): {breakdown}. e.g. {sample}.",
   "doctor.check.store_scope_lint.remediation":
     "Run `fabric store backfill-scope` to add missing semantic_scope/visibility_store; `fabric store re-scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
+  // project-scope binding backfill lint (unbound_project).
+  "doctor.check.unbound_project.name": "Project-scope binding",
+  "doctor.check.unbound_project.ok":
+    "The bound write store carries a project coordinate (project_id + active_project), so project-scope recall/writes route correctly.",
+  "doctor.check.unbound_project.message":
+    "Store '{alias}' is bound as the write target but the project coordinate is incomplete (missing {missing}); project-scope recall/writes fall back to team scope.",
+  "doctor.check.unbound_project.remediation":
+    "Run `fabric doctor --fix` to backfill the project binding (mints project_id, registers the project in the store, sets active_project). Idempotent — a second run is a no-op.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

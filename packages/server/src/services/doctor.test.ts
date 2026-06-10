@@ -248,6 +248,9 @@ describe("runDoctorReport", () => {
       // v2.2 W4 (G-GUARD / A6): store scope lint — missing scope fields /
       // personal-leak-in-shared-store / dangling project ref over read-set stores.
       "Store scope lint",
+      // project-scope binding backfill lint — store bound but no project_id /
+      // active_project. Adjacent to store scope lint (both scope invariants).
+      "Project-scope binding",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
@@ -258,7 +261,8 @@ describe("runDoctorReport", () => {
     // (Agents metadata / Rule content refs / Knowledge-test index / Meta manual
     // divergence / Knowledge dir unindexed / Knowledge index drift); "Knowledge
     // counter desync" renamed to "Store counter drift" (net -6).
-    expect(report.checks).toHaveLength(48);
+    // +1: project-scope binding backfill lint (unbound_project) → 49.
+    expect(report.checks).toHaveLength(49);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

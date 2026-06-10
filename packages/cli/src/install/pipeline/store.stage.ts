@@ -8,15 +8,11 @@ import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../sto
 import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
 import { t } from "../../i18n.js";
 import {
-  storeBind,
   storeCreate,
   storeList,
   storeProjectList,
-  storeSetWriteRoute,
-  storeSwitchWrite,
   unboundAvailableStores,
 } from "../../store/store-ops.js";
-import { regenerateBindingsSnapshot } from "../../store/bindings-io.js";
 import { loadProjectConfig } from "../../store/project-config-io.js";
 import { paint } from "../../colors.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
@@ -79,7 +75,12 @@ export class StoreStage implements Stage {
 
       // Handle --url flag: mount and bind remote store
       if (context.args.url) {
-        await this.bindRemoteStoreToProject(context.target, context.args.url, globalRoot);
+        await this.bindRemoteStoreToProject(
+          context.target,
+          context.args.url,
+          globalRoot,
+          context.interactive,
+        );
         return stageRan("store", [context.args.url], []);
       }
 
@@ -138,67 +139,82 @@ export class StoreStage implements Stage {
     saveGlobalConfig({ ...config, language: picked }, globalRoot);
   }
 
+  /**
+   * Shared bind tail (DRY): resolve which project this repo binds to inside
+   * `alias` (git-suggested, silent in the common case), then run the ONE
+   * function that mints `project_id`, registers the project in the store, sets
+   * `active_project`, switches the write target, and writes the project
+   * write-route — `ensureStoreProjectBinding`. All three onboarding paths
+   * (join / create / bind-mounted) route through here so the project scope axis
+   * is wired identically; previously only the bind-mounted path did, leaving a
+   * fresh `install --url` / create flow with no `project_id` / `active_project`.
+   *
+   * Returns the resolved project id, or null when the user cancels the
+   * disambiguation prompt (interactive ambiguity only).
+   */
+  private async bindStoreToProject(
+    projectRoot: string,
+    alias: string,
+    globalRoot: string,
+    options: { suggestedRemote?: string; interactive: boolean },
+  ): Promise<string | null> {
+    const project = await this.resolveProjectIdWithGuard(
+      projectRoot,
+      alias,
+      globalRoot,
+      options.interactive,
+    );
+    if (project === null) {
+      return null;
+    }
+    await ensureStoreProjectBinding(projectRoot, alias, {
+      globalRoot,
+      requestedProjectId: project,
+      ...(options.suggestedRemote === undefined ? {} : { suggestedRemote: options.suggestedRemote }),
+    });
+    return project;
+  }
+
   private async bindRemoteStoreToProject(
     projectRoot: string,
     url: string,
     globalRoot: string,
+    interactive: boolean,
   ): Promise<string> {
     const already = storeList(globalRoot).find((store) => store.remote === url);
     const mounted = already ?? mountStoreFromRemote(url, globalRoot);
 
-    await storeBind(projectRoot, { id: mounted.alias, suggested_remote: url }, { globalRoot });
-    storeSwitchWrite(projectRoot, mounted.alias, { globalRoot });
-    const activeProject = loadProjectConfig(projectRoot)?.active_project;
-    if (typeof activeProject === "string" && activeProject.length > 0) {
-      storeSetWriteRoute(projectRoot, `project:${activeProject}`, mounted.alias, { globalRoot });
-    }
-    regenerateBindingsSnapshot(projectRoot, {
-      now: new Date().toISOString(),
-      globalRoot,
+    const bound = await this.bindStoreToProject(projectRoot, mounted.alias, globalRoot, {
+      suggestedRemote: url,
+      interactive,
     });
+    if (bound === null) {
+      // User cancelled the project disambiguation — leave the store mounted but
+      // unbound; the unbound nudge surfaces it next run rather than forcing a
+      // possibly-wrong project.
+      this.warnUnboundStores([{ alias: mounted.alias }]);
+      return mounted.alias;
+    }
 
     console.log("");
     console.log(paint.success(t("cli.install.store.bound-success", { alias: mounted.alias })));
     return mounted.alias;
   }
 
-  private async bindMountedStoreToProject(
-    projectRoot: string,
-    alias: string,
-    globalRoot: string,
-    requestedProjectId: string,
-  ): Promise<string> {
-    await ensureStoreProjectBinding(projectRoot, alias, {
-      globalRoot,
-      requestedProjectId,
-    });
-    console.log("");
-    console.log(paint.success(t("cli.install.store.bound-success", { alias })));
-    return alias;
-  }
-
   private async bindCreatedStoreToProject(
     projectRoot: string,
     alias: string,
-    options: { remote?: string; globalRoot: string },
+    options: { remote?: string; globalRoot: string; interactive: boolean },
   ): Promise<string> {
     await storeCreate(alias, new Date().toISOString(), {
       ...(options.remote === undefined ? {} : { remote: options.remote }),
       globalRoot: options.globalRoot,
     });
-    await storeBind(
-      projectRoot,
-      options.remote === undefined ? { id: alias } : { id: alias, suggested_remote: options.remote },
-      { globalRoot: options.globalRoot },
-    );
-    storeSwitchWrite(projectRoot, alias, { globalRoot: options.globalRoot });
-    const activeProject = loadProjectConfig(projectRoot)?.active_project;
-    if (typeof activeProject === "string" && activeProject.length > 0) {
-      storeSetWriteRoute(projectRoot, `project:${activeProject}`, alias, { globalRoot: options.globalRoot });
-    }
-    regenerateBindingsSnapshot(projectRoot, {
-      now: new Date().toISOString(),
-      globalRoot: options.globalRoot,
+    // A freshly-created store has no projects yet, so resolveProjectIdWithGuard
+    // always returns the git-suggested id silently (never null here).
+    await this.bindStoreToProject(projectRoot, alias, options.globalRoot, {
+      ...(options.remote === undefined ? {} : { suggestedRemote: options.remote }),
+      interactive: options.interactive,
     });
     console.log("");
     console.log(paint.success(t("cli.install.store.created-success", { alias })));
@@ -230,12 +246,16 @@ export class StoreStage implements Stage {
       this.warnUnboundStores(unboundStores);
       return null;
     }
-    const project = await this.resolveProjectIdWithGuard(context.target, choice, globalRoot);
-    if (project === null) {
+    const bound = await this.bindStoreToProject(context.target, choice, globalRoot, {
+      interactive: true,
+    });
+    if (bound === null) {
       this.warnUnboundStores(unboundStores);
       return null;
     }
-    return this.bindMountedStoreToProject(context.target, choice, globalRoot, project);
+    console.log("");
+    console.log(paint.success(t("cli.install.store.bound-success", { alias: choice })));
+    return choice;
   }
 
   /**
@@ -246,16 +266,25 @@ export class StoreStage implements Stage {
    * enumerates projects AND the git id matches none of them — the one case
    * where silently auto-creating would fork a parallel project away from the
    * team's existing one. Returns the resolved project id, or null on cancel.
+   *
+   * `interactive` gates the disambiguation prompt: non-interactive flows (e.g.
+   * `install --url` in CI) never block — they fall back to the deterministic
+   * git-suggested id instead of stalling on a clack prompt with no TTY.
    */
   private async resolveProjectIdWithGuard(
     projectRoot: string,
     alias: string,
     globalRoot: string,
+    interactive: boolean,
   ): Promise<string | null> {
     const suggested = suggestStoreProjectId(projectRoot);
     const existing = await storeProjectList(alias, globalRoot);
 
     if (existing.length === 0 || existing.some((project) => project.id === suggested)) {
+      return suggested;
+    }
+
+    if (!interactive) {
       return suggested;
     }
 
@@ -331,7 +360,9 @@ export class StoreStage implements Stage {
       if (isCancel(url) || typeof url !== "string" || url.length === 0) {
         return null;
       }
-      return `bound:${await this.bindRemoteStoreToProject(projectRoot, url, globalRoot)}`;
+      // Onboarding only runs under the interactive wizard (execute gates it on
+      // wizardEnabled), so the disambiguation prompt is allowed here.
+      return `bound:${await this.bindRemoteStoreToProject(projectRoot, url, globalRoot, true)}`;
     }
 
     const alias = await text({ message: t("cli.install.store.onboard.alias"), initialValue: "team" });
@@ -346,7 +377,9 @@ export class StoreStage implements Stage {
     return `created:${await this.bindCreatedStoreToProject(
       projectRoot,
       alias,
-      remoteStr === undefined ? { globalRoot } : { remote: remoteStr, globalRoot },
+      remoteStr === undefined
+        ? { globalRoot, interactive: true }
+        : { remote: remoteStr, globalRoot, interactive: true },
     )}`;
   }
 

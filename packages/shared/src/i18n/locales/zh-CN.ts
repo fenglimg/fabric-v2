@@ -279,6 +279,8 @@ export const zhCNMessages: Messages = {
   // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run banner — 出现在 report 之前, 让用户明确没有发生 mutation。
   "cli.doctor.fix-dry-run-banner":
     "[dry-run] 未应用任何 mutation。下方 fixable_errors 列表就是 `fabric doctor --fix` 会处理的项;去掉 --dry-run 再跑可实际修复。",
+  "cli.doctor.unbound-project-backfilled":
+    "已回填 store '{alias}' 的 project-scope 绑定 → project '{project}'(铸 project_id + active_project)。",
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
   "doctor.enrich.allComplete":
@@ -830,6 +832,14 @@ export const zhCNMessages: Messages = {
     "{total} 个 store scope 问题: {breakdown}。例如 {sample}。",
   "doctor.check.store_scope_lint.remediation":
     "调 `fabric store backfill-scope` 补缺失的 semantic_scope/visibility_store;`fabric store re-scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
+  // project-scope binding 回填 lint (unbound_project)。
+  "doctor.check.unbound_project.name": "Project-scope binding",
+  "doctor.check.unbound_project.ok":
+    "已绑写入 store 带有 project 坐标(project_id + active_project),project-scope 的 recall/写入路由正常。",
+  "doctor.check.unbound_project.message":
+    "store '{alias}' 已绑为写入目标但 project 坐标不完整(缺 {missing});project-scope 的 recall/写入会 fallback 到 team scope。",
+  "doctor.check.unbound_project.remediation":
+    "调 `fabric doctor --fix` 回填 project 绑定(铸 project_id、把 project 注册进 store、设 active_project)。幂等 —— 二次跑为 no-op。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

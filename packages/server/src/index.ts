@@ -24,6 +24,7 @@ import { registerKnowledgeSections } from "./tools/knowledge-sections.js";
 declare const __SERVER_VERSION__: string;
 
 export {
+  detectUnboundProject,
   enrichDescriptions,
   runDoctorApplyLint,
   runDoctorArchiveHistory,
@@ -31,6 +32,7 @@ export {
   runDoctorFix,
   runDoctorHistoryAll,
   runDoctorReport,
+  type UnboundProjectViolation,
   type ArchiveHistoryEntry,
   type ArchiveHistoryReport,
   type CiteCoverageReport,
