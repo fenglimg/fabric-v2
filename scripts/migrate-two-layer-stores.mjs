@@ -13,58 +13,53 @@
 // Usage:  node scripts/migrate-two-layer-stores.mjs          (real ~/.fabric)
 //         FABRIC_HOME=/tmp/x node scripts/migrate-two-layer-stores.mjs  (test root)
 
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, lstatSync, readlinkSync, symlinkSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const here = fileURLToPath(new URL(".", import.meta.url));
-const { deriveMountLabel, storeMountSubPath, STORES_ROOT_DIR } = await import(
-  join(here, "..", "packages", "shared", "dist", "index.js")
-);
-
 const STORE_BY_ALIAS_DIR = "by-alias";
 
-function resolveGlobalRoot() {
+export function resolveGlobalRoot() {
   const home = process.env.FABRIC_HOME;
   return home === undefined ? join(homedir(), ".fabric") : join(home, ".fabric");
 }
 
 function tsStamp() {
-  // Avoid Date in tests? This is a one-shot CLI script; plain timestamp is fine.
   return new Date().toISOString().replace(/[:.]/gu, "-");
 }
 
-function log(msg) {
-  process.stdout.write(`${msg}\n`);
-}
-
-function main() {
-  const globalRoot = resolveGlobalRoot();
+// The migration core. `deps` injects the layout helpers (deriveMountLabel /
+// storeMountSubPath / storesRootDir) so the SAME logic the CLI ships is used
+// while staying unit-testable without loading the built dist. `log` is injected
+// (defaults to stdout) so tests can stay quiet. Returns a summary for asserts.
+export function migrateTwoLayer({ globalRoot, deriveMountLabel, storeMountSubPath, storesRootDir, backup = true, log = (m) => process.stdout.write(`${m}\n`) }) {
   const configPath = join(globalRoot, "fabric-global.json");
   if (!existsSync(configPath)) {
     log(`no fabric-global.json at ${configPath} — nothing to migrate`);
-    return;
+    return { migrated: [], skipped: [], backup: null };
   }
 
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const stores = Array.isArray(config.stores) ? config.stores : [];
   if (stores.length === 0) {
     log("no mounted stores — nothing to migrate");
-    return;
+    return { migrated: [], skipped: [], backup: null };
   }
 
   // 1) Back up the entire ~/.fabric before touching anything.
-  const backup = `${globalRoot}.bak-${tsStamp()}`;
-  cpSync(globalRoot, backup, { recursive: true });
-  log(`backed up ${globalRoot} → ${backup}`);
+  let backupPath = null;
+  if (backup) {
+    backupPath = `${globalRoot}.bak-${tsStamp()}`;
+    cpSync(globalRoot, backupPath, { recursive: true });
+    log(`backed up ${globalRoot} → ${backupPath}`);
+  }
 
-  const storesRoot = join(globalRoot, STORES_ROOT_DIR);
+  const storesRoot = join(globalRoot, storesRootDir);
   const tmpRoot = join(storesRoot, ".__mig_two_layer");
   rmSync(tmpRoot, { recursive: true, force: true });
 
-  // 2) Plan moves: for each store compute its NEW two-layer subpath + label,
-  //    and its CURRENT on-disk location (old single-layer `mount_name`|uuid).
+  // 2) Plan moves: NEW two-layer subpath + label vs CURRENT single-layer dir.
   const plan = [];
   for (const s of stores) {
     const label = deriveMountLabel({ remote: s.remote, alias: s.alias, store_uuid: s.store_uuid });
@@ -75,23 +70,25 @@ function main() {
     plan.push({ store: s, label, newSub, newDir, oldDir, oldSingle });
   }
 
-  // 3) Stage every store dir into a temp area (old names collide with the new
-  //    group bucket names, e.g. old `stores/personal` vs new group `personal/`).
-  let staged = 0;
+  // 3) Stage every store dir into a temp area (old single-layer names collide
+  //    with the new group bucket names, e.g. old `stores/personal` vs `personal/`).
+  const migrated = [];
+  const skipped = [];
   for (const p of plan) {
-    if (existsSync(p.newDir) && existsSync(join(p.newDir, "store.json"))) {
+    if (existsSync(join(p.newDir, "store.json"))) {
       log(`already two-layer: ${p.newSub} — skipping`);
+      skipped.push(p.store.alias);
       continue;
     }
     if (!existsSync(join(p.oldDir, "store.json"))) {
       log(`WARN: no store tree at ${p.oldDir} (store.json missing) — skipping ${p.store.alias}`);
+      skipped.push(p.store.alias);
       continue;
     }
     mkdirSync(tmpRoot, { recursive: true });
     const stagePath = join(tmpRoot, p.store.store_uuid);
     renameSync(p.oldDir, stagePath);
     p.stagePath = stagePath;
-    staged += 1;
   }
 
   // 4) Drop the old by-alias layer (rebuilt below against the new paths).
@@ -102,11 +99,14 @@ function main() {
     if (p.stagePath === undefined) continue;
     mkdirSync(join(p.newDir, ".."), { recursive: true }); // the `stores/<group>/` bucket
     renameSync(p.stagePath, p.newDir);
+    p.store.mount_name = p.label; // 6) registry label becomes the new label
+    migrated.push(p.store.alias);
     log(`moved ${p.oldSingle} → ${p.newSub}`);
   }
   rmSync(tmpRoot, { recursive: true, force: true });
 
-  // 6) Update the registry: mount_name becomes the new label.
+  // For idempotent re-runs the labels must still reflect the new layout even when
+  // nothing moved (already-two-layer stores).
   for (const p of plan) {
     p.store.mount_name = p.label;
   }
@@ -114,14 +114,14 @@ function main() {
   log("updated fabric-global.json mount_name labels");
 
   // 7) Rebuild the by-alias readability symlinks against the two-layer paths.
-  rebuildByAlias(globalRoot, stores);
+  rebuildByAlias({ globalRoot, stores, storesRootDir, storeMountSubPath, log });
   log("migration complete");
+  return { migrated, skipped, backup: backupPath };
 }
 
-function rebuildByAlias(globalRoot, stores) {
-  const byAliasDir = join(globalRoot, STORES_ROOT_DIR, STORE_BY_ALIAS_DIR);
+function rebuildByAlias({ globalRoot, stores, storesRootDir, storeMountSubPath, log }) {
+  const byAliasDir = join(globalRoot, storesRootDir, STORE_BY_ALIAS_DIR);
   mkdirSync(byAliasDir, { recursive: true });
-  // Remove anything stale.
   for (const name of readdirSync(byAliasDir)) {
     rmSync(join(byAliasDir, name), { force: true, recursive: false });
   }
@@ -138,4 +138,17 @@ function rebuildByAlias(globalRoot, stores) {
   }
 }
 
-main();
+// CLI entry — only when run directly (not when imported by a test). Loads the
+// layout helpers from the built shared dist so the migration matches shipped code.
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  const { deriveMountLabel, storeMountSubPath, STORES_ROOT_DIR } = await import(
+    join(here, "..", "packages", "shared", "dist", "index.js")
+  );
+  migrateTwoLayer({
+    globalRoot: resolveGlobalRoot(),
+    deriveMountLabel,
+    storeMountSubPath,
+    storesRootDir: STORES_ROOT_DIR,
+  });
+}
