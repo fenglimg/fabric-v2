@@ -98,7 +98,7 @@ export const zhCNMessages: Messages = {
   // 11 个面板字段标签（A 组 2 个 + B 组 8 个 + C 组 1 个）。
   "cli.config.fields.fabric_language.label": "语言",
   "cli.config.fields.fabric_language.description":
-    "Fabric 钩子与 Skill 输出使用的语言。",
+    "Fabric 的全局语言基调（界面与知识统一），保存到 ~/.fabric/fabric-global.json。",
   "cli.config.fields.default_layer_filter.label": "默认知识层",
   "cli.config.fields.default_layer_filter.description":
     "知识列表的默认层级范围（team / personal / both）。",
@@ -928,8 +928,9 @@ export const zhCNMessages: Messages = {
   "cli.install.stages.summary.failed": "失败",
   "cli.install.next-step": "{label} {message}",
   "cli.install.reason-message": "{label} {message}",
-  "cli.install.language_preference_hint":
-    "Fabric 语言偏好：{value}。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：match-existing | zh-CN | en | zh-CN-hybrid）。",
+  "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
+  "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
+  "cli.install.language.option.en": "English (en)",
   "cli.install.plan.title": "Fabric 安装计划",
   "cli.install.plan.mode-banner.default": "[mode: apply] 标准安装执行",
   "cli.install.plan.mode-banner.plan": "[mode: plan] 仅预览，不会写入文件",

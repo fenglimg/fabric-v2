@@ -4,8 +4,9 @@ import { dirname, join } from "node:path";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { log } from "@clack/prompts";
 
+import { resolveGlobalLocale } from "@fenglimg/fabric-shared";
+
 import { t } from "../../i18n.js";
-import { detectExistingLanguage, type ResolvedLanguage } from "../../lib/detect-language.js";
 import { buildForensicReport } from "../../scanner/forensic.js";
 import { detectClientSupports } from "../../config/resolver.js";
 import type { Stage, InstallContext, StageResult, ScaffoldResult, DiffFileState, InitWriteAction } from "./types.js";
@@ -161,14 +162,11 @@ export class EnvStage implements Stage {
     return "created";
   }
 
-  private writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
+  private writeDefaultFabricConfig(fabricDir: string, _targetRoot: string): void {
     const target = join(fabricDir, "fabric-config.json");
     if (existsSync(target)) return;
 
-    const detectedLanguage: ResolvedLanguage = detectExistingLanguage(targetRoot);
-
     const FABRIC_CONFIG_DEFAULTS = {
-      fabric_language: detectedLanguage,
       archive_hint_hours: 24,
       archive_hint_cooldown_hours: 12,
       review_hint_pending_count: 10,
@@ -191,10 +189,6 @@ export class EnvStage implements Stage {
 
     mkdirSync(fabricDir, { recursive: true });
     writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
-
-    log.info(
-      `Detected and fixated fabric_language = ${detectedLanguage}; edit ${target} to override.`,
-    );
   }
 
   private writeDefaultGitignore(fabricDir: string): void {
@@ -218,18 +212,9 @@ export class EnvStage implements Stage {
     writeFileSync(target, FABRIC_GITIGNORE_CONTENT, "utf8");
   }
 
-  private readFabricLanguagePreference(projectRoot: string): string {
-    // Read from the just-written config
-    const configPath = join(projectRoot, ".fabric", "fabric-config.json");
-    if (!existsSync(configPath)) {
-      return "en";
-    }
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const config = require(configPath);
-      return config.fabric_language ?? "en";
-    } catch {
-      return "en";
-    }
+  private readFabricLanguagePreference(_projectRoot: string): string {
+    // grill-6fixes (D1): language is the single machine-wide tone in
+    // `~/.fabric/fabric-global.json`, not a per-project field.
+    return resolveGlobalLocale();
   }
 }

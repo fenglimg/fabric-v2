@@ -104,7 +104,7 @@ export const enMessages: Messages = {
   // Per-field labels (11 total: 2 Group A + 8 Group B + 1 Group C).
   "cli.config.fields.fabric_language.label": "Language",
   "cli.config.fields.fabric_language.description":
-    "Language used by Fabric hooks and Skills output.",
+    "Fabric's global language base tone (UI + knowledge), saved to ~/.fabric/fabric-global.json.",
   "cli.config.fields.default_layer_filter.label": "Default knowledge layer",
   "cli.config.fields.default_layer_filter.description":
     "Default layer scope for knowledge listings (team / personal / both).",
@@ -946,8 +946,9 @@ export const enMessages: Messages = {
   "cli.install.stages.summary.failed": "failed",
   "cli.install.next-step": "{label} {message}",
   "cli.install.reason-message": "{label} {message}",
-  "cli.install.language_preference_hint":
-    "Fabric language preference: {value}. To change, edit `fabric_language` in `.fabric/fabric-config.json` (values: match-existing | zh-CN | en | zh-CN-hybrid).",
+  "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
+  "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
+  "cli.install.language.option.en": "English (en)",
   "cli.install.plan.title": "Fabric install plan",
   "cli.install.plan.mode-banner.default": "[mode: apply] Standard install execution",
   "cli.install.plan.mode-banner.plan": "[mode: plan] Dry run only, no files will be written",

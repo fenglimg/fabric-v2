@@ -115,15 +115,17 @@ describe("install-v2 pipeline UX", () => {
     expect(semanticIndex).toBeLessThan(nextStepsIndex);
   });
 
-  it("env stage reads an existing fabric_language from fabric-config.json", async () => {
-    const target = await tempProject();
-    await mkdir(join(target, ".fabric"), { recursive: true });
-    await writeFile(
-      join(target, ".fabric", "fabric-config.json"),
-      JSON.stringify({ fabric_language: "zh-CN" }, null, 2),
-      "utf8",
+  it("env stage reads the language from the global config (grill-6fixes D1)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabric-install-v2-home-"));
+    tempRoots.push(home);
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({ uid: "u-test", language: "zh-CN" }),
+      globalRoot,
     );
 
+    const target = await tempProject();
     const context = baseContext(target);
     const stage = new EnvStage();
     const result = await stage.execute(context);
@@ -147,7 +149,7 @@ describe("install-v2 pipeline UX", () => {
 
     expect(result.disposition).toBe("ran");
     expect(lines.some((line) => line.includes("下一步"))).toBe(true);
-    expect(lines.some((line) => line.includes("Fabric 语言偏好：zh-CN"))).toBe(true);
+    // grill-6fixes (D1): the "Fabric 语言偏好：{value}" hint line was removed.
   });
 
   it("binds a selected mounted store during the install wizard", async () => {
@@ -157,7 +159,10 @@ describe("install-v2 pipeline UX", () => {
 
     const globalRoot = join(home, ".fabric");
     const teamUuid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test" }), globalRoot);
+    // grill-6fixes (D1b): seed a language so the install language selector
+    // (StoreStage.ensureLanguageSelected) early-returns instead of consuming
+    // the store-onboarding select mock below.
+    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
     storeCreate("team", "2026-06-08T00:00:00.000Z", {
       uuid: teamUuid,
       git: false,
@@ -206,7 +211,10 @@ describe("install-v2 pipeline UX", () => {
 
     const globalRoot = join(home, ".fabric");
     const teamUuid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test" }), globalRoot);
+    // grill-6fixes (D1b): seed a language so the install language selector
+    // (StoreStage.ensureLanguageSelected) early-returns instead of consuming
+    // the store-onboarding select mock below.
+    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
     storeCreate("team", "2026-06-08T00:00:00.000Z", {
       uuid: teamUuid,
       git: false,

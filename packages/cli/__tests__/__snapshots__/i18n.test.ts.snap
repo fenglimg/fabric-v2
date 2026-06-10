@@ -47,7 +47,6 @@ Examples:
       "Cursor           ready      failed  installed  installed  continue in client",
       "",
       "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
-      "Fabric language preference: en. To change, edit \`fabric_language\` in \`.fabric/fabric-config.json\` (values: match-existing | zh-CN | en | zh-CN-hybrid).",
       "",
       "Next steps — get your first value:
   1. Restart your AI client (Claude Code / Cursor / Codex). It now auto-surfaces this project's knowledge to the assistant.
@@ -122,7 +121,6 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "Cursor           已就绪     失败  已安装  已安装  可在客户端继续",
       "",
       "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
-      "Fabric 语言偏好：en。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：match-existing | zh-CN | en | zh-CN-hybrid）。",
       "",
       "下一步 —— 拿到第一份价值:
   1. 重启你的 AI 客户端 (Claude Code / Cursor / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。

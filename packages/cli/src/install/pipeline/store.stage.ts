@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { initStore, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
+import { initStore, resolveGlobalLocale, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
 import { isCancel, select, text } from "@clack/prompts";
 import { join } from "node:path";
 
@@ -67,6 +67,11 @@ export class StoreStage implements Stage {
         await this.ensurePersonalStore(globalConfig, globalRoot);
       }
 
+      // grill-6fixes (D1b): pick the single global language base tone once,
+      // game-style, on first install (when unset). Persists to the global
+      // config and is never asked again; `fabric config` changes it later.
+      await this.ensureLanguageSelected(globalRoot, context);
+
       // Handle --url flag: mount and bind remote store
       if (context.args.url) {
         await this.bindRemoteStoreToProject(context.target, context.args.url, globalRoot);
@@ -101,6 +106,31 @@ export class StoreStage implements Stage {
     } catch (error) {
       return stageFailedFromError("store", error);
     }
+  }
+
+  /**
+   * grill-6fixes (D1b): the install-time language selector. Fires only in the
+   * interactive wizard, and only when the global `language` is still unset
+   * (first-ever install). The default pre-highlight follows the env-detected
+   * locale (Chinese shell → zh-CN). Cancelling leaves it unset so resolvers
+   * keep falling back to env detection until the user picks via `fabric config`.
+   */
+  private async ensureLanguageSelected(globalRoot: string, context: InstallContext): Promise<void> {
+    if (!context.wizardEnabled) return;
+    const config = loadGlobalConfig(globalRoot);
+    if (config === null || config.language !== undefined) return;
+
+    const picked = await select<"zh-CN" | "en">({
+      message: t("cli.install.language.prompt"),
+      options: [
+        { value: "zh-CN", label: t("cli.install.language.option.zh-CN") },
+        { value: "en", label: t("cli.install.language.option.en") },
+      ],
+      initialValue: resolveGlobalLocale(globalRoot),
+    });
+    if (isCancel(picked)) return;
+
+    saveGlobalConfig({ ...config, language: picked }, globalRoot);
   }
 
   private async bindRemoteStoreToProject(

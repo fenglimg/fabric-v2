@@ -17,39 +17,30 @@ import {
 // configs.
 // ---------------------------------------------------------------------------
 
-describe("fabricConfigSchema — fabric_language", () => {
-  it("accepts all four fabric_language enum values", () => {
-    for (const value of [
-      "match-existing",
-      "zh-CN",
-      "en",
-      "zh-CN-hybrid",
-    ] as const) {
-      const parsed = fabricConfigSchema.parse({ fabric_language: value });
-      expect(parsed.fabric_language).toBe(value);
-    }
+describe("fabricLanguageSchema — narrowed to zh-CN | en (grill-6fixes D2)", () => {
+  it("accepts exactly the two concrete locales", () => {
+    expect(fabricLanguageSchema.parse("zh-CN")).toBe("zh-CN");
+    expect(fabricLanguageSchema.parse("en")).toBe("en");
   });
 
-  it("accepts the rc.12 zh-CN-hybrid value end-to-end", () => {
-    const parsed = fabricConfigSchema.parse({ fabric_language: "zh-CN-hybrid" });
-    expect(parsed.fabric_language).toBe("zh-CN-hybrid");
-  });
-
-  it("rejects an invalid fabric_language enum value", () => {
-    expect(() =>
-      fabricConfigSchema.parse({ fabric_language: "japanese" }),
-    ).toThrow();
-    expect(() =>
-      fabricConfigSchema.parse({ fabric_language: "" }),
-    ).toThrow();
-  });
-
-  it("standalone fabricLanguageSchema mirrors the enum domain", () => {
-    expect(fabricLanguageSchema.parse("match-existing")).toBe(
-      "match-existing",
-    );
-    expect(fabricLanguageSchema.parse("zh-CN-hybrid")).toBe("zh-CN-hybrid");
+  it("rejects the removed match-existing / zh-CN-hybrid values", () => {
+    expect(() => fabricLanguageSchema.parse("match-existing")).toThrow();
+    expect(() => fabricLanguageSchema.parse("zh-CN-hybrid")).toThrow();
     expect(() => fabricLanguageSchema.parse("ja-JP")).toThrow();
+    expect(() => fabricLanguageSchema.parse("")).toThrow();
+  });
+
+  it("the standalone domain is exactly [zh-CN, en]", () => {
+    expect([...fabricLanguageSchema.options].sort()).toEqual(["en", "zh-CN"]);
+  });
+});
+
+describe("fabricConfigSchema — fabric_language is no longer a project field (grill-6fixes D1)", () => {
+  it("silently drops a stale fabric_language key (language is global now)", () => {
+    const parsed = fabricConfigSchema.parse({
+      fabric_language: "zh-CN",
+    } as Record<string, unknown>) as Record<string, unknown>;
+    expect(parsed.fabric_language).toBeUndefined();
   });
 });
 
@@ -77,21 +68,13 @@ describe("fabricConfigSchema — default_layer_filter", () => {
 });
 
 describe("fabricConfigSchema — defaults and backward compatibility", () => {
-  it("missing fields apply defaults: match-existing / both", () => {
+  it("missing fields apply default: both", () => {
     const parsed = fabricConfigSchema.parse({});
-    expect(parsed.fabric_language).toBe("match-existing");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
-  it("partial config (only fabric_language) defaults default_layer_filter", () => {
-    const parsed = fabricConfigSchema.parse({ fabric_language: "zh-CN" });
-    expect(parsed.fabric_language).toBe("zh-CN");
-    expect(parsed.default_layer_filter).toBe("both");
-  });
-
-  it("partial config (only default_layer_filter) defaults fabric_language", () => {
+  it("partial config (only default_layer_filter) keeps the explicit value", () => {
     const parsed = fabricConfigSchema.parse({ default_layer_filter: "team" });
-    expect(parsed.fabric_language).toBe("match-existing");
     expect(parsed.default_layer_filter).toBe("team");
   });
 
@@ -119,17 +102,14 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
     });
 
     // New fields filled by defaults.
-    expect(parsed.fabric_language).toBe("match-existing");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
   it("explicit values override defaults across full config", () => {
     const parsed = fabricConfigSchema.parse({
       clientPaths: { claudeCodeCLI: "/usr/bin/claude" },
-      fabric_language: "en",
       default_layer_filter: "personal",
     });
-    expect(parsed.fabric_language).toBe("en");
     expect(parsed.default_layer_filter).toBe("personal");
     expect(parsed.clientPaths).toEqual({ claudeCodeCLI: "/usr/bin/claude" });
   });
@@ -250,15 +230,17 @@ describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
     // of the rc.9+ skill tunables are present and the schema must resolve
     // every one to its default.
     const minimalUserConfig = {
-      fabric_language: "zh-CN-hybrid" as const,
+      // grill-6fixes (D1): a stale fabric_language key from an old config is
+      // silently dropped (language is global now); the rest still default.
+      fabric_language: "zh-CN-hybrid",
       archive_hint_hours: 24,
       review_hint_pending_count: 10,
       review_hint_pending_age_days: 7,
       maintenance_hint_days: 14,
       maintenance_hint_cooldown_days: 7,
-    };
-    const parsed = fabricConfigSchema.parse(minimalUserConfig);
-    expect(parsed.fabric_language).toBe("zh-CN-hybrid");
+    } as Record<string, unknown>;
+    const parsed = fabricConfigSchema.parse(minimalUserConfig) as Record<string, unknown>;
+    expect(parsed.fabric_language).toBeUndefined();
     expect(parsed.import_window_first_run_months).toBe(60);
     expect(parsed.import_window_rerun_months).toBe(2);
     expect(parsed.import_max_pending_per_run).toBe(10);
@@ -273,14 +255,14 @@ describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
 
   it("root schema remains lenient — unknown keys are silently dropped (no .strict())", () => {
     const parsed = fabricConfigSchema.parse({
-      fabric_language: "en" as const,
+      default_layer_filter: "both" as const,
       // A bogus key from a future rc that this schema does not know about.
       // Lenient parse means it is silently dropped, not rejected. This is
       // load-bearing: forward-compat for rc.13+ tunables that have not yet
       // landed in shared/src/schemas/fabric-config.ts.
       some_future_rc_knob: 42,
     });
-    expect(parsed.fabric_language).toBe("en");
+    expect(parsed.default_layer_filter).toBe("both");
     expect((parsed as Record<string, unknown>).some_future_rc_knob).toBeUndefined();
   });
 });

@@ -6,102 +6,90 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { detectNodeLocale } from "./detect-node-locale.js";
 import { resolveFabricLocale } from "./resolve-fabric-locale.js";
+import { resolveGlobalLocale } from "./resolve-global-locale.js";
 
 // ---------------------------------------------------------------------------
-// resolve-fabric-locale — runtime locale resolver for projectRoot-aware
-// consumers (rc.26 doctor i18n closure, TASK-01).
+// resolve-fabric-locale / resolve-global-locale — grill-6fixes (D1).
 //
-// Tests use a tmpdir fixture (no global state mutation) and assert
-// RELATIVELY against `detectNodeLocale()` for the fall-through branches so the
-// suite stays deterministic regardless of CI's LANG / FAB_LANG env.
+// Language is now a SINGLE machine-wide tone in
+// `~/.fabric/fabric-global.json` → `language`. `resolveFabricLocale` ignores
+// its `projectRoot` argument and delegates to `resolveGlobalLocale`. Tests
+// isolate the global root via FABRIC_HOME and assert RELATIVELY against
+// `detectNodeLocale()` for the env-fallback branches so the suite stays
+// deterministic regardless of CI's LANG / FAB_LANG.
 // ---------------------------------------------------------------------------
 
-function makeTmpProjectRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "fabric-locale-"));
-}
-
-function writeFabricConfig(projectRoot: string, body: string): void {
-  const dir = path.join(projectRoot, ".fabric");
+function writeGlobalConfig(globalHome: string, body: string): void {
+  const dir = path.join(globalHome, ".fabric");
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "fabric-config.json"), body);
+  fs.writeFileSync(path.join(dir, "fabric-global.json"), body);
 }
 
-describe("resolveFabricLocale", () => {
-  let tmpRoots: string[] = [];
+describe("resolveGlobalLocale / resolveFabricLocale", () => {
+  let tmpHomes: string[] = [];
+  let savedFabricHome: string | undefined;
 
   beforeEach(() => {
-    tmpRoots = [];
+    tmpHomes = [];
+    savedFabricHome = process.env.FABRIC_HOME;
   });
 
   afterEach(() => {
-    for (const root of tmpRoots) {
-      fs.rmSync(root, { recursive: true, force: true });
+    for (const home of tmpHomes) {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+    if (savedFabricHome === undefined) {
+      delete process.env.FABRIC_HOME;
+    } else {
+      process.env.FABRIC_HOME = savedFabricHome;
     }
     vi.restoreAllMocks();
   });
 
-  function freshRoot(): string {
-    const root = makeTmpProjectRoot();
-    tmpRoots.push(root);
-    return root;
+  function freshGlobalHome(): string {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-globalloc-"));
+    tmpHomes.push(home);
+    process.env.FABRIC_HOME = home;
+    return home;
   }
 
-  it("returns 'zh-CN' when fabric_language is 'zh-CN'", () => {
-    const root = freshRoot();
-    writeFabricConfig(root, JSON.stringify({ fabric_language: "zh-CN" }));
+  it("returns the global language 'zh-CN' verbatim", () => {
+    const home = freshGlobalHome();
+    writeGlobalConfig(home, JSON.stringify({ uid: "u-test", language: "zh-CN", stores: [] }));
 
-    expect(resolveFabricLocale(root)).toBe("zh-CN");
+    expect(resolveGlobalLocale()).toBe("zh-CN");
+    // resolveFabricLocale ignores its projectRoot and delegates to the global.
+    expect(resolveFabricLocale("/any/project/root")).toBe("zh-CN");
   });
 
-  it("returns 'en' when fabric_language is 'en'", () => {
-    const root = freshRoot();
-    writeFabricConfig(root, JSON.stringify({ fabric_language: "en" }));
+  it("returns the global language 'en' verbatim", () => {
+    const home = freshGlobalHome();
+    writeGlobalConfig(home, JSON.stringify({ uid: "u-test", language: "en", stores: [] }));
 
-    expect(resolveFabricLocale(root)).toBe("en");
+    expect(resolveGlobalLocale()).toBe("en");
+    expect(resolveFabricLocale()).toBe("en");
   });
 
-  it("returns 'zh-CN' (silently) when fabric_language is 'zh-CN-hybrid' — a valid persistent value, NOT a placeholder", () => {
-    const root = freshRoot();
-    writeFabricConfig(root, JSON.stringify({ fabric_language: "zh-CN-hybrid" }));
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("falls back to detectNodeLocale when global config has no language", () => {
+    const home = freshGlobalHome();
+    writeGlobalConfig(home, JSON.stringify({ uid: "u-test", stores: [] }));
 
-    const result = resolveFabricLocale(root);
-
-    expect(result).toBe("zh-CN");
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(resolveGlobalLocale()).toBe(detectNodeLocale());
+    expect(resolveFabricLocale()).toBe(detectNodeLocale());
   });
 
-  it("warns and falls back to detectNodeLocale when fabric_language is 'match-existing'", () => {
-    const root = freshRoot();
-    writeFabricConfig(
-      root,
-      JSON.stringify({ fabric_language: "match-existing" }),
-    );
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("falls back to detectNodeLocale when fabric-global.json is missing", () => {
+    freshGlobalHome();
+    // No fabric-global.json written.
 
-    const result = resolveFabricLocale(root);
-
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/match-existing/);
-    // RELATIVE assertion — env-dependent, but must equal detectNodeLocale's
-    // own return for the current process env. Re-invoke to compare.
-    expect(result).toBe(detectNodeLocale());
+    expect(resolveGlobalLocale()).toBe(detectNodeLocale());
   });
 
-  it("falls back to detectNodeLocale when fabric-config.json is missing", () => {
-    const root = freshRoot();
-    // No .fabric/ directory at all.
+  it("falls back to detectNodeLocale when fabric-global.json is malformed (and does not throw)", () => {
+    const home = freshGlobalHome();
+    writeGlobalConfig(home, "{ not valid json");
 
-    const result = resolveFabricLocale(root);
-
-    expect(result).toBe(detectNodeLocale());
-  });
-
-  it("falls back to detectNodeLocale when fabric-config.json is malformed JSON (and does not throw)", () => {
-    const root = freshRoot();
-    writeFabricConfig(root, "{ this is not valid json");
-
-    expect(() => resolveFabricLocale(root)).not.toThrow();
-    expect(resolveFabricLocale(root)).toBe(detectNodeLocale());
+    expect(() => resolveGlobalLocale()).not.toThrow();
+    expect(resolveGlobalLocale()).toBe(detectNodeLocale());
   });
 });

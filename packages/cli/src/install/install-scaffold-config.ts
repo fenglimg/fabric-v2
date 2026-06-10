@@ -1,10 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { log } from "@clack/prompts";
-
-import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
-
 // ISS-042: the per-dev activity ledgers and caches are described throughout the
 // codebase as "gitignored" (events.jsonl, metrics.jsonl, cite-rollup.jsonl,
 // .cache/, advisory `.lock` files, `.corrupted.*` forensic sidecars), but
@@ -42,17 +38,15 @@ export function writeDefaultGitignore(fabricDir: string): void {
  * Idempotent: writes ONLY when the file does not exist. NEVER merges missing
  * fields into an existing file. NEVER overwrites user edits.
  */
-export function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
+export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string): void {
   const target = join(fabricDir, "fabric-config.json");
   if (existsSync(target)) return;
 
-  // TASK-006 (C1): probe README + docs to fixate fabric_language on a fresh
-  // init. Existing user configs are never overwritten because of the early
-  // return above.
-  const detectedLanguage: ResolvedLanguage = detectExistingLanguage(targetRoot);
-
+  // grill-6fixes (D1): language is no longer a per-project field — it lives in
+  // `~/.fabric/fabric-global.json` and is picked once by the install language
+  // selector. The README/docs detection + fixation that used to run here was
+  // removed.
   const FABRIC_CONFIG_DEFAULTS = {
-    fabric_language: detectedLanguage,
     archive_hint_hours: 24,
     archive_hint_cooldown_hours: 12,
     review_hint_pending_count: 10,
@@ -75,8 +69,4 @@ export function writeDefaultFabricConfig(fabricDir: string, targetRoot: string):
 
   mkdirSync(fabricDir, { recursive: true });
   writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
-
-  log.info(
-    `Detected and fixated fabric_language = ${detectedLanguage}; edit ${target} to override.`,
-  );
 }

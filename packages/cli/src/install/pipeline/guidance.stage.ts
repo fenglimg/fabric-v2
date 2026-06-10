@@ -68,12 +68,10 @@ export class GuidanceStage implements Stage {
       console.log("");
       console.log(translate("cli.install.restart-banner"));
 
-      // Print language preference hint
-      if (context.state.fabricLanguage) {
-        console.log(
-          paint.muted(translate("cli.install.language_preference_hint", { value: context.state.fabricLanguage })),
-        );
-      }
+      // grill-6fixes (D1): the old "Fabric 语言偏好：{value}" hint was removed.
+      // Language is the single machine-wide tone picked once by the install
+      // language selector; surfacing a per-install "preference" line here was
+      // the source of the wizard-vs-fixated mismatch users hit.
 
       // Print capability summary
       const finalSupports = detectClientSupports(context.target);

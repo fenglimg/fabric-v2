@@ -39,6 +39,12 @@ import {
 // This guarantees `keyof PanelFieldKey` stays in lockstep with the schema.
 export type FabricConfigSchemaShape = z.infer<typeof fabricConfigSchema>;
 
+// grill-6fixes (D1): `fabric_language` is no longer a project-config key but is
+// still surfaced as a panel field (config.ts routes its read/write to the
+// global config). Panel keys are therefore schema keys plus that one virtual
+// global-routed key.
+export type PanelFieldKey = keyof FabricConfigSchemaShape | "fabric_language";
+
 export type PanelFieldGroup = "A_locale" | "B_hint_threshold" | "C_audit";
 
 export type ValidateResult =
@@ -46,8 +52,8 @@ export type ValidateResult =
   | { ok: false; error: string };
 
 export interface PanelFieldMeta {
-  /** Schema key this field edits — type-checked against the inferred config shape. */
-  readonly key: keyof FabricConfigSchemaShape;
+  /** Schema key this field edits (plus the virtual global-routed `fabric_language`). */
+  readonly key: PanelFieldKey;
   /** Logical grouping for panel section headers. */
   readonly group: PanelFieldGroup;
   /** Clack widget hint — `select` for enums, `text` for free-form numbers. */
@@ -104,7 +110,7 @@ function makePositiveIntField(
 }
 
 function makeEnumField(
-  key: keyof FabricConfigSchemaShape,
+  key: PanelFieldKey,
   group: PanelFieldGroup,
   enumValues: readonly string[],
   defaultValue: string,
@@ -186,12 +192,13 @@ export function getPanelFieldByKey(
 
 const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // --- Group A: Locale (2) ---
-  makeEnumField(
-    "fabric_language",
-    "A_locale",
-    fabricLanguageSchema.options,
-    pickStringDefault("fabric_language"),
-  ),
+  // grill-6fixes (D1): `fabric_language` is no longer a project-config field —
+  // it is the single machine-wide tone in `~/.fabric/fabric-global.json`. The
+  // panel still surfaces it (the `fabric config` language entry), but config.ts
+  // special-cases this key to read/write the GLOBAL config instead of the
+  // project file. Default is a literal "en" since there is no project-schema
+  // default to derive from.
+  makeEnumField("fabric_language", "A_locale", fabricLanguageSchema.options, "en"),
   makeEnumField(
     "default_layer_filter",
     "A_locale",

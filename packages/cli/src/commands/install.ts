@@ -90,7 +90,6 @@ import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
-  readFabricLanguagePreference,
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
   writeCursorBootstrapManagedBlock,
@@ -813,14 +812,10 @@ function printInitPostSetup(
   printInitStageSummary(stageResults);
   printInitCapabilitySummary(finalSupports, stageResults, plan.options);
 
-  // rc.12 broad-gate-fabric-lang TASK-006: one-line install-end UX hint that
-  // surfaces the resolved fabric_language and tells the user where to change
-  // it. Reads from .fabric/fabric-config.json after the bootstrap stage so
-  // the value reflects what was written (or detected) during this run.
-  const fabricLanguage = readFabricLanguagePreference(plan.target);
-  console.log(
-    paint.muted(t("cli.install.language_preference_hint", { value: fabricLanguage })),
-  );
+  // grill-6fixes (D1): the install-end "Fabric 语言偏好：{value}" hint was
+  // removed. Language is the single machine-wide tone picked once by the
+  // install language selector (StoreStage), not surfaced as a per-install
+  // preference line here.
 }
 
 // rc.14 TASK-002 — diff-mode classification table rendered in --dry-run and

@@ -1,79 +1,18 @@
-import fs from "node:fs";
-import path from "node:path";
-
-import { detectNodeLocale } from "./detect-node-locale.js";
+import { resolveGlobalLocale } from "./resolve-global-locale.js";
 import type { Locale } from "./types.js";
 
 /**
- * Resolve the effective runtime locale for a given project root.
+ * Resolve the effective runtime locale for a project-scoped command.
  *
- * Resolution order (rc.26 — closes KT-DEC-9004 runtime gap):
- *   1. Read `<projectRoot>/.fabric/fabric-config.json` and inspect
- *      `fabric_language`.
- *   2. If the value is `"en"` or `"zh-CN"` (the two concrete Locale members),
- *      return it verbatim — this is the eager-resolved value `fabric init` is
- *      supposed to write back per KT-DEC-9004.
- *   3. If the value is `"match-existing"` or `"zh-CN-hybrid"` (placeholders
- *      that should NEVER survive `fabric init` per KT-DEC-9004's invariant),
- *      emit a `console.warn` and fall through to `detectNodeLocale()`.
- *   4. If the file is missing, unreadable, malformed JSON, or `fabric_language`
- *      is absent / has any other shape, silently fall through to
- *      `detectNodeLocale()` (env-driven: `FAB_LANG` → `LANG` → `"en"`).
+ * grill-6fixes (D1): language is now a SINGLE machine-wide base tone held in
+ * `~/.fabric/fabric-global.json` → `language`. The old per-project
+ * `fabric_language` field and the README/docs content-detection path were
+ * removed, so the `projectRoot` argument is no longer consulted — it is kept
+ * only so the existing call sites need no signature change. Everything now
+ * delegates to {@link resolveGlobalLocale} (global language → env fallback).
  *
- * Never throws — all failure paths degrade to `detectNodeLocale()`.
+ * Never throws.
  */
-export function resolveFabricLocale(projectRoot: string): Locale {
-  const configPath = path.join(projectRoot, ".fabric", "fabric-config.json");
-
-  let raw: string;
-  try {
-    raw = fs.readFileSync(configPath, "utf8");
-  } catch {
-    return detectNodeLocale();
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return detectNodeLocale();
-  }
-
-  if (typeof parsed !== "object" || parsed === null) {
-    return detectNodeLocale();
-  }
-
-  const fabricLanguage = (parsed as { fabric_language?: unknown }).fabric_language;
-
-  if (fabricLanguage === "en" || fabricLanguage === "zh-CN") {
-    return fabricLanguage;
-  }
-
-  if (fabricLanguage === "zh-CN-hybrid") {
-    // `zh-CN-hybrid` is a VALID, persistent fabric_language (Chinese narrative
-    // with English technical tokens — rc.12, bootstrap "locked clarification 3";
-    // detect-language deliberately returns it). It is NOT an unresolved
-    // placeholder: it maps to the zh-CN base Locale for i18n string lookup, and
-    // the hybrid narrative behavior is applied by the renderers downstream that
-    // read the raw fabric_language. Resolve it silently (no warning) to avoid
-    // the spurious "pre-init placeholder" noise that fired on every CLI command.
-    return "zh-CN";
-  }
-
-  if (fabricLanguage === "match-existing") {
-    // KT-DEC-9004 invariant: `fabric init` is expected to eager-resolve this
-    // placeholder into a concrete Locale ("en" | "zh-CN") and write back to
-    // fabric-config.json. Encountering it at runtime means either (a) `fabric
-    // init` was never run, (b) the user hand-edited the config, or (c) a legacy
-    // v1.x config slipped through the v2.0 lenient root parser. Warn loudly and
-    // degrade to env detection.
-    console.warn(
-      `[fabric] fabric_language="${fabricLanguage}" is a pre-init placeholder ` +
-        `that should have been resolved during 'fabric init' (KT-DEC-9004). ` +
-        `Falling back to FAB_LANG / LANG environment detection.`,
-    );
-    return detectNodeLocale();
-  }
-
-  return detectNodeLocale();
+export function resolveFabricLocale(_projectRoot?: string): Locale {
+  return resolveGlobalLocale();
 }

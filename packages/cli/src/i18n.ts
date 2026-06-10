@@ -1,27 +1,21 @@
 import {
   createTranslator,
-  detectNodeLocale,
-  resolveFabricLocale,
+  resolveGlobalLocale,
   type Translator,
 } from "@fenglimg/fabric-shared";
 
-// rc.26 TASK-01 — γ-pattern: the module-level `t` and `locale` exports stay
-// based on `detectNodeLocale()` so non-projectRoot consumers (banner/version/
-// help and the install/uninstall/serve/config/hooks-orchestrator/index call
-// sites — which run before a project root is known or are deliberately
-// env-scoped) keep their current env-driven behavior. The
-// `getProjectTranslator(projectRoot)` factory provides projectRoot-aware
-// locale resolution (reads `.fabric/fabric-config.json` fabric_language) per
-// KT-DEC-9004 for the project-scoped commands that DO have a workspace root.
-export const locale = detectNodeLocale();
+// grill-6fixes (D1): the single machine-wide language base tone governs both
+// CLI display AND knowledge authoring. The module-level `locale`/`t` resolve
+// from `~/.fabric/fabric-global.json` → `language` (set once by the install
+// language selector), falling back to env detection (FAB_LANG → LANG → en)
+// before the language is picked. There is no per-project override anymore, so
+// `getProjectTranslator` resolves the same global locale — the `projectRoot`
+// parameter is retained for call-site compatibility but no longer consulted.
+export const locale = resolveGlobalLocale();
 export const t = createTranslator(locale);
 
-// W3-05 (ISS-033/034): projectRoot-aware translator for project-scoped
-// commands (doctor, whoami, store, scope-explain, sync, metrics). Resolves the
-// repo's configured fabric_language, falling back to env detection when no
-// `.fabric/fabric-config.json` is present. `projectRoot` defaults to the cwd.
-export function getProjectTranslator(projectRoot: string = process.cwd()): Translator {
-  return createTranslator(resolveFabricLocale(projectRoot));
+export function getProjectTranslator(_projectRoot: string = process.cwd()): Translator {
+  return createTranslator(resolveGlobalLocale());
 }
 
 // Back-compat alias — doctor's existing call site. New code should call

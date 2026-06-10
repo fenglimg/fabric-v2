@@ -256,6 +256,13 @@ export const globalConfigSchema = z
   .object({
     // Machine/account identity. Personal-knowledge id namespace (S33/S27).
     uid: z.string().min(1),
+    // grill-6fixes (D1): the single machine-wide language base tone. Governs
+    // BOTH the CLI display locale AND the knowledge-authoring language — there
+    // is no per-project override (the old project `fabric_language` +
+    // README-detection path was removed). Picked once via the install
+    // language selector; changeable via `fabric config`. Absent ⇒ resolvers
+    // fall back to env detection (FAB_LANG → LANG → en).
+    language: z.enum(["zh-CN", "en"]).optional(),
     // All stores mounted on this machine. The implicit personal store is
     // included here once initialized. Default empty so a fresh global config
     // (before `install --global`) parses cleanly.

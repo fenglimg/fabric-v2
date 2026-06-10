@@ -3,6 +3,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolveGlobalLocale } from "@fenglimg/fabric-shared";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import {
   BOOTSTRAP_MARKER_BEGIN,
@@ -402,34 +403,17 @@ export {
 };
 
 /**
- * Read the `fabric_language` value from `.fabric/fabric-config.json` at
- * `projectRoot`. Returns the raw string value (one of `"match-existing" |
- * "zh-CN" | "en" | "zh-CN-hybrid"`) when present, else `"match-existing"` as
- * the documented default. Tolerant of missing files and malformed JSON: the
- * fallback keeps the install path robust even when called before the
- * fabric-config has been scaffolded (e.g. an isolated `fabric hooks install` on
- * a half-initialized workspace).
+ * Resolve the language base tone used by the bootstrap section writer.
  *
- * rc.12 broad-gate-fabric-lang TASK-006: extracted from install.ts so the
- * section writer can resolve the value without coupling to scan.ts's
- * heavier `resolveFabricLanguage` / `detectExistingLanguage` machinery.
+ * grill-6fixes (D1): language is a single machine-wide value in
+ * `~/.fabric/fabric-global.json` → `language`, governing both display and
+ * knowledge. The old per-project `fabric_language` read (and the
+ * `match-existing` / `zh-CN-hybrid` placeholders) were removed; this now
+ * delegates to {@link resolveGlobalLocale} (global language → env fallback).
+ * `projectRoot` is retained for call-site compatibility but unused.
  */
-export function readFabricLanguagePreference(projectRoot: string): string {
-  const configPath = join(projectRoot, ".fabric", "fabric-config.json");
-  if (!existsSync(configPath)) {
-    return "match-existing";
-  }
-  try {
-    const raw = readFileSync(configPath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return "match-existing";
-    }
-    const value = (parsed as Record<string, unknown>)["fabric_language"];
-    return typeof value === "string" && value.length > 0 ? value : "match-existing";
-  } catch {
-    return "match-existing";
-  }
+export function readFabricLanguagePreference(_projectRoot: string): string {
+  return resolveGlobalLocale();
 }
 
 // rc.34 TASK-02: SKILL.md size pre-check + stale-install detection.

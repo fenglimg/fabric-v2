@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks from fabric_language=zh-CN 1`] = `
+exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks from global language=zh-CN 1`] = `
 [
   {
     "actionHint_prefix_30_chars": null,
@@ -389,7 +389,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
 ]
 `;
 
-exports[`runDoctorReport i18n snapshots > renders stable English doctor checks from fabric_language=en 1`] = `
+exports[`runDoctorReport i18n snapshots > renders stable English doctor checks from global language=en 1`] = `
 [
   {
     "actionHint_prefix_30_chars": null,

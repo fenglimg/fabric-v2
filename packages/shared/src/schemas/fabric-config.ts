@@ -41,24 +41,15 @@ export const selectionTokenTtlMsSchema = z.number().int().min(30_000).max(3_600_
 // small enough to stay well under the payload budget).
 export const planContextTopKSchema = z.number().int().min(1).max(200);
 
-// v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: Drives init-scan
-// baseline template language and the zh-CN body rewrite policy.
-// `match-existing` preserves whatever language the project is already
-// authoring knowledge in; explicit `zh-CN` / `en` lock the policy regardless
-// of detected content; `zh-CN-hybrid` renders Chinese narrative prose with
-// English technical terms preserved (MCP tool names, CLI commands, file
-// paths, Skill/Fabric protected tokens).
-//
-// rc.12 hard rename: this used to be `knowledgeLanguageSchema` and the
-// associated config field was `knowledge_language`. There is no z.preprocess
-// alias — pre-rc.12 fabric-config.json files will fail parse with a clear
-// "Unrecognized key" error (acceptable under the zero-user clean-slate).
-export const fabricLanguageSchema = z.enum([
-  "match-existing",
-  "zh-CN",
-  "en",
-  "zh-CN-hybrid",
-]);
+// grill-6fixes (D1/D2): the language base tone. Narrowed to exactly the two
+// concrete locales — `zh-CN` | `en`. The `match-existing` placeholder and the
+// `zh-CN-hybrid` variant were removed end-to-end, along with the README/docs
+// content-detection path that auto-fixated them. Language is no longer a
+// per-project field; it lives once in `~/.fabric/fabric-global.json` →
+// `language` (globalConfigSchema in schemas/store.ts) and governs both CLI
+// display and knowledge authoring. This schema is retained because the install
+// language selector and the `fabric config` language entry validate against it.
+export const fabricLanguageSchema = z.enum(["zh-CN", "en"]);
 
 // v2.0 (grill-followup Q6): Fallback for `fab_plan_context` when the caller
 // omits `layer_filter`. `both` keeps team and personal knowledge in scope;
@@ -127,10 +118,10 @@ export const fabricConfigSchema = z.object({
   scanIgnores: z.array(z.string()).optional(),
   audit_mode: auditModeSchema.optional(),
   mcpPayloadLimits: mcpPayloadLimitsSchema,
-  // Backward-compat: both fields are optional with defaults so existing
-  // fabric-config.json files (pre-grill-followup) parse unchanged. The default
-  // values themselves are load-bearing — see docs/data-schema.md.
-  fabric_language: fabricLanguageSchema.optional().default("match-existing"),
+  // grill-6fixes (D1): `fabric_language` is no longer a per-project field —
+  // language is a single machine-wide tone in `~/.fabric/fabric-global.json`.
+  // The root parser is lenient (no .strict()), so any stale `fabric_language`
+  // key left in an existing project config is silently dropped.
   default_layer_filter: defaultLayerFilterSchema.optional().default("both"),
   // Cooldown for the fabric-hint Stop hook (formerly archive-hint, renamed in
   // rc.5 TASK-010). After ANY of the three signals (archive / review / import)

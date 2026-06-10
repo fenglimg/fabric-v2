@@ -14,7 +14,9 @@ import {
 // packages/cli/templates/hooks/fabric-hint.cjs reader helpers. If a new
 // reader is added in the future, add the field here too.
 const EXPECTED_FABRIC_CONFIG_FIELDS = [
-  "fabric_language",
+  // grill-6fixes (D1): `fabric_language` is no longer scaffolded into the
+  // project config — language is a single machine-wide tone in
+  // ~/.fabric/fabric-global.json.
   "archive_hint_hours",
   "archive_hint_cooldown_hours",
   "review_hint_pending_count",
@@ -171,11 +173,9 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
       expect(parsed, `missing field ${field}`).toHaveProperty(field);
     }
     // Verify the documented defaults explicitly so a silent default-shift
-    // is caught by the test. TASK-006 (C1): fabric_language is fixated
-    // at init time by probing README + docs/*.md. The werewolf fixture
-    // README is pure English so the detector resolves to "en". The literal
-    // "match-existing" placeholder is no longer written.
-    expect(parsed.fabric_language).toBe("en");
+    // is caught by the test. grill-6fixes (D1): the project config no longer
+    // carries `fabric_language` — language is global now.
+    expect(parsed).not.toHaveProperty("fabric_language");
     expect(parsed.archive_hint_hours).toBe(24);
     expect(parsed.archive_hint_cooldown_hours).toBe(12);
     expect(parsed.review_hint_pending_count).toBe(10);

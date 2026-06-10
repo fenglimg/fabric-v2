@@ -14,6 +14,7 @@ const dirs: string[] = [];
 const originalCwd = process.cwd();
 const originalHome = process.env.HOME;
 const originalFabLang = process.env.FAB_LANG;
+const originalFabricHome = process.env.FABRIC_HOME;
 
 function zhProject(): string {
   const root = mkdtempSync(join(tmpdir(), "fab-i18n-cmd-"));
@@ -33,9 +34,12 @@ function isolateHome(): void {
   const home = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
   dirs.push(home);
   process.env.HOME = home;
-  // Force env locale to en so any leak to the module-level `t` would show
-  // English — making the zh-CN assertion prove the projectRoot path is used.
-  process.env.FAB_LANG = "en";
+  // grill-6fixes (D1): language is the single global tone in
+  // ~/.fabric/fabric-global.json → `language`. With no global config present,
+  // the projectRoot-aware translator resolves via the env fallback, so we drive
+  // the expected zh-CN rendering through FAB_LANG.
+  process.env.FAB_LANG = "zh-CN";
+  delete process.env.FABRIC_HOME;
 }
 
 afterEach(() => {
@@ -44,6 +48,8 @@ afterEach(() => {
   else process.env.HOME = originalHome;
   if (originalFabLang === undefined) delete process.env.FAB_LANG;
   else process.env.FAB_LANG = originalFabLang;
+  if (originalFabricHome === undefined) delete process.env.FABRIC_HOME;
+  else process.env.FABRIC_HOME = originalFabricHome;
   vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });

@@ -12,16 +12,30 @@ const tempRoots: string[] = [];
 
 let originalFabricHome: string | undefined;
 let originalFabLang: string | undefined;
+let fakeHome: string;
 
 beforeEach(() => {
   originalFabricHome = process.env.FABRIC_HOME;
-  const fakeHome = mkdtempSync(join(tmpdir(), "doctor-i18n-fabric-home-"));
+  fakeHome = mkdtempSync(join(tmpdir(), "doctor-i18n-fabric-home-"));
   tempRoots.push(fakeHome);
   process.env.FABRIC_HOME = fakeHome;
 
   originalFabLang = process.env.FAB_LANG;
   process.env.FAB_LANG = "en";
 });
+
+// grill-6fixes (D1): doctor renders in the single machine-wide language tone
+// from ~/.fabric/fabric-global.json, not a per-project field. Drive it by
+// writing the global config under the isolated FABRIC_HOME.
+function setGlobalLanguage(language: "en" | "zh-CN"): void {
+  const dir = join(fakeHome, ".fabric");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "fabric-global.json"),
+    JSON.stringify({ uid: "u-doctor-i18n", language, stores: [] }, null, 2),
+    "utf8",
+  );
+}
 
 afterEach(() => {
   if (originalFabricHome === undefined) {
@@ -42,9 +56,9 @@ afterEach(() => {
 });
 
 describe("runDoctorReport i18n snapshots", () => {
-  it("renders stable English doctor checks from fabric_language=en", async () => {
+  it("renders stable English doctor checks from global language=en", async () => {
     const target = createV2KnowledgeProject("doctor-i18n-en");
-    writeFabricConfig(target, "en");
+    setGlobalLanguage("en");
     await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const report = await runDoctorReport(target);
@@ -52,9 +66,9 @@ describe("runDoctorReport i18n snapshots", () => {
     expect(projectChecks(report.checks)).toMatchSnapshot();
   });
 
-  it("renders stable Chinese doctor checks from fabric_language=zh-CN", async () => {
+  it("renders stable Chinese doctor checks from global language=zh-CN", async () => {
     const target = createV2KnowledgeProject("doctor-i18n-zh");
-    writeFabricConfig(target, "zh-CN");
+    setGlobalLanguage("zh-CN");
     await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const report = await runDoctorReport(target);
@@ -64,14 +78,16 @@ describe("runDoctorReport i18n snapshots", () => {
 
   it("keeps doctor check ordering and machine fields locale-invariant", async () => {
     const enTarget = createV2KnowledgeProject("doctor-i18n-contract-en");
-    writeFabricConfig(enTarget, "en");
     await writeKnowledgeMeta(enTarget, { source: "doctor_fix" });
 
     const zhTarget = createV2KnowledgeProject("doctor-i18n-contract-zh");
-    writeFabricConfig(zhTarget, "zh-CN");
     await writeKnowledgeMeta(zhTarget, { source: "doctor_fix" });
 
+    // grill-6fixes (D1): language is global now, so flip the global tone
+    // between the two runs to compare en vs zh rendering of the same checks.
+    setGlobalLanguage("en");
     const enReport = await runDoctorReport(enTarget);
+    setGlobalLanguage("zh-CN");
     const zhReport = await runDoctorReport(zhTarget);
 
     expect(zhReport.checks).toHaveLength(enReport.checks.length);
@@ -127,11 +143,10 @@ function createV2KnowledgeProject(name: string): string {
   writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
   writeFile(".fabric/events.jsonl", "", target);
+  // grill-6fixes (D1): a minimal project config (no per-project language — that
+  // is global now). Kept so doctor's project-config checks stay satisfied.
+  writeFile(".fabric/fabric-config.json", JSON.stringify({}, null, 2), target);
   return target;
-}
-
-function writeFabricConfig(root: string, fabricLanguage: "en" | "zh-CN"): void {
-  writeFile(".fabric/fabric-config.json", JSON.stringify({ fabric_language: fabricLanguage }, null, 2), root);
 }
 
 function createProject(name: string): string {

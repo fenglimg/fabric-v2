@@ -17,6 +17,16 @@ import { resolveClients } from "../config/resolver.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
+import {
+  loadGlobalConfig,
+  resolveGlobalRoot,
+  saveGlobalConfig,
+} from "../store/global-config-io.js";
+
+// grill-6fixes (D1): the language base tone is a single machine-wide value in
+// `~/.fabric/fabric-global.json`, not a per-project field. The panel still
+// surfaces it under this key, but read/write are routed to the global config.
+const LANGUAGE_FIELD_KEY = "fabric_language";
 
 // ---------------------------------------------------------------------------
 // rc.16 TASK-006 (F1-panel): `fabric config` is now a clack-based interactive
@@ -315,6 +325,13 @@ export const configCmd = defineCommand({
     let edited = false;
     while (true) {
       const current = await readPanelConfig(configPath);
+      // grill-6fixes (D1): overlay the global language onto the in-memory panel
+      // config so the language entry's menu label reflects the machine-wide
+      // tone (the project file no longer carries `fabric_language`).
+      const globalLanguage = loadGlobalConfig(resolveGlobalRoot())?.language;
+      if (globalLanguage !== undefined) {
+        current[LANGUAGE_FIELD_KEY] = globalLanguage;
+      }
       const fields = getPanelFields();
 
       const fieldChoice = await select<string>({
@@ -355,9 +372,25 @@ export const configCmd = defineCommand({
       }
 
       try {
-        const refreshed = await readPanelConfig(configPath);
-        const merged: PanelConfig = { ...refreshed, [field.key as string]: newValue };
-        await atomicWriteJson(configPath, merged);
+        if ((field.key as string) === LANGUAGE_FIELD_KEY) {
+          // grill-6fixes (D1): language persists to the GLOBAL config, not the
+          // project file. The uninit gate guarantees `fabric install` already
+          // ran, so a global config exists.
+          const globalRoot = resolveGlobalRoot();
+          const globalConfig = loadGlobalConfig(globalRoot);
+          if (globalConfig === null) {
+            log.error(t("cli.config.errors.uninit-workspace.message"));
+            continue;
+          }
+          saveGlobalConfig(
+            { ...globalConfig, language: newValue as "zh-CN" | "en" },
+            globalRoot,
+          );
+        } else {
+          const refreshed = await readPanelConfig(configPath);
+          const merged: PanelConfig = { ...refreshed, [field.key as string]: newValue };
+          await atomicWriteJson(configPath, merged);
+        }
         edited = true;
         log.success(
           t("cli.config.write.success", {

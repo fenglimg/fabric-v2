@@ -167,27 +167,50 @@ describe("rc.16 TASK-007: fabric config panel — exit path", () => {
 });
 
 describe("rc.16 TASK-007: fabric config panel — Group A enum field roundtrip", () => {
-  it("editing fabric_language to 'en' writes the new value and leaves no .tmp residue", async () => {
+  it("editing fabric_language to 'en' writes the GLOBAL language (grill-6fixes D1)", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);
 
-    // Sequence: top menu picks fabric_language → field-prompt picks 'en' → top
-    // menu picks __exit__.
-    selectMock
-      .mockResolvedValueOnce("fabric_language")
-      .mockResolvedValueOnce("en")
-      .mockResolvedValueOnce("__exit__");
+    // grill-6fixes (D1): language is global now, so the panel routes this field
+    // to ~/.fabric/fabric-global.json. Isolate FABRIC_HOME so the real global
+    // config is never touched, and seed it with a zh-CN base tone.
+    const globalHome = mkdtempSync(join(tmpdir(), "fab-config-global-"));
+    tempRoots.push(globalHome);
+    const savedFabricHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = globalHome;
+    const globalConfigPath = join(globalHome, ".fabric", "fabric-global.json");
+    mkdirSync(join(globalHome, ".fabric"), { recursive: true });
+    writeFileSync(
+      globalConfigPath,
+      JSON.stringify({ uid: "u-test", language: "zh-CN", stores: [] }, null, 2),
+      "utf8",
+    );
 
-    await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+    try {
+      // Sequence: top menu picks fabric_language → field-prompt picks 'en' →
+      // top menu picks __exit__.
+      selectMock
+        .mockResolvedValueOnce("fabric_language")
+        .mockResolvedValueOnce("en")
+        .mockResolvedValueOnce("__exit__");
 
-    const after = readConfig(dir);
-    expect(after.fabric_language).toBe("en");
-    expect(after.archive_hint_hours).toBe(24);
+      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
 
-    // Atomic write contract: no .tmp leftovers anywhere under .fabric/
-    const fabricFiles = readdirSync(join(dir, ".fabric"));
-    expect(fabricFiles.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
-    expect(logSuccessMock).toHaveBeenCalled();
+      // Language landed in the GLOBAL config, not the project file.
+      const globalAfter = JSON.parse(readFileSync(globalConfigPath, "utf8")) as Record<string, unknown>;
+      expect(globalAfter.language).toBe("en");
+
+      // Atomic write contract: no .tmp leftovers anywhere under .fabric/
+      const fabricFiles = readdirSync(join(dir, ".fabric"));
+      expect(fabricFiles.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
+      expect(logSuccessMock).toHaveBeenCalled();
+    } finally {
+      if (savedFabricHome === undefined) {
+        delete process.env.FABRIC_HOME;
+      } else {
+        process.env.FABRIC_HOME = savedFabricHome;
+      }
+    }
   });
 });
 
