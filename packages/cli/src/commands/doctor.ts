@@ -21,6 +21,7 @@ import {
   type HistoryAllReport,
 } from "@fenglimg/fabric-server";
 
+import { backfillUnboundProject } from "../install/backfill-unbound-project.js";
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
@@ -503,6 +504,7 @@ export const doctorCommand = defineCommand({
 
     let fixKnowledgeReport: DoctorFixKnowledgeReport | null = null;
     let fixReport: Awaited<ReturnType<typeof runDoctorFix>> | null = null;
+    let unboundProjectFix: Awaited<ReturnType<typeof backfillUnboundProject>> = null;
     let report: DoctorReport;
 
     if (fixKnowledge) {
@@ -557,6 +559,11 @@ export const doctorCommand = defineCommand({
       if (args["dry-run"] === true) {
         report = await runDoctorReport(resolution.target);
       } else {
+        // Backfill the project-scope binding (unbound_project) FIRST so the
+        // report below reflects the post-backfill state — the server fix cannot
+        // reach the CLI-only install primitive that mints project_id /
+        // active_project. Idempotent: a no-op when the coordinate is complete.
+        unboundProjectFix = await backfillUnboundProject(resolution.target);
         fixReport = await runDoctorFix(resolution.target);
         report = fixReport.report;
         // C3: repair the by-alias readability links (best-effort, global scope).
@@ -572,7 +579,11 @@ export const doctorCommand = defineCommand({
     if (args.json === true) {
       writeStdout(
         JSON.stringify(
-          { ...(fixKnowledgeReport ?? fixReport ?? report), store_diagnostics: storeDiagnostics },
+          {
+            ...(fixKnowledgeReport ?? fixReport ?? report),
+            store_diagnostics: storeDiagnostics,
+            ...(unboundProjectFix === null ? {} : { unbound_project_fix: unboundProjectFix }),
+          },
           null,
           2,
         ),
@@ -586,6 +597,14 @@ export const doctorCommand = defineCommand({
         renderFixKnowledgeMutations(fixKnowledgeReport, dt);
       } else if (fixReport !== null) {
         writeStdout(fixReport.message);
+        if (unboundProjectFix !== null) {
+          writeStdout(
+            dt("cli.doctor.unbound-project-backfilled", {
+              alias: unboundProjectFix.alias,
+              project: unboundProjectFix.active_project,
+            }),
+          );
+        }
       } else if ((fix || fixKnowledge) && args["dry-run"] === true) {
         // v2.0.0-rc.33 W4-B1: dry-run banner. Surfaces above the standard
         // report so user knows no mutations were applied; the fixable_errors

@@ -62,6 +62,7 @@ import {
   computeReadSetRevision,
 } from "./cross-store-recall.js";
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
+import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
   createStoreCounterCheck,
   fixStoreCounters,
@@ -131,6 +132,8 @@ export {
 } from "./doctor-summary-opaque.js";
 export type { KnowledgeSummaryOpaqueInspection } from "./doctor-summary-opaque.js";
 export { createScopeLintCheck } from "./doctor-scope-lint.js";
+export { detectUnboundProject } from "./doctor-unbound-project.js";
+export type { UnboundProjectViolation } from "./doctor-unbound-project.js";
 export { createStoreCounterCheck } from "./doctor-store-counters.js";
 export {
   createLayerMismatchCheck,
@@ -1310,6 +1313,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
     // only stores (the post-decolo knowledge home); never throws.
     createScopeLintCheck(t, await lintStoreScopes(projectRoot)),
+    // project-scope binding backfill lint — a store bound as the write target
+    // but with no project_id / active_project parks the project axis. The
+    // fresh-install hole is sealed in store.stage.ts; this covers existing repos
+    // (CLI `--fix` backfills via ensureStoreProjectBinding).
+    createUnboundProjectCheck(t, detectUnboundProject(projectRoot)),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null

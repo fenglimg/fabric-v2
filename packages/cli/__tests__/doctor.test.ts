@@ -193,6 +193,8 @@ describe("doctor command", () => {
         report: createReport("ok"),
       }),
       runDoctorApplyLint: vi.fn(),
+      // --fix backfills the project-scope binding first; nothing to backfill here.
+      detectUnboundProject: vi.fn().mockReturnValue(null),
     }));
 
     const { doctorCommand } = await import("../src/commands/doctor.ts");
