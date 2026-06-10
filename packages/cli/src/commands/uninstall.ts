@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { cancel, confirm, group, intro, isCancel, log, note, outro } from "@clack/prompts";
+import { cancel, confirm, intro, isCancel, multiselect, note, outro } from "@clack/prompts";
 import { defineCommand } from "citty";
 // v2.0.0-rc.37 Wave A2: serve-lock preflight removed alongside fabric serve
 // quarantine — no main-line process writes `.fabric/.serve.lock` any more.
@@ -146,7 +146,6 @@ type McpRemovalDetail = {
   message?: string;
 };
 
-const UNINSTALL_WIZARD_GROUP_CANCELLED = Symbol("uninstall-wizard-group-cancelled");
 
 // Top-level `.fabric/` state files written by `fabric install`. The default scaffold
 // stage prunes these. Knowledge content is stored under global stores, not under
@@ -577,84 +576,54 @@ export async function resolveUninstallExecutionPlanWithWizard(
   };
 }
 
+// grill-6fixes (③): the uninstall wizard now mirrors the install UX —
+// a single multiselect of what to remove (pre-checked per the resolved
+// defaults), ONE plan summary of the selection, and ONE final confirm.
+// The previous flow stacked ~5 [Y/n] confirms (a redundant target-confirm,
+// three per-stage confirms, an execute-confirm) and printed the plan twice
+// behind a mis-aligned overview box — which read as unpolished next to install.
 export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
   return {
     async run(context) {
       intro(t("cli.uninstall.wizard.intro"));
-      note(
-        t("cli.uninstall.wizard.overview.body", {
-          target: context.target,
-        }),
-        t("cli.uninstall.wizard.overview.title"),
-      );
-      printUninstallPlanSummary(context.target, context.options, context.supports);
 
-      log.step(t("cli.uninstall.wizard.step.target"));
-      const continueWithTarget = await confirm({
-        message: t("cli.uninstall.wizard.target.confirm", { target: context.target }),
-        initialValue: true,
+      const available = UNINSTALL_STAGE_KEYS.filter(
+        (key) => !context.lockedStages.includes(key),
+      );
+      const initialValues = available.filter((key) => !isStageSkipped(context.options, key));
+
+      const picked = await multiselect<UninstallStageName>({
+        message: t("cli.uninstall.wizard.select.prompt", { target: context.target }),
+        options: available.map((key) => ({
+          value: key,
+          label: t(`cli.uninstall.wizard.select.${key}.label`),
+          hint: t(`cli.uninstall.wizard.select.${key}.hint`),
+        })),
+        initialValues,
+        required: false,
       });
-      if (isCancel(continueWithTarget) || !continueWithTarget) {
+      if (isCancel(picked)) {
         emitUninstallWizardCancellation();
         return null;
       }
 
-      log.step(t("cli.uninstall.wizard.step.plan"));
-      let groupedSelection: UninstallWizardSelection;
-      try {
-        groupedSelection = await group<UninstallWizardSelection>(
-          {
-            scaffold: async () =>
-              context.lockedStages.includes("scaffold")
-                ? false
-                : confirmInGroup({
-                    message: t("cli.uninstall.wizard.stage.scaffold", {
-                      defaultValue: formatPromptDefault(!context.options.skipScaffold),
-                    }),
-                    initialValue: !context.options.skipScaffold,
-                  }),
-            bootstrap: async () =>
-              context.lockedStages.includes("bootstrap")
-                ? false
-                : confirmInGroup({
-                    message: t("cli.uninstall.wizard.stage.bootstrap", {
-                      defaultValue: formatPromptDefault(!context.options.skipBootstrap),
-                    }),
-                    initialValue: !context.options.skipBootstrap,
-                  }),
-            mcp: async () =>
-              context.lockedStages.includes("mcp")
-                ? false
-                : confirmInGroup({
-                    message: t("cli.uninstall.wizard.stage.mcp", {
-                      defaultValue: formatPromptDefault(!context.options.skipMcp),
-                    }),
-                    initialValue: !context.options.skipMcp,
-                  }),
-          },
-          {
-            onCancel() {
-              throw UNINSTALL_WIZARD_GROUP_CANCELLED;
-            },
-          },
-        );
-      } catch (error) {
-        if (error === UNINSTALL_WIZARD_GROUP_CANCELLED) {
-          emitUninstallWizardCancellation();
-          return null;
-        }
-        throw error;
-      }
+      const selected = new Set(picked as UninstallStageName[]);
+      const selection: UninstallWizardSelection = {
+        scaffold: selected.has("scaffold"),
+        bootstrap: selected.has("bootstrap"),
+        mcp: selected.has("mcp"),
+      };
 
+      // ONE plan summary of the SELECTED plan — no duplicate print.
       const previewOptions: UninstallOptions = {
         ...context.options,
-        skipScaffold: !groupedSelection.scaffold,
-        skipBootstrap: !groupedSelection.bootstrap,
-        skipMcp: !groupedSelection.mcp,
+        skipScaffold: !selection.scaffold,
+        skipBootstrap: !selection.bootstrap,
+        skipMcp: !selection.mcp,
       };
-      log.step(t("cli.uninstall.wizard.step.review"));
       printUninstallPlanSummary(context.target, previewOptions, context.supports);
 
+      // ONE final confirm.
       const confirmed = await confirm({
         message: t("cli.uninstall.wizard.execute.confirm"),
         initialValue: true,
@@ -666,21 +635,26 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
 
       outro(t("cli.uninstall.wizard.outro"));
 
-      return groupedSelection;
+      return selection;
     },
   };
 }
 
-function emitUninstallWizardCancellation(): void {
-  cancel(t("cli.uninstall.wizard.cancelled"));
+const UNINSTALL_STAGE_KEYS: readonly UninstallStageName[] = ["scaffold", "bootstrap", "mcp"];
+
+function isStageSkipped(options: UninstallOptions, key: UninstallStageName): boolean {
+  switch (key) {
+    case "scaffold":
+      return Boolean(options.skipScaffold);
+    case "bootstrap":
+      return Boolean(options.skipBootstrap);
+    case "mcp":
+      return Boolean(options.skipMcp);
+  }
 }
 
-async function confirmInGroup(options: { message: string; initialValue: boolean }): Promise<boolean> {
-  const result = await confirm(options);
-  if (isCancel(result)) {
-    throw UNINSTALL_WIZARD_GROUP_CANCELLED;
-  }
-  return result;
+function emitUninstallWizardCancellation(): void {
+  cancel(t("cli.uninstall.wizard.cancelled"));
 }
 
 // -----------------------------------------------------------------------
@@ -847,10 +821,6 @@ function assertExistingDirectory(target: string): void {
 
 function isInteractiveUninstall(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
-}
-
-function formatPromptDefault(value: boolean): string {
-  return value ? "Y/n" : "y/N";
 }
 
 function yesNoLabel(value: boolean): string {

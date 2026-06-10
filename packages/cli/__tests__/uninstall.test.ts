@@ -241,10 +241,11 @@ describe("uninstall wizard cancellation", () => {
       note: vi.fn(),
       outro: vi.fn(),
       cancel: cancelMock,
-      // First confirm() in the wizard ("Continue uninstalling Fabric from
-      // {target}?") returns false — the wizard short-circuits with cancellation.
+      // grill-6fixes (③): the wizard is now a single multiselect + a single
+      // final confirm. The user picks stages, then declines the final
+      // "Execute now?" confirm → the wizard short-circuits with cancellation.
+      multiselect: vi.fn().mockResolvedValue(["scaffold", "bootstrap", "mcp"]),
       confirm: vi.fn().mockResolvedValue(false),
-      group: vi.fn(),
       select: vi.fn(),
       log: { step: vi.fn() },
       isCancel: vi.fn().mockReturnValue(false),
