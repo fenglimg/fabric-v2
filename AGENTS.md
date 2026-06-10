@@ -1,12 +1,3 @@
-# Project Knowledge
-
-This project uses [Fabric](https://github.com/fenglimg/fabric) for cross-client AI knowledge management.
-
-Knowledge entries live only in mounted stores under `~/.fabric/stores/`. Use `fabric store bind` and `fabric store switch-write` to select the project read/write stores.
-Run `fabric doctor` to verify state.
-
-Use `fabric-archive` and `fabric-review` to create and review decisions, pitfalls, guidelines, models, and processes in the active store.
-
 <!-- fabric:bootstrap:begin -->
 # Fabric Bootstrap
 
@@ -20,7 +11,7 @@ Use `fabric-archive` and `fabric-review` to create and review decisions, pitfall
 
 ## 5 分钟上手 (Dev Quickstart)
 
-**Fabric 是什么**:跨客户端(Claude Code / Codex / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
+**Fabric 是什么**:跨客户端(Claude Code / Codex CLI / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
 
 **你要做的 (DO)** vs **engine 自动的 (DON'T 手动)**:
 
@@ -31,7 +22,7 @@ Use `fabric-archive` and `fabric-review` to create and review decisions, pitfall
 | 用 `fabric-archive` / `fabric-review` / `fabric store ...` 管理 store-backed knowledge | 手写任何非 store knowledge 根 |
 | `npm install -g @fenglimg/fabric-cli@latest` 升级 | 背 35 条 doctor lint 代码 |
 
-**4 步循环**: `fabric install` (一次) → 绑定并选择写入 store → AI 正常工作 (hook on session start + edit) → AI 提议条目进入当前 write store 的 `knowledge/pending/` → 用 `fabric-review` skill 审核。
+**4 步循环**: `fabric install` (一次) → 绑定并选择写入 store → AI 正常工作 (hook on session start + edit) → AI 通过 MCP 写入当前 write store 的 pending 条目并返回 `pending_path` → 用 `fabric-review` skill 审核。
 
 **真例**:某 sprite 黑边 root cause 是 `atlas.premultiplyAlpha` flag 反向 — 归档进 store 的 `knowledge/pitfalls/` 后,下次同类问题 AI 自动 reference。
 
@@ -48,7 +39,7 @@ Use `fabric-archive` and `fabric-review` to create and review decisions, pitfall
 - **Skills (7)**:写流程 `fabric-archive` / `fabric-review` / `fabric-import`;store 流程 `fabric-store` / `fabric-sync` / `fabric-connect`;诊断 `fabric-audit`。
 - **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
 - **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config `archive_edit_threshold` 一致)/ 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
-- **Review backlog nudge** (rc.36): 当前 read/write store 的 `knowledge/pending/` 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
+- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_review action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
 
