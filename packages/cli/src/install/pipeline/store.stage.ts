@@ -11,6 +11,7 @@ import {
   storeBind,
   storeCreate,
   storeList,
+  storeProjectList,
   storeSetWriteRoute,
   storeSwitchWrite,
   unboundAvailableStores,
@@ -20,7 +21,11 @@ import { loadProjectConfig } from "../../store/project-config-io.js";
 import { paint } from "../../colors.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
-import { ensureStoreProjectBinding } from "../store-project-onboarding.js";
+import {
+  ensureStoreProjectBinding,
+  normalizeStoreProjectId,
+  suggestStoreProjectId,
+} from "../store-project-onboarding.js";
 
 // ---------------------------------------------------------------------------
 // Store Stage
@@ -225,15 +230,61 @@ export class StoreStage implements Stage {
       this.warnUnboundStores(unboundStores);
       return null;
     }
-    const project = await text({
-      message: t("cli.install.store.project-coordinate", { store: choice }),
-      initialValue: loadProjectConfig(context.target)?.active_project ?? "project",
-    });
-    if (isCancel(project) || typeof project !== "string" || project.length === 0) {
+    const project = await this.resolveProjectIdWithGuard(context.target, choice, globalRoot);
+    if (project === null) {
       this.warnUnboundStores(unboundStores);
       return null;
     }
     return this.bindMountedStoreToProject(context.target, choice, globalRoot, project);
+  }
+
+  /**
+   * grill-6fixes (D6): pick which project this repo binds to inside `alias`.
+   * Default is the git-repo-derived id, applied SILENTLY in the common case
+   * (the store has no projects yet, or the git id already matches an existing
+   * one). The user is asked ONLY on genuine ambiguity — the store already
+   * enumerates projects AND the git id matches none of them — the one case
+   * where silently auto-creating would fork a parallel project away from the
+   * team's existing one. Returns the resolved project id, or null on cancel.
+   */
+  private async resolveProjectIdWithGuard(
+    projectRoot: string,
+    alias: string,
+    globalRoot: string,
+  ): Promise<string | null> {
+    const suggested = suggestStoreProjectId(projectRoot);
+    const existing = await storeProjectList(alias, globalRoot);
+
+    if (existing.length === 0 || existing.some((project) => project.id === suggested)) {
+      return suggested;
+    }
+
+    const NEW_PROJECT = "__new_project__";
+    const picked = await select<string>({
+      message: t("cli.install.store.project-pick.prompt", { store: alias }),
+      initialValue: NEW_PROJECT,
+      options: [
+        ...existing.map((project) => ({
+          value: project.id,
+          label: t("cli.install.store.project-pick.join", {
+            name: project.name ?? project.id,
+            id: project.id,
+          }),
+        })),
+        { value: NEW_PROJECT, label: t("cli.install.store.project-pick.new", { id: suggested }) },
+      ],
+    });
+    if (isCancel(picked)) return null;
+    if (picked !== NEW_PROJECT) return picked;
+
+    const entered = await text({
+      message: t("cli.install.store.project-pick.new-name"),
+      initialValue: suggested,
+    });
+    if (isCancel(entered) || typeof entered !== "string" || entered.length === 0) {
+      return null;
+    }
+    return normalizeStoreProjectId(entered);
   }
 
   /**

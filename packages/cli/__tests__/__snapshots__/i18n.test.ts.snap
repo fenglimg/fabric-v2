@@ -74,6 +74,80 @@ Examples:
 }
 `;
 
+exports[`cli i18n > renders en command descriptions and output snapshots 2`] = `
+{
+  "config": {
+    "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).
+
+Examples:
+  fabric config                   open the interactive panel
+  fabric config --target /path    edit configuration for a specific project",
+    "errors": [
+      "Workspace not initialized. Run \`fabric install\` first.",
+    ],
+    "stderr": [],
+    "stdout": [],
+  },
+  "install": {
+    "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).
+
+Examples:
+  fabric install                  interactive install in the current project
+  fabric install --yes            accept defaults, skip the TTY wizard
+  fabric install --dry-run        preview the install plan without writing files",
+    "errors": [],
+    "stderr": [
+      "Using globally-installed @fenglimg/fabric-server",
+      "failed mcp: __vite_ssr_import_meta__.resolve is not a function",
+    ],
+    "stdout": [
+      "installed global Fabric (uid <uid>)",
+      "Created <fixture-2>/AGENTS.md",
+      "Created <fixture-2>/.fabric/events.jsonl",
+      "Created <fixture-2>/.fabric/forensic.json",
+      "Next Installing bootstrap templates...",
+      "completed bootstrap: installed=127 skipped=2",
+      "Next Configuring MCP clients...",
+      "Next Installing git hooks...",
+      "completed hooks: installed=2 skipped=140",
+      "Reason .fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
+      "ran: bootstrap, hooks",
+      "skipped: none",
+      "failed: mcp",
+      "Client capability summary",
+      "Client           Bootstrap  MCP     Hook       Skill      Follow-up         ",
+      "---------------  ---------  ------  ---------  ---------  ------------------",
+      "Claude Code CLI  ready      failed  installed  installed  continue in client",
+      "Cursor           ready      failed  installed  installed  continue in client",
+      "",
+      "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
+      "",
+      "Next steps — get your first value:
+  1. Restart your AI client (Claude Code / Cursor / Codex). It now auto-surfaces this project's knowledge to the assistant.
+  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.
+  3. Verify it works: ask your AI "what does Fabric know about this repo?", or run \`fabric doctor\` to check health.",
+      "",
+      "More: docs/surfaces.md explains when to use CLI vs Skill vs MCP.",
+    ],
+  },
+  "locale": "en",
+  "uninstall": {
+    "description": "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.
+
+Examples:
+  fabric uninstall                interactive uninstall in the current project
+  fabric uninstall --yes          accept defaults, skip the TTY wizard
+  fabric uninstall --dry-run      preview the uninstall plan without removing files",
+    "usage": "fabric uninstall - Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.
+
+Examples:
+  fabric uninstall                interactive uninstall in the current project
+  fabric uninstall --yes          accept defaults, skip the TTY wizard
+  fabric uninstall --dry-run      preview the uninstall plan without removing files",
+  },
+}
+`;
+
 exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] = `
 {
   "config": {
