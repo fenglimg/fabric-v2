@@ -1,14 +1,14 @@
 ---
 name: fabric-import
-description: 冷启动从 git log + docs/*.md 回灌 .fabric/knowledge/pending (NOT code/data import). Triggers 导入历史/bootstrap fabric/mine changelog/挖掘 commit.
+description: 冷启动从 git log + docs/*.md 回灌 active write store pending knowledge (NOT code/data import). Triggers 导入历史/bootstrap fabric/mine changelog/挖掘 commit.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__fabric__fab_review
 ---
 
-> **Surface**: Skill (LLM judgment over git + docs). See [`docs/ARCHITECTURE.md`](https://github.com/fenglimg/fabric/blob/main/docs/ARCHITECTURE.md).
+> **Surface**: Skill (LLM judgment over git + docs). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
 
 ## Purpose
 
-One-time per-project cold-start: lift git commits + `docs/*.md` into `.fabric/knowledge/pending/` as `team`-layer entries. Bridges `fabric install`'s 4-7 baseline → accumulated corpus. Run once on adoption or after major refactor.
+One-time per-project cold-start: lift git commits + `docs/*.md` into the active write store as `team`-layer pending entries. Bridges `fabric install`'s 4-7 baseline → accumulated corpus. Run once on adoption or after major refactor.
 
 ## Precondition
 
@@ -18,7 +18,7 @@ Else stop: `没有触发 import 信号；如需手动 import 请显式调用 fab
 
 SKIP when: `.fabric/` missing (→ `fabric install`); canonical > `import_skip_canonical_threshold` (default 50); state file `phase=complete` + `last_checkpoint_at <24h`.
 
-Required: `.fabric/` exists, `agents.meta.json` present, MCP `fab_extract_knowledge` + `fab_review` registered, working tree reasonably clean.
+Required: `.fabric/` exists, target store resolved, MCP `fab_extract_knowledge` + `fab_review` registered, working tree reasonably clean.
 
 ## Phase 0 — Init
 
@@ -56,9 +56,9 @@ Strict P1→P2→P3 order. State write after every sub-step. Infer-not-Ask.
 
 `fabric install` produced baseline. Phase 1 REFERENCES, does NOT redo.
 
-1. Read `agents.meta.json` → confirm baseline counters.
-2. Glob `.fabric/knowledge/team/**/*.md` → titles for P2 negative filter.
-3. If meta missing OR team/ empty: STOP. Tell user `请先运行 fabric install 完成基线扫描` / `Please run fabric install first` and exit.
+1. Run `fabric onboard-coverage --json` and `fab_review action="search"` as needed to understand existing canonical titles in the mounted store read-set.
+2. If no write store is resolved: STOP. Tell user `请先绑定并选择写入 store` / `Please bind and select a write store first` and exit.
+3. Use the returned canonical titles for the P2 negative filter.
 4. State: `phase=P1-done`, `p1_baseline_titles=[...]`, `last_checkpoint_at=<ISO>`.
 
 No MCP calls.
@@ -134,7 +134,7 @@ Protected tokens (verbatim, no translate): `stable_id`, `pending_path`, `layer`,
 
 ## Output Contract
 
-Roll-up sections (per `fabric_language`): `Phase 2 — Mining` | `Phase 3 — Dedup` | `State` | `Next Steps`. Plus one-line `git status .fabric/knowledge/`. Bilingual templates → `Read .../ref/output-contract.md`.
+Roll-up sections (per `fabric_language`): `Phase 2 — Mining` | `Phase 3 — Dedup` | `State` | `Next Steps`. Include the target store alias for proposed entries. Bilingual templates → `Read .../ref/output-contract.md`.
 
 ## Worked Examples
 

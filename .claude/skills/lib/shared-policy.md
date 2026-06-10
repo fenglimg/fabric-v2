@@ -17,7 +17,7 @@ following classes of token appear **verbatim in both variants**:
   `evidence_paths`, `tags`, `pending_path`, `layer`.
 - **Enum / routing values**: `narrow`, `broad`, `team`, `personal`, `draft`,
   `verified`, `proven`, `knowledge_scope_degraded`.
-- **Imperatives + paths**: `MUST`, `NEVER`, `.fabric/knowledge/`, file paths.
+- **Imperatives + paths**: `MUST`, `NEVER`, `knowledge/pending`, file paths.
 
 The authoritative machine-checked list is `PROTECTED_TOKENS` in
 `@fenglimg/fabric-shared` (enforced by `scripts/lint-protected-tokens.ts`).
