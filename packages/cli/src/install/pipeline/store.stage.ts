@@ -5,7 +5,8 @@ import { isCancel, select, text } from "@clack/prompts";
 import { join } from "node:path";
 
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../store/global-config-io.js";
-import { mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
+import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
+import { t } from "../../i18n.js";
 import {
   storeBind,
   storeCreate,
@@ -52,7 +53,15 @@ export class StoreStage implements Stage {
       // Ensure global config exists
       const globalConfig = loadGlobalConfig(globalRoot);
       if (globalConfig === null) {
-        await runGlobalInstall({}, globalRoot);
+        // C4: first-ever global install — offer to clone an existing personal
+        // store from a remote instead of always minting a fresh empty one.
+        // Default (and every non-interactive path) stays the fresh local mint.
+        const cloned = context.wizardEnabled
+          ? await this.promptPersonalStoreOnboarding(globalRoot)
+          : false;
+        if (!cloned) {
+          await runGlobalInstall({}, globalRoot);
+        }
         context.state.globalConfigCreated = true;
       } else {
         await this.ensurePersonalStore(globalConfig, globalRoot);
@@ -114,11 +123,7 @@ export class StoreStage implements Stage {
     });
 
     console.log("");
-    console.log(
-      paint.success(
-        `bound store '${mounted.alias}' to this project and set it as the write target.`,
-      ),
-    );
+    console.log(paint.success(t("cli.install.store.bound-success", { alias: mounted.alias })));
     return mounted.alias;
   }
 
@@ -133,9 +138,7 @@ export class StoreStage implements Stage {
       requestedProjectId,
     });
     console.log("");
-    console.log(
-      paint.success(`bound store '${alias}' to this project and set it as the write target.`),
-    );
+    console.log(paint.success(t("cli.install.store.bound-success", { alias })));
     return alias;
   }
 
@@ -163,9 +166,7 @@ export class StoreStage implements Stage {
       globalRoot: options.globalRoot,
     });
     console.log("");
-    console.log(
-      paint.success(`created store '${alias}', bound it to this project, and set it as the write target.`),
-    );
+    console.log(paint.success(t("cli.install.store.created-success", { alias })));
     return alias;
   }
 
@@ -175,15 +176,19 @@ export class StoreStage implements Stage {
     globalRoot: string,
   ): Promise<string | null> {
     const choice = await select({
-      message: "Bind an already-mounted knowledge store to this project?",
+      message: t("cli.install.store.bind-mounted.prompt"),
       initialValue: "skip",
       options: [
         ...unboundStores.map((store) => ({
           value: store.alias,
           label: store.alias,
-          hint: store.remote ?? "local store",
+          hint: store.remote ?? t("cli.install.store.local-store"),
         })),
-        { value: "skip", label: "skip", hint: "leave mounted stores unbound for now" },
+        {
+          value: "skip",
+          label: t("cli.install.store.skip-label"),
+          hint: t("cli.install.store.bind-mounted.skip-hint"),
+        },
       ],
     });
     if (isCancel(choice) || choice === "skip" || typeof choice !== "string") {
@@ -191,7 +196,7 @@ export class StoreStage implements Stage {
       return null;
     }
     const project = await text({
-      message: `Project coordinate in store '${choice}':`,
+      message: t("cli.install.store.project-coordinate", { store: choice }),
       initialValue: loadProjectConfig(context.target)?.active_project ?? "project",
     });
     if (isCancel(project) || typeof project !== "string" || project.length === 0) {
@@ -213,12 +218,24 @@ export class StoreStage implements Stage {
     }
 
     const choice = await select({
-      message: "Set up a team / shared knowledge store for this project?",
+      message: t("cli.install.store.onboard.prompt"),
       initialValue: "skip",
       options: [
-        { value: "skip", label: "skip", hint: "personal store only (default)" },
-        { value: "join", label: "join existing", hint: "clone + bind a shared store from a git remote" },
-        { value: "create", label: "create new", hint: "start a fresh local store (optionally remote-backed)" },
+        {
+          value: "skip",
+          label: t("cli.install.store.skip-label"),
+          hint: t("cli.install.store.onboard.skip-hint"),
+        },
+        {
+          value: "join",
+          label: t("cli.install.store.onboard.join-label"),
+          hint: t("cli.install.store.onboard.join-hint"),
+        },
+        {
+          value: "create",
+          label: t("cli.install.store.onboard.create-label"),
+          hint: t("cli.install.store.onboard.create-hint"),
+        },
       ],
     });
     if (isCancel(choice) || choice === "skip") {
@@ -227,7 +244,7 @@ export class StoreStage implements Stage {
 
     if (choice === "join") {
       const url = await text({
-        message: "Shared store git remote (url):",
+        message: t("cli.install.store.onboard.join-url"),
         placeholder: "git@github.com:org/knowledge.git",
       });
       if (isCancel(url) || typeof url !== "string" || url.length === 0) {
@@ -236,12 +253,12 @@ export class StoreStage implements Stage {
       return `bound:${await this.bindRemoteStoreToProject(projectRoot, url, globalRoot)}`;
     }
 
-    const alias = await text({ message: "Local alias for the new store:", initialValue: "team" });
+    const alias = await text({ message: t("cli.install.store.onboard.alias"), initialValue: "team" });
     if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
       return null;
     }
     const remote = await text({
-      message: "Git remote to back it (optional - leave blank to skip):",
+      message: t("cli.install.store.onboard.remote"),
       placeholder: "git@github.com:org/knowledge.git",
     });
     const remoteStr = !isCancel(remote) && typeof remote === "string" && remote.length > 0 ? remote : undefined;
@@ -255,11 +272,65 @@ export class StoreStage implements Stage {
   private warnUnboundStores(unboundStores: Array<{ alias: string }>): void {
     console.log("");
     console.log(
-      `Note: The following stores are mounted but not bound to this project: ${unboundStores.map((s) => `'${s.alias}'`).join(", ")}`,
+      t("cli.install.store.unbound-note", {
+        aliases: unboundStores.map((s) => `'${s.alias}'`).join(", "),
+      }),
     );
-    console.log(
-      `  Run 'fabric store bind ${unboundStores[0].alias}' to bind one.`,
-    );
+    console.log(t("cli.install.store.unbound-hint", { first: unboundStores[0].alias }));
+  }
+
+  /**
+   * C4: first-touch personal-store onboarding. Offers "create local (default)"
+   * vs "clone existing from a remote". Returns true only when it cloned a
+   * personal store AND wrote the global config (so the caller skips the fresh
+   * mint). Default / cancel / clone-failure all return false → caller mints
+   * fresh via runGlobalInstall. Never adds a keystroke to the non-interactive
+   * path (only invoked when wizardEnabled).
+   */
+  private async promptPersonalStoreOnboarding(globalRoot: string): Promise<boolean> {
+    const choice = await select({
+      message: t("cli.install.store.personal.prompt"),
+      initialValue: "new",
+      options: [
+        {
+          value: "new",
+          label: t("cli.install.store.personal.new-label"),
+          hint: t("cli.install.store.personal.new-hint"),
+        },
+        {
+          value: "clone",
+          label: t("cli.install.store.personal.clone-label"),
+          hint: t("cli.install.store.personal.clone-hint"),
+        },
+      ],
+    });
+    if (isCancel(choice) || choice !== "clone") {
+      return false;
+    }
+
+    const url = await text({
+      message: t("cli.install.store.personal.clone-url"),
+      placeholder: "git@github.com:you/fabric-personal.git",
+    });
+    if (isCancel(url) || typeof url !== "string" || url.length === 0) {
+      return false;
+    }
+
+    try {
+      const { store_uuid } = cloneGlobalPersonalFromRemote(url, globalRoot);
+      console.log("");
+      console.log(paint.success(t("cli.install.store.personal.cloned-success", { uuid: store_uuid })));
+      return true;
+    } catch (error) {
+      console.log(
+        paint.warn(
+          t("cli.install.store.personal.clone-failed", {
+            reason: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+      );
+      return false;
+    }
   }
 
   private async ensurePersonalStore(config: GlobalConfig, globalRoot: string): Promise<void> {

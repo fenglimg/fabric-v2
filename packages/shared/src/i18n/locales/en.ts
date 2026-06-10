@@ -985,11 +985,54 @@ export const enMessages: Messages = {
     "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
   "cli.install.next-steps":
     "Next steps — get your first value:\n" +
-    "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
+    "  1. Restart your AI client (Claude Code / Cursor / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
     "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
     "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
   "cli.install.store-bind-nudge":
     "💡 Mounted store(s) not bound to this project: {aliases}. Run `fabric store bind {first}` to read their knowledge here, then `fabric store switch-write {first}` to write team knowledge into it.",
+  // C1/C5: semantic-search interactive copy routed through t().
+  "cli.install.semantic.prompt": "Enable vector semantic search? (the first recall downloads an embedding model)",
+  "cli.install.semantic.enabled": "Semantic search enabled (embed_enabled=true, embed_model={model}).",
+  "cli.install.semantic.already-enabled": "Semantic search already enabled (embed_model={model}); {path} unchanged.",
+  "cli.install.semantic.offer-install": "Install the optional embedder now? Runs `npm i -g fastembed` (a no-op if already installed).",
+  "cli.install.semantic.installing": "Running `npm i -g fastembed` …",
+  "cli.install.semantic.installed": "fastembed installed. The embedding model downloads automatically on the first recall (~tens–hundreds of MB; no KB data is uploaded).",
+  "cli.install.semantic.install-failed": "Auto-install failed ({reason}). Run the steps manually:",
+  "cli.install.semantic.manual-steps":
+    "  1. Install the optional embedder where the MCP server resolves modules (a global install is global):\n" +
+    "       npm i -g fastembed\n" +
+    "  2. Warm the model cache (the first run downloads the weights, ~tens–hundreds of MB; no KB data is uploaded):\n" +
+    "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # strict-offline: pre-place the weights here\n" +
+    "  Note: after switching embed_model the existing vector dim/semantics change; the next recall re-embeds with the new model (doc vectors are cached by text and auto-recompute on mismatch).\n" +
+    "  Disable: set embed_enabled=false in fabric.config.json.",
+  // C5: store onboarding interactive copy routed through t().
+  "cli.install.store.local-store": "local store",
+  "cli.install.store.bind-mounted.prompt": "Bind an already-mounted knowledge store to this project?",
+  "cli.install.store.skip-label": "skip",
+  "cli.install.store.bind-mounted.skip-hint": "leave mounted stores unbound for now",
+  "cli.install.store.project-coordinate": "Project coordinate in store '{store}':",
+  "cli.install.store.bound-success": "bound store '{alias}' to this project and set it as the write target.",
+  "cli.install.store.created-success": "created store '{alias}', bound it to this project, and set it as the write target.",
+  "cli.install.store.onboard.prompt": "Set up a team / shared knowledge store for this project?",
+  "cli.install.store.onboard.skip-hint": "personal store only (default)",
+  "cli.install.store.onboard.join-label": "join existing",
+  "cli.install.store.onboard.join-hint": "clone + bind a shared store from a git remote",
+  "cli.install.store.onboard.create-label": "create new",
+  "cli.install.store.onboard.create-hint": "start a fresh local store (optionally remote-backed)",
+  "cli.install.store.onboard.join-url": "Shared store git remote (url):",
+  "cli.install.store.onboard.alias": "Local alias for the new store:",
+  "cli.install.store.onboard.remote": "Git remote to back it (optional - leave blank to skip):",
+  "cli.install.store.unbound-note": "Note: The following stores are mounted but not bound to this project: {aliases}.",
+  "cli.install.store.unbound-hint": "  Run 'fabric store bind {first}' to bind one.",
+  // C4: personal store clone-or-new.
+  "cli.install.store.personal.prompt": "No personal store on this machine yet. Create a fresh one, or clone your existing one from a remote?",
+  "cli.install.store.personal.new-label": "create local (default)",
+  "cli.install.store.personal.new-hint": "a fresh empty personal store",
+  "cli.install.store.personal.clone-label": "clone existing",
+  "cli.install.store.personal.clone-hint": "clone your backed-up personal store from a git remote",
+  "cli.install.store.personal.clone-url": "Your personal store git remote (url):",
+  "cli.install.store.personal.cloned-success": "cloned personal store from remote ({uuid}).",
+  "cli.install.store.personal.clone-failed": "cloning the personal store failed ({reason}); falling back to a fresh local store.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
   "cli.install.capabilities.header.client": "Client",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
@@ -1049,6 +1092,8 @@ export const enMessages: Messages = {
   "cli.uninstall.args.dry-run.description":
     "Print the uninstall plan without removing files or running follow-up stages.",
   "cli.uninstall.plan.title": "Fabric uninstall plan",
+  // C3: mirror install's phase banner ("Fabric install 将按 N 个阶段执行").
+  "cli.uninstall.plan.phase-banner": "Fabric uninstall runs in {total} phases",
   "cli.uninstall.plan.target": "Target: {target}",
   "cli.uninstall.plan.actions":
     "Plan: scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",

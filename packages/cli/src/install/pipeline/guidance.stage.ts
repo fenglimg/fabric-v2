@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 import { confirm, isCancel, select, text } from "@clack/prompts";
@@ -89,10 +90,11 @@ export class GuidanceStage implements Stage {
     console.log("");
     if (enabled.alreadyEnabled) {
       console.log(
-        paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`),
+        paint.muted(t("cli.install.semantic.already-enabled", { model: enabled.model, path: enabled.configPath })),
       );
       return;
     }
+    // Non-interactive (--enable-embed) path: print header + full manual steps.
     for (const line of renderSemanticSearchInstructions(enabled.model)) {
       console.log(line);
     }
@@ -100,13 +102,57 @@ export class GuidanceStage implements Stage {
 
   private async promptSemanticSearch(projectRoot: string): Promise<void> {
     const enable = await confirm({
-      message: "Enable vector semantic search? (downloads an embedding model on first use)",
+      message: t("cli.install.semantic.prompt"),
       initialValue: false,
     });
     if (isCancel(enable) || !enable) {
       return;
     }
-    this.enableSemanticSearchAndReport(projectRoot);
+    const enabled = enableSemanticSearch(projectRoot);
+    console.log("");
+    if (enabled.alreadyEnabled) {
+      console.log(
+        paint.muted(t("cli.install.semantic.already-enabled", { model: enabled.model, path: enabled.configPath })),
+      );
+      return;
+    }
+    console.log(t("cli.install.semantic.enabled", { model: enabled.model }));
+    // C1: offer to run the one host-side step (`npm i -g fastembed`) for the
+    // user instead of dumping a wall of manual commands. Consent-gated — never
+    // auto-run without a yes; a decline or failure falls back to the printed
+    // manual steps. The model weights still download lazily on first recall.
+    await this.offerInstallFastembed();
+  }
+
+  private async offerInstallFastembed(): Promise<void> {
+    const proceed = await confirm({
+      message: t("cli.install.semantic.offer-install"),
+      initialValue: true,
+    });
+    if (isCancel(proceed) || !proceed) {
+      this.printSemanticManualSteps();
+      return;
+    }
+    console.log(t("cli.install.semantic.installing"));
+    try {
+      execFileSync("npm", ["i", "-g", "fastembed"], { stdio: ["ignore", "inherit", "inherit"] });
+      console.log(paint.success(t("cli.install.semantic.installed")));
+    } catch (error) {
+      console.log(
+        paint.warn(
+          t("cli.install.semantic.install-failed", {
+            reason: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+      );
+      this.printSemanticManualSteps();
+    }
+  }
+
+  private printSemanticManualSteps(): void {
+    for (const line of t("cli.install.semantic.manual-steps").split("\n")) {
+      console.log(line);
+    }
   }
 
   private printCapabilitySummary(

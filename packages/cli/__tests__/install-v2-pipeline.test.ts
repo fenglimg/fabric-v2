@@ -7,6 +7,7 @@ import { createTranslator, globalConfigSchema, readBindingsSnapshot } from "@fen
 import { select, text } from "@clack/prompts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { t } from "../src/i18n.js";
 import { GuidanceStage } from "../src/install/pipeline/guidance.stage.js";
 import { EnvStage } from "../src/install/pipeline/env.stage.js";
 import { StoreStage } from "../src/install/pipeline/store.stage.js";
@@ -177,11 +178,13 @@ describe("install-v2 pipeline UX", () => {
 
     expect(result.disposition).toBe("ran");
     expect(result.installed).toEqual(["bound:team"]);
+    // C5: prompts route through t() now — assert via the same translator the
+    // StoreStage uses, so the check is locale-agnostic.
     expect(select).toHaveBeenCalledWith(expect.objectContaining({
-      message: "Bind an already-mounted knowledge store to this project?",
+      message: t("cli.install.store.bind-mounted.prompt"),
     }));
     expect(text).toHaveBeenCalledWith(expect.objectContaining({
-      message: "Project coordinate in store 'team':",
+      message: t("cli.install.store.project-coordinate", { store: "team" }),
     }));
 
     const projectConfig = loadProjectConfig(target);

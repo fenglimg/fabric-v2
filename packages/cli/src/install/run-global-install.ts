@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   STORES_ROOT_DIR,
   addMountedStore,
+  globalConfigSchema,
   readStoreIdentity,
   storeMountNameSchema,
   storeRelativePathForMount,
@@ -104,6 +105,56 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
   syncStoreAliasLinks(globalRoot);
   console.log(`mounted store '${alias}' (${identity.store_uuid}) from ${url}`);
   return { store_uuid: identity.store_uuid, alias };
+}
+
+// C4: clone an existing PERSONAL store from a remote into the personal slot, as
+// an alternative to minting a fresh empty one on first global install. Mirrors
+// `mountStoreFromRemote`'s S55-correct identity handling — the personal store's
+// intrinsic `store_uuid` comes from the cloned `store.json`, never derived from
+// the remote — but adopts the clone as the personal store (alias `personal`,
+// `personal: true`) instead of a team mount. Only valid when no global config
+// exists yet (the caller falls back to `runGlobalInstall` on any throw).
+export function cloneGlobalPersonalFromRemote(
+  url: string,
+  globalRoot: string,
+  uid: string = deriveUid(),
+): { store_uuid: string } {
+  if (loadGlobalConfig(globalRoot) !== null) {
+    throw new GenericIOError("global config already exists; refusing to clone a personal store over it", {
+      actionHint:
+        "this machine already has a personal store; to adopt a remote one, use `fabric store` after install rather than re-running first-touch install",
+    });
+  }
+
+  const storesRoot = join(globalRoot, STORES_ROOT_DIR);
+  mkdirSync(storesRoot, { recursive: true });
+
+  const tmp = mkdtempSync(join(tmpdir(), "fabric-personal-clone-"));
+  const cloneDest = join(tmp, "store");
+  gitClone(url, cloneDest);
+
+  const identity = readStoreIdentity(cloneDest);
+  if (identity === null) {
+    throw new GenericIOError(`cloned store at ${url} has no valid store.json (not a Fabric store)`, {
+      actionHint:
+        "verify the url points to a Fabric personal store git repo (it must contain a store.json at its root)",
+    });
+  }
+
+  const personalStore = {
+    store_uuid: identity.store_uuid,
+    alias: "personal",
+    mount_name: "personal",
+    personal: true,
+    remote: url,
+  };
+  const finalDir = join(globalRoot, storeRelativePathForMount(personalStore));
+  renameSync(cloneDest, finalDir);
+
+  saveGlobalConfig(globalConfigSchema.parse({ uid, stores: [personalStore] }), globalRoot);
+  syncStoreAliasLinks(globalRoot);
+  console.log(`cloned personal store '${identity.store_uuid}' from ${url}`);
+  return { store_uuid: identity.store_uuid };
 }
 
 export async function runGlobalInstall(

@@ -18,8 +18,13 @@ export type DetectedClientCapability =
   | "hook"
   | "skill";
 
+// Display-only kinds extend the writer-backed ClientKind. "CodexDesktop" has no
+// dedicated writer — it shares Codex CLI's ~/.codex config, so installing the
+// Codex CLI assets covers Desktop too. It exists only as a capability-table row.
+export type DisplayClientKind = ClientConfigWriter["clientKind"] | "CodexDesktop";
+
 export type DetectedClientSupport = {
-  clientKind: ClientConfigWriter["clientKind"];
+  clientKind: DisplayClientKind;
   label: string;
   detected: boolean;
   configPath: string | null;
@@ -133,8 +138,23 @@ export function detectClientSupports(
       capabilities: {
         bootstrap: true,
         mcp: true,
-        hook: false,
-        skill: false,
+        // Cursor DOES receive Fabric hooks: install copies the hook scripts to
+        // `.cursor/hooks/` and merges `.cursor/hooks.json` (hooks-orchestrator).
+        // It also HAS skills: Cursor resolves its Skills from the `.claude` /
+        // `.codex` skill dirs (cross-client fallback) that install already
+        // populates, so no dedicated `.cursor/skills` write is needed and the
+        // skill is genuinely available. The prior `hook:false`/`skill:false`
+        // both under-reported capabilities the install actually delivers.
+        hook: true,
+        skill: true,
+      },
+      installedCapabilities: {
+        hook: existsSync(join(workspaceRoot, ".cursor", "hooks.json")),
+        // Skills are available to Cursor when the shared `.claude` / `.codex`
+        // skill dirs exist (the locations Cursor reads them from).
+        skill:
+          existsSync(join(workspaceRoot, ".claude", "skills")) ||
+          existsSync(join(workspaceRoot, ".codex", "skills")),
       },
     },
     {
@@ -154,6 +174,27 @@ export function detectClientSupports(
         // `.codex/skills/` now, so probe that directory instead of the stale
         // hardcoded `false` (which made `fabric install` always re-report Codex
         // skills as uninstalled even right after installing them).
+        skill: existsSync(join(workspaceRoot, ".codex", "skills")),
+      },
+    },
+    {
+      clientKind: "CodexDesktop",
+      label: "Codex Desktop",
+      // Codex Desktop shares the same ~/.codex config as Codex CLI — there is no
+      // separate adapter work: installing the Codex CLI assets (MCP config /
+      // hooks / skills) makes Desktop ready too. Display-only row mirroring Codex
+      // CLI's detection + installed state; no dedicated writer (CodexTOMLConfigWriter
+      // already targets the shared config, so removing/adding it once covers both).
+      detected: codexDetected || hasExplicitPath(clientPaths, "codexCLI"),
+      configPath: "~/.codex/config.toml (shared with Codex CLI)",
+      capabilities: {
+        bootstrap: true,
+        mcp: true,
+        hook: true,
+        skill: true,
+      },
+      installedCapabilities: {
+        hook: existsSync(join(workspaceRoot, ".codex", "hooks.json")),
         skill: existsSync(join(workspaceRoot, ".codex", "skills")),
       },
     },

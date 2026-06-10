@@ -41,16 +41,16 @@ Examples:
       "skipped: none",
       "failed: mcp",
       "Client capability summary",
-      "Client           Bootstrap  MCP     Hook       Skill      Follow-up           ",
-      "---------------  ---------  ------  ---------  ---------  --------------------",
-      "Claude Code CLI  ready      failed  installed  installed  continue in client  ",
-      "Cursor           ready      failed  n/a        n/a        manual step required",
+      "Client           Bootstrap  MCP     Hook       Skill      Follow-up         ",
+      "---------------  ---------  ------  ---------  ---------  ------------------",
+      "Claude Code CLI  ready      failed  installed  installed  continue in client",
+      "Cursor           ready      failed  installed  installed  continue in client",
       "",
       "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
       "Fabric language preference: en. To change, edit \`fabric_language\` in \`.fabric/fabric-config.json\` (values: match-existing | zh-CN | en | zh-CN-hybrid).",
       "",
       "Next steps — get your first value:
-  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.
+  1. Restart your AI client (Claude Code / Cursor / Codex). It now auto-surfaces this project's knowledge to the assistant.
   2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.
   3. Verify it works: ask your AI "what does Fabric know about this repo?", or run \`fabric doctor\` to check health.",
       "",
@@ -116,16 +116,16 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "已跳过: 无",
       "失败: mcp",
       "客户端能力摘要",
-      "客户端           Bootstrap  MCP   Hook    Skill   后续动作        ",
-      "---------------  ---------  ----  ------  ------  ----------------",
-      "Claude Code CLI  已就绪     失败  已安装  已安装  可在客户端继续  ",
-      "Cursor           已就绪     失败  不适用  不适用  需要手动后续处理",
+      "客户端           Bootstrap  MCP   Hook    Skill   后续动作      ",
+      "---------------  ---------  ----  ------  ------  --------------",
+      "Claude Code CLI  已就绪     失败  已安装  已安装  可在客户端继续",
+      "Cursor           已就绪     失败  已安装  已安装  可在客户端继续",
       "",
       "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
       "Fabric 语言偏好：en。如需调整，请编辑 .fabric/fabric-config.json 中的 fabric_language 字段（可选值：match-existing | zh-CN | en | zh-CN-hybrid）。",
       "",
       "下一步 —— 拿到第一份价值:
-  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。
+  1. 重启你的 AI 客户端 (Claude Code / Cursor / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。
   2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。
   3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 \`fabric doctor\` 查健康。",
       "",

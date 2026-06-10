@@ -18,6 +18,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { t } from "../i18n.js";
+
 // Mirror of config-loader DEFAULT_EMBED_MODEL — the light Chinese model. Kept as
 // a local literal so this CLI module has no server-package import just for a
 // string (and so the install footprint argument in vector-retrieval holds).
@@ -71,15 +73,15 @@ export function enableSemanticSearch(
 /**
  * Operator instructions for the host-side steps (install fastembed + warm cache
  * + reindex). Returned as lines so the caller can route them through its logger.
+ *
+ * C5: routed through `t()` so the copy follows `fabric_language` instead of the
+ * old hardcoded-Chinese block. Header carries the pinned model; the remaining
+ * lines are the manual fallback steps (used when the interactive offer to run
+ * `npm i -g fastembed` is declined or unavailable).
  */
 export function renderSemanticSearchInstructions(model: string): string[] {
   return [
-    "语义搜索已启用 (embed_enabled=true, embed_model=" + model + ")。还需两步 (一次性):",
-    "  1. 安装可选 embedder (装到 MCP server 解析模块的位置 — 全局安装即全局):",
-    "       npm i -g fastembed",
-    "  2. 预热模型缓存 (首跑会联网下载模型权重 ~数十-数百 MB, 不上传任何 KB 数据):",
-    "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # 严格离线者预先放好权重",
-    "  注: 切换 embed_model 后已有向量维度/语义变化, 下次 recall 会按新模型重新嵌入 (doc 向量按文本缓存, 自动失配重算)。",
-    "  关闭: 编辑 fabric.config.json 设 embed_enabled=false。",
+    t("cli.install.semantic.enabled", { model }),
+    ...t("cli.install.semantic.manual-steps").split("\n"),
   ];
 }

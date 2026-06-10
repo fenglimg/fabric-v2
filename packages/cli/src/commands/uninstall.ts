@@ -472,13 +472,22 @@ export async function executeUninstallExecutionPlan(
 ): Promise<UninstallExecutionResult> {
   const stageResults: UninstallStageRecord[] = [];
 
+  // C3: mirror install's phase display — upfront "runs in N phases" banner plus
+  // a numbered `[n/N] <stage>` header per phase (install prints the same shape
+  // via pipeline.ts). Skipped phases stay visible so the run reads symmetric.
+  const totalStages = plan.stages.length;
+  console.log(t("cli.uninstall.plan.phase-banner", { total: String(totalStages) }));
+
+  let stepNum = 0;
   for (const stage of plan.stages) {
+    stepNum += 1;
     if (stage.skipped) {
+      console.log(formatUninstallStageHeader(stage.name, stepNum, totalStages, true));
       stageResults.push({ name: stage.name, disposition: "skipped", steps: [] });
       continue;
     }
 
-    console.log(formatUninstallStageHeader(stage.name));
+    console.log(formatUninstallStageHeader(stage.name, stepNum, totalStages));
     try {
       const steps = await executeUninstallStage(plan, stage.name);
       const disposition: UninstallStageDisposition = steps.some((s) => s.status === "error") ? "failed" : "ran";
@@ -770,8 +779,15 @@ function printUninstallSummary(result: UninstallExecutionResult): void {
   }
 }
 
-function formatUninstallStageHeader(stageName: UninstallStageName): string {
-  return `${paint.ai(t("cli.shared.next"))} ${paint.muted(t(`cli.uninstall.stages.${stageName}`))}`;
+function formatUninstallStageHeader(
+  stageName: UninstallStageName,
+  stepNum: number,
+  total: number,
+  skipped = false,
+): string {
+  const label = t(`cli.uninstall.stages.${stageName}`);
+  const head = `[${stepNum}/${total}] ${label}`;
+  return skipped ? paint.muted(`${head} (${t("cli.shared.skipped")})`) : head;
 }
 
 function formatUninstallStageResult(

@@ -967,11 +967,54 @@ export const zhCNMessages: Messages = {
     "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
   "cli.install.next-steps":
     "下一步 —— 拿到第一份价值:\n" +
-    "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。\n" +
+    "  1. 重启你的 AI 客户端 (Claude Code / Cursor / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。\n" +
     "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
     "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
   "cli.install.store-bind-nudge":
     "💡 检测到已挂载但未绑定本项目的知识 store: {aliases}。运行 `fabric store bind {first}` 把它的知识接入本项目, 再 `fabric store switch-write {first}` 设为团队知识的写入目标。",
+  // C1/C5: 语义搜索交互文案统一走 t()，英文术语首现加中文 gloss。
+  "cli.install.semantic.prompt": "启用向量语义搜索 (vector semantic search)？(首次召回 recall 时才会下载嵌入模型)",
+  "cli.install.semantic.enabled": "语义搜索已启用 (embed_enabled=true, embed_model={model})。",
+  "cli.install.semantic.already-enabled": "语义搜索已是启用状态 (embed_model={model})，未改动 {path}。",
+  "cli.install.semantic.offer-install": "现在安装可选的 embedder (向量编码器) 吗？将运行 `npm i -g fastembed`（已安装则秒过）。",
+  "cli.install.semantic.installing": "正在运行 `npm i -g fastembed` …",
+  "cli.install.semantic.installed": "fastembed 安装完成。嵌入模型会在首次召回 (recall) 时自动下载（约数十–数百 MB；不上传任何 KB 数据）。",
+  "cli.install.semantic.install-failed": "自动安装失败（{reason}）。请手动执行下面的步骤：",
+  "cli.install.semantic.manual-steps":
+    "  1. 安装可选 embedder (向量编码器，装到 MCP server 解析模块的位置 — 全局安装即全局):\n" +
+    "       npm i -g fastembed\n" +
+    "  2. 预热模型缓存 (首跑会联网下载模型权重 ~数十-数百 MB, 不上传任何 KB 数据):\n" +
+    "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # 严格离线者预先放好权重\n" +
+    "  注: 切换 embed_model 后已有向量维度/语义变化, 下次 recall 会按新模型重新嵌入 (doc 向量按文本缓存, 自动失配重算)。\n" +
+    "  关闭: 编辑 fabric.config.json 设 embed_enabled=false。",
+  // C5: store onboarding 交互文案统一走 t()。
+  "cli.install.store.local-store": "本地 store",
+  "cli.install.store.bind-mounted.prompt": "把一个已挂载的知识 store 绑定到本项目？",
+  "cli.install.store.skip-label": "跳过",
+  "cli.install.store.bind-mounted.skip-hint": "暂不绑定已挂载的 store",
+  "cli.install.store.project-coordinate": "在 store '{store}' 中的项目坐标 (project coordinate):",
+  "cli.install.store.bound-success": "已把 store '{alias}' 绑定到本项目并设为写入目标 (write target)。",
+  "cli.install.store.created-success": "已创建 store '{alias}'、绑定到本项目并设为写入目标 (write target)。",
+  "cli.install.store.onboard.prompt": "为本项目设置一个团队 / 共享知识 store？",
+  "cli.install.store.onboard.skip-hint": "仅用 personal store (默认)",
+  "cli.install.store.onboard.join-label": "加入已有",
+  "cli.install.store.onboard.join-hint": "从 git remote 克隆 + 绑定一个共享 store",
+  "cli.install.store.onboard.create-label": "新建",
+  "cli.install.store.onboard.create-hint": "新建一个本地 store (可选 remote 托管)",
+  "cli.install.store.onboard.join-url": "共享 store 的 git remote (url):",
+  "cli.install.store.onboard.alias": "新 store 的本地别名 (alias):",
+  "cli.install.store.onboard.remote": "用于托管它的 git remote (可选 — 留空跳过):",
+  "cli.install.store.unbound-note": "注意: 以下 store 已挂载但未绑定到本项目: {aliases}。",
+  "cli.install.store.unbound-hint": "  运行 'fabric store bind {first}' 绑定其一。",
+  // C4: personal store clone-or-new。
+  "cli.install.store.personal.prompt": "本机还没有 personal store (个人知识库)。新建一个，还是从 remote 克隆你已有的？",
+  "cli.install.store.personal.new-label": "新建本地 (默认)",
+  "cli.install.store.personal.new-hint": "全新空 personal store",
+  "cli.install.store.personal.clone-label": "克隆已有",
+  "cli.install.store.personal.clone-hint": "从 git remote 克隆你备份的 personal store",
+  "cli.install.store.personal.clone-url": "你的 personal store 的 git remote (url):",
+  "cli.install.store.personal.cloned-success": "已从 remote 克隆 personal store ({uuid})。",
+  "cli.install.store.personal.clone-failed": "克隆 personal store 失败（{reason}），改为新建本地空 store。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
   "cli.install.capabilities.header.client": "客户端",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
@@ -1028,6 +1071,8 @@ export const zhCNMessages: Messages = {
   "cli.uninstall.args.yes.description": "接受当前卸载计划并跳过 TTY 向导直接执行。",
   "cli.uninstall.args.dry-run.description": "仅输出卸载计划，不删除文件也不执行后续阶段。",
   "cli.uninstall.plan.title": "Fabric 卸载计划",
+  // C3: 镜像 install 的阶段提示 (install 用 "Fabric install 将按 N 个阶段执行")。
+  "cli.uninstall.plan.phase-banner": "Fabric uninstall 将按 {total} 个阶段执行",
   "cli.uninstall.plan.target": "目标：{target}",
   "cli.uninstall.plan.actions":
     "计划：scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
