@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 
 // W1-01 (ISS-012): Stop / SessionStart hooks append to shared, non-session-scoped
@@ -145,6 +145,74 @@ function readSnapshotKnowledgeStats(projectRoot, now) {
   } catch {
     return empty;
   }
+}
+
+function readLegacyPendingStats(projectRoot, now) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const baseDir = join(projectRoot, FABRIC_DIR, PENDING_DIR);
+
+  let count = 0;
+  let oldestMtime = null;
+
+  if (!existsSync(baseDir)) {
+    return { count: 0, oldestAgeMs: null };
+  }
+
+  for (const type of PENDING_TYPES) {
+    const typeDir = join(baseDir, type);
+    if (!existsSync(typeDir)) continue;
+
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      const filePath = join(typeDir, entry);
+      let mtime;
+      try {
+        mtime = statSync(filePath).mtimeMs;
+      } catch {
+        continue;
+      }
+      count += 1;
+      if (oldestMtime === null || mtime < oldestMtime) {
+        oldestMtime = mtime;
+      }
+    }
+  }
+
+  return {
+    count,
+    oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
+  };
+}
+
+function countLegacyCanonicalNodes(projectRoot) {
+  const knowledgeRoot = join(projectRoot, FABRIC_DIR, "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return 0;
+  }
+  let count = 0;
+  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
+    const typeDir = join(knowledgeRoot, type);
+    if (!existsSync(typeDir)) continue;
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.endsWith(".md")) {
+        count += 1;
+      }
+    }
+  }
+  return count;
 }
 
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
@@ -306,25 +374,30 @@ function readLedger(projectRoot) {
 }
 
 /**
- * Read pending backlog stats from the CLI-pre-generated bindings snapshot.
- * Hooks do not resolve stores and do not scan retired project-local
- * `.fabric/knowledge/pending`; missing snapshot stats degrade to zero.
+ * Read pending counts from the CLI-generated resolved-bindings snapshot.
+ *
+ * Returns { count, oldestAgeMs } where:
+ *   - count: total .md file count across all type subdirs
+ *   - oldestAgeMs: (nowMs - oldestMtimeMs) when count>0, else null
+ *
+ * Store-only cutover: hooks must not walk project-local .fabric/knowledge or
+ * store trees. Missing snapshot stats degrade to zero (KT-DEC-0007).
  */
 function readPendingStats(projectRoot, now) {
   const stats = readSnapshotKnowledgeStats(projectRoot, now);
   if (stats !== null) {
     return { count: stats.pendingCount, oldestAgeMs: stats.oldestPendingAgeMs };
   }
-  return { count: 0, oldestAgeMs: null };
+  return readLegacyPendingStats(projectRoot, now);
 }
 
 /**
- * Count canonical knowledge entries from the bindings snapshot hook stats.
- * Missing stats degrade to zero; the CLI owns store traversal.
+ * Count canonical knowledge entries from the CLI-generated resolved-bindings
+ * snapshot. Hooks do not walk project-local .fabric/knowledge or store trees.
  */
 function countCanonicalNodes(projectRoot) {
   const stats = readSnapshotKnowledgeStats(projectRoot);
-  return stats === null ? 0 : stats.canonicalCount;
+  return stats === null ? countLegacyCanonicalNodes(projectRoot) : stats.canonicalCount;
 }
 
 /**
@@ -1403,7 +1476,6 @@ function tryReadStdinJson() {
   try {
     // Skip the read entirely when stdin is a TTY (interactive invocation, no
     // payload). readFileSync on fd 0 would block forever in that case.
-    if (process.env.VITEST !== undefined) return null;
     if (process.stdin.isTTY === true) return null;
     const buf = readFileSync(0, "utf8");
     if (typeof buf !== "string" || buf.trim().length === 0) return null;

@@ -94,17 +94,66 @@ try {
   // Lib missing (old install) — injection telemetry degrades to silent absence.
 }
 
-// Read the project's own `project_id` from `.fabric/fabric-config.json` (the
-// snapshot key). Reading the PROJECT config is not a store-tree read — it is how
-// the hook learns which snapshot to fetch. Returns null on any failure.
-function readProjectId(cwd) {
+// Read the workspace binding id from `.fabric/fabric-config.json` (the snapshot
+// key). Defaults to project_id when workspace_binding_id is absent.
+function readWorkspaceBindingId(cwd) {
   try {
     const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
     const parsed = JSON.parse(raw);
+    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
   } catch {
     return null;
   }
+}
+
+function readSnapshotCanonicalCount(projectRoot) {
+  if (bindingsSnapshotReader === null) {
+    return null;
+  }
+  const bindingId = readWorkspaceBindingId(projectRoot);
+  if (bindingId === null) {
+    return null;
+  }
+  try {
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    const stats = snapshot && snapshot.knowledge_stats;
+    if (
+      stats &&
+      typeof stats === "object" &&
+      Number.isFinite(stats.canonical_count) &&
+      stats.canonical_count > 0
+    ) {
+      return Math.floor(stats.canonical_count);
+    }
+  } catch {
+    // best-effort hint stats only
+  }
+  return 0;
+}
+
+function countLegacyCanonicalNodes(projectRoot) {
+  const knowledgeRoot = join(projectRoot, FABRIC_DIR_REL, "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return 0;
+  }
+  let count = 0;
+  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
+    const typeDir = join(knowledgeRoot, type);
+    if (!existsSync(typeDir)) continue;
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.endsWith(".md")) {
+        count += 1;
+      }
+    }
+  }
+  return count;
 }
 
 // -----------------------------------------------------------------------------
@@ -169,37 +218,12 @@ const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 // -----------------------------------------------------------------------------
 
 /**
- * Count canonical knowledge entries across the five canonical type subdirs
- * (decisions / pitfalls / guidelines / models / processes). Pending entries
- * are NOT counted — they are proposals, not seeded knowledge.
- *
- * Returns the integer count. ENOENT / unreadable subdir → silently treated as
- * zero (preserves never-block-on-failure invariant). Filters on `.md` suffix
- * only; the more-precise canonical filename pattern check is owned by
- * doctor.ts (the hook is a coarse signal, not a lint).
+ * Count canonical knowledge entries from the CLI-generated resolved-bindings
+ * snapshot. Hooks do not walk project-local .fabric/knowledge or store trees.
  */
 function countCanonicalNodes(projectRoot) {
-  const knowledgeRoot = join(projectRoot, FABRIC_DIR_REL, "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return 0;
-  }
-  let count = 0;
-  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
-    const typeDir = join(knowledgeRoot, type);
-    if (!existsSync(typeDir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".md")) {
-        count += 1;
-      }
-    }
-  }
-  return count;
+  const snapshotCount = readSnapshotCanonicalCount(projectRoot);
+  return snapshotCount === null ? countLegacyCanonicalNodes(projectRoot) : snapshotCount;
 }
 
 /**
@@ -864,10 +888,10 @@ function main(env, stdio) {
     // missing snapshot / single-store setup just omits the line.
     if (bindingsSnapshotReader !== null) {
       try {
-        const projectId = readProjectId(cwd);
-        if (projectId) {
+        const bindingId = readWorkspaceBindingId(cwd);
+        if (bindingId) {
           const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
           );
           if (label) lines.push(label);
         }

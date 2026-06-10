@@ -83,7 +83,7 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 // v2.0.0-rc.37 NEW-17: shared sidecar I/O for the plan-context-hint result
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
-const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
+const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.cjs");
 // W1-01 (ISS-011): the PreToolUse hook is the highest-frequency, most
 // concurrency-exposed write surface in Fabric. Multi-window edits spawn
 // concurrent hook processes that all append to the SAME non-session-scoped
@@ -865,9 +865,9 @@ function pathSetKey(paths) {
 
 // Returns the cached cliPayload for `paths` iff the cache's meta token matches
 // the current knowledge-graph freshness, else null (caller spawns the CLI).
-function readNarrowResultCache(cwd, sessionId, paths, metaToken) {
+async function readNarrowResultCache(cwd, sessionId, paths, metaToken) {
   if (metaToken === null) return null;
-  const cache = readJsonState(
+  const cache = await readJsonStateAsync(
     cwd,
     narrowResultCacheFileName(sessionId),
     (parsed) => parsed && typeof parsed === "object" && parsed.results && typeof parsed.results === "object",
@@ -880,10 +880,10 @@ function readNarrowResultCache(cwd, sessionId, paths, metaToken) {
 // Persist `cliPayload` under the path-set key. Resets the map when the meta
 // token changed (stale graph) and caps the map size (FIFO-ish: drop oldest
 // insertion-order keys). Best-effort — never throws.
-function writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload) {
+async function writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload) {
   if (metaToken === null) return;
   const fileName = narrowResultCacheFileName(sessionId);
-  const prior = readJsonState(
+  const prior = await readJsonStateAsync(
     cwd,
     fileName,
     (parsed) => parsed && typeof parsed === "object" && parsed.results && typeof parsed.results === "object",
@@ -897,7 +897,7 @@ function writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload) {
       delete results[stale];
     }
   }
-  writeJsonState(cwd, fileName, { meta_token: metaToken, results });
+  await writeJsonStateAsync(cwd, fileName, { meta_token: metaToken, results });
 }
 
 // -----------------------------------------------------------------------------
@@ -1246,7 +1246,7 @@ function renderSummary(payload, maxLen) {
 // Main — invoked as a CLI (require.main === module) and in-process by tests
 // -----------------------------------------------------------------------------
 
-function main(env, stdio) {
+async function main(env, stdio) {
   try {
     const cwd = (env && env.cwd) || process.cwd();
     const now = (env && env.now) || new Date();
@@ -1348,14 +1348,14 @@ function main(env, stdio) {
       const useResultCache = !(env && env.skipResultCache === true);
       const metaToken = useResultCache ? metaFreshnessToken(cwd) : null;
       const cached = useResultCache
-        ? readNarrowResultCache(cwd, sessionId, paths, metaToken)
+        ? await readNarrowResultCache(cwd, sessionId, paths, metaToken)
         : null;
       if (cached !== null) {
         cliPayload = cached;
       } else {
         cliPayload = invokePlanContextHint(cwd, paths);
         if (useResultCache && cliPayload !== null && cliPayload !== undefined) {
-          writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload);
+          await writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload);
         }
       }
     }
@@ -1684,6 +1684,5 @@ if (require.main === module) {
   main(
     { cwd: process.cwd(), now: new Date(), stdin: stdinRaw },
     { stderr: process.stderr },
-  );
-  process.exit(0);
+  ).finally(() => process.exit(0));
 }
