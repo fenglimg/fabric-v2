@@ -7,7 +7,7 @@ import { createTranslator, globalConfigSchema, readBindingsSnapshot } from "@fen
 import { select, text } from "@clack/prompts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { t } from "../src/i18n.js";
+import { locale, t } from "../src/i18n.js";
 import { GuidanceStage } from "../src/install/pipeline/guidance.stage.js";
 import { EnvStage } from "../src/install/pipeline/env.stage.js";
 import { StoreStage } from "../src/install/pipeline/store.stage.js";
@@ -205,6 +205,43 @@ describe("install-v2 pipeline UX", () => {
 
     const snapshot = readBindingsSnapshot(globalRoot, "project-test");
     expect(snapshot?.write_target).toEqual({ store_uuid: teamUuid, alias: "team" });
+  });
+
+  it("asks the language tone first and applies it to the rest of the run (language-first)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fabric-install-v2-home-"));
+    tempRoots.push(home);
+    vi.stubEnv("FABRIC_HOME", home);
+
+    const globalRoot = join(home, ".fabric");
+    // An existing global config WITHOUT a language (first-ever / manual-edit
+    // window). The selector must fire and the pick must persist + take effect.
+    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", stores: [] }), globalRoot);
+
+    const target = await tempProject();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    // First select = language prompt → zh-CN; any later store-onboard select
+    // (no stores bound yet) defaults to "skip".
+    vi.mocked(select).mockResolvedValueOnce("zh-CN").mockResolvedValue("skip");
+
+    const callsBefore = vi.mocked(select).mock.calls.length;
+    const stage = new StoreStage();
+    const result = await stage.execute(baseContext(target, {
+      interactive: true,
+      wizardEnabled: true,
+    }));
+
+    expect(result.disposition).toBe("ran");
+    // The FIRST prompt of the stage was the language selector (structural,
+    // locale-agnostic: only the language prompt offers exactly [zh-CN, en]).
+    const firstArg = vi.mocked(select).mock.calls[callsBefore]?.[0] as
+      | { options?: Array<{ value: string }> }
+      | undefined;
+    expect(firstArg?.options?.map((o) => o.value)).toEqual(["zh-CN", "en"]);
+    // The pick persisted to the global config (so a re-run never re-asks)…
+    expect(loadGlobalConfig(globalRoot)?.language).toBe("zh-CN");
+    // …and refreshLocale() re-bound the process locale to honor it this run.
+    expect(locale).toBe("zh-CN");
   });
 
   it("mints a project_id before generating the bindings snapshot", async () => {

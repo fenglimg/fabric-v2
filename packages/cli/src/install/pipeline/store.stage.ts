@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../store/global-config-io.js";
 import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
-import { t } from "../../i18n.js";
+import { refreshLocale, t } from "../../i18n.js";
 import {
   storeCreate,
   storeList,
@@ -53,6 +53,20 @@ export class StoreStage implements Stage {
 
       // Ensure global config exists
       const globalConfig = loadGlobalConfig(globalRoot);
+
+      // grill-6fixes (D1b) + language-first: pick the single global language
+      // base tone as the VERY FIRST interactive prompt — before any personal /
+      // team store onboarding — so the choice sets the tone for the rest of the
+      // install. Only fires in the wizard and only when the global `language`
+      // is still unset (first-ever install). On a first install the global
+      // config does not exist yet, so the pick is captured in-memory here and
+      // persisted by `persistLanguageSelection` below, once the config is
+      // guaranteed to exist (freshly minted, cloned, or pre-existing).
+      const pickedLanguage =
+        context.wizardEnabled && globalConfig?.language === undefined
+          ? await this.promptLanguage(globalRoot)
+          : undefined;
+
       if (globalConfig === null) {
         // C4: first-ever global install — offer to clone an existing personal
         // store from a remote instead of always minting a fresh empty one.
@@ -68,10 +82,10 @@ export class StoreStage implements Stage {
         await this.ensurePersonalStore(globalConfig, globalRoot);
       }
 
-      // grill-6fixes (D1b): pick the single global language base tone once,
-      // game-style, on first install (when unset). Persists to the global
-      // config and is never asked again; `fabric config` changes it later.
-      await this.ensureLanguageSelected(globalRoot, context);
+      // Persist the language pick now that the global config exists, then
+      // refresh the process locale so every subsequent stage / prompt renders
+      // in the chosen tone within THIS same install run.
+      this.persistLanguageSelection(globalRoot, pickedLanguage);
 
       // Handle --url flag: mount and bind remote store
       if (context.args.url) {
@@ -115,17 +129,15 @@ export class StoreStage implements Stage {
   }
 
   /**
-   * grill-6fixes (D1b): the install-time language selector. Fires only in the
-   * interactive wizard, and only when the global `language` is still unset
-   * (first-ever install). The default pre-highlight follows the env-detected
-   * locale (Chinese shell → zh-CN). Cancelling leaves it unset so resolvers
-   * keep falling back to env detection until the user picks via `fabric config`.
+   * grill-6fixes (D1b): the install-time language selector, surfaced as the
+   * first interactive prompt of the install (see execute()). Returns the picked
+   * tone, or undefined on cancel (resolvers then keep falling back to env
+   * detection until the user picks via `fabric config`). The default
+   * pre-highlight follows the env-detected locale (Chinese shell → zh-CN).
+   * Persistence is deferred to persistLanguageSelection so the pick can be
+   * captured before the global config exists on a first-ever install.
    */
-  private async ensureLanguageSelected(globalRoot: string, context: InstallContext): Promise<void> {
-    if (!context.wizardEnabled) return;
-    const config = loadGlobalConfig(globalRoot);
-    if (config === null || config.language !== undefined) return;
-
+  private async promptLanguage(globalRoot: string): Promise<"zh-CN" | "en" | undefined> {
     const picked = await select<"zh-CN" | "en">({
       message: t("cli.install.language.prompt"),
       options: [
@@ -134,9 +146,25 @@ export class StoreStage implements Stage {
       ],
       initialValue: resolveGlobalLocale(globalRoot),
     });
-    if (isCancel(picked)) return;
+    if (isCancel(picked)) return undefined;
+    return picked;
+  }
 
-    saveGlobalConfig({ ...config, language: picked }, globalRoot);
+  /**
+   * Persist the language pick onto the (now-guaranteed) global config and
+   * refresh the process locale so the rest of THIS install run renders in the
+   * chosen tone. No-op when nothing was picked (non-wizard / already set /
+   * cancelled). refreshLocale() runs whenever a pick exists — even if the value
+   * already matched — so the module-level translator, bound to the env locale
+   * before the config carried `language`, picks up the persisted value.
+   */
+  private persistLanguageSelection(globalRoot: string, picked: "zh-CN" | "en" | undefined): void {
+    if (picked === undefined) return;
+    const config = loadGlobalConfig(globalRoot);
+    if (config !== null && config.language !== picked) {
+      saveGlobalConfig({ ...config, language: picked }, globalRoot);
+    }
+    refreshLocale();
   }
 
   /**
