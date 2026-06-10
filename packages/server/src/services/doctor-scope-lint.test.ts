@@ -9,7 +9,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { createScopeLintCheck, lintStoreScopes, type ScopeLintViolation } from "./doctor-scope-lint.js";
@@ -74,7 +74,7 @@ async function seedEntry(
 ): Promise<void> {
   const dir = join(
     resolveGlobalRoot(),
-    storeRelativePath(storeUuid),
+    storeRelativePathForMount({ store_uuid: storeUuid, personal: storeUuid === PERSONAL_STORE }),
     STORE_LAYOUT.knowledgeDir,
     "decisions",
   );
@@ -83,7 +83,7 @@ async function seedEntry(
 }
 
 async function registerProjects(storeUuid: string, ids: string[]): Promise<void> {
-  const storeDir = join(resolveGlobalRoot(), storeRelativePath(storeUuid));
+  const storeDir = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: storeUuid, personal: storeUuid === PERSONAL_STORE }));
   await mkdir(storeDir, { recursive: true });
   const path = join(storeDir, STORE_LAYOUT.projectsFile);
   await writeFile(

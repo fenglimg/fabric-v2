@@ -139,7 +139,7 @@ describe("storeCreate (ADJ-NEWN-5 create a brand-new local store)", () => {
       mountName: "platform-kb",
       globalRoot,
     });
-    expect(result.storeDir).toBe(join(globalRoot, "stores", "platform-kb"));
+    expect(result.storeDir).toBe(join(globalRoot, "stores", "team", "platform-kb"));
     expect(resolveStoreDir("team", globalRoot)).toBe(result.storeDir);
     expect(resolveStoreDir(PLATFORM, globalRoot)).toBe(result.storeDir);
     expect(resolveStoreDir("platform-kb", globalRoot)).toBe(result.storeDir);

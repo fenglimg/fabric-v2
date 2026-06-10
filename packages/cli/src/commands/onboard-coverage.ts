@@ -10,7 +10,7 @@ import {
   ONBOARD_SLOT_TOTAL,
   readKnowledgeAcrossStores,
   resolveGlobalRoot,
-  storeRelativePath,
+  storeRelativePathForMount,
   type MountedStoreDir,
   type OnboardSlot,
 } from "@fenglimg/fabric-shared";
@@ -190,7 +190,16 @@ function readSetStoreDirs(projectRoot: string): MountedStoreDir[] {
   return readSet.stores.map((store) => ({
     store_uuid: store.store_uuid,
     alias: store.alias,
-    dir: join(globalRoot, storeRelativePath(store.store_uuid)),
+    // D4 two-layer layout: resolve via the mounted record (group + label), not
+    // the single-segment uuid path — mirrors the other read-set consumers.
+    dir: join(
+      globalRoot,
+      storeRelativePathForMount(
+        input.mountedStores.find((s) => s.store_uuid === store.store_uuid) ?? {
+          store_uuid: store.store_uuid,
+        },
+      ),
+    ),
   }));
 }
 

@@ -8,7 +8,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
   type GlobalConfig,
 } from "@fenglimg/fabric-shared";
 
@@ -576,7 +576,7 @@ async function writeStoreEntry(
 ): Promise<void> {
   const dir = join(
     resolveGlobalRoot(),
-    storeRelativePath(storeUuid),
+    storeRelativePathForMount({ store_uuid: storeUuid, personal: storeUuid === PERSONAL_STORE }),
     STORE_LAYOUT.knowledgeDir,
     type,
   );

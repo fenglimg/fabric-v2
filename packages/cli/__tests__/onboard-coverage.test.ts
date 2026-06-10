@@ -23,7 +23,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 import {
   runOnboardCoverage,
@@ -84,7 +84,7 @@ function seedMountedStoreFile(
   bindTeamStore(root);
   const dir = join(
     resolveGlobalRoot(),
-    storeRelativePath(TEAM_STORE_UUID),
+    storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID }),
     STORE_LAYOUT.knowledgeDir,
     type,
   );

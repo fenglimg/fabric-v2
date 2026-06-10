@@ -19,7 +19,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 // v2.2 全砍 Stage 2/3 (B2 cutover): review reads/writes through the store.
@@ -89,7 +89,7 @@ async function seedPendingFile(
 ): Promise<string> {
   // v2.2 全砍: seed into the team store's pending dir; review reports + accepts
   // the absolute store path.
-  const dir = join(resolveGlobalRoot(), storeRelativePath(TEST_TEAM_UUID), STORE_LAYOUT.knowledgeDir, "pending", type);
+  const dir = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: TEST_TEAM_UUID }), STORE_LAYOUT.knowledgeDir, "pending", type);
   await mkdir(dir, { recursive: true });
   const frontmatter = [
     "---",
@@ -377,7 +377,7 @@ describe("registerReview", () => {
     const stableId = approved[0].stable_id;
     const canonicalRel = join(
       resolveGlobalRoot(),
-      storeRelativePath(TEST_TEAM_UUID),
+      storeRelativePathForMount({ store_uuid: TEST_TEAM_UUID }),
       STORE_LAYOUT.knowledgeDir,
       "decisions",
       `${stableId}--happy-a.md`,

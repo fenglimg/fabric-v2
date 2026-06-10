@@ -8,7 +8,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
@@ -119,10 +119,14 @@ async function writeStoreEntry(
   storeUuid: string,
   type: string,
   f: StoreEntryFields,
+  // Two-layer layout: the seed dir must match the store's MOUNTED group. Defaults
+  // to the personal store uuid, but seedQueryableProject mounts PERSONAL_STORE as
+  // a team store (it just reuses the uuid to force a corpus change) → pass false.
+  personal: boolean = storeUuid === PERSONAL_STORE,
 ): Promise<void> {
   const dir = join(
     resolveGlobalRoot(),
-    storeRelativePath(storeUuid),
+    storeRelativePathForMount({ store_uuid: storeUuid, personal }),
     STORE_LAYOUT.knowledgeDir,
     type,
   );
@@ -1015,14 +1019,14 @@ describe("planContext BM25 model cache (ISS-024)", () => {
       maturity: "verified",
       relevance_scope: "broad",
       relevance_paths: [],
-    });
+    }, false);
     await writeStoreEntry(storeUuid, "decisions", {
       id: "KT-DEC-7002",
       summary: "unrelated bottle topic widget",
       maturity: "verified",
       relevance_scope: "broad",
       relevance_paths: [],
-    });
+    }, false);
     saveGlobalConfig({
       uid: "test-uid",
       stores: [{ store_uuid: storeUuid, alias: "team", remote: "git@e:team.git" }],

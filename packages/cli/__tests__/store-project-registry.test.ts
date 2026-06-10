@@ -54,7 +54,7 @@ describe("store project create/list", () => {
     expect(listed.map((p) => p.id)).toEqual(["fabric-v2"]);
     // committed parallel to store.json
     const file = JSON.parse(
-      readFileSync(join(globalRoot, "stores", "team", "projects.json"), "utf8"),
+      readFileSync(join(globalRoot, "stores", "team", "team", "projects.json"), "utf8"),
     );
     expect(file.projects[0].id).toBe("fabric-v2");
   });

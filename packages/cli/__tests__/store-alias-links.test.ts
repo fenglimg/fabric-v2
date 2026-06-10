@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdtempSync, readlinkSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { storeRelativePathForMount } from "@fenglimg/fabric-shared";
+import { storeMountSubPath, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runGlobalInstall } from "../src/install/run-global-install.js";
@@ -40,15 +40,19 @@ function aliasLink(globalRoot: string, alias: string): string {
   return join(globalRoot, "stores", STORE_BY_ALIAS_DIR, alias);
 }
 
-function assertAliasLinkIfSupported(globalRoot: string, alias: string, mountName: string): void {
+function assertAliasLinkIfSupported(
+  globalRoot: string,
+  alias: string,
+  store: { store_uuid: string; mount_name?: string; personal?: boolean },
+): void {
   const sync = syncStoreAliasLinks(globalRoot);
   if (sync.errors.includes(alias)) {
-    expect(existsSync(join(globalRoot, "stores", mountName, "store.json"))).toBe(true);
+    expect(existsSync(join(globalRoot, storeRelativePathForMount(store), "store.json"))).toBe(true);
     return;
   }
   const link = aliasLink(globalRoot, alias);
   expect(lstatSync(link).isSymbolicLink()).toBe(true);
-  expect(readlinkSync(link)).toBe(join("..", mountName));
+  expect(readlinkSync(link)).toBe(join("..", storeMountSubPath(store)));
 }
 
 describe("store by-alias links (C3)", () => {
@@ -56,13 +60,17 @@ describe("store by-alias links (C3)", () => {
     const globalRoot = await setup();
     await storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
 
-    assertAliasLinkIfSupported(globalRoot, "team", "team");
+    assertAliasLinkIfSupported(globalRoot, "team", { store_uuid: TEAM, mount_name: "team" });
     expect(existsSync(join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM, mount_name: "team" }), "store.json"))).toBe(true);
   });
 
   it("install --global mints the personal store's by-alias link", async () => {
     const globalRoot = await setup();
-    assertAliasLinkIfSupported(globalRoot, "personal", "personal");
+    assertAliasLinkIfSupported(globalRoot, "personal", {
+      store_uuid: PERSONAL,
+      mount_name: "personal",
+      personal: true,
+    });
   });
 
   it("detectAliasLinkDrift flags a missing link and sync heals it", async () => {
@@ -90,7 +98,7 @@ describe("store by-alias links (C3)", () => {
     await storeCreate("team", "2026-01-01T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
     const sync = syncStoreAliasLinks(globalRoot);
     if (sync.errors.includes("team")) {
-      expect(existsSync(join(globalRoot, "stores", "team", "store.json"))).toBe(true);
+      expect(existsSync(join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM, mount_name: "team" }), "store.json"))).toBe(true);
       return;
     }
     expect(existsSync(aliasLink(globalRoot, "team"))).toBe(true);
@@ -107,7 +115,7 @@ describe("store by-alias links (C3)", () => {
     try {
       symlinkSync(join("..", "team"), aliasLink(globalRoot, "ghost"));
     } catch {
-      expect(existsSync(join(globalRoot, "stores", "team", "store.json"))).toBe(true);
+      expect(existsSync(join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM, mount_name: "team" }), "store.json"))).toBe(true);
       return;
     }
 

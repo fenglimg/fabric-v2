@@ -17,7 +17,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { loadConflictEntries, runDoctorConflictLint } from "./doctor-conflict.js";
@@ -33,7 +33,7 @@ process.env.FABRIC_HOME = fakeHome;
 const STORE = "33333333-3333-4333-8333-333333333333";
 
 function storeKnowledgeDir(): string {
-  return join(resolveGlobalRoot(), storeRelativePath(STORE), STORE_LAYOUT.knowledgeDir);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE }), STORE_LAYOUT.knowledgeDir);
 }
 
 afterEach(() => {
@@ -43,7 +43,7 @@ afterEach(() => {
   }
   // Reset the store knowledge between tests so entries never accumulate across
   // cases (the global root / fakeHome is shared at module scope).
-  rmSync(join(resolveGlobalRoot(), storeRelativePath(STORE)), { recursive: true, force: true });
+  rmSync(join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE })), { recursive: true, force: true });
 });
 
 afterAll(() => {

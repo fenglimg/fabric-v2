@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { globalConfigSchema, readBindingsSnapshot, storeRelativePath } from "@fenglimg/fabric-shared";
+import { globalConfigSchema, readBindingsSnapshot, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
@@ -127,7 +127,7 @@ describe("runStartSync", () => {
       push: () => "clean",
     });
 
-    expect(seen).toEqual([join(globalRoot, "stores", "team-kb")]);
+    expect(seen).toEqual([join(globalRoot, "stores", "team", "team-kb")]);
   });
 
   it("offline store defers its push but the session still settles (S17)", () => {
@@ -310,8 +310,8 @@ describe("real git: default `git pull --rebase` clean path", () => {
     git(seed, ["push", "-u", "origin", "main"]);
 
     // The mounted store is a clone of that remote under ~/.fabric/stores/<uuid>/.
-    const storeDir = join(globalRoot, storeRelativePath(TEAM));
-    mkdirSync(join(globalRoot, "stores"), { recursive: true });
+    const storeDir = join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM }));
+    mkdirSync(join(storeDir, ".."), { recursive: true });
     execFileSync("git", ["clone", remote, storeDir], { stdio: "ignore" });
 
     // Only the team store has a reachable remote in this test; point platform's
@@ -366,8 +366,8 @@ describe("real git: default `git push` publishes local commits (W2-T3)", () => {
 
     // The mounted store is a clone of the remote with a NEW local commit that
     // has NOT been pushed (this is exactly what extract→approve produced).
-    const storeDir = join(globalRoot, storeRelativePath(TEAM));
-    mkdirSync(join(globalRoot, "stores"), { recursive: true });
+    const storeDir = join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM }));
+    mkdirSync(join(storeDir, ".."), { recursive: true });
     execFileSync("git", ["clone", remote, storeDir], { stdio: "ignore" });
     git(storeDir, ["commit", "--allow-empty", "-m", "local knowledge commit"]);
     const localHead = git(storeDir, ["rev-parse", "HEAD"]).trim();
@@ -408,8 +408,8 @@ describe("real git: default `git push` publishes local commits (W2-T3)", () => {
     git(seed, ["push", "-u", "origin", "main"]);
     const remoteHeadBefore = git(remote, ["rev-parse", "main"]).trim();
 
-    const storeDir = join(globalRoot, storeRelativePath(TEAM));
-    mkdirSync(join(globalRoot, "stores"), { recursive: true });
+    const storeDir = join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM }));
+    mkdirSync(join(storeDir, ".."), { recursive: true });
     execFileSync("git", ["clone", remote, storeDir], { stdio: "ignore" });
     // git identity so defaultCommitDirty's plain `git commit` succeeds.
     git(storeDir, ["config", "user.name", "t"]);

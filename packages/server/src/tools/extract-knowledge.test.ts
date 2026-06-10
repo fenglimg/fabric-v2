@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   STORE_LAYOUT,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { registerExtractKnowledge } from "./extract-knowledge.js";
@@ -39,7 +39,7 @@ async function createProjectWithStores(prefix = "fabric-tools-extract-"): Promis
 
 function pendingStorePath(layer: "team" | "personal", type: string, slug: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(process.env.FABRIC_HOME!, ".fabric", storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, "pending", type, `${slug}.md`);
+  return join(process.env.FABRIC_HOME!, ".fabric", storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.knowledgeDir, "pending", type, `${slug}.md`);
 }
 import {
   resetFirstReconcileGate,

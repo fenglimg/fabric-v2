@@ -398,7 +398,7 @@ function pushableAliasesOf(config: {
 
 function makeStoreDirResolver(
   globalRoot: string,
-  stores: Array<{ store_uuid: string; mount_name?: string }>,
+  stores: Array<{ store_uuid: string; mount_name?: string; personal?: boolean }>,
 ): (status: SyncStoreStatus) => string {
   return (status) =>
     join(

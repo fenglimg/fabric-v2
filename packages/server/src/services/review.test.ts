@@ -11,7 +11,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
@@ -49,7 +49,7 @@ function provisionStores(projectRoot: string): void {
 
 function storeKnowledgeDir(layer: "team" | "personal", ...sub: string[]): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, ...sub);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.knowledgeDir, ...sub);
 }
 
 function toPosixPath(value: string): string {
@@ -60,7 +60,7 @@ function toPosixPath(value: string): string {
 // committed counters.json, not the retired co-location agents.meta.json.
 function storeCountersFile(layer: "team" | "personal"): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.countersFile);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.countersFile);
 }
 
 describe("review path guards", () => {

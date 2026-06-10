@@ -103,7 +103,7 @@ function mountTwoSharedStores(): void {
 function personalPendingDir(type: string): string {
   return join(
     resolveGlobalRoot(),
-    storeRelativePathForMount({ store_uuid: PERSONAL_STORE_UUID }),
+    storeRelativePathForMount({ store_uuid: PERSONAL_STORE_UUID, personal: true }),
     STORE_LAYOUT.knowledgeDir,
     STORE_PENDING_DIR,
     type,

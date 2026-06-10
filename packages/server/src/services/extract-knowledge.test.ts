@@ -9,7 +9,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
@@ -44,7 +44,7 @@ function provisionStores(projectRoot: string): void {
 // Store-rooted reported pending path (the `~/` form extract-knowledge returns).
 function pendingRel(layer: "team" | "personal", type: string, slug: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return `~/.fabric/${storeRelativePath(uuid)}/${STORE_LAYOUT.knowledgeDir}/pending/${type}/${slug}.md`;
+  return `~/.fabric/${storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" })}/${STORE_LAYOUT.knowledgeDir}/pending/${type}/${slug}.md`;
 }
 
 // Resolve a reported pending path to an absolute on-disk path.
@@ -59,7 +59,7 @@ function pendingAbs(reported: string): string {
 // Absolute store pending dir for seeding a pre-existing pending file in tests.
 function storePendingDir(layer: "team" | "personal", type: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, "pending", type);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.knowledgeDir, "pending", type);
 }
 
 const tempDirs: string[] = [];

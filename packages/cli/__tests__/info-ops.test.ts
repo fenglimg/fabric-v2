@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { globalConfigSchema, storeRelativePath } from "@fenglimg/fabric-shared";
+import { globalConfigSchema, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
@@ -57,7 +57,7 @@ describe("whoami", () => {
       globalRoot,
     );
     // …but the on-disk store repo HAS an origin remote (what sync actually uses).
-    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    const storeDir = join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM }));
     mkdirSync(storeDir, { recursive: true });
     execFileSync("git", ["init", "-q"], { cwd: storeDir });
     execFileSync("git", ["remote", "add", "origin", "git@h:team.git"], { cwd: storeDir });

@@ -11,7 +11,7 @@ import {
   isPersonalLeakIntoSharedStore,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
@@ -66,7 +66,7 @@ function mountStores(): void {
 function readPendingFrontmatter(storeUuid: string, type: string): string {
   const dir = join(
     resolveGlobalRoot(),
-    storeRelativePath(storeUuid),
+    storeRelativePathForMount({ store_uuid: storeUuid, personal: storeUuid === PERSONAL }),
     STORE_LAYOUT.knowledgeDir,
     STORE_PENDING_DIR,
     type,

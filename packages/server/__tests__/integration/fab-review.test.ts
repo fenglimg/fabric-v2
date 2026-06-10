@@ -50,7 +50,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 // v2.2 全砍 Stage 2/3 (B2 cutover): review reads/writes through the store.
@@ -58,16 +58,16 @@ const TEST_PERSONAL_UUID = "11111111-1111-4111-8111-111111111111";
 const TEST_TEAM_UUID = "22222222-2222-4222-8222-222222222222";
 function storePendingDir(layer: "team" | "personal", type: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, "pending", type);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.knowledgeDir, "pending", type);
 }
 function storeCanonicalDir(layer: "team" | "personal", type: string): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, type);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.knowledgeDir, type);
 }
 // W4 decolo: counter lives in the store's committed counters.json.
 function storeCountersFile(layer: "team" | "personal"): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.countersFile);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.countersFile);
 }
 
 import { runDoctorReport } from "../../src/services/doctor.js";

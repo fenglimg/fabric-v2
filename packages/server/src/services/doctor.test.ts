@@ -17,7 +17,7 @@ import {
   readStoreCounters,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import {
@@ -1076,7 +1076,7 @@ describe("runDoctorReport", () => {
     }
 
     function storeDir(): string {
-      return join(resolveGlobalRoot(), storeRelativePath(STORE_UUID));
+      return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE_UUID }));
     }
 
     // Seed the team store with one decision entry whose stable_id counter is
@@ -5443,7 +5443,7 @@ describe("runDoctorCiteCoverage", () => {
 
     const dir = join(
       resolveGlobalRoot(),
-      storeRelativePath(CITE_STORE_UUID_A),
+      storeRelativePathForMount({ store_uuid: CITE_STORE_UUID_A }),
       STORE_LAYOUT.knowledgeDir,
       "decisions",
     );
@@ -6295,7 +6295,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       "utf8",
     );
 
-    const storeRoot = join(resolveGlobalRoot(), storeRelativePath(CITE_STORE_UUID));
+    const storeRoot = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: CITE_STORE_UUID }));
     // knowledge_type is the plural subdir form ("decisions"); the singular
     // frontmatter `type` drops the trailing "s".
     for (const node of nodes) {
@@ -7054,7 +7054,7 @@ describe("runDoctorCiteCoverage (W1-T3 exposed_and_mutated weak signal)", () => 
       "utf8",
     );
 
-    const storeRoot = join(resolveGlobalRoot(), storeRelativePath(CITE_STORE_UUID_W1T3));
+    const storeRoot = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: CITE_STORE_UUID_W1T3 }));
     for (const node of nodes) {
       const dir = join(storeRoot, STORE_LAYOUT.knowledgeDir, node.knowledge_type);
       mkdirSync(dir, { recursive: true });
@@ -7658,7 +7658,7 @@ describe("enrichDescriptions", () => {
   function storePath(...parts: string[]): string {
     return join(
       resolveGlobalRoot(),
-      storeRelativePath(ENRICH_STORE_UUID),
+      storeRelativePathForMount({ store_uuid: ENRICH_STORE_UUID }),
       STORE_LAYOUT.knowledgeDir,
       ...parts,
     );

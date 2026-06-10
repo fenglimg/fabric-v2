@@ -8,7 +8,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { planContext } from "./plan-context.js";
@@ -77,7 +77,7 @@ function entry(id: string, scope: string, title: string): string {
 async function seedStore(): Promise<void> {
   const decisionsDir = join(
     resolveGlobalRoot(),
-    storeRelativePath(STORE),
+    storeRelativePathForMount({ store_uuid: STORE }),
     STORE_LAYOUT.knowledgeDir,
     "decisions",
   );

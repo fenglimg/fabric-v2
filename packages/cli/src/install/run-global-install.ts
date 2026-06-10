@@ -7,9 +7,9 @@ import { join } from "node:path";
 import {
   STORES_ROOT_DIR,
   addMountedStore,
+  deriveMountLabel,
   globalConfigSchema,
   readStoreIdentity,
-  storeMountNameSchema,
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 import { GenericIOError } from "@fenglimg/fabric-shared/errors";
@@ -86,8 +86,12 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
   }
 
   const alias = identity.canonical_alias ?? "team";
-  const mount_name = storeMountNameSchema.safeParse(alias).success ? alias : identity.store_uuid;
+  // D4 — the directory LABEL is the remote-derived repo name (falls back to
+  // alias / short uuid). A team clone is NOT personal → it lands in the `team/`
+  // group bucket.
+  const mount_name = deriveMountLabel({ remote: url, alias, store_uuid: identity.store_uuid });
   const finalDir = join(globalRoot, storeRelativePathForMount({ store_uuid: identity.store_uuid, mount_name }));
+  mkdirSync(join(finalDir, ".."), { recursive: true }); // ensure the `stores/<group>/` bucket exists
   renameSync(cloneDest, finalDir);
 
   const config = loadGlobalConfig(globalRoot);
@@ -144,11 +148,14 @@ export function cloneGlobalPersonalFromRemote(
   const personalStore = {
     store_uuid: identity.store_uuid,
     alias: "personal",
-    mount_name: "personal",
+    // D4 — label from the remote repo name; `personal: true` routes it to the
+    // `personal/` group bucket regardless of the label.
+    mount_name: deriveMountLabel({ remote: url, alias: "personal", store_uuid: identity.store_uuid }),
     personal: true,
     remote: url,
   };
   const finalDir = join(globalRoot, storeRelativePathForMount(personalStore));
+  mkdirSync(join(finalDir, ".."), { recursive: true }); // ensure the `stores/personal/` bucket exists
   renameSync(cloneDest, finalDir);
 
   saveGlobalConfig(globalConfigSchema.parse({ uid, stores: [personalStore] }), globalRoot);

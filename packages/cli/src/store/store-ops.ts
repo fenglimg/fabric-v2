@@ -7,6 +7,7 @@ import {
   addMountedStore,
   addStoreProject,
   bindRequiredStore,
+  deriveMountLabel,
   detachMountedStore,
   explainStore,
   initStore,
@@ -18,6 +19,7 @@ import {
   storeHasProject,
   storeIdentitySchema,
   storeProjectsFileSchema,
+  storeMountSubPath,
   storeRelativePath,
   storeRelativePathForMount,
   storeMountNameSchema,
@@ -102,7 +104,9 @@ export function syncStoreAliasLinks(globalRoot: string = resolveGlobalRoot()): A
     return result;
   }
   const byAliasDir = join(globalRoot, STORES_ROOT_DIR, STORE_BY_ALIAS_DIR);
-  const desired = new Map(config.stores.map((s) => [s.alias, s.mount_name ?? s.store_uuid]));
+  // Two-layer layout: the link target is `../<group>/<label>` relative to
+  // `stores/by-alias/` (storeMountSubPath), NOT a single segment anymore.
+  const desired = new Map(config.stores.map((s) => [s.alias, storeMountSubPath(s)]));
 
   try {
     mkdirSync(byAliasDir, { recursive: true });
@@ -132,7 +136,7 @@ export function syncStoreAliasLinks(globalRoot: string = resolveGlobalRoot()): A
   // Create / re-point links for every mounted store.
   for (const [alias, mountName] of desired) {
     const link = join(byAliasDir, alias);
-    const target = join("..", mountName); // relative → stores/<mount_name|uuid>
+    const target = join("..", mountName); // relative → stores/<group>/<label>
     try {
       let current: string | null = null;
       try {
@@ -178,7 +182,7 @@ export function detectAliasLinkDrift(globalRoot: string = resolveGlobalRoot()): 
   const drifted: string[] = [];
   for (const store of config.stores) {
     const link = join(byAliasDir, store.alias);
-    const target = join("..", store.mount_name ?? store.store_uuid);
+    const target = join("..", storeMountSubPath(store));
     try {
       if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
         drifted.push(store.alias);
@@ -225,7 +229,12 @@ export async function storeCreate(
   // requireConfig first: refuse to create before `install --global` (no uid).
   const config = requireConfig(globalRoot);
   const uuid = options.uuid ?? randomUUID();
-  const mount_name = storeMountNameSchema.parse(options.mountName ?? alias);
+  // D4 — explicit --mount-name wins (validated); otherwise the label is derived
+  // from the remote repo name, falling back to the alias / short uuid.
+  const mount_name =
+    options.mountName !== undefined
+      ? storeMountNameSchema.parse(options.mountName)
+      : deriveMountLabel({ remote: options.remote, alias, store_uuid: uuid });
   const mountedBase: MountedStore = { store_uuid: uuid, alias, mount_name };
   const storeDir = mountedStoreDir(mountedBase, globalRoot);
 
@@ -262,8 +271,12 @@ function initStoreSync(absDir: string, identity: StoreIdentity): StoreIdentity {
   if (existsSync(identityFile)) {
     throw new Error(`store already initialized at ${absDir} (store.json exists)`);
   }
+  // D4b — pre-create all 5 canonical category dirs with a committed `.gitkeep`
+  // so the full store structure is visible/complete from birth (mirrors initStore).
   for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
-    mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, type), { recursive: true });
+    const typeDir = join(absDir, STORE_LAYOUT.knowledgeDir, type);
+    mkdirSync(typeDir, { recursive: true });
+    writeFileSync(join(typeDir, ".gitkeep"), "", "utf8");
   }
   mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
   mkdirSync(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
@@ -347,6 +360,7 @@ export function assertStoreMountable(
             storeRelativePathForMount({
               store_uuid: uuid,
               mount_name: mountName ?? registered?.mount_name,
+              personal: registered?.personal,
             }),
           ),
           join(globalRoot, storeRelativePath(uuid)),

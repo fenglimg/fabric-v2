@@ -76,8 +76,13 @@ export async function initStore(
     }
   }
 
+  // D4b — pre-create all 5 canonical category dirs (+ pending) with a committed
+  // `.gitkeep` so the full store structure is visible/complete from birth, even
+  // before any entry of that type exists (empty git dirs are otherwise invisible).
   for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
-    await mkdir(join(absDir, STORE_LAYOUT.knowledgeDir, type), { recursive: true });
+    const typeDir = join(absDir, STORE_LAYOUT.knowledgeDir, type);
+    await mkdir(typeDir, { recursive: true });
+    await writeFile(join(typeDir, ".gitkeep"), "", "utf8");
   }
   await mkdir(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
   await mkdir(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });

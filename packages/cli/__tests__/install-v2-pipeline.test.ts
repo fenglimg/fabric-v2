@@ -305,7 +305,7 @@ describe("install-v2 pipeline UX", () => {
     expect(result.disposition).toBe("ran");
     const repaired = loadGlobalConfig(globalRoot);
     expect(repaired?.stores.some((store) => store.alias === "personal" && store.personal === true)).toBe(true);
-    expect(existsSync(join(globalRoot, "stores", "personal", "store.json"))).toBe(true);
+    expect(existsSync(join(globalRoot, "stores", "personal", "personal", "store.json"))).toBe(true);
   });
 
   it("marks a legacy alias=personal store as personal instead of creating a duplicate", async () => {

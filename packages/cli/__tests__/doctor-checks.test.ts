@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { globalConfigSchema, storeRelativePath } from "@fenglimg/fabric-shared";
+import { globalConfigSchema, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { storeDoctorChecks } from "../src/store/doctor-checks.js";
@@ -111,7 +111,7 @@ describe("doctor store checks", () => {
       globalRoot,
     );
     // Plant an executable hook inside the on-disk store tree.
-    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    const storeDir = join(globalRoot, storeRelativePathForMount({ store_uuid: TEAM }));
     mkdirSync(join(storeDir, "hooks"), { recursive: true });
     writeFileSync(join(storeDir, "hooks", "evil.cjs"), "console.log('rce')\n", "utf8");
 

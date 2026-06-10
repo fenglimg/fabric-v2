@@ -212,8 +212,89 @@ export function storeRelativePath(storeUuid: string): string {
   return `${STORES_ROOT_DIR}/${storeUuid}`;
 }
 
-export function storeRelativePathForMount(store: { store_uuid: string; mount_name?: string }): string {
-  return `${STORES_ROOT_DIR}/${store.mount_name ?? store.store_uuid}`;
+// grill-6fixes (D4) — TWO-LAYER store layout: `stores/<group>/<label>/`.
+//
+//   group  = the PERSONAL/TEAM bucket, derived purely from `personal:true` in
+//            fabric-global.json (NOT baked into the on-disk name). A store's
+//            bucket is a config fact, not part of its directory label.
+//   label  = a human-readable directory name (the `mount_name`). It is a LABEL,
+//            never the identity — the store's true identity is store.json's
+//            store_uuid. The label is derived from the remote repo name (see
+//            deriveMountLabel), so renaming/rotating a remote only makes the
+//            local label stale; lookup still goes via the config record →
+//            uuid (resolveStoreByAliasOrUuid), and `fabric doctor --fix` can
+//            refresh a stale label. When `mount_name` is absent the label falls
+//            back to the full store_uuid so the path stays a valid segment.
+export const STORE_MOUNT_GROUPS = ["personal", "team"] as const;
+export type StoreMountGroup = (typeof STORE_MOUNT_GROUPS)[number];
+
+export function storeMountGroup(store: { personal?: boolean }): StoreMountGroup {
+  return store.personal === true ? "personal" : "team";
+}
+
+// `<group>/<label>` — the store's location RELATIVE to STORES_ROOT_DIR. Used by
+// the by-alias symlink layer (target relative to `stores/by-alias/`).
+export function storeMountSubPath(store: {
+  store_uuid: string;
+  mount_name?: string;
+  personal?: boolean;
+}): string {
+  return `${storeMountGroup(store)}/${store.mount_name ?? store.store_uuid}`;
+}
+
+export function storeRelativePathForMount(store: {
+  store_uuid: string;
+  mount_name?: string;
+  personal?: boolean;
+}): string {
+  return `${STORES_ROOT_DIR}/${storeMountSubPath(store)}`;
+}
+
+// Sanitize an arbitrary string into a valid `mount_name` directory label (the
+// second layer of the two-layer store layout). Lowercases, maps any char outside
+// [a-z0-9._-] to '-', collapses runs, and trims to start/end on an alphanumeric
+// so the result satisfies STORE_MOUNT_NAME_PATTERN. Returns undefined when
+// nothing usable (length < 2) survives.
+function sanitizeMountLabel(raw: string): string | undefined {
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/[-._]{2,}/gu, "-")
+    .replace(/^[^a-z0-9]+/u, "")
+    .replace(/[^a-z0-9]+$/u, "")
+    .slice(0, 80)
+    .replace(/[^a-z0-9]+$/u, "");
+  return STORE_MOUNT_NAME_PATTERN.test(slug) ? slug : undefined;
+}
+
+// Extract a repository-name label from a git remote URL. Handles both
+// `https://host/org/repo(.git)` and scp-style `git@host:org/repo(.git)`.
+function mountLabelFromRemote(remote: string): string | undefined {
+  const withoutGit = remote.trim().replace(/\.git$/iu, "").replace(/\/+$/u, "");
+  const lastSegment = withoutGit.split(/[\\/:]/u).filter(Boolean).at(-1);
+  return lastSegment === undefined ? undefined : sanitizeMountLabel(lastSegment);
+}
+
+// Derive the on-disk directory label for a store from its identity hints.
+// Priority (D4 guardrail): remote-derived repo name → alias → short store_uuid.
+// ALWAYS returns a STORE_MOUNT_NAME_PATTERN-valid label so persisting it through
+// mountedStoreSchema never throws.
+export function deriveMountLabel(input: {
+  remote?: string;
+  alias?: string;
+  store_uuid: string;
+}): string {
+  const fromRemote = input.remote === undefined ? undefined : mountLabelFromRemote(input.remote);
+  if (fromRemote !== undefined) {
+    return fromRemote;
+  }
+  if (input.alias !== undefined) {
+    const fromAlias = sanitizeMountLabel(input.alias);
+    if (fromAlias !== undefined) {
+      return fromAlias;
+    }
+  }
+  return input.store_uuid.replace(/-/gu, "").slice(0, 8);
 }
 
 // ---------------------------------------------------------------------------

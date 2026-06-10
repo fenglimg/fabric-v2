@@ -9,7 +9,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
@@ -77,7 +77,7 @@ function mountTeamStore(): void {
 function storeCanonicalDir(type: string): string {
   return join(
     resolveGlobalRoot(),
-    storeRelativePath(TEAM_STORE_UUID),
+    storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID }),
     STORE_LAYOUT.knowledgeDir,
     type,
   );

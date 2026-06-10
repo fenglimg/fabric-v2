@@ -28,7 +28,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 const tempDirs: string[] = [];
@@ -82,12 +82,12 @@ function provisionStores(projectRoot: string): void {
 
 function storeKnowledgeDir(layer: "team" | "personal", ...sub: string[]): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return join(resolveGlobalRoot(), storeRelativePath(uuid), STORE_LAYOUT.knowledgeDir, ...sub);
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.knowledgeDir, ...sub);
 }
 
 function storeDisplayPath(layer: "team" | "personal", ...sub: string[]): string {
   const uuid = layer === "personal" ? TEST_PERSONAL_UUID : TEST_TEAM_UUID;
-  return ["~/.fabric", storeRelativePath(uuid).replace(/\\/gu, "/"), STORE_LAYOUT.knowledgeDir, ...sub].join("/");
+  return ["~/.fabric", storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }).replace(/\\/gu, "/"), STORE_LAYOUT.knowledgeDir, ...sub].join("/");
 }
 
 async function seedArchivedFile(

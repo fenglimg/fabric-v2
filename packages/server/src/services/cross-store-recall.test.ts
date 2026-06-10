@@ -8,7 +8,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import {
@@ -68,7 +68,7 @@ async function createProjectWithEmptyMeta(): Promise<string> {
 // Seed a mounted store under the isolated ~/.fabric/stores/<uuid>/ with one
 // knowledge entry, and register it in the global config.
 async function seedTeamStore(): Promise<void> {
-  const storeDir = join(resolveGlobalRoot(), storeRelativePath(TEAM_STORE_UUID));
+  const storeDir = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID }));
   const decisionsDir = join(storeDir, STORE_LAYOUT.knowledgeDir, "decisions");
   await mkdir(decisionsDir, { recursive: true });
   await writeFile(

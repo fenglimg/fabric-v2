@@ -8,7 +8,7 @@ import {
   STORE_LAYOUT,
   resolveGlobalRoot,
   saveGlobalConfig,
-  storeRelativePath,
+  storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
 import { recall } from "./recall.js";
@@ -77,7 +77,7 @@ function mountStores(): void {
 async function writeStoreEntry(type: string, id: string, lines: string[]): Promise<void> {
   const dir = join(
     resolveGlobalRoot(),
-    storeRelativePath(TEAM_STORE),
+    storeRelativePathForMount({ store_uuid: TEAM_STORE }),
     STORE_LAYOUT.knowledgeDir,
     type,
   );
