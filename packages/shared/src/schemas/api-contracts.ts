@@ -444,7 +444,7 @@ export const recallInputSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      "Optional explicit stable_ids to fetch. When omitted, fab_recall returns ALL entries plan-context surfaces (the common case after rc.37 selectable-filter removal). When provided, filters fetched bodies to this set.",
+      "Optional explicit stable_ids to fetch whole. When omitted, fab_recall auto-selects: a description for every surfaced candidate plus full bodies only for the highest-ranked few within the body-tier budget (rest are description-only, fetchable on demand). When provided, fetches exactly these bodies and bypasses the body-tier budget.",
     ),
   // v2.2 MC1-recall-pack (W2-T4): graph expansion.
   include_related: z
@@ -485,6 +485,11 @@ export const recallOutputSchema = z.object({
       level: z.enum(["L0", "L1", "L2"]),
       path: z.string(),
       body: z.string(),
+      // grill-report C-005 (body-tier): set when this body was sliced to keep the
+      // response under the hard payload ceiling (a single oversized head entry);
+      // the full body is fetchable via fab_get_knowledge_sections. Omitted in the
+      // common case. Additive — declare it or zod strips it on output validation.
+      truncated: z.boolean().optional(),
       // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7 物理 store
       // 边界对 AI 可见): per-rule store provenance so the caller can trace which
       // store each recalled entry came from. cross-store-recall already prefixes
@@ -521,6 +526,16 @@ export const recallOutputSchema = z.object({
     .object({
       omitted_candidate_count: z.number().int().nonnegative(),
       returned_candidate_count: z.number().int().nonnegative(),
+    })
+    .optional(),
+  // grill-report C-003/C-009 (body-tier): discovery/application split summary.
+  // `bodies_returned` = rules[] count; `description_only` = surfaced candidates
+  // whose body was held back by the body-tier budget (fetch on demand via
+  // fab_get_knowledge_sections). Omitted when every candidate shipped its body.
+  body_tier: z
+    .object({
+      bodies_returned: z.number().int().nonnegative(),
+      description_only: z.number().int().nonnegative(),
     })
     .optional(),
 });

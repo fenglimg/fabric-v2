@@ -12,6 +12,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { recall } from "./recall.js";
+import { getKnowledgeSections } from "./knowledge-sections.js";
 import { readEventLedger } from "./event-ledger.js";
 import { contextCache } from "../cache.js";
 
@@ -302,6 +303,104 @@ describe("recall (one-call combined service — NEW-3)", () => {
     expect(result.truncation).toEqual({ omitted_candidate_count: 1, returned_candidate_count: 1 });
     expect(result.next_steps ?? []).toEqual(
       expect.arrayContaining([expect.stringMatching(/omitted by the retrieval budget/)]),
+    );
+  });
+
+  // grill-report C-003/C-004/C-005/C-006/C-009 (body-tier): recall returns a
+  // DESCRIPTION for every surfaced candidate but a full BODY only for the
+  // rank-ordered prefix that fits BODY_BUDGET (balanced = 4096 bytes). Each
+  // large entry's body (~3.2KB) overflows after the first, so only #1 ships a
+  // body — deterministic regardless of which entry ranks first.
+  async function seedLargeEntries(count: number, bodyBytes = 3200): Promise<string> {
+    const projectRoot = await createTempProject();
+    const filler = "x".repeat(bodyBytes);
+    for (let i = 1; i <= count; i++) {
+      const id = `KT-DEC-000${i}`;
+      await writeStoreEntry("decisions", id, [
+        "---",
+        `id: ${id}`,
+        "type: decision",
+        "layer: team",
+        "maturity: verified",
+        "created_at: 2026-06-04T00:00:00.000Z",
+        "intent_clues: [auth]",
+        "tech_stack: [TypeScript]",
+        `summary: Decision ${i}`,
+        "---",
+        `# Body ${i}`,
+        filler,
+        "",
+      ]);
+    }
+    mountStores();
+    return projectRoot;
+  }
+
+  it("body-tier: trims bodies past the budget but keeps every candidate description", async () => {
+    const projectRoot = await seedLargeEntries(3); // three ~3.2KB bodies
+
+    const result = await recall(projectRoot, { paths: ["src/index.ts"], intent: "auth" });
+
+    // Discovery layer intact: all three candidates carry descriptions.
+    expect(result.candidates).toHaveLength(3);
+    // Application layer lean: only the #1 body fits BODY_BUDGET (3.2KB + 3.2KB > 4096).
+    expect(result.rules).toHaveLength(1);
+    expect(result.selected_stable_ids).toHaveLength(1);
+    expect(result.body_tier).toEqual({ bodies_returned: 1, description_only: 2 });
+    expect(result.next_steps ?? []).toEqual(
+      expect.arrayContaining([expect.stringMatching(/description-only.*fab_get_knowledge_sections/)]),
+    );
+    // No truncation flag in the lean common case (body delivered whole).
+    expect(result.rules[0].truncated).toBeUndefined();
+    expect(result.rules[0].body).toContain("xxxx");
+  });
+
+  it("body-tier: description-only entries stay fetchable via the same selection_token (escape hatch)", async () => {
+    const projectRoot = await seedLargeEntries(3);
+
+    const result = await recall(projectRoot, { paths: ["src/index.ts"], intent: "auth" });
+    const returned = new Set(result.rules.map((r) => r.stable_id));
+    const descriptionOnly = result.candidates.map((c) => c.stable_id).find((id) => !returned.has(id));
+    expect(descriptionOnly).toBeDefined();
+
+    // The token caches the FULL candidate set, so a follow-up fetch of a
+    // body-tier-trimmed entry resolves its body (no re-plan needed).
+    const followUp = await getKnowledgeSections(projectRoot, {
+      selection_token: result.selection_token,
+      ai_selected_stable_ids: [descriptionOnly as string],
+      ai_selection_reasons: {},
+    });
+    expect(followUp.rules.map((r) => r.stable_id)).toEqual([descriptionOnly]);
+    expect(followUp.rules[0].body).toContain("xxxx");
+  });
+
+  it("body-tier: explicit `ids` bypass the budget and fetch every requested body whole", async () => {
+    const projectRoot = await seedLargeEntries(3);
+    const ids = ["team:KT-DEC-0001", "team:KT-DEC-0002", "team:KT-DEC-0003"];
+
+    const result = await recall(projectRoot, { paths: ["src/index.ts"], ids });
+
+    // All three bodies returned despite far exceeding BODY_BUDGET (C-006).
+    expect(result.rules.map((r) => r.stable_id).sort()).toEqual(ids);
+    // descriptionOnly === 0 on the explicit path → no body_tier summary.
+    expect(result.body_tier).toBeUndefined();
+  });
+
+  it("body-tier: a single oversized body is truncated + flagged, never throwing 413 (C-005)", async () => {
+    // One ~70KB body, alone over the 65536 hard ceiling. Single candidate →
+    // budget skipped (floor), so the ceiling guard is what must keep it legal.
+    const projectRoot = await seedLargeEntries(1, 70000);
+
+    const result = await recall(projectRoot, { paths: ["src/index.ts"], intent: "auth" });
+
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].truncated).toBe(true);
+    expect(result.rules[0].body).toMatch(/truncated to fit the recall payload ceiling/);
+    expect(result.rules[0].body.length).toBeLessThan(70000);
+    // The whole envelope now fits the hard ceiling — the tool layer won't 413.
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThanOrEqual(65536);
+    expect(result.next_steps ?? []).toEqual(
+      expect.arrayContaining([expect.stringMatching(/truncated to fit the payload ceiling/)]),
     );
   });
 

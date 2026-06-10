@@ -13,9 +13,13 @@
 // token can keep calling fab_get_knowledge_sections — the returned token is
 // the same one fab_plan_context would have emitted.
 
+import { readFile } from "node:fs/promises";
+
 import { planContext, type PlanContextInput, type PlanContextResult } from "./plan-context.js";
 import { getKnowledgeSections, extractBody } from "./knowledge-sections.js";
+import { buildCrossStoreBodyIndex } from "./cross-store-recall.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
+import { readRecallBodyBudget } from "../config-loader.js";
 
 export type RecallInput = PlanContextInput & {
   /**
@@ -44,12 +48,29 @@ export type RecallTruncation = {
   returned_candidate_count: number;
 };
 
+// grill-report C-003/C-009 (body-tier): the split between discovery layer
+// (every top_k candidate's description, always returned via `candidates`) and
+// application layer (full bodies, only for the highest-ranked few that fit
+// BODY_BUDGET). `bodies_returned` = rules[] length; `description_only` = how many
+// surfaced candidates carry a description but NO eager body (fetch on demand via
+// fab_get_knowledge_sections with the returned selection_token). Omitted when no
+// candidate was held back (the response carried every candidate's body).
+export type RecallBodyTier = {
+  bodies_returned: number;
+  description_only: number;
+};
+
 export type RecallResult = PlanContextResult & {
   rules: Array<{
     stable_id: string;
     level: "L0" | "L1" | "L2";
     path: string;
     body: string;
+    // grill-report C-005 (body-tier): set when the body was sliced to keep the
+    // response under the hard payload ceiling (a single oversized head entry).
+    // The full body remains fetchable via fab_get_knowledge_sections. Omitted in
+    // the common case (body delivered whole). Additive.
+    truncated?: boolean;
     // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7): per-rule
     // store provenance. cross-store-recall stamps candidate ids `<alias>:<id>`;
     // this surfaces that store alias as a structured field so the caller can
@@ -68,6 +89,8 @@ export type RecallResult = PlanContextResult & {
   directive: string;
   next_steps?: string[];
   truncation?: RecallTruncation;
+  // grill-report C-003/C-009 (body-tier): the discovery/application split summary.
+  body_tier?: RecallBodyTier;
 };
 
 // Synth `ai_selection_reasons` payload for the underlying
@@ -163,11 +186,30 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     );
   }
 
-  const packaging = buildRecallPackaging(planResult, relatedAvailableNotIncluded);
+  // grill-report C-003/C-004/C-006/C-009 (body-tier): decide which surfaced
+  // candidates ship a full body. The auto-select default (no explicit `ids`) is
+  // capped by BODY_BUDGET — accumulate body bytes in rank order, stop at the
+  // first overflow, the rest stay description-only (still in `candidates`,
+  // fetchable on demand via fab_get_knowledge_sections + the returned
+  // selection_token). Explicit `ids` (and the include_related expansion that
+  // only fires WITH explicit ids) bypass the budget per C-006 — the on-demand
+  // escape hatch must not be re-throttled — and fetch every requested body.
+  // payloadHardBytes is resolved here too for the C-005 ceiling guard below.
+  const { bodyBudgetBytes, payloadHardBytes } = readRecallBodyBudget(projectRoot);
+  let bodyFetchIds = orderedIds;
+  if (input.ids === undefined && orderedIds.length > 1) {
+    bodyFetchIds = await selectBodyBudgetedIds(projectRoot, orderedIds, bodyBudgetBytes);
+  }
+  // description_only = surfaced candidates we did NOT ship an eager body for
+  // (budget-trimmed on the auto path; 0 on the explicit-ids/related path).
+  const descriptionOnlyCount = orderedIds.length - bodyFetchIds.length;
+  const packaging = buildRecallPackaging(planResult, relatedAvailableNotIncluded, descriptionOnlyCount);
 
   // Empty-fetch path: no candidates → return the plan envelope with empty
   // rules/diagnostics. Avoids a spurious getKnowledgeSections call that would
-  // immediately validate-then-no-op.
+  // immediately validate-then-no-op. selectBodyBudgetedIds floors at 1, so when
+  // orderedIds is non-empty bodyFetchIds is too (diagnostics for an unresolved
+  // head are still produced by getKnowledgeSections below).
   if (orderedIds.length === 0) {
     return {
       ...planResult,
@@ -179,25 +221,138 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   }
 
   const reasons: Record<string, string> = {};
-  for (const id of orderedIds) {
+  for (const id of bodyFetchIds) {
     reasons[id] = RECALL_REASON_MARKER;
   }
 
   const sectionsResult = await getKnowledgeSections(projectRoot, {
     selection_token: planResult.selection_token,
-    ai_selected_stable_ids: orderedIds,
+    ai_selected_stable_ids: bodyFetchIds,
     ai_selection_reasons: reasons,
     correlation_id: input.correlation_id,
     session_id: input.session_id,
     client_hash: input.client_hash,
   });
 
-  return {
+  const result: RecallResult = {
     ...planResult,
     rules: sectionsResult.rules.map(attachStoreProvenance),
     selected_stable_ids: sectionsResult.selected_stable_ids,
     diagnostics: sectionsResult.diagnostics,
     ...packaging,
+    ...(descriptionOnlyCount > 0
+      ? {
+          body_tier: {
+            bodies_returned: sectionsResult.rules.length,
+            description_only: descriptionOnlyCount,
+          },
+        }
+      : {}),
+  };
+
+  // grill-report C-005: recall MUST NOT 413. A pathological single oversized
+  // head body (the floor entry that alone blew the budget) is sliced + flagged
+  // so the assembled envelope fits the hard ceiling.
+  return applyBodyHardCeiling(result, payloadHardBytes);
+}
+
+// grill-report C-004/C-005 (body-tier): pick the rank-ordered prefix of
+// candidates whose bodies fit BODY_BUDGET. Floors at the #1 candidate (always
+// returned, even if its body alone overflows or it is unresolvable — in which
+// case getKnowledgeSections emits the warn diagnostic), then accumulates body
+// bytes until the next one would overflow. Caller only invokes this on the
+// auto-select path with > 1 candidate. Reads bodies via the same cross-store
+// index getKnowledgeSections uses; an unresolvable / unreadable entry measures
+// as 0 bytes (it ships no body anyway). Best-effort: a body-index build failure
+// degrades to "fetch everything" (lean is an optimization, never a hard gate).
+async function selectBodyBudgetedIds(
+  projectRoot: string,
+  orderedIds: string[],
+  bodyBudgetBytes: number,
+): Promise<string[]> {
+  let bodyIndex: Awaited<ReturnType<typeof buildCrossStoreBodyIndex>>;
+  try {
+    bodyIndex = await buildCrossStoreBodyIndex(projectRoot);
+  } catch {
+    return orderedIds;
+  }
+  const measure = async (id: string): Promise<number> => {
+    const ref = bodyIndex.get(id);
+    if (ref === undefined) return 0;
+    try {
+      return Buffer.byteLength(extractBody(await readFile(ref.file, "utf8")), "utf8");
+    } catch {
+      return 0;
+    }
+  };
+  const kept: string[] = [];
+  let acc = 0;
+  for (const id of orderedIds) {
+    const bytes = await measure(id);
+    if (kept.length === 0) {
+      // Floor (C-005): always keep #1, regardless of size/resolvability.
+      kept.push(id);
+      acc += bytes;
+      continue;
+    }
+    if (acc + bytes > bodyBudgetBytes) break; // C-004: stop at first overflow.
+    kept.push(id);
+    acc += bytes;
+  }
+  return kept;
+}
+
+// grill-report C-005 (body-tier): keep the assembled recall envelope under the
+// hard payload ceiling so the tool layer never throws 413. The only realistic
+// overflow under body-tier is a single oversized FLOOR body (the #1 candidate
+// kept past BODY_BUDGET). Slice the longest body (marking it `truncated`) and
+// re-measure until it fits — the full body stays fetchable via
+// fab_get_knowledge_sections. RESERVE leaves room for the `warnings` array the
+// tool layer appends after recall returns. Pure (no I/O).
+const TOOL_ENVELOPE_RESERVE_BYTES = 4096;
+const BODY_TRUNCATION_MARKER =
+  "\n\n…[truncated to fit the recall payload ceiling — fetch the full body via fab_get_knowledge_sections]";
+
+function applyBodyHardCeiling(result: RecallResult, payloadHardBytes: number): RecallResult {
+  const cap = Math.max(1024, payloadHardBytes - TOOL_ENVELOPE_RESERVE_BYTES);
+  if (Buffer.byteLength(JSON.stringify(result), "utf8") <= cap) {
+    return result;
+  }
+  const rules = result.rules.map((rule) => ({ ...rule }));
+  let truncatedAny = false;
+  // Bounded loop: JSON escaping makes the per-cut byte delta nonlinear, so slice
+  // the longest body, re-measure, repeat (cap 8 iterations).
+  for (let i = 0; i < 8; i++) {
+    const bytes = Buffer.byteLength(JSON.stringify({ ...result, rules }), "utf8");
+    if (bytes <= cap) break;
+    let idx = -1;
+    let longest = -1;
+    for (let j = 0; j < rules.length; j++) {
+      if (rules[j].body.length > longest) {
+        longest = rules[j].body.length;
+        idx = j;
+      }
+    }
+    if (idx < 0 || rules[idx].body.length <= BODY_TRUNCATION_MARKER.length) break;
+    const overflow = bytes - cap;
+    // body.length is CHARS; non-ASCII bytes ≈ 3× chars, so cutting `overflow`
+    // chars drops ≥ overflow bytes — safe (never under-cuts). Converges fast.
+    const keepLen = Math.max(0, rules[idx].body.length - overflow - BODY_TRUNCATION_MARKER.length);
+    rules[idx] = {
+      ...rules[idx],
+      body: rules[idx].body.slice(0, keepLen) + BODY_TRUNCATION_MARKER,
+      truncated: true,
+    };
+    truncatedAny = true;
+  }
+  if (!truncatedAny) return result;
+  return {
+    ...result,
+    rules,
+    next_steps: [
+      ...(result.next_steps ?? []),
+      "A recalled body was truncated to fit the payload ceiling — fetch its full content via fab_get_knowledge_sections (same selection_token + the rule's stable_id).",
+    ],
   };
 }
 
@@ -228,9 +383,19 @@ function relatedLookupKeys(stableId: string): string[] {
 function buildRecallPackaging(
   planResult: PlanContextResult,
   relatedAvailableNotIncluded: boolean,
+  descriptionOnlyCount: number,
 ): { directive: string; next_steps?: string[]; truncation?: RecallTruncation } {
   const omitted = planResult.omitted_candidate_count ?? 0;
   const nextSteps: string[] = [];
+  // grill-report C-003 (body-tier): the discovery→application escape-hatch hint.
+  // These candidates ARE present (with descriptions) in `candidates`; only their
+  // bodies were held back by BODY_BUDGET. The selection_token caches the FULL
+  // candidate set, so any of them is fetchable on demand.
+  if (descriptionOnlyCount > 0) {
+    nextSteps.push(
+      `${descriptionOnlyCount} lower-ranked candidate(s) returned description-only (body-tier budget) — read their description in candidates[], and fetch any body on demand via fab_get_knowledge_sections with the returned selection_token + the candidate's stable_id.`,
+    );
+  }
   if (omitted > 0) {
     nextSteps.push(
       `${omitted} lower-ranked candidate(s) were omitted by the retrieval budget — pass a narrower intent (or raise plan_context_top_k / the retrieval_budget_profile) to surface them.`,

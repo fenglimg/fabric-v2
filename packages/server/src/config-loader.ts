@@ -70,6 +70,49 @@ export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undef
 }
 
 /**
+ * grill-report C-009 (body-tier): resolve the fab_recall body-tier budget plus
+ * the hard payload ceiling, both in bytes. The body budget caps how many bodies
+ * recall fetches eagerly (rank-order accumulation stops here); the hard ceiling
+ * is the C-005 truncation floor so a single oversized head body degrades to a
+ * marked truncation instead of a 413. Explicit `recall_body_budget_bytes` /
+ * `mcpPayloadLimits.hardBytes` win over the profile; absent → profile defaults
+ * (balanced = 4096 / 65536). Best-effort + hot-path safe — any read/parse
+ * failure falls back to the balanced profile so recall never crashes on a
+ * corrupt config.
+ */
+export function readRecallBodyBudget(projectRoot: string): {
+  bodyBudgetBytes: number;
+  payloadHardBytes: number;
+} {
+  try {
+    const config = readFabricConfig(projectRoot);
+    const profile = readRetrievalBudgetProfile(config);
+    const explicitBody = config.recall_body_budget_bytes;
+    const explicitHard = config.mcpPayloadLimits?.hardBytes;
+    const resolved = resolveRetrievalBudget({
+      profile,
+      // Honor only an in-range integer; anything else falls through to the
+      // profile default (mirrors the schema's [256, 1MB] bound).
+      bodyBudgetBytes:
+        typeof explicitBody === "number" &&
+        Number.isInteger(explicitBody) &&
+        explicitBody >= 256 &&
+        explicitBody <= 1_048_576
+          ? explicitBody
+          : undefined,
+      payloadHardBytes:
+        typeof explicitHard === "number" && Number.isInteger(explicitHard) && explicitHard > 0
+          ? explicitHard
+          : undefined,
+    });
+    return { bodyBudgetBytes: resolved.bodyBudgetBytes, payloadHardBytes: resolved.payloadHardBytes };
+  } catch {
+    const fallback = resolveRetrievalBudget();
+    return { bodyBudgetBytes: fallback.bodyBudgetBytes, payloadHardBytes: fallback.payloadHardBytes };
+  }
+}
+
+/**
  * v2.0.0-rc.29 TASK-008 (BUG-F3): returns the selection_token_ttl_ms override
  * from fabric.config.json, or undefined when absent so the caller (plan-context.ts)
  * falls back to its 5-minute default. Best-effort: any parse failure returns

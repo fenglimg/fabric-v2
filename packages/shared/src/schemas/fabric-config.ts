@@ -446,6 +446,14 @@ export const fabricConfigSchema = z.object({
   // hint_broad_budget_chars) still override the profile when set. See
   // retrieval-budget.ts (resolveRetrievalBudget) for the resolution order.
   retrieval_budget_profile: z.enum(["conservative", "balanced", "generous"]).optional(),
+  // grill-report C-009 / R2-R5 mitigation knob: per-field override for the
+  // fab_recall body-tier budget (bytes). Absent → derived from the profile
+  // (balanced = 4096). Bump it if the lean default drops too many bodies and the
+  // AI is not following up with fab_get_knowledge_sections (R2 observation).
+  // Range 256B..1MB — below 256B even one body never fits; above 1MB defeats the
+  // whole lean-recall purpose. Overrides the profile when set, like the other
+  // per-field knobs.
+  recall_body_budget_bytes: z.number().int().min(256).max(1_048_576).optional(),
   // v2.2 C2-vector (W2-T7): OPTIONAL dense-embedding semantic retrieval, layered
   // as a recall supplement after BM25. Default OFF (`--no-embed` is the baseline);
   // requires the operator to install the optional `fastembed` package — absent →
