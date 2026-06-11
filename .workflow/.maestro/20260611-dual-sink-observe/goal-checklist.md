@@ -15,13 +15,15 @@
 ## 终止判据(全 done + W6 dogfood gate)
 | 判据 | wave | 状态 |
 |---|---|---|
-| C1 emitContext 三分支 | W2-1 | ☐ |
-| C2 banner 重构(人普查/AI always正文+计数) | W3-1, W3-2 | ☐ |
-| C3 注入层 filterByActiveProject 镜像 | W3-1 | ☐ |
-| C4 config 预设 nudge_mode+observe.*(不变量:只调人出口) | W1-1, W1-2 | ☐ |
-| C5 PreToolUse命中gate + Stop软nudge value-gated | W4-1, W4-2 | ☐ |
-| C6 Codex matcher 加 apply_patch | W5-1 | ☐ |
-| C7 全测试绿+tsc + dogfood CC banner systemMessage | W6-1, W6-2 | ☐ |
+| C1 emitContext 三分支 | W2-1 | ✅ |
+| C2 banner 重构(人普查/AI always正文+计数) | W3-1, W3-2 | ✅ |
+| C3 注入层 filterByActiveProject 镜像 | W3-1 | ✅ |
+| C4 config 预设 nudge_mode+observe.*(不变量:只调人出口) | W1-1, W1-2 | ✅ |
+| C5 PreToolUse命中gate + Stop软nudge value-gated | W4-1, W4-2 | ✅ |
+| C6 Codex matcher 加 apply_patch | W5-1 | ✅ |
+| C7 全测试绿+tsc + dogfood CC banner systemMessage | W6-1, W6-2 | ✅ |
+
+**✅ 全 7 判据达成(2026-06-11)** — task_decomposition 全 done + W6-2 dogfood gate 过(CC SessionStart 顶层 systemMessage 人出口可见)。
 
 ## Waves(依赖序)
 - **W1 config 基座** (W1-1 schema+rebuild → W1-2 nudge-policy resolver+不变量) — 先做,后续 hook 都读它
