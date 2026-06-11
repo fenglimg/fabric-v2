@@ -34,7 +34,8 @@
   },
   "git_commits": [
     { "wave": "W1", "sha": "0b1a960", "subject": "feat(config): nudge_mode + observe.* 预设 + hook nudge-policy resolver" },
-    { "wave": "W2", "sha": "d7a9018", "subject": "feat(hooks): client-adapter emitDualSink 三分支 dual sink" }
+    { "wave": "W2", "sha": "d7a9018", "subject": "feat(hooks): client-adapter emitDualSink 三分支 dual sink" },
+    { "wave": "W3-1", "sha": "5b958f8", "subject": "feat(server): always-active bodies + project-filter 守卫 (dual-sink 数据层)" }
   ],
   "task_decomposition": [
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -59,8 +60,8 @@
       "subject": "plan-context-hint/planContext 扩 always 条目正文(bounded by recall body-tier 预算)+ 镜像 cross-store-recall 的 filterByActiveProject(personal+team+project:当前,丢他项目);确认 scope=always 源字段(activation.tier vs relevance_scope)",
       "done_when": "plan-context-hint payload 携 scope=always 条目正文 + 已 project-filter;rebuild dist;CLI handler 单测绿(always-body 出现 + 他项目条目被丢)",
       "ship_criteria_alignment": ["C2", "C3"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "vitest plan-context-hint test + cross-store-recall filter parity + build dist", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "vitest plan-context-hint test + cross-store-recall filter parity + build dist", "evidence": "核验: criterion 3 已结构满足(planContext:352 调 buildCrossStoreRawItems 用同一 filterByActiveProject; 既有 cross-store-recall-project-filter.test 已证 planContext 丢他项目)。新增 buildAlwaysActiveBodies(server, type∈guidelines/models, extractBody)+ plan-context-hint always_bodies[] + server 导出。server/cli tsc EXIT=0; plan-context-hint 12 + project-filter 3 passed", "verified_at": "2026-06-11" } },
     { "id": "W3-2", "round": 1, "parent_id": "W3-1", "relationship": "incomplete-resolution", "subdivision_depth": 1,
       "subject": "knowledge-hint-broad.cjs banner 重构两 sink:人出口=分组普查(always-loaded/on-demand/[team][personal]/✗剔他项目);AI 出口=仅 scope=always 正文+on-demand 类别计数(替换 top_k=8 静态列表);经 emitContext dual sink + nudge_mode 调人出口;always 正文 bounded by char budget 超额降级 summary",
       "done_when": "banner 渲染两片(headline→systemMessage / always正文+计数→additionalContext);快照测试更新绿;budget 超额降级路径有测试",

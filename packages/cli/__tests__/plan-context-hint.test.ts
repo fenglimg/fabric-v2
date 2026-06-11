@@ -46,15 +46,32 @@ type MockAlwaysBody = {
   body: string;
 };
 
+type MockCensus = {
+  by_type: Record<string, number>;
+  by_layer: { team: number; personal: number };
+  dropped_other_project: number;
+  total: number;
+};
+
+const EMPTY_CENSUS: MockCensus = {
+  by_type: {},
+  by_layer: { team: 0, personal: 0 },
+  dropped_other_project: 0,
+  total: 0,
+};
+
 function mockServer(
   result: ServerPlanContextResult,
   alwaysBodies: MockAlwaysBody[] = [],
+  census: MockCensus = EMPTY_CENSUS,
 ): void {
   vi.doMock("@fenglimg/fabric-server", () => ({
     planContext: vi.fn().mockResolvedValue(result),
     // v2.2 dual-sink (Goal A / D9): plan-context-hint now also pulls the
     // always-active bodies for the AI sink — the mock must export it.
     buildAlwaysActiveBodies: vi.fn().mockResolvedValue(alwaysBodies),
+    // v2.2 dual-sink (Goal A / D8): + the read-set census for the human sink.
+    buildKnowledgeCensus: vi.fn().mockResolvedValue(census),
   }));
 }
 
@@ -412,5 +429,22 @@ describe("plan-context-hint — always_bodies projection (dual-sink D9)", () => 
     );
     const output = await runPlanContextHint({ all: true });
     expect(output.always_bodies).toEqual([]);
+  });
+
+  it("forwards the read-set census for the human sink", async () => {
+    mockServer(freshResult(), [], {
+      by_type: { guidelines: 2, models: 1, decisions: 5, pitfalls: 3, processes: 1 },
+      by_layer: { team: 10, personal: 2 },
+      dropped_other_project: 4,
+      total: 12,
+    });
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    expect(output.census.by_type.decisions).toBe(5);
+    expect(output.census.by_layer.team).toBe(10);
+    expect(output.census.dropped_other_project).toBe(4);
+    expect(output.census.total).toBe(12);
   });
 });

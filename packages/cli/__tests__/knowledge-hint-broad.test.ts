@@ -607,7 +607,12 @@ describe("knowledge-hint-broad.cjs — main", () => {
     }
   });
 
-  function captureStderr(env: { payload?: Payload | null; cwd?: string }): string[] {
+  function captureStderr(env: {
+    payload?: Payload | null;
+    cwd?: string;
+    census?: unknown;
+    alwaysBodies?: unknown;
+  }): string[] {
     const writes: string[] = [];
     const stderr = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, ...env }, { stderr });
@@ -622,17 +627,39 @@ describe("knowledge-hint-broad.cjs — main", () => {
     expect(captureStderr({ payload: makePayload([]) })).toEqual([]);
   });
 
-  it("writes rendered summary to stderr when narrow has entries", () => {
+  it("writes the dual-sink human census to stderr when entries exist (unknown client → stderr fallback)", () => {
+    // v2.2 dual-sink: the human sink is now the §3 grouped census (count-summary),
+    // not the legacy per-entry broad listing. In a unit test no CLAUDE_PROJECT_DIR
+    // is set → detectClient() is undefined → emitDualSink falls back to a stderr
+    // breadcrumb carrying the human census.
     const narrow = [
       makeEntry("KT-DEC-0001", "decision", "proven", "summary"),
     ];
     const writes = captureStderr({ payload: makePayload(narrow) });
     expect(writes.length).toBeGreaterThan(0);
     const stderr = writes.join("");
-    expect(stderr).toMatch(/Session start — 1 broad-scoped/);
-    expect(stderr).toMatch(/KT-DEC-0001/);
-    expect(stderr).toMatch(/revision_hash:/);
-    expect(stderr).toMatch(/fab_get_knowledge_sections/);
+    expect(stderr).toMatch(/\[fabric\] SessionStart/);
+    expect(stderr).toMatch(/on-demand/);
+    expect(stderr).toMatch(/decision 1/); // census count, not the per-entry id
+    expect(stderr).toMatch(/fab_recall/); // next-step nudge
+  });
+
+  it("dual-sink: census carried on payload drives the always-loaded / on-demand split", () => {
+    const writes = captureStderr({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "s")]),
+      census: {
+        by_type: { guidelines: 2, models: 1, decisions: 5, pitfalls: 3, processes: 0 },
+        by_layer: { team: 9, personal: 2 },
+        dropped_other_project: 4,
+        total: 11,
+      },
+    });
+    const stderr = writes.join("");
+    expect(stderr).toMatch(/always-loaded/);
+    expect(stderr).toMatch(/guideline 2 · model 1/);
+    expect(stderr).toMatch(/decision 5 · pitfall 3/);
+    expect(stderr).toMatch(/\[team\] 9 · \[personal\] 2/);
+    expect(stderr).toMatch(/已剔除他项目 4 条|dropped 4 other-project/);
   });
 
   it("appends a per-store read-set label from the bindings snapshot (v2.1 P4, F4/S63)", () => {
@@ -1061,8 +1088,8 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     const stderr = writes.join("");
     expect(stderr).toMatch(/📋 Fabric:/);
     expect(stderr).toMatch(/\/fabric-import/);
-    // broad summary body still present (first run, no cache)
-    expect(stderr).toMatch(/Session start — 1 broad-scoped/);
+    // v2.2 dual-sink: the §3 census banner still present alongside the import nudge.
+    expect(stderr).toMatch(/\[fabric\] SessionStart/);
   });
 
   it("canonical=15 >= 10 → NO import banner emitted", () => {
@@ -1261,5 +1288,140 @@ describe("knowledge-hint-broad.cjs — related二阶 provenance rendering (W3-T2
     for (const l of lines) {
       expect(l).not.toContain("related-to");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.2 dual-sink (Goal A) — SessionStart two-channel emit (criteria 1+2).
+// Forces a known client via FABRIC_HINT_CLIENT and captures the stdout JSON
+// envelope to assert the human systemMessage (§3 census) AND the AI
+// additionalContext (always-active bodies + on-demand counts) are both shaped
+// per client, plus the budget-degrade + nudge_mode-silent invariant.
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
+  let tempRoot: string;
+  const savedClient = process.env.FABRIC_HINT_CLIENT;
+  const savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "broad-dualsink-"));
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    delete process.env.CLAUDE_PROJECT_DIR;
+  });
+  afterEach(() => {
+    if (savedClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedClient;
+    if (savedProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedProjDir;
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  function writeConfig(cfg: Record<string, unknown>): void {
+    writeFileSync(join(tempRoot, ".fabric", "fabric-config.json"), JSON.stringify(cfg), "utf8");
+  }
+
+  function capture(env: Record<string, unknown>): { out: string[]; err: string[] } {
+    const out: string[] = [];
+    const err: string[] = [];
+    (hook as unknown as { main: (e: unknown, s: unknown) => void }).main(
+      { cwd: tempRoot, ...env },
+      { stdout: { write: (c: string) => out.push(c) }, stderr: { write: (c: string) => err.push(c) } },
+    );
+    return { out, err };
+  }
+
+  const census = {
+    by_type: { guidelines: 1, models: 0, decisions: 4, pitfalls: 2, processes: 0 },
+    by_layer: { team: 6, personal: 1 },
+    dropped_other_project: 0,
+    total: 7,
+  };
+  const alwaysBodies = [
+    { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: "Code style", body: "# Code style\n\nUse 2-space indent." },
+  ];
+
+  it("cc client → ONE stdout envelope: systemMessage(human census) + additionalContext(AI always-bodies)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en" });
+    const { out } = capture({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+      census,
+      alwaysBodies,
+    });
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    // Human sink
+    expect(env.systemMessage).toMatch(/\[fabric\] SessionStart/);
+    expect(env.systemMessage).toMatch(/always-loaded/);
+    // AI sink
+    expect(env.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/);
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/team:KT-GLD-0001/);
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/Use 2-space indent/);
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/ON-DEMAND.*decisions 4/);
+  });
+
+  it("cursor client → flat additional_context, NO systemMessage (human observation degraded)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cursor";
+    writeConfig({ fabric_language: "en" });
+    const { out } = capture({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+      census,
+      alwaysBodies,
+    });
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    expect(env.additional_context).toMatch(/ALWAYS-ACTIVE RULES/);
+    expect(env.systemMessage).toBeUndefined();
+    expect(env.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("nudge_mode=silent → AI additionalContext STILL emitted, systemMessage suppressed (D5 invariant)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en", nudge_mode: "silent" });
+    const { out } = capture({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+      census,
+      alwaysBodies,
+    });
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    expect(env.systemMessage).toBeUndefined(); // human muted
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/); // AI intact
+  });
+
+  it("always-body over budget degrades to summary + recall pointer (D10)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en", hint_broad_budget_chars: 30 });
+    const bigBodies = [
+      { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: "S1", body: "x".repeat(500) },
+      { id: "team:KT-MOD-0001", type: "models", layer: "team", summary: "S2", body: "y".repeat(500) },
+    ];
+    const { out } = capture({
+      payload: makePayload([]),
+      census,
+      alwaysBodies: bigBodies,
+    });
+    const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
+    // The second body cannot fit the 30-char budget → degraded to summary + pointer.
+    expect(ai).toMatch(/over budget; fab_recall for body/);
+  });
+
+  it("reminder_to_context=false → no AI sink, human systemMessage still emitted", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en", hint_reminder_to_context: false });
+    const { out } = capture({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+      census,
+      alwaysBodies,
+    });
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    expect(env.systemMessage).toMatch(/\[fabric\] SessionStart/);
+    expect(env.hookSpecificOutput).toBeUndefined();
   });
 });

@@ -78,7 +78,9 @@ export { reviewKnowledge } from "./services/review.js";
 // `fabric plan-context-hint` CLI adapter to populate the SessionStart AI sink.
 export {
   buildAlwaysActiveBodies,
+  buildKnowledgeCensus,
   type AlwaysActiveBody,
+  type KnowledgeCensus,
 } from "./services/cross-store-recall.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {

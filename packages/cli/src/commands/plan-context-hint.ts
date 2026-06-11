@@ -1,6 +1,11 @@
 import { defineCommand } from "citty";
 
-import { buildAlwaysActiveBodies, planContext } from "@fenglimg/fabric-server";
+import {
+  buildAlwaysActiveBodies,
+  buildKnowledgeCensus,
+  planContext,
+  type KnowledgeCensus,
+} from "@fenglimg/fabric-server";
 
 import { resolveDevMode } from "../dev-mode.js";
 
@@ -110,6 +115,10 @@ export interface PlanContextHintOutput {
   // present (possibly empty); the hook only consumes it on the SessionStart
   // (`--all`) path.
   always_bodies: PlanContextHintAlwaysBody[];
+  // v2.2 dual-sink (Goal A / D8): unsliced read-set census for the human sink's
+  // grouped banner (per-type + per-layer + dropped-other-project). Distinct from
+  // `entries` (top_k-sliced AI candidate list).
+  census: KnowledgeCensus;
   auto_healed?: boolean;
   previous_revision_hash?: string;
 }
@@ -235,9 +244,18 @@ export async function runPlanContextHint(opts: {
   }
 
   // v2.2 dual-sink (Goal A / D9): collect always-active (guideline/model) bodies
-  // for the AI sink. Same project-filter as recall (shared filterByActiveProject).
-  // Never throws — degrades to [] so the hint payload stays valid.
+  // for the AI sink + the unsliced census for the human sink. Same project-filter
+  // as recall (shared filterByActiveProject). Never throws — degrade to safe
+  // empties so the hint payload stays valid.
   const alwaysBodies = await buildAlwaysActiveBodies(resolution.target).catch(() => []);
+  const census = await buildKnowledgeCensus(resolution.target).catch(
+    (): KnowledgeCensus => ({
+      by_type: {},
+      by_layer: { team: 0, personal: 0 },
+      dropped_other_project: 0,
+      total: 0,
+    }),
+  );
 
   const output: PlanContextHintOutput = {
     version: 2,
@@ -256,6 +274,7 @@ export async function runPlanContextHint(opts: {
       summary: b.summary,
       body: b.body,
     })),
+    census,
   };
 
   // v2.0.0-rc.22 Scope D T-D3 (TASK-010): thread auto-heal banner pair through

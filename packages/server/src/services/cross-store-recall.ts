@@ -304,6 +304,54 @@ export interface AlwaysActiveBody {
  * Returns [] (never throws) on any read-set resolution failure — the SessionStart
  * banner must degrade gracefully, never crash session start.
  */
+// v2.2 dual-sink (Goal A / D8): an UNSLICED census of the project's read-set,
+// grouped by knowledge_type + layer, with the count of OTHER-project entries the
+// recall filter dropped. The SessionStart human sink renders this as the grouped
+// "what knowledge exists" banner (always-loaded vs on-demand split + [team]/
+// [personal] + ✗ dropped). Distinct from plan-context-hint's `entries`, which are
+// top_k-sliced for the AI candidate list and cannot report full per-type totals.
+export interface KnowledgeCensus {
+  /** knowledge_type → count (decisions/pitfalls/guidelines/models/processes). */
+  by_type: Record<string, number>;
+  by_layer: { team: number; personal: number };
+  /** entries专属 to OTHER projects that filterByActiveProject removed. */
+  dropped_other_project: number;
+  /** kept (post-filter) total. */
+  total: number;
+}
+
+/**
+ * Build the read-set census (project-filtered counts + dropped-other-project).
+ * Reuses the cached read-set walk, so calling alongside buildAlwaysActiveBodies
+ * in one SessionStart fire costs a single walk. Never throws — degrades to an
+ * all-zero census so the banner stays renderable.
+ */
+export async function buildKnowledgeCensus(projectRoot: string): Promise<KnowledgeCensus> {
+  const census: KnowledgeCensus = {
+    by_type: {},
+    by_layer: { team: 0, personal: 0 },
+    dropped_other_project: 0,
+    total: 0,
+  };
+  try {
+    const activeProject = activeProjectOf(projectRoot);
+    const all = await walkReadSetStores(projectRoot);
+    const kept = filterByActiveProject(all, activeProject);
+    census.dropped_other_project = all.length - kept.length;
+    for (const entry of kept) {
+      const type = extractRuleDescription(entry.source)?.knowledge_type;
+      if (typeof type === "string") {
+        census.by_type[type] = (census.by_type[type] ?? 0) + 1;
+      }
+      census.by_layer[entry.layer] += 1;
+      census.total += 1;
+    }
+  } catch {
+    // degrade to all-zero census
+  }
+  return census;
+}
+
 export async function buildAlwaysActiveBodies(
   projectRoot: string,
 ): Promise<AlwaysActiveBody[]> {
