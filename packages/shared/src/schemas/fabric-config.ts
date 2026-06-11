@@ -56,6 +56,36 @@ export const fabricLanguageSchema = z.enum(["zh-CN", "en"]);
 // `team` / `personal` narrow the default surface for projects that only
 // curate one layer.
 export const defaultLayerFilterSchema = z.enum(["team", "personal", "both"]);
+
+// v2.2 dual-sink (Goal A / D4): nudge_mode is the human-output preset that
+// replaces the "knob soup" of per-hook numeric thresholds with one coherent
+// dial. CORE INVARIANT (D5): nudge_mode governs ONLY the human-facing sink
+// (`systemMessage` on CC/Codex, flat `additional_context` degrade on Cursor) —
+// it NEVER touches the AI sink (`hookSpecificOutput.additionalContext`). Flow ⊥
+// observation: the model receives the same knowledge regardless of how quiet the
+// human channel is. Levels (resolved in lib/nudge-policy.cjs):
+//   silent  — no human systemMessage at all (AI sink unchanged)
+//   minimal — only high-value human output (SessionStart banner; PreToolUse hits;
+//             value-gated Stop nudge). PreToolUse miss + low-value Stop stay quiet.
+//   normal  — default; preserves pre-dual-sink human visibility
+//   verbose — everything surfaces to the human channel
+// The legacy numeric knobs (hint_broad_top_k, archive_edit_threshold, …) are
+// retained as fine-grained OVERRIDES that win over the preset when set.
+export const nudgeModeSchema = z.enum(["silent", "minimal", "normal", "verbose"]);
+
+// v2.2 dual-sink (Goal A / D4): observe.* are per-event human-output toggles —
+// each gates whether that lifecycle event emits a human-facing systemMessage.
+// Same invariant as nudge_mode: the AI additionalContext sink is unaffected.
+// Absent → the nudge_mode preset decides. `.strict()` rejects unknown event keys
+// so a typo fails loudly rather than silently disabling observation.
+export const observeConfigSchema = z
+  .object({
+    session_start: z.boolean().optional(),
+    pre_tool_use: z.boolean().optional(),
+    stop: z.boolean().optional(),
+  })
+  .strict();
+
 export const writeRouteSchema = z
   .object({
     scope: z
@@ -123,6 +153,15 @@ export const fabricConfigSchema = z.object({
   // The root parser is lenient (no .strict()), so any stale `fabric_language`
   // key left in an existing project config is silently dropped.
   default_layer_filter: defaultLayerFilterSchema.optional().default("both"),
+  // v2.2 dual-sink (Goal A / D4): human-output preset. See nudgeModeSchema for
+  // the level semantics + the flow ⊥ observation invariant (nudge_mode never
+  // touches the AI additionalContext sink). Default "normal" preserves the
+  // pre-dual-sink human visibility so existing dogfood repos see no regression.
+  nudge_mode: nudgeModeSchema.optional().default("normal"),
+  // v2.2 dual-sink (Goal A / D4): per-event human-output overrides. A set value
+  // wins over the nudge_mode preset for that event; absent events fall back to
+  // the preset. AI sink unaffected (same invariant as nudge_mode).
+  observe: observeConfigSchema.optional(),
   // Cooldown for the fabric-hint Stop hook (formerly archive-hint, renamed in
   // rc.5 TASK-010). After ANY of the three signals (archive / review / import)
   // fires, that signal stays silent for this many hours regardless of state

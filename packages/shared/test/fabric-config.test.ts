@@ -4,6 +4,8 @@ import {
   defaultLayerFilterSchema,
   fabricConfigSchema,
   fabricLanguageSchema,
+  nudgeModeSchema,
+  observeConfigSchema,
 } from "../src/schemas/fabric-config";
 
 // ---------------------------------------------------------------------------
@@ -135,6 +137,79 @@ describe("fabricConfigSchema — cite/self-archive escape hatches", () => {
   it("rejects a non-boolean policy flag", () => {
     expect(() => fabricConfigSchema.parse({ cite_policy_enabled: "off" })).toThrow();
     expect(() => fabricConfigSchema.parse({ self_archive_policy_enabled: 0 })).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.2 dual-sink (Goal A / D4) — nudge_mode + observe.* human-output presets.
+//
+// nudge_mode is the headline human-output dial; observe.* are per-event
+// overrides. Both gate ONLY the human-facing sink — the AI additionalContext
+// sink is unaffected (D5 invariant, enforced in lib/nudge-policy.cjs and its
+// dedicated invariant test). Here we cover the schema surface: enum domain,
+// default, per-event toggle shape, strictness, and back-compat.
+// ---------------------------------------------------------------------------
+
+describe("fabricConfigSchema — nudge_mode (dual-sink D4)", () => {
+  it("defaults to normal when absent", () => {
+    expect(fabricConfigSchema.parse({}).nudge_mode).toBe("normal");
+  });
+
+  it("accepts all four preset levels", () => {
+    for (const value of ["silent", "minimal", "normal", "verbose"] as const) {
+      expect(fabricConfigSchema.parse({ nudge_mode: value }).nudge_mode).toBe(value);
+    }
+  });
+
+  it("rejects an unknown level", () => {
+    expect(() => fabricConfigSchema.parse({ nudge_mode: "loud" })).toThrow();
+    expect(() => fabricConfigSchema.parse({ nudge_mode: "NORMAL" })).toThrow();
+  });
+
+  it("standalone nudgeModeSchema domain is exactly the four levels", () => {
+    expect([...nudgeModeSchema.options].sort()).toEqual([
+      "minimal",
+      "normal",
+      "silent",
+      "verbose",
+    ]);
+  });
+});
+
+describe("fabricConfigSchema — observe.* per-event toggles (dual-sink D4)", () => {
+  it("is undefined when absent (preset decides)", () => {
+    expect(fabricConfigSchema.parse({}).observe).toBeUndefined();
+  });
+
+  it("accepts a partial per-event toggle set", () => {
+    const parsed = fabricConfigSchema.parse({
+      observe: { session_start: true, stop: false },
+    });
+    expect(parsed.observe).toEqual({ session_start: true, stop: false });
+  });
+
+  it("accepts all three event keys", () => {
+    const parsed = fabricConfigSchema.parse({
+      observe: { session_start: false, pre_tool_use: true, stop: true },
+    });
+    expect(parsed.observe).toEqual({
+      session_start: false,
+      pre_tool_use: true,
+      stop: true,
+    });
+  });
+
+  it("rejects an unknown event key (strict) and a non-boolean value", () => {
+    expect(() =>
+      fabricConfigSchema.parse({ observe: { session_stop: true } }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ observe: { stop: "yes" } }),
+    ).toThrow();
+  });
+
+  it("standalone observeConfigSchema parses an empty object", () => {
+    expect(observeConfigSchema.parse({})).toEqual({});
   });
 });
 
