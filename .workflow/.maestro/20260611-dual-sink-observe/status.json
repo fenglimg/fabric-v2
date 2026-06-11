@@ -38,7 +38,8 @@
     { "wave": "W3-1", "sha": "5b958f8", "subject": "feat(server): always-active bodies + project-filter 守卫 (dual-sink 数据层)" },
     { "wave": "W3-2", "sha": "1222876", "subject": "feat(hooks): SessionStart banner dual-sink 重构 (人普查/AI always正文+计数)" },
     { "wave": "W4", "sha": "872a39f", "subject": "feat(hooks): PreToolUse hit-gate + Stop archive 软 value-gated dual-sink" },
-    { "wave": "W5", "sha": "52c99d8", "subject": "feat(hooks): Codex matcher 加 apply_patch + strip 集补齐 fabric-owned 全集" }
+    { "wave": "W5", "sha": "52c99d8", "subject": "feat(hooks): Codex matcher 加 apply_patch + strip 集补齐 fabric-owned 全集" },
+    { "wave": "W6", "sha": "b2c7c1c", "subject": "chore(goal): W6 收口 — 全量回归零回归 + dogfood CC systemMessage 人出口实证" }
   ],
   "task_decomposition": [
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
