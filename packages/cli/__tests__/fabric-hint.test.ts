@@ -523,12 +523,25 @@ describe("fabric-hint.cjs — readArchiveEditThreshold", () => {
 // rc.6 TASK-022 (E5): end-to-end main() integration with edit-counter sidecar.
 describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
   let tempRoot: string;
+  // v2.2 dual-sink (Goal A): the archive nudge now emits a SOFT dual-sink envelope
+  // (systemMessage + additionalContext), not decision:block. Force cc so the
+  // envelope lands on the captured stdout; restore after.
+  let savedHintClient: string | undefined;
+  let savedProjDir: string | undefined;
 
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-main-edits-"));
+    savedHintClient = process.env.FABRIC_HINT_CLIENT;
+    savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    delete process.env.CLAUDE_PROJECT_DIR;
   });
 
   afterEach(() => {
+    if (savedHintClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedHintClient;
+    if (savedProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedProjDir;
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {
@@ -546,11 +559,32 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     );
   }
 
-  it("fires archive signal when 20 edits accumulated since knowledge_proposed (within 24h)", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+  // v2.2 dual-sink (Goal A / D6): write the archive ledger with a high-value
+  // signal AFTER the watermark so the value-gate passes. Without a high-value
+  // event (edit_intent_checked) the archive nudge is correctly suppressed.
+  function seedArchiveLedger(root: string, proposedTs: number): void {
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    const lines = [
+      JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
+      JSON.stringify(makeEvent("edit_intent_checked", proposedTs + 60 * 1000, { path: "src/foo.ts" })),
+    ];
+    writeFileSync(join(root, ".fabric", "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
+  }
+
+  // v2.2 dual-sink (Goal A): extract the archive nudge reason text from the soft
+  // dual-sink envelope (systemMessage == human; additionalContext == AI). The
+  // legacy decision:block contract is gone for the archive signal (D3).
+  function archiveEmit(writes: string[]): { systemMessage?: string; ai?: string } {
+    const env = JSON.parse(writes[0] as string);
+    return {
+      systemMessage: env.systemMessage,
+      ai: env.hookSpecificOutput ? env.hookSpecificOutput.additionalContext : undefined,
+    };
+  }
+
+  it("fires archive signal (soft dual-sink) when 20 edits accumulated since knowledge_proposed (within 24h)", () => {
     const proposedTs = NOW_MS - 5 * HOUR_MS;
-    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+    seedArchiveLedger(tempRoot, proposedTs);
 
     // 20 edits all AFTER proposedTs.
     const editLines: string[] = [];
@@ -564,26 +598,21 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
     expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      signal: string;
-      reason: string;
-    };
-    expect(payload.signal).toBe("archive");
-    expect(payload.reason).toMatch(/20 次编辑/);
+    // v2.2 dual-sink (Goal A / D3): soft envelope, NOT decision:block.
+    const emit = archiveEmit(writes);
+    expect(JSON.parse(writes[0] as string).decision).toBeUndefined();
+    expect(emit.systemMessage).toMatch(/20 次编辑/); // human sink
+    expect(emit.ai).toMatch(/20 次编辑/); // AI sink
   });
 
   it("appends per-store read-set label to the Stop hint reason (v2.1 P4, F4/S63)", () => {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     const projectId = "11111111-1111-4111-8111-111111111111";
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    seedArchiveLedger(tempRoot, proposedTs);
     writeFileSync(
       join(tempRoot, ".fabric", "fabric-config.json"),
       JSON.stringify({ project_id: projectId }),
-      "utf8",
-    );
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(makeEvent("knowledge_proposed", proposedTs))}\n`,
       "utf8",
     );
     const editLines: string[] = [];
@@ -617,9 +646,9 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
       const writes: string[] = [];
       hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout: { write: (c: string) => writes.push(c) } });
       expect(writes).toHaveLength(1);
-      const payload = JSON.parse(writes[0] as string) as { reason: string };
-      expect(payload.reason).toContain("read-set stores:");
-      expect(payload.reason).toContain("team (write)");
+      const emit = archiveEmit(writes);
+      expect(emit.systemMessage).toContain("read-set stores:");
+      expect(emit.systemMessage).toContain("team (write)");
     } finally {
       if (prevHome === undefined) delete process.env.FABRIC_HOME;
       else process.env.FABRIC_HOME = prevHome;
@@ -662,15 +691,13 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
   });
 
   it("honours custom archive_edit_threshold=10 from fabric-config.json", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 2 * HOUR_MS;
+    seedArchiveLedger(tempRoot, proposedTs);
     writeFileSync(
       join(tempRoot, ".fabric", "fabric-config.json"),
       JSON.stringify({ archive_edit_threshold: 10 }),
       "utf8",
     );
-    const proposedTs = NOW_MS - 2 * HOUR_MS;
-    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
 
     // 10 edits — exactly at custom threshold, well within 24h.
     const editLines: string[] = [];
@@ -684,15 +711,13 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
     expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("archive");
+    // soft dual-sink envelope carries the archive reason (no decision:block).
+    expect(archiveEmit(writes).systemMessage).toMatch(/fabric-archive/);
   });
 
   it("malformed lines in edit-counter are skipped; valid count still drives trigger", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     const proposedTs = NOW_MS - 4 * HOUR_MS;
-    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+    seedArchiveLedger(tempRoot, proposedTs);
 
     const editLines: string[] = [];
     // 20 valid lines.
@@ -709,8 +734,7 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
     expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("archive");
+    expect(archiveEmit(writes).systemMessage).toMatch(/20 次编辑/);
   });
 });
 
@@ -729,34 +753,38 @@ describe("fabric-hint.cjs — main", () => {
     }
   });
 
-  it("writes JSON {decision:'block', reason} to stdout when last knowledge_proposed >=24h ago", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const proposedTs = NOW_MS - 26 * HOUR_MS;
-    const line = JSON.stringify(
-      makeEvent("knowledge_proposed", proposedTs, {
-        timestamp: new Date(proposedTs).toISOString(),
-      }),
-    );
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${line}\n`,
-      "utf8",
-    );
+  it("emits the SOFT archive dual-sink envelope (no decision:block) when last knowledge_proposed >=24h ago", () => {
+    // v2.2 dual-sink (Goal A / D3): the archive nudge is now a soft envelope
+    // (systemMessage + additionalContext), never decision:block. Force cc so the
+    // envelope lands on stdout; seed a high-value event so the value-gate passes.
+    const prevClient = process.env.FABRIC_HINT_CLIENT;
+    const prevProjDir = process.env.CLAUDE_PROJECT_DIR;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    delete process.env.CLAUDE_PROJECT_DIR;
+    try {
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      const proposedTs = NOW_MS - 26 * HOUR_MS;
+      const lines = [
+        JSON.stringify(makeEvent("knowledge_proposed", proposedTs, { timestamp: new Date(proposedTs).toISOString() })),
+        JSON.stringify(makeEvent("edit_intent_checked", proposedTs + 60 * 1000, { path: "src/foo.ts" })),
+      ];
+      writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      decision: string;
-      reason: string;
-      signal: string;
-    };
-    expect(payload.decision).toBe("block");
-    expect(payload.signal).toBe("archive");
-    expect(typeof payload.reason).toBe("string");
-    expect(payload.reason).toMatch(/fabric-archive/);
+      expect(writes).toHaveLength(1);
+      const env = JSON.parse(writes[0] as string);
+      expect(env.decision).toBeUndefined(); // NOT a block contract
+      expect(env.systemMessage).toMatch(/fabric-archive/); // human sink
+      expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-archive/); // AI sink
+    } finally {
+      if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+      else process.env.FABRIC_HINT_CLIENT = prevClient;
+      if (prevProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+      else process.env.CLAUDE_PROJECT_DIR = prevProjDir;
+    }
   });
 
   it("writes nothing to stdout on no-trigger (silent exit 0 path)", () => {
@@ -1979,44 +2007,53 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(result?.reason).toMatch(/3\/10/);
   });
 
-  it("main() injects activity overview end-to-end into Signal A banner", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(makeEvent("knowledge_proposed", proposedTs))}\n`,
-      "utf8",
-    );
-    // Edit counter: 20 fires under packages/server/services/, 8 under packages/cli/
-    seedEditCounterJson(tempRoot, [
-      ...Array.from({ length: 20 }, (_, i) => ({
-        ts: proposedTs + (i + 1) * 60 * 1000,
-        paths: [`packages/server/services/file${i}.ts`],
-      })),
-      ...Array.from({ length: 8 }, (_, i) => ({
-        ts: proposedTs + (i + 21) * 60 * 1000,
-        paths: [`packages/cli/x${i}.ts`],
-      })),
-    ]);
+  it("main() injects activity overview end-to-end into Signal A banner (soft dual-sink)", () => {
+    const prevClient = process.env.FABRIC_HINT_CLIENT;
+    const prevProjDir = process.env.CLAUDE_PROJECT_DIR;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    delete process.env.CLAUDE_PROJECT_DIR;
+    try {
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      const proposedTs = NOW_MS - 5 * HOUR_MS;
+      // v2.2 dual-sink (Goal A / D6): high-value event after the watermark so the
+      // archive value-gate passes.
+      const ledger = [
+        JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
+        JSON.stringify(makeEvent("edit_intent_checked", proposedTs + 30 * 1000, { path: "packages/server/services/x.ts" })),
+      ];
+      writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${ledger.join("\n")}\n`, "utf8");
+      // Edit counter: 20 fires under packages/server/services/, 8 under packages/cli/
+      seedEditCounterJson(tempRoot, [
+        ...Array.from({ length: 20 }, (_, i) => ({
+          ts: proposedTs + (i + 1) * 60 * 1000,
+          paths: [`packages/server/services/file${i}.ts`],
+        })),
+        ...Array.from({ length: 8 }, (_, i) => ({
+          ts: proposedTs + (i + 21) * 60 * 1000,
+          paths: [`packages/cli/x${i}.ts`],
+        })),
+      ]);
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      signal: string;
-      reason: string;
-    };
-    expect(payload.signal).toBe("archive");
-    expect(payload.reason).toMatch(/📋 Fabric:/);
-    expect(payload.reason).toMatch(/最近活动集中在:/);
-    // 2-level dir bucketing: packages/server/* collapses to "packages/server/".
-    expect(payload.reason).toMatch(/packages\/server\/ \(20 edits\)/);
-    expect(payload.reason).toMatch(/packages\/cli\/ \(8 edits\)/);
-    expect(payload.reason).toMatch(/是否调 \/fabric-archive/);
-    // 20 + 8 = 28 fires post-anchor (each entry one fire).
-    expect(payload.reason).toMatch(/28 次编辑/);
+      expect(writes).toHaveLength(1);
+      const reason = JSON.parse(writes[0] as string).systemMessage as string;
+      expect(reason).toMatch(/📋 Fabric:/);
+      expect(reason).toMatch(/最近活动集中在:/);
+      // 2-level dir bucketing: packages/server/* collapses to "packages/server/".
+      expect(reason).toMatch(/packages\/server\/ \(20 edits\)/);
+      expect(reason).toMatch(/packages\/cli\/ \(8 edits\)/);
+      expect(reason).toMatch(/是否调 \/fabric-archive/);
+      // 20 + 8 = 28 fires post-anchor (each entry one fire).
+      expect(reason).toMatch(/28 次编辑/);
+    } finally {
+      if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+      else process.env.FABRIC_HINT_CLIENT = prevClient;
+      if (prevProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+      else process.env.CLAUDE_PROJECT_DIR = prevProjDir;
+    }
   });
 
   it("Signal D banner reformat keeps required substrings + adds question line", () => {

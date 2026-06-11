@@ -1748,3 +1748,80 @@ describe("knowledge-hint-narrow.cjs — hook_surface_emitted emit", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// v2.2 dual-sink (Goal A / C5) — PreToolUse two-channel emit on a narrow HIT.
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-narrow.cjs — dual-sink PreToolUse (Goal A)", () => {
+  const savedClient = process.env.FABRIC_HINT_CLIENT;
+  const savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+  afterEach(() => {
+    if (savedClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedClient;
+    if (savedProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedProjDir;
+  });
+
+  function captureBoth(env: HookEnv): { out: string[]; err: string[] } {
+    const out: string[] = [];
+    const err: string[] = [];
+    (hook as unknown as { main: (e: HookEnv, s: unknown) => void }).main(env, {
+      stdout: { write: (c: string) => out.push(c) },
+      stderr: { write: (c: string) => err.push(c) },
+    });
+    return { out, err };
+  }
+
+  function hitEnv(root: string, extra: Record<string, unknown> = {}): HookEnv {
+    return {
+      cwd: root,
+      payload: { tool_name: "Edit", tool_input: { file_path: "src/foo.ts" }, session_id: "s-dual" },
+      cliResult: makeCliPayload([makeEntry("KT-DEC-0001", "decision", "proven", "guard auth")]),
+      skipCounter: true,
+      skipSilenceCounter: true,
+      skipCacheWrite: true,
+      ...extra,
+    } as HookEnv;
+  }
+
+  it("cc hit → ONE envelope: systemMessage(human) + additionalContext(AI)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    delete process.env.CLAUDE_PROJECT_DIR;
+    const root = mkRoot("narrow-dualsink-cc");
+    const { out } = captureBoth(hitEnv(root));
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    expect(env.systemMessage).toMatch(/narrow-scoped knowledge entries match/);
+    expect(env.systemMessage).toMatch(/KT-DEC-0001/);
+    expect(env.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/KT-DEC-0001/);
+  });
+
+  it("nudge_mode=silent → AI additionalContext intact, systemMessage suppressed (D5)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    delete process.env.CLAUDE_PROJECT_DIR;
+    const root = mkRoot("narrow-dualsink-silent");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({ nudge_mode: "silent" }),
+      "utf8",
+    );
+    const { out } = captureBoth(hitEnv(root));
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    expect(env.systemMessage).toBeUndefined();
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/KT-DEC-0001/);
+  });
+
+  it("cursor hit → flat additional_context, no systemMessage (human degraded)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cursor";
+    delete process.env.CLAUDE_PROJECT_DIR;
+    const root = mkRoot("narrow-dualsink-cursor");
+    const { out } = captureBoth(hitEnv(root));
+    expect(out.length).toBe(1);
+    const env = JSON.parse(out[0]);
+    expect(env.additional_context).toMatch(/KT-DEC-0001/);
+    expect(env.systemMessage).toBeUndefined();
+  });
+});

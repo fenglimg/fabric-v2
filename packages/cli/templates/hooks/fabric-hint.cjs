@@ -71,6 +71,17 @@ try {
   clientAdapter = null;
 }
 
+// v2.2 dual-sink (Goal A / D4): human-output gate for the archive nudge. The Stop
+// archive nudge is SOFT (additionalContext, never decision:block — D3) and the
+// human systemMessage is gated by nudge_mode. Optional require — absent → human
+// always emits (legacy posture).
+let nudgePolicy = null;
+try {
+  nudgePolicy = require("./lib/nudge-policy.cjs");
+} catch {
+  nudgePolicy = null;
+}
+
 // v2.0.0-rc.37 NEW-16: shared config + sidecar I/O for the per-signal dismiss
 // feature (config-level durable opt-out + session-scoped sidecar). Guarded
 // require (house style); dismiss simply doesn't fire if the lib is absent.
@@ -232,6 +243,59 @@ const EVENT_LEDGER_FILE = "events.jsonl";
 const METRICS_LEDGER_FILE = "metrics.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
+
+// v2.2 dual-sink (Goal A / D6): deterministic high-value probe for the archive
+// nudge value-gate. Mirrors packages/server/src/services/archive-scan.ts
+// (hasHighValueSignal) — the hook replicates the SAME deterministic ledger probe
+// rather than running the semantic archive-scan, staying within the Hook⊥MCP
+// boundary (the hook reads events.jsonl mechanically; it never judges relevance).
+// Keep these two literal sets in sync with archive-scan.ts.
+const ARCHIVE_HIGH_VALUE_EVENT_TYPES = new Set([
+  "knowledge_context_planned",
+  "edit_paths_recorded",
+  "edit_intent_checked",
+]);
+const ARCHIVE_NORMATIVE_KEYWORDS = [
+  "以后",
+  "always",
+  "never",
+  "from now on",
+  "下次",
+  "记一下",
+  "永远不要",
+];
+
+// v2.2 dual-sink (Goal A / D6): does the ledger carry a high-value archive signal
+// since the watermark (last knowledge_proposed)? True iff any HIGH_VALUE event
+// fired past the watermark, OR the latest assistant_turn carries a normative
+// keyword. Deterministic — no semantic judgement. Used to VALUE-GATE the archive
+// nudge so the check cadence (edits/hours) is decoupled from the nudge cadence
+// (D6): a workspace that crossed the edit threshold but produced no high-value
+// signal stays quiet. watermarkTs null (never archived) → treat all events as
+// past-watermark (a never-archived repo with any edit signal is worth nudging).
+function hasHighValueArchiveSignal(events, watermarkTs) {
+  if (!Array.isArray(events)) return false;
+  const wm = typeof watermarkTs === "number" ? watermarkTs : 0;
+  let latestTurn = null;
+  for (const e of events) {
+    if (!e || typeof e.ts !== "number" || e.ts <= wm) continue;
+    if (typeof e.event_type === "string" && ARCHIVE_HIGH_VALUE_EVENT_TYPES.has(e.event_type)) {
+      return true;
+    }
+    if (e.event_type === "assistant_turn_observed") {
+      if (latestTurn === null || (typeof latestTurn.ts === "number" && e.ts > latestTurn.ts)) {
+        latestTurn = e;
+      }
+    }
+  }
+  if (latestTurn !== null) {
+    const haystack = JSON.stringify(latestTurn).toLowerCase();
+    for (const kw of ARCHIVE_NORMATIVE_KEYWORDS) {
+      if (haystack.includes(kw.toLowerCase())) return true;
+    }
+  }
+  return false;
+}
 // v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
 const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
 // v2.0.0-rc.20 TASK-03: per-turn cite-policy observation event. Emitted by
@@ -2175,6 +2239,26 @@ function main(env, stdio) {
 
     if (result === null) return;
 
+    // v2.2 dual-sink (Goal A / D6): VALUE-GATE the archive nudge. Signal A's
+    // edit/hours trigger is the CHECK cadence; the nudge only fires when a
+    // deterministic high-value signal accrued since the last archive (decouples
+    // check frequency from disturb frequency). Boundary-correct: replicates
+    // archive-scan's ledger probe (no semantic judgement). Other signals
+    // (review/import/maintenance) are unaffected.
+    if (result.signal === "archive") {
+      let watermarkTs = null;
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i];
+        if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
+          watermarkTs = ev.ts;
+          break;
+        }
+      }
+      if (!hasHighValueArchiveSignal(events, watermarkTs)) {
+        return; // no high-value candidate → stay quiet (D6 value-gate)
+      }
+    }
+
     // v2.0.0-rc.37 NEW-16: per-signal dismiss. A chosen signal whose type the
     // user dismissed (config-durable or session sidecar) exits silently —
     // same shape as a cooldown hit. Covers BOTH maintenance and A/B/C paths.
@@ -2238,9 +2322,27 @@ function main(env, stdio) {
     }
 
     emitSignalFiredEvent(cwd, sessionId, result);
+    const reasonText = typeof result.reason === "string" ? result.reason : "";
     delete result.threshold;
     delete result.actual_value;
-    out.write(JSON.stringify(result));
+    // v2.2 dual-sink (Goal A / D3): the archive nudge is SOFT — emitted as
+    // additionalContext(AI) + systemMessage(human), NEVER decision:block. The
+    // human channel is gated by nudge_mode (D4/D5); the AI channel always carries
+    // it (flow ⊥ observation). Missing it is backstopped by the SessionEnd marker
+    // + cross-session debt (D3). Review/import keep the decision:block contract
+    // (out of Goal A scope; KT-DEC-0007 nudge semantics unchanged for them).
+    if (result.signal === "archive" && clientAdapter && typeof clientAdapter.emitDualSink === "function") {
+      const humanGate =
+        nudgePolicy !== null
+          ? nudgePolicy.resolveHumanSink(cwd, "stop", { highValue: true })
+          : { emitHuman: true };
+      clientAdapter.emitDualSink(
+        { human: humanGate.emitHuman ? reasonText : null, ai: reasonText },
+        { client: clientAdapter.detectClient(__dirname), eventName: "Stop", streams: { stdout: out } },
+      );
+    } else {
+      out.write(JSON.stringify(result));
+    }
     cache[result.signal] = nowMs;
     writeShownCache(cwd, cache, resolveHookSessionId(stdinPayload));
   } catch {

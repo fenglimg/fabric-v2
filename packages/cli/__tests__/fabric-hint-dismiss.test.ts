@@ -85,30 +85,58 @@ describe("fabric-hint main() dismiss suppression (rc.37 NEW-16)", () => {
   const now = new Date(NOW_MS);
 
   function seedArchiveTrigger(): void {
-    // knowledge_proposed 25h ago → archive Signal A fires by hours.
-    const ev = {
-      kind: "fabric-event",
-      schema_version: 1,
-      id: "event:knowledge_proposed:1",
-      event_type: "knowledge_proposed",
-      ts: NOW_MS - 25 * 60 * 60 * 1000,
-    };
-    writeFileSync(join(cwd, ".fabric", "events.jsonl"), `${JSON.stringify(ev)}\n`);
+    // knowledge_proposed 25h ago → archive Signal A fires by hours. v2.2 dual-sink
+    // (Goal A / D6): + a high-value event after the watermark so the value-gate
+    // passes (otherwise the nudge is correctly suppressed).
+    const proposedTs = NOW_MS - 25 * 60 * 60 * 1000;
+    const lines = [
+      { kind: "fabric-event", schema_version: 1, id: "event:knowledge_proposed:1", event_type: "knowledge_proposed", ts: proposedTs },
+      { kind: "fabric-event", schema_version: 1, id: "event:eic:1", event_type: "edit_intent_checked", ts: proposedTs + 1000, path: "src/foo.ts" },
+    ];
+    writeFileSync(join(cwd, ".fabric", "events.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   }
 
-  it("emits archive nudge (with dismiss-option line) when NOT dismissed", () => {
-    seedArchiveTrigger();
-    const writes: string[] = [];
-    hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0]) as { signal: string; reason: string };
-    expect(payload.signal).toBe("archive");
-    expect(payload.reason).toContain("hint_dismiss_signals");
+  it("emits archive nudge (soft dual-sink, with dismiss-option line) when NOT dismissed", () => {
+    const prev = process.env.FABRIC_HINT_CLIENT;
+    const prevDir = process.env.CLAUDE_PROJECT_DIR;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    delete process.env.CLAUDE_PROJECT_DIR;
+    try {
+      seedArchiveTrigger();
+      const writes: string[] = [];
+      hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
+      expect(writes).toHaveLength(1);
+      const env = JSON.parse(writes[0]) as { decision?: string; systemMessage?: string };
+      expect(env.decision).toBeUndefined(); // soft, not block (D3)
+      expect(env.systemMessage).toContain("hint_dismiss_signals");
+    } finally {
+      if (prev === undefined) delete process.env.FABRIC_HINT_CLIENT;
+      else process.env.FABRIC_HINT_CLIENT = prev;
+      if (prevDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+      else process.env.CLAUDE_PROJECT_DIR = prevDir;
+    }
   });
 
   it("stays silent when archive is dismissed via config", () => {
     seedArchiveTrigger();
     writeConfig({ hint_dismiss_signals: ["archive"] });
+    const writes: string[] = [];
+    hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
+    expect(writes).toEqual([]);
+  });
+
+  it("value-gate (D6): Signal A trigger but NO high-value signal → silent", () => {
+    // knowledge_proposed 25h ago triggers Signal A by hours, but with NO
+    // high-value event after the watermark the archive nudge is suppressed.
+    const proposedTs = NOW_MS - 25 * 60 * 60 * 1000;
+    const ev = {
+      kind: "fabric-event",
+      schema_version: 1,
+      id: "event:knowledge_proposed:1",
+      event_type: "knowledge_proposed",
+      ts: proposedTs,
+    };
+    writeFileSync(join(cwd, ".fabric", "events.jsonl"), `${JSON.stringify(ev)}\n`);
     const writes: string[] = [];
     hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
     expect(writes).toEqual([]);

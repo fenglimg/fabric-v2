@@ -35,7 +35,8 @@
   "git_commits": [
     { "wave": "W1", "sha": "0b1a960", "subject": "feat(config): nudge_mode + observe.* 预设 + hook nudge-policy resolver" },
     { "wave": "W2", "sha": "d7a9018", "subject": "feat(hooks): client-adapter emitDualSink 三分支 dual sink" },
-    { "wave": "W3-1", "sha": "5b958f8", "subject": "feat(server): always-active bodies + project-filter 守卫 (dual-sink 数据层)" }
+    { "wave": "W3-1", "sha": "5b958f8", "subject": "feat(server): always-active bodies + project-filter 守卫 (dual-sink 数据层)" },
+    { "wave": "W3-2", "sha": "1222876", "subject": "feat(hooks): SessionStart banner dual-sink 重构 (人普查/AI always正文+计数)" }
   ],
   "task_decomposition": [
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -66,8 +67,8 @@
       "subject": "knowledge-hint-broad.cjs banner 重构两 sink:人出口=分组普查(always-loaded/on-demand/[team][personal]/✗剔他项目);AI 出口=仅 scope=always 正文+on-demand 类别计数(替换 top_k=8 静态列表);经 emitContext dual sink + nudge_mode 调人出口;always 正文 bounded by char budget 超额降级 summary",
       "done_when": "banner 渲染两片(headline→systemMessage / always正文+计数→additionalContext);快照测试更新绿;budget 超额降级路径有测试",
       "ship_criteria_alignment": ["C2"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "vitest knowledge-hint-broad 快照 + budget 降级 test", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "vitest knowledge-hint-broad 快照 + budget 降级 test", "evidence": "banner 两 sink: renderHumanCensus(§3 always/on-demand+layer+dropped) + renderAiSink(always 正文 bounded+超额降级 summary + on-demand 计数) 经 emitDualSink; census via server buildKnowledgeCensus + plan-context-hint。knowledge-hint-broad 69 passed(5 新 dual-sink: cc 双 sink/cursor 降级/silent D5 不变量/budget D10 降级/reminder off); cli tsc EXIT=0", "verified_at": "2026-06-11" } },
     { "id": "W4-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "knowledge-hint-narrow.cjs PreToolUse:命中(有 narrow 条目)才出 systemMessage / miss 全静默;C4 改前未 recall → AI-only additionalContext(不出 systemMessage)",
       "done_when": "narrow hook 经 dual sink emitContext;命中出双 sink、miss 静默、未recall出 AI-only 三路径单测绿",

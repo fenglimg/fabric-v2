@@ -93,7 +93,18 @@ const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.c
 const { appendLockedLine } = require("./lib/injection-log.cjs");
 // lifecycle-refactor W1-T2: client discriminator for the hook_surface_emitted
 // event (schema requires the `client` enum). Mirrors the broad hook's import.
-const { detectClient } = require("./lib/client-adapter.cjs");
+// v2.2 dual-sink (Goal A): + emitDualSink (PreToolUse two-channel emit).
+const { detectClient, emitDualSink } = require("./lib/client-adapter.cjs");
+// v2.2 dual-sink (Goal A / D4 + C5): human-output gate. On a narrow HIT the human
+// systemMessage is gated by nudge_mode (a miss is already a silent early-return
+// above); the AI additionalContext is emitted regardless (flow ⊥ observation).
+// Optional require so an old install degrades to "always emit human".
+let nudgePolicy = null;
+try {
+  nudgePolicy = require("./lib/nudge-policy.cjs");
+} catch {
+  // Lib missing (old install) — human sink always emits (legacy behavior).
+}
 // v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
 // resolved-bindings snapshot. Store-aware hint surfaces the write-target store
 // for the edited file WITHOUT re-resolving or walking store trees. Best-effort.
@@ -1522,9 +1533,27 @@ async function main(env, stdio) {
       }
     }
 
-    // Stderr: human-facing breadcrumb + legacy contract.
-    for (const line of lines) {
-      err.write(`${line}\n`);
+    // v2.2 dual-sink (Goal A / C5): a narrow HIT emits BOTH channels. The human
+    // systemMessage is gated by nudge_mode (a MISS already returned silently far
+    // above — narrow.length===0 / gate-skip / dedup-filter); the AI
+    // additionalContext is emitted regardless (gated only by reminder_to_context),
+    // preserving flow ⊥ observation (D5). emitDualSink shapes the protocol per
+    // client (CC/Codex camelCase nested; Cursor flat snake_case; unknown → stderr).
+    const text = lines.join("\n");
+    const humanGate =
+      nudgePolicy !== null
+        ? nudgePolicy.resolveHumanSink(cwd, "pre_tool_use", { hit: true })
+        : { emitHuman: true };
+    const human = humanGate.emitHuman ? text : null;
+    const ai = readReminderToContext(cwd) ? text : null;
+    if (!(env && env.skipStdout === true)) {
+      emitDualSink(
+        { human, ai },
+        { client: detectClient(), eventName: "PreToolUse", streams: { stdout: out, stderr: err } },
+      );
+    } else if (human !== null) {
+      // skipStdout test seam: still surface the human breadcrumb to stderr.
+      err.write(`${text}\n`);
     }
 
     // lifecycle-refactor W1-T2: hook_surface_emitted — record WHICH narrow-scoped
@@ -1569,33 +1598,10 @@ async function main(env, stdio) {
       // best-effort telemetry — never block the edit
     }
 
-    // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
-    // hint_reminder_to_context is true (default), serialize the same banner
-    // body as Claude Code's PreToolUse hookSpecificOutput shape so the model
-    // receives the reminder IN-CONTEXT (rc.32 baseline cite-coverage 3.1%
-    // root cause: reminders never entered model context). PreToolUse hook
-    // contract: stdout JSON with hookSpecificOutput.additionalContext is
-    // injected into the model's context window; the hook DOES NOT block the
-    // edit (additionalContext is informational, not a permissionDecision).
-    // v2.0.0-rc.33 W4 review-fix (gemini High-1): CC-specific stdout envelope.
-    // See knowledge-hint-broad.cjs companion for rationale — CLAUDE_PROJECT_DIR
-    // is the CC presence signal; Codex CLI / Cursor don't set it.
-    const _isClaudeCode =
-      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
-      process.env.CLAUDE_PROJECT_DIR.length > 0;
-    if (!(env && env.skipStdout === true) && _isClaudeCode && readReminderToContext(cwd)) {
-      try {
-        const envelope = {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            additionalContext: lines.join("\n"),
-          },
-        };
-        out.write(`${JSON.stringify(envelope)}\n`);
-      } catch {
-        // Best-effort — stderr is the durable contract.
-      }
-    }
+    // v2.2 dual-sink (Goal A): the legacy rc.33 W2-6 CC-only stdout envelope is
+    // replaced by emitDualSink above (which carries BOTH the human systemMessage
+    // and the AI additionalContext, shaped per client). reminder_to_context still
+    // gates whether the AI sink is populated (see `ai` above).
 
     // v2.0.0-rc.33 W2-5: record successful emit for cooldown gate.
     if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {
