@@ -74,6 +74,12 @@ export {
 // deriveRuleIdentity / extractRuleDescription directly from the module.
 export { extractKnowledge } from "./services/extract-knowledge.js";
 export { reviewKnowledge } from "./services/review.js";
+// v2.2 dual-sink (Goal A / D9): always-active body collector consumed by the
+// `fabric plan-context-hint` CLI adapter to populate the SessionStart AI sink.
+export {
+  buildAlwaysActiveBodies,
+  type AlwaysActiveBody,
+} from "./services/cross-store-recall.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {
   planContext,

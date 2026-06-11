@@ -38,9 +38,23 @@ type ServerPlanContextResult = {
   previous_revision_hash?: string;
 };
 
-function mockServer(result: ServerPlanContextResult): void {
+type MockAlwaysBody = {
+  stable_id: string;
+  type: string;
+  layer: "team" | "personal";
+  summary: string;
+  body: string;
+};
+
+function mockServer(
+  result: ServerPlanContextResult,
+  alwaysBodies: MockAlwaysBody[] = [],
+): void {
   vi.doMock("@fenglimg/fabric-server", () => ({
     planContext: vi.fn().mockResolvedValue(result),
+    // v2.2 dual-sink (Goal A / D9): plan-context-hint now also pulls the
+    // always-active bodies for the AI sink — the mock must export it.
+    buildAlwaysActiveBodies: vi.fn().mockResolvedValue(alwaysBodies),
   }));
 }
 
@@ -351,5 +365,52 @@ describe("plan-context-hint — related二阶 provenance projection (W3-T2)", ()
     for (const e of output.entries) {
       expect(Object.prototype.hasOwnProperty.call(e, "related_to")).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.2 dual-sink (Goal A / D9): always_bodies projection — the AI sink's
+// always-active (guideline/model) bodies, forwarded from buildAlwaysActiveBodies.
+// ---------------------------------------------------------------------------
+describe("plan-context-hint — always_bodies projection (dual-sink D9)", () => {
+  it("forwards always-active bodies into the wire payload", async () => {
+    mockServer(freshResult(), [
+      {
+        stable_id: "team:KT-GLD-0001",
+        type: "guidelines",
+        layer: "team",
+        summary: "Code style guidelines",
+        body: "# Code style\n\nUse 2-space indent.",
+      },
+      {
+        stable_id: "personal:KP-MOD-9001",
+        type: "models",
+        layer: "personal",
+        summary: "Domain model",
+        body: "# Model\n\nThe Order aggregate …",
+      },
+    ]);
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    expect(output.always_bodies).toHaveLength(2);
+    expect(output.always_bodies[0]).toEqual({
+      id: "team:KT-GLD-0001",
+      type: "guidelines",
+      layer: "team",
+      summary: "Code style guidelines",
+      body: "# Code style\n\nUse 2-space indent.",
+    });
+    expect(output.always_bodies[1].id).toBe("personal:KP-MOD-9001");
+  });
+
+  it("always_bodies is always present (empty array when none)", async () => {
+    mockServer(freshResult(), []);
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    expect(output.always_bodies).toEqual([]);
   });
 });

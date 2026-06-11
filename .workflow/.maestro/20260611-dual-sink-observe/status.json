@@ -34,7 +34,7 @@
   },
   "git_commits": [
     { "wave": "W1", "sha": "0b1a960", "subject": "feat(config): nudge_mode + observe.* 预设 + hook nudge-policy resolver" },
-    { "wave": "W2", "sha": "PENDING", "subject": "feat(hooks): client-adapter emitDualSink 三分支 dual sink" }
+    { "wave": "W2", "sha": "d7a9018", "subject": "feat(hooks): client-adapter emitDualSink 三分支 dual sink" }
   ],
   "task_decomposition": [
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,

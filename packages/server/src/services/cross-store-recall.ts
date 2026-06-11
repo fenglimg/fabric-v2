@@ -15,7 +15,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
-import { sha256 } from "./_shared.js";
+import { extractBody, sha256 } from "./_shared.js";
 
 // ---------------------------------------------------------------------------
 // v2.1 global-refactor (W1-T1) — cross-store read-side wiring.
@@ -265,6 +265,71 @@ export async function buildCrossStoreBodyIndex(
     }
   }
   return index;
+}
+
+// v2.2 dual-sink (Goal A / D9): the "always-active" knowledge subset whose BODY
+// is injected straight into the SessionStart AI context (no recall needed). Per
+// the rev4.4 §3 AI-sink contract, the always-active types are guidelines +
+// models — the standing rules (code style, domain models) you want permanently
+// active; decisions / pitfalls / processes are situational and stay ON-DEMAND
+// (surfaced as category counts, fetched via fab_recall when a path matches).
+//
+// NOTE (Goal-A boundary): store candidates carry `relevance_scope` (broad|narrow)
+// but NOT `activation.tier` (always|path|description) — the latter lives on the
+// retired co-location meta-node, and converging the two axes is explicitly Goal
+// B. So "always-active" is resolved here by knowledge_type, the only signal
+// present on every store entry today. When Goal B lands activation.tier on store
+// frontmatter, this selector should switch to `tier === "always"`.
+const ALWAYS_ACTIVE_TYPES = new Set(["guidelines", "models"]);
+
+export interface AlwaysActiveBody {
+  /** store-qualified id (`<alias>:<stableId>`). */
+  stable_id: string;
+  /** knowledge_type — one of ALWAYS_ACTIVE_TYPES. */
+  type: string;
+  layer: "team" | "personal";
+  /** description.summary — the overflow-degrade fallback when the body cannot
+   *  fit the injection char budget (the budget is enforced hook-side, D10). */
+  summary: string;
+  /** frontmatter-stripped markdown body. */
+  body: string;
+}
+
+/**
+ * Collect the always-active (guidelines + models) entries from the project's
+ * read-set, project-filtered identically to recall (filterByActiveProject), with
+ * their frontmatter-stripped bodies. The SessionStart hook injects these bodies
+ * into the AI context and renders category counts for the on-demand remainder.
+ *
+ * Returns [] (never throws) on any read-set resolution failure — the SessionStart
+ * banner must degrade gracefully, never crash session start.
+ */
+export async function buildAlwaysActiveBodies(
+  projectRoot: string,
+): Promise<AlwaysActiveBody[]> {
+  const out: AlwaysActiveBody[] = [];
+  try {
+    const activeProject = activeProjectOf(projectRoot);
+    for (const entry of filterByActiveProject(
+      await walkReadSetStores(projectRoot),
+      activeProject,
+    )) {
+      const desc = extractRuleDescription(entry.source);
+      if (desc === undefined) continue;
+      const type = desc.knowledge_type;
+      if (typeof type !== "string" || !ALWAYS_ACTIVE_TYPES.has(type)) continue;
+      out.push({
+        stable_id: entry.qualifiedId,
+        type,
+        layer: entry.layer,
+        summary: typeof desc.summary === "string" ? desc.summary : "",
+        body: extractBody(entry.source),
+      });
+    }
+  } catch {
+    return [];
+  }
+  return out;
 }
 
 // v2.2 全砍 F10: doctor's opaque-summary lint historically only scanned the

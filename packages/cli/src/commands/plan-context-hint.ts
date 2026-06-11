@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { planContext } from "@fenglimg/fabric-server";
+import { buildAlwaysActiveBodies, planContext } from "@fenglimg/fabric-server";
 
 import { resolveDevMode } from "../dev-mode.js";
 
@@ -84,6 +84,19 @@ export interface PlanContextHintEntry {
 // breaking v2 consumers, but introduce explicit narrow_count / broad_count
 // computed from the entry's relevance_scope. Hook scripts should prefer the
 // split fields and treat the legacy `broad_count` as deprecated.
+// v2.2 dual-sink (Goal A / D9): one always-active (guideline/model) entry whose
+// BODY is injected straight into the SessionStart AI context. The hook renders
+// these as ALWAYS-ACTIVE RULES (bounded by the injection char budget, overflow
+// degrading to `summary` + a recall pointer — D10) and emits category counts for
+// the on-demand remainder (decisions/pitfalls/processes).
+export interface PlanContextHintAlwaysBody {
+  id: string;
+  type: string;
+  layer: "team" | "personal";
+  summary: string;
+  body: string;
+}
+
 export interface PlanContextHintOutput {
   version: 2;
   revision_hash: string;
@@ -93,6 +106,10 @@ export interface PlanContextHintOutput {
   broad_count: number;
   narrow_count: number;
   broad_only_count: number;
+  // v2.2 dual-sink (Goal A / D9): always-active bodies for the AI sink. Always
+  // present (possibly empty); the hook only consumes it on the SessionStart
+  // (`--all`) path.
+  always_bodies: PlanContextHintAlwaysBody[];
   auto_healed?: boolean;
   previous_revision_hash?: string;
 }
@@ -217,6 +234,11 @@ export async function runPlanContextHint(opts: {
     else broad_only_count += 1;
   }
 
+  // v2.2 dual-sink (Goal A / D9): collect always-active (guideline/model) bodies
+  // for the AI sink. Same project-filter as recall (shared filterByActiveProject).
+  // Never throws — degrades to [] so the hint payload stays valid.
+  const alwaysBodies = await buildAlwaysActiveBodies(resolution.target).catch(() => []);
+
   const output: PlanContextHintOutput = {
     version: 2,
     revision_hash: result.revision_hash,
@@ -227,6 +249,13 @@ export async function runPlanContextHint(opts: {
     broad_count: candidates.length,
     narrow_count,
     broad_only_count,
+    always_bodies: alwaysBodies.map((b) => ({
+      id: b.stable_id,
+      type: b.type,
+      layer: b.layer,
+      summary: b.summary,
+      body: b.body,
+    })),
   };
 
   // v2.0.0-rc.22 Scope D T-D3 (TASK-010): thread auto-heal banner pair through
