@@ -98,9 +98,82 @@ function emitContext(text, opts) {
   }
 }
 
+// v2.2 dual-sink (Goal A / D7): two-channel emit. Unlike emitContext (which
+// picks ONE channel), emitDualSink surfaces a knowledge breadcrumb to BOTH the
+// human and the AI in one render, split into two fields, with the protocol
+// shaped per client:
+//
+//   cc / codex (symmetric, D7): a single stdout JSON envelope carrying
+//     { systemMessage: <human>,                          // the human sink
+//       hookSpecificOutput: { hookEventName, additionalContext: <ai> } }  // AI sink
+//     camelCase + nested. `systemMessage` is the universal human-facing field
+//     (verified against official hook docs in the mode④ design session); it is
+//     what fixes the "stderr human channel is dead on CC" gap — CC suppresses
+//     hook stderr at exit 0, so the human never saw the old breadcrumb.
+//
+//   cursor (heterogeneous, D7): a flat snake_case stdout envelope
+//     { additional_context: <ai> } — NO systemMessage. Cursor has no general
+//     human-facing hook channel (human messages only surface on permission
+//     deny), so the human breadcrumb is HONESTLY DROPPED rather than faked into
+//     a channel the user won't see (honest degradation, not false-green).
+//
+//   unknown client (detection failed, not CC): fall back to a plain stderr
+//     breadcrumb (human preferred, else ai) — no known JSON contract to target.
+//
+// Either field may be null/empty: pass { human, ai } and only the present
+// channels are written (e.g. a PreToolUse miss passes human:null → AI-only;
+// nudge_mode silent passes human:null too). The AI field is ALWAYS the caller's
+// to decide independently — this fn never derives one channel from the other,
+// preserving the flow ⊥ observation invariant (D5).
+//
+// Never-throw contract (KT-DEC-0007): every path degrades silently.
+function emitDualSink(payload, opts) {
+  const { human = null, ai = null } = payload || {};
+  const { client, eventName = "SessionStart", streams = {} } = opts || {};
+  const stdout = streams.stdout || process.stdout;
+  const stderr = streams.stderr || process.stderr;
+  const hasHuman = typeof human === "string" && human.length > 0;
+  const hasAi = typeof ai === "string" && ai.length > 0;
+  const resolved = client || detectClient();
+  try {
+    if (resolved === "cursor") {
+      // Flat snake_case, AI sink only. Human breadcrumb honestly dropped.
+      if (hasAi) {
+        stdout.write(`${JSON.stringify({ additional_context: ai })}\n`);
+      }
+      return;
+    }
+    const useEnvelope =
+      resolved === "cc" ||
+      resolved === "codex" ||
+      (resolved === undefined && isClaudeCode());
+    if (useEnvelope) {
+      const envelope = {};
+      if (hasHuman) envelope.systemMessage = human;
+      if (hasAi) {
+        envelope.hookSpecificOutput = {
+          hookEventName: eventName,
+          additionalContext: ai,
+        };
+      }
+      if (Object.keys(envelope).length > 0) {
+        stdout.write(`${JSON.stringify(envelope)}\n`);
+      }
+      return;
+    }
+    // Unknown client: no JSON contract — surface the human breadcrumb (or ai)
+    // on stderr as a last resort so something is visible.
+    const fallback = hasHuman ? human : hasAi ? ai : null;
+    if (fallback !== null) stderr.write(`${fallback}\n`);
+  } catch {
+    // best-effort — never throw
+  }
+}
+
 module.exports = {
   isClaudeCode,
   detectClient,
   readStdinJson,
   emitContext,
+  emitDualSink,
 };

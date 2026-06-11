@@ -23,6 +23,14 @@ const adapter = require("../templates/hooks/lib/client-adapter.cjs") as {
       forceStderr?: boolean;
     },
   ) => void;
+  emitDualSink: (
+    payload: { human?: string | null; ai?: string | null },
+    opts?: {
+      client?: string;
+      eventName?: string;
+      streams?: { stdout?: { write: (s: string) => void }; stderr?: { write: (s: string) => void } };
+    },
+  ) => void;
 };
 
 const savedEnv = { ...process.env };
@@ -90,5 +98,94 @@ describe("client-adapter.cjs emitContext", () => {
     });
     expect(out.lines).toHaveLength(0);
     expect(err.lines).toEqual(["oneshot\n"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.2 dual-sink (Goal A / D7): emitDualSink — three-branch two-channel emit.
+// ---------------------------------------------------------------------------
+describe("client-adapter.cjs emitDualSink", () => {
+  it("cc → one stdout envelope with systemMessage(human) + nested additionalContext(ai)", () => {
+    const out = capture();
+    adapter.emitDualSink(
+      { human: "▸ banner", ai: "RULES …" },
+      { client: "cc", eventName: "SessionStart", streams: { stdout: out.stream } },
+    );
+    expect(out.lines).toHaveLength(1);
+    const parsed = JSON.parse(out.lines[0]);
+    expect(parsed.systemMessage).toBe("▸ banner");
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(parsed.hookSpecificOutput.additionalContext).toBe("RULES …");
+  });
+
+  it("codex → symmetric with cc (same camelCase nested envelope)", () => {
+    const out = capture();
+    adapter.emitDualSink(
+      { human: "H", ai: "A" },
+      { client: "codex", eventName: "PreToolUse", streams: { stdout: out.stream } },
+    );
+    expect(out.lines).toHaveLength(1);
+    const parsed = JSON.parse(out.lines[0]);
+    expect(parsed.systemMessage).toBe("H");
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+    expect(parsed.hookSpecificOutput.additionalContext).toBe("A");
+  });
+
+  it("cursor → flat snake_case additional_context, NO systemMessage (human dropped)", () => {
+    const out = capture();
+    adapter.emitDualSink(
+      { human: "H-dropped", ai: "A" },
+      { client: "cursor", streams: { stdout: out.stream } },
+    );
+    expect(out.lines).toHaveLength(1);
+    const parsed = JSON.parse(out.lines[0]);
+    expect(parsed.additional_context).toBe("A");
+    expect(parsed.systemMessage).toBeUndefined();
+    expect(parsed.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("cursor with no ai → emits nothing (no human channel exists)", () => {
+    const out = capture();
+    adapter.emitDualSink({ human: "H-only", ai: null }, { client: "cursor", streams: { stdout: out.stream } });
+    expect(out.lines).toHaveLength(0);
+  });
+
+  it("cc human-only (ai null) → envelope carries only systemMessage", () => {
+    const out = capture();
+    adapter.emitDualSink({ human: "H", ai: null }, { client: "cc", streams: { stdout: out.stream } });
+    const parsed = JSON.parse(out.lines[0]);
+    expect(parsed.systemMessage).toBe("H");
+    expect(parsed.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("cc ai-only (human null, e.g. PreToolUse miss / silent mode) → only additionalContext", () => {
+    const out = capture();
+    adapter.emitDualSink({ human: null, ai: "A" }, { client: "cc", streams: { stdout: out.stream } });
+    const parsed = JSON.parse(out.lines[0]);
+    expect(parsed.systemMessage).toBeUndefined();
+    expect(parsed.hookSpecificOutput.additionalContext).toBe("A");
+  });
+
+  it("cc both-empty → writes nothing", () => {
+    const out = capture();
+    adapter.emitDualSink({ human: null, ai: null }, { client: "cc", streams: { stdout: out.stream } });
+    expect(out.lines).toHaveLength(0);
+  });
+
+  it("unknown client → stderr fallback breadcrumb (human preferred)", () => {
+    const out = capture();
+    const err = capture();
+    adapter.emitDualSink(
+      { human: "H", ai: "A" },
+      { client: undefined, streams: { stdout: out.stream, stderr: err.stream } },
+    );
+    // detection falls through to undefined (no env, dirnameHint default not cc) in CI;
+    // guard against the test host happening to set CLAUDE_PROJECT_DIR.
+    if (out.lines.length === 0) {
+      expect(err.lines).toEqual(["H\n"]);
+    } else {
+      // host detected as cc — envelope path; still no throw, systemMessage present
+      expect(JSON.parse(out.lines[0]).systemMessage).toBe("H");
+    }
   });
 });

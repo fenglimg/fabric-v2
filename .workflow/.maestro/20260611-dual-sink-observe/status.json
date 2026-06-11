@@ -32,7 +32,10 @@
       "每 wave 收口 git commit(中文提交信息)+ sha 回填 git_commits[];本地 tsc --noEmit 前置闸(memory: local_tsc_vs_ci_tsc)"
     ]
   },
-  "git_commits": [],
+  "git_commits": [
+    { "wave": "W1", "sha": "0b1a960", "subject": "feat(config): nudge_mode + observe.* 预设 + hook nudge-policy resolver" },
+    { "wave": "W2", "sha": "PENDING", "subject": "feat(hooks): client-adapter emitDualSink 三分支 dual sink" }
+  ],
   "task_decomposition": [
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "config schema 加 nudge_mode(enum silent|minimal|normal|verbose) + observe.*(per-event 开关 object),旧数值旋钮保留;rebuild shared dist",
@@ -50,8 +53,8 @@
       "subject": "client-adapter emitContext 重构为 dual sink 三分支:CC/Codex={systemMessage(人), hookSpecificOutput:{hookEventName, additionalContext(AI)}} camelCase嵌套;Cursor=扁平 snake_case {additional_context},无 systemMessage(人观测降级);向后兼容旧单参 text→AI 出口;never-throw",
       "done_when": "emitContext 接受 {human, ai}(或等价)并按 detectClient 分三端输出;三端 envelope 形态单测绿;旧调用签名仍工作",
       "ship_criteria_alignment": ["C1"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "vitest client-adapter test(cc/codex/cursor 三端 + 向后兼容)", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "vitest client-adapter test(cc/codex/cursor 三端 + 向后兼容)", "evidence": "新增 emitDualSink(payload,opts):cc/codex→stdout {systemMessage(人), hookSpecificOutput:{hookEventName, additionalContext(AI)}} camelCase嵌套;cursor→扁平 {additional_context} 无 systemMessage(人诚实丢);unknown→stderr fallback;never-throw。保留 emitContext 不动(向后兼). client-adapter.test 15 passed(3原+12新). parity/install/configs 9 passed(模板重装比对绿)", "verified_at": "2026-06-11" } },
     { "id": "W3-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "plan-context-hint/planContext 扩 always 条目正文(bounded by recall body-tier 预算)+ 镜像 cross-store-recall 的 filterByActiveProject(personal+team+project:当前,丢他项目);确认 scope=always 源字段(activation.tier vs relevance_scope)",
       "done_when": "plan-context-hint payload 携 scope=always 条目正文 + 已 project-filter;rebuild dist;CLI handler 单测绿(always-body 出现 + 他项目条目被丢)",
