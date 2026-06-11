@@ -494,6 +494,55 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
     ).length;
     expect(fabricHintCount).toBe(1);
   });
+
+  // dual-sink W5-1 (C6): a matcher change in templates/hooks/configs/codex-hooks.json
+  // (adding `apply_patch` to the PreToolUse/PostToolUse matchers) MUST propagate to
+  // an already-installed `.codex/hooks.json` on re-install. The merge dedupes array
+  // entries by their `.command`, so without listing cite-policy-evict.cjs /
+  // post-tooluse-mutation.cjs in FABRIC_HOOK_SCRIPT_BASENAMES the stale-matcher
+  // entry would survive and the new `apply_patch` matcher would be silently dropped.
+  it("W5-1: re-install propagates the codex apply_patch matcher into pre-existing hooks (all 3 slots)", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-codex-matcher-upgrade");
+    tempRoots.push(target);
+
+    // First install establishes canonical state.
+    await runInit(target);
+    const codexHooksPath = join(target, ".codex/hooks.json");
+
+    // Simulate a pre-upgrade install: rewrite all fabric-owned matchers to the
+    // OLD form (no apply_patch), mimicking a workspace installed before W5-1.
+    const before = readFileSync(codexHooksPath, "utf8").replace(
+      /"Edit\|Write\|MultiEdit\|apply_patch"/g,
+      '"Edit|Write|MultiEdit"',
+    );
+    writeFileSync(codexHooksPath, before, "utf8");
+    // Sanity: the downgrade actually removed every apply_patch occurrence.
+    expect(readFileSync(codexHooksPath, "utf8")).not.toContain("apply_patch");
+
+    // Re-run install — strip-then-merge must restore the new matcher.
+    await runInit(target);
+
+    const codexHooks = JSON.parse(readFileSync(codexHooksPath, "utf8")) as {
+      events?: {
+        PreToolUse?: Array<{ matcher: string; command: string }>;
+        PostToolUse?: Array<{ matcher: string; command: string }>;
+      };
+    };
+
+    const slotEntries = [
+      ...(codexHooks.events?.PreToolUse ?? []),
+      ...(codexHooks.events?.PostToolUse ?? []),
+    ];
+    const fabricEntries = slotEntries.filter((e) =>
+      /(knowledge-hint-narrow|cite-policy-evict|post-tooluse-mutation)\.cjs/u.test(e.command),
+    );
+    // Three fabric-owned matcher-gated entries, each restored to apply_patch,
+    // with no stale-matcher duplicate left behind.
+    expect(fabricEntries).toHaveLength(3);
+    for (const entry of fabricEntries) {
+      expect(entry.matcher).toBe("Edit|Write|MultiEdit|apply_patch");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

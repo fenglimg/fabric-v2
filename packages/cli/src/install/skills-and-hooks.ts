@@ -1530,6 +1530,17 @@ export const FABRIC_HOOK_SCRIPT_BASENAMES: ReadonlySet<string> = new Set([
   "fabric-hint.cjs",
   "knowledge-hint-broad.cjs",
   "knowledge-hint-narrow.cjs",
+  // dual-sink W5-1: the strip set must enumerate the COMPLETE fabric-owned hook
+  // surface — same set as FABRIC_HOOK_COMMAND_PATHS. Otherwise a matcher change
+  // in the template (e.g. adding `apply_patch` to the Codex PreToolUse/PostToolUse
+  // matchers) silently fails to propagate on upgrade: stripStaleHookEntries
+  // leaves the un-listed entry in place, and the subsequent append-with-dedupe
+  // matches it by `command` and SKIPS the new-matcher fragment, preserving the
+  // stale matcher. Listing these three makes the canonical template entry the
+  // sole survivor on every re-install, so matcher edits actually sync.
+  "cite-policy-evict.cjs",
+  "post-tooluse-mutation.cjs",
+  "session-end-marker.cjs",
   // rc.5 TASK-010 rename — old hook scripts that pre-upgrade workspaces
   // may still have registered. Sweeping them prevents the double-fire
   // documented in audit §2.6.

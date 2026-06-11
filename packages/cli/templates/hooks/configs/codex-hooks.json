@@ -12,17 +12,17 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|apply_patch",
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\""
       },
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|apply_patch",
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\""
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|apply_patch",
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\""
       }
     ],
