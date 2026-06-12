@@ -55,9 +55,9 @@
       "ship_criteria_alignment": ["G-BASELINE"], "alignment_strength": "direct", "status": "done",
       "verification": { "method": "deterministic", "verifier": "pnpm --filter @fenglimg/fabric-cli test", "evidence": "cli 1050/1050 (0 fail 0 skip), 连跑2次确定性; 根因非 seed 陈旧而是 ① resolveGlobalRoot(FABRIC_HOME??homedir) 泄漏本机 ~/.fabric language=zh-CN ② detectNodeLocale 泄漏 $LANG=zh_CN → 14 测试 dev-only 红; 修=vitest.setup.ts 每文件隔离 FABRIC_HOME+pin FAB_LANG=en; 连带接线 pipeline.ts/install-onboarding.ts 硬编码 CJK→t(); i18n snapshot regen(计数漂移可解释); parity 核 en=zh=933 完美", "verified_at": "2026-06-12" } },
     { "id": "W0-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "105 skip 逐个 triage(复活 or 随死代码删)", "done_when": "每个 it.skip/skipped 判定: 测 live 行为→复活改 fixture; 测 retired check→随死代码删; skip 计数归零",
-      "ship_criteria_alignment": ["G-BASELINE", "G-DEADCODE"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep it.skip 计数 + 全量 test 0 skip", "evidence": null, "verified_at": null } },
+      "subject": "99 server skip triage(修正: 主体是 REVIVE ~90 test 非删除)", "done_when": "每个 it.skip/skipped 判定: 测 live 行为→复活改 store fixture; 测 retired check→随死代码删; skip 计数归零",
+      "ship_criteria_alignment": ["G-BASELINE", "G-DEADCODE"], "alignment_strength": "direct", "status": "in_progress",
+      "verification": { "method": "deterministic", "verifier": "grep it.skip 计数 + 全量 test 0 skip", "evidence": "进行中: 删 retired knowledge_dir_missing 2 skip(99→97). 重大修正: 亲验 refute agent 的 redundant 分类 — describe.skip 块内 it() 非活跃覆盖, orphan_demote 等 live check 整块覆盖被迁移 skip 掉 → W0-2 主体=REVIVE ~90 test 重写 store fixture, 非删除(原 plan 低估). 详 .workflow/.scratchpad/w0-2-skip-triage.md. 建议独立聚焦相位逐 check family 推进.", "verified_at": null } },
     { "id": "W0-3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "建 census 不变式安全闸", "done_when": "新增测试: event_type emitter↔handler 奇偶 / i18n key↔locale 奇偶 / layer-type 枚举 census / MCP 工具注册 smoke;全绿",
       "ship_criteria_alignment": ["G-INVARIANT"], "alignment_strength": "infrastructure", "status": "done",
@@ -86,7 +86,8 @@
   "needs_adjudication": [
     { "id": "ADJ-1", "subject": "半成品 sync 推送(run-sync.ts defaultPush/defaultCommitDirty/Git* types 未接线): 删 / 接完 / 留", "adjudication_reason": "out-of-authority", "round": 1 },
     { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1 },
-    { "id": "ADJ-3", "subject": "bootstrap-canonical.ts BOOTSTRAP_CANONICAL 是 byte-locked zh-CN-hybrid AGENTS.md 模板(rc.19 locked clarification 3 + doctor drift 检测 byte-identical 契约)→ en 用户拿到中文 AGENTS.md。彻底 i18n 化需双 canonical body + drift 检测按 locale 选,推翻 byte-lock 决策。做/不做", "adjudication_reason": "out-of-authority", "round": 1 }
+    { "id": "ADJ-3", "subject": "bootstrap-canonical.ts BOOTSTRAP_CANONICAL 是 byte-locked zh-CN-hybrid AGENTS.md 模板(rc.19 locked clarification 3 + doctor drift 检测 byte-identical 契约)→ en 用户拿到中文 AGENTS.md。彻底 i18n 化需双 canonical body + drift 检测按 locale 选,推翻 byte-lock 决策。做/不做", "adjudication_reason": "out-of-authority", "round": 1 },
+    { "id": "ADJ-4", "subject": "isForbiddenCrossLayerEdge(knowledge-meta-builder.ts:1053)跨层隐私守卫(team 不得链 personal KP),production 零 caller 仅 -related.test 用。是孤儿的 Species B 隐私防御(保留,后续接线)还是真退役死码(随 W1 删)?Species B 防御 out-of-scope 故浮裁", "adjudication_reason": "out-of-authority", "round": 1 }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260612-fallback-purge/goal-checklist.md",
   "status": "running",
