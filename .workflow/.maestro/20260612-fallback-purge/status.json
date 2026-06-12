@@ -33,9 +33,9 @@
     { "name": "G-BASELINE", "target": "test 0 fail & 0 skip", "actual": "0 fail / 99 skip (cli 14→0 via i18n hermeticity+wiring @bc451de; 99 server skip 待 W0-2)",
       "verifier_cmd": "pnpm -r --if-present test 2>&1 | grep -iE 'failed|skipped' | tail -5",
       "verified_at": "2026-06-12" },
-    { "name": "G-INVARIANT", "target": "census 不变式闸建立且全绿(event_type/i18n/layer-type/MCP)", "actual": null,
-      "verifier_cmd": "PROBE: 新增 census 测试文件后填实际 vitest 命令",
-      "verified_at": null },
+    { "name": "G-INVARIANT", "target": "census 不变式闸建立且全绿(event_type/i18n/layer-type/MCP)", "actual": "4/4 绿: i18n parity(locale-parity.test)+event_type(event-ledger-census 59成员)+layer-type(knowledge-enum-census 5/3/2)+MCP(既有 index.test 'registers only current MCP tools')",
+      "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared exec vitest run src/i18n/locale-parity.test.ts src/schemas/event-ledger-census.test.ts src/schemas/knowledge-enum-census.test.ts && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts",
+      "verified_at": "2026-06-12" },
     { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "1/5 簇(recall extractBody 已删)",
       "verifier_cmd": "npx knip --no-progress 2>&1 | grep -c 'knowledge-meta-builder' (目标: 仅剩 live 的 deriveRuleIdentity/extractRuleDescription)",
       "verified_at": null },
@@ -60,8 +60,8 @@
       "verification": { "method": "deterministic", "verifier": "grep it.skip 计数 + 全量 test 0 skip", "evidence": null, "verified_at": null } },
     { "id": "W0-3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "建 census 不变式安全闸", "done_when": "新增测试: event_type emitter↔handler 奇偶 / i18n key↔locale 奇偶 / layer-type 枚举 census / MCP 工具注册 smoke;全绿",
-      "ship_criteria_alignment": ["G-INVARIANT"], "alignment_strength": "infrastructure", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "vitest 新 census 测试", "evidence": null, "verified_at": null } },
+      "ship_criteria_alignment": ["G-INVARIANT"], "alignment_strength": "infrastructure", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "vitest 新 census 测试", "evidence": "4/4: i18n parity(en=zh=933)+event_type(runtime .optionsMap 钉59成员 inline snapshot)+knowledge-enum(KT-DEC-0005 5/3/2)新建; MCP 注册 census 复用既有 index.test.ts 'registers only current MCP tools'(6工具精确集). 含 shared 630全绿. event_type 用运行时内省非 grep, 守动态派发. @c056570/e4dc626", "verified_at": "2026-06-12" } },
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 co-location 死簇(knowledge-meta-builder 死函数)+ 连带 fixture/测试", "done_when": "删 buildKnowledgeMeta/computeKnowledgeBasedAgentsMeta/computeKnowledgeTestIndex/loadKbIdTypeMap/deriveKnowledgeMetaTopologyType/isSameKnowledgeTestIndex/stableStringify/__*Cache* + isForbiddenCrossLayerEdge;保留 deriveRuleIdentity/extractRuleDescription;processed writeKnowledgeMeta fixture(W0-2 耦合);tsc+test 绿",
       "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
@@ -102,6 +102,7 @@
   ],
   "done_log": [
     { "id": "W1-pre", "subject": "删 recall.ts 死 re-export extractBody", "commit": "d7eba65", "at": "2026-06-12" },
-    { "id": "W0-1", "subject": "i18n install pipeline 硬编码 CJK 接入 t() + cli 测试 locale hermeticity(14 红→0)", "commit": "bc451de", "at": "2026-06-12" }
+    { "id": "W0-1", "subject": "i18n install pipeline 硬编码 CJK 接入 t() + cli 测试 locale hermeticity(14 红→0)", "commit": "bc451de", "at": "2026-06-12" },
+    { "id": "W0-3", "subject": "census 不变式闸 4/4(i18n parity + event_type + knowledge-enum + MCP既有)", "commit": "c056570", "at": "2026-06-12" }
   ]
 }

@@ -9,7 +9,7 @@
 
 ## 命名 Ship Gate(全绿即达成)
 - [ ] **G-BASELINE** — 全量测试 0 fail & 0 skip(当前 14 fail / 105 skip)
-- [ ] **G-INVARIANT** — census 不变式安全闸建立且全绿(event_type/i18n/layer-type/MCP)
+- [x] **G-INVARIANT** — census 闸 4/4 绿(i18n parity + event_type 59成员 + knowledge-enum 5/3/2 + MCP既有)(e4dc626/c056570)
 - [ ] **G-DEADCODE** — co-location 死簇 + 死 type 删净(当前 1/5,recall extractBody 已删)
 - [ ] **G-MIGRATION** — Species A 迁移/兼容 grep 零残留
 - [ ] **G-VOCAB** — cite-tag remap + tendril 删净 + shared rebuild + parser 测试绿
@@ -24,7 +24,7 @@
 **Wave 0 基线+安全闸**
 - [x] W0-1 14红 → 真根因=测试非hermetic+pipeline硬编码CJK绕过t();修=FABRIC_HOME隔离+pin FAB_LANG+接线t() (bc451de) → G-BASELINE
 - [ ] W0-2 99 server skip 逐个 triage(复活/随死代码删)→ G-BASELINE+G-DEADCODE
-- [ ] W0-3 建 census 不变式闸 → G-INVARIANT
+- [x] W0-3 census 闸 4/4(i18n parity/event_type 59/knowledge-enum 5·3·2/MCP既有)(c056570) → G-INVARIANT
 **Wave 1 死代码外科删除**(与 W0-2 耦合)
 - [ ] W1-1 删 co-location 死簇 + 连带 fixture(保留 deriveRuleIdentity/extractRuleDescription)→ G-DEADCODE
 - [ ] W1-2 摘死 type + 精验 computeExposedAndMutated → G-DEADCODE
