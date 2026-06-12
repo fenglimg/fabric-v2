@@ -90,10 +90,10 @@ describe("install-v2 pipeline UX", () => {
       .execute(baseContext(target));
 
     expect(result.success).toBe(true);
-    expect(lines).toContain("Fabric install 将按 2 个阶段执行");
-    expect(lines).toContain("[1/2] 全局与项目预检");
-    expect(lines).toContain("[2/2] 知识库拓扑");
-    expect(lines.some((line) => line.includes("绑定当前项目的 read/write store"))).toBe(true);
+    expect(lines).toContain("Running 2 stages...");
+    expect(lines).toContain("[1/2] Preflight check");
+    expect(lines).toContain("[2/2] Store configuration");
+    expect(lines.some((line) => line.includes("Bind the current project's read/write store"))).toBe(true);
   });
 
   it("prints semantic-search guidance before final next steps", async () => {
@@ -109,7 +109,7 @@ describe("install-v2 pipeline UX", () => {
     }));
 
     expect(result.disposition).toBe("ran");
-    const semanticIndex = lines.findIndex((line) => line.includes("语义搜索已启用"));
+    const semanticIndex = lines.findIndex((line) => line.includes("Semantic search enabled"));
     const nextStepsIndex = lines.findIndex((line) => line.includes("Next steps"));
     expect(semanticIndex).toBeGreaterThanOrEqual(0);
     expect(nextStepsIndex).toBeGreaterThanOrEqual(0);

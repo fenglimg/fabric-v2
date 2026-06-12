@@ -46,7 +46,7 @@ describe("install-v2 semantic-search guidance", () => {
     const result = await new GuidanceStage().execute(baseContext(target));
 
     expect(result.disposition).toBe("ran");
-    expect(lines.filter((line) => line.includes("语义搜索已启用"))).toHaveLength(1);
+    expect(lines.filter((line) => line.includes("Semantic search enabled"))).toHaveLength(1);
     expect(lines.filter((line) => line.includes("npm i -g fastembed"))).toHaveLength(1);
   });
 });

@@ -1,6 +1,7 @@
 import { confirm, isCancel, select, text } from "@clack/prompts";
 
 import { paint } from "../colors.js";
+import { t } from "../i18n.js";
 import { enableSemanticSearch, renderSemanticSearchInstructions } from "./semantic-search.js";
 import { mountStoreFromRemote } from "./run-global-install.js";
 import { resolveGlobalRoot } from "../store/global-config-io.js";
@@ -23,7 +24,11 @@ export function enableSemanticSearchAndReport(projectRoot: string, model?: strin
   const enabled = enableSemanticSearch(projectRoot, model === undefined ? {} : { model });
   console.log("");
   if (enabled.alreadyEnabled) {
-    console.log(paint.muted(`语义搜索已是启用状态 (embed_model=${enabled.model})，未改动 ${enabled.configPath}。`));
+    console.log(
+      paint.muted(
+        t("cli.install.semantic.already-enabled", { model: enabled.model, path: enabled.configPath }),
+      ),
+    );
     return;
   }
   for (const line of renderSemanticSearchInstructions(enabled.model)) {

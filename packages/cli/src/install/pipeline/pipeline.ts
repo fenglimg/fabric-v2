@@ -1,3 +1,5 @@
+import { t } from "../../i18n.js";
+
 import type { Stage, InstallContext, StageResult, PipelineResult, StageName } from "./types.js";
 import type { StepInfo, SummaryInfo, SummaryDetailRow, ErrorInfo } from "../../tui/types.js";
 
@@ -5,32 +7,23 @@ import type { StepInfo, SummaryInfo, SummaryDetailRow, ErrorInfo } from "../../t
 // Stage visual anchors (EPIC-005)
 // ---------------------------------------------------------------------------
 
-/** Human-readable stage labels for visual anchors */
-const STAGE_LABELS: Record<StageName, string> = {
-  preflight: "Preflight check",
-  env: "Environment setup",
-  store: "Store configuration",
-  hooks: "Hooks & skills",
-  mcp: "MCP server",
-  validate: "Validation",
-  guidance: "Next steps",
+/**
+ * Localized human-readable stage label. The `StageName` (preflight/env/…) is a
+ * routing key and stays English; only the displayed copy is translated, per
+ * [[askuserquestion-i18n-value-vs-label]] (translate display text, keep keys).
+ * Resolved through the live `t` binding so it honors the language picked mid-run
+ * by the store stage's language selector (refreshLocale).
+ */
+function stageLabel(name: StageName): string {
+  return t(`cli.install.pipeline.label.${name}`);
+}
+
+/** i18n keys for the optional one-line stage description (plain path only). */
+const STAGE_DESCRIPTION_KEYS: Partial<Record<StageName, string>> = {
+  store: "cli.install.pipeline.desc.store",
 };
 
-const PLAIN_STAGE_LABELS: Record<StageName, string> = {
-  preflight: "全局与项目预检",
-  env: "项目环境初始化",
-  store: "知识库拓扑",
-  hooks: "Hook 与 skill 安装",
-  mcp: "MCP 服务配置",
-  validate: "安装校验",
-  guidance: "后续指引",
-};
-
-const PLAIN_STAGE_DESCRIPTIONS: Partial<Record<StageName, string>> = {
-  store: "绑定当前项目的 read/write store，刷新 resolved-bindings snapshot。",
-};
-
-/** Stage icons for visual anchors */
+/** Stage icons for visual anchors (locale-independent) */
 const STAGE_ICONS: Record<StageName, string> = {
   preflight: "🔍",
   env: "🏗️",
@@ -83,10 +76,10 @@ export class InstallPipeline {
 
     // EPIC-005: Render pipeline intro
     if (renderer) {
-      renderer.renderSection("Fabric Install");
-      renderer.renderInfo(`Running ${totalStages} stages...`);
+      renderer.renderSection(t("cli.install.pipeline.title"));
+      renderer.renderInfo(t("cli.install.pipeline.running", { count: String(totalStages) }));
     } else {
-      console.log(`Fabric install 将按 ${totalStages} 个阶段执行`);
+      console.log(t("cli.install.pipeline.running", { count: String(totalStages) }));
     }
 
     for (let i = 0; i < this.stages.length; i++) {
@@ -96,19 +89,19 @@ export class InstallPipeline {
 
       // EPIC-005: Visual anchor — section header with icon
       if (renderer) {
-        renderer.renderSection(`${STAGE_ICONS[stageName]} ${STAGE_LABELS[stageName]}`);
+        renderer.renderSection(`${STAGE_ICONS[stageName]} ${stageLabel(stageName)}`);
       } else {
-        console.log(`[${stepNum}/${totalStages}] ${PLAIN_STAGE_LABELS[stageName]}`);
-        const description = PLAIN_STAGE_DESCRIPTIONS[stageName];
-        if (description !== undefined) {
-          console.log(`  ${description}`);
+        console.log(`[${stepNum}/${totalStages}] ${stageLabel(stageName)}`);
+        const descriptionKey = STAGE_DESCRIPTION_KEYS[stageName];
+        if (descriptionKey !== undefined) {
+          console.log(`  ${t(descriptionKey)}`);
         }
       }
 
       // EPIC-008: Progress feedback — step counter + spinner
       if (renderer) {
         renderer.renderStep({
-          name: STAGE_LABELS[stageName],
+          name: stageLabel(stageName),
           current: stepNum,
           total: totalStages,
           status: "running",
@@ -123,7 +116,7 @@ export class InstallPipeline {
         if (renderer) {
           if (result.disposition === "ran") {
             renderer.renderStep({
-              name: STAGE_LABELS[stageName],
+              name: stageLabel(stageName),
               current: stepNum,
               total: totalStages,
               status: "success",
@@ -133,7 +126,7 @@ export class InstallPipeline {
             });
           } else if (result.disposition === "skipped") {
             renderer.renderStep({
-              name: STAGE_LABELS[stageName],
+              name: stageLabel(stageName),
               current: stepNum,
               total: totalStages,
               status: "skipped",
@@ -143,7 +136,7 @@ export class InstallPipeline {
             });
           } else if (result.disposition === "failed") {
             renderer.renderStep({
-              name: STAGE_LABELS[stageName],
+              name: stageLabel(stageName),
               current: stepNum,
               total: totalStages,
               status: "error",
@@ -159,7 +152,7 @@ export class InstallPipeline {
           // EPIC-007: Render error box
           if (renderer) {
             const errorInfo: ErrorInfo = {
-              title: `${STAGE_LABELS[stageName]} failed`,
+              title: `${stageLabel(stageName)} ${t("cli.install.stages.failed")}`,
               message: result.errors.join(", "),
               hint: "Check the error details above. Run with --debug for more information.",
             };
@@ -212,7 +205,7 @@ export class InstallPipeline {
     const errorCount = results.filter((r) => r.disposition === "failed").length;
 
     const details: SummaryDetailRow[] = results.map((r) => ({
-      label: STAGE_LABELS[r.name],
+      label: stageLabel(r.name),
       value: r.disposition === "ran"
         ? `${r.installed.length} installed`
         : r.disposition === "skipped"
@@ -226,7 +219,7 @@ export class InstallPipeline {
     }));
 
     return {
-      title: "Fabric Install Complete",
+      title: t("cli.install.pipeline.complete"),
       successCount,
       skippedCount,
       errorCount,

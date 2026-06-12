@@ -10,6 +10,7 @@ const tempRoots: string[] = [];
 const originalFabLang = process.env.FAB_LANG;
 const originalNoColor = process.env.NO_COLOR;
 const originalHome = process.env.HOME;
+const originalFabricHome = process.env.FABRIC_HOME;
 const restoreTtyMocks: Array<() => void> = [];
 
 afterEach(() => {
@@ -28,6 +29,7 @@ afterEach(() => {
   restoreEnv("FAB_LANG", originalFabLang);
   restoreEnv("NO_COLOR", originalNoColor);
   restoreEnv("HOME", originalHome);
+  restoreEnv("FABRIC_HOME", originalFabricHome);
 });
 
 describe("cli i18n", () => {
@@ -51,6 +53,10 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   const isolatedHome = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
   tempRoots.push(isolatedHome);
   process.env.HOME = isolatedHome;
+  // Isolate FABRIC_HOME per snapshot too — otherwise the suite-wide setup
+  // FABRIC_HOME is shared across the en + zh-CN runs, so the second global
+  // install sees "already installed" and drops the "installed global" line.
+  process.env.FABRIC_HOME = isolatedHome;
   restoreTtyMocks.push(setProcessTty(false));
 
   const installTarget = trackFixture(`fab-i18n-install-${locale}`);
