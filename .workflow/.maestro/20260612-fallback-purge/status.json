@@ -36,18 +36,18 @@
     { "name": "G-INVARIANT", "target": "census 不变式闸建立且全绿(event_type/i18n/layer-type/MCP)", "actual": "4/4 绿: i18n parity(locale-parity.test)+event_type(event-ledger-census, W2-1 删 bootstrap_marker_migrated+mcp_config_migrated → 59→57成员, 闸逐次捕获并同步 inline snapshot)+layer-type(knowledge-enum-census 5/3/2)+MCP(既有 index.test 'registers only current MCP tools')",
       "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared exec vitest run src/i18n/locale-parity.test.ts src/schemas/event-ledger-census.test.ts src/schemas/knowledge-enum-census.test.ts && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts",
       "verified_at": "2026-06-12" },
-    { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "部分: recall extractBody(W1-pre)+LockState 死type 再导出(W1-2 8791f94)已删; computeExposedAndMutated REFUTE 疑死=LIVE保留. 余 co-location 死簇(buildKnowledgeMeta/compute*/stableStringify/__Cache*/isForbiddenCrossLayerEdge)+KnowledgeMetaBuildSource DEFER→W1-1 聚焦相位(阻塞于 W0-2 ~90 test fixture 迁移). 本会话不可全绿(用户选项A defer)",
-      "verifier_cmd": "npx knip --no-progress 2>&1 | grep -c 'knowledge-meta-builder' (目标: 仅剩 live 的 deriveRuleIdentity/extractRuleDescription)",
-      "verified_at": null },
+    { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "GREEN(2a2eca5): knowledge-meta-builder.ts 1270→530 行. 删 co-location 死簇 buildKnowledgeMeta/writeKnowledgeMeta/computeKnowledgeBasedAgentsMeta/computeKnowledgeTestIndex/loadKbIdTypeMap/deriveKnowledgeMetaTopologyType/isSameKnowledgeTestIndex/stableStringify/__knowledgeMeta*Cache* + KnowledgeMetaBuild* 类型 + ~40 私有死 helper; 连带去 doctor.test(58)/doctor-i18n.test(4) no-op writeKnowledgeMeta fixture 调用. 保留 deriveRuleIdentity/extractRuleDescription(cross-store-recall+extract-knowledge live) + isForbiddenCrossLayerEdge(ADJ-4 Species B 隐私守卫 + -related.test). 早前已删: recall extractBody(W1-pre d7eba65)+ LockState 死type(W1-2 8791f94); computeExposedAndMutated REFUTE=LIVE 保留. knip 零死簇命中.",
+      "verifier_cmd": "npx knip --no-progress 2>&1 | grep 'knowledge-meta-builder' (目标: 零命中=无死export; 仅剩 live deriveRuleIdentity/extractRuleDescription + ADJ-4 isForbiddenCrossLayerEdge)",
+      "verified_at": "2026-06-12" },
     { "name": "G-MIGRATION", "target": "Species A 迁移/兼容 grep 零残留", "actual": "GREEN: 4 surface src 残留 0/0/0/0 (bootstrap marker / .cursor flat / MCP settings+TOML / config maturity alias). W2-1a c7a4e57 · W2-1b c2541a5 · W2-1c-i 1a03f48 · W2-1c-ii bc93d4e · W2-2 3a88478. tsc全绿·shared628/server693(97skip).",
       "verifier_cmd": "PROBE: grep 旧 marker/.cursor 扁平/[mcp.servers]/orphan_demote_stable_days 残留计数",
       "verified_at": "2026-06-12" },
     { "name": "G-VOCAB", "target": "cite-tag LEGACY_CITE_TAG_REMAP + i18n/hook/bootstrap tendril 删净 + shared rebuild + parser 测试绿", "actual": "GREEN(gate): cite-line-parser.ts 0 残留 + shared build OK (87ed337). 删 LEGACY_CITE_TAG_REMAP(parser + .cjs twin parity 守恒)+ event-ledger preprocess + i18n G3/[recalled] stale 文案; legacy tag → none; ~50 test seed/断言同步(parser/event-ledger/fabric-hint/doctor cite-coverage/summarize)。ADJ-3 残留: byte-locked BOOTSTRAP_CANONICAL 的 legacy-tag 文案行(用户拍 码层全做+bootstrap归ADJ-3, 不破 byte-lock)。",
       "verifier_cmd": "grep -rc 'LEGACY_CITE_TAG_REMAP\\|planned.*applied' packages/shared/src/cite-line-parser.ts && pnpm --filter @fenglimg/fabric-shared build",
       "verified_at": "2026-06-12" },
-    { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试全绿", "actual": null,
+    { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试全绿", "actual": "GREEN: pnpm -r exec tsc --noEmit = 0 error; 全 repo 测试 0 fail 0 skip (shared 628 / server 697 / cli 1047). 单次顺序 pnpm -r test 可靠全绿.",
       "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test",
-      "verified_at": null }
+      "verified_at": "2026-06-12" }
   ],
   "task_decomposition": [
     { "id": "W0-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
@@ -64,8 +64,8 @@
       "verification": { "method": "deterministic", "verifier": "vitest 新 census 测试", "evidence": "4/4: i18n parity(en=zh=933)+event_type(runtime .optionsMap 钉59成员 inline snapshot)+knowledge-enum(KT-DEC-0005 5/3/2)新建; MCP 注册 census 复用既有 index.test.ts 'registers only current MCP tools'(6工具精确集). 含 shared 630全绿. event_type 用运行时内省非 grep, 守动态派发. @c056570/e4dc626", "verified_at": "2026-06-12" } },
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 co-location 死簇(knowledge-meta-builder 死函数)+ 连带 fixture/测试", "done_when": "删 buildKnowledgeMeta/computeKnowledgeBasedAgentsMeta/computeKnowledgeTestIndex/loadKbIdTypeMap/deriveKnowledgeMetaTopologyType/isSameKnowledgeTestIndex/stableStringify/__*Cache* + isForbiddenCrossLayerEdge;保留 deriveRuleIdentity/extractRuleDescription;processed writeKnowledgeMeta fixture(W0-2 耦合);tsc+test 绿",
-      "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "knip + server test", "evidence": "PRE-MAPPED(未删): audit零caller声明 CONFIRMED — buildKnowledgeMeta/loadKbIdTypeMap 等的全部 grep 命中皆注释或定义本身, 零真实调用点. 关键: buildKnowledgeMeta(L125)+writeKnowledgeMeta(L132) 已是 no-op(返回 createRetiredKnowledgeMetaBuildResult, store-only cutover 早完成), 不再调 compute*/stableStringify/derive*/loadKbIdTypeMap/__Cache* → 这些 helper 纯死重, 删不断 no-op. writeKnowledgeMeta 作 fixture 现 no-op, §C fixture 调用实际空搭. deriveRuleIdentity/extractRuleDescription 仍 live(2/3 caller) 保留.", "verified_at": null } },
+      "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "knip + server test", "evidence": "DONE(2a2eca5). W0-2 解 skip 后解锁. knowledge-meta-builder.ts 1270→530: 删全部 co-location 死簇(build/write/compute*/loadKbIdTypeMap/derive*Topology/isSame*/stableStringify/__cache* + KnowledgeMetaBuild* 类型 + ~40 私有死 helper findKnowledgeFiles/computeRevision/collect*/recordBaselineSynced/findFabricVerifyAnnotations 等). 用 Python 切 keep-range 拼装(零转录错误)保留 deriveRuleIdentity/extractRuleDescription(cross-store-recall+extract-knowledge live)+ isForbiddenCrossLayerEdge(ADJ-4 EXCLUDE 保留, -related.test 用). 连带去 doctor.test(58)+doctor-i18n.test(4) no-op writeKnowledgeMeta fixture 调用(纯存在性断言无副作用) + import. KnowledgeMetaBuildSource 死 type 随簇删(解 W1-2 defer). knip 零命中 · tsc 绿 · server 697/0skip.", "verified_at": "2026-06-12" } },
     { "id": "W1-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "摘死 type + 精验 computeExposedAndMutated", "done_when": "删 LockState(legacy-serve-lock-probe,文件保留)/ KnowledgeMetaBuildSource 死 type;精验 computeExposedAndMutated 是否死,死则删",
       "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "done",
@@ -80,8 +80,8 @@
       "verification": { "method": "deterministic", "verifier": "grep + test", "evidence": "3a88478: 删 fabric-config 2 别名 schema 字段 + config-loader ?? alias fallback + 2 alias test. 保留 doctor 内部 stable/endorsed ladder(ADJ-2). 残留 0. shared628/server693.", "verified_at": "2026-06-12" } },
     { "id": "W3-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 cite-tag vocab shim + 全 tendril(小心 wave)", "done_when": "删 LEGACY_CITE_TAG_REMAP(cite-line-parser)+ event-ledger preprocess remap + i18n en/zh G1/G3 recalled/chained-from 文案 + self-archive hook 旧名正则 + bootstrap-canonical/AGENTS.md 旧名文案;rebuild shared dist;cite-line-parser.test/event-ledger.test 旧断言同步删/改;全绿",
-      "ship_criteria_alignment": ["G-VOCAB"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + shared build + test", "evidence": null, "verified_at": null } }
+      "ship_criteria_alignment": ["G-VOCAB"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep + shared build + test", "evidence": "DONE(87ed337, 第二会话; 本会话核对 G-VOCAB 仍绿). 删 LEGACY_CITE_TAG_REMAP(cite-line-parser + .cjs twin)+ event-ledger preprocess remap + i18n G1/G3 文案 + ~50 test 同步; legacy tag → none; shared rebuild. bootstrap-canonical legacy-tag 文案行归 ADJ-3(不破 byte-lock).", "verified_at": "2026-06-12" } }
   ],
   "sequencing_decision": {
     "at": "2026-06-12", "decided_by": "user",
@@ -97,8 +97,8 @@
     { "id": "ADJ-5", "subject": "W0-2 ~90 server skip 测的 doctor 读侧 lint check 已被 v2.2 store cutover 掏空成空桩(等 store 版重实现, 属已 defer 的 multistore goal)。这批用旧 co-location fixture 写的 skip 测试: 删 / 重框交接 / 在本 goal 实现 store 读侧", "adjudication_reason": "out-of-authority", "round": 1, "resolution": "RESOLVED(2026-06-12, user): 删旧测试(clean-slate)。前提: W0-2 plan('重写 store fixture 复活')被代码 refute — check 是空桩什么都不读, 复活须先造 store 版读侧(=新功能, 非清兜底, 属 defer 的 multistore goal)。删 19 skip 块(~89 test)为过渡态测试(旧 co-location fixture + 测退役旧实现)属 Species A 清除范围; 保留生产空桩(意图 re-enable)。复活 4 个真 live 的 cite-coverage 错误路径 it.skip。未来 store 读侧重实现时重写 store-fixture 测试。已达 0 skip → G-BASELINE 绿。" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260612-fallback-purge/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null,
+  "status": "completed",
+  "loop_exit_status": "ship_criteria_met (6/6 gate 全绿 @2026-06-12 第三会话: G-BASELINE/INVARIANT/DEADCODE/MIGRATION/VOCAB/GREEN)。剩余非-gate OPEN: ADJ-3 bootstrap byte-lock i18n 方向(用户待裁)。",
   "audit_rounds": [
     { "round": 1, "status": "running", "round_task_ceiling": 12, "round_task_actual": 8,
       "convergence_status": "converging",
@@ -120,6 +120,7 @@
     { "id": "W3-1", "subject": "删 cite-tag vocab shim LEGACY_CITE_TAG_REMAP(+.cjs twin/i18n/~50 test) → G-VOCAB(gate); bootstrap文案→ADJ-3", "commit": "87ed337", "at": "2026-06-12" },
     { "id": "W1-2", "subject": "摘死 LockState type 再导出 + refute computeExposedAndMutated + defer KnowledgeMetaBuildSource→W1-1", "commit": "8791f94", "at": "2026-06-12" },
     { "id": "ADJ-1-refute", "subject": "ADJ-1 sync 推送前提 refute(F-SYNC-NOPUSH 已修接线 live+测试齐全)→ SKIP 保留, 非死码非 Species A", "commit": null, "at": "2026-06-12" },
-    { "id": "W0-2", "subject": "97 server skip → 0: 删 ~89 obsolete co-location skip 测试(读侧 lint 已掏空空桩, 用户拍 ADJ-5 删旧)+ 复活 4 cite 错误路径 it.skip + 清孤儿注释 → G-BASELINE + G-GREEN 绿", "commit": null, "at": "2026-06-12" }
+    { "id": "W0-2", "subject": "97 server skip → 0: 删 ~89 obsolete co-location skip 测试(读侧 lint 已掏空空桩, 用户拍 ADJ-5 删旧)+ 复活 4 cite 错误路径 it.skip + 清孤儿注释 → G-BASELINE + G-GREEN 绿", "commit": "f15ec47", "at": "2026-06-12" },
+    { "id": "W1-1", "subject": "删 co-location 死簇(knowledge-meta-builder 1270→530, ~40 私有死 helper + build/write/compute* 簇 + KnowledgeMetaBuildSource)+ 去 test no-op fixture; 保留 deriveRuleIdentity/extractRuleDescription/isForbiddenCrossLayerEdge → G-DEADCODE 绿 → 6/6 gate 全绿", "commit": "2a2eca5", "at": "2026-06-12" }
   ]
 }

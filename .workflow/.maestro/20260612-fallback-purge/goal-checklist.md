@@ -7,13 +7,13 @@
 0 用户阶段清除 **Species A**(历史包袱/架构残留/过渡态兜底),保留 **Species B**(运行时防御)。
 命名 ship gate 全绿即自动 completed。
 
-## 命名 Ship Gate(全绿即达成)— 3/6 绿
-- [ ] **G-BASELINE** — 全量测试 0 fail & 0 skip(当前 0 fail / 97 skip;skip 需 W0-2 聚焦相位)
-- [x] **G-INVARIANT** — census 闸 4/4 绿(i18n parity + event_type 57成员 + knowledge-enum 5/3/2 + MCP既有)(e4dc626/c056570)
-- [ ] **G-DEADCODE** — 部分:extractBody+LockState 死type 已删;余 co-location 死簇+KnowledgeMetaBuildSource → W1-1 聚焦相位
+## 命名 Ship Gate(全绿即达成)— 6/6 绿 ✅ 达成
+- [x] **G-BASELINE** — 全量测试 0 fail & 0 skip(shared 628 / server 697 / cli 1047;97 skip → 0 via W0-2 f15ec47)✅
+- [x] **G-INVARIANT** — census 闸 4/4 绿(i18n parity + event_type 57成员 + knowledge-enum 5/3/2 + MCP既有)(e4dc626/c056570)✅
+- [x] **G-DEADCODE** — co-location 死簇全删(knowledge-meta-builder 1270→530;2a2eca5)+ extractBody/LockState 早删;knip 零命中 ✅
 - [x] **G-MIGRATION** — Species A 迁移/兼容 grep 零残留(4 surface 0;W2-1a/b/c + W2-2)✅
 - [x] **G-VOCAB** — cite-tag LEGACY_CITE_TAG_REMAP 删净 + shared rebuild + parser 测试绿(87ed337;bootstrap文案残留→ADJ-3)✅
-- [ ] **G-GREEN** — tsc --noEmit ✓ + 全量测试全绿(tsc✓/fail0,但 G-BASELINE 97skip 阻塞)
+- [x] **G-GREEN** — tsc --noEmit ✓(0 error)+ 全量测试全绿(单次顺序 pnpm -r test)✅
 
 ## 边界契约
 - **IN**:Species A 删除 · 测试基线收绿 · census 不变式闸
@@ -60,3 +60,13 @@
 - 每步:先 grep 验死 → census 闸兜底 → 改 → tsc + 全量测试绿 → git commit → 原子更新 status.json → 重检 gate。
 
 续跑:`cd /Users/wepie/Desktop/personal-projects/pcf-fallback-purge` → 读本文件 + `.scratchpad/w0-2-skip-triage.md` + `wave0-triage.md` → `/goal-mode continue`。
+
+## ✅ 收口(2026-06-12 第三会话 — 6/6 gate 全绿,目标达成)
+**3 commit**:f15ec47(W0-2)· 2a2eca5(W1-1)· status 收口。
+
+**两次前提被代码 refute**(均靠"实施前 grep 验证"纪律抓出):
+1. **ADJ-1 sync 推送**:spec 称"未接线半成品",实为 live 接线 + 全测试的 `fabric sync` 推送(F-SYNC-NOPUSH 已在 90f23e3 修接线,是 fabric-sync skill Phase1 发动机)→ **SKIP 保留**(用户复核确认),非死码非 Species A。
+2. **W0-2 ~90 skip**:plan 称"重写 store fixture 复活",实为 doctor 读侧 lint check 在 store cutover 时全被掏空成空桩(什么都不读),复活须先实现 store 版读侧(=造新功能,属 defer 的 multistore goal)→ 用户拍 **ADJ-5 删旧测试**(过渡态,旧 co-location fixture + 测退役实现)。复活 4 个真 live 的 cite 错误路径 it.skip。
+
+**剩余非-gate OPEN(不阻断达成)**:
+- **ADJ-3** bootstrap-canonical 的 `Backward compat: 解析器接受老 4-state tags` 文案行现失真(parser 已 legacy→none),但改动 BOOTSTRAP_CANONICAL 破 byte-lock;彻底 i18n 化(双 canonical body)方向 OPEN 待用户拍。属 byte-lock 决策,浮用户,不在本 goal gate 内。
