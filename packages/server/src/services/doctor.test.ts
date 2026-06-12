@@ -1018,42 +1018,10 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.code === "legacy_client_path_present")).toBeUndefined();
   });
 
-  // -------------------------------------------------------------------------
-  // v2.0 — TASK-006: 4 v1.x-coupled checks renamed + 1 new visibility check
-  // -------------------------------------------------------------------------
-
-  it.skip("v2.0 / knowledge_dir_missing: fixable_error when any required subdir is absent", async () => {
-    const target = createInitializedProject("doctor-knowledge-missing-detect");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // Remove a single required subdir to trigger the check.
-    rmSync(join(target, ".fabric", "knowledge", "pending"), { recursive: true, force: true });
-
-    const report = await runDoctorReport(target);
-    const codes = report.fixable_errors.map((e) => e.code);
-    expect(codes).toContain("knowledge_dir_missing");
-    const issue = report.fixable_errors.find((e) => e.code === "knowledge_dir_missing");
-    expect(issue?.message).toContain(".fabric/knowledge/pending");
-  });
-
-  it.skip("v2.0 / knowledge_dir_missing: --fix creates the missing subdirs (mkdir recursive)", async () => {
-    const target = createInitializedProject("doctor-knowledge-missing-fix");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    rmSync(join(target, ".fabric", "knowledge", "pending"), { recursive: true, force: true });
-    rmSync(join(target, ".fabric", "knowledge", "guidelines"), { recursive: true, force: true });
-
-    const fix = await runDoctorFix(target);
-    const after = await runDoctorReport(target);
-
-    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_missing");
-    expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_missing");
-    for (const sub of ["pending", "guidelines"]) {
-      expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(true);
-    }
-  });
+  // v2.0.0-rc.* store-only cutover: the co-location `knowledge_dir_missing`
+  // check (validated `.fabric/knowledge/<subdir>` presence) is retired — the
+  // store-only model no longer keeps a project-local knowledge tree. Its two
+  // tests were removed with the check (zero production reference).
 
   // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
   // `index_drift` tests (which seeded agents.meta.json#counters below the
