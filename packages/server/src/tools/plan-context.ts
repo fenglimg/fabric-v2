@@ -19,7 +19,6 @@ import {
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
-import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
 import { type StructuredToolWarning } from "./payload-warning.js";
 
 export function registerPlanContext(server: McpServer, tracker?: InFlightTracker): void {
@@ -44,16 +43,9 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
         const gateWarn = gateWarning(gateResult);
 
         const projectRoot = resolveProjectRoot();
-        // v2.0.0-rc.30 TASK-002 (G1 flip): opted into autoHealOnDrift after
-        // rc.29 PARTIAL built the channel. micro-bench (knowledge-sync.bench.ts)
-        // measured ~12% hz regression on the no-drift hot path (well below the
-        // 30% threshold from the deferral plan) — drift→heal pairing now ships
-        // by default, closing the 7% heal-coverage gap reported in rc.29 BUG-G1.
-        const syncReport = await ensureKnowledgeFresh(projectRoot, { autoHealOnDrift: true });
         const payloadLimits = readPayloadLimits(projectRoot);
         const baseWarnings: StructuredToolWarning[] = [
           ...(gateWarn ? [gateWarn] : []),
-          ...syncReport.warnings,
         ];
         const trimWarning = {
           code: 'mcp_payload_trimmed' as const,

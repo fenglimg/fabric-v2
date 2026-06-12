@@ -16,7 +16,6 @@ import {
   gateWarning,
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
-import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
 import { recall, type RecallInput } from "../services/recall.js";
 import { appendEventLedgerEvent } from "../services/event-ledger.js";
 
@@ -60,7 +59,6 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         const gateWarn = gateWarning(gateResult);
 
         const projectRoot = resolveProjectRoot();
-        const syncReport = await ensureKnowledgeFresh(projectRoot, { autoHealOnDrift: true });
 
         const input: RecallInput = {
           paths,
@@ -83,7 +81,6 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
           ...result,
           warnings: [
             ...(gateWarn ? [gateWarn] : []),
-            ...syncReport.warnings,
           ],
         };
 

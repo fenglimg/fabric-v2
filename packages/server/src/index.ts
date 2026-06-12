@@ -131,7 +131,6 @@ export { startRotationTick, stopRotationTick } from "./services/rotation-tick.js
 // imports them from this barrel. Purely additive — no behavior change.
 export { contextCache } from "./cache.js";
 export { readEventLedger } from "./services/event-ledger.js";
-export { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
 export { rehydrateAgentsMetaAt } from "./services/rehydrate-state.js";
 export { resolveLedgerPaths, readLedger } from "./services/read-ledger.js";
 // v2.2 W5 R2 (agents.meta decolo): `getKnowledge` (the path-glob co-location
@@ -170,14 +169,6 @@ export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 
 export { flushAndSyncEventLedger } from "./services/event-ledger.js";
 export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
-export {
-  ensureKnowledgeFresh,
-  type LedgerEvent,
-  type KnowledgeSyncLedgerEvent,
-  type KnowledgeSyncOptions,
-  type KnowledgeSyncReport,
-  type StructuredWarning,
-} from "./services/knowledge-sync.js";
 // v2.0.0-rc.37 Wave A2 Part 2: serve-lock fully quarantined to
 // packages/server-http-experimental/. Main retains a read-only probe at
 // `services/legacy-serve-lock-probe.ts` (isAlive + readLockState) so doctor

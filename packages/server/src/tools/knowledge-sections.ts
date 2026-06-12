@@ -20,7 +20,6 @@ import {
   getKnowledgeSections,
   type GetKnowledgeSectionsInput,
 } from "../services/knowledge-sections.js";
-import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
 
 export function registerKnowledgeSections(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -41,16 +40,12 @@ export function registerKnowledgeSections(server: McpServer, tracker?: InFlightT
         const gateWarn = gateWarning(gateResult);
 
         const projectRoot = resolveProjectRoot();
-        // v2.0.0-rc.30 TASK-002 (G1 flip): paired with plan-context.ts caller,
-        // see that file's TASK-002 comment for bench rationale.
-        const syncReport = await ensureKnowledgeFresh(projectRoot, { autoHealOnDrift: true });
         const result = await getKnowledgeSections(projectRoot, input);
 
         const response = {
           ...result,
           warnings: [
             ...(gateWarn ? [gateWarn] : []),
-            ...syncReport.warnings,
           ],
         };
 
