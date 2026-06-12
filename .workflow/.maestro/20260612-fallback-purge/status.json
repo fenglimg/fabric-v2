@@ -90,10 +90,10 @@
     "deferred_focused_phase": ["W0-2 skip 复活 ~90 test", "W1-1 writeKnowledgeMeta+死簇删除(阻塞于 W0-2)"]
   },
   "needs_adjudication": [
-    { "id": "ADJ-1", "subject": "半成品 sync 推送(run-sync.ts defaultPush/defaultCommitDirty/Git* types 未接线): 删 / 接完 / 留", "adjudication_reason": "out-of-authority", "round": 1 },
-    { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1 },
-    { "id": "ADJ-3", "subject": "bootstrap-canonical.ts BOOTSTRAP_CANONICAL 是 byte-locked zh-CN-hybrid AGENTS.md 模板(rc.19 locked clarification 3 + doctor drift 检测 byte-identical 契约)→ en 用户拿到中文 AGENTS.md。彻底 i18n 化需双 canonical body + drift 检测按 locale 选,推翻 byte-lock 决策。做/不做", "adjudication_reason": "out-of-authority", "round": 1 },
-    { "id": "ADJ-4", "subject": "isForbiddenCrossLayerEdge(knowledge-meta-builder.ts:1053)跨层隐私守卫(team 不得链 personal KP),production 零 caller 仅 -related.test 用。是孤儿的 Species B 隐私防御(保留,后续接线)还是真退役死码(随 W1 删)?Species B 防御 out-of-scope 故浮裁", "adjudication_reason": "out-of-authority", "round": 1 }
+    { "id": "ADJ-1", "subject": "半成品 sync 推送(run-sync.ts defaultPush/defaultCommitDirty/Git* types 未接线): 删 / 接完 / 留", "adjudication_reason": "out-of-authority", "round": 1, "resolution": "RESOLVED(2026-06-12, user): 删(clean-slate, 需要时 TDD 重建)。下相位执行: 删 run-sync.ts defaultPush/defaultCommitDirty/GitPush/GitRebasePull/GitRebaseResolve/GitCommitDirty 未接线半成品 + 连带测试; grep 验零 live caller 先。" },
+    { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1, "resolution": "RESOLVED(2026-06-12, user): 不做(defer, 触到该代码时再改)。doctor 内部 LintMaturity stable/endorsed vocab 保持不动, 非本目标范围。" },
+    { "id": "ADJ-3", "subject": "bootstrap-canonical.ts BOOTSTRAP_CANONICAL 是 byte-locked zh-CN-hybrid AGENTS.md 模板(rc.19 locked clarification 3 + doctor drift 检测 byte-identical 契约)→ en 用户拿到中文 AGENTS.md。彻底 i18n 化需双 canonical body + drift 检测按 locale 选,推翻 byte-lock 决策。做/不做", "adjudication_reason": "out-of-authority", "round": 1, "resolution": "PARTIAL(2026-06-12, user, W3-1 耦合): 码层全做(已 87ed337), bootstrap legacy-tag 文案行归 ADJ-3 不破 byte-lock。残留: BOOTSTRAP_CANONICAL 里 'Backward compat: 解析器接受老 4-state tags→applied' 文案行现失真(parser 已改 legacy→none)。彻底 i18n 化(双 canonical body)的 byte-lock 推翻决策仍 OPEN 待拍。" },
+    { "id": "ADJ-4", "subject": "isForbiddenCrossLayerEdge(knowledge-meta-builder.ts:1053)跨层隐私守卫(team 不得链 personal KP),production 零 caller 仅 -related.test 用。是孤儿的 Species B 隐私防御(保留,后续接线)还是真退役死码(随 W1 删)?Species B 防御 out-of-scope 故浮裁", "adjudication_reason": "out-of-authority", "round": 1, "resolution": "RESOLVED(2026-06-12, user): 保留(未接线 Species B 隐私防御)。W1-1 死簇删除时 isForbiddenCrossLayerEdge 与其测试 EXCLUDE 保留(不随簇删), 未来隐私守卫任务再接线。" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260612-fallback-purge/goal-checklist.md",
   "status": "running",
