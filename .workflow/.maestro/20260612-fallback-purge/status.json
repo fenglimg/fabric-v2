@@ -39,9 +39,9 @@
     { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "1/5 簇(recall extractBody 已删)",
       "verifier_cmd": "npx knip --no-progress 2>&1 | grep -c 'knowledge-meta-builder' (目标: 仅剩 live 的 deriveRuleIdentity/extractRuleDescription)",
       "verified_at": null },
-    { "name": "G-MIGRATION", "target": "Species A 迁移/兼容 grep 零残留", "actual": null,
+    { "name": "G-MIGRATION", "target": "Species A 迁移/兼容 grep 零残留", "actual": "GREEN: 4 surface src 残留 0/0/0/0 (bootstrap marker / .cursor flat / MCP settings+TOML / config maturity alias). W2-1a c7a4e57 · W2-1b c2541a5 · W2-1c-i 1a03f48 · W2-1c-ii bc93d4e · W2-2 3a88478. tsc全绿·shared628/server693(97skip).",
       "verifier_cmd": "PROBE: grep 旧 marker/.cursor 扁平/[mcp.servers]/orphan_demote_stable_days 残留计数",
-      "verified_at": null },
+      "verified_at": "2026-06-12" },
     { "name": "G-VOCAB", "target": "cite-tag LEGACY_CITE_TAG_REMAP + i18n/hook/bootstrap tendril 删净 + shared rebuild + parser 测试绿", "actual": null,
       "verifier_cmd": "grep -rc 'LEGACY_CITE_TAG_REMAP\\|planned.*applied' packages/shared/src/cite-line-parser.ts && pnpm --filter @fenglimg/fabric-shared build",
       "verified_at": null },
@@ -76,8 +76,8 @@
       "verification": { "method": "deterministic", "verifier": "grep 残留 + test", "evidence": "3 子簇全删, 残留 grep 0/0/0. W2-1a(c7a4e57): bootstrap legacy marker(LEGACY_KB_*+bootstrapMarkerMigratedEventSchema+inspect/create/migrateBootstrapMarkers+stripLegacyKnowledgeBaseSection+i18n+4test); census 59→58. W2-1b(c2541a5): .cursor 扁平 CURSOR_LEGACY_FLAT_FILE_REL+writeCursor Phase1 删除逻辑+1集成test; 摘死import statSync. W2-1c(i 1a03f48): Codex TOML 旧[mcp.servers.*]归一化(removeCodex/upsertCodexServerBlock legacyPattern)+2test. W2-1c(ii bc93d4e): mcp_config_in_wrong_file 迁移检测(亲验 install 只写.mcp.json 从不写project settings.json→纯迁移)+mcp_config_migrated事件+5test; census 58→57. 实际符号名异于spec近似名(亲验法生效). tsc全绿·shared628/server695(97skip)/cli1047·census闸7/7.", "verified_at": "2026-06-12" } },
     { "id": "W2-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 config maturity 别名接受", "done_when": "删 orphan_demote_stable_days/endorsed_days 别名接受(config-loader);留 doctor 内部 stable/endorsed LintMaturity 决斗不动;test 绿",
-      "ship_criteria_alignment": ["G-MIGRATION"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep + test", "evidence": null, "verified_at": null } },
+      "ship_criteria_alignment": ["G-MIGRATION"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep + test", "evidence": "3a88478: 删 fabric-config 2 别名 schema 字段 + config-loader ?? alias fallback + 2 alias test. 保留 doctor 内部 stable/endorsed ladder(ADJ-2). 残留 0. shared628/server693.", "verified_at": "2026-06-12" } },
     { "id": "W3-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 cite-tag vocab shim + 全 tendril(小心 wave)", "done_when": "删 LEGACY_CITE_TAG_REMAP(cite-line-parser)+ event-ledger preprocess remap + i18n en/zh G1/G3 recalled/chained-from 文案 + self-archive hook 旧名正则 + bootstrap-canonical/AGENTS.md 旧名文案;rebuild shared dist;cite-line-parser.test/event-ledger.test 旧断言同步删/改;全绿",
       "ship_criteria_alignment": ["G-VOCAB"], "alignment_strength": "direct", "status": "open",
@@ -114,6 +114,7 @@
     { "id": "W2-1a", "subject": "删 bootstrap legacy marker 迁移码(census 59→58)", "commit": "c7a4e57", "at": "2026-06-12" },
     { "id": "W2-1b", "subject": "删 .cursor 扁平文件迁移码", "commit": "c2541a5", "at": "2026-06-12" },
     { "id": "W2-1c-i", "subject": "删 Codex TOML 旧 [mcp.servers.*] 归一化", "commit": "1a03f48", "at": "2026-06-12" },
-    { "id": "W2-1c-ii", "subject": "删 mcp_config_in_wrong_file 迁移检测(census 58→57)", "commit": "bc93d4e", "at": "2026-06-12" }
+    { "id": "W2-1c-ii", "subject": "删 mcp_config_in_wrong_file 迁移检测(census 58→57)", "commit": "bc93d4e", "at": "2026-06-12" },
+    { "id": "W2-2", "subject": "删 config maturity 别名接受 → G-MIGRATION 全绿", "commit": "3a88478", "at": "2026-06-12" }
   ]
 }
