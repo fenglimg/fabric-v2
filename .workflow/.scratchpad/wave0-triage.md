@@ -64,4 +64,22 @@
 
 ## 状态
 Wave 0 候选定性 = **完成**。死代码 surface 已收敛到上述 5 簇,远小于 knip 原始 33 项。
-下一步:Wave 0 剩余(seed regen + skip triage + census 不变式闸)→ 然后 Wave 1 外科删除。
+
+## 🔄 REBASE 刷新(对齐 main 927b71d,scaffold-teardown 已停=无并发风险)
+并行 goal scaffold-teardown 已落 4 commit 到 main,动的是**邻居**,未碰核心目标。逐项复验:
+- ✅ cite-tag `LEGACY_CITE_TAG_REMAP` 仍在(`f643baf` 只删 `[recalled]` 强制提醒,没碰 parser remap)→ Wave 3 仍有效
+- ✅ co-location `deriveRuleIdentity`/`extractRuleDescription` 仍 live(cross-store-recall 9+ 处)→ 保留
+- ✅ co-location 死簇仍在,仅 `deriveKnowledgeMetaLayer` 已被并行删(从死清单移除)
+- 🔧 **修正**:recall.ts `extractBody` 非死重复实现,是 **行 419 `export { extractBody }` 死 re-export**(内部 import+用 _shared 版,行 19/282 保留)→ 删一行即可
+- ✅ i18n G1/G3(en/zh 各 3 处)+ self-archive 旧名(bootstrap 1 处) tendril 仍在
+
+## ⚠️ 贯穿性事实:核心目标全与测试改动耦合(无"快速干净删")
+- co-location 死簇:`writeKnowledgeMeta`(测试 fixture,被 doctor.test/doctor-i18n.test 用)内部链式调用 dead-export 函数 → 删死簇必须连带改 ~13 处 fixture + skip-triage
+- vocab shim:删 remap 必须连带改 cite-line-parser.test / event-ledger.test 的 legacy 断言 + i18n 文案 + rebuild shared dist
+→ 所以 Wave 1/3 都不是孤立删除,**与 skip-triage / fixture 改动是同一坨工作**,需在干净会话里逐测试做。
+
+## 已执行
+- [x] recall.ts:419 死 re-export 删除(零功能影响,验证流水线)
+
+## 下一步(建议干净会话,以本文档为 spec)
+Wave 0 余(seed regen+diff / 105-skip triage / census 不变式闸)+ Wave 1 co-location 死簇(耦合 fixture)→ Wave 2 迁移 → Wave 3 vocab shim(rebuild dist)。
