@@ -230,13 +230,10 @@ export function readPlanContextTopK(projectRoot: string): number {
  *
  * v2.2 W3-T5 (F-MATURITY-ENDORSED): the CANONICAL maturity enum is
  * draft/verified/proven (KT-DEC-0005); the doctor's orphan_demote ladder still
- * speaks the legacy stable/endorsed names internally. This loader bridges the
- * two: it accepts both the canonical config keys
- * (`orphan_demote_proven_days` / `orphan_demote_verified_days`) and the legacy
- * aliases (`orphan_demote_stable_days` / `orphan_demote_endorsed_days`), mapping
- * proven→stable and verified→endorsed. The canonical key wins when both are
- * present, so a config can migrate to the canonical vocabulary without losing
- * its tuning, and a pre-fix config keeps working unchanged.
+ * speaks the legacy stable/endorsed names internally. This loader reads the
+ * canonical config keys (`orphan_demote_proven_days` /
+ * `orphan_demote_verified_days` / `orphan_demote_draft_days`) and maps
+ * proven→stable / verified→endorsed onto that internal ladder.
  *
  * Validation rule mirrors the schema: integer in [1, 3650] (one day to ten
  * years). Out-of-range or non-numeric values are silently dropped so a
@@ -248,8 +245,6 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
       Record<
         | "orphan_demote_proven_days"
         | "orphan_demote_verified_days"
-        | "orphan_demote_stable_days"
-        | "orphan_demote_endorsed_days"
         | "orphan_demote_draft_days",
         unknown
       >
@@ -261,11 +256,9 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
       }
       return v;
     };
-    // Canonical key wins; legacy alias is the fallback (back-compat).
-    const proven = validate(cfg.orphan_demote_proven_days) ?? validate(cfg.orphan_demote_stable_days);
+    const proven = validate(cfg.orphan_demote_proven_days);
     if (proven !== undefined) out.stable = proven;
-    const verified =
-      validate(cfg.orphan_demote_verified_days) ?? validate(cfg.orphan_demote_endorsed_days);
+    const verified = validate(cfg.orphan_demote_verified_days);
     if (verified !== undefined) out.endorsed = verified;
     const d = validate(cfg.orphan_demote_draft_days);
     if (d !== undefined) out.draft = d;

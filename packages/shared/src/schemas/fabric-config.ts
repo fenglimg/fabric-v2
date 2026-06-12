@@ -427,19 +427,12 @@ export const fabricConfigSchema = z.object({
   // chosen so a typo can't accidentally disable the lint (min 1).
   //
   // v2.2 W3-T5 (F-MATURITY-ENDORSED): the canonical maturity enum is
-  // draft/verified/proven (KT-DEC-0005), but these threshold keys historically
-  // used the legacy stable/endorsed vocabulary — a config authored with the
-  // canonical names could never tune the proven/verified tiers. The canonical
-  // keys below are the preferred form; the legacy keys are retained for
-  // backward-compat (a config written before this fix keeps working). The
-  // loader maps stable→proven / endorsed→verified, canonical taking precedence.
+  // draft/verified/proven (KT-DEC-0005). These threshold keys use the canonical
+  // vocabulary; the loader maps proven→stable / verified→endorsed onto the
+  // doctor's internal orphan_demote ladder.
   orphan_demote_proven_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_verified_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
-  // Legacy aliases (deprecated; map to proven/verified). Kept so existing
-  // configs do not silently lose their tuning.
-  orphan_demote_stable_days: z.number().int().min(1).max(3650).optional(),
-  orphan_demote_endorsed_days: z.number().int().min(1).max(3650).optional(),
   // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
   // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
   // short for entries with parameterized summaries (e.g. "Use bcrypt with

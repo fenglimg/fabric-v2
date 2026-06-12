@@ -205,24 +205,6 @@ describe("config-loader — readOrphanDemoteThresholdDays (W3-T5)", () => {
     expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 120, endorsed: 45, draft: 7 });
   });
 
-  it("still honors the LEGACY keys (stable/endorsed) for backward-compat", () => {
-    writeConfig({
-      orphan_demote_stable_days: 200,
-      orphan_demote_endorsed_days: 60,
-    });
-    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 200, endorsed: 60 });
-  });
-
-  it("prefers the canonical key when both canonical + legacy are present", () => {
-    writeConfig({
-      orphan_demote_proven_days: 111,
-      orphan_demote_stable_days: 222,
-      orphan_demote_verified_days: 33,
-      orphan_demote_endorsed_days: 44,
-    });
-    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 111, endorsed: 33 });
-  });
-
   it("drops out-of-range / non-integer values without nuking the rest", () => {
     writeConfig({
       orphan_demote_proven_days: 0, // below min → dropped
