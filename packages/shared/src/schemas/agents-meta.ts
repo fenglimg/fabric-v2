@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import type {
   AgentsIdentitySource,
-  AgentsLayer,
   AgentsMetaNode,
   AgentsTopologyType,
 } from "../types/agents.js";
@@ -28,11 +27,9 @@ const KNOWLEDGE_TYPE_SINGULAR_TO_PLURAL = {
   process: "processes",
 } as const;
 
-export const AGENTS_META_LAYERS = ["L0", "L1", "L2"] as const;
 export const AGENTS_META_TOPOLOGY_TYPES = ["mirror", "cross-cutting", "domain", "local", "global"] as const;
 export const AGENTS_META_IDENTITY_SOURCES = ["declared", "derived"] as const;
 
-export const agentsLayerSchema = z.enum(AGENTS_META_LAYERS);
 export const agentsTopologyTypeSchema = z.enum(AGENTS_META_TOPOLOGY_TYPES);
 export const agentsIdentitySourceSchema = z.enum(AGENTS_META_IDENTITY_SOURCES);
 
@@ -91,36 +88,16 @@ export const ruleDescriptionSchema = z
 export const ruleDescriptionIndexItemSchema = z
   .object({
     stable_id: z.string(),
-    level: agentsLayerSchema,
-    required: z.boolean(),
     description: ruleDescriptionSchema,
   })
   .strict();
 
-// v2.0-rc.5 A1: retire L0/L1/L2 protocol — `level`, `layer`, `deps`,
-// `topology_type`, `priority` removed from the schema. Surface remains
-// path-derivable via `deriveAgentsMetaLayer` / `deriveAgentsMetaTopologyType`
-// when consumers need it. Older on-disk meta files carrying these fields
-// continue to load (Zod strips unknown keys by default).
-//
-// v2.0.0-rc.30 TASK-004 (B.1, replacing rc.29 TASK-007 BUG-P1 documentation):
-// the `level` vs `layer` double semantic is GONE — `layer` was removed
-// entirely from AgentsMetaNode + withDerivedAgentsMetaNodeDefaults. The
-// v1→v2 dual-write was a migration shim where disk wrote both fields with
-// identical values; cleanup deferred until knowledge-sections.ts +
-// get-knowledge.ts upstream consumers migrated to `node.level ??
-// deriveAgentsMetaLayer(file)` in TASK-003. Single source of truth for
-// loading semantic:
-//
-//   - declared `node.level` (override on meta.json) takes priority
-//   - else `deriveAgentsMetaLayer(file)` derives L0/L1/L2 from file path depth
-//
-// Storage layer (team vs personal) is a SEPARATE concept tracked at
-// frontmatter (`knowledge_layer`) + mounted store provenance — never the
-// `layer` field on this schema (which was always L0/L1/L2 enum, not
-// team/personal). See
-// memory/project_l0_l1_l2_redesign_v21.md for v2.1 redesign that will
-// rename `level` to `load` and add explicit `scope: team|personal`.
+// v2.0.0-rc.38 Goal B (scaffold-teardown): the L0/L1/L2 `level` protocol axis
+// is fully retired — it was dead-write (populated into output but read by no
+// consumer). `relevance_scope` (broad/narrow on RuleDescription) is the single
+// live surfacing axis. The remaining legacy fields (`deps`, `priority`,
+// `topology_type`) stay path-derivable via `deriveAgentsMetaTopologyType` and
+// are stripped/passthrough'd from on-disk meta without re-key churn.
 const agentsMetaNodeBaseSchema = z.object({
   file: z.string(),
   content_ref: z.string().optional(),
@@ -128,15 +105,9 @@ const agentsMetaNodeBaseSchema = z.object({
   hash: z.string(),
   stable_id: z.string().optional(),
   identity_source: agentsIdentitySourceSchema.optional(),
-  activation: z
-    .object({
-      tier: z.enum(["always", "path", "description"]),
-      description: z.string().optional(),
-    })
-    .optional(),
   description: ruleDescriptionSchema.optional(),
   sections: z.array(z.string()).optional(),
-}).passthrough(); // v2.0-rc.5: L0/L1/L2 protocol fields (level/deps/topology_type/priority) removed from the declared schema but preserved through parse() via .passthrough(). v2.0.0-rc.30 TASK-003+TASK-004 closure: knowledge-sections.ts + get-knowledge.ts upstream consumers migrated to `node.level ?? deriveAgentsMetaLayer(file)`, `node.priority` kept as fallback for test fixture sort contracts; `node.layer` field removed entirely (was a dual-write of `level` with identical values in every observed workspace). Passthrough retained to load pre-rc.30 on-disk meta files without re-key churn; v2.1 redesign (see memory/project_l0_l1_l2_redesign_v21.md) may replace passthrough with strict schema once disk migration completes.
+}).passthrough(); // Legacy L0/L1/L2 protocol fields (level/deps/topology_type/priority/layer) are not declared here; .passthrough() preserves any still on disk so pre-rc.38 meta files load without re-key churn. The dead `level` axis was removed from AgentsMetaNode + output contracts in Goal B; `topology_type` derives from file path when a consumer needs it.
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {
   if (!isRecord(value) || typeof value.file !== "string") {
@@ -198,17 +169,12 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
   const stableId = node.stable_id ?? deriveAgentsMetaStableId(node.file);
   const identitySource = isKnowledgeEntry ? "declared" : deriveAgentsMetaIdentitySource(node);
 
-  // v2.0-rc.5: legacy L0/L1/L2 protocol fields (level/topology_type) are
-  // no longer declared in the Zod schema. They remain populated as
-  // transitional defaults via .passthrough() so knowledge-sections.ts and
-  // get-knowledge.ts (after TASK-003 migration: only as the optional
-  // `node.level ?? derive()` short-circuit) keep functioning.
-  // v2.0.0-rc.30 TASK-004 (B.1): `layer` field dropped — was a v1→v2 dual
-  // with `level` writing identical values to disk. Single source of truth:
-  // declared `node.level` (override) OR derive from file path.
+  // v2.0.0-rc.38 Goal B (scaffold-teardown): the dead L0/L1/L2 `level` axis is
+  // gone (was dead-write — populated but read by nothing). `topology_type`
+  // stays as a transitional default via .passthrough() (still derivable from
+  // file path; declared `node.topology_type` overrides).
   return {
     ...node,
-    level: node.level ?? deriveAgentsMetaLayer(node.file),
     topology_type: node.topology_type ?? deriveAgentsMetaTopologyType(node.file),
     stable_id: stableId,
     identity_source: identitySource,
@@ -295,42 +261,12 @@ export function deriveAgentsMetaIdentitySource(
   return node.stable_id !== undefined && node.stable_id !== derivedStableId ? "declared" : "derived";
 }
 
-export function deriveAgentsMetaLayer(file: string): AgentsLayer {
-  const normalized = normalizePath(file);
-
-  if (normalized === "AGENTS.md") {
-    return "L0";
-  }
-
-  if (hasCrossCuttingSegment(normalized)) {
-    return "L1";
-  }
-
-  const depthSource = getDepthSource(normalized);
-  const directoryDepth = getDirectoryDepth(depthSource);
-
-  if (directoryDepth === 0) {
-    return "L0";
-  }
-
-  if (directoryDepth <= 2) {
-    return "L1";
-  }
-
-  return "L2";
-}
-
 export function deriveAgentsMetaTopologyType(file: string): AgentsTopologyType {
   return hasCrossCuttingSegment(normalizePath(file)) ? "cross-cutting" : "mirror";
 }
 
 function getDepthSource(file: string): string {
   return file.startsWith(FABRIC_AGENTS_PREFIX) ? file.slice(FABRIC_AGENTS_PREFIX.length) : file;
-}
-
-function getDirectoryDepth(file: string): number {
-  const segments = file.split("/").filter(Boolean);
-  return Math.max(segments.length - 1, 0);
 }
 
 function hasCrossCuttingSegment(file: string): boolean {

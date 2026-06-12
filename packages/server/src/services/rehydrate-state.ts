@@ -180,9 +180,7 @@ function buildLedgerFallbackMeta(entries: StoredLedgerEntry[]): AgentsMeta {
         scope_glob: affectedPath,
         deps: [],
         priority: "medium",
-        // v2.0.0-rc.30 TASK-004: dropped `layer: "L2"` — use `level` only;
-        // AgentsMetaNode no longer carries `layer`.
-        level: "L2",
+        // v2.0.0-rc.38 Goal B: the dead L0/L1/L2 `level` axis was retired.
         topology_type: "mirror",
         hash: `replayed:${hashBase ?? entry.id}`,
       };

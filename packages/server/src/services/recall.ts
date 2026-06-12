@@ -63,7 +63,6 @@ export type RecallBodyTier = {
 export type RecallResult = PlanContextResult & {
   rules: Array<{
     stable_id: string;
-    level: "L0" | "L1" | "L2";
     path: string;
     body: string;
     // grill-report C-005 (body-tier): set when the body was sliced to keep the

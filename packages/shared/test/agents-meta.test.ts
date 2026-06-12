@@ -61,8 +61,6 @@ describe("ruleDescriptionIndexItemSchema", () => {
   it("uses stable_id as identity and keeps description neutral", () => {
     const parsed = ruleDescriptionIndexItemSchema.parse({
       stable_id: "ui-batch-rendering",
-      level: "L1",
-      required: false,
       description: {
         summary: "UI batch rendering rules",
         intent_clues: ["优化 drawcall"],
@@ -81,11 +79,10 @@ describe("ruleDescriptionIndexItemSchema", () => {
 });
 
 describe("agentsMetaNodeSchema", () => {
-  // v2.0-rc.5 A1: legacy `level`, `layer`, `deps`, `topology_type`, `priority`
-  // are no longer declared in the schema. `withDerivedAgentsMetaNodeDefaults`
-  // still populates `layer`/`level`/`topology_type` for transitional consumers
-  // (knowledge-sections / plan-context) via .passthrough(); TASK-007 drops
-  // those code paths.
+  // v2.0.0-rc.38 Goal B (scaffold-teardown): the dead L0/L1/L2 `level` axis and
+  // the unwired `activation` axis are retired. `topology_type` stays as a
+  // transitional derived default; legacy `deps`/`priority` survive via
+  // .passthrough() without being read.
   it("accepts registry-first nodes with content_ref and structured description", () => {
     const parsed = agentsMetaNodeSchema.parse({
       stable_id: "ui-batch-rendering",
@@ -94,8 +91,6 @@ describe("agentsMetaNodeSchema", () => {
       scope_glob: "assets/scripts/ui/**",
       deps: [],
       priority: "medium",
-      level: "L1",
-      // v2.0.0-rc.30 TASK-004: `layer: "L1"` removed (field dropped from schema).
       topology_type: "domain",
       hash: "sha256:test",
       description: {
@@ -110,13 +105,10 @@ describe("agentsMetaNodeSchema", () => {
     expect(parsed.stable_id).toBe("ui-batch-rendering");
     expect(parsed.content_ref).toBe(".fabric/knowledge/guidelines/ui-batch-rendering.md");
     expect(parsed.description?.summary).toBe("UI batch rendering rules");
-    // A1 transitional: legacy fields preserved via .passthrough() until A3.
-    // v2.0.0-rc.30 TASK-004: `layer` assertion removed (field dropped).
-    expect(parsed.level).toBe("L1");
     expect(parsed.topology_type).toBe("domain");
   });
 
-  it("accepts nodes without activation and preserves derived defaults", () => {
+  it("preserves derived topology default and carries no dead level axis", () => {
     const parsed = agentsMetaNodeSchema.parse({
       file: ".fabric/agents/packages/server/AGENTS.md",
       scope_glob: "packages/server/**",
@@ -125,45 +117,8 @@ describe("agentsMetaNodeSchema", () => {
       hash: "sha256:test",
     });
 
-    expect(parsed.activation).toBeUndefined();
-    // v2.0.0-rc.30 TASK-004: `layer` field dropped; loading semantic now on `level`.
-    expect(parsed.level).toBe("L1");
+    expect(parsed).not.toHaveProperty("level");
     expect(parsed.topology_type).toBe("mirror");
-  });
-
-  it("accepts optional activation tiers and preserves activation through derived defaults", () => {
-    const parsed = agentsMetaNodeSchema.parse({
-      file: ".fabric/agents/_cross/typescript.md",
-      scope_glob: "**/*.ts",
-      deps: [],
-      priority: "high",
-      hash: "sha256:cross",
-      activation: {
-        tier: "description",
-        description: "TypeScript rules available when the task is TS-related.",
-      },
-    });
-
-    expect(parsed.activation).toEqual({
-      tier: "description",
-      description: "TypeScript rules available when the task is TS-related.",
-    });
-    // v2.0.0-rc.30 TASK-004: `layer` field dropped; loading semantic now on `level`.
-    expect(parsed.level).toBe("L1");
-    expect(parsed.topology_type).toBe("cross-cutting");
-
-    expect(
-      withDerivedAgentsMetaNodeDefaults({
-        file: ".fabric/agents/packages/server/src/AGENTS.md",
-        scope_glob: "packages/server/src/**",
-        deps: [],
-        priority: "medium",
-        hash: "sha256:derived",
-        activation: {
-          tier: "always",
-        },
-      }).activation,
-    ).toEqual({ tier: "always" });
   });
 
   it("derives stable identity metadata when declarations are absent", () => {

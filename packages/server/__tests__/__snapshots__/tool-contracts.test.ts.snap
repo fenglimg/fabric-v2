@@ -1004,14 +1004,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
             "body": {
               "type": "string",
             },
-            "level": {
-              "enum": [
-                "L0",
-                "L1",
-                "L2",
-              ],
-              "type": "string",
-            },
             "path": {
               "type": "string",
             },
@@ -1021,7 +1013,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
           },
           "required": [
             "stable_id",
-            "level",
             "path",
             "body",
           ],

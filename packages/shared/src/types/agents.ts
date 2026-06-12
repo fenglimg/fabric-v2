@@ -1,8 +1,5 @@
-export type AgentsLayer = "L0" | "L1" | "L2";
-
 export type AgentsTopologyType = "mirror" | "cross-cutting" | "domain" | "local" | "global";
 
-export type AgentsActivationTier = "always" | "path" | "description";
 export type AgentsIdentitySource = "declared" | "derived";
 
 export interface RuleDescription {
@@ -55,11 +52,6 @@ export interface RuleDescriptionIndexItem {
   description: RuleDescription;
 }
 
-export interface AgentsMetaNodeActivation {
-  tier: AgentsActivationTier;
-  description?: string;
-}
-
 export interface AgentsMetaNode {
   file: string;
   content_ref?: string;
@@ -67,20 +59,17 @@ export interface AgentsMetaNode {
   hash: string;
   stable_id?: string;
   identity_source?: AgentsIdentitySource;
-  activation?: AgentsMetaNodeActivation;
   description?: RuleDescription;
   sections?: string[];
-  // v2.0-rc.5 A1: legacy L0/L1/L2 protocol fields retired from the Zod
-  // schema but kept here as optionals for TASK-007 transitional consumers.
-  // v2.0.0-rc.30 TASK-004 (B.1): `layer` field dropped — was a v1→v2 dual
-  // with `level` (disk wrote both, values were identical "L1"/"L1" in every
-  // observed workspace). Single source of truth = `level` (declared optional)
-  // OR derive from file path via `deriveAgentsMetaLayer` when unset.
-  // Consumers should derive these via `deriveAgentsMetaLayer` /
-  // `deriveAgentsMetaTopologyType` rather than reading them off the node.
+  // v2.0-rc.5 A1: legacy protocol fields retired from the Zod schema but kept
+  // here as optionals for transitional consumers / on-disk back-compat.
+  // v2.0.0-rc.38 (Goal B scaffold-teardown): the dead L0/L1/L2 `level` axis was
+  // removed entirely (dead-write — populated into output but read by nothing);
+  // `relevance_scope` (broad/narrow on RuleDescription) is the single live
+  // surfacing axis. `topology_type` derives from file path via
+  // `deriveAgentsMetaTopologyType` rather than being read off the node.
   deps?: string[];
   priority?: "high" | "medium" | "low";
-  level?: AgentsLayer;
   topology_type?: AgentsTopologyType;
 }
 

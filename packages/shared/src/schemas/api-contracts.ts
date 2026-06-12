@@ -326,12 +326,12 @@ export const knowledgeSectionsOutputSchema = z.object({
   // v2.0.0-rc.38 UX-13 (D-MCP step-2 audit): the deprecated `precedence`
   // L2/L1/L0 tuple (flagged "removed in rc.24" but still emitted) is gone — it
   // was a constant 3-string field on every response read by no production
-  // consumer. Use rules[].level for ordering.
+  // consumer. v2.0.0-rc.38 Goal B: the dead L0/L1/L2 `level` axis was retired
+  // too (dead-write — no consumer ordered by it).
   selected_stable_ids: z.array(z.string()),
   rules: z.array(
     z.object({
       stable_id: z.string(),
-      level: z.enum(["L0", "L1", "L2"]),
       path: z.string(),
       // v2.0.0-rc.23 TASK-013 (F8b): replaced the legacy
       // `sections: Record<string,string>` (keyed by the 4-element A-set enum)
@@ -482,7 +482,6 @@ export const recallOutputSchema = z.object({
   rules: z.array(
     z.object({
       stable_id: z.string(),
-      level: z.enum(["L0", "L1", "L2"]),
       path: z.string(),
       body: z.string(),
       // grill-report C-005 (body-tier): set when this body was sliced to keep the

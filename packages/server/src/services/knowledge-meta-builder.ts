@@ -7,7 +7,6 @@ import {
   KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION,
   agentsMetaSchema,
   defaultAgentsMetaCounters,
-  deriveAgentsMetaLayer,
   deriveAgentsMetaStableId,
   deriveAgentsMetaTopologyType,
   isKnowledgeStableId,
@@ -18,7 +17,6 @@ import {
   StableIdSchema,
   parseKnowledgeId,
   type AgentsIdentitySource,
-  type AgentsLayer,
   type AgentsMeta,
   type AgentsTopologyType,
   type KnowledgeType,
@@ -261,10 +259,6 @@ export async function computeKnowledgeTestIndex(
     links: links.sort(compareRuleTestEntries),
     orphan_annotations: orphanAnnotations.sort(compareRuleTestEntries),
   };
-}
-
-export function deriveKnowledgeMetaLayer(relativePath: string): AgentsLayer {
-  return deriveAgentsMetaLayer(toAgentsCompatiblePath(relativePath));
 }
 
 export function deriveKnowledgeMetaTopologyType(relativePath: string): AgentsTopologyType {
@@ -610,44 +604,6 @@ function indexExistingNodesByContentRef(existingMeta: AgentsMeta | undefined): M
   }
 
   return byContentRef;
-}
-
-function deriveNodeId(file: string): string {
-  // v2.0: no special-cased "L0" node for `.fabric/bootstrap/README.md` —
-  // knowledge entries (KP-/KT-...) and legacy rules use their derived ids.
-
-  const layer = deriveKnowledgeMetaLayer(file);
-  const relativeStem = getRuleRelativeStem(file);
-
-  // v2.0: distinguish personal vs team knowledge entries that share the same
-  // subdir/filename (e.g. team decisions/auth.md and personal decisions/auth.md
-  // both stem to "decisions/auth") so the node-id remains unique per root.
-  if (file.startsWith(PERSONAL_CONTENT_REF_PREFIX)) {
-    return `${layer}/personal/${relativeStem}`;
-  }
-  if (file.startsWith(TEAM_CONTENT_REF_PREFIX)) {
-    return `${layer}/team/${relativeStem}`;
-  }
-
-  return `${layer}/${relativeStem}`;
-}
-
-function createDefaultNodeMeta(contentRef: string): NodeMeta {
-  const layer = deriveKnowledgeMetaLayer(contentRef);
-  const topologyType = deriveKnowledgeMetaTopologyType(contentRef);
-
-  return {
-    file: contentRef,
-    content_ref: contentRef,
-    scope_glob: deriveScopeGlob(contentRef),
-    deps: layer === "L0" ? [] : ["L0"],
-    priority: layer === "L0" ? "high" : "medium",
-    // v2.0.0-rc.30 TASK-004: dropped duplicate `layer:` write — was always
-    // identical to `level:`; AgentsMetaNode no longer carries the field.
-    level: layer,
-    topology_type: topologyType,
-    hash: "",
-  };
 }
 
 function deriveScopeGlob(contentRef: string): string {

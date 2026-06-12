@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 
-import { type AgentsLayer } from "@fenglimg/fabric-shared";
 import { McpToolError } from "@fenglimg/fabric-shared/errors";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
@@ -53,7 +52,6 @@ export type KnowledgeSectionResult = {
   selected_stable_ids: string[];
   rules: Array<{
     stable_id: string;
-    level: AgentsLayer;
     path: string;
     body: string;
   }>;
@@ -163,7 +161,6 @@ export async function getKnowledgeSections(
     }
     rules.push({
       stable_id: stableId,
-      level: "L1",
       path: ref.file,
       body: extractBody(content),
     });
