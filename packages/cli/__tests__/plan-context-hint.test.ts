@@ -299,7 +299,6 @@ describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/�
       stable_id: "KT-DEC-0999",
       level: "L2",
       required: false,
-      selectable: false,
       description: {
         summary: "no scope item",
         intent_clues: [],

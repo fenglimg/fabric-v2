@@ -63,7 +63,6 @@ describe("ruleDescriptionIndexItemSchema", () => {
       stable_id: "ui-batch-rendering",
       level: "L1",
       required: false,
-      selectable: true,
       description: {
         summary: "UI batch rendering rules",
         intent_clues: ["优化 drawcall"],

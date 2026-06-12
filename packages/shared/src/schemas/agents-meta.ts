@@ -93,7 +93,6 @@ export const ruleDescriptionIndexItemSchema = z
     stable_id: z.string(),
     level: agentsLayerSchema,
     required: z.boolean(),
-    selectable: z.boolean(),
     description: ruleDescriptionSchema,
   })
   .strict();
