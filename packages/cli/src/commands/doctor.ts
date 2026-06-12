@@ -667,7 +667,16 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: 
   // print them as a one-line each header BEFORE the per-check enumeration.
   // Empty TL;DR (everything OK) just emits a single green line.
   renderTldrHeader(report, dt, verbose);
+  // doctor-decruft W3 (G-QUIET): default output prints only actionable checks
+  // (status warn/error); the full per-check enumeration — including every
+  // passing/info row — is gated behind --verbose. The TL;DR header above
+  // already surfaces the top issues, and the fixable/manual/warning sections
+  // below list every actionable issue in full, so the default surface stays
+  // signal-only instead of scrolling ~30 OK rows.
   for (const check of report.checks) {
+    if (!verbose && check.status === "ok") {
+      continue;
+    }
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
   const opts = { verbose, dt };

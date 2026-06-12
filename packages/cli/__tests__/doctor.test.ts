@@ -110,6 +110,74 @@ describe("doctor command", () => {
     expect(out).toContain("[info] [personal] store is local-only");
   });
 
+  // doctor-decruft W3 (G-QUIET): default human output prints only actionable
+  // (status warn/error) checks; the full per-check enumeration — including
+  // every passing/info row — is gated behind --verbose. Mixed-status report
+  // pins both directions so the quiet default can never silently regress.
+  it("G-QUIET: default output hides passing check rows; --verbose lists them", async () => {
+    const mixedReport = {
+      status: "warn" as const,
+      checks: [
+        { name: "Bootstrap anchor", status: "ok" as const, message: "anchor present" },
+        { name: "Knowledge draft backlog", status: "ok" as const, message: "no backlog" },
+        { name: "Events ledger health", status: "warn" as const, message: "metrics stalled" },
+      ],
+      fixable_errors: [] as Array<{ code: string; name: string; message: string; path?: string }>,
+      manual_errors: [] as Array<{ code: string; name: string; message: string; path?: string }>,
+      warnings: [{ code: "events_jsonl_health_degraded", name: "Events ledger health", message: "metrics stalled" }],
+      infos: [] as Array<{ code: string; name: string; message: string; path?: string }>,
+      summary: {
+        target: "/tmp/fabric-target",
+        framework: { kind: "vite", version: "^7.0.0", subkind: "vite-application" },
+        entryPoints: [],
+        metaRevision: "sha256:x",
+        computedMetaRevision: null,
+        ruleCount: 1,
+        eventLedgerPath: "/tmp/fabric-target/.fabric/events.jsonl",
+        fixableErrorCount: 0,
+        manualErrorCount: 0,
+        warningCount: 1,
+        targetFiles: {},
+      },
+    };
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
+      runDoctorReport: vi.fn().mockResolvedValue(mixedReport),
+      runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
+    }));
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+
+    // Default (quiet): passing rows hidden, the warn row still printed.
+    const quiet = captureStdout();
+    try {
+      await doctorCommand.run?.({
+        args: { target: "/tmp/fabric-target", json: false, strict: false, fix: false },
+      } as never);
+    } finally {
+      quiet.restore();
+    }
+    const quietOut = quiet.lines.join("\n");
+    expect(quietOut).not.toContain("[ok] Bootstrap anchor");
+    expect(quietOut).not.toContain("[ok] Knowledge draft backlog");
+    expect(quietOut).toContain("[warn] Events ledger health");
+
+    // --verbose: full per-check enumeration including the passing rows.
+    const loud = captureStdout();
+    try {
+      await doctorCommand.run?.({
+        args: { target: "/tmp/fabric-target", json: false, strict: false, fix: false, verbose: true },
+      } as never);
+    } finally {
+      loud.restore();
+    }
+    const loudOut = loud.lines.join("\n");
+    expect(loudOut).toContain("[ok] Bootstrap anchor");
+    expect(loudOut).toContain("[ok] Knowledge draft backlog");
+    expect(loudOut).toContain("[warn] Events ledger health");
+  });
+
   it("--debug-bundle emits a redacted bundle (S40, no plaintext secrets)", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
