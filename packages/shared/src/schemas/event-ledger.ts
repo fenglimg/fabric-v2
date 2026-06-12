@@ -144,13 +144,6 @@ export const eventLedgerTruncatedEventSchema = z.object({
   corrupted_path: z.string(),
 });
 
-export const mcpConfigMigratedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("mcp_config_migrated"),
-  source: z.literal("doctor_fix"),
-  removed_from: z.string(),
-});
-
 export const metaReconciledOnStartupEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("meta_reconciled_on_startup"),
@@ -876,7 +869,6 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   reapplyCompletedEventSchema,
   installDiffAppliedEventSchema,
   eventLedgerTruncatedEventSchema,
-  mcpConfigMigratedEventSchema,
   metaReconciledOnStartupEventSchema,
   metaReconciledEventSchema,
   claudeSkillPathMigratedEventSchema,
@@ -973,7 +965,6 @@ export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
 export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
 export type InstallDiffAppliedEvent = z.infer<typeof installDiffAppliedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
-export type McpConfigMigratedEvent = z.infer<typeof mcpConfigMigratedEventSchema>;
 export type MetaReconciledOnStartupEvent = z.infer<typeof metaReconciledOnStartupEventSchema>;
 export type MetaReconciledEvent = z.infer<typeof metaReconciledEventSchema>;
 export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigratedEventSchema>;
@@ -1034,7 +1025,6 @@ export type EventLedgerEvent =
   | ReapplyCompletedEvent
   | InstallDiffAppliedEvent
   | EventLedgerTruncatedEvent
-  | McpConfigMigratedEvent
   | MetaReconciledOnStartupEvent
   | MetaReconciledEvent
   | ClaudeSkillPathMigratedEvent

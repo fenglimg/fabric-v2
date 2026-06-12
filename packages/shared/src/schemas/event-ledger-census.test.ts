@@ -73,7 +73,6 @@ describe("event_type census", () => {
         "knowledge_slug_renamed",
         "knowledge_unarchived",
         "llm_judge_run",
-        "mcp_config_migrated",
         "mcp_event",
         "mcp_stdio_trace",
         "meta_reconciled",

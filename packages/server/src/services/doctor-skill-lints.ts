@@ -5,11 +5,6 @@ import type { Translator } from "@fenglimg/fabric-shared";
 
 import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor.js";
 
-export type McpConfigInWrongFileInspection = {
-  hasWrongEntry: boolean;
-  settingsPath: string;
-};
-
 export type SkillRefMirrorInspection =
   | { status: "ok" }
   | {
@@ -66,29 +61,6 @@ function issueCheck(
     actionHint,
     audience,
   };
-}
-
-export async function inspectMcpConfigInWrongFile(projectRoot: string): Promise<McpConfigInWrongFileInspection> {
-  const settingsPath = join(projectRoot, ".claude", "settings.json");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(settingsPath, "utf8")) as unknown;
-  } catch {
-    return { hasWrongEntry: false, settingsPath };
-  }
-
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { hasWrongEntry: false, settingsPath };
-  }
-
-  const settings = parsed as Record<string, unknown>;
-  const mcpServers = settings.mcpServers;
-  if (mcpServers === null || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
-    return { hasWrongEntry: false, settingsPath };
-  }
-
-  const hasWrongEntry = "fabric" in (mcpServers as Record<string, unknown>);
-  return { hasWrongEntry, settingsPath };
 }
 
 async function listMarkdownFiles(dir: string): Promise<string[] | null> {
@@ -268,27 +240,6 @@ function extractSkillFrontmatterLines(
     out.push({ line, lineNumber: i + 1 });
   }
   return null;
-}
-
-export function createMcpConfigInWrongFileCheck(
-  t: Translator,
-  inspection: McpConfigInWrongFileInspection,
-): DoctorCheck {
-  if (inspection.hasWrongEntry) {
-    return issueCheck(
-      t("doctor.check.mcp_config_in_wrong_file.name"),
-      "error",
-      "fixable_error",
-      "mcp_config_in_wrong_file",
-      t("doctor.check.mcp_config_in_wrong_file.message"),
-      t("doctor.check.mcp_config_in_wrong_file.remediation"),
-    );
-  }
-
-  return okCheck(
-    t("doctor.check.mcp_config_in_wrong_file.name"),
-    t("doctor.check.mcp_config_in_wrong_file.ok"),
-  );
 }
 
 export function createSkillRefMirrorCheck(t: Translator, inspection: SkillRefMirrorInspection): DoctorCheck {

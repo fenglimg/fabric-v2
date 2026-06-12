@@ -85,12 +85,10 @@ import {
   type EventsJsonlGatesReport,
 } from "./events-jsonl-gates.js";
 import {
-  createMcpConfigInWrongFileCheck,
   createSkillDescriptionCheck,
   createSkillMdYamlInvalidCheck,
   createSkillRefMirrorCheck,
   createSkillTokenBudgetCheck,
-  inspectMcpConfigInWrongFile,
   inspectSkillDescription,
   inspectSkillMdYamlInvalid,
   inspectSkillRefMirror,
@@ -980,7 +978,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     bootstrapAnchor,
     l1BootstrapSnapshotDrift,
     l2ManagedBlockDrift,
-    mcpConfigInWrongFile,
     skillRefMirror,
     skillTokenBudget,
     skillDescription,
@@ -1001,7 +998,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // Promise.all block as the other bootstrap inspections.
     inspectL1BootstrapSnapshotDrift(projectRoot),
     inspectL2ManagedBlockDrift(projectRoot),
-    inspectMcpConfigInWrongFile(projectRoot),
     inspectSkillRefMirror(projectRoot),
     inspectSkillTokenBudget(projectRoot),
     inspectSkillDescription(projectRoot),
@@ -1211,7 +1207,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createDraftAutoPromoteCheck(t, draftAutoPromote),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
     createDriftUnconsumedCheck(t, driftUnconsumed),
-    createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createStableIdCollisionCheck(t, stableIdCollision),
     // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
     // replaced by the store-aware `store_counter_drift` (per-store committed
@@ -1519,11 +1514,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     await flushMetrics(projectRoot);
   } catch {
     // best-effort hygiene — never fail --fix on a metrics flush hiccup.
-  }
-
-  if (before.fixable_errors.some((issue) => issue.code === "mcp_config_in_wrong_file")) {
-    await fixMcpConfigInWrongFile(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "mcp_config_in_wrong_file"));
   }
 
   // rc.23 TASK-010 (e): stale .fabric/.serve.lock cleanup. The advisory rides
@@ -4461,48 +4451,6 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
       await atomicWriteText(claudeMdPath, updated);
     }
   }
-}
-
-async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
-  const settingsPath = join(projectRoot, ".claude", "settings.json");
-  if (!(await pathExists(settingsPath))) {
-    return;
-  }
-
-  let settings: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(await readFile(settingsPath, "utf8")) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return;
-    }
-    settings = parsed as Record<string, unknown>;
-  } catch {
-    return;
-  }
-
-  const mcpServers = settings.mcpServers;
-  if (mcpServers === null || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
-    return;
-  }
-
-  // Remove the fabric entry from mcpServers
-  const { fabric: _removed, ...remainingServers } = mcpServers as Record<string, unknown>;
-  const cleaned: Record<string, unknown> = { ...settings };
-
-  if (Object.keys(remainingServers).length === 0) {
-    delete cleaned.mcpServers;
-  } else {
-    cleaned.mcpServers = remainingServers;
-  }
-
-  await atomicWriteJson(settingsPath, cleaned, { indent: 2 });
-
-  // Append a ledger event documenting the migration
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "mcp_config_migrated",
-    source: "doctor_fix",
-    removed_from: ".claude/settings.json",
-  });
 }
 
 // v2.2 W5 R4 (agents.meta decolo): `fixCounterDesync` removed — store counters floor via fixStoreCounters (doctor-store-counters.ts).
