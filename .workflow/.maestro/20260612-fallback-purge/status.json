@@ -65,7 +65,7 @@
     { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 co-location 死簇(knowledge-meta-builder 死函数)+ 连带 fixture/测试", "done_when": "删 buildKnowledgeMeta/computeKnowledgeBasedAgentsMeta/computeKnowledgeTestIndex/loadKbIdTypeMap/deriveKnowledgeMetaTopologyType/isSameKnowledgeTestIndex/stableStringify/__*Cache* + isForbiddenCrossLayerEdge;保留 deriveRuleIdentity/extractRuleDescription;processed writeKnowledgeMeta fixture(W0-2 耦合);tsc+test 绿",
       "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "knip + server test", "evidence": null, "verified_at": null } },
+      "verification": { "method": "deterministic", "verifier": "knip + server test", "evidence": "PRE-MAPPED(未删): audit零caller声明 CONFIRMED — buildKnowledgeMeta/loadKbIdTypeMap 等的全部 grep 命中皆注释或定义本身, 零真实调用点. 关键: buildKnowledgeMeta(L125)+writeKnowledgeMeta(L132) 已是 no-op(返回 createRetiredKnowledgeMetaBuildResult, store-only cutover 早完成), 不再调 compute*/stableStringify/derive*/loadKbIdTypeMap/__Cache* → 这些 helper 纯死重, 删不断 no-op. writeKnowledgeMeta 作 fixture 现 no-op, §C fixture 调用实际空搭. deriveRuleIdentity/extractRuleDescription 仍 live(2/3 caller) 保留.", "verified_at": null } },
     { "id": "W1-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "摘死 type + 精验 computeExposedAndMutated", "done_when": "删 LockState(legacy-serve-lock-probe,文件保留)/ KnowledgeMetaBuildSource 死 type;精验 computeExposedAndMutated 是否死,死则删",
       "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
