@@ -83,6 +83,12 @@
       "ship_criteria_alignment": ["G-VOCAB"], "alignment_strength": "direct", "status": "open",
       "verification": { "method": "deterministic", "verifier": "grep + shared build + test", "evidence": null, "verified_at": null } }
   ],
+  "sequencing_decision": {
+    "at": "2026-06-12", "decided_by": "user",
+    "decision": "选项A: 先推进不依赖 skip 的 W2(迁移码删除)+ W3(cite-tag vocab shim 删除)+ 能解耦的 W1 部分, 把这些 gate 推绿; W0-2 ~90 test 复活 + 依赖它的 W1 writeKnowledgeMeta 删除作为独立聚焦相位另起(逐 check family 增量)。",
+    "next_priority": ["W2-1", "W2-2", "W3-1", "W1-2(死type, 不依赖skip)"],
+    "deferred_focused_phase": ["W0-2 skip 复活 ~90 test", "W1-1 writeKnowledgeMeta+死簇删除(阻塞于 W0-2)"]
+  },
   "needs_adjudication": [
     { "id": "ADJ-1", "subject": "半成品 sync 推送(run-sync.ts defaultPush/defaultCommitDirty/Git* types 未接线): 删 / 接完 / 留", "adjudication_reason": "out-of-authority", "round": 1 },
     { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1 },

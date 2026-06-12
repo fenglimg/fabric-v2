@@ -41,5 +41,20 @@
 - ADJ-2 doctor 内部 stable/endorsed rename:做/不做
 - ADJ-3 bootstrap-canonical byte-locked zh-CN AGENTS.md(en 用户拿中文):彻底 i18n 化需推翻 byte-lock 契约,做/不做
 
-## Resume
-新会话续跑:`cd /Users/wepie/Desktop/personal-projects/pcf-fallback-purge` → 读本文件 + 两份 spec → `/goal-mode continue` 推进下一步(单步:推进一 task → verification → 原子更新 status.json → 重检 gate)。
+## Resume(2026-06-12 决策后的执行顺序)
+用户拍板**选项 A**:先推进不依赖 skip 的独立 gate,skip 复活单列。
+
+**下一相位优先级(新会话从这里接)**:
+1. **W2-1** 删 Species A 迁移码(stripLegacyFabricKnowledgeBaseSection / .cursor 扁平迁移 / MCP TOML [mcp.servers.*] 归一化)→ G-MIGRATION
+2. **W2-2** 删 config maturity 别名(orphan_demote_stable_days/endorsed_days,留 doctor 内部 stable/endorsed)→ G-MIGRATION
+3. **W3-1** 删 cite-tag LEGACY_CITE_TAG_REMAP + 全 tendril + rebuild shared dist + 同步测试 → G-VOCAB
+4. **W1-2** 摘死 type(LockState/KnowledgeMetaBuildSource)+ 精验 computeExposedAndMutated(不依赖 skip 的部分)→ G-DEADCODE
+- 每步:先 grep 验死 → census 闸兜底 → 改 → tsc + 全量测试绿 → git commit → 原子更新 status.json → 重检 gate。
+
+**已 defer 到独立聚焦相位**(另起 goal 或专注窗口):
+- **W0-2** ~90 skip 复活(逐 check family 重写 store fixture,防 false-green;见 `.scratchpad/w0-2-skip-triage.md`)
+- **W1-1** writeKnowledgeMeta + co-location 死簇删除(阻塞于 W0-2 解 skip 后才能删 fixture)
+
+**待裁决队列(非阻塞)**:ADJ-1 sync 推送 · ADJ-2 stable/endorsed rename · ADJ-3 bootstrap byte-lock i18n · ADJ-4 isForbiddenCrossLayerEdge 隐私守卫
+
+续跑:`cd /Users/wepie/Desktop/personal-projects/pcf-fallback-purge` → 读本文件 + 两份 spec → `/goal-mode continue`。
