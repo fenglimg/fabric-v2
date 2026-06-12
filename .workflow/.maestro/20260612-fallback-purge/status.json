@@ -30,9 +30,9 @@
     ]
   },
   "ship_criteria": [
-    { "name": "G-BASELINE", "target": "test 0 fail & 0 skip", "actual": "14 fail / 105 skip",
+    { "name": "G-BASELINE", "target": "test 0 fail & 0 skip", "actual": "0 fail / 99 skip (cli 14→0 via i18n hermeticity+wiring @bc451de; 99 server skip 待 W0-2)",
       "verifier_cmd": "pnpm -r --if-present test 2>&1 | grep -iE 'failed|skipped' | tail -5",
-      "verified_at": null },
+      "verified_at": "2026-06-12" },
     { "name": "G-INVARIANT", "target": "census 不变式闸建立且全绿(event_type/i18n/layer-type/MCP)", "actual": null,
       "verifier_cmd": "PROBE: 新增 census 测试文件后填实际 vitest 命令",
       "verified_at": null },
@@ -51,9 +51,9 @@
   ],
   "task_decomposition": [
     { "id": "W0-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
-      "subject": "14 红(cli 语言漂移)seed regen + diff 审计", "done_when": "regen seed 后 diff 旧 seed,逐行确认每处变化被 language-first 重构解释(解释不了=真bug修);cli 测试转绿",
-      "ship_criteria_alignment": ["G-BASELINE"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "pnpm --filter @fenglimg/fabric-cli test", "evidence": null, "verified_at": null } },
+      "subject": "14 红(cli 语言漂移)→ 真根因=测试 locale 非 hermetic + install pipeline 硬编码 CJK 绕过 t()", "done_when": "regen seed 后 diff 旧 seed,逐行确认每处变化被 language-first 重构解释(解释不了=真bug修);cli 测试转绿",
+      "ship_criteria_alignment": ["G-BASELINE"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "pnpm --filter @fenglimg/fabric-cli test", "evidence": "cli 1050/1050 (0 fail 0 skip), 连跑2次确定性; 根因非 seed 陈旧而是 ① resolveGlobalRoot(FABRIC_HOME??homedir) 泄漏本机 ~/.fabric language=zh-CN ② detectNodeLocale 泄漏 $LANG=zh_CN → 14 测试 dev-only 红; 修=vitest.setup.ts 每文件隔离 FABRIC_HOME+pin FAB_LANG=en; 连带接线 pipeline.ts/install-onboarding.ts 硬编码 CJK→t(); i18n snapshot regen(计数漂移可解释); parity 核 en=zh=933 完美", "verified_at": "2026-06-12" } },
     { "id": "W0-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "105 skip 逐个 triage(复活 or 随死代码删)", "done_when": "每个 it.skip/skipped 判定: 测 live 行为→复活改 fixture; 测 retired check→随死代码删; skip 计数归零",
       "ship_criteria_alignment": ["G-BASELINE", "G-DEADCODE"], "alignment_strength": "direct", "status": "open",
@@ -85,19 +85,23 @@
   ],
   "needs_adjudication": [
     { "id": "ADJ-1", "subject": "半成品 sync 推送(run-sync.ts defaultPush/defaultCommitDirty/Git* types 未接线): 删 / 接完 / 留", "adjudication_reason": "out-of-authority", "round": 1 },
-    { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1 }
+    { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1 },
+    { "id": "ADJ-3", "subject": "bootstrap-canonical.ts BOOTSTRAP_CANONICAL 是 byte-locked zh-CN-hybrid AGENTS.md 模板(rc.19 locked clarification 3 + doctor drift 检测 byte-identical 契约)→ en 用户拿到中文 AGENTS.md。彻底 i18n 化需双 canonical body + drift 检测按 locale 选,推翻 byte-lock 决策。做/不做", "adjudication_reason": "out-of-authority", "round": 1 }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260612-fallback-purge/goal-checklist.md",
   "status": "running",
   "loop_exit_status": null,
   "audit_rounds": [
     { "round": 1, "status": "running", "round_task_ceiling": 12, "round_task_actual": 8,
-      "convergence_status": "converging", "newly_discovered_this_round": [], "carried_in": [],
+      "convergence_status": "converging",
+      "newly_discovered_this_round": ["i18n-wiring-gap: install pipeline(STAGE_LABELS/PLAIN_*/intro)+install-onboarding 硬编码 CJK 绕过 t() → 已并入 W0-1 修复", "ADJ-3: bootstrap-canonical byte-locked zh-CN AGENTS.md(en 用户拿中文)→ 设计裁决"],
+      "carried_in": [],
       "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
       "drift_checks": [],
       "completion_gate": { "task_gate": {}, "goal_gate": { "blocking": true }, "drift_gate": {} } }
   ],
   "done_log": [
-    { "id": "W1-pre", "subject": "删 recall.ts 死 re-export extractBody", "commit": "d7eba65", "at": "2026-06-12" }
+    { "id": "W1-pre", "subject": "删 recall.ts 死 re-export extractBody", "commit": "d7eba65", "at": "2026-06-12" },
+    { "id": "W0-1", "subject": "i18n install pipeline 硬编码 CJK 接入 t() + cli 测试 locale hermeticity(14 红→0)", "commit": "bc451de", "at": "2026-06-12" }
   ]
 }

@@ -22,8 +22,8 @@
 
 ## 任务(已知面,live-ledger 可增长)
 **Wave 0 基线+安全闸**
-- [ ] W0-1 14红 seed regen + diff 审计 → G-BASELINE
-- [ ] W0-2 105 skip 逐个 triage(复活/随死代码删)→ G-BASELINE+G-DEADCODE
+- [x] W0-1 14红 → 真根因=测试非hermetic+pipeline硬编码CJK绕过t();修=FABRIC_HOME隔离+pin FAB_LANG+接线t() (bc451de) → G-BASELINE
+- [ ] W0-2 99 server skip 逐个 triage(复活/随死代码删)→ G-BASELINE+G-DEADCODE
 - [ ] W0-3 建 census 不变式闸 → G-INVARIANT
 **Wave 1 死代码外科删除**(与 W0-2 耦合)
 - [ ] W1-1 删 co-location 死簇 + 连带 fixture(保留 deriveRuleIdentity/extractRuleDescription)→ G-DEADCODE
@@ -39,6 +39,7 @@
 ## 待裁决(round 末批量浮,非阻塞)
 - ADJ-1 半成品 sync 推送:删/接完/留
 - ADJ-2 doctor 内部 stable/endorsed rename:做/不做
+- ADJ-3 bootstrap-canonical byte-locked zh-CN AGENTS.md(en 用户拿中文):彻底 i18n 化需推翻 byte-lock 契约,做/不做
 
 ## Resume
 新会话续跑:`cd /Users/wepie/Desktop/personal-projects/pcf-fallback-purge` → 读本文件 + 两份 spec → `/goal-mode continue` 推进下一步(单步:推进一 task → verification → 原子更新 status.json → 重检 gate)。
