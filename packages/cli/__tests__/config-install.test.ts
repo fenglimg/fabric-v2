@@ -66,40 +66,6 @@ args = ["/new/server.js"]
 `,
     );
   });
-
-  it("migrates legacy mcp.servers.fabric into mcp_servers.fabric", async () => {
-    const { configPath } = createTempConfig();
-    writeFileSync(
-      configPath,
-      `model = "gpt-5.4"
-
-[mcp.servers.fabric]
-command = "/old/node"
-args = ["/old/server.js"]
-
-[notice]
-hide_full_access_warning = true
-`,
-      "utf8",
-    );
-
-    const writer = new CodexTOMLConfigWriter(configPath);
-    await writer.write("/replacement/server.js", process.cwd());
-
-    const written = readFileSync(configPath, "utf8");
-    expect(written).not.toContain("[mcp.servers.fabric]");
-    expect(written).toBe(
-      `model = "gpt-5.4"
-
-[notice]
-hide_full_access_warning = true
-
-[mcp_servers.fabric]
-command = ${JSON.stringify(process.execPath)}
-args = ["/replacement/server.js"]
-`,
-    );
-  });
 });
 
 function createTempConfig(): { root: string; configPath: string } {

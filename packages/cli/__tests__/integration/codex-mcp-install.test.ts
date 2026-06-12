@@ -17,9 +17,6 @@
  *   2. Section preservation — every original named section + top-level key
  *      survives the rewrite (substring assertions per section).
  *   3. Idempotency — invoking `write()` twice yields byte-equal output.
- *   4. Legacy migration — a fixture containing `[mcp.servers.fabric]` (legacy
- *      dot-spelling, the leading hypothesis for the original Bug Y report)
- *      gets migrated cleanly to `[mcp_servers.fabric]` with no duplicate.
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -172,32 +169,5 @@ startup_timeout_ms = 30000
     expect(written).toContain("startup_timeout_ms = 30000");
     // Still exactly one fabric block.
     expect(written.match(/\[mcp_servers\.fabric\]/g) ?? []).toHaveLength(1);
-  });
-
-  it("migrates legacy [mcp.servers.fabric] to [mcp_servers.fabric] without duplicates", async () => {
-    const { configPath } = createTempConfig();
-    // Real-world fixture + a stale legacy block (the leading hypothesis for
-    // the original Bug Y report — see _codex-mcp-diagnosis.md root-cause #1).
-    const legacyFixture = `${REAL_WORLD_CODEX_FIXTURE}
-[mcp.servers.fabric]
-command = "/old/node"
-args = ["/old/server.js"]
-`;
-    writeFileSync(configPath, legacyFixture, "utf8");
-
-    const writer = new CodexTOMLConfigWriter(configPath);
-    await writer.write("/new/server.js", process.cwd());
-
-    const written = readFileSync(configPath, "utf8");
-    expect(written).not.toContain("[mcp.servers.fabric]");
-    expect(written).toContain("[mcp_servers.fabric]");
-    expect(written).toContain('args = ["/new/server.js"]');
-    // Original sections must still be intact post-migration.
-    for (const section of REAL_WORLD_SECTIONS) {
-      expect(written, `expected to preserve section ${section}`).toContain(section);
-    }
-    // Exactly one fabric block (no legacy + current duplicate).
-    const occurrences = written.match(/\[mcp_servers\.fabric\]/g) ?? [];
-    expect(occurrences).toHaveLength(1);
   });
 });

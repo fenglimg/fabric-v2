@@ -92,10 +92,9 @@ function trimTrailingBlankLines(value: string): string {
 }
 
 /**
- * Strip any `[mcp_servers.<serverName>]` (and the legacy `[mcp.servers.<serverName>]`)
- * blocks from a Codex TOML config string. Returns the resulting TOML text and
- * whether a block was actually removed (used by callers to distinguish
- * `removed` vs `skipped` results).
+ * Strip any `[mcp_servers.<serverName>]` block from a Codex TOML config string.
+ * Returns the resulting TOML text and whether a block was actually removed
+ * (used by callers to distinguish `removed` vs `skipped` results).
  *
  * Preserves all other content byte-for-byte aside from collapsing trailing
  * whitespace. Idempotent: invoking on a config that no longer contains the
@@ -107,17 +106,12 @@ function removeCodexServerBlock(
 ): { text: string; changed: boolean } {
   const normalized = rawConfig.replace(/\r\n/g, "\n");
   const escaped = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const legacyPattern = new RegExp(
-    String.raw`\n?\[mcp\.servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
-    "g",
-  );
   const currentPattern = new RegExp(
     String.raw`\n?\[mcp_servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
     "g",
   );
 
-  const withoutLegacy = normalized.replace(legacyPattern, "");
-  const withoutCurrent = withoutLegacy.replace(currentPattern, "");
+  const withoutCurrent = normalized.replace(currentPattern, "");
   const changed = withoutCurrent !== normalized;
   // Trim trailing whitespace only when something was removed — otherwise the
   // caller's check for "no change" stays byte-accurate against the original.
@@ -128,7 +122,6 @@ function removeCodexServerBlock(
 function upsertCodexServerBlock(rawConfig: string, serverName: string, serverEntry: ServerEntry): string {
   const normalized = rawConfig.replace(/\r\n/g, "\n");
   const escaped = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const legacyPattern = new RegExp(String.raw`\n?\[mcp\.servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`, "g");
   const currentPattern = new RegExp(
     String.raw`\n?\[mcp_servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
     "g",
@@ -136,8 +129,7 @@ function upsertCodexServerBlock(rawConfig: string, serverName: string, serverEnt
 
   // 升级项 a: capture the existing block (if any) BEFORE stripping it, so its
   // user-authored sibling keys (disabled, startup_timeout_ms, …) survive the
-  // re-serialize. Only the current-form block carries user keys worth keeping;
-  // the legacy `[mcp.servers.*]` form is migrated away wholesale.
+  // re-serialize.
   const existingMatch = normalized.match(currentPattern);
   const preservedUserLines =
     existingMatch !== null && existingMatch.length > 0
@@ -145,8 +137,7 @@ function upsertCodexServerBlock(rawConfig: string, serverName: string, serverEnt
       : [];
   const block = serializeCodexServerBlock(serverName, serverEntry, preservedUserLines);
 
-  const withoutLegacy = normalized.replace(legacyPattern, "");
-  const withoutExisting = withoutLegacy.replace(currentPattern, "");
+  const withoutExisting = normalized.replace(currentPattern, "");
   const trimmed = trimTrailingBlankLines(withoutExisting);
 
   if (trimmed.length === 0) {
