@@ -566,13 +566,11 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     ].join("\n");
     await writeFile(orphanPath, orphanFrontmatter, "utf8");
 
-    // First doctor run — store-cutover keeps the legacy fallback inert until
-    // it is rebuilt against read-set stores.
-    const first = await runDoctorReport(projectRoot);
-    const firstCheck = first.checks.find((c) => c.name === "Filesystem-edit fallback");
-    expect(firstCheck?.status).toBe("ok");
-    expect(firstCheck?.kind).toBeUndefined();
-    expect(firstCheck?.message).toContain("No orphan canonical knowledge entries");
+    // First doctor run — store-cutover keeps the legacy fallback inert (the
+    // empty-stub `filesystem_edit_fallback` check was removed in doctor-decruft
+    // W2; store-aware orphan recovery is deferred to Goal Y). Verify the run
+    // appends no synthesized event.
+    await runDoctorReport(projectRoot);
 
     // Ledger after first run: only the real approve event is present.
     const promotedAfterFirst = await readEventLedger(projectRoot, { event_type: "knowledge_promoted" });
@@ -588,10 +586,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(realPromoted).toBeDefined();
 
     // Second doctor run — idempotent; no new event added.
-    const second = await runDoctorReport(projectRoot);
-    const secondCheck = second.checks.find((c) => c.name === "Filesystem-edit fallback");
-    expect(secondCheck?.status).toBe("ok");
-    expect(secondCheck?.message).toContain("No orphan canonical knowledge entries");
+    await runDoctorReport(projectRoot);
 
     const promotedAfterSecond = await readEventLedger(projectRoot, { event_type: "knowledge_promoted" });
     expect(promotedAfterSecond.events).toHaveLength(1);

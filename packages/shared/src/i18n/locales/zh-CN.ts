@@ -312,16 +312,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.bootstrap_anchor.remediation.missing":
     "运行 `fabric install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
   "doctor.check.bootstrap_anchor.ok": "repo root 下已存在 Bootstrap anchor：{present}。",
-  "doctor.check.baseline_filename_format.name": "Baseline 文件名格式",
-  "doctor.check.baseline_filename_format.ok":
-    "所有 baseline knowledge 文件都使用 canonical `${id}--${slug}.md` 文件名格式。",
-  "doctor.check.baseline_filename_format.message.singular":
-    "{count} 个 baseline knowledge 文件仍使用已废弃的 bare-slug 文件名格式，必须迁移为 `${id}--${slug}.md`。首个：{detail}。",
-  "doctor.check.baseline_filename_format.message.plural":
-    "{count} 个 baseline knowledge 文件仍使用已废弃的 bare-slug 文件名格式，必须迁移为 `${id}--${slug}.md`。首个：{detail}。",
   // v2.0.0-rc.33 W3-2 (T6 #5): 文案显式引用 message 内已列出的 detail (file 名), 让用户直接 rm 而非自己去 grep 找。baseline pipeline 已 rc.23 移除, 没有 auto-fix。
-  "doctor.check.baseline_filename_format.remediation":
-    "手动删除上面 message 中列出的 bare-slug baseline file(s) (例如 `rm <message 列出的 file>`);baseline pipeline 已在 rc.23 移除, 不再提供 auto-fix 路径。",
   "doctor.check.forensic.name": "Scan evidence",
   "doctor.check.forensic.message.missing.singular":
     "{error} 实时扫描检测到 {frameworkKind}，共有 {count} 个入口点。",
@@ -486,15 +477,6 @@ export const zhCNMessages: Messages = {
   "doctor.check.draft_backlog.remediation":
     "调 `/fabric-review` 批量审 draft entries: approve 升 verified/proven, reject 丢, modify 修。draft 长期堆积通常意味着 archive skill 产 draft 太快或 review skill 没跟上。",
   // rc.37 NEW-38: knowledge auto-promote (info surface; --fix 执行).
-  "doctor.check.draft_auto_promote.name": "Knowledge auto-promote",
-  "doctor.check.draft_auto_promote.ok":
-    "无 settled draft 待自动 promote (draft 均未满 14 天或已被 drift 标记)。",
-  "doctor.check.draft_auto_promote.message":
-    "{count} 个 draft entries 已沉淀 ≥14 天且无 drift ({sample}{suffix}) — 可自动 promote 到 verified。跑 `fabric doctor --fix` 执行。",
-  "doctor.check.draft_auto_promote.remediation":
-    "跑 `fabric doctor --fix` 把这些 settled draft 自动升到 verified (排掉 draft_backlog); 或调 `/fabric-review` 手动逐条定夺。",
-  "doctor.check.draft_auto_promote.fixed":
-    "自动 promote {count} 个 settled draft entries → verified。",
   // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
   "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
   "doctor.check.knowledge_tags_empty.ok":
@@ -537,16 +519,7 @@ export const zhCNMessages: Messages = {
     "使用 `fabric store bind` / `fabric store switch-write`，然后把 knowledge 迁入 store 的 knowledge/ tree。",
   "doctor.check.knowledge_dir_unindexed.ok":
     "无需执行 legacy local knowledge 索引动作。",
-  "doctor.check.stable_id_collision.name": "Stable ID collision",
-  "doctor.check.stable_id_collision.message.singular":
-    "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中：{files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
-  "doctor.check.stable_id_collision.message.plural":
-    "检测到 {count} 个 stable_id collisions。首个：\"{stableId}\" 位于 {files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
   // v2.0.0-rc.33 W3-2 (T6 #27): 走 fabric-review modify 流程让 canonical id allocator 重新分配, 而非让用户自己选 id (易撞 counter, 难手算)。
-  "doctor.check.stable_id_collision.remediation":
-    "调 `/fabric-review modify <message 中列出的 colliding id 之一>`, 让 canonical id allocator 自动重分配 id (会同步更新 frontmatter + counters + 历史 cross-ref)。严禁手工编辑 id frontmatter — 会撞 counter。",
-  "doctor.check.stable_id_collision.ok":
-    "mounted store knowledge 中未发现已声明的 stable_id collisions。",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
   "doctor.check.counter_desync.message.singular":
     "{count} 个 knowledge counter 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fabric doctor --fix` bump counters。",
@@ -571,62 +544,8 @@ export const zhCNMessages: Messages = {
     "project root 检测到 {files}。这些 root files 不会被 Fabric MCP 自动加载。",
   "doctor.check.preexisting_root_files.remediation":
     "如果希望这些 knowledge 内容在 MCP 响应中可用，请将其移动到 mounted store 的 `knowledge/{type}/` tree。",
-  "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
-  "doctor.check.filesystem_edit_fallback.ok":
-    "No orphan canonical knowledge entries detected；events.jsonl promotion trail 完整。",
-  "doctor.check.filesystem_edit_fallback.message.synthesized.singular":
-    "已为孤立 canonical entries 合成 {count} 个 knowledge_promoted event（{sample}{suffix}）。Reason='{reason}'。",
-  "doctor.check.filesystem_edit_fallback.message.synthesized.plural":
-    "已为孤立 canonical entries 合成 {count} 个 knowledge_promoted events（{sample}{suffix}）。Reason='{reason}'。",
-  "doctor.check.filesystem_edit_fallback.remediation.synthesized":
-    "这些 entries 是在 fab_review.approve 之外被移动到 store knowledge/<type>/ 的。合成 events 会恢复 audit-trail 完整性。",
-  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
-  "doctor.check.orphan_demote.ok":
-    "没有 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold。",
-  "doctor.check.orphan_demote.message.singular":
-    "{count} 个 canonical knowledge entry 超过按 maturity 设定的 inactivity threshold（proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
-  "doctor.check.orphan_demote.message.plural":
-    "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
-  "doctor.check.orphan_demote.remediation":
-    "运行 `fabric doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
-  "doctor.check.stale_archive.name": "Knowledge stale archive",
-  "doctor.check.stale_archive.ok":
-    "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
-  "doctor.check.stale_archive.message.singular":
-    "{count} 个 draft knowledge entry 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
-  "doctor.check.stale_archive.message.plural":
-    "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
-  "doctor.check.stale_archive.remediation":
-    "运行 `fabric doctor --fix-knowledge`将 stale entries 移动到 `.fabric/.archive/<type>/`。",
-  "doctor.check.pending_overdue.name": "Knowledge pending overdue",
-  "doctor.check.pending_overdue.ok":
-    "没有 pending knowledge entries 超过 14-day review threshold。",
-  "doctor.check.pending_overdue.message.singular":
-    "{count} 个 pending knowledge entry 已等待 review 超过 {thresholdDays} 天。首个：{detail}。",
-  "doctor.check.pending_overdue.message.plural":
-    "{count} 个 pending knowledge entries 已等待 review 超过 {thresholdDays} 天。首个：{detail}。",
-  "doctor.check.pending_overdue.remediation":
-    "通过 fabric-review Skill（`/fabric-review`）审阅 pending entries，并执行 approve / reject / defer / modify。",
-  "doctor.check.stable_id_duplicate.name": "Knowledge stable_id duplicate",
-  "doctor.check.stable_id_duplicate.ok":
-    "team / personal trees 中没有 canonical knowledge files 共享 stable_id。",
-  "doctor.check.stable_id_duplicate.message.singular":
-    "{count} 个 stable_id 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
-  "doctor.check.stable_id_duplicate.message.plural":
-    "{count} 个 stable_ids 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
   // v2.0.0-rc.33 W3-2 (T6 #34): 同 stable_id_collision — 走 fabric-review modify 让 allocator 分配新 id, 不让用户手算。
-  "doctor.check.stable_id_duplicate.remediation":
-    "调 `/fabric-review modify <message 中列出的 duplicate id 之一>`, 由 canonical id allocator 分配新的 `<prefix>-<type>-<counter>--<slug>.md` (会同步重命名文件 + 更新 frontmatter + 修正 counters)。",
-  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
-  "doctor.check.layer_mismatch.ok":
-    "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
-  "doctor.check.layer_mismatch.message.singular":
-    "{count} 个 canonical knowledge file 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
-  "doctor.check.layer_mismatch.message.plural":
-    "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
   // v2.0.0-rc.33 W3-2 (T6 #35): 加 skill 入口 (`/fabric-review modify <id>`) 让用户知道怎么 invoke。
-  "doctor.check.layer_mismatch.remediation":
-    "将文件移动到正确的 write-target store，或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope 对每个 (layer, type) pair 都大于或等于现有 canonical counter 最大值。",
@@ -645,68 +564,6 @@ export const zhCNMessages: Messages = {
     "知识库仅有 {count} 个 canonical entries（< {threshold} threshold）。plan_context 检索面低于可用下限。",
   "doctor.check.underseeded.remediation":
     "运行 fabric-import Skill（`/fabric-import`）从 git history 与现有文档回填 knowledge。",
-  "doctor.check.narrow_no_paths.name": "Knowledge narrow without paths",
-  "doctor.check.narrow_no_paths.ok":
-    "没有 narrow-scope canonical entries 的 relevance_paths array 为空。",
-  "doctor.check.narrow_no_paths.message.singular":
-    "{count} 个 narrow-scope canonical entry 的 relevance_paths array 为空（silent recall risk — narrow without anchors can never match a target path）。首个：{detail}。",
-  "doctor.check.narrow_no_paths.message.plural":
-    "{count} 个 narrow-scope canonical entries 的 relevance_paths array 为空（silent recall risk — narrow without anchors can never match a target path）。首个：{detail}。",
-  "doctor.check.narrow_no_paths.remediation":
-    "调 `/fabric-review` 选该 entry → modify 为 relevance_paths 添加 path anchors，或将 relevance_scope 放宽到 broad；也可直接编辑 entry frontmatter。",
-  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
-  "doctor.check.relevance_paths_dangling.ok":
-    "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",
-  "doctor.check.relevance_paths_dangling.message.singular":
-    "{count} 个 relevance_paths glob 在当前 workspace 中解析到 0 个文件。首个：{detail}。",
-  "doctor.check.relevance_paths_dangling.message.plural":
-    "{count} 个 relevance_paths globs 在当前 workspace 中解析到 0 个文件。首个：{detail}。",
-  "doctor.check.relevance_paths_dangling.remediation":
-    "更新 entry 的 relevance_paths，移除不再匹配任何文件的 globs，或使用 `fab_review.modify` 重写 anchor set。",
-  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
-  "doctor.check.relevance_paths_drift.ok.skipped":
-    "已跳过（git history unavailable；无法评估 {windowDays}d drift window）。",
-  "doctor.check.relevance_paths_drift.ok.fresh":
-    "所有 narrow-scope canonical entries 都至少有 1 个 relevance_path 在最近 {windowDays}d 内被触碰。",
-  "doctor.check.relevance_paths_drift.message.singular":
-    "{count} 个 narrow-scope canonical entry 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个：{detail}。",
-  "doctor.check.relevance_paths_drift.message.plural":
-    "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个：{detail}。",
-  "doctor.check.relevance_paths_drift.remediation":
-    "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors，或使用 `fab_review.reject` 归档。",
-  "doctor.check.personal_layer_path_misclassify.name": "Personal-layer path misclassify",
-  "doctor.check.personal_layer_path_misclassify.ok":
-    "没有 personal-layer entries 的 relevance_paths 解析到当前项目内的文件。",
-  "doctor.check.personal_layer_path_misclassify.message.singular":
-    "{count} 个 personal-layer entry 的 relevance_paths 命中当前项目内的文件（personal 层应保持项目无关）。首个：{detail}。",
-  "doctor.check.personal_layer_path_misclassify.message.plural":
-    "{count} 个 personal-layer entries 的 relevance_paths 命中当前项目内的文件（personal 层应保持项目无关）。首个：{detail}。",
-  "doctor.check.personal_layer_path_misclassify.remediation":
-    "用 `fab_review.modify` 把 layer 翻成 team，或重写 relevance_paths 让 anchors 保持项目无关（删掉项目特定 globs）。",
-  "doctor.check.suspicious_kb.name": "Suspicious KB injection",
-  "doctor.check.suspicious_kb.ok":
-    "所有 canonical knowledge body 均未命中已知 prompt-injection 模式。",
-  "doctor.check.suspicious_kb.message.singular":
-    "{count} 个 canonical entry body 含命中 prompt-injection 模式的 token（多半是 NEW-31 之前归档的 legacy 条目）。首个：{detail}。",
-  "doctor.check.suspicious_kb.message.plural":
-    "{count} 个 canonical entry bodies 含命中 prompt-injection 模式的 token（多半是 NEW-31 之前归档的 legacy 条目）。首个：{detail}。",
-  "doctor.check.suspicious_kb.remediation":
-    "审阅被标记的条目 — 用 `fab_review.modify` 擦掉 body 中的 injection token，或 `fab_review.reject` 归档不该 canonicalize 的条目。",
-  "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
-  "doctor.check.narrow_too_few.ok":
-    "Narrow-with-paths ratio {ratioPct}%（{narrowCount}/{totalCount}）；{teleNote}。",
-  "doctor.check.narrow_too_few.message.telemetry_skipped":
-    "telemetry skipped（no edit-counter fires in window）",
-  "doctor.check.narrow_too_few.message.telemetry_window":
-    "silence rate {silencePct}% over {windowDays}d",
-  "doctor.check.narrow_too_few.message.structural":
-    "narrow-with-paths share {ratioPct}%（{narrowCount}/{totalCount}）below {thresholdPct}% threshold",
-  "doctor.check.narrow_too_few.message.telemetry":
-    "narrow-hook silence rate {silencePct}%（{silenceFires}/{totalFires}）over {windowDays}d above {thresholdPct}% threshold",
-  "doctor.check.narrow_too_few.message.summary":
-    "Narrow-scope KB coverage 低于可用下限：{parts}。",
-  "doctor.check.narrow_too_few.remediation":
-    "运行 fabric-import Skill（`/fabric-import`）针对当前 codebase 重新播种 narrow anchors。",
   "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
   "doctor.check.session_hints_stale.ok":
     ".fabric/.cache/ 下没有超过 {days} 天的 session-hints cache files。",
@@ -735,15 +592,6 @@ export const zhCNMessages: Messages = {
     "[advisory] .fabric/.serve.lock 持有 dead PID {pid}（acquired {acquiredAgo}）。运行 `fabric doctor --fix` 移除。",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
     "运行 `fabric doctor --fix` 移除过期的 .fabric/.serve.lock。",
-  "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
-  "doctor.check.relevance_fields_missing.ok":
-    "所有 pending entries 都声明了 relevance_scope 和 relevance_paths。",
-  "doctor.check.relevance_fields_missing.message.singular":
-    "{count} 个 pending entry 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
-  "doctor.check.relevance_fields_missing.message.plural":
-    "{count} 个 pending entries 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
-  "doctor.check.relevance_fields_missing.remediation":
-    "运行 `fabric doctor --fix-knowledge` 回填 schema defaults（relevance_scope: broad，relevance_paths: []）。",
   // rc.31 BUG-M3/NEW-4: hooks_wired observability.
   "doctor.check.hooks_wired.name": "Claude Code hooks wired",
   "doctor.check.hooks_wired.ok.skipped": "项目未启用 Claude Code（无 .claude/ 目录）；跳过 hooks_wired 检查。",

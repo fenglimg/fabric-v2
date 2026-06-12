@@ -151,9 +151,6 @@ describe("runDoctorReport", () => {
       // (snapshot+rules ↔ three-end blocks).
       "Bootstrap snapshot drift",
       "Managed block drift",
-      // rc.22 TASK-006: baseline filename format — sits adjacent to the
-      // Knowledge layout check (both are knowledge-layout invariants).
-      "Baseline filename format",
       "Scan evidence",
       // v2.2 W5 R4 (agents.meta decolo): "Agents metadata" / "Rule content refs"
       // / "Knowledge-test index" removed — they inspected the retired
@@ -172,46 +169,21 @@ describe("runDoctorReport", () => {
       // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Inserted adjacent to
       // cite_goodhart — both are observability checks built on disk + ledger.
       "Knowledge draft backlog",
-      // rc.37 NEW-38: auto-promote info surface (adjacent to draft_backlog).
-      "Knowledge auto-promote",
       // rc.36 TASK-05 (P0-8): empty-tags ratio. Adjacent to draft_backlog —
       // both flag observability gaps in canonical entry quality.
       "Knowledge tags coverage",
       // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
       "Knowledge drift unconsumed",
-      // v2.2 W5 R4 (agents.meta decolo): "Meta manual divergence" /
-      // "Knowledge dir unindexed" removed (co-location agents.meta-vs-disk).
-      "Stable ID collision",
       // v2.2 W5 R4: co-location "Knowledge counter desync" replaced by the
       // store-aware "Store counter drift" (per-store committed counters.json).
       "Store counter drift",
-      "Filesystem-edit fallback",
-      "Knowledge orphan demote",
-      "Knowledge stale archive",
-      "Knowledge pending overdue",
-      "Knowledge stable_id duplicate",
-      "Knowledge layer mismatch",
-      // v2.2 W5 R4 (agents.meta decolo): "Knowledge index drift" removed —
-      // its store-aware successor is "Store counter drift" (registered above).
       "Knowledge underseeded",
-      "Knowledge narrow without paths",
-      "Knowledge relevance_paths dangling",
-      "Knowledge relevance_paths drift",
-      // rc.37 NEW-5: personal-layer path misclassification advisory. Sits
-      // in the relevance_paths hygiene cluster — warning kind.
-      "Personal-layer path misclassify",
-      // rc.37 NEW-32: suspicious_kb_injection — scans canonical bodies for
-      // prompt-injection tokens. Symmetric with extract-knowledge's
-      // archive-time sanitizer.
-      "Suspicious KB injection",
-      "Knowledge narrow too few",
       "Knowledge session-hints stale",
       "Hook cache writable",
       // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory sits adjacent
       // to the other read-side hygiene infos. Info kind — does not bump
       // report status.
       "Serve lock",
-      "Knowledge relevance fields missing",
       "Skill markdown YAML",
       // rc.23 TASK-014 (F8c): Onboard coverage advisory — info kind. Sits
       // adjacent to Skill markdown YAML (both are Skill-adjacent advisories).
@@ -254,7 +226,13 @@ describe("runDoctorReport", () => {
     // +1: project-scope binding backfill lint (unbound_project) → 49.
     // fallback-purge W2-1a: removed "Bootstrap marker migration" check → 48.
     // fallback-purge W2-1c: removed "Claude MCP config location" check → 47.
-    expect(report.checks).toHaveLength(47);
+    // doctor-decruft W2: removed 16 store-cutover empty-stub checks (baseline
+    // filename format / draft auto-promote / stable_id collision / filesystem-edit
+    // fallback / orphan demote / stale archive / pending overdue / stable_id
+    // duplicate / layer mismatch / narrow-no-paths / relevance_paths dangling /
+    // relevance_paths drift / personal-layer misclassify / suspicious KB / narrow
+    // too few / relevance fields missing) → 31.
+    expect(report.checks).toHaveLength(31);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -772,16 +750,8 @@ describe("runDoctorReport", () => {
     }
   });
 
-
-  it("TASK-031: stable_id_collision not reported when all stable_ids are unique", async () => {
-    const target = createInitializedProject("doctor-stable-id-ok");
-    writeFile(".fabric/events.jsonl", "", target);
-
-    const report = await runDoctorReport(target);
-
-    expect(report.warnings.map((w) => w.code)).not.toContain("stable_id_collision");
-    expect(report.checks.find((c) => c.name === "Stable ID collision")?.status).toBe("ok");
-  });
+  // doctor-decruft W2: TASK-031 (stable_id_collision ok-path) test removed —
+  // the store-cutover empty-stub `stable_id_collision` check was deleted.
 
   // v2.2 W5 R4 (agents.meta decolo): TASK-030 (knowledge_dir_unindexed) and
   // TASK-029 (content_ref_missing) tests removed alongside their checks. Both
@@ -1004,71 +974,10 @@ describe("runDoctorReport", () => {
     expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(false);
   });
 
-  // rc.3 TASK-005: filesystem-edit fallback — synthesize knowledge_promoted
-  // for canonical entries that have no matching event in events.jsonl.
-  it("filesystem_edit_fallback: no orphans when canonical entry has matching knowledge_promoted event", async () => {
-    const target = createInitializedProject("doctor-fef-no-orphan");
-
-    // Seed a canonical entry AND its matching knowledge_promoted event.
-    const fm = "---\nid: KT-DEC-0042\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# D\n";
-    writeFile(".fabric/knowledge/decisions/KT-DEC-0042--demo.md", fm, target);
-    const promoted = JSON.stringify({
-      kind: "fabric-event",
-      id: "event:promoted-existing",
-      ts: 1_000,
-      schema_version: 1,
-      event_type: "knowledge_promoted",
-      stable_id: "KT-DEC-0042",
-      timestamp: "2026-05-10T00:00:00.000Z",
-      reason: "fab_review.approve",
-    });
-    writeFile(".fabric/events.jsonl", `${promoted}\n`, target);
-
-    const report = await runDoctorReport(target);
-    const check = report.checks.find((c) => c.name === "Filesystem-edit fallback");
-    expect(check?.status).toBe("ok");
-    expect(check?.kind).toBeUndefined();
-    expect(check?.message).toContain("No orphan canonical knowledge entries");
-
-    // Ledger must contain exactly one knowledge_promoted event (the seeded one).
-    const { events } = await readEventLedger(target);
-    const promotedEvents = events.filter((e) => e.event_type === "knowledge_promoted");
-    expect(promotedEvents).toHaveLength(1);
-    expect(promotedEvents[0]?.reason).toBe("fab_review.approve");
-  });
-
-
-
-
-  // v2.0.0-rc.29 TASK-004 (BUG-G2 + BUG-G5): the synth path emits the full
-  // proposed → promote_started → promoted triplet (not just the terminal
-  // promoted event) so the historical invariant
-  //   knowledge_promoted ≤ knowledge_promote_started ≤ knowledge_proposed
-  // holds on ledgers that contain synth-restored orphans. Pre-fix on this repo
-  // the ratio was 19 promoted > 13 promote_started (6 orphan deltas).
-
-  it("filesystem_edit_fallback: silently ignores files without <id>--<slug> filename pattern", async () => {
-    const target = createInitializedProject("doctor-fef-malformed");
-    writeFile(".fabric/events.jsonl", "", target);
-
-    // None of these match `<id>--<slug>.md`:
-    //  - missing id prefix
-    //  - id-only without --slug
-    //  - non-knowledge filename
-    writeFile(".fabric/knowledge/decisions/no-id-prefix.md", "# Plain\n", target);
-    writeFile(".fabric/knowledge/decisions/KT-DEC-0001.md", "# Bare id\n", target);
-    writeFile(".fabric/knowledge/decisions/README.md", "# Readme\n", target);
-
-    const report = await runDoctorReport(target);
-    const check = report.checks.find((c) => c.name === "Filesystem-edit fallback");
-    expect(check?.message).toContain("No orphan canonical knowledge entries");
-
-    const { events } = await readEventLedger(target);
-    const synthesized = events.filter(
-      (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
-    );
-    expect(synthesized).toHaveLength(0);
-  });
+  // doctor-decruft W2: the two filesystem_edit_fallback tests were removed
+  // alongside the store-cutover empty-stub `filesystem_edit_fallback` check.
+  // The synth-restore path they exercised was already inert (the report fed an
+  // empty inspection); store-aware orphan recovery is deferred to Goal Y.
 
   // rc.6 TASK-021 (E3): lint #27 knowledge_session_hints_stale. Info-kind
   // finding plus an apply-lint cleanup arm that unlinks stale session-hints
@@ -5395,14 +5304,7 @@ describe("runDoctorEmitCadenceCheck (rc.30 TASK-003 H2)", () => {
   });
 });
 
-describe("doctor legacy canonical iterator guardrails", () => {
-  it("keeps iterateCanonicalEntries from synchronously scanning the project-local corpus", () => {
-    const source = readFileSync(new URL("./doctor.ts", import.meta.url), "utf8");
-    const start = source.indexOf("function* iterateCanonicalEntries(");
-    const end = source.indexOf("async function inspectOrphanDemote", start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const block = source.slice(start, end);
-    expect(block).not.toMatch(/\b(?:readdirSync|readFileSync|statSync)\b/u);
-  });
-});
+// doctor-decruft W2: "legacy canonical iterator guardrails" describe removed —
+// the inert iterateCanonicalEntries generator + the inspectOrphanDemote it
+// guarded were deleted (store-cutover dead code; the empty-stub checks they fed
+// are gone, store-aware re-implementation deferred to Goal Y).

@@ -82,8 +82,7 @@ describe("werewolf-snapshot fixture (rc.37 F1)", () => {
     expect(draftBacklog?.status).toBe("ok");
     expect(draftBacklog?.message).not.toContain("53/57");
 
-    // auto-promote info surface fires (settled drafts exist in the snapshot).
-    const autoPromote = report.checks.find((c) => c.name === "Knowledge auto-promote");
-    expect(autoPromote).toBeDefined();
+    // doctor-decruft W2: the "Knowledge auto-promote" info-surface assertion was
+    // removed — the empty-stub draft_auto_promote check was deleted.
   });
 });

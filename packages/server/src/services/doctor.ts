@@ -43,14 +43,6 @@ import {
   createKnowledgeSummaryOpaqueCheck,
   inspectKnowledgeSummaryOpaque,
 } from "./doctor-summary-opaque.js";
-import {
-  createLayerMismatchCheck,
-  createStableIdCollisionCheck,
-  createStableIdDuplicateCheck,
-  type LayerMismatchInspection,
-  type StableIdCollisionInspection,
-  type StableIdDuplicateInspection,
-} from "./doctor-stable-id-collision.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -130,16 +122,6 @@ export { createScopeLintCheck } from "./doctor-scope-lint.js";
 export { detectUnboundProject } from "./doctor-unbound-project.js";
 export type { UnboundProjectViolation } from "./doctor-unbound-project.js";
 export { createStoreCounterCheck } from "./doctor-store-counters.js";
-export {
-  createLayerMismatchCheck,
-  createStableIdCollisionCheck,
-  createStableIdDuplicateCheck,
-} from "./doctor-stable-id-collision.js";
-export type {
-  LayerMismatchInspection,
-  StableIdCollisionInspection,
-  StableIdDuplicateInspection,
-} from "./doctor-stable-id-collision.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
@@ -407,29 +389,8 @@ type DraftBacklogInspection = {
   ratio: number; // draftCount / totalCount, 0..1
 };
 
-// v2.0.0-rc.37 NEW-38: knowledge auto-promote report shape. v2.2 store cutover
-// keeps the public check as an empty compatibility surface until candidate
-// discovery can operate against store-backed knowledge.
-type DraftAutoPromoteCandidate = {
-  stable_id: string;
-  relPath: string;
-  absPath: string;
-  ageDays: number;
-};
-type DraftAutoPromoteInspection = {
-  candidates: DraftAutoPromoteCandidate[];
-};
-
 function emptyDraftBacklogInspection(): DraftBacklogInspection {
   return { status: "ok", draftCount: 0, totalCount: 0, ratio: 0 };
-}
-
-function emptyDraftAutoPromoteInspection(): DraftAutoPromoteInspection {
-  return { candidates: [] };
-}
-
-function emptyFilesystemEditFallbackInspection(): FilesystemEditFallbackInspection {
-  return { synthesized: 0, synthesizedStableIds: [] };
 }
 
 // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
@@ -460,138 +421,11 @@ type CiteGoodhartInspection = {
   fired: Array<{ pattern: "G1" | "G2" | "G5"; detail: string }>;
 };
 
-// v2.0.0-rc.22 TASK-006: baseline filename format lint.
-// Each entry records the offending project-relative path plus the baseline
-// stable_id parsed from the file's frontmatter.
-type BaselineFilenameFormatOffender = {
-  path: string;
-  stable_id: string;
-};
-
-type BaselineFilenameFormatInspection = {
-  offenders: BaselineFilenameFormatOffender[];
-};
-
 type PreexistingRootFilesInspection = {
   detected: string[];
 };
 
-type FilesystemEditFallbackInspection = {
-  // Number of orphan canonical entries for which a synthesized
-  // knowledge_promoted event was appended on this run.
-  synthesized: number;
-  // The stable_ids that were synthesized this run (sorted).
-  synthesizedStableIds: string[];
-};
-
-// rc.4 TASK-001: read-side lint inspections (#16-18). Each inspection walks
-// the .fabric/knowledge/ tree and emits a `candidates` list of entries that
-// fail the maturity-keyed inactivity threshold. Mutation + event emission for
-// the proposed actions land in TASK-003 (--apply-lint).
-
 export type LintMaturity = "stable" | "endorsed" | "draft";
-
-type OrphanDemoteCandidate = {
-  // Stable id parsed out of YAML frontmatter (e.g. KT-DEC-0001).
-  stable_id: string;
-  // Project-relative POSIX path of the canonical entry.
-  path: string;
-  // Inactivity in days at the time of the check (max of frontmatter.created_at,
-  // file mtime, and last matching event in events.jsonl).
-  age_days: number;
-  // Current maturity tier from frontmatter.
-  maturity: LintMaturity;
-  // The maturity tier the entry would demote to if a mutation were applied.
-  // `null` means terminal (draft → archive territory in TASK-002 stale-archive).
-  next_maturity: "endorsed" | "draft" | null;
-};
-
-type OrphanDemoteInspection = {
-  candidates: OrphanDemoteCandidate[];
-  // v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity thresholds resolved at inspect
-  // time (merges fabric-config overrides over hardcoded defaults). Surfaced
-  // back to createOrphanDemoteCheck so the user sees the ACTUAL threshold
-  // their workspace is running under, not the always-90/30/14 hardcode.
-  thresholds: Record<LintMaturity, number>;
-};
-
-type StaleArchiveCandidate = {
-  stable_id: string;
-  path: string;
-  age_days: number;
-  // Proposed archive destination, project-relative POSIX.
-  archive_path: string;
-};
-
-type StaleArchiveInspection = {
-  candidates: StaleArchiveCandidate[];
-};
-
-type PendingOverdueCandidate = {
-  // pending entries may have no frontmatter id yet (proposals are pre-allocate),
-  // so stable_id is optional.
-  stable_id?: string;
-  path: string;
-  age_days: number;
-};
-
-type PendingOverdueInspection = {
-  candidates: PendingOverdueCandidate[];
-};
-
-// rc.5 TASK-009 (B2): pending auto-archive candidate. Identifies a pending
-// proposal whose age (frontmatter.created_at when present, else mtime) exceeds
-// PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS. Covers BOTH the team-rooted pending
-// tree (`<projectRoot>/.fabric/knowledge/pending/<type>/`) and the
-// personal-rooted tree (`<FABRIC_HOME>/.fabric/knowledge/pending/<type>/`)
-// introduced by TASK-008 (B1). The mutation arm (--apply-lint) moves the
-// file into `.fabric/.archive/pending/<type>/` under the appropriate root
-// (git mv for team, fs.rename for personal) and emits a single
-// pending_auto_archived event per move.
-type PendingAutoArchiveCandidate = {
-  layer: "team" | "personal";
-  // Pending entry's knowledge type subdir (e.g. "decisions"). Mirrors
-  // KNOWLEDGE_CANONICAL_TYPE_DIRS slice (pending uses the same vocabulary).
-  type: string;
-  // Display path: project-relative POSIX for team; `~/.fabric/...` for personal.
-  // Used in lint messages, mutation `path`, and the emitted event's
-  // `pending_path` field so observers can grep events.jsonl without
-  // resolving absolute paths.
-  pending_path: string;
-  // Absolute filesystem path of the source (used by the apply step).
-  pending_path_abs: string;
-  // Display destination after archive. Mirrors `pending_path` shape:
-  // `.fabric/.archive/pending/<type>/<filename>` for team,
-  // `~/.fabric/.archive/pending/<type>/<filename>` for personal.
-  archived_to: string;
-  // Absolute filesystem path of the destination (used by the apply step).
-  archived_to_abs: string;
-  age_days: number;
-};
-
-type PendingAutoArchiveInspection = {
-  candidates: PendingAutoArchiveCandidate[];
-};
-
-function emptyOrphanDemoteInspection(projectRoot: string): OrphanDemoteInspection {
-  return { candidates: [], thresholds: resolveMaturityThresholds(projectRoot) };
-}
-
-function emptyStaleArchiveInspection(): StaleArchiveInspection {
-  return { candidates: [] };
-}
-
-function emptyPendingOverdueInspection(): PendingOverdueInspection {
-  return { candidates: [] };
-}
-
-function emptyPendingAutoArchiveInspection(): PendingAutoArchiveInspection {
-  return { candidates: [] };
-}
-
-function emptyRelevanceFieldsMissingInspection(): RelevanceFieldsMissingInspection {
-  return { candidates: [], scanned_count: 0 };
-}
 
 // rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
 // Reports when the workspace's canonical knowledge node count is strictly
@@ -647,171 +481,7 @@ type StaleServeLockInspection =
       ageMs: number;
       pidAlive: boolean;
     };
-
-// rc.6 TASK-023 (E6): narrow_too_few — two-part check on narrow-scope KB
-// hygiene. Inspection consolidates a structural ratio (how much of the
-// canonical corpus is narrow-with-paths) with a telemetry-derived silence
-// rate (how often the PreToolUse narrow hook fires with no match). Either
-// arm independently can flag; both arms point at the same fabric-import
-// recommendation (re-seed narrow anchors).
-type NarrowTooFewInspection = {
-  // Structural arm (Part A).
-  total_canonical_entries: number;
-  narrow_with_paths_count: number;
-  narrow_ratio: number; // narrow_with_paths_count / total_canonical_entries, 0 when total === 0
-  structural_flagged: boolean;
-  // Telemetry arm (Part B).
-  total_edit_fires_in_window: number;
-  silence_fires_in_window: number;
-  silence_rate: number; // silence/edit, 0 when edits === 0
-  // True when we have insufficient data to evaluate Part B (e.g. no
-  // edit-counter file or zero fires in window). UI surfaces this as
-  // "skipped" rather than "passing".
-  telemetry_skipped: boolean;
-  telemetry_flagged: boolean;
-};
-
-function emptyNarrowTooFewInspection(): NarrowTooFewInspection {
-  return {
-    total_canonical_entries: 0,
-    narrow_with_paths_count: 0,
-    narrow_ratio: 0,
-    structural_flagged: false,
-    total_edit_fires_in_window: 0,
-    silence_fires_in_window: 0,
-    silence_rate: 0,
-    telemetry_skipped: true,
-    telemetry_flagged: false,
-  };
-}
-
-// rc.5 TASK-013 (C4): read-side lint inspections #23/#24/#25 for relevance_paths
-// hygiene. All three walk canonical entries (team + personal) and inspect the
-// `relevance_scope` / `relevance_paths` frontmatter fields introduced by the
-// TASK-012 narrow-scope model:
-//
-// #23 narrow_no_paths        — narrow entry with empty relevance_paths
-//                              (silent recall risk: narrow + no anchors means
-//                              the entry can never match a target_path).
-// #24 relevance_paths_dangling — relevance_paths glob resolves to zero
-//                              filesystem matches under the workspace root.
-//                              Flag-only in rc.5; auto-prune deferred to rc.7+.
-// #25 relevance_paths_drift  — narrow entry whose relevance_paths have not
-//                              been touched in the recent git history window
-//                              (90d). Heuristic; report-only.
-
-type NarrowNoPathsCandidate = {
-  stable_id: string;
-  // Display path: project-relative POSIX for team layer; `~/.fabric/...`
-  // for personal layer (matches PERSONAL_CONTENT_REF_PREFIX convention).
-  path: string;
-};
-
-type NarrowNoPathsInspection = {
-  candidates: NarrowNoPathsCandidate[];
-};
-
-type DanglingGlobEntry = {
-  stable_id: string;
-  path: string;
-  // The exact glob string from the entry's relevance_paths array that
-  // resolved to zero filesystem matches.
-  dangling_glob: string;
-};
-
-type RelevancePathsDanglingInspection = {
-  entries: DanglingGlobEntry[];
-};
-
-type RelevancePathsDriftCandidate = {
-  stable_id: string;
-  path: string;
-  // All relevance_paths globs declared by the entry (preserved for the
-  // message so operators can see which anchors are stale).
-  globs: string[];
-};
-
-type RelevancePathsDriftInspection = {
-  candidates: RelevancePathsDriftCandidate[];
-  // True when git was unavailable / the call failed. The check downgrades to
-  // an ok+info message in that case (rather than firing on every entry).
-  git_available: boolean;
-};
-
-// rc.37 NEW-5: personal_layer_path_misclassify. Personal-layer entries
-// (KP-*) live under ~/.fabric/knowledge/ and are meant to be project-agnostic.
-// When a personal entry declares relevance_paths whose globs resolve against
-// files in the CURRENT project, that's a misclassification signal — the
-// content is project-bound and probably belongs in the team layer.
-type PersonalLayerPathMisclassifyCandidate = {
-  stable_id: string;
-  // ~/.fabric/knowledge/... display form.
-  path: string;
-  // Subset of relevance_paths globs that matched files in the current project.
-  matched_globs: string[];
-};
-
-type PersonalLayerPathMisclassifyInspection = {
-  candidates: PersonalLayerPathMisclassifyCandidate[];
-};
-
-// rc.37 NEW-32: suspicious_kb_injection. Scans canonical KB body files
-// (both layers) for the same prompt-injection patterns that
-// extract-knowledge's sanitizer strips on archive (NEW-31). Legacy entries
-// written before NEW-31 landed could carry surviving injection tokens —
-// this check surfaces them so an operator can fab_review.modify or reject.
-type SuspiciousKbCandidate = {
-  stable_id: string;
-  // ~/.fabric/... or project-relative POSIX path.
-  path: string;
-  // Matched prompt-injection pattern names from the retired read-side scanner.
-  patterns: string[];
-};
-
-type SuspiciousKbInspection = {
-  candidates: SuspiciousKbCandidate[];
-};
-
-// rc.4 TASK-002: read-side integrity lint inspections (#19-21). Each
-// inspection walks both the team-rooted (`<projectRoot>/.fabric/knowledge/`)
-// and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/`) canonical trees
-// and emits findings keyed off the path-decoupled stable_id parsed out of
-// the canonical filename. Mutation half (counter bump for index-drift)
-// lands in TASK-003 (--apply-lint). Stable-id-duplicate and layer-mismatch
-// remain loud `error` kinds with no auto-fix — the right resolution is
-// manual triage, not a deterministic doctor mutation.
-
 type CanonicalLayer = "team" | "personal";
-
-// Inactivity thresholds (in days) keyed by maturity tier. Beyond this age with
-// no fetch / promote / proposal event the entry is a demote candidate.
-const ORPHAN_DEMOTE_THRESHOLD_DAYS: Record<LintMaturity, number> = {
-  stable: 90,
-  endorsed: 30,
-  draft: 14,
-};
-
-// Additional inactivity (beyond the demote threshold) before a draft entry is
-// a stale-archive candidate. Total quiet window for a born-draft entry is
-// 14 + 90 = 104 days; for a previously-stable demoted entry the total is
-// 90 + 90 + 90 = 270 days (stable → endorsed → draft → archive). The check
-// only requires the *additional* 90d after entering draft, since orphan-demote
-// is responsible for the prior tier transitions.
-const STALE_ARCHIVE_ADDITIONAL_DAYS = 90;
-
-// v2.0.0-rc.37 NEW-38: knowledge auto-promote. A canonical `draft` entry that
-// has survived this many days WITHOUT being flagged drifted has "settled" —
-// Pending entries older than this threshold (based on frontmatter.created_at
-// when present, otherwise file mtime) are flagged for human triage.
-const PENDING_OVERDUE_THRESHOLD_DAYS = 14;
-
-// rc.5 TASK-009 (B2): pending entries past this (deliberately higher) threshold
-// are auto-archived by `doctor --apply-lint`. The overdue lint (#18) still
-// fires at 14d; the auto-archive action only triggers after a further grace
-// period, giving humans a 16-day review window from the first overdue ping.
-// Threshold is currently a const — fabric-config.json override can land later
-// if dogfood signals a different cadence.
-const PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS = 30;
 
 // rc.5 TASK-010: default underseed threshold for lint #22 (knowledge_underseeded).
 // Mirrors the fabric-hint hook's DEFAULT_UNDERSEED_NODE_THRESHOLD so the lint
@@ -859,57 +529,6 @@ const HINT_SILENCE_COUNTER_FILE_REL = posix.join(
 );
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-// Regex extracting the `maturity:` value from YAML frontmatter. Mirrors
-// extractKnowledgeFrontmatterId; we keep parsing line-based to avoid pulling
-// in a YAML dependency for a handful of fields.
-//
-// v2.2 W3-T5 (F-MATURITY-ENDORSED): recognize BOTH the canonical maturity
-// vocabulary (draft/verified/proven — KT-DEC-0005) and the legacy
-// stable/endorsed names this doctor ladder was written against. Before this, a
-// canonical `proven`/`verified` entry's maturity line did not match, so it was
-// silently dropped from the ENTIRE orphan_demote lint (a proven entry could
-// never be demoted). extractKnowledgeFrontmatterMaturity normalizes the
-// canonical names back onto the internal LintMaturity ladder
-// (proven→stable, verified→endorsed).
-const MATURITY_LINE_PATTERN = /^maturity:\s*("?)(stable|endorsed|draft|verified|proven)\1\s*$/mu;
-
-// Canonical maturity (KT-DEC-0005) → internal LintMaturity ladder. The doctor
-// orphan_demote ladder is expressed in the legacy stable/endorsed names; this
-// map lets canonical entries flow through it without rewriting the ladder.
-const CANONICAL_TO_LINT_MATURITY: Record<string, LintMaturity> = {
-  proven: "stable",
-  verified: "endorsed",
-  draft: "draft",
-  // legacy values pass through unchanged.
-  stable: "stable",
-  endorsed: "endorsed",
-};
-
-// Regex extracting `created_at:` (ISO 8601 datetime) from YAML frontmatter.
-const CREATED_AT_LINE_PATTERN = /^created_at:\s*("?)([^"\n]+)\1\s*$/mu;
-
-// rc.5 TASK-013 (C4): regexes extracting `relevance_scope` and
-// `relevance_paths` from YAML frontmatter. Mirrors the line-based parsing
-// style used elsewhere in this module (we avoid a YAML dependency for a
-// handful of well-known fields). `relevance_paths` is a flow-style array
-// (`[a, b, c]`) per the rc.5 contract; we tolerate empty arrays and
-// whitespace around commas. Bare-strings are unquoted by convention but the
-// parser accepts both quoted and unquoted forms.
-const RELEVANCE_SCOPE_LINE_PATTERN = /^relevance_scope:\s*("?)(narrow|broad)\1\s*$/mu;
-const RELEVANCE_PATHS_LINE_PATTERN = /^relevance_paths:\s*\[([^\]]*)\]\s*$/mu;
-
-// rc.5 TASK-013 (C4): drift window for lint #25 (relevance_paths_drift).
-// 90 days of git history. Hardcoded for rc.5 — a future
-// .fabric/fabric-config.json override may land if dogfooding suggests a
-// different cadence.
-const RELEVANCE_PATHS_DRIFT_WINDOW_DAYS = 90;
-
-// Reason prefix for synthesized knowledge_promoted events emitted by the
-// filesystem-edit fallback check. The `[synthesized]` prefix makes these
-// events grep-able in events.jsonl so consumers can distinguish them from
-// real promotions emitted by fab_review.approve.
-const SYNTHESIZED_PROMOTED_REASON = "[synthesized] filesystem-edit-fallback";
 
 // Knowledge subdirectories scanned by legacy filesystem-edit fallback checks.
 // The project-local tree is no longer required, but if legacy content exists
@@ -1013,8 +632,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const storeRevision = await computeReadSetRevision(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
   const draftBacklog = emptyDraftBacklogInspection();
-  // rc.37 NEW-38: auto-promote candidates (info surface; --fix does the work).
-  const draftAutoPromote = emptyDraftAutoPromoteInspection();
   // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
   const knowledgeTagsEmpty: EmptyTagsInspection = {
     status: "ok",
@@ -1029,13 +646,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // `knowledge_dir_unindexed` retired — both compared the project co-location
   // `.fabric/knowledge` against agents.meta.json (no longer authoritative;
   // knowledge lives in stores) and their only --fix was reconcileKnowledge.
-  // v2.0.0-rc.22 TASK-006: baseline filename format hard error. Detects
-  // legacy bare-slug baseline files. rc.23 TASK-012 (F8a) deleted the
-  // baseline-emit pipeline outright, so the lint now serves only as a
-  // forensic indicator for stale pre-rc.23 workspaces; resolution is
-  // manual deletion of the offending file. manual_error kind, no --fix path.
-  const baselineFilenameFormat: BaselineFilenameFormatInspection = { offenders: [] };
-  const stableIdCollision: StableIdCollisionInspection = { collisions: [] };
   // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
   // `index_drift` checks (against agents.meta.json#counters) are retired. The
   // monotonic stable_id counter now lives per-store in committed counters.json
@@ -1043,25 +653,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // replacement — disk-max FLOOR semantics over every read-set store.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
   const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
-  // rc.3 TASK-005: filesystem-edit fallback. Synthesizes knowledge_promoted
-  // for canonical entries with no matching event. Runs AFTER ledger
-  // partial-write detection so we never append to a corrupt tail; it relies
-  // on the existing read/append machinery to be in a consistent state.
-  const filesystemEditFallback = emptyFilesystemEditFallbackInspection();
-  // rc.4 TASK-001: read-side lint inspections (#16-18). These run after the
-  // filesystem-edit fallback (which can append synthesized knowledge_promoted
-  // events) so that the lastActiveAt index built by orphan-demote and
-  // stale-archive sees the synthesized timestamps and does not double-count
-  // a freshly-synthesized canonical entry as orphan.
+  // Shared timestamp for the read-side hygiene inspections below (session-hints
+  // cache age + stale serve-lock age).
   const lintNow = Date.now();
-  // v2.2 store cutover: legacy dual-root corpus lints are disabled until their
-  // walkers are rewritten against ~/.fabric/stores/*/knowledge. Do not read or
-  // mutate project-local `.fabric/knowledge` / legacy `~/.fabric/knowledge`.
-  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
-  const staleArchive = emptyStaleArchiveInspection();
-  const pendingOverdue = emptyPendingOverdueInspection();
-  const stableIdDuplicate: StableIdDuplicateInspection = { duplicates: [] };
-  const layerMismatch: LayerMismatchInspection = { mismatches: [] };
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a store summary count, not a time-decayed
   // signal. Runs alongside the rc.4 integrity inspections so the
@@ -1072,26 +666,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     threshold: underseedThreshold,
     underseeded: storeKnowledgeSummaries.length < underseedThreshold,
   };
-  // rc.5 TASK-013 (C4): relevance_paths hygiene inspections #23/#24/#25. All
-  // three walk canonical entries (team + personal) and inspect frontmatter
-  // relevance fields. #24 expands globs against the live filesystem; #25
-  // shells out to `git log` for the drift heuristic (degrades to ok+info
-  // when git is unavailable). Flag-only in rc.5 — apply-lint auto-prune
-  // deferred to rc.7+.
-  const narrowNoPaths: NarrowNoPathsInspection = { candidates: [] };
-  const relevancePathsDangling: RelevancePathsDanglingInspection = { entries: [] };
-  const relevancePathsDrift: RelevancePathsDriftInspection = { candidates: [], git_available: true };
-  // rc.37 NEW-5: personal-layer entries whose relevance_paths match files in
-  // the current project — signals layer misclassification (content is
-  // project-bound, should be team-layer).
-  const personalLayerPathMisclassify: PersonalLayerPathMisclassifyInspection = { candidates: [] };
-  // rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
-  // (legacy entries archived before NEW-31's sanitizer landed).
-  const suspiciousKb: SuspiciousKbInspection = { candidates: [] };
-  // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
-  // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
-  // telemetry when the edit-counter has no fires in the 30d window.
-  const narrowTooFew = emptyNarrowTooFewInspection();
   // rc.6 TASK-021 (E3): session-hints cache hygiene (#27). Scans
   // `.fabric/.cache/` for session-hints-*.json files older than 7 days
   // (mtime-based). Info kind — does not bump report status. apply-lint
@@ -1103,13 +677,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // same lintNow timestamp as the other read-side hygiene inspections so a
   // single doctor run reports an internally-consistent set of age figures.
   const staleServeLock = inspectStaleServeLock(projectRoot, lintNow);
-  // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (#28). Scans the
-  // pending tree (both layers) for entries whose frontmatter is missing
-  // `relevance_scope` and/or `relevance_paths`. Info kind — back-fill is
-  // hygiene, not correctness (meta-builder falls back to the schema
-  // defaults at read time). apply-lint writes the explicit defaults and
-  // emits one aggregate `relevance_migration_run` event per run.
-  const relevanceFieldsMissing = emptyRelevanceFieldsMissingInspection();
   // rc.12 lint #29: skill_md_yaml_invalid. Scans .claude/skills and
   // .codex/skills SKILL.md frontmatter for unquoted ': ' tokens that Codex's
   // strict YAML parser rejects (Claude Code is lenient). Warning kind —
@@ -1168,11 +735,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // three-end blocks).
     createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
     createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
-    // v2.0.0-rc.22 TASK-006: baseline filename format. Sits adjacent to
-    // the retired local knowledge-layout checks. manual_error
-    // kind; resolution is manual file deletion (rc.23 TASK-012 (F8a) removed
-    // the baseline-emit pipeline, so no auto-fix exists).
-    createBaselineFilenameFormatCheck(t, baselineFilenameFormat),
     createForensicCheck(t, forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
     // is owned by the AI-side client init skill, not by `fabric install` CLI.
@@ -1204,53 +766,17 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillDescriptionCheck(t, skillDescription),
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
-    createDraftAutoPromoteCheck(t, draftAutoPromote),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
     createDriftUnconsumedCheck(t, driftUnconsumed),
-    createStableIdCollisionCheck(t, stableIdCollision),
     // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
     // replaced by the store-aware `store_counter_drift` (per-store committed
     // counters.json, disk-max FLOOR / KT-DEC-0004). Registered below alongside
     // the scope lint, the other store-scoped doctor check.
     createStoreCounterCheck(t, storeCounterDrift),
-    createFilesystemEditFallbackCheck(t, filesystemEditFallback),
-    // rc.4 TASK-001: read-side lint checks #16-18. Findings only — mutation
-    // + event emission lands in TASK-003 behind --apply-lint.
-    createOrphanDemoteCheck(t, orphanDemote),
-    createStaleArchiveCheck(t, staleArchive),
-    createPendingOverdueCheck(t, pendingOverdue),
-    // rc.4 TASK-002: read-side integrity checks #19-20. Stable_id duplicate
-    // runs first — it is the most critical integrity break and surfaces ahead
-    // of layer-mismatch so a human operator triages the collision before
-    // reasoning about counter state. Both require manual triage (rename / move).
-    // v2.2 W5 R4: the co-location `index_drift` check (agents.meta#counters vs
-    // disk) is retired — its store-aware successor is `store_counter_drift`.
-    createStableIdDuplicateCheck(t, stableIdDuplicate),
-    createLayerMismatchCheck(t, layerMismatch),
     // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
     // does not bump report status. Recommends running the fabric-import skill
     // to backfill knowledge when the corpus is below the threshold floor.
     createUnderseededCheck(t, underseeded),
-    // rc.5 TASK-013 (C4): relevance_paths hygiene checks #23/#24/#25.
-    // All three are flag-only in rc.5 (no apply-lint mutations).
-    //   #23 narrow_no_paths        — warning kind (silent recall risk)
-    //   #24 relevance_paths_dangling — warning kind (glob → zero matches)
-    //   #25 relevance_paths_drift  — info kind (git-log heuristic; noisy)
-    createNarrowNoPathsCheck(t, narrowNoPaths),
-    createRelevancePathsDanglingCheck(t, relevancePathsDangling),
-    createRelevancePathsDriftCheck(t, relevancePathsDrift),
-    // rc.37 NEW-5: personal-layer path misclassification advisory. Sits in
-    // the relevance_paths hygiene cluster — same iterator, same path-glob
-    // matcher, warning kind (no auto-fix; remediation is fab_review modify
-    // layer flip to team).
-    createPersonalLayerPathMisclassifyCheck(t, personalLayerPathMisclassify),
-    // rc.37 NEW-32: suspicious_kb_injection — scan canonical bodies for
-    // prompt-injection tokens. Symmetric with NEW-31's archive-time
-    // sanitization; catches legacy pre-NEW-31 entries. Warning kind.
-    createSuspiciousKbCheck(t, suspiciousKb),
-    // rc.6 TASK-023 (E6): narrow_too_few (lint #26). Info kind; both arms
-    // (structural + telemetry) recommend the same fabric-import action.
-    createNarrowTooFewCheck(t, narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
     createSessionHintsStaleCheck(t, sessionHintsStale),
     createHookCacheWritabilityCheck(t, hookCacheWritability),
@@ -1258,10 +784,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // does not bump report status. `--fix` unlinks the corpse and emits
     // `serve_lock_cleared`.
     createStaleServeLockCheck(t, staleServeLock),
-    // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (lint #28).
-    // Info kind — applies to pending entries only; canonical entries get
-    // the fields written verbatim by fab_review.approve/modify.
-    createRelevanceFieldsMissingCheck(t, relevanceFieldsMissing),
     // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
     // SKILL.md frontmatter that Codex CLI silently drops at load.
     createSkillMdYamlInvalidCheck(t, skillMdYamlInvalid),
@@ -1645,38 +1167,6 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
 
   const now = Date.now();
 
-  // v2.2 store cutover: retired dual-root knowledge lints are no longer
-  // mutation sources. Do not demote/archive entries from project-local
-  // `.fabric/knowledge` or legacy `~/.fabric/knowledge`; store-aware versions
-  // must be implemented against ~/.fabric/stores/*/knowledge before re-enabling.
-  const orphanDemote = emptyOrphanDemoteInspection(projectRoot);
-  for (const candidate of orphanDemote.candidates) {
-    if (candidate.next_maturity === null) {
-      // Terminal (already draft) — orphan-demote does not apply, stale-archive
-      // owns the next transition. Defensive: createOrphanDemoteCheck filters
-      // these out conceptually (next_maturity stays null only for draft) but
-      // we never want to write `maturity: null`.
-      continue;
-    }
-    mutations.push(await applyOrphanDemote(projectRoot, candidate, now));
-  }
-
-  const staleArchive = emptyStaleArchiveInspection();
-  for (const candidate of staleArchive.candidates) {
-    mutations.push(await applyStaleArchive(projectRoot, candidate, now));
-  }
-
-  // rc.5 TASK-009 (B2): pending auto-archive (>30d). Runs after the canonical
-  // demote/archive trio because (a) it has no interaction with lastActiveAt
-  // (pending files are not yet in the canonical event stream) and (b) walking
-  // pending after the canonical mutation pass keeps the dual-root pending
-  // walker independent of any concurrent .fabric/knowledge/<type>/ writes
-  // triggered above. One mutation per stale-pending entry, per layer.
-  const pendingAutoArchive = emptyPendingAutoArchiveInspection();
-  for (const candidate of pendingAutoArchive.candidates) {
-    mutations.push(await applyPendingAutoArchive(projectRoot, candidate, now));
-  }
-
   // rc.6 TASK-021 (E3): session-hints cache cleanup (#27). Independent of
   // all canonical/pending mutation paths — operates strictly on local hot-
   // cache files under `.fabric/.cache/session-hints-*.json`. Ordering: runs
@@ -1689,40 +1179,18 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
   }
 
-  // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (#28). Runs after
-  // pending_auto_archive (which may move stale-pending entries out of the
-  // pending tree, removing them from the back-fill walk's input set) and
-  // after session_hints_stale (which has no overlap but mirrors the
-  // "cheapest mutation last" ordering — back-fill is cheap but bookkeeping
-  // for the aggregate event is independent of the per-file walk). One
-  // mutation per back-filled pending entry; one aggregate
-  // `relevance_migration_run` event emitted unconditionally after the walk
-  // so the audit trail records every --apply-lint heartbeat (matches the
-  // `doctor_run` invariant — fires every run, even when no findings).
-  // v2.2 store-only cutover: relevance back-fill previously walked retired
-  // project-local and legacy personal pending roots. Keep the aggregate no-op
-  // event below, but do not scan or mutate those roots.
-  const relevanceFieldsMissing = emptyRelevanceFieldsMissingInspection();
-  let relevanceTouchedCount = 0;
-  for (const candidate of relevanceFieldsMissing.candidates) {
-    const mutation = await applyRelevanceFieldsMissing(candidate);
-    mutations.push(mutation);
-    if (mutation.applied) {
-      relevanceTouchedCount += 1;
-    }
-  }
-  // Best-effort event emit. A ledger-append failure does NOT roll back the
-  // per-file frontmatter writes — back-fill is hygiene rather than a
-  // transactional correctness boundary, and the next --apply-lint run will
-  // observe the (now-present) fields and skip them (idempotent) so the
-  // aggregate event omission is recoverable on retry. Mirrors the
-  // best-effort policy for the `doctor_run` event emitter at the CLI surface.
+  // v2.2 store cutover: the relevance-fields back-fill walk over the retired
+  // dual-root pending tree is gone (store-aware re-implementation deferred).
+  // The aggregate `relevance_migration_run` heartbeat still fires every
+  // --apply-lint run for audit-trail symmetry with `doctor_run` (scanned_count
+  // / touched_count are 0 — there is no walk). Best-effort: a ledger-append
+  // failure does not abort the run.
   try {
     await appendEventLedgerEvent(projectRoot, {
       event_type: "relevance_migration_run",
       timestamp: new Date(now).toISOString(),
-      scanned_count: relevanceFieldsMissing.scanned_count,
-      touched_count: relevanceTouchedCount,
+      scanned_count: 0,
+      touched_count: 0,
     });
   } catch (error) {
     ledgerWarnings.push(createLedgerAppendWarning("relevance migration aggregate event", error));
@@ -1784,345 +1252,6 @@ function createApplyLintMessage(
       : `${manualErrorCount} manual error${manualErrorCount === 1 ? "" : "s"} remain.`,
   );
   return parts.join(" ");
-}
-
-// v2.2 W3-T5 (F-MATURITY-ENDORSED): the internal demote ladder produces a
-// legacy next-tier name (endorsed|draft). When the on-disk entry uses the
-// canonical vocabulary (verified|proven), the rewrite must emit the CANONICAL
-// equivalent so a canonical file never gets a legacy value spliced into it
-// (which would re-introduce the very vocab drift this task fixes). verified is
-// the canonical name for the legacy "endorsed" tier; draft is shared.
-const LINT_TO_CANONICAL_MATURITY: Record<"endorsed" | "draft", string> = {
-  endorsed: "verified",
-  draft: "draft",
-};
-
-// Pure helper: rewrite the `maturity:` line in a YAML frontmatter block.
-// Returns null if the source does not contain a parseable frontmatter with a
-// `maturity:` field — caller must handle that defensively. Surgical replace:
-// only the maturity line is touched; all other fields preserve their exact
-// bytes (per risk note: round-trip preservation matters).
-//
-// v2.2 W3-T5: the replacement value tracks the SOURCE entry's vocabulary —
-// canonical entries (verified/proven) are demoted to canonical names, legacy
-// entries (stable/endorsed) to legacy names — so the rewrite is both correct
-// for canonical entries (previously a no-op that silently failed) and
-// non-regressing for legacy ones.
-function rewriteFrontmatterMaturity(
-  source: string,
-  newMaturity: "endorsed" | "draft",
-): string | null {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const block = fm[1];
-  const matMatch = MATURITY_LINE_PATTERN.exec(block);
-  if (matMatch === null) {
-    return null;
-  }
-  const currentValue = matMatch[2];
-  const isCanonicalVocab =
-    currentValue === "proven" || currentValue === "verified" || currentValue === "draft";
-  const replacement = isCanonicalVocab ? LINT_TO_CANONICAL_MATURITY[newMaturity] : newMaturity;
-  const replacedBlock = block.replace(
-    MATURITY_LINE_PATTERN,
-    (line) => line.replace(/(stable|endorsed|draft|verified|proven)/u, replacement),
-  );
-  // Splice replacement back into the original. Use string slicing to preserve
-  // BOM / line endings outside the captured block exactly.
-  const blockStart = source.indexOf(block);
-  if (blockStart < 0) {
-    return null;
-  }
-  return source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
-}
-
-// v2.0.0-rc.37 NEW-38: promote rewriter. Distinct from rewriteFrontmatterMaturity
-// (which speaks the legacy stable|endorsed|draft demote vocabulary) — this one
-async function applyOrphanDemote(
-  projectRoot: string,
-  candidate: OrphanDemoteCandidate,
-  now: number,
-): Promise<DoctorApplyLintMutation> {
-  const next = candidate.next_maturity;
-  if (next === null) {
-    return {
-      kind: "knowledge_orphan_demote_required",
-      path: candidate.path,
-      detail: `${candidate.maturity} -> (none, already at terminal tier)`,
-      applied: false,
-      error: "next_maturity is null; orphan-demote not applicable",
-    };
-  }
-  const detail = `${candidate.maturity} -> ${next}`;
-  const absPath = join(projectRoot, candidate.path);
-  try {
-    const source = await readFile(absPath, "utf8");
-    const rewritten = rewriteFrontmatterMaturity(source, next);
-    if (rewritten === null) {
-      return {
-        kind: "knowledge_orphan_demote_required",
-        path: candidate.path,
-        detail,
-        applied: false,
-        error: "frontmatter missing maturity field; cannot rewrite",
-      };
-    }
-    if (rewritten === source) {
-      // Defensive: rewrite produced no diff. Treat as no-op.
-      return {
-        kind: "knowledge_orphan_demote_required",
-        path: candidate.path,
-        detail,
-        applied: false,
-        error: "rewrite produced byte-identical output",
-      };
-    }
-    await atomicWriteText(absPath, rewritten);
-    // Audit-trail invariant: if the event-ledger append fails AFTER the
-    // frontmatter rewrite has hit disk, roll the file back to its pre-mutation
-    // contents so the canonical state matches the (absent) event entry. This
-    // is best-effort — if the rollback ALSO fails we surface both errors but
-    // disk state may genuinely be inconsistent (extremely rare; would require
-    // disk failure between two sequential atomic writes).
-    try {
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "knowledge_demoted",
-        stable_id: candidate.stable_id,
-        timestamp: new Date(now).toISOString(),
-        reason: `lint:orphan_demote ${candidate.maturity}->${next} after ${candidate.age_days}d inactive`,
-      });
-    } catch (ledgerError) {
-      try {
-        await atomicWriteText(absPath, source);
-      } catch (rollbackError) {
-        return {
-          kind: "knowledge_orphan_demote_required",
-          path: candidate.path,
-          detail,
-          applied: false,
-          error: `ledger append failed (${truncateErrorMessage(ledgerError)}); rollback also failed (${truncateErrorMessage(rollbackError)}); disk may be in inconsistent state`,
-        };
-      }
-      return {
-        kind: "knowledge_orphan_demote_required",
-        path: candidate.path,
-        detail,
-        applied: false,
-        error: `ledger append failed (${truncateErrorMessage(ledgerError)}); frontmatter rolled back`,
-      };
-    }
-    return {
-      kind: "knowledge_orphan_demote_required",
-      path: candidate.path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_orphan_demote_required",
-      path: candidate.path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
-
-async function applyStaleArchive(
-  projectRoot: string,
-  candidate: StaleArchiveCandidate,
-  now: number,
-): Promise<DoctorApplyLintMutation> {
-  const sourceAbs = join(projectRoot, candidate.path);
-  const destAbs = join(projectRoot, candidate.archive_path);
-  const detail = `${candidate.path} -> ${candidate.archive_path}`;
-  try {
-    await mkdir(join(destAbs, ".."), { recursive: true });
-    try {
-      await rename(sourceAbs, destAbs);
-    } catch (renameError) {
-      // EXDEV fallback: cross-filesystem rename failure. Copy + unlink.
-      // Both source and dest live under projectRoot in normal use; this
-      // fallback only fires in unusual setups (e.g. .archive on a separate
-      // mount). See risk note 2 in TASK-003.json.
-      if (
-        renameError instanceof Error &&
-        "code" in renameError &&
-        (renameError as NodeJS.ErrnoException).code === "EXDEV"
-      ) {
-        const data = await readFile(sourceAbs);
-        await writeFile(destAbs, data);
-        const { unlink } = await import("node:fs/promises");
-        await unlink(sourceAbs);
-      } else {
-        throw renameError;
-      }
-    }
-    // Audit-trail invariant: if the event-ledger append fails AFTER the
-    // archive rename, roll the file back to its canonical location so disk
-    // state matches the (absent) event. Best-effort rollback.
-    try {
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "knowledge_archived",
-        stable_id: candidate.stable_id,
-        timestamp: new Date(now).toISOString(),
-        reason: `lint:stale_archive ${candidate.path} -> ${candidate.archive_path} after ${candidate.age_days}d inactive`,
-      });
-    } catch (ledgerError) {
-      try {
-        await rename(destAbs, sourceAbs);
-      } catch (rollbackError) {
-        return {
-          kind: "knowledge_stale_archive_required",
-          path: candidate.path,
-          detail,
-          applied: false,
-          error: `ledger append failed (${truncateErrorMessage(ledgerError)}); rollback also failed (${truncateErrorMessage(rollbackError)}); file may be stranded at ${candidate.archive_path}`,
-        };
-      }
-      return {
-        kind: "knowledge_stale_archive_required",
-        path: candidate.path,
-        detail,
-        applied: false,
-        error: `ledger append failed (${truncateErrorMessage(ledgerError)}); archive rolled back`,
-      };
-    }
-    return {
-      kind: "knowledge_stale_archive_required",
-      path: candidate.path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_stale_archive_required",
-      path: candidate.path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
-
-// rc.5 TASK-009 (B2): auto-archive a stale pending entry. Team-layer source
-// uses `git mv` (preserves rename detection inside the workspace git tree)
-// with an `fs.rename` fallback for non-repo / untracked cases. Personal-layer
-// source uses plain `fs.rename` (lives outside the project's git tree).
-// Emits exactly one `pending_auto_archived` event per successful move with
-// `pending_path`, `archived_to`, `reason` ("auto_archive_30d").
-//
-// Audit-trail invariant mirrors applyStaleArchive: if the event-ledger
-// append fails AFTER the move, roll the file back to its pending location
-// so disk state matches the (absent) event. Best-effort — a rollback failure
-// is surfaced in `error` but is extremely rare (would require two sequential
-// rename failures across the same call).
-async function applyPendingAutoArchive(
-  projectRoot: string,
-  candidate: PendingAutoArchiveCandidate,
-  now: number,
-): Promise<DoctorApplyLintMutation> {
-  const detail = `${candidate.pending_path} -> ${candidate.archived_to}`;
-  try {
-    await mkdir(join(candidate.archived_to_abs, ".."), { recursive: true });
-
-    let moved = false;
-    if (candidate.layer === "team") {
-      // Prefer `git mv` so the workspace history threads through the rename.
-      // Falls back to plain rename when (a) not in a git repo, (b) the file
-      // is untracked, or (c) git is unavailable. Mirrors the dual-strategy
-      // pattern in review.ts approve flow.
-      try {
-        const relSource = relativePosix(projectRoot, candidate.pending_path_abs);
-        const relDest = relativePosix(projectRoot, candidate.archived_to_abs);
-        execFileSync("git", ["mv", "-f", relSource, relDest], {
-          cwd: projectRoot,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        moved = true;
-      } catch {
-        // Fall through to plain rename below.
-      }
-    }
-    if (!moved) {
-      try {
-        await rename(candidate.pending_path_abs, candidate.archived_to_abs);
-      } catch (renameError) {
-        // EXDEV fallback (cross-filesystem). Same shape as applyStaleArchive.
-        if (
-          renameError instanceof Error &&
-          "code" in renameError &&
-          (renameError as NodeJS.ErrnoException).code === "EXDEV"
-        ) {
-          const data = await readFile(candidate.pending_path_abs);
-          await writeFile(candidate.archived_to_abs, data);
-          const { unlink } = await import("node:fs/promises");
-          await unlink(candidate.pending_path_abs);
-        } else {
-          throw renameError;
-        }
-      }
-    }
-
-    try {
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "pending_auto_archived",
-        pending_path: candidate.pending_path,
-        archived_to: candidate.archived_to,
-        reason: "auto_archive_30d",
-      });
-    } catch (ledgerError) {
-      // Best-effort rollback to keep disk state consistent with the (absent)
-      // event. We cannot easily reverse `git mv` cleanly post-failure, so a
-      // plain rename back to the original location is sufficient — the next
-      // run's git status will surface the move as a regular working-tree
-      // change rather than a tracked rename.
-      try {
-        await rename(candidate.archived_to_abs, candidate.pending_path_abs);
-      } catch (rollbackError) {
-        return {
-          kind: "knowledge_pending_auto_archive",
-          path: candidate.pending_path,
-          detail,
-          applied: false,
-          error: `ledger append failed (${truncateErrorMessage(ledgerError)}); rollback also failed (${truncateErrorMessage(rollbackError)}); file may be stranded at ${candidate.archived_to}`,
-        };
-      }
-      return {
-        kind: "knowledge_pending_auto_archive",
-        path: candidate.pending_path,
-        detail,
-        applied: false,
-        error: `ledger append failed (${truncateErrorMessage(ledgerError)}); archive rolled back`,
-      };
-    }
-    return {
-      kind: "knowledge_pending_auto_archive",
-      path: candidate.pending_path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_pending_auto_archive",
-      path: candidate.pending_path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
-
-// Helper: convert an absolute path to a workspace-relative POSIX path
-// suitable for `git mv` invocation. Falls back to the absolute path when
-// the absolute is already outside projectRoot (defensive — callers only
-// pass team-layer paths here, but keep the contract clear).
-function relativePosix(projectRoot: string, absolutePath: string): string {
-  const rel = nodeRelative(projectRoot, absolutePath);
-  return rel.split(sep).join("/");
 }
 
 // rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
@@ -2375,32 +1504,6 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
   return { status: fired.length === 0 ? "ok" : "warn", fired };
 }
 
-function createDraftAutoPromoteCheck(
-  t: Translator,
-  inspection: DraftAutoPromoteInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.draft_auto_promote.name"),
-      t("doctor.check.draft_auto_promote.ok"),
-    );
-  }
-  const sample = inspection.candidates.slice(0, 3).map((c) => c.stable_id).join(", ");
-  return {
-    name: t("doctor.check.draft_auto_promote.name"),
-    status: "ok",
-    kind: "info",
-    code: "draft_auto_promotable",
-    fixable: false,
-    message: t("doctor.check.draft_auto_promote.message", {
-      count: String(inspection.candidates.length),
-      sample,
-      suffix: inspection.candidates.length > 3 ? ", ..." : "",
-    }),
-    actionHint: t("doctor.check.draft_auto_promote.remediation"),
-  };
-}
-
 // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when
 // >50% of entries carry `tags: []` — clustering / topical surfacing degrades
 // when most entries are tag-less. Threshold mirrors draft_backlog (>50% with
@@ -2417,32 +1520,6 @@ type EmptyTagsInspection = {
 // `.fabric/knowledge` via buildKnowledgeMeta (its staleness diffed against a
 // rebuilt index, its --fix was reconcileKnowledge) — all retired now that
 // knowledge lives in stores.
-
-function createBaselineFilenameFormatCheck(
-  t: Translator,
-  inspection: BaselineFilenameFormatInspection,
-): DoctorCheck {
-  if (inspection.offenders.length === 0) {
-    return okCheck(
-      t("doctor.check.baseline_filename_format.name"),
-      t("doctor.check.baseline_filename_format.ok"),
-    );
-  }
-  const first = inspection.offenders[0];
-  const detail = `${first.stable_id} at ${first.path}`;
-  const count = inspection.offenders.length;
-  return issueCheck(
-    t("doctor.check.baseline_filename_format.name"),
-    "error",
-    "manual_error",
-    "lint-baseline-filename-format",
-    t(`doctor.check.baseline_filename_format.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.baseline_filename_format.remediation"),
-  );
-}
 
 function createForensicCheck(
   t: Translator,
@@ -3029,33 +2106,6 @@ async function inspectPreexistingRootFiles(projectRoot: string): Promise<Preexis
   return { detected };
 }
 
-function createFilesystemEditFallbackCheck(t: Translator, inspection: FilesystemEditFallbackInspection): DoctorCheck {
-  if (inspection.synthesized === 0) {
-    return okCheck(
-      t("doctor.check.filesystem_edit_fallback.name"),
-      t("doctor.check.filesystem_edit_fallback.ok"),
-    );
-  }
-  const sample = inspection.synthesizedStableIds.slice(0, 3).join(", ");
-  return {
-    name: t("doctor.check.filesystem_edit_fallback.name"),
-    status: "ok",
-    kind: "info",
-    code: "knowledge_promoted_synthesized",
-    fixable: false,
-    message: t(
-      `doctor.check.filesystem_edit_fallback.message.synthesized.${inspection.synthesized === 1 ? "singular" : "plural"}`,
-      {
-        count: String(inspection.synthesized),
-        sample,
-        suffix: inspection.synthesizedStableIds.length > 3 ? ", ..." : "",
-        reason: SYNTHESIZED_PROMOTED_REASON,
-      },
-    ),
-    actionHint: t("doctor.check.filesystem_edit_fallback.remediation.synthesized"),
-  };
-}
-
 function createPreexistingRootFilesCheck(t: Translator, inspection: PreexistingRootFilesInspection): DoctorCheck {
   if (inspection.detected.length === 0) {
     return okCheck(t("doctor.check.preexisting_root_files.name"), t("doctor.check.preexisting_root_files.ok"));
@@ -3069,91 +2119,6 @@ function createPreexistingRootFilesCheck(t: Translator, inspection: PreexistingR
     message: t("doctor.check.preexisting_root_files.message", { files: inspection.detected.join(", ") }),
     actionHint: t("doctor.check.preexisting_root_files.remediation"),
   };
-}
-
-// rc.4 TASK-001: read-side lint inspections (#16-18). Walks the canonical
-// .fabric/knowledge/{type}/ tree (orphan-demote, stale-archive) and the
-// pending/<type>/ staging area (pending-overdue), parses YAML frontmatter
-// for maturity + stable_id + created_at, and computes per-entry inactivity
-// against an in-memory lastActiveAt index built in a single pass over
-// events.jsonl. None of these inspections mutate the filesystem or emit
-// events — TASK-003 wires those mutation paths behind --apply-lint.
-
-// v2.0 rc.5 TASK-014 (C5): build a Map<stable_id, lastConsumedAtEpochMs> in a
-// single pass over events.jsonl. Primary signal is knowledge_consumed (emitted
-// by fab_get_knowledge_sections per resolved stable_id). Drives the pivoted
-// lint #16 (orphan_demote) — replaces the legacy heuristic which mixed every
-// lifecycle + selection + fetch event into a generic "last_referenced".
-//
-// Idempotency carve-out: knowledge_demoted and knowledge_archived events are
-// ALSO recognized as "consumption touches" so that applying a lint mutation
-// (which emits one of these) refreshes the entry's last-consumed timestamp on
-// the next read. Without this, a freshly-demoted but never-consumed entry
-// would be re-flagged on the very next apply-lint run (same created_at, same
-// threshold), breaking the rc.4 idempotency contract documented at
-// runDoctorApplyLint. Selection / fetch / proposed / promoted events are NOT
-// included — those are the legacy-heuristic signals being retired in C5.
-//
-// The legacy buildLastActiveIndex (below) is kept for stale_archive (#17)
-// which still relies on the union-of-lifecycle-events signal until rc.6 audits
-// every read-side check.
-async function buildLastConsumedIndex(
-  projectRoot: string,
-): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
-  let events;
-  try {
-    ({ events } = await readEventLedger(projectRoot));
-  } catch {
-    return map;
-  }
-
-  for (const event of events) {
-    const ts = event.ts;
-    if (typeof ts !== "number" || !Number.isFinite(ts)) {
-      continue;
-    }
-
-    // v2.0.0-rc.33 W3-4 (P1-4): include `knowledge_sections_fetched` as a
-    // use-signal alongside knowledge_consumed. The MCP fab_get_knowledge_sections
-    // tool emits `knowledge_sections_fetched` (carrying final_stable_ids[])
-    // for every fetch; the legacy `knowledge_consumed` path is only hit when
-    // the AI actually reaches into the per-id body. An entry that was
-    // section-fetched (loaded into context) but not separately consumed should
-    // NOT be demoted as orphan — the agent saw it. Without this signal,
-    // doctor reports false-positive orphan_demote candidates whenever the
-    // AI's working memory keeps referring to fetched-but-not-deeply-consumed
-    // entries (which is the rc.32 baseline cite-coverage 3.1% reality).
-    if (event.event_type === "knowledge_sections_fetched") {
-      const ids = Array.isArray(event.final_stable_ids) ? event.final_stable_ids : [];
-      for (const stableId of ids) {
-        if (typeof stableId !== "string" || stableId.length === 0) continue;
-        const prev = map.get(stableId);
-        if (prev === undefined || ts > prev) {
-          map.set(stableId, ts);
-        }
-      }
-      continue;
-    }
-
-    if (
-      event.event_type !== "knowledge_consumed" &&
-      event.event_type !== "knowledge_demoted" &&
-      event.event_type !== "knowledge_archived"
-    ) {
-      continue;
-    }
-    const stableId = event.stable_id;
-    if (typeof stableId !== "string" || stableId.length === 0) {
-      continue;
-    }
-    const prev = map.get(stableId);
-    if (prev === undefined || ts > prev) {
-      map.set(stableId, ts);
-    }
-  }
-
-  return map;
 }
 
 // Build a Map<stable_id, lastActiveAtEpochMs> in a single pass over events.jsonl.
@@ -3231,204 +2196,6 @@ async function buildLastActiveIndex(
   }
 
   return map;
-}
-
-// Pure helper: maturity → inactivity threshold in days.
-// v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity threshold with fabric-config
-// override. Cached per-projectRoot to avoid re-reading the config file on
-// every iterateCanonicalEntries iteration (called O(N) per inspect pass).
-// The cache key is a WeakMap-style closure over (projectRoot, defaults).
-function resolveMaturityThresholds(projectRoot: string): Record<LintMaturity, number> {
-  const overrides = readOrphanDemoteThresholdDays(projectRoot);
-  return {
-    stable: overrides.stable ?? ORPHAN_DEMOTE_THRESHOLD_DAYS.stable,
-    endorsed: overrides.endorsed ?? ORPHAN_DEMOTE_THRESHOLD_DAYS.endorsed,
-    draft: overrides.draft ?? ORPHAN_DEMOTE_THRESHOLD_DAYS.draft,
-  };
-}
-
-function maturityThresholdDays(maturity: LintMaturity, thresholds?: Record<LintMaturity, number>): number {
-  return (thresholds ?? ORPHAN_DEMOTE_THRESHOLD_DAYS)[maturity];
-}
-
-// Pure helper: maturity → next-lower tier (or null when terminal).
-function nextLowerMaturity(current: LintMaturity): "endorsed" | "draft" | null {
-  if (current === "stable") return "endorsed";
-  if (current === "endorsed") return "draft";
-  return null;
-}
-
-function extractKnowledgeFrontmatterMaturity(source: string): LintMaturity | null {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const match = MATURITY_LINE_PATTERN.exec(fm[1]);
-  if (match === null) {
-    return null;
-  }
-  // v2.2 W3-T5 (F-MATURITY-ENDORSED): normalize canonical (proven/verified) and
-  // legacy (stable/endorsed) names onto the internal LintMaturity ladder so a
-  // canonical entry is a first-class orphan_demote candidate.
-  return CANONICAL_TO_LINT_MATURITY[match[2] as string] ?? null;
-}
-
-function extractKnowledgeFrontmatterCreatedAt(source: string): number | null {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const match = CREATED_AT_LINE_PATTERN.exec(fm[1]);
-  if (match === null) {
-    return null;
-  }
-  const parsed = Date.parse(match[2]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-// Iterate canonical knowledge files: yields {stableId, maturity, abs path,
-// rel path, type, lastReferenceMs}. lastReferenceMs is the max of frontmatter
-// created_at, file mtime, and last-active event ts. Files that don't match
-// the canonical filename pattern OR are missing frontmatter id+maturity are
-// skipped silently — they are out of scope for the lint check (covered by
-// other doctor checks like stable_id_collision / filesystem_edit_fallback).
-type CanonicalEntry = {
-  stable_id: string;
-  maturity: LintMaturity;
-  type: typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number];
-  absPath: string;
-  relPath: string;
-  lastReferenceMs: number;
-};
-
-function* iterateCanonicalEntries(
-  projectRoot: string,
-  lastActiveIndex: Map<string, number>,
-): Generator<CanonicalEntry> {
-  void projectRoot;
-  void lastActiveIndex;
-  // v2.2 store cutover: legacy project-local `.fabric/knowledge` canonical
-  // walkers are retired. Current report/fix paths feed these checks with
-  // explicit empty inspections until they are rebuilt against read-set stores.
-  // Keep this private generator inert so an accidental old call site cannot
-  // reintroduce synchronous full-corpus readdir/read/stat work.
-  return;
-}
-
-async function inspectOrphanDemote(
-  projectRoot: string,
-  now: number,
-): Promise<OrphanDemoteInspection> {
-  // v2.0 rc.5 TASK-014 (C5): pivot to last_consumed_at derived from
-  // knowledge_consumed events only. Frontmatter created_at remains a fallback
-  // inside iterateCanonicalEntries so fresh-but-never-consumed entries are
-  // not immediately flagged.
-  const lastConsumedIndex = await buildLastConsumedIndex(projectRoot);
-  const thresholds = resolveMaturityThresholds(projectRoot);
-  const candidates: OrphanDemoteCandidate[] = [];
-
-  for (const entry of iterateCanonicalEntries(projectRoot, lastConsumedIndex)) {
-    const ageMs = entry.lastReferenceMs > 0 ? now - entry.lastReferenceMs : now;
-    const ageDays = Math.floor(ageMs / MS_PER_DAY);
-    const threshold = maturityThresholdDays(entry.maturity, thresholds);
-    if (ageDays <= threshold) {
-      continue;
-    }
-    candidates.push({
-      stable_id: entry.stable_id,
-      path: entry.relPath,
-      age_days: ageDays,
-      maturity: entry.maturity,
-      next_maturity: nextLowerMaturity(entry.maturity),
-    });
-  }
-
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates, thresholds };
-}
-
-async function inspectStaleArchive(
-  projectRoot: string,
-  now: number,
-): Promise<StaleArchiveInspection> {
-  const lastActiveIndex = await buildLastActiveIndex(projectRoot);
-  const candidates: StaleArchiveCandidate[] = [];
-
-  for (const entry of iterateCanonicalEntries(projectRoot, lastActiveIndex)) {
-    if (entry.maturity !== "draft") {
-      continue;
-    }
-    const ageMs = entry.lastReferenceMs > 0 ? now - entry.lastReferenceMs : now;
-    const ageDays = Math.floor(ageMs / MS_PER_DAY);
-    // Stale-archive applies the demote threshold (14 for born-draft) PLUS the
-    // additional 90d quiet window. We do not require knowing the prior maturity
-    // — the additional-quiet semantics is a function of "this entry has been
-    // draft AND quiet for at least 90d", expressed here as draftDemoteThreshold
-    // + STALE_ARCHIVE_ADDITIONAL_DAYS total inactivity.
-    const requiredQuiet =
-      ORPHAN_DEMOTE_THRESHOLD_DAYS.draft + STALE_ARCHIVE_ADDITIONAL_DAYS;
-    if (ageDays <= requiredQuiet) {
-      continue;
-    }
-    const filename = posix.basename(entry.relPath);
-    candidates.push({
-      stable_id: entry.stable_id,
-      path: entry.relPath,
-      age_days: ageDays,
-      archive_path: posix.join(".fabric/.archive", entry.type, filename),
-    });
-  }
-
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
-}
-
-// rc.5 TASK-009 (B2): inlined personal-root resolver mirroring
-// resolvePersonalKnowledgeRoot but anchored at `<home>` rather than
-// `<home>/.fabric/knowledge` — pending lives at `<home>/.fabric/knowledge/pending`
-// so callers want the homedir root and append the suffix themselves.
-function resolvePersonalRootForPending(): string {
-  return process.env.FABRIC_HOME ?? homedir();
-}
-
-// rc.5 TASK-010: inspect lint #22 (knowledge_underseeded).
-//
-// Counts canonical entries across the five canonical type subdirs (excluding
-// pending/) and compares against the underseed threshold. The threshold is
-// read defensively from `.fabric/fabric-config.json#underseed_node_threshold`
-// — the same key the fabric-hint Stop hook reads — falling back to
-// DEFAULT_UNDERSEED_NODE_THRESHOLD on missing-file / parse-failure / bad-type.
-//
-// We deliberately do NOT use the strict CANONICAL_KNOWLEDGE_FILENAME_PATTERN
-// here: entries without the `--<slug>` suffix or with non-canonical filenames
-// still represent knowledge content and should count toward the floor. The
-// stricter pattern is owned by the retired stable-id integrity lints, which
-// deal with identity rather than corpus size.
-async function inspectUnderseeded(projectRoot: string): Promise<UnderseededInspection> {
-  const threshold = await readUnderseedThresholdFromConfig(projectRoot);
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-  let nodeCount = 0;
-  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
-    const dir = join(knowledgeRoot, typeDir);
-    let entries;
-    try {
-      entries = await readdirAsync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith(".md")) {
-        nodeCount += 1;
-      }
-    }
-  }
-  return {
-    node_count: nodeCount,
-    threshold,
-    underseeded: nodeCount < threshold,
-  };
 }
 
 // rc.6 TASK-021 (E3): inspect `.fabric/.cache/` for session-hints cache
@@ -3524,80 +2291,6 @@ async function readUnderseedThresholdFromConfig(projectRoot: string): Promise<nu
     // fall through to default
   }
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
-}
-
-function createOrphanDemoteCheck(t: Translator, inspection: OrphanDemoteInspection): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.orphan_demote.name"),
-      t("doctor.check.orphan_demote.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.stable_id} (${first.maturity}, ${first.age_days}d inactive at ${first.path})`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.orphan_demote.name"),
-    "warn",
-    "warning",
-    "knowledge_orphan_demote_required",
-    t(`doctor.check.orphan_demote.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      stableDays: String(inspection.thresholds.stable),
-      endorsedDays: String(inspection.thresholds.endorsed),
-      draftDays: String(inspection.thresholds.draft),
-      detail,
-    }),
-    t("doctor.check.orphan_demote.remediation"),
-  );
-}
-
-function createStaleArchiveCheck(t: Translator, inspection: StaleArchiveInspection): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.stale_archive.name"),
-      t("doctor.check.stale_archive.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.stable_id} (${first.age_days}d inactive at ${first.path}) -> ${first.archive_path}`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.stale_archive.name"),
-    "warn",
-    "warning",
-    "knowledge_stale_archive_required",
-    t(`doctor.check.stale_archive.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      additionalDays: String(STALE_ARCHIVE_ADDITIONAL_DAYS),
-      detail,
-    }),
-    t("doctor.check.stale_archive.remediation"),
-  );
-}
-
-function createPendingOverdueCheck(t: Translator, inspection: PendingOverdueInspection): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.pending_overdue.name"),
-      t("doctor.check.pending_overdue.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.path} (${first.age_days}d old)`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.pending_overdue.name"),
-    "warn",
-    "warning",
-    "knowledge_pending_overdue",
-    t(`doctor.check.pending_overdue.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      thresholdDays: String(PENDING_OVERDUE_THRESHOLD_DAYS),
-      detail,
-    }),
-    t("doctor.check.pending_overdue.remediation"),
-  );
 }
 
 // rc.5 TASK-010: surface the underseeded lint (#22) as an `info` kind so it
@@ -3707,346 +2400,6 @@ function createStaleServeLockCheck(
       acquiredAgo,
     }),
     t("doctor.check.stale_serve_lock.remediation.dead_pid"),
-  );
-}
-
-// v2.2 store cutover: relevance-path read-side scanners are disabled until
-// they can operate against store-backed knowledge. Keep renderer functions so
-// the public doctor report shape stays stable with empty inspections.
-
-function createNarrowNoPathsCheck(t: Translator, inspection: NarrowNoPathsInspection): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.narrow_no_paths.name"),
-      t("doctor.check.narrow_no_paths.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.stable_id} (${first.path})`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.narrow_no_paths.name"),
-    "warn",
-    "warning",
-    "knowledge_narrow_no_paths",
-    t(`doctor.check.narrow_no_paths.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.narrow_no_paths.remediation"),
-  );
-}
-
-function createRelevancePathsDanglingCheck(
-  t: Translator,
-  inspection: RelevancePathsDanglingInspection,
-): DoctorCheck {
-  if (inspection.entries.length === 0) {
-    return okCheck(
-      t("doctor.check.relevance_paths_dangling.name"),
-      t("doctor.check.relevance_paths_dangling.ok"),
-    );
-  }
-  const first = inspection.entries[0];
-  const detail = `${first.stable_id} at ${first.path} -> \`${first.dangling_glob}\` (0 matches)`;
-  const count = inspection.entries.length;
-  return issueCheck(
-    t("doctor.check.relevance_paths_dangling.name"),
-    "warn",
-    "warning",
-    "knowledge_relevance_paths_dangling",
-    t(`doctor.check.relevance_paths_dangling.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.relevance_paths_dangling.remediation"),
-  );
-}
-
-function createRelevancePathsDriftCheck(
-  t: Translator,
-  inspection: RelevancePathsDriftInspection,
-): DoctorCheck {
-  if (!inspection.git_available) {
-    return okCheck(
-      t("doctor.check.relevance_paths_drift.name"),
-      t("doctor.check.relevance_paths_drift.ok.skipped", {
-        windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
-      }),
-    );
-  }
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.relevance_paths_drift.name"),
-      t("doctor.check.relevance_paths_drift.ok.fresh", {
-        windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
-      }),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.stable_id} at ${first.path} (globs: ${first.globs.join(", ")})`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.relevance_paths_drift.name"),
-    "ok",
-    "info",
-    "knowledge_relevance_paths_drift",
-    t(`doctor.check.relevance_paths_drift.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
-      detail,
-    }),
-    t("doctor.check.relevance_paths_drift.remediation"),
-  );
-}
-
-function createPersonalLayerPathMisclassifyCheck(
-  t: Translator,
-  inspection: PersonalLayerPathMisclassifyInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.personal_layer_path_misclassify.name"),
-      t("doctor.check.personal_layer_path_misclassify.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.stable_id} -> ${first.matched_globs.slice(0, 2).join(", ")}`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.personal_layer_path_misclassify.name"),
-    "warn",
-    "warning",
-    "knowledge_personal_layer_path_misclassify",
-    t(`doctor.check.personal_layer_path_misclassify.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.personal_layer_path_misclassify.remediation"),
-  );
-}
-
-function createSuspiciousKbCheck(
-  t: Translator,
-  inspection: SuspiciousKbInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.suspicious_kb.name"),
-      t("doctor.check.suspicious_kb.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.stable_id} -> ${first.patterns.slice(0, 2).join(", ")}`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.suspicious_kb.name"),
-    "warn",
-    "warning",
-    "knowledge_suspicious_kb_injection",
-    t(`doctor.check.suspicious_kb.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.suspicious_kb.remediation"),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// v2.0.0-rc.9 TASK-003 (A3): lint #28 relevance_fields_missing.
-//
-// Scans the pending staging tree (.fabric/knowledge/pending/**/*.md and
-// ~/.fabric/knowledge/pending/**/*.md) for entries whose YAML frontmatter
-// is missing the `relevance_scope` AND/OR `relevance_paths` fields. These
-// fields were introduced by rc.5 TASK-012 (C3) and rc.5 contracts default
-// missing values to (`broad`, []) at read time via knowledge-meta-builder's
-// fallback (knowledge-meta-builder.ts:1007-1021). Migration is hygiene
-// rather than correctness — but a single `--apply-lint` pass back-fills
-// the explicit defaults so the on-disk shape matches the schema, keeps
-// `fab_review.modify` semantics unambiguous, and emits one aggregate
-// `relevance_migration_run` event per run for audit-trail symmetry with
-// the rc.5→rc.7 bulk-migration precedent (pending_auto_archived /
-// claude_skill_path_migrated etc).
-//
-// Scope: PENDING ONLY. Canonical entries are excluded — the `fab_review`
-// approve/modify flow already writes both fields verbatim (see
-// review.ts approve / modify), and back-filling canonical files would
-// require parsing the layer (KT-/KP-) for each entry. Pending is the
-// only surface where the v2.0 contract still has to tolerate
-// schema-default reads.
-//
-// Idempotency: an entry with BOTH fields already present is skipped (no
-// write, no per-file mutation, no contribution to touched_count). The
-// aggregate event is still emitted on every --apply-lint invocation
-// (touched_count=0 on the no-op pass) so the audit trail reflects every
-// migration heartbeat, mirroring `doctor_run`.
-//
-// Lint number: #28. Lint #26 (`narrow_too_few`, rc.6 TASK-023) and #27
-// (`session_hints_stale`, rc.6 TASK-021) are already allocated; the task
-// spec called this "#26 relevance_fields_missing" but the existing
-// numbering is preserved verbatim to honor TASK-003's "do not break
-// existing lint numbering" constraint.
-// ---------------------------------------------------------------------------
-
-type RelevanceFieldsMissingCandidate = {
-  // Display path: project-relative POSIX for team layer; `~/.fabric/...`
-        // for personal layer, matching the pending display-path convention.
-  pending_path: string;
-  // Absolute filesystem path of the file (used by the apply step to write
-  // back the augmented frontmatter).
-  pending_path_abs: string;
-  // True iff the frontmatter is missing `relevance_scope`. Either flag may
-  // be set independently — a candidate is recorded when at least one is
-  // true; the apply step writes only the missing fields.
-  missing_scope: boolean;
-  // True iff the frontmatter is missing `relevance_paths`.
-  missing_paths: boolean;
-};
-
-type RelevanceFieldsMissingInspection = {
-  candidates: RelevanceFieldsMissingCandidate[];
-  // Total pending entries the walker visited (regardless of whether they
-  // were missing fields). Used by the aggregate event's `scanned_count`.
-  scanned_count: number;
-};
-
-// Pure helper: insert the missing relevance_* YAML lines into a frontmatter
-// block. The replacement writes the fields verbatim against the regex shape
-// at L627-628 so the re-scan invariant holds:
-//   relevance_scope: broad
-//   relevance_paths: []
-// Inserts immediately before the closing `---` delimiter (or after the
-// existing last frontmatter line if there's no trailing blank). Returns
-// null when the source has no parseable frontmatter — caller must handle
-// defensively (the inspection upstream filters that case, but the mutation
-// arm is defensive). If both fields are already present this returns the
-// original source byte-for-byte (idempotency).
-function appendRelevanceFieldsToFrontmatter(
-  source: string,
-  needsScope: boolean,
-  needsPaths: boolean,
-): string | null {
-  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
-  const fm = FM_PATTERN.exec(source);
-  if (fm === null) {
-    return null;
-  }
-  const block = fm[1];
-  // Re-check inside the helper so an idempotent re-run can never re-add
-  // a field that the original write already produced.
-  const actuallyNeedsScope =
-    needsScope && !RELEVANCE_SCOPE_LINE_PATTERN.test(block);
-  const actuallyNeedsPaths =
-    needsPaths && !RELEVANCE_PATHS_LINE_PATTERN.test(block);
-  if (!actuallyNeedsScope && !actuallyNeedsPaths) {
-    return source;
-  }
-  // Build the new frontmatter block. Append the YAML lines after the
-  // existing block content (which already includes its own trailing line
-  // ending tail, guaranteed by the `\r?\n---` match), separating with a
-  // single newline. The values are written verbatim to match the regex
-  // shapes at L627-628 — `relevance_scope: broad` (unquoted) and
-  // `relevance_paths: []` (flow-style empty array).
-  const additions: string[] = [];
-  if (actuallyNeedsScope) {
-    additions.push("relevance_scope: broad");
-  }
-  if (actuallyNeedsPaths) {
-    additions.push("relevance_paths: []");
-  }
-  const trailing = block.endsWith("\n") ? "" : "\n";
-  const replacedBlock = `${block}${trailing}${additions.join("\n")}`;
-  const blockStart = source.indexOf(block);
-  if (blockStart < 0) {
-    return null;
-  }
-  return (
-    source.slice(0, blockStart) +
-    replacedBlock +
-    source.slice(blockStart + block.length)
-  );
-}
-
-async function applyRelevanceFieldsMissing(
-  candidate: RelevanceFieldsMissingCandidate,
-): Promise<DoctorApplyLintMutation> {
-  const parts: string[] = [];
-  if (candidate.missing_scope) parts.push("relevance_scope: broad");
-  if (candidate.missing_paths) parts.push("relevance_paths: []");
-  const detail = `back-filled: ${parts.join(", ")}`;
-  try {
-    const source = await readFile(candidate.pending_path_abs, "utf8");
-    const rewritten = appendRelevanceFieldsToFrontmatter(
-      source,
-      candidate.missing_scope,
-      candidate.missing_paths,
-    );
-    if (rewritten === null) {
-      return {
-        kind: "knowledge_relevance_fields_missing",
-        path: candidate.pending_path,
-        detail,
-        applied: false,
-        error: "frontmatter not parseable; cannot back-fill",
-      };
-    }
-    if (rewritten === source) {
-      // Idempotency: both fields already present at write time (e.g. a
-      // concurrent process landed the back-fill between inspect and apply).
-      // Surface as applied=false with a benign explanation so the mutation
-      // count stays accurate.
-      return {
-        kind: "knowledge_relevance_fields_missing",
-        path: candidate.pending_path,
-        detail,
-        applied: false,
-        error: "fields already present at write time (no diff)",
-      };
-    }
-    await atomicWriteText(candidate.pending_path_abs, rewritten);
-    return {
-      kind: "knowledge_relevance_fields_missing",
-      path: candidate.pending_path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_relevance_fields_missing",
-      path: candidate.pending_path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
-
-function createRelevanceFieldsMissingCheck(
-  t: Translator,
-  inspection: RelevanceFieldsMissingInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.relevance_fields_missing.name"),
-      t("doctor.check.relevance_fields_missing.ok"),
-    );
-  }
-  const first = inspection.candidates[0];
-  const missingParts: string[] = [];
-  if (first.missing_scope) missingParts.push("relevance_scope");
-  if (first.missing_paths) missingParts.push("relevance_paths");
-  const detail = `${first.pending_path} (missing: ${missingParts.join(", ")})`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.relevance_fields_missing.name"),
-    "ok",
-    "info",
-    "knowledge_relevance_fields_missing",
-    t(`doctor.check.relevance_fields_missing.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      detail,
-    }),
-    t("doctor.check.relevance_fields_missing.remediation"),
   );
 }
 
@@ -4168,74 +2521,6 @@ function createOnboardCoverageCheck(t: Translator, inspection: OnboardCoverageIn
       optedOutCount: String(inspection.opted_out.length),
     }),
     t("doctor.check.onboard_coverage.remediation.incomplete"),
-  );
-}
-
-// rc.6 TASK-023 (E6): lint #26 narrow_too_few. Info-kind finding that
-// recommends running fabric-import to (re-)seed narrow anchors when EITHER
-// the structural ratio of narrow-with-paths entries is too low OR the
-// observed silence rate of the PreToolUse narrow hook is too high. The two
-// arms point at the same recommendation because both indicate the narrow
-// scope has drifted away from where edits actually land.
-//
-// Status remains "ok" (info kind) — narrow_too_few is an informational
-// usage-pattern signal, not a correctness break. Mirrors the
-// knowledge_underseeded (#22) precedent.
-function createNarrowTooFewCheck(t: Translator, inspection: NarrowTooFewInspection): DoctorCheck {
-  const { structural_flagged, telemetry_flagged } = inspection;
-  if (!structural_flagged && !telemetry_flagged) {
-    // Compose a passing message that includes whichever arm contributed
-    // data — keeps the surface informative even on the happy path.
-    const ratioPct = (inspection.narrow_ratio * 100).toFixed(0);
-    const teleNote = inspection.telemetry_skipped
-      ? t("doctor.check.narrow_too_few.message.telemetry_skipped")
-      : t("doctor.check.narrow_too_few.message.telemetry_window", {
-        silencePct: (inspection.silence_rate * 100).toFixed(0),
-        windowDays: String(SILENCE_WINDOW_DAYS),
-      });
-    return okCheck(
-      t("doctor.check.narrow_too_few.name"),
-      t("doctor.check.narrow_too_few.ok", {
-        ratioPct,
-        narrowCount: String(inspection.narrow_with_paths_count),
-        totalCount: String(inspection.total_canonical_entries),
-        teleNote,
-      }),
-    );
-  }
-  // Build a message that describes which arm(s) fired. Both arms point at
-  // the same fabric-import action, so the actionHint is unified.
-  const parts: string[] = [];
-  if (structural_flagged) {
-    const ratioPct = (inspection.narrow_ratio * 100).toFixed(0);
-    parts.push(
-      t("doctor.check.narrow_too_few.message.structural", {
-        ratioPct,
-        narrowCount: String(inspection.narrow_with_paths_count),
-        totalCount: String(inspection.total_canonical_entries),
-        thresholdPct: (NARROW_RATIO_THRESHOLD * 100).toFixed(0),
-      }),
-    );
-  }
-  if (telemetry_flagged) {
-    const silencePct = (inspection.silence_rate * 100).toFixed(0);
-    parts.push(
-      t("doctor.check.narrow_too_few.message.telemetry", {
-        silencePct,
-        silenceFires: String(inspection.silence_fires_in_window),
-        totalFires: String(inspection.total_edit_fires_in_window),
-        windowDays: String(SILENCE_WINDOW_DAYS),
-        thresholdPct: (SILENCE_RATE_THRESHOLD * 100).toFixed(0),
-      }),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.narrow_too_few.name"),
-    "ok",
-    "info",
-    "knowledge_narrow_too_few",
-    t("doctor.check.narrow_too_few.message.summary", { parts: parts.join("; ") }),
-    t("doctor.check.narrow_too_few.remediation"),
   );
 }
 

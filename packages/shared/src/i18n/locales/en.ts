@@ -327,16 +327,7 @@ export const enMessages: Messages = {
   "doctor.check.bootstrap_anchor.remediation.missing":
     "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
   "doctor.check.bootstrap_anchor.ok": "Bootstrap anchor present at repo root: {present}.",
-  "doctor.check.baseline_filename_format.name": "Baseline filename format",
-  "doctor.check.baseline_filename_format.ok":
-    "All baseline knowledge files use the canonical `${id}--${slug}.md` filename format.",
-  "doctor.check.baseline_filename_format.message.singular":
-    "{count} baseline knowledge file uses the deprecated bare-slug filename format and must be migrated to `${id}--${slug}.md`. First: {detail}.",
-  "doctor.check.baseline_filename_format.message.plural":
-    "{count} baseline knowledge files use the deprecated bare-slug filename format and must be migrated to `${id}--${slug}.md`. First: {detail}.",
   // v2.0.0-rc.33 W3-2 (T6 #5): reference the file names from the message so users can copy-paste rm targets rather than grep for them.
-  "doctor.check.baseline_filename_format.remediation":
-    "Manually rm the bare-slug baseline file(s) listed in the message (e.g. `rm <file from message>`). The baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
   "doctor.check.forensic.name": "Scan evidence",
   "doctor.check.forensic.message.missing.singular":
     "{error} Live scan detects {frameworkKind} with {count} entry point.",
@@ -502,15 +493,6 @@ export const enMessages: Messages = {
   "doctor.check.draft_backlog.remediation":
     "Run `/fabric-review` to triage drafts: approve to promote to verified/proven, reject to drop, modify to fix. A long-standing draft backlog usually means archive produces drafts faster than review can promote them.",
   // rc.37 NEW-38: knowledge auto-promote (info surface; --fix applies).
-  "doctor.check.draft_auto_promote.name": "Knowledge auto-promote",
-  "doctor.check.draft_auto_promote.ok":
-    "No settled drafts awaiting auto-promote (drafts are younger than 14 days or flagged drifted).",
-  "doctor.check.draft_auto_promote.message":
-    "{count} draft entries have settled for ≥14 days with no drift ({sample}{suffix}) — eligible for auto-promote to verified. Run `fabric doctor --fix` to apply.",
-  "doctor.check.draft_auto_promote.remediation":
-    "Run `fabric doctor --fix` to auto-promote these settled drafts to verified (drains draft_backlog); or run `/fabric-review` to triage each manually.",
-  "doctor.check.draft_auto_promote.fixed":
-    "Auto-promoted {count} settled draft entries → verified.",
   // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
   "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
   "doctor.check.knowledge_tags_empty.ok":
@@ -553,16 +535,7 @@ export const enMessages: Messages = {
     "Use `fabric store bind` / `fabric store switch-write`, then migrate knowledge into the store's knowledge/ tree.",
   "doctor.check.knowledge_dir_unindexed.ok":
     "No legacy local knowledge indexing action is needed.",
-  "doctor.check.stable_id_collision.name": "Stable ID collision",
-  "doctor.check.stable_id_collision.message.singular":
-    "stable_id \"{stableId}\" is declared in {fileCount} files: {files}. Edit one of the knowledge files to use a unique stable_id.",
-  "doctor.check.stable_id_collision.message.plural":
-    "{count} stable_id collisions detected. First: \"{stableId}\" in {files}. Edit one of the knowledge files to use a unique stable_id.",
   // v2.0.0-rc.33 W3-2 (T6 #27): route through fabric-review modify so the canonical id allocator picks a fresh id (avoids hand-counter math).
-  "doctor.check.stable_id_collision.remediation":
-    "Run `/fabric-review modify <one of the colliding ids from the message>` to let the canonical id allocator reassign it (updates frontmatter + counters + historical cross-refs atomically). Do NOT hand-edit id frontmatter — it will desync counters.",
-  "doctor.check.stable_id_collision.ok":
-    "No declared stable_id collisions found in mounted store knowledge.",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
   "doctor.check.counter_desync.message.singular":
     "{count} knowledge counter desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fabric doctor --fix` to bump counters.",
@@ -587,62 +560,8 @@ export const enMessages: Messages = {
     "{files} detected at project root. These root files are not auto-loaded by Fabric MCP.",
   "doctor.check.preexisting_root_files.remediation":
     "Move knowledge content into a mounted store's `knowledge/{type}/` tree if you want it available in MCP responses.",
-  "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
-  "doctor.check.filesystem_edit_fallback.ok":
-    "No orphan canonical knowledge entries detected; events.jsonl promotion trail is complete.",
-  "doctor.check.filesystem_edit_fallback.message.synthesized.singular":
-    "Synthesized {count} knowledge_promoted event for orphan canonical entries ({sample}{suffix}). Reason='{reason}'.",
-  "doctor.check.filesystem_edit_fallback.message.synthesized.plural":
-    "Synthesized {count} knowledge_promoted events for orphan canonical entries ({sample}{suffix}). Reason='{reason}'.",
-  "doctor.check.filesystem_edit_fallback.remediation.synthesized":
-    "These entries were moved into store knowledge/<type>/ outside fab_review.approve. The synthesized events restore audit-trail completeness.",
-  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
-  "doctor.check.orphan_demote.ok":
-    "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
-  "doctor.check.orphan_demote.message.singular":
-    "{count} canonical knowledge entry exceeds their maturity-keyed inactivity threshold (proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d). First: {detail}.",
-  "doctor.check.orphan_demote.message.plural":
-    "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={stableDays}d / verified={endorsedDays}d / draft={draftDays}d). First: {detail}.",
-  "doctor.check.orphan_demote.remediation":
-    "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
-  "doctor.check.stale_archive.name": "Knowledge stale archive",
-  "doctor.check.stale_archive.ok":
-    "No draft knowledge entries exceed the additional stale-archive quiet window.",
-  "doctor.check.stale_archive.message.singular":
-    "{count} draft knowledge entry is stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
-  "doctor.check.stale_archive.message.plural":
-    "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
-  "doctor.check.stale_archive.remediation":
-    "Run `fabric doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
-  "doctor.check.pending_overdue.name": "Knowledge pending overdue",
-  "doctor.check.pending_overdue.ok":
-    "No pending knowledge entries exceed the 14-day review threshold.",
-  "doctor.check.pending_overdue.message.singular":
-    "{count} pending knowledge entry has been awaiting review for more than {thresholdDays} days. First: {detail}.",
-  "doctor.check.pending_overdue.message.plural":
-    "{count} pending knowledge entries have been awaiting review for more than {thresholdDays} days. First: {detail}.",
-  "doctor.check.pending_overdue.remediation":
-    "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
-  "doctor.check.stable_id_duplicate.name": "Knowledge stable_id duplicate",
-  "doctor.check.stable_id_duplicate.ok":
-    "No canonical knowledge files share a stable_id across team / personal trees.",
-  "doctor.check.stable_id_duplicate.message.singular":
-    "{count} stable_id duplicated across canonical knowledge files (path-decoupled identity invariant). First: {detail}.",
-  "doctor.check.stable_id_duplicate.message.plural":
-    "{count} stable_ids duplicated across canonical knowledge files (path-decoupled identity invariant). First: {detail}.",
   // v2.0.0-rc.33 W3-2 (T6 #34): same as stable_id_collision — route through fabric-review modify so allocator handles the new id.
-  "doctor.check.stable_id_duplicate.remediation":
-    "Run `/fabric-review modify <one of the duplicate ids from the message>` to let the canonical id allocator assign a fresh `<prefix>-<type>-<counter>--<slug>.md` (renames the file + updates frontmatter + corrects counters in one shot).",
-  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
-  "doctor.check.layer_mismatch.ok":
-    "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
-  "doctor.check.layer_mismatch.message.singular":
-    "{count} canonical knowledge file are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
-  "doctor.check.layer_mismatch.message.plural":
-    "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
   // v2.0.0-rc.33 W3-2 (T6 #35): make the skill entry point explicit so users know how to invoke fabric-review.
-  "doctor.check.layer_mismatch.remediation":
-    "Move the file to the correct write-target store or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope is at or above the highest existing canonical counter for every (layer, type) pair.",
@@ -661,68 +580,6 @@ export const enMessages: Messages = {
     "Knowledge corpus has only {count} canonical entries (< {threshold} threshold). The plan_context retrieval surface is below its useful floor.",
   "doctor.check.underseeded.remediation":
     "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
-  "doctor.check.narrow_no_paths.name": "Knowledge narrow without paths",
-  "doctor.check.narrow_no_paths.ok":
-    "No narrow-scope canonical entries have an empty relevance_paths array.",
-  "doctor.check.narrow_no_paths.message.singular":
-    "{count} narrow-scope canonical entry has an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: {detail}.",
-  "doctor.check.narrow_no_paths.message.plural":
-    "{count} narrow-scope canonical entries have an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: {detail}.",
-  "doctor.check.narrow_no_paths.remediation":
-    "Run `/fabric-review`, select the entry → modify to add path anchors to relevance_paths or widen relevance_scope to broad; or edit the entry frontmatter directly.",
-  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
-  "doctor.check.relevance_paths_dangling.ok":
-    "All relevance_paths globs resolve to at least one file under the workspace root.",
-  "doctor.check.relevance_paths_dangling.message.singular":
-    "{count} relevance_paths glob resolves to zero files in the current workspace. First: {detail}.",
-  "doctor.check.relevance_paths_dangling.message.plural":
-    "{count} relevance_paths globs resolve to zero files in the current workspace. First: {detail}.",
-  "doctor.check.relevance_paths_dangling.remediation":
-    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
-  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
-  "doctor.check.relevance_paths_drift.ok.skipped":
-    "Skipped (git history unavailable; cannot evaluate {windowDays}d drift window).",
-  "doctor.check.relevance_paths_drift.ok.fresh":
-    "All narrow-scope canonical entries have at least one relevance_path touched in the last {windowDays}d.",
-  "doctor.check.relevance_paths_drift.message.singular":
-    "{count} narrow-scope canonical entry has relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
-  "doctor.check.relevance_paths_drift.message.plural":
-    "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
-  "doctor.check.relevance_paths_drift.remediation":
-    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
-  "doctor.check.personal_layer_path_misclassify.name": "Personal-layer path misclassify",
-  "doctor.check.personal_layer_path_misclassify.ok":
-    "No personal-layer entries declare relevance_paths that resolve against the current project.",
-  "doctor.check.personal_layer_path_misclassify.message.singular":
-    "{count} personal-layer entry declares relevance_paths that match files in the current project (personal layer should be project-agnostic). First: {detail}.",
-  "doctor.check.personal_layer_path_misclassify.message.plural":
-    "{count} personal-layer entries declare relevance_paths that match files in the current project (personal layer should be project-agnostic). First: {detail}.",
-  "doctor.check.personal_layer_path_misclassify.remediation":
-    "Use `fab_review.modify` with `layer: \"team\"` to flip the entry, or rewrite the relevance_paths so the anchors are project-agnostic (e.g. drop project-specific globs).",
-  "doctor.check.suspicious_kb.name": "Suspicious KB injection",
-  "doctor.check.suspicious_kb.ok":
-    "No canonical knowledge bodies match known prompt-injection patterns.",
-  "doctor.check.suspicious_kb.message.singular":
-    "{count} canonical entry body contains tokens matching prompt-injection patterns (likely legacy pre-NEW-31 archive). First: {detail}.",
-  "doctor.check.suspicious_kb.message.plural":
-    "{count} canonical entry bodies contain tokens matching prompt-injection patterns (likely legacy pre-NEW-31 archive). First: {detail}.",
-  "doctor.check.suspicious_kb.remediation":
-    "Review the flagged entries — use `fab_review.modify` to scrub the injection tokens from the body, or `fab_review.reject` to archive entries that should not have been canonicalised.",
-  "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
-  "doctor.check.narrow_too_few.ok":
-    "Narrow-with-paths ratio {ratioPct}% ({narrowCount}/{totalCount}); {teleNote}.",
-  "doctor.check.narrow_too_few.message.telemetry_skipped":
-    "telemetry skipped (no edit-counter fires in window)",
-  "doctor.check.narrow_too_few.message.telemetry_window":
-    "silence rate {silencePct}% over {windowDays}d",
-  "doctor.check.narrow_too_few.message.structural":
-    "narrow-with-paths share {ratioPct}% ({narrowCount}/{totalCount}) below {thresholdPct}% threshold",
-  "doctor.check.narrow_too_few.message.telemetry":
-    "narrow-hook silence rate {silencePct}% ({silenceFires}/{totalFires}) over {windowDays}d above {thresholdPct}% threshold",
-  "doctor.check.narrow_too_few.message.summary":
-    "Narrow-scope KB coverage is below the useful floor: {parts}.",
-  "doctor.check.narrow_too_few.remediation":
-    "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
   "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
   "doctor.check.session_hints_stale.ok":
     "No session-hints cache files older than {days} days under .fabric/.cache/.",
@@ -751,15 +608,6 @@ export const enMessages: Messages = {
     "[advisory] .fabric/.serve.lock holds dead PID {pid} (acquired {acquiredAgo}). Run `fabric doctor --fix` to remove.",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
     "Run `fabric doctor --fix` to remove the stale .fabric/.serve.lock.",
-  "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
-  "doctor.check.relevance_fields_missing.ok":
-    "All pending entries declare both relevance_scope and relevance_paths.",
-  "doctor.check.relevance_fields_missing.message.singular":
-    "{count} pending entry is missing relevance_scope and/or relevance_paths in frontmatter. First: {detail}.",
-  "doctor.check.relevance_fields_missing.message.plural":
-    "{count} pending entries are missing relevance_scope and/or relevance_paths in frontmatter. First: {detail}.",
-  "doctor.check.relevance_fields_missing.remediation":
-    "Run `fabric doctor --fix-knowledge` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
   // rc.31 BUG-M3/NEW-4: hooks_wired observability.
   "doctor.check.hooks_wired.name": "Claude Code hooks wired",
   "doctor.check.hooks_wired.ok.skipped": "Project does not use Claude Code (no .claude/ directory); hooks_wired check skipped.",
