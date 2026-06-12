@@ -36,7 +36,7 @@
     { "name": "G-INVARIANT", "target": "census 不变式闸建立且全绿(event_type/i18n/layer-type/MCP)", "actual": "4/4 绿: i18n parity(locale-parity.test)+event_type(event-ledger-census, W2-1 删 bootstrap_marker_migrated+mcp_config_migrated → 59→57成员, 闸逐次捕获并同步 inline snapshot)+layer-type(knowledge-enum-census 5/3/2)+MCP(既有 index.test 'registers only current MCP tools')",
       "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared exec vitest run src/i18n/locale-parity.test.ts src/schemas/event-ledger-census.test.ts src/schemas/knowledge-enum-census.test.ts && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts",
       "verified_at": "2026-06-12" },
-    { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "1/5 簇(recall extractBody 已删)",
+    { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "部分: recall extractBody(W1-pre)+LockState 死type 再导出(W1-2 8791f94)已删; computeExposedAndMutated REFUTE 疑死=LIVE保留. 余 co-location 死簇(buildKnowledgeMeta/compute*/stableStringify/__Cache*/isForbiddenCrossLayerEdge)+KnowledgeMetaBuildSource DEFER→W1-1 聚焦相位(阻塞于 W0-2 ~90 test fixture 迁移). 本会话不可全绿(用户选项A defer)",
       "verifier_cmd": "npx knip --no-progress 2>&1 | grep -c 'knowledge-meta-builder' (目标: 仅剩 live 的 deriveRuleIdentity/extractRuleDescription)",
       "verified_at": null },
     { "name": "G-MIGRATION", "target": "Species A 迁移/兼容 grep 零残留", "actual": "GREEN: 4 surface src 残留 0/0/0/0 (bootstrap marker / .cursor flat / MCP settings+TOML / config maturity alias). W2-1a c7a4e57 · W2-1b c2541a5 · W2-1c-i 1a03f48 · W2-1c-ii bc93d4e · W2-2 3a88478. tsc全绿·shared628/server693(97skip).",
@@ -68,8 +68,8 @@
       "verification": { "method": "deterministic", "verifier": "knip + server test", "evidence": "PRE-MAPPED(未删): audit零caller声明 CONFIRMED — buildKnowledgeMeta/loadKbIdTypeMap 等的全部 grep 命中皆注释或定义本身, 零真实调用点. 关键: buildKnowledgeMeta(L125)+writeKnowledgeMeta(L132) 已是 no-op(返回 createRetiredKnowledgeMetaBuildResult, store-only cutover 早完成), 不再调 compute*/stableStringify/derive*/loadKbIdTypeMap/__Cache* → 这些 helper 纯死重, 删不断 no-op. writeKnowledgeMeta 作 fixture 现 no-op, §C fixture 调用实际空搭. deriveRuleIdentity/extractRuleDescription 仍 live(2/3 caller) 保留.", "verified_at": null } },
     { "id": "W1-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "摘死 type + 精验 computeExposedAndMutated", "done_when": "删 LockState(legacy-serve-lock-probe,文件保留)/ KnowledgeMetaBuildSource 死 type;精验 computeExposedAndMutated 是否死,死则删",
-      "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "knip + tsc", "evidence": null, "verified_at": null } },
+      "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "knip + tsc", "evidence": "8791f94: 删 LockState 死 type 再导出(server 仅用函数; server-http-experimental 同名是隔离包不动). REFUTE computeExposedAndMutated 疑死(doctor-cite-coverage:1277 真调用 LIVE 保留). KnowledgeMetaBuildSource DEFER→耦合 W1-1 deferred writeKnowledgeMeta(WriteKnowledgeMetaOptions→writeKnowledgeMeta fixture 仍 live, 阻塞 W0-2). tsc 全绿 server 693.", "verified_at": "2026-06-12" } },
     { "id": "W2-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 Species A 迁移码", "done_when": "删旧 marker 剥离(stripLegacyFabricKnowledgeBaseSection)/ .cursor 扁平文件迁移 / MCP TOML [mcp.servers.*] 归一化;doctor 对应检测(bootstrap_marker_migration/mcp_config_in_wrong_file)随之消失;test 绿",
       "ship_criteria_alignment": ["G-MIGRATION"], "alignment_strength": "direct", "status": "done",
@@ -115,6 +115,8 @@
     { "id": "W2-1b", "subject": "删 .cursor 扁平文件迁移码", "commit": "c2541a5", "at": "2026-06-12" },
     { "id": "W2-1c-i", "subject": "删 Codex TOML 旧 [mcp.servers.*] 归一化", "commit": "1a03f48", "at": "2026-06-12" },
     { "id": "W2-1c-ii", "subject": "删 mcp_config_in_wrong_file 迁移检测(census 58→57)", "commit": "bc93d4e", "at": "2026-06-12" },
-    { "id": "W2-2", "subject": "删 config maturity 别名接受 → G-MIGRATION 全绿", "commit": "3a88478", "at": "2026-06-12" }
+    { "id": "W2-2", "subject": "删 config maturity 别名接受 → G-MIGRATION 全绿", "commit": "3a88478", "at": "2026-06-12" },
+    { "id": "W3-1", "subject": "删 cite-tag vocab shim LEGACY_CITE_TAG_REMAP(+.cjs twin/i18n/~50 test) → G-VOCAB(gate); bootstrap文案→ADJ-3", "commit": "87ed337", "at": "2026-06-12" },
+    { "id": "W1-2", "subject": "摘死 LockState type 再导出 + refute computeExposedAndMutated + defer KnowledgeMetaBuildSource→W1-1", "commit": "8791f94", "at": "2026-06-12" }
   ]
 }
