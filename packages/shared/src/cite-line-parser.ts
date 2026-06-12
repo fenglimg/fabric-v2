@@ -229,9 +229,9 @@ export function parseCiteLine(raw: string): ParseCiteLineResult {
       // v2.0.0-rc.27.1 (Codex review fix): cite_commitments MUST be index-
       // aligned with cite_ids per the schema doc on event-ledger.ts:428.
       // Multi-id citations share ONE parsed contract — propagate it across
-      // every id slot so downstream consumers (`doctor.ts` per-cite walk +
-      // `cite-contract-reminder.cjs`) can look up `commitments[i]` for any
-      // valid `i < cite_ids.length` without falling into an undefined slot.
+      // every id slot so the downstream consumer (`doctor.ts` per-cite
+      // cite-coverage walk) can look up `commitments[i]` for any valid
+      // `i < cite_ids.length` without falling into an undefined slot.
       for (let i = 0; i < parsed.ids.length; i += 1) {
         result.cite_commitments.push(parsed.commitment);
       }

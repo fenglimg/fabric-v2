@@ -313,7 +313,7 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
     expect(r.cite_tags).toEqual(["applied"]);
     // v2.0.0-rc.27.1 (Codex review fix): cite_commitments MUST be index-
     // aligned with cite_ids per schema doc — a shared contract propagates to
-    // every id slot so doctor.ts + cite-contract-reminder.cjs can index by
+    // every id slot so the doctor.ts cite-coverage walk can index by
     // cite_ids[i] without hitting an undefined slot.
     const sharedCommitment = {
       operators: [{ kind: "edit", target: "src/foo.ts" }],

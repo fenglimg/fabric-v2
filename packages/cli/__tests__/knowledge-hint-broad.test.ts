@@ -752,36 +752,10 @@ describe("knowledge-hint-broad.cjs — countCanonicalNodes (rc.8)", () => {
     }
   });
 
-  it("returns 0 when .fabric/knowledge/ is missing", () => {
+  it("returns 0 when no resolved-bindings snapshot exists (store-only cutover)", () => {
+    // No fabric-config binding + no snapshot → store path degrades to 0.
+    // The legacy project-local .fabric/knowledge walk is retired.
     expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
-  });
-
-  it("counts only .md files across the five canonical type subdirs", () => {
-    for (const type of hook.CONSTANTS.KNOWLEDGE_CANONICAL_TYPES) {
-      mkdirSync(join(tempRoot, ".fabric", "knowledge", type), { recursive: true });
-    }
-    writeFileSync(
-      join(tempRoot, ".fabric", "knowledge", "decisions", "a.md"),
-      "x",
-      "utf8",
-    );
-    writeFileSync(
-      join(tempRoot, ".fabric", "knowledge", "decisions", "b.md"),
-      "x",
-      "utf8",
-    );
-    writeFileSync(
-      join(tempRoot, ".fabric", "knowledge", "pitfalls", "c.md"),
-      "x",
-      "utf8",
-    );
-    // non-md: should be ignored
-    writeFileSync(
-      join(tempRoot, ".fabric", "knowledge", "guidelines", "ignore.txt"),
-      "x",
-      "utf8",
-    );
-    expect(hook.countCanonicalNodes(tempRoot)).toBe(3);
   });
 
   it("ignores project-local canonical leftovers for store-era projects without snapshot stats", () => {
@@ -955,77 +929,79 @@ describe("knowledge-hint-broad.cjs — shouldRecommendImport (rc.8)", () => {
     }
   });
 
-  function plantMeta(): void {
+  // Store-only cutover: the "is fabric-bound" init signal is now a binding id
+  // in fabric-config.json (not the legacy .fabric/agents.meta.json probe), and
+  // the canonical count comes from the resolved-bindings snapshot (not a
+  // project-local .fabric/knowledge walk).
+  const PROJECT_ID = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1";
+
+  function plantBound(overrides: Record<string, unknown> = {}): void {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     writeFileSync(
-      join(tempRoot, ".fabric", "agents.meta.json"),
-      JSON.stringify({}),
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ project_id: PROJECT_ID, fabric_language: "en", ...overrides }),
       "utf8",
     );
   }
 
-  function plantCanonical(count: number): void {
-    mkdirSync(join(tempRoot, ".fabric", "knowledge", "decisions"), {
-      recursive: true,
-    });
-    for (let i = 0; i < count; i += 1) {
-      writeFileSync(
-        join(tempRoot, ".fabric", "knowledge", "decisions", `e${i}.md`),
-        "x",
-        "utf8",
-      );
-    }
+  function plantImportState(phase: string): void {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", ".import-state.json"),
+      JSON.stringify({ phase }),
+      "utf8",
+    );
   }
 
-  it("returns false when agents.meta.json is missing (workspace not init'd)", () => {
-    plantCanonical(2); // sparse but no meta — no recommendation
-    expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+  it("returns false when the workspace is not fabric-bound (no binding)", () => {
+    // sparse snapshot but no fabric-config binding → not bound → no recommendation
+    withIsolatedFabricHome((home) => {
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    });
   });
 
   it("returns true when canonical < threshold AND .import-state.json absent (the target case)", () => {
-    plantMeta();
-    plantCanonical(3);
-    expect(hook.shouldRecommendImport(tempRoot)).toBe(true);
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(true);
+    });
   });
 
   it("returns false when canonical >= threshold (knowledge graph already seeded)", () => {
-    plantMeta();
-    plantCanonical(15);
-    expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 15 });
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    });
   });
 
   it("returns false when import-state.json phase === 'complete' (user already imported)", () => {
-    plantMeta();
-    plantCanonical(2);
-    writeFileSync(
-      join(tempRoot, ".fabric", ".import-state.json"),
-      JSON.stringify({ phase: "complete" }),
-      "utf8",
-    );
-    expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
+      plantImportState("complete");
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    });
   });
 
   it("returns false when import-state.json phase is in-progress (user actively importing)", () => {
-    plantMeta();
-    plantCanonical(2);
-    writeFileSync(
-      join(tempRoot, ".fabric", ".import-state.json"),
-      JSON.stringify({ phase: "P1-done" }),
-      "utf8",
-    );
-    expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
+      plantImportState("P1-done");
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
+    });
   });
 
   it("respects fabric-config.json underseed_node_threshold override", () => {
-    plantMeta();
-    plantCanonical(15);
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ underseed_node_threshold: 50 }),
-      "utf8",
-    );
-    // 15 < 50 → recommend
-    expect(hook.shouldRecommendImport(tempRoot)).toBe(true);
+    withIsolatedFabricHome((home) => {
+      plantBound({ underseed_node_threshold: 50 });
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 15 });
+      // 15 < 50 → recommend
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(true);
+    });
   });
 });
 
@@ -1055,90 +1031,90 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     return writes;
   }
 
-  function plantMeta(): void {
+  // Store-only cutover: bound via fabric-config binding id; canonical count
+  // from the resolved-bindings snapshot under an isolated FABRIC_HOME.
+  const PROJECT_ID = "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2";
+
+  function plantBound(): void {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     writeFileSync(
-      join(tempRoot, ".fabric", "agents.meta.json"),
-      JSON.stringify({}),
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ project_id: PROJECT_ID, fabric_language: "en" }),
       "utf8",
     );
   }
 
-  function plantCanonical(count: number): void {
-    mkdirSync(join(tempRoot, ".fabric", "knowledge", "decisions"), {
-      recursive: true,
-    });
-    for (let i = 0; i < count; i += 1) {
-      writeFileSync(
-        join(tempRoot, ".fabric", "knowledge", "decisions", `e${i}.md`),
-        "x",
-        "utf8",
-      );
-    }
+  function plantImportState(phase: string): void {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", ".import-state.json"),
+      JSON.stringify({ phase }),
+      "utf8",
+    );
   }
 
   it("canonical=3 < 10 + no import-state → emits import banner alongside summary", () => {
-    plantMeta();
-    plantCanonical(3);
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
 
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-fresh" }),
+      const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+      const writes = captureStderr({
+        payload: makePayload(narrow, { revision_hash: "rev-fresh" }),
+      });
+      const stderr = writes.join("");
+      expect(stderr).toMatch(/📋 Fabric:/);
+      expect(stderr).toMatch(/\/fabric-import/);
+      // v2.2 dual-sink: the §3 census banner still present alongside the import nudge.
+      expect(stderr).toMatch(/\[fabric\] SessionStart/);
     });
-    const stderr = writes.join("");
-    expect(stderr).toMatch(/📋 Fabric:/);
-    expect(stderr).toMatch(/\/fabric-import/);
-    // v2.2 dual-sink: the §3 census banner still present alongside the import nudge.
-    expect(stderr).toMatch(/\[fabric\] SessionStart/);
   });
 
   it("canonical=15 >= 10 → NO import banner emitted", () => {
-    plantMeta();
-    plantCanonical(15);
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 15 });
 
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-seeded" }),
+      const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+      const writes = captureStderr({
+        payload: makePayload(narrow, { revision_hash: "rev-seeded" }),
+      });
+      const stderr = writes.join("");
+      expect(stderr).not.toMatch(/📋 Fabric:/);
+      expect(stderr).not.toMatch(/\/fabric-import/);
     });
-    const stderr = writes.join("");
-    expect(stderr).not.toMatch(/📋 Fabric:/);
-    expect(stderr).not.toMatch(/\/fabric-import/);
   });
 
   it("import-state.json phase='complete' → NO import banner emitted", () => {
-    plantMeta();
-    plantCanonical(2);
-    writeFileSync(
-      join(tempRoot, ".fabric", ".import-state.json"),
-      JSON.stringify({ phase: "complete" }),
-      "utf8",
-    );
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
+      plantImportState("complete");
 
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-done" }),
+      const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+      const writes = captureStderr({
+        payload: makePayload(narrow, { revision_hash: "rev-done" }),
+      });
+      const stderr = writes.join("");
+      expect(stderr).not.toMatch(/📋 Fabric:/);
+      expect(stderr).not.toMatch(/\/fabric-import/);
     });
-    const stderr = writes.join("");
-    expect(stderr).not.toMatch(/📋 Fabric:/);
-    expect(stderr).not.toMatch(/\/fabric-import/);
   });
 
   it("import-state.json phase='P1-done' (in-progress) → NO import banner emitted", () => {
-    plantMeta();
-    plantCanonical(2);
-    writeFileSync(
-      join(tempRoot, ".fabric", ".import-state.json"),
-      JSON.stringify({ phase: "P1-done" }),
-      "utf8",
-    );
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
+      plantImportState("P1-done");
 
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-mid" }),
+      const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+      const writes = captureStderr({
+        payload: makePayload(narrow, { revision_hash: "rev-mid" }),
+      });
+      const stderr = writes.join("");
+      expect(stderr).not.toMatch(/📋 Fabric:/);
+      expect(stderr).not.toMatch(/\/fabric-import/);
     });
-    const stderr = writes.join("");
-    expect(stderr).not.toMatch(/📋 Fabric:/);
-    expect(stderr).not.toMatch(/\/fabric-import/);
   });
 
 });

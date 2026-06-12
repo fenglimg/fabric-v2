@@ -143,29 +143,6 @@ function readSnapshotCanonicalCount(projectRoot) {
   return 0;
 }
 
-function countLegacyCanonicalNodes(projectRoot) {
-  const knowledgeRoot = join(projectRoot, FABRIC_DIR_REL, "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return 0;
-  }
-  let count = 0;
-  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
-    const typeDir = join(knowledgeRoot, type);
-    if (!existsSync(typeDir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".md")) {
-        count += 1;
-      }
-    }
-  }
-  return count;
-}
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -184,7 +161,6 @@ const FABRIC_DIR_REL = ".fabric";
 // cannot `require` each other. If a third hook ever needs the same logic,
 // refactor into packages/cli/templates/hooks/lib/. Keep these values in sync
 // with packages/cli/templates/hooks/fabric-hint.cjs.
-const AGENTS_META_FILE = "agents.meta.json";
 const IMPORT_STATE_FILE = ".import-state.json";
 const KNOWLEDGE_CANONICAL_TYPES = [
   "decisions",
@@ -230,11 +206,12 @@ const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 
 /**
  * Count canonical knowledge entries from the CLI-generated resolved-bindings
- * snapshot. Hooks do not walk project-local .fabric/knowledge or store trees.
+ * snapshot. Store-only: hooks never walk project-local knowledge or store
+ * trees — a missing snapshot degrades to zero (KT-DEC-0007).
  */
 function countCanonicalNodes(projectRoot) {
   const snapshotCount = readSnapshotCanonicalCount(projectRoot);
-  return snapshotCount === null ? countLegacyCanonicalNodes(projectRoot) : snapshotCount;
+  return snapshotCount === null ? 0 : snapshotCount;
 }
 
 /**
@@ -344,9 +321,11 @@ function isImportTouched(projectRoot) {
  * surface the one-line `/fabric-import` recommendation banner.
  *
  * Three-condition truth table (ALL must hold to return true):
- *   1. `.fabric/agents.meta.json` exists
- *      (workspace has been `fabric init`-ed; otherwise the recommendation
- *       is meaningless — `fabric-import` requires init's baseline scan).
+ *   1. the workspace is fabric-bound — readWorkspaceBindingId(cwd) !== null
+ *      (a resolved binding id in fabric-config.json; otherwise the
+ *       recommendation is meaningless — `fabric-import` requires a bound
+ *       workspace. Store-only: replaces the legacy derived-index-file
+ *       existence probe.)
  *   2. countCanonicalNodes(cwd) < readUnderseedThreshold(cwd)
  *      (knowledge graph is sparse — import would meaningfully enrich it).
  *   3. isImportTouched(cwd) === 'absent'
@@ -359,8 +338,7 @@ function isImportTouched(projectRoot) {
  */
 function shouldRecommendImport(projectRoot) {
   try {
-    const metaPath = join(projectRoot, FABRIC_DIR_REL, AGENTS_META_FILE);
-    if (!existsSync(metaPath)) return false;
+    if (readWorkspaceBindingId(projectRoot) === null) return false;
 
     const threshold = readUnderseedThreshold(projectRoot);
     const nodeCount = countCanonicalNodes(projectRoot);

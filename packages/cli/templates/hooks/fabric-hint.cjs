@@ -44,23 +44,6 @@ try {
   citeLineParser = null;
 }
 
-// v2.0.0-rc.24 TASK-05: L1 enforcement layer — soft Stop hook reminder for
-// [recalled] cites of decision/pitfall types that arrived without operator
-// contract or skip:<reason>. Reads .fabric/agents.meta.json (via
-// lib/cite-contract-reminder.cjs#readKnowledgeTypeMap) to type-route cite
-// ids per B6 lock; emits one
-//   ⚠ KB: <id> cited as [recalled] but missing contract; add → edit:<glob>
-//     or → skip:<reason> next turn
-// line to stderr per offending id. Non-blocking, never throws.
-let citeContractReminder = null;
-try {
-  citeContractReminder = require("./lib/cite-contract-reminder.cjs");
-} catch {
-  // Helper module missing — soft reminder simply doesn't fire. Audit-side
-  // doctor (TASK-08) still catches contract violations at the next run.
-  citeContractReminder = null;
-}
-
 // v2.0.0-rc.37 NEW-30: shared client-protocol adapter. Guarded require (this
 // hook runs in arbitrary user repos); detectClient delegates the 3-tier
 // detection to the lib, falling back to env-only when the lib is absent.
@@ -200,30 +183,6 @@ function readLegacyPendingStats(projectRoot, now) {
     count,
     oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
   };
-}
-
-function countLegacyCanonicalNodes(projectRoot) {
-  const knowledgeRoot = join(projectRoot, FABRIC_DIR, "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return 0;
-  }
-  let count = 0;
-  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
-    const typeDir = join(knowledgeRoot, type);
-    if (!existsSync(typeDir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".md")) {
-        count += 1;
-      }
-    }
-  }
-  return count;
 }
 
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
@@ -444,8 +403,8 @@ function readLedger(projectRoot) {
  *   - count: total .md file count across all type subdirs
  *   - oldestAgeMs: (nowMs - oldestMtimeMs) when count>0, else null
  *
- * Store-only cutover: hooks must not walk project-local .fabric/knowledge or
- * store trees. Missing snapshot stats degrade to zero (KT-DEC-0007).
+ * Store-only cutover: hooks never walk project-local knowledge or store
+ * trees. Missing snapshot stats degrade to zero (KT-DEC-0007).
  */
 function readPendingStats(projectRoot, now) {
   const stats = readSnapshotKnowledgeStats(projectRoot, now);
@@ -457,11 +416,12 @@ function readPendingStats(projectRoot, now) {
 
 /**
  * Count canonical knowledge entries from the CLI-generated resolved-bindings
- * snapshot. Hooks do not walk project-local .fabric/knowledge or store trees.
+ * snapshot. Store-only: hooks never walk project-local knowledge or store
+ * trees — a missing snapshot degrades to zero (KT-DEC-0007).
  */
 function countCanonicalNodes(projectRoot) {
   const stats = readSnapshotKnowledgeStats(projectRoot);
-  return stats === null ? countLegacyCanonicalNodes(projectRoot) : stats.canonicalCount;
+  return stats === null ? 0 : stats.canonicalCount;
 }
 
 /**
@@ -1974,50 +1934,6 @@ function summarizeTranscript(transcriptPath) {
 }
 
 /**
- * v2.0.0-rc.24 TASK-05: emit soft L1 reminder to stderr when assistant turns
- * cited a decision/pitfall id with [recalled] but no operator contract and no
- * skip:<reason>. Reads agents.meta.json once per invocation; aggregated per
- * turn (one line per offending id). Non-blocking — never throws, always
- * returns the array of emitted reminder strings (for unit tests + callers
- * that want to observe what was written).
- *
- * The reminder writes go to stderr (the hook contract: stdout is structured
- * banner JSON consumed by the harness; stderr is free-text system message
- * that surfaces back to the model on the next turn in cc / codex / cursor).
- */
-function emitCiteContractRemindersBestEffort(cwd, stdinPayload, stderr) {
-  if (citeContractReminder === null) return [];
-  if (stdinPayload === null || typeof stdinPayload !== "object") return [];
-  try {
-    const transcript = summarizeTranscript(stdinPayload.transcript_path);
-    const turns = transcript.assistant_turns;
-    if (!Array.isArray(turns) || turns.length === 0) return [];
-
-    const idTypeMap = citeContractReminder.readKnowledgeTypeMap(cwd);
-    if (!(idTypeMap instanceof Map) || idTypeMap.size === 0) return [];
-
-    const reminders = citeContractReminder.formatContractMissingReminders({
-      assistant_turns: turns,
-      idTypeMap,
-    });
-    if (!Array.isArray(reminders) || reminders.length === 0) return [];
-
-    const sink = stderr || process.stderr;
-    for (const line of reminders) {
-      try {
-        sink.write(line + "\n");
-      } catch {
-        // Sink write failure must not abort emission of remaining reminders.
-      }
-    }
-    return reminders;
-  } catch {
-    // Outer guard — never throw. Hook continues silently.
-    return [];
-  }
-}
-
-/**
  * v2.0.0-rc.7 T5: writeSessionDigestBestEffort — non-blocking digest fan-out.
  * Called from main() before the existing decide() flow. Failure is silently
  * swallowed; the Stop hook contract remains "never block on hook failure".
@@ -2069,16 +1985,6 @@ function main(env, stdio) {
     // transcript file is small in practice and re-parse cost is dwarfed by
     // the hook's other I/O).
     extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload);
-
-    // v2.0.0-rc.24 TASK-05: L1 soft reminder layer. Surfaces ⚠ KB:<id> lines
-    // to stderr when decision/pitfall cites arrived with [recalled] tag but
-    // empty contract. Non-blocking, never throws; doctor (TASK-08) catches
-    // any contract violation the model ignored.
-    emitCiteContractRemindersBestEffort(
-      cwd,
-      stdinPayload,
-      stdio && stdio.stderr,
-    );
 
     const events = readLedger(cwd);
 
@@ -2395,10 +2301,6 @@ module.exports = {
   parseKbLine,
   detectClient,
   extractAndWriteAssistantTurnsBestEffort,
-  // v2.0.0-rc.24 TASK-05: L1 soft reminder helpers (exported for unit testing
-  // of the contract-missing emission contract). The lib module itself is
-  // also exported indirectly via the reminder helper.
-  emitCiteContractRemindersBestEffort,
   // lifecycle-refactor W3-A2 (§7): graph-edge-candidate request emitter
   // (exported for unit testing of the honest stable_id-gating + de-dup).
   emitGraphEdgeCandidateBestEffort,

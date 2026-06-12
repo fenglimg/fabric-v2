@@ -1054,26 +1054,10 @@ describe("fabric-hint.cjs — countCanonicalNodes", () => {
     }
   });
 
-  it("returns 0 when .fabric/knowledge does not exist", () => {
+  it("returns 0 when no resolved-bindings snapshot exists (store-only cutover)", () => {
+    // No fabric-config binding + no snapshot → store path degrades to 0.
+    // The legacy project-local .fabric/knowledge walk is retired.
     expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
-  });
-
-  it("counts .md files across all five canonical type subdirs (excludes pending)", () => {
-    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
-    seedCanonicalFile(tempRoot, "pitfalls", "KT-PIT-0001--b");
-    seedCanonicalFile(tempRoot, "guidelines", "KT-GLD-0001--c");
-    seedCanonicalFile(tempRoot, "models", "KT-MOD-0001--d");
-    seedCanonicalFile(tempRoot, "processes", "KT-PRO-0001--e");
-    // pending/ entries MUST NOT count.
-    seedCanonicalFile(tempRoot, "pending/decisions", "pending-proposal");
-    // Non-.md noise MUST be ignored.
-    writeFileSync(
-      join(tempRoot, ".fabric", "knowledge", "decisions", "README.txt"),
-      "ignore me",
-      "utf8",
-    );
-
-    expect(hook.countCanonicalNodes(tempRoot)).toBe(5);
   });
 
   it("ignores project-local canonical leftovers for store-era projects without snapshot stats", () => {
@@ -1272,90 +1256,101 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
     }
   });
 
+  // Store-only cutover: canonical count comes from the resolved-bindings
+  // snapshot under an isolated FABRIC_HOME, not a project-local .fabric/knowledge
+  // walk. Workspace is bound via fabric-config.json project_id.
+  const PROJECT_ID = "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3";
+
   it("emits import JSON with signal:'import' + recommended_skill:'fabric-import' on underseeded corpus", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    // Seed an init_scan_completed event 48h before NOW.
-    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(initEvent)}\n`,
-      "utf8",
-    );
-    // Seed 3 canonical entries (< default threshold 10).
-    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
-    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0002--b");
-    seedCanonicalFile(tempRoot, "pitfalls", "KT-PIT-0001--c");
+    withIsolatedFabricHome((home) => {
+      writeProjectConfig(tempRoot, PROJECT_ID);
+      // Seed an init_scan_completed event 48h before NOW.
+      const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+      writeFileSync(
+        join(tempRoot, ".fabric", "events.jsonl"),
+        `${JSON.stringify(initEvent)}\n`,
+        "utf8",
+      );
+      // 3 canonical entries (< default threshold 10) via snapshot stats.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      decision: string;
-      reason: string;
-      signal: string;
-      recommended_skill: string;
-    };
-    expect(payload.decision).toBe("block");
-    expect(payload.signal).toBe("import");
-    expect(payload.recommended_skill).toBe("fabric-import");
-    expect(payload.reason).toMatch(/fabric-import/);
-    expect(payload.reason).toMatch(/3\/10/);
+      expect(writes).toHaveLength(1);
+      const payload = JSON.parse(writes[0] as string) as {
+        decision: string;
+        reason: string;
+        signal: string;
+        recommended_skill: string;
+      };
+      expect(payload.decision).toBe("block");
+      expect(payload.signal).toBe("import");
+      expect(payload.recommended_skill).toBe("fabric-import");
+      expect(payload.reason).toMatch(/fabric-import/);
+      expect(payload.reason).toMatch(/3\/10/);
+    });
   });
 
   it("silent exit 0 when corpus is well-seeded (>= threshold)", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
-    // rc.7 T10: also seed a recent doctor_run so Signal D stays silent;
-    // otherwise a well-seeded workspace with no doctor_run history would
-    // (correctly) trip the maintenance signal and this test would no longer
-    // assert silence.
-    const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS, {
-      mode: "lint",
-      issues: 0,
-      timestamp: new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+    withIsolatedFabricHome((home) => {
+      writeProjectConfig(tempRoot, PROJECT_ID);
+      const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+      // rc.7 T10: also seed a recent doctor_run so Signal D stays silent;
+      // otherwise a well-seeded workspace with no doctor_run history would
+      // (correctly) trip the maintenance signal and this test would no longer
+      // assert silence.
+      const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS, {
+        mode: "lint",
+        issues: 0,
+        timestamp: new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+      });
+      writeFileSync(
+        join(tempRoot, ".fabric", "events.jsonl"),
+        `${JSON.stringify(initEvent)}\n${JSON.stringify(recentDoctor)}\n`,
+        "utf8",
+      );
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 12 });
+
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+      expect(writes).toEqual([]);
     });
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(initEvent)}\n${JSON.stringify(recentDoctor)}\n`,
-      "utf8",
-    );
-    for (let i = 0; i < 12; i += 1) {
-      seedCanonicalFile(tempRoot, "decisions", `KT-DEC-${1000 + i}--entry-${i}`);
-    }
-
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-
-    expect(writes).toEqual([]);
   });
 
   it("honours custom underseed_node_threshold from fabric-config.json", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ underseed_node_threshold: 3 }),
-      "utf8",
-    );
-    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(initEvent)}\n`,
-      "utf8",
-    );
-    // 2 canonical entries: < threshold(3) so import fires.
-    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
-    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0002--b");
+    withIsolatedFabricHome((home) => {
+      writeProjectConfig(tempRoot, PROJECT_ID);
+      // merge the threshold override into the bound fabric-config.json
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({
+          project_id: PROJECT_ID,
+          fabric_language: "en",
+          underseed_node_threshold: 3,
+        }),
+        "utf8",
+      );
+      const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+      writeFileSync(
+        join(tempRoot, ".fabric", "events.jsonl"),
+        `${JSON.stringify(initEvent)}\n`,
+        "utf8",
+      );
+      // 2 canonical entries: < threshold(3) so import fires.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("import");
+      expect(writes).toHaveLength(1);
+      const payload = JSON.parse(writes[0] as string) as { signal: string };
+      expect(payload.signal).toBe("import");
+    });
   });
 });
 
@@ -1646,36 +1641,46 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
     }
   });
 
-  function seedCanonical(root: string, count: number): void {
-    const dir = join(root, ".fabric", "knowledge", "decisions");
-    mkdirSync(dir, { recursive: true });
-    for (let i = 0; i < count; i += 1) {
-      writeFileSync(join(dir, `KT-DEC-${i}.md`), "# stub\n", "utf8");
-    }
+  // Store-only cutover: canonical count comes from the resolved-bindings
+  // snapshot under an isolated FABRIC_HOME. bindCanonical binds the workspace
+  // (fabric-config project_id) and writes the snapshot canonical_count.
+  const PROJECT_ID = "d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4";
+  function bindCanonical(home: string, count: number): void {
+    writeProjectConfig(tempRoot, PROJECT_ID);
+    writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: count });
   }
 
   it("emits Signal D when no doctor_run ever AND canonical >= 5", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    // Empty events.jsonl is fine — no doctor_run, no archive triggers.
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
-    seedCanonical(tempRoot, 5);
+    withIsolatedFabricHome((home) => {
+      // Bind WITHOUT forcing fabric_language so the reason renders in the
+      // default locale (this test asserts the localized reason string).
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ project_id: PROJECT_ID }),
+        "utf8",
+      );
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 5 });
+      // Empty events.jsonl is fine — no doctor_run, no archive triggers.
+      writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      signal: string;
-      recommended_skill: unknown;
-      reason: string;
-    };
-    expect(payload.signal).toBe("maintenance");
-    expect(payload.recommended_skill).toBeNull();
-    expect(payload.reason).toMatch(/从未运行 lint 检查/);
-    // Cooldown sidecar written.
-    const sidecar = join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit");
-    expect(existsSync(sidecar)).toBe(true);
+      expect(writes).toHaveLength(1);
+      const payload = JSON.parse(writes[0] as string) as {
+        signal: string;
+        recommended_skill: unknown;
+        reason: string;
+      };
+      expect(payload.signal).toBe("maintenance");
+      expect(payload.recommended_skill).toBeNull();
+      expect(payload.reason).toMatch(/从未运行 lint 检查/);
+      // Cooldown sidecar written.
+      const sidecar = join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit");
+      expect(existsSync(sidecar)).toBe(true);
+    });
   });
 
   // F13 (ISS-20260531-038): the cooldown sidecar must be session-scoped so a
@@ -1702,47 +1707,50 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
   });
 
   it("does NOT fire Signal D when canonical < 5 (fresh-init guard)", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
-    seedCanonical(tempRoot, 3); // below threshold
+    withIsolatedFabricHome((home) => {
+      bindCanonical(home, 3); // below threshold
+      writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toEqual([]);
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      expect(writes).toEqual([]);
+    });
   });
 
   it("does NOT fire Signal D when doctor_run < 14d ago", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const recentDoctor = NOW_MS - 5 * DAY_MS;
-    const line = JSON.stringify(makeEvent("doctor_run", recentDoctor));
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
-    seedCanonical(tempRoot, 10);
+    withIsolatedFabricHome((home) => {
+      bindCanonical(home, 10);
+      const recentDoctor = NOW_MS - 5 * DAY_MS;
+      const line = JSON.stringify(makeEvent("doctor_run", recentDoctor));
+      writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toEqual([]);
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      expect(writes).toEqual([]);
+    });
   });
 
   it("does NOT re-fire Signal D within 7d cooldown (sidecar present)", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
-    seedCanonical(tempRoot, 10);
+    withIsolatedFabricHome((home) => {
+      bindCanonical(home, 10);
+      writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
 
-    // Sidecar: emitted 3d ago.
-    const sidecarDir = join(tempRoot, ".fabric", ".cache");
-    mkdirSync(sidecarDir, { recursive: true });
-    writeFileSync(
-      join(sidecarDir, "maintenance-hint-last-emit"),
-      new Date(NOW_MS - 3 * DAY_MS).toISOString(),
-      "utf8",
-    );
+      // Sidecar: emitted 3d ago.
+      const sidecarDir = join(tempRoot, ".fabric", ".cache");
+      mkdirSync(sidecarDir, { recursive: true });
+      writeFileSync(
+        join(sidecarDir, "maintenance-hint-last-emit"),
+        new Date(NOW_MS - 3 * DAY_MS).toISOString(),
+        "utf8",
+      );
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toEqual([]);
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      expect(writes).toEqual([]);
+    });
   });
 
   it("emits Signal D AFTER A/B/C are silent (precedence: maintenance is last)", () => {
@@ -1751,51 +1759,58 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
     //   - 0 pending entries (Signal B silent)
     //   - init_scan_completed 2d ago, 50 canonical entries (Signal C silent)
     //   - No doctor_run event (Signal D fires)
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    const initTs = NOW_MS - 2 * DAY_MS;
-    const lines = [
-      JSON.stringify(makeEvent("init_scan_completed", initTs)),
-      JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
-    ];
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      lines.map((l) => `${l}\n`).join(""),
-      "utf8",
-    );
-    seedCanonical(tempRoot, 50);
+    withIsolatedFabricHome((home) => {
+      bindCanonical(home, 50);
+      const proposedTs = NOW_MS - 5 * HOUR_MS;
+      const initTs = NOW_MS - 2 * DAY_MS;
+      const lines = [
+        JSON.stringify(makeEvent("init_scan_completed", initTs)),
+        JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
+      ];
+      writeFileSync(
+        join(tempRoot, ".fabric", "events.jsonl"),
+        lines.map((l) => `${l}\n`).join(""),
+        "utf8",
+      );
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("maintenance");
+      expect(writes).toHaveLength(1);
+      const payload = JSON.parse(writes[0] as string) as { signal: string };
+      expect(payload.signal).toBe("maintenance");
+    });
   });
 
   it("honours fabric-config.json maintenance_hint_days override", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    // Doctor ran 10d ago; default 14d → silent. Override 7d → fires.
-    const doctorTs = NOW_MS - 10 * DAY_MS;
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(makeEvent("doctor_run", doctorTs))}\n`,
-      "utf8",
-    );
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ maintenance_hint_days: 7 }),
-      "utf8",
-    );
-    seedCanonical(tempRoot, 10);
+    withIsolatedFabricHome((home) => {
+      // Doctor ran 10d ago; default 14d → silent. Override 7d → fires.
+      writeProjectConfig(tempRoot, PROJECT_ID);
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({
+          project_id: PROJECT_ID,
+          fabric_language: "en",
+          maintenance_hint_days: 7,
+        }),
+        "utf8",
+      );
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 10 });
+      const doctorTs = NOW_MS - 10 * DAY_MS;
+      writeFileSync(
+        join(tempRoot, ".fabric", "events.jsonl"),
+        `${JSON.stringify(makeEvent("doctor_run", doctorTs))}\n`,
+        "utf8",
+      );
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("maintenance");
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      expect(writes).toHaveLength(1);
+      const payload = JSON.parse(writes[0] as string) as { signal: string };
+      expect(payload.signal).toBe("maintenance");
+    });
   });
 });
 
