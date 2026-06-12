@@ -1,0 +1,103 @@
+{
+  "session_id": "20260612-fallback-purge",
+  "active_session_id": null,
+  "sessions": [],
+  "intent": "0 用户阶段探清并清除所有 fallback/兜底逻辑(历史包袱/架构残留/过渡态),上线前一次性 decruft",
+  "goal": "清除 Species A(历史包袱/架构变更残留/过渡态兜底),保留 Species B(运行时防御);测试基线收绿零skip;建 census 不变式闸防动态派发误删。命名 ship gate 全绿即达成。",
+  "mode": "3",
+  "current_phase": "audit",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "Species A 删除: co-location 死簇 / 旧 marker 剥离 / .cursor 扁平文件迁移 / MCP TOML 归一化 / config maturity 别名 / cite-tag vocab remap + tendril",
+      "测试基线收绿: 14 红(语言漂移)→0, 105 skip 逐个 triage→0",
+      "建 census 不变式安全闸: event_type emitter↔handler / i18n key↔locale / layer-type 枚举 / MCP 工具注册"
+    ],
+    "out_of_scope": [
+      "Species B 运行时防御(schema 默认值/install try-catch/doctor --fix 自愈/first-reconcile-gate/ledger 4KB 截断)— 全保留",
+      "半成品功能(sync 推送 run-sync.ts defaultPush/defaultCommitDirty)— 用户拍,不动",
+      "决斗: doctor 内部 stable/endorsed rename — 用户拍,不动(那是 rename 非 fallback)",
+      "over-export 外观 nit(摘多余 export / 6 个 duplicate export)— 可选,不强求"
+    ],
+    "constraints": [
+      "先验死代码: 零 live caller(grep)才删;还有 caller=重构未完→先收尾 cutover 再删旧",
+      "动态/字符串派发(60 event_type case / i18n key / 计算键)靠 census 不变式闸验,不靠 grep 零caller",
+      "TDD-red: 每个删除目标先写红不变式断言'删除后的世界'→删→转绿(可证明穷尽)",
+      "每波收口: tsc --noEmit + 全量测试绿 + git commit",
+      "改 packages/shared schema 必须 pnpm --filter @fenglimg/fabric-shared build 重建 dist",
+      "knip 'unused export' 多为 over-export(活代码),非死代码,删前必 grep 验 live consumer",
+      "行动手册 = .workflow/.scratchpad/fallback-purge-plan.md + wave0-triage.md(spec,引用不复制)"
+    ]
+  },
+  "ship_criteria": [
+    { "name": "G-BASELINE", "target": "test 0 fail & 0 skip", "actual": "14 fail / 105 skip",
+      "verifier_cmd": "pnpm -r --if-present test 2>&1 | grep -iE 'failed|skipped' | tail -5",
+      "verified_at": null },
+    { "name": "G-INVARIANT", "target": "census 不变式闸建立且全绿(event_type/i18n/layer-type/MCP)", "actual": null,
+      "verifier_cmd": "PROBE: 新增 census 测试文件后填实际 vitest 命令",
+      "verified_at": null },
+    { "name": "G-DEADCODE", "target": "co-location 死簇 + recall死重复 + 死type 删净", "actual": "1/5 簇(recall extractBody 已删)",
+      "verifier_cmd": "npx knip --no-progress 2>&1 | grep -c 'knowledge-meta-builder' (目标: 仅剩 live 的 deriveRuleIdentity/extractRuleDescription)",
+      "verified_at": null },
+    { "name": "G-MIGRATION", "target": "Species A 迁移/兼容 grep 零残留", "actual": null,
+      "verifier_cmd": "PROBE: grep 旧 marker/.cursor 扁平/[mcp.servers]/orphan_demote_stable_days 残留计数",
+      "verified_at": null },
+    { "name": "G-VOCAB", "target": "cite-tag LEGACY_CITE_TAG_REMAP + i18n/hook/bootstrap tendril 删净 + shared rebuild + parser 测试绿", "actual": null,
+      "verifier_cmd": "grep -rc 'LEGACY_CITE_TAG_REMAP\\|planned.*applied' packages/shared/src/cite-line-parser.ts && pnpm --filter @fenglimg/fabric-shared build",
+      "verified_at": null },
+    { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试全绿", "actual": null,
+      "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test",
+      "verified_at": null }
+  ],
+  "task_decomposition": [
+    { "id": "W0-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "14 红(cli 语言漂移)seed regen + diff 审计", "done_when": "regen seed 后 diff 旧 seed,逐行确认每处变化被 language-first 重构解释(解释不了=真bug修);cli 测试转绿",
+      "ship_criteria_alignment": ["G-BASELINE"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "pnpm --filter @fenglimg/fabric-cli test", "evidence": null, "verified_at": null } },
+    { "id": "W0-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "105 skip 逐个 triage(复活 or 随死代码删)", "done_when": "每个 it.skip/skipped 判定: 测 live 行为→复活改 fixture; 测 retired check→随死代码删; skip 计数归零",
+      "ship_criteria_alignment": ["G-BASELINE", "G-DEADCODE"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep it.skip 计数 + 全量 test 0 skip", "evidence": null, "verified_at": null } },
+    { "id": "W0-3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "建 census 不变式安全闸", "done_when": "新增测试: event_type emitter↔handler 奇偶 / i18n key↔locale 奇偶 / layer-type 枚举 census / MCP 工具注册 smoke;全绿",
+      "ship_criteria_alignment": ["G-INVARIANT"], "alignment_strength": "infrastructure", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "vitest 新 census 测试", "evidence": null, "verified_at": null } },
+    { "id": "W1-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "删 co-location 死簇(knowledge-meta-builder 死函数)+ 连带 fixture/测试", "done_when": "删 buildKnowledgeMeta/computeKnowledgeBasedAgentsMeta/computeKnowledgeTestIndex/loadKbIdTypeMap/deriveKnowledgeMetaTopologyType/isSameKnowledgeTestIndex/stableStringify/__*Cache* + isForbiddenCrossLayerEdge;保留 deriveRuleIdentity/extractRuleDescription;processed writeKnowledgeMeta fixture(W0-2 耦合);tsc+test 绿",
+      "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "knip + server test", "evidence": null, "verified_at": null } },
+    { "id": "W1-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "摘死 type + 精验 computeExposedAndMutated", "done_when": "删 LockState(legacy-serve-lock-probe,文件保留)/ KnowledgeMetaBuildSource 死 type;精验 computeExposedAndMutated 是否死,死则删",
+      "ship_criteria_alignment": ["G-DEADCODE"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "knip + tsc", "evidence": null, "verified_at": null } },
+    { "id": "W2-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "删 Species A 迁移码", "done_when": "删旧 marker 剥离(stripLegacyFabricKnowledgeBaseSection)/ .cursor 扁平文件迁移 / MCP TOML [mcp.servers.*] 归一化;doctor 对应检测(bootstrap_marker_migration/mcp_config_in_wrong_file)随之消失;test 绿",
+      "ship_criteria_alignment": ["G-MIGRATION"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep 残留 + test", "evidence": null, "verified_at": null } },
+    { "id": "W2-2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "删 config maturity 别名接受", "done_when": "删 orphan_demote_stable_days/endorsed_days 别名接受(config-loader);留 doctor 内部 stable/endorsed LintMaturity 决斗不动;test 绿",
+      "ship_criteria_alignment": ["G-MIGRATION"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep + test", "evidence": null, "verified_at": null } },
+    { "id": "W3-1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "删 cite-tag vocab shim + 全 tendril(小心 wave)", "done_when": "删 LEGACY_CITE_TAG_REMAP(cite-line-parser)+ event-ledger preprocess remap + i18n en/zh G1/G3 recalled/chained-from 文案 + self-archive hook 旧名正则 + bootstrap-canonical/AGENTS.md 旧名文案;rebuild shared dist;cite-line-parser.test/event-ledger.test 旧断言同步删/改;全绿",
+      "ship_criteria_alignment": ["G-VOCAB"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep + shared build + test", "evidence": null, "verified_at": null } }
+  ],
+  "needs_adjudication": [
+    { "id": "ADJ-1", "subject": "半成品 sync 推送(run-sync.ts defaultPush/defaultCommitDirty/Git* types 未接线): 删 / 接完 / 留", "adjudication_reason": "out-of-authority", "round": 1 },
+    { "id": "ADJ-2", "subject": "doctor 内部 stable/endorsed 是否顺手 rename 成 canonical verified/proven(独立 refactor,非 fallback)", "adjudication_reason": "out-of-authority", "round": 1 }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260612-fallback-purge/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null,
+  "audit_rounds": [
+    { "round": 1, "status": "running", "round_task_ceiling": 12, "round_task_actual": 8,
+      "convergence_status": "converging", "newly_discovered_this_round": [], "carried_in": [],
+      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "drift_checks": [],
+      "completion_gate": { "task_gate": {}, "goal_gate": { "blocking": true }, "drift_gate": {} } }
+  ],
+  "done_log": [
+    { "id": "W1-pre", "subject": "删 recall.ts 死 re-export extractBody", "commit": "d7eba65", "at": "2026-06-12" }
+  ]
+}
