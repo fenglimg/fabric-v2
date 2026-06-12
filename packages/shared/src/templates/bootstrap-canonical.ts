@@ -24,15 +24,6 @@ export const BOOTSTRAP_MARKER_BEGIN = "<!-- fabric:bootstrap:begin -->";
 export const BOOTSTRAP_MARKER_END = "<!-- fabric:bootstrap:end -->";
 
 /**
- * Legacy marker pair from rc.12-rc.18 era (when the managed section was
- * branded "Fabric Knowledge Base"). Retained here for one-time migration
- * detection only: rc.19 install path scans for legacy markers, strips the
- * legacy region, and rewrites with the new bootstrap markers.
- */
-export const LEGACY_KB_MARKER_BEGIN = "<!-- fabric:knowledge-base:begin -->";
-export const LEGACY_KB_MARKER_END = "<!-- fabric:knowledge-base:end -->";
-
-/**
  * Regex matching the entire managed bootstrap section, markers inclusive,
  * with an optional preceding blank-line separator (so re-install / uninstall
  * don't leave orphan blank lines). Non-greedy body matches any content
@@ -41,14 +32,6 @@ export const LEGACY_KB_MARKER_END = "<!-- fabric:knowledge-base:end -->";
  */
 export const BOOTSTRAP_REGEX =
   /(?:\r?\n){0,2}<!-- fabric:bootstrap:begin -->[\s\S]*?<!-- fabric:bootstrap:end -->/;
-
-/**
- * Legacy-marker variant used for one-time migration detection during rc.19
- * install — same shape as {@link BOOTSTRAP_REGEX} but targets the older
- * `knowledge-base` marker pair.
- */
-export const LEGACY_KB_REGEX =
-  /(?:\r?\n){0,2}<!-- fabric:knowledge-base:begin -->[\s\S]*?<!-- fabric:knowledge-base:end -->/;
 
 /**
  * Canonical bootstrap body — byte-locked per rc.19 locked clarification 3.

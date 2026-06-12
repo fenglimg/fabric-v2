@@ -301,15 +301,6 @@ export const enMessages: Messages = {
   "doctor.enrich.allComplete":
     "All canonical knowledge entries already declare intent_clues / tech_stack / impact / must_read_if.",
   // rc.26 TASK-02a: doctor foundation-batch check messages.
-  "doctor.check.bootstrap_marker_migration.name": "Bootstrap marker migration",
-  "doctor.check.bootstrap_marker_migration.ok":
-    "No legacy fabric:knowledge-base markers detected in bootstrap target files.",
-  "doctor.check.bootstrap_marker_migration.message.singular":
-    "{count} file still carry the legacy fabric:knowledge-base bootstrap marker: {list}.",
-  "doctor.check.bootstrap_marker_migration.message.plural":
-    "{count} files still carry the legacy fabric:knowledge-base bootstrap marker: {list}.",
-  "doctor.check.bootstrap_marker_migration.remediation":
-    "Run `fabric doctor --fix` to migrate to fabric:bootstrap marker",
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
   "doctor.check.bootstrap_snapshot_drift.message.drift":
     ".fabric/AGENTS.md content diverges byte-for-byte from BOOTSTRAP_CANONICAL.",

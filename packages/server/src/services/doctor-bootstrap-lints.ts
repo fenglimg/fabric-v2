@@ -6,7 +6,6 @@ import {
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
-  LEGACY_KB_REGEX,
   type Translator,
 } from "@fenglimg/fabric-shared";
 
@@ -15,10 +14,6 @@ import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor.js";
 export type BootstrapAnchorInspection = {
   hasAgentsMd: boolean;
   hasClaudeMd: boolean;
-};
-
-export type BootstrapMarkerMigrationInspection = {
-  filesNeedingMigration: string[];
 };
 
 export type L1BootstrapSnapshotDriftInspection = {
@@ -31,13 +26,6 @@ export type L2ManagedBlockDriftInspection = {
   status: "ok" | "drift" | "no-managed-block";
   drifted: Array<{ path: string; expected: string; actual: string }>;
 };
-
-export const BOOTSTRAP_MARKER_MIGRATION_TARGETS = [
-  "CLAUDE.md",
-  "AGENTS.md",
-  ".cursor/rules",
-  ".cursor/rules/fabric-bootstrap.mdc",
-] as const;
 
 function okCheck(name: string, message: string): DoctorCheck {
   return { name, status: "ok", message };
@@ -77,50 +65,6 @@ export async function inspectBootstrapAnchor(projectRoot: string): Promise<Boots
     fileExists(join(projectRoot, "CLAUDE.md")),
   ]);
   return { hasAgentsMd, hasClaudeMd };
-}
-
-export async function inspectBootstrapMarkerMigration(
-  target: string,
-): Promise<BootstrapMarkerMigrationInspection> {
-  const filesNeedingMigration: string[] = [];
-  for (const rel of BOOTSTRAP_MARKER_MIGRATION_TARGETS) {
-    const abs = join(target, rel);
-    let content: string;
-    try {
-      content = await readFile(abs, "utf8");
-    } catch {
-      continue;
-    }
-    if (LEGACY_KB_REGEX.test(content)) {
-      filesNeedingMigration.push(abs);
-    }
-  }
-  return { filesNeedingMigration };
-}
-
-export function createBootstrapMarkerMigrationCheck(
-  t: Translator,
-  inspection: BootstrapMarkerMigrationInspection,
-): DoctorCheck {
-  if (inspection.filesNeedingMigration.length === 0) {
-    return okCheck(
-      t("doctor.check.bootstrap_marker_migration.name"),
-      t("doctor.check.bootstrap_marker_migration.ok"),
-    );
-  }
-  const list = inspection.filesNeedingMigration.join(", ");
-  const count = inspection.filesNeedingMigration.length;
-  return issueCheck(
-    t("doctor.check.bootstrap_marker_migration.name"),
-    "error",
-    "fixable_error",
-    "bootstrap_marker_migration_required",
-    t(`doctor.check.bootstrap_marker_migration.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.bootstrap_marker_migration.remediation"),
-  );
 }
 
 export async function inspectL1BootstrapSnapshotDrift(
@@ -194,9 +138,6 @@ export async function inspectL2ManagedBlockDrift(
     } catch {
       continue;
     }
-    if (!BOOTSTRAP_REGEX.test(content) && LEGACY_KB_REGEX.test(content)) {
-      continue;
-    }
     const match = content.match(BOOTSTRAP_REGEX);
     if (match === null) {
       continue;
@@ -220,19 +161,15 @@ export async function inspectL2ManagedBlockDrift(
   const claudeMdPath = join(target, "CLAUDE.md");
   try {
     const claudeContent = await readFile(claudeMdPath, "utf8");
-    if (!BOOTSTRAP_REGEX.test(claudeContent) && LEGACY_KB_REGEX.test(claudeContent)) {
-      // TASK-04 owns legacy-marker pre-migration state.
-    } else {
-      anyManagedBlockFound = true;
-      const lines = claudeContent.split(/\r?\n/u);
-      const hasAtImport = lines.some((line) => line.trim() === "@.fabric/AGENTS.md");
-      if (!hasAtImport) {
-        drifted.push({
-          path: claudeMdPath,
-          expected: "@.fabric/AGENTS.md",
-          actual: "(line missing)",
-        });
-      }
+    anyManagedBlockFound = true;
+    const lines = claudeContent.split(/\r?\n/u);
+    const hasAtImport = lines.some((line) => line.trim() === "@.fabric/AGENTS.md");
+    if (!hasAtImport) {
+      drifted.push({
+        path: claudeMdPath,
+        expected: "@.fabric/AGENTS.md",
+        actual: "(line missing)",
+      });
     }
   } catch {
     // Best-effort: missing CLAUDE.md is fine for this inspection.

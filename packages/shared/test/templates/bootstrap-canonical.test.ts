@@ -5,9 +5,6 @@ import {
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
-  LEGACY_KB_MARKER_BEGIN,
-  LEGACY_KB_MARKER_END,
-  LEGACY_KB_REGEX,
 } from "../../src/templates/bootstrap-canonical";
 
 describe("bootstrap-canonical", () => {
@@ -193,13 +190,6 @@ describe("bootstrap-canonical", () => {
       expect(BOOTSTRAP_MARKER_BEGIN).toBe("<!-- fabric:bootstrap:begin -->");
       expect(BOOTSTRAP_MARKER_END).toBe("<!-- fabric:bootstrap:end -->");
     });
-
-    it("exports the legacy knowledge-base marker pair as exact HTML-comment literals", () => {
-      expect(LEGACY_KB_MARKER_BEGIN).toBe(
-        "<!-- fabric:knowledge-base:begin -->",
-      );
-      expect(LEGACY_KB_MARKER_END).toBe("<!-- fabric:knowledge-base:end -->");
-    });
   });
 
   describe("regex matchers", () => {
@@ -207,14 +197,6 @@ describe("bootstrap-canonical", () => {
       expect(
         BOOTSTRAP_REGEX.test(
           "<!-- fabric:bootstrap:begin -->\nbody\n<!-- fabric:bootstrap:end -->",
-        ),
-      ).toBe(true);
-    });
-
-    it("LEGACY_KB_REGEX matches a begin/body/end region", () => {
-      expect(
-        LEGACY_KB_REGEX.test(
-          "<!-- fabric:knowledge-base:begin -->\nbody\n<!-- fabric:knowledge-base:end -->",
         ),
       ).toBe(true);
     });

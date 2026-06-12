@@ -10,8 +10,6 @@ import {
   BOOTSTRAP_CANONICAL,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
-  LEGACY_KB_MARKER_BEGIN,
-  LEGACY_KB_MARKER_END,
   STORE_LAYOUT,
   fabricConfigSchema,
   readStoreCounters,
@@ -150,13 +148,8 @@ describe("runDoctorReport", () => {
     // filenames violating the canonical `${id}--${slug}.md` invariant).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
-      // rc.19 bootstrap-consolidation TASK-004: fabric:knowledge-base →
-      // fabric:bootstrap one-time marker migration sits adjacent to the
-      // anchor check — both are bootstrap-file invariants.
-      "Bootstrap marker migration",
       // rc.19 bootstrap-consolidation TASK-005: L1 + L2 byte-level drift
-      // detection sit immediately after the marker migration check. Order:
-      // anchor existence → migration → L1 (canonical ↔ snapshot) → L2
+      // detection. Order: anchor existence → L1 (canonical ↔ snapshot) → L2
       // (snapshot+rules ↔ three-end blocks).
       "Bootstrap snapshot drift",
       "Managed block drift",
@@ -262,7 +255,8 @@ describe("runDoctorReport", () => {
     // divergence / Knowledge dir unindexed / Knowledge index drift); "Knowledge
     // counter desync" renamed to "Store counter drift" (net -6).
     // +1: project-scope binding backfill lint (unbound_project) → 49.
-    expect(report.checks).toHaveLength(49);
+    // fallback-purge W2-1a: removed "Bootstrap marker migration" check → 48.
+    expect(report.checks).toHaveLength(48);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -4479,122 +4473,6 @@ describe("runDoctorReport", () => {
       expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("error");
     });
   });
-
-  describe("rc.19 marker migration fabric:knowledge-base → fabric:bootstrap", () => {
-    function seedLegacyMarker(target: string, relPath: string, body: string): void {
-      // Legacy managed block: same body convention as the new marker, but using
-      // the pre-rc.19 fabric:knowledge-base marker token pair.
-      const legacyBlock = `${LEGACY_KB_MARKER_BEGIN}\n${body}\n${LEGACY_KB_MARKER_END}`;
-      const abs = join(target, relPath);
-      mkdirSync(join(abs, ".."), { recursive: true });
-      writeFileSync(abs, `${legacyBlock}\n`, "utf8");
-    }
-
-    it("reports fixable_error when bootstrap target files carry legacy fabric:knowledge-base markers", async () => {
-      const target = createInitializedProject("doctor-rc19-marker-detect");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      seedLegacyMarker(target, "CLAUDE.md", "legacy body for CLAUDE.md");
-      seedLegacyMarker(target, "AGENTS.md", "legacy body for AGENTS.md");
-      seedLegacyMarker(target, ".cursor/rules/fabric-bootstrap.mdc", "legacy body for cursor");
-
-      const report = await runDoctorReport(target);
-      const codes = report.fixable_errors.map((e) => e.code);
-      expect(codes).toContain("bootstrap_marker_migration_required");
-      const check = report.checks.find((c) => c.name === "Bootstrap marker migration");
-      expect(check?.status).toBe("error");
-      expect(check?.message).toContain("fabric:knowledge-base");
-    });
-
-    it("--fix rewrites legacy markers to fabric:bootstrap in all seeded target paths", async () => {
-      const target = createInitializedProject("doctor-rc19-marker-fix-paths");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      const targets: string[] = [
-        "CLAUDE.md",
-        "AGENTS.md",
-        ".cursor/rules/fabric-bootstrap.mdc",
-      ];
-      for (const rel of targets) {
-        seedLegacyMarker(target, rel, `legacy body for ${rel}`);
-      }
-
-      await runDoctorFix(target);
-
-      // Per-file invariants: zero legacy substrings, exactly one new begin/end.
-      for (const rel of targets) {
-        const content = readFileSync(join(target, rel), "utf8");
-        expect(content.split(LEGACY_KB_MARKER_BEGIN).length - 1).toBe(0);
-        expect(content.split(LEGACY_KB_MARKER_END).length - 1).toBe(0);
-        // Defensive: even the bare token "fabric:knowledge-base" must be gone.
-        expect(content.includes("fabric:knowledge-base")).toBe(false);
-        expect(content.split(BOOTSTRAP_MARKER_BEGIN).length - 1).toBe(1);
-        expect(content.split(BOOTSTRAP_MARKER_END).length - 1).toBe(1);
-      }
-    });
-
-    it("--fix emits one bootstrap_marker_migrated ledger event per file migrated", async () => {
-      const target = createInitializedProject("doctor-rc19-marker-ledger");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      const targets: string[] = [
-        "CLAUDE.md",
-        "AGENTS.md",
-        ".cursor/rules/fabric-bootstrap.mdc",
-      ];
-      for (const rel of targets) {
-        seedLegacyMarker(target, rel, `legacy body for ${rel}`);
-      }
-
-      await runDoctorFix(target);
-
-      // Read the events.jsonl directly (parallel to the mcp_config_migrated
-      // ledger pattern at L239-L241) and assert one migrated event per file.
-      const ledgerPath = join(target, ".fabric", "events.jsonl");
-      const raw = readFileSync(ledgerPath, "utf8");
-      const lines = raw.split(/\r?\n/u).filter((l) => l.trim().length > 0);
-      const migratedEvents = lines
-        .map((line) => JSON.parse(line) as { event_type?: string; path?: string })
-        .filter((evt) => evt.event_type === "bootstrap_marker_migrated");
-      expect(migratedEvents.length).toBe(targets.length);
-      // Every event references an absolute path under the project root.
-      for (const evt of migratedEvents) {
-        expect(typeof evt.path).toBe("string");
-        expect(evt.path?.startsWith(target)).toBe(true);
-      }
-    });
-
-    it("idempotent: re-running --fix after migration produces zero new bootstrap_marker_migrated events", async () => {
-      const target = createInitializedProject("doctor-rc19-marker-idempotent");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
-      writeFile(".fabric/events.jsonl", "", target);
-
-      seedLegacyMarker(target, "CLAUDE.md", "legacy body 1");
-      seedLegacyMarker(target, "AGENTS.md", "legacy body 2");
-
-      await runDoctorFix(target);
-
-      const countMigratedEvents = (): number => {
-        const raw = readFileSync(join(target, ".fabric", "events.jsonl"), "utf8");
-        const lines = raw.split(/\r?\n/u).filter((l) => l.trim().length > 0);
-        return lines
-          .map((line) => JSON.parse(line) as { event_type?: string })
-          .filter((evt) => evt.event_type === "bootstrap_marker_migrated").length;
-      };
-      const firstCount = countMigratedEvents();
-      expect(firstCount).toBeGreaterThanOrEqual(1);
-
-      // Second --fix: legacy markers are already gone, so no new migration runs.
-      const refix = await runDoctorFix(target);
-      expect(refix.fixed.map((e) => e.code)).not.toContain("bootstrap_marker_migration_required");
-      const secondCount = countMigratedEvents();
-      expect(secondCount).toBe(firstCount);
-    });
-  });
-
   // v2.0.0-rc.22 TASK-006: doctor lint `lint-baseline-filename-format` —
   // hard error (no --fix path). rc.23 TASK-012 (F8a) removed the legacy
   // baseline-emit pipeline, so resolution is manual file deletion. Aligns

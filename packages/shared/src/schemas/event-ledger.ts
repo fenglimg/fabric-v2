@@ -151,25 +151,6 @@ export const mcpConfigMigratedEventSchema = z.object({
   removed_from: z.string(),
 });
 
-// v2.0.0-rc.19 bootstrap-consolidation TASK-004: emitted by `fabric doctor --fix`
-// once per file when the legacy `<!-- fabric:knowledge-base:* -->` managed-block
-// markers are rewritten to the new `<!-- fabric:bootstrap:* -->` marker pair.
-// One-time migration audit trail — runs FIRST in runDoctorFix dispatcher so
-// subsequent L1/L2 drift inspections see post-rename state. Mirrors the
-// `mcp_config_migrated` shape (read → rewrite via atomicWriteText → ledger
-// append, best-effort). `migrated_count` is the number of marker tokens
-// replaced in the file (expected: 2 — one :begin, one :end — but the schema
-// allows zero so an idempotent re-run that finds no work still validates).
-export const bootstrapMarkerMigratedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("bootstrap_marker_migrated"),
-  path: z.string(),
-  migrated_count: z.number().int().nonnegative(),
-  legacy_marker: z.literal("fabric:knowledge-base"),
-  new_marker: z.literal("fabric:bootstrap"),
-  timestamp: z.string(),
-});
-
 export const metaReconciledOnStartupEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("meta_reconciled_on_startup"),
@@ -896,9 +877,6 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   installDiffAppliedEventSchema,
   eventLedgerTruncatedEventSchema,
   mcpConfigMigratedEventSchema,
-  // v2.0.0-rc.19 TASK-004: bootstrap_marker_migrated — one-time fabric:knowledge-base
-  // → fabric:bootstrap marker rewrite emitted per file by `fabric doctor --fix`.
-  bootstrapMarkerMigratedEventSchema,
   metaReconciledOnStartupEventSchema,
   metaReconciledEventSchema,
   claudeSkillPathMigratedEventSchema,
@@ -996,7 +974,6 @@ export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
 export type InstallDiffAppliedEvent = z.infer<typeof installDiffAppliedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
 export type McpConfigMigratedEvent = z.infer<typeof mcpConfigMigratedEventSchema>;
-export type BootstrapMarkerMigratedEvent = z.infer<typeof bootstrapMarkerMigratedEventSchema>;
 export type MetaReconciledOnStartupEvent = z.infer<typeof metaReconciledOnStartupEventSchema>;
 export type MetaReconciledEvent = z.infer<typeof metaReconciledEventSchema>;
 export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigratedEventSchema>;
@@ -1058,7 +1035,6 @@ export type EventLedgerEvent =
   | InstallDiffAppliedEvent
   | EventLedgerTruncatedEvent
   | McpConfigMigratedEvent
-  | BootstrapMarkerMigratedEvent
   | MetaReconciledOnStartupEvent
   | MetaReconciledEvent
   | ClaudeSkillPathMigratedEvent

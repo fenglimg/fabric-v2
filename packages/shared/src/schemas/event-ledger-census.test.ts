@@ -33,7 +33,6 @@ describe("event_type census", () => {
     expect(unionEventTypes()).toMatchInlineSnapshot(`
       [
         "assistant_turn_observed",
-        "bootstrap_marker_migrated",
         "cite_contract_policy_activated",
         "cite_policy_activated",
         "claude_hook_path_migrated",

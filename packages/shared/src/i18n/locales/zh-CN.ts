@@ -286,15 +286,6 @@ export const zhCNMessages: Messages = {
   "doctor.enrich.allComplete":
     "所有正式知识条目均已包含 intent_clues / tech_stack / impact / must_read_if。",
   // rc.26 TASK-02a: doctor foundation-batch check messages.
-  "doctor.check.bootstrap_marker_migration.name": "Bootstrap marker 迁移",
-  "doctor.check.bootstrap_marker_migration.ok":
-    "bootstrap 目标文件中未检测到旧 fabric:knowledge-base marker。",
-  "doctor.check.bootstrap_marker_migration.message.singular":
-    "{count} 个文件仍带有旧 fabric:knowledge-base bootstrap marker：{list}。",
-  "doctor.check.bootstrap_marker_migration.message.plural":
-    "{count} 个文件仍带有旧 fabric:knowledge-base bootstrap marker：{list}。",
-  "doctor.check.bootstrap_marker_migration.remediation":
-    "运行 `fabric doctor --fix` 迁移到 fabric:bootstrap marker",
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
   "doctor.check.bootstrap_snapshot_drift.message.drift":
     ".fabric/AGENTS.md 内容与 BOOTSTRAP_CANONICAL 逐字节不一致。",

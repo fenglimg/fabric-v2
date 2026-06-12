@@ -22,7 +22,6 @@ import {
   forensicReportSchema,
   parseKnowledgeId,
   knowledgeTestIndexSchema,
-  LEGACY_KB_REGEX,
   BOOTSTRAP_CANONICAL,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,

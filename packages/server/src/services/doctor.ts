@@ -107,13 +107,10 @@ import {
   inspectHooksWired,
 } from "./doctor-hooks-lints.js";
 import {
-  BOOTSTRAP_MARKER_MIGRATION_TARGETS,
   createBootstrapAnchorCheck,
-  createBootstrapMarkerMigrationCheck,
   createL1BootstrapSnapshotDriftCheck,
   createL2ManagedBlockDriftCheck,
   inspectBootstrapAnchor,
-  inspectBootstrapMarkerMigration,
   inspectL1BootstrapSnapshotDrift,
   inspectL2ManagedBlockDrift,
 } from "./doctor-bootstrap-lints.js";
@@ -981,7 +978,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     eventLedger,
     eventsJsonlGates,
     bootstrapAnchor,
-    bootstrapMarkerMigration,
     l1BootstrapSnapshotDrift,
     l2ManagedBlockDrift,
     mcpConfigInWrongFile,
@@ -1000,10 +996,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // G8 metric leak / G9 metrics stale / G10 rotation overdue).
     inspectEventsJsonlGates(projectRoot),
     inspectBootstrapAnchor(projectRoot),
-    // v2.0.0-rc.19 TASK-004: one-time fabric:knowledge-base → fabric:bootstrap
-    // marker migration scan. Inspect runs in this Promise.all block to keep
-    // performance parity with the other I/O-bound inspections.
-    inspectBootstrapMarkerMigration(projectRoot),
     // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection. Both are
     // I/O-bound (small file reads + buffer compare) so they live in the same
     // Promise.all block as the other bootstrap inspections.
@@ -1175,13 +1167,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   );
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(t, bootstrapAnchor),
-    // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
-    // the anchor check — both are bootstrap-file invariants. fixable_error
-    // when any of the four target paths still carries the legacy marker.
-    createBootstrapMarkerMigrationCheck(t, bootstrapMarkerMigration),
-    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection sit immediately
-    // after the marker migration check. Order: anchor existence → migration →
-    // L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔ three-end blocks).
+    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection. Order:
+    // anchor existence → L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔
+    // three-end blocks).
     createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
     createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
     // v2.0.0-rc.22 TASK-006: baseline filename format. Sits adjacent to
@@ -1401,32 +1389,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const before = await runDoctorReport(projectRoot);
   const fixed: DoctorIssue[] = [];
   const ledgerWarnings: DoctorIssue[] = [];
-
-  // v2.0.0-rc.19 bootstrap-consolidation TASK-004: marker migration runs FIRST
-  // so subsequent L1/L2 drift checks (TASK-05) see the post-rename state. One
-  // ledger event is appended per rewritten file as a best-effort write —
-  // failures are swallowed (.catch(() => {})) so a disk-full / permission
-  // error on the ledger does not roll back the file rewrite.
-  if (
-    before.fixable_errors.some(
-      (issue) => issue.code === "bootstrap_marker_migration_required",
-    )
-  ) {
-    const migrated = await migrateBootstrapMarkers(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "bootstrap_marker_migration_required"));
-    for (const path of migrated.paths) {
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "bootstrap_marker_migrated",
-        path,
-        migrated_count: migrated.countPerPath[path] ?? 1,
-        legacy_marker: "fabric:knowledge-base",
-        new_marker: "fabric:bootstrap",
-        timestamp: new Date().toISOString(),
-      }).catch((error) => {
-        ledgerWarnings.push(createLedgerAppendWarning(`bootstrap marker migration for ${path}`, error));
-      });
-    }
-  }
 
   // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 drift fix MUST run before
   // L2 fix — L2's expectedBody is computed from the on-disk `.fabric/AGENTS.md`
@@ -4386,59 +4348,6 @@ async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<C
 // fix. The corresponding `legacy_client_path_present` event-type literal
 // remains in event-ledger.ts and will be removed in TASK-006 alongside the
 // broader event-vocabulary rename.
-
-// v2.0.0-rc.19 bootstrap-consolidation TASK-004: one-time legacy → new marker
-// rewrite across the four bootstrap target paths. Mirrors the
-// fixMcpConfigInWrongFile pattern (read → mutate → atomicWriteText). Idempotent:
-// re-running on already-migrated content leaves bytes untouched (the .replace
-// chain produces a string identical to the input when no legacy markers
-// remain). Body content between the markers is preserved verbatim — only the
-// marker tokens are rewritten. Any body-content drift is L2 drift territory
-// (TASK-05's domain) and surfaces on the next doctor report.
-//
-// Returns the absolute paths of every file rewritten alongside a per-path
-// replacement count so the dispatcher can emit one ledger event per file with
-// the exact token-replacement count baked in.
-async function migrateBootstrapMarkers(
-  projectRoot: string,
-): Promise<{ paths: string[]; countPerPath: Record<string, number> }> {
-  const paths: string[] = [];
-  const countPerPath: Record<string, number> = {};
-
-  for (const rel of BOOTSTRAP_MARKER_MIGRATION_TARGETS) {
-    const abs = join(projectRoot, rel);
-    if (!(await pathExists(abs))) {
-      continue;
-    }
-    let original: string;
-    try {
-      original = await readFile(abs, "utf8");
-    } catch {
-      continue;
-    }
-    // Count legacy marker tokens BEFORE rewrite — sum of :begin + :end
-    // occurrences. Drives `migrated_count` in the ledger event.
-    const beginMatches = original.match(/<!-- fabric:knowledge-base:begin -->/g);
-    const endMatches = original.match(/<!-- fabric:knowledge-base:end -->/g);
-    const replacedCount = (beginMatches?.length ?? 0) + (endMatches?.length ?? 0);
-    if (replacedCount === 0) {
-      continue;
-    }
-    const rewritten = original
-      .replace(/<!-- fabric:knowledge-base:begin -->/g, BOOTSTRAP_MARKER_BEGIN)
-      .replace(/<!-- fabric:knowledge-base:end -->/g, BOOTSTRAP_MARKER_END);
-    if (rewritten === original) {
-      // Defensive: replacedCount > 0 implies a real rewrite, but guard against
-      // surprise idempotency anyway.
-      continue;
-    }
-    await atomicWriteText(abs, rewritten);
-    paths.push(abs);
-    countPerPath[abs] = replacedCount;
-  }
-
-  return { paths, countPerPath };
-}
 
 // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 drift fix. Replays the
 // three-end managed block writes using inline regex+replace logic — DUPLICATED

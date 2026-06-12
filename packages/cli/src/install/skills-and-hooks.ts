@@ -9,7 +9,6 @@ import {
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
-  LEGACY_KB_REGEX,
 } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import { deepMerge } from "../config/json.js";
@@ -391,10 +390,10 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
  * source of truth. Re-exported here for backwards-compatible imports
  * (uninstall helper + integration tests still reach for them via this module).
  *
- * The legacy `fabric:knowledge-base` marker pair has been retired from active
- * use: install no longer writes it, and any pre-existing occurrence in the
- * three propagation targets is cleaned up by the per-client writers below
- * (clean-slate, no migration shim — feedback_clean_slate.md memory).
+ * The pre-rc.19 `fabric:knowledge-base` marker pair is fully retired: install
+ * neither writes nor migrates it (clean-slate, no migration shim — 0 users,
+ * feedback_clean_slate.md memory). `fabric:bootstrap` is the only managed
+ * marker.
  */
 export {
   BOOTSTRAP_MARKER_BEGIN,
@@ -1134,10 +1133,9 @@ export async function mergeCursorHookConfig(
 // identical content.
 //
 // Clean-slate (no migration shim):
-//   - CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc: any pre-
-//     existing legacy `fabric:knowledge-base` marker pair is stripped at
-//     install time. The new `fabric:bootstrap` marker is the only managed
-//     marker going forward.
+//   - CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc: the
+//     `fabric:bootstrap` marker is the only managed marker (no legacy
+//     `fabric:knowledge-base` migration — 0 users).
 //   - .cursor/rules (legacy flat-file path): deleted on install when present.
 //     Cursor's real convention is the directory-rule `.cursor/rules/*.mdc`.
 //
@@ -1184,24 +1182,6 @@ function wrapInBootstrapMarkers(body: string): string {
   return `${BOOTSTRAP_MARKER_BEGIN}\n${body}\n${BOOTSTRAP_MARKER_END}`;
 }
 
-/**
- * Strip any legacy `fabric:knowledge-base` marker region from `existing`,
- * including an optional preceding blank-line separator (mirrors the
- * BOOTSTRAP_REGEX shape). Returns the cleaned string. Idempotent: no-op when
- * the legacy marker is absent.
- *
- * Used by all three TASK-003 writers as the first transform on any pre-
- * existing target file so clean-slate migration happens transparently on
- * install (per memory feedback_clean_slate.md — no compat shim).
- */
-function stripLegacyKnowledgeBaseSection(existing: string): string {
-  const match = existing.match(LEGACY_KB_REGEX);
-  if (match === null) return existing;
-  const before = existing.slice(0, match.index ?? 0);
-  const after = existing.slice((match.index ?? 0) + match[0].length);
-  return `${before}${after.replace(/^\r?\n/, "")}`;
-}
-
 const CLAUDE_BOOTSTRAP_HEADER = "# Project Knowledge";
 const CLAUDE_AGENTS_IMPORT_LINE = "@.fabric/AGENTS.md";
 const CLAUDE_PROJECT_RULES_IMPORT_LINE = "@.fabric/project-rules.md";
@@ -1218,9 +1198,6 @@ const CLAUDE_PROJECT_RULES_IMPORT_LINE = "@.fabric/project-rules.md";
  * exists; if it does not, we also strip any stale `@.fabric/project-rules.md`
  * line from CLAUDE.md so the import set stays consistent with on-disk
  * reality.
- *
- * Clean-slate: any legacy `fabric:knowledge-base` managed-section region is
- * stripped on first invocation (one-shot migration; idempotent on re-run).
  *
  * Bootstrap header: when CLAUDE.md does not pre-exist, we seed it with a
  * single `# Project Knowledge` header before the imports so the file is
@@ -1252,22 +1229,20 @@ export async function writeClaudeBootstrapThinShell(
     }
   }
 
-  // Phase 1: clean-slate strip of any legacy fabric:knowledge-base section.
-  let next = stripLegacyKnowledgeBaseSection(existing);
-
-  // Phase 2: drop stale project-rules @-import when the companion file is
+  // Phase 1: drop stale project-rules @-import when the companion file is
   // absent on disk. Keeps the import set consistent with reality.
+  let next = existing;
   if (!projectRulesPresent) {
     next = removeImportLine(next, CLAUDE_PROJECT_RULES_IMPORT_LINE);
   }
 
-  // Phase 3: seed header if file did not pre-exist (or was wiped to empty
-  // by the legacy-strip + import-strip above).
+  // Phase 2: seed header if file did not pre-exist (or was wiped to empty
+  // by the import-strip above).
   if (!preExisted && next.length === 0) {
     next = `${CLAUDE_BOOTSTRAP_HEADER}\n`;
   }
 
-  // Phase 4: append `@`-import lines as needed (line-level idempotent).
+  // Phase 3: append `@`-import lines as needed (line-level idempotent).
   next = ensureImportLine(next, CLAUDE_AGENTS_IMPORT_LINE);
   if (projectRulesPresent) {
     next = ensureImportLine(next, CLAUDE_PROJECT_RULES_IMPORT_LINE);
@@ -1340,10 +1315,6 @@ function hasExactLine(content: string, line: string): boolean {
  * existing user content outside the markers is preserved verbatim (managed-
  * section invariant).
  *
- * Clean-slate: any legacy `fabric:knowledge-base` region is stripped on first
- * invocation so a single managed block (the new `fabric:bootstrap` one) is
- * the only Fabric-owned region after install.
- *
  * Creates AGENTS.md if missing (root anchor responsibility moved to bootstrap-
  * stage per rc.19 TASK-003 — scaffold-stage no longer writes it).
  */
@@ -1371,24 +1342,21 @@ export async function writeCodexBootstrapManagedBlock(
   const body = buildManagedBlockBody(targetRoot);
   const managedBlock = wrapInBootstrapMarkers(body);
 
-  // Phase 1: clean-slate strip of any legacy fabric:knowledge-base section.
-  const stripped = stripLegacyKnowledgeBaseSection(existing);
-
-  // Phase 2: in-place replace of new fabric:bootstrap section, else append.
+  // In-place replace of the fabric:bootstrap section, else append.
   let next: string;
-  const match = stripped.match(BOOTSTRAP_REGEX);
+  const match = existing.match(BOOTSTRAP_REGEX);
   if (match !== null) {
-    const before = stripped.slice(0, match.index ?? 0);
-    const after = stripped.slice((match.index ?? 0) + match[0].length);
+    const before = existing.slice(0, match.index ?? 0);
+    const after = existing.slice((match.index ?? 0) + match[0].length);
     const cleaned = `${before}${after.replace(/^\r?\n/, "")}`;
     const trailingNewline = cleaned.length === 0 || cleaned.endsWith("\n") ? "" : "\n";
     next = `${cleaned}${trailingNewline}${cleaned.length === 0 ? "" : "\n"}${managedBlock}\n`;
   } else {
-    if (stripped.length === 0) {
+    if (existing.length === 0) {
       next = `${managedBlock}\n`;
     } else {
-      const trailingNewline = stripped.endsWith("\n") ? "" : "\n";
-      next = `${stripped}${trailingNewline}\n${managedBlock}\n`;
+      const trailingNewline = existing.endsWith("\n") ? "" : "\n";
+      next = `${existing}${trailingNewline}\n${managedBlock}\n`;
     }
   }
 
