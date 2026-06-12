@@ -6,14 +6,14 @@
 ## 目标
 让 `fabric doctor` ① 别**谎报体检**(删 ~13 个 store-cutover 掏空的空桩 check)② 别**刷屏**(默认只显 warn/error)。命名 gate 全绿即自动 completed。
 
-## 命名 Ship Gate(全绿即达成)
-- [ ] **G-HONEST** — doctor 不再列空桩 check(~13 个 empty*Inspection/{...:[]} 删净)
-- [ ] **G-QUIET** — doctor 默认只显 warn/error,全列表挪 `--verbose`
-- [ ] **G-GREEN** — tsc ✓ + 全测试 0 fail 0 skip + census/parity 闸绿
+## 命名 Ship Gate(全绿即达成)✅ 全绿 — goal completed
+- [x] **G-HONEST** — doctor 不再列空桩 check(16 个 empty*Inspection/{...:[]} 删净;grep 双闸=0)
+- [x] **G-QUIET** — doctor 默认只显 warn/error,全列表挪 `--verbose`(dogfood 默认 2 行 vs verbose 32 行)
+- [x] **G-GREEN** — tsc -r ✓ + server 686/cli 1048/shared 1047 全绿 0 fail 0 skip + census/parity 闸绿
 
 ## 任务
-- [ ] **W2** 删空桩 check + 全级联(i18n en/zh 等量删→parity 重平衡 / event census / checks[] / apply-lint 死臂 / 类型 / server doctor.test 断言)→ G-HONEST + G-GREEN
-- [ ] **W3** doctor 默认静默(renderHumanReport gate on --verbose)+ 同步输出测试/快照(快照 -u 前肉眼 diff)→ G-QUIET + G-GREEN
+- [x] **W2** 删空桩 check + 全级联(i18n en/zh 各删 84 key→parity 299→215 重平衡 / event census / checks[] 47→31 / apply-lint 死臂 / 类型 / 死 inspect 机器 / server doctor.test 断言)→ G-HONEST + G-GREEN — commit `7ce5964`
+- [x] **W3** doctor 默认静默(renderHumanReport gate on --verbose)+ G-QUIET 回归测试(肉眼 diff i18n 快照 -u)→ G-QUIET + G-GREEN — commit `2ebf2fe`
 
 ## 铁律(本会话两次踩前提失真的教训)
 - 删任何 "no-op/stub" 前 **grep 验 Species A(删)vs B(留)**;行号会漂,**以 grep 为准**(KT-PIT-0002)。

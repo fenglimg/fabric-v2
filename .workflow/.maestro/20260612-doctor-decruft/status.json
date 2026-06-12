@@ -5,7 +5,7 @@
   "intent": "doctor 净化 + 静默化(fallback-purge 收尾 grill 派生 Goal X 第2/3波)。第1波删 knowledge-sync 空转壳已落 e037897。",
   "goal": "让 fabric doctor 别谎报体检(删 ~13 个 store-cutover 掏空的空桩 check)+ 别刷屏(默认只显 warn/error, 全列表挪 --verbose)。命名 gate 全绿即达成。",
   "mode": "3",
-  "current_phase": "execute",
+  "current_phase": "complete",
   "current_round": 1,
   "boundary_contract": {
     "in_scope": [
@@ -29,30 +29,37 @@
     ]
   },
   "ship_criteria": [
-    { "name": "G-HONEST", "target": "doctor 不再列空桩 check; ~13 stub check(orphan_demote/stale_archive/pending_overdue/stable_id_collision/layer_mismatch/relevance×3/personal_layer_misclassify/suspicious_kb/narrow_too_few/relevance_fields/draft_auto_promote/filesystem_edit/baseline_filename)删净", "actual": null,
+    { "name": "G-HONEST", "target": "doctor 不再列空桩 check; ~13 stub check(orphan_demote/stale_archive/pending_overdue/stable_id_collision/layer_mismatch/relevance×3/personal_layer_misclassify/suspicious_kb/narrow_too_few/relevance_fields/draft_auto_promote/filesystem_edit/baseline_filename)删净",
+      "actual": "PASS: 16 个空桩 check 全删(实际 17 含 pending_auto_archive apply-lint 臂)。grep empty*Inspection 子集=0, hardcoded collisions|duplicates|mismatches|offenders:[] =0。整删 doctor-stable-id-collision.ts(+test);连带清掉 store-cutover 遗留的 0-caller 死 inspect 机器(inspectOrphanDemote/StaleArchive/Underseeded + iterateCanonicalEntries + buildLastConsumedIndex + rewriteFrontmatterMaturity 等)与 7 个孤立常量。emptyDraftBacklogInspection 保留(LIVE)。",
       "verifier_cmd": "grep -cE 'empty(OrphanDemote|StaleArchive|PendingOverdue|PendingAutoArchive|RelevanceFieldsMissing|NarrowTooFew|DraftAutoPromote|FilesystemEditFallback)Inspection' packages/server/src/services/doctor.ts (目标 0) && grep -c 'collisions: \\[\\]\\|duplicates: \\[\\]\\|mismatches: \\[\\]\\|offenders: \\[\\]' packages/server/src/services/doctor.ts (目标 0)",
-      "verified_at": null },
-    { "name": "G-QUIET", "target": "fabric doctor 默认只显 warn/error(+TL;DR), 全 check 列表仅 --verbose", "actual": null,
-      "verifier_cmd": "PROBE: 读 renderHumanReport(packages/cli/src/commands/doctor.ts ~L661) 确认 check 枚举 gate 在 verbose; 跑 cli doctor 输出测试绿 + 肉眼跑 fabric doctor 看只剩问题行",
-      "verified_at": null },
-    { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试 0 fail 0 skip + census/parity 闸绿", "actual": null,
+      "verified_at": "2026-06-12T17:45:00Z" },
+    { "name": "G-QUIET", "target": "fabric doctor 默认只显 warn/error(+TL;DR), 全 check 列表仅 --verbose",
+      "actual": "PASS: renderHumanReport 默认 skip status==='ok' 的 check, --verbose 打全部。dogfood: 默认 2 check-ish 行(TL;DR + 1 warn) vs --verbose 32 行。新增 G-QUIET 回归测试(混合状态 report 钉默认隐藏 ok 行 / --verbose 列出双向)。cli 1048 全绿。",
+      "verifier_cmd": "PROBE: renderHumanReport(packages/cli/src/commands/doctor.ts ~L669) check 枚举 gate `if (!verbose && check.status === 'ok') continue`; cli __tests__/doctor.test.ts G-QUIET 测试绿 + dogfood node dist/index.js doctor 只剩问题行",
+      "verified_at": "2026-06-12T17:45:00Z" },
+    { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试 0 fail 0 skip + census/parity 闸绿",
+      "actual": "PASS: pnpm -r exec tsc --noEmit exit 0; server 686 / cli 1048 / shared 1047 全 pass 0 fail 0 skip; locale-parity(en=zh 299→215 重平衡) + event-ledger-census 闸绿(relevance_migration_run schema+心跳保留)。",
       "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test 2>&1 | grep -E 'Tests +[0-9]+ (passed|failed|skipped)' && pnpm --filter @fenglimg/fabric-shared exec vitest run src/i18n/locale-parity.test.ts src/schemas/event-ledger-census.test.ts",
-      "verified_at": null }
+      "verified_at": "2026-06-12T17:45:00Z" }
   ],
   "task_decomposition": [
     { "id": "W2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删 doctor ~13 空桩 check(诚实化)+ 全级联(i18n en/zh + parity 闸 + event census + checks[] + apply-lint 臂 + 类型 + server doctor.test 断言)",
       "done_when": "grep 验空桩 0; locale-parity en=zh 重新平衡; event census 绿; tsc + 全测试 0 fail 0 skip",
-      "ship_criteria_alignment": ["G-HONEST", "G-GREEN"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep 空桩计数 + locale-parity + 全测试", "evidence": null, "verified_at": null } },
+      "ship_criteria_alignment": ["G-HONEST", "G-GREEN"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep 空桩计数 + locale-parity + 全测试", "evidence": "commit 7ce5964: grep 双闸=0; i18n en/zh 各删 84 key(299→215)平衡; server 686 pass; doctor.test census 47→31; doctor-i18n 快照 -u(diff 全为删掉 check 行); doctor-stable-id-collision.ts+test 整删", "verified_at": "2026-06-12T17:45:00Z" } },
     { "id": "W3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "doctor 默认静默(renderHumanReport 只印 warn/error, 全列表挪 --verbose)+ 同步输出测试/快照",
       "done_when": "默认输出只剩问题行; --verbose 全列; cli 输出测试 + 快照绿(肉眼 diff 确认)",
-      "ship_criteria_alignment": ["G-QUIET", "G-GREEN"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "cli doctor 输出测试 + dogfood 肉眼看输出", "evidence": null, "verified_at": null } }
+      "ship_criteria_alignment": ["G-QUIET", "G-GREEN"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "cli doctor 输出测试 + dogfood 肉眼看输出", "evidence": "commit 2ebf2fe: renderHumanReport gate `if(!verbose && status==='ok') continue`; dogfood 默认 2 行 vs --verbose 32 行; 新增 G-QUIET 回归测试; cli 1048 pass", "verified_at": "2026-06-12T17:45:00Z" } }
+  ],
+  "git_commits": [
+    { "wave": "W2", "sha": "7ce5964", "summary": "删 16 个 store-cutover 空桩 check + 全级联 + 死 inspect 机器清理" },
+    { "wave": "W3", "sha": "2ebf2fe", "summary": "doctor 默认静默 only warn/error, 全列表挪 --verbose + G-QUIET 回归测试" }
   ],
   "needs_adjudication": [],
   "goal_checklist_path": ".workflow/.maestro/20260612-doctor-decruft/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "completed",
+  "loop_exit_status": "met"
 }
