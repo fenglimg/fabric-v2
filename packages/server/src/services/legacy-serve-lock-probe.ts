@@ -4,5 +4,4 @@
 export {
   isAlive,
   readServeLockState as readLockState,
-  type ServeLockState as LockState,
 } from "@fenglimg/fabric-shared/node";

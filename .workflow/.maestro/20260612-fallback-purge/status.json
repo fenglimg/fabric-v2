@@ -42,9 +42,9 @@
     { "name": "G-MIGRATION", "target": "Species A 迁移/兼容 grep 零残留", "actual": "GREEN: 4 surface src 残留 0/0/0/0 (bootstrap marker / .cursor flat / MCP settings+TOML / config maturity alias). W2-1a c7a4e57 · W2-1b c2541a5 · W2-1c-i 1a03f48 · W2-1c-ii bc93d4e · W2-2 3a88478. tsc全绿·shared628/server693(97skip).",
       "verifier_cmd": "PROBE: grep 旧 marker/.cursor 扁平/[mcp.servers]/orphan_demote_stable_days 残留计数",
       "verified_at": "2026-06-12" },
-    { "name": "G-VOCAB", "target": "cite-tag LEGACY_CITE_TAG_REMAP + i18n/hook/bootstrap tendril 删净 + shared rebuild + parser 测试绿", "actual": null,
+    { "name": "G-VOCAB", "target": "cite-tag LEGACY_CITE_TAG_REMAP + i18n/hook/bootstrap tendril 删净 + shared rebuild + parser 测试绿", "actual": "GREEN(gate): cite-line-parser.ts 0 残留 + shared build OK (87ed337). 删 LEGACY_CITE_TAG_REMAP(parser + .cjs twin parity 守恒)+ event-ledger preprocess + i18n G3/[recalled] stale 文案; legacy tag → none; ~50 test seed/断言同步(parser/event-ledger/fabric-hint/doctor cite-coverage/summarize)。ADJ-3 残留: byte-locked BOOTSTRAP_CANONICAL 的 legacy-tag 文案行(用户拍 码层全做+bootstrap归ADJ-3, 不破 byte-lock)。",
       "verifier_cmd": "grep -rc 'LEGACY_CITE_TAG_REMAP\\|planned.*applied' packages/shared/src/cite-line-parser.ts && pnpm --filter @fenglimg/fabric-shared build",
-      "verified_at": null },
+      "verified_at": "2026-06-12" },
     { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试全绿", "actual": null,
       "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test",
       "verified_at": null }
