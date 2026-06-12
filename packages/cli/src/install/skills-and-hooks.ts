@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1132,12 +1132,11 @@ export async function mergeCursorHookConfig(
 // these two sources so the Codex and Cursor managed blocks contain byte-
 // identical content.
 //
-// Clean-slate (no migration shim):
-//   - CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc: the
-//     `fabric:bootstrap` marker is the only managed marker (no legacy
-//     `fabric:knowledge-base` migration — 0 users).
-//   - .cursor/rules (legacy flat-file path): deleted on install when present.
-//     Cursor's real convention is the directory-rule `.cursor/rules/*.mdc`.
+// Clean-slate (no migration shim): `fabric:bootstrap` is the only managed
+// marker across CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc
+// (no legacy `fabric:knowledge-base` migration, no `.cursor/rules` flat-file
+// migration — 0 users). Cursor's convention is the directory-rule
+// `.cursor/rules/*.mdc`.
 //
 // Idempotency contract: each writer must produce a byte-identical destination
 // state on second invocation against an unchanged input (snapshot + optional
@@ -1381,19 +1380,12 @@ export async function writeCodexBootstrapManagedBlock(
 const CURSOR_RULE_FRONT_MATTER =
   "---\nalwaysApply: true\ndescription: Fabric Protocol bootstrap rules\n---\n\n";
 
-const CURSOR_LEGACY_FLAT_FILE_REL = join(".cursor", "rules");
 const CURSOR_BOOTSTRAP_MDC_REL = join(".cursor", "rules", "fabric-bootstrap.mdc");
 
 /**
  * Write the BOOTSTRAP managed block to `.cursor/rules/fabric-bootstrap.mdc`,
  * prefixed with the Cursor directory-rule YAML front-matter
  * (`alwaysApply: true`) so the rule is always active.
- *
- * Clean-slate migration: if the legacy `.cursor/rules` flat-file (pre-
- * directory-rule convention) exists AS A FILE (not a directory), delete it.
- * Per memory feedback_clean_slate.md — the pre-user phase prefers clean-slate
- * refactors over preservation. Cursor's real convention is directory-rule
- * `.cursor/rules/*.mdc`; the flat-file path was a drift bug in rc.12-rc.18.
  *
  * Idempotency: front-matter + managed block produced via byte-identical
  * concatenation; re-runs against unchanged inputs produce identical output.
@@ -1404,22 +1396,6 @@ export async function writeCursorBootstrapManagedBlock(
 ): Promise<InstallStepResult> {
   const step = "bootstrap-cursor";
   const target = join(targetRoot, CURSOR_BOOTSTRAP_MDC_REL);
-  const legacyFlatFile = join(targetRoot, CURSOR_LEGACY_FLAT_FILE_REL);
-
-  // Phase 1: clean-slate delete legacy flat-file `.cursor/rules` IFF it is
-  // a regular file (not a directory). The directory case is the intended
-  // post-migration state and must be preserved (it hosts the .mdc rules).
-  try {
-    if (existsSync(legacyFlatFile)) {
-      const stat = statSync(legacyFlatFile);
-      if (stat.isFile()) {
-        await rm(legacyFlatFile, { force: true });
-      }
-    }
-  } catch {
-    // best-effort — a failure to delete the legacy file should not abort the
-    // new-file write below
-  }
 
   const body = buildManagedBlockBody(targetRoot);
   const managedBlock = wrapInBootstrapMarkers(body);

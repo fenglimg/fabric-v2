@@ -849,52 +849,6 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
     expect(afterSecond.startsWith(seedContent)).toBe(true);
   });
 
-  it("migrates legacy .cursor/rules flat-file to .cursor/rules/fabric-bootstrap.mdc directory rule", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-bootstrap-cursor-migrate");
-    tempRoots.push(target);
-
-    // Seed the legacy state: `.cursor/rules` is a flat file (not a directory)
-    // containing a stale legacy `fabric:knowledge-base` managed section.
-    // Mirrors the rc.12-rc.18 install output that rc.19 now migrates away from.
-    const legacyContent =
-      "# User notes\n\n" +
-      "<!-- fabric:knowledge-base:begin -->\n" +
-      "## Fabric Knowledge Base\n\nLegacy body that must vanish.\n" +
-      "<!-- fabric:knowledge-base:end -->\n";
-    writeFixtureFile(target, ".cursor/rules", legacyContent);
-
-    // Sanity: legacy flat file present BEFORE install.
-    expect(existsSync(join(target, ".cursor/rules"))).toBe(true);
-    expect(statSync(join(target, ".cursor/rules")).isFile()).toBe(true);
-
-    await runInit(target);
-
-    // Post-install: legacy flat file is gone — `.cursor/rules` is now a
-    // DIRECTORY (the parent of the new `.mdc` directory rule), not the
-    // legacy single-file blob.
-    const cursorRulesPath = join(target, ".cursor/rules");
-    expect(existsSync(cursorRulesPath)).toBe(true);
-    expect(statSync(cursorRulesPath).isDirectory()).toBe(true);
-    expect(statSync(cursorRulesPath).isFile()).toBe(false);
-
-    // New directory rule exists at the canonical path.
-    const newPath = join(target, CURSOR_BOOTSTRAP_MDC_REL);
-    expect(existsSync(newPath)).toBe(true);
-    const newContent = readFileSync(newPath, "utf8");
-
-    // New file uses the new bootstrap marker and NOT the legacy marker.
-    expect(newContent).toContain(SECTION_BEGIN);
-    expect(newContent).toContain(SECTION_END);
-    expect(newContent).not.toContain("fabric:knowledge-base");
-    // Exactly one bootstrap marker pair.
-    expect(countOccurrences(newContent, SECTION_BEGIN)).toBe(1);
-    expect(countOccurrences(newContent, SECTION_END)).toBe(1);
-    // Front-matter is present.
-    expect(newContent).toContain("alwaysApply: true");
-    // Body byte-equals canonical (no project-rules.md present in this scenario).
-    expect(extractManagedBlockBody(newContent)).toBe(BOOTSTRAP_CANONICAL);
-  });
-
   describe("project-rules.md only-if-exists concat behavior", () => {
     it("Scenario A: without .fabric/project-rules.md — Codex block body byte-equals .fabric/AGENTS.md", async () => {
       const target = createWerewolfFixtureRoot("itg-install-bootstrap-project-rules-absent");
