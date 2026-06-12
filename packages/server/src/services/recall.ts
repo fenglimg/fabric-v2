@@ -413,7 +413,3 @@ function buildRecallPackaging(
       : {}),
   };
 }
-
-// Re-exported for test scaffolds that want to strip frontmatter consistently
-// with the section-fetch path.
-export { extractBody };
