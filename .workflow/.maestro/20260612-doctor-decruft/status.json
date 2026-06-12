@@ -1,0 +1,58 @@
+{
+  "session_id": "20260612-doctor-decruft",
+  "active_session_id": null,
+  "sessions": [],
+  "intent": "doctor 净化 + 静默化(fallback-purge 收尾 grill 派生 Goal X 第2/3波)。第1波删 knowledge-sync 空转壳已落 e037897。",
+  "goal": "让 fabric doctor 别谎报体检(删 ~13 个 store-cutover 掏空的空桩 check)+ 别刷屏(默认只显 warn/error, 全列表挪 --verbose)。命名 gate 全绿即达成。",
+  "mode": "3",
+  "current_phase": "execute",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "W2: 删 doctor.ts ~13 个空桩 check(empty*Inspection / {candidates|duplicates|...:[]} 硬编码)+ create*Check 渲染器 + checks[] 接线 + apply-lint 死 mutation 臂 + 专用类型 + i18n en/zh 文案 key + server doctor.test check-list 断言",
+      "W3: renderHumanReport 默认只打印 check.status!=='ok'(warn/error), --verbose 打全部; 同步 doctor 输出测试 + 快照"
+    ],
+    "out_of_scope": [
+      "保留 LIVE store-aware check: underseeded / summary-opaque / store_counter_drift / session_hints_stale / skill_md_yaml / hooks_* / promote_ledger_invariant / onboard_coverage / stale_serve_lock / global_cli / bootstrap anchor+L1+L2 / scan evidence",
+      "不拆 doctor.ts god-file(用户否了删+拆大重构)",
+      "不碰 event-ledger auto-heal-after-drift trigger enum(受 census 钉, 留 schema)",
+      "cosmetic over-export nit(knip 5 export+13 type+6 duplicate)跳过",
+      "store 版读侧 lint 重实现 = Goal Y, 不在本 goal(本 goal 只删+诚实化, 不重建)"
+    ],
+    "constraints": [
+      "铁律: 删任何 stub 前 grep 验 Species A(过渡桩删)vs B(防御留); 行号会漂以 grep 为准(KT-PIT-0002)",
+      "i18n 删 key 必须 en+zh 等量删, 删后跑 locale-parity.test 确认 en=zh 重新平衡(G-INVARIANT)",
+      "删 apply-lint 臂前确认其聚合事件(如 relevance_migration_run)是否被 event-ledger-census 钉",
+      "防 false-green: 删 check 后跑全测试确认无断言悬空; 快照 -u 前肉眼 diff 确认变化都是'少印 ok 行'",
+      "每波: tsc --noEmit + 全量测试 0 fail 0 skip + git commit + 原子更新 status.json",
+      "行动手册 spec = .workflow/.scratchpad/doctor-decruft-goal-x.md(引用不复制)"
+    ]
+  },
+  "ship_criteria": [
+    { "name": "G-HONEST", "target": "doctor 不再列空桩 check; ~13 stub check(orphan_demote/stale_archive/pending_overdue/stable_id_collision/layer_mismatch/relevance×3/personal_layer_misclassify/suspicious_kb/narrow_too_few/relevance_fields/draft_auto_promote/filesystem_edit/baseline_filename)删净", "actual": null,
+      "verifier_cmd": "grep -cE 'empty(OrphanDemote|StaleArchive|PendingOverdue|PendingAutoArchive|RelevanceFieldsMissing|NarrowTooFew|DraftAutoPromote|FilesystemEditFallback)Inspection' packages/server/src/services/doctor.ts (目标 0) && grep -c 'collisions: \\[\\]\\|duplicates: \\[\\]\\|mismatches: \\[\\]\\|offenders: \\[\\]' packages/server/src/services/doctor.ts (目标 0)",
+      "verified_at": null },
+    { "name": "G-QUIET", "target": "fabric doctor 默认只显 warn/error(+TL;DR), 全 check 列表仅 --verbose", "actual": null,
+      "verifier_cmd": "PROBE: 读 renderHumanReport(packages/cli/src/commands/doctor.ts ~L661) 确认 check 枚举 gate 在 verbose; 跑 cli doctor 输出测试绿 + 肉眼跑 fabric doctor 看只剩问题行",
+      "verified_at": null },
+    { "name": "G-GREEN", "target": "tsc --noEmit ✓ + 全量测试 0 fail 0 skip + census/parity 闸绿", "actual": null,
+      "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r --if-present test 2>&1 | grep -E 'Tests +[0-9]+ (passed|failed|skipped)' && pnpm --filter @fenglimg/fabric-shared exec vitest run src/i18n/locale-parity.test.ts src/schemas/event-ledger-census.test.ts",
+      "verified_at": null }
+  ],
+  "task_decomposition": [
+    { "id": "W2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "删 doctor ~13 空桩 check(诚实化)+ 全级联(i18n en/zh + parity 闸 + event census + checks[] + apply-lint 臂 + 类型 + server doctor.test 断言)",
+      "done_when": "grep 验空桩 0; locale-parity en=zh 重新平衡; event census 绿; tsc + 全测试 0 fail 0 skip",
+      "ship_criteria_alignment": ["G-HONEST", "G-GREEN"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep 空桩计数 + locale-parity + 全测试", "evidence": null, "verified_at": null } },
+    { "id": "W3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "doctor 默认静默(renderHumanReport 只印 warn/error, 全列表挪 --verbose)+ 同步输出测试/快照",
+      "done_when": "默认输出只剩问题行; --verbose 全列; cli 输出测试 + 快照绿(肉眼 diff 确认)",
+      "ship_criteria_alignment": ["G-QUIET", "G-GREEN"], "alignment_strength": "direct", "status": "open",
+      "verification": { "method": "deterministic", "verifier": "cli doctor 输出测试 + dogfood 肉眼看输出", "evidence": null, "verified_at": null } }
+  ],
+  "needs_adjudication": [],
+  "goal_checklist_path": ".workflow/.maestro/20260612-doctor-decruft/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null
+}
