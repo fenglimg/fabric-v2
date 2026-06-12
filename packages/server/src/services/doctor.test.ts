@@ -32,7 +32,6 @@ import {
 import { readEventLedger } from "./event-ledger.js";
 import { readCiteRollup } from "./cite-rollup.js";
 import { bumpCounter, readMetrics } from "./metrics.js";
-import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
 
 const tempRoots: string[] = [];
@@ -116,7 +115,6 @@ describe("runDoctorReport", () => {
     // .fabric/knowledge/* subdirs) plus a knowledge entry for knowledge-meta-builder
     // to index. Legacy `.fabric/rules/` is no longer used.
     const target = createInitializedProject("doctor-ok");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -262,7 +260,6 @@ describe("runDoctorReport", () => {
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
     // Done-when: fresh post-init v2.0 repo with mocked layout — no errors, no warnings.
     const target = createV2KnowledgeProject("doctor-v2-clean");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const report = await runDoctorReport(target);
 
@@ -274,7 +271,6 @@ describe("runDoctorReport", () => {
 
   it("treats malformed rule sections as manual errors", async () => {
     const target = createInitializedProject("doctor-invalid-rule");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "{not-json}\n", target);
 
     const report = await runDoctorReport(target);
@@ -300,7 +296,6 @@ describe("runDoctorReport", () => {
 
   it("doctor fixable check fires when partial write detected and --fix truncates + writes ledger event", async () => {
     const target = createInitializedProject("doctor-partial-write");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     // Write a ledger file that ends without a newline (partial write simulation)
     const goodLine = JSON.stringify({
@@ -340,7 +335,6 @@ describe("runDoctorReport", () => {
   // not block, but stops the prior silent-drop blind spot.
   it("event_ledger_schema_compat: warns on schema_version=0 rows (audit §2.24)", async () => {
     const target = createInitializedProject("doctor-event-ledger-schema-compat-version");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const validLine = JSON.stringify({
       kind: "fabric-event",
@@ -377,7 +371,6 @@ describe("runDoctorReport", () => {
 
   it("event_ledger_schema_compat: warns on unknown event_type (audit §2.24)", async () => {
     const target = createInitializedProject("doctor-event-ledger-schema-compat-event-type");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const unknownTypeLine = JSON.stringify({
       kind: "fabric-event",
@@ -404,7 +397,6 @@ describe("runDoctorReport", () => {
 
   it("event_ledger_schema_compat: clean when all rows match current schema", async () => {
     const target = createInitializedProject("doctor-event-ledger-schema-compat-clean");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const validLine = JSON.stringify({
       kind: "fabric-event",
@@ -434,7 +426,6 @@ describe("runDoctorReport", () => {
   // ref/ subtrees.
   it("skill_ref_mirror: ok when fresh install (no skill ref subtrees yet)", async () => {
     const target = createInitializedProject("doctor-skill-ref-mirror-empty");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -446,7 +437,6 @@ describe("runDoctorReport", () => {
 
   it("skill_ref_mirror: ok when both clients carry byte-identical ref content", async () => {
     const target = createInitializedProject("doctor-skill-ref-mirror-parity");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const refBody = "# i18n policy\n\nbody bytes";
@@ -466,7 +456,6 @@ describe("runDoctorReport", () => {
 
   it("skill_ref_mirror: warns when .claude/ ref/ diverges from .codex/ ref/", async () => {
     const target = createInitializedProject("doctor-skill-ref-mirror-drift");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const claudeRef = join(target, ".claude", "skills", "fabric-archive", "ref");
@@ -493,7 +482,6 @@ describe("runDoctorReport", () => {
   // drift.
   it("skill_ref_mirror: warns when both clients exist but one is missing a ref file (partial drift)", async () => {
     const target = createInitializedProject("doctor-skill-ref-mirror-partial");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const claudeRef = join(target, ".claude", "skills", "fabric-archive", "ref");
@@ -517,7 +505,6 @@ describe("runDoctorReport", () => {
 
   it("skill_ref_mirror: tolerates client-asymmetric installs (one client only)", async () => {
     const target = createInitializedProject("doctor-skill-ref-mirror-asymmetric");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Only Codex installed; Claude subtree absent entirely.
@@ -586,7 +573,6 @@ describe("runDoctorReport", () => {
 
     it("doctor_fix_triggers_rotation: --fix on a ledger with old lines archives them and reports a fixed entry", async () => {
       const target = createInitializedProject("doctor-rotate-trigger");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       const baseTs = staleTs();
       seedLedger(target, [
         oldMcpEventLine("mcp-old-1", baseTs),
@@ -617,7 +603,6 @@ describe("runDoctorReport", () => {
 
     it("doctor_fix_rotation_idempotent: a second --fix on a freshly-rotated ledger is a no-op", async () => {
       const target = createInitializedProject("doctor-rotate-idempotent");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       const baseTs = staleTs();
       seedLedger(target, [
         oldMcpEventLine("mcp-old-1", baseTs),
@@ -646,7 +631,6 @@ describe("runDoctorReport", () => {
 
     it("doctor_fix_no_archive_when_under_retention: --fix with only recent events does NOT create an archive file or fixed entry", async () => {
       const target = createInitializedProject("doctor-rotate-noop");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       seedLedger(target, [recentMcpEventLine("mcp-new-1"), recentMcpEventLine("mcp-new-2")]);
 
       const fix = await runDoctorFix(target);
@@ -659,7 +643,6 @@ describe("runDoctorReport", () => {
 
     it("doctor_fix_emits_events_rotated: post-rotation main ledger contains an events_rotated audit event", async () => {
       const target = createInitializedProject("doctor-rotate-audit");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       const baseTs = staleTs();
       seedLedger(target, [
         oldMcpEventLine("mcp-old-1", baseTs),
@@ -684,7 +667,6 @@ describe("runDoctorReport", () => {
 
     it("doctor_fix_same_day_appends_archive: two --fix invocations on the same day with fresh stale events append to the same archive file", async () => {
       const target = createInitializedProject("doctor-rotate-sameday");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       const baseTs = staleTs();
 
       // Round 1: one old + one new event → rotation archives the old one
@@ -793,7 +775,6 @@ describe("runDoctorReport", () => {
 
   it("TASK-031: stable_id_collision not reported when all stable_ids are unique", async () => {
     const target = createInitializedProject("doctor-stable-id-ok");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -850,7 +831,6 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / rc.2: doctor exposes no `legacy_client_path_present` warning even when fabric.config.json contains only supported keys", async () => {
     const target = createInitializedProject("doctor-legacy-client-removed");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     writeFile(
@@ -975,7 +955,6 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / bootstrap_anchor_missing: passes when AGENTS.md or CLAUDE.md exists at repo root", async () => {
     const target = createInitializedProject("doctor-anchor-agents");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -987,7 +966,6 @@ describe("runDoctorReport", () => {
     const target = createInitializedProject("doctor-anchor-claude-only");
     rmSync(join(target, "AGENTS.md"), { force: true });
     writeFile("CLAUDE.md", "# CLAUDE\n", target);
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -998,7 +976,6 @@ describe("runDoctorReport", () => {
   it("v2.0 / bootstrap_anchor_missing: fixable_error when neither AGENTS.md nor CLAUDE.md exists", async () => {
     const target = createInitializedProject("doctor-anchor-missing");
     rmSync(join(target, "AGENTS.md"), { force: true });
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -1031,7 +1008,6 @@ describe("runDoctorReport", () => {
   // for canonical entries that have no matching event in events.jsonl.
   it("filesystem_edit_fallback: no orphans when canonical entry has matching knowledge_promoted event", async () => {
     const target = createInitializedProject("doctor-fef-no-orphan");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     // Seed a canonical entry AND its matching knowledge_promoted event.
     const fm = "---\nid: KT-DEC-0042\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# D\n";
@@ -1073,7 +1049,6 @@ describe("runDoctorReport", () => {
 
   it("filesystem_edit_fallback: silently ignores files without <id>--<slug> filename pattern", async () => {
     const target = createInitializedProject("doctor-fef-malformed");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // None of these match `<id>--<slug>.md`:
@@ -1135,7 +1110,6 @@ describe("runDoctorReport", () => {
 
     it("reports ok when .fabric/.cache/ is absent (no cache files ever written)", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-no-dir");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const report = await runDoctorReport(target);
@@ -1150,7 +1124,6 @@ describe("runDoctorReport", () => {
 
     it("reports ok when only fresh cache files exist (mtime < 7d)", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-fresh");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSessionHintsFile(target, "sess-fresh-a", 0); // today
       seedSessionHintsFile(target, "sess-fresh-b", 6); // just under threshold
@@ -1167,7 +1140,6 @@ describe("runDoctorReport", () => {
 
     it("flags stale cache files (mtime >= 7d) as info-kind finding", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-stale-flag");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSessionHintsFile(target, "sess-stale-1", 8);
       seedSessionHintsFile(target, "sess-stale-2", 30);
@@ -1185,7 +1157,6 @@ describe("runDoctorReport", () => {
 
     it("ignores non-session-hints files in .fabric/.cache/", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-ignores-others");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       // The edit-counter sidecar lives in the same directory; doctor must
       // not flag it for cleanup. Age it to >7d to make the test sharp.
@@ -1208,7 +1179,6 @@ describe("runDoctorReport", () => {
 
     it("apply-lint deletes stale session-hints files (>7d)", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-apply-delete");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       const staleFileA = seedSessionHintsFile(target, "sess-old-a", 10);
       const staleFileB = seedSessionHintsFile(target, "sess-old-b", 90);
@@ -1230,7 +1200,6 @@ describe("runDoctorReport", () => {
 
     it("apply-lint preserves fresh session-hints files (<7d)", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-preserve-fresh");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       const freshFile = seedSessionHintsFile(target, "sess-fresh", 1);
       const staleFile = seedSessionHintsFile(target, "sess-old", 20);
@@ -1252,7 +1221,6 @@ describe("runDoctorReport", () => {
 
     it("apply-lint cleanup is idempotent (second run produces zero mutations)", async () => {
       const target = createInitializedProject("doctor-rc6-sessionhints-idempotent");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSessionHintsFile(target, "sess-old", 30);
 
@@ -1271,7 +1239,6 @@ describe("runDoctorReport", () => {
   describe("ISS-20260531-053: hook cache writability diagnostic", () => {
     it("reports ok when .fabric/.cache is absent but its parent can create it", async () => {
       const target = createInitializedProject("doctor-hook-cache-writable-ok");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       expect(existsSync(join(target, ".fabric", ".cache"))).toBe(false);
 
@@ -1284,7 +1251,6 @@ describe("runDoctorReport", () => {
 
     it("warns when .fabric/.cache cannot accept hook sidecar writes", async () => {
       const target = createInitializedProject("doctor-hook-cache-writable-blocked");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       writeFile(".fabric/.cache", "not a directory", target);
 
@@ -1320,7 +1286,6 @@ describe("runDoctorReport", () => {
 
     it("reports ok when .fabric/.serve.lock is absent", async () => {
       const target = createInitializedProject("doctor-rc23-servelock-absent");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const report = await runDoctorReport(target);
@@ -1332,7 +1297,6 @@ describe("runDoctorReport", () => {
 
     it("reports ok when lock holds a live PID (no advisory)", async () => {
       const target = createInitializedProject("doctor-rc23-servelock-alive");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       // process.pid is the vitest worker — guaranteed alive for the duration
       // of the test. acquireLock writes Date.now(); we mirror that.
@@ -1346,7 +1310,6 @@ describe("runDoctorReport", () => {
 
     it("flags stale lock (dead PID) as info-kind advisory", async () => {
       const target = createInitializedProject("doctor-rc23-servelock-stale-flag");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       // 5 days ago — matches the dogfood report shape: "acquired 5 days ago".
       const acquired = Date.now() - 5 * 24 * 60 * 60 * 1000;
@@ -1365,7 +1328,6 @@ describe("runDoctorReport", () => {
 
     it("renders hours-ago wording when lock < 1 day old", async () => {
       const target = createInitializedProject("doctor-rc23-servelock-hours");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       // 3 hours ago — below the days threshold.
       const acquired = Date.now() - 3 * 60 * 60 * 1000;
@@ -1378,7 +1340,6 @@ describe("runDoctorReport", () => {
 
     it("--fix unlinks the stale lock and emits serve_lock_cleared event", async () => {
       const target = createInitializedProject("doctor-rc23-servelock-fix");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       const acquired = Date.now() - 5 * 24 * 60 * 60 * 1000;
       const lockFile = seedServeLock(target, DEAD_PID, acquired);
@@ -1398,7 +1359,6 @@ describe("runDoctorReport", () => {
 
     it("--fix preserves a lock held by a live PID (no-op)", async () => {
       const target = createInitializedProject("doctor-rc23-servelock-fix-preserve");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       const lockFile = seedServeLock(target, process.pid, Date.now());
 
@@ -1421,7 +1381,6 @@ describe("runDoctorReport", () => {
 
     it("flags a SKILL.md whose description has an unquoted ': '", async () => {
       const target = createInitializedProject("doctor-rc12-skill-yaml-invalid");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSkill(
         target,
@@ -1441,7 +1400,6 @@ describe("runDoctorReport", () => {
 
     it("flags a Codex SKILL.md alongside Claude ones (both roots scanned)", async () => {
       const target = createInitializedProject("doctor-rc12-skill-yaml-codex");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSkill(
         target,
@@ -1457,7 +1415,6 @@ describe("runDoctorReport", () => {
 
     it("does NOT flag a quoted value containing ': '", async () => {
       const target = createInitializedProject("doctor-rc12-skill-yaml-quoted");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSkill(
         target,
@@ -1473,7 +1430,6 @@ describe("runDoctorReport", () => {
 
     it("does NOT flag a description with no inner ': '", async () => {
       const target = createInitializedProject("doctor-rc12-skill-yaml-clean");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSkill(
         target,
@@ -1489,7 +1445,6 @@ describe("runDoctorReport", () => {
 
     it("is ok when neither .claude/skills nor .codex/skills exists", async () => {
       const target = createInitializedProject("doctor-rc12-skill-yaml-absent");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const report = await runDoctorReport(target);
@@ -1500,7 +1455,6 @@ describe("runDoctorReport", () => {
 
     it("ignores a SKILL.md missing the opening frontmatter `---` line", async () => {
       const target = createInitializedProject("doctor-rc12-skill-yaml-no-fm");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       seedSkill(
         target,
@@ -1526,7 +1480,6 @@ describe("runDoctorReport", () => {
   describe("rc.19 L1 bootstrap snapshot drift", () => {
     it("reports ok when .fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL", async () => {
       const target = createInitializedProject("doctor-rc19-l1-canonical");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Seed the canonical bootstrap snapshot — byte-for-byte BOOTSTRAP_CANONICAL.
@@ -1540,7 +1493,6 @@ describe("runDoctorReport", () => {
 
     it("reports fixable_error when .fabric/AGENTS.md bytes differ", async () => {
       const target = createInitializedProject("doctor-rc19-l1-drift");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Mutate the snapshot by one char — bytes diverge from BOOTSTRAP_CANONICAL.
@@ -1557,7 +1509,6 @@ describe("runDoctorReport", () => {
 
     it("--fix restores byte-equality and second --fix is no-op for the L1 drift code", async () => {
       const target = createInitializedProject("doctor-rc19-l1-fix");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
@@ -1581,7 +1532,6 @@ describe("runDoctorReport", () => {
       // an install-side line-ending bug must surface here as drift even though
       // a semantic diff would call the bytes equivalent.
       const target = createInitializedProject("doctor-rc19-l1-crlf");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const crlf = BOOTSTRAP_CANONICAL.replace(/\n/g, "\r\n");
@@ -1606,7 +1556,6 @@ describe("runDoctorReport", () => {
 
     it("reports ok when all three managed blocks byte-equal expected concat (no project-rules)", async () => {
       const target = createInitializedProject("doctor-rc19-l2-ok");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // L1 must be canonical so L2's expectedBody == BOOTSTRAP_CANONICAL.
@@ -1624,7 +1573,6 @@ describe("runDoctorReport", () => {
 
     it("reports drift when root AGENTS.md managed block bytes differ", async () => {
       const target = createInitializedProject("doctor-rc19-l2-drift");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
@@ -1639,7 +1587,6 @@ describe("runDoctorReport", () => {
 
     it("--fix rewrites all three managed blocks and is idempotent on re-run", async () => {
       const target = createInitializedProject("doctor-rc19-l2-fix");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
@@ -1675,7 +1622,6 @@ describe("runDoctorReport", () => {
 
     it("reports L2 drift when CLAUDE.md is missing the @.fabric/AGENTS.md import line", async () => {
       const target = createInitializedProject("doctor-rc19-l2-claude-missing-at");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
@@ -1696,7 +1642,6 @@ describe("runDoctorReport", () => {
       // managed_block_drift. This pins the no-normalization invariant so a
       // future "helpful" normalization patch breaks the test.
       const target = createInitializedProject("doctor-rc19-l2-crlf-agents");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Install canonical state (post-rc.19): L1 snapshot canonical, both L2
@@ -1732,7 +1677,6 @@ describe("runDoctorReport", () => {
       // AGENTS.md CRLF case above. Pins the no-normalization invariant for the
       // second L2 managed-block surface.
       const target = createInitializedProject("doctor-rc19-l2-crlf-cursor");
-      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Install canonical state.
@@ -5170,10 +5114,8 @@ function createV2KnowledgeProject(name: string): string {
   writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
   writeFile(".fabric/events.jsonl", "", target);
-  // Defer to writeKnowledgeMeta() at the test site after this returns; that gives us a
-  // canonical empty agents.meta.json + knowledge-test.index.json that match what
-  // knowledge-meta-builder produces, so neither agents_meta_stale nor
-  // knowledge_test_index_stale fires.
+  // v2.2 store-only cutover: the co-location agents.meta.json / knowledge-test
+  // index build path is retired, so the fixture seeds only the .fabric tree above.
   return target;
 }
 

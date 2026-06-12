@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DoctorCheck } from "./doctor.js";
 import { runDoctorReport } from "./doctor.js";
-import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 
 const tempRoots: string[] = [];
 
@@ -59,7 +58,6 @@ describe("runDoctorReport i18n snapshots", () => {
   it("renders stable English doctor checks from global language=en", async () => {
     const target = createV2KnowledgeProject("doctor-i18n-en");
     setGlobalLanguage("en");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const report = await runDoctorReport(target);
 
@@ -69,7 +67,6 @@ describe("runDoctorReport i18n snapshots", () => {
   it("renders stable Chinese doctor checks from global language=zh-CN", async () => {
     const target = createV2KnowledgeProject("doctor-i18n-zh");
     setGlobalLanguage("zh-CN");
-    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const report = await runDoctorReport(target);
 
@@ -78,10 +75,8 @@ describe("runDoctorReport i18n snapshots", () => {
 
   it("keeps doctor check ordering and machine fields locale-invariant", async () => {
     const enTarget = createV2KnowledgeProject("doctor-i18n-contract-en");
-    await writeKnowledgeMeta(enTarget, { source: "doctor_fix" });
 
     const zhTarget = createV2KnowledgeProject("doctor-i18n-contract-zh");
-    await writeKnowledgeMeta(zhTarget, { source: "doctor_fix" });
 
     // grill-6fixes (D1): language is global now, so flip the global tone
     // between the two runs to compare en vs zh rendering of the same checks.
