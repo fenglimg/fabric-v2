@@ -2,16 +2,11 @@ import { z } from "zod";
 
 import { normalizeCiteTag } from "../cite-line-parser.js";
 
-// v2.1.0-rc.1 (ADJ-P4-1, full remap): cite_tags is persisted in events.jsonl.
-// rc≤36 events stored the legacy 5-state vocabulary (planned/recalled/
-// chained-from/dismissed/none); rc.37 NEW-1 collapsed authoring to the 2-state
-// vocab (applied/dismissed). Rather than carry both forever (dual-vocab
-// coexistence), this preprocess remaps every legacy element to its 2-state
-// equivalent on READ — so historical events normalize to applied/dismissed/none
-// and no longer fail safeParse / get undercounted by cite-coverage. New writes
-// already emit the 2-state vocab (parser remaps at parse time), so the
-// preprocess is a no-op for them. Reuses `normalizeCiteTag` — the same remap the
-// parser applies — to keep read-normalization and parse-emission in lockstep.
+// cite_tags is persisted in events.jsonl. The vocabulary is the 2-state set
+// applied/dismissed (+ none sentinel). This preprocess runs `normalizeCiteTag`
+// on READ so any on-disk value outside the 2-state set degrades to `none`
+// (rather than failing safeParse). Reuses `normalizeCiteTag` — the same
+// normalization the parser applies — to keep read and parse in lockstep.
 const citeTagSchema = z.preprocess(
   (value) => (typeof value === "string" ? normalizeCiteTag(value) : value),
   z.enum(["applied", "dismissed", "none"]),

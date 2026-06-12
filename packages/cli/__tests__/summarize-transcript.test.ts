@@ -164,7 +164,7 @@ describe("summarizeTranscript — Codex CLI shape (audit §2.16 regression)", ()
           content: [
             {
               type: "output_text",
-              text: "KB: KT-DEC-0001 [recalled] → edit:src/foo.ts\n\nproceeding",
+              text: "KB: KT-DEC-0001 [applied] → edit:src/foo.ts\n\nproceeding",
             },
           ],
         },
@@ -173,10 +173,9 @@ describe("summarizeTranscript — Codex CLI shape (audit §2.16 regression)", ()
     const r = summarizeTranscript(path);
     expect(r.assistant_turns).toHaveLength(1);
     expect(r.assistant_turns[0].kb_line_raw).toBe(
-      "KB: KT-DEC-0001 [recalled] → edit:src/foo.ts",
+      "KB: KT-DEC-0001 [applied] → edit:src/foo.ts",
     );
     expect(r.assistant_turns[0].cite_ids).toEqual(["KT-DEC-0001"]);
-    // v2.1.0-rc.1 (ADJ-P4-1): legacy [recalled] input remaps to [applied].
     expect(r.assistant_turns[0].cite_tags).toEqual(["applied"]);
   });
 

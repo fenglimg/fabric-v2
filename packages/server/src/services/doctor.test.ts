@@ -4654,7 +4654,7 @@ describe("rollupCiteAuditIfNeeded", () => {
       event_type: "assistant_turn_observed",
       kb_line_raw: citeId ? `KB: ${citeId}` : null,
       cite_ids: citeId ? [citeId] : [],
-      cite_tags: citeId ? ["planned"] : ["none"],
+      cite_tags: citeId ? ["applied"] : ["none"],
       client: "cc",
       turn_id: id,
       timestamp: new Date(ts).toISOString(),
@@ -4842,9 +4842,9 @@ describe("rc.39 emit-fold counter merge", () => {
       schema_version: 1,
       session_id: `sess-${id}`,
       event_type: "assistant_turn_observed",
-      kb_line_raw: "KB: KT-DEC-0001 [planned]",
+      kb_line_raw: "KB: KT-DEC-0001 [applied]",
       cite_ids: ["KT-DEC-0001"],
-      cite_tags: ["planned"],
+      cite_tags: ["applied"],
       client,
       turn_id: id,
       timestamp: new Date(ts).toISOString(),
@@ -5037,7 +5037,7 @@ describe("runDoctorCiteCoverage (smoke)", () => {
         event_type: "assistant_turn_observed",
         kb_line_raw: "KB: KT-DEC-0001",
         cite_ids: ["KT-DEC-0001"],
-        cite_tags: ["planned"],
+        cite_tags: ["applied"],
         client: "cc",
         turn_id: "turn-1",
         timestamp: new Date(marker.marker_ts + 10).toISOString(),
@@ -5355,7 +5355,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-A",
         kbLineRaw: "KB: KT-DEC-0001",
         citeIds: ["KT-DEC-0001"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10,
       }),
@@ -5396,7 +5396,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-N",
         kbLineRaw: "KB: KT-DEC-0042",
         citeIds: ["KT-DEC-0042"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10,
       }),
@@ -5474,7 +5474,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-R",
         kbLineRaw: "KB: KT-DEC-0099",
         citeIds: ["KT-DEC-0099"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 1_000,
       }),
@@ -5505,7 +5505,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-U2",
         kbLineRaw: "KB: KT-DEC-0100",
         citeIds: ["KT-DEC-0100"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10,
       }),
@@ -5645,7 +5645,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-P1",
         kbLineRaw: "KB: KT-DEC-0301",
         citeIds: ["KT-DEC-0301"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10,
       }),
@@ -5653,7 +5653,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-P2",
         kbLineRaw: "KB: KT-DEC-0302",
         citeIds: ["KT-DEC-0302"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 20,
       }),
@@ -5694,7 +5694,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-OLD",
         kbLineRaw: "KB: old",
         citeIds: ["KT-DEC-0401"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10, // < cutoff → excluded
       }),
@@ -5702,7 +5702,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-NEW",
         kbLineRaw: "KB: new",
         citeIds: ["KT-DEC-0402"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: cutoff + 10, // >= cutoff → included
       }),
@@ -5736,7 +5736,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-CC",
         kbLineRaw: "KB: cc",
         citeIds: ["KT-DEC-0501"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10,
       }),
@@ -5744,7 +5744,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-CX",
         kbLineRaw: "KB: codex",
         citeIds: ["KT-DEC-0502"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "codex",
         ts: marker.marker_ts + 20,
       }),
@@ -5801,7 +5801,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-CC2",
         kbLineRaw: "KB: cc",
         citeIds: ["KT-DEC-0601"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "cc",
         ts: marker.marker_ts + 10,
       }),
@@ -5809,7 +5809,7 @@ describe("runDoctorCiteCoverage", () => {
         sessionId: "sess-CX2",
         kbLineRaw: "KB: codex",
         citeIds: ["KT-DEC-0602"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         client: "codex",
         ts: marker.marker_ts + 20,
       }),
@@ -5934,7 +5934,7 @@ describe("runDoctorCiteCoverage", () => {
           turnId: `turn-${i}`,
           kbLineRaw: i % 2 === 0 ? `KB: KT-DEC-${String(i).padStart(4, "0")}` : null,
           citeIds: i % 2 === 0 ? [`KT-DEC-${String(i).padStart(4, "0")}`] : [],
-          citeTags: i % 3 === 0 ? ["planned"] : i % 3 === 1 ? ["none"] : ["dismissed"],
+          citeTags: i % 3 === 0 ? ["applied"] : i % 3 === 1 ? ["none"] : ["dismissed"],
           client: i % 2 === 0 ? "cc" : "codex",
           ts: marker.marker_ts + i + 1,
         }),
@@ -6117,7 +6117,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-1",
         citeIds: ["KT-DEC-0001"],
-        citeTags: ["planned"],
+        citeTags: ["applied"],
         // Even though commitments are EMPTY (would be contract_missing under
         // 'ok' state), drift skips the contract walk entirely.
         citeCommitments: [{ operators: [], skip_reason: null }],
@@ -6167,7 +6167,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-OK",
         citeIds: ["KT-DEC-0100"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{
           operators: [{ kind: "edit", target: "src/auth/**" }],
           skip_reason: null,
@@ -6207,7 +6207,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-V",
         citeIds: ["KT-DEC-0200"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{
           operators: [{ kind: "edit", target: "src/auth/**" }],
           skip_reason: null,
@@ -6244,7 +6244,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-M",
         citeIds: ["KT-PIT-0001"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{ operators: [], skip_reason: null }],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
       }),
@@ -6274,7 +6274,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-MOD",
         citeIds: ["KT-MOD-0001"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         // Even with operators, models are reference cites — no contract eval.
         citeCommitments: [{ operators: [{ kind: "edit", target: "**" }], skip_reason: null }],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
@@ -6305,7 +6305,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-G",
         citeIds: ["KT-GLD-0001"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{ operators: [], skip_reason: null }],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
       }),
@@ -6346,7 +6346,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-multi",
         citeIds: ["KT-DEC-0001", "KT-PIT-0005"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [sharedCommitment, sharedCommitment],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
       }),
@@ -6376,7 +6376,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-U",
         citeIds: ["KT-DEC-9999"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{ operators: [], skip_reason: null }],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
       }),
@@ -6405,7 +6405,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-S",
         citeIds: ["KT-DEC-0300"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{ operators: [], skip_reason: "sequencing" }],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
       }),
@@ -6437,7 +6437,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-P",
         citeIds: ["KP-DEC-0001"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{ operators: [], skip_reason: null }],
         ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
       }),
@@ -6466,7 +6466,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-T",
         citeIds: ["KT-DEC-0400", "KP-DEC-0400"],
-        citeTags: ["recalled", "recalled"],
+        citeTags: ["applied", "applied"],
         citeCommitments: [
           { operators: [], skip_reason: null },
           { operators: [], skip_reason: null },
@@ -6506,7 +6506,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-Pers",
         citeIds: ["KT-DEC-0500", "KP-DEC-0500"],
-        citeTags: ["recalled", "recalled"],
+        citeTags: ["applied", "applied"],
         citeCommitments: [
           { operators: [], skip_reason: null },
           { operators: [], skip_reason: null },
@@ -6545,7 +6545,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-X",
         citeIds: ["KT-DEC-0601", "KT-PIT-0601", "KT-MOD-0601", "KP-GLD-0601"],
-        citeTags: ["recalled", "recalled", "recalled", "recalled"],
+        citeTags: ["applied", "applied", "applied", "applied"],
         citeCommitments: [
           { operators: [], skip_reason: null },
           { operators: [], skip_reason: null },
@@ -6581,7 +6581,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-R",
         citeIds: ["KT-DEC-0701"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{
           operators: [{ kind: "require", target: "auth" }],
           skip_reason: null,
@@ -6618,7 +6618,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-F",
         citeIds: ["KT-DEC-0801"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{
           operators: [{ kind: "forbid", target: "legacy" }],
           skip_reason: null,
@@ -6654,7 +6654,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-NE",
         citeIds: ["KT-DEC-0901"],
-        citeTags: ["recalled"],
+        citeTags: ["applied"],
         citeCommitments: [{
           operators: [{ kind: "not_edit", target: "src/billing/**" }],
           skip_reason: null,
@@ -6687,8 +6687,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
       mkContractTurnEvent({
         sessionId: "sess-RC20",
         citeIds: ["KT-DEC-0001"],
-        citeTags: ["planned"],
-        kbLineRaw: "KB: KT-DEC-0001 (anchor) [planned]",
+        citeTags: ["applied"],
+        kbLineRaw: "KB: KT-DEC-0001 (anchor) [applied]",
         client: "cc",
         ts: rcMarker.marker_ts + 5,
       }),

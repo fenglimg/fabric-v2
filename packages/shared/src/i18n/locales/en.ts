@@ -483,7 +483,7 @@ export const enMessages: Messages = {
     "{count} SKILL.md description structural issues: {list}. The description field is the host's primary auto-invoke matching signal.",
   "doctor.check.skill_description.remediation":
     "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase. See W1 description rewrite style. Re-run `fabric install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
-  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Scans 7d of assistant_turn_observed events for 4 anti-patterns (G1 ritual / G2 dismissal abuse / G3 chained-from misuse / G5 placeholder cite). Warning severity — heuristics can false-positive; advisory only.
+  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Scans 7d of assistant_turn_observed events for 3 anti-patterns (G1 ritual / G2 dismissal abuse / G5 placeholder cite). Warning severity — heuristics can false-positive; advisory only.
   "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
   "doctor.check.cite_goodhart.ok":
     "No cite-policy Goodhart patterns detected over the last 7 days.",
@@ -492,7 +492,7 @@ export const enMessages: Messages = {
   "doctor.check.cite_goodhart.message.plural":
     "Detected {count} cite-policy Goodhart patterns: {list}.",
   "doctor.check.cite_goodhart.remediation":
-    "Review the fired patterns: G1 ritual → the same id repeated as [recalled] suggests the KB should land into a contract instead; G2 dismissal abuse → > 60% of recalled cites used skip: bypasses contract enforcement, audit skip-reason validity; G3 chained-from misuse → chained-from tag with no commitment (operators=[] + skip_reason=null), add operators or use a different tag; G5 placeholder cite → too many bare 'KB: none' / [unspecified], prefer specific sentinels like [no-relevant] / [not-applicable]. For raw data, run `fabric doctor --cite-coverage --since=7d`.",
+    "Review the fired patterns: G1 ritual → the same id repeated as [applied] suggests the KB should land into a contract instead; G2 dismissal abuse → > 60% of applied cites used skip: bypasses contract enforcement, audit skip-reason validity; G5 placeholder cite → too many bare 'KB: none' / [unspecified], prefer specific sentinels like [no-relevant] / [not-applicable]. For raw data, run `fabric doctor --cite-coverage --since=7d`.",
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint. rc.32 baseline showed 92% of entries stuck at draft, signaling a broken promote loop. Warns when > 50% draft (workspace must have >= 10 entries to compute the ratio — small corpora are noisy).
   "doctor.check.draft_backlog.name": "Knowledge draft backlog",
   "doctor.check.draft_backlog.ok":

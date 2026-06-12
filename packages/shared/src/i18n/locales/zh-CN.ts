@@ -467,7 +467,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
   "doctor.check.skill_description.remediation":
     "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语。参考 W1 description rewrite 风格。重新跑 `fabric install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
-  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart 模式检测。扫 7d 内 assistant_turn_observed 事件, 4 个 anti-pattern (G1 仪式化 / G2 抄底引用 / G3 chained-from 滥用 / G5 placeholder cite)。warning 级 (启发式有 false-positive, 不阻断)。
+  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart 模式检测。扫 7d 内 assistant_turn_observed 事件, 3 个 anti-pattern (G1 仪式化 / G2 抄底引用 / G5 placeholder cite)。warning 级 (启发式有 false-positive, 不阻断)。
   "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
   "doctor.check.cite_goodhart.ok":
     "过去 7d 未检测到 cite-policy Goodhart 反模式。",
@@ -476,7 +476,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.cite_goodhart.message.plural":
     "检测到 {count} 个 cite-policy Goodhart 模式: {list}。",
   "doctor.check.cite_goodhart.remediation":
-    "审阅触发的 pattern: G1 仪式化 → 同一 [recalled] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% recalled 用 skip: 是绕过 contract, review skip reason 真实性; G3 chained-from 滥用 → chained-from 标了但没 commitment, 要补 operators 或改用其他 tag; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fabric doctor --cite-coverage --since=7d`。",
+    "审阅触发的 pattern: G1 仪式化 → 同一 [applied] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% applied 用 skip: 是绕过 contract, review skip reason 真实性; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fabric doctor --cite-coverage --since=7d`。",
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint。rc.32 baseline 92% entry 卡在 draft, 揭示 promote 断流。> 50% draft 触发 warning (workspace 必须 >= 10 entries 才计算比率, 避免小语料噪音)。
   "doctor.check.draft_backlog.name": "Knowledge draft backlog",
   "doctor.check.draft_backlog.ok":

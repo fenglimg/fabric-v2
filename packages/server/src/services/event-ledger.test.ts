@@ -208,7 +208,7 @@ describe("event-ledger", () => {
     expect(raw).toContain("[REDACTED:phone-number]");
   });
 
-  it("remaps a legacy 5-state cite_tags event on read (ADJ-P4-1 full remap)", async () => {
+  it("degrades retired legacy cite_tags to none on read (2-state vocab)", async () => {
     const projectRoot = await createTempProject();
 
     // Write a raw legacy JSONL line directly (bypassing the now-2-state typed
@@ -230,11 +230,11 @@ describe("event-ledger", () => {
 
     const { events: entries } = await readEventLedger(projectRoot);
     expect(entries).toHaveLength(1);
-    // Legacy planned/recalled/chained-from collapse to `applied`; dismissed/none
-    // pass through. The event is NOT dropped by safeParse.
+    // Retired legacy planned/recalled/chained-from degrade to `none`;
+    // dismissed/none pass through. The event is NOT dropped by safeParse.
     expect(entries[0]).toMatchObject({
       event_type: "assistant_turn_observed",
-      cite_tags: ["applied", "applied", "applied", "dismissed", "none"],
+      cite_tags: ["none", "none", "none", "dismissed", "none"],
     });
   });
 

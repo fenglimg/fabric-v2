@@ -18,10 +18,9 @@
 //     auto-ships to cc/codex/cursor with no install pipeline change.
 //
 // Vocabulary contract (mirrored 1:1 with the TS source):
-//   - cite_tags enum: applied | dismissed | none (rc.37 NEW-1 2-state vocab).
-//     v2.1.0-rc.1 (ADJ-P4-1, full remap): legacy rc≤36 tags (planned / recalled
-//     / chained-from) are REMAPPED to `applied` here — accepted as input but no
-//     longer emitted verbatim, so the TS source and this twin stay in lockstep.
+//   - cite_tags enum: applied | dismissed | none (2-state vocab). Pre-user
+//     clean-slate: unrecognized tags degrade to `none` (no legacy remap), so
+//     the TS source and this twin stay in lockstep.
 //   - operator kinds: edit | not_edit | require | forbid
 //     (source token `!edit:` → schema kind `not_edit`)
 //   - skip:<reason> captures everything after the first colon, so
@@ -52,24 +51,17 @@ function splitStorePrefix(token) {
     : { store: token.slice(0, colon), id: token.slice(colon + 1) };
 }
 
-// v2.1.0-rc.1 (ADJ-P4-1, full remap): legacy rc≤36 tags collapse to `applied`.
-// Mirrors LEGACY_CITE_TAG_REMAP / normalizeCiteTag in the TS source — accepted
-// as input but emitted as the 2-state vocab so cite-coverage never undercounts.
-const LEGACY_CITE_TAG_REMAP = {
-  planned: "applied",
-  recalled: "applied",
-  "chained-from": "applied",
-};
-
+// Mirrors normalizeCiteTag in the TS source: applied/dismissed/none pass
+// through; anything else degrades to `none` (no legacy remap).
 function parseTag(rawTag) {
   if (!rawTag) return "none";
-  // Tags may carry tails like `chained-from KT-DEC-0001` or
-  // `dismissed:scope-mismatch`; head token (whitespace/colon-bounded) wins.
+  // Tags may carry tails like `dismissed:scope-mismatch`; the head token
+  // (whitespace/colon-bounded) wins.
   const head = rawTag.trim().split(/[\s:]+/)[0].toLowerCase();
   if (head === "applied" || head === "dismissed" || head === "none") {
     return head;
   }
-  return LEGACY_CITE_TAG_REMAP[head] || "none";
+  return "none";
 }
 
 function parseContractTail(tail) {
