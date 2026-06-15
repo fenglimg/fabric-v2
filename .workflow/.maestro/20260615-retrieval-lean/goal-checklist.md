@@ -24,7 +24,9 @@
 
 ### W1 — 检索塌成 1 工具 (KT-DEC-0026 / KT-GLD-0005)
 - [x] **W1-1** recall.ts 改只返描述+路径;删 selectBodyBudgetedIds/applyBodyHardCeiling/rules[]/body_tier ✅ 34 tests green
-- [ ] **W1-2** 退役 fab_plan_context + fab_get_knowledge_sections MCP 工具;保留 CLI plan-context-hint
+- [x] **W1-2** 退役 fab_plan_context + fab_get_knowledge_sections MCP 工具;保留 CLI plan-context-hint ✅ index.test 只 4 工具
+
+> **W1 wave 闭 — G-W1-RETRIEVAL 绿** (server 711 + shared 637 + cli 1036 tests, tsc clean)。getKnowledgeSections 服务+schema 暂留, W3 连同事件账本删。
 - [x] **W1-3** include_related 改 C-1:候选浮 related id,不取 body ✅
 
 ### W2 — SessionStart 脊柱重裁 (KT-DEC-0027/0028/0029, KT-MOD-0001)

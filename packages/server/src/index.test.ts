@@ -29,11 +29,11 @@ describe("createFabricServer", () => {
     createFabricServer();
 
     const toolNames = registerTool.mock.calls.map((call) => call[0]);
+    // W1-2 (KT-DEC-0026): the two-step fab_plan_context / fab_get_knowledge_sections
+    // MCP tools are retired — recall collapsed to ONE lean tool.
     expect(toolNames.sort()).toEqual([
       "fab_archive_scan",
       "fab_extract_knowledge",
-      "fab_get_knowledge_sections",
-      "fab_plan_context",
       "fab_recall",
       "fab_review",
     ]);
@@ -64,13 +64,16 @@ describe("createFabricServer", () => {
     const { FABRIC_SERVER_INSTRUCTIONS } = await import("./index.js");
 
     expect(FABRIC_SERVER_INSTRUCTIONS.length).toBeGreaterThan(0);
-    // Canonical retrieval flow: one-step recall + two-step plan→sections.
+    // W1-2 (KT-DEC-0026): single lean retrieval flow — fab_recall returns
+    // descriptions + read paths; bodies are loaded via a native Read. The
+    // retired two-step tools must NOT appear in the manifest anymore.
     expect(FABRIC_SERVER_INSTRUCTIONS).toContain("fab_recall");
-    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("fab_plan_context");
-    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("fab_get_knowledge_sections");
-    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("selection_token");
-    // Full tool manifest — all six registered tools are described.
-    for (const tool of ["fab_recall", "fab_plan_context", "fab_get_knowledge_sections", "fab_extract_knowledge", "fab_archive_scan", "fab_review"]) {
+    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("knowledge_body_read");
+    expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("fab_plan_context");
+    expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("fab_get_knowledge_sections");
+    expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("selection_token");
+    // Full tool manifest — the four current tools are described.
+    for (const tool of ["fab_recall", "fab_extract_knowledge", "fab_archive_scan", "fab_review"]) {
       expect(FABRIC_SERVER_INSTRUCTIONS).toContain(tool);
     }
     // Conventions: session_id + cite.

@@ -15,11 +15,9 @@ import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
-import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRecall } from "./tools/recall.js";
 import { registerArchiveScan } from "./tools/archive-scan.js";
 import { registerReview } from "./tools/review.js";
-import { registerKnowledgeSections } from "./tools/knowledge-sections.js";
 
 declare const __SERVER_VERSION__: string;
 
@@ -188,20 +186,18 @@ export const FABRIC_SERVER_INSTRUCTIONS = [
   "Fabric is a cross-client knowledge layer: durable team/personal decisions, pitfalls, guidelines, models, and processes this server surfaces so you do not re-learn them each session.",
   "",
   "Retrieval — do this BEFORE you edit code or commit to a decision:",
-  "- Default (one step): call `fab_recall(paths)` with the files you are about to touch; it returns the relevant KB bodies directly.",
-  "- Two step (only when single-step bodies are too large and you must trim noise): `fab_plan_context(paths)` returns a `selection_token` + ranked candidate descriptions, then `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids })` fetches the chosen bodies. The token comes ONLY from a recent `fab_plan_context` — never fabricate one.",
+  "- Call `fab_recall(paths)` with the files you are about to touch. It returns the relevant KB DESCRIPTIONS (`candidates[]`) plus a READ-PATH index (`paths[]`: one on-disk knowledge file per surfaced candidate).",
+  "- It does NOT return bodies. To load an entry's full content, Read the file at its `paths[].path` (native file read) — that is observed as a `knowledge_body_read`. Reading on demand keeps the description index lean; a needed body is one cheap Read away.",
   "",
   "Tools:",
-  "- `fab_recall` — one-shot KB recall for given paths (preferred entry point).",
-  "- `fab_plan_context` — preview ranked candidate descriptions and obtain a selection_token (two-step retrieval / large corpora).",
-  "- `fab_get_knowledge_sections` — fetch full bodies for a selection_token + chosen stable_ids.",
+  "- `fab_recall` — one-shot KB recall: descriptions + read paths for the given files.",
   "- `fab_extract_knowledge` — extract structured knowledge from text you supply.",
   "- `fab_archive_scan` — scan recent work for archive-worthy knowledge candidates.",
   "- `fab_review` — review and triage pending knowledge entries.",
   "",
   "Conventions:",
   "- Candidate lists are ranked best-first (content relevance) and bounded; `omitted_candidate_count > 0` means more exist — narrow your intent to surface them.",
-  "- Pass the client `session_id` to `fab_recall` / `fab_plan_context` so cross-session knowledge-debt tracking stays accurate.",
+  "- Pass the client `session_id` to `fab_recall` so cross-session knowledge-debt tracking stays accurate.",
   "- Cite the KB id you applied or dismissed before edits, per the project's cite policy.",
 ].join("\n");
 
@@ -216,8 +212,6 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
     },
   );
 
-  registerPlanContext(server, tracker);
-  registerKnowledgeSections(server, tracker);
   registerRecall(server, tracker);
   registerArchiveScan(server, tracker);
   registerExtractKnowledge(server, tracker);
