@@ -39,11 +39,14 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export const RELEVANCE_PATHS_DRIFT_WINDOW_DAYS = 90;
 
 // Directories excluded from the workspace path scan — keeps the candidate list
-// bounded so dangling-glob matching stays cheap.
+// bounded so dangling-glob matching stays cheap. NOTE: `.fabric/` is deliberately
+// NOT excluded — knowledge entries legitimately anchor relevance_paths at
+// `.fabric/AGENTS.md` / `.fabric/project-rules.md` etc., so ignoring it would
+// false-positive every such anchor as dangling (caught by dogfooding this repo).
+// The hot `.fabric/.cache` subtree is still skipped via the `.cache` entry below.
 const IGNORED_DIRECTORIES = new Set([
   "node_modules",
   ".git",
-  ".fabric",
   "dist",
   "build",
   "coverage",

@@ -142,6 +142,20 @@ describe("inspectStoreRelevancePaths — dangling (G-RELEVANCE)", () => {
     const result = await inspectStoreRelevancePaths(projectRoot);
     expect(result.dangling.entries).toEqual([]);
   });
+
+  // Regression (caught dogfooding this repo): an anchor into `.fabric/` must NOT
+  // be reported dangling — knowledge entries legitimately reference
+  // `.fabric/AGENTS.md` etc. The workspace scan must descend into `.fabric/`.
+  it("does NOT flag dangling for a relevance_path anchored inside .fabric/", async () => {
+    await freshHome();
+    const projectRoot = await createProject();
+    await writeFile(join(projectRoot, ".fabric", "AGENTS.md"), "# bootstrap\n");
+    await seedEntry("KT-DEC-0007--f.md", "KT-DEC-0007", "narrow", [".fabric/AGENTS.md"]);
+    mountTeam();
+
+    const result = await inspectStoreRelevancePaths(projectRoot);
+    expect(result.dangling.entries).toEqual([]);
+  });
 });
 
 describe("inspectStoreRelevancePaths — drift (G-RELEVANCE)", () => {
