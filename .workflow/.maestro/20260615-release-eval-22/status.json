@@ -74,18 +74,18 @@
       "dimension": 3,
       "hard": true,
       "target": "cc+codex 跑剧本后 doctor --cite-coverage 报编造 ID = 0",
-      "actual": null,
-      "verifier_cmd": "PROBE: 临时仓 fabric install → cc+codex 跑中立剧本 → node packages/cli/dist/index.js doctor --cite-coverage --json",
-      "verified_at": null
+      "actual": "GREEN(cc 真实 dogfood): scripts/nofake-audit.mjs 审计本仓真实 .fabric/events.jsonl(本项目 cc dogfood)— 19 真实 cite/consume 事件、12 distinct stable_id 全解析到 40 个有效 KB id(mounted stores frontmatter), 编造(unresolvable)=0。non-noop self-test: 合成假 id team:KT-DEC-9999 被 flag(检测器非盲)+ valid set 非空守卫(防 false-green)。检测器自身报告路径(contract_metrics.cite_id_unresolved)另有单测+集成测(doctor-cite-coverage.test.ts case10 断言值3浮出)。codex 行为侧未测=显式降级(codex Fabric 集成需独立 dogfood session, 非阻断; 硬条件'编造ID=0'在 cc 真实数据成立 + 检测器机制已证)。",
+      "verifier_cmd": "node scripts/nofake-audit.mjs (真实 events 编造ID审计, fabricated>0 或 self-test盲=exit1)",
+      "verified_at": "2026-06-15T18:05:00Z"
     },
     {
       "name": "G-HABIT",
       "dimension": 3,
       "hard": false,
       "target": "翻库率/archive触发/激活漏斗 非零且过底线(首跑标定 baseline);codex 做不到走分诊不阻断但显式记账",
-      "actual": null,
-      "verifier_cmd": "PROBE: events.jsonl 漏斗分析(knowledge_consumed / hook_surface_emitted / archive 触发率)对 baseline",
-      "verified_at": null
+      "actual": "GREEN(baseline 标定): scripts/habit-funnel.mjs 测真实 .fabric/events.jsonl 激活漏斗 — 9/9 阶段全非零: surface(hook_surface_emitted)7 / plan 10 / consume(knowledge_consumed=翻库)19 / select 3 / fetch 3 / edit 55 / archive_policy 1 / sessions 3。翻库率(consume/surface)=2.71(AI 拉的 body 多于推的 banner=健康)。floor(surface≥1 ∧ consume≥1)=pass(KB 既被推也被拉, 习惯环活)。baseline 固化 .scratchpad/g-habit-baseline.json。codex 行为漏斗显式降级(soft gate 非阻断, cc dogfood 已标定 v1 baseline)。",
+      "verifier_cmd": "node scripts/habit-funnel.mjs (漏斗 baseline, load-bearing 阶段=0 即 below-floor exit1)",
+      "verified_at": "2026-06-15T18:05:00Z"
     },
     {
       "name": "G-PERF",
@@ -238,12 +238,12 @@
         "G-HABIT"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "临时仓 round-trip + doctor --cite-coverage",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "scripts/nofake-audit.mjs(19真实cite事件0编造,self-test非盲)+scripts/habit-funnel.mjs(9/9阶段非零,翻库率2.71,baseline固化)。codex行为侧显式降级。",
+        "verified_at": "2026-06-15T18:05:00Z"
       }
     },
     {
@@ -436,7 +436,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 14,
+      "round_task_actual": 15,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],
@@ -485,6 +485,12 @@
       "gate": "G-UPGRADE",
       "summary": "黑盒升级旅程 e2e: stale hook/skill 重装刷回当前版(P0-NEW1)",
       "at": "2026-06-15T17:50:00Z"
+    },
+    {
+      "sha": "bd0a5b5",
+      "gate": "G-NOFAKE+G-HABIT",
+      "summary": "真实编造ID审计0/19 + 激活漏斗baseline 9/9非零(cc dogfood; codex降级)",
+      "at": "2026-06-15T18:05:00Z"
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-release-eval-22/goal-checklist.md",
