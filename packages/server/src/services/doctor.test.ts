@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
 import {
-  BOOTSTRAP_CANONICAL,
+  BOOTSTRAP_CANONICAL_EN,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   STORE_LAYOUT,
@@ -1387,12 +1387,12 @@ describe("runDoctorReport", () => {
   // installed at the top of the file (mkdtempSync + process.env.FABRIC_HOME).
   // ---------------------------------------------------------------------------
   describe("rc.19 L1 bootstrap snapshot drift", () => {
-    it("reports ok when .fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL", async () => {
+    it("reports ok when .fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL_EN", async () => {
       const target = createInitializedProject("doctor-rc19-l1-canonical");
       writeFile(".fabric/events.jsonl", "", target);
 
-      // Seed the canonical bootstrap snapshot — byte-for-byte BOOTSTRAP_CANONICAL.
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      // Seed the canonical bootstrap snapshot — byte-for-byte BOOTSTRAP_CANONICAL_EN.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
 
       const report = await runDoctorReport(target);
 
@@ -1404,8 +1404,8 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l1-drift");
       writeFile(".fabric/events.jsonl", "", target);
 
-      // Mutate the snapshot by one char — bytes diverge from BOOTSTRAP_CANONICAL.
-      const mutated = `${BOOTSTRAP_CANONICAL}X`;
+      // Mutate the snapshot by one char — bytes diverge from BOOTSTRAP_CANONICAL_EN.
+      const mutated = `${BOOTSTRAP_CANONICAL_EN}X`;
       writeFileSync(join(target, ".fabric", "AGENTS.md"), mutated, "utf8");
 
       const report = await runDoctorReport(target);
@@ -1420,13 +1420,13 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l1-fix");
       writeFile(".fabric/events.jsonl", "", target);
 
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL_EN}drift`, "utf8");
 
       const fix = await runDoctorFix(target);
       expect(fix.fixed.map((e) => e.code)).toContain("bootstrap_snapshot_drift");
       // Byte-equality restored.
       const restored = readFileSync(join(target, ".fabric", "AGENTS.md"), "utf8");
-      expect(restored).toBe(BOOTSTRAP_CANONICAL);
+      expect(restored).toBe(BOOTSTRAP_CANONICAL_EN);
 
       // Second --fix: L1 drift code MUST NOT re-fire (idempotency).
       const after = await runDoctorReport(target);
@@ -1443,9 +1443,9 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l1-crlf");
       writeFile(".fabric/events.jsonl", "", target);
 
-      const crlf = BOOTSTRAP_CANONICAL.replace(/\n/g, "\r\n");
+      const crlf = BOOTSTRAP_CANONICAL_EN.replace(/\n/g, "\r\n");
       // Sanity: the bytes really do differ from canonical.
-      expect(crlf).not.toBe(BOOTSTRAP_CANONICAL);
+      expect(crlf).not.toBe(BOOTSTRAP_CANONICAL_EN);
       writeFileSync(join(target, ".fabric", "AGENTS.md"), crlf, "utf8");
 
       const report = await runDoctorReport(target);
@@ -1467,11 +1467,11 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l2-ok");
       writeFile(".fabric/events.jsonl", "", target);
 
-      // L1 must be canonical so L2's expectedBody == BOOTSTRAP_CANONICAL.
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      // L1 must be canonical so L2's expectedBody == BOOTSTRAP_CANONICAL_EN.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
       // Seed both managed-block targets with the canonical body.
-      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL);
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL);
+      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL_EN);
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL_EN);
       // CLAUDE.md: thin shell — needs @-import line.
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
 
@@ -1484,9 +1484,9 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l2-drift");
       writeFile(".fabric/events.jsonl", "", target);
 
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
       // Mutate body in root AGENTS.md managed block.
-      seedManagedBlock(target, "AGENTS.md", `${BOOTSTRAP_CANONICAL}\nROGUE EDIT`);
+      seedManagedBlock(target, "AGENTS.md", `${BOOTSTRAP_CANONICAL_EN}\nROGUE EDIT`);
 
       const report = await runDoctorReport(target);
       const codes = report.fixable_errors.map((e) => e.code);
@@ -1498,7 +1498,7 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l2-fix");
       writeFile(".fabric/events.jsonl", "", target);
 
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
       seedManagedBlock(target, "AGENTS.md", "WRONG BODY A");
       seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", "WRONG BODY B");
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n", "utf8"); // missing @-import
@@ -1506,7 +1506,7 @@ describe("runDoctorReport", () => {
       const fix = await runDoctorFix(target);
       expect(fix.fixed.map((e) => e.code)).toContain("managed_block_drift");
 
-      // All three managed blocks now byte-equal expectedBody == BOOTSTRAP_CANONICAL.
+      // All three managed blocks now byte-equal expectedBody == BOOTSTRAP_CANONICAL_EN.
       const after = await runDoctorReport(target);
       expect(after.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
       expect(after.checks.find((c) => c.name === "Managed block drift")?.status).toBe("ok");
@@ -1516,10 +1516,10 @@ describe("runDoctorReport", () => {
       const cursorContent = readFileSync(join(target, ".cursor", "rules", "fabric-bootstrap.mdc"), "utf8");
       expect(agentsContent).toContain(BOOTSTRAP_MARKER_BEGIN);
       expect(agentsContent).toContain(BOOTSTRAP_MARKER_END);
-      expect(agentsContent).toContain(BOOTSTRAP_CANONICAL);
+      expect(agentsContent).toContain(BOOTSTRAP_CANONICAL_EN);
       expect(cursorContent).toContain(BOOTSTRAP_MARKER_BEGIN);
       expect(cursorContent).toContain(BOOTSTRAP_MARKER_END);
-      expect(cursorContent).toContain(BOOTSTRAP_CANONICAL);
+      expect(cursorContent).toContain(BOOTSTRAP_CANONICAL_EN);
       // CLAUDE.md gains the @-import line.
       const claudeContent = readFileSync(join(target, "CLAUDE.md"), "utf8");
       expect(claudeContent.split(/\r?\n/u).some((line) => line.trim() === "@.fabric/AGENTS.md")).toBe(true);
@@ -1533,7 +1533,7 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l2-claude-missing-at");
       writeFile(".fabric/events.jsonl", "", target);
 
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
       // CLAUDE.md exists but lacks the @-import line (thin shell special case).
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\nNo at-import line here.\n", "utf8");
 
@@ -1555,9 +1555,9 @@ describe("runDoctorReport", () => {
 
       // Install canonical state (post-rc.19): L1 snapshot canonical, both L2
       // managed-block targets seeded canonical, CLAUDE.md with @-import.
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
-      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL);
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL);
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
+      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL_EN);
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL_EN);
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
 
       // Sanity: baseline is clean (no managed_block_drift).
@@ -1589,9 +1589,9 @@ describe("runDoctorReport", () => {
       writeFile(".fabric/events.jsonl", "", target);
 
       // Install canonical state.
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
-      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL);
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL);
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
+      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL_EN);
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL_EN);
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
 
       // Sanity: baseline is clean.
@@ -1671,13 +1671,13 @@ describe("ensureCitePolicyActivatedMarker", () => {
 
 // v2.0.0-rc.24 TASK-06: ensureCiteContractPolicyActivatedMarker — drift-gated
 // counterpart of ensureCitePolicyActivatedMarker. Marker emit is refused when
-// `.fabric/AGENTS.md` does not byte-equal BOOTSTRAP_CANONICAL (rc.23→rc.24
+// `.fabric/AGENTS.md` does not byte-equal BOOTSTRAP_CANONICAL_EN (rc.23→rc.24
 // upgrade window safeguard). Once drift clears, behaves exactly like rc.20
 // marker: idempotent, silent on read/write failure.
 describe("ensureCiteContractPolicyActivatedMarker", () => {
   it("clean bootstrap + no prior marker → emits new marker with emitted_now:true and blocked_by:null", async () => {
     const target = createInitializedProject("cite-contract-marker-clean-first");
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
     writeFile(".fabric/events.jsonl", "", target);
 
     const before = Date.now();
@@ -1703,7 +1703,7 @@ describe("ensureCiteContractPolicyActivatedMarker", () => {
 
   it("clean bootstrap + existing marker → returns existing marker_ts with emitted_now:false", async () => {
     const target = createInitializedProject("cite-contract-marker-existing");
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
     writeFile(".fabric/events.jsonl", "", target);
 
     const first = await ensureCiteContractPolicyActivatedMarker(target);
@@ -1724,8 +1724,8 @@ describe("ensureCiteContractPolicyActivatedMarker", () => {
 
   it("drifted bootstrap → returns blocked_by:'bootstrap_drift', no ledger write", async () => {
     const target = createInitializedProject("cite-contract-marker-drifted");
-    // Drift: AGENTS.md present but bytes diverge from BOOTSTRAP_CANONICAL.
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
+    // Drift: AGENTS.md present but bytes diverge from BOOTSTRAP_CANONICAL_EN.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL_EN}drift`, "utf8");
     writeFile(".fabric/events.jsonl", "", target);
 
     const result = await ensureCiteContractPolicyActivatedMarker(target);
@@ -1762,12 +1762,12 @@ describe("ensureCiteContractPolicyActivatedMarker", () => {
     writeFile(".fabric/events.jsonl", "", target);
 
     // Phase 1: drift → blocked.
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}X`, "utf8");
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL_EN}X`, "utf8");
     const blocked = await ensureCiteContractPolicyActivatedMarker(target);
     expect(blocked.blocked_by).toBe("bootstrap_drift");
 
     // Phase 2: user runs `fabric install` → snapshot restored to canonical.
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
     const emitted = await ensureCiteContractPolicyActivatedMarker(target);
     expect(emitted.emitted_now).toBe(true);
     expect(emitted.blocked_by).toBe(null);
@@ -3129,7 +3129,7 @@ describe("runDoctorCiteCoverage", () => {
 // require/forbid).
 //
 // Fixture invariants that differ from rc.20 TASK-08:
-//   - `.fabric/AGENTS.md` must byte-equal BOOTSTRAP_CANONICAL for the
+//   - `.fabric/AGENTS.md` must byte-equal BOOTSTRAP_CANONICAL_EN for the
 //     contract marker to emit. Tests that need the marker call
 //     `seedCleanBootstrap`; tests asserting the drift-skip path either omit
 //     the snapshot or write a mutated copy.
@@ -3154,8 +3154,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
   }
 
   function seedCleanBootstrap(target: string): void {
-    // Drift gate requires `.fabric/AGENTS.md` byte-equal to BOOTSTRAP_CANONICAL.
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    // Drift gate requires `.fabric/AGENTS.md` byte-equal to BOOTSTRAP_CANONICAL_EN.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
   }
 
   // v2.2 W5 R2/R7 (agents.meta decolo): the cite-coverage kb relevance index is
@@ -3271,8 +3271,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
   it("bootstrap drift → contract_metrics_status='skipped:bootstrap_drift', rc.20 metrics still computed", async () => {
     const target = createInitializedProject("contract-drift-skip");
     writeFile(".fabric/events.jsonl", "", target);
-    // Mutate .fabric/AGENTS.md so it no longer byte-equals BOOTSTRAP_CANONICAL.
-    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
+    // Mutate .fabric/AGENTS.md so it no longer byte-equals BOOTSTRAP_CANONICAL_EN.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL_EN}drift`, "utf8");
 
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [

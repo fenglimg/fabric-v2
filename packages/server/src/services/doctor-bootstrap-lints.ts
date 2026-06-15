@@ -2,10 +2,11 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  BOOTSTRAP_CANONICAL,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
+  matchBootstrapCanonicalLocale,
+  resolveBootstrapCanonical,
   type Translator,
 } from "@fenglimg/fabric-shared";
 
@@ -71,16 +72,24 @@ export async function inspectL1BootstrapSnapshotDrift(
   target: string,
 ): Promise<L1BootstrapSnapshotDriftInspection> {
   const abs = join(target, ".fabric", "AGENTS.md");
+  // Content-layer i18n: `canonical` reflects the machine's current language
+  // flow (what `fabric install` / `--fix` would write here).
+  const canonical = resolveBootstrapCanonical();
   let onDisk: string;
   try {
     onDisk = await readFile(abs, "utf8");
   } catch {
-    return { status: "missing", canonical: BOOTSTRAP_CANONICAL, onDisk: null };
+    return { status: "missing", canonical, onDisk: null };
   }
-  if (onDisk === BOOTSTRAP_CANONICAL) {
-    return { status: "ok", canonical: BOOTSTRAP_CANONICAL, onDisk };
+  // G-PARITY C2: tolerate a snapshot byte-equal to ANY locale's canonical body.
+  // A machine-language switch (e.g. zh-CN → en) leaves an otherwise-canonical
+  // snapshot written in the previous locale; that is a verbatim Fabric output,
+  // not a hand-edit, so it must NOT be reported as drift. Only a body matching
+  // no locale at all is genuine drift (hand-edit / corruption / stale schema).
+  if (matchBootstrapCanonicalLocale(onDisk) !== null) {
+    return { status: "ok", canonical, onDisk };
   }
-  return { status: "drift", canonical: BOOTSTRAP_CANONICAL, onDisk };
+  return { status: "drift", canonical, onDisk };
 }
 
 export function createL1BootstrapSnapshotDriftCheck(

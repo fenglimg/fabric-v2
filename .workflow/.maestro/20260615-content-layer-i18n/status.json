@@ -1,7 +1,9 @@
 {
   "session_id": "20260615-content-layer-i18n",
   "active_session_id": "20260615-content-layer-i18n",
-  "sessions": ["20260615-content-layer-i18n"],
+  "sessions": [
+    "20260615-content-layer-i18n"
+  ],
   "intent": "读 GOAL-BRIEF.md 起 mode③, ship gate: G-ADJ3 / G-DUALBODY / G-PARITY / G-GREEN",
   "goal": "内容层(写进 artifact 的正文)跟随统一语言流向 resolveGlobalLocale 单源, 消除英文用户拿到中文 AGENTS.md / 中文 Why proposed; 先修 ADJ-3 stale 文案债, 再造 en/zh 双语能力",
   "mode": "3",
@@ -96,116 +98,284 @@
   ],
   "task_decomposition": [
     {
-      "id": "A1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "A1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "bootstrap-canonical.ts L127 文案对齐 parser clean-slate (stash 已捞回)",
       "done_when": "L127 = Clean-slate 文案 (已在 working tree)",
-      "ship_criteria_alignment": ["G-ADJ3"], "alignment_strength": "direct",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
       "status": "done",
-      "verification": { "method": "deterministic", "verifier": "git diff HEAD bootstrap-canonical.ts", "evidence": "L127 已是 Clean-slate (无 backward compat) 文案", "verified_at": "2026-06-15" }
+      "verification": {
+        "method": "deterministic",
+        "verifier": "git diff HEAD bootstrap-canonical.ts",
+        "evidence": "L127 已是 Clean-slate (无 backward compat) 文案",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "A2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "A2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "修 bootstrap-canonical.test.ts:57-67 断言旧 Backward-compat 文案 -> 新 clean-slate 文案 + 注释",
       "done_when": "测试断言对齐新 L127, bootstrap-canonical 测试绿",
-      "ship_criteria_alignment": ["G-ADJ3"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "pnpm --filter shared test bootstrap-canonical", "evidence": null, "verified_at": null }
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "pnpm --filter shared test",
+        "evidence": "shared 628 passed; toContain Clean-slate 替换 Backward compat",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "A3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "A3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "丢弃 stash 的 en2 孤儿快照块, 保留 HEAD 干净快照 (F1)",
       "done_when": "i18n.test.ts.snap == HEAD 态, CI 模式 0 obsolete",
-      "ship_criteria_alignment": ["G-ADJ3"], "alignment_strength": "direct",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
       "status": "done",
-      "verification": { "method": "deterministic", "verifier": "CI=true vitest run i18n.test.ts", "evidence": "已 git stash drop 错误快照; HEAD snap CI 0 obsolete", "verified_at": "2026-06-15" }
+      "verification": {
+        "method": "deterministic",
+        "verifier": "CI=true vitest run i18n.test.ts",
+        "evidence": "已 git stash drop 错误快照; HEAD snap CI 0 obsolete",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "A4", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "A4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "全 shared 改动定稿后 fabric install 重同步本仓 .fabric/AGENTS.md 消 L1-drift",
       "done_when": "fabric doctor 无 bootstrap_snapshot_drift; .fabric/AGENTS.md 与当前 locale canonical byte 一致",
-      "ship_criteria_alignment": ["G-ADJ3"], "alignment_strength": "direct",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
       "status": "blocked",
-      "verification": { "method": "deterministic", "verifier": "fabric doctor", "evidence": "blocked-on: B1-B5 定稿 (dual-body 影响 AGENTS.md 内容)", "verified_at": null }
+      "verification": {
+        "method": "deterministic",
+        "verifier": "fabric doctor",
+        "evidence": "blocked-on: B1-B5 定稿 (dual-body 影响 AGENTS.md 内容)",
+        "verified_at": null
+      }
     },
     {
-      "id": "B1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "B1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "bootstrap-canonical.ts 拆 BOOTSTRAP_CANONICAL_EN/_ZH 双体 (EN 全文翻译, protected token 保英文)",
       "done_when": "导出 _EN/_ZH 双常量; BOOTSTRAP_CANONICAL 保留为按 locale 选择的 helper 或 _ZH 别名 (向后兼容现有 import)",
-      "ship_criteria_alignment": ["G-DUALBODY"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "tsc + byte-lock test", "evidence": null, "verified_at": null }
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc + byte-lock test",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "B2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "B2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "api-contracts.ts PROPOSED_REASON_DESCRIPTIONS 拆 en/zh 双 map",
       "done_when": "导出 en/zh 双 map (Record<Locale, Record<ProposedReason,string>> 或 _EN/_ZH)",
-      "ship_criteria_alignment": ["G-DUALBODY"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "tsc", "evidence": null, "verified_at": null }
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "B3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "B3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "writer 侧路由 resolveGlobalLocale: write-bootstrap-snapshot.ts + doctor.ts:919 (runDoctorFix L1 写 snapshot)",
       "done_when": "两处写 .fabric/AGENTS.md 均按 resolveGlobalLocale 挑体",
-      "ship_criteria_alignment": ["G-DUALBODY"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep resolveGlobalLocale + install 测试", "evidence": null, "verified_at": null }
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "grep resolveGlobalLocale + install 测试",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "B4", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "B4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "drift 比对侧路由: doctor-bootstrap-lints.ts inspectL1/L2 + doctor-cite-coverage.ts activation 比对按 locale 挑 canonical",
       "done_when": "drift/activation 比对用 resolveGlobalLocale-选定 canonical (parity gate 处理双 locale)",
-      "ship_criteria_alignment": ["G-DUALBODY", "G-PARITY"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "doctor 测试", "evidence": null, "verified_at": null }
+      "ship_criteria_alignment": [
+        "G-DUALBODY",
+        "G-PARITY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "doctor 测试",
+        "evidence": "W2: inspectL1 加 matchBootstrapCanonicalLocale 容双 locale; cite-coverage 删未用 import; 全绿",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "B5", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "B5",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "extract-knowledge.ts:773 PROPOSED_REASON 按 resolveGlobalLocale 挑 map 渲染 ## Why proposed",
       "done_when": "reasonExplanation 按 locale 选 map",
-      "ship_criteria_alignment": ["G-DUALBODY"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "extract-knowledge 测试", "evidence": null, "verified_at": null }
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "extract-knowledge 测试",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
     },
     {
-      "id": "C1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "C1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "内容层 parity 闸: en<->zh marker/H2 section 数量一致 + protected token (命令名/marker/KB: 语法/路由 key) 双体均在",
       "done_when": "新 parity 测试存在且绿; 守 KT-GLD-0002 protected token 边界",
-      "ship_criteria_alignment": ["G-PARITY"], "alignment_strength": "direct",
+      "ship_criteria_alignment": [
+        "G-PARITY"
+      ],
+      "alignment_strength": "direct",
       "status": "open",
-      "verification": { "method": "deterministic", "verifier": "新 parity test", "evidence": null, "verified_at": null }
+      "verification": {
+        "method": "deterministic",
+        "verifier": "新 parity test",
+        "evidence": null,
+        "verified_at": null
+      }
     },
     {
-      "id": "C2", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "C2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "语言切换 drift 边界: 已装项目机器语言切换后 doctor 容双 locale 或提示重装 (不误报永久 drift)",
       "done_when": "doctor L1 drift 在 onDisk 匹配任一 locale canonical 时不误报 (或给 locale-stale 重装提示); 回归测试绿",
-      "ship_criteria_alignment": ["G-PARITY"], "alignment_strength": "direct",
+      "ship_criteria_alignment": [
+        "G-PARITY"
+      ],
+      "alignment_strength": "direct",
       "status": "open",
-      "verification": { "method": "deterministic", "verifier": "doctor locale-switch 回归测试", "evidence": null, "verified_at": null }
+      "verification": {
+        "method": "deterministic",
+        "verifier": "doctor locale-switch 回归测试",
+        "evidence": null,
+        "verified_at": null
+      }
     },
     {
-      "id": "D1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "id": "D1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
       "subject": "全量收口: rebuild dist + tsc -r 0 error + shared/server/cli 全量测试 0 fail 0 skip",
       "done_when": "G-GREEN verifier_cmd 全绿",
-      "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "direct",
+      "ship_criteria_alignment": [
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
       "status": "open",
-      "verification": { "method": "deterministic", "verifier": "tsc + full test", "evidence": null, "verified_at": null }
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc + full test",
+        "evidence": null,
+        "verified_at": null
+      }
     }
   ],
   "needs_adjudication": [],
   "audit_rounds": [
     {
-      "round": 1, "status": "running", "round_task_ceiling": 14, "round_task_actual": 12,
+      "round": 1,
+      "status": "running",
+      "round_task_ceiling": 14,
+      "round_task_actual": 12,
       "convergence_status": "converging",
-      "newly_discovered_this_round": ["F1", "F2"],
+      "newly_discovered_this_round": [
+        "F1",
+        "F2"
+      ],
       "carried_in": [],
-      "carry_over_to_next": { "from_open_blocked": [], "from_ceiling_overflow": [], "from_depth_cap": [] },
+      "carry_over_to_next": {
+        "from_open_blocked": [],
+        "from_ceiling_overflow": [],
+        "from_depth_cap": []
+      },
       "drift_checks": [],
-      "completion_gate": { "task_gate": {}, "goal_gate": { "blocking": true }, "drift_gate": {} }
+      "completion_gate": {
+        "task_gate": {},
+        "goal_gate": {
+          "blocking": true
+        },
+        "drift_gate": {}
+      }
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-content-layer-i18n/goal-checklist.md",
   "status": "running",
   "loop_exit_status": null,
-  "git_commits": []
+  "git_commits": [
+    {
+      "sha": "a125798",
+      "wave": "W1",
+      "gate": "G-ADJ3",
+      "subject": "cite 文案对齐 parser clean-slate + ledger"
+    }
+  ]
 }

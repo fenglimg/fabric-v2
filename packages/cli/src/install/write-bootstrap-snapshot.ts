@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
-import { BOOTSTRAP_CANONICAL } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
+import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import type { InstallStepResult } from "./skills-and-hooks.js";
 
@@ -85,11 +85,15 @@ export async function writeFabricAgentsSnapshot(
 ): Promise<InstallStepResult> {
   const step = "bootstrap-snapshot";
   const target = fabricAgentsSnapshotPath(targetRoot);
+  // Content-layer i18n: select the locale-appropriate body via the unified
+  // language flow (resolveGlobalLocale, inside resolveBootstrapCanonical). An
+  // en machine writes the EN body, a zh-CN machine the ZH body.
+  const canonical = resolveBootstrapCanonical();
 
   if (existsSync(target)) {
     try {
       const existing = readFileSync(target, "utf8");
-      if (existing === BOOTSTRAP_CANONICAL) {
+      if (existing === canonical) {
         return { step, path: target, status: "skipped", message: "up-to-date" };
       }
     } catch {
@@ -98,6 +102,6 @@ export async function writeFabricAgentsSnapshot(
   }
 
   await mkdir(dirname(target), { recursive: true });
-  await atomicWriteText(target, BOOTSTRAP_CANONICAL);
+  await atomicWriteText(target, canonical);
   return { step, path: target, status: "written" };
 }

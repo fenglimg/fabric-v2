@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { Locale } from "../i18n/types.js";
 import { onboardSlotSchema } from "../onboard-slots.js";
 import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
 
@@ -632,15 +633,42 @@ export const ProposedReasonSchema = z.enum([
 ]);
 export type ProposedReason = z.infer<typeof ProposedReasonSchema>;
 
-// 1-line zh-CN descriptions used to render `## Why proposed` in pending body.
-// Keep stable: changing strings here changes every newly-written pending file.
-export const PROPOSED_REASON_DESCRIPTIONS: Record<ProposedReason, string> = {
+// 1-line descriptions used to render `## Why proposed` in the pending body.
+// Content-layer i18n: the pending body follows the unified language flow
+// (`resolveGlobalLocale`), so the explanation must exist in both locales. The
+// consumer (extract-knowledge.ts) selects the map by the resolved locale.
+// Keep stable: changing strings here changes every newly-written pending file
+// in that locale (byte-sensitive — see bootstrap byte-lock rationale).
+const PROPOSED_REASON_DESCRIPTIONS_ZH: Record<ProposedReason, string> = {
   "explicit-user-mark": "用户显式标记需归档（always / never / 下次注意 等规范性语言）。",
   "diagnostic-then-fix": "诊断过程发现新模式或踩坑，修复后值得沉淀。",
   "decision-confirmation": "≥2 候选方案经权衡后确认选型，需保留 rationale。",
   "wrong-turn-revert": "尝试某路径后回退，错误路径本身是值得记录的 pitfall。",
   "new-dependency-or-pattern": "引入新依赖 / 新模式 / 新命名约定。",
   "dismissal-with-reason": "用户明确拒绝某方案并给出原因，原因即可归档知识。",
+};
+
+const PROPOSED_REASON_DESCRIPTIONS_EN: Record<ProposedReason, string> = {
+  "explicit-user-mark":
+    "User explicitly marked this for archival (normative language: always / never / next time, etc.).",
+  "diagnostic-then-fix":
+    "A new pattern or pitfall surfaced during diagnosis and is worth retaining after the fix.",
+  "decision-confirmation":
+    "A choice was confirmed after weighing ≥2 candidate approaches; the rationale must be preserved.",
+  "wrong-turn-revert":
+    "A path was tried then reverted; the wrong turn itself is a pitfall worth recording.",
+  "new-dependency-or-pattern": "Introduces a new dependency / pattern / naming convention.",
+  "dismissal-with-reason":
+    "The user explicitly rejected an approach and gave a reason; the reason is archivable knowledge.",
+};
+
+// Locale-keyed map; extract-knowledge.ts picks via `resolveGlobalLocale()`.
+export const PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE: Record<
+  Locale,
+  Record<ProposedReason, string>
+> = {
+  "zh-CN": PROPOSED_REASON_DESCRIPTIONS_ZH,
+  en: PROPOSED_REASON_DESCRIPTIONS_EN,
 };
 
 // v2.0.0-rc.7 T5: source_sessions[] is the canonical array form.

@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BOOTSTRAP_CANONICAL } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
+import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import {
   cleanupFixtureRoot,
@@ -46,7 +46,7 @@ describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
     const snapshotPath = join(target, ".fabric/AGENTS.md");
     expect(existsSync(snapshotPath)).toBe(true);
     const content = readFileSync(snapshotPath, "utf8");
-    expect(content).toBe(BOOTSTRAP_CANONICAL);
+    expect(content).toBe(resolveBootstrapCanonical());
     // Sanity: locked-clarification-3 size guarantee from the source const.
     expect(content.length).toBeGreaterThanOrEqual(400);
   });
@@ -66,7 +66,7 @@ describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
 
     // Byte-identical content.
     expect(secondContent).toBe(firstContent);
-    expect(secondContent).toBe(BOOTSTRAP_CANONICAL);
+    expect(secondContent).toBe(resolveBootstrapCanonical());
     // Size unchanged — defense-in-depth alongside content equality.
     expect(secondStat.size).toBe(firstStat.size);
   });
@@ -87,7 +87,7 @@ describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
     await runInit(target);
 
     expect(existsSync(snapshotPath)).toBe(true);
-    expect(readFileSync(snapshotPath, "utf8")).toBe(BOOTSTRAP_CANONICAL);
+    expect(readFileSync(snapshotPath, "utf8")).toBe(resolveBootstrapCanonical());
   });
 
   it("mkdirs .fabric/ parent when missing", async () => {
@@ -105,6 +105,6 @@ describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
     expect(statSync(fabricDir).isDirectory()).toBe(true);
     const snapshotPath = join(fabricDir, "AGENTS.md");
     expect(existsSync(snapshotPath)).toBe(true);
-    expect(readFileSync(snapshotPath, "utf8")).toBe(BOOTSTRAP_CANONICAL);
+    expect(readFileSync(snapshotPath, "utf8")).toBe(resolveBootstrapCanonical());
   });
 });

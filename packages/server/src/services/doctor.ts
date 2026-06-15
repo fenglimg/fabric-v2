@@ -9,7 +9,7 @@ import { ZodError } from "zod";
 import {
   createTranslator,
   forensicReportSchema,
-  BOOTSTRAP_CANONICAL,
+  resolveBootstrapCanonical,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
@@ -916,7 +916,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "bootstrap_snapshot_drift")) {
     const snapshotPath = join(projectRoot, ".fabric", "AGENTS.md");
     await ensureParentDirectory(snapshotPath);
-    await atomicWriteText(snapshotPath, BOOTSTRAP_CANONICAL);
+    // Content-layer i18n: --fix restores the snapshot in the machine's current
+    // language (resolveGlobalLocale, via resolveBootstrapCanonical), matching
+    // what `fabric install` would write — and what the L1 drift inspector
+    // accepts for the current locale.
+    await atomicWriteText(snapshotPath, resolveBootstrapCanonical());
     fixed.push(findIssue(before.fixable_errors, "bootstrap_snapshot_drift"));
   }
 

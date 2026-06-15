@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  BOOTSTRAP_CANONICAL,
+  BOOTSTRAP_CANONICAL_ZH,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
 } from "../../src/templates/bootstrap-canonical";
 
 describe("bootstrap-canonical", () => {
-  describe("BOOTSTRAP_CANONICAL", () => {
+  describe("BOOTSTRAP_CANONICAL_ZH", () => {
     it("starts with the locked header + opening clause", () => {
-      expect(BOOTSTRAP_CANONICAL.startsWith("# Fabric Bootstrap\n\n本项目")).toBe(
+      expect(BOOTSTRAP_CANONICAL_ZH.startsWith("# Fabric Bootstrap\n\n本项目")).toBe(
         true,
       );
     });
@@ -20,16 +20,16 @@ describe("bootstrap-canonical", () => {
       // intro paragraph and the existing AI-facing sections. ≤5 lines,
       // second-person, points dev at USER-QUICKSTART.md to deflect the
       // "AGENTS.md is dev onboarding" misread Batch 7 caught.
-      expect(BOOTSTRAP_CANONICAL).toContain("## For Developers");
-      expect(BOOTSTRAP_CANONICAL).toContain("docs/USER-QUICKSTART.md");
-      expect(BOOTSTRAP_CANONICAL).toContain("## 行为规则");
-      expect(BOOTSTRAP_CANONICAL).toContain("## 知识库(KB)");
-      expect(BOOTSTRAP_CANONICAL).toContain("## Cite policy");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## For Developers");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("docs/USER-QUICKSTART.md");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## 行为规则");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## 知识库(KB)");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## Cite policy");
     });
 
     it("For Developers section precedes the AI-facing sections", () => {
-      const devIdx = BOOTSTRAP_CANONICAL.indexOf("## For Developers");
-      const aiIdx = BOOTSTRAP_CANONICAL.indexOf("## 行为规则");
+      const devIdx = BOOTSTRAP_CANONICAL_ZH.indexOf("## For Developers");
+      const aiIdx = BOOTSTRAP_CANONICAL_ZH.indexOf("## 行为规则");
       expect(devIdx).toBeGreaterThan(0);
       expect(aiIdx).toBeGreaterThan(devIdx);
     });
@@ -37,21 +37,21 @@ describe("bootstrap-canonical", () => {
     it("is at least 800 bytes (utf-8)", () => {
       // rc.24: grew from ≥400 with cite-contract syntax bullets (operators +
       // skip-reason dictionary + type routing + personal-layer mention).
-      expect(Buffer.byteLength(BOOTSTRAP_CANONICAL, "utf8")).toBeGreaterThanOrEqual(
+      expect(Buffer.byteLength(BOOTSTRAP_CANONICAL_ZH, "utf8")).toBeGreaterThanOrEqual(
         800,
       );
     });
 
     describe("cite policy invariants", () => {
       it("contains the KB cite reply-line format anchor", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("KB: <id>");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: <id>");
       });
 
       it("documents the v2.1 store-qualified cite prefix (F3/S62)", () => {
         // Multi-store read-sets disambiguate a shadowed local id via a
         // `<store-alias>:<id>` cite prefix; the canonical policy must teach it.
-        expect(BOOTSTRAP_CANONICAL).toContain("KB: <store-alias>:<id>");
-        expect(BOOTSTRAP_CANONICAL).toContain("personal-only");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: <store-alias>:<id>");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("personal-only");
       });
 
       it("exposes the clean-slate 3-state cite vocabulary (applied/dismissed/none)", () => {
@@ -62,53 +62,53 @@ describe("bootstrap-canonical", () => {
         // (`planned` / `recalled` / `chained-from`) degrades to `none`, with
         // `chained-from`'s embedded id rescued as a sibling cite_id. The bullet
         // still enumerates the legacy token names so readers know what degrades.
-        expect(BOOTSTRAP_CANONICAL).toContain("applied|dismissed:<reason>");
-        expect(BOOTSTRAP_CANONICAL).toContain("dismissed:<reason>");
-        expect(BOOTSTRAP_CANONICAL).toContain("Clean-slate");
-        expect(BOOTSTRAP_CANONICAL).toMatch(/planned.*recalled.*chained-from/);
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("applied|dismissed:<reason>");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("dismissed:<reason>");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("Clean-slate");
+        expect(BOOTSTRAP_CANONICAL_ZH).toMatch(/planned.*recalled.*chained-from/);
       });
 
       it("enumerates all dismissed-reason values", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("scope-mismatch");
-        expect(BOOTSTRAP_CANONICAL).toContain("outdated");
-        expect(BOOTSTRAP_CANONICAL).toContain("not-applicable");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("scope-mismatch");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("outdated");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("not-applicable");
       });
 
       it("references the fabric doctor --cite-coverage audit command", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("fabric doctor --cite-coverage");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("fabric doctor --cite-coverage");
       });
 
       describe("cite contract syntax (rc.24)", () => {
         // rc.24: `[recalled]` cite lines for decisions/pitfalls类 entries must
-        // append operator-based contract commitments. BOOTSTRAP_CANONICAL is
+        // append operator-based contract commitments. BOOTSTRAP_CANONICAL_ZH is
         // the byte-locked source of truth for the contract vocabulary —
         // operators, skip-reason dictionary, and type routing all live here
         // first, then propagate to hooks + doctor via fabric install.
 
         it("contains-operator-syntax — shows the `→ edit:` operator anchor", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("→ edit:");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("→ edit:");
         });
 
         it("contains-operator-syntax — enumerates all 5 operators", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("edit:<glob>");
-          expect(BOOTSTRAP_CANONICAL).toContain("!edit:<glob>");
-          expect(BOOTSTRAP_CANONICAL).toContain("require:<symbol>");
-          expect(BOOTSTRAP_CANONICAL).toContain("forbid:<symbol>");
-          expect(BOOTSTRAP_CANONICAL).toContain("skip:<reason>");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("edit:<glob>");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("!edit:<glob>");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("require:<symbol>");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("forbid:<symbol>");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("skip:<reason>");
         });
 
         it("contains-skip-reason-dict — enumerates all 6 skip reasons", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain(
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain(
             "sequencing | conditional | semantic | aesthetic | architectural | other:<text>",
           );
         });
 
         it("contains-type-routing-bullet — documents models reference-cite policy", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("models 类引用为 reference cite");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("models 类引用为 reference cite");
         });
 
         it("contains-KP-personal-mention — Discovery bullet calls out personal layer", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("KP-*");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("KP-*");
         });
       });
 
@@ -119,27 +119,27 @@ describe("bootstrap-canonical", () => {
         // legacy/lazy emissions.
 
         it("documents the [no-relevant] sentinel", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("[no-relevant]");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("[no-relevant]");
         });
 
         it("documents the [not-applicable] sentinel as a KB: none reason", () => {
           // 'not-applicable' already exists as a dismissed reason — the T8c
           // addition is the explanatory phrase tying it to KB: none scope.
-          expect(BOOTSTRAP_CANONICAL).toContain("不在 cite 范围");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("不在 cite 范围");
         });
 
         it("retains bare `KB: none` as legacy [unspecified] form", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("[unspecified]");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("[unspecified]");
         });
 
         it("uses the new bracketed reply-line shape `KB: none [<reason>]`", () => {
-          expect(BOOTSTRAP_CANONICAL).toContain("KB: none [<reason>]");
+          expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: none [<reason>]");
         });
       });
     });
 
     it("does not contain a UTF-8 BOM", () => {
-      expect(BOOTSTRAP_CANONICAL.charCodeAt(0)).not.toBe(0xfeff);
+      expect(BOOTSTRAP_CANONICAL_ZH.charCodeAt(0)).not.toBe(0xfeff);
     });
 
     describe("two-step KB read flow (rc.23 F1)", () => {
@@ -150,15 +150,15 @@ describe("bootstrap-canonical", () => {
       // fail schema validation on the very first KB read.
 
       it("mentions fab_plan_context as the step-1 entry point", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("fab_plan_context");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("fab_plan_context");
       });
 
       it("mentions ai_selected_stable_ids as a required step-2 argument", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("ai_selected_stable_ids");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("ai_selected_stable_ids");
       });
 
       it("references selection_token as the inter-step contract", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("selection_token");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("selection_token");
       });
 
       // rc.23 TASK-013 (F8b): the legacy KNOWLEDGE_SECTION_NAMES tuple
@@ -167,22 +167,22 @@ describe("bootstrap-canonical", () => {
       // section enum — fab_get_knowledge_sections returns the full body and
       // the LLM scans whatever B-set headings the rule defines.
       it("no longer references the retired KNOWLEDGE_SECTION_NAMES enum", () => {
-        expect(BOOTSTRAP_CANONICAL).not.toContain("MISSION_STATEMENT");
-        expect(BOOTSTRAP_CANONICAL).not.toContain("MANDATORY_INJECTION");
-        expect(BOOTSTRAP_CANONICAL).not.toContain("BUSINESS_LOGIC_CHUNKS");
-        expect(BOOTSTRAP_CANONICAL).not.toContain("CONTEXT_INFO");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("MISSION_STATEMENT");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("MANDATORY_INJECTION");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("BUSINESS_LOGIC_CHUNKS");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("CONTEXT_INFO");
       });
 
       it("no longer shows a `sections:` parameter in the step-2 example", () => {
         // The `sections` input parameter on fab_get_knowledge_sections was
         // removed in rc.23 F8b. The two-step example must not demo it.
-        expect(BOOTSTRAP_CANONICAL).not.toMatch(/sections:\s*\[/);
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toMatch(/sections:\s*\[/);
       });
 
       it("does not teach the obsolete single-step fab_get_knowledge_sections(id=...) form", () => {
         // The bare `id=` arg form is the rc.22-and-earlier mistake that drove
         // KB:none 25/25. Schema requires selection_token + ai_selected_stable_ids.
-        expect(BOOTSTRAP_CANONICAL).not.toMatch(/fab_get_knowledge_sections\(id=/);
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toMatch(/fab_get_knowledge_sections\(id=/);
       });
     });
   });
@@ -226,8 +226,8 @@ describe("bootstrap-canonical", () => {
   describe("public surface re-export", () => {
     it("is reachable through the package root barrel", async () => {
       const shared = await import("../../src/index");
-      expect((shared as { BOOTSTRAP_CANONICAL?: string }).BOOTSTRAP_CANONICAL).toBe(
-        BOOTSTRAP_CANONICAL,
+      expect((shared as { BOOTSTRAP_CANONICAL_ZH?: string }).BOOTSTRAP_CANONICAL_ZH).toBe(
+        BOOTSTRAP_CANONICAL_ZH,
       );
       expect(
         (shared as { BOOTSTRAP_MARKER_BEGIN?: string }).BOOTSTRAP_MARKER_BEGIN,

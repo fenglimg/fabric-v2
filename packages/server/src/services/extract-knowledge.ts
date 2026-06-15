@@ -3,13 +3,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  PROPOSED_REASON_DESCRIPTIONS,
+  PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE,
   type FabExtractKnowledgeInput,
   type FabExtractKnowledgeOutput,
   type ProposedReason,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
-import { hasSecrets, isPersonalScope, redactPii } from "@fenglimg/fabric-shared";
+import { hasSecrets, isPersonalScope, redactPii, resolveGlobalLocale } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
@@ -767,10 +767,15 @@ function renderFreshEntry(args: FreshEntryArgs): string {
 
   // v2.0.0-rc.7 T6: body section order is fixed:
   //   ## Summary
-  //   ## Why proposed       (1-line from PROPOSED_REASON_DESCRIPTIONS)
+  //   ## Why proposed       (1-line from PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE)
   //   ## Session context    (3-5 line passthrough from input)
   //   ## Evidence           (merged on idempotency collision — no per-call section)
-  const reasonExplanation = PROPOSED_REASON_DESCRIPTIONS[args.proposedReason];
+  // Content-layer i18n: the explanation follows the unified language flow
+  // (`resolveGlobalLocale` — global language → env fallback), so an en-locale
+  // machine writes an English `## Why proposed` line and a zh-CN machine a
+  // Chinese one. Same single source the bootstrap writer and CLI display use.
+  const reasonExplanation =
+    PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE[resolveGlobalLocale()][args.proposedReason];
   const body = [
     "",
     "## Summary",
