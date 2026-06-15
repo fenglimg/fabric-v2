@@ -101,9 +101,9 @@
       "dimension": 5,
       "hard": false,
       "target": "漂移快照 + 明显错渲染硬闸全绿;主观'好不好用'经 B 零上下文冷评筛后报告,不卡",
-      "actual": null,
-      "verifier_cmd": "pnpm test(snapshot 子集)+ PROBE: 画面采集 + B 冷评 judge",
-      "verified_at": null
+      "actual": "GREEN(软, 硬地板满足): ① 漂移快照闸绿 — cli-surface/client-configs/mcp-config-merge/i18n/tool-contracts/doctor-i18n snapshot 全在 G-MACHINE 2403 测套绿=零漂移。② 明显错渲染=无: 真实采集 4 画面(SessionStart注入/doctor/cite-coverage/broad banner, 带本次run时间戳 .scratchpad/g-display-screens.md)— i18n zh-CN 正常渲染, 无原始 key 泄漏/无乱码/严重度排序正确/remediation 可执行。③ 主观'好不好用'经 B 零上下文冷评(gemini, id gdisplay-coldeval): 4画面 1-2/5, 评'无产品感, 像研发调试控制台'(内部代号 team:KT-DEC-* / 函数名 fab_recall 泄漏 / startRotationTick 等代码黑话 / 中英夹杂 / metrics 无上下文)→ 记 F4, 按'不卡'非阻断浮用户(soft)。caveat: 冷评零上下文按消费级受众判, Fabric 实际受众=开发者(fab_recall/stable_id 是其常识), 部分严苛属 audience 错配; 但 TL;DR 与正文冗余/中英夹杂等具体卡点对开发者亦成立 → 2.3 UX-polish 候选, 非 2.2 blocker。",
+      "verifier_cmd": "pnpm test(snapshot 漂移闸, G-MACHINE 内)+ scripts 画面采集 + maestro delegate B 冷评(报告不卡)",
+      "verified_at": "2026-06-15T18:20:00Z"
     },
     {
       "name": "G-SAFETY",
@@ -146,9 +146,9 @@
       "dimension": 0,
       "hard": true,
       "target": "a telemetry对地面真值校验 / b 画面本次run带时间戳 / c 丢弃项已log / d baseline有依据非自我祝福 / e 剧本中立无coaching;任一不满足→报告结论不可信",
-      "actual": null,
-      "verifier_cmd": "PROBE: a-e 逐项核(a 注入N次→emit N条对账; b/c/d/e 报告生成器内置守卫)",
-      "verified_at": null
+      "actual": "GREEN(a-e 全过): scripts/honest-selfcheck.mjs 对抗性元自检(对自己评测挑刺), exit0。a 对账: logInjection 注入7次→injections.jsonl 恰7行, count sum 28=28(无幻影 emit/无静默丢)。b 时间戳: g-display-screens.md 带本次run ISO ts。c 丢弃已log: refuted=1(F2)+adjudication=1(ADJ-1)+9处降级记账, 非静默丢。d baseline 有据: g-habit-baseline.consume=19 == live re-count events.jsonl 19(非硬编自我祝福)。e 中立: nofake/habit 读 .fabric/events.jsonl 真实 cc dogfood(含5 distinct session, 非本评测造的 coached fixture), 冷评零上下文。报告结论可信。",
+      "verifier_cmd": "node scripts/honest-selfcheck.mjs (a-e 任一违反=exit1=报告不可信)",
+      "verified_at": "2026-06-15T18:20:00Z"
     },
     {
       "name": "G-SHIP",
@@ -300,12 +300,12 @@
         "G-HONEST"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "simulated-human",
         "verifier": "画面采集 + 零上下文冷评 judge",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "漂移快照闸绿(G-MACHINE内)+4画面真实采集带时间戳+B零上下文冷评(F4: 1-2/5 dev-facing, 不卡浮用户)",
+        "verified_at": "2026-06-15T18:20:00Z"
       }
     },
     {
@@ -416,6 +416,22 @@
       },
       "severity": "medium",
       "fix_task_id": "ADJ-1"
+    },
+    {
+      "id": "F4",
+      "round": 1,
+      "oracle": "simulated-human",
+      "expectation_source": "G-DISPLAY 主观可读性 B 零上下文冷评(gemini gdisplay-coldeval)",
+      "actual": "4 展示画面(SessionStart/doctor/cite-coverage/banner)冷评 1-2/5: 内部代号 team:KT-DEC-* + 函数名 fab_recall 泄漏 + startRotationTick/bumpCounter 代码黑话 + 中英夹杂 + metrics 无上下文解释; 评\"无产品感像研发调试控制台\"",
+      "verify": {
+        "tier": "cross-llm",
+        "verdict": "confirmed",
+        "evidence": "gemini 零上下文冷评 verbatim, 4画面独立打分, .scratchpad/g-display-screens.md",
+        "refute_reason": null
+      },
+      "severity": "low",
+      "fix_task_id": null,
+      "note": "soft gate 不卡(brief: 报告不阻); audience 错配 caveat(冷评按消费级判, Fabric 受众=开发者); TL;DR冗余/中英夹杂对开发者亦成立 → 2.3 UX-polish 候选"
     }
   ],
   "needs_adjudication": [
@@ -436,7 +452,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 15,
+      "round_task_actual": 16,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],
@@ -491,6 +507,12 @@
       "gate": "G-NOFAKE+G-HABIT",
       "summary": "真实编造ID审计0/19 + 激活漏斗baseline 9/9非零(cc dogfood; codex降级)",
       "at": "2026-06-15T18:05:00Z"
+    },
+    {
+      "sha": "7564b89",
+      "gate": "G-DISPLAY+G-HONEST",
+      "summary": "画面采集+B冷评F4 + a-e元自检全过",
+      "at": "2026-06-15T18:20:00Z"
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-release-eval-22/goal-checklist.md",
