@@ -362,12 +362,12 @@
         "G-SELFAUDIT"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "cross-llm",
         "verifier": "报告生成器 + 零上下文冷评守卫",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "REPORT.md ①-⑤ 产出 + G-HONEST a-e 全过(honest-selfcheck.mjs)+ 8 scripts/baseline 固化进 repo = 常驻评测集 v1",
+        "verified_at": "2026-06-15T18:30:00Z"
       }
     }
   ],
