@@ -683,6 +683,27 @@ export const zhCNMessages: Messages = {
     "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致(KT-* must live under team/, KP-* under personal/)。首个:{detail}。",
   "doctor.check.layer_mismatch.remediation":
     "将文件移动到正确的 write-target store,或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
+  // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene (dangling + drift)。
+  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.ok":
+    "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",
+  "doctor.check.relevance_paths_dangling.message.singular":
+    "{count} 个 relevance_paths glob 在当前 workspace 中解析到 0 个文件。首个:{detail}。",
+  "doctor.check.relevance_paths_dangling.message.plural":
+    "{count} 个 relevance_paths globs 在当前 workspace 中解析到 0 个文件。首个:{detail}。",
+  "doctor.check.relevance_paths_dangling.remediation":
+    "更新 entry 的 relevance_paths,移除不再匹配任何文件的 globs,或使用 `fab_review.modify` 重写 anchor set。",
+  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.ok.skipped":
+    "已跳过(git history unavailable;无法评估 {windowDays}d drift window)。",
+  "doctor.check.relevance_paths_drift.ok.fresh":
+    "所有 narrow-scope canonical entries 都至少有 1 个 relevance_path 在最近 {windowDays}d 内被触碰。",
+  "doctor.check.relevance_paths_drift.message.singular":
+    "{count} 个 narrow-scope canonical entry 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
+  "doctor.check.relevance_paths_drift.message.plural":
+    "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
+  "doctor.check.relevance_paths_drift.remediation":
+    "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

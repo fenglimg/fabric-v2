@@ -214,6 +214,10 @@ describe("runDoctorReport", () => {
       // mismatch (manual error), rebuilt store-aware over the read-set corpus.
       "Stable ID collision",
       "Knowledge layer mismatch",
+      // v2.2 Goal B (G-RELEVANCE): relevance_paths hygiene — dangling (warning)
+      // + drift (info), rebuilt store-aware over the read-set corpus.
+      "Knowledge relevance_paths dangling",
+      "Knowledge relevance_paths drift",
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
@@ -238,7 +242,8 @@ describe("runDoctorReport", () => {
     // too few / relevance fields missing) → 31.
     // v2.2 Goal B (G-INTEGRITY): rebuilt store-aware stable_id_collision +
     // layer_mismatch as two checks → 33.
-    expect(report.checks).toHaveLength(33);
+    // v2.2 Goal B (G-RELEVANCE): rebuilt relevance_paths dangling + drift → 35.
+    expect(report.checks).toHaveLength(35);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

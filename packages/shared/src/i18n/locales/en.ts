@@ -699,6 +699,27 @@ export const enMessages: Messages = {
     "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
   "doctor.check.layer_mismatch.remediation":
     "Move the file to the correct write-target store or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
+  // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene (dangling + drift).
+  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.ok":
+    "All relevance_paths globs resolve to at least one file under the workspace root.",
+  "doctor.check.relevance_paths_dangling.message.singular":
+    "{count} relevance_paths glob resolves to zero files in the current workspace. First: {detail}.",
+  "doctor.check.relevance_paths_dangling.message.plural":
+    "{count} relevance_paths globs resolve to zero files in the current workspace. First: {detail}.",
+  "doctor.check.relevance_paths_dangling.remediation":
+    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.ok.skipped":
+    "Skipped (git history unavailable; cannot evaluate {windowDays}d drift window).",
+  "doctor.check.relevance_paths_drift.ok.fresh":
+    "All narrow-scope canonical entries have at least one relevance_path touched in the last {windowDays}d.",
+  "doctor.check.relevance_paths_drift.message.singular":
+    "{count} narrow-scope canonical entry has relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
+  "doctor.check.relevance_paths_drift.message.plural":
+    "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
+  "doctor.check.relevance_paths_drift.remediation":
+    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

@@ -48,6 +48,11 @@ import {
   createStableIdCollisionCheck,
   inspectStoreStableIdIntegrity,
 } from "./doctor-stable-id-collision.js";
+import {
+  createRelevancePathsDanglingCheck,
+  createRelevancePathsDriftCheck,
+  inspectStoreRelevancePaths,
+} from "./doctor-relevance-paths.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -666,6 +671,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // Single walk of the read-set store canonical corpus; never throws (degrades
   // to no-findings when no store is mounted).
   const stableIdIntegrity = await inspectStoreStableIdIntegrity(projectRoot);
+  // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene — dangling globs
+  // (anchor → 0 workspace files) + drift (narrow anchors gone quiet in git).
+  // Single store-corpus walk; the drift arm shells out to `git log` and
+  // degrades to ok when git is unavailable.
+  const relevancePaths = await inspectStoreRelevancePaths(projectRoot);
   const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // Shared timestamp for the read-side hygiene inspections below (session-hints
   // cache age + stale serve-lock age).
@@ -837,6 +847,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // canonical-corpus integrity checks. Built from one shared store walk above.
     createStableIdCollisionCheck(t, stableIdIntegrity.collision),
     createLayerMismatchCheck(t, stableIdIntegrity.layerMismatch),
+    // v2.2 Goal B (G-RELEVANCE): relevance_paths hygiene — dangling (warning) +
+    // drift (info). Adjacent to the integrity cluster; both read the store
+    // canonical corpus and resolve anchors against the project workspace.
+    createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
+    createRelevancePathsDriftCheck(t, relevancePaths.drift),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos
