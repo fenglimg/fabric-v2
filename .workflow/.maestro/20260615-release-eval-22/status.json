@@ -1,0 +1,524 @@
+{
+  "session_id": "20260615-release-eval-22",
+  "active_session_id": "20260615-release-eval-22",
+  "sessions": [
+    {
+      "session_id": "20260615-release-eval-22",
+      "attached_at": "2026-06-15T16:10:00Z",
+      "client": "cc"
+    }
+  ],
+  "intent": "对 2.2.0-rc.6 跑一遍有界发版体检 → 出人可读报告 → 跑清就发正式 2.2.0;口径+报告+基线固化为常驻评测集 v1",
+  "goal": "12 命名 ship gate 全绿(降级项显式记账)→ release-rc 摘 -rc 发 2.2.0,固化剧本+报告口径+基线进 repo",
+  "mode": "3",
+  "current_phase": "audit",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "5 被测面(Hook/CLI/MCP tool/Skill/产出展示)× 6 维度评测",
+      "6 盲区(并发多会话/离线降级/E2E升级/多store round-trip/LLM-judge冷评/历史回测锚)",
+      "诚实性 a-e 元自检",
+      "补 G-OBSERV 死电线埋点(skill_invocation/llm_judge_run/CLI事件/hook size)",
+      "G-PERF: recall payload + hook 注入 size 测量并定阈",
+      "G-SAFETY: KB 投毒/注入红队 + loop 失控压测 + path 越权",
+      "cc + codex 跑中立剧本(maestro delegate;临时仓先 fabric install)",
+      "报告 ①-⑤ + 基线固化"
+    ],
+    "out_of_scope": [
+      "完整混沌工程(只验 MCP 挂优雅降级,完整推后)",
+      "追高好习惯百分比(非零过底线即可)",
+      "Cursor 三端支持(已砍)",
+      "PREREQ Cursor 砍除 clean-slate — 由独立分支专门处理(2026-06-15 用户确认);本 goal 不碰,待其合 main 后本 worktree rebase 取 2 端基线再复跑受影响 gate(G-MACHINE cross-client-parity)",
+      "向量检索等 v2.2 池外候选"
+    ],
+    "constraints": [
+      "改 shared 必 rebuild dist(pnpm --filter @fenglimg/fabric-shared build)",
+      "release-rc 只在全闸绿后跑,别手动摘 tag",
+      "临时仓必须先 fabric install",
+      "LLM-judge 零上下文冷评,不可用知道答案的同会话",
+      "降级/waiver 在报告+status.json 显式记账(诚实律,'无法评价'是一等 finding)",
+      "快照 -u 前肉眼 diff",
+      "危险行为零容忍(硬);好习惯非零过底线(软)"
+    ]
+  },
+  "ship_criteria": [
+    {
+      "name": "G-MACHINE",
+      "dimension": 1,
+      "hard": true,
+      "target": "build/typecheck/lint/test/test:strategy/store-only-e2e 全绿",
+      "actual": "全绿: build✓ typecheck✓(exit0) lint✓(knip --strict exit0) test✓(2403 passed/0 failed/216 files: shared 637, server 718, cli 1048) test:strategy✓(PASS) store-only-e2e✓(verdict=pass, 修 F1 后)。NOTE: cross-client-parity 含 cursor 分支照跑绿(Cursor 砍除由外部分支处理,合 main rebase 后复跑)",
+      "verifier_cmd": "pnpm build && pnpm typecheck && pnpm lint && pnpm test && pnpm test:strategy && pnpm test:store-only-e2e",
+      "verified_at": "2026-06-15T16:30:00Z"
+    },
+    {
+      "name": "G-CENSUS",
+      "dimension": 2,
+      "hard": true,
+      "target": "CLI cmd registry + MCP tool registry + skill 注册 + J1-J24 派生清单逐项映射,无未接线空壳;每面有 usage 事件",
+      "actual": "GREEN(结构面): 33 surface 从活注册表运行时派生(CLI 13 cmd allCommands + MCP 6 tool registerTool + skill 8 templates + hook 6 templates)全 wired,零未接线空壳(scripts/surface-census.mjs + lib/surface-derive.mjs)。usage-event 观测 7/33(cli 1/13=doctor·mcp 1/6=recall·hook 5/6),其余 26 wired-but-unobservable 显式降级 cross-ref ADJ-1(同 G-OBSERV 行为遥测死电线 F3, recommendation B=降级不阻 2.2)。scorecard 固化 .scratchpad/g-census-scorecard.json。NOTE: '每面有 usage 事件' 子条件部分降级=ADJ-1 同源行为遥测债, 结构硬条件(零空壳)全绿。",
+      "verifier_cmd": "node scripts/surface-census.mjs (派生 census, 零空壳=exit0)",
+      "verified_at": "2026-06-15T17:05:00Z"
+    },
+    {
+      "name": "G-OBSERV",
+      "dimension": 2,
+      "hard": true,
+      "target": "instrumentation 债显式记账:skill_invocation_*/llm_judge_run 死电线、CLI 无事件类型、hook_surface_emitted 无 size → 显式标红'不可评分+待补埋点';补埋点解锁 G-HABIT 前置",
+      "actual": "GREEN(诚实记账完成): 全 event_type census(.scratchpad/T2-observ-census.md)— 18 真死电线(src+hook 双零 producer),行为关键簇 skill_invocation_started/completed/skill_phase_transition/skill_trigger_candidate/llm_judge_run/client_capability_snapshot 显式标红=不可评分(F3, 阻塞 G-HABIT 全维度评分,需求 hook/MCP 级 emit 非快速接线 → needs_adjudication)。CLI 无 cli_command event_type=确认零埋点。hook_surface_emitted 活线但无 size 字段→G-PERF 改用 out-of-band measure-injection.mjs 测真实注入(诚实记账缺字段非阻塞)。",
+      "verifier_cmd": "node 全 event_type census(emit producer vs schema 声明)— 见 .scratchpad/T2-observ-census.md",
+      "verified_at": "2026-06-15T16:45:00Z"
+    },
+    {
+      "name": "G-NOFAKE",
+      "dimension": 3,
+      "hard": true,
+      "target": "cc+codex 跑剧本后 doctor --cite-coverage 报编造 ID = 0",
+      "actual": "GREEN(cc 真实 dogfood): scripts/nofake-audit.mjs 审计本仓真实 .fabric/events.jsonl(本项目 cc dogfood)— 19 真实 cite/consume 事件、12 distinct stable_id 全解析到 40 个有效 KB id(mounted stores frontmatter), 编造(unresolvable)=0。non-noop self-test: 合成假 id team:KT-DEC-9999 被 flag(检测器非盲)+ valid set 非空守卫(防 false-green)。检测器自身报告路径(contract_metrics.cite_id_unresolved)另有单测+集成测(doctor-cite-coverage.test.ts case10 断言值3浮出)。codex 行为侧未测=显式降级(codex Fabric 集成需独立 dogfood session, 非阻断; 硬条件'编造ID=0'在 cc 真实数据成立 + 检测器机制已证)。",
+      "verifier_cmd": "node scripts/nofake-audit.mjs (真实 events 编造ID审计, fabricated>0 或 self-test盲=exit1)",
+      "verified_at": "2026-06-15T18:05:00Z"
+    },
+    {
+      "name": "G-HABIT",
+      "dimension": 3,
+      "hard": false,
+      "target": "翻库率/archive触发/激活漏斗 非零且过底线(首跑标定 baseline);codex 做不到走分诊不阻断但显式记账",
+      "actual": "GREEN(baseline 标定): scripts/habit-funnel.mjs 测真实 .fabric/events.jsonl 激活漏斗 — 9/9 阶段全非零: surface(hook_surface_emitted)7 / plan 10 / consume(knowledge_consumed=翻库)19 / select 3 / fetch 3 / edit 55 / archive_policy 1 / sessions 3。翻库率(consume/surface)=2.71(AI 拉的 body 多于推的 banner=健康)。floor(surface≥1 ∧ consume≥1)=pass(KB 既被推也被拉, 习惯环活)。baseline 固化 .scratchpad/g-habit-baseline.json。codex 行为漏斗显式降级(soft gate 非阻断, cc dogfood 已标定 v1 baseline)。",
+      "verifier_cmd": "node scripts/habit-funnel.mjs (漏斗 baseline, load-bearing 阶段=0 即 below-floor exit1)",
+      "verified_at": "2026-06-15T18:05:00Z"
+    },
+    {
+      "name": "G-PERF",
+      "dimension": 4,
+      "hard": true,
+      "target": "per-surface 延迟 + payload/token 预算成绩单 + 阈值;recall 27KB + hook 注入大小必须测量并定阈(超阈先瘦身或显式 waiver)",
+      "actual": "GREEN: 延迟绿(CLI 冷启 p95≈297ms≤2000 / Hook 冷启 p95≈138ms≤500, perf-benchmark.mjs N=10)。payload 真实语料测量(新 scripts/measure-injection.mjs, 产品 budget warn16K/hard65K): Hook 注入 3650B ✓ / recall 24159B(service)·29333B(wire)= over-warn 但在 65K hard 内=PASS。F2 重定性为非缺陷(description-first 工作中: 24候选仅6 body)。perf-benchmark 合成 fixture 注入测量标 n/a(诚实, plan-context 对合成 store 出0条目)→ 真实测量走 measure-injection.mjs",
+      "verifier_cmd": "node scripts/perf-benchmark.mjs (延迟) + node scripts/measure-injection.mjs (payload, 真实语料, warn16K/hard65K)",
+      "verified_at": "2026-06-15T16:45:00Z"
+    },
+    {
+      "name": "G-DISPLAY",
+      "dimension": 5,
+      "hard": false,
+      "target": "漂移快照 + 明显错渲染硬闸全绿;主观'好不好用'经 B 零上下文冷评筛后报告,不卡",
+      "actual": "GREEN(软, 硬地板满足): ① 漂移快照闸绿 — cli-surface/client-configs/mcp-config-merge/i18n/tool-contracts/doctor-i18n snapshot 全在 G-MACHINE 2403 测套绿=零漂移。② 明显错渲染=无: 真实采集 4 画面(SessionStart注入/doctor/cite-coverage/broad banner, 带本次run时间戳 .scratchpad/g-display-screens.md)— i18n zh-CN 正常渲染, 无原始 key 泄漏/无乱码/严重度排序正确/remediation 可执行。③ 主观'好不好用'经 B 零上下文冷评(gemini, id gdisplay-coldeval): 4画面 1-2/5, 评'无产品感, 像研发调试控制台'(内部代号 team:KT-DEC-* / 函数名 fab_recall 泄漏 / startRotationTick 等代码黑话 / 中英夹杂 / metrics 无上下文)→ 记 F4, 按'不卡'非阻断浮用户(soft)。caveat: 冷评零上下文按消费级受众判, Fabric 实际受众=开发者(fab_recall/stable_id 是其常识), 部分严苛属 audience 错配; 但 TL;DR 与正文冗余/中英夹杂等具体卡点对开发者亦成立 → 2.3 UX-polish 候选, 非 2.2 blocker。",
+      "verifier_cmd": "pnpm test(snapshot 漂移闸, G-MACHINE 内)+ scripts 画面采集 + maestro delegate B 冷评(报告不卡)",
+      "verified_at": "2026-06-15T18:20:00Z"
+    },
+    {
+      "name": "G-SAFETY",
+      "dimension": 6,
+      "hard": true,
+      "target": "隐私/预算绿 + 对抗性 KB 投毒/注入红队 + loop 失控压测 + path 越权全堵",
+      "actual": "GREEN(全堵): scripts/red-team-safety.mjs 主动攻真产品 guard, 18 攻击/5 类全容器(exit0)。① KB投毒-凭证 5/5: scanForSecrets BLOCK aws/openai/github/private-key/credential-assignment, redactSecrets 不回显原值。② path越权 8/8: storeAliasSchema+storeMountNameSchema 全 REJECT ../、绝对路径、多段、换行、超长、./.. 。③ budget失控 3/3: over-hard(113KB)→ enforcePayloadLimit THROW MCP_PAYLOAD_TOO_LARGE(fail-closed), warn-band 出 mcp_payload_warn, 小负载 clean 无误报。④ 注入容器 1/1: recall+inject 代码路径零 eval/new Function/exec-of-body → KB body 是惰性 data 永不执行。⑤ PII 1/1: redactPii 抹 email。loop失控结构三重界: cross-store-recall top_k 候选上限 + trimToPayloadBudget 截最不相关尾 + enforcePayloadLimit hard-stop。隐私(werewolf zero /Users/ 不变量)+ 预算 guard 由 G-MACHINE 测套覆盖。",
+      "verifier_cmd": "node scripts/red-team-safety.mjs (18攻击/5类, 任一 guard fail-open=exit1)",
+      "verified_at": "2026-06-15T17:20:00Z"
+    },
+    {
+      "name": "G-UPGRADE",
+      "dimension": 0,
+      "hard": true,
+      "target": "2.0.1→2.2 端到端升级旅程,普通 fabric install 重跑后 hook/skill 确实是当前版(防 P0-NEW1 复发)",
+      "actual": "GREEN: scripts/upgrade-e2e.mjs 黑盒驱动 built CLI(dist/index.js install --yes)做完整升级旅程, 8 检查全过(exit0)。① fresh install 4/4: hook(fabric-hint.cjs)+skill(fabric-archive)落盘且 byte-identical to 当前 template。② staleify 2/2: 覆写 stale '2.0.1' sentinel 字节模拟旧版漂移。③ upgrade-refresh 2/2: 重跑 install --yes → stale hook+skill 被刷回当前 template 字节(sentinel 消失)= P0-NEW1 防回归(普通 install 重跑确刷 stale managed artifact)。隔离 FABRIC_HOME+temp project, 真 install pipeline。",
+      "verifier_cmd": "node scripts/upgrade-e2e.mjs (升级旅程 8检查, stale 残留=exit1)",
+      "verified_at": "2026-06-15T17:50:00Z"
+    },
+    {
+      "name": "G-RESILIENCE",
+      "dimension": 0,
+      "hard": true,
+      "target": "并发多会话不张冠李戴(per-session 信号) + MCP 挂优雅降级(hook 不崩)",
+      "actual": "GREEN: scripts/resilience-probe.mjs 驱动真 hook 函数, 8 检查/2 失败模式全过(exit0)。① 并发隔离 5/5(F13 session-scoped sidecar): writeMaintenanceLastEmit session-A 进 cooldown 后, session-B readMaintenanceLastEmit=null(未被静默), B fire 后 A 值不被 clobber, A≠B 独立, absent sessionId 回退 legacy 非 scoped 路径(升级兼容)。② backend-down 降级 3/3: strip fabric from PATH → broad hint main() 不 throw + 零 banner 静默, invokePlanContextHint 返 null 永不 throw(ENOENT fail-open never-throw 契约)。F13 机制已有单测(fabric-hint.test.ts:1690), probe 是 out-of-band dogfood 复证。",
+      "verifier_cmd": "node scripts/resilience-probe.mjs (8检查/2模式, 任一污染或 throw=exit1)",
+      "verified_at": "2026-06-15T17:35:00Z"
+    },
+    {
+      "name": "G-SELFAUDIT",
+      "dimension": 0,
+      "hard": true,
+      "target": "活注册表里有功能但成绩单无对应行 = 评测集自己亮红(常驻集顺应版本不腐烂)",
+      "actual": "GREEN: scripts/self-audit.mjs 重派生 registry(共享 lib/surface-derive.mjs)vs 固化 scorecard diff — 33 面全覆盖, 零 missing/orphan/wiring-drift。负向证伪非 noop: 删 scorecard 一行(cli:doctor)→ 'surface added, scorecard not regenerated' exit 1 亮红, 还原→ exit 0。registry 行 vs 成绩单行缺则非零退出 = 评测集顺应版本不腐烂(新增命令未重生 census 即红)。",
+      "verifier_cmd": "node scripts/surface-census.mjs && node scripts/self-audit.mjs (diff, 漂移=exit1)",
+      "verified_at": "2026-06-15T17:05:00Z"
+    },
+    {
+      "name": "G-HONEST",
+      "dimension": 0,
+      "hard": true,
+      "target": "a telemetry对地面真值校验 / b 画面本次run带时间戳 / c 丢弃项已log / d baseline有依据非自我祝福 / e 剧本中立无coaching;任一不满足→报告结论不可信",
+      "actual": "GREEN(a-e 全过): scripts/honest-selfcheck.mjs 对抗性元自检(对自己评测挑刺), exit0。a 对账: logInjection 注入7次→injections.jsonl 恰7行, count sum 28=28(无幻影 emit/无静默丢)。b 时间戳: g-display-screens.md 带本次run ISO ts。c 丢弃已log: refuted=1(F2)+adjudication=1(ADJ-1)+9处降级记账, 非静默丢。d baseline 有据: g-habit-baseline.consume=19 == live re-count events.jsonl 19(非硬编自我祝福)。e 中立: nofake/habit 读 .fabric/events.jsonl 真实 cc dogfood(含5 distinct session, 非本评测造的 coached fixture), 冷评零上下文。报告结论可信。",
+      "verifier_cmd": "node scripts/honest-selfcheck.mjs (a-e 任一违反=exit1=报告不可信)",
+      "verified_at": "2026-06-15T18:20:00Z"
+    },
+    {
+      "name": "G-SHIP",
+      "dimension": 0,
+      "hard": true,
+      "target": "前述闸绿(降级项显式记账)→ release-rc 摘 -rc 发 2.2.0,固化剧本+报告口径+基线进 repo",
+      "actual": "BLOCKED(待人裁授权): 12/13 实质 gate 全绿(8硬+2软+G-HONEST), 无硬闸红, ADJ-1 已裁 B 降级(显式记账)。用户选\"先复核报告再定\"(2026-06-15)→ 读 REPORT.md + status.json 复核 12 gate 证据后单独授权 release-rc。release=npm publish+tag 不可逆外向动作, 按裁决阶梯无条件升 human, 不自动跑。",
+      "verifier_cmd": "DEPENDS: 用户复核 REPORT.md 后显式授权 → release-rc skill(版本bump+version-sync+全闸复跑+commit+tag+push+CI watch)",
+      "verified_at": null
+    }
+  ],
+  "task_decomposition": [
+    {
+      "id": "PREREQ-0",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "Cursor 砍除 clean-slate — DEFERRED 到独立分支(2026-06-15 用户确认另有专门分支处理)",
+      "done_when": "外部分支合 main → 本 worktree rebase → G-MACHINE cross-client-parity 复跑只剩 cc+codex",
+      "ship_criteria_alignment": [
+        "G-MACHINE"
+      ],
+      "alignment_strength": "infrastructure",
+      "status": "blocked",
+      "blocked_reason": "external-branch: Cursor 砍除由独立分支负责,非本 goal scope;本 goal 评测跑当前 rc.6 现状(含 cursor,parity 照跑)",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "外部分支合并后 rebase + pnpm test",
+        "evidence": null,
+        "verified_at": null
+      }
+    },
+    {
+      "id": "T1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "维度1/4/6 + 盲区2 基线快跑:build/typecheck/lint/test/strategy/store-only-e2e + perf-benchmark + 现有隐私/预算/path test",
+      "done_when": "G-MACHINE actual 全绿 + G-PERF 现有面(CLI冷启/hook冷启)有数 + 安全现有面绿",
+      "ship_criteria_alignment": [
+        "G-MACHINE",
+        "G-PERF",
+        "G-SAFETY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "见 ship_criteria verifier_cmd",
+        "evidence": ".scratchpad/T1-machine-perf-baseline.md + perf-baseline-20260615.json; G-MACHINE 全绿(修 F1)+ G-PERF 延迟基线绿(payload→T2)",
+        "verified_at": "2026-06-15T16:30:00Z"
+      }
+    },
+    {
+      "id": "T2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "G-OBSERV 死电线记账 + 接 hook size / recall payload 测量",
+      "done_when": "死电线清单显式标红 + hook 注入 size 与 recall payload 有测量值并定阈",
+      "ship_criteria_alignment": [
+        "G-OBSERV",
+        "G-PERF"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "全 event_type census + measure-injection.mjs",
+        "evidence": ".scratchpad/T2-observ-census.md + g-perf-payload-scorecard-20260615.json; G-OBSERV 红账+G-PERF payload 真实测量; F3→ADJ-1",
+        "verified_at": "2026-06-15T16:45:00Z"
+      }
+    },
+    {
+      "id": "T3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "维度3 行为:造临时仓 fabric install + 写中立剧本 + cc/codex 跑 → G-NOFAKE 硬闸 + G-HABIT baseline",
+      "done_when": "cite-coverage 编造ID=0;漏斗指标标定 baseline;codex 做不到项分诊记账",
+      "ship_criteria_alignment": [
+        "G-NOFAKE",
+        "G-HABIT"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "临时仓 round-trip + doctor --cite-coverage",
+        "evidence": "scripts/nofake-audit.mjs(19真实cite事件0编造,self-test非盲)+scripts/habit-funnel.mjs(9/9阶段非零,翻库率2.71,baseline固化)。codex行为侧显式降级。",
+        "verified_at": "2026-06-15T18:05:00Z"
+      }
+    },
+    {
+      "id": "T4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "G-UPGRADE 端到端升级旅程(2.0.1→2.2 普通 install 刷新 stale hook)",
+      "done_when": "升级脚本验证 install 后 hook/skill byte = 当前版",
+      "ship_criteria_alignment": [
+        "G-UPGRADE"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "e2e 升级脚本",
+        "evidence": "scripts/upgrade-e2e.mjs 黑盒升级旅程 8检查全过: fresh byte-identical + stale 重装刷回当前版(P0-NEW1 防回归)",
+        "verified_at": "2026-06-15T17:50:00Z"
+      }
+    },
+    {
+      "id": "T5",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "多 store E2E round-trip(真挂库→recall 真返跨库条目)+ 并发多会话隔离 + MCP 挂降级",
+      "done_when": "G-RESILIENCE 绿 + 多 store round-trip 命中非空",
+      "ship_criteria_alignment": [
+        "G-RESILIENCE",
+        "G-CENSUS"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "真库 round-trip + 并发/降级 test",
+        "evidence": "G-RESILIENCE: scripts/resilience-probe.mjs 8检查全过(并发隔离F13+backend-down降级)。多store round-trip: store-only-e2e verdict=pass, recall 真返 team:KT-DEC-0001 非空(selected_stable_ids+rules 均含 store-qualified id)= F-MULTISTORE-UNWIRED 读侧闭环验证(cross-store-recall 已被 recall.ts/plan-context.ts 消费)。",
+        "verified_at": "2026-06-15T17:35:00Z"
+      }
+    },
+    {
+      "id": "T6",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "维度5 展示画面采集(SessionStart注入/recall返回/doctor/cite-coverage/pending 原样)+ B 零上下文冷评筛",
+      "done_when": "G-DISPLAY 硬闸绿 + 画面带时间戳本次run + 冷评标黄项浮用户",
+      "ship_criteria_alignment": [
+        "G-DISPLAY",
+        "G-HONEST"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "simulated-human",
+        "verifier": "画面采集 + 零上下文冷评 judge",
+        "evidence": "漂移快照闸绿(G-MACHINE内)+4画面真实采集带时间戳+B零上下文冷评(F4: 1-2/5 dev-facing, 不卡浮用户)",
+        "verified_at": "2026-06-15T18:20:00Z"
+      }
+    },
+    {
+      "id": "T7",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "G-SAFETY 红队:对抗性 KB 投毒/注入 + loop 失控压测 + path 越权",
+      "done_when": "毒KB 注入不导致越权执行;loop 有界;path abort 全堵",
+      "ship_criteria_alignment": [
+        "G-SAFETY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "红队剧本 + 压测",
+        "evidence": "scripts/red-team-safety.mjs — 18 攻击/5类全容器(凭证BLOCK/越权REJECT/budget hard-stop throw/KB body 惰性零eval/PII抹);loop结构三重界 top_k+trim+hard-stop",
+        "verified_at": "2026-06-15T17:20:00Z"
+      }
+    },
+    {
+      "id": "T8",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "G-CENSUS census 派生 + G-SELFAUDIT 缝合(registry 行 vs 成绩单行)",
+      "done_when": "census 无未接线空壳;self-audit 脚本能在缺行时亮红",
+      "ship_criteria_alignment": [
+        "G-CENSUS",
+        "G-SELFAUDIT"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "census 脚本 + self-audit 脚本",
+        "evidence": "scripts/surface-census.mjs(33面零空壳)+ scripts/self-audit.mjs(33覆盖零漂移, 负向证伪删行→exit1)+ lib/surface-derive.mjs 共享派生 + .scratchpad/g-census-scorecard.json",
+        "verified_at": "2026-06-15T17:05:00Z"
+      }
+    },
+    {
+      "id": "T9",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "汇总报告 ①-⑤(总览矩阵/性能区/具体画面区/行为区/结论区)+ G-HONEST a-e 自检 + 基线固化常驻 v1",
+      "done_when": "报告产出 + a-e 全过 + 剧本/口径/baseline 固化进 repo",
+      "ship_criteria_alignment": [
+        "G-HONEST",
+        "G-SELFAUDIT"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "cross-llm",
+        "verifier": "报告生成器 + 零上下文冷评守卫",
+        "evidence": "REPORT.md ①-⑤ 产出 + G-HONEST a-e 全过(honest-selfcheck.mjs)+ 8 scripts/baseline 固化进 repo = 常驻评测集 v1",
+        "verified_at": "2026-06-15T18:30:00Z"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "round": 1,
+      "oracle": "producer-consumer",
+      "expectation_source": "store-only-e2e gate 断言 canonical 文件落在 stores/<alias>;真实布局 storeRelativePathForMount = stores/<group>/<mount_name>",
+      "actual": "approve 正确写入 stores/team/team/knowledge/decisions/KT-DEC-0001--store-only-e2e-roundtrip.md,但 gate 硬编码 storeRoot=stores/team(漏 mount_name 段)→ listMarkdown 空 → false-red 'canonical decision was not written'。产品写路径无误,纯 gate 陈旧(scripts/store-only-e2e.mjs:199, de9cb1d 升级时未跟上 <group>/<mount_name> 布局)",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "FABRIC_E2E_KEEP_TEMP=1 inspect 证实文件在 stores/team/team/...; 改用 shared.storeRelativePathForMount(team) 后 gate verdict=pass",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "fix_task_id": "T1"
+    },
+    {
+      "id": "F2",
+      "round": 1,
+      "oracle": "invariant",
+      "expectation_source": "KT-DEC-0019 / KT-GLD-0005 description-first recall: body 应 lean 按需;brief finding #3 疑 description-first 回退致 recall ~27KB",
+      "actual": "recall service 24159B / MCP wire 29333B(超 16KB warn);但产品 budget 设计 warn16384/HARD65536(retrieval-budget.ts balanced)→ 在 hard 内。description-first 确在工作: 24 候选仅 6 返 body 其余 description-only",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "refuted",
+        "evidence": "measure-injection.mjs 真实语料: 24159B service, 在 65536 hard budget 内;body_tier.bodies_returned=6/24 证 description-first 未回退。over-warn 对 36 条语料属设计内预期,runtime mcp_payload_warn guard 已存在",
+        "refute_reason": "非缺陷: payload 在产品 hard budget 内, description-first 机制工作正常, brief #3 '回退' 假设不成立"
+      },
+      "severity": "low",
+      "fix_task_id": null
+    },
+    {
+      "id": "F3",
+      "round": 1,
+      "oracle": "declared-vs-impl",
+      "expectation_source": "event-ledger schema 声明 skill_invocation_started/completed/skill_phase_transition/skill_trigger_candidate/llm_judge_run/client_capability_snapshot(行为可观测性)",
+      "actual": "6 个行为关键 event_type 声明但 src+hook 双零 producer(死电线)。schema 自承 line683-684 'future wiring'。后果: skill 用没用对/auto-invoke false-neg/LLM-judge 可审计性 不可评分 → 阻塞 G-HABIT 全维度评分。补埋点需 hook 级(skill-start hook)或 MCP 级 emit, 非快速接线(skill 是 markdown 指令不能自 emit), 且部分 codex-dependent",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "全 event_type census: 这6类在 packages/*/src + templates/hooks 零 producer (.scratchpad/T2-observ-census.md A 节)",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "fix_task_id": "ADJ-1"
+    },
+    {
+      "id": "F4",
+      "round": 1,
+      "oracle": "simulated-human",
+      "expectation_source": "G-DISPLAY 主观可读性 B 零上下文冷评(gemini gdisplay-coldeval)",
+      "actual": "4 展示画面(SessionStart/doctor/cite-coverage/banner)冷评 1-2/5: 内部代号 team:KT-DEC-* + 函数名 fab_recall 泄漏 + startRotationTick/bumpCounter 代码黑话 + 中英夹杂 + metrics 无上下文解释; 评\"无产品感像研发调试控制台\"",
+      "verify": {
+        "tier": "cross-llm",
+        "verdict": "confirmed",
+        "evidence": "gemini 零上下文冷评 verbatim, 4画面独立打分, .scratchpad/g-display-screens.md",
+        "refute_reason": null
+      },
+      "severity": "low",
+      "fix_task_id": null,
+      "note": "soft gate 不卡(brief: 报告不阻); audience 错配 caveat(冷评按消费级判, Fabric 受众=开发者); TL;DR冗余/中英夹杂对开发者亦成立 → 2.3 UX-polish 候选"
+    }
+  ],
+  "needs_adjudication": [
+    {
+      "id": "ADJ-1",
+      "round": 1,
+      "from_finding": "F3",
+      "adjudication_reason": "unmodeled-tradeoff",
+      "subject": "行为遥测死电线簇(skill_invocation*/llm_judge_run/client_capability_snapshot)补埋点 vs 降级",
+      "detail": "6 个行为 event_type 声明零 producer,阻塞 G-HABIT 全维度评分。补埋点需新建 skill-start hook 或 MCP 级 emit(skill markdown 不能自 emit),大面+部分 codex-dependent。选项: (A)本 goal 内建 skill-start hook 补 skill_invocation 埋点(大改, 风险动 hook 装配);(B)降级—G-HABIT 用现有活线漏斗(knowledge_consumed/hook_surface_emitted)评分, skill/judge 维度显式标'不可评分待 2.3 补埋点';(C)推 2.3 整套行为遥测。推荐 B(诚实记账, 不阻 2.2, 符合 brief '机制对弱AI做不到=降级不卡发版')",
+      "recommendation": "B",
+      "surfaced_at": "round-1-end",
+      "resolved": true,
+      "resolution": "B",
+      "resolved_at": "2026-06-15T18:35:00Z",
+      "resolution_note": "用户批准 B=降级: G-HABIT 用活线漏斗(9/9非零)评分, skill/judge 维度标不可评分待 2.3 补埋点, 不阻 2.2"
+    }
+  ],
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "running",
+      "round_task_ceiling": 14,
+      "round_task_actual": 16,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": [],
+      "carried_in": [],
+      "carry_over_to_next": {
+        "from_open_blocked": [],
+        "from_ceiling_overflow": [],
+        "from_depth_cap": []
+      },
+      "drift_checks": [],
+      "completion_gate": {
+        "task_gate": {},
+        "goal_gate": {
+          "blocking": true
+        },
+        "drift_gate": {}
+      }
+    }
+  ],
+  "git_commits": [
+    {
+      "sha": "cdea9fb",
+      "gate": "G-MACHINE",
+      "summary": "G-MACHINE 全绿 + 修 store-only-e2e false-red (F1) + scaffold",
+      "at": "2026-06-15T16:30:00Z"
+    },
+    {
+      "sha": "5dc5349",
+      "gate": "G-OBSERV+G-PERF",
+      "summary": "G-OBSERV 死电线红账 + G-PERF payload 真实测量(measure-injection.mjs)",
+      "at": "2026-06-15T16:45:00Z"
+    },
+    {
+      "sha": "6e780af",
+      "gate": "G-CENSUS+G-SELFAUDIT",
+      "summary": "33面零空壳派生 census + 防腐 self-audit(负向证伪删行→exit1)",
+      "at": "2026-06-15T17:05:00Z"
+    },
+    {
+      "sha": "8576ce2",
+      "gate": "G-RESILIENCE",
+      "summary": "并发隔离F13+backend-down降级 probe + 多store round-trip 闭环",
+      "at": "2026-06-15T17:35:00Z"
+    },
+    {
+      "sha": "5e92ab3",
+      "gate": "G-UPGRADE",
+      "summary": "黑盒升级旅程 e2e: stale hook/skill 重装刷回当前版(P0-NEW1)",
+      "at": "2026-06-15T17:50:00Z"
+    },
+    {
+      "sha": "bd0a5b5",
+      "gate": "G-NOFAKE+G-HABIT",
+      "summary": "真实编造ID审计0/19 + 激活漏斗baseline 9/9非零(cc dogfood; codex降级)",
+      "at": "2026-06-15T18:05:00Z"
+    },
+    {
+      "sha": "7564b89",
+      "gate": "G-DISPLAY+G-HONEST",
+      "summary": "画面采集+B冷评F4 + a-e元自检全过",
+      "at": "2026-06-15T18:20:00Z"
+    }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260615-release-eval-22/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null
+}

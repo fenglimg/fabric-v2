@@ -33,6 +33,13 @@ import { performance } from "node:perf_hooks";
 const ITERATIONS = 10;
 const CLI_BUDGET_MS = 2000;
 const HOOK_BUDGET_MS = 500;
+// v2.2 G-PERF: SessionStart hook injection payload budget. The hook writes the
+// AI sink to stdout (hookSpecificOutput.additionalContext) and the human banner
+// to stderr; the AI sink is the per-session-boot context tax we gate on. Mirror
+// the MCP payload warn threshold (16384B) — a single injection should cost no
+// more than a single MCP recall response. Measured against the fixed 13-entry
+// fixture so it tracks render-size regressions, not corpus growth.
+const HOOK_PAYLOAD_BUDGET_BYTES = 16384;
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const PERSONAL_STORE_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const TEAM_STORE_UUID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -46,7 +53,13 @@ function measureOnce(command, args, options = {}) {
     ...options,
   });
   const elapsed = performance.now() - start;
-  return { elapsed, status: result.status, signal: result.signal, stderr: result.stderr };
+  return {
+    elapsed,
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 
 function percentile(samples, p) {
@@ -92,6 +105,7 @@ function writeKnowledgeEntry(storeRoot, type, id, scope, visibilityStore, summar
       "maturity: verified",
       "created_at: 2026-06-09T00:00:00.000Z",
       `semantic_scope: ${scope}`,
+      "relevance_scope: broad",
       `visibility_store: "${visibilityStore}"`,
       `summary: ${summary}`,
       "intent_clues: [store-only, perf]",
@@ -228,17 +242,24 @@ function benchmarkHook(hookPath) {
     session_id: "perf-bench",
   });
   const samples = [];
+  let lastStdout = "";
+  let lastStderr = "";
   for (let i = 0; i < ITERATIONS; i++) {
-    const { elapsed, status, signal, stderr } = measureOnce(process.execPath, [hookPath], {
+    const { elapsed, status, signal, stdout, stderr } = measureOnce(process.execPath, [hookPath], {
       cwd: fixture.projectRoot,
       input: stdinPayload,
-      env: { ...process.env, FABRIC_HOME: fixture.fabricHome },
+      // FABRIC_HINT_CLIENT forces detectClient()=cc so the hook actually renders
+      // its injection sink — without a client env it skips emit and the payload
+      // measurement is a false-green 0B (honesty: measure the real injection).
+      env: { ...process.env, FABRIC_HOME: fixture.fabricHome, FABRIC_HINT_CLIENT: "cc" },
     });
     if (status !== 0 || signal !== null) {
       const detail = signal !== null ? `signal ${signal}` : `status ${status}`;
       const stderrSnippet = typeof stderr === "string" && stderr.trim().length > 0 ? `: ${stderr.trim()}` : "";
       throw new Error(`SessionStart hook failed with ${detail}${stderrSnippet}`);
     }
+    lastStdout = typeof stdout === "string" ? stdout : "";
+    lastStderr = typeof stderr === "string" ? stderr : "";
     samples.push(elapsed);
   }
   return {
@@ -247,6 +268,14 @@ function benchmarkHook(hookPath) {
     p95_ms: Math.round(percentile(samples, 95)),
     max_ms: Math.round(Math.max(...samples)),
     samples: samples.map((s) => Math.round(s)),
+    // v2.2 G-PERF: deterministic injection payload size for the fixed fixture.
+    // stdout = AI additionalContext sink (the context tax); stderr = human banner.
+    injection_payload: {
+      ai_sink_bytes: Buffer.byteLength(lastStdout, "utf8"),
+      human_banner_bytes: Buffer.byteLength(lastStderr, "utf8"),
+      total_bytes: Buffer.byteLength(lastStdout, "utf8") + Buffer.byteLength(lastStderr, "utf8"),
+      budget_bytes: HOOK_PAYLOAD_BUDGET_BYTES,
+    },
   };
 }
 
@@ -267,9 +296,19 @@ const report = {
 
 const cliPass = report.cli_cold_start.p95_ms <= CLI_BUDGET_MS;
 const hookPass = report.hook_cold_start.p95_ms <= HOOK_BUDGET_MS;
+const payload = report.hook_cold_start.injection_payload;
+// The hermetic synthetic fixture cannot exercise injection RENDERING:
+// `plan-context-hint --all` surfaces 0 entries for a freshly-minted synthetic
+// store (no index built), so the hook emits an empty sink → total_bytes=0. A
+// 0-byte "pass" would be a false-green, so treat 0 as measurement-invalid (n/a)
+// rather than pass. The real injection size is measured against a representative
+// corpus in the G-PERF scorecard (re-runnable via scripts/measure-injection.mjs).
+const payloadMeasured = payload.total_bytes > 0;
+const payloadPass = payloadMeasured && payload.total_bytes <= HOOK_PAYLOAD_BUDGET_BYTES;
 report.verdict = {
   cli_cold_start: cliPass ? "pass" : "fail",
   hook_cold_start: hookPass ? "pass" : "fail",
+  hook_injection_payload: !payloadMeasured ? "n/a-synthetic-fixture" : payloadPass ? "pass" : "fail",
 };
 
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -279,10 +318,14 @@ process.stderr.write(
     "[perf-benchmark]",
     `  CLI cold start: p50=${report.cli_cold_start.p50_ms}ms p95=${report.cli_cold_start.p95_ms}ms (gate ${CLI_BUDGET_MS}ms ${cliPass ? "✓" : "✗"})`,
     `  Hook cold start: p50=${report.hook_cold_start.p50_ms}ms p95=${report.hook_cold_start.p95_ms}ms (gate ${HOOK_BUDGET_MS}ms ${hookPass ? "✓" : "✗"})`,
+    `  Hook injection payload: ai=${payload.ai_sink_bytes}B human=${payload.human_banner_bytes}B total=${payload.total_bytes}B (gate ${HOOK_PAYLOAD_BUDGET_BYTES}B ${!payloadMeasured ? "n/a synthetic fixture — see G-PERF scorecard" : payloadPass ? "✓" : "✗"})`,
     "",
   ].join("\n"),
 );
 
-if (!cliPass || !hookPass) {
+// n/a (synthetic fixture surfaced 0 entries) does not fail the gate — only a
+// measured over-budget injection does.
+const payloadFail = payloadMeasured && !payloadPass;
+if (!cliPass || !hookPass || payloadFail) {
   process.exit(1);
 }

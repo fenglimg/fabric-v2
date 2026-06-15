@@ -1,0 +1,25 @@
+{
+  "gate": "G-HABIT",
+  "generated_by": "habit-funnel.mjs",
+  "source": ".fabric/events.jsonl (cc dogfood)",
+  "funnel": {
+    "surface": 7,
+    "plan": 10,
+    "consume": 19,
+    "select": 3,
+    "fetch": 3,
+    "edit": 55,
+    "edit_intent": 55,
+    "archive_policy": 1,
+    "sessions": 3
+  },
+  "recall_hit_rate_consume_over_surface": 2.71,
+  "floor": {
+    "surface": 1,
+    "consume": 1
+  },
+  "floor_status": "pass",
+  "nonzero_stages": 9,
+  "total_stages": 9,
+  "codex_note": "cc dogfood only; codex behavioural funnel deferred (soft gate, explicit degrade — not blocking)"
+}

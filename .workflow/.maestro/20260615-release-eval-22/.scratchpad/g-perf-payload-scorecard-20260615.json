@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "warn_bytes": 16384,
+  "hard_bytes": 65536,
+  "hook_injection": {
+    "ai_sink_bytes": 3650,
+    "human_banner_bytes": 0,
+    "total_bytes": 3650
+  },
+  "recall": {
+    "response_bytes": 24159,
+    "candidate_count": 24,
+    "bodies_returned": 6,
+    "product_warn_emitted": false
+  },
+  "verdict": {
+    "hook_injection": "pass",
+    "recall": "over-warn"
+  }
+}
