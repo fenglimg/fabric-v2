@@ -9,8 +9,8 @@
 - **constraints**:改 shared 必 rebuild dist · release-rc 全绿后才跑 · 临时仓先 fabric install · LLM-judge 零上下文冷评 · 降级显式记账 · 快照 -u 前肉眼 diff
 
 ## 命名 Ship Gate(全绿即自动 completed)
-- [ ] **PREREQ-0** Cursor 砍除 clean-slate
-- [ ] **G-MACHINE** (硬) build/typecheck/lint/test/strategy/store-only-e2e 全绿
+- [~] **PREREQ-0** Cursor 砍除 — DEFERRED 到外部分支(非本 goal scope)
+- [x] **G-MACHINE** (硬) ✓ 全绿(test 2403/0)— 修 F1 store-only-e2e false-red @cdea9fb
 - [ ] **G-CENSUS** (硬) registry 派生清单逐项映射无空壳 + 每面 usage 事件
 - [ ] **G-OBSERV** (硬) 死电线显式记账 + 补埋点(解锁 G-HABIT 前置)
 - [ ] **G-NOFAKE** (硬) cc+codex 剧本后 cite-coverage 编造ID=0
