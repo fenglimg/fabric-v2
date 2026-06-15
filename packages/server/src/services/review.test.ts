@@ -415,6 +415,27 @@ describe("reviewKnowledge", () => {
     expect(layerEvents.events).toHaveLength(0);
   });
 
+  // v2.2 graph edges (KT-DEC-0031 wiki seam): regression for the bug where the
+  // modify changes schema lacked `related`, so zod .strip() silently dropped it
+  // — modify returned success but the H2 adjacency never reached frontmatter,
+  // leaving the only programmatic related-write path non-functional.
+  it("modify writes the related[] H2 graph edge into frontmatter", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "edge-source", {
+      tags: ["initial"],
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { related: ["KT-DEC-0019", "KT-GLD-0005"] },
+    });
+    expect(result.action).toBe("modify");
+
+    const updated = await readFile(pendingPath, "utf8");
+    expect(updated).toMatch(/^related: \[KT-DEC-0019, KT-GLD-0005\]$/mu);
+  });
+
   it("v2.2 modify re-scopes semantic_scope (team → project:<id>) in place, store untouched", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "decisions", "rescope-me", {

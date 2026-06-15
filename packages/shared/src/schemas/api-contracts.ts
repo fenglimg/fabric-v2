@@ -958,6 +958,13 @@ const _fabReviewModifyChangesSchema = z.object({
   // an entry in the personal store is a store move, which is the dedicated
   // modify-layer path (R5#3 privacy boundary), never an in-place scalar edit.
   semantic_scope: z.string().regex(SCOPE_COORDINATE_PATTERN).optional(),
+  // v2.2 graph edges (KT-DEC-0031 wiki seam): write the `related` H2 adjacency
+  // (bare or store-qualified stable_ids this entry points at). REPLACE semantics
+  // mirror tags/relevance_paths — the caller (fabric-connect) reads existing
+  // edges via fab_recall and sends the merged set. Absent this field the modify
+  // path silently dropped `related` via zod .strip() (KT-PIT-0005 recurrence),
+  // leaving the only programmatic related-write path non-functional.
+  related: z.array(z.string()).optional(),
 });
 
 export const FabReviewInputSchema = z.discriminatedUnion("action", [
@@ -1054,7 +1061,7 @@ export const FabReviewInputShape = {
       "Reason string. Required (non-empty) when action=reject; optional when action=defer.",
     ),
   changes: _fabReviewModifyChangesSchema.optional().describe(
-    "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*/semantic_scope). Required when action=modify. semantic_scope re-scopes the entry's resolution coordinate in place (e.g. team → project:<id>) without moving stores; personal-root coordinates are rejected (use modify-layer).",
+    "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*/semantic_scope/related). Required when action=modify. semantic_scope re-scopes the entry's resolution coordinate in place (e.g. team → project:<id>) without moving stores; personal-root coordinates are rejected (use modify-layer).",
   ),
   query: z
     .string()
