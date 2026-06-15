@@ -12,7 +12,7 @@ import type {
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { allocateStoreKnowledgeId } from "@fenglimg/fabric-shared";
+import { allocateStoreKnowledgeId, isPersonalScope } from "@fenglimg/fabric-shared";
 import {
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
@@ -70,6 +70,8 @@ type ParsedFrontmatter = {
   // at consumption time (matches knowledge-meta-builder defaults).
   relevance_scope?: RelevanceScope;
   relevance_paths?: string[];
+  // v2.2 project-scope migration: resolution coordinate (personal/team/project:<id>).
+  semantic_scope?: string;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3 frontmatter authoring path).
   status?: LifecycleStatus;
   deferred_until?: string;
@@ -813,6 +815,10 @@ type ModifyChanges = {
   // values — see `modifyEntry`.
   relevance_scope?: RelevanceScope;
   relevance_paths?: string[];
+  // v2.2 project-scope migration: in-place re-scope of the resolution
+  // coordinate (team → project:<id>). visibility_store is untouched —
+  // scope ⊥ store. Personal-root coordinates are rejected in modifyEntry.
+  semantic_scope?: string;
 };
 
 // v2.0.0-rc.27 TASK-001: superset of ModifyChanges used internally by
@@ -837,6 +843,16 @@ async function modifyEntry(
   const content = await readFile(target.absPath, "utf8");
   const fm = parseFrontmatter(content);
   const currentLayer: Layer = fm.layer ?? "team";
+
+  // v2.2 project-scope migration: a personal-root semantic_scope would move the
+  // entry into the personal store (R5#3 privacy boundary) — that is a store
+  // move, not an in-place scalar edit. Refuse it here; the dedicated path is
+  // modify-layer (changes.layer: "personal"), which re-resolves the target store.
+  if (changes.semantic_scope !== undefined && isPersonalScope(changes.semantic_scope)) {
+    throw new Error(
+      `cannot re-scope to personal coordinate '${changes.semantic_scope}' via modify; use action 'modify-layer' with layer 'personal' to move the entry into the personal store (R5#3)`,
+    );
+  }
 
   // ------ Layer-flip path ------
   if (changes.layer !== undefined && changes.layer !== currentLayer) {
@@ -1518,6 +1534,12 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
         // v2.0-rc.5 C3: flow-style inline YAML array, same parser as `tags`.
         out.relevance_paths = parseFlowArray(value);
         break;
+      case "semantic_scope":
+        // v2.2 project-scope migration: open coordinate string (schemas/scope.ts).
+        // No allow-list — the grammar is open (team/personal/project:x/org:y...);
+        // the modify input schema already validated it against SCOPE_COORDINATE_PATTERN.
+        out.semantic_scope = stripQuotes(value);
+        break;
       case "status":
         // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): strict allow-list. Unknown
         // values leave the field absent so list/search apply the "active"
@@ -1625,6 +1647,8 @@ function rewriteFrontmatterMerge(
   // v2.0-rc.5 C3 (TASK-012): relevance hints — same flow-array shape as tags.
   if (patch.relevance_scope !== undefined) updates.relevance_scope = `relevance_scope: ${patch.relevance_scope}`;
   if (patch.relevance_paths !== undefined) updates.relevance_paths = `relevance_paths: ${flowArray(patch.relevance_paths)}`;
+  // v2.2 project-scope migration: in-place re-scope (team → project:<id>).
+  if (patch.semantic_scope !== undefined) updates.semantic_scope = `semantic_scope: ${patch.semantic_scope}`;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
   // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
   // datetimes correctly (no colon in the date portion would need quoting,

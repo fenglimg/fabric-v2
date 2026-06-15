@@ -415,6 +415,54 @@ describe("reviewKnowledge", () => {
     expect(layerEvents.events).toHaveLength(0);
   });
 
+  it("v2.2 modify re-scopes semantic_scope (team → project:<id>) in place, store untouched", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "rescope-me", {
+      tags: ["initial"],
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { semantic_scope: "project:fabric-v2" },
+    });
+    expect(result.action).toBe("modify");
+
+    const updated = await readFile(pendingPath, "utf8");
+    // semantic_scope line written (appended, since seed omits it).
+    expect(updated).toMatch(/^semantic_scope: project:fabric-v2$/mu);
+    // layer is NOT touched — scope ⊥ store. The entry stays a team-store file.
+    expect(updated).toMatch(/^layer: team$/mu);
+    // A knowledge_modified event records the changed field (no layer-flip event).
+    const layerEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_layer_changed",
+    });
+    expect(layerEvents.events).toHaveLength(0);
+    const modifiedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_modified",
+    });
+    expect(modifiedEvents.events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("v2.2 modify rejects a personal-root semantic_scope (must use modify-layer)", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "no-personal-rescope", {
+      tags: ["initial"],
+    });
+
+    await expect(
+      reviewKnowledge(projectRoot, {
+        action: "modify",
+        pending_path: pendingPath,
+        changes: { semantic_scope: "personal" },
+      }),
+    ).rejects.toThrow(/personal/u);
+
+    // The file is unchanged — no semantic_scope line leaked in.
+    const after = await readFile(pendingPath, "utf8");
+    expect(after).not.toMatch(/^semantic_scope:/mu);
+  });
+
   it("F55 (ISS-055): a malicious tag cannot inject a new frontmatter key via flow array", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "decisions", "inject-array", {

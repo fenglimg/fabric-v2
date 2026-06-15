@@ -367,6 +367,10 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 ],
                 "type": "string",
               },
+              "semantic_scope": {
+                "pattern": "^[a-z0-9_-]+(:[a-z0-9_-]+)*$",
+                "type": "string",
+              },
               "summary": {
                 "type": "string",
               },
@@ -441,6 +445,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
               },
               "relevance_scope": {
                 "$ref": "#/anyOf/3/properties/changes/properties/relevance_scope",
+              },
+              "semantic_scope": {
+                "$ref": "#/anyOf/3/properties/changes/properties/semantic_scope",
               },
               "summary": {
                 "$ref": "#/anyOf/3/properties/changes/properties/summary",

@@ -949,6 +949,15 @@ const _fabReviewModifyChangesSchema = z.object({
   // sent in these fields (personal-implies-broad).
   relevance_scope: z.enum(["narrow", "broad"]).optional(),
   relevance_paths: z.array(z.string()).optional(),
+  // v2.2 project-scope migration: re-scope an existing entry's resolution
+  // coordinate (e.g. team → project:fabric-v2) WITHOUT moving stores
+  // (scope ⊥ store, S42/A2). The in-place modify path keeps visibility_store
+  // intact, so a team→project flip just relabels who recall surfaces it to
+  // (G-FILTER, cross-store-recall.ts) — the entry stays physically in the
+  // same shared store. A personal-root coordinate is rejected here: landing
+  // an entry in the personal store is a store move, which is the dedicated
+  // modify-layer path (R5#3 privacy boundary), never an in-place scalar edit.
+  semantic_scope: z.string().regex(SCOPE_COORDINATE_PATTERN).optional(),
 });
 
 export const FabReviewInputSchema = z.discriminatedUnion("action", [
@@ -1045,7 +1054,7 @@ export const FabReviewInputShape = {
       "Reason string. Required (non-empty) when action=reject; optional when action=defer.",
     ),
   changes: _fabReviewModifyChangesSchema.optional().describe(
-    "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*). Required when action=modify.",
+    "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*/semantic_scope). Required when action=modify. semantic_scope re-scopes the entry's resolution coordinate in place (e.g. team → project:<id>) without moving stores; personal-root coordinates are rejected (use modify-layer).",
   ),
   query: z
     .string()
