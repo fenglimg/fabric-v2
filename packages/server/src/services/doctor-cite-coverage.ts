@@ -551,10 +551,15 @@ export function sumFoldedTurnCounters(
 //   - qualifying_cites:      cite_tags === 'applied' (rc.37 2-state vocab; the
 //                            legacy planned/recalled/chained-from are remapped
 //                            to 'applied' on read — see ADJ-P4-1).
-//   - recalled_unverified:   'applied' tag with no knowledge_sections_fetched
-//                            in the same session within ±60s (the [applied]
+//   - recalled_unverified:   'applied' tag with no knowledge_body_read in the
+//                            same session within ±60s (the [applied]
 //                            verification-obligation check; field name retained
-//                            for report-contract stability).
+//                            for report-contract stability). KT-DEC-0030: the
+//                            verification signal migrated from the retired MCP
+//                            knowledge_sections_fetched to the native-Read
+//                            knowledge_body_read — the [applied] obligation is
+//                            now "did the model actually open the body" (the
+//                            funnel's planned → body_read → cite[applied] middle).
 //   - edits_touched:         edit_intent_checked events in window.
 //   - expected_but_missed:   edit_intent_checked whose path matches some kb
 //                            entry's relevance_paths but no assistant_turn in
@@ -713,7 +718,12 @@ export async function runDoctorCiteCoverage(
 
   type TurnEvent = Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }>;
   type EditEvent = Extract<EventLedgerEvent, { event_type: "edit_intent_checked" }>;
-  type FetchEvent = Extract<EventLedgerEvent, { event_type: "knowledge_sections_fetched" }>;
+  // KT-DEC-0030: the [applied] verification signal is now the native-Read
+  // knowledge_body_read marker (the retired knowledge_sections_fetched MCP event
+  // is no longer emitted). Old ledgers still parse it; this report stops reading
+  // it. `FetchEvent` keeps its name for blast-radius minimalism — it now carries
+  // the body-read shape.
+  type FetchEvent = Extract<EventLedgerEvent, { event_type: "knowledge_body_read" }>;
   // v2.1 ⑤ cite-redesign (P5): knowledge_context_planned is the recall event
   // (target_paths + final_stable_ids + session_id) — the recall→edit overlap
   // is the recall-based citation.
@@ -741,7 +751,7 @@ export async function runDoctorCiteCoverage(
       case "edit_intent_checked":
         editEvents.push(event);
         break;
-      case "knowledge_sections_fetched":
+      case "knowledge_body_read":
         fetchEvents.push(event);
         break;
       case "knowledge_context_planned":
@@ -1089,8 +1099,9 @@ export async function runDoctorCiteCoverage(
 
     // v2.1.0-rc.1 (ADJ-P4-1): `recalled_unverified` retains its report-contract
     // name but now measures the rc.37 NEW-1 `[applied]` verification obligation
-    // directly — an `applied` cite with no knowledge_sections_fetched in the same
-    // session within ±60s (legacy `recalled` is remapped to `applied` on read).
+    // directly — an `applied` cite with no knowledge_body_read in the same
+    // session within ±60s (KT-DEC-0030; legacy `recalled` is remapped to
+    // `applied` on read).
     if (turnHadApplied && !isRecallVerified(turn)) {
       recalledUnverified += 1;
       bumpClient(turn.client, (m) => {
@@ -1516,7 +1527,7 @@ export async function runDoctorCiteCoverage(
 //
 // Only assistant_turn_observed is rolled/dropped — every other (low-volume)
 // event stays in the ledger untouched. The per-day metrics are computed BEFORE
-// the drop, while turns + edit_intent_checked + knowledge_sections_fetched are
+// the drop, while turns + edit_intent_checked + knowledge_body_read are
 // all still present, so correlation-based metrics (expected_but_missed etc.)
 // stay correct (modulo sessions that straddle a UTC midnight — an accepted
 // observability approximation, not exact accounting).

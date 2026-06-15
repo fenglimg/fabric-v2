@@ -26,7 +26,7 @@ import {
   purgeEmptyShellTurnsIfNeeded,
   rollupCiteAuditIfNeeded,
   runDoctorCiteCoverage,
-  runDoctorEmitCadenceCheck,
+  runDoctorBodyReadMisfireCheck,
   runDoctorFix,
   runDoctorReport,
 } from "./doctor.js";
@@ -2087,30 +2087,6 @@ describe("rc.39 emit-fold counter merge", () => {
     expect(report.metrics.total_turns).toBe(1 + 3);
   });
 
-  it("emit-cadence: observed includes folded turn counters; fetched includes the metrics counter", async () => {
-    const target = createInitializedProject("emit-fold-cadence");
-    writeFile(".fabric/events.jsonl", "", target);
-    const marker = await ensureCitePolicyActivatedMarker(target);
-    // 2 cite-bearing turns remain as events.
-    seedEvents(target, [
-      citeTurn("c1", marker.marker_ts + 10, "cc"),
-      citeTurn("c2", marker.marker_ts + 11, "cc"),
-    ]);
-    writeMetricsRows(target, [
-      {
-        timestamp: new Date(marker.marker_ts + 20).toISOString(),
-        window: "stop",
-        counters: { "assistant_turn_observed:cc": 8, knowledge_sections_fetched: 10 },
-      },
-    ]);
-
-    const cadence = await runDoctorEmitCadenceCheck(target);
-    // observed = 2 events + 8 folded = 10; fetched = 0 events + 10 counter = 10.
-    expect(cadence.observed).toBe(10);
-    expect(cadence.fetched).toBe(10);
-    expect(cadence.ratio).toBeCloseTo(1.0, 5);
-    expect(cadence.status).toBe("ok");
-  });
 
   function emptyTurn(id: string, ts: number, client: string): Record<string, unknown> {
     return {
@@ -2407,22 +2383,25 @@ describe("runDoctorCiteCoverage", () => {
     };
   }
 
-  function mkKnowledgeFetchEvent(opts: {
+  // KT-DEC-0030: the [applied] verification signal is now knowledge_body_read
+  // (native Read of the store body), not the retired knowledge_sections_fetched.
+  // recalled_unverified correlation is session_id + ±60s based (not id-matched),
+  // so one body_read per session in-window suffices to mark a cite verified.
+  function mkKnowledgeBodyReadEvent(opts: {
     sessionId: string;
     ids: string[];
     ts: number;
   }): object {
     return {
       kind: "fabric-event",
-      id: `event:fetch:${randomUUID()}`,
+      id: `event:bodyread:${randomUUID()}`,
       ts: opts.ts,
       schema_version: 1,
       session_id: opts.sessionId,
-      event_type: "knowledge_sections_fetched",
-      selection_token: `tok:${randomUUID()}`,
-      requested_sections: opts.ids,
-      final_stable_ids: opts.ids,
-      ai_selected_stable_ids: opts.ids,
+      event_type: "knowledge_body_read",
+      stable_id: opts.ids[0] ?? "KT-DEC-0000",
+      store: "team",
+      path: `~/.fabric/stores/team/kb/knowledge/decisions/${opts.ids[0] ?? "KT-DEC-0000"}--x.md`,
     };
   }
 
@@ -2624,9 +2603,9 @@ describe("runDoctorCiteCoverage", () => {
     expect(report.metrics.expected_but_missed).toBe(0);
   });
 
-  // 7. Recalled tag + matching knowledge_sections_fetched in same session
-  //    within ±60s → recalled_unverified does NOT increment.
-  it("recalled tag verified by a same-session fetch within +/-60s does not increment recalled_unverified", async () => {
+  // 7. Recalled tag + matching knowledge_body_read in same session
+  //    within ±60s → recalled_unverified does NOT increment (KT-DEC-0030).
+  it("recalled tag verified by a same-session body_read within +/-60s does not increment recalled_unverified", async () => {
     const target = createInitializedProject("cite-coverage-recall-verified");
     writeFile(".fabric/events.jsonl", "", target);
 
@@ -2642,8 +2621,8 @@ describe("runDoctorCiteCoverage", () => {
         client: "cc",
         ts: marker.marker_ts + 1_000,
       }),
-      // Fetch 30s after the turn — well inside the 60s window.
-      mkKnowledgeFetchEvent({
+      // Body read 30s after the turn — well inside the 60s window.
+      mkKnowledgeBodyReadEvent({
         sessionId: "sess-R",
         ids: ["KT-DEC-0099"],
         ts: marker.marker_ts + 31_000,
@@ -5218,7 +5197,7 @@ describe("runDoctorCiteCoverage recall-based口径 (v2.1 ⑤)", () => {
 // memory/project_l0_l1_l2_redesign_v21.md.
 // ---------------------------------------------------------------------------
 
-describe("runDoctorEmitCadenceCheck (rc.30 TASK-003 H2)", () => {
+describe("runDoctorBodyReadMisfireCheck (W3-3 / KT-DEC-0030)", () => {
   function seedEventsRaw(target: string, events: unknown[]): void {
     const fabricDir = join(target, ".fabric");
     if (!existsSync(fabricDir)) {
@@ -5230,76 +5209,69 @@ describe("runDoctorEmitCadenceCheck (rc.30 TASK-003 H2)", () => {
     writeFileSync(ledgerPath, existing + newlines, "utf8");
   }
 
-  function makeFetchEvent(i: number): Record<string, unknown> {
+  function makePlannedEvent(i: number): Record<string, unknown> {
     return {
       kind: "fabric-event",
-      id: `fetch-${String(i)}`,
+      id: `planned-${String(i)}`,
       ts: 1700000000000 + i,
       schema_version: 1,
-      event_type: "knowledge_sections_fetched",
-      selection_token: `tok-${String(i)}`,
-      requested_sections: [],
+      event_type: "knowledge_context_planned",
+      target_paths: [`src/file-${String(i)}.ts`],
+      required_stable_ids: [],
+      ai_selectable_stable_ids: [`KT-DEC-${String(i).padStart(4, "0")}`],
       final_stable_ids: [`KT-DEC-${String(i).padStart(4, "0")}`],
-      ai_selected_stable_ids: [],
     };
   }
 
-  function makeObserveEvent(i: number): Record<string, unknown> {
+  function makeBodyReadEvent(i: number): Record<string, unknown> {
     return {
       kind: "fabric-event",
-      id: `obs-${String(i)}`,
+      id: `bodyread-${String(i)}`,
       ts: 1700000001000 + i,
       schema_version: 1,
-      event_type: "assistant_turn_observed",
-      kb_line_raw: null,
-      cite_ids: [],
-      cite_tags: [],
-      cite_commitments: [],
-      turn_id: `t-${String(i)}`,
-      timestamp: new Date(1700000001000 + i).toISOString(),
+      event_type: "knowledge_body_read",
+      stable_id: `KT-DEC-${String(i).padStart(4, "0")}`,
+      store: "team",
+      path: `~/.fabric/stores/team/fabric-team-knowledge/knowledge/decisions/KT-DEC-${String(i).padStart(4, "0")}--slug.md`,
     };
   }
 
-  it("returns ok with ratio 1 when no knowledge_sections_fetched events exist (vacuous pass)", async () => {
-    const target = mkdtempSync(join(tmpdir(), "cadence-empty-"));
+  it("returns ok (not applicable) when recall volume is below the floor", async () => {
+    const target = mkdtempSync(join(tmpdir(), "bodyread-quiet-"));
     tempRoots.push(target);
-    seedEventsRaw(target, [makeObserveEvent(0)]);
-    const report = await runDoctorEmitCadenceCheck(target);
-    expect(report.fetched).toBe(0);
-    expect(report.ratio).toBe(1);
+    seedEventsRaw(target, Array.from({ length: 3 }, (_unused, i) => makePlannedEvent(i)));
+    const report = await runDoctorBodyReadMisfireCheck(target);
+    expect(report.recalls).toBe(3);
+    expect(report.body_reads).toBe(0);
     expect(report.status).toBe("ok");
-    expect(report.message).toContain("not applicable");
+    expect(report.message).toContain("not enough activity");
   });
 
-  it("returns warn when assistant_turn_observed/knowledge_sections_fetched < 0.8", async () => {
-    const target = mkdtempSync(join(tmpdir(), "cadence-warn-"));
+  it("returns warn when recalls are sustained but zero body_read (unwired marker)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "bodyread-misfire-"));
     tempRoots.push(target);
-    const events = [
-      ...Array.from({ length: 10 }, (_unused, i) => makeFetchEvent(i)),
-      ...Array.from({ length: 5 }, (_unused, i) => makeObserveEvent(i)),
-    ];
-    seedEventsRaw(target, events);
-    const report = await runDoctorEmitCadenceCheck(target);
-    expect(report.fetched).toBe(10);
-    expect(report.observed).toBe(5);
-    expect(report.ratio).toBe(0.5);
+    seedEventsRaw(target, Array.from({ length: 12 }, (_unused, i) => makePlannedEvent(i)));
+    const report = await runDoctorBodyReadMisfireCheck(target);
+    expect(report.recalls).toBe(12);
+    expect(report.body_reads).toBe(0);
     expect(report.status).toBe("warn");
-    expect(report.message).toContain("Stop hook may not be wired");
+    expect(report.message).toContain("may be unwired");
+    expect(report.message).toContain("Read");
   });
 
-  it("returns ok when ratio ≥ 0.8 (healthy emit cadence)", async () => {
-    const target = mkdtempSync(join(tmpdir(), "cadence-ok-"));
+  it("returns ok when at least one body_read fired amid sustained recalls (sparse-by-design)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "bodyread-ok-"));
     tempRoots.push(target);
     const events = [
-      ...Array.from({ length: 10 }, (_unused, i) => makeFetchEvent(i)),
-      ...Array.from({ length: 9 }, (_unused, i) => makeObserveEvent(i)),
+      ...Array.from({ length: 12 }, (_unused, i) => makePlannedEvent(i)),
+      makeBodyReadEvent(0),
     ];
     seedEventsRaw(target, events);
-    const report = await runDoctorEmitCadenceCheck(target);
-    expect(report.fetched).toBe(10);
-    expect(report.observed).toBe(9);
-    expect(report.ratio).toBe(0.9);
+    const report = await runDoctorBodyReadMisfireCheck(target);
+    expect(report.recalls).toBe(12);
+    expect(report.body_reads).toBe(1);
     expect(report.status).toBe("ok");
+    expect(report.message).toContain("healthy");
   });
 });
 

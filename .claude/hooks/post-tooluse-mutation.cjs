@@ -3,12 +3,16 @@
  * lifecycle-refactor W2-T3 — PostToolUse mutation marker hook (previously
  * dormant). Closes the mutation env opened by the PreToolUse narrow hint.
  *
- * PostToolUse fires AFTER an Edit/Write/MultiEdit tool call completes. This
- * hook appends one `file_mutated` event per edited path to
- * `.fabric/events.jsonl`, carrying the `tool_call_id` so doctor can pair the
- * Pre (intent) and Post (mutation) halves of a single tool call — the per-call
- * key also guards against parallel-fire races (two concurrent edits never
- * collapse to one ledger key).
+ * PostToolUse fires AFTER a tool call completes. This hook serves two markers,
+ * both appended to `.fabric/events.jsonl` and both observation-only:
+ *   - Edit/Write/MultiEdit → one `file_mutated` event per edited path, carrying
+ *     the `tool_call_id` so doctor can pair the Pre (intent) and Post (mutation)
+ *     halves of a single call (the per-call key also guards parallel-fire races).
+ *   - Read → one `knowledge_body_read` event per Fabric knowledge file opened
+ *     (KT-DEC-0030). After retrieval collapsed to one lean tool (KT-DEC-0026),
+ *     fab_recall returns descriptions + paths only; the agent reads a body via a
+ *     NATIVE Read, and this marker is the observable trace doctor uses for the
+ *     planned → body_read → cite[applied] funnel.
  *
  * Design (lifecycle-concept-final.md §1 FROZEN invariants + §5 row7):
  *   - LOW compute: extract paths + tool_call_id, append; the hook never reads
@@ -48,6 +52,24 @@ const EVENTS_LEDGER_FILE = "events.jsonl";
 // names across clients; we only react to the file-edit tools (matches the
 // PreToolUse narrow hint's EDIT_TOOL_NAMES so Pre/Post pair on the same set).
 const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
+
+// KT-DEC-0030: tool names that read a file body. After retrieval collapsed to
+// one lean tool (KT-DEC-0026), the agent consumes a knowledge body via a NATIVE
+// Read of the store file — so a Read landing on a `<store>/knowledge/<type>/
+// <ID>--*.md` path is the observable "body opened" signal. Only `Read` is in
+// scope (Edit/Write already covered by the mutation marker above).
+const READ_TOOL_NAMES = new Set(["Read"]);
+
+// Matches a Fabric knowledge file path and captures the stable_id from the
+// basename. The id grammar mirrors KT-DEC-0004 (`K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN`).
+// The path MUST sit under a `/knowledge/<type>/` segment so arbitrary Reads that
+// merely happen to embed an id-shaped token never false-fire.
+const KNOWLEDGE_BODY_PATH_RE =
+  /[\\/]knowledge[\\/][^\\/]+[\\/](K[PT]-(?:DEC|MOD|GLD|PIT|PRO)-\d{3,})--[^\\/]*\.md$/;
+
+// Captures the store alias from a multistore path (`.../stores/<alias>/...`).
+// Absent for legacy dual-root layouts → store stays undefined (still a valid event).
+const STORE_ALIAS_RE = /[\\/]stores[\\/]([^\\/]+)[\\/]/;
 
 /**
  * Read stdin (or a test-supplied raw string) as JSON. Returns null on any
@@ -223,6 +245,75 @@ function appendFileMutated(projectRoot, now, paths, toolCallId, toolName, sessio
   }
 }
 
+/**
+ * KT-DEC-0030: parse a Read path into a knowledge-body-read descriptor. Returns
+ * `{ stable_id, store, path }` when the path is a Fabric knowledge file, else
+ * null. `store` is omitted when no `stores/<alias>/` segment is present (legacy
+ * dual-root layout). `path` is forward-slash-normalized but NOT made
+ * project-relative — knowledge bodies live under ~/.fabric, outside the project
+ * tree, so the home-anchored path is the meaningful identifier.
+ */
+function extractKnowledgeBodyRead(filePath) {
+  if (typeof filePath !== "string" || filePath.length === 0) return null;
+  const idMatch = KNOWLEDGE_BODY_PATH_RE.exec(filePath);
+  if (idMatch === null) return null;
+  const storeMatch = STORE_ALIAS_RE.exec(filePath);
+  const slashed = filePath.split(/[\\/]/).join("/");
+  return {
+    stable_id: idMatch[1],
+    store: storeMatch !== null ? storeMatch[1] : null,
+    path: slashed,
+  };
+}
+
+/**
+ * Append one `knowledge_body_read` marker per Fabric knowledge file read.
+ * Best-effort, identical guarantees to appendFileMutated (silent on any error,
+ * skips when `.fabric/` absent). Non-knowledge reads produce zero events — the
+ * common case (the agent reads source files far more than knowledge bodies),
+ * so the hook stays a near-noop on the hot Read path.
+ */
+function appendKnowledgeBodyRead(projectRoot, now, paths, toolCallId, toolName, sessionId) {
+  try {
+    const fabricDir = join(projectRoot, FABRIC_DIR_REL);
+    if (!existsSync(fabricDir)) return;
+    const reads = Array.isArray(paths)
+      ? paths.map((p) => extractKnowledgeBodyRead(p)).filter((r) => r !== null)
+      : [];
+    if (reads.length === 0) return;
+    const tsMs = now instanceof Date ? now.getTime() : Number(now);
+    const callId =
+      typeof toolCallId === "string" && toolCallId.length > 0
+        ? toolCallId
+        : `fallback:${randomUUID()}`;
+    const validSessionId =
+      typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
+    const validToolName =
+      typeof toolName === "string" && toolName.length > 0 ? toolName : null;
+    const lines =
+      reads
+        .map((r) =>
+          JSON.stringify({
+            kind: "fabric-event",
+            id: `event:${randomUUID()}`,
+            ts: tsMs,
+            schema_version: 1,
+            ...(validSessionId ? { session_id: validSessionId } : {}),
+            event_type: "knowledge_body_read",
+            stable_id: r.stable_id,
+            ...(r.store ? { store: r.store } : {}),
+            path: r.path,
+            tool_call_id: callId,
+            ...(validToolName ? { tool_name: validToolName } : {}),
+          }),
+        )
+        .join("\n") + "\n";
+    appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), lines);
+  } catch {
+    // Silent — marker failure must never block the tool pipeline.
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Main — invoked as a CLI (require.main === module) and in-process by tests.
 // Wraps the entire flow in try/catch: ANY error → silent exit 0.
@@ -237,7 +328,9 @@ function main(env) {
     if (payload === null || payload === undefined) return;
 
     const toolName = extractToolName(payload);
-    if (!toolName || !EDIT_TOOL_NAMES.has(toolName)) return;
+    const isEdit = toolName && EDIT_TOOL_NAMES.has(toolName);
+    const isRead = toolName && READ_TOOL_NAMES.has(toolName);
+    if (!isEdit && !isRead) return;
 
     const toolInput = extractToolInput(payload);
     const paths = extractPaths(toolInput);
@@ -249,7 +342,13 @@ function main(env) {
         ? payload.session_id
         : null;
 
-    appendFileMutated(cwd, now, paths, toolCallId, toolName, sessionId);
+    if (isEdit) {
+      appendFileMutated(cwd, now, paths, toolCallId, toolName, sessionId);
+    } else {
+      // KT-DEC-0030: observe native Reads of store knowledge bodies. Non-
+      // knowledge Reads filter out inside appendKnowledgeBodyRead (zero events).
+      appendKnowledgeBodyRead(cwd, now, paths, toolCallId, toolName, sessionId);
+    }
   } catch {
     // Silent — never block the tool pipeline on hook failure.
   }
@@ -264,10 +363,13 @@ module.exports = {
   extractToolCallId,
   normalizePath,
   appendFileMutated,
+  extractKnowledgeBodyRead,
+  appendKnowledgeBodyRead,
   CONSTANTS: {
     FABRIC_DIR_REL,
     EVENTS_LEDGER_FILE,
     EDIT_TOOL_NAMES,
+    READ_TOOL_NAMES,
   },
 };
 

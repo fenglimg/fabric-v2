@@ -51,6 +51,7 @@ describe("event_type census", () => {
         "install_diff_applied",
         "knowledge_archive_attempted",
         "knowledge_archived",
+        "knowledge_body_read",
         "knowledge_consumed",
         "knowledge_context_planned",
         "knowledge_deferred",

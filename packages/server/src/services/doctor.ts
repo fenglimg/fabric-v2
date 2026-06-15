@@ -84,7 +84,7 @@ import {
 } from "./event-ledger.js";
 import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./cite-rollup.js";
 import type { CiteRollupRow } from "./cite-rollup.js";
-import { flushMetrics, readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
+import { flushMetrics } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
 import {
@@ -2219,6 +2219,10 @@ async function buildLastActiveIndex(
       case "knowledge_archived":
       case "knowledge_archive_attempted":
       case "knowledge_deferred":
+      // KT-DEC-0030: knowledge_body_read is the native-Read consumption signal
+      // that replaced knowledge_consumed/knowledge_sections_fetched — it carries a
+      // single stable_id and is the forward recency source for orphan/stale lints.
+      case "knowledge_body_read":
       case "knowledge_rejected": {
         if (typeof event.stable_id === "string" && event.stable_id.length > 0) {
           ids.push(event.stable_id);
@@ -3236,91 +3240,78 @@ function yamlQuoteIfNeeded(value: string): string {
 export { getEventLedgerPath };
 
 // ---------------------------------------------------------------------------
-// v2.0.0-rc.30 TASK-003 (H2 deferred-from-rc.29): Emit-cadence sub-check.
+// W3-3 (KT-DEC-0030): body_read misfire sub-check.
 //
-// rc.29 BUG-H2 audit reported `qualifying_cites=0` on 16K-turn workspace
-// while cite-coverage `runDoctorCiteCoverage` reads `assistant_turn_observed`
-// from events.jsonl. Audit hypothesised cite-line-parser type-enum split as
-// root cause; VERIFICATION.md refuted that (parser shape already events-
-// based) and noted the symptom might still be real via a different code
-// path — specifically the assistant_turn_observed emit cadence (Stop hook
-// not firing on every turn).
+// After retrieval collapsed to one lean tool (KT-DEC-0026), the agent consumes a
+// knowledge body via a NATIVE Read of the store file, observed by the PostToolUse
+// hook as `knowledge_body_read`. The wire has a structural failure mode: if the
+// PostToolUse matcher is missing `Read` (config drift) the marker NEVER fires and
+// the planned → body_read → cite[applied] funnel goes dark silently.
 //
-// This standalone check pairs `knowledge_sections_fetched` (every time a
-// client pulled rule bodies via fab_get_knowledge_sections) with
-// `assistant_turn_observed` (Stop hook emit per assistant turn). Each fetch
-// implies at least one downstream assistant turn — if fetched >> observed,
-// the hook is silently failing somewhere. Standalone (not wired into the
-// runDoctorReport pipeline yet) so v2.1 design doc can finalise integration
-// shape (CLI flag? JSON envelope? human render?); the function + tests pin
-// the contract and the threshold.
+// doctor can't witness a Read directly, so it proxies via `knowledge_context_planned`
+// — every fab_recall surfaces native read-paths to the agent, so sustained recall
+// activity with ZERO body_read events across the whole ledger is the misfire
+// signature. The check is deliberately BINARY (silence amid significant activity),
+// not a ratio: body_read is sparse BY DESIGN (the lean default reads bodies on
+// demand, KT-GLD-0005), so a low-but-nonzero rate is healthy, not a fault. Only
+// total silence past a recall-volume floor warns. Standalone (not wired into the
+// runDoctorReport pipeline yet); the function + tests pin the contract.
+//
+// hook = nudge, never a gate (KT-DEC-0007): the result is a warn-level hint only.
 // ---------------------------------------------------------------------------
 
-export type EmitCadenceReport = {
-  fetched: number;
-  observed: number;
-  ratio: number; // observed / fetched; 1.0 when fetched=0 (vacuously OK)
+export type BodyReadMisfireReport = {
+  recalls: number; // knowledge_context_planned count (read-paths surfaced)
+  body_reads: number; // knowledge_body_read count (native Reads observed)
   status: "ok" | "warn";
   message: string;
 };
 
-const EMIT_CADENCE_WARN_THRESHOLD = 0.8;
+// Recall-volume floor below which "zero body_read" is statistically
+// uninformative (new/quiet workspace) — never warn there.
+const BODY_READ_MISFIRE_MIN_RECALLS = 10;
 
-export async function runDoctorEmitCadenceCheck(projectRoot: string): Promise<EmitCadenceReport> {
+export async function runDoctorBodyReadMisfireCheck(
+  projectRoot: string,
+): Promise<BodyReadMisfireReport> {
   const { events } = await readEventLedger(projectRoot);
-  let fetched = 0;
-  let observed = 0;
+  let recalls = 0;
+  let bodyReads = 0;
   for (const event of events) {
-    if (event.event_type === "knowledge_sections_fetched") {
-      fetched += 1;
-    } else if (event.event_type === "assistant_turn_observed") {
-      observed += 1;
+    if (event.event_type === "knowledge_context_planned") {
+      recalls += 1;
+    } else if (event.event_type === "knowledge_body_read") {
+      bodyReads += 1;
     }
   }
 
-  // rc.39 emit-fold + rc.37 Wave B: both signals are counter-managed in part.
-  // `knowledge_sections_fetched` moved to metrics.jsonl wholesale (rc.37); the
-  // empty-shell half of `assistant_turn_observed` folds into metrics.jsonl
-  // counters (rc.39). Without adding these back the ratio would read artificially
-  // low once the fold/clean-slate took effect. All-time window (since=0) — the
-  // cadence check has no `--since` bound.
-  try {
-    const metricsRows = await readMetrics(projectRoot);
-    observed += sumFoldedTurnCounters(metricsRows, { since: 0, client: "all" });
-    for (const row of metricsRows) {
-      const v = row.counters[METRIC_COUNTER_NAMES.knowledge_sections_fetched];
-      if (typeof v === "number" && Number.isFinite(v)) fetched += v;
-    }
-  } catch {
-    // best-effort — degrade to events-only counts on read failure.
-  }
-  if (fetched === 0) {
+  if (recalls < BODY_READ_MISFIRE_MIN_RECALLS) {
     return {
-      fetched: 0,
-      observed,
-      ratio: 1,
+      recalls,
+      body_reads: bodyReads,
       status: "ok",
-      message: "No knowledge_sections_fetched events yet — cadence not applicable.",
+      message:
+        `Only ${String(recalls)} recall(s) on record (< ${String(BODY_READ_MISFIRE_MIN_RECALLS)}) — ` +
+        `not enough activity to assess knowledge_body_read wiring.`,
     };
   }
-  const ratio = observed / fetched;
-  if (ratio < EMIT_CADENCE_WARN_THRESHOLD) {
+
+  if (bodyReads === 0) {
     return {
-      fetched,
-      observed,
-      ratio,
+      recalls,
+      body_reads: 0,
       status: "warn",
       message:
-        `assistant_turn_observed/knowledge_sections_fetched ratio ${ratio.toFixed(2)} ` +
-        `< ${EMIT_CADENCE_WARN_THRESHOLD} — Stop hook may not be wired on every client. ` +
-        `Check .claude/settings.json + .codex/skills/* hooks.Stop entries.`,
+        `${String(recalls)} recall(s) surfaced read-paths but ZERO knowledge_body_read events — ` +
+        `the PostToolUse Read marker may be unwired. Check the PostToolUse matcher includes ` +
+        `\`Read\` in .claude/settings.json (and the codex equivalent), then rerun \`fabric install\`.`,
     };
   }
+
   return {
-    fetched,
-    observed,
-    ratio,
+    recalls,
+    body_reads: bodyReads,
     status: "ok",
-    message: `assistant_turn_observed cadence healthy (ratio ${ratio.toFixed(2)}).`,
+    message: `knowledge_body_read wiring healthy (${String(bodyReads)} body read(s) across ${String(recalls)} recall(s)).`,
   };
 }
