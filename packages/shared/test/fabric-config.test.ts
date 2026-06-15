@@ -86,7 +86,7 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
     const previousVersionFixture = {
       clientPaths: {
         claudeCodeCLI: "/usr/local/bin/claude",
-        cursor: "/Applications/Cursor.app/Contents/MacOS/Cursor",
+        codexCLI: "/usr/local/bin/codex",
       },
       scanIgnores: ["node_modules", "dist", ".git"],
       audit_mode: "strict" as const,

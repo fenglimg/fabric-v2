@@ -35,7 +35,6 @@ import {
  *   - packages/cli/templates/hooks/fabric-hint.cjs                   (rc.5 TASK-010)
  *   - packages/cli/templates/hooks/configs/claude-code.json          (TASK-004)
  *   - packages/cli/templates/hooks/configs/codex-hooks.json          (TASK-004)
- *   - packages/cli/templates/hooks/configs/cursor-hooks.json         (rc.5 TASK-010)
  */
 
 // rc.14 TASK-002: diff-mode classification.
@@ -112,7 +111,6 @@ const HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL = "hooks/post-tooluse-mutation.cjs";
 const HOOK_LIB_TEMPLATE_DIR_REL = "hooks/lib";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
-const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
 
 /**
  * Project-root-relative destination paths for the three v2 Skill markdown
@@ -122,8 +120,7 @@ const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
  * absolute, OS-normalized targets.
  *
  * Client coverage: Skills are only meaningful for Claude Code and Codex CLI
- * (the two clients that surface a Skills directory); Cursor is intentionally
- * absent because it has no Skills concept.
+ * (the two clients that surface a Skills directory).
  */
 export const SKILL_DESTINATIONS = {
   fabricArchive: [
@@ -233,51 +230,45 @@ export const DEPRECATED_SKILL_DIRS = [
 
 
 /**
- * Project-root-relative destination paths for the three cross-client hook
+ * Project-root-relative destination paths for the two cross-client hook
  * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
- * `fabric install` (install) and `fabric uninstall` (removal). All three clients —
- * Claude Code, Codex CLI, and Cursor — receive every script.
+ * `fabric install` (install) and `fabric uninstall` (removal). Both clients —
+ * Claude Code and Codex CLI — receive every script.
  */
 export const HOOK_SCRIPT_DESTINATIONS = {
   fabricHint: [
     ".claude/hooks/fabric-hint.cjs",
     ".codex/hooks/fabric-hint.cjs",
-    ".cursor/hooks/fabric-hint.cjs",
   ],
   knowledgeHintBroad: [
     ".claude/hooks/knowledge-hint-broad.cjs",
     ".codex/hooks/knowledge-hint-broad.cjs",
-    ".cursor/hooks/knowledge-hint-broad.cjs",
   ],
   knowledgeHintNarrow: [
     ".claude/hooks/knowledge-hint-narrow.cjs",
     ".codex/hooks/knowledge-hint-narrow.cjs",
-    ".cursor/hooks/knowledge-hint-narrow.cjs",
   ],
   // v2.0.0-rc.34 TASK-06: Claude Code — UserPromptSubmit cite-policy long-
   // session evict sidecar.
-  // v2.0.0-rc.37 NEW-21: extended to Codex / Cursor SessionStart slots.
-  // Those clients don't have an equivalent per-prompt event, so cite-policy-
+  // v2.0.0-rc.37 NEW-21: extended to Codex SessionStart slot.
+  // Codex doesn't have an equivalent per-prompt event, so cite-policy-
   // evict.cjs runs in "SessionStart mode" (one-shot stderr emit per session
   // boot, no turn-counter). Cadence is lower than Claude Code's per-prompt
-  // window but strictly better than 0 (rc.32 baseline measured Codex/Cursor
+  // window but strictly better than 0 (rc.32 baseline measured Codex
   // at 3.1% cite coverage when no cite-reminder surface existed).
   citePolicyEvict: [
     ".claude/hooks/cite-policy-evict.cjs",
     ".codex/hooks/cite-policy-evict.cjs",
-    ".cursor/hooks/cite-policy-evict.cjs",
   ],
-  // lifecycle-refactor W2-T2: SessionEnd marker hook — all three clients.
+  // lifecycle-refactor W2-T2: SessionEnd marker hook — both clients.
   sessionEndMarker: [
     ".claude/hooks/session-end-marker.cjs",
     ".codex/hooks/session-end-marker.cjs",
-    ".cursor/hooks/session-end-marker.cjs",
   ],
-  // lifecycle-refactor W2-T3: PostToolUse mutation marker hook — all three.
+  // lifecycle-refactor W2-T3: PostToolUse mutation marker hook — both.
   postTooluseMutation: [
     ".claude/hooks/post-tooluse-mutation.cjs",
     ".codex/hooks/post-tooluse-mutation.cjs",
-    ".cursor/hooks/post-tooluse-mutation.cjs",
   ],
 } as const;
 
@@ -300,7 +291,6 @@ export const HOOK_SCRIPT_DESTINATIONS = {
 export const HOOK_LIB_DESTINATIONS = [
   ".claude/hooks/lib",
   ".codex/hooks/lib",
-  ".cursor/hooks/lib",
 ] as const;
 
 /**
@@ -311,7 +301,6 @@ export const HOOK_LIB_DESTINATIONS = [
 export const HOOK_CONFIG_TARGETS = {
   claudeCode: ".claude/settings.json",
   codex: ".codex/hooks.json",
-  cursor: ".cursor/hooks.json",
 } as const;
 
 /**
@@ -321,8 +310,7 @@ export const HOOK_CONFIG_TARGETS = {
  * `fabric uninstall` (which must prune fabric entries from those same arrays).
  *
  * Note the client-specific shape: Claude Code groups under `hooks.*`
- * (PascalCase event names), Codex under `events.*` (PascalCase), and Cursor
- * under `hooks.*` (camelCase event names per https://cursor.com/cn/docs/hooks).
+ * (PascalCase event names) and Codex under `events.*` (PascalCase).
  * Preserve the upstream schemas exactly — these dotted paths MUST byte-match
  * each template's top-level keys, otherwise `arrayAppendWithDedupe` in
  * `deepMerge` silently falls back to array-REPLACE on re-install.
@@ -344,7 +332,6 @@ export const HOOK_CONFIG_ARRAY_PATHS = {
     "hooks.SessionEnd",
   ],
   codex: ["events.Stop", "events.SessionStart", "events.PreToolUse", "events.PostToolUse", "events.SessionEnd"],
-  cursor: ["hooks.stop", "hooks.sessionStart", "hooks.preToolUse", "hooks.postToolUse", "hooks.sessionEnd"],
 } as const;
 
 /**
@@ -372,14 +359,6 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
     citePolicyEvict: "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\"",
     sessionEndMarker: "\"$(git rev-parse --show-toplevel)/.codex/hooks/session-end-marker.cjs\"",
     postTooluseMutation: "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\"",
-  },
-  cursor: {
-    fabricHint: ".cursor/hooks/fabric-hint.cjs",
-    knowledgeHintBroad: ".cursor/hooks/knowledge-hint-broad.cjs",
-    knowledgeHintNarrow: ".cursor/hooks/knowledge-hint-narrow.cjs",
-    citePolicyEvict: ".cursor/hooks/cite-policy-evict.cjs",
-    sessionEndMarker: ".cursor/hooks/session-end-marker.cjs",
-    postTooluseMutation: ".cursor/hooks/post-tooluse-mutation.cjs",
   },
 } as const;
 
@@ -649,8 +628,8 @@ export async function cleanupDeprecatedSkills(
  * <slug>/ref/` and `.codex/skills/<slug>/ref/`. Idempotent — unchanged files
  * skip the write. Missing template `ref/` directory degrades silently with a
  * single `skipped` row noting `no-ref-files` so retro-fitting older skills
- * doesn't require schema migration. Cursor is intentionally absent: it has
- * no Skills concept, matching SKILL_DESTINATIONS coverage.
+ * doesn't require schema migration. Only Claude Code and Codex CLI surface a
+ * Skills directory, matching SKILL_DESTINATIONS coverage.
  */
 async function installSkillRefFiles(
   projectRoot: string,
@@ -770,8 +749,8 @@ export async function installSharedSkillLib(
 }
 
 /**
- * Copy templates/hooks/fabric-hint.cjs into all three supported clients'
- * hooks directories: .claude/hooks/, .codex/hooks/, and .cursor/hooks/.
+ * Copy templates/hooks/fabric-hint.cjs into both supported clients'
+ * hooks directories: .claude/hooks/ and .codex/hooks/.
  * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
  * platform ignores the bit.
  *
@@ -801,8 +780,8 @@ export async function installArchiveHintHook(
 }
 
 /**
- * Copy templates/hooks/knowledge-hint-broad.cjs into all three supported
- * clients' hooks directories: .claude/hooks/, .codex/hooks/, .cursor/hooks/.
+ * Copy templates/hooks/knowledge-hint-broad.cjs into both supported
+ * clients' hooks directories: .claude/hooks/ and .codex/hooks/.
  * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
  * platform ignores the bit.
  *
@@ -833,8 +812,8 @@ export async function installKnowledgeHintBroadHook(
 }
 
 /**
- * Copy templates/hooks/knowledge-hint-narrow.cjs into all three supported
- * clients' hooks directories: .claude/hooks/, .codex/hooks/, .cursor/hooks/.
+ * Copy templates/hooks/knowledge-hint-narrow.cjs into both supported
+ * clients' hooks directories: .claude/hooks/ and .codex/hooks/.
  * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
  * platform ignores the bit.
  *
@@ -871,7 +850,7 @@ export async function installKnowledgeHintNarrowHook(
  * v2.0.0-rc.34 TASK-06: copy templates/hooks/cite-policy-evict.cjs into the
  * Claude Code hooks directory ONLY. The sidecar relies on Claude Code's
  * UserPromptSubmit event + hookSpecificOutput stdout JSON envelope, neither
- * of which Codex CLI or Cursor expose. Defaults to OFF
+ * of which Codex CLI exposes. Defaults to OFF
  * (`cite_evict_interval = 0`); opt-in via fabric-config.json.
  */
 export async function installCitePolicyEvictHook(
@@ -897,7 +876,7 @@ export async function installCitePolicyEvictHook(
 
 /**
  * lifecycle-refactor W2-T2: copy templates/hooks/session-end-marker.cjs into
- * all three clients' hooks directories (.claude/.codex/.cursor). chmod 0o755 on
+ * both clients' hooks directories (.claude/.codex). chmod 0o755 on
  * POSIX. Sibling installer to {@link installKnowledgeHintNarrowHook}; same copy
  * plumbing, differs only in which hook event the per-client config wires it to
  * (SessionEnd). The script is a pure marker — appends one `session_ended` event
@@ -926,7 +905,7 @@ export async function installSessionEndMarkerHook(
 
 /**
  * lifecycle-refactor W2-T3: copy templates/hooks/post-tooluse-mutation.cjs into
- * all three clients' hooks directories (.claude/.codex/.cursor). chmod 0o755 on
+ * both clients' hooks directories (.claude/.codex). chmod 0o755 on
  * POSIX. Sibling installer to {@link installKnowledgeHintNarrowHook}; same copy
  * plumbing, registered against PostToolUse with Edit|Write|MultiEdit matchers.
  * The script appends one `file_mutated` event per edited path (per-call key
@@ -955,8 +934,8 @@ export async function installPostTooluseMutationHook(
 
 /**
  * Copy every `.cjs` file from templates/hooks/lib/ into each client's
- * `<client>/hooks/lib/` directory (.claude/hooks/lib/, .codex/hooks/lib/,
- * .cursor/hooks/lib/). Idempotent per file via {@link copyTextIdempotent}.
+ * `<client>/hooks/lib/` directory (.claude/hooks/lib/, .codex/hooks/lib/).
+ * Idempotent per file via {@link copyTextIdempotent}.
  *
  * The directory listing is read at install time (not hard-coded) so
  * adding a new `templates/hooks/lib/foo.cjs` in a future RC ships
@@ -982,7 +961,7 @@ export async function installPostTooluseMutationHook(
  * or `cite-line-parser` finds the install-side wiring.
  *
  * Returns one InstallStepResult per (client × lib file) — N libs shipped
- * across 3 clients = 3N rows. Empty lib directory is allowed (returns
+ * across 2 clients = 2N rows. Empty lib directory is allowed (returns
  * a single skipped row noting the absence) so the function is safe to
  * call before any libs have been authored.
  */
@@ -1086,65 +1065,34 @@ export async function mergeCodexHookConfig(
   );
 }
 
-/**
- * Deep-merge templates/hooks/configs/cursor-hooks.json into the user's
- * `.cursor/hooks.json`. `hooks.stop`, `hooks.sessionStart`, and
- * `hooks.preToolUse` arrays are array-append-with-dedupe. Top-level envelope
- * is `{version: 1, hooks: {…}}` per https://cursor.com/cn/docs/hooks.
- *
- * Added in rc.5 TASK-010 to bring Cursor to parity with Claude Code and
- * Codex CLI for the cross-client hook surface. rc.6 TASK-019 filled the
- * SessionStart slot; rc.6 TASK-020 fills the PreToolUse slot. rc.14 TASK-001
- * corrected the top-level envelope shape (was wrong `events.*` PascalCase).
- */
-export async function mergeCursorHookConfig(
-  projectRoot: string,
-  _options: InstallOptions = {},
-): Promise<InstallStepResult> {
-  const fragment = await readJsonTemplate(CURSOR_HOOK_CONFIG_TEMPLATE_REL);
-  const targetPath = join(projectRoot, HOOK_CONFIG_TARGETS.cursor);
-  return mergeJsonIdempotent(
-    "cursor-hook-config",
-    targetPath,
-    fragment,
-    [...HOOK_CONFIG_ARRAY_PATHS.cursor],
-  );
-}
-
 // ===========================================================================
 // rc.19 TASK-003 — three-end bootstrap propagation
 // ===========================================================================
 //
 // The legacy single-writer `addFabricKnowledgeBaseSection` has been split into
-// three per-client thin-shell writers, each tailored to how that client
+// per-client thin-shell writers, each tailored to how that client
 // actually consumes the bootstrap:
 //
 //   - Claude Code: real `@`-import directives in CLAUDE.md (no managed block).
 //   - Codex CLI:   byte-copy managed block in root AGENTS.md.
-//   - Cursor:      byte-copy managed block in `.cursor/rules/fabric-bootstrap.mdc`
-//                  prefixed with YAML front-matter (Cursor directory-rule
-//                  contract: `alwaysApply: true`).
 //
-// All three writers consume the L1 bootstrap snapshot at `.fabric/AGENTS.md`
+// Both writers consume the L1 bootstrap snapshot at `.fabric/AGENTS.md`
 // (written by `writeFabricAgentsSnapshot` from write-bootstrap-snapshot.ts in
 // TASK-002) plus the optional `.fabric/project-rules.md` (user-authored, only-
 // if-exists). The shared helper {@link buildManagedBlockBody} concatenates
-// these two sources so the Codex and Cursor managed blocks contain byte-
-// identical content.
+// these two sources so the Codex managed block contains the expected content.
 //
 // Clean-slate (no migration shim): `fabric:bootstrap` is the only managed
-// marker across CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc
-// (no legacy `fabric:knowledge-base` migration, no `.cursor/rules` flat-file
-// migration — 0 users). Cursor's convention is the directory-rule
-// `.cursor/rules/*.mdc`.
+// marker across CLAUDE.md / AGENTS.md (no legacy `fabric:knowledge-base`
+// migration — 0 users).
 //
 // Idempotency contract: each writer must produce a byte-identical destination
 // state on second invocation against an unchanged input (snapshot + optional
 // project-rules). The integration test matrix in TASK-008 asserts this across
-// all three targets.
+// both targets.
 
 /**
- * Build the byte content embedded inside the Codex / Cursor managed blocks.
+ * Build the byte content embedded inside the Codex managed block.
  *
  * Concatenates:
  *   1. `.fabric/AGENTS.md` (BOOTSTRAP_CANONICAL snapshot written by TASK-002)
@@ -1173,9 +1121,7 @@ export function buildManagedBlockBody(targetRoot: string): string {
 
 /**
  * Wrap a managed-block body in the BOOTSTRAP marker pair. Used by the Codex
- * and Cursor writers to ensure byte-identical marker formatting across the
- * two targets (only difference between them is the file path and the
- * Cursor-specific YAML front-matter prefix).
+ * writer to ensure consistent marker formatting around the managed block.
  */
 function wrapInBootstrapMarkers(body: string): string {
   return `${BOOTSTRAP_MARKER_BEGIN}\n${body}\n${BOOTSTRAP_MARKER_END}`;
@@ -1377,62 +1323,6 @@ export async function writeCodexBootstrapManagedBlock(
   }
 }
 
-const CURSOR_RULE_FRONT_MATTER =
-  "---\nalwaysApply: true\ndescription: Fabric Protocol bootstrap rules\n---\n\n";
-
-const CURSOR_BOOTSTRAP_MDC_REL = join(".cursor", "rules", "fabric-bootstrap.mdc");
-
-/**
- * Write the BOOTSTRAP managed block to `.cursor/rules/fabric-bootstrap.mdc`,
- * prefixed with the Cursor directory-rule YAML front-matter
- * (`alwaysApply: true`) so the rule is always active.
- *
- * Idempotency: front-matter + managed block produced via byte-identical
- * concatenation; re-runs against unchanged inputs produce identical output.
- */
-export async function writeCursorBootstrapManagedBlock(
-  targetRoot: string,
-  _options: InstallOptions = {},
-): Promise<InstallStepResult> {
-  const step = "bootstrap-cursor";
-  const target = join(targetRoot, CURSOR_BOOTSTRAP_MDC_REL);
-
-  const body = buildManagedBlockBody(targetRoot);
-  const managedBlock = wrapInBootstrapMarkers(body);
-  const expected = `${CURSOR_RULE_FRONT_MATTER}${managedBlock}\n`;
-
-  let existing = "";
-  if (existsSync(target)) {
-    try {
-      existing = await readFile(target, "utf8");
-    } catch (error: unknown) {
-      return {
-        step,
-        path: target,
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  if (existing === expected) {
-    return { step, path: target, status: "skipped", message: "up-to-date" };
-  }
-
-  try {
-    await mkdir(dirname(target), { recursive: true });
-    await atomicWriteText(target, expected);
-    return { step, path: target, status: "written" };
-  } catch (error: unknown) {
-    return {
-      step,
-      path: target,
-      status: "error",
-      message: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
 // -----------------------------------------------------------------------
 // internals
 // -----------------------------------------------------------------------
@@ -1502,7 +1392,7 @@ export const FABRIC_HOOK_SCRIPT_BASENAMES: ReadonlySet<string> = new Set([
  * user-authored hook unrelated to fabric).
  */
 function commandBasename(command: string): string | null {
-  // Trim trailing quotes / whitespace that Codex/Cursor templates wrap.
+  // Trim trailing quotes / whitespace that Codex templates wrap.
   const trimmed = command.trim().replace(/^"+|"+$/g, "");
   const match = /([^/\\]+\.cjs)$/u.exec(trimmed);
   return match === null ? null : match[1];
@@ -1561,7 +1451,7 @@ function stripStaleHookEntries(
       }
       const entry = item as Record<string, unknown>;
       const hooks = entry.hooks;
-      // Claude/Codex shape: hooks[].command. Cursor shape: same key.
+      // Claude/Codex shape: hooks[].command.
       let isFabricOwned = false;
       if (Array.isArray(hooks)) {
         for (const h of hooks) {
@@ -1577,7 +1467,7 @@ function stripStaleHookEntries(
           }
         }
       }
-      // Also tolerate the cursor flat shape `{ command: "..." }` without a
+      // Also tolerate the flat shape `{ command: "..." }` without a
       // nested hooks[] wrapper — defensive against schema drift.
       if (!isFabricOwned && typeof entry.command === "string") {
         const base = commandBasename(entry.command);

@@ -68,7 +68,7 @@
 | Pure shared contract | Zod schema、i18n key、atomic write、resolver、payload guard | `packages/shared/test/` 或 `packages/shared/src/**/*.test.ts` | `pnpm --filter @fenglimg/fabric-shared test` |
 | Server service/tool | MCP tool、store routing、doctor service、recall/review/extract service | `packages/server/src/**/*.test.ts` 或 `packages/server/__tests__/` | `pnpm --filter @fenglimg/fabric-server test` |
 | CLI command/surface | citty command、help 文案、install/store/sync/doctor 命令行为 | `packages/cli/__tests__/`，必要时 snapshot | `NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test` |
-| Cross-client hooks | Claude/Codex/Cursor hook config、hook `.cjs`、bootstrap managed block | hook unit tests + install parity tests | `pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/knowledge-hint-broad.test.ts __tests__/knowledge-hint-narrow.test.ts __tests__/hooks-install-validate.test.ts` |
+| Cross-client hooks | Claude/Codex hook config、hook `.cjs`、bootstrap managed block | hook unit tests + install parity tests | `pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/knowledge-hint-broad.test.ts __tests__/knowledge-hint-narrow.test.ts __tests__/hooks-install-validate.test.ts` |
 | Store-only workflow | mounted store create/bind/write/review/recall round trip | built-artifact E2E | `pnpm -r build && pnpm test:store-only-e2e` |
 | Agent-in-the-loop behavior | skill/hook/MCP 是否改变 agent 行为、cite/self-archive 遵循、fallback/skip/retry | trace dataset + deterministic scorer + LLM-judge | 先补可观测事件；再按 `e2e-methodology-FINAL.md` 的 J-EXP-META 执行 |
 | Security/control | prompt injection、KB 投毒、cross-store 泄漏、MCP 越权、unbounded consumption | red-team matrix + privacy/budget tests | package test + targeted red-team/eval harness |

@@ -47,14 +47,14 @@ export const BOOTSTRAP_REGEX =
  * Canonical bootstrap body (zh-CN) — byte-locked per rc.19 locked clarification 3.
  * Rendered into the managed block between {@link BOOTSTRAP_MARKER_BEGIN} and
  * {@link BOOTSTRAP_MARKER_END} by `fabric install` (via
- * {@link resolveBootstrapCanonical}) on a zh-CN machine, across all three
- * supported clients (Claude Code, Cursor, Codex CLI).
+ * {@link resolveBootstrapCanonical}) on a zh-CN machine, across both
+ * supported clients (Claude Code, Codex CLI).
  *
  * Length guarantee: ≥ 800 bytes (rc.24: grew from ≥400 with cite-contract syntax).
  */
 export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 
-本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 \`fabric install\` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 \`fabric install\`。
+本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 \`fabric install\` 同步到两端 managed block,**不要手动编辑两端的 block**,只改这里 + 重跑 \`fabric install\`。
 
 ## For Developers
 
@@ -64,7 +64,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 
 ## 5 分钟上手 (Dev Quickstart)
 
-**Fabric 是什么**:跨客户端(Claude Code / Codex CLI / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
+**Fabric 是什么**:跨客户端(Claude Code / Codex CLI)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
 
 **你要做的 (DO)** vs **engine 自动的 (DON'T 手动)**:
 
@@ -150,7 +150,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
  */
 export const BOOTSTRAP_CANONICAL_EN = `# Fabric Bootstrap
 
-This project uses Fabric to manage cross-client AI knowledge and behavior rules. This file is synced into the managed block on all three clients by \`fabric install\` — **do not hand-edit the block on any client**; edit here + re-run \`fabric install\`.
+This project uses Fabric to manage cross-client AI knowledge and behavior rules. This file is synced into the managed block on both clients by \`fabric install\` — **do not hand-edit the block on any client**; edit here + re-run \`fabric install\`.
 
 ## For Developers
 
@@ -160,7 +160,7 @@ As a dev you only need to: run \`fabric install\` once per repo, use \`fabric st
 
 ## Dev Quickstart
 
-**What Fabric is**: a cross-client (Claude Code / Codex CLI / Cursor) AI knowledge layer. Store the team/project **decisions / pitfalls / guidelines / models / processes** as markdown; hooks surface them to the AI automatically so it doesn't re-learn every time.
+**What Fabric is**: a cross-client (Claude Code / Codex CLI) AI knowledge layer. Store the team/project **decisions / pitfalls / guidelines / models / processes** as markdown; hooks surface them to the AI automatically so it doesn't re-learn every time.
 
 **What you DO** vs **what the engine does (DON'T hand-edit)**:
 

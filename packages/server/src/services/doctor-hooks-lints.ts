@@ -16,7 +16,7 @@ type HooksWiredInspection = {
 
 type HookContentDriftPair = {
   basename: string;
-  clients: Array<"claude" | "codex" | "cursor">;
+  clients: Array<"claude" | "codex">;
   hashes: Array<{ client: string; sha: string }>;
 };
 type HooksContentDriftInspection = {
@@ -26,7 +26,7 @@ type HooksContentDriftInspection = {
 
 type HookRuntimeIssue = {
   path: string;
-  client: "claude" | "codex" | "cursor";
+  client: "claude" | "codex";
   kind: "missing_shebang" | "parse_error" | "read_error";
   detail: string;
 };
@@ -39,10 +39,9 @@ type HookCacheWritabilityInspection =
   | { writable: true; path: string }
   | { writable: false; path: string; error: string };
 
-const HOOKS_RUNTIME_CLIENT_DIRS: Array<{ client: "claude" | "codex" | "cursor"; dir: string }> = [
+const HOOKS_RUNTIME_CLIENT_DIRS: Array<{ client: "claude" | "codex"; dir: string }> = [
   { client: "claude", dir: ".claude/hooks" },
   { client: "codex", dir: ".codex/hooks" },
-  { client: "cursor", dir: ".cursor/hooks" },
 ];
 
 function okCheck(name: string, message: string): DoctorCheck {
@@ -201,7 +200,7 @@ export async function inspectHookCacheWritability(
 export async function inspectHooksContentDrift(projectRoot: string): Promise<HooksContentDriftInspection> {
   const hookFilesByBasename = new Map<
     string,
-    Array<{ client: "claude" | "codex" | "cursor"; abs: string }>
+    Array<{ client: "claude" | "codex"; abs: string }>
   >();
   for (const { client, dir } of HOOKS_RUNTIME_CLIENT_DIRS) {
     const absDir = join(projectRoot, dir);

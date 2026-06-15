@@ -2,7 +2,7 @@
 // with a stale comment, so `fabric install` always reported Codex skills as
 // uninstalled — even right after installing them. It must probe the real
 // `.codex/skills/` directory (mirroring the `.codex/hooks.json` hook probe).
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,36 +31,6 @@ describe("Codex installedCapabilities.skill probe (F6)", () => {
     const root = tmp();
     mkdirSync(join(root, ".codex", "skills", "fabric-archive"), { recursive: true });
     expect(codexEntry(root)?.installedCapabilities?.skill).toBe(true);
-  });
-});
-
-// C2: Cursor genuinely receives Fabric hooks (hooks-orchestrator writes
-// `.cursor/hooks/` + `.cursor/hooks.json`) AND has skills available — Cursor
-// resolves Skills from the `.claude` / `.codex` dirs (cross-client fallback)
-// that install populates, so no `.cursor/skills` write is needed. Both
-// capabilities are therefore true; the prior `false` flags under-reported them.
-describe("Cursor hook + skill capability (real installer delivers both)", () => {
-  function cursorEntry(root: string) {
-    return detectClientSupports(root).find((c) => c.clientKind === "Cursor");
-  }
-  it("advertises capabilities.hook=true", () => {
-    expect(cursorEntry(tmp())?.capabilities.hook).toBe(true);
-  });
-  it("advertises capabilities.skill=true (reads skills from .claude/.codex dirs)", () => {
-    expect(cursorEntry(tmp())?.capabilities.skill).toBe(true);
-  });
-  it("installedCapabilities.hook reflects .cursor/hooks.json presence", () => {
-    const root = tmp();
-    expect(cursorEntry(root)?.installedCapabilities?.hook).toBe(false);
-    mkdirSync(join(root, ".cursor"), { recursive: true });
-    writeFileSync(join(root, ".cursor", "hooks.json"), "{}");
-    expect(cursorEntry(root)?.installedCapabilities?.hook).toBe(true);
-  });
-  it("installedCapabilities.skill reflects shared .claude/.codex skill dirs", () => {
-    const root = tmp();
-    expect(cursorEntry(root)?.installedCapabilities?.skill).toBe(false);
-    mkdirSync(join(root, ".codex", "skills", "fabric-archive"), { recursive: true });
-    expect(cursorEntry(root)?.installedCapabilities?.skill).toBe(true);
   });
 });
 

@@ -15,7 +15,7 @@ import { join } from "node:path";
 //                            globalRoot = <home>/.fabric is the v2.1 store root.
 //   - createFakeBareRemote(): a local `git init --bare` repo for sync/clone.
 //   - cloneRepo()/seedAndPush(): round-trip helpers over the fake remote.
-//   - threeClientConfigFixtures(): one fabric-config fixture per supported client.
+//   - twoClientConfigFixtures(): one fabric-config fixture per supported client.
 //
 // All created temp dirs are tracked; call cleanupTestWall() in afterEach.
 // ---------------------------------------------------------------------------
@@ -104,19 +104,18 @@ export function seedAndPush(workDir: string, relPath: string, content: string): 
   git(workDir, ["push", "origin", "main"]);
 }
 
-export interface ThreeClientConfigFixtures {
+export interface TwoClientConfigFixtures {
   claudeCode: Record<string, unknown>;
   codexCLI: Record<string, unknown>;
-  cursor: Record<string, unknown>;
 }
 
 /**
- * One project fabric-config fixture per supported client (CC / Codex / Cursor).
+ * One project fabric-config fixture per supported client (CC / Codex).
  * Each is a valid `fabric-config.json` shape (parses against fabricConfigSchema)
- * carrying the v2.1 project_id + required_stores fields. Used to prove the three
+ * carrying the v2.1 project_id + required_stores fields. Used to prove the two
  * ends round-trip identically through the config schema.
  */
-export function threeClientConfigFixtures(): ThreeClientConfigFixtures {
+export function twoClientConfigFixtures(): TwoClientConfigFixtures {
   const base = {
     project_id: "11111111-1111-4111-8111-111111111111",
     required_stores: [{ id: "team", suggested_remote: "git@github.com:acme/team-kb.git" }],
@@ -125,7 +124,6 @@ export function threeClientConfigFixtures(): ThreeClientConfigFixtures {
   return {
     claudeCode: { ...base, clientPaths: { claudeCodeCLI: ".claude" } },
     codexCLI: { ...base, clientPaths: { codexCLI: ".codex" } },
-    cursor: { ...base, clientPaths: { cursor: ".cursor" } },
   };
 }
 

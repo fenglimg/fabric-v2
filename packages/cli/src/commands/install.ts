@@ -89,10 +89,8 @@ import {
   installSharedSkillLib,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
-  mergeCursorHookConfig,
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
-  writeCursorBootstrapManagedBlock,
   type InstallStepResult,
 } from "../install/skills-and-hooks.js";
 
@@ -109,7 +107,7 @@ type InitArgs = {
   // W5b: the `--force-skills-only` / `--force-hooks-only` single-slice refresh
   // flags were removed. A plain `fabric install` re-run is idempotent (the
   // install-skills-and-hooks idempotency test proves zero diff in .claude/
-  // .codex/.cursor and preservation of user permissions + custom hook entries),
+  // .codex and preservation of user permissions + custom hook entries),
   // so it is the safe way to absorb new skill/hook templates — no dedicated
   // escape hatch needed.
   // v2.1 ③ vector-chinese-model (P3): opt-in "enable semantic search" step.
@@ -130,7 +128,7 @@ export type InitOptions = {
 export type InitWriteAction = "created" | "overwritten";
 
 // v2.0 follow-up (rc.1 fix #1): AGENTS.md at the repo root is the universal
-// MCP-agnostic bootstrap anchor. Cursor, Codex CLI, and Claude Code all read
+// MCP-agnostic bootstrap anchor. Codex CLI and Claude Code both read
 // it; doctor's `bootstrap_anchor_missing` check requires either AGENTS.md or
 // CLAUDE.md to be present. We write a minimal default on a fresh init and
 // PRESERVE any pre-existing file verbatim. The intent
@@ -873,9 +871,8 @@ async function executeInitStagePlan(
         // v2/rc.2+rc.3+rc.4+rc.5: bootstrap installs the fabric-archive /
         // fabric-review / fabric-import Skill templates + fabric-hint Stop
         // hook script (rc.5 TASK-010 rename from archive-hint) + per-client
-        // hook configs across all three supported clients (claude / codex /
-        // cursor) + the pointer line in CLAUDE.md / AGENTS.md / .cursor/rules.
-        // Each step
+        // hook configs across both supported clients (claude / codex)
+        // + the pointer line in CLAUDE.md / AGENTS.md. Each step
         // is best-effort: a single failure (e.g. one client's directory is
         // unreadable) is logged but does not abort init — other clients
         // and downstream stages continue.
@@ -903,11 +900,11 @@ async function executeInitStagePlan(
         // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook + edit-counter sidecar.
         installResults.push(...await runBestEffort("hook-narrow-script", () => installKnowledgeHintNarrowHook(plan.target)));
         // F4: rc.34 TASK-06 UserPromptSubmit cite-policy-evict.cjs. The hook
-        // CONFIG merges below register it across all three clients, but the
+        // CONFIG merges below register it across both clients, but the
         // bootstrap stage previously never copied the SCRIPT — so a
         // bootstrap-only install (e.g. init without the downstream `hooks`
         // stage) left configs pointing at a missing file. Inlined here too,
-        // mirroring the cursor-hook-config note below.
+        // mirroring the hook-config note below.
         installResults.push(...await runBestEffort("hook-cite-policy-evict-script", () => installCitePolicyEvictHook(plan.target)));
         // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hook
         // scripts. Mirror the sibling hook-script copies (config merges below
@@ -924,27 +921,18 @@ async function executeInitStagePlan(
         installResults.push(...await runBestEffort("hook-lib", () => installHookLibs(plan.target)));
         installResults.push(await runBestEffortSingle("claude-hook-config", () => mergeClaudeCodeHookConfig(plan.target)));
         installResults.push(await runBestEffortSingle("codex-hook-config", () => mergeCodexHookConfig(plan.target)));
-        // rc.5 TASK-010 cursor parity (rc.6 also writes the SessionStart slot
-        // via the same merged template). Missing from the rc.5 bootstrap-stage
-        // wiring — the `hooks` stage downstream calls installHooks() which
-        // covered it, but bootstrap-only invocations (e.g. partial-resilience
-        // tests) need it inlined here too.
-        installResults.push(await runBestEffortSingle("cursor-hook-config", () => mergeCursorHookConfig(plan.target)));
         // rc.19 TASK-002: L1 bootstrap snapshot — materialize the canonical
         // `.fabric/AGENTS.md` from BOOTSTRAP_CANONICAL. Idempotent + atomic.
         // This snapshot is the source-of-truth that the three propagation
         // writers below fan out into per-client thin shells.
         installResults.push(await runBestEffortSingle("bootstrap-snapshot", () => writeFabricAgentsSnapshot(plan.target)));
-        // rc.19 TASK-003: three-end propagation. Each writer consumes the L1
+        // rc.19 TASK-003: two-end propagation. Each writer consumes the L1
         // snapshot (plus optional `.fabric/project-rules.md`) and writes the
         // appropriate per-client output:
         //   - Claude Code: real `@`-import directives in CLAUDE.md
         //   - Codex CLI:   byte-copy managed block in root AGENTS.md
-        //   - Cursor:      byte-copy managed block + YAML front-matter in
-        //                  `.cursor/rules/fabric-bootstrap.mdc`
         installResults.push(await runBestEffortSingle("bootstrap-claude", () => writeClaudeBootstrapThinShell(plan.target)));
         installResults.push(await runBestEffortSingle("bootstrap-codex", () => writeCodexBootstrapManagedBlock(plan.target)));
-        installResults.push(await runBestEffortSingle("bootstrap-cursor", () => writeCursorBootstrapManagedBlock(plan.target)));
         const installedCount = installResults.filter((r) => r.status === "written").length;
         const skippedCount = installResults.filter((r) => r.status === "skipped").length;
         const errorCount = installResults.filter((r) => r.status === "error").length;

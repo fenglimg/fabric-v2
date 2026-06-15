@@ -1,27 +1,27 @@
 /**
  * v2.0.0-rc.37 NEW-30: shared client-protocol adapter for hook scripts.
  *
- * The three host clients (Claude Code / Codex CLI / Cursor) differ in how a
+ * The two host clients (Claude Code / Codex CLI) differ in how a
  * hook surfaces context back to the model:
  *   - Claude Code reads a stdout JSON envelope
  *     ({ hookSpecificOutput: { hookEventName, additionalContext } }).
- *   - Codex CLI and Cursor read plain stderr text.
+ *   - Codex CLI reads plain stderr text.
  * Each hook had its own copy of the detect-client + read-stdin + pick-channel
  * logic (fabric-hint.detectClient, cite-policy-evict.isClaudeCode + readStdinJson,
  * knowledge-hint-broad inline CLAUDE_PROJECT_DIR check). This module is the
  * single canonical implementation so the protocol choice lives in one place.
  *
  * Provides:
- *   - detectClient(dirnameHint?) → 'cc' | 'codex' | 'cursor' | undefined
+ *   - detectClient(dirnameHint?) → 'cc' | 'codex' | undefined
  *       3-tier: FABRIC_HINT_CLIENT env override → CLAUDE_PROJECT_DIR (cc) →
- *       __dirname path heuristic (.claude / .codex / .cursor). dirnameHint
+ *       __dirname path heuristic (.claude / .codex). dirnameHint
  *       defaults to this lib's own dir (which still lives under the client
  *       dir, e.g. .claude/hooks/lib), so the heuristic stays accurate.
  *   - isClaudeCode() → boolean   (CLAUDE_PROJECT_DIR present)
  *   - readStdinJson({ timeoutMs }) → Promise<object | null>
  *       Async stdin JSON reader; null on parse error / closed stdin / timeout.
  *   - emitContext(text, { client, eventName, streams, forceStderr }) → void
- *       Standardised output: Claude Code → stdout JSON envelope; Codex/Cursor
+ *       Standardised output: Claude Code → stdout JSON envelope; Codex
  *       → plain stderr. forceStderr pins stderr even on Claude Code (used for
  *       SessionStart one-shot reminders). Best-effort — never throws.
  *
@@ -40,7 +40,7 @@ function detectClient(dirnameHint) {
   const envClient = process.env.FABRIC_HINT_CLIENT;
   if (typeof envClient === "string" && envClient.length > 0) {
     const normalised = envClient.trim().toLowerCase();
-    if (normalised === "cc" || normalised === "codex" || normalised === "cursor") {
+    if (normalised === "cc" || normalised === "codex") {
       return normalised;
     }
   }
@@ -51,7 +51,6 @@ function detectClient(dirnameHint) {
   try {
     if (dir.includes(".claude/") || dir.includes(".claude\\")) return "cc";
     if (dir.includes(".codex/") || dir.includes(".codex\\")) return "codex";
-    if (dir.includes(".cursor/") || dir.includes(".cursor\\")) return "cursor";
   } catch {
     // fall through
   }
@@ -111,12 +110,6 @@ function emitContext(text, opts) {
 //     what fixes the "stderr human channel is dead on CC" gap — CC suppresses
 //     hook stderr at exit 0, so the human never saw the old breadcrumb.
 //
-//   cursor (heterogeneous, D7): a flat snake_case stdout envelope
-//     { additional_context: <ai> } — NO systemMessage. Cursor has no general
-//     human-facing hook channel (human messages only surface on permission
-//     deny), so the human breadcrumb is HONESTLY DROPPED rather than faked into
-//     a channel the user won't see (honest degradation, not false-green).
-//
 //   unknown client (detection failed, not CC): fall back to a plain stderr
 //     breadcrumb (human preferred, else ai) — no known JSON contract to target.
 //
@@ -136,13 +129,6 @@ function emitDualSink(payload, opts) {
   const hasAi = typeof ai === "string" && ai.length > 0;
   const resolved = client || detectClient();
   try {
-    if (resolved === "cursor") {
-      // Flat snake_case, AI sink only. Human breadcrumb honestly dropped.
-      if (hasAi) {
-        stdout.write(`${JSON.stringify({ additional_context: ai })}\n`);
-      }
-      return;
-    }
     const useEnvelope =
       resolved === "cc" ||
       resolved === "codex" ||

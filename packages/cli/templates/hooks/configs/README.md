@@ -4,7 +4,7 @@ These JSON files are **fragment templates** consumed by `fabric install` and
 `fabric hooks install`. They are not standalone client config files.
 
 The supported clients are pinned by `packages/shared/src/schemas/fabric-config.ts`
-to Claude Code, Cursor, and Codex CLI. Adding a new client requires extending
+to Claude Code and Codex CLI. Adding a new client requires extending
 that schema first.
 
 ## claude-code.json
@@ -25,45 +25,32 @@ Written to (or merged into) the user repo's `.codex/hooks.json`. NOTE: Codex
 project-level hooks file is JSON, **not** TOML — only the user-level Codex MCP
 config (`~/.codex/config.toml`) is TOML.
 
-## cursor-hooks.json
-
-Written to (or merged into) the user repo's `.cursor/hooks.json`. Schema
-authoritative source: https://cursor.com/cn/docs/hooks. Top-level requires
-`version: 1` (number literal, NOT string) and a `hooks` object (NOT `events`)
-keyed by camelCase event names: `stop`, `sessionStart`, `preToolUse`. Per-entry
-shape stays flat (Codex-style): `{command, matcher?, type?, timeout?,
-loop_limit?, failClosed?}`. rc.14 TASK-001 corrected rc.13's wrong top-level
-envelope (was `{events: {Stop, SessionStart, PreToolUse}}` PascalCase, which
-Cursor rejects with "Config version must be a number; Config hooks must be an
-object").
-
 ## Per-client schema comparison (v2.0.0-rc.37 NEW-29)
 
 Each host program enforces its own wire format — `fabric install` cannot
-serialize one shared shape across all three. Differences are pinned here
-side-by-side so anyone editing one config knows what the others require.
+serialize one shared shape across both. Differences are pinned here
+side-by-side so anyone editing one config knows what the other requires.
 
-| Axis                 | Claude Code                              | Codex CLI                                          | Cursor                                          |
-| -------------------- | ---------------------------------------- | -------------------------------------------------- | ----------------------------------------------- |
-| Settings file        | `.claude/settings.json`                  | `.codex/hooks.json`                                | `.cursor/hooks.json`                            |
-| Top-level envelope   | `hooks: { ... }` (no version)            | `events: { ... }` (no version)                     | `{ version: 1, hooks: { ... } }` (number, not string) |
-| Event-name case      | PascalCase: `Stop`, `SessionStart`, `PreToolUse`, `UserPromptSubmit` | PascalCase: `Stop`, `SessionStart`, `PreToolUse`     | camelCase: `stop`, `sessionStart`, `preToolUse` |
-| Per-entry shape      | Nested matcher: `[{matcher, hooks:[{type:"command", command}]}]` | Flat: `[{command, matcher?}]`                      | Flat: `[{command, matcher?, type?, timeout?, loop_limit?, failClosed?}]` |
-| Path interpolation   | `${CLAUDE_PROJECT_DIR}` (env var)        | `"$(git rev-parse --show-toplevel)"` (shell expansion) | project-relative (resolved by Cursor)           |
-| Cite-policy event    | `UserPromptSubmit` (per-prompt)          | `SessionStart` 2nd entry (rc.37 NEW-21 parity)     | `sessionStart` 2nd entry (rc.37 NEW-21 parity)  |
+| Axis                 | Claude Code                              | Codex CLI                                          |
+| -------------------- | ---------------------------------------- | -------------------------------------------------- |
+| Settings file        | `.claude/settings.json`                  | `.codex/hooks.json`                                |
+| Top-level envelope   | `hooks: { ... }` (no version)            | `events: { ... }` (no version)                     |
+| Event-name case      | PascalCase: `Stop`, `SessionStart`, `PreToolUse`, `UserPromptSubmit` | PascalCase: `Stop`, `SessionStart`, `PreToolUse`     |
+| Per-entry shape      | Nested matcher: `[{matcher, hooks:[{type:"command", command}]}]` | Flat: `[{command, matcher?}]`                      |
+| Path interpolation   | `${CLAUDE_PROJECT_DIR}` (env var)        | `"$(git rev-parse --show-toplevel)"` (shell expansion) |
+| Cite-policy event    | `UserPromptSubmit` (per-prompt)          | `SessionStart` 2nd entry (rc.37 NEW-21 parity)     |
 
 Whenever a hook is added to one config, walk this table and add the equivalent
-entry to the other two — `fabric install` merges each into its respective
+entry to the other — `fabric install` merges each into its respective
 target verbatim, so missing entries silently degrade the cross-client surface.
 
 ## fabric-hint.cjs script paths
 
 - Claude: `.claude/hooks/fabric-hint.cjs` (project-relative)
 - Codex:  `.codex/hooks/fabric-hint.cjs`  (project-relative)
-- Cursor: `.cursor/hooks/fabric-hint.cjs` (project-relative)
 
 The single shared script lives at `packages/cli/templates/hooks/fabric-hint.cjs`
-in this repo and is copied into all three `<client>/hooks/` destinations by the
+in this repo and is copied into both `<client>/hooks/` destinations by the
 install wiring. The script emits stdout JSON
 `{decision:"block", reason, signal, recommended_skill}` with exit 0 when one of
 three signals trips:

@@ -93,7 +93,18 @@ const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.c
 const { appendLockedLine } = require("./lib/injection-log.cjs");
 // lifecycle-refactor W1-T2: client discriminator for the hook_surface_emitted
 // event (schema requires the `client` enum). Mirrors the broad hook's import.
-const { detectClient } = require("./lib/client-adapter.cjs");
+// v2.2 dual-sink (Goal A): + emitDualSink (PreToolUse two-channel emit).
+const { detectClient, emitDualSink } = require("./lib/client-adapter.cjs");
+// v2.2 dual-sink (Goal A / D4 + C5): human-output gate. On a narrow HIT the human
+// systemMessage is gated by nudge_mode (a miss is already a silent early-return
+// above); the AI additionalContext is emitted regardless (flow ⊥ observation).
+// Optional require so an old install degrades to "always emit human".
+let nudgePolicy = null;
+try {
+  nudgePolicy = require("./lib/nudge-policy.cjs");
+} catch {
+  // Lib missing (old install) — human sink always emits (legacy behavior).
+}
 // v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
 // resolved-bindings snapshot. Store-aware hint surfaces the write-target store
 // for the edited file WITHOUT re-resolving or walking store trees. Best-effort.
@@ -242,8 +253,8 @@ function readPayload(rawStdin) {
   } catch (e) {
     // v2.0.0-rc.29 REVIEW (codex LOW-1): apply BUG-L1's malformed-input
     // diagnostic uniformly across hook scripts. fabric-hint.cjs got the stderr
-    // trace in TASK-008; without this matching write here, a broken Codex /
-    // Cursor host payload silently kills the narrow hint with no operator
+    // trace in TASK-008; without this matching write here, a broken Codex
+    // host payload silently kills the narrow hint with no operator
     // signal at all. Best-effort: a failed stderr write must not throw upward
     // (hook contract — never crash the host's edit pipeline).
     try {
@@ -257,31 +268,26 @@ function readPayload(rawStdin) {
 }
 
 /**
- * Extract the tool name from a hook payload. Clients differ in casing /
- * field placement; we probe the conventional shapes:
+ * Extract the tool name from a hook payload. Both supported clients use the
+ * same shape:
  *   - Claude Code:  { tool_name, tool_input: { ... } }
  *   - Codex CLI:    { tool_name, tool_input: { ... } } (mirrors Claude)
- *   - Cursor:       { tool, input: { ... } } (legacy variant)
  * Returns null when no recognizable shape is present.
  */
 function extractToolName(payload) {
   if (!payload || typeof payload !== "object") return null;
   if (typeof payload.tool_name === "string") return payload.tool_name;
-  if (typeof payload.tool === "string") return payload.tool;
   return null;
 }
 
 /**
- * Extract the tool_input object from a hook payload, accepting both the
- * `tool_input` (Claude/Codex) and `input` (Cursor) conventions.
+ * Extract the tool_input object from a hook payload (the `tool_input`
+ * convention shared by Claude Code and Codex CLI).
  */
 function extractToolInput(payload) {
   if (!payload || typeof payload !== "object") return null;
   if (payload.tool_input && typeof payload.tool_input === "object") {
     return payload.tool_input;
-  }
-  if (payload.input && typeof payload.input === "object") {
-    return payload.input;
   }
   return null;
 }
@@ -292,8 +298,8 @@ function extractToolInput(payload) {
  *   - bulk variant:      { file_paths: ["src/foo.ts", "src/bar.ts"] }
  *   - MultiEdit:         { file_path: "...", edits: [{file_path?, ...}, ...] }
  *     (Claude Code's MultiEdit currently issues per-edit operations against
- *     a single `file_path`; older drafts and Cursor's variant carried
- *     per-edit `file_path`. We accept both to be defensive.)
+ *     a single `file_path`; older drafts carried per-edit `file_path`. We
+ *     accept both to be defensive.)
  *
  * Returns a deduped array of strings — empty when no path is recognizable.
  * Order: first occurrence wins (stable across re-renders of the same payload).
@@ -523,7 +529,7 @@ function appendHintSilenceCounter(projectRoot, now) {
 /**
  * Resolve the session id used to key the cache file. Priority:
  *   1. payload.session_id (string, non-empty) — preferred; threads through
- *      from the client hook payload (Claude Code / Codex CLI / Cursor).
+ *      from the client hook payload (Claude Code / Codex CLI).
  *   2. process.env.FABRIC_SESSION_ID — environment fallback.
  *   3. SYNTHETIC_SESSION_ID — a process-lifetime UUID, generated lazily so
  *      tests can stub it (see resetSyntheticSessionId).
@@ -1522,9 +1528,27 @@ async function main(env, stdio) {
       }
     }
 
-    // Stderr: human-facing breadcrumb + legacy contract.
-    for (const line of lines) {
-      err.write(`${line}\n`);
+    // v2.2 dual-sink (Goal A / C5): a narrow HIT emits BOTH channels. The human
+    // systemMessage is gated by nudge_mode (a MISS already returned silently far
+    // above — narrow.length===0 / gate-skip / dedup-filter); the AI
+    // additionalContext is emitted regardless (gated only by reminder_to_context),
+    // preserving flow ⊥ observation (D5). emitDualSink shapes the protocol per
+    // client (CC/Codex camelCase nested; unknown → stderr).
+    const text = lines.join("\n");
+    const humanGate =
+      nudgePolicy !== null
+        ? nudgePolicy.resolveHumanSink(cwd, "pre_tool_use", { hit: true })
+        : { emitHuman: true };
+    const human = humanGate.emitHuman ? text : null;
+    const ai = readReminderToContext(cwd) ? text : null;
+    if (!(env && env.skipStdout === true)) {
+      emitDualSink(
+        { human, ai },
+        { client: detectClient(), eventName: "PreToolUse", streams: { stdout: out, stderr: err } },
+      );
+    } else if (human !== null) {
+      // skipStdout test seam: still surface the human breadcrumb to stderr.
+      err.write(`${text}\n`);
     }
 
     // lifecycle-refactor W1-T2: hook_surface_emitted — record WHICH narrow-scoped
@@ -1569,33 +1593,10 @@ async function main(env, stdio) {
       // best-effort telemetry — never block the edit
     }
 
-    // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
-    // hint_reminder_to_context is true (default), serialize the same banner
-    // body as Claude Code's PreToolUse hookSpecificOutput shape so the model
-    // receives the reminder IN-CONTEXT (rc.32 baseline cite-coverage 3.1%
-    // root cause: reminders never entered model context). PreToolUse hook
-    // contract: stdout JSON with hookSpecificOutput.additionalContext is
-    // injected into the model's context window; the hook DOES NOT block the
-    // edit (additionalContext is informational, not a permissionDecision).
-    // v2.0.0-rc.33 W4 review-fix (gemini High-1): CC-specific stdout envelope.
-    // See knowledge-hint-broad.cjs companion for rationale — CLAUDE_PROJECT_DIR
-    // is the CC presence signal; Codex CLI / Cursor don't set it.
-    const _isClaudeCode =
-      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
-      process.env.CLAUDE_PROJECT_DIR.length > 0;
-    if (!(env && env.skipStdout === true) && _isClaudeCode && readReminderToContext(cwd)) {
-      try {
-        const envelope = {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            additionalContext: lines.join("\n"),
-          },
-        };
-        out.write(`${JSON.stringify(envelope)}\n`);
-      } catch {
-        // Best-effort — stderr is the durable contract.
-      }
-    }
+    // v2.2 dual-sink (Goal A): the legacy rc.33 W2-6 CC-only stdout envelope is
+    // replaced by emitDualSink above (which carries BOTH the human systemMessage
+    // and the AI additionalContext, shaped per client). reminder_to_context still
+    // gates whether the AI sink is populated (see `ai` above).
 
     // v2.0.0-rc.33 W2-5: record successful emit for cooldown gate.
     if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {

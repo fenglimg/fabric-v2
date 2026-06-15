@@ -234,10 +234,6 @@ describe("knowledge-hint-narrow.cjs — extractToolName", () => {
     expect(hook.extractToolName({ tool_name: "Edit" })).toBe("Edit");
   });
 
-  it("reads tool (Cursor legacy convention)", () => {
-    expect(hook.extractToolName({ tool: "Write" })).toBe("Write");
-  });
-
   it("returns null when no recognizable field", () => {
     expect(hook.extractToolName({})).toBeNull();
     expect(hook.extractToolName(null)).toBeNull();
@@ -249,11 +245,6 @@ describe("knowledge-hint-narrow.cjs — extractToolInput", () => {
   it("reads tool_input (Claude/Codex convention)", () => {
     const out = hook.extractToolInput({ tool_input: { file_path: "x.ts" } });
     expect(out).toEqual({ file_path: "x.ts" });
-  });
-
-  it("reads input (Cursor legacy convention)", () => {
-    const out = hook.extractToolInput({ input: { file_path: "y.ts" } });
-    expect(out).toEqual({ file_path: "y.ts" });
   });
 
   it("returns null when neither field is present", () => {
@@ -1814,14 +1805,4 @@ describe("knowledge-hint-narrow.cjs — dual-sink PreToolUse (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).toMatch(/KT-DEC-0001/);
   });
 
-  it("cursor hit → flat additional_context, no systemMessage (human degraded)", () => {
-    process.env.FABRIC_HINT_CLIENT = "cursor";
-    delete process.env.CLAUDE_PROJECT_DIR;
-    const root = mkRoot("narrow-dualsink-cursor");
-    const { out } = captureBoth(hitEnv(root));
-    expect(out.length).toBe(1);
-    const env = JSON.parse(out[0]);
-    expect(env.additional_context).toMatch(/KT-DEC-0001/);
-    expect(env.systemMessage).toBeUndefined();
-  });
 });

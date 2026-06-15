@@ -68,10 +68,10 @@ export const enMessages: Messages = {
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
   "cli.config.install.args.clients.description":
-    "Optional comma-separated client filter, for example cursor,codex.",
+    "Optional comma-separated client filter, for example cc,codex.",
   "cli.config.install.args.dry-run.description": "Preview detected write operations without modifying files.",
   "cli.config.errors.unknown-client":
-    "Unknown client \"{client}\". Use a comma-separated list such as cursor,codex.",
+    "Unknown client \"{client}\". Use a comma-separated list such as cc,codex.",
   "cli.config.errors.expected-object": "Expected object in {path}",
   "cli.config.install.no-configs":
     "No Fabric MCP client config detected. Create the client directory or set clientPaths in fabric.config.json.",
@@ -256,7 +256,7 @@ export const enMessages: Messages = {
   "cli.doctor.args.since.description":
     "Time window for cite coverage (e.g. 7d, 24h, 30m)",
   "cli.doctor.args.client.description":
-    "Filter cite coverage by client (cc|codex|cursor|all)",
+    "Filter cite coverage by client (cc|codex|all)",
   // v2.0.0-rc.24 TASK-10: --layer filters cite contract audit by KB layer (team|personal|all).
   "cli.doctor.args.layer.description":
     "Filter cite contract audit by KB layer (team|personal|all)",
@@ -280,7 +280,7 @@ export const enMessages: Messages = {
   "cli.doctor.errors.invalid-since":
     "Invalid --since value: {input}. Expected duration like 7d, 24h, 30m or epoch ms.",
   "cli.doctor.errors.invalid-client":
-    "Invalid --client value: {input}. Expected cc, codex, cursor, or all.",
+    "Invalid --client value: {input}. Expected cc, codex, or all.",
   "cli.doctor.errors.invalid-layer":
     "Invalid --layer value: {input}. Expected team, personal, or all.",
   // rc.23 TASK-007 (a-C2): --enrich-descriptions flag set. Back-fills the
@@ -622,7 +622,7 @@ export const enMessages: Messages = {
   // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax validity
   // of installed *.cjs hook files (one layer below hooks_wired).
   "doctor.check.hooks_runtime.name": "Hooks runtime health",
-  "doctor.check.hooks_runtime.ok.skipped": "No installed hook files found under .claude/hooks/ / .codex/hooks/ / .cursor/hooks/; skipping hooks_runtime check.",
+  "doctor.check.hooks_runtime.ok.skipped": "No installed hook files found under .claude/hooks/ / .codex/hooks/; skipping hooks_runtime check.",
   "doctor.check.hooks_runtime.ok.healthy":
     "Scanned {count} hook .cjs file(s); shebang and Node.js syntax parse all pass.",
   "doctor.check.hooks_runtime.message.singular":
@@ -635,9 +635,9 @@ export const enMessages: Messages = {
   "doctor.check.hooks_content_drift.name": "Hooks cross-client content parity",
   "doctor.check.hooks_content_drift.ok.skipped": "No hook files co-exist across multiple clients (single-client install or no hooks present); skipping hooks_content_drift check.",
   "doctor.check.hooks_content_drift.ok.aligned":
-    "Scanned {count} hook copies; sha256 of every basename matches across .claude / .codex / .cursor.",
+    "Scanned {count} hook copies; sha256 of every basename matches across .claude / .codex.",
   "doctor.check.hooks_content_drift.message":
-    "{count} hook basename(s) drift across clients; first: {first_basename} (involves {first_clients}). `fabric install` copies the same template to all three clients — drift usually comes from manual edits.",
+    "{count} hook basename(s) drift across clients; first: {first_basename} (involves {first_clients}). `fabric install` copies the same template to both clients — drift usually comes from manual edits.",
   "doctor.check.hooks_content_drift.remediation":
     "Run `fabric install` to restore each client's hook copy to the canonical template. If you actually need client-specific behavior, modify a shared lib/ helper or templates/hooks/configs/ wiring instead of editing the installed .cjs in place.",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
@@ -805,7 +805,7 @@ export const enMessages: Messages = {
     "With --enable-embed: override the pinned embed model (default fast-bge-small-zh-v1.5)",
   // rc.35 TASK-08 (P0-5/6): --force-skills-only.
   "cli.install.args.force-skills-only.description":
-    "Skip bootstrap / MCP / hooks / settings; refresh ONLY the fabric Skill template copies (.claude/.codex/.cursor/skills/*).",
+    "Skip bootstrap / MCP / hooks / settings; refresh ONLY the fabric Skill template copies (.claude/.codex/skills/*).",
   "cli.install.force-skills-only.banner": "Refreshing fabric Skill templates only",
   "cli.install.force-skills-only.uninitialised.message":
     "fabric install --force-skills-only: project is not initialised (.fabric/agents.meta.json is missing).",
@@ -814,7 +814,7 @@ export const enMessages: Messages = {
   "cli.install.force-skills-only.summary": "Skills refresh complete — written: {written}, skipped: {skipped}, errors: {errors}",
   // v2.0.0-rc.37 NEW-26: --force-hooks-only mirror of --force-skills-only.
   "cli.install.args.force-hooks-only.description":
-    "Skip bootstrap / MCP / skills / settings; only refresh fabric hook scripts + per-client hook config merges (.claude/.codex/.cursor/hooks/*).",
+    "Skip bootstrap / MCP / skills / settings; only refresh fabric hook scripts + per-client hook config merges (.claude/.codex/hooks/*).",
   "cli.install.force-hooks-only.banner": "Refreshing fabric hooks only",
   "cli.install.force-hooks-only.uninitialised.message":
     "fabric install --force-hooks-only: project not initialised (.fabric/agents.meta.json missing).",
@@ -836,7 +836,6 @@ export const enMessages: Messages = {
   "cli.install.stages.bootstrap.snapshot.skipped": "Skipped .fabric/AGENTS.md — already current",
   "cli.install.steps.bootstrap-claude": "Updated CLAUDE.md with @-import directives",
   "cli.install.steps.bootstrap-codex": "Updated AGENTS.md with fabric:bootstrap managed block",
-  "cli.install.steps.bootstrap-cursor": "Updated .cursor/rules/fabric-bootstrap.mdc",
   "cli.install.stages.mcp": "Configuring MCP clients...",
   "cli.install.stages.hooks": "Installing git hooks...",
   "cli.install.stages.skipped": "skipped",
@@ -893,13 +892,13 @@ export const enMessages: Messages = {
   "cli.install.wizard.cancelled": "Fabric install cancelled before execution.",
   "cli.install.capabilities.title": "Client capability summary",
   // v2.0.0-rc.37 NEW-22: post-install restart banner. The MCP server is
-  // spawned by the client; already-running Claude Code / Cursor / Codex
+  // spawned by the client; already-running Claude Code / Codex
   // sessions won't pick up the new mcp config until they restart.
   "cli.install.restart-banner":
-    "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
+    "Restart hint: any already-running Claude Code / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
   "cli.install.next-steps":
     "Next steps — get your first value:\n" +
-    "  1. Restart your AI client (Claude Code / Cursor / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
+    "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
     "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
     "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
   "cli.install.store-bind-nudge":

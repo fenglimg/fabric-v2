@@ -13,7 +13,7 @@ the codebase from scratch and re-argues the same architecture decisions. The
 things you actually want them to remember — why we picked Postgres over Mongo,
 the auth bug that bit us last quarter, the deploy step that breaks in CI — live
 scattered across Slack threads, PR comments, and `AGENTS.md` forks that drift
-between `CLAUDE.md`, `.cursor/rules`, and Codex configs. Fabric is one
+between `CLAUDE.md` and Codex configs. Fabric is one
 MCP-first knowledge layer every supported client reads and writes through, with
 a hook-driven reminder layer so the knowledge actually fires when it matters.
 
@@ -23,11 +23,11 @@ a hook-driven reminder layer so the knowledge actually fires when it matters.
                 │  (MCP, 6 tools, stdio only) │
                 └──────────────┬──────────────┘
                                │
-        ┌──────────────────────┼──────────────────────┐
-        ▼                      ▼                      ▼
-  Claude Code                Cursor                Codex CLI
-        │                      │                      │
-        └──────────────────────┼──────────────────────┘
+        ┌──────────────────────┴──────────────────────┐
+        ▼                                             ▼
+  Claude Code                                     Codex CLI
+        │                                             │
+        └──────────────────────┬──────────────────────┘
                                ▼
                   ┌────────────────────────┐
                   │  ~/.fabric/stores/     │
@@ -46,7 +46,7 @@ a hook-driven reminder layer so the knowledge actually fires when it matters.
 
 ## Why Fabric
 
-AI agents forget. Static rule files (`AGENTS.md`, `.cursor/rules`,
+AI agents forget. Static rule files (`AGENTS.md`,
 `CLAUDE.md`) stop the bleeding for one client but drift across clients within a
 week. Generic doc engines index everything and surface nothing. Fabric is
 narrowly scoped to the one job that matters: keeping a small, typed,
@@ -57,13 +57,13 @@ without polluting agent context.
 
 1. **Cross-client MCP-first surface.** One server (`fabric-knowledge-server`),
    six tools (`fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
-   `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`), three clients reading and writing
+   `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`), two clients reading and writing
    through the same protocol via stdio. Knowledge stops being a per-client artifact.
 
 2. **Harness-agnostic by design.** No 16-stage workflow state machine, no
    IDE-vendor lock-in. Fabric integrates via the surfaces every modern agent
    harness already exposes — MCP tools, Stop hooks, SessionStart hooks,
-   PreToolUse hooks, Skill templates — so it works under Claude Code, Cursor,
+   PreToolUse hooks, Skill templates — so it works under Claude Code
    and Codex CLI without per-harness adapters.
 
 3. **Two-stage cold-start with degenerate single-stage fallback.**
@@ -94,7 +94,7 @@ without polluting agent context.
    `relevance_paths_drift` #25) keep the bindings honest as the code moves.
 
 7. **Cross-client hook reminder layer.** A single `fabric-hint.cjs` Stop hook
-   ships with parity configs for Claude Code, Cursor, and Codex CLI. It emits
+   ships with parity configs for Claude Code and Codex CLI. It emits
    structured JSON with three signals — `archive` (24h since last
    `knowledge_proposed`), `review` (pending queue depth), `underseed`
    (`nodes<10 AND time_since_init>=24h`) — and a `recommended_skill` field so
@@ -222,13 +222,12 @@ v1.8-era HTTP server was quarantined to `packages/server-http-experimental/`
 in v2.0.0-rc.37.
 
 **Restart the client after `fabric install`** — already-running Claude Code /
-Cursor / Codex CLI sessions won't pick up the new MCP config until restart;
+Codex CLI sessions won't pick up the new MCP config until restart;
 new sessions autoload it.
 
 Supported clients (v2.0):
 
 - **Claude Code** — managed bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
-- **Cursor** — managed rule bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + MCP stdio; Fabric does not install a `.cursor/skills` tree
 - **Codex CLI** — managed `AGENTS.md` bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
 
 ## How It Works
@@ -276,7 +275,7 @@ Fabric exposes six MCP tools and eight Skill templates: the `fabric` router plus
 **Hooks** install per client but point at shared Node scripts copied into each
 client's hook directory. `fabric-hint.cjs` owns Stop-time backlog nudges;
 SessionStart, PreToolUse, PostToolUse, and SessionEnd use their own shared
-scripts so all three clients see the same lifecycle.
+scripts so both clients see the same lifecycle.
 
 **Lifecycle** — `fabric doctor` runs 48 checks in one pass: orphan demotion
 driven by `last_consumed_at` (from `knowledge_consumed` events), stale archive,
@@ -313,7 +312,7 @@ This is a pnpm monorepo:
   `fabric install`.
 - `packages/cli/templates/hooks/` — `fabric-hint.cjs` + `knowledge-hint-broad.cjs`
   + `knowledge-hint-narrow.cjs` + `cite-policy-evict.cjs` plus per-client hook
-  configs (`claude-code.json`, `cursor-hooks.json`, `codex-hooks.json`).
+  configs (`claude-code.json`, `codex-hooks.json`).
 
 Contributors: clone, `pnpm install`, `pnpm -r build`, `pnpm -r test`.
 

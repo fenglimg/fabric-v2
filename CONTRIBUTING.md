@@ -75,7 +75,7 @@ If your change contradicts a locked decision, explain why in the PR description.
 ## Adding a new MCP tool / Skill / doctor check
 
 - **MCP tool**: schema goes in `packages/shared/src/schemas/api-contracts.ts`; service in `packages/server/src/services/`; tool wrapper in `packages/server/src/tools/`; registered in `packages/server/src/index.ts:createFabricServer`.
-- **Skill**: canonical template in `packages/cli/templates/skills/<slug>/SKILL.md`; mirror to `.claude/skills/` + `.codex/skills/` + `.cursor/skills/` for in-repo dogfood. `fabric install` copies templates to client targets.
+- **Skill**: canonical template in `packages/cli/templates/skills/<slug>/SKILL.md`; mirror to `.claude/skills/` + `.codex/skills/` for in-repo dogfood. `fabric install` copies templates to client targets.
 - **Doctor check**: inspection function in `packages/server/src/services/doctor.ts`; i18n keys in `packages/shared/src/i18n/locales/{zh-CN,en}.ts`; registered in `runDoctorReport` checks list; snapshot tests in `packages/server/src/services/doctor.test.ts` need the count updated.
 
 See existing examples in each path for the exact pattern.

@@ -238,7 +238,7 @@ export type CiteCoverageReport = {
   marker_ts: number;
   marker_emitted_now: boolean;
   since_ts: number;
-  client_filter: "cc" | "codex" | "cursor" | "all";
+  client_filter: "cc" | "codex" | "all";
   // v2.0.0-rc.24 TASK-08: layer filter for personal-layer parity. 'all' =
   // both team (KT-*) and personal (KP-*); 'team' / 'personal' = restrict
   // top-level metrics to one root. Optional (defaults to 'all') so existing
@@ -519,7 +519,7 @@ export function computeExposedAndMutated(args: {
 const ASSISTANT_TURN_COUNTER_PREFIX = "assistant_turn_observed";
 export function sumFoldedTurnCounters(
   rows: MetricsRow[],
-  options: { since: number; until?: number; client: "cc" | "codex" | "cursor" | "all" },
+  options: { since: number; until?: number; client: "cc" | "codex" | "all" },
 ): number {
   let sum = 0;
   for (const row of rows) {
@@ -574,7 +574,7 @@ export async function runDoctorCiteCoverage(
   projectRoot: string,
   options: {
     since: number;
-    client: "cc" | "codex" | "cursor" | "all";
+    client: "cc" | "codex" | "all";
     // v2.0.0-rc.24 TASK-08: layer filter for personal-layer parity. Optional
     // — defaults to 'all' so the CLI rc.20 surface (which has not yet wired
     // --layer; TASK-10 owns that change) keeps working byte-for-byte.

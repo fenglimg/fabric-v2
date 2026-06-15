@@ -332,56 +332,32 @@ export async function unmergeCodexHookConfig(
   });
 }
 
-/**
- * Inverse of `mergeCursorHookConfig`. Reads `.cursor/hooks.json`, filters
- * every fabric entry out of each `hooks.stop` / `hooks.sessionStart` /
- * `hooks.preToolUse` array (matching by top-level `command` field), then
- * atomically writes the pruned object back. Schema per
- * https://cursor.com/cn/docs/hooks; corrected in rc.14 TASK-001.
- */
-export async function unmergeCursorHookConfig(
-  projectRoot: string,
-): Promise<UninstallStepResult> {
-  return unmergeHookConfig({
-    step: "cursor-hook-config",
-    projectRoot,
-    configRel: HOOK_CONFIG_TARGETS.cursor,
-    arrayPaths: [...HOOK_CONFIG_ARRAY_PATHS.cursor],
-    fabricCommands: Object.values(FABRIC_HOOK_COMMAND_PATHS.cursor),
-    extractCommands: extractFlatCommands,
-  });
-}
-
 // -----------------------------------------------------------------------
 // Pointer-line stripping
 // -----------------------------------------------------------------------
 
 /**
- * rc.19 TASK-003 — inverse of the three propagation writers
- * (`writeClaudeBootstrapThinShell`, `writeCodexBootstrapManagedBlock`,
- * `writeCursorBootstrapManagedBlock`).
+ * rc.19 TASK-003 — inverse of the two propagation writers
+ * (`writeClaudeBootstrapThinShell`, `writeCodexBootstrapManagedBlock`).
  *
  * Strips Fabric-owned content from each propagation target:
  *   - `CLAUDE.md`: removes the `@.fabric/AGENTS.md` and `@.fabric/project-rules.md`
  *     `@`-import lines (line-level strip; leaves any user content alone).
  *   - `AGENTS.md`: strips the BOOTSTRAP managed block (markers inclusive,
  *     with optional preceding blank-line separator) via {@link BOOTSTRAP_REGEX}.
- *   - `.cursor/rules/fabric-bootstrap.mdc`: strips the BOOTSTRAP managed
- *     block; if the only remaining content is the YAML front-matter (i.e.
- *     no user-authored body), the file itself is deleted.
  *
  * Idempotent: when nothing fabric-owned is found in a target the step
  * records `skipped/no-fabric-section`. Running uninstall twice back-to-back
  * reports 100% skipped on the second pass.
  *
- * Files are NEVER deleted (except the Cursor mdc per the rule above), even
- * if all that remained was the managed block — install cannot prove it was
- * the file's creator, so uninstall preserves user-authored content
- * surrounding it (mirrors the rc.4 pointer-strip conservatism).
+ * Files are NEVER deleted, even if all that remained was the managed block —
+ * install cannot prove it was the file's creator, so uninstall preserves
+ * user-authored content surrounding it (mirrors the rc.4 pointer-strip
+ * conservatism).
  *
  * Renamed from `stripFabricKnowledgeBaseSection` (rc.12 broad-gate-fabric-
- * lang TASK-006) when rc.19 split the writer into three per-client
- * propagators with distinct strip rules per target.
+ * lang TASK-006) when rc.19 split the writer into per-client propagators
+ * with distinct strip rules per target.
  */
 export async function stripFabricBootstrapBlocks(
   projectRoot: string,
@@ -392,16 +368,7 @@ export async function stripFabricBootstrapBlocks(
   results.push(await stripClaudeBootstrapImports(projectRoot));
 
   // 2. AGENTS.md — strip BOOTSTRAP managed block (regex-based).
-  results.push(await stripManagedBlock(projectRoot, "AGENTS.md", { deleteWhenEmpty: false }));
-
-  // 3. .cursor/rules/fabric-bootstrap.mdc — strip BOOTSTRAP managed block;
-  // delete the file when the body is just YAML front-matter (i.e. fabric
-  // was the only producer of meaningful content).
-  results.push(
-    await stripManagedBlock(projectRoot, join(".cursor", "rules", "fabric-bootstrap.mdc"), {
-      deleteWhenEmpty: true,
-    }),
-  );
+  results.push(await stripManagedBlock(projectRoot, "AGENTS.md"));
 
   return results;
 }
@@ -458,16 +425,15 @@ async function stripClaudeBootstrapImports(projectRoot: string): Promise<Uninsta
 
 /**
  * Strip the BOOTSTRAP managed block (regex-matched, markers inclusive) from
- * the file at `projectRoot/relPath`. When `deleteWhenEmpty` is true and the
- * post-strip content has no user-authored body beyond YAML front-matter, the
- * file is deleted instead of left as an orphan front-matter shell.
+ * the file at `projectRoot/relPath`. The file is never deleted — install
+ * cannot prove it was the file's creator, so any surrounding user content is
+ * preserved.
  */
 async function stripManagedBlock(
   projectRoot: string,
   relPath: string,
-  options: { deleteWhenEmpty: boolean },
 ): Promise<UninstallStepResult> {
-  const step = relPath.endsWith(".mdc") ? "bootstrap-cursor" : "bootstrap-codex";
+  const step = "bootstrap-codex";
   const target = join(projectRoot, relPath);
   if (!existsSync(target)) {
     return { step, path: target, status: "skipped", message: "absent" };
@@ -491,20 +457,6 @@ async function stripManagedBlock(
   const after = existing.slice((match.index ?? 0) + match[0].length);
   const filtered = `${before}${after.replace(/^\r?\n/, "")}`;
 
-  if (options.deleteWhenEmpty && isFrontMatterOnly(filtered)) {
-    try {
-      await rm(target, { force: true });
-      return { step, path: target, status: "removed", message: "front-matter-only" };
-    } catch (error: unknown) {
-      return {
-        step,
-        path: target,
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
   try {
     await atomicWriteText(target, filtered);
     return { step, path: target, status: "removed" };
@@ -516,21 +468,6 @@ async function stripManagedBlock(
       message: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-/**
- * True when `content` consists of nothing but a YAML front-matter block
- * (`---` … `---`) optionally followed by whitespace-only trailing content.
- * Used by {@link stripManagedBlock} to decide whether to delete the file
- * after a Cursor managed-block strip.
- */
-function isFrontMatterOnly(content: string): boolean {
-  // Strip leading whitespace, then attempt to match a front-matter block at
-  // the head, then ensure the remainder is pure whitespace.
-  const trimmed = content.replace(/^\s+/, "");
-  const match = trimmed.match(/^---\n[\s\S]*?\n---\s*$/);
-  if (match === null) return trimmed.length === 0;
-  return true;
 }
 
 // -----------------------------------------------------------------------
@@ -559,9 +496,9 @@ export async function deleteFabricAgentsSnapshot(
  * Bootstrap-stage uninstall orchestrator. Runs every helper in this module
  * in the exact reverse order of `fabric install`'s install pipeline:
  *
- *   1. Pointer-line strip (CLAUDE.md / AGENTS.md / .cursor/rules)
- *   2. Hook-config un-merge (cursor → codex → claude — reverse of install)
- *   3. Hook-lib removal (lib/*.cjs across all 3 client hook dirs — rc.16 TASK-004)
+ *   1. Pointer-line strip (CLAUDE.md / AGENTS.md)
+ *   2. Hook-config un-merge (codex → claude — reverse of install)
+ *   3. Hook-lib removal (lib/*.cjs across both client hook dirs — rc.16 TASK-004)
  *   4. Hook-script removal (knowledge-narrow → knowledge-broad → fabric-hint)
  *   5. Skill removal (fabric-import → fabric-review → fabric-archive)
  *
@@ -576,9 +513,9 @@ export async function uninstallBootstrapStage(
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
 
-  // 1. Three-end bootstrap blocks first (cheapest, reverses TASK-003
+  // 1. Two-end bootstrap blocks first (cheapest, reverses TASK-003
   // propagation writers from install). rc.19 TASK-003: renamed from
-  // `stripFabricKnowledgeBaseSection`; the single-regex strip across three
+  // `stripFabricKnowledgeBaseSection`; the single-regex strip across
   // identical targets is gone, replaced by per-client strip rules.
   await runAndCollect(results, "bootstrap-blocks", projectRoot, () =>
     stripFabricBootstrapBlocks(projectRoot),
@@ -590,10 +527,7 @@ export async function uninstallBootstrapStage(
     deleteFabricAgentsSnapshot(projectRoot),
   );
 
-  // 2. Hook configs (reverse of install order: cursor → codex → claude)
-  await runAndCollectOne(results, "cursor-hook-config", projectRoot, () =>
-    unmergeCursorHookConfig(projectRoot),
-  );
+  // 2. Hook configs (reverse of install order: codex → claude)
   await runAndCollectOne(results, "codex-hook-config", projectRoot, () =>
     unmergeCodexHookConfig(projectRoot),
   );
@@ -911,7 +845,7 @@ function extractClaudeCommands(entry: unknown): string[] {
 }
 
 /**
- * Codex / Cursor hook entry shape: top-level `{ command: '...' }` (optionally
+ * Codex hook entry shape: top-level `{ command: '...' }` (optionally
  * with a `matcher` sibling). Read the `command` field directly.
  */
 function extractFlatCommands(entry: unknown): string[] {

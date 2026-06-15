@@ -1079,7 +1079,7 @@ function main(env, stdio) {
     // v2.2 dual-sink (Goal A / D7): emit both channels in one render. The human
     // systemMessage is gated by nudge_mode (emitHuman); the AI additionalContext
     // is emitted regardless. emitDualSink shapes the protocol per client (CC/Codex
-    // camelCase nested envelope; Cursor flat snake_case; unknown → stderr).
+    // camelCase nested envelope; unknown → stderr).
     const human = humanGate.emitHuman && humanLines.length > 0 ? humanLines.join("\n") : null;
     const reminderToContext = readReminderToContext(cwd);
     const ai = reminderToContext && aiText && aiText.length > 0 ? aiText : null;
@@ -1125,7 +1125,7 @@ function main(env, stdio) {
     // per session boot so this never bloats the ledger. Never blocks the hook
     // (KT-DEC-0007): any failure (no .fabric/, undetected client, write error)
     // degrades to silent skip. Client is omitted-by-skip when undetectable
-    // because the schema's `client` enum admits only cc/codex/cursor.
+    // because the schema's `client` enum admits only cc/codex.
     try {
       const surfaceClient = detectClient();
       const fabricDir = join(cwd, FABRIC_DIR_REL);

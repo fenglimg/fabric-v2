@@ -198,7 +198,7 @@ describe("runDoctorReport", () => {
       // hooks_wired, which only checks settings.json references).
       "Hooks runtime health",
       // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256
-      // parity (same basename in .claude/.codex/.cursor must hash-match).
+      // parity (same basename in .claude/.codex must hash-match).
       "Hooks cross-client content parity",
       // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30
       // PATH installs against rc.31+ project schemas (P0-9 root cause).
@@ -1499,15 +1499,14 @@ describe("runDoctorReport", () => {
       writeFileSync(abs, `${block}\n`, "utf8");
     }
 
-    it("reports ok when all three managed blocks byte-equal expected concat (no project-rules)", async () => {
+    it("reports ok when the managed block byte-equals expected concat (no project-rules)", async () => {
       const target = createInitializedProject("doctor-rc19-l2-ok");
       writeFile(".fabric/events.jsonl", "", target);
 
       // L1 must be canonical so L2's expectedBody == BOOTSTRAP_CANONICAL_EN.
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
-      // Seed both managed-block targets with the canonical body.
+      // Seed the managed-block target with the canonical body.
       seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL_EN);
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL_EN);
       // CLAUDE.md: thin shell — needs @-import line.
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
 
@@ -1530,32 +1529,27 @@ describe("runDoctorReport", () => {
       expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("error");
     });
 
-    it("--fix rewrites all three managed blocks and is idempotent on re-run", async () => {
+    it("--fix rewrites the managed block and is idempotent on re-run", async () => {
       const target = createInitializedProject("doctor-rc19-l2-fix");
       writeFile(".fabric/events.jsonl", "", target);
 
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
       seedManagedBlock(target, "AGENTS.md", "WRONG BODY A");
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", "WRONG BODY B");
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n", "utf8"); // missing @-import
 
       const fix = await runDoctorFix(target);
       expect(fix.fixed.map((e) => e.code)).toContain("managed_block_drift");
 
-      // All three managed blocks now byte-equal expectedBody == BOOTSTRAP_CANONICAL_EN.
+      // The managed block now byte-equals expectedBody == BOOTSTRAP_CANONICAL_EN.
       const after = await runDoctorReport(target);
       expect(after.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
       expect(after.checks.find((c) => c.name === "Managed block drift")?.status).toBe("ok");
 
-      // Verify the rewritten managed block bodies match canonical.
+      // Verify the rewritten managed block body matches canonical.
       const agentsContent = readFileSync(join(target, "AGENTS.md"), "utf8");
-      const cursorContent = readFileSync(join(target, ".cursor", "rules", "fabric-bootstrap.mdc"), "utf8");
       expect(agentsContent).toContain(BOOTSTRAP_MARKER_BEGIN);
       expect(agentsContent).toContain(BOOTSTRAP_MARKER_END);
       expect(agentsContent).toContain(BOOTSTRAP_CANONICAL_EN);
-      expect(cursorContent).toContain(BOOTSTRAP_MARKER_BEGIN);
-      expect(cursorContent).toContain(BOOTSTRAP_MARKER_END);
-      expect(cursorContent).toContain(BOOTSTRAP_CANONICAL_EN);
       // CLAUDE.md gains the @-import line.
       const claudeContent = readFileSync(join(target, "CLAUDE.md"), "utf8");
       expect(claudeContent.split(/\r?\n/u).some((line) => line.trim() === "@.fabric/AGENTS.md")).toBe(true);
@@ -1589,11 +1583,10 @@ describe("runDoctorReport", () => {
       const target = createInitializedProject("doctor-rc19-l2-crlf-agents");
       writeFile(".fabric/events.jsonl", "", target);
 
-      // Install canonical state (post-rc.19): L1 snapshot canonical, both L2
-      // managed-block targets seeded canonical, CLAUDE.md with @-import.
+      // Install canonical state (post-rc.19): L1 snapshot canonical, L2
+      // managed-block target seeded canonical, CLAUDE.md with @-import.
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
       seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL_EN);
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL_EN);
       writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
 
       // Sanity: baseline is clean (no managed_block_drift).
@@ -1610,36 +1603,6 @@ describe("runDoctorReport", () => {
       // Sanity: the bytes really do differ from the LF original.
       expect(crlf).not.toBe(lf);
       writeFileSync(agentsPath, crlf, "utf8");
-
-      const report = await runDoctorReport(target);
-      const codes = report.fixable_errors.map((e) => e.code);
-      expect(codes).toContain("managed_block_drift");
-      expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("error");
-    });
-
-    it("reports L2 drift when .cursor/rules/fabric-bootstrap.mdc managed block contains CRLF line endings", async () => {
-      // CRLF regression guard for the Cursor mdc target — parallel to the
-      // AGENTS.md CRLF case above. Pins the no-normalization invariant for the
-      // second L2 managed-block surface.
-      const target = createInitializedProject("doctor-rc19-l2-crlf-cursor");
-      writeFile(".fabric/events.jsonl", "", target);
-
-      // Install canonical state.
-      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
-      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL_EN);
-      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL_EN);
-      writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
-
-      // Sanity: baseline is clean.
-      const baseline = await runDoctorReport(target);
-      expect(baseline.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
-
-      // Mutate ONLY the cursor mdc file to carry CRLF line endings.
-      const cursorPath = join(target, ".cursor", "rules", "fabric-bootstrap.mdc");
-      const lf = readFileSync(cursorPath, "utf8");
-      const crlf = lf.replace(/\n/g, "\r\n");
-      expect(crlf).not.toBe(lf);
-      writeFileSync(cursorPath, crlf, "utf8");
 
       const report = await runDoctorReport(target);
       const codes = report.fixable_errors.map((e) => e.code);
@@ -2404,7 +2367,7 @@ describe("runDoctorCiteCoverage", () => {
     kbLineRaw: string | null;
     citeIds: string[];
     citeTags: string[];
-    client?: "cc" | "codex" | "cursor";
+    client?: "cc" | "codex";
     ts: number;
   }): object {
     return {
@@ -3260,7 +3223,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     citeIds: string[];
     citeTags: string[];
     citeCommitments?: ContractCommitment[];
-    client?: "cc" | "codex" | "cursor";
+    client?: "cc" | "codex";
     ts: number;
     kbLineRaw?: string | null;
   }): object {

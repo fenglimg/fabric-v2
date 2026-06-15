@@ -20,7 +20,7 @@ const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
  *
  * Responsibilities:
  * 1. Install local fabric-server if using local mode
- * 2. Configure MCP for Claude Code, Codex, and Cursor
+ * 2. Configure MCP for Claude Code and Codex
  * 3. Use appropriate scope (project or user)
  *
  * This stage can be skipped via --skipMcp.

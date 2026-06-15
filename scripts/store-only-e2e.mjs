@@ -196,7 +196,12 @@ async function main() {
     assert(approved.approved.length === 1, "review approve did not approve exactly one entry");
     const stableId = approved.approved[0].stable_id;
 
-    const storeRoot = join(fabricHome, ".fabric", "stores", "team");
+    // Two-layer store layout (grill-6fixes D4): stores/<group>/<label>, where
+    // group = personal|team bucket and label = mount_name. Derive the store root
+    // the same way production does (storeRelativePathForMount) instead of
+    // hardcoding stores/team — the mounted team store physically lives at
+    // stores/team/team here (group=team, mount_name=team).
+    const storeRoot = join(fabricHome, ".fabric", shared.storeRelativePathForMount(team));
     const canonicalDir = join(storeRoot, shared.STORE_LAYOUT.knowledgeDir, "decisions");
     const canonicalFiles = listMarkdown(canonicalDir);
     assert(canonicalFiles.length === 1, "canonical decision was not written to the team store");

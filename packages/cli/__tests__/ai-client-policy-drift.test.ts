@@ -31,7 +31,6 @@ describe("AI client policy docs drift guard", () => {
       "packages/shared/src/templates/bootstrap-canonical.ts",
       ".fabric/AGENTS.md",
       "AGENTS.md",
-      ".cursor/rules/fabric-bootstrap.mdc",
     ]
       .map((rel) => `${rel}\n${read(rel)}`)
       .join("\n\n---\n\n");
@@ -53,10 +52,11 @@ describe("AI client policy docs drift guard", () => {
     expect(archiveGateDocs).not.toContain("from archive-hint.cjs");
   });
 
-  it("keeps Cursor skill delivery documented in the parity matrix", () => {
+  it("keeps skill delivery documented in the parity matrix for both clients", () => {
     const parityMatrix = read("packages/shared/src/parity/parity-matrix.json");
 
-    expect(parityMatrix).toMatch(/\.cursor\/skills\/fabric-/);
-    expect(parityMatrix).not.toContain("Fabric does not install .cursor/skills");
+    expect(parityMatrix).toMatch(/\.claude\/skills\/fabric-/);
+    expect(parityMatrix).toMatch(/\.codex\/skills\/fabric-/);
+    expect(parityMatrix).not.toContain(".cursor/skills");
   });
 });

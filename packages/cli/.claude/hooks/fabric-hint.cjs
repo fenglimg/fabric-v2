@@ -44,23 +44,6 @@ try {
   citeLineParser = null;
 }
 
-// v2.0.0-rc.24 TASK-05: L1 enforcement layer — soft Stop hook reminder for
-// [recalled] cites of decision/pitfall types that arrived without operator
-// contract or skip:<reason>. Reads .fabric/agents.meta.json (via
-// lib/cite-contract-reminder.cjs#readKnowledgeTypeMap) to type-route cite
-// ids per B6 lock; emits one
-//   ⚠ KB: <id> cited as [recalled] but missing contract; add → edit:<glob>
-//     or → skip:<reason> next turn
-// line to stderr per offending id. Non-blocking, never throws.
-let citeContractReminder = null;
-try {
-  citeContractReminder = require("./lib/cite-contract-reminder.cjs");
-} catch {
-  // Helper module missing — soft reminder simply doesn't fire. Audit-side
-  // doctor (TASK-08) still catches contract violations at the next run.
-  citeContractReminder = null;
-}
-
 // v2.0.0-rc.37 NEW-30: shared client-protocol adapter. Guarded require (this
 // hook runs in arbitrary user repos); detectClient delegates the 3-tier
 // detection to the lib, falling back to env-only when the lib is absent.
@@ -69,6 +52,17 @@ try {
   clientAdapter = require("./lib/client-adapter.cjs");
 } catch {
   clientAdapter = null;
+}
+
+// v2.2 dual-sink (Goal A / D4): human-output gate for the archive nudge. The Stop
+// archive nudge is SOFT (additionalContext, never decision:block — D3) and the
+// human systemMessage is gated by nudge_mode. Optional require — absent → human
+// always emits (legacy posture).
+let nudgePolicy = null;
+try {
+  nudgePolicy = require("./lib/nudge-policy.cjs");
+} catch {
+  nudgePolicy = null;
 }
 
 // v2.0.0-rc.37 NEW-16: shared config + sidecar I/O for the per-signal dismiss
@@ -98,14 +92,97 @@ try {
   bindingsSnapshotReader = null;
 }
 
-// Read the project's own `project_id` (the snapshot key) from its config.
-function readProjectId(cwd) {
+// Read the workspace binding id (snapshot key) from project config. Standard
+// repos default to project_id; worktrees can set workspace_binding_id to isolate
+// hook/runtime state without changing project identity.
+function readWorkspaceBindingId(cwd) {
   try {
     const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
   } catch {
     return null;
   }
+}
+
+function readSnapshotKnowledgeStats(projectRoot, now) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const empty = { pendingCount: 0, oldestPendingAgeMs: null, canonicalCount: 0 };
+  if (bindingsSnapshotReader === null) {
+    return null;
+  }
+  const bindingId = readWorkspaceBindingId(projectRoot);
+  if (bindingId === null) {
+    return null;
+  }
+  try {
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    const stats = snapshot && snapshot.knowledge_stats;
+    if (!stats || typeof stats !== "object") {
+      return empty;
+    }
+    const pendingCount =
+      Number.isFinite(stats.pending_count) && stats.pending_count > 0
+        ? Math.floor(stats.pending_count)
+        : 0;
+    const canonicalCount =
+      Number.isFinite(stats.canonical_count) && stats.canonical_count > 0
+        ? Math.floor(stats.canonical_count)
+        : 0;
+    const oldestPendingAgeMs =
+      pendingCount > 0 &&
+      Number.isFinite(stats.oldest_pending_mtime_ms) &&
+      stats.oldest_pending_mtime_ms > 0
+        ? Math.max(0, nowMs - stats.oldest_pending_mtime_ms)
+        : null;
+    return { pendingCount, oldestPendingAgeMs, canonicalCount };
+  } catch {
+    return empty;
+  }
+}
+
+function readLegacyPendingStats(projectRoot, now) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const baseDir = join(projectRoot, FABRIC_DIR, PENDING_DIR);
+
+  let count = 0;
+  let oldestMtime = null;
+
+  if (!existsSync(baseDir)) {
+    return { count: 0, oldestAgeMs: null };
+  }
+
+  for (const type of PENDING_TYPES) {
+    const typeDir = join(baseDir, type);
+    if (!existsSync(typeDir)) continue;
+
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      const filePath = join(typeDir, entry);
+      let mtime;
+      try {
+        mtime = statSync(filePath).mtimeMs;
+      } catch {
+        continue;
+      }
+      count += 1;
+      if (oldestMtime === null || mtime < oldestMtime) {
+        oldestMtime = mtime;
+      }
+    }
+  }
+
+  return {
+    count,
+    oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
+  };
 }
 
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
@@ -125,6 +202,59 @@ const EVENT_LEDGER_FILE = "events.jsonl";
 const METRICS_LEDGER_FILE = "metrics.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
+
+// v2.2 dual-sink (Goal A / D6): deterministic high-value probe for the archive
+// nudge value-gate. Mirrors packages/server/src/services/archive-scan.ts
+// (hasHighValueSignal) — the hook replicates the SAME deterministic ledger probe
+// rather than running the semantic archive-scan, staying within the Hook⊥MCP
+// boundary (the hook reads events.jsonl mechanically; it never judges relevance).
+// Keep these two literal sets in sync with archive-scan.ts.
+const ARCHIVE_HIGH_VALUE_EVENT_TYPES = new Set([
+  "knowledge_context_planned",
+  "edit_paths_recorded",
+  "edit_intent_checked",
+]);
+const ARCHIVE_NORMATIVE_KEYWORDS = [
+  "以后",
+  "always",
+  "never",
+  "from now on",
+  "下次",
+  "记一下",
+  "永远不要",
+];
+
+// v2.2 dual-sink (Goal A / D6): does the ledger carry a high-value archive signal
+// since the watermark (last knowledge_proposed)? True iff any HIGH_VALUE event
+// fired past the watermark, OR the latest assistant_turn carries a normative
+// keyword. Deterministic — no semantic judgement. Used to VALUE-GATE the archive
+// nudge so the check cadence (edits/hours) is decoupled from the nudge cadence
+// (D6): a workspace that crossed the edit threshold but produced no high-value
+// signal stays quiet. watermarkTs null (never archived) → treat all events as
+// past-watermark (a never-archived repo with any edit signal is worth nudging).
+function hasHighValueArchiveSignal(events, watermarkTs) {
+  if (!Array.isArray(events)) return false;
+  const wm = typeof watermarkTs === "number" ? watermarkTs : 0;
+  let latestTurn = null;
+  for (const e of events) {
+    if (!e || typeof e.ts !== "number" || e.ts <= wm) continue;
+    if (typeof e.event_type === "string" && ARCHIVE_HIGH_VALUE_EVENT_TYPES.has(e.event_type)) {
+      return true;
+    }
+    if (e.event_type === "assistant_turn_observed") {
+      if (latestTurn === null || (typeof latestTurn.ts === "number" && e.ts > latestTurn.ts)) {
+        latestTurn = e;
+      }
+    }
+  }
+  if (latestTurn !== null) {
+    const haystack = JSON.stringify(latestTurn).toLowerCase();
+    for (const kw of ARCHIVE_NORMATIVE_KEYWORDS) {
+      if (haystack.includes(kw.toLowerCase())) return true;
+    }
+  }
+  return false;
+}
 // v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
 const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
 // v2.0.0-rc.20 TASK-03: per-turn cite-policy observation event. Emitted by
@@ -267,92 +397,31 @@ function readLedger(projectRoot) {
 }
 
 /**
- * Walk <projectRoot>/.fabric/knowledge/pending/<type>/*.md across all
- * PENDING_TYPES subdirs, collecting count and oldest mtime.
+ * Read pending counts from the CLI-generated resolved-bindings snapshot.
  *
  * Returns { count, oldestAgeMs } where:
  *   - count: total .md file count across all type subdirs
  *   - oldestAgeMs: (nowMs - oldestMtimeMs) when count>0, else null
  *
- * ENOENT / unreadable subdir / unstat-able file → silently skipped
- * (preserves the hook's never-block-on-failure invariant).
+ * Store-only cutover: hooks never walk project-local knowledge or store
+ * trees. Missing snapshot stats degrade to zero (KT-DEC-0007).
  */
 function readPendingStats(projectRoot, now) {
-  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const baseDir = join(projectRoot, FABRIC_DIR, PENDING_DIR);
-
-  let count = 0;
-  let oldestMtime = null;
-
-  if (!existsSync(baseDir)) {
-    return { count: 0, oldestAgeMs: null };
+  const stats = readSnapshotKnowledgeStats(projectRoot, now);
+  if (stats !== null) {
+    return { count: stats.pendingCount, oldestAgeMs: stats.oldestPendingAgeMs };
   }
-
-  for (const type of PENDING_TYPES) {
-    const typeDir = join(baseDir, type);
-    if (!existsSync(typeDir)) continue;
-
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.endsWith(".md")) continue;
-      const filePath = join(typeDir, entry);
-      let mtime;
-      try {
-        mtime = statSync(filePath).mtimeMs;
-      } catch {
-        continue;
-      }
-      count += 1;
-      if (oldestMtime === null || mtime < oldestMtime) {
-        oldestMtime = mtime;
-      }
-    }
-  }
-
-  return {
-    count,
-    oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
-  };
+  return readLegacyPendingStats(projectRoot, now);
 }
 
 /**
- * Count canonical knowledge entries across the five canonical type subdirs
- * (decisions / pitfalls / guidelines / models / processes). Pending entries
- * are NOT counted — they are proposals, not seeded knowledge.
- *
- * Returns the integer count. ENOENT / unreadable subdir → silently treated as
- * zero (preserves never-block-on-failure invariant). Filters on `.md` suffix
- * only; the more-precise canonical filename pattern check is owned by
- * doctor.ts (the hook is a coarse signal, not a lint).
+ * Count canonical knowledge entries from the CLI-generated resolved-bindings
+ * snapshot. Store-only: hooks never walk project-local knowledge or store
+ * trees — a missing snapshot degrades to zero (KT-DEC-0007).
  */
 function countCanonicalNodes(projectRoot) {
-  const knowledgeRoot = join(projectRoot, FABRIC_DIR, "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return 0;
-  }
-  let count = 0;
-  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
-    const typeDir = join(knowledgeRoot, type);
-    if (!existsSync(typeDir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".md")) {
-        count += 1;
-      }
-    }
-  }
-  return count;
+  const stats = readSnapshotKnowledgeStats(projectRoot);
+  return stats === null ? 0 : stats.canonicalCount;
 }
 
 /**
@@ -1510,14 +1579,13 @@ function parseKbLine(raw) {
  *      "codex". Covers the dominant deployment shape (hook script lives
  *      under the client's per-repo dir).
  *
- * Returns `undefined` when neither signal fires (e.g. Cursor — deferred to
- * rc.21 — or a custom deployment). The Zod schema marks `client` optional,
- * so omitting it leaves the event valid.
+ * Returns `undefined` when neither signal fires (a custom deployment). The
+ * Zod schema marks `client` optional, so omitting it leaves the event valid.
  */
 function detectClient() {
   // Delegate the full 3-tier detection (env → CLAUDE_PROJECT_DIR → path
-  // heuristic, incl. .cursor) to the shared adapter. __dirname is passed so
-  // the path heuristic reflects THIS hook's location.
+  // heuristic) to the shared adapter. __dirname is passed so the path
+  // heuristic reflects THIS hook's location.
   if (clientAdapter && typeof clientAdapter.detectClient === "function") {
     return clientAdapter.detectClient(__dirname);
   }
@@ -1525,7 +1593,7 @@ function detectClient() {
   const envClient = process.env.FABRIC_HINT_CLIENT;
   if (typeof envClient === "string" && envClient.length > 0) {
     const normalised = envClient.trim().toLowerCase();
-    if (normalised === "cc" || normalised === "codex" || normalised === "cursor") {
+    if (normalised === "cc" || normalised === "codex") {
       return normalised;
     }
   }
@@ -1865,50 +1933,6 @@ function summarizeTranscript(transcriptPath) {
 }
 
 /**
- * v2.0.0-rc.24 TASK-05: emit soft L1 reminder to stderr when assistant turns
- * cited a decision/pitfall id with [recalled] but no operator contract and no
- * skip:<reason>. Reads agents.meta.json once per invocation; aggregated per
- * turn (one line per offending id). Non-blocking — never throws, always
- * returns the array of emitted reminder strings (for unit tests + callers
- * that want to observe what was written).
- *
- * The reminder writes go to stderr (the hook contract: stdout is structured
- * banner JSON consumed by the harness; stderr is free-text system message
- * that surfaces back to the model on the next turn in cc / codex / cursor).
- */
-function emitCiteContractRemindersBestEffort(cwd, stdinPayload, stderr) {
-  if (citeContractReminder === null) return [];
-  if (stdinPayload === null || typeof stdinPayload !== "object") return [];
-  try {
-    const transcript = summarizeTranscript(stdinPayload.transcript_path);
-    const turns = transcript.assistant_turns;
-    if (!Array.isArray(turns) || turns.length === 0) return [];
-
-    const idTypeMap = citeContractReminder.readKnowledgeTypeMap(cwd);
-    if (!(idTypeMap instanceof Map) || idTypeMap.size === 0) return [];
-
-    const reminders = citeContractReminder.formatContractMissingReminders({
-      assistant_turns: turns,
-      idTypeMap,
-    });
-    if (!Array.isArray(reminders) || reminders.length === 0) return [];
-
-    const sink = stderr || process.stderr;
-    for (const line of reminders) {
-      try {
-        sink.write(line + "\n");
-      } catch {
-        // Sink write failure must not abort emission of remaining reminders.
-      }
-    }
-    return reminders;
-  } catch {
-    // Outer guard — never throw. Hook continues silently.
-    return [];
-  }
-}
-
-/**
  * v2.0.0-rc.7 T5: writeSessionDigestBestEffort — non-blocking digest fan-out.
  * Called from main() before the existing decide() flow. Failure is silently
  * swallowed; the Stop hook contract remains "never block on hook failure".
@@ -1960,16 +1984,6 @@ function main(env, stdio) {
     // transcript file is small in practice and re-parse cost is dwarfed by
     // the hook's other I/O).
     extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload);
-
-    // v2.0.0-rc.24 TASK-05: L1 soft reminder layer. Surfaces ⚠ KB:<id> lines
-    // to stderr when decision/pitfall cites arrived with [recalled] tag but
-    // empty contract. Non-blocking, never throws; doctor (TASK-08) catches
-    // any contract violation the model ignored.
-    emitCiteContractRemindersBestEffort(
-      cwd,
-      stdinPayload,
-      stdio && stdio.stderr,
-    );
 
     const events = readLedger(cwd);
 
@@ -2130,6 +2144,26 @@ function main(env, stdio) {
 
     if (result === null) return;
 
+    // v2.2 dual-sink (Goal A / D6): VALUE-GATE the archive nudge. Signal A's
+    // edit/hours trigger is the CHECK cadence; the nudge only fires when a
+    // deterministic high-value signal accrued since the last archive (decouples
+    // check frequency from disturb frequency). Boundary-correct: replicates
+    // archive-scan's ledger probe (no semantic judgement). Other signals
+    // (review/import/maintenance) are unaffected.
+    if (result.signal === "archive") {
+      let watermarkTs = null;
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i];
+        if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
+          watermarkTs = ev.ts;
+          break;
+        }
+      }
+      if (!hasHighValueArchiveSignal(events, watermarkTs)) {
+        return; // no high-value candidate → stay quiet (D6 value-gate)
+      }
+    }
+
     // v2.0.0-rc.37 NEW-16: per-signal dismiss. A chosen signal whose type the
     // user dismissed (config-durable or session sidecar) exits silently —
     // same shape as a cooldown hit. Covers BOTH maintenance and A/B/C paths.
@@ -2150,10 +2184,10 @@ function main(env, stdio) {
     // pile. Best-effort; missing snapshot / single-store omits the line.
     if (bindingsSnapshotReader !== null && typeof result.reason === "string") {
       try {
-        const projectId = readProjectId(cwd);
-        if (projectId) {
+        const bindingId = readWorkspaceBindingId(cwd);
+        if (bindingId) {
           const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
           );
           if (label) {
             result.reason = `${result.reason}\n${label}`;
@@ -2193,9 +2227,27 @@ function main(env, stdio) {
     }
 
     emitSignalFiredEvent(cwd, sessionId, result);
+    const reasonText = typeof result.reason === "string" ? result.reason : "";
     delete result.threshold;
     delete result.actual_value;
-    out.write(JSON.stringify(result));
+    // v2.2 dual-sink (Goal A / D3): the archive nudge is SOFT — emitted as
+    // additionalContext(AI) + systemMessage(human), NEVER decision:block. The
+    // human channel is gated by nudge_mode (D4/D5); the AI channel always carries
+    // it (flow ⊥ observation). Missing it is backstopped by the SessionEnd marker
+    // + cross-session debt (D3). Review/import keep the decision:block contract
+    // (out of Goal A scope; KT-DEC-0007 nudge semantics unchanged for them).
+    if (result.signal === "archive" && clientAdapter && typeof clientAdapter.emitDualSink === "function") {
+      const humanGate =
+        nudgePolicy !== null
+          ? nudgePolicy.resolveHumanSink(cwd, "stop", { highValue: true })
+          : { emitHuman: true };
+      clientAdapter.emitDualSink(
+        { human: humanGate.emitHuman ? reasonText : null, ai: reasonText },
+        { client: clientAdapter.detectClient(__dirname), eventName: "Stop", streams: { stdout: out } },
+      );
+    } else {
+      out.write(JSON.stringify(result));
+    }
     cache[result.signal] = nowMs;
     writeShownCache(cwd, cache, resolveHookSessionId(stdinPayload));
   } catch {
@@ -2248,10 +2300,6 @@ module.exports = {
   parseKbLine,
   detectClient,
   extractAndWriteAssistantTurnsBestEffort,
-  // v2.0.0-rc.24 TASK-05: L1 soft reminder helpers (exported for unit testing
-  // of the contract-missing emission contract). The lib module itself is
-  // also exported indirectly via the reminder helper.
-  emitCiteContractRemindersBestEffort,
   // lifecycle-refactor W3-A2 (§7): graph-edge-candidate request emitter
   // (exported for unit testing of the honest stable_id-gating + de-dup).
   emitGraphEdgeCandidateBestEffort,

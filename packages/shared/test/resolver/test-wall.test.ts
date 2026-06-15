@@ -11,7 +11,7 @@ import {
   createIsolatedHome,
   seedAndPush,
   setProjectRoot,
-  threeClientConfigFixtures,
+  twoClientConfigFixtures,
 } from "../helpers/test-wall.js";
 
 // v2.1.0-rc.1 P0.5 — test-wall smoke (GREEN). Proves the isolation harness
@@ -55,10 +55,10 @@ describe("P0.5 test wall — fake bare remote", () => {
   });
 });
 
-describe("P0.5 test wall — three-client config fixtures", () => {
+describe("P0.5 test wall — two-client config fixtures", () => {
   it("parses each client fixture against fabricConfigSchema with v2.1 fields", () => {
-    const fx = threeClientConfigFixtures();
-    for (const cfg of [fx.claudeCode, fx.codexCLI, fx.cursor]) {
+    const fx = twoClientConfigFixtures();
+    for (const cfg of [fx.claudeCode, fx.codexCLI]) {
       const parsed = fabricConfigSchema.parse(cfg);
       expect(parsed.project_id).toBe("11111111-1111-4111-8111-111111111111");
       expect(parsed.required_stores?.[0]?.id).toBe("team");

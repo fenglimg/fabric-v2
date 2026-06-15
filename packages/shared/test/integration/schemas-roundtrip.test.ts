@@ -46,7 +46,7 @@ describe('I1.1 fabricConfigSchema round-trip', () => {
   })
   it('full config with all fields', () => {
     roundTrip(fabricConfigSchema, {
-      clientPaths: { claudeCodeCLI: '/usr/bin/claude', cursor: '/usr/bin/cursor' },
+      clientPaths: { claudeCodeCLI: '/usr/bin/claude', codexCLI: '/usr/bin/codex' },
       scanIgnores: ['node_modules', 'dist'],
       audit_mode: 'strict',
       mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 },
@@ -54,7 +54,7 @@ describe('I1.1 fabricConfigSchema round-trip', () => {
   })
   it('clientPathsSchema rejects unknown clientPaths keys (strict, no passthrough)', () => {
     // v2.0 / rc.2: Fabric scope is locked to claudeCodeCLI / claudeCodeDesktop /
-    // cursor / codexCLI. Retired v1.x keys (windsurf, rooCode, geminiCLI) and
+    // codexCLI. Retired v1.x keys (windsurf, rooCode, geminiCLI) and
     // any other unknown key fail at Zod parse time on the strict
     // clientPathsSchema — there is no soft-deprecation path.
     for (const retired of ['windsurf', 'rooCode', 'geminiCLI', 'unknownClient']) {

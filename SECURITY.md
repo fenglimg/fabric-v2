@@ -34,7 +34,7 @@ In scope:
 Out of scope:
 
 - The quarantined `packages/server-http-experimental/` package (not built or shipped to npm).
-- Third-party AI clients (Claude Code, Cursor, Codex CLI) — report there.
+- Third-party AI clients (Claude Code, Codex CLI) — report there.
 - General prompt-injection of LLMs via knowledge entries (Fabric scrubs known patterns via `INJECTION_PATTERNS` in `packages/server/src/services/extract-knowledge.ts`; novel evasions are useful research and welcome via email).
 
 ## Hardening notes

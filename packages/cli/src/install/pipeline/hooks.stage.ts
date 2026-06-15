@@ -20,10 +20,8 @@ import {
   installHookLibs,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
-  mergeCursorHookConfig,
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
-  writeCursorBootstrapManagedBlock,
   type InstallStepResult,
 } from "../skills-and-hooks.js";
 import { writeFabricAgentsSnapshot } from "../write-bootstrap-snapshot.js";
@@ -89,13 +87,11 @@ export class HooksStage implements Stage {
       // Merge hook configs
       installResults.push(await this.runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(target)));
       installResults.push(await this.runSingleStep("codex-hook-config", () => mergeCodexHookConfig(target)));
-      installResults.push(await this.runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(target)));
 
       // Bootstrap snapshots
       installResults.push(await this.runSingleStep("bootstrap-snapshot", () => writeFabricAgentsSnapshot(target)));
       installResults.push(await this.runSingleStep("bootstrap-claude", () => writeClaudeBootstrapThinShell(target)));
       installResults.push(await this.runSingleStep("bootstrap-codex", () => writeCodexBootstrapManagedBlock(target)));
-      installResults.push(await this.runSingleStep("bootstrap-cursor", () => writeCursorBootstrapManagedBlock(target)));
 
       // Validate hook paths
       installResults.push(...validateHookPaths(target));

@@ -209,7 +209,7 @@ export const doctorCommand = defineCommand({
       type: "string",
       description: t("cli.doctor.args.client.description"),
       default: "all",
-      valueHint: "cc|codex|cursor|all",
+      valueHint: "cc|codex|all",
     },
     layer: {
       type: "string",
@@ -977,12 +977,11 @@ async function resolveFixKnowledgeConsent(options: {
 // rc.20 TASK-05: --cite-coverage flag helpers
 // ---------------------------------------------------------------------------
 
-type CiteCoverageClientFilter = "cc" | "codex" | "cursor" | "all";
+type CiteCoverageClientFilter = "cc" | "codex" | "all";
 
 const CITE_COVERAGE_CLIENT_FILTERS: ReadonlySet<CiteCoverageClientFilter> = new Set([
   "cc",
   "codex",
-  "cursor",
   "all",
 ]);
 

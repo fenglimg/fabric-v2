@@ -100,8 +100,8 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
 
     // rc.16 TASK-004 (F2-tests): fabric-owned hook libs are removed too.
     // Symmetric inverse of installHookLibs — the lib `.cjs` files plus the
-    // empty `lib/` directory should be gone across all 3 client trees.
-    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+    // empty `lib/` directory should be gone across all client trees.
+    for (const clientDir of [".claude", ".codex"]) {
       expect(
         existsSync(join(target, clientDir, "hooks/lib/banner-i18n.cjs")),
         `${clientDir} banner-i18n.cjs should be removed`,
@@ -121,13 +121,10 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     // settings.json by default, but the file itself may still exist with
     // permissions or other unmodified fields.
     //
-    // rc.14 TASK-004 (Finding 3) — extend snapshot assertions to `.cursor`
-    // and `.codex` alongside `.claude`. Closes the uninstall-side parity
-    // gap parallel to the install-side `.cursor` snapshot coverage added
-    // in TASK-002. Without this, cursor/codex-side uninstall regressions
-    // would sneak past CI.
+    // rc.14 TASK-004 (Finding 3) — extend snapshot assertions to `.codex`
+    // alongside `.claude`. Closes the uninstall-side parity gap. Without
+    // this, codex-side uninstall regressions would sneak past CI.
     const remainingClaude = snapshotTree(target, ".claude");
-    const remainingCursor = snapshotTree(target, ".cursor");
     const remainingCodex = snapshotTree(target, ".codex");
     for (const path of Object.keys(remainingClaude)) {
       // No fabric-owned filenames remain in .claude.
@@ -138,14 +135,6 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       expect(path).not.toContain("fabric-review/SKILL.md");
       expect(path).not.toContain("fabric-import/SKILL.md");
       // rc.16 TASK-004: lib `.cjs` helpers shipped via installHookLibs.
-      expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
-      expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
-    }
-    for (const path of Object.keys(remainingCursor)) {
-      // No fabric-owned hook scripts remain in .cursor.
-      expect(path).not.toContain("fabric-hint.cjs");
-      expect(path).not.toContain("knowledge-hint-broad.cjs");
-      expect(path).not.toContain("knowledge-hint-narrow.cjs");
       expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
       expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
@@ -160,7 +149,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
   });
 
   // W2-01 (F3): cite-policy-evict.cjs was installed (rc.34 TASK-06) across all
-  // three clients but the uninstall path never removed the script OR pruned the
+  // clients but the uninstall path never removed the script OR pruned the
   // config entry. Round-trip must leave zero cite-policy-evict residue.
   it("removes cite-policy-evict.cjs scripts and prunes its config entries (F3)", async () => {
     const target = createWerewolfFixtureRoot("itg-uninstall-cite-evict");
@@ -169,7 +158,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     await runInit(target);
 
     // Pre-condition: the cite-policy-evict script exists on every client.
-    for (const dir of [".claude", ".codex", ".cursor"]) {
+    for (const dir of [".claude", ".codex"]) {
       expect(
         existsSync(join(target, dir, "hooks", "cite-policy-evict.cjs")),
         `${dir} cite-policy-evict.cjs should exist after init`,
@@ -182,15 +171,15 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     await runUninstall(target);
 
     // Scripts gone on every client.
-    for (const dir of [".claude", ".codex", ".cursor"]) {
+    for (const dir of [".claude", ".codex"]) {
       expect(
         existsSync(join(target, dir, "hooks", "cite-policy-evict.cjs")),
         `${dir} cite-policy-evict.cjs should be removed`,
       ).toBe(false);
     }
-    // Config entry pruned: no surviving config across the three clients still
+    // Config entry pruned: no surviving config across the clients still
     // references the script.
-    for (const rel of [".claude/settings.json", ".codex/hooks.json", ".cursor/hooks.json"]) {
+    for (const rel of [".claude/settings.json", ".codex/hooks.json"]) {
       const p = join(target, rel);
       if (existsSync(p)) {
         expect(readFileSync(p, "utf8")).not.toContain("cite-policy-evict.cjs");
@@ -373,9 +362,6 @@ describe("TASK-005 uninstall round-trip: T5 idempotent re-run", () => {
 //                                          to CLAUDE.md, so no marker strip).
 //   - AGENTS.md                          — strip `fabric:bootstrap` managed
 //                                          block (markers inclusive).
-//   - .cursor/rules/fabric-bootstrap.mdc — strip managed block; delete the
-//                                          file when only YAML front-matter
-//                                          remains.
 //
 // New assertions:
 //   - uninstall deletes `.fabric/AGENTS.md` (the L1 snapshot).
@@ -386,10 +372,8 @@ describe("TASK-005 uninstall round-trip: T5 idempotent re-run", () => {
 const SECTION_BEGIN_UN = "<!-- fabric:bootstrap:begin -->";
 const SECTION_END_UN = "<!-- fabric:bootstrap:end -->";
 
-const CURSOR_BOOTSTRAP_MDC_REL_UN = ".cursor/rules/fabric-bootstrap.mdc";
-
-describe("rc.19 TASK-003 uninstall round-trip: bootstrap three-end strip", () => {
-  it("strips fabric content from CLAUDE.md / AGENTS.md / Cursor mdc while preserving user content", async () => {
+describe("rc.19 TASK-003 uninstall round-trip: bootstrap two-end strip", () => {
+  it("strips fabric content from CLAUDE.md / AGENTS.md while preserving user content", async () => {
     const target = createWerewolfFixtureRoot("itg-uninstall-t6-section");
     tempRoots.push(target);
 
@@ -412,7 +396,6 @@ describe("rc.19 TASK-003 uninstall round-trip: bootstrap three-end strip", () =>
     expect(agentsAfterInit).toContain(SECTION_BEGIN_UN);
     expect(agentsAfterInit).toContain(SECTION_END_UN);
 
-    expect(existsSync(join(target, CURSOR_BOOTSTRAP_MDC_REL_UN))).toBe(true);
     expect(existsSync(join(target, ".fabric/AGENTS.md"))).toBe(true);
 
     await runUninstall(target);
@@ -429,9 +412,6 @@ describe("rc.19 TASK-003 uninstall round-trip: bootstrap three-end strip", () =>
     expect(agentsAfterUninstall).not.toContain(SECTION_END_UN);
     expect(agentsAfterUninstall).toContain("# Project notes");
     expect(agentsAfterUninstall).toContain("User-authored project guidance lives here.");
-
-    // Cursor mdc: file deleted (front-matter-only after strip).
-    expect(existsSync(join(target, CURSOR_BOOTSTRAP_MDC_REL_UN))).toBe(false);
 
     // L1 snapshot deleted.
     expect(existsSync(join(target, ".fabric/AGENTS.md"))).toBe(false);

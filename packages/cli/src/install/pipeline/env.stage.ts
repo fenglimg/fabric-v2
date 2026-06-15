@@ -20,7 +20,7 @@ import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
  * Environment stage: sets up the project environment.
  *
  * Responsibilities:
- * 1. Detect client supports (Claude Code, Codex, Cursor)
+ * 1. Detect client supports (Claude Code, Codex)
  * 2. Create .fabric directory structure
  * 3. Write fabric-config.json with detected language
  * 4. Write .gitignore for Fabric artifacts

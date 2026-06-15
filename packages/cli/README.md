@@ -7,7 +7,7 @@
 1. 在 monorepo 根目录运行 `pnpm install`。
 2. 用 `pnpm --filter @fenglimg/fabric-cli build` 构建 CLI。
 3. 在目标项目运行 `fabric install`，完成一站式安装。
-4. 重启 Claude Code / Cursor / Codex CLI，在客户端里验证 `fab_recall`、`fab_plan_context` 和 `fab_get_knowledge_sections`。
+4. 重启 Claude Code / Codex CLI，在客户端里验证 `fab_recall`、`fab_plan_context` 和 `fab_get_knowledge_sections`。
 
 `fabric install` 会自动准备 bootstrap、MCP stdio 配置和 git hooks。当前公共命令面包括 `install`、`store`、`sync`、`info`、`doctor`、`uninstall`、`config`；`metrics`、`plan-context-hint`、`onboard-coverage` 是 hidden/internal 命令；`whoami` / `status` / `scope-explain` 作为 deprecated alias 保留到 v3。`fabric serve` 已 quarantine 到 `packages/server-http-experimental/`，主线不再注册。
 

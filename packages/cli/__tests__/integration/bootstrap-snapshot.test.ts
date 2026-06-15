@@ -5,7 +5,7 @@
  * `packages/cli/src/install/write-bootstrap-snapshot.ts`) wired into the
  * install bootstrap stage. The snapshot is the source-of-truth that
  * downstream propagation (TASK-003) fans out into per-client thin shells
- * (CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc), and that the
+ * (CLAUDE.md / AGENTS.md), and that the
  * server-side doctor L1 drift check consumes for byte-identical comparison.
  *
  * Coverage:

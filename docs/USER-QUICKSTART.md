@@ -6,7 +6,7 @@
 ## What Fabric is
 
 A **cross-client knowledge layer** for AI coding agents (Claude Code,
-Codex CLI, Cursor). Decisions / pitfalls / guidelines / models / processes
+Codex CLI). Decisions / pitfalls / guidelines / models / processes
 your team accumulates get stored as markdown in mounted stores under
 `~/.fabric/stores/`, and **hook scripts surface the relevant ones** to your AI
 mid-session so it stops re-arguing every architecture decision from scratch.

@@ -5,7 +5,6 @@ import type { fabricConfigSchema } from "../schemas/fabric-config.js";
 export interface ClientPaths {
   claudeCodeCLI?: string;
   claudeCodeDesktop?: string;
-  cursor?: string;
   codexCLI?: string;
 }
 

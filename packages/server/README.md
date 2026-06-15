@@ -1,6 +1,6 @@
 # @fenglimg/fabric-server
 
-Fabric MCP knowledge server. Runs over stdio transport and serves Claude Code, Cursor, and Codex CLI from a single `.fabric/` directory.
+Fabric MCP knowledge server. Runs over stdio transport and serves Claude Code and Codex CLI from a single `.fabric/` directory.
 
 ## Tools exposed
 

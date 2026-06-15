@@ -201,8 +201,8 @@ export async function writeJsonClientConfig(configPath: string, serverEntry: Ser
  * entry is not present. Preserves all other `mcpServers` entries byte-for-byte;
  * the only structural change is the key deletion + rewrite via atomic JSON.
  *
- * Used by ClaudeCodeCLIWriter / ClaudeCodeDesktopWriter / CursorWriter — the
- * three JSON-format clients. Codex (TOML) implements its own remove() via
+ * Used by ClaudeCodeCLIWriter / ClaudeCodeDesktopWriter — the
+ * JSON-format clients. Codex (TOML) implements its own remove() via
  * targeted regex stripping; see toml.ts.
  */
 export async function removeJsonClientConfigEntry(
@@ -353,19 +353,6 @@ export class ClaudeCodeCLIWriter extends JsonClientConfigWriter {
     return this.scope === "user"
       ? join(homedir(), ".claude.json")
       : join(workspaceRoot, ".mcp.json");
-  }
-}
-
-export class CursorWriter extends JsonClientConfigWriter {
-  readonly clientKind = "Cursor" as const;
-
-  constructor(configuredPath?: string) {
-    super(configuredPath);
-  }
-
-  protected defaultPath(workspaceRoot: string): string | null {
-    const cursorDir = join(workspaceRoot, ".cursor");
-    return existsSync(cursorDir) ? join(cursorDir, "mcp.json") : null;
   }
 }
 

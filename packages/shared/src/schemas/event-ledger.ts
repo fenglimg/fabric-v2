@@ -515,7 +515,7 @@ export const assistantTurnObservedEventSchema = z.object({
   // existing inline event constructors stay valid without supplying it — pre-W3-T4
   // events parse with the field absent and bucket under the unqualified default.
   cite_stores: z.array(z.string().nullable()).optional(),
-  client: z.enum(["cc", "codex", "cursor"]).optional(),
+  client: z.enum(["cc", "codex"]).optional(),
   turn_id: z.string(),
   envelope_index: z.number().int().nonnegative().optional(),
   timestamp: z.string().datetime(),
@@ -690,7 +690,7 @@ export const hookSurfaceEmittedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("hook_surface_emitted"),
   hook_name: z.string(),
-  client: z.enum(["cc", "codex", "cursor"]),
+  client: z.enum(["cc", "codex"]),
   target_channel: z.string(),
   rendered_ids: z.array(z.string()),
   delivery_status: z.enum(["delivered", "suppressed", "error"]),
@@ -797,7 +797,7 @@ export const llmJudgeRunEventSchema = z.object({
 export const clientCapabilitySnapshotEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("client_capability_snapshot"),
-  client: z.enum(["cc", "codex", "cursor"]),
+  client: z.enum(["cc", "codex"]),
   capabilities: z.array(z.string()),
   version: z.string(),
 });

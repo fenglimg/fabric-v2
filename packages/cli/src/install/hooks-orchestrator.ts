@@ -20,10 +20,8 @@ import {
   installPostTooluseMutationHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
-  mergeCursorHookConfig,
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
-  writeCursorBootstrapManagedBlock,
   type InstallStepResult,
 } from "./skills-and-hooks.js";
 import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
@@ -61,19 +59,17 @@ export type InstallHooksResult = {
  *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
  *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
  *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
- *   4. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/ + .cursor/hooks/
- *      (rc.5 TASK-010: renamed from archive-hint.cjs; Cursor added as third client)
+ *   4. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/
+ *      (rc.5 TASK-010: renamed from archive-hint.cjs)
  *   5. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
  *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
  *   6. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
  *      (events.Stop[] array-append-with-dedupe)
- *   7. Deep-merge templates/hooks/configs/cursor-hooks.json into .cursor/hooks.json
- *      (events.Stop[] array-append-with-dedupe — rc.5 TASK-010)
- *   8. Append fabric-archive, fabric-review AND fabric-import Skill
- *      pointers to CLAUDE.md/AGENTS.md/.cursor/rules when those files
+ *   7. Append fabric-archive, fabric-review AND fabric-import Skill
+ *      pointers to CLAUDE.md/AGENTS.md when those files
  *      already exist (does not create them; each pointer is dedup-checked
  *      independently).
- *   9. Validate that every installed client hook config resolves to the
+ *   8. Validate that every installed client hook config resolves to the
  *      fabric-hint.cjs script on disk — guards against template / install
  *      drift (e.g. partial copy, manual edit of one config file).
  *
@@ -82,7 +78,7 @@ export type InstallHooksResult = {
  * surfaces in `errors` but does not throw — the other client install still
  * runs.
  *
- * Why all 9 steps (not just hooks): rc.2 wires the Skill, hook script, and
+ * Why all 8 steps (not just hooks): rc.2 wires the Skill, hook script, and
  * config-merge as one feature. Installing only the hook script would leave
  * the Stop hook firing without a Skill to invoke.
  */
@@ -106,7 +102,7 @@ export async function installHooks(
   results.push(...await runStep(() => installSharedSkillLib(normalizedTarget)));
   results.push(...await runStep(() => installArchiveHintHook(normalizedTarget)));
   // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Mirrors
-  // the fabric-hint.cjs copy step — same three client dest dirs, same
+  // the fabric-hint.cjs copy step — same two client dest dirs, same
   // chmod 0o755 on POSIX. Order vs config-merge matters: copy first so the
   // validateHookPaths post-step finds the script on disk.
   results.push(...await runStep(() => installKnowledgeHintBroadHook(normalizedTarget)));
@@ -116,12 +112,12 @@ export async function installHooks(
   results.push(...await runStep(() => installKnowledgeHintNarrowHook(normalizedTarget)));
   // v2.0.0-rc.34 TASK-06: Claude Code-only UserPromptSubmit cite-policy
   // long-session evict sidecar. Single destination (.claude/hooks/) — Codex
-  // and Cursor lack the event registration. Default OFF; user opt-in via
+  // lacks the event registration. Default OFF; user opt-in via
   // fabric-config.json#cite_evict_interval.
   results.push(...await runStep(() => installCitePolicyEvictHook(normalizedTarget)));
   // lifecycle-refactor W2-T2: SessionEnd marker hook (session_ended append).
   // lifecycle-refactor W2-T3: PostToolUse mutation marker hook (file_mutated
-  // append). Both copy across all three clients (chmod 0o755 on POSIX) BEFORE
+  // append). Both copy across both clients (chmod 0o755 on POSIX) BEFORE
   // the config merge so validateHookPaths finds the scripts on disk.
   results.push(...await runStep(() => installSessionEndMarkerHook(normalizedTarget)));
   results.push(...await runStep(() => installPostTooluseMutationHook(normalizedTarget)));
@@ -132,24 +128,22 @@ export async function installHooks(
   results.push(...await runStep(() => installHookLibs(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
-  results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));
   // rc.19 TASK-002: L1 bootstrap snapshot — mirror of install.ts bootstrap
   // stage. Writes `.fabric/AGENTS.md` from BOOTSTRAP_CANONICAL first so the
-  // three propagation writers below see a populated snapshot when they
+  // two propagation writers below see a populated snapshot when they
   // build their managed-block bodies.
   results.push(await runSingleStep("bootstrap-snapshot", () => writeFabricAgentsSnapshot(normalizedTarget)));
-  // rc.19 TASK-003: three-end propagation. Mirrors install.ts ordering —
-  // Claude thin-shell → Codex managed block → Cursor managed block.
+  // rc.19 TASK-003: two-end propagation. Mirrors install.ts ordering —
+  // Claude thin-shell → Codex managed block.
   results.push(await runSingleStep("bootstrap-claude", () => writeClaudeBootstrapThinShell(normalizedTarget)));
   results.push(await runSingleStep("bootstrap-codex", () => writeCodexBootstrapManagedBlock(normalizedTarget)));
-  results.push(await runSingleStep("bootstrap-cursor", () => writeCursorBootstrapManagedBlock(normalizedTarget)));
   results.push(...validateHookPaths(normalizedTarget));
 
   return summarizeResults(results);
 }
 
-// rc.5 TASK-010: cross-client hook path validation. After all three client
-// configs have been merged and the hook script has been copied into all three
+// rc.5 TASK-010: cross-client hook path validation. After both client
+// configs have been merged and the hook script has been copied into both
 // `<client>/hooks/fabric-hint.cjs` destinations, verify each config's
 // registered command path actually resolves on disk. This guards against
 // template drift (e.g. a future change to the config template that updates
@@ -188,11 +182,6 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
       client: "codex",
       configRel: join(".codex", "hooks.json"),
       hookDir: join(".codex", "hooks"),
-    },
-    {
-      client: "cursor",
-      configRel: join(".cursor", "hooks.json"),
-      hookDir: join(".cursor", "hooks"),
     },
   ];
 

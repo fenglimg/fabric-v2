@@ -14,7 +14,7 @@ labels: ["bug"]
 - Fabric version: `<paste output of: fabric --version>`
 - OS: <macOS 14 / Linux / Windows>
 - Node version: `<node -v>`
-- AI client + version: <Claude Code 1.x / Cursor 0.x / Codex CLI 0.x>
+- AI client + version: <Claude Code 1.x / Codex CLI 0.x>
 - Install method: <npm i -g @fenglimg/fabric-cli / pnpm dlx / other>
 
 ## Steps to reproduce

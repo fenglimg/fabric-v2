@@ -13,7 +13,7 @@ import type { InstallStepResult } from "./skills-and-hooks.js";
  * Materializes the canonical L1 bootstrap document at `.fabric/AGENTS.md`
  * from the shared {@link BOOTSTRAP_CANONICAL} constant. This file is the
  * single source of truth that downstream propagation (TASK-03) fans out to
- * per-client thin shells (CLAUDE.md / AGENTS.md / .cursor/rules/) and that
+ * per-client thin shells (CLAUDE.md / AGENTS.md) and that
  * the doctor L1 drift check (TASK-05) compares against.
  *
  * Idempotency: byte-compare the existing file (if any) against the canonical

@@ -1,8 +1,8 @@
 /**
  * Integration tests: TASK-006 (rc.2) + TASK-006 (rc.3) + TASK-005 (rc.4)
- *   + TASK-010 (rc.5: archive-hint → fabric-hint rename + cursor parity)
+ *   + TASK-010 (rc.5: archive-hint → fabric-hint rename)
  *   fabric-archive, fabric-review AND fabric-import Skills + fabric-hint
- *   Stop hook install across Claude Code / Codex CLI / Cursor
+ *   Stop hook install across Claude Code / Codex CLI
  *
  * Verifies the wiring at packages/cli/src/install/skills-and-hooks.ts
  * (called from init bootstrap stage and the fabric hooks command). Eight
@@ -121,29 +121,23 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(claudeConnectSkill).toBe(connectSkillTemplate);
     expect(codexConnectSkill).toBe(connectSkillTemplate);
 
-    // Hook script copies — byte-identical (rc.5 TASK-010: Cursor added)
+    // Hook script copies — byte-identical
     const claudeHook = readFileSync(join(target, ".claude/hooks/fabric-hint.cjs"), "utf8");
     const codexHook = readFileSync(join(target, ".codex/hooks/fabric-hint.cjs"), "utf8");
-    const cursorHook = readFileSync(join(target, ".cursor/hooks/fabric-hint.cjs"), "utf8");
     expect(claudeHook).toBe(hookTemplate);
     expect(codexHook).toBe(hookTemplate);
-    expect(cursorHook).toBe(hookTemplate);
 
     // rc.6 TASK-019: knowledge-hint-broad.cjs copies (SessionStart sibling)
     const claudeBroad = readFileSync(join(target, ".claude/hooks/knowledge-hint-broad.cjs"), "utf8");
     const codexBroad = readFileSync(join(target, ".codex/hooks/knowledge-hint-broad.cjs"), "utf8");
-    const cursorBroad = readFileSync(join(target, ".cursor/hooks/knowledge-hint-broad.cjs"), "utf8");
     expect(claudeBroad).toBe(broadHookTemplate);
     expect(codexBroad).toBe(broadHookTemplate);
-    expect(cursorBroad).toBe(broadHookTemplate);
 
     // rc.6 TASK-020: knowledge-hint-narrow.cjs copies (PreToolUse sibling)
     const claudeNarrow = readFileSync(join(target, ".claude/hooks/knowledge-hint-narrow.cjs"), "utf8");
     const codexNarrow = readFileSync(join(target, ".codex/hooks/knowledge-hint-narrow.cjs"), "utf8");
-    const cursorNarrow = readFileSync(join(target, ".cursor/hooks/knowledge-hint-narrow.cjs"), "utf8");
     expect(claudeNarrow).toBe(narrowHookTemplate);
     expect(codexNarrow).toBe(narrowHookTemplate);
-    expect(cursorNarrow).toBe(narrowHookTemplate);
 
     // rc.16 TASK-004 (F2-tests): banner-i18n.cjs lib MUST ship to every
     // client's <client>/hooks/lib/ directory. fabric-hint.cjs and knowledge-
@@ -152,7 +146,7 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     // Stop / SessionStart event after install. Byte-equality vs the shipped
     // template is asserted to also catch any drift in the lib content.
     const bannerLibTemplate = readTemplate("hooks/lib/banner-i18n.cjs");
-    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+    for (const clientDir of [".claude", ".codex"]) {
       const libPath = join(target, clientDir, "hooks/lib/banner-i18n.cjs");
       expect(existsSync(libPath), `missing: ${libPath}`).toBe(true);
       expect(readFileSync(libPath, "utf8")).toBe(bannerLibTemplate);
@@ -162,7 +156,7 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     // installHookLibs honest about its directory-walk contract: it copies
     // every `.cjs` under templates/hooks/lib/, not just banner-i18n.
     const digestLibTemplate = readTemplate("hooks/lib/session-digest-writer.cjs");
-    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+    for (const clientDir of [".claude", ".codex"]) {
       const libPath = join(target, clientDir, "hooks/lib/session-digest-writer.cjs");
       expect(existsSync(libPath), `missing: ${libPath}`).toBe(true);
       expect(readFileSync(libPath, "utf8")).toBe(digestLibTemplate);
@@ -201,28 +195,6 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
       ".codex/hooks/knowledge-hint-narrow.cjs",
     );
     expect(JSON.stringify(codexHooks.events?.PreToolUse)).toContain("Edit|Write|MultiEdit");
-
-    // Cursor hooks.json schema per https://cursor.com/cn/docs/hooks:
-    //   top-level `version: 1` (number) + `hooks: {stop, sessionStart, preToolUse}` (camelCase).
-    // rc.14 TASK-001 — schema fix (rc.13 shipped wrong top-level `events.*` PascalCase).
-    const cursorHooks = JSON.parse(
-      readFileSync(join(target, ".cursor/hooks.json"), "utf8"),
-    ) as {
-      version?: unknown;
-      hooks?: { stop?: unknown[]; sessionStart?: unknown[]; preToolUse?: unknown[] };
-    };
-    expect(cursorHooks.version).toBe(1);
-    expect(Array.isArray(cursorHooks.hooks?.stop)).toBe(true);
-    expect(JSON.stringify(cursorHooks.hooks?.stop)).toContain(".cursor/hooks/fabric-hint.cjs");
-    expect(Array.isArray(cursorHooks.hooks?.sessionStart)).toBe(true);
-    expect(JSON.stringify(cursorHooks.hooks?.sessionStart)).toContain(
-      ".cursor/hooks/knowledge-hint-broad.cjs",
-    );
-    expect(Array.isArray(cursorHooks.hooks?.preToolUse)).toBe(true);
-    expect(JSON.stringify(cursorHooks.hooks?.preToolUse)).toContain(
-      ".cursor/hooks/knowledge-hint-narrow.cjs",
-    );
-    expect(JSON.stringify(cursorHooks.hooks?.preToolUse)).toContain("Edit|Write|MultiEdit");
   });
 });
 
@@ -231,26 +203,20 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: idempotency", () => {
-  it("re-running init produces zero diff in .claude/, .codex/, and .cursor/ trees", async () => {
+  it("re-running init produces zero diff in .claude/ and .codex/ trees", async () => {
     const target = createWerewolfFixtureRoot("itg-install-reinit");
     tempRoots.push(target);
 
     await runInit(target);
     const snap1Claude = snapshotTree(target, ".claude");
     const snap1Codex = snapshotTree(target, ".codex");
-    // rc.14 TASK-002: fill .cursor snapshot parity gap. Previously only
-    // .claude and .codex were snapshotted; cursor-side regressions would
-    // sneak past CI. Symmetric coverage now enforces cursor idempotency too.
-    const snap1Cursor = snapshotTree(target, ".cursor");
 
     await runInit(target);
     const snap2Claude = snapshotTree(target, ".claude");
     const snap2Codex = snapshotTree(target, ".codex");
-    const snap2Cursor = snapshotTree(target, ".cursor");
 
     expect(snap2Claude).toEqual(snap1Claude);
     expect(snap2Codex).toEqual(snap1Codex);
-    expect(snap2Cursor).toEqual(snap1Cursor);
   });
 });
 
@@ -611,12 +577,12 @@ describe("TASK-006 install-skills-and-hooks: fabric hooks idempotent", () => {
     // After a clean init, every hook step should be skipped (already up-to-date).
     expect(result.installed).toEqual([]);
     // rc.6: skipped now covers 2 archive skills + 2 review skills + 2 import
-    // skills + 3 Stop hook scripts (claude/codex/cursor) + 3 SessionStart hook
-    // scripts (rc.6 TASK-019) + 3 PreToolUse hook scripts (rc.6 TASK-020) +
-    // 3 client configs = 18 minimum.
-    // rc.16 TASK-004: + 3 clients × N hook libs (currently 2: banner-i18n,
-    // session-digest-writer) = 6 more rows; threshold updated to ≥24.
-    expect(result.skipped.length).toBeGreaterThanOrEqual(24);
+    // skills + 2 Stop hook scripts (claude/codex) + 2 SessionStart hook
+    // scripts (rc.6 TASK-019) + 2 PreToolUse hook scripts (rc.6 TASK-020) +
+    // 2 client configs.
+    // rc.16 TASK-004: + 2 clients × N hook libs (currently 2: banner-i18n,
+    // session-digest-writer) = 4 more rows; threshold updated to ≥16.
+    expect(result.skipped.length).toBeGreaterThanOrEqual(16);
   });
 });
 
@@ -658,21 +624,17 @@ describe("TASK-006 install-skills-and-hooks: partial install resilience", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Test 8 — Three-end bootstrap propagation (rc.19 TASK-003)
+// Test 8 — Two-end bootstrap propagation (rc.19 TASK-003)
 //
 // The legacy single-writer `addFabricKnowledgeBaseSection` (which emitted one
-// HTML-comment-wrapped block per CLAUDE.md / AGENTS.md / .cursor/rules) was
-// split into three per-client thin-shell writers backed by the L1 snapshot at
+// HTML-comment-wrapped block per CLAUDE.md / AGENTS.md) was
+// split into per-client thin-shell writers backed by the L1 snapshot at
 // `.fabric/AGENTS.md`. New propagation targets:
 //
 //   - CLAUDE.md                          — thin shell with `@.fabric/AGENTS.md`
 //                                          `@`-import line (no managed block)
 //   - AGENTS.md                          — Codex managed block, body byte-equal
 //                                          to `.fabric/AGENTS.md`
-//   - .cursor/rules/fabric-bootstrap.mdc — Cursor directory rule with YAML
-//                                          front-matter (alwaysApply: true)
-//                                          and a managed block, body byte-
-//                                          equal to `.fabric/AGENTS.md`
 //
 // Marker constants moved to the new `fabric:bootstrap` pair. The legacy
 // `fabric:knowledge-base` marker is intentionally never written by install;
@@ -682,8 +644,6 @@ describe("TASK-006 install-skills-and-hooks: partial install resilience", () => 
 
 const SECTION_BEGIN = "<!-- fabric:bootstrap:begin -->";
 const SECTION_END = "<!-- fabric:bootstrap:end -->";
-
-const CURSOR_BOOTSTRAP_MDC_REL = ".cursor/rules/fabric-bootstrap.mdc";
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
@@ -712,8 +672,8 @@ function extractManagedBlockBody(content: string): string | null {
   return content.slice(innerStart, innerEnd);
 }
 
-describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin shell", () => {
-  it("writes .fabric/AGENTS.md byte-equal to BOOTSTRAP_CANONICAL + propagates to all three clients", async () => {
+describe("rc.19 TASK-003 bootstrap propagation: two-end managed block + thin shell", () => {
+  it("writes .fabric/AGENTS.md byte-equal to BOOTSTRAP_CANONICAL + propagates to both clients", async () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-propagation");
     tempRoots.push(target);
 
@@ -732,21 +692,6 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
     expect(countOccurrences(agentsMd, SECTION_END)).toBe(1);
     const codexBody = extractManagedBlockBody(agentsMd);
     expect(codexBody).toBe(snapshot);
-
-    // Cursor: directory rule file exists with YAML front-matter
-    // (alwaysApply: true) + managed block byte-equal to snapshot.
-    const cursorRulePath = join(target, CURSOR_BOOTSTRAP_MDC_REL);
-    expect(existsSync(cursorRulePath)).toBe(true);
-    const cursorRule = readFileSync(cursorRulePath, "utf8");
-    expect(cursorRule).toContain("alwaysApply: true");
-    // Front-matter sits at the head of the file (well before the marker).
-    expect(cursorRule.indexOf("alwaysApply: true")).toBeLessThan(
-      cursorRule.indexOf(SECTION_BEGIN),
-    );
-    expect(countOccurrences(cursorRule, SECTION_BEGIN)).toBe(1);
-    expect(countOccurrences(cursorRule, SECTION_END)).toBe(1);
-    const cursorBody = extractManagedBlockBody(cursorRule);
-    expect(cursorBody).toBe(snapshot);
 
     // Claude: CLAUDE.md is a thin shell with `@.fabric/AGENTS.md` exactly once
     // and NO managed block (no `<!-- fabric:bootstrap:* -->` markers).
@@ -771,7 +716,6 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
       ".fabric/AGENTS.md",
       "AGENTS.md",
       "CLAUDE.md",
-      CURSOR_BOOTSTRAP_MDC_REL,
     ]) {
       afterFirst[rel] = readFileSync(join(target, rel), "utf8");
     }
@@ -781,18 +725,14 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
       ".fabric/AGENTS.md",
       "AGENTS.md",
       "CLAUDE.md",
-      CURSOR_BOOTSTRAP_MDC_REL,
     ]) {
       const afterSecond = readFileSync(join(target, rel), "utf8");
       expect(afterSecond, `${rel} drifted on second install`).toBe(afterFirst[rel]);
     }
-    // Codex + Cursor still have exactly one marker pair after re-run.
+    // Codex still has exactly one marker pair after re-run.
     const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
     expect(countOccurrences(agentsMd, SECTION_BEGIN)).toBe(1);
     expect(countOccurrences(agentsMd, SECTION_END)).toBe(1);
-    const cursorRule = readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8");
-    expect(countOccurrences(cursorRule, SECTION_BEGIN)).toBe(1);
-    expect(countOccurrences(cursorRule, SECTION_END)).toBe(1);
   });
 
   it("preserves pre-existing user content above managed block in AGENTS.md", async () => {
@@ -885,16 +825,10 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
       const expectedBody = `${snapshot}\n---\nCUSTOM RULES\n`;
       expect(extractManagedBlockBody(agentsMd)).toBe(expectedBody);
 
-      // Cursor block body uses the same concat.
-      const cursorRule = readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8");
-      expect(extractManagedBlockBody(cursorRule)).toBe(expectedBody);
-
-      // Idempotent re-run: same bytes across both targets.
+      // Idempotent re-run: same bytes.
       const beforeAgents = readFileSync(join(target, "AGENTS.md"), "utf8");
-      const beforeCursor = readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8");
       await runInit(target);
       expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(beforeAgents);
-      expect(readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8")).toBe(beforeCursor);
 
       // user-authored project-rules.md is preserved byte-for-byte.
       expect(readFileSync(join(target, ".fabric/project-rules.md"), "utf8")).toBe("CUSTOM RULES\n");
@@ -914,7 +848,7 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
 // ---------------------------------------------------------------------------
 
 describe("rc.16 TASK-004 install-hook-libs: directory-walk contract", () => {
-  it("ships every .cjs file from templates/hooks/lib/ to all 3 client lib dirs", async () => {
+  it("ships every .cjs file from templates/hooks/lib/ to all client lib dirs", async () => {
     const target = createWerewolfFixtureRoot("itg-install-hook-libs");
     tempRoots.push(target);
 
@@ -929,7 +863,7 @@ describe("rc.16 TASK-004 install-hook-libs: directory-walk contract", () => {
     // Sanity: at least banner-i18n.cjs (rc.16 TASK-001) must be present.
     expect(expectedLibFiles).toContain("banner-i18n.cjs");
 
-    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+    for (const clientDir of [".claude", ".codex"]) {
       for (const libFile of expectedLibFiles) {
         const dest = join(target, clientDir, "hooks/lib", libFile);
         expect(existsSync(dest), `expected lib at ${dest}`).toBe(true);

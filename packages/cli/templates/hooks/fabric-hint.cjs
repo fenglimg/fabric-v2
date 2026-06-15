@@ -1579,14 +1579,13 @@ function parseKbLine(raw) {
  *      "codex". Covers the dominant deployment shape (hook script lives
  *      under the client's per-repo dir).
  *
- * Returns `undefined` when neither signal fires (e.g. Cursor — deferred to
- * rc.21 — or a custom deployment). The Zod schema marks `client` optional,
- * so omitting it leaves the event valid.
+ * Returns `undefined` when neither signal fires (a custom deployment). The
+ * Zod schema marks `client` optional, so omitting it leaves the event valid.
  */
 function detectClient() {
   // Delegate the full 3-tier detection (env → CLAUDE_PROJECT_DIR → path
-  // heuristic, incl. .cursor) to the shared adapter. __dirname is passed so
-  // the path heuristic reflects THIS hook's location.
+  // heuristic) to the shared adapter. __dirname is passed so the path
+  // heuristic reflects THIS hook's location.
   if (clientAdapter && typeof clientAdapter.detectClient === "function") {
     return clientAdapter.detectClient(__dirname);
   }
@@ -1594,7 +1593,7 @@ function detectClient() {
   const envClient = process.env.FABRIC_HINT_CLIENT;
   if (typeof envClient === "string" && envClient.length > 0) {
     const normalised = envClient.trim().toLowerCase();
-    if (normalised === "cc" || normalised === "codex" || normalised === "cursor") {
+    if (normalised === "cc" || normalised === "codex") {
       return normalised;
     }
   }

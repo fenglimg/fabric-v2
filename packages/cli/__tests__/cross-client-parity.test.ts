@@ -2,15 +2,15 @@
  * v2.0.0-rc.37 F2: cross-client parity smoke test.
  *
  * Installs Fabric into a fresh project root and verifies the per-client install
- * surface (.claude / .codex / .cursor) is byte-parallel where it must be:
+ * surface (.claude / .codex) is byte-parallel where it must be:
  *   - hook scripts (fabric-hint, knowledge-hint-broad/narrow, cite-policy-evict)
- *     ship to all 3 clients byte-equal;
- *   - shared hook lib/*.cjs ship to all 3 clients byte-equal;
+ *     ship to both clients byte-equal;
+ *   - shared hook lib/*.cjs ship to both clients byte-equal;
  *   - skill SKILL.md + ref/*.md ship to .claude + .codex byte-equal;
  *   - every client gets a hook-config file.
  *
  * The other "operations" in the G-PARITY gate (doctor / plan-context / archive /
- * review) are CLIENT-AGNOSTIC by construction — all three clients talk to the
+ * review) are CLIENT-AGNOSTIC by construction — both clients talk to the
  * same stdio MCP server, so their output cannot differ by client. Parity that
  * CAN drift is the install surface, which this test pins. The collected
  * `mismatches` array doubles as the diff report.
@@ -53,7 +53,7 @@ const HOOK_SCRIPTS = [
   "knowledge-hint-narrow.cjs",
   "cite-policy-evict.cjs",
 ];
-const HOOK_CLIENTS = [".claude", ".codex", ".cursor"];
+const HOOK_CLIENTS = [".claude", ".codex"];
 const SKILL_CLIENTS = [".claude", ".codex"];
 const SKILLS = ["fabric-archive", "fabric-review", "fabric-import"];
 
@@ -84,18 +84,18 @@ function assertByteParity(
 }
 
 describe("cross-client install parity (rc.37 F2)", () => {
-  it("hooks + lib byte-parallel across 3 clients; skills across 2; configs present", async () => {
+  it("hooks + lib byte-parallel across 2 clients; skills across 2; configs present", async () => {
     const root = extractWerewolfFixture((d) => tempRoots.push(d));
     await installHooks(root);
 
     const mismatches: string[] = [];
 
-    // 1. Hook scripts — byte-equal across .claude / .codex / .cursor.
+    // 1. Hook scripts — byte-equal across .claude / .codex.
     for (const script of HOOK_SCRIPTS) {
       assertByteParity(root, HOOK_CLIENTS, (c) => join(c, "hooks", script), `hook ${script}`, mismatches);
     }
 
-    // 2. Shared hook lib/*.cjs — byte-equal across all 3 clients. Enumerate
+    // 2. Shared hook lib/*.cjs — byte-equal across both clients. Enumerate
     //    from .claude's lib dir as the reference set.
     const claudeLib = join(root, ".claude", "hooks", "lib");
     if (existsSync(claudeLib)) {
@@ -128,12 +128,11 @@ describe("cross-client install parity (rc.37 F2)", () => {
     const root = extractWerewolfFixture((d) => tempRoots.push(d));
     await installHooks(root);
     // Claude Code: .claude/settings.json; Codex: .codex/hooks.json or codex
-    // config; Cursor: .cursor/hooks.json. At least one config artifact per
-    // client root must exist post-install.
+    // config. At least one config artifact per client root must exist
+    // post-install.
     const configPresence = [
       { client: ".claude", candidates: [".claude/settings.json"] },
       { client: ".codex", candidates: [".codex/hooks.json", ".codex/config.toml"] },
-      { client: ".cursor", candidates: [".cursor/hooks.json"] },
     ];
     const missing: string[] = [];
     for (const { client, candidates } of configPresence) {
