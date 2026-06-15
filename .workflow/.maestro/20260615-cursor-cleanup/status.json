@@ -5,7 +5,7 @@
   "intent": "读 GOAL-BRIEF.md 砍除 Cursor client 支持, 收成 cc+codex 两端, 按命名 ship gate 跑到全绿",
   "goal": "把 Cursor client 支持从 codebase clean-slate 删净, supported clients 收成 Claude Code(cc) + Codex CLI(codex) 两端; build/类型/测试全绿、无 dangling cursor 引用、重装产物不再含 cursor。",
   "mode": "3",
-  "current_phase": "execute",
+  "current_phase": "final",
   "current_round": 1,
   "boundary_contract": {
     "in_scope": [
@@ -102,14 +102,14 @@
       "subject": "本仓 fabric install 重装 + doctor 绿 → G-REINSTALL",
       "done_when": "fabric install 重生成 .claude/.codex; root .cursor/ 删; .fabric/AGENTS.md 不再提 cursor; fabric doctor 绿",
       "ship_criteria_alignment": ["G-REINSTALL"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "dogfood", "verifier": "fabric install + fabric doctor + grep .cursor/AGENTS.md", "evidence": null, "verified_at": null } },
+      "status": "done", "_T6": true,
+      "verification": { "method": "dogfood", "verifier": "fabric install + fabric doctor + grep .cursor/AGENTS.md", "evidence": "fabric install --yes 重生成 root+cli .claude/.codex (客户端摘要只剩 Claude Code+Codex); 删 root .cursor/ 18 文件; AGENTS.md/.fabric/AGENTS.md cursor=0; 已安装 .cjs==template byte-一致; fabric doctor 无 cursor/bootstrap/hook 结构告警(唯一 warn=metrics flush 停滞=MCP server 未运行环境噪声); 外科保留未连带提交 pre-existing skill 漂移; commit 21c3d21", "verified_at": "2026-06-15" } },
     { "id": "T7", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "全量 build+tsc+lint+test 绿 → G-GREEN",
       "done_when": "pnpm -r build + tsc --noEmit 0 error + lint + 全量 test 0 fail 0 skip + test:strategy + test:store-only-e2e 全绿",
       "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "full build+tsc+lint+test suite", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "full build+tsc+lint+test suite", "evidence": "build ✓ | pnpm -r tsc --noEmit 0 error | knip --strict ✓ | server 717 ✓ | cli 1036 ✓ | shared 636 pass +1 recall-perf flake(隔离复跑 2/2 过, 0 cursor) | test:strategy PASS ✓ | test:store-only-e2e ✗ PRE-EXISTING(归因: git worktree e22db30 base 同错同行失败, 与 cursor 零关系, 用户裁决另起任务)。Cursor 相关全绿零回归", "verified_at": "2026-06-15" } },
     { "id": "NEW-T8", "round": 1, "parent_id": "T2", "relationship": "incomplete-resolution", "subdivision_depth": 1,
       "subject": "scope 扩展: .cjs hook 运行时 (client-adapter/fabric-hint/narrow) 的 cursor client 分支 + clientPathsSchema cursor 字段",
       "done_when": "client-adapter detectClient/emitDualSink cursor 分支删; fabric-hint fallback 去 cursor; narrow payload.tool/input Cursor shim 删; clientPathsSchema 删 cursor 字段",
@@ -118,16 +118,26 @@
       "discovery": "brief 的 G-NODANGLE gate 只 grep packages/**/*.ts, 漏掉 .cjs 运行时; 且 grep -iv 'cursor:' 排 CSS 时连带掩盖 schema 字段 cursor:。按 [[feedback-clean-slate]]+KT-DEC-0002(不留 deprecated fallback shim) 自决扩 scope, 非真歧义",
       "verification": { "method": "deterministic", "verifier": "grep .cjs cursor=0(除注释已清) + tsc 0 + 测试绿", "evidence": "commit a1dcf50; 三套测试全绿", "verified_at": "2026-06-15" } }
   ],
-  "needs_adjudication": [],
+  "needs_adjudication": [
+    { "id": "ADJ-1", "subject": "test:store-only-e2e PRE-EXISTING 失败 (canonical decision 未写入 team store)", "adjudication_reason": "out-of-authority",
+      "evidence": "git worktree e22db30 base 同错同行失败; 与 cursor 零关系; 疑 e22db30 'fab_review modify semantic_scope' fallout 或 review→approve→canonical-write store 写入 bug",
+      "resolution": "用户裁决(2026-06-15): 合 Cursor 清理, e2e 另起独立任务。G-GREEN 标 met-modulo-preexisting", "status": "resolved-deferred" }
+  ],
   "traps": [
     "局部变量 cursor (JSON 遍历指针) 非 Cursor client — 绝不删: skills-and-hooks.ts:1543-1594, uninstall-skills-and-hooks.ts:837-852",
     "排除模式必须用 grep -iv 'cursor:' (CSS cursor: 属性 + 'cursor,codex' i18n 例子里的 cursor 是 client 语义需删, 但 ui-ux CSS cursor: 不删)"
   ],
   "git_commits": [
     { "sha": "96648ed", "wave": "T1-T2-T3-T5src", "summary": "client 枚举骨架 + cli/server 消费者 + 模板目录 + i18n 删 cursor; 3 包 tsc 0" },
-    { "sha": "a1dcf50", "wave": "T2ext-T4-T5docs", "summary": ".cjs 运行时 + clientPaths schema + 21 测试 + 文档删 cursor; 三套测试全绿 (CLI1036/server717/shared637)" }
+    { "sha": "a1dcf50", "wave": "T2ext-T4-T5docs", "summary": ".cjs 运行时 + clientPaths schema + 21 测试 + 文档删 cursor; 三套测试全绿 (CLI1036/server717/shared637)" },
+    { "sha": "21c3d21", "wave": "T6-G-REINSTALL", "summary": "reinstall 重生成已安装副本 + 删 root .cursor + AGENTS.md bootstrap 两端; 外科保留 pre-existing skill 漂移" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-cursor-cleanup/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "命名 ship gate 全绿 (G-GREEN met-modulo-preexisting: 唯一红项 store-only-e2e 经 base 归因为 pre-existing 非 cursor, 用户裁决另起任务)",
+    "summary": "Cursor client 支持 clean-slate 删净, supported clients 收成 cc+codex 两端。7 gate: G-ENUM/G-SRC/G-TPL/G-PARITY/G-NODANGLE/G-REINSTALL 全绿; G-GREEN cursor 相关全绿零回归(build/tsc/knip/server717/cli1036/shared/strategy 全过), 唯一红 store-only-e2e 是 pre-existing(e22db30 base 同样红)。3 commit: 96648ed/a1dcf50/21c3d21。scope 自决扩到 .cjs 运行时 + clientPaths schema(brief gate .ts-only 盲区)。下一步: 合 main 并通知 release-eval goal(cross-client-parity 基线=2 端)",
+    "at": "2026-06-15"
+  }
 }
