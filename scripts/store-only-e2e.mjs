@@ -196,7 +196,10 @@ async function main() {
     assert(approved.approved.length === 1, "review approve did not approve exactly one entry");
     const stableId = approved.approved[0].stable_id;
 
-    const storeRoot = join(fabricHome, ".fabric", "stores", "team");
+    // Store dir is `<global>/stores/<group>/<mount_name>` (group = team|personal),
+    // not `stores/<alias>`. Reuse the canonical helper so this gate tracks the
+    // real on-disk layout instead of re-deriving (and drifting from) it.
+    const storeRoot = join(fabricHome, ".fabric", shared.storeRelativePathForMount(team));
     const canonicalDir = join(storeRoot, shared.STORE_LAYOUT.knowledgeDir, "decisions");
     const canonicalFiles = listMarkdown(canonicalDir);
     assert(canonicalFiles.length === 1, "canonical decision was not written to the team store");
