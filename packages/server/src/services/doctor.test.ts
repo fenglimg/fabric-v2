@@ -218,6 +218,10 @@ describe("runDoctorReport", () => {
       // + drift (info), rebuilt store-aware over the read-set corpus.
       "Knowledge relevance_paths dangling",
       "Knowledge relevance_paths drift",
+      // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote + stale_archive,
+      // rebuilt store-aware (age from events.jsonl last-active, KT-DEC-0023).
+      "Knowledge orphan demote",
+      "Knowledge stale archive",
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
@@ -243,7 +247,8 @@ describe("runDoctorReport", () => {
     // v2.2 Goal B (G-INTEGRITY): rebuilt store-aware stable_id_collision +
     // layer_mismatch as two checks → 33.
     // v2.2 Goal B (G-RELEVANCE): rebuilt relevance_paths dangling + drift → 35.
-    expect(report.checks).toHaveLength(35);
+    // v2.2 Goal B (G-AGE): rebuilt orphan_demote + stale_archive → 37.
+    expect(report.checks).toHaveLength(37);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

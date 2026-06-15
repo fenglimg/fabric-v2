@@ -53,6 +53,11 @@ import {
   createRelevancePathsDriftCheck,
   inspectStoreRelevancePaths,
 } from "./doctor-relevance-paths.js";
+import {
+  createOrphanDemoteCheck,
+  createStaleArchiveCheck,
+  inspectStoreKnowledgeAge,
+} from "./doctor-knowledge-age.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -676,10 +681,16 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // Single store-corpus walk; the drift arm shells out to `git log` and
   // degrades to ok when git is unavailable.
   const relevancePaths = await inspectStoreRelevancePaths(projectRoot);
-  const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
-  // Shared timestamp for the read-side hygiene inspections below (session-hints
-  // cache age + stale serve-lock age).
+  // Shared timestamp for the read-side hygiene inspections below (knowledge
+  // decay age + session-hints cache age + stale serve-lock age).
   const lintNow = Date.now();
+  // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (inactivity > maturity
+  // threshold) + stale_archive (terminal draft quiet beyond demote+90d). Age is
+  // measured from each entry's last knowledge event (events.jsonl, store-agnostic
+  // / KT-DEC-0023), so the last-active index is built once and injected.
+  const lastActiveIndex = await buildLastActiveIndex(projectRoot);
+  const knowledgeAge = await inspectStoreKnowledgeAge(projectRoot, lintNow, lastActiveIndex);
+  const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a store summary count, not a time-decayed
   // signal. Runs alongside the rc.4 integrity inspections so the
@@ -852,6 +863,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // canonical corpus and resolve anchors against the project workspace.
     createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
     createRelevancePathsDriftCheck(t, relevancePaths.drift),
+    // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (warning) +
+    // stale_archive (warning). Age from events.jsonl last-active (KT-DEC-0023);
+    // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
+    createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
+    createStaleArchiveCheck(t, knowledgeAge.staleArchive),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos

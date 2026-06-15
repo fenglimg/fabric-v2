@@ -720,6 +720,25 @@ export const enMessages: Messages = {
     "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
   "doctor.check.relevance_paths_drift.remediation":
     "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive).
+  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.ok":
+    "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
+  "doctor.check.orphan_demote.message.singular":
+    "{count} canonical knowledge entry exceeds its maturity-keyed inactivity threshold (proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d). First: {detail}.",
+  "doctor.check.orphan_demote.message.plural":
+    "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d). First: {detail}.",
+  "doctor.check.orphan_demote.remediation":
+    "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
+  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.ok":
+    "No draft knowledge entries exceed the additional stale-archive quiet window.",
+  "doctor.check.stale_archive.message.singular":
+    "{count} draft knowledge entry is stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
+  "doctor.check.stale_archive.message.plural":
+    "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
+  "doctor.check.stale_archive.remediation":
+    "Run `fabric doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

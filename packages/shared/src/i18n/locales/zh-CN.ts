@@ -704,6 +704,25 @@ export const zhCNMessages: Messages = {
     "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
   "doctor.check.relevance_paths_drift.remediation":
     "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
+  // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive)。
+  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.ok":
+    "没有 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold。",
+  "doctor.check.orphan_demote.message.singular":
+    "{count} 个 canonical knowledge entry 超过按 maturity 设定的 inactivity threshold(proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d)。首个:{detail}。",
+  "doctor.check.orphan_demote.message.plural":
+    "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold(proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d)。首个:{detail}。",
+  "doctor.check.orphan_demote.remediation":
+    "运行 `fabric doctor --fix-knowledge` 将 orphan entries 降级一个 maturity tier。",
+  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.ok":
+    "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
+  "doctor.check.stale_archive.message.singular":
+    "{count} 个 draft knowledge entry 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
+  "doctor.check.stale_archive.message.plural":
+    "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
+  "doctor.check.stale_archive.remediation":
+    "运行 `fabric doctor --fix-knowledge` 将 stale entries 移动到 `.fabric/.archive/<type>/`。",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":
