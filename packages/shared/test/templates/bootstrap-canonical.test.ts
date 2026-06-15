@@ -54,15 +54,17 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL).toContain("personal-only");
       });
 
-      it("exposes the rc.37 NEW-1 simplified 2-state cite vocabulary", () => {
-        // rc.37 NEW-1 collapsed planned / recalled / chained-from into a single
-        // `applied` tag, leaving `dismissed:<reason>` untouched. Legacy 4-state
-        // tags are still recognised by the parser and must still be documented
-        // in the canonical Backward compat bullet so workspaces with old cite
-        // history keep round-tripping under cite-coverage audits.
+      it("exposes the clean-slate 3-state cite vocabulary (applied/dismissed/none)", () => {
+        // ADJ-3: the canonical cite-policy bullet must describe the parser's
+        // ACTUAL clean-slate behaviour, not the obsolete "legacy tags map to
+        // applied" claim. `cite-line-parser.ts` (normalizeCiteTag) recognises
+        // only `applied` / `dismissed` / `none`; any unrecognised legacy tag
+        // (`planned` / `recalled` / `chained-from`) degrades to `none`, with
+        // `chained-from`'s embedded id rescued as a sibling cite_id. The bullet
+        // still enumerates the legacy token names so readers know what degrades.
         expect(BOOTSTRAP_CANONICAL).toContain("applied|dismissed:<reason>");
         expect(BOOTSTRAP_CANONICAL).toContain("dismissed:<reason>");
-        expect(BOOTSTRAP_CANONICAL).toContain("Backward compat");
+        expect(BOOTSTRAP_CANONICAL).toContain("Clean-slate");
         expect(BOOTSTRAP_CANONICAL).toMatch(/planned.*recalled.*chained-from/);
       });
 
