@@ -43,6 +43,21 @@ import {
   createKnowledgeSummaryOpaqueCheck,
   inspectKnowledgeSummaryOpaque,
 } from "./doctor-summary-opaque.js";
+import {
+  createLayerMismatchCheck,
+  createStableIdCollisionCheck,
+  inspectStoreStableIdIntegrity,
+} from "./doctor-stable-id-collision.js";
+import {
+  createRelevancePathsDanglingCheck,
+  createRelevancePathsDriftCheck,
+  inspectStoreRelevancePaths,
+} from "./doctor-relevance-paths.js";
+import {
+  createOrphanDemoteCheck,
+  createStaleArchiveCheck,
+  inspectStoreKnowledgeAge,
+} from "./doctor-knowledge-age.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -259,7 +274,7 @@ export type DoctorApplyLintMutation = {
   // (pre-mutation). For index_drift: synthetic path string
   // `agents.meta.json#counters.<layer>.<type>`.
   path: string;
-  // Detail of the mutation (e.g. "stable -> endorsed", ".fabric/.archive/...",
+  // Detail of the mutation (e.g. "proven -> verified", ".fabric/.archive/...",
   // "5 -> 8"). Free-form prose for human consumption.
   detail: string;
   // True when the mutation succeeded; false when the per-finding repair
@@ -425,7 +440,12 @@ type PreexistingRootFilesInspection = {
   detected: string[];
 };
 
-export type LintMaturity = "stable" | "endorsed" | "draft";
+// v2.2 Goal B (G-VOCAB / ADJ-2): the doctor's internal maturity ladder now
+// speaks the CANONICAL schema vocabulary (draft/verified/proven, KT-DEC-0024)
+// directly — the legacy stable/endorsed names are retired. orphan_demote walks
+// proven → verified → draft; config-loader reads the same canonical config keys
+// with no remap.
+export type LintMaturity = "proven" | "verified" | "draft";
 
 // rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
 // Reports when the workspace's canonical knowledge node count is strictly
@@ -652,10 +672,25 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
   // replacement — disk-max FLOOR semantics over every read-set store.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
-  const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
-  // Shared timestamp for the read-side hygiene inspections below (session-hints
-  // cache age + stale serve-lock age).
+  // v2.2 Goal B (G-INTEGRITY): store-aware stable_id collision + layer mismatch.
+  // Single walk of the read-set store canonical corpus; never throws (degrades
+  // to no-findings when no store is mounted).
+  const stableIdIntegrity = await inspectStoreStableIdIntegrity(projectRoot);
+  // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene — dangling globs
+  // (anchor → 0 workspace files) + drift (narrow anchors gone quiet in git).
+  // Single store-corpus walk; the drift arm shells out to `git log` and
+  // degrades to ok when git is unavailable.
+  const relevancePaths = await inspectStoreRelevancePaths(projectRoot);
+  // Shared timestamp for the read-side hygiene inspections below (knowledge
+  // decay age + session-hints cache age + stale serve-lock age).
   const lintNow = Date.now();
+  // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (inactivity > maturity
+  // threshold) + stale_archive (terminal draft quiet beyond demote+90d). Age is
+  // measured from each entry's last knowledge event (events.jsonl, store-agnostic
+  // / KT-DEC-0023), so the last-active index is built once and injected.
+  const lastActiveIndex = await buildLastActiveIndex(projectRoot);
+  const knowledgeAge = await inspectStoreKnowledgeAge(projectRoot, lintNow, lastActiveIndex);
+  const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a store summary count, not a time-decayed
   // signal. Runs alongside the rc.4 integrity inspections so the
@@ -818,6 +853,21 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
     // only stores (the post-decolo knowledge home); never throws.
     createScopeLintCheck(t, await lintStoreScopes(projectRoot)),
+    // v2.2 Goal B (G-INTEGRITY): store stable_id collision (warning) + layer
+    // mismatch (manual error). Adjacent to the scope lint — both are store
+    // canonical-corpus integrity checks. Built from one shared store walk above.
+    createStableIdCollisionCheck(t, stableIdIntegrity.collision),
+    createLayerMismatchCheck(t, stableIdIntegrity.layerMismatch),
+    // v2.2 Goal B (G-RELEVANCE): relevance_paths hygiene — dangling (warning) +
+    // drift (info). Adjacent to the integrity cluster; both read the store
+    // canonical corpus and resolve anchors against the project workspace.
+    createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
+    createRelevancePathsDriftCheck(t, relevancePaths.drift),
+    // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (warning) +
+    // stale_archive (warning). Age from events.jsonl last-active (KT-DEC-0023);
+    // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
+    createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
+    createStaleArchiveCheck(t, knowledgeAge.staleArchive),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos
@@ -1108,8 +1158,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 
 // rc.4 TASK-003: lint mutation entry point. Behavior summary:
 //   * `lint:orphan_demote` (warning kind code=knowledge_orphan_demote_required):
-//     rewrite frontmatter `maturity:` one tier down (stable -> endorsed,
-//     endorsed -> draft) via atomicWriteText; emit knowledge_demoted event.
+//     rewrite frontmatter `maturity:` one tier down (proven -> verified,
+//     verified -> draft) via atomicWriteText; emit knowledge_demoted event.
 //   * `lint:stale_archive` (code=knowledge_stale_archive_required):
 //     rename file to .fabric/.archive/<type>/<filename>; emit knowledge_archived
 //     event. Per task design the archive subtree is a tombstone (not git-tracked
@@ -1136,8 +1186,13 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 // next run's buildLastActiveIndex) and the inspections re-evaluate against
 // the new on-disk state, so a 2nd `--apply-lint` run on a dir with no new
 // findings produces 0 mutations and 0 events.
+// v2.2 Goal B (G-INTEGRITY): the loud-error gate now lists only
+// `knowledge_layer_mismatch` — the rebuilt store integrity lints fold the old
+// filename-id `stable_id_duplicate` into the frontmatter-id `stable_id_collision`
+// (a warning), since `deriveRuleIdentity` unifies the two id sources in the
+// store model. layer_mismatch stays a manual error (rename + move is unsafe to
+// auto-apply).
 const MANUAL_LINT_ERROR_CODES = new Set([
-  "knowledge_stable_id_duplicate",
   "knowledge_layer_mismatch",
 ]);
 

@@ -563,9 +563,9 @@ describe("doctor command", () => {
       // must bypass it.
       const preReport = createReport("ok");
       preReport.warnings.push({
-        code: "knowledge_orphan_demote_required",
-        name: "Orphan demote",
-        message: "demote candidate",
+        code: "knowledge_index_drift",
+        name: "Store counter drift",
+        message: "counter bump candidate",
         path: ".fabric/knowledge/decisions/KT-DEC-2001--orphan.md",
       });
       const applyReport = {
@@ -613,9 +613,9 @@ describe("doctor command", () => {
     it("--fix-knowledge with FABRIC_NONINTERACTIVE=1 (no --yes) skips the confirm", async () => {
       const preReport = createReport("ok");
       preReport.warnings.push({
-        code: "knowledge_orphan_demote_required",
-        name: "Orphan demote",
-        message: "demote candidate",
+        code: "knowledge_index_drift",
+        name: "Store counter drift",
+        message: "counter bump candidate",
         path: "x.md",
       });
       const applyReport = {
@@ -663,9 +663,9 @@ describe("doctor command", () => {
     it("--fix-knowledge without --yes and non-tty stdin exits 1 without mutating", async () => {
       const preReport = createReport("ok");
       preReport.warnings.push({
-        code: "knowledge_orphan_demote_required",
-        name: "Orphan demote",
-        message: "demote candidate",
+        code: "knowledge_index_drift",
+        name: "Store counter drift",
+        message: "counter bump candidate",
         path: "x.md",
       });
       const applyLintSpy = vi.fn();

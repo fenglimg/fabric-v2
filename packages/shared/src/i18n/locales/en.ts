@@ -142,7 +142,7 @@ export const enMessages: Messages = {
     "Examples:\n" +
     "  fabric doctor                   read-only diagnostics report\n" +
     "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
-    "  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
+    "  fabric doctor --fix-knowledge   apply lint mutations (counter / archive / cache)\n" +
     "  fabric doctor --json            machine-readable output",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
@@ -240,7 +240,7 @@ export const enMessages: Messages = {
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
+    "Apply knowledge lint mutations: archive overdue pending drafts, floor drifted per-store id counters, and prune stale session-hint caches. Decay lints (orphan demote / stale archive) are report-only — remediate those via the fab_review flow. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
@@ -249,7 +249,7 @@ export const enMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — re-run with `fabric doctor --verbose` to see)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
+    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (archive/counter/cache); --fix repairs derived state (meta/index). Run them separately.",
   // rc.20 TASK-05: --cite-coverage report flags. Read-only; mutually exclusive with --fix/--fix-knowledge.
   "cli.doctor.args.cite-coverage.description":
     "Generate cite policy adherence report (read-only; skips standard inspections)",
@@ -508,7 +508,7 @@ export const enMessages: Messages = {
   "doctor.check.drift_unconsumed.message":
     "{driftCount} knowledge_drift_detected events in the last 30 days, but only {demoteCount} knowledge_demoted. Drift > demote by ≥ 5 means part of the drift is going unconsumed — KB slowly stales.",
   "doctor.check.drift_unconsumed.remediation":
-    "Run `fabric doctor --fix` to trigger orphan-demote / stale-archive auto-heal, or invoke `/fabric-review` to manually triage drift-flagged entries.",
+    "Invoke `/fabric-review` to triage drift-flagged entries — demote or archive them via the store-write review flow. (The doctor `orphan_demote` / `stale_archive` lints surface decay; they do not auto-heal store-backed knowledge.)",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",
@@ -680,6 +680,65 @@ export const enMessages: Messages = {
     "{total} store scope issue(s): {breakdown}. e.g. {sample}.",
   "doctor.check.store_scope_lint.remediation":
     "Run `fabric store backfill-scope` to add missing semantic_scope/visibility_store; `fabric store re-scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
+  // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints.
+  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.message.singular":
+    "stable_id \"{stableId}\" is declared in {fileCount} files: {files}. Edit one of the knowledge files to use a unique stable_id.",
+  "doctor.check.stable_id_collision.message.plural":
+    "{count} stable_id collisions detected. First: \"{stableId}\" in {files}. Edit one of the knowledge files to use a unique stable_id.",
+  "doctor.check.stable_id_collision.remediation":
+    "Run `/fabric-review modify <one of the colliding ids from the message>` to let the canonical id allocator reassign it (updates frontmatter + counters + historical cross-refs atomically). Do NOT hand-edit id frontmatter — it will desync counters.",
+  "doctor.check.stable_id_collision.ok":
+    "No declared stable_id collisions found in mounted store knowledge.",
+  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.ok":
+    "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
+  "doctor.check.layer_mismatch.message.singular":
+    "{count} canonical knowledge file is physically misaligned with its stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  "doctor.check.layer_mismatch.message.plural":
+    "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  "doctor.check.layer_mismatch.remediation":
+    "Move the file to the correct write-target store or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
+  // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene (dangling + drift).
+  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.ok":
+    "All relevance_paths globs resolve to at least one file under the workspace root.",
+  "doctor.check.relevance_paths_dangling.message.singular":
+    "{count} relevance_paths glob resolves to zero files in the current workspace. First: {detail}.",
+  "doctor.check.relevance_paths_dangling.message.plural":
+    "{count} relevance_paths globs resolve to zero files in the current workspace. First: {detail}.",
+  "doctor.check.relevance_paths_dangling.remediation":
+    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.ok.skipped":
+    "Skipped (git history unavailable; cannot evaluate {windowDays}d drift window).",
+  "doctor.check.relevance_paths_drift.ok.fresh":
+    "All narrow-scope canonical entries have at least one relevance_path touched in the last {windowDays}d.",
+  "doctor.check.relevance_paths_drift.message.singular":
+    "{count} narrow-scope canonical entry has relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
+  "doctor.check.relevance_paths_drift.message.plural":
+    "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
+  "doctor.check.relevance_paths_drift.remediation":
+    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive).
+  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.ok":
+    "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
+  "doctor.check.orphan_demote.message.singular":
+    "{count} canonical knowledge entry exceeds its maturity-keyed inactivity threshold (proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d). First: {detail}.",
+  "doctor.check.orphan_demote.message.plural":
+    "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d). First: {detail}.",
+  "doctor.check.orphan_demote.remediation":
+    "Demote the entry one maturity tier via `/fabric-review modify <id>`, or re-engage it so it logs fresh activity. (Rewriting store-backed knowledge is the store-write flow's job — this read-side lint only surfaces the decay.)",
+  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.ok":
+    "No draft knowledge entries exceed the additional stale-archive quiet window.",
+  "doctor.check.stale_archive.message.singular":
+    "{count} draft knowledge entry is stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
+  "doctor.check.stale_archive.message.plural":
+    "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
+  "doctor.check.stale_archive.remediation":
+    "Archive the stale draft via `/fabric-review reject <id>`, or revive it if still relevant. (Moving store-backed files is the store-write flow's job — this read-side lint only surfaces the staleness.)",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

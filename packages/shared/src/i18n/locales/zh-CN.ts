@@ -136,7 +136,7 @@ export const zhCNMessages: Messages = {
     "示例：\n" +
     "  fabric doctor                   只读诊断报告\n" +
     "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
-    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
+    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（计数器 / 归档 / 缓存）\n" +
     "  fabric doctor --json            机器可读输出",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
@@ -226,7 +226,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
-    "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
+    "应用知识库 lint 变更:归档逾期 pending draft、修正漂移的 per-store id 计数器、清理陈旧 session-hint 缓存。衰减类 lint(orphan demote / stale archive)只读上报 — 请通过 fab_review 流程处理。默认 doctor 运行仍然只读。",
   "cli.doctor.args.yes.description":
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   // rc.35 TASK-12 (P0-11): --verbose 展开 maintainer 受众的 remediation。
@@ -235,7 +235,7 @@ export const zhCNMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — 加 `fabric doctor --verbose` 查看)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
+    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（归档/计数器/缓存）；--fix 修复派生状态（meta/索引）。请分别运行。",
   // rc.20 TASK-05: --cite-coverage 报告参数；只读，与 --fix/--fix-knowledge 互斥。
   "cli.doctor.args.cite-coverage.description":
     "Cite 政策合规报告(只读;跳过标准检查)",
@@ -492,7 +492,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.drift_unconsumed.message":
     "近 30 天内 knowledge_drift_detected 事件 {driftCount} 次,knowledge_demoted 事件 {demoteCount} 次。drift > demote 至少 5 → 部分 drift 没被消化,KB 会缓慢失活。",
   "doctor.check.drift_unconsumed.remediation":
-    "运行 `fabric doctor --fix` 触发 orphan-demote / stale-archive 自愈流,或调 `/fabric-review` 主动审 drift 标记的条目。",
+    "调 `/fabric-review` 审 drift 标记的条目 — 通过 store 写侧 review 流程降级或归档它们。(doctor 的 orphan_demote / stale_archive lint 只上报衰减,不自愈 store 知识。)",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",
@@ -664,6 +664,65 @@ export const zhCNMessages: Messages = {
     "{total} 个 store scope 问题: {breakdown}。例如 {sample}。",
   "doctor.check.store_scope_lint.remediation":
     "调 `fabric store backfill-scope` 补缺失的 semantic_scope/visibility_store;`fabric store re-scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
+  // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints。
+  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.message.singular":
+    "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中:{files}。请编辑其中一个 knowledge file,改用唯一 stable_id。",
+  "doctor.check.stable_id_collision.message.plural":
+    "检测到 {count} 个 stable_id collisions。首个:\"{stableId}\" 位于 {files}。请编辑其中一个 knowledge file,改用唯一 stable_id。",
+  "doctor.check.stable_id_collision.remediation":
+    "调 `/fabric-review modify <message 中列出的 colliding id 之一>`, 让 canonical id allocator 自动重分配 id (会同步更新 frontmatter + counters + 历史 cross-ref)。严禁手工编辑 id frontmatter — 会撞 counter。",
+  "doctor.check.stable_id_collision.ok":
+    "mounted store knowledge 中未发现已声明的 stable_id collisions。",
+  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.ok":
+    "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
+  "doctor.check.layer_mismatch.message.singular":
+    "{count} 个 canonical knowledge file 与其 stable_id layer prefix 的物理位置不一致(KT-* must live under team/, KP-* under personal/)。首个:{detail}。",
+  "doctor.check.layer_mismatch.message.plural":
+    "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致(KT-* must live under team/, KP-* under personal/)。首个:{detail}。",
+  "doctor.check.layer_mismatch.remediation":
+    "将文件移动到正确的 write-target store,或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
+  // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene (dangling + drift)。
+  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.ok":
+    "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",
+  "doctor.check.relevance_paths_dangling.message.singular":
+    "{count} 个 relevance_paths glob 在当前 workspace 中解析到 0 个文件。首个:{detail}。",
+  "doctor.check.relevance_paths_dangling.message.plural":
+    "{count} 个 relevance_paths globs 在当前 workspace 中解析到 0 个文件。首个:{detail}。",
+  "doctor.check.relevance_paths_dangling.remediation":
+    "更新 entry 的 relevance_paths,移除不再匹配任何文件的 globs,或使用 `fab_review.modify` 重写 anchor set。",
+  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.ok.skipped":
+    "已跳过(git history unavailable;无法评估 {windowDays}d drift window)。",
+  "doctor.check.relevance_paths_drift.ok.fresh":
+    "所有 narrow-scope canonical entries 都至少有 1 个 relevance_path 在最近 {windowDays}d 内被触碰。",
+  "doctor.check.relevance_paths_drift.message.singular":
+    "{count} 个 narrow-scope canonical entry 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
+  "doctor.check.relevance_paths_drift.message.plural":
+    "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
+  "doctor.check.relevance_paths_drift.remediation":
+    "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
+  // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive)。
+  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.ok":
+    "没有 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold。",
+  "doctor.check.orphan_demote.message.singular":
+    "{count} 个 canonical knowledge entry 超过按 maturity 设定的 inactivity threshold(proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d)。首个:{detail}。",
+  "doctor.check.orphan_demote.message.plural":
+    "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold(proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d)。首个:{detail}。",
+  "doctor.check.orphan_demote.remediation":
+    "通过 `/fabric-review modify <id>` 将该 entry 降级一个 maturity tier,或重新使用它以记录新活动。(改写 store 知识是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露衰减。)",
+  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.ok":
+    "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
+  "doctor.check.stale_archive.message.singular":
+    "{count} 个 draft knowledge entry 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
+  "doctor.check.stale_archive.message.plural":
+    "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
+  "doctor.check.stale_archive.remediation":
+    "通过 `/fabric-review reject <id>` 归档该 stale draft,或若仍相关则复活它。(移动 store 文件是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露陈旧。)",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

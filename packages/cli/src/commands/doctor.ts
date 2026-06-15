@@ -91,9 +91,15 @@ type DoctorArgs = {
 // pre-flight DoctorReport (fixable_errors + warnings) so the preview can be
 // rendered BEFORE any mutation runs. Codes outside this set are not part of
 // the fix-knowledge surface and are not counted.
+// v2.2 Goal B (G-AGE honesty): `knowledge_orphan_demote_required` and
+// `knowledge_stale_archive_required` are intentionally NOT listed here. Their
+// read-side DETECTION was rebuilt store-aware (doctor-knowledge-age.ts), but the
+// store-backed demote/archive MUTATION is store-write territory (deferred to the
+// store-write goal). Listing them would make `--fix-knowledge` preview a fix it
+// never executes — exactly the "doctor 谎报" Goal X eliminated. Until the
+// mutation arm is wired, these decay lints are surfaced-and-remediated via the
+// fab_review flow (see their remediation copy), never auto-mutated.
 const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
-  knowledge_orphan_demote_required: "demote (maturity)",
-  knowledge_stale_archive_required: "archive (git mv)",
   knowledge_pending_auto_archive: "archive (git mv, pending)",
   knowledge_index_drift: "counter bump (agents.meta)",
   knowledge_session_hints_stale: "cache delete",

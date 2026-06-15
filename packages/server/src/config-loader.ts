@@ -224,22 +224,21 @@ export function readPlanContextTopK(projectRoot: string): number {
 /**
  * v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity orphan_demote thresholds. Returns
  * the override Map keyed by the doctor's internal LintMaturity ladder
- * ("stable"|"endorsed"|"draft") so doctor's orphan_demote inspect can spread it
+ * (proven|verified|draft) so doctor's orphan_demote inspect can spread it
  * over the hardcoded defaults. Absent keys fall through. Best-effort: any
  * read/parse failure returns an empty map.
  *
- * v2.2 W3-T5 (F-MATURITY-ENDORSED): the CANONICAL maturity enum is
- * draft/verified/proven (KT-DEC-0005); the doctor's orphan_demote ladder still
- * speaks the legacy stable/endorsed names internally. This loader reads the
- * canonical config keys (`orphan_demote_proven_days` /
- * `orphan_demote_verified_days` / `orphan_demote_draft_days`) and maps
- * proven→stable / verified→endorsed onto that internal ladder.
+ * v2.2 Goal B (G-VOCAB / ADJ-2): the doctor's LintMaturity ladder now speaks
+ * the CANONICAL maturity enum (draft/verified/proven, KT-DEC-0005) directly —
+ * the legacy stable/endorsed remap is retired. This loader reads the canonical
+ * config keys (`orphan_demote_proven_days` / `orphan_demote_verified_days` /
+ * `orphan_demote_draft_days`) and returns them under matching canonical keys.
  *
  * Validation rule mirrors the schema: integer in [1, 3650] (one day to ten
  * years). Out-of-range or non-numeric values are silently dropped so a
  * partial override file does not nuke the hardcoded defaults wholesale.
  */
-export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Record<"stable" | "endorsed" | "draft", number>> {
+export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Record<"proven" | "verified" | "draft", number>> {
   try {
     const cfg = readFabricConfig(projectRoot) as Partial<
       Record<
@@ -249,7 +248,7 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
         unknown
       >
     >;
-    const out: Partial<Record<"stable" | "endorsed" | "draft", number>> = {};
+    const out: Partial<Record<"proven" | "verified" | "draft", number>> = {};
     const validate = (v: unknown): number | undefined => {
       if (typeof v !== "number" || !Number.isFinite(v) || v < 1 || v > 3650 || !Number.isInteger(v)) {
         return undefined;
@@ -257,9 +256,9 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
       return v;
     };
     const proven = validate(cfg.orphan_demote_proven_days);
-    if (proven !== undefined) out.stable = proven;
+    if (proven !== undefined) out.proven = proven;
     const verified = validate(cfg.orphan_demote_verified_days);
-    if (verified !== undefined) out.endorsed = verified;
+    if (verified !== undefined) out.verified = verified;
     const d = validate(cfg.orphan_demote_draft_days);
     if (d !== undefined) out.draft = d;
     return out;
