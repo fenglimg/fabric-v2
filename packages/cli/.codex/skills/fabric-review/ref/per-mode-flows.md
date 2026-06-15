@@ -75,7 +75,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
 1. Extract the topic keyword(s) from the user's message (e.g. "find about deepMerge" → query="deepMerge").
 2. Call `fab_review action="search"` with `query` and any obvious filters (if user said "team-only" → `filters.layer="team"`).
-3. Server returns `items[]` ranked by relevance — these are entries already in `.fabric/knowledge/{layer}/{type}/` (NOT pending), unless `filters` says otherwise.
+3. Server returns `items[]` ranked by relevance — these are entries already in mounted store `knowledge/<type>/` (NOT pending), unless `filters` says otherwise.
 4. Render top-N (cap at `review_topic_result_cap`, config-resolved, default 8) results with title / summary / pending_path.
 5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), pivot into the corresponding pending mode action — the search result already gives the `pending_path` needed for the action.
 6. NEVER surface a per-item AskUserQuestion just for browsing — only when the user signals an action verb.
@@ -134,7 +134,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 ## Mode: revisit — Specific Entry Deep Dive
 
 1. The user referenced a specific entry (by id `KT-D-7` or by slug `single-cjs-hook`).
-2. Call `fab_review action="list"` with `filters` narrowed by best-guess fields; if the entry is canonical (has stable_id), `Read` the file directly at `.fabric/knowledge/{layer}/{type}/<id>--<slug>.md`.
+2. Call `fab_review action="list"` with `filters` narrowed by best-guess fields; if the entry is canonical (has stable_id), use the path returned by `fab_review` instead of inventing a store path.
 3. Display the full body (frontmatter + content). Tail the events.jsonl for any history events tagged with this stable_id.
 4. Surface AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` only if the entry is still pending; for canonical entries the only mutation path is `modify` (incl. layer flip).
 

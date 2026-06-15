@@ -39,13 +39,13 @@ Rendering rule:
 
 - `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
 - `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fabric install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
+- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_recall`), CLI command names (e.g. `fabric install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
 - `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
 
 Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,
 `narrow`, `broad`, `source_sessions`, `proposed_reason`, `session_context`,
 `pending_path`, `layer`, `team`, `personal`, `knowledge_scope_degraded`,
-`MUST`, `NEVER`, `.fabric/knowledge/`, etc.) are NEVER translated — they
+`MUST`, `NEVER`, `knowledge/pending`, etc.) are NEVER translated — they
 appear verbatim in both language variants. The bilingualization scope is
 prose ONLY.
 
@@ -108,4 +108,3 @@ the option-list invariants that downstream tooling (the Skill's own
 `switch` statements over `choice`, plus any future MCP-level audit lint
 that scans for these specific string literals) depends on. Keeping
 `options[]` English-only is contract-locked across all three skills.
-

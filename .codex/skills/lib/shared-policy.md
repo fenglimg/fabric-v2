@@ -11,7 +11,7 @@ When rendering bilingual (zh-CN ↔ en) output, prose is translated but the
 following classes of token appear **verbatim in both variants**:
 
 - **MCP tool + field names**: `fab_extract_knowledge`, `fab_review`,
-  `fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
+  `fab_recall`, `fab_archive_scan`,
   `relevance_scope`, `relevance_paths`, `source_sessions`, `proposed_reason`,
   `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
   `evidence_paths`, `tags`, `pending_path`, `layer`.

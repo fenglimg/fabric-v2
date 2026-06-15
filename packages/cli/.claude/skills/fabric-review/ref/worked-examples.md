@@ -36,7 +36,7 @@ Inferred mode: `revisit` (Step 1 keyword "look at <id>").
 
 Skill flow:
 
-1. Read `.fabric/knowledge/team/guidelines/KT-G-0003--indent-style.md`. Display body to user.
+1. Read the canonical path returned by `fab_review search` for `KT-G-0003`. Display body to user.
 2. AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` — user picks `modify`.
 3. Skill detects user-stated intent "actually personal not team" — surface AskUserQuestion `{options: ["team", "personal"]}` with current layer=team noted; user confirms `personal`.
 4. Call:

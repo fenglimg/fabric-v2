@@ -33,15 +33,13 @@ const PROTECTED_TOKENS: readonly string[] = [
   "fabric store bind <alias>",
   "fabric store switch-write <alias>",
   "npm install -g @fenglimg/fabric-cli@latest",
-  // MCP tools
+  // MCP tools — KT-DEC-0026: retrieval collapsed to the single lean fab_recall;
+  // the two-step fab_plan_context / fab_get_knowledge_sections (+ selection_token
+  // / ai_selected_stable_ids / candidates[].stable_id) surface is retired, so
+  // those tokens no longer appear in either bootstrap body.
   "fab_recall",
-  "fab_plan_context",
-  "fab_get_knowledge_sections",
   'fab_review action="list"',
   "fab_extract_knowledge",
-  "selection_token",
-  "ai_selected_stable_ids",
-  "candidates[].stable_id",
   // paths / config
   ".fabric/agents.meta.json",
   ".fabric/fabric-config.json",

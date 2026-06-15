@@ -24,6 +24,7 @@
 // Namespace import (not destructured) so the atomic write goes through a single
 // mutable fs reference — also what the atomicity tests spy on (ISS-016).
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const { dirname, join } = require("node:path");
 
 const CACHE_DIR_REL = join(".fabric", ".cache");
@@ -52,11 +53,38 @@ function atomicWrite(path, data) {
   }
 }
 
+async function atomicWriteAsync(path, data) {
+  await fsp.mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await fsp.writeFile(tmp, data);
+    await fsp.rename(tmp, path);
+  } catch (err) {
+    try {
+      await fsp.rm(tmp, { force: true });
+    } catch {
+      // best-effort temp cleanup
+    }
+    throw err;
+  }
+}
+
 function readJsonState(projectRoot, fileName, validate) {
   const path = cachePath(projectRoot, fileName);
   if (!fs.existsSync(path)) return null;
   try {
     const parsed = JSON.parse(fs.readFileSync(path, "utf8"));
+    if (typeof validate === "function" && !validate(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function readJsonStateAsync(projectRoot, fileName, validate) {
+  const path = cachePath(projectRoot, fileName);
+  try {
+    const parsed = JSON.parse(await fsp.readFile(path, "utf8"));
     if (typeof validate === "function" && !validate(parsed)) return null;
     return parsed;
   } catch {
@@ -73,11 +101,29 @@ function writeJsonState(projectRoot, fileName, value) {
   }
 }
 
+async function writeJsonStateAsync(projectRoot, fileName, value) {
+  try {
+    await atomicWriteAsync(cachePath(projectRoot, fileName), JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readTextState(projectRoot, fileName) {
   const path = cachePath(projectRoot, fileName);
   if (!fs.existsSync(path)) return null;
   try {
     return fs.readFileSync(path, "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+async function readTextStateAsync(projectRoot, fileName) {
+  const path = cachePath(projectRoot, fileName);
+  try {
+    return (await fsp.readFile(path, "utf8")).trim();
   } catch {
     return null;
   }
@@ -92,12 +138,26 @@ function writeTextState(projectRoot, fileName, text) {
   }
 }
 
+async function writeTextStateAsync(projectRoot, fileName, text) {
+  try {
+    await atomicWriteAsync(cachePath(projectRoot, fileName), String(text));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   cachePath,
   readJsonState,
+  readJsonStateAsync,
   writeJsonState,
+  writeJsonStateAsync,
   readTextState,
+  readTextStateAsync,
   writeTextState,
+  writeTextStateAsync,
   atomicWrite,
+  atomicWriteAsync,
   CACHE_DIR_REL,
 };

@@ -142,47 +142,36 @@ describe("bootstrap-canonical", () => {
       expect(BOOTSTRAP_CANONICAL_ZH.charCodeAt(0)).not.toBe(0xfeff);
     });
 
-    describe("two-step KB read flow (rc.23 F1)", () => {
-      // rc.23 F1: the template teaches the real two-step API
-      //   step 1 — fab_plan_context(paths=[...]) → returns selection_token + entries
-      //   step 2 — fab_get_knowledge_sections({selection_token, ai_selected_stable_ids, sections})
-      // The pre-rc.23 single-step `fab_get_knowledge_sections(id=...)` form would
-      // fail schema validation on the very first KB read.
+    describe("single-step KB read flow (KT-DEC-0026 / KT-DEC-0030)", () => {
+      // KT-DEC-0026: retrieval collapsed to ONE lean tool. fab_recall returns
+      // descriptions + native read paths only; the body is read on demand via a
+      // native Read (observed as knowledge_body_read, KT-DEC-0030). The two-step
+      // fab_plan_context → fab_get_knowledge_sections MCP surface is retired
+      // (clean-slate, KT-DEC-0002) — the bootstrap must NOT teach it anymore.
 
-      it("mentions fab_plan_context as the step-1 entry point", () => {
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("fab_plan_context");
+      // EN parity for every token below is enforced by bootstrap-parity.test.ts.
+      it("teaches fab_recall as the single retrieval entry point", () => {
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("fab_recall");
       });
 
-      it("mentions ai_selected_stable_ids as a required step-2 argument", () => {
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("ai_selected_stable_ids");
+      it("teaches native Read of the body path as the on-demand fetch", () => {
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("knowledge_body_read");
       });
 
-      it("references selection_token as the inter-step contract", () => {
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("selection_token");
+      it("no longer teaches the retired two-step MCP surface (fab_plan_context / fab_get_knowledge_sections)", () => {
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("fab_plan_context");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("fab_get_knowledge_sections");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("selection_token");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("ai_selected_stable_ids");
       });
 
-      // rc.23 TASK-013 (F8b): the legacy KNOWLEDGE_SECTION_NAMES tuple
-      // (MISSION_STATEMENT / MANDATORY_INJECTION / BUSINESS_LOGIC_CHUNKS /
-      // CONTEXT_INFO) was retired. The bootstrap no longer enumerates a
-      // section enum — fab_get_knowledge_sections returns the full body and
-      // the LLM scans whatever B-set headings the rule defines.
+      // rc.23 TASK-013 (F8b): the legacy KNOWLEDGE_SECTION_NAMES tuple was
+      // retired long ago; the bootstrap must still never resurrect it.
       it("no longer references the retired KNOWLEDGE_SECTION_NAMES enum", () => {
         expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("MISSION_STATEMENT");
         expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("MANDATORY_INJECTION");
         expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("BUSINESS_LOGIC_CHUNKS");
         expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("CONTEXT_INFO");
-      });
-
-      it("no longer shows a `sections:` parameter in the step-2 example", () => {
-        // The `sections` input parameter on fab_get_knowledge_sections was
-        // removed in rc.23 F8b. The two-step example must not demo it.
-        expect(BOOTSTRAP_CANONICAL_ZH).not.toMatch(/sections:\s*\[/);
-      });
-
-      it("does not teach the obsolete single-step fab_get_knowledge_sections(id=...) form", () => {
-        // The bare `id=` arg form is the rc.22-and-earlier mistake that drove
-        // KB:none 25/25. Schema requires selection_token + ai_selected_stable_ids.
-        expect(BOOTSTRAP_CANONICAL_ZH).not.toMatch(/fab_get_knowledge_sections\(id=/);
       });
     });
   });
