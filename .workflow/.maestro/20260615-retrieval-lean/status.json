@@ -71,26 +71,26 @@
     {
       "name": "G-W5-DOCS",
       "target": "全 repo grep 无残留 fab_get_knowledge_sections / 两步流程旧文案 (除 CLI plan-context-hint 正当引用)",
-      "actual": null,
+      "actual": "GREEN — 全 repo .md/.mdc grep 残留=0(排除 CHANGELOG/CONTRIBUTING 历史 + CLI plan-context-hint 正当引用 + .workflow/goal-brief); bootstrap-canonical.ts zh+en 各5处改单步 fab_recall+原生 Read; README ×3+docs ×2+7 skill ref 源重写; 镜像 fabric install 同步 root+packages/cli 两套 .claude/.codex+AGENTS.md ×3; bootstrap-parity census 删5退役 token+两步测试组重写单步断言",
       "verifier_cmd": "grep -rn 'fab_get_knowledge_sections\\|fab_plan_context' --include='*.md' --include='*.mdc' (应仅 CLI plan-context-hint)",
       "method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-SHIP-TSC",
       "target": "pnpm -r exec tsc --noEmit 通过",
-      "actual": null,
+      "actual": "GREEN — pnpm -r exec tsc --noEmit exit 0 (W5 收口后全包 typecheck 通过)",
       "verifier_cmd": "pnpm -r exec tsc --noEmit",
       "method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-SHIP-LINT-TEST",
       "target": "lint / test 全绿",
-      "actual": null,
+      "actual": "GREEN — lint=`knip --strict` exit 0(无死码/未用 export, 含 W3 删 knowledge-sections.ts 后); test=`pnpm -r test` 全绿: cli 1050 + server 705 + shared 635",
       "verifier_cmd": "PROBE: 读 package.json scripts 定 lint+test 命令",
       "method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     }
   ],
   "task_decomposition": [
@@ -382,12 +382,12 @@
         "G-W5-DOCS"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "grep 无两步残留",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "bootstrap-canonical.ts (→ AGENTS.md ×3 镜像) zh+en 各5处改单步; README ×3 + docs/ARCHITECTURE + docs/RUNTIME-CONTRACTS 重写; .cursor/*.mdc 已不存在(Cursor 早删, 任务文本 stale); grep 残留=0; CLI plan-context-hint 引用保留",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0031 / KT-DEC-0026"
     },
@@ -403,12 +403,12 @@
         "G-W5-DOCS"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "grep skill ref 无两步残留",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "skill 模板源改: fabric-connect SKILL(description+流程)、fabric-review/ref/cite-contract、3× i18n-policy 示例 token(fab_get_knowledge_sections→fab_recall)、lib/shared-policy 工具清单删两退役工具; fabric install 同步 root+packages/cli 镜像; grep 0 残留",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0026"
     },
@@ -424,12 +424,12 @@
         "G-W5-DOCS"
       ],
       "alignment_strength": "infrastructure",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "grep 确认无新 wiki 工具/面",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "本 session 未触碰任何 wiki/related schema 文件(git diff 确认); related[] 保持 id-based 单向无类型; 无新建导航面/多跳/反链/专用工具(KT-DEC-0031 YAGNI 守住)",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0031"
     }
@@ -440,10 +440,10 @@
   "audit_rounds": [
     {
       "round": 1,
-      "status": "running",
+      "status": "complete",
       "round_task_ceiling": 16,
-      "round_task_actual": 13,
-      "convergence_status": "converging",
+      "round_task_actual": 16,
+      "convergence_status": "converged",
       "newly_discovered_this_round": [],
       "carried_in": [],
       "carry_over_to_next": {
@@ -453,15 +453,23 @@
       },
       "drift_checks": [],
       "completion_gate": {
-        "task_gate": {},
-        "goal_gate": {
-          "blocking": true
+        "task_gate": {
+          "all_tasks_done": true,
+          "open_count": 0
         },
-        "drift_gate": {}
+        "goal_gate": {
+          "blocking": false,
+          "all_ship_criteria_green": true,
+          "note": "全 7 ship_criteria (G-W1..G-W5 + G-SHIP-TSC + G-SHIP-LINT-TEST) actual≥target 且 verified_at 已填"
+        },
+        "drift_gate": {
+          "in_scope_held": true,
+          "note": "CLI plan-context-hint 保留未动; 无 deprecated shim; 无新 wiki 面; 三端镜像 fabric install 同步"
+        }
       }
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-retrieval-lean/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "complete",
+  "loop_exit_status": "goal_met"
 }

@@ -52,9 +52,19 @@
 > **W4 wave 闭 — G-W4-LINT 绿**。两 lint round-trip fixture(KT-PIT-0014)+ 真实 doctor dogfood 零假阳性。检查数 37→39。cli 1050 + server 705 + shared 637 green, tsc clean。
 
 ### W5 — 文档/bootstrap 同步 + wiki 护栏 (KT-DEC-0031)
-- [ ] **W5-1** 重写删两步流程:.fabric/AGENTS.md ×2 + README + .cursor/*.mdc
-- [ ] **W5-2** 7 fabric skill ref/ 两步流程文案重写
-- [ ] **W5-3** wiki 护栏:related[] 保持 id-based 单向无类型;不建多余面(验证性)
+- [x] **W5-1** 重写删两步流程:bootstrap-canonical(→AGENTS.md ×3)+ README ×3 + docs ×2 ✅(.cursor 已不存在)
+- [x] **W5-2** 7 fabric skill ref/ 两步流程文案重写 ✅
+- [x] **W5-3** wiki 护栏:related[] 保持 id-based 单向无类型;不建多余面 ✅(验证性,invariant 守住)
+
+> **W5 wave 闭 — G-W5-DOCS 绿(全 repo grep 残留=0)**。镜像 fabric install 同步 root+packages/cli。cli 1050 + shared 635 + server 705 green, tsc clean。
+
+---
+
+## ✅ 目标达成 (mode ③ 终止判据全绿)
+全 7 ship gate actual≥target 且 verified:
+G-W1-RETRIEVAL · G-W2-SPINE · G-W3-OBSERVABILITY · G-W4-LINT · G-W5-DOCS · G-SHIP-TSC(`tsc --noEmit` exit 0) · G-SHIP-LINT-TEST(`knip --strict` exit 0 + cli 1050/server 705/shared 635 tests green)。
+边界守住:CLI plan-context-hint 保留未动 · 无 deprecated shim · 无新 wiki 面 · 三端镜像同步。
+遗留(非阻塞,已 spawn task chip):KT-DEC-0026 知识条目 relevance_paths 仍锚已删的 knowledge-sections.ts → doctor dangling 提示,待 fab_review.modify 清理。
 
 ## Resume
 推进:`/goal-mode continue`(单步 = 推一个 task → 跑 verification → 原子更新 status.json → 重检终止门)。
