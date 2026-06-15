@@ -219,6 +219,9 @@ describe("runDoctorReport", () => {
       // + drift (info), rebuilt store-aware over the read-set corpus.
       "Knowledge relevance_paths dangling",
       "Knowledge relevance_paths drift",
+      // W4-3 (KT-MOD-0001) narrow_no_paths + W4-2 (KT-DEC-0028) broad-index-drift.
+      "Knowledge narrow scope without paths",
+      "Knowledge broad index drift",
       // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote + stale_archive,
       // rebuilt store-aware (age from events.jsonl last-active, KT-DEC-0023).
       "Knowledge orphan demote",
@@ -249,7 +252,8 @@ describe("runDoctorReport", () => {
     // layer_mismatch as two checks → 33.
     // v2.2 Goal B (G-RELEVANCE): rebuilt relevance_paths dangling + drift → 35.
     // v2.2 Goal B (G-AGE): rebuilt orphan_demote + stale_archive → 37.
-    expect(report.checks).toHaveLength(37);
+    // W4-3 narrow_no_paths (KT-MOD-0001) + W4-2 broad-index-drift (KT-DEC-0028) → 39.
+    expect(report.checks).toHaveLength(39);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

@@ -16,6 +16,7 @@ import {
 import {
   createRelevancePathsDanglingCheck,
   createRelevancePathsDriftCheck,
+  createNarrowNoPathsCheck,
   inspectStoreRelevancePaths,
 } from "./doctor-relevance-paths.js";
 import { runDoctorReport } from "./doctor.js";
@@ -211,6 +212,30 @@ describe("inspectStoreRelevancePaths — drift (G-RELEVANCE)", () => {
   });
 });
 
+describe("inspectStoreRelevancePaths — narrow_no_paths (W4-3 / KT-MOD-0001)", () => {
+  it("FIRES when a narrow-scope entry has an empty relevance_paths set", async () => {
+    await freshHome();
+    const projectRoot = await createProject();
+    await seedEntry("KT-DEC-0007--dead.md", "KT-DEC-0007", "narrow", []);
+    mountTeam();
+
+    const result = await inspectStoreRelevancePaths(projectRoot);
+    expect(result.narrowNoPaths.entries).toHaveLength(1);
+    expect(result.narrowNoPaths.entries[0].stable_id).toBe("team:KT-DEC-0007");
+  });
+
+  it("does NOT fire for a narrow entry that carries a path, nor for a broad entry with no path", async () => {
+    await freshHome();
+    const projectRoot = await createProject();
+    await seedEntry("KT-DEC-0008--anchored.md", "KT-DEC-0008", "narrow", ["src/real.ts"]);
+    await seedEntry("KT-DEC-0009--broad.md", "KT-DEC-0009", "broad", []);
+    mountTeam();
+
+    const result = await inspectStoreRelevancePaths(projectRoot);
+    expect(result.narrowNoPaths.entries).toHaveLength(0);
+  });
+});
+
 describe("runDoctorReport round-trip (G-RELEVANCE consumer)", () => {
   it("surfaces knowledge_relevance_paths_dangling as a warning", async () => {
     await freshHome();
@@ -222,6 +247,18 @@ describe("runDoctorReport round-trip (G-RELEVANCE consumer)", () => {
     const warning = report.warnings.find((w) => w.code === "knowledge_relevance_paths_dangling");
     expect(warning).toBeDefined();
     expect(warning?.message).toContain("src/ghost.ts");
+  });
+
+  it("surfaces knowledge_narrow_no_paths as a warning (W4-3)", async () => {
+    await freshHome();
+    const projectRoot = await createProject();
+    await seedEntry("KT-DEC-0007--dead.md", "KT-DEC-0007", "narrow", []);
+    mountTeam();
+
+    const report = await runDoctorReport(projectRoot);
+    const warning = report.warnings.find((w) => w.code === "knowledge_narrow_no_paths");
+    expect(warning).toBeDefined();
+    expect(warning?.message).toContain("team:KT-DEC-0007");
   });
 });
 
@@ -245,5 +282,14 @@ describe("relevance renderers", () => {
     });
     expect(fired.kind).toBe("info");
     expect(fired.code).toBe("knowledge_relevance_paths_drift");
+  });
+
+  it("narrow_no_paths renderer: ok when empty, warning when populated", () => {
+    expect(createNarrowNoPathsCheck(t, { entries: [] }).status).toBe("ok");
+    const fired = createNarrowNoPathsCheck(t, {
+      entries: [{ stable_id: "team:KT-DEC-0007", path: "store:team:KT-DEC-0007" }],
+    });
+    expect(fired.status).toBe("warn");
+    expect(fired.code).toBe("knowledge_narrow_no_paths");
   });
 });

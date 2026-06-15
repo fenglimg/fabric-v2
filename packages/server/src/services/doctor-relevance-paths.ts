@@ -27,9 +27,13 @@ import type { DoctorCheck } from "./doctor.js";
 //                              (the anchored code has gone quiet — the entry
 //                              may be stale). Info kind; git-log heuristic that
 //                              degrades to ok when git is unavailable.
+//   narrow_no_paths          — W4-3 (KT-MOD-0001): a narrow-scope entry with an
+//                              EMPTY relevance_paths set. The three-axis model
+//                              makes this illegal: a narrow entry is gated on
+//                              path overlap, so with no paths it can NEVER
+//                              surface (a permanently dead entry). Warning kind.
 //
-// #23 narrow_no_paths is intentionally NOT rebuilt (co-location niche, dropped
-// in the fallback-purge backlog). Pure read; never throws.
+// Pure read; never throws.
 // ---------------------------------------------------------------------------
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -78,9 +82,19 @@ export interface RelevancePathsDriftInspection {
   git_available: boolean;
 }
 
+export type NarrowNoPathsEntry = {
+  stable_id: string; // store-qualified id (`<alias>:<local-id>`)
+  path: string; // display path of the holding entry
+};
+
+export interface NarrowNoPathsInspection {
+  entries: NarrowNoPathsEntry[];
+}
+
 export interface RelevancePathsInspection {
   dangling: RelevancePathsDanglingInspection;
   drift: RelevancePathsDriftInspection;
+  narrowNoPaths: NarrowNoPathsInspection;
 }
 
 function toPosix(p: string): string {
@@ -220,9 +234,27 @@ export async function inspectStoreRelevancePaths(
   }
   driftCandidates.sort((a, b) => a.path.localeCompare(b.path));
 
+  // --- W4-3 narrow_no_paths (KT-MOD-0001) ---------------------------------
+  // A narrow entry with no relevance_paths can never path-match, so it is a
+  // permanently dead entry. Independent of the workspace/git scans above —
+  // it's a pure frontmatter shape check over the store corpus.
+  const narrowNoPathsEntries: NarrowNoPathsEntry[] = [];
+  for (const entry of entries) {
+    if (entry.description.relevance_scope !== "narrow") continue;
+    const paths = entry.description.relevance_paths ?? [];
+    if (paths.length === 0) {
+      narrowNoPathsEntries.push({
+        stable_id: entry.qualifiedId,
+        path: `store:${entry.qualifiedId}`,
+      });
+    }
+  }
+  narrowNoPathsEntries.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
+
   return {
     dangling: { entries: danglingEntries },
     drift: { candidates: driftCandidates, git_available: recentPaths !== null },
+    narrowNoPaths: { entries: narrowNoPathsEntries },
   };
 }
 
@@ -292,5 +324,36 @@ export function createRelevancePathsDriftCheck(
       windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
     }),
     actionHint: t("doctor.check.relevance_paths_drift.remediation"),
+  };
+}
+
+// W4-3 (KT-MOD-0001): narrow-scope entry with an empty relevance_paths set is
+// illegal (can never path-match → permanently dead). Warning kind so it bumps
+// doctor status — unlike drift this is a hard shape violation, not a heuristic.
+export function createNarrowNoPathsCheck(
+  t: Translator,
+  inspection: NarrowNoPathsInspection,
+): DoctorCheck {
+  if (inspection.entries.length === 0) {
+    return {
+      name: t("doctor.check.narrow_no_paths.name"),
+      status: "ok",
+      message: t("doctor.check.narrow_no_paths.ok"),
+    };
+  }
+  const first = inspection.entries[0];
+  const detail = `${first.stable_id} at ${first.path}`;
+  const count = inspection.entries.length;
+  return {
+    name: t("doctor.check.narrow_no_paths.name"),
+    status: "warn",
+    kind: "warning",
+    code: "knowledge_narrow_no_paths",
+    fixable: false,
+    message: t(`doctor.check.narrow_no_paths.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    actionHint: t("doctor.check.narrow_no_paths.remediation"),
   };
 }

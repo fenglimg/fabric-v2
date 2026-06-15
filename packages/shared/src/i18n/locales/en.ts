@@ -720,6 +720,26 @@ export const enMessages: Messages = {
     "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
   "doctor.check.relevance_paths_drift.remediation":
     "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  // W4-3 (KT-MOD-0001): narrow-scope entry with an empty relevance_paths set.
+  "doctor.check.narrow_no_paths.name": "Knowledge narrow scope without paths",
+  "doctor.check.narrow_no_paths.ok":
+    "Every narrow-scope canonical entry carries at least one relevance_path.",
+  "doctor.check.narrow_no_paths.message.singular":
+    "{count} narrow-scope entry has an empty relevance_paths set — it can never path-match, so it will never surface (permanently dead). First: {detail}.",
+  "doctor.check.narrow_no_paths.message.plural":
+    "{count} narrow-scope entries have an empty relevance_paths set — they can never path-match, so they will never surface (permanently dead). First: {detail}.",
+  "doctor.check.narrow_no_paths.remediation":
+    "Use `fab_review.modify` to add relevance_paths globs anchoring the entry, or switch its relevance_scope to `broad` if it is meant to be always-on.",
+  // W4-2 (KT-DEC-0028): per-store broad index nearing the backstop.
+  "doctor.check.broad_index_drift.name": "Knowledge broad index drift",
+  "doctor.check.broad_index_drift.ok":
+    "No store's broad-scope entry count reaches the drift threshold ({threshold} of backstop {backstop}).",
+  "doctor.check.broad_index_drift.message.singular":
+    "{count} store's broad-scope index has reached {threshold} (80% of backstop {backstop}) — the SessionStart banner is close to truncating broad entries. First: {detail}.",
+  "doctor.check.broad_index_drift.message.plural":
+    "{count} stores' broad-scope indexes have reached {threshold} (80% of backstop {backstop}) — the SessionStart banner is close to truncating broad entries. First: {detail}.",
+  "doctor.check.broad_index_drift.remediation":
+    "Run the `fabric-audit` skill to prune or demote stale broad-scope entries in the flagged store, or raise `broad_index_backstop` in .fabric/fabric-config.json if the corpus is legitimately large.",
   // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive).
   "doctor.check.orphan_demote.name": "Knowledge orphan demote",
   "doctor.check.orphan_demote.ok":

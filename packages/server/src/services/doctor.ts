@@ -51,8 +51,13 @@ import {
 import {
   createRelevancePathsDanglingCheck,
   createRelevancePathsDriftCheck,
+  createNarrowNoPathsCheck,
   inspectStoreRelevancePaths,
 } from "./doctor-relevance-paths.js";
+import {
+  createBroadIndexDriftCheck,
+  inspectBroadIndexDrift,
+} from "./doctor-broad-index.js";
 import {
   createOrphanDemoteCheck,
   createStaleArchiveCheck,
@@ -681,6 +686,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // Single store-corpus walk; the drift arm shells out to `git log` and
   // degrades to ok when git is unavailable.
   const relevancePaths = await inspectStoreRelevancePaths(projectRoot);
+  // W4-2 (KT-DEC-0028): broad-index-drift — per-store broad entry count vs the
+  // broad_index_backstop (warn at 80%, points to fabric-audit before the
+  // SessionStart banner silently truncates).
+  const broadIndexDrift = await inspectBroadIndexDrift(projectRoot);
   // Shared timestamp for the read-side hygiene inspections below (knowledge
   // decay age + session-hints cache age + stale serve-lock age).
   const lintNow = Date.now();
@@ -863,6 +872,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // canonical corpus and resolve anchors against the project workspace.
     createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
     createRelevancePathsDriftCheck(t, relevancePaths.drift),
+    // W4-3 (KT-MOD-0001): narrow-scope entry with empty relevance_paths =
+    // permanently dead (warning). W4-2 (KT-DEC-0028): broad-index-drift —
+    // per-store broad count nearing the backstop (warning → fabric-audit).
+    createNarrowNoPathsCheck(t, relevancePaths.narrowNoPaths),
+    createBroadIndexDriftCheck(t, broadIndexDrift),
     // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (warning) +
     // stale_archive (warning). Age from events.jsonl last-active (KT-DEC-0023);
     // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
