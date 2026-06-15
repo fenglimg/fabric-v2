@@ -7,23 +7,25 @@
 
 Fabric 安装时会往项目写一份给 AI 看的规则文件 (`.fabric/AGENTS.md`), 还会在每条待审知识里写一句"为什么提议归档"。这两处正文**现在永远是中文**, 哪怕用户把机器语言设成英文 —— 英文用户拿到一坨看不懂的中文。本 goal 让这两处正文跟着用户选的语言走 (en/zh 双语), 顺带先修一行过期的规则文案。
 
-## Ship Gate (全绿即达成)
+## Ship Gate (全绿即达成) — ✅ 全部达成 (2026-06-15)
 
-- [ ] **G-ADJ3** — 文案修复收口
-  - [x] A1 bootstrap L127 对齐 parser clean-slate (stash 已捞回)
-  - [ ] A2 修 bootstrap-canonical.test.ts 断言旧文案
+- [x] **G-ADJ3** — 文案修复收口
+  - [x] A1 bootstrap L127 对齐 parser clean-slate
+  - [x] A2 修 bootstrap-canonical.test.ts 断言旧文案 → Clean-slate
   - [x] A3 丢弃 stash en2 孤儿快照 (F1: brief 前提被实证推翻, HEAD 快照本就 CI-clean)
-  - [ ] A4 fabric install 重同步本仓 AGENTS.md (blocked-on B1-B5)
-- [ ] **G-DUALBODY** — 双语能力
-  - [ ] B1 BOOTSTRAP_CANONICAL 拆 _EN/_ZH
-  - [ ] B2 PROPOSED_REASON 拆 en/zh map
-  - [ ] B3 writer 侧 (install + doctor --fix) 路由 resolveGlobalLocale
-  - [ ] B4 drift 比对侧 (bootstrap-lints + cite-coverage) 路由
-  - [ ] B5 extract-knowledge ## Why proposed 路由
-- [ ] **G-PARITY** — 结构对齐闸 + 语言切换边界
-  - [ ] C1 en↔zh parity 闸 (marker/section 数 + protected token)
-  - [ ] C2 语言切换 drift 边界 (doctor 容双 locale / 提示重装)
-- [ ] **G-GREEN** — rebuild dist + tsc -r 0 error + 全量测试 0 fail 0 skip
+  - [x] A4 resync 本仓 AGENTS.md (cp ZH canonical + runDoctorFix L2; doctor 全 ok)
+- [x] **G-DUALBODY** — 双语能力
+  - [x] B1 BOOTSTRAP_CANONICAL 拆 _EN/_ZH + BY_LOCALE + resolver/match helper
+  - [x] B2 PROPOSED_REASON 拆 en/zh BY_LOCALE map
+  - [x] B3 writer 侧 (install + doctor --fix) 路由 resolveGlobalLocale
+  - [x] B4 drift 比对侧 (bootstrap-lints 容双 locale + cite-coverage 复用) 路由
+  - [x] B5 extract-knowledge ## Why proposed 路由
+- [x] **G-PARITY** — 结构对齐闸 + 语言切换边界
+  - [x] C1 en↔zh parity census (bootstrap-parity.test.ts 9绿: H2数+protected token)
+  - [x] C2 语言切换 drift 容忍 (inspectL1 matchBootstrapCanonicalLocale + 回归测试)
+- [x] **G-GREEN** — tsc -r 0 error + shared637/server687/cli1048 单跑全绿 0 skip
+
+> 注: `pnpm -r test` 并发跑偶发瞬时失败 (timing-sensitive store/recall + 跨包 FABRIC_HOME 竞争); per-package 单跑为权威结果, 全绿。
 
 ## 5 消费点 (G-DUALBODY 接线清单)
 

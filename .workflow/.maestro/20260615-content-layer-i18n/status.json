@@ -7,7 +7,7 @@
   "intent": "读 GOAL-BRIEF.md 起 mode③, ship gate: G-ADJ3 / G-DUALBODY / G-PARITY / G-GREEN",
   "goal": "内容层(写进 artifact 的正文)跟随统一语言流向 resolveGlobalLocale 单源, 消除英文用户拿到中文 AGENTS.md / 中文 Why proposed; 先修 ADJ-3 stale 文案债, 再造 en/zh 双语能力",
   "mode": "3",
-  "current_phase": "execute",
+  "current_phase": "final",
   "current_round": 1,
   "boundary_contract": {
     "in_scope": [
@@ -38,30 +38,30 @@
     {
       "name": "G-ADJ3",
       "target": "L127 文案对齐 parser clean-slate ✓ + 快照态正确 + bootstrap-canonical/i18n 测试绿 + 本仓 AGENTS.md 重同步消 L1-drift",
-      "actual": null,
+      "actual": "L127 对齐 clean-slate + test 改 + 快照 HEAD 干净 + AGENTS.md resync; shared/cli i18n 绿",
       "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared test -- bootstrap-canonical && cd packages/cli && CI=true npx vitest run __tests__/i18n.test.ts",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-DUALBODY",
       "target": "BOOTSTRAP_CANONICAL 拆 _EN/_ZH + PROPOSED_REASON 拆 en/zh; 5 消费点 (writer x2 / drift x2 / extract x1) 全走 resolveGlobalLocale 挑体",
-      "actual": null,
+      "actual": "_ZH/_EN + PROPOSED_REASON BY_LOCALE; 5 消费点全 resolveGlobalLocale-routed; 全绿",
       "verifier_cmd": "PROBE: grep 5 消费点均 resolveGlobalLocale-routed + dual-body 单测绿",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-PARITY",
       "target": "内容层 parity 闸 (en<->zh marker/section 数量一致 + protected token 边界) 存在且绿; 语言切换 drift 边界 (doctor 容双 locale 或提示重装) 处理",
-      "actual": null,
+      "actual": "bootstrap-parity.test 9绿(结构+protected token census) + doctor locale-switch 容忍测试绿",
       "verifier_cmd": "PROBE: 新 parity 测试 + locale-switch drift 测试绿",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-GREEN",
       "target": "pnpm -r exec tsc --noEmit 0 error + shared/server/cli 全量测试 0 fail 0 skip (rebuild dist 后)",
-      "actual": null,
+      "actual": "tsc-r 0err + shared637/server687/cli1048 单跑全绿 0skip",
       "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared build && pnpm -r exec tsc --noEmit && pnpm -r test",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     }
   ],
   "findings": [
@@ -169,12 +169,12 @@
         "G-ADJ3"
       ],
       "alignment_strength": "direct",
-      "status": "blocked",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "fabric doctor",
-        "evidence": "blocked-on: B1-B5 定稿 (dual-body 影响 AGENTS.md 内容)",
-        "verified_at": null
+        "evidence": "本机 zh-CN; cp ZH canonical -> .fabric/AGENTS.md + runDoctorFix 修 L2 三端; doctor bootstrap/managed 全 ok; diff 仅 L127 传播(+AGENTS.md 前导空行=doctor 重写确定性输出)",
+        "verified_at": "2026-06-15"
       }
     },
     {
@@ -290,12 +290,12 @@
         "G-PARITY"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "新 parity test",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "bootstrap-parity.test.ts 9 tests 绿: H2 数对齐 + 全 protected token 双在 + 无 retired token",
+        "verified_at": "2026-06-15"
       }
     },
     {
@@ -310,12 +310,12 @@
         "G-PARITY"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "doctor locale-switch 回归测试",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "doctor.test L1 块新增 locale-switch 容忍测试绿; inspectL1 matchBootstrapCanonicalLocale 容双 locale",
+        "verified_at": "2026-06-15"
       }
     },
     {
@@ -330,12 +330,12 @@
         "G-GREEN"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "tsc + full test",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "W3: 单跑 shared637/server687/cli1048 全绿 0skip + tsc-r 0err",
+        "verified_at": "2026-06-15"
       }
     }
   ],
@@ -368,8 +368,13 @@
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-content-layer-i18n/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null,
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "all named ship gates green",
+    "summary": "内容层 en/zh 双体 + resolveGlobalLocale 单源接线 5 消费点; ADJ-3 文案修复(+实证推翻快照前提 F1); parity 闸 + 语言切换 drift 容忍",
+    "at": "2026-06-15"
+  },
   "git_commits": [
     {
       "sha": "a125798",

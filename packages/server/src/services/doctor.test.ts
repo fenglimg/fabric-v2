@@ -8,6 +8,7 @@ import { ZodError } from "zod";
 
 import {
   BOOTSTRAP_CANONICAL_EN,
+  BOOTSTRAP_CANONICAL_ZH,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   STORE_LAYOUT,
@@ -1393,6 +1394,25 @@ describe("runDoctorReport", () => {
 
       // Seed the canonical bootstrap snapshot — byte-for-byte BOOTSTRAP_CANONICAL_EN.
       writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_EN, "utf8");
+
+      const report = await runDoctorReport(target);
+
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("bootstrap_snapshot_drift");
+      expect(report.checks.find((c) => c.name === "Bootstrap snapshot drift")?.status).toBe("ok");
+    });
+
+    // Content-layer i18n / G-PARITY C2: a machine-language switch leaves an
+    // already-installed project's `.fabric/AGENTS.md` byte-equal to the OTHER
+    // locale's canonical body. The current machine is en (FAB_LANG pinned in
+    // beforeEach), but the on-disk snapshot is the ZH body — a verbatim Fabric
+    // output, NOT a hand-edit. The drift inspector must tolerate it (no false
+    // bootstrap_snapshot_drift) so language-switching users aren't nagged.
+    it("tolerates a snapshot in the other locale (language switch is not drift)", async () => {
+      const target = createInitializedProject("doctor-rc19-l1-locale-switch");
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Current locale resolves to en; seed the ZH canonical body instead.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL_ZH, "utf8");
 
       const report = await runDoctorReport(target);
 
