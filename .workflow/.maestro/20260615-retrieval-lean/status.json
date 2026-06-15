@@ -63,10 +63,10 @@
     {
       "name": "G-W4-LINT",
       "target": "三条 lint 触发正确: broad-index-drift(warn@80%) / narrow+空relevance_paths=非法 / broad_index_backstop schema(20..500)",
-      "actual": null,
+      "actual": "GREEN — broad_index_backstop 入 fabric-config schema(默认50, range 20..500); broad-index-drift lint(doctor-broad-index.ts, 按 store 计数达 backstop 80% warn 指 fabric-audit) + narrow_no_paths lint(doctor-relevance-paths.ts, narrow+空=死条目 warn 指 fab_review.modify); 两 lint round-trip fixture(KT-PIT-0014: FIRES/不 FIRES/边界/renderer)+ 真实 fabric doctor dogfood 零假阳性; i18n en+zh; 检查数 37→39; cli 1050+server 705+shared 637 green, tsc clean",
       "verifier_cmd": "PROBE: doctor lint 单测/fixture round-trip (producer-consumer 防假绿, KT-PIT-0014)",
       "method": "deterministic",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-W5-DOCS",
@@ -318,13 +318,13 @@
         "G-W4-LINT"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "discovery": "W2-1 hook 用 broad_index_backstop(默认50)兜底, 通过 readConfigNumber 带 inline 默认即可工作; W4-1 正式入 fabric-config schema(range 20..500)+ W4-2 doctor drift lint。W2/W4 共用此 config key, W2 先用 inline 默认不阻塞。",
       "verification": {
         "method": "deterministic",
         "verifier": "schema 单测 + shared build",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "fabric-config.ts 加 broad_index_backstop: z.number().int().min(20).max(500).optional().default(50); shared rebuild + 637 tests green(含 config schema 测试); 与 hook readBroadIndexBackstop 同界对齐",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-MOD-0001"
     },
@@ -340,12 +340,12 @@
         "G-W4-LINT"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "lint fixture round-trip 测试",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "doctor-broad-index.ts: inspectBroadIndexDrift 按 qualifiedId 前缀分 store 计 broad-scope 数, >= floor(backstop*0.8) 触 warn(code knowledge_broad_index_drift, 指 fabric-audit); 读 .fabric/fabric-config.json#broad_index_backstop 同 hook; round-trip(16 FIRES/15 不 FIRES/narrow 排除/default 50/renderer)+ dogfood ok 零假阳性",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0028 / KT-PIT-0014"
     },
@@ -361,12 +361,12 @@
         "G-W4-LINT"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "lint fixture round-trip 测试",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "doctor-relevance-paths.ts 加 narrowNoPaths 检查: relevance_scope===narrow 且 relevance_paths 空 → warn(code knowledge_narrow_no_paths, 指 fab_review.modify 补路径/改 broad); round-trip(FIRES 空/不 FIRES 带路径或 broad/doctor consumer/renderer)+ dogfood ok 零假阳性",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-MOD-0001"
     },
@@ -442,7 +442,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 16,
-      "round_task_actual": 10,
+      "round_task_actual": 13,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],

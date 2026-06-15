@@ -45,9 +45,11 @@
 > **W3 wave 闭 — G-W3-OBSERVABILITY 绿 (dogfood)**。镜像 fabric install 同步。cli 1050 + server 694 + shared 637 tests green, tsc clean。
 
 ### W4 — 三轴 scope + 配置/lint (KT-MOD-0001)
-- [ ] **W4-1** broad_index_backstop 入 fabric-config schema(20..500)
-- [ ] **W4-2** doctor broad-index-drift lint(warn@80%,按 store 归因)
-- [ ] **W4-3** doctor narrow+空 relevance_paths=非法 lint
+- [x] **W4-1** broad_index_backstop 入 fabric-config schema(20..500)✅ 默认50, 与 hook 同界
+- [x] **W4-2** doctor broad-index-drift lint(warn@80%,按 store 归因,指 fabric-audit)✅ doctor-broad-index.ts
+- [x] **W4-3** doctor narrow+空 relevance_paths=非法 lint ✅ narrow_no_paths 指 fab_review.modify
+
+> **W4 wave 闭 — G-W4-LINT 绿**。两 lint round-trip fixture(KT-PIT-0014)+ 真实 doctor dogfood 零假阳性。检查数 37→39。cli 1050 + server 705 + shared 637 green, tsc clean。
 
 ### W5 — 文档/bootstrap 同步 + wiki 护栏 (KT-DEC-0031)
 - [ ] **W5-1** 重写删两步流程:.fabric/AGENTS.md ×2 + README + .cursor/*.mdc
