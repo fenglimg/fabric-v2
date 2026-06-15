@@ -381,6 +381,18 @@
       "wave": "W1",
       "gate": "G-ADJ3",
       "subject": "cite 文案对齐 parser clean-slate + ledger"
+    },
+    {
+      "sha": "2032ee6",
+      "wave": "W2",
+      "gate": "G-DUALBODY",
+      "subject": "内容层 en/zh 双体 + resolveGlobalLocale 挑体 (5 消费点)"
+    },
+    {
+      "sha": "1371896",
+      "wave": "W3",
+      "gate": "G-PARITY/A4/G-GREEN",
+      "subject": "parity census + 语言切换容忍 + AGENTS.md resync"
     }
   ]
 }
