@@ -128,9 +128,9 @@
       "dimension": 0,
       "hard": true,
       "target": "并发多会话不张冠李戴(per-session 信号) + MCP 挂优雅降级(hook 不崩)",
-      "actual": null,
-      "verifier_cmd": "PROBE: 并发 session 信号隔离 test + MCP-down hook 降级 test",
-      "verified_at": null
+      "actual": "GREEN: scripts/resilience-probe.mjs 驱动真 hook 函数, 8 检查/2 失败模式全过(exit0)。① 并发隔离 5/5(F13 session-scoped sidecar): writeMaintenanceLastEmit session-A 进 cooldown 后, session-B readMaintenanceLastEmit=null(未被静默), B fire 后 A 值不被 clobber, A≠B 独立, absent sessionId 回退 legacy 非 scoped 路径(升级兼容)。② backend-down 降级 3/3: strip fabric from PATH → broad hint main() 不 throw + 零 banner 静默, invokePlanContextHint 返 null 永不 throw(ENOENT fail-open never-throw 契约)。F13 机制已有单测(fabric-hint.test.ts:1690), probe 是 out-of-band dogfood 复证。",
+      "verifier_cmd": "node scripts/resilience-probe.mjs (8检查/2模式, 任一污染或 throw=exit1)",
+      "verified_at": "2026-06-15T17:35:00Z"
     },
     {
       "name": "G-SELFAUDIT",
@@ -279,12 +279,12 @@
         "G-CENSUS"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "真库 round-trip + 并发/降级 test",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "G-RESILIENCE: scripts/resilience-probe.mjs 8检查全过(并发隔离F13+backend-down降级)。多store round-trip: store-only-e2e verdict=pass, recall 真返 team:KT-DEC-0001 非空(selected_stable_ids+rules 均含 store-qualified id)= F-MULTISTORE-UNWIRED 读侧闭环验证(cross-store-recall 已被 recall.ts/plan-context.ts 消费)。",
+        "verified_at": "2026-06-15T17:35:00Z"
       }
     },
     {
@@ -436,7 +436,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 12,
+      "round_task_actual": 13,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],
@@ -473,6 +473,12 @@
       "gate": "G-CENSUS+G-SELFAUDIT",
       "summary": "33面零空壳派生 census + 防腐 self-audit(负向证伪删行→exit1)",
       "at": "2026-06-15T17:05:00Z"
+    },
+    {
+      "sha": "8576ce2",
+      "gate": "G-RESILIENCE",
+      "summary": "并发隔离F13+backend-down降级 probe + 多store round-trip 闭环",
+      "at": "2026-06-15T17:35:00Z"
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-release-eval-22/goal-checklist.md",
