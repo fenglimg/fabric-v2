@@ -15,7 +15,7 @@
 //     hand-syncing is cheaper than introducing transpile machinery.
 //   - The existing `installHookLibs` pipeline auto-copies every `.cjs` under
 //     templates/hooks/lib/ to each client's hooks/lib/ dir, so this file
-//     auto-ships to cc/codex/cursor with no install pipeline change.
+//     auto-ships to cc/codex with no install pipeline change.
 //
 // Vocabulary contract (mirrored 1:1 with the TS source):
 //   - cite_tags enum: applied | dismissed | none (2-state vocab). Pre-user

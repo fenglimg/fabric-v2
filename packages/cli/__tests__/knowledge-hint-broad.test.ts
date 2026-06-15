@@ -1341,21 +1341,6 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).toMatch(/ON-DEMAND.*decisions 4/);
   });
 
-  it("cursor client → flat additional_context, NO systemMessage (human observation degraded)", () => {
-    process.env.FABRIC_HINT_CLIENT = "cursor";
-    writeConfig({ fabric_language: "en" });
-    const { out } = capture({
-      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
-      census,
-      alwaysBodies,
-    });
-    expect(out.length).toBe(1);
-    const env = JSON.parse(out[0]);
-    expect(env.additional_context).toMatch(/ALWAYS-ACTIVE RULES/);
-    expect(env.systemMessage).toBeUndefined();
-    expect(env.hookSpecificOutput).toBeUndefined();
-  });
-
   it("nudge_mode=silent → AI additionalContext STILL emitted, systemMessage suppressed (D5 invariant)", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
     writeConfig({ fabric_language: "en", nudge_mode: "silent" });

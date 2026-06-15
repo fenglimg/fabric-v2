@@ -73,14 +73,14 @@
       "subject": "逐个追平 cli/server 消费者 (install 流水线/config/doctor) → G-ENUM + G-SRC",
       "done_when": "T1 write-red 暴露的所有类型错追平; install/config/doctor cursor 分支删净无 dead branch; tsc 0 error",
       "ship_criteria_alignment": ["G-ENUM", "G-SRC"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "tsc --noEmit 0 error + git grep cursor src 0", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "tsc --noEmit 0 error + git grep cursor src 0", "evidence": "3 包 tsc 0 error; SRC 非测试 cursor=0 (仅留 JSON 指针变量 + server AuditCursor 字节游标, 非 client); commit 96648ed", "verified_at": "2026-06-15" } },
     { "id": "T3", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "删模板目录 packages/cli/.cursor/ + configs cursor hook config + uninstall 对称 → G-TPL",
       "done_when": "rm -r packages/cli/.cursor; configs cursor hook config 删; uninstall-skills-and-hooks 对称去 cursor; tsc 绿",
       "ship_criteria_alignment": ["G-TPL"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "test ! -d packages/cli/.cursor + grep configs", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "test ! -d packages/cli/.cursor + grep configs", "evidence": "git rm packages/cli/.cursor/ (11 文件) + templates/hooks/configs/cursor-hooks.json; uninstall unmergeCursorHookConfig + .cursor strip 删净对称; commit 96648ed", "verified_at": "2026-06-15" } },
     { "id": "T4", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "更新 parity 测试 + 快照 (肉眼 diff 只删 cursor 行) → G-PARITY",
       "done_when": "cross-client-parity.test.ts + parity-matrix-e2e 只剩 cc+codex; 快照 -u 前肉眼 diff; 绿",
@@ -111,7 +111,9 @@
     "局部变量 cursor (JSON 遍历指针) 非 Cursor client — 绝不删: skills-and-hooks.ts:1543-1594, uninstall-skills-and-hooks.ts:837-852",
     "排除模式必须用 grep -iv 'cursor:' (CSS cursor: 属性 + 'cursor,codex' i18n 例子里的 cursor 是 client 语义需删, 但 ui-ux CSS cursor: 不删)"
   ],
-  "git_commits": [],
+  "git_commits": [
+    { "sha": "96648ed", "wave": "T1-T2-T3-T5src", "summary": "client 枚举骨架 + cli/server 消费者 + 模板目录 + i18n 删 cursor; 3 包 tsc 0" }
+  ],
   "goal_checklist_path": ".workflow/.maestro/20260615-cursor-cleanup/goal-checklist.md",
   "status": "running",
   "loop_exit_status": null

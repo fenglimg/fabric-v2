@@ -13,7 +13,6 @@ export const clientPathsSchema = z
   .object({
     claudeCodeCLI: z.string().optional(),
     claudeCodeDesktop: z.string().optional(),
-    cursor: z.string().optional(),
     codexCLI: z.string().optional(),
   })
   .strict();

@@ -119,8 +119,8 @@ export type FsSnapshot = Record<string, string>;
  * tests to assert byte-identical idempotency across re-runs.
  *
  * rc.14 TASK-002 — hoisted from per-file copies. Tests now consume this
- * single implementation; cursor parity assertions (`.cursor` snapshots) are
- * symmetric with `.claude` and `.codex` for the first time.
+ * single implementation; parity assertions are symmetric across `.claude`
+ * and `.codex`.
  */
 export function snapshotTree(root: string, rel: string): FsSnapshot {
   const out: FsSnapshot = {};

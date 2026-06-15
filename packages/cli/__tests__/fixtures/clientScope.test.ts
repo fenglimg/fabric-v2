@@ -14,11 +14,11 @@ const _rooCodeCheck: ClientKind = "RooCode";
 // @ts-expect-error -- 'GeminiCLI' must not be assignable to ClientKind
 const _geminiCLICheck: ClientKind = "GeminiCLI";
 
-const allClientKinds: ClientKind[] = ["ClaudeCodeCLI", "ClaudeCodeDesktop", "Cursor", "CodexCLI"];
+const allClientKinds: ClientKind[] = ["ClaudeCodeCLI", "ClaudeCodeDesktop", "CodexCLI"];
 
 describe("client scope guard", () => {
-  it("has exactly 4 client kinds (2 Claude variants + Cursor + Codex)", () => {
-    expect(allClientKinds).toHaveLength(4);
+  it("has exactly 3 client kinds (2 Claude variants + Codex)", () => {
+    expect(allClientKinds).toHaveLength(3);
   });
 
   it("does not include retired clients", () => {
@@ -31,7 +31,6 @@ describe("client scope guard", () => {
   it("contains all expected client kinds", () => {
     expect(allClientKinds).toContain("ClaudeCodeCLI");
     expect(allClientKinds).toContain("ClaudeCodeDesktop");
-    expect(allClientKinds).toContain("Cursor");
     expect(allClientKinds).toContain("CodexCLI");
   });
 
@@ -45,12 +44,11 @@ describe("client scope guard", () => {
     }
   });
 
-  it("accepts all four supported clientPaths keys", () => {
+  it("accepts the supported clientPaths keys", () => {
     expect(() =>
       clientPathsSchema.parse({
         claudeCodeCLI: "/usr/bin/claude",
         claudeCodeDesktop: "/Applications/Claude.app",
-        cursor: "/usr/bin/cursor",
         codexCLI: "/usr/bin/codex",
       }),
     ).not.toThrow();

@@ -253,8 +253,8 @@ function readPayload(rawStdin) {
   } catch (e) {
     // v2.0.0-rc.29 REVIEW (codex LOW-1): apply BUG-L1's malformed-input
     // diagnostic uniformly across hook scripts. fabric-hint.cjs got the stderr
-    // trace in TASK-008; without this matching write here, a broken Codex /
-    // Cursor host payload silently kills the narrow hint with no operator
+    // trace in TASK-008; without this matching write here, a broken Codex
+    // host payload silently kills the narrow hint with no operator
     // signal at all. Best-effort: a failed stderr write must not throw upward
     // (hook contract — never crash the host's edit pipeline).
     try {
@@ -268,31 +268,26 @@ function readPayload(rawStdin) {
 }
 
 /**
- * Extract the tool name from a hook payload. Clients differ in casing /
- * field placement; we probe the conventional shapes:
+ * Extract the tool name from a hook payload. Both supported clients use the
+ * same shape:
  *   - Claude Code:  { tool_name, tool_input: { ... } }
  *   - Codex CLI:    { tool_name, tool_input: { ... } } (mirrors Claude)
- *   - Cursor:       { tool, input: { ... } } (legacy variant)
  * Returns null when no recognizable shape is present.
  */
 function extractToolName(payload) {
   if (!payload || typeof payload !== "object") return null;
   if (typeof payload.tool_name === "string") return payload.tool_name;
-  if (typeof payload.tool === "string") return payload.tool;
   return null;
 }
 
 /**
- * Extract the tool_input object from a hook payload, accepting both the
- * `tool_input` (Claude/Codex) and `input` (Cursor) conventions.
+ * Extract the tool_input object from a hook payload (the `tool_input`
+ * convention shared by Claude Code and Codex CLI).
  */
 function extractToolInput(payload) {
   if (!payload || typeof payload !== "object") return null;
   if (payload.tool_input && typeof payload.tool_input === "object") {
     return payload.tool_input;
-  }
-  if (payload.input && typeof payload.input === "object") {
-    return payload.input;
   }
   return null;
 }
@@ -303,8 +298,8 @@ function extractToolInput(payload) {
  *   - bulk variant:      { file_paths: ["src/foo.ts", "src/bar.ts"] }
  *   - MultiEdit:         { file_path: "...", edits: [{file_path?, ...}, ...] }
  *     (Claude Code's MultiEdit currently issues per-edit operations against
- *     a single `file_path`; older drafts and Cursor's variant carried
- *     per-edit `file_path`. We accept both to be defensive.)
+ *     a single `file_path`; older drafts carried per-edit `file_path`. We
+ *     accept both to be defensive.)
  *
  * Returns a deduped array of strings — empty when no path is recognizable.
  * Order: first occurrence wins (stable across re-renders of the same payload).
@@ -534,7 +529,7 @@ function appendHintSilenceCounter(projectRoot, now) {
 /**
  * Resolve the session id used to key the cache file. Priority:
  *   1. payload.session_id (string, non-empty) — preferred; threads through
- *      from the client hook payload (Claude Code / Codex CLI / Cursor).
+ *      from the client hook payload (Claude Code / Codex CLI).
  *   2. process.env.FABRIC_SESSION_ID — environment fallback.
  *   3. SYNTHETIC_SESSION_ID — a process-lifetime UUID, generated lazily so
  *      tests can stub it (see resetSyntheticSessionId).
@@ -1538,7 +1533,7 @@ async function main(env, stdio) {
     // above — narrow.length===0 / gate-skip / dedup-filter); the AI
     // additionalContext is emitted regardless (gated only by reminder_to_context),
     // preserving flow ⊥ observation (D5). emitDualSink shapes the protocol per
-    // client (CC/Codex camelCase nested; Cursor flat snake_case; unknown → stderr).
+    // client (CC/Codex camelCase nested; unknown → stderr).
     const text = lines.join("\n");
     const humanGate =
       nudgePolicy !== null

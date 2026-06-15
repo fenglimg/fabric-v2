@@ -27,7 +27,6 @@ const clientPathsArbitrary = fc.record(
   {
     claudeCodeCLI: fc.string(),
     claudeCodeDesktop: fc.string(),
-    cursor: fc.string(),
     codexCLI: fc.string(),
   },
   { requiredKeys: [] },

@@ -8,7 +8,7 @@
 
 Per KB decision `decisions/fabric-serve-quarantine-not-delete` (`v2.0.0-rc.37` Wave A2):
 
-`fabric serve` exposed an Express-based HTTP server (MCP + REST + SSE + planned UI on port 7373) — a vision残留 from v1.8. By v2.0.0 all three supported clients (Claude Code / Cursor / Codex CLI) use **stdio MCP transport exclusively**, so the HTTP server has zero consumer. Maintaining its attack surface (auth tokens, loopback validation, lock files, security hardening per `rc.29` BUG-K1) is pure tax.
+`fabric serve` exposed an Express-based HTTP server (MCP + REST + SSE + planned UI on port 7373) — a vision残留 from v1.8. By v2.0.0 both supported clients (Claude Code / Codex CLI) use **stdio MCP transport exclusively**, so the HTTP server has zero consumer. Maintaining its attack surface (auth tokens, loopback validation, lock files, security hardening per `rc.29` BUG-K1) is pure tax.
 
 Trade-offs evaluated:
 - **Delete**: loses future web UI restart entry point

@@ -3,8 +3,8 @@
  * (templates/hooks/lib/client-adapter.cjs).
  *
  * Pins the 3-tier client detection (env override → CLAUDE_PROJECT_DIR → path
- * heuristic incl. .cursor), and the channel-aware emitContext (Claude Code
- * stdout JSON envelope vs Codex/Cursor stderr, plus forceStderr override).
+ * heuristic), and the channel-aware emitContext (Claude Code stdout JSON
+ * envelope vs Codex stderr, plus forceStderr override).
  * Never-throw contract is implicit — emitContext swallows write failures.
  */
 
@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const adapter = require("../templates/hooks/lib/client-adapter.cjs") as {
   isClaudeCode: () => boolean;
-  detectClient: (dirnameHint?: string) => "cc" | "codex" | "cursor" | undefined;
+  detectClient: (dirnameHint?: string) => "cc" | "codex" | undefined;
   emitContext: (
     text: string,
     opts?: {
@@ -51,8 +51,8 @@ function capture(): { lines: string[]; stream: { write: (s: string) => void } } 
 
 describe("client-adapter.cjs detectClient", () => {
   it("FABRIC_HINT_CLIENT env override wins", () => {
-    process.env.FABRIC_HINT_CLIENT = "Cursor";
-    expect(adapter.detectClient("/whatever/.codex/hooks/lib")).toBe("cursor");
+    process.env.FABRIC_HINT_CLIENT = "codex";
+    expect(adapter.detectClient("/whatever/.claude/hooks/lib")).toBe("codex");
   });
 
   it("CLAUDE_PROJECT_DIR presence → cc", () => {
@@ -61,10 +61,9 @@ describe("client-adapter.cjs detectClient", () => {
     expect(adapter.isClaudeCode()).toBe(true);
   });
 
-  it("path heuristic resolves cc / codex / cursor", () => {
+  it("path heuristic resolves cc / codex", () => {
     expect(adapter.detectClient("/x/.claude/hooks/lib")).toBe("cc");
     expect(adapter.detectClient("/x/.codex/hooks/lib")).toBe("codex");
-    expect(adapter.detectClient("/x/.cursor/hooks/lib")).toBe("cursor");
   });
 
   it("returns undefined when no signal fires", () => {
@@ -82,7 +81,7 @@ describe("client-adapter.cjs emitContext", () => {
     expect(parsed.hookSpecificOutput.additionalContext).toBe("hello");
   });
 
-  it("Codex/Cursor (non-cc client) → plain stderr", () => {
+  it("Codex (non-cc client) → plain stderr", () => {
     const err = capture();
     adapter.emitContext("nudge", { client: "codex", streams: { stderr: err.stream } });
     expect(err.lines).toEqual(["nudge\n"]);
@@ -102,7 +101,7 @@ describe("client-adapter.cjs emitContext", () => {
 });
 
 // ---------------------------------------------------------------------------
-// v2.2 dual-sink (Goal A / D7): emitDualSink — three-branch two-channel emit.
+// v2.2 dual-sink (Goal A / D7): emitDualSink — two-channel emit.
 // ---------------------------------------------------------------------------
 describe("client-adapter.cjs emitDualSink", () => {
   it("cc → one stdout envelope with systemMessage(human) + nested additionalContext(ai)", () => {
@@ -129,25 +128,6 @@ describe("client-adapter.cjs emitDualSink", () => {
     expect(parsed.systemMessage).toBe("H");
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
     expect(parsed.hookSpecificOutput.additionalContext).toBe("A");
-  });
-
-  it("cursor → flat snake_case additional_context, NO systemMessage (human dropped)", () => {
-    const out = capture();
-    adapter.emitDualSink(
-      { human: "H-dropped", ai: "A" },
-      { client: "cursor", streams: { stdout: out.stream } },
-    );
-    expect(out.lines).toHaveLength(1);
-    const parsed = JSON.parse(out.lines[0]);
-    expect(parsed.additional_context).toBe("A");
-    expect(parsed.systemMessage).toBeUndefined();
-    expect(parsed.hookSpecificOutput).toBeUndefined();
-  });
-
-  it("cursor with no ai → emits nothing (no human channel exists)", () => {
-    const out = capture();
-    adapter.emitDualSink({ human: "H-only", ai: null }, { client: "cursor", streams: { stdout: out.stream } });
-    expect(out.lines).toHaveLength(0);
   });
 
   it("cc human-only (ai null) → envelope carries only systemMessage", () => {

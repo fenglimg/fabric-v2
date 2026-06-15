@@ -61,7 +61,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": "all",
-      "description": "Filter cite coverage by client (cc|codex|cursor|all)",
+      "description": "Filter cite coverage by client (cc|codex|all)",
       "name": "client",
       "negativeDescription": undefined,
       "required": undefined,

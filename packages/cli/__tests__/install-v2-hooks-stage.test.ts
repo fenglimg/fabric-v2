@@ -37,10 +37,8 @@ const mocks = vi.hoisted(() => {
     mergeCodexHookConfig: vi.fn(() => {
       throw new Error("codex config locked");
     }),
-    mergeCursorHookConfig: vi.fn(() => ok("cursor-hook-config")),
     writeClaudeBootstrapThinShell: vi.fn(() => ok("bootstrap-claude")),
     writeCodexBootstrapManagedBlock: vi.fn(() => ok("bootstrap-codex")),
-    writeCursorBootstrapManagedBlock: vi.fn(() => ok("bootstrap-cursor")),
     writeFabricAgentsSnapshot: vi.fn(() => ok("bootstrap-snapshot")),
     validateHookPaths: vi.fn(() => []),
   };
@@ -65,10 +63,8 @@ vi.mock("../src/install/skills-and-hooks.js", () => ({
   installHookLibs: mocks.installHookLibs,
   mergeClaudeCodeHookConfig: mocks.mergeClaudeCodeHookConfig,
   mergeCodexHookConfig: mocks.mergeCodexHookConfig,
-  mergeCursorHookConfig: mocks.mergeCursorHookConfig,
   writeClaudeBootstrapThinShell: mocks.writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock: mocks.writeCodexBootstrapManagedBlock,
-  writeCursorBootstrapManagedBlock: mocks.writeCursorBootstrapManagedBlock,
 }));
 
 vi.mock("../src/install/write-bootstrap-snapshot.js", () => ({

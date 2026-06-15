@@ -1,12 +1,12 @@
 // If a snapshot fails: review the diff. If the change is intentional, run `pnpm test -u` to update.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { writeClaudeMcpConfig, writeJsonClientConfig } from "../src/config/json.ts";
+import { writeClaudeMcpConfig } from "../src/config/json.ts";
 import { serializeCodexServerBlock } from "../src/config/toml.ts";
 
 // Deterministic fixture entry: fixed paths so snapshots are stable across machines.
@@ -55,18 +55,6 @@ describe("client config emission — golden snapshots", () => {
     // Use serializeCodexServerBlock directly with a deterministic entry so the
     // snapshot is stable across machines (process.execPath would vary otherwise).
     const out = serializeCodexServerBlock("fabric", FABRIC_ENTRY);
-    expect(out).toMatchSnapshot();
-  });
-
-  it("Cursor .cursor/mcp.json matches snapshot", async () => {
-    const tmpRoot = makeTempDir();
-    const cursorDir = join(tmpRoot, ".cursor");
-    mkdirSync(cursorDir, { recursive: true });
-    const configPath = join(cursorDir, "mcp.json");
-
-    await writeJsonClientConfig(configPath, FABRIC_ENTRY);
-
-    const out = readFileSync(configPath, "utf8");
     expect(out).toMatchSnapshot();
   });
 });

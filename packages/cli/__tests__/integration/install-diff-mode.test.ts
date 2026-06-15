@@ -100,7 +100,6 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
     const snapshot1Fabric = snapshotTree(target, ".fabric");
     const snapshot1Claude = snapshotTree(target, ".claude");
     const snapshot1Codex = snapshotTree(target, ".codex");
-    const snapshot1Cursor = snapshotTree(target, ".cursor");
 
     const captured = captureStdio();
     try {
@@ -118,10 +117,8 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
     // ledger growth is the documented contract).
     const snapshot2Claude = snapshotTree(target, ".claude");
     const snapshot2Codex = snapshotTree(target, ".codex");
-    const snapshot2Cursor = snapshotTree(target, ".cursor");
     expect(snapshot2Claude).toEqual(snapshot1Claude);
     expect(snapshot2Codex).toEqual(snapshot1Codex);
-    expect(snapshot2Cursor).toEqual(snapshot1Cursor);
 
     // .fabric/forensic.json is a snapshot regenerated every run; events.jsonl
     // grows by one install_diff_applied line per non-canonical run. The
@@ -145,7 +142,7 @@ describe("rc.14 TASK-002 install-diff-mode: missing file auto-applies", () => {
     tempRoots.push(target);
 
     await runInit(target);
-    const hookPath = ".cursor/hooks/fabric-hint.cjs";
+    const hookPath = ".claude/hooks/fabric-hint.cjs";
     expect(existsSync(join(target, hookPath))).toBe(true);
 
     seedMissingFile(target, hookPath);
