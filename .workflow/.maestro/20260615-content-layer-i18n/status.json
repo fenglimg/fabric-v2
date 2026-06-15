@@ -1,0 +1,398 @@
+{
+  "session_id": "20260615-content-layer-i18n",
+  "active_session_id": "20260615-content-layer-i18n",
+  "sessions": [
+    "20260615-content-layer-i18n"
+  ],
+  "intent": "读 GOAL-BRIEF.md 起 mode③, ship gate: G-ADJ3 / G-DUALBODY / G-PARITY / G-GREEN",
+  "goal": "内容层(写进 artifact 的正文)跟随统一语言流向 resolveGlobalLocale 单源, 消除英文用户拿到中文 AGENTS.md / 中文 Why proposed; 先修 ADJ-3 stale 文案债, 再造 en/zh 双语能力",
+  "mode": "3",
+  "current_phase": "final",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "packages/shared/src/templates/bootstrap-canonical.ts",
+      "packages/shared/src/schemas/api-contracts.ts (PROPOSED_REASON_DESCRIPTIONS)",
+      "packages/cli/src/install/write-bootstrap-snapshot.ts",
+      "packages/server/src/services/doctor.ts (snapshot 写 + import)",
+      "packages/server/src/services/doctor-bootstrap-lints.ts",
+      "packages/server/src/services/doctor-cite-coverage.ts",
+      "packages/server/src/services/extract-knowledge.ts",
+      "相关测试 + 本仓 .fabric/AGENTS.md 重同步"
+    ],
+    "out_of_scope": [
+      "resolveGlobalLocale 解析器本身 (唯一源, 勿自建/勿改)",
+      "cite-line-parser 行为 (已 clean-slate, 只对齐文案)",
+      ".claude/settings.local.json (无关噪声, 不提交)",
+      "AskUserQuestion options 路由 key (KT-GLD-0002: 保持英文)"
+    ],
+    "constraints": [
+      "改 shared 必 rebuild dist (pnpm --filter @fenglimg/fabric-shared build)",
+      "BOOTSTRAP_CANONICAL / PROPOSED_REASON byte-稳定敏感: 改后跑 byte-lock + install 测试",
+      "快照 -u 前肉眼 diff, 不掩盖真 mismatch",
+      "内容层挑体必走 resolveGlobalLocale, 勿自建解析",
+      "protected token / 命令名 / marker 字面量 / 路由 key 保持英文 (KT-GLD-0002)"
+    ]
+  },
+  "ship_criteria": [
+    {
+      "name": "G-ADJ3",
+      "target": "L127 文案对齐 parser clean-slate ✓ + 快照态正确 + bootstrap-canonical/i18n 测试绿 + 本仓 AGENTS.md 重同步消 L1-drift",
+      "actual": "L127 对齐 clean-slate + test 改 + 快照 HEAD 干净 + AGENTS.md resync; shared/cli i18n 绿",
+      "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared test -- bootstrap-canonical && cd packages/cli && CI=true npx vitest run __tests__/i18n.test.ts",
+      "verified_at": "2026-06-15"
+    },
+    {
+      "name": "G-DUALBODY",
+      "target": "BOOTSTRAP_CANONICAL 拆 _EN/_ZH + PROPOSED_REASON 拆 en/zh; 5 消费点 (writer x2 / drift x2 / extract x1) 全走 resolveGlobalLocale 挑体",
+      "actual": "_ZH/_EN + PROPOSED_REASON BY_LOCALE; 5 消费点全 resolveGlobalLocale-routed; 全绿",
+      "verifier_cmd": "PROBE: grep 5 消费点均 resolveGlobalLocale-routed + dual-body 单测绿",
+      "verified_at": "2026-06-15"
+    },
+    {
+      "name": "G-PARITY",
+      "target": "内容层 parity 闸 (en<->zh marker/section 数量一致 + protected token 边界) 存在且绿; 语言切换 drift 边界 (doctor 容双 locale 或提示重装) 处理",
+      "actual": "bootstrap-parity.test 9绿(结构+protected token census) + doctor locale-switch 容忍测试绿",
+      "verifier_cmd": "PROBE: 新 parity 测试 + locale-switch drift 测试绿",
+      "verified_at": "2026-06-15"
+    },
+    {
+      "name": "G-GREEN",
+      "target": "pnpm -r exec tsc --noEmit 0 error + shared/server/cli 全量测试 0 fail 0 skip (rebuild dist 后)",
+      "actual": "tsc-r 0err + shared637/server687/cli1048 单跑全绿 0skip",
+      "verifier_cmd": "pnpm --filter @fenglimg/fabric-shared build && pnpm -r exec tsc --noEmit && pnpm -r test",
+      "verified_at": "2026-06-15"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "round": 1,
+      "oracle": "declared-vs-impl",
+      "expectation_source": "GOAL-BRIEF G-ADJ3 称 'main 上 i18n.test.ts.snap 本就不完整, CI=true 会 FAIL, 须补缺失快照块'",
+      "actual": "实证 (CI=true vitest run i18n.test.ts) HEAD 原始快照干净通过 0 obsolete/0 missing; stash 补的 `en ... snapshots 2` 块才是孤儿 obsolete (测试每个 it 只调一次 toMatchSnapshot, 只应有 en1+zhCN1)。正确动作=丢弃 stash 快照改动保留 HEAD 干净态, 非补块。",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "git stash push snap -> CI=true vitest run -> 2 passed 0 obsolete; working(stash) snap -> 2 passed 1 obsolete (en2)",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "fix_task_id": "A3"
+    },
+    {
+      "id": "F2",
+      "round": 1,
+      "oracle": "doc-vs-code",
+      "expectation_source": "cite-line-parser.ts:11-15,85-93 真行为 = clean-slate (legacy tag 降级 none, chained-from 抢救 sibling id)",
+      "actual": "旧 bootstrap L127 文案 ('解析器同时接受老 4-state tags 都映射到 applied') 是文档谎言; 新 L127 (Clean-slate 降级 none) 准确。bootstrap-canonical.test.ts:65 toContain('Backward compat') 断言旧谎言文案, L127 改后会 FAIL, 需同步更新该测试 + 注释。",
+      "verify": {
+        "tier": "deterministic",
+        "verdict": "confirmed",
+        "evidence": "Read cite-line-parser.ts normalizeCiteTag default->none; bootstrap-canonical.test.ts:57-67 注释自述 'Legacy 4-state tags are still recognised' = 过期",
+        "refute_reason": null
+      },
+      "severity": "medium",
+      "fix_task_id": "A2"
+    }
+  ],
+  "task_decomposition": [
+    {
+      "id": "A1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "bootstrap-canonical.ts L127 文案对齐 parser clean-slate (stash 已捞回)",
+      "done_when": "L127 = Clean-slate 文案 (已在 working tree)",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "git diff HEAD bootstrap-canonical.ts",
+        "evidence": "L127 已是 Clean-slate (无 backward compat) 文案",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "A2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "修 bootstrap-canonical.test.ts:57-67 断言旧 Backward-compat 文案 -> 新 clean-slate 文案 + 注释",
+      "done_when": "测试断言对齐新 L127, bootstrap-canonical 测试绿",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "pnpm --filter shared test",
+        "evidence": "shared 628 passed; toContain Clean-slate 替换 Backward compat",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "A3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "丢弃 stash 的 en2 孤儿快照块, 保留 HEAD 干净快照 (F1)",
+      "done_when": "i18n.test.ts.snap == HEAD 态, CI 模式 0 obsolete",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "CI=true vitest run i18n.test.ts",
+        "evidence": "已 git stash drop 错误快照; HEAD snap CI 0 obsolete",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "A4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "全 shared 改动定稿后 fabric install 重同步本仓 .fabric/AGENTS.md 消 L1-drift",
+      "done_when": "fabric doctor 无 bootstrap_snapshot_drift; .fabric/AGENTS.md 与当前 locale canonical byte 一致",
+      "ship_criteria_alignment": [
+        "G-ADJ3"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "fabric doctor",
+        "evidence": "本机 zh-CN; cp ZH canonical -> .fabric/AGENTS.md + runDoctorFix 修 L2 三端; doctor bootstrap/managed 全 ok; diff 仅 L127 传播(+AGENTS.md 前导空行=doctor 重写确定性输出)",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "B1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "bootstrap-canonical.ts 拆 BOOTSTRAP_CANONICAL_EN/_ZH 双体 (EN 全文翻译, protected token 保英文)",
+      "done_when": "导出 _EN/_ZH 双常量; BOOTSTRAP_CANONICAL 保留为按 locale 选择的 helper 或 _ZH 别名 (向后兼容现有 import)",
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc + byte-lock test",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "B2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "api-contracts.ts PROPOSED_REASON_DESCRIPTIONS 拆 en/zh 双 map",
+      "done_when": "导出 en/zh 双 map (Record<Locale, Record<ProposedReason,string>> 或 _EN/_ZH)",
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "B3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "writer 侧路由 resolveGlobalLocale: write-bootstrap-snapshot.ts + doctor.ts:919 (runDoctorFix L1 写 snapshot)",
+      "done_when": "两处写 .fabric/AGENTS.md 均按 resolveGlobalLocale 挑体",
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "grep resolveGlobalLocale + install 测试",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "B4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "drift 比对侧路由: doctor-bootstrap-lints.ts inspectL1/L2 + doctor-cite-coverage.ts activation 比对按 locale 挑 canonical",
+      "done_when": "drift/activation 比对用 resolveGlobalLocale-选定 canonical (parity gate 处理双 locale)",
+      "ship_criteria_alignment": [
+        "G-DUALBODY",
+        "G-PARITY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "doctor 测试",
+        "evidence": "W2: inspectL1 加 matchBootstrapCanonicalLocale 容双 locale; cite-coverage 删未用 import; 全绿",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "B5",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "extract-knowledge.ts:773 PROPOSED_REASON 按 resolveGlobalLocale 挑 map 渲染 ## Why proposed",
+      "done_when": "reasonExplanation 按 locale 选 map",
+      "ship_criteria_alignment": [
+        "G-DUALBODY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "extract-knowledge 测试",
+        "evidence": "W2: tsc-r clean + shared628/server686/cli1048 全绿",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "C1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "内容层 parity 闸: en<->zh marker/H2 section 数量一致 + protected token (命令名/marker/KB: 语法/路由 key) 双体均在",
+      "done_when": "新 parity 测试存在且绿; 守 KT-GLD-0002 protected token 边界",
+      "ship_criteria_alignment": [
+        "G-PARITY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "新 parity test",
+        "evidence": "bootstrap-parity.test.ts 9 tests 绿: H2 数对齐 + 全 protected token 双在 + 无 retired token",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "C2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "语言切换 drift 边界: 已装项目机器语言切换后 doctor 容双 locale 或提示重装 (不误报永久 drift)",
+      "done_when": "doctor L1 drift 在 onDisk 匹配任一 locale canonical 时不误报 (或给 locale-stale 重装提示); 回归测试绿",
+      "ship_criteria_alignment": [
+        "G-PARITY"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "doctor locale-switch 回归测试",
+        "evidence": "doctor.test L1 块新增 locale-switch 容忍测试绿; inspectL1 matchBootstrapCanonicalLocale 容双 locale",
+        "verified_at": "2026-06-15"
+      }
+    },
+    {
+      "id": "D1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "全量收口: rebuild dist + tsc -r 0 error + shared/server/cli 全量测试 0 fail 0 skip",
+      "done_when": "G-GREEN verifier_cmd 全绿",
+      "ship_criteria_alignment": [
+        "G-GREEN"
+      ],
+      "alignment_strength": "direct",
+      "status": "done",
+      "verification": {
+        "method": "deterministic",
+        "verifier": "tsc + full test",
+        "evidence": "W3: 单跑 shared637/server687/cli1048 全绿 0skip + tsc-r 0err",
+        "verified_at": "2026-06-15"
+      }
+    }
+  ],
+  "needs_adjudication": [],
+  "audit_rounds": [
+    {
+      "round": 1,
+      "status": "running",
+      "round_task_ceiling": 14,
+      "round_task_actual": 12,
+      "convergence_status": "converging",
+      "newly_discovered_this_round": [
+        "F1",
+        "F2"
+      ],
+      "carried_in": [],
+      "carry_over_to_next": {
+        "from_open_blocked": [],
+        "from_ceiling_overflow": [],
+        "from_depth_cap": []
+      },
+      "drift_checks": [],
+      "completion_gate": {
+        "task_gate": {},
+        "goal_gate": {
+          "blocking": true
+        },
+        "drift_gate": {}
+      }
+    }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260615-content-layer-i18n/goal-checklist.md",
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "all named ship gates green",
+    "summary": "内容层 en/zh 双体 + resolveGlobalLocale 单源接线 5 消费点; ADJ-3 文案修复(+实证推翻快照前提 F1); parity 闸 + 语言切换 drift 容忍",
+    "at": "2026-06-15"
+  },
+  "git_commits": [
+    {
+      "sha": "a125798",
+      "wave": "W1",
+      "gate": "G-ADJ3",
+      "subject": "cite 文案对齐 parser clean-slate + ledger"
+    },
+    {
+      "sha": "2032ee6",
+      "wave": "W2",
+      "gate": "G-DUALBODY",
+      "subject": "内容层 en/zh 双体 + resolveGlobalLocale 挑体 (5 消费点)"
+    },
+    {
+      "sha": "1371896",
+      "wave": "W3",
+      "gate": "G-PARITY/A4/G-GREEN",
+      "subject": "parity census + 语言切换容忍 + AGENTS.md resync"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+
 <!-- fabric:bootstrap:begin -->
 # Fabric Bootstrap
 
@@ -82,7 +83,7 @@
 - **dismissed reason**: 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。
 - **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_recall` / `fab_plan_context`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
 - **稽核**: `fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出 cite 覆盖率,含 `KB: none` sentinel 拆分。本规则不阻断你工作,只记录。
-- **Backward compat**: 解析器同时接受老 4-state tags (`planned` / `recalled` / `chained-from <id>`) — 都映射到 `[applied]` 语义,gradually 迁到新简化形态即可,旧 session 留下的 cite 仍然计入 cite-coverage。
+- **Clean-slate (无 backward compat)**: 解析器只认 `applied` / `dismissed` / `none` 三态;任何无法识别的老 tag (`planned` / `recalled` / `chained-from <id>`) 一律降级为 `none`(`chained-from` 的内嵌 id 仍被抢救为 sibling cite_id)。旧 session 留下的 legacy cite 以 `none` 计入 cite-coverage。
 - **完整参考下沉** (v2.2 SK5): contract operator / skip·dismissed 词典 / 类型路由 / 稽核口径 / **裁决阶梯** (AI自决 → 多-LLM 含零上下文冷评 → 非阻塞队列) 的权威详参在 `fabric-review` skill 的 `ref/cite-contract.md` —— bootstrap 只留可执行 core,治理细节归 ref 不再撑大 bootstrap。
 
 <!-- fabric:bootstrap:end -->

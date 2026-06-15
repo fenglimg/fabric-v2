@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BOOTSTRAP_CANONICAL } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
+import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import { installHooks } from "../../src/install/hooks-orchestrator.ts";
 import { buildInitExecutionPlan, executeInitExecutionPlan } from "../../src/commands/install.ts";
@@ -723,7 +723,7 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
     const snapshotPath = join(target, ".fabric/AGENTS.md");
     expect(existsSync(snapshotPath)).toBe(true);
     const snapshot = readFileSync(snapshotPath, "utf8");
-    expect(snapshot).toBe(BOOTSTRAP_CANONICAL);
+    expect(snapshot).toBe(resolveBootstrapCanonical());
 
     // Codex: AGENTS.md at project root contains exactly one bootstrap marker
     // pair; the body between markers byte-equals the snapshot.
@@ -811,7 +811,7 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
     expect(countOccurrences(content, SECTION_BEGIN)).toBe(1);
     expect(countOccurrences(content, SECTION_END)).toBe(1);
     // Body byte-equals canonical.
-    expect(extractManagedBlockBody(content)).toBe(BOOTSTRAP_CANONICAL);
+    expect(extractManagedBlockBody(content)).toBe(resolveBootstrapCanonical());
   });
 
   it("overwrites user vandalism inside fabric:bootstrap markers on re-install", async () => {
@@ -842,7 +842,7 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
 
     expect(afterSecond).not.toContain("USER VANDALISM");
     // Body byte-equals canonical content again.
-    expect(extractManagedBlockBody(afterSecond)).toBe(BOOTSTRAP_CANONICAL);
+    expect(extractManagedBlockBody(afterSecond)).toBe(resolveBootstrapCanonical());
     expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
     expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
     // Pre-section user content survives.
@@ -860,7 +860,7 @@ describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin s
       const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
       // No separator, no concat — body byte-equals snapshot alone.
       expect(extractManagedBlockBody(agentsMd)).toBe(snapshot);
-      expect(snapshot).toBe(BOOTSTRAP_CANONICAL);
+      expect(snapshot).toBe(resolveBootstrapCanonical());
 
       // Idempotent re-run: same bytes.
       const before = readFileSync(join(target, "AGENTS.md"), "utf8");

@@ -22,7 +22,6 @@ import {
   forensicReportSchema,
   parseKnowledgeId,
   knowledgeTestIndexSchema,
-  BOOTSTRAP_CANONICAL,
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
@@ -105,8 +104,9 @@ export async function ensureCitePolicyActivatedMarker(
 // commitments field, manufacturing false `contract_missing` violations.
 //
 // The gate reuses `inspectL1BootstrapSnapshotDrift` (rc.19): if `.fabric/
-// AGENTS.md` byte-equals the current `BOOTSTRAP_CANONICAL`, the user has run
-// the rc.24 `fabric install` and the hook layer is in sync with the schema.
+// AGENTS.md` byte-equals the canonical bootstrap body for any locale (the
+// inspector tolerates a language switch), the user has run the rc.24 `fabric
+// install` and the hook layer is in sync with the schema.
 // 'missing' is also treated as drift (deliberate conservative choice — no
 // install snapshot present means we cannot prove the hook layer matches; user
 // must run `fabric install` to seed `.fabric/AGENTS.md`).
@@ -602,8 +602,9 @@ export async function runDoctorCiteCoverage(
   // rc.20 cite_policy_activated marker — see plan B4). The drift gate inside
   // ensureCiteContractPolicyActivatedMarker bridges the rc.23→rc.24
   // half-upgrade window: when `.fabric/AGENTS.md` does NOT byte-equal the
-  // current BOOTSTRAP_CANONICAL we refuse activation, so contract metrics
-  // surface as 'skipped:bootstrap_drift' until the user reruns `fabric install`.
+  // canonical bootstrap body for any locale we refuse activation, so contract
+  // metrics surface as 'skipped:bootstrap_drift' until the user reruns
+  // `fabric install`.
   const contractMarker = await ensureCiteContractPolicyActivatedMarker(projectRoot);
   // v2.2 W5 R6 (读侧 cutover): id→knowledge_type map built from the read-set
   // STORES (cross-store on-the-fly), replacing the retired co-location
