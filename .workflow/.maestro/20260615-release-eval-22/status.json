@@ -207,7 +207,8 @@
       "completion_gate": { "task_gate": {}, "goal_gate": { "blocking": true }, "drift_gate": {} } }
   ],
   "git_commits": [
-    { "sha": "cdea9fb", "gate": "G-MACHINE", "summary": "G-MACHINE 全绿 + 修 store-only-e2e false-red (F1) + scaffold", "at": "2026-06-15T16:30:00Z" }
+    { "sha": "cdea9fb", "gate": "G-MACHINE", "summary": "G-MACHINE 全绿 + 修 store-only-e2e false-red (F1) + scaffold", "at": "2026-06-15T16:30:00Z" },
+    { "sha": "5dc5349", "gate": "G-OBSERV+G-PERF", "summary": "G-OBSERV 死电线红账 + G-PERF payload 真实测量(measure-injection.mjs)", "at": "2026-06-15T16:45:00Z" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-release-eval-22/goal-checklist.md",
   "status": "running",
