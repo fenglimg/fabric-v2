@@ -210,6 +210,10 @@ describe("runDoctorReport", () => {
       // v2.2 W4 (G-GUARD / A6): store scope lint — missing scope fields /
       // personal-leak-in-shared-store / dangling project ref over read-set stores.
       "Store scope lint",
+      // v2.2 Goal B (G-INTEGRITY): store stable_id collision (warning) + layer
+      // mismatch (manual error), rebuilt store-aware over the read-set corpus.
+      "Stable ID collision",
+      "Knowledge layer mismatch",
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
@@ -232,7 +236,9 @@ describe("runDoctorReport", () => {
     // duplicate / layer mismatch / narrow-no-paths / relevance_paths dangling /
     // relevance_paths drift / personal-layer misclassify / suspicious KB / narrow
     // too few / relevance fields missing) → 31.
-    expect(report.checks).toHaveLength(31);
+    // v2.2 Goal B (G-INTEGRITY): rebuilt store-aware stable_id_collision +
+    // layer_mismatch as two checks → 33.
+    expect(report.checks).toHaveLength(33);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

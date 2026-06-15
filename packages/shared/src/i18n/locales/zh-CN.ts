@@ -664,6 +664,25 @@ export const zhCNMessages: Messages = {
     "{total} 个 store scope 问题: {breakdown}。例如 {sample}。",
   "doctor.check.store_scope_lint.remediation":
     "调 `fabric store backfill-scope` 补缺失的 semantic_scope/visibility_store;`fabric store re-scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
+  // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints。
+  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.message.singular":
+    "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中:{files}。请编辑其中一个 knowledge file,改用唯一 stable_id。",
+  "doctor.check.stable_id_collision.message.plural":
+    "检测到 {count} 个 stable_id collisions。首个:\"{stableId}\" 位于 {files}。请编辑其中一个 knowledge file,改用唯一 stable_id。",
+  "doctor.check.stable_id_collision.remediation":
+    "调 `/fabric-review modify <message 中列出的 colliding id 之一>`, 让 canonical id allocator 自动重分配 id (会同步更新 frontmatter + counters + 历史 cross-ref)。严禁手工编辑 id frontmatter — 会撞 counter。",
+  "doctor.check.stable_id_collision.ok":
+    "mounted store knowledge 中未发现已声明的 stable_id collisions。",
+  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.ok":
+    "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
+  "doctor.check.layer_mismatch.message.singular":
+    "{count} 个 canonical knowledge file 与其 stable_id layer prefix 的物理位置不一致(KT-* must live under team/, KP-* under personal/)。首个:{detail}。",
+  "doctor.check.layer_mismatch.message.plural":
+    "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致(KT-* must live under team/, KP-* under personal/)。首个:{detail}。",
+  "doctor.check.layer_mismatch.remediation":
+    "将文件移动到正确的 write-target store,或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

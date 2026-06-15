@@ -43,6 +43,11 @@ import {
   createKnowledgeSummaryOpaqueCheck,
   inspectKnowledgeSummaryOpaque,
 } from "./doctor-summary-opaque.js";
+import {
+  createLayerMismatchCheck,
+  createStableIdCollisionCheck,
+  inspectStoreStableIdIntegrity,
+} from "./doctor-stable-id-collision.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -657,6 +662,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
   // replacement — disk-max FLOOR semantics over every read-set store.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
+  // v2.2 Goal B (G-INTEGRITY): store-aware stable_id collision + layer mismatch.
+  // Single walk of the read-set store canonical corpus; never throws (degrades
+  // to no-findings when no store is mounted).
+  const stableIdIntegrity = await inspectStoreStableIdIntegrity(projectRoot);
   const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // Shared timestamp for the read-side hygiene inspections below (session-hints
   // cache age + stale serve-lock age).
@@ -823,6 +832,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
     // only stores (the post-decolo knowledge home); never throws.
     createScopeLintCheck(t, await lintStoreScopes(projectRoot)),
+    // v2.2 Goal B (G-INTEGRITY): store stable_id collision (warning) + layer
+    // mismatch (manual error). Adjacent to the scope lint — both are store
+    // canonical-corpus integrity checks. Built from one shared store walk above.
+    createStableIdCollisionCheck(t, stableIdIntegrity.collision),
+    createLayerMismatchCheck(t, stableIdIntegrity.layerMismatch),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos
@@ -1141,8 +1155,13 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 // next run's buildLastActiveIndex) and the inspections re-evaluate against
 // the new on-disk state, so a 2nd `--apply-lint` run on a dir with no new
 // findings produces 0 mutations and 0 events.
+// v2.2 Goal B (G-INTEGRITY): the loud-error gate now lists only
+// `knowledge_layer_mismatch` — the rebuilt store integrity lints fold the old
+// filename-id `stable_id_duplicate` into the frontmatter-id `stable_id_collision`
+// (a warning), since `deriveRuleIdentity` unifies the two id sources in the
+// store model. layer_mismatch stays a manual error (rename + move is unsafe to
+// auto-apply).
 const MANUAL_LINT_ERROR_CODES = new Set([
-  "knowledge_stable_id_duplicate",
   "knowledge_layer_mismatch",
 ]);
 

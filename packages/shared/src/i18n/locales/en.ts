@@ -680,6 +680,25 @@ export const enMessages: Messages = {
     "{total} store scope issue(s): {breakdown}. e.g. {sample}.",
   "doctor.check.store_scope_lint.remediation":
     "Run `fabric store backfill-scope` to add missing semantic_scope/visibility_store; `fabric store re-scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
+  // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints.
+  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.message.singular":
+    "stable_id \"{stableId}\" is declared in {fileCount} files: {files}. Edit one of the knowledge files to use a unique stable_id.",
+  "doctor.check.stable_id_collision.message.plural":
+    "{count} stable_id collisions detected. First: \"{stableId}\" in {files}. Edit one of the knowledge files to use a unique stable_id.",
+  "doctor.check.stable_id_collision.remediation":
+    "Run `/fabric-review modify <one of the colliding ids from the message>` to let the canonical id allocator reassign it (updates frontmatter + counters + historical cross-refs atomically). Do NOT hand-edit id frontmatter — it will desync counters.",
+  "doctor.check.stable_id_collision.ok":
+    "No declared stable_id collisions found in mounted store knowledge.",
+  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.ok":
+    "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
+  "doctor.check.layer_mismatch.message.singular":
+    "{count} canonical knowledge file is physically misaligned with its stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  "doctor.check.layer_mismatch.message.plural":
+    "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  "doctor.check.layer_mismatch.remediation":
+    "Move the file to the correct write-target store or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":
