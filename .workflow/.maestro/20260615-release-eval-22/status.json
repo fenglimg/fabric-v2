@@ -155,8 +155,8 @@
       "dimension": 0,
       "hard": true,
       "target": "前述闸绿(降级项显式记账)→ release-rc 摘 -rc 发 2.2.0,固化剧本+报告口径+基线进 repo",
-      "actual": null,
-      "verifier_cmd": "DEPENDS: 全 gate 绿 + 用户 review → release-rc skill",
+      "actual": "BLOCKED(待人裁授权): 12/13 实质 gate 全绿(8硬+2软+G-HONEST), 无硬闸红, ADJ-1 已裁 B 降级(显式记账)。用户选\"先复核报告再定\"(2026-06-15)→ 读 REPORT.md + status.json 复核 12 gate 证据后单独授权 release-rc。release=npm publish+tag 不可逆外向动作, 按裁决阶梯无条件升 human, 不自动跑。",
+      "verifier_cmd": "DEPENDS: 用户复核 REPORT.md 后显式授权 → release-rc skill(版本bump+version-sync+全闸复跑+commit+tag+push+CI watch)",
       "verified_at": null
     }
   ],
@@ -444,7 +444,10 @@
       "detail": "6 个行为 event_type 声明零 producer,阻塞 G-HABIT 全维度评分。补埋点需新建 skill-start hook 或 MCP 级 emit(skill markdown 不能自 emit),大面+部分 codex-dependent。选项: (A)本 goal 内建 skill-start hook 补 skill_invocation 埋点(大改, 风险动 hook 装配);(B)降级—G-HABIT 用现有活线漏斗(knowledge_consumed/hook_surface_emitted)评分, skill/judge 维度显式标'不可评分待 2.3 补埋点';(C)推 2.3 整套行为遥测。推荐 B(诚实记账, 不阻 2.2, 符合 brief '机制对弱AI做不到=降级不卡发版')",
       "recommendation": "B",
       "surfaced_at": "round-1-end",
-      "resolved": false
+      "resolved": true,
+      "resolution": "B",
+      "resolved_at": "2026-06-15T18:35:00Z",
+      "resolution_note": "用户批准 B=降级: G-HABIT 用活线漏斗(9/9非零)评分, skill/judge 维度标不可评分待 2.3 补埋点, 不阻 2.2"
     }
   ],
   "audit_rounds": [
