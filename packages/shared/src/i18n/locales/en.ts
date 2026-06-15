@@ -142,7 +142,7 @@ export const enMessages: Messages = {
     "Examples:\n" +
     "  fabric doctor                   read-only diagnostics report\n" +
     "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
-    "  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
+    "  fabric doctor --fix-knowledge   apply lint mutations (counter / archive / cache)\n" +
     "  fabric doctor --json            machine-readable output",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
@@ -240,7 +240,7 @@ export const enMessages: Messages = {
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
+    "Apply knowledge lint mutations: archive overdue pending drafts, floor drifted per-store id counters, and prune stale session-hint caches. Decay lints (orphan demote / stale archive) are report-only — remediate those via the fab_review flow. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
@@ -249,7 +249,7 @@ export const enMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — re-run with `fabric doctor --verbose` to see)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
+    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (archive/counter/cache); --fix repairs derived state (meta/index). Run them separately.",
   // rc.20 TASK-05: --cite-coverage report flags. Read-only; mutually exclusive with --fix/--fix-knowledge.
   "cli.doctor.args.cite-coverage.description":
     "Generate cite policy adherence report (read-only; skips standard inspections)",
@@ -508,7 +508,7 @@ export const enMessages: Messages = {
   "doctor.check.drift_unconsumed.message":
     "{driftCount} knowledge_drift_detected events in the last 30 days, but only {demoteCount} knowledge_demoted. Drift > demote by ≥ 5 means part of the drift is going unconsumed — KB slowly stales.",
   "doctor.check.drift_unconsumed.remediation":
-    "Run `fabric doctor --fix` to trigger orphan-demote / stale-archive auto-heal, or invoke `/fabric-review` to manually triage drift-flagged entries.",
+    "Invoke `/fabric-review` to triage drift-flagged entries — demote or archive them via the store-write review flow. (The doctor `orphan_demote` / `stale_archive` lints surface decay; they do not auto-heal store-backed knowledge.)",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",
@@ -729,7 +729,7 @@ export const enMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
-    "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
+    "Demote the entry one maturity tier via `/fabric-review modify <id>`, or re-engage it so it logs fresh activity. (Rewriting store-backed knowledge is the store-write flow's job — this read-side lint only surfaces the decay.)",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "No draft knowledge entries exceed the additional stale-archive quiet window.",
@@ -738,7 +738,7 @@ export const enMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
-    "Run `fabric doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
+    "Archive the stale draft via `/fabric-review reject <id>`, or revive it if still relevant. (Moving store-backed files is the store-write flow's job — this read-side lint only surfaces the staleness.)",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

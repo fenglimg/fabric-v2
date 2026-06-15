@@ -115,7 +115,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
+      "description": "Apply knowledge lint mutations: archive overdue pending drafts, floor drifted per-store id counters, and prune stale session-hint caches. Decay lints (orphan demote / stale archive) are report-only — remediate those via the fab_review flow. Default doctor run remains report-only.",
       "name": "fix-knowledge",
       "negativeDescription": undefined,
       "required": undefined,
@@ -208,7 +208,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
 Examples:
   fabric doctor                   read-only diagnostics report
   fabric doctor --fix             repair derived state (meta + indexes)
-  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)
+  fabric doctor --fix-knowledge   apply lint mutations (counter / archive / cache)
   fabric doctor --json            machine-readable output",
   "name": "doctor",
 }

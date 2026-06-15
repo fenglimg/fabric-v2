@@ -136,7 +136,7 @@ export const zhCNMessages: Messages = {
     "示例：\n" +
     "  fabric doctor                   只读诊断报告\n" +
     "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
-    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
+    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（计数器 / 归档 / 缓存）\n" +
     "  fabric doctor --json            机器可读输出",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
@@ -226,7 +226,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
-    "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
+    "应用知识库 lint 变更:归档逾期 pending draft、修正漂移的 per-store id 计数器、清理陈旧 session-hint 缓存。衰减类 lint(orphan demote / stale archive)只读上报 — 请通过 fab_review 流程处理。默认 doctor 运行仍然只读。",
   "cli.doctor.args.yes.description":
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   // rc.35 TASK-12 (P0-11): --verbose 展开 maintainer 受众的 remediation。
@@ -235,7 +235,7 @@ export const zhCNMessages: Messages = {
   "doctor.maintainer-hint-folded":
     "(maintainer-only remediation — 加 `fabric doctor --verbose` 查看)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
-    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
+    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（归档/计数器/缓存）；--fix 修复派生状态（meta/索引）。请分别运行。",
   // rc.20 TASK-05: --cite-coverage 报告参数；只读，与 --fix/--fix-knowledge 互斥。
   "cli.doctor.args.cite-coverage.description":
     "Cite 政策合规报告(只读;跳过标准检查)",
@@ -492,7 +492,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.drift_unconsumed.message":
     "近 30 天内 knowledge_drift_detected 事件 {driftCount} 次,knowledge_demoted 事件 {demoteCount} 次。drift > demote 至少 5 → 部分 drift 没被消化,KB 会缓慢失活。",
   "doctor.check.drift_unconsumed.remediation":
-    "运行 `fabric doctor --fix` 触发 orphan-demote / stale-archive 自愈流,或调 `/fabric-review` 主动审 drift 标记的条目。",
+    "调 `/fabric-review` 审 drift 标记的条目 — 通过 store 写侧 review 流程降级或归档它们。(doctor 的 orphan_demote / stale_archive lint 只上报衰减,不自愈 store 知识。)",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",
@@ -713,7 +713,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold(proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d)。首个:{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "运行 `fabric doctor --fix-knowledge` 将 orphan entries 降级一个 maturity tier。",
+    "通过 `/fabric-review modify <id>` 将该 entry 降级一个 maturity tier,或重新使用它以记录新活动。(改写 store 知识是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露衰减。)",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -722,7 +722,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
   "doctor.check.stale_archive.remediation":
-    "运行 `fabric doctor --fix-knowledge` 将 stale entries 移动到 `.fabric/.archive/<type>/`。",
+    "通过 `/fabric-review reject <id>` 归档该 stale draft,或若仍相关则复活它。(移动 store 文件是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露陈旧。)",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":
