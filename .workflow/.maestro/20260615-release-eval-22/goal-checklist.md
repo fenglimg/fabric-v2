@@ -8,21 +8,21 @@
 - **OUT**:完整混沌工程 · 追高好习惯% · Cursor 三端 · 池外候选(向量等)
 - **constraints**:改 shared 必 rebuild dist · release-rc 全绿后才跑 · 临时仓先 fabric install · LLM-judge 零上下文冷评 · 降级显式记账 · 快照 -u 前肉眼 diff
 
-## 命名 Ship Gate(全绿即自动 completed)
+## 命名 Ship Gate(12/13 实质全绿 · G-SHIP 待人裁授权)
 - [~] **PREREQ-0** Cursor 砍除 — DEFERRED 到外部分支(非本 goal scope)
 - [x] **G-MACHINE** (硬) ✓ 全绿(test 2403/0)— 修 F1 store-only-e2e false-red @cdea9fb
-- [ ] **G-CENSUS** (硬) registry 派生清单逐项映射无空壳 + 每面 usage 事件
+- [x] **G-CENSUS** (硬) ✓ 33 surface 零空壳派生 @6e780af(observability 7/33 降级 cross-ref ADJ-1)
 - [x] **G-OBSERV** (硬) ✓ 死电线红账(18 真死)+ F3 行为遥测→ADJ-1 降级 @5dc5349
-- [ ] **G-NOFAKE** (硬) cc+codex 剧本后 cite-coverage 编造ID=0
-- [ ] **G-HABIT** (软) 漏斗指标非零过底线 baseline;codex 分诊记账(F3 阻塞 skill/judge 维度)
+- [x] **G-NOFAKE** (硬) ✓ 真实 19 cite 事件 0 编造 ID + 检测器非盲 @71833f3(codex 侧降级)
+- [x] **G-HABIT** (软) ✓ 激活漏斗 9/9 非零 翻库率2.71 baseline @71833f3
 - [x] **G-PERF** (硬) ✓ 延迟绿 + 注入3650B✓/recall24-29KB(over-warn 在65K hard内)PASS @5dc5349
-- [ ] **G-DISPLAY** (软) 漂移快照+错渲染硬闸;主观经 B 冷评筛不卡
-- [ ] **G-SAFETY** (硬) 隐私/预算 + KB投毒/注入红队 + loop压测 + path越权
-- [ ] **G-UPGRADE** (硬) 2.0.1→2.2 install 刷新 stale hook
-- [ ] **G-RESILIENCE** (硬) 并发多会话隔离 + MCP挂降级
-- [ ] **G-SELFAUDIT** (硬) registry 有功能无成绩单行→亮红
-- [ ] **G-HONEST** (硬) 诚实性 a-e 全过
-- [ ] **G-SHIP** (硬) 全绿 → release-rc 摘 -rc 发 2.2.0 + 固化常驻 v1
+- [x] **G-DISPLAY** (软) ✓ 漂移闸绿+无错渲染;B 冷评 1-2/5→F4 dev-facing 不卡 @8d6421a
+- [x] **G-SAFETY** (硬) ✓ 红队 18攻击/5类全容器 @7b43473
+- [x] **G-UPGRADE** (硬) ✓ 黑盒升级 e2e stale 刷回当前版 P0-NEW1 @8619913
+- [x] **G-RESILIENCE** (硬) ✓ 并发隔离5/5+backend-down降级3/3+多store round-trip @68e2ebc
+- [x] **G-SELFAUDIT** (硬) ✓ registry vs scorecard diff 负向证伪 @6e780af
+- [x] **G-HONEST** (硬) ✓ a-e 元自检全过 @8d6421a
+- [ ] **G-SHIP** (硬) ⬜ **待人裁** — 12/13 实质绿, 用户选"先复核报告再定"(2026-06-15); release 不可逆需显式授权 @fbf38bf
 
 ## 执行顺序(round 1)
 0. PREREQ-0 砍 Cursor
@@ -35,6 +35,12 @@
 7. T7 G-SAFETY 红队
 8. T8 G-CENSUS + G-SELFAUDIT
 9. T9 报告 ①-⑤ + G-HONEST + 固化
+
+## 状态(2026-06-15 终态)
+**12/13 实质 gate 全绿**(8硬+2软+G-HONEST,无硬闸红)。报告 `REPORT.md` ①-⑤ 已出。
+**唯一剩余**: G-SHIP = 发 2.2.0(npm publish+tag 不可逆)→ 用户选"先复核报告再定", 待复核 `REPORT.md`+`status.json` 后单独授权 `release-rc`。
+**降级显式记账**: ADJ-1 裁 B(行为遥测死电线降级, 用户批准)· F4(画面 dev-facing UX, 2.3 候选不卡)· codex 行为侧降级 · cross-client-parity 含 cursor 待外部分支合 main 后复跑。
+**常驻评测集 v1**: 8 scripts/*.mjs(census/self-audit/red-team/resilience/upgrade/nofake/habit/honest)+ baseline JSON + REPORT 口径, 已进 repo, 下次 rc 一键复跑。
 
 ## 裁决三级阶梯
 ① AI 自决(test/grep/tsc/measure) → ② 多-LLM 冷评(maestro delegate gemini/codex,≥2票含≥1零上下文) → ③ human(needs_adjudication 队列,round 末批量浮)
