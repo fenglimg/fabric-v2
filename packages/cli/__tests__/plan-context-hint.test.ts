@@ -263,6 +263,39 @@ describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/�
     const byId = Object.fromEntries(output.entries.map((e) => [e.id, e]));
     expect(byId["KT-DEC-0001"]?.relevance_scope).toBe("narrow");
     expect(byId["KT-GLD-0001"]?.relevance_scope).toBe("broad");
+    // W2-2 (KT-DEC-0027): the producer forwards must_read_if so the SessionStart
+    // spine can render decision/pitfall/process as a title + hook.
+    expect(byId["KT-DEC-0001"]?.must_read_if).toBe("summary for KT-DEC-0001");
+  });
+
+  it("omits must_read_if when the frontmatter declares none (W2-2)", async () => {
+    const noHook = {
+      stable_id: "KT-DEC-0003",
+      description: {
+        summary: "no hook item",
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        // must_read_if intentionally omitted
+        knowledge_type: "decision",
+        maturity: "draft",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      },
+    };
+    mockServer({
+      revision_hash: "rev-nohook",
+      stale: false,
+      selection_token: "tok-nohook",
+      entries: [],
+      candidates: [noHook],
+      preflight_diagnostics: [],
+    });
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    expect(output.entries[0]?.must_read_if).toBeUndefined();
   });
 
   it("narrow_count + broad_only_count partition the entries set", async () => {

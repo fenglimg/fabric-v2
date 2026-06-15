@@ -260,6 +260,10 @@ export const planContextHintNarrowEntrySchema = z.object({
   type: z.string(),
   maturity: z.string(),
   summary: z.string(),
+  // W2-2 (KT-DEC-0027): the entry's must_read_if trigger hook, forwarded for the
+  // SessionStart REFERENCE rendering (decision/pitfall/process → title + hook).
+  // Optional — omitted when the frontmatter declares none.
+  must_read_if: z.string().optional(),
 });
 
 export const planContextHintOutputSchema = z.object({

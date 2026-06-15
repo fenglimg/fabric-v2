@@ -30,10 +30,12 @@
 - [x] **W1-3** include_related 改 C-1:候选浮 related id,不取 body ✅
 
 ### W2 — SessionStart 脊柱重裁 (KT-DEC-0027/0028/0029, KT-MOD-0001)
-- [ ] **W2-1** broad 全显示,废 hint_broad_top_k;每行字数封顶;broad_index_backstop 兜底+报漂移
-- [ ] **W2-2** 类型分等:guideline/model 灌正文(降级退索引行);decision/pitfall/process 仅标题+must_read_if 钩子
-- [ ] **W2-3** SessionStart 对 narrow 完全沉默(删 ON-DEMAND 计数 + dropped-other-project)
-- [ ] **W2-4** footer 改 fab_recall(paths)+recall(ids)/Read 约定(删两步文案)
+- [x] **W2-1** broad 全显示,废 hint_broad_top_k;每行字数封顶;broad_index_backstop(50) 兜底+漂移 marker ✅
+- [x] **W2-2** 类型分等:guideline/model 灌正文(超预算退索引行);decision/pitfall/process REFERENCE 段 title+must_read_if ✅ (CLI payload 加 must_read_if)
+- [x] **W2-3** SessionStart 对 narrow 完全沉默(删 ON-DEMAND 计数 + dropped-other-project) ✅
+- [x] **W2-4** footer 改 fab_recall(paths)+Read 约定(删两步文案) ✅
+
+> **W2 wave 闭 — G-W2-SPINE 绿 (dogfood 实测渲染符合定稿)**。镜像 .claude/.codex 已同步 byte-equal。cli 1042+5新 / server 711 / shared 637 tests green, tsc clean。
 
 ### W3 — 观测电线 (KT-DEC-0030)
 - [ ] **W3-1** PostToolUse hook 盯 Read ~/.fabric → 发 knowledge_body_read(id+store)

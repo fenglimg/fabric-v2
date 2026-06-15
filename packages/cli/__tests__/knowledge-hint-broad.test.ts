@@ -268,15 +268,15 @@ describe("knowledge-hint-broad.cjs — renderSummary (full mode, count <= TRUNCA
     expect(body).toMatch(/- KT-PIT-0001 · pitfall summary/);
   });
 
-  it("includes revision_hash line and `fab_get_knowledge_sections` footer", () => {
+  it("includes revision_hash line and the single-step `fab_recall` footer (W2-4)", () => {
     const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
     const lines = hook.renderSummary(
       makePayload(narrow, { revision_hash: "abc999" }),
     );
     expect(lines.some((l) => l.includes("revision_hash: abc999"))).toBe(true);
-    expect(
-      lines.some((l) => l.includes("fab_get_knowledge_sections")),
-    ).toBe(true);
+    // W2-4 (KT-DEC-0026): two-step footer retired — single lean fab_recall flow.
+    expect(lines.some((l) => l.includes("fab_recall(paths)"))).toBe(true);
+    expect(lines.some((l) => l.includes("fab_get_knowledge_sections"))).toBe(false);
   });
 
   it("renders exactly TRUNCATION_THRESHOLD entries in full mode", () => {
@@ -306,7 +306,7 @@ describe("knowledge-hint-broad.cjs — HK2 injection budget ladder (W2-T2)", () 
     // Banner + revision_hash + footer survive regardless of budget.
     expect(lines[0]).toMatch(/Session start/);
     expect(lines.some((l) => l.includes("revision_hash: budget-rev"))).toBe(true);
-    expect(lines.some((l) => l.includes("fab_get_knowledge_sections"))).toBe(true);
+    expect(lines.some((l) => l.includes("fab_recall(paths)"))).toBe(true);
     // The overflow marker is present and reports the remaining count.
     expect(lines.some((l) => /more entr(y|ies) omitted \(injection budget 120 chars/.test(l))).toBe(true);
     // Far fewer than 10 entry lines survived under the 120-char body budget.
@@ -381,9 +381,7 @@ describe("knowledge-hint-broad.cjs — renderSummary (truncated mode, count > TR
     expect(lines.some((l) => l.includes("revision_hash: rev-truncated"))).toBe(
       true,
     );
-    expect(
-      lines.some((l) => l.includes("fab_get_knowledge_sections")),
-    ).toBe(true);
+    expect(lines.some((l) => l.includes("fab_recall(paths)"))).toBe(true);
   });
 });
 
@@ -456,7 +454,7 @@ describe("knowledge-hint-broad.cjs — renderSummary auto-heal banner (rc.22 T-D
     const lines = hook.renderSummary(payload);
     const idxRev = indexOf(lines, "revision_hash:");
     const idxHeal = indexOf(lines, "🔄 Fabric:");
-    const idxFooter = indexOf(lines, "fab_get_knowledge_sections");
+    const idxFooter = indexOf(lines, "Load full content");
     expect(idxRev).toBeGreaterThanOrEqual(0);
     expect(idxHeal).toBeGreaterThan(idxRev);
     expect(idxFooter).toBeGreaterThan(idxHeal);
@@ -507,7 +505,7 @@ describe("knowledge-hint-broad.cjs — renderSummary auto-heal banner (rc.22 T-D
     const body = lines.join("\n");
     expect(body).toMatch(/Session start — 1 broad-scoped/);
     expect(body).toMatch(/revision_hash: sha256:deadbeefcafebabe/);
-    expect(body).toMatch(/fab_get_knowledge_sections/);
+    expect(body).toMatch(/fab_recall\(paths\)/);
   });
 });
 
@@ -627,11 +625,11 @@ describe("knowledge-hint-broad.cjs — main", () => {
     expect(captureStderr({ payload: makePayload([]) })).toEqual([]);
   });
 
-  it("writes the dual-sink human census to stderr when entries exist (unknown client → stderr fallback)", () => {
-    // v2.2 dual-sink: the human sink is now the §3 grouped census (count-summary),
-    // not the legacy per-entry broad listing. In a unit test no CLAUDE_PROJECT_DIR
-    // is set → detectClient() is undefined → emitDualSink falls back to a stderr
-    // breadcrumb carrying the human census.
+  it("writes the SessionStart census to stderr when entries exist (unknown client → stderr fallback)", () => {
+    // W2-3 (KT-DEC-0029): the human sink is the broad-only census breadcrumb;
+    // SessionStart is SILENT about narrow / on-demand knowledge (no on-demand
+    // count line). In a unit test no CLAUDE_PROJECT_DIR is set → detectClient()
+    // is undefined → emitDualSink falls back to a stderr breadcrumb.
     const narrow = [
       makeEntry("KT-DEC-0001", "decision", "proven", "summary"),
     ];
@@ -639,12 +637,12 @@ describe("knowledge-hint-broad.cjs — main", () => {
     expect(writes.length).toBeGreaterThan(0);
     const stderr = writes.join("");
     expect(stderr).toMatch(/\[fabric\] SessionStart/);
-    expect(stderr).toMatch(/on-demand/);
-    expect(stderr).toMatch(/decision 1/); // census count, not the per-entry id
+    // W2-3: the on-demand count line is retired.
+    expect(stderr).not.toMatch(/on-demand/);
     expect(stderr).toMatch(/fab_recall/); // next-step nudge
   });
 
-  it("dual-sink: census carried on payload drives the always-loaded / on-demand split", () => {
+  it("dual-sink: census drives the always-loaded breadcrumb; on-demand + dropped lines are retired (W2-3)", () => {
     const writes = captureStderr({
       payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "s")]),
       census: {
@@ -657,9 +655,11 @@ describe("knowledge-hint-broad.cjs — main", () => {
     const stderr = writes.join("");
     expect(stderr).toMatch(/always-loaded/);
     expect(stderr).toMatch(/guideline 2 · model 1/);
-    expect(stderr).toMatch(/decision 5 · pitfall 3/);
     expect(stderr).toMatch(/\[team\] 9 · \[personal\] 2/);
-    expect(stderr).toMatch(/已剔除他项目 4 条|dropped 4 other-project/);
+    // W2-3 (KT-DEC-0029): the on-demand census count line + dropped-other-project
+    // line are retired — SessionStart stays silent about narrow knowledge.
+    expect(stderr).not.toMatch(/decision 5 · pitfall 3/);
+    expect(stderr).not.toMatch(/已剔除他项目|dropped 4 other-project/);
   });
 
   it("appends a per-store read-set label from the bindings snapshot (v2.1 P4, F4/S63)", () => {
@@ -1338,7 +1338,11 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/);
     expect(env.hookSpecificOutput.additionalContext).toMatch(/team:KT-GLD-0001/);
     expect(env.hookSpecificOutput.additionalContext).toMatch(/Use 2-space indent/);
-    expect(env.hookSpecificOutput.additionalContext).toMatch(/ON-DEMAND.*decisions 4/);
+    // W2-2 (KT-DEC-0027): decision/pitfall/process render as a REFERENCE section
+    // (title + must_read_if hook), not an ON-DEMAND count line.
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/REFERENCE/);
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/\[decision\] KT-DEC-0001/);
+    expect(env.hookSpecificOutput.additionalContext).not.toMatch(/ON-DEMAND/);
   });
 
   it("nudge_mode=silent → AI additionalContext STILL emitted, systemMessage suppressed (D5 invariant)", () => {
@@ -1384,5 +1388,127 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     const env = JSON.parse(out[0]);
     expect(env.systemMessage).toMatch(/\[fabric\] SessionStart/);
     expect(env.hookSpecificOutput).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W2 — SessionStart spine: type-tiered AI sink + backstop (KT-DEC-0027/0028/0029).
+// REFERENCE renders decision/pitfall/process as title + must_read_if hook (never
+// the body); narrow entries stay silent; the broad index folds past the backstop.
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => {
+  let tempRoot: string;
+  const savedClient = process.env.FABRIC_HINT_CLIENT;
+  const savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "broad-w2-spine-"));
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    delete process.env.CLAUDE_PROJECT_DIR;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+  });
+  afterEach(() => {
+    if (savedClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedClient;
+    if (savedProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedProjDir;
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  type SpineEntry = {
+    id: string;
+    type: string;
+    maturity: string;
+    summary: string;
+    relevance_scope?: "broad" | "narrow";
+    must_read_if?: string;
+  };
+
+  function writeConfig(cfg: Record<string, unknown>): void {
+    writeFileSync(join(tempRoot, ".fabric", "fabric-config.json"), JSON.stringify(cfg), "utf8");
+  }
+
+  function aiContext(env: Record<string, unknown>): string {
+    const out: string[] = [];
+    (hook as unknown as { main: (e: unknown, s: unknown) => void }).main(
+      { cwd: tempRoot, ...env },
+      { stdout: { write: (c: string) => out.push(c) }, stderr: { write: () => {} } },
+    );
+    if (out.length === 0) return "";
+    const parsed = JSON.parse(out[0]);
+    return (parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext) || "";
+  }
+
+  function makeSpinePayload(entries: SpineEntry[]): Record<string, unknown> {
+    return { version: 2, revision_hash: "rev-spine", target_paths: ["**"], entries, broad_count: entries.length };
+  }
+
+  it("renders decision/pitfall/process as title + must_read_if hook (KT-DEC-0027)", () => {
+    writeConfig({ fabric_language: "en" });
+    const ai = aiContext({
+      payload: makeSpinePayload([
+        { id: "team:KT-DEC-0001", type: "decision", maturity: "draft", summary: "the summary", relevance_scope: "broad", must_read_if: "editing the auth flow" },
+      ]),
+      alwaysBodies: [],
+    });
+    expect(ai).toMatch(/REFERENCE/);
+    // The must_read_if hook is rendered (NOT the summary, NOT the body).
+    expect(ai).toMatch(/\[decision\] team:KT-DEC-0001 — editing the auth flow/);
+    expect(ai).not.toMatch(/the summary/);
+  });
+
+  it("falls back to summary when must_read_if is absent", () => {
+    writeConfig({ fabric_language: "en" });
+    const ai = aiContext({
+      payload: makeSpinePayload([
+        { id: "team:KT-PIT-0001", type: "pitfall", maturity: "verified", summary: "watch the cache flag", relevance_scope: "broad" },
+      ]),
+      alwaysBodies: [],
+    });
+    expect(ai).toMatch(/\[pitfall\] team:KT-PIT-0001 — watch the cache flag/);
+  });
+
+  it("stays silent about narrow-scoped entries in the spine (KT-DEC-0029)", () => {
+    writeConfig({ fabric_language: "en" });
+    const ai = aiContext({
+      payload: makeSpinePayload([
+        { id: "team:KT-DEC-0001", type: "decision", maturity: "draft", summary: "broad one", relevance_scope: "broad", must_read_if: "broad hook" },
+        { id: "team:KT-DEC-0009", type: "decision", maturity: "draft", summary: "narrow one", relevance_scope: "narrow", must_read_if: "narrow hook" },
+      ]),
+      alwaysBodies: [],
+    });
+    expect(ai).toMatch(/KT-DEC-0001/);
+    expect(ai).not.toMatch(/KT-DEC-0009/);
+  });
+
+  it("folds the broad index tail past broad_index_backstop + emits the drift marker (KT-DEC-0028)", () => {
+    writeConfig({ fabric_language: "en", broad_index_backstop: 20 });
+    const entries: SpineEntry[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `team:KT-DEC-${1000 + i}`,
+      type: "decision",
+      maturity: "draft",
+      summary: `s${i}`,
+      relevance_scope: "broad" as const,
+    }));
+    const ai = aiContext({ payload: makeSpinePayload(entries), alwaysBodies: [] });
+    // 20 reference lines rendered, 10 folded into the drift marker.
+    expect(ai).toMatch(/10 more broad entries folded \(broad index > backstop 20; run fabric-audit\)/);
+  });
+
+  it("guideline/model body over budget degrades to an index line, never a folded count (KT-DEC-0028)", () => {
+    writeConfig({ fabric_language: "en", hint_broad_budget_chars: 30 });
+    const ai = aiContext({
+      payload: makeSpinePayload([]),
+      alwaysBodies: [
+        { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: "style rule", body: "x".repeat(500) },
+        { id: "team:KT-MOD-0001", type: "models", layer: "team", summary: "domain model", body: "y".repeat(500) },
+      ],
+    });
+    // The over-budget entry stays an individually-visible index line, not a count.
+    expect(ai).toMatch(/\[model\] team:KT-MOD-0001 · domain model \(over budget; fab_recall for body\)/);
   });
 });
