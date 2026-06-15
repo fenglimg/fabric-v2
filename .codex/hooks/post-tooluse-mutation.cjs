@@ -69,7 +69,6 @@ function readPayload(rawStdin) {
 /**
  * Extract the tool name. Mirrors the narrow hint's probe:
  *   - Claude Code / Codex: { tool_name, ... }
- *   - Cursor (legacy):      { tool, ... }
  */
 function extractToolName(payload) {
   if (!payload || typeof payload !== "object") return null;
@@ -79,8 +78,8 @@ function extractToolName(payload) {
 }
 
 /**
- * Extract the tool_input object, accepting both the `tool_input`
- * (Claude/Codex) and `input` (Cursor) conventions.
+ * Extract the tool_input object from the `tool_input`
+ * (Claude/Codex) convention.
  */
 function extractToolInput(payload) {
   if (!payload || typeof payload !== "object") return null;

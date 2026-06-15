@@ -85,14 +85,19 @@
       "subject": "更新 parity 测试 + 快照 (肉眼 diff 只删 cursor 行) → G-PARITY",
       "done_when": "cross-client-parity.test.ts + parity-matrix-e2e 只剩 cc+codex; 快照 -u 前肉眼 diff; 绿",
       "ship_criteria_alignment": ["G-PARITY"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "pnpm --filter cli test parity + diff 审查", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "pnpm --filter cli test parity + diff 审查", "evidence": "parity-matrix.json + schema 收成 2 端; cross-client-parity + parity-matrix-e2e 测试更新; 3 snapshot 肉眼 diff 后 -u; CLI 1036/server 717/shared 637 全绿 0 fail 0 skip; commit a1dcf50", "verified_at": "2026-06-15" } },
     { "id": "T5", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "docs/README 文案 + i18n locales + bootstrap-canonical cursor 清理 + git grep 清零 → G-NODANGLE",
       "done_when": "locales/{en,zh-CN}.ts + bootstrap-canonical.ts + docs/README cursor 文案删; git grep -i cursor packages/**/*.ts (排 cursor:) = 0",
       "ship_criteria_alignment": ["G-NODANGLE", "G-SRC"], "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "git grep -in cursor 排 cursor: = 0", "evidence": null, "verified_at": null } },
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "git grep -in cursor 排 cursor: = 0", "evidence": "i18n en/zh + bootstrap-canonical + docs(11 文件) cursor 清净; src/.ts + templates/.cjs cursor=0 (仅留 JSON 指针变量 let cursor:unknown + server AuditCursor + 1 故意负断言); commit a1dcf50。注: packages/cli/.claude+.codex + root 已安装副本仍 stale, 归 T6 reinstall 重生成", "verified_at": "2026-06-15" } },
+    { "id": "T4done-marker", "round": 1, "parent_id": "T4", "relationship": "incomplete-resolution", "subdivision_depth": 1,
+      "subject": "T4 parity 测试 + 快照 完成标记 (见 G-PARITY)",
+      "done_when": "见 T4 / G-PARITY", "ship_criteria_alignment": ["G-PARITY"], "alignment_strength": "direct",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "见 G-PARITY", "evidence": "commit a1dcf50", "verified_at": "2026-06-15" } },
     { "id": "T6", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
       "subject": "本仓 fabric install 重装 + doctor 绿 → G-REINSTALL",
       "done_when": "fabric install 重生成 .claude/.codex; root .cursor/ 删; .fabric/AGENTS.md 不再提 cursor; fabric doctor 绿",
@@ -104,7 +109,14 @@
       "done_when": "pnpm -r build + tsc --noEmit 0 error + lint + 全量 test 0 fail 0 skip + test:strategy + test:store-only-e2e 全绿",
       "ship_criteria_alignment": ["G-GREEN"], "alignment_strength": "direct",
       "status": "open",
-      "verification": { "method": "deterministic", "verifier": "full build+tsc+lint+test suite", "evidence": null, "verified_at": null } }
+      "verification": { "method": "deterministic", "verifier": "full build+tsc+lint+test suite", "evidence": null, "verified_at": null } },
+    { "id": "NEW-T8", "round": 1, "parent_id": "T2", "relationship": "incomplete-resolution", "subdivision_depth": 1,
+      "subject": "scope 扩展: .cjs hook 运行时 (client-adapter/fabric-hint/narrow) 的 cursor client 分支 + clientPathsSchema cursor 字段",
+      "done_when": "client-adapter detectClient/emitDualSink cursor 分支删; fabric-hint fallback 去 cursor; narrow payload.tool/input Cursor shim 删; clientPathsSchema 删 cursor 字段",
+      "ship_criteria_alignment": ["G-SRC", "G-NODANGLE"], "alignment_strength": "direct",
+      "status": "done",
+      "discovery": "brief 的 G-NODANGLE gate 只 grep packages/**/*.ts, 漏掉 .cjs 运行时; 且 grep -iv 'cursor:' 排 CSS 时连带掩盖 schema 字段 cursor:。按 [[feedback-clean-slate]]+KT-DEC-0002(不留 deprecated fallback shim) 自决扩 scope, 非真歧义",
+      "verification": { "method": "deterministic", "verifier": "grep .cjs cursor=0(除注释已清) + tsc 0 + 测试绿", "evidence": "commit a1dcf50; 三套测试全绿", "verified_at": "2026-06-15" } }
   ],
   "needs_adjudication": [],
   "traps": [
@@ -112,7 +124,8 @@
     "排除模式必须用 grep -iv 'cursor:' (CSS cursor: 属性 + 'cursor,codex' i18n 例子里的 cursor 是 client 语义需删, 但 ui-ux CSS cursor: 不删)"
   ],
   "git_commits": [
-    { "sha": "96648ed", "wave": "T1-T2-T3-T5src", "summary": "client 枚举骨架 + cli/server 消费者 + 模板目录 + i18n 删 cursor; 3 包 tsc 0" }
+    { "sha": "96648ed", "wave": "T1-T2-T3-T5src", "summary": "client 枚举骨架 + cli/server 消费者 + 模板目录 + i18n 删 cursor; 3 包 tsc 0" },
+    { "sha": "a1dcf50", "wave": "T2ext-T4-T5docs", "summary": ".cjs 运行时 + clientPaths schema + 21 测试 + 文档删 cursor; 三套测试全绿 (CLI1036/server717/shared637)" }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-cursor-cleanup/goal-checklist.md",
   "status": "running",

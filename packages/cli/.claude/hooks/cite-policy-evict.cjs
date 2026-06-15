@@ -27,7 +27,7 @@
  *     The legacy hand-written cite path is still honored (back-compat).
  *   - otherwise → soft nudge: "改前先 fab_recall(paths)". NUDGE, never a gate
  *     (KT-DEC-0007): Claude Code receives it as a PreToolUse additionalContext
- *     envelope on stdout; Codex/Cursor as stderr. The edit always proceeds.
+ *     envelope on stdout; Codex as stderr. The edit always proceeds.
  *
  * Config (.fabric/fabric-config.json):
  *   - `cite_recall_nudge` (boolean, default true) — master switch. Set false to
@@ -48,16 +48,16 @@
  * its own malfunction.
  *
  * Cross-client: PreToolUse(Edit|Write|MultiEdit) is registered on all three
- * clients (Claude Code / Codex CLI / Cursor) — see hooks/configs/*.json. This
+ * clients (Claude Code / Codex CLI) — see hooks/configs/*.json. This
  * is strictly better parity than the rc.34 hook, which was Claude-Code-only
- * for the per-turn window and SessionStart-only for Codex/Cursor.
+ * for the per-turn window and SessionStart-only for Codex.
  */
 
 const { readFileSync } = require("node:fs");
 const { isAbsolute, join, relative } = require("node:path");
 
 // Shared config read + client-aware emit (Claude Code stdout envelope vs
-// Codex/Cursor stderr). The installer copies every lib/*.cjs alongside the hook.
+// Codex stderr). The installer copies every lib/*.cjs alongside the hook.
 const { readConfigNumber } = require("./lib/config-cache.cjs");
 const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
 
@@ -445,7 +445,7 @@ async function main(env, stdio) {
     }
 
     // No recall, no manual cite → soft nudge. Claude Code: PreToolUse stdout
-    // additionalContext envelope. Codex/Cursor: stderr. Never a gate.
+    // additionalContext envelope. Codex: stderr. Never a gate.
     const streams = (env && env.stdio) || stdio || {};
     const onClaudeCode = isClaudeCode() || (env && env.forceClaudeCode === true);
     emitContext(renderNudge(nudgePaths), {

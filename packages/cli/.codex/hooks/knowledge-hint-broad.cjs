@@ -74,7 +74,18 @@ const {
 const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
 // CLAUDE_PROJECT_DIR single-bit check below).
-const { isClaudeCode, detectClient } = require("./lib/client-adapter.cjs");
+// v2.2 dual-sink (Goal A): + emitDualSink (two-channel SessionStart emit).
+const { isClaudeCode, detectClient, emitDualSink } = require("./lib/client-adapter.cjs");
+// v2.2 dual-sink (Goal A / D4): human-output gate (nudge_mode + observe.*). Only
+// governs the human systemMessage — the AI additionalContext is emitted
+// regardless (flow ⊥ observation). Optional require so an old install lacking the
+// lib degrades to "always emit human" (the pre-dual-sink default).
+let nudgePolicy = null;
+try {
+  nudgePolicy = require("./lib/nudge-policy.cjs");
+} catch {
+  // Lib missing (old install) — human sink always emits (legacy behavior).
+}
 // v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
 // resolved-bindings snapshot. The hook NEVER re-resolves stores or walks store
 // trees — it only echoes the read-set the CLI already computed. Best-effort.
@@ -94,18 +105,44 @@ try {
   // Lib missing (old install) — injection telemetry degrades to silent absence.
 }
 
-// Read the project's own `project_id` from `.fabric/fabric-config.json` (the
-// snapshot key). Reading the PROJECT config is not a store-tree read — it is how
-// the hook learns which snapshot to fetch. Returns null on any failure.
-function readProjectId(cwd) {
+// Read the workspace binding id from `.fabric/fabric-config.json` (the snapshot
+// key). Defaults to project_id when workspace_binding_id is absent.
+function readWorkspaceBindingId(cwd) {
   try {
     const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
     const parsed = JSON.parse(raw);
+    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
     return typeof parsed.project_id === "string" ? parsed.project_id : null;
   } catch {
     return null;
   }
 }
+
+function readSnapshotCanonicalCount(projectRoot) {
+  if (bindingsSnapshotReader === null) {
+    return null;
+  }
+  const bindingId = readWorkspaceBindingId(projectRoot);
+  if (bindingId === null) {
+    return null;
+  }
+  try {
+    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    const stats = snapshot && snapshot.knowledge_stats;
+    if (
+      stats &&
+      typeof stats === "object" &&
+      Number.isFinite(stats.canonical_count) &&
+      stats.canonical_count > 0
+    ) {
+      return Math.floor(stats.canonical_count);
+    }
+  } catch {
+    // best-effort hint stats only
+  }
+  return 0;
+}
+
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -124,7 +161,6 @@ const FABRIC_DIR_REL = ".fabric";
 // cannot `require` each other. If a third hook ever needs the same logic,
 // refactor into packages/cli/templates/hooks/lib/. Keep these values in sync
 // with packages/cli/templates/hooks/fabric-hint.cjs.
-const AGENTS_META_FILE = "agents.meta.json";
 const IMPORT_STATE_FILE = ".import-state.json";
 const KNOWLEDGE_CANONICAL_TYPES = [
   "decisions",
@@ -169,37 +205,13 @@ const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 // -----------------------------------------------------------------------------
 
 /**
- * Count canonical knowledge entries across the five canonical type subdirs
- * (decisions / pitfalls / guidelines / models / processes). Pending entries
- * are NOT counted — they are proposals, not seeded knowledge.
- *
- * Returns the integer count. ENOENT / unreadable subdir → silently treated as
- * zero (preserves never-block-on-failure invariant). Filters on `.md` suffix
- * only; the more-precise canonical filename pattern check is owned by
- * doctor.ts (the hook is a coarse signal, not a lint).
+ * Count canonical knowledge entries from the CLI-generated resolved-bindings
+ * snapshot. Store-only: hooks never walk project-local knowledge or store
+ * trees — a missing snapshot degrades to zero (KT-DEC-0007).
  */
 function countCanonicalNodes(projectRoot) {
-  const knowledgeRoot = join(projectRoot, FABRIC_DIR_REL, "knowledge");
-  if (!existsSync(knowledgeRoot)) {
-    return 0;
-  }
-  let count = 0;
-  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
-    const typeDir = join(knowledgeRoot, type);
-    if (!existsSync(typeDir)) continue;
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".md")) {
-        count += 1;
-      }
-    }
-  }
-  return count;
+  const snapshotCount = readSnapshotCanonicalCount(projectRoot);
+  return snapshotCount === null ? 0 : snapshotCount;
 }
 
 /**
@@ -309,9 +321,11 @@ function isImportTouched(projectRoot) {
  * surface the one-line `/fabric-import` recommendation banner.
  *
  * Three-condition truth table (ALL must hold to return true):
- *   1. `.fabric/agents.meta.json` exists
- *      (workspace has been `fabric init`-ed; otherwise the recommendation
- *       is meaningless — `fabric-import` requires init's baseline scan).
+ *   1. the workspace is fabric-bound — readWorkspaceBindingId(cwd) !== null
+ *      (a resolved binding id in fabric-config.json; otherwise the
+ *       recommendation is meaningless — `fabric-import` requires a bound
+ *       workspace. Store-only: replaces the legacy derived-index-file
+ *       existence probe.)
  *   2. countCanonicalNodes(cwd) < readUnderseedThreshold(cwd)
  *      (knowledge graph is sparse — import would meaningfully enrich it).
  *   3. isImportTouched(cwd) === 'absent'
@@ -324,8 +338,7 @@ function isImportTouched(projectRoot) {
  */
 function shouldRecommendImport(projectRoot) {
   try {
-    const metaPath = join(projectRoot, FABRIC_DIR_REL, AGENTS_META_FILE);
-    if (!existsSync(metaPath)) return false;
+    if (readWorkspaceBindingId(projectRoot) === null) return false;
 
     const threshold = readUnderseedThreshold(projectRoot);
     const nodeCount = countCanonicalNodes(projectRoot);
@@ -761,6 +774,151 @@ function renderSummary(payload, maxLen, budgetChars) {
 }
 
 // -----------------------------------------------------------------------------
+// v2.2 dual-sink (Goal A): two-sink SessionStart rendering.
+//
+// HUMAN sink (systemMessage): a grouped census (§3 / D8) — always-loaded vs
+// on-demand split + [team]/[personal] + ✗ dropped-other-project. Count-summary
+// form (not a per-entry wall of text); the verbose nudge_mode appends the legacy
+// per-entry renderSummary listing on top.
+//
+// AI sink (additionalContext): the always-active (guideline/model) BODIES (§3 /
+// D9), bounded by the injection char budget with overflow degrading to summary +
+// a recall pointer, followed by on-demand category counts. Replaces the legacy
+// top_k=8 id-list that used to be the AI payload.
+// -----------------------------------------------------------------------------
+
+// Singular display label for a plural knowledge_type.
+const TYPE_SINGULAR = {
+  decisions: "decision",
+  pitfalls: "pitfall",
+  guidelines: "guideline",
+  models: "model",
+  processes: "process",
+};
+
+const ALWAYS_TYPES = ["guidelines", "models"];
+const ONDEMAND_TYPES = ["decisions", "pitfalls", "processes"];
+
+// Normalize a knowledge_type to its canonical PLURAL form. Frontmatter / entries
+// may carry the singular ("decision") while the census keys on the plural enum
+// ("decisions"); fold both so counting + display stay consistent.
+const TYPE_TO_PLURAL = {
+  decision: "decisions",
+  pitfall: "pitfalls",
+  guideline: "guidelines",
+  model: "models",
+  process: "processes",
+};
+function toPluralType(type) {
+  return TYPE_TO_PLURAL[type] || type;
+}
+
+// Fallback census when payload.census is absent (old CLI / unit-test payloads):
+// count the (possibly sliced) entries by knowledge_type so the human banner still
+// has something to group. Production payloads always carry the unsliced census.
+function deriveCensusFromEntries(entries) {
+  const census = { by_type: {}, by_layer: { team: 0, personal: 0 }, dropped_other_project: 0, total: 0 };
+  if (!Array.isArray(entries)) return census;
+  for (const e of entries) {
+    const type = e && typeof e.type === "string" ? toPluralType(e.type) : null;
+    if (type === null) continue;
+    census.by_type[type] = (census.by_type[type] || 0) + 1;
+    census.total += 1;
+  }
+  return census;
+}
+
+// Render the human-facing grouped census (§3). `lang` is "zh-CN" | other (en).
+// Returns an array of lines (may be empty when the census is empty).
+function renderHumanCensus(census, opts) {
+  const { lang } = opts || {};
+  const c = census || {};
+  const byType = c.by_type || {};
+  const total = typeof c.total === "number" ? c.total : 0;
+  if (total === 0 && (c.dropped_other_project || 0) === 0) return [];
+  const zh = lang === "zh-CN";
+
+  const typeCounts = (types) =>
+    types
+      .filter((t) => (byType[t] || 0) > 0)
+      .map((t) => `${TYPE_SINGULAR[t] || t} ${byType[t]}`)
+      .join(" · ");
+
+  const lines = [];
+  lines.push(`▸ [fabric] SessionStart (${total} KB)`);
+  const alwaysCounts = typeCounts(ALWAYS_TYPES);
+  lines.push(zh ? "  ─ always-loaded(AI 也收到正文)─" : "  ─ always-loaded (AI also gets bodies) ─");
+  lines.push(`   ${alwaysCounts.length > 0 ? alwaysCounts : zh ? "(无)" : "(none)"}`);
+  const ondemandCounts = typeCounts(ONDEMAND_TYPES);
+  lines.push(zh ? "  ─ on-demand(改文件时 fab_recall)─" : "  ─ on-demand (fab_recall when editing) ─");
+  lines.push(`   ${ondemandCounts.length > 0 ? ondemandCounts : zh ? "(无)" : "(none)"}`);
+  const layer = c.by_layer || {};
+  if ((layer.team || 0) > 0 || (layer.personal || 0) > 0) {
+    lines.push(`  [team] ${layer.team || 0} · [personal] ${layer.personal || 0}`);
+  }
+  const dropped = c.dropped_other_project || 0;
+  if (dropped > 0) {
+    lines.push(zh ? `  ✗ 已剔除他项目 ${dropped} 条` : `  ✗ dropped ${dropped} other-project entr${dropped === 1 ? "y" : "ies"}`);
+  }
+  return lines;
+}
+
+// Render the AI-facing sink (§3): always-active bodies (bounded by budgetChars,
+// overflow degrading to summary + recall pointer) + on-demand category counts.
+// `alwaysBodies` is the plan-context-hint always_bodies[] ({id,type,layer,summary,body}).
+function renderAiSink(opts) {
+  const { census, alwaysBodies, storeLabel, budgetChars, lang } = opts || {};
+  const zh = lang === "zh-CN";
+  const bodies = Array.isArray(alwaysBodies) ? alwaysBodies : [];
+  const byTypeAll = (census && census.by_type) || {};
+  const ondemandTotal = ONDEMAND_TYPES.reduce((n, t) => n + (byTypeAll[t] || 0), 0);
+  // Nothing to inject (no always-active bodies AND no on-demand knowledge) →
+  // empty so main() stays silent on an empty knowledge base.
+  if (bodies.length === 0 && ondemandTotal === 0) return "";
+  const lines = [];
+  lines.push(`[fabric:SessionStart] ${storeLabel || "store"}`);
+
+  // ALWAYS-ACTIVE RULES — inject bodies up to the budget, degrade the tail.
+  lines.push(zh ? "ALWAYS-ACTIVE RULES (无需再 recall):" : "ALWAYS-ACTIVE RULES (no recall needed):");
+  if (bodies.length === 0) {
+    lines.push(zh ? "  (无 always-active 条目)" : "  (none)");
+  } else {
+    const budget = typeof budgetChars === "number" && budgetChars > 0 ? budgetChars : 0;
+    let used = 0;
+    let degraded = false;
+    for (const b of bodies) {
+      const label = `[${TYPE_SINGULAR[b.type] || b.type}] ${b.id}`;
+      const body = typeof b.body === "string" ? b.body.trim() : "";
+      const summary = typeof b.summary === "string" ? b.summary : "";
+      const fullCost = label.length + body.length + 2;
+      if (!degraded && (budget === 0 || used + fullCost <= budget)) {
+        lines.push(`  ${label}`);
+        if (body.length > 0) lines.push(body);
+        used += fullCost;
+      } else {
+        // Budget exceeded → degrade this + remaining to summary + recall pointer.
+        degraded = true;
+        lines.push(
+          `  ${label} · ${summary}${zh ? " (超预算; fab_recall 取正文)" : " (over budget; fab_recall for body)"}`,
+        );
+      }
+    }
+  }
+
+  // ON-DEMAND category counts.
+  const byType = (census && census.by_type) || {};
+  const ondemand = ONDEMAND_TYPES.filter((t) => (byType[t] || 0) > 0)
+    .map((t) => `${t} ${byType[t]}`)
+    .join(" · ");
+  lines.push(
+    zh
+      ? `ON-DEMAND (改文件时 fab_recall(paths)): ${ondemand || "(无)"}`
+      : `ON-DEMAND (fab_recall(paths) when editing): ${ondemand || "(none)"}`,
+  );
+  return lines.join("\n");
+}
+
+// -----------------------------------------------------------------------------
 // Main entry — invoked both as a CLI (require.main === module) and in-process
 // by tests. Wraps the entire flow in try/catch: ANY error → silent exit 0.
 // -----------------------------------------------------------------------------
@@ -845,53 +1003,94 @@ function main(env, stdio) {
     const summaryMaxLen = readSummaryMaxLen(cwd);
     // v2.2 HK2-degrade (W2-T2): thread the injection char-budget into the renderer.
     const broadBudgetChars = readBroadBudgetChars(cwd);
-    const lines = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
 
-    // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path —
-    // shared between the (existing) broadImportBanner branch and the new
-    // 'next step' nudge tail added below. 'match-existing' / unknown variants
-    // fold to 'en' inside renderBanner per UX i18n Policy class 1.
-    const fabricLanguageForEmit = lines.length > 0 || recommendImport ? readFabricLanguage(cwd) : null;
-    if (recommendImport && fabricLanguageForEmit !== null) {
-      lines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
+    // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path.
+    const fabricLanguageForEmit = readFabricLanguage(cwd);
+
+    // v2.2 dual-sink (Goal A): census drives the human grouped banner; always_bodies
+    // drives the AI sink. Both come from the plan-context-hint payload; tests /
+    // old CLIs lacking them fall back gracefully (census derived from entries).
+    const census =
+      env && env.census !== undefined
+        ? env.census
+        : payload && payload.census
+          ? payload.census
+          : deriveCensusFromEntries(resolvedPayload && resolvedPayload.entries);
+    const alwaysBodies =
+      env && env.alwaysBodies !== undefined
+        ? env.alwaysBodies
+        : payload && Array.isArray(payload.always_bodies)
+          ? payload.always_bodies
+          : [];
+
+    // v2.2 dual-sink (Goal A / D4): resolve the human-output gate. nudge_mode only
+    // adjusts the human systemMessage — the AI sink is emitted regardless (D5).
+    const humanGate =
+      nudgePolicy !== null
+        ? nudgePolicy.resolveHumanSink(cwd, "session_start", {})
+        : { emitHuman: true, verbosity: "normal" };
+
+    // ---- HUMAN sink: §3 grouped census (+ verbose per-entry detail). ----
+    const humanLines = renderHumanCensus(census, { lang: fabricLanguageForEmit });
+    if (humanLines.length > 0 && humanGate.verbosity === "verbose") {
+      // verbose nudge_mode: append the legacy per-entry listing under the census.
+      const detail = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
+      humanLines.push(...detail);
     }
-
-    if (lines.length === 0) return; // nothing to say — silent exit
-
-    // v2.1.0-rc.1 P4 (F4/S63): append a per-store read-set label from the
-    // CLI-pre-generated bindings snapshot so the session opens aware of which
-    // stores it reads and where writes land. Best-effort, never blocks: a
-    // missing snapshot / single-store setup just omits the line.
-    if (bindingsSnapshotReader !== null) {
+    // v2.1.0-rc.1 P4 (F4/S63): per-store read-set label (which stores are read /
+    // where writes land). Best-effort; a missing snapshot omits the line.
+    if (bindingsSnapshotReader !== null && humanLines.length > 0) {
       try {
-        const projectId = readProjectId(cwd);
-        if (projectId) {
+        const bindingId = readWorkspaceBindingId(cwd);
+        if (bindingId) {
           const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
           );
-          if (label) lines.push(label);
+          if (label) humanLines.push(label);
         }
       } catch {
         // store labels are decorative provenance — never crash the hook
       }
     }
+    // rc.8 underseed self-check: one-line `/fabric-import` recommendation banner.
+    if (recommendImport && humanLines.length > 0 && fabricLanguageForEmit !== null) {
+      humanLines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
+    }
+    // v2.0.0-rc.37 NEW-23: SessionStart "next step" guidance.
+    if (humanLines.length > 0) {
+      humanLines.push(
+        fabricLanguageForEmit === "zh-CN"
+          ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选描述(candidates)。"
+          : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the candidate descriptions first.",
+      );
+    }
 
-    // v2.0.0-rc.37 NEW-23: SessionStart 索引末尾"下一步"引导。Tail line that
-    // tells the AI what to do with the broad index it just received. Without
-    // this, the model often parses the index and moves on without ever calling
-    // fab_recall / fab_plan_context. One-line nudge, bilingual.
-    // v2.2 W1-REVIEW codex LOW-6: `description_index` was renamed to `candidates`
-    // in rc.38 UX-1; the nudge now uses the current field name so the guidance
-    // matches the actual MCP response shape.
-    const nextStepNudge =
-      fabricLanguageForEmit === "zh-CN"
-        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选描述(candidates)。"
-        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the candidate descriptions first.";
-    lines.push(nextStepNudge);
+    // ---- AI sink: §3 always-active bodies + on-demand counts. ----
+    const aiText = renderAiSink({
+      census,
+      alwaysBodies,
+      budgetChars: broadBudgetChars,
+      lang: fabricLanguageForEmit,
+    });
 
-    // Stderr: always emit (human-facing breadcrumb + legacy contract).
-    for (const line of lines) {
-      err.write(`${line}\n`);
+    // Nothing to say at all → silent exit (preserves the empty-payload contract).
+    if (humanLines.length === 0 && (!aiText || aiText.length === 0)) return;
+
+    // v2.2 dual-sink (Goal A / D7): emit both channels in one render. The human
+    // systemMessage is gated by nudge_mode (emitHuman); the AI additionalContext
+    // is emitted regardless. emitDualSink shapes the protocol per client (CC/Codex
+    // camelCase nested envelope; unknown → stderr).
+    const human = humanGate.emitHuman && humanLines.length > 0 ? humanLines.join("\n") : null;
+    const reminderToContext = readReminderToContext(cwd);
+    const ai = reminderToContext && aiText && aiText.length > 0 ? aiText : null;
+    if (!(env && env.skipStdout === true)) {
+      emitDualSink(
+        { human, ai },
+        { client: detectClient(), eventName: "SessionStart", streams: { stdout: out, stderr: err } },
+      );
+    } else if (human !== null) {
+      // skipStdout test seam: still surface the human breadcrumb to stderr.
+      err.write(`${human}\n`);
     }
 
     // v2.2 HK3-telemetry (W3-T1): record the injection side. We just OFFERED the
@@ -914,37 +1113,10 @@ function main(env, stdio) {
       });
     }
 
-    // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
-    // hint_reminder_to_context is true (default), serialize the same banner
-    // body as Claude Code's SessionStart hookSpecificOutput shape so the model
-    // receives the reminder IN-CONTEXT (rc.32 baseline cite-coverage 3.1%
-    // root cause: reminders never entered model context). Stderr stays the
-    // host-facing channel.
-    //
-    // Failure to write JSON envelope must NOT crash the hook — stderr already
-    // delivered, the stdout layer is best-effort.
-    // v2.0.0-rc.33 W4 review-fix (gemini High-1): the stdout JSON envelope
-    // is Claude Code-specific (hookSpecificOutput.additionalContext contract).
-    // Codex CLI / Cursor don't parse it — leaking it to their stdout risks
-    // either polluting the terminal or crashing the host's hook-parsing
-    // pipeline. CLAUDE_PROJECT_DIR is set by CC when invoking hooks (see
-    // packages/cli/templates/hooks/configs/claude-code.json sigil paths);
-    // its presence is the single-bit "this is Claude Code" signal (now via
-    // the shared client-adapter, rc.37 NEW-30).
-    const reminderToContext = readReminderToContext(cwd) && isClaudeCode();
-    if (reminderToContext && !(env && env.skipStdout === true)) {
-      try {
-        const envelope = {
-          hookSpecificOutput: {
-            hookEventName: "SessionStart",
-            additionalContext: lines.join("\n"),
-          },
-        };
-        out.write(`${JSON.stringify(envelope)}\n`);
-      } catch {
-        // Best-effort — stderr is the durable contract
-      }
-    }
+    // v2.2 dual-sink (Goal A): the legacy rc.33 W2-6 stdout JSON envelope is
+    // replaced by emitDualSink above (which carries BOTH the human systemMessage
+    // and the AI additionalContext, shaped per client). hint_reminder_to_context
+    // still gates whether the AI sink is populated (see `ai` above).
 
     // v2.1 NEW-N-3 (ADJ-NEWN-3): hook_surface_emitted instrumentation. One
     // best-effort ledger row recording WHICH broad-scoped ids were surfaced
@@ -953,7 +1125,7 @@ function main(env, stdio) {
     // per session boot so this never bloats the ledger. Never blocks the hook
     // (KT-DEC-0007): any failure (no .fabric/, undetected client, write error)
     // degrades to silent skip. Client is omitted-by-skip when undetectable
-    // because the schema's `client` enum admits only cc/codex/cursor.
+    // because the schema's `client` enum admits only cc/codex.
     try {
       const surfaceClient = detectClient();
       const fabricDir = join(cwd, FABRIC_DIR_REL);
