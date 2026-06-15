@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 
 import type { ClientPaths, FabricConfig } from "@fenglimg/fabric-shared";
 import { ClaudeCodeDesktopWriter, getClaudeDesktopConfigPath } from "./claude-code.js";
-import { ClaudeCodeCLIWriter, CursorWriter } from "./json.js";
+import { ClaudeCodeCLIWriter } from "./json.js";
 import type { ClaudeMcpScope } from "./json.js";
 import { CodexTOMLConfigWriter } from "./toml.js";
 import type { ClientConfigWriter } from "./writer.js";
@@ -76,13 +76,6 @@ export function resolveClients(
 
   addIfDetected(
     writers,
-    existsSync(join(workspaceRoot, ".cursor")),
-    (configuredPath) => new CursorWriter(configuredPath),
-    hasExplicitPath(clientPaths, "cursor") ? clientPaths!.cursor : undefined,
-  );
-
-  addIfDetected(
-    writers,
     existsSync(join(homedir(), ".codex")),
     (configuredPath) => new CodexTOMLConfigWriter(configuredPath),
     hasExplicitPath(clientPaths, "codexCLI") ? clientPaths!.codexCLI : undefined,
@@ -98,7 +91,6 @@ export function detectClientSupports(
   const clientPaths = fabricConfig.clientPaths;
   const claudeDetected = existsSync(join(homedir(), ".claude")) || existsSync(join(workspaceRoot, ".claude"));
   const claudeDesktopDetected = existsSync(getClaudeDesktopConfigPath());
-  const cursorDetected = existsSync(join(workspaceRoot, ".cursor"));
   const codexDetected = existsSync(join(homedir(), ".codex"));
 
   return [
@@ -128,33 +120,6 @@ export function detectClientSupports(
         mcp: true,
         hook: false,
         skill: false,
-      },
-    },
-    {
-      clientKind: "Cursor",
-      label: "Cursor",
-      detected: cursorDetected || hasExplicitPath(clientPaths, "cursor"),
-      configPath: ".cursor/mcp.json",
-      capabilities: {
-        bootstrap: true,
-        mcp: true,
-        // Cursor DOES receive Fabric hooks: install copies the hook scripts to
-        // `.cursor/hooks/` and merges `.cursor/hooks.json` (hooks-orchestrator).
-        // It also HAS skills: Cursor resolves its Skills from the `.claude` /
-        // `.codex` skill dirs (cross-client fallback) that install already
-        // populates, so no dedicated `.cursor/skills` write is needed and the
-        // skill is genuinely available. The prior `hook:false`/`skill:false`
-        // both under-reported capabilities the install actually delivers.
-        hook: true,
-        skill: true,
-      },
-      installedCapabilities: {
-        hook: existsSync(join(workspaceRoot, ".cursor", "hooks.json")),
-        // Skills are available to Cursor when the shared `.claude` / `.codex`
-        // skill dirs exist (the locations Cursor reads them from).
-        skill:
-          existsSync(join(workspaceRoot, ".claude", "skills")) ||
-          existsSync(join(workspaceRoot, ".codex", "skills")),
       },
     },
     {

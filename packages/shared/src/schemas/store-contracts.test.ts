@@ -121,13 +121,12 @@ describe("P0 store/scope/id schemas", () => {
 });
 
 describe("P0 parity-matrix stub", () => {
-  it("parses parity-matrix.json against parityMatrixSchema with all three clients per row", () => {
+  it("parses parity-matrix.json against parityMatrixSchema with both clients per row", () => {
     const matrix = parityMatrixSchema.parse(readJson("../parity/parity-matrix.json"));
     expect(matrix.capabilities.length).toBeGreaterThan(0);
     for (const cap of matrix.capabilities) {
       expect(cap.clients.claudeCode).toBeDefined();
       expect(cap.clients.codexCLI).toBeDefined();
-      expect(cap.clients.cursor).toBeDefined();
     }
   });
 });

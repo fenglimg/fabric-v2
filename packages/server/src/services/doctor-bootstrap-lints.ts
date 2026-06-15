@@ -138,7 +138,6 @@ export async function inspectL2ManagedBlockDrift(
 
   const blockTargets = [
     join(target, "AGENTS.md"),
-    join(target, ".cursor", "rules", "fabric-bootstrap.mdc"),
   ];
   for (const abs of blockTargets) {
     let content: string;

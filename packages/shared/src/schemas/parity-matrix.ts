@@ -1,26 +1,25 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// v2.1.0-rc.1 P0 — Three-client parity matrix contract (CONTRACT part of
+// v2.1.0-rc.1 P0 — Two-client parity matrix contract (CONTRACT part of
 // S14/S29; the E2E VERIFICATION that drives off this matrix is P5).
 //
-// Each row = one capability × the three supported clients' EXPECTED state.
+// Each row = one capability × the two supported clients' EXPECTED state.
 // This file front-loads the contract so P4 develops client adapters AGAINST a
 // fixed baseline and P5 only executes the matrix as 100%-green E2E cases — no
 // "build first, align later" inversion (roadmap-v4 changelog ①).
 //
-// Supported clients are LOCKED to three (memory/project_fabric_scope.md):
-// Claude Code, Codex CLI, Cursor. Cursor has FULL skill/hook/mcp support
-// (memory/reference_cursor_supports_skills.md) — the earlier "capability
-// three-tier downgrade" for Cursor was reversed; do NOT reintroduce it. The
-// matrix expresses MECHANISM differences (event names / payload / cwd /
-// session-id, S6) while keeping `supported: true` across the board.
+// Supported clients are LOCKED to two (memory/project_fabric_scope.md):
+// Claude Code, Codex CLI. (A third client was removed 2026-06-15 — clean-slate
+// per the zero-user policy.) The matrix expresses MECHANISM differences (event
+// names / payload / cwd / session-id, S6) while keeping `supported: true`
+// across the board.
 //
 // Pure definition layer: schema + a stub `parity-matrix.json` validated against
 // it. No client adapter runs here.
 // ---------------------------------------------------------------------------
 
-export const PARITY_CLIENTS = ["claudeCode", "codexCLI", "cursor"] as const;
+export const PARITY_CLIENTS = ["claudeCode", "codexCLI"] as const;
 export const parityClientSchema = z.enum(PARITY_CLIENTS);
 export type ParityClient = z.infer<typeof parityClientSchema>;
 
@@ -43,7 +42,7 @@ export const parityClientExpectationSchema = z
 
 export type ParityClientExpectation = z.infer<typeof parityClientExpectationSchema>;
 
-// One capability row × all three clients. Every client MUST have an explicit
+// One capability row × all clients. Every client MUST have an explicit
 // expectation entry (no implicit defaults) so the matrix is exhaustive and the
 // P5 E2E pass can iterate it deterministically.
 export const parityCapabilitySchema = z
@@ -55,7 +54,6 @@ export const parityCapabilitySchema = z
       .object({
         claudeCode: parityClientExpectationSchema,
         codexCLI: parityClientExpectationSchema,
-        cursor: parityClientExpectationSchema,
       })
       .strict(),
   })

@@ -737,7 +737,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // v2.0.0-rc.37 NEW-20: hooks_runtime closes the gap below hooks_wired —
   // shebang + Node.js syntax validity of each installed .cjs hook file.
   // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256 parity
-  // for the same hook basename across .claude/.codex/.cursor.
+  // for the same hook basename across .claude/.codex.
   // rc.31 BUG-G2/G5: promote-ledger invariant check (proposed >= started >= promoted).
   // Surfaces ledger desync (e.g. werewolf-minigame rc.30 audit: proposed=17,
   // started=48, promoted=52). Warning kind — does not bump report status to
@@ -2693,8 +2693,7 @@ async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<C
 // are byte-equal.
 //
 // Behavior summary per target:
-//   - AGENTS.md / .cursor/rules/fabric-bootstrap.mdc: locate-or-append a
-//     managed block via BOOTSTRAP_REGEX; body is
+//   - AGENTS.md: locate-or-append a managed block via BOOTSTRAP_REGEX; body is
 //     `{BEGIN}\n{expectedBody}\n{END}`. In-place replace when marker present;
 //     append with blank-line separator when absent. Skip files that do not
 //     exist (propagator never ran — install bug, not doctor's concern).
@@ -2726,10 +2725,9 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
   }
   const managedBlock = `${BOOTSTRAP_MARKER_BEGIN}\n${expectedBody}\n${BOOTSTRAP_MARKER_END}`;
 
-  // Managed-block targets: AGENTS.md + .cursor/rules/fabric-bootstrap.mdc.
+  // Managed-block targets: AGENTS.md.
   const blockTargets = [
     join(projectRoot, "AGENTS.md"),
-    join(projectRoot, ".cursor", "rules", "fabric-bootstrap.mdc"),
   ];
   for (const abs of blockTargets) {
     if (!(await pathExists(abs))) {

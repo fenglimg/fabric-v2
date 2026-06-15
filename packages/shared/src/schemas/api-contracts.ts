@@ -1318,7 +1318,7 @@ export const citeCoverageReportSchema = z.object({
   marker_ts: z.number().int().nonnegative(),
   marker_emitted_now: z.boolean(),
   since_ts: z.number().int().nonnegative(),
-  client_filter: z.enum(["cc", "codex", "cursor", "all"]),
+  client_filter: z.enum(["cc", "codex", "all"]),
   // v2.0.0-rc.24 TASK-08: layer filter discriminator. Optional so pre-TASK-10
   // CLI callers (which never set the flag) still parse. Defaults to "all" at
   // the service layer.

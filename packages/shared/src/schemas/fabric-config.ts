@@ -5,7 +5,7 @@ import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
-// v2.0: Fabric scope is locked to Claude Code, Cursor, and Codex CLI.
+// v2.0: Fabric scope is locked to Claude Code and Codex CLI.
 // Unknown clientPaths keys (e.g. windsurf, rooCode, geminiCLI from v1.x) are
 // rejected at parse time via .strict() — there is no soft-deprecation path.
 // Adding a new client requires extending this schema explicitly.
@@ -60,8 +60,8 @@ export const defaultLayerFilterSchema = z.enum(["team", "personal", "both"]);
 // v2.2 dual-sink (Goal A / D4): nudge_mode is the human-output preset that
 // replaces the "knob soup" of per-hook numeric thresholds with one coherent
 // dial. CORE INVARIANT (D5): nudge_mode governs ONLY the human-facing sink
-// (`systemMessage` on CC/Codex, flat `additional_context` degrade on Cursor) —
-// it NEVER touches the AI sink (`hookSpecificOutput.additionalContext`). Flow ⊥
+// (`systemMessage` on CC/Codex) — it NEVER touches the AI sink
+// (`hookSpecificOutput.additionalContext`). Flow ⊥
 // observation: the model receives the same knowledge regardless of how quiet the
 // human channel is. Levels (resolved in lib/nudge-policy.cjs):
 //   silent  — no human systemMessage at all (AI sink unchanged)

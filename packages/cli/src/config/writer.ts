@@ -1,7 +1,6 @@
 export type ClientKind =
   | "ClaudeCodeCLI"
   | "ClaudeCodeDesktop"
-  | "Cursor"
   | "CodexCLI";
 
 export type ServerEntry = {

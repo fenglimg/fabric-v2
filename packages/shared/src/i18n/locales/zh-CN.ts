@@ -62,10 +62,10 @@ export const zhCNMessages: Messages = {
   "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
-  "cli.config.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 cursor,codex。",
+  "cli.config.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 cc,codex。",
   "cli.config.install.args.dry-run.description": "仅预览将要发生的写入操作，不修改文件。",
   "cli.config.errors.unknown-client":
-    "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 cursor,codex。",
+    "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 cc,codex。",
   "cli.config.errors.expected-object": "{path} 中应为对象。",
   "cli.config.install.no-configs":
     "未检测到 Fabric MCP 客户端配置。请创建客户端目录，或在 fabric.config.json 中设置 clientPaths。",
@@ -242,7 +242,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.since.description":
     "Cite 覆盖率统计窗口(如 7d, 24h, 30m)",
   "cli.doctor.args.client.description":
-    "按客户端过滤(cc|codex|cursor|all)",
+    "按客户端过滤(cc|codex|all)",
   // v2.0.0-rc.24 TASK-10: --layer 过滤 cite 合约审计的知识层 (team|personal|all)。
   "cli.doctor.args.layer.description":
     "按知识层过滤 cite 合约审计 (team|personal|all)",
@@ -266,7 +266,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.errors.invalid-since":
     "--since 取值无效: {input}。预期格式 7d / 24h / 30m 或 epoch ms。",
   "cli.doctor.errors.invalid-client":
-    "--client 取值无效: {input}。预期 cc / codex / cursor / all。",
+    "--client 取值无效: {input}。预期 cc / codex / all。",
   "cli.doctor.errors.invalid-layer":
     "--layer 取值无效: {input}。预期 team / personal / all。",
   // rc.23 TASK-007 (a-C2): --enrich-descriptions 回填四个 description 字段。
@@ -606,7 +606,7 @@ export const zhCNMessages: Messages = {
   // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax validity
   // of installed *.cjs hook files (one layer below hooks_wired).
   "doctor.check.hooks_runtime.name": "Hooks 运行时健康",
-  "doctor.check.hooks_runtime.ok.skipped": "未发现已安装的 hook 文件（.claude/hooks/ / .codex/hooks/ / .cursor/hooks/ 都缺）；跳过 hooks_runtime 检查。",
+  "doctor.check.hooks_runtime.ok.skipped": "未发现已安装的 hook 文件（.claude/hooks/ / .codex/hooks/ 都缺）；跳过 hooks_runtime 检查。",
   "doctor.check.hooks_runtime.ok.healthy":
     "已扫描 {count} 个 hook .cjs 文件，shebang 与 Node.js 语法解析全部通过。",
   "doctor.check.hooks_runtime.message.singular":
@@ -619,7 +619,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.hooks_content_drift.name": "Hooks 跨客户端内容一致性",
   "doctor.check.hooks_content_drift.ok.skipped": "未发现跨客户端共存的 hook 文件（单 client 安装或全部缺失）；跳过 hooks_content_drift 检查。",
   "doctor.check.hooks_content_drift.ok.aligned":
-    "已扫描 {count} 个 hook 副本，跨 client (.claude / .codex / .cursor) sha256 全部一致。",
+    "已扫描 {count} 个 hook 副本，跨 client (.claude / .codex) sha256 全部一致。",
   "doctor.check.hooks_content_drift.message":
     "{count} 个 hook basename 在 client 之间内容 drift；首例：{first_basename}（涉及 {first_clients}）。`fabric install` 复制同一模板到三 client，drift 通常来自手动编辑。",
   "doctor.check.hooks_content_drift.remediation":
@@ -787,7 +787,7 @@ export const zhCNMessages: Messages = {
     "配合 --enable-embed:覆盖固定的 embed 模型 (默认 fast-bge-small-zh-v1.5)",
   // rc.35 TASK-08 (P0-5/6): --force-skills-only。
   "cli.install.args.force-skills-only.description":
-    "跳过 bootstrap / MCP / hooks / settings,只重新刷新 fabric Skill 模板 (.claude/.codex/.cursor/skills/*)。",
+    "跳过 bootstrap / MCP / hooks / settings,只重新刷新 fabric Skill 模板 (.claude/.codex/skills/*)。",
   "cli.install.force-skills-only.banner": "只刷新 fabric Skill 模板",
   "cli.install.force-skills-only.uninitialised.message":
     "fabric install --force-skills-only: 项目未初始化(找不到 .fabric/agents.meta.json)。",
@@ -796,7 +796,7 @@ export const zhCNMessages: Messages = {
   "cli.install.force-skills-only.summary": "Skill 刷新完成 — 写入: {written}, 跳过: {skipped}, 错误: {errors}",
   // v2.0.0-rc.37 NEW-26: --force-hooks-only mirror of --force-skills-only。
   "cli.install.args.force-hooks-only.description":
-    "跳过 bootstrap / MCP / skills / settings,只重新刷新 fabric hook scripts + per-client hook config 合并 (.claude/.codex/.cursor/hooks/*)。",
+    "跳过 bootstrap / MCP / skills / settings,只重新刷新 fabric hook scripts + per-client hook config 合并 (.claude/.codex/hooks/*)。",
   "cli.install.force-hooks-only.banner": "只刷新 fabric hooks",
   "cli.install.force-hooks-only.uninitialised.message":
     "fabric install --force-hooks-only: 项目未初始化(找不到 .fabric/agents.meta.json)。",
@@ -818,7 +818,6 @@ export const zhCNMessages: Messages = {
   "cli.install.stages.bootstrap.snapshot.skipped": "已跳过 .fabric/AGENTS.md — 已是最新",
   "cli.install.steps.bootstrap-claude": "已更新 CLAUDE.md 的 @-import 引用",
   "cli.install.steps.bootstrap-codex": "已更新 AGENTS.md 的 fabric:bootstrap managed block",
-  "cli.install.steps.bootstrap-cursor": "已更新 .cursor/rules/fabric-bootstrap.mdc",
   "cli.install.stages.mcp": "正在配置 MCP 客户端...",
   "cli.install.stages.hooks": "正在安装 git hooks...",
   "cli.install.stages.skipped": "已跳过",
@@ -874,13 +873,13 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.cancelled": "Fabric 安装已在执行前取消。",
   "cli.install.capabilities.title": "客户端能力摘要",
   // v2.0.0-rc.37 NEW-22: post-install 重启提示。MCP server 在 client 启动
-  // 时 spawn, 已运行的 Claude Code / Cursor / Codex session 不会自动加载
+  // 时 spawn, 已运行的 Claude Code / Codex session 不会自动加载
   // 新 mcp config — 必须重启才能拿到 Fabric tools。
   "cli.install.restart-banner":
-    "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
+    "重启提示: 已运行的 Claude Code / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
   "cli.install.next-steps":
     "下一步 —— 拿到第一份价值:\n" +
-    "  1. 重启你的 AI 客户端 (Claude Code / Cursor / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。\n" +
+    "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。\n" +
     "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
     "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
   "cli.install.store-bind-nudge":
