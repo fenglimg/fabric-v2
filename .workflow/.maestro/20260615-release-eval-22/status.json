@@ -119,9 +119,9 @@
       "dimension": 0,
       "hard": true,
       "target": "2.0.1→2.2 端到端升级旅程,普通 fabric install 重跑后 hook/skill 确实是当前版(防 P0-NEW1 复发)",
-      "actual": null,
-      "verifier_cmd": "PROBE: e2e 升级脚本(装 2.0.1 → install 2.2 → 验 hook/skill byte 是当前版)",
-      "verified_at": null
+      "actual": "GREEN: scripts/upgrade-e2e.mjs 黑盒驱动 built CLI(dist/index.js install --yes)做完整升级旅程, 8 检查全过(exit0)。① fresh install 4/4: hook(fabric-hint.cjs)+skill(fabric-archive)落盘且 byte-identical to 当前 template。② staleify 2/2: 覆写 stale '2.0.1' sentinel 字节模拟旧版漂移。③ upgrade-refresh 2/2: 重跑 install --yes → stale hook+skill 被刷回当前 template 字节(sentinel 消失)= P0-NEW1 防回归(普通 install 重跑确刷 stale managed artifact)。隔离 FABRIC_HOME+temp project, 真 install pipeline。",
+      "verifier_cmd": "node scripts/upgrade-e2e.mjs (升级旅程 8检查, stale 残留=exit1)",
+      "verified_at": "2026-06-15T17:50:00Z"
     },
     {
       "name": "G-RESILIENCE",
@@ -258,12 +258,12 @@
         "G-UPGRADE"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "e2e 升级脚本",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "scripts/upgrade-e2e.mjs 黑盒升级旅程 8检查全过: fresh byte-identical + stale 重装刷回当前版(P0-NEW1 防回归)",
+        "verified_at": "2026-06-15T17:50:00Z"
       }
     },
     {
@@ -436,7 +436,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 14,
-      "round_task_actual": 13,
+      "round_task_actual": 14,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],
@@ -479,6 +479,12 @@
       "gate": "G-RESILIENCE",
       "summary": "并发隔离F13+backend-down降级 probe + 多store round-trip 闭环",
       "at": "2026-06-15T17:35:00Z"
+    },
+    {
+      "sha": "5e92ab3",
+      "gate": "G-UPGRADE",
+      "summary": "黑盒升级旅程 e2e: stale hook/skill 重装刷回当前版(P0-NEW1)",
+      "at": "2026-06-15T17:50:00Z"
     }
   ],
   "goal_checklist_path": ".workflow/.maestro/20260615-release-eval-22/goal-checklist.md",
