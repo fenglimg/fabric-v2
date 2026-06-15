@@ -819,6 +819,10 @@ type ModifyChanges = {
   // coordinate (team → project:<id>). visibility_store is untouched —
   // scope ⊥ store. Personal-root coordinates are rejected in modifyEntry.
   semantic_scope?: string;
+  // v2.2 graph edges (KT-DEC-0031): `related` H2 adjacency. REPLACE semantics
+  // like tags. Previously dropped by zod .strip() in the changes schema before
+  // it ever reached here (the only related-write path was non-functional).
+  related?: string[];
 };
 
 // v2.0.0-rc.27 TASK-001: superset of ModifyChanges used internally by
@@ -1649,6 +1653,8 @@ function rewriteFrontmatterMerge(
   if (patch.relevance_paths !== undefined) updates.relevance_paths = `relevance_paths: ${flowArray(patch.relevance_paths)}`;
   // v2.2 project-scope migration: in-place re-scope (team → project:<id>).
   if (patch.semantic_scope !== undefined) updates.semantic_scope = `semantic_scope: ${patch.semantic_scope}`;
+  // v2.2 graph edges: `related` flow-array, same emit shape as tags/relevance_paths.
+  if (patch.related !== undefined) updates.related = `related: ${flowArray(patch.related)}`;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
   // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
   // datetimes correctly (no colon in the date portion would need quoting,
@@ -1692,6 +1698,7 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.tags !== undefined) lines.push(`tags: ${flowArray(patch.tags)}`);
   if (patch.relevance_scope !== undefined) lines.push(`relevance_scope: ${patch.relevance_scope}`);
   if (patch.relevance_paths !== undefined) lines.push(`relevance_paths: ${flowArray(patch.relevance_paths)}`);
+  if (patch.related !== undefined) lines.push(`related: ${flowArray(patch.related)}`);
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
 }
