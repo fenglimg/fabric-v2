@@ -55,10 +55,10 @@
     {
       "name": "G-W3-OBSERVABILITY",
       "target": "Read ~/.fabric 正文产生 knowledge_body_read 事件; cite-coverage 记账不变",
-      "actual": null,
+      "actual": "GREEN(dogfood) — 驱动已装 .claude/hooks/post-tooluse-mutation.cjs 用 Read payload, events.jsonl 落 knowledge_body_read{stable_id:KT-DEC-0030,store:team,path,tool_name:Read}; planned→body_read 同 session 可见; doctor --cite-coverage 跑通(recalled_unverified 字段在, fetch→body_read 迁移, 记账不变); cli 1050+server 694+shared 637 green, tsc clean",
       "verifier_cmd": "PROBE: dogfood Read 知识文件后 grep events.jsonl 有 knowledge_body_read + doctor --cite-coverage 数值回归",
       "method": "dogfood",
-      "verified_at": null
+      "verified_at": "2026-06-15"
     },
     {
       "name": "G-W4-LINT",
@@ -255,12 +255,12 @@
         "G-W3-OBSERVABILITY"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "Read 后 events.jsonl 有 body_read",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "knowledgeBodyReadEventSchema 入 union+census snapshot; post-tooluse-mutation.cjs 加 READ_TOOL_NAMES+extractKnowledgeBodyRead(KNOWLEDGE_BODY_PATH_RE 解析 id, STORE_ALIAS_RE 解析 store)+appendKnowledgeBodyRead; matcher 加 Read(claude+codex); 9 新 hook 单测 green; dogfood 已装 hook 落 knowledge_body_read{KT-DEC-0030,team,Read}",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0030"
     },
@@ -276,12 +276,12 @@
         "G-W3-OBSERVABILITY"
       ],
       "alignment_strength": "direct",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "grep 无旧事件发射 + cite-coverage 测试回归",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "删 knowledge-sections.ts 服务+测试(唯一 emit 点, W1 删工具后无活引用); knowledge_selection/_sections_fetched schema 保留供旧 ledger 回放; cite-coverage recalled_unverified 验证信号 fetch→body_read 迁移(FetchEvent 类型/收集/correlation 全切), knowledge_context_planned 键不动; doctor buildLastActiveIndex 加 body_read recency case; server 694 tests green(含迁移后的 recall-verified/unverified 双测)",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0030 / KT-DEC-0007"
     },
@@ -297,12 +297,12 @@
         "G-W3-OBSERVABILITY"
       ],
       "alignment_strength": "indirect",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "doctor 检查单测",
-        "evidence": null,
-        "verified_at": null
+        "evidence": "runDoctorBodyReadMisfireCheck 替换失源的 runDoctorEmitCadenceCheck: recall(planned)量过阈(>=10)且零 body_read=warn(Read 线哑火, 指向 PostToolUse matcher); 二元判据非 ratio(body_read 按 KT-GLD-0005 稀疏设计); 3 单测 round-trip(quiet 不报/misfire warn/sparse-ok)green",
+        "verified_at": "2026-06-15"
       },
       "anchor": "KT-DEC-0030"
     },
@@ -442,7 +442,7 @@
       "round": 1,
       "status": "running",
       "round_task_ceiling": 16,
-      "round_task_actual": 7,
+      "round_task_actual": 10,
       "convergence_status": "converging",
       "newly_discovered_this_round": [],
       "carried_in": [],

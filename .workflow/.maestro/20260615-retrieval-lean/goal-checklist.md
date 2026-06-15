@@ -38,9 +38,11 @@
 > **W2 wave 闭 — G-W2-SPINE 绿 (dogfood 实测渲染符合定稿)**。镜像 .claude/.codex 已同步 byte-equal。cli 1042+5新 / server 711 / shared 637 tests green, tsc clean。
 
 ### W3 — 观测电线 (KT-DEC-0030)
-- [ ] **W3-1** PostToolUse hook 盯 Read ~/.fabric → 发 knowledge_body_read(id+store)
-- [ ] **W3-2** knowledge_selection/knowledge_sections_fetched 作废;knowledge_context_planned 保留
-- [ ] **W3-3** doctor 加防哑火检查(有 Read 无 body_read)
+- [x] **W3-1** PostToolUse hook 盯 Read ~/.fabric → 发 knowledge_body_read(id+store)✅ dogfood 落事件; matcher 加 Read
+- [x] **W3-2** knowledge_selection/knowledge_sections_fetched 作废(删 knowledge-sections.ts 死服务);knowledge_context_planned 保留;cite recalled_unverified fetch→body_read 迁移 ✅
+- [x] **W3-3** doctor 加防哑火检查 ✅ runDoctorBodyReadMisfireCheck(planned 过阈+零 body_read=warn)
+
+> **W3 wave 闭 — G-W3-OBSERVABILITY 绿 (dogfood)**。镜像 fabric install 同步。cli 1050 + server 694 + shared 637 tests green, tsc clean。
 
 ### W4 — 三轴 scope + 配置/lint (KT-MOD-0001)
 - [ ] **W4-1** broad_index_backstop 入 fabric-config schema(20..500)
