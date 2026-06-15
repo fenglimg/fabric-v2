@@ -33,7 +33,7 @@
 - **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fabric doctor --fix`。
 
 ## 知识库(KB)
-- **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer `KP-*` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
+- **Discovery**:SessionStart hook 列 broad-scoped 条目(条目按 `semantic_scope` 分三层:`team` 团队通用 / `project:<id>` 本项目专属(仅在绑定该项目的仓库浮现)/ `personal` 个人 `KP-*`,三者引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
 - **Usage**:常态走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 正文。仅当单步正文过多致上下文过载、需精确裁剪噪音时才两步:`fab_plan_context(paths=[...])` 返回 `selection_token` + 顶层 `candidates[]`,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<从 candidates[].stable_id 挑>...] })` 拉全文;`selection_token` 必须来自最近一次 `fab_plan_context`,不可凭空编造。
 - **session_id**: 调用 `fab_recall` / `fab_plan_context` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 `fabric-hint.cjs` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (7)**:写流程 `fabric-archive` / `fabric-review` / `fabric-import`;store 流程 `fabric-store` / `fabric-sync` / `fabric-connect`;诊断 `fabric-audit`。

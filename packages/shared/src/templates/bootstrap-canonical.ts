@@ -86,7 +86,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **\`.fabric/agents.meta.json\` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 \`fabric doctor --fix\`。
 
 ## 知识库(KB)
-- **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer \`KP-*\` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
+- **Discovery**:SessionStart hook 列 broad-scoped 条目(条目按 \`semantic_scope\` 分三层:\`team\` 团队通用 / \`project:<id>\` 本项目专属(仅在绑定该项目的仓库浮现)/ \`personal\` 个人 \`KP-*\`,三者引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
 - **Usage**:常态走单步 \`fab_recall(paths=[...])\` 一次拿回相关 KB 正文。仅当单步正文过多致上下文过载、需精确裁剪噪音时才两步:\`fab_plan_context(paths=[...])\` 返回 \`selection_token\` + 顶层 \`candidates[]\`,再 \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<从 candidates[].stable_id 挑>...] })\` 拉全文;\`selection_token\` 必须来自最近一次 \`fab_plan_context\`,不可凭空编造。
 - **session_id**: 调用 \`fab_recall\` / \`fab_plan_context\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 \`fabric-hint.cjs\` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (7)**:写流程 \`fabric-archive\` / \`fabric-review\` / \`fabric-import\`;store 流程 \`fabric-store\` / \`fabric-sync\` / \`fabric-connect\`;诊断 \`fabric-audit\`。
@@ -182,7 +182,7 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 - **Never hand-edit \`.fabric/agents.meta.json\`**; the engine syncs derived state automatically — run \`fabric doctor --fix\` for an explicit reconcile.
 
 ## Knowledge Base (KB)
-- **Discovery**: the SessionStart hook lists broad-scoped entries (including personal-layer \`KP-*\` entries, referenced the same way); editing a file may trigger a narrow hint via the PreToolUse hook.
+- **Discovery**: the SessionStart hook lists broad-scoped entries (scoped by \`semantic_scope\` across three tiers: \`team\` team-wide / \`project:<id>\` this-project-only (surfaces only in repos bound to that project) / \`personal\` \`KP-*\`, all three referenced the same way); editing a file may trigger a narrow hint via the PreToolUse hook.
 - **Usage**: normally go one-step \`fab_recall(paths=[...])\` to fetch the relevant KB bodies in one call. Only when the one-step bodies are too large and overload the context go two-step: \`fab_plan_context(paths=[...])\` returns a \`selection_token\` + top-level \`candidates[]\`, then \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<picked from candidates[].stable_id>...] })\` fetches the full bodies; the \`selection_token\` MUST come from the most recent \`fab_plan_context\` — never fabricate one.
 - **session_id**: when calling \`fab_recall\` / \`fab_plan_context\`, always pass the current client session id as the \`session_id\` argument (Claude Code's session id is in the stdin payload; Codex's corresponding identifier likewise). This lets \`fabric doctor --archive-history\` and the \`fabric-hint.cjs\` Stop hook track cross-session debt accurately.
 - **Skills (7)**: write flow \`fabric-archive\` / \`fabric-review\` / \`fabric-import\`; store flow \`fabric-store\` / \`fabric-sync\` / \`fabric-connect\`; diagnostics \`fabric-audit\`.
