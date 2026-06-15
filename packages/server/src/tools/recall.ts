@@ -28,7 +28,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
     "fab_recall",
     {
       description:
-        "Combined one-call replacement for (fab_plan_context → fab_get_knowledge_sections). Pass candidate `paths` (+ optional `intent`) and receive, in one round-trip, a DESCRIPTION for every relevant Fabric rule (`candidates[]`) plus the full markdown BODY for the highest-ranked few that fit the body-tier budget (`rules[]`). Lower-ranked candidates return description-only to keep the response lean — read their `candidates[].description`, and when you need to APPLY one, fetch its body on demand by calling fab_get_knowledge_sections with the returned `selection_token` + the candidate's `stable_id` (`next_steps` and `body_tier` spell this out). After rc.37 removed server-side `selectable=false` filtering, the LLM id-picking step was a no-op, so `fab_recall` auto-selects for the common case while leaving the two-step escape hatch open. Pass explicit `ids` to fetch exactly those bodies whole (bypasses the body-tier budget).",
+        "Recall the Fabric knowledge relevant to the files you are about to touch. Pass candidate `paths` (+ optional `intent`) and receive a DESCRIPTION index (`candidates[]`: summary / intent_clues / must_read_if / related) plus a READ-PATH index (`paths[]`: one on-disk knowledge file per surfaced candidate). It does NOT return bodies — Read a `paths[].path` to load the full entry on demand (cheap, and recoverable), instead of paying a permanent per-recall context tax for bodies you may not use. Pass `ids` to scope which read paths are surfaced when you already know which entries you want; `include_related:true` to also surface one-hop `related` neighbours' descriptions + read paths.",
       inputSchema: recallInputSchema,
       outputSchema: recallOutputSchema,
       annotations: recallAnnotations,
@@ -90,7 +90,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         response.warnings = appendPayloadWarning(
           response.warnings,
           guardResult,
-          "Pass an explicit `ids` array to scope fab_recall, or fall back to the two-step (fab_plan_context → fab_get_knowledge_sections) flow to fetch bodies on demand.",
+          "Pass an explicit `ids` array (or a narrower `intent`) to scope fab_recall's read-path index — recall returns descriptions + read paths, so Read a `paths[].path` to load any body on demand.",
         );
 
         payloadBytesOut = Buffer.byteLength(serialized, "utf8");

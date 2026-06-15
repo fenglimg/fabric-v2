@@ -383,17 +383,17 @@ export const knowledgeSectionsAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// MCP tool contract — fab_recall (v2.0.0-rc.37 NEW-3)
+// MCP tool contract — fab_recall (W1 / KT-DEC-0026: retrieval collapsed to ONE
+// lean tool)
 //
-// One-call shortcut over (fab_plan_context → fab_get_knowledge_sections). After
-// rc.37 Wave A1 removed server-side selectable filtering, the LLM-driven
-// id-picking step lost most of its value: every entry returned by plan-context
-// is `selectable=true`, so the AI's "selection" is almost always "pick all".
-// `fab_recall` collapses the two-step ceremony for that common case: pass
-// `paths` (+ optional `intent`), get back the full markdown bodies + plan
-// metadata in a single MCP round-trip. Internally still walks the same
-// planContext + getKnowledgeSections services so emitted ledger events,
-// selection token TTL, and auto-heal paths are identical.
+// `fab_recall(paths)` returns candidate DESCRIPTIONS + native READ PATHS only —
+// it no longer delivers bodies. The agent reads the body on demand from `paths[]`
+// (Read <store>/.../{type}/{id}--*.md), which the PostToolUse hook observes as
+// `knowledge_body_read` (KT-DEC-0030). Rationale (KT-GLD-0005 cost-asymmetry): an
+// eager body is a permanent per-recall context tax; a needed body is one cheap
+// native Read away. The two-step (fab_plan_context → fab_get_knowledge_sections)
+// MCP surface and the selection_token / body-tier packaging are retired
+// (clean-slate, KT-DEC-0002).
 // ---------------------------------------------------------------------------
 
 export const recallInputSchema = z.object({
@@ -445,24 +445,20 @@ export const recallInputSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      "Optional explicit stable_ids to fetch whole. When omitted, fab_recall auto-selects: a description for every surfaced candidate plus full bodies only for the highest-ranked few within the body-tier budget (rest are description-only, fetchable on demand). When provided, fetches exactly these bodies and bypasses the body-tier budget.",
+      "Optional explicit stable_ids to SCOPE the returned read paths. When omitted, `paths` carries one read path per surfaced candidate. The candidate DESCRIPTION index is always returned in full for discovery — `ids` only narrows which read paths are surfaced (e.g. when you already know which entries to Read). Stale ids are redirect-rewritten before matching.",
     ),
-  // v2.2 MC1-recall-pack (W2-T4): graph expansion.
+  // W1-3 / KT-DEC-0031: graph expansion (surface related read paths, no body).
   include_related: z
     .boolean()
     .optional()
     .describe(
-      "When true, also fetch the one-hop `related` graph neighbours (of the selected entries) that are present in the candidate set. Useful with a scoped `ids` to pull connected knowledge in one call.",
+      "When true, also surface the one-hop `related` graph neighbours (of the surfaced entries) that are present in the candidate set — their descriptions and read paths, NOT their bodies.",
     ),
 });
 
 export const recallOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
-  // Selection token surfaced for callers who want to continue the conversation
-  // with fab_get_knowledge_sections (e.g. fetch additional ids later) — every
-  // recall response is still token-backed internally.
-  selection_token: z.string(),
   // v2.0.0-rc.38 UX-1/UX-4: mirrors planContextOutputSchema fold ① — per-path
   // description_index collapsed into a single top-level `candidates`, and
   // `preflight_diagnostics` lifted out of the removed `shared` wrapper.
@@ -472,72 +468,40 @@ export const recallOutputSchema = z.object({
       requirement_profile: _requirementProfileSchema,
     }),
   ),
+  // W1 (KT-DEC-0026): the discovery index — every surfaced candidate's
+  // DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
   candidates: z.array(_descriptionIndexItemSchema),
-  // v2.2 W1-REVIEW codex MED-5: fab_recall spreads `...planResult`, so it carries
-  // the truncation signal too. Declare it here or zod strips it on output
-  // validation — the RECOMMENDED one-step entry would silently lose the "more
-  // candidates exist" signal that plan_context surfaces.
-  omitted_candidate_count: z.number().int().nonnegative().optional(),
-  preflight_diagnostics: z.array(_preflightDiagnosticSchema),
-  // Same shape as knowledgeSectionsOutputSchema.rules — full body keyed by stable_id.
-  rules: z.array(
+  // W1 (KT-DEC-0026): the read-path index — one entry per surfaced candidate
+  // (scoped by `ids` when provided), in ranked order. `path` is the on-disk
+  // knowledge file the agent Reads to load the body on demand; `store` is the
+  // originating store alias (omitted for unqualified entries).
+  paths: z.array(
     z.object({
       stable_id: z.string(),
       path: z.string(),
-      body: z.string(),
-      // grill-report C-005 (body-tier): set when this body was sliced to keep the
-      // response under the hard payload ceiling (a single oversized head entry);
-      // the full body is fetchable via fab_get_knowledge_sections. Omitted in the
-      // common case. Additive — declare it or zod strips it on output validation.
-      truncated: z.boolean().optional(),
-      // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测 / D7 物理 store
-      // 边界对 AI 可见): per-rule store provenance so the caller can trace which
-      // store each recalled entry came from. cross-store-recall already prefixes
-      // store entries `<alias>:<stable_id>`; this surfaces that as a structured
-      // field (`{ alias }`) instead of forcing the caller to parse the id. Omitted
-      // for unqualified/back-compat entries (no alias prefix). Additive — declare it or zod
-      // strips it on output validation.
       store: z.object({ alias: z.string() }).optional(),
     }),
   ),
-  selected_stable_ids: z.array(z.string()),
-  diagnostics: z.array(
-    z.object({
-      code: z.enum(["missing_knowledge_metadata", "unresolved_selected_id"]),
-      severity: z.literal("warn"),
-      stable_id: z.string(),
-      message: z.string(),
-    }),
-  ),
+  // Number of lower-ranked candidates dropped by the retrieval budget. Present
+  // (and > 0) ONLY when truncation fired — keeps the steady-state wire shape
+  // unchanged while signalling "more exist; narrow your intent".
+  omitted_candidate_count: z.number().int().nonnegative().optional(),
+  preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   warnings: z.array(structuredWarningSchema).optional(),
   auto_healed: z.boolean().optional(),
   previous_revision_hash: z.string().optional(),
-  // v2.0.0-rc.37 NEW-24: parallel to planContextOutputSchema.redirects — see
-  // that field for semantics. fab_recall transparently rewrites any old ids
-  // passed via `ids` before fetching bodies; the surfaced map still exposes
-  // the substitution to callers that want to refresh their cached state.
+  // v2.0.0-rc.37 NEW-24: parallel to planContextOutputSchema.redirects — stale
+  // (pre layer-flip) ids in `ids` are redirect-rewritten before matching; the
+  // surfaced map exposes the substitution so callers refresh cached state.
   redirects: z.record(z.string()).optional(),
-  // v2.2 MC1-recall-pack (W2-T4): packaging increments — a standing behavioral
-  // directive (cite-before-edit), dynamic next-step hints, and a truncation
-  // summary, so the one-call recall is self-describing.
+  // lifecycle-refactor W3-T2 (§7 图谱消费): related-expansion provenance map
+  // (appended id → surfaced source id). Present only when include_related
+  // appended an in-corpus neighbour. Omitted on the steady-state path.
+  related_appended: z.record(z.string()).optional(),
+  // v2.2 MC1-recall-pack: standing behavioral directive (cite-before-edit) +
+  // dynamic discovery hints, so the one-call recall is self-describing.
   directive: z.string(),
   next_steps: z.array(z.string()).optional(),
-  truncation: z
-    .object({
-      omitted_candidate_count: z.number().int().nonnegative(),
-      returned_candidate_count: z.number().int().nonnegative(),
-    })
-    .optional(),
-  // grill-report C-003/C-009 (body-tier): discovery/application split summary.
-  // `bodies_returned` = rules[] count; `description_only` = surfaced candidates
-  // whose body was held back by the body-tier budget (fetch on demand via
-  // fab_get_knowledge_sections). Omitted when every candidate shipped its body.
-  body_tier: z
-    .object({
-      bodies_returned: z.number().int().nonnegative(),
-      description_only: z.number().int().nonnegative(),
-    })
-    .optional(),
 });
 
 export const recallAnnotations = {
