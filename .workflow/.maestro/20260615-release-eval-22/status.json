@@ -109,6 +109,7 @@
       "name": "G-SAFETY",
       "dimension": 6,
       "hard": true,
+      "target": "隐私/预算绿 + 对抗性 KB 投毒/注入红队 + loop 失控压测 + path 越权全堵",
       "actual": "GREEN(全堵): scripts/red-team-safety.mjs 主动攻真产品 guard, 18 攻击/5 类全容器(exit0)。① KB投毒-凭证 5/5: scanForSecrets BLOCK aws/openai/github/private-key/credential-assignment, redactSecrets 不回显原值。② path越权 8/8: storeAliasSchema+storeMountNameSchema 全 REJECT ../、绝对路径、多段、换行、超长、./.. 。③ budget失控 3/3: over-hard(113KB)→ enforcePayloadLimit THROW MCP_PAYLOAD_TOO_LARGE(fail-closed), warn-band 出 mcp_payload_warn, 小负载 clean 无误报。④ 注入容器 1/1: recall+inject 代码路径零 eval/new Function/exec-of-body → KB body 是惰性 data 永不执行。⑤ PII 1/1: redactPii 抹 email。loop失控结构三重界: cross-store-recall top_k 候选上限 + trimToPayloadBudget 截最不相关尾 + enforcePayloadLimit hard-stop。隐私(werewolf zero /Users/ 不变量)+ 预算 guard 由 G-MACHINE 测套覆盖。",
       "verifier_cmd": "node scripts/red-team-safety.mjs (18攻击/5类, 任一 guard fail-open=exit1)",
       "verified_at": "2026-06-15T17:20:00Z"
