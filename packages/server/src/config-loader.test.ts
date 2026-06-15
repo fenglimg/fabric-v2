@@ -176,10 +176,11 @@ describe("config-loader — readEmbedConfig (C2 / W2-T7)", () => {
   });
 });
 
-// v2.2 W3-T5 (F-MATURITY-ENDORSED): readOrphanDemoteThresholdDays bridges the
-// canonical maturity vocabulary (proven/verified, KT-DEC-0005) and the legacy
-// stable/endorsed config keys, returning the doctor's internal ladder keys.
-describe("config-loader — readOrphanDemoteThresholdDays (W3-T5)", () => {
+// v2.2 Goal B (G-VOCAB / ADJ-2): readOrphanDemoteThresholdDays reads the
+// canonical maturity config keys (proven/verified/draft, KT-DEC-0005) and
+// returns them under matching canonical ladder keys — the legacy
+// stable/endorsed remap is retired.
+describe("config-loader — readOrphanDemoteThresholdDays (G-VOCAB)", () => {
   let tempDir: string;
   beforeEach(() => {
     tempDir = join(process.cwd(), ".tmp-config-loader-orphan", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -196,13 +197,13 @@ describe("config-loader — readOrphanDemoteThresholdDays (W3-T5)", () => {
     expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({});
   });
 
-  it("honors the CANONICAL keys (proven/verified) → internal stable/endorsed ladder", () => {
+  it("honors the CANONICAL keys (proven/verified/draft) under matching ladder keys", () => {
     writeConfig({
       orphan_demote_proven_days: 120,
       orphan_demote_verified_days: 45,
       orphan_demote_draft_days: 7,
     });
-    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ stable: 120, endorsed: 45, draft: 7 });
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ proven: 120, verified: 45, draft: 7 });
   });
 
   it("drops out-of-range / non-integer values without nuking the rest", () => {
@@ -211,6 +212,6 @@ describe("config-loader — readOrphanDemoteThresholdDays (W3-T5)", () => {
       orphan_demote_verified_days: 30,
       orphan_demote_draft_days: 4000, // above max → dropped
     });
-    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ endorsed: 30 });
+    expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ verified: 30 });
   });
 });

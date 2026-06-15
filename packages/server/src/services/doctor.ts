@@ -259,7 +259,7 @@ export type DoctorApplyLintMutation = {
   // (pre-mutation). For index_drift: synthetic path string
   // `agents.meta.json#counters.<layer>.<type>`.
   path: string;
-  // Detail of the mutation (e.g. "stable -> endorsed", ".fabric/.archive/...",
+  // Detail of the mutation (e.g. "proven -> verified", ".fabric/.archive/...",
   // "5 -> 8"). Free-form prose for human consumption.
   detail: string;
   // True when the mutation succeeded; false when the per-finding repair
@@ -425,7 +425,12 @@ type PreexistingRootFilesInspection = {
   detected: string[];
 };
 
-export type LintMaturity = "stable" | "endorsed" | "draft";
+// v2.2 Goal B (G-VOCAB / ADJ-2): the doctor's internal maturity ladder now
+// speaks the CANONICAL schema vocabulary (draft/verified/proven, KT-DEC-0024)
+// directly — the legacy stable/endorsed names are retired. orphan_demote walks
+// proven → verified → draft; config-loader reads the same canonical config keys
+// with no remap.
+export type LintMaturity = "proven" | "verified" | "draft";
 
 // rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
 // Reports when the workspace's canonical knowledge node count is strictly
@@ -1108,8 +1113,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 
 // rc.4 TASK-003: lint mutation entry point. Behavior summary:
 //   * `lint:orphan_demote` (warning kind code=knowledge_orphan_demote_required):
-//     rewrite frontmatter `maturity:` one tier down (stable -> endorsed,
-//     endorsed -> draft) via atomicWriteText; emit knowledge_demoted event.
+//     rewrite frontmatter `maturity:` one tier down (proven -> verified,
+//     verified -> draft) via atomicWriteText; emit knowledge_demoted event.
 //   * `lint:stale_archive` (code=knowledge_stale_archive_required):
 //     rename file to .fabric/.archive/<type>/<filename>; emit knowledge_archived
 //     event. Per task design the archive subtree is a tombstone (not git-tracked
