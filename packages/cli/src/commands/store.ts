@@ -302,6 +302,16 @@ const backfillScopeCommand = defineCommand({
     for (const c of report.changes) {
       console.log(`  ${c.id ?? "(no id)"}  [${c.changed.join(", ")}]`);
     }
+    // Guardrail (no behavior change): backfill defaults every team-layer entry to
+    // `semantic_scope: team` — an over-broad default. Project-specific entries
+    // (incl. components reused across gameplay WITHIN one app — that is NOT
+    // cross-project) must be demoted. See fabric-archive/ref/phase-3-7-semantic-scope.md.
+    const scopeAssigned = report.changes.filter((c) => c.changed.includes("semantic_scope")).length;
+    if (scopeAssigned > 0) {
+      console.error(
+        `${dryRun ? "[dry-run] " : ""}note: ${scopeAssigned} entr${scopeAssigned === 1 ? "y" : "ies"} defaulted to semantic_scope: team. Demote project-specific ones with \`fabric store re-scope <store> --to project:<id> --id <id>\`.`,
+      );
+    }
   },
 });
 
