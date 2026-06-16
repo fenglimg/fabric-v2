@@ -117,23 +117,27 @@ function readSnapshotKnowledgeStats(projectRoot, now) {
   }
   try {
     const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
-    const stats = snapshot && snapshot.knowledge_stats;
-    if (!stats || typeof stats !== "object") {
+    // LIVE recount off the snapshot's resolved store dirs. The cached
+    // knowledge_stats projection is frozen at snapshot-write time, so once the
+    // pending queue is reviewed (or store content syncs out-of-band) it goes
+    // stale — that is the phantom review-backlog this hook used to report
+    // (KT-PIT-0017). The authoritative count is the live *.md walk under the
+    // resolved store dirs.
+    const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
+    if (!live || typeof live !== "object") {
       return empty;
     }
     const pendingCount =
-      Number.isFinite(stats.pending_count) && stats.pending_count > 0
-        ? Math.floor(stats.pending_count)
-        : 0;
+      Number.isFinite(live.pendingCount) && live.pendingCount > 0 ? Math.floor(live.pendingCount) : 0;
     const canonicalCount =
-      Number.isFinite(stats.canonical_count) && stats.canonical_count > 0
-        ? Math.floor(stats.canonical_count)
+      Number.isFinite(live.canonicalCount) && live.canonicalCount > 0
+        ? Math.floor(live.canonicalCount)
         : 0;
     const oldestPendingAgeMs =
       pendingCount > 0 &&
-      Number.isFinite(stats.oldest_pending_mtime_ms) &&
-      stats.oldest_pending_mtime_ms > 0
-        ? Math.max(0, nowMs - stats.oldest_pending_mtime_ms)
+      Number.isFinite(live.oldestPendingMtimeMs) &&
+      live.oldestPendingMtimeMs > 0
+        ? Math.max(0, nowMs - live.oldestPendingMtimeMs)
         : null;
     return { pendingCount, oldestPendingAgeMs, canonicalCount };
   } catch {

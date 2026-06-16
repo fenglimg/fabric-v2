@@ -17,6 +17,9 @@ const lib = require(
   readBindingsSnapshot: (bindingId: string, globalRoot?: string) => unknown;
   formatStoreLabels: (snapshot: unknown) => string;
   bindingsSnapshotPath: (bindingId: string, globalRoot?: string) => string;
+  liveKnowledgeStats: (
+    snapshot: unknown,
+  ) => { pendingCount: number; canonicalCount: number; oldestPendingMtimeMs: number | null } | null;
 };
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
@@ -85,5 +88,69 @@ describe("bindings-snapshot-reader.cjs (hook reads CLI snapshot, not .fabric)", 
   it("empty label string when snapshot is null/shapeless (silent degrade)", () => {
     expect(lib.formatStoreLabels(null)).toBe("");
     expect(lib.formatStoreLabels({})).toBe("");
+  });
+});
+
+// Seed a store ROOT dir with `canonical` canonical *.md files (spread across the
+// 5 type dirs) and `pending` pending *.md files; return the store root path.
+function seedStoreDir(globalRoot: string, name: string, canonical: number, pending: number): string {
+  const root = join(globalRoot, "stores", name);
+  const types = ["decisions", "pitfalls", "guidelines", "models", "processes"];
+  for (let i = 0; i < canonical; i++) {
+    const typeDir = join(root, "knowledge", types[i % types.length]);
+    mkdirSync(typeDir, { recursive: true });
+    writeFileSync(join(typeDir, `K-${i}.md`), "# node\n", "utf8");
+  }
+  const pendingDir = join(root, "knowledge", "pending", "decisions");
+  if (pending > 0) mkdirSync(pendingDir, { recursive: true });
+  for (let i = 0; i < pending; i++) {
+    writeFileSync(join(pendingDir, `p-${i}.md`), "# pending\n", "utf8");
+  }
+  return root;
+}
+
+describe("liveKnowledgeStats (recount live, never trust the stale cached projection)", () => {
+  it("recounts live off knowledge_store_dirs, ignoring the stale cached counts (KT-PIT-0017 root cure)", () => {
+    // The defect scenario: store grew 1 → 57 nodes out-of-band; the cached
+    // knowledge_stats is frozen at the install-time count of 1, which mis-fires
+    // the underseed "knowledge sparse" nudge. Live walk must return the truth.
+    const globalRoot = tmpGlobalRoot();
+    const storeRoot = seedStoreDir(globalRoot, "team-kb", 57, 0);
+    const live = lib.liveKnowledgeStats({
+      knowledge_stats: { pending_count: 19, canonical_count: 1, oldest_pending_mtime_ms: 123 },
+      knowledge_store_dirs: [storeRoot],
+    });
+    expect(live?.canonicalCount).toBe(57);
+    // pending审完 → no pending files on disk → live pending is 0, NOT the cached 19.
+    expect(live?.pendingCount).toBe(0);
+    expect(live?.oldestPendingMtimeMs).toBeNull();
+  });
+
+  it("sums canonical + pending across multiple store dirs", () => {
+    const globalRoot = tmpGlobalRoot();
+    const a = seedStoreDir(globalRoot, "store-a", 4, 2);
+    const b = seedStoreDir(globalRoot, "store-b", 3, 1);
+    const live = lib.liveKnowledgeStats({ knowledge_store_dirs: [a, b] });
+    expect(live?.canonicalCount).toBe(7);
+    expect(live?.pendingCount).toBe(3);
+    expect(typeof live?.oldestPendingMtimeMs).toBe("number");
+  });
+
+  it("falls back to cached knowledge_stats when knowledge_store_dirs is absent (old snapshot)", () => {
+    const live = lib.liveKnowledgeStats({
+      knowledge_stats: { pending_count: 5, canonical_count: 12, oldest_pending_mtime_ms: 999 },
+    });
+    expect(live).toEqual({ pendingCount: 5, canonicalCount: 12, oldestPendingMtimeMs: 999 });
+  });
+
+  it("returns zero counts when dirs are present but empty (missing dirs degrade silently)", () => {
+    const globalRoot = tmpGlobalRoot();
+    const live = lib.liveKnowledgeStats({ knowledge_store_dirs: [join(globalRoot, "stores", "nope")] });
+    expect(live).toEqual({ pendingCount: 0, canonicalCount: 0, oldestPendingMtimeMs: null });
+  });
+
+  it("returns null when neither dirs nor cached stats are available", () => {
+    expect(lib.liveKnowledgeStats({})).toBeNull();
+    expect(lib.liveKnowledgeStats(null)).toBeNull();
   });
 });

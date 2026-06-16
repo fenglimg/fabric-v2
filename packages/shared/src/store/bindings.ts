@@ -125,12 +125,17 @@ function collectKnowledgeStats(globalRoot: string, resolveInput: StoreResolveInp
   let pendingCount = 0;
   let oldestPendingMtimeMs: number | null = null;
   let canonicalCount = 0;
+  // Resolved store ROOT dirs the counts came from — persisted alongside the
+  // counts so hooks can recount LIVE (the counts themselves go stale, the dirs
+  // do not). One entry per read-set store, in read-set order.
+  const storeDirs: string[] = [];
 
   for (const store of readSet.stores) {
     const mounted = resolveInput.mountedStores.find((entry) => entry.store_uuid === store.store_uuid) ?? {
       store_uuid: store.store_uuid,
     };
     const storeDir = join(globalRoot, storeRelativePathForMount(mounted));
+    storeDirs.push(storeDir);
     for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
       const canonical = countMarkdownFiles(join(storeDir, STORE_LAYOUT.knowledgeDir, type));
       canonicalCount += canonical.count;
@@ -146,9 +151,12 @@ function collectKnowledgeStats(globalRoot: string, resolveInput: StoreResolveInp
   }
 
   return {
-    pending_count: pendingCount,
-    canonical_count: canonicalCount,
-    oldest_pending_mtime_ms: oldestPendingMtimeMs,
+    stats: {
+      pending_count: pendingCount,
+      canonical_count: canonicalCount,
+      oldest_pending_mtime_ms: oldestPendingMtimeMs,
+    },
+    storeDirs,
   };
 }
 
@@ -175,6 +183,8 @@ export function writeBindingsSnapshot(
   const read_set = resolver.resolveReadSet(options.resolveInput);
   const { target } = resolver.resolveWriteTarget(options.resolveInput, options.writeScope);
 
+  const { stats, storeDirs } = collectKnowledgeStats(options.globalRoot, options.resolveInput, read_set);
+
   const snapshot: ResolvedBindingsSnapshot = resolvedBindingsSnapshotSchema.parse({
     version: 1,
     project_id: options.projectId,
@@ -182,7 +192,8 @@ export function writeBindingsSnapshot(
     generated_at: options.now,
     read_set,
     write_target: target,
-    knowledge_stats: collectKnowledgeStats(options.globalRoot, options.resolveInput, read_set),
+    knowledge_stats: stats,
+    knowledge_store_dirs: storeDirs,
   });
 
   const path = bindingsSnapshotPath(options.globalRoot, snapshot.workspace_binding_id);

@@ -121,14 +121,15 @@ function readSnapshotCanonicalCount(projectRoot) {
   }
   try {
     const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
-    const stats = snapshot && snapshot.knowledge_stats;
-    if (
-      stats &&
-      typeof stats === "object" &&
-      Number.isFinite(stats.canonical_count) &&
-      stats.canonical_count > 0
-    ) {
-      return Math.floor(stats.canonical_count);
+    // LIVE recount off the snapshot's resolved store dirs. The cached
+    // knowledge_stats.canonical_count is frozen at snapshot-write time and goes
+    // stale when store content syncs in out-of-band (e.g. the store grew from 1
+    // → 57 nodes via a `git pull`/cross-workspace sync that never regenerated
+    // THIS workspace's snapshot), which mis-fired the "knowledge sparse"
+    // underseed nudge (KT-PIT-0017, same stale-projection root cause).
+    const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
+    if (live && Number.isFinite(live.canonicalCount) && live.canonicalCount > 0) {
+      return Math.floor(live.canonicalCount);
     }
   } catch {
     // best-effort hint stats only

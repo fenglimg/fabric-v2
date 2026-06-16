@@ -52,6 +52,29 @@ describe("P3 bindings snapshot", () => {
     expect(snapshot.workspace_binding_id).toBe(PROJECT);
   });
 
+  it("persists one resolved store ROOT dir per read-set store (hook live-recount source)", () => {
+    const home = createIsolatedHome();
+    const snapshot = writeBindingsSnapshot({
+      globalRoot: home.globalRoot,
+      projectId: PROJECT,
+      resolveInput,
+      writeScope: "team",
+      now: "2026-05-30T00:00:00.000Z",
+    });
+
+    // One dir per read-set store; each is an absolute path under the global
+    // stores root that the hook will walk live (stable across content sync).
+    expect(snapshot.knowledge_store_dirs).toHaveLength(snapshot.read_set.stores.length);
+    for (const dir of snapshot.knowledge_store_dirs ?? []) {
+      expect(dir.startsWith(home.globalRoot)).toBe(true);
+      expect(dir).toContain("stores");
+    }
+    // Survives the disk round-trip (schema accepts the new field).
+    expect(readBindingsSnapshot(home.globalRoot, PROJECT)?.knowledge_store_dirs).toEqual(
+      snapshot.knowledge_store_dirs,
+    );
+  });
+
   it("round-trips through disk and is readable by hooks", () => {
     const home = createIsolatedHome();
     writeBindingsSnapshot({
