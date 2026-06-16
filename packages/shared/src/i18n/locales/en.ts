@@ -554,6 +554,15 @@ export const enMessages: Messages = {
     "Run `fabric doctor --fix` to floor each store's counters.json at the highest stable_id observed on disk (the floor never lowers — KT-DEC-0004 monotonic invariant).",
   "doctor.check.store_counter_drift.ok":
     "Every read-set store's counters.json is floored at its on-disk max stable_id.",
+  "doctor.check.store_orphan.name": "Store orphan",
+  "doctor.check.store_orphan.message.singular":
+    "{count} store exists on disk but is not registered in the global registry ({detail}); recall / bind cannot see it. Run `fabric doctor --fix` to adopt it (re-register — never deletes the on-disk tree).",
+  "doctor.check.store_orphan.message.plural":
+    "{count} stores exist on disk but are not registered in the global registry (first: {detail}); recall / bind cannot see them. Run `fabric doctor --fix` to adopt them (re-register — never deletes the on-disk tree).",
+  "doctor.check.store_orphan.remediation":
+    "Run `fabric doctor --fix` to adopt the orphan store(s) into the registry (re-register by store_uuid, alias auto-disambiguated on clash; rescue-before-delete — registers, never deletes on disk).",
+  "doctor.check.store_orphan.ok":
+    "No unregistered orphan stores under ~/.fabric/stores.",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "No CLAUDE.md or AGENTS.md detected at project root.",
   "doctor.check.preexisting_root_files.message":
@@ -941,6 +950,9 @@ export const enMessages: Messages = {
   // C5: store onboarding interactive copy routed through t().
   "cli.install.store.local-store": "local store",
   "cli.install.store.bind-mounted.prompt": "Bind an already-mounted knowledge store to this project?",
+  "cli.install.store.setup.prompt": "Set up a knowledge store for this project?",
+  "cli.install.store.setup.bind-label": "bind mounted: {alias}",
+  "cli.install.store.setup.already-bound": "already bound to this project: {aliases} ✓",
   "cli.install.store.skip-label": "skip",
   "cli.install.store.bind-mounted.skip-hint": "leave mounted stores unbound for now",
   "cli.install.store.project-coordinate": "Project coordinate in store '{store}':",

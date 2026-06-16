@@ -176,7 +176,8 @@ describe("install-v2 pipeline UX", () => {
     // ambiguity guard takes the SILENT path — no project prompt; the id is
     // derived from the repo (git name → temp-dir basename here).
     const expectedProject = suggestStoreProjectId(target);
-    vi.mocked(select).mockResolvedValueOnce("team");
+    // Merged store-setup prompt: the mounted store is option `bind:<alias>`.
+    vi.mocked(select).mockResolvedValueOnce("bind:team");
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const stage = new StoreStage();
@@ -190,7 +191,7 @@ describe("install-v2 pipeline UX", () => {
     // C5: prompts route through t() now — assert via the same translator the
     // StoreStage uses, so the check is locale-agnostic.
     expect(select).toHaveBeenCalledWith(expect.objectContaining({
-      message: t("cli.install.store.bind-mounted.prompt"),
+      message: t("cli.install.store.setup.prompt"),
     }));
     // grill-6fixes (D6): silent path — no project text prompt was shown.
     expect(text).not.toHaveBeenCalled();
@@ -265,7 +266,8 @@ describe("install-v2 pipeline UX", () => {
     saveProjectConfig({}, target);
     // grill-6fixes (D6): empty store → silent project resolution (git-derived).
     const expectedProject = suggestStoreProjectId(target);
-    vi.mocked(select).mockResolvedValueOnce("team");
+    // Merged store-setup prompt: the mounted store is option `bind:<alias>`.
+    vi.mocked(select).mockResolvedValueOnce("bind:team");
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const stage = new StoreStage();
@@ -305,8 +307,9 @@ describe("install-v2 pipeline UX", () => {
 
     const target = await tempProject();
     saveProjectConfig({}, target);
-    // First select = store choice; second select = project pick (join existing).
-    vi.mocked(select).mockResolvedValueOnce("team").mockResolvedValueOnce("existing-app");
+    // First select = merged store-setup (bind the mounted store); second select
+    // = project pick (join the existing non-matching project).
+    vi.mocked(select).mockResolvedValueOnce("bind:team").mockResolvedValueOnce("existing-app");
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await new StoreStage().execute(baseContext(target, {

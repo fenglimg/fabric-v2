@@ -178,6 +178,8 @@ describe("runDoctorReport", () => {
       // v2.2 W5 R4: co-location "Knowledge counter desync" replaced by the
       // store-aware "Store counter drift" (per-store committed counters.json).
       "Store counter drift",
+      // store-onboarding grill (Q5): on-disk store invisible to the registry.
+      "Store orphan",
       "Knowledge underseeded",
       "Knowledge session-hints stale",
       "Hook cache writable",
@@ -253,7 +255,9 @@ describe("runDoctorReport", () => {
     // v2.2 Goal B (G-RELEVANCE): rebuilt relevance_paths dangling + drift → 35.
     // v2.2 Goal B (G-AGE): rebuilt orphan_demote + stale_archive → 37.
     // W4-3 narrow_no_paths (KT-MOD-0001) + W4-2 broad-index-drift (KT-DEC-0028) → 39.
-    expect(report.checks).toHaveLength(39);
+    // store-onboarding grill (Q5): +1 store_orphan (on-disk store invisible to
+    // the registry) → 40.
+    expect(report.checks).toHaveLength(40);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

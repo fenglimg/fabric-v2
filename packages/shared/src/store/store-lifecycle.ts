@@ -56,6 +56,25 @@ export function addMountedStore(config: GlobalConfig, store: MountedStore): Glob
   return { ...config, stores };
 }
 
+// When mounting a store whose desired alias is already taken by a DIFFERENT
+// store, derive a unique alias by appending a numeric suffix (`team` → `team-2`,
+// `team-3`, …). Identity is the intrinsic store_uuid (S55), so the alias is just
+// a human label — a silent, deterministic disambiguation is safe, and the user
+// can rename later via `fabric store`. Returns `desired` unchanged when it is
+// free. Pure: the caller passes the currently-taken aliases.
+export function disambiguateAlias(existingAliases: Iterable<string>, desired: string): string {
+  const taken = new Set(existingAliases);
+  if (!taken.has(desired)) {
+    return desired;
+  }
+  for (let n = 2; ; n += 1) {
+    const candidate = `${desired}-${n}`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+  }
+}
+
 // Detach a store from the registry (E4: NOT a delete — on-disk tree untouched).
 // Returns the new config plus the detached entry (null when alias not mounted).
 export function detachMountedStore(

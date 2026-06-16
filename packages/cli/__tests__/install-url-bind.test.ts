@@ -7,7 +7,8 @@ import { initStore } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { bindCreatedStoreToProject, bindRemoteStoreToProject } from "../src/commands/install.js";
-import { loadGlobalConfig } from "../src/store/global-config-io.js";
+import { mountStoreFromRemote } from "../src/install/run-global-install.js";
+import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { runGlobalInstall } from "../src/install/run-global-install.js";
 import { scopeExplain } from "../src/store/scope-explain.js";
@@ -97,6 +98,66 @@ describe("install --url (bindRemoteStoreToProject)", () => {
     expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
     // bind dedupes by id → still a single required store.
     expect(loadProjectConfig(projectRoot)?.required_stores).toHaveLength(1);
+  });
+});
+
+// store-onboarding grill (Q3) — mountStoreFromRemote robustness. Identity is the
+// intrinsic store_uuid (S55): a target directory already on disk is reconciled
+// by uuid, never clobbered (the old ENOTEMPTY-on-rename bug).
+describe("mountStoreFromRemote robustness (store-onboarding grill)", () => {
+  const OTHER = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+  it("adopts an on-disk store missing from the registry instead of crashing on rename", async () => {
+    const { globalRoot } = setupGlobalAndProject();
+    await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
+    const remote = await makeFakeStoreRemote(TEAM);
+    mountStoreFromRemote(remote, globalRoot);
+    expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
+
+    // Simulate the orphan residue: drop the team store from the registry but
+    // leave its on-disk tree (exactly what a failed rename used to leave behind).
+    const cfg = loadGlobalConfig(globalRoot)!;
+    saveGlobalConfig(
+      { ...cfg, stores: cfg.stores.filter((s) => s.store_uuid !== TEAM) },
+      globalRoot,
+    );
+    expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(1);
+
+    // Re-mounting the same remote must ADOPT the on-disk tree (same uuid), not
+    // ENOTEMPTY on renameSync into the occupied directory.
+    const res = mountStoreFromRemote(remote, globalRoot);
+    expect(res.store_uuid).toBe(TEAM);
+    expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
+    expect(loadGlobalConfig(globalRoot)?.stores.some((s) => s.store_uuid === TEAM)).toBe(true);
+  });
+
+  it("reuses the existing mount when the same remote is re-cloned (uuid dedupe)", async () => {
+    const { globalRoot } = setupGlobalAndProject();
+    await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
+    const remote = await makeFakeStoreRemote(TEAM);
+
+    const first = mountStoreFromRemote(remote, globalRoot);
+    const second = mountStoreFromRemote(remote, globalRoot);
+    expect(second.store_uuid).toBe(first.store_uuid);
+    expect(second.alias).toBe(first.alias);
+    expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2); // personal + team, no duplicate
+  });
+
+  it("refuses to overwrite a DIFFERENT store occupying the target directory", async () => {
+    const { globalRoot } = setupGlobalAndProject();
+    await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
+    // Two remotes whose repo basename ("store") derives the SAME mount_name, so
+    // both resolve to the same finalDir — but they carry different store uuids.
+    const remoteA = await makeFakeStoreRemote(TEAM);
+    mountStoreFromRemote(remoteA, globalRoot);
+    // Orphan A's registry entry, leaving A's tree at team/<mount_name>.
+    const cfg = loadGlobalConfig(globalRoot)!;
+    saveGlobalConfig(
+      { ...cfg, stores: cfg.stores.filter((s) => s.store_uuid !== TEAM) },
+      globalRoot,
+    );
+    const remoteB = await makeFakeStoreRemote(OTHER);
+    expect(() => mountStoreFromRemote(remoteB, globalRoot)).toThrow(/different store already occupies/u);
   });
 });
 
