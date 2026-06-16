@@ -22,6 +22,7 @@ import {
 } from "@fenglimg/fabric-server";
 
 import { backfillUnboundProject } from "../install/backfill-unbound-project.js";
+import { migrateRootConfig } from "../install/migrate-root-config.js";
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
@@ -511,6 +512,7 @@ export const doctorCommand = defineCommand({
     let fixKnowledgeReport: DoctorFixKnowledgeReport | null = null;
     let fixReport: Awaited<ReturnType<typeof runDoctorFix>> | null = null;
     let unboundProjectFix: Awaited<ReturnType<typeof backfillUnboundProject>> = null;
+    let rootConfigMigration: ReturnType<typeof migrateRootConfig> | null = null;
     let report: DoctorReport;
 
     if (fixKnowledge) {
@@ -565,6 +567,10 @@ export const doctorCommand = defineCommand({
       if (args["dry-run"] === true) {
         report = await runDoctorReport(resolution.target);
       } else {
+        // A1 (KT-DEC-0003): consolidate any legacy project-root fabric.config.json
+        // into .fabric/fabric-config.json FIRST so downstream fixes read the single
+        // source of truth. Idempotent: a no-op when no legacy root file exists.
+        rootConfigMigration = migrateRootConfig(resolution.target);
         // Backfill the project-scope binding (unbound_project) FIRST so the
         // report below reflects the post-backfill state — the server fix cannot
         // reach the CLI-only install primitive that mints project_id /
@@ -589,6 +595,7 @@ export const doctorCommand = defineCommand({
             ...(fixKnowledgeReport ?? fixReport ?? report),
             store_diagnostics: storeDiagnostics,
             ...(unboundProjectFix === null ? {} : { unbound_project_fix: unboundProjectFix }),
+            ...(rootConfigMigration?.migrated === true ? { root_config_migration: rootConfigMigration } : {}),
           },
           null,
           2,
@@ -609,6 +616,15 @@ export const doctorCommand = defineCommand({
               alias: unboundProjectFix.alias,
               project: unboundProjectFix.active_project,
             }),
+          );
+        }
+        if (rootConfigMigration?.migrated === true) {
+          writeStdout(
+            `config: migrated legacy root fabric.config.json → .fabric/fabric-config.json${
+              rootConfigMigration.mergedKeys.length > 0
+                ? ` (merged: ${rootConfigMigration.mergedKeys.join(", ")})`
+                : ""
+            }`,
           );
         }
       } else if ((fix || fixKnowledge) && args["dry-run"] === true) {

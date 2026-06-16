@@ -791,8 +791,8 @@ describe("planContext top_k truncation (W1-T3)", () => {
     const projectRoot = await createTeamProject();
     if (topK !== undefined) {
       await writeFile(
-        join(projectRoot, "fabric.config.json"),
-        `${JSON.stringify({ plan_context_top_k: topK }, null, 2)}\n`,
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: topK }, null, 2)}\n`,
       );
     }
     const topics: Array<[string, string]> = [
@@ -941,7 +941,10 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
       const projectRoot = await seedTwoOpaqueEntries();
       // embed_weight defaults to 30 (≤49 cap). BM25 is 0 for both candidates
       // (no shared token), so any positive vector weight is the deciding signal.
-      await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true })}\n`);
+      await writeFile(
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], embed_enabled: true }, null, 2)}\n`,
+      );
 
       // Query is 'a'-heavy and shares no lexical token with either summary, so
       // BM25 is 0 for both — the vector supplement is the deciding signal.
@@ -1077,8 +1080,8 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     const projectRoot = await createTeamProject();
     if (opts.topK !== undefined) {
       await writeFile(
-        join(projectRoot, "fabric.config.json"),
-        `${JSON.stringify({ plan_context_top_k: opts.topK }, null, 2)}\n`,
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: opts.topK }, null, 2)}\n`,
       );
     }
     // KT-DEC-9201: strongly matches the intent (ranks top). KT-DEC-9202: the

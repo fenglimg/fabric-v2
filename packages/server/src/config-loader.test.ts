@@ -28,7 +28,9 @@ describe("config-loader — readSelectionTokenTtlMs (rc.29 REVIEW HIGH-3)", () =
   });
 
   function writeConfig(content: string): void {
-    writeFileSync(join(tempDir, "fabric.config.json"), content);
+    const dir = join(tempDir, ".fabric");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "fabric-config.json"), content);
   }
 
   it("returns undefined when fabric.config.json is absent (fall back to default)", () => {
@@ -83,7 +85,9 @@ describe("config-loader — retrieval budget profile binding (C5 / W2-T3)", () =
     rmSync(tempDir, { recursive: true, force: true });
   });
   function writeConfig(obj: unknown): void {
-    writeFileSync(join(tempDir, "fabric.config.json"), JSON.stringify(obj));
+    const dir = join(tempDir, ".fabric");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(obj));
   }
 
   it("no config → top_k 24 (balanced default) and payload limits undefined (guard defaults)", () => {
@@ -132,7 +136,9 @@ describe("config-loader — readEmbedConfig (C2 / W2-T7)", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
   function writeConfig(obj: unknown): void {
-    writeFileSync(join(tempDir, "fabric.config.json"), JSON.stringify(obj));
+    const dir = join(tempDir, ".fabric");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(obj));
   }
 
   it("defaults to disabled + weight 30 + Chinese model with no config", () => {
@@ -190,7 +196,9 @@ describe("config-loader — readOrphanDemoteThresholdDays (G-VOCAB)", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
   function writeConfig(obj: unknown): void {
-    writeFileSync(join(tempDir, "fabric.config.json"), JSON.stringify(obj));
+    const dir = join(tempDir, ".fabric");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(obj));
   }
 
   it("returns empty when no config is present (defaults apply downstream)", () => {

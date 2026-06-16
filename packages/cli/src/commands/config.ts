@@ -67,11 +67,11 @@ export type InstallMcpClientsResult = {
   details: McpInstallDetail[];
 };
 
-// `fabric.config.json` (workspace-root) — legacy MCP-clients config consumed
-// by `installMcpClients` only. The panel targets `.fabric/fabric-config.json`
-// (see PANEL_CONFIG_RELATIVE_PATH below).
+// `.fabric/fabric-config.json` — the single project-config source of truth (A1).
+// Consumed here by `installMcpClients` for MCP-client settings; the same file
+// also backs the panel (PANEL_CONFIG_RELATIVE_PATH below) and the server runtime.
 async function loadFabricConfig(workspaceRoot: string): Promise<FabricConfig> {
-  const configPath = resolve(workspaceRoot, "fabric.config.json");
+  const configPath = resolve(workspaceRoot, ".fabric", "fabric-config.json");
   if (!existsSync(configPath)) {
     return {};
   }

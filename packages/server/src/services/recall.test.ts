@@ -287,7 +287,10 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   it("surfaces omitted_candidate_count + a next_steps hint when the budget omits candidates", async () => {
     const projectRoot = await seedTwoEntryProject();
     // top_k=1 over two candidates → one omitted by the retrieval budget.
-    await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ plan_context_top_k: 1 })}\n`);
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: 1 }, null, 2)}\n`,
+    );
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 

@@ -24,12 +24,13 @@ function readRetrievalBudgetProfile(config: FabricConfig): RetrievalBudgetProfil
 export const PLAN_CONTEXT_TOP_K_DEFAULT = 24;
 
 /**
- * Reads fabric.config.json from the project root.
+ * Reads the project config from `.fabric/fabric-config.json` — the single source
+ * of truth for project config (A1; KT-DEC-0003 dual-root `~/.fabric` + `<repo>/.fabric`).
  * Returns an empty config object when the file is absent.
  * Throws if the file content is not a JSON object.
  */
 function readFabricConfig(projectRoot: string): FabricConfig {
-  const configPath = join(projectRoot, "fabric.config.json");
+  const configPath = join(projectRoot, ".fabric", "fabric-config.json");
   if (!existsSync(configPath)) {
     return {};
   }

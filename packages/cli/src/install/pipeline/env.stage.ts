@@ -9,6 +9,7 @@ import { resolveGlobalLocale } from "@fenglimg/fabric-shared";
 import { t } from "../../i18n.js";
 import { buildForensicReport } from "../../scanner/forensic.js";
 import { detectClientSupports } from "../../config/resolver.js";
+import { migrateRootConfig } from "../migrate-root-config.js";
 import type { Stage, InstallContext, StageResult, ScaffoldResult, DiffFileState, InitWriteAction } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 
@@ -120,6 +121,11 @@ export class EnvStage implements Stage {
 
     // Write default fabric-config.json
     this.writeDefaultFabricConfig(scaffold.fabricDir, target);
+
+    // A1 (KT-DEC-0003): fold any legacy project-root fabric.config.json into
+    // .fabric/fabric-config.json so there is a single config source of truth.
+    // No-op when no legacy root file exists (every new install).
+    migrateRootConfig(target);
 
     // Write .gitignore
     this.writeDefaultGitignore(scaffold.fabricDir);
