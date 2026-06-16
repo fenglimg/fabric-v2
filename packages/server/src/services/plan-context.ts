@@ -56,11 +56,14 @@ export type PlanContextInput = {
   client_hash?: string;
   correlation_id?: string;
   session_id?: string;
-  // v2.0-rc.5 C3 (TASK-012): caller-supplied path context for relevance_paths
-  // filtering. `narrow` description_index entries are only surfaced when at
-  // least one of their `relevance_paths` globs matches at least one entry in
-  // `target_paths`. When omitted or empty, the filter fails open and every
-  // narrow entry is included (matches the rc.5 D1 hint CLI behavior).
+  // v2.0-rc.5 C3 (TASK-012): caller-supplied path context for relevance scoring.
+  // NOTE (rc.37 A1): the old hard narrow-by-path FILTER is GONE — `target_paths`
+  // no longer EXCLUDES any entry. It now feeds locality SCORING only
+  // (scoreDescriptionItem: same-file/dir/package boost over relevance_paths), so
+  // a path-matching entry ranks higher but a non-matching one is never dropped.
+  // Scope discipline (broad surfaced / narrow silent) moved to the SessionStart
+  // injection layer; recall ranks the full corpus and caps at top_k. When
+  // omitted, locality contributes 0 and ranking falls back to BM25 + recency.
   target_paths?: string[];
   // F54 (ISS-20260531-090): restrict the candidate corpus to one knowledge
   // layer. "both" (or omitted) → no filtering, falling back to
@@ -949,13 +952,20 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
 // v2.0.0-rc.33 W2-3: recency boost — entries created within RECENCY_WINDOW_MS
 // of `now` get +RECENCY_BOOST. Binary boost (vs. linear decay) keeps the
 // sort key resilient against clock skew and ISO-string parse jitter.
+//
+// recency recalibration (grill-report): the boost was +100 — equal to a
+// same-FILE locality hit and ~2× a strong BM25 term match — so a burst of
+// recently-archived entries drowned older path-relevant ones (a same-package
+// recent entry outranked an exact-file old entry). Dropped to the same-package
+// locality tier (25) so recency is a genuine TIE-BREAK nudge: it reorders
+// entries already tied on content + structural signal, never trampling them.
 const RECENCY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const RECENCY_BOOST = 100;
+const RECENCY_BOOST = 25;
 
 // v2.0.0-rc.33 W2-4: locality tiers. Same-file > same-dir > same-package >
-// none. Values are calibrated so a same-dir hit dominates a recency boost
-// (recency 100 ties with same-dir 50 + same-package 25 if entry is also
-// new), keeping locality the lead signal — recency is a secondary nudge.
+// none. Calibrated so locality leads recency: a same-file (100) / same-dir (50)
+// hit dominates the recency nudge (now 25 == same-package tier), keeping
+// path-locality the lead structural signal and recency a secondary tie-break.
 const LOCALITY_SAME_FILE = 100;
 const LOCALITY_SAME_DIR = 50;
 const LOCALITY_SAME_PACKAGE = 25;

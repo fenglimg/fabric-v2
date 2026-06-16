@@ -1005,6 +1005,51 @@ describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
     // Content match (BM25 ~3 rare terms × 50) beats perfect same-file locality (100).
     expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-8001", "team:KT-DEC-8002"]);
   });
+
+  // recency calibration lock: recency is a TIE-BREAK nudge (~same-package tier),
+  // NOT able to trample a stronger structural signal. A recently-created entry
+  // sitting only in the same PACKAGE must not outrank an old entry that matches
+  // the exact target FILE. Pre-fix recency was +100 (== same-file locality), so a
+  // burst of recent archives drowned older path-relevant entries; this pins the
+  // post-fix calibration where recency can no longer flip that ordering.
+  // created_at is computed relative to Date.now() so the test stays hermetic
+  // (no fixed near-future date that would stop earning the recency window).
+  it("recency is a tie-break nudge, not a trampler — recent same-package loses to old same-file", async () => {
+    const projectRoot = await createTeamProject();
+    const recent = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 1d ago → recency window
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); // 30d ago → no boost
+    // RECENT + same-PACKAGE locality only (+25), no content overlap.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8101",
+      summary: "recent same package",
+      maturity: "verified",
+      created_at: recent,
+      relevance_scope: "broad",
+      relevance_paths: ["packages/cli/other/bar.ts"],
+    });
+    // OLD + same-FILE locality (+100), no content overlap.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8102",
+      summary: "old same file",
+      maturity: "verified",
+      created_at: old,
+      relevance_scope: "broad",
+      relevance_paths: ["packages/cli/src/foo.ts"],
+    });
+    mountStores();
+
+    // No intent → BM25 off → score = equal salience + recency + locality only.
+    const result = await planContext(projectRoot, {
+      paths: ["packages/cli/src/foo.ts"],
+      target_paths: ["packages/cli/src/foo.ts"],
+    });
+
+    // same-file locality (100) must lead same-package (25) + recency nudge (25).
+    expect(result.candidates.map((c) => c.stable_id)).toEqual([
+      "team:KT-DEC-8102",
+      "team:KT-DEC-8101",
+    ]);
+  });
 });
 
 // W4-02 (ISS-024): the BM25 model is corpus-keyed (read-set revision) and reused

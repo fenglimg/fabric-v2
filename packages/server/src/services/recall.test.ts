@@ -314,4 +314,64 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const fetched = await readEventLedger(projectRoot, { event_type: "knowledge_sections_fetched" });
     expect(fetched.events).toEqual([]);
   });
+
+  // always-active dedupe marker: the SessionStart hook injects broad
+  // model/guideline BODIES in full ("ALWAYS-ACTIVE RULES") while broad
+  // decision/pitfall/process get a REFERENCE id+hook only. recall re-surfaces
+  // those same broad model/guideline entries; mark them `always_active:true` so
+  // the agent knows the body is already in context and need not re-Read it. The
+  // predicate is a pure function of (relevance_scope, knowledge_type) — no client
+  // state needed. NOT dropped/demoted: SessionStart injection degrades to an
+  // index line on budget overflow, so the body is not guaranteed present.
+  it("marks broad model/guideline candidates always_active:true; decisions are not", async () => {
+    const projectRoot = await createTempProject();
+    await writeStoreEntry("models", "KT-MOD-0001", [
+      "---",
+      "id: KT-MOD-0001",
+      "type: model",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: scope model",
+      "---",
+      "# body",
+      "",
+    ]);
+    await writeStoreEntry("guidelines", "KT-GLD-0001", [
+      "---",
+      "id: KT-GLD-0001",
+      "type: guideline",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: a guideline",
+      "---",
+      "# body",
+      "",
+    ]);
+    await writeStoreEntry("decisions", "KT-DEC-0001", [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: a decision",
+      "---",
+      "# body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, { paths: ["src/x.ts"], intent: "scope model guideline" });
+    const byId = new Map(result.candidates.map((c) => [c.stable_id, c]));
+
+    expect(byId.get("team:KT-MOD-0001")?.always_active).toBe(true);
+    expect(byId.get("team:KT-GLD-0001")?.always_active).toBe(true);
+    // REFERENCE-tier (decision) is NOT full-injected at SessionStart → no marker.
+    expect(byId.get("team:KT-DEC-0001")?.always_active ?? false).toBe(false);
+  });
 });

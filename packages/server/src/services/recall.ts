@@ -133,12 +133,34 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
 
   const nextSteps = buildNextSteps(planResult, paths, candidateById, candidateLookup);
 
+  // always-active dedupe marker: a broad model/guideline candidate is ALSO
+  // injected in full at SessionStart ("ALWAYS-ACTIVE RULES"), so its body is
+  // already in the agent's context — mark it so the agent does not waste a Read.
+  // Pure function of (relevance_scope, knowledge_type); no client state needed.
+  // NOT dropped/demoted: SessionStart injection degrades to an index line on
+  // budget overflow, so the body's presence is not guaranteed.
+  const markedCandidates = planRest.candidates.map((c) =>
+    isAlwaysActive(c) ? { ...c, always_active: true as const } : c,
+  );
+
   return {
     ...planRest,
+    candidates: markedCandidates,
     paths,
     directive: RECALL_DIRECTIVE,
     ...(nextSteps.length > 0 ? { next_steps: nextSteps } : {}),
   };
+}
+
+// Mirrors the SessionStart hook's ALWAYS_TYPES (knowledge-hint-broad.cjs):
+// broad ∧ knowledge_type ∈ {models, guidelines} → full BODY injected at session
+// start. decision/pitfall/process are REFERENCE (id+hook only) and narrow stays
+// silent, so neither is always-active.
+const ALWAYS_ACTIVE_TYPES = new Set(["models", "guidelines"]);
+
+function isAlwaysActive(candidate: { description: { relevance_scope?: string; knowledge_type?: string } }): boolean {
+  const { relevance_scope, knowledge_type } = candidate.description;
+  return (relevance_scope ?? "broad") !== "narrow" && ALWAYS_ACTIVE_TYPES.has(knowledge_type ?? "");
 }
 
 // W1 (KT-DEC-0026): discovery-layer next-step hints. No body-tier hint anymore
