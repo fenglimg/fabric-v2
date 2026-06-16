@@ -238,6 +238,37 @@ const STRINGS = {
     "zh-CN-hybrid": () => "   是否调 `fabric doctor --lint` 看看知识库健康度?",
   },
 
+  // ---- Stop hook: session-activity status (human trust anchor) -------------
+  // Observability grill (a): a no-signal Stop currently returns SILENT — the
+  // human only ever hears from Fabric when there is a nudge to act on, never a
+  // "here is what I did" status, which reads as "Fabric does nothing". This line
+  // is the trust anchor: session-scoped counts from events.jsonl (edits +
+  // knowledge pulls by the AI + pending backlog). Cadence is gated by nudge_mode
+  // (silent=never, normal=once/session, verbose=every turn) at the call site.
+  // params: { edits, consumed, pending } — all numbers.
+  statusLine: {
+    "zh-CN": (p) =>
+      `📋 Fabric 本会话 · 改 ${p.edits} 文件 · AI 取用知识 ${p.consumed} 次 · 待审 ${p.pending} 条`,
+    en: (p) =>
+      `📋 Fabric this session · ${p.edits} files edited · ${p.consumed} KB pulls by AI · ${p.pending} pending`,
+    "zh-CN-hybrid": (p) =>
+      `📋 Fabric 本会话 · 改 ${p.edits} 文件 · AI 取用知识 ${p.consumed} 次 · 待审 ${p.pending} 条`,
+  },
+
+  // ---- Stop hook: nudge_mode tier guidance (discoverability) ---------------
+  // Observability grill (Q4): users did not know the human-channel volume knob
+  // (nudge_mode) exists, so they assumed the hooks never surface to humans. This
+  // line names the current tier and the levers. params: { mode } — current
+  // nudge_mode. Protected token: nudge_mode + the config path verbatim.
+  statusTier: {
+    "zh-CN": (p) =>
+      `   音量 ${p.mode}:verbose=每步可见 / silent=静音(.fabric/fabric-config.json nudge_mode)`,
+    en: (p) =>
+      `   volume ${p.mode}: verbose=show every step / silent=mute (.fabric/fabric-config.json nudge_mode)`,
+    "zh-CN-hybrid": (p) =>
+      `   音量 ${p.mode}:verbose=每步可见 / silent=静音(.fabric/fabric-config.json nudge_mode)`,
+  },
+
   // ---- Broad hook: import recommendation ------------------------------------
   // Source (zh-CN): knowledge-hint-broad.cjs:262
   //   "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?"

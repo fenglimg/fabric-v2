@@ -82,6 +82,10 @@ const FIXTURE_PARAMS: Record<string, Record<string, unknown>> = {
   // are 8-char hex strings (caller already strips the sha256: scheme prefix).
   metaAutoRefreshedBanner: { prev: "a1b2c3d4", cur: "e5f60718" },
   metaAutoRefreshedBannerGeneric: {},
+  // observability grill (a + Q4): session-activity status line + nudge_mode
+  // tier-guidance line (human trust anchor + volume-knob discoverability).
+  statusLine: { edits: 2, consumed: 1, pending: 0 },
+  statusTier: { mode: "normal" },
 };
 
 const ALL_KEYS = Object.keys(FIXTURE_PARAMS);
@@ -100,9 +104,10 @@ describe("banner-i18n: STRINGS table coverage envelope", () => {
     expect(fixtureKeys).toEqual(stringsKeys);
   });
 
-  it("exposes exactly 15 banner keys (rc.27 contract — was 13 pre-archive-parts-i18n)", () => {
-    // rc.27 TASK-005 added archivePartsHours + archivePartsEdits (audit §2.17).
-    expect(Object.keys(lib.STRINGS)).toHaveLength(15);
+  it("exposes exactly 17 banner keys (observability grill added statusLine + statusTier)", () => {
+    // rc.27 TASK-005 added archivePartsHours + archivePartsEdits (audit §2.17);
+    // observability grill added statusLine + statusTier (15 → 17).
+    expect(Object.keys(lib.STRINGS)).toHaveLength(17);
   });
 });
 
@@ -222,6 +227,20 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["🔄 Fabric:"],
     zhCNContract: ["元数据已自动刷新"],
     enHints: ["meta auto-refreshed"],
+  },
+  // observability grill (a): session-activity status line. 📋 Fabric prefix is
+  // the only cross-variant protected token (the metric labels diverge by lang).
+  statusLine: {
+    protectedTokens: ["📋 Fabric"],
+    zhCNContract: ["本会话", "取用知识"],
+    enHints: ["this session", "KB pulls"],
+  },
+  // observability grill (Q4): nudge_mode tier-guidance line. The lever names +
+  // config path are protected tokens kept verbatim across all variants.
+  statusTier: {
+    protectedTokens: ["nudge_mode", "verbose", "silent", ".fabric/fabric-config.json"],
+    zhCNContract: ["音量"],
+    enHints: ["volume"],
   },
 };
 

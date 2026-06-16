@@ -45,9 +45,14 @@ type EditCounterStats = { editsSinceLastProposed: number; threshold: number };
 
 type HookModule = {
   main: (
-    env: { cwd: string; now: Date },
+    env: { cwd: string; now: Date; stdin_payload?: unknown },
     stdio: { stdout: { write: (chunk: string) => void } },
   ) => void;
+  // observability grill (a): session-scoped activity tally for the status line.
+  tallySessionActivity: (
+    events: Array<Record<string, unknown>>,
+    sessionId: string,
+  ) => { edits: number; consumed: number };
   readLedger: (projectRoot: string) => Array<Record<string, unknown>>;
   readPendingStats: (projectRoot: string, now: Date) => PendingStats;
   countCanonicalNodes: (projectRoot: string) => number;
@@ -2295,6 +2300,117 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       expect(r).not.toBeNull();
       expect(r?.reason.toLowerCase()).not.toMatch(/candidates detected/);
     }
+  });
+});
+
+// observability grill (a + Q4): the no-signal Stop now surfaces a session-
+// activity status breadcrumb (human sink) so Fabric stops feeling inert, plus a
+// nudge_mode tier-guidance line so the volume knob is discoverable.
+describe("fabric-hint.cjs — session status breadcrumb (observability grill)", () => {
+  let tempRoot: string;
+  let savedHintClient: string | undefined;
+  let savedProjDir: string | undefined;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-status-"));
+    savedHintClient = process.env.FABRIC_HINT_CLIENT;
+    savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+    process.env.FABRIC_HINT_CLIENT = "cc"; // force the cc dual-sink envelope onto stdout
+    delete process.env.CLAUDE_PROJECT_DIR;
+  });
+
+  afterEach(() => {
+    if (savedHintClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedHintClient;
+    if (savedProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedProjDir;
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  // A minimal no-signal ledger: a couple of session-tagged activity events, no
+  // archive/review/import/maintenance trigger, so decide() returns null and the
+  // status path runs.
+  function seedActivityLedger(root: string, sessionId: string): void {
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    const lines = [
+      JSON.stringify(makeEvent("file_mutated", NOW_MS - 3 * HOUR_MS, { session_id: sessionId })),
+      JSON.stringify(makeEvent("file_mutated", NOW_MS - 2 * HOUR_MS, { session_id: sessionId })),
+      JSON.stringify(makeEvent("knowledge_consumed", NOW_MS - 1 * HOUR_MS, { session_id: sessionId })),
+    ];
+    writeFileSync(join(root, ".fabric", "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
+  }
+
+  function writeNudgeMode(root: string, mode: string): void {
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({ nudge_mode: mode }),
+      "utf8",
+    );
+  }
+
+  it("tallySessionActivity counts only session-scoped file_mutated + knowledge_consumed", () => {
+    const events = [
+      makeEvent("file_mutated", 1, { session_id: "s1" }),
+      makeEvent("file_mutated", 2, { session_id: "s1" }),
+      makeEvent("file_mutated", 3, { session_id: "other" }), // different session — ignored
+      makeEvent("knowledge_consumed", 4, { session_id: "s1" }),
+      makeEvent("knowledge_proposed", 5, { session_id: "s1" }), // not counted (no sid in prod anyway)
+      makeEvent("file_mutated", 6, {}), // sessionless — ignored
+    ];
+    expect(hook.tallySessionActivity(events, "s1")).toEqual({ edits: 2, consumed: 1 });
+    expect(hook.tallySessionActivity(events, "")).toEqual({ edits: 0, consumed: 0 });
+  });
+
+  it("emits the status line + tier guidance on a no-signal Stop (nudge_mode normal)", () => {
+    seedActivityLedger(tempRoot, "s1");
+    writeNudgeMode(tempRoot, "normal");
+
+    const writes: string[] = [];
+    hook.main(
+      { cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } },
+      { stdout: { write: (chunk: string) => writes.push(chunk) } },
+    );
+
+    expect(writes).toHaveLength(1);
+    const env = JSON.parse(writes[0] as string);
+    // human sink carries the status; the AI sink gets NO activity recap (D5).
+    expect(env.systemMessage).toMatch(/Fabric 本会话/);
+    expect(env.systemMessage).toMatch(/改 2 文件/);
+    expect(env.systemMessage).toMatch(/AI 取用知识 1 次/);
+    expect(env.systemMessage).toMatch(/nudge_mode/); // tier-guidance discoverability
+    expect(env.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("stays silent when nudge_mode is silent", () => {
+    seedActivityLedger(tempRoot, "s1");
+    writeNudgeMode(tempRoot, "silent");
+
+    const writes: string[] = [];
+    hook.main(
+      { cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } },
+      { stdout: { write: (chunk: string) => writes.push(chunk) } },
+    );
+
+    expect(writes).toHaveLength(0);
+  });
+
+  it("stays silent when the session has no activity and no backlog", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
+    writeNudgeMode(tempRoot, "normal");
+
+    const writes: string[] = [];
+    hook.main(
+      { cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } },
+      { stdout: { write: (chunk: string) => writes.push(chunk) } },
+    );
+
+    expect(writes).toHaveLength(0);
   });
 });
 
