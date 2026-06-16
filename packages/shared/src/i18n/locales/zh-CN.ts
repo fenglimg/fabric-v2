@@ -129,6 +129,12 @@ export const zhCNMessages: Messages = {
   "cli.config.fields.audit_mode.label": "审计模式",
   "cli.config.fields.audit_mode.description":
     "human-lock 与漂移检测的审计粒度（strict / warn / off）。",
+  "cli.config.fields.nudge_mode.label": "提示档位",
+  "cli.config.fields.nudge_mode.description":
+    "人类可见 nudge 的总档位（silent 静默 / minimal 精简 / normal 正常 / verbose 详尽）；仅控人类提示通道，不影响注入给 AI 的知识。",
+  "cli.config.fields.embed_enabled.label": "向量语义检索",
+  "cli.config.fields.embed_enabled.description":
+    "是否启用向量语义检索（true / false）。注意：开启还需 `fabric install --enable-embed` 完成主机侧安装（fastembed + 模型缓存），仅在此置 true 不会自动生效。",
 
   "cli.doctor.description":
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）。\n" +

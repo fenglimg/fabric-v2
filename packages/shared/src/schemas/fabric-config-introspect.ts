@@ -5,6 +5,7 @@ import {
   defaultLayerFilterSchema,
   fabricConfigSchema,
   fabricLanguageSchema,
+  nudgeModeSchema,
 } from "./fabric-config.js";
 
 // rc.16 TASK-005 (F1-introspect): schema-introspection helper that exposes
@@ -45,7 +46,7 @@ export type FabricConfigSchemaShape = z.infer<typeof fabricConfigSchema>;
 // global-routed key.
 export type PanelFieldKey = keyof FabricConfigSchemaShape | "fabric_language";
 
-export type PanelFieldGroup = "A_locale" | "B_hint_threshold" | "C_audit";
+export type PanelFieldGroup = "A_locale" | "B_hint_threshold" | "C_audit" | "D_behavior";
 
 export type ValidateResult =
   | { ok: true; value: unknown }
@@ -141,6 +142,32 @@ function makeEnumField(
   };
 }
 
+// Boolean field rendered as a true/false select. Config values are stored as
+// real JSON booleans; the widget speaks "true"/"false" strings and validate()
+// maps them back to the boolean the schema expects.
+function makeBooleanField(key: keyof FabricConfigSchemaShape, defaultValue: boolean): PanelFieldMeta {
+  return {
+    key,
+    group: "D_behavior",
+    widget: "select",
+    label_i18n_key: `cli.config.fields.${key}.label`,
+    description_i18n_key: `cli.config.fields.${key}.description`,
+    default: String(defaultValue),
+    enum_values: ["true", "false"],
+    validate(raw: string): ValidateResult {
+      const trimmed = raw.trim();
+      if (trimmed === "true") return { ok: true, value: true };
+      if (trimmed === "false") return { ok: true, value: false };
+      return { ok: false, error: "Must be one of: true, false." };
+    },
+    format_for_display(value: unknown): string {
+      if (typeof value === "boolean") return String(value);
+      if (value === undefined || value === null) return String(defaultValue);
+      return String(value);
+    },
+  };
+}
+
 // Defaults are read from the Zod schema's parse output to guarantee parity:
 // any future change to fabric-config.ts `.default(...)` flows through here
 // without a manual edit. We parse `{}` once at module load — Zod fills in
@@ -174,7 +201,7 @@ const AUDIT_MODE_PANEL_DEFAULT = "warn";
 
 /**
  * Returns the per-field metadata array driving the `fabric config` clack panel.
- * Group A (2) + Group B (8) + Group C (1) = 11 entries.
+ * Group A (2) + Group B (8) + Group C (1) + Group D (2) = 13 entries.
  */
 export function getPanelFields(): readonly PanelFieldMeta[] {
   return PANEL_FIELDS;
@@ -245,4 +272,12 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
     auditModeSchema.options,
     AUDIT_MODE_PANEL_DEFAULT,
   ),
+
+  // --- Group D: Behavior / features (2) ---
+  // nudge_mode — the master switch for the human-visible nudge experience
+  // (the most user-facing runtime knob, previously JSON-only). embed_enabled —
+  // vector semantic recall, panel-editable now that config lives in `.fabric`
+  // (A1); enabling also needs the host-side `fabric install --enable-embed`.
+  makeEnumField("nudge_mode", "D_behavior", nudgeModeSchema.options, "normal"),
+  makeBooleanField("embed_enabled", false),
 ];
