@@ -1048,6 +1048,12 @@ function buildSessionStartSinks(cwd, payload, env) {
         ? "下一步: 改相关文件前调 fab_recall(paths) 拿 KB 条目的描述+读路径;按需 Read 路径取正文。"
         : "Next: before editing related files, call fab_recall(paths) for the KB entries' descriptions + read paths; Read a path on demand for the body.",
     );
+    // Block 5 (Option X): point to the byte-identical inspector for this injection.
+    humanLines.push(
+      fabricLanguageForEmit === "zh-CN"
+        ? "看具体注入: fabric context (--explain 看每条来源)"
+        : "Inspect this injection: fabric context (--explain for per-entry provenance)",
+    );
   }
 
   // ---- AI sink: spine — always-active bodies + reference, bounded. ----

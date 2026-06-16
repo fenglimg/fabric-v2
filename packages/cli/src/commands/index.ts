@@ -28,4 +28,7 @@ export const allCommands = {
     import("./onboard-coverage.js").then((module) => module.default),
   // v2.0.0-rc.37 NEW-34: text dashboard over .fabric/metrics.jsonl.
   metrics: () => import("./metrics.js").then((module) => module.default),
+  // Block 5 (Option X): show what SessionStart injects (shared renderer with the
+  // hook → byte-identical). --explain for per-entry provenance.
+  context: () => import("./context.js").then((module) => module.default),
 };
