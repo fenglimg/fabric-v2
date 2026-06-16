@@ -104,10 +104,12 @@ export type PlanContextPayloadBudget = {
 // no Chinese game-perf token list, no Performance regex.
 // v2.0.0-rc.38 UX-3 (D-MCP fold ③): dropped path_segments / extension —
 // trivially derivable from target_path, pure per-entry bloat.
+// v2.2 payload de-dup: `user_intent` lifted to a single top-level `intent` echo
+// on the result (was a verbatim per-path copy). Per-entry profile keeps only the
+// fields that vary by path.
 export type RequirementProfile = {
   target_path: string;
   known_tech: string[];
-  user_intent: string;
   detected_entities: string[];
 };
 
@@ -144,6 +146,9 @@ export type PlanContextResult = {
   stale: boolean;
   selection_token: string;
   entries: PlanContextEntry[];
+  // v2.2 payload de-dup: single top-level echo of the caller's `intent` (was
+  // duplicated into every entry's requirement_profile). Omitted when no intent.
+  intent?: string;
   // v2.0.0-rc.38 UX-1: was `shared.description_index`. Lifted to a single
   // top-level array; `preflight_diagnostics` lifted alongside it (the `shared`
   // wrapper held nothing else).
@@ -499,6 +504,7 @@ export async function planContext(
         stale,
         selection_token: selectionToken,
         entries,
+        ...(input.intent !== undefined ? { intent: input.intent } : {}),
         candidates: candidateSlice,
         ...(totalOmitted > 0 ? { omitted_candidate_count: totalOmitted } : {}),
         preflight_diagnostics: basePreflightDiagnostics,
@@ -540,6 +546,7 @@ export async function planContext(
     stale,
     selection_token: selectionToken,
     entries,
+    ...(input.intent !== undefined ? { intent: input.intent } : {}),
     candidates,
     ...(omittedCandidateCount + payloadTrimDropped > 0 ? { omitted_candidate_count: omittedCandidateCount + payloadTrimDropped } : {}),
     preflight_diagnostics: basePreflightDiagnostics,
@@ -675,7 +682,6 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
   return {
     target_path: normalizedPath,
     known_tech: knownTech,
-    user_intent: input.intent ?? "",
     detected_entities: input.detected_entities?.[normalizedPath] ?? input.detected_entities?.[path] ?? [],
   };
 }

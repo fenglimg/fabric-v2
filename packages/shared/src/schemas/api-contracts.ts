@@ -82,6 +82,11 @@ const _ruleDescriptionSchema = z.object({
 const _descriptionIndexItemSchema = z.object({
   stable_id: z.string(),
   description: _ruleDescriptionSchema,
+  // recall dedupe marker: true when this candidate is ALSO injected in full at
+  // SessionStart ("ALWAYS-ACTIVE RULES" = broad model/guideline). MUST be
+  // declared here or zod .strip() drops it at the MCP boundary (KT-PIT-0005),
+  // silently breaking the marker even though recall() sets it. Only ever true.
+  always_active: z.boolean().optional(),
 });
 
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired.
@@ -93,10 +98,13 @@ const _descriptionIndexItemSchema = z.object({
 // split on "/") and `extension` (== suffix of target_path) — both trivially
 // derivable by any consumer, so shipping them per-entry was pure bloat. The
 // remaining fields are input echoes kept for caller convenience.
+// v2.2 payload de-dup: `user_intent` lifted OUT of the per-path profile to a
+// single top-level `intent` echo on the response. It was a verbatim copy of the
+// caller's intent in EVERY entry (N paths → N identical copies); per-path the
+// profile now carries only fields that actually vary by path.
 const _requirementProfileSchema = z.object({
   target_path: z.string(),
   known_tech: z.array(z.string()),
-  user_intent: z.string(),
   detected_entities: z.array(z.string()),
 });
 
@@ -201,6 +209,9 @@ export const planContextOutputSchema = z.object({
       requirement_profile: _requirementProfileSchema,
     }),
   ),
+  // v2.2 payload de-dup: single top-level echo of the caller's `intent` (was
+  // duplicated into every entry's requirement_profile). Omitted when no intent.
+  intent: z.string().optional(),
   candidates: z.array(_descriptionIndexItemSchema),
   // v2.2 A-INFRA-3 (W1-T3-TOPK) / MC4-payload-budget (W1-T4): number of
   // lower-ranked candidates dropped by the unified truncation chain (top_k cap
@@ -472,6 +483,9 @@ export const recallOutputSchema = z.object({
       requirement_profile: _requirementProfileSchema,
     }),
   ),
+  // v2.2 payload de-dup: single top-level echo of the caller's `intent` (was
+  // duplicated into every entry's requirement_profile). Omitted when no intent.
+  intent: z.string().optional(),
   // W1 (KT-DEC-0026): the discovery index — every surfaced candidate's
   // DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
   candidates: z.array(_descriptionIndexItemSchema),

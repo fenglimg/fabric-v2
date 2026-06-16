@@ -10,6 +10,7 @@ import {
   saveGlobalConfig,
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
+import { recallOutputSchema } from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 import { recall, attachPathStore } from "./recall.js";
 import { readEventLedger } from "./event-ledger.js";
@@ -373,5 +374,13 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(byId.get("team:KT-GLD-0001")?.always_active).toBe(true);
     // REFERENCE-tier (decision) is NOT full-injected at SessionStart → no marker.
     expect(byId.get("team:KT-DEC-0001")?.always_active ?? false).toBe(false);
+
+    // wire-strip lock (KT-PIT-0005): always_active must be DECLARED in
+    // recallOutputSchema, else zod .strip() silently drops it at the MCP boundary
+    // — the field would work in this unit test (direct call) yet vanish over the
+    // wire. Round-trip through the output schema and assert it survives.
+    const parsed = recallOutputSchema.parse(result);
+    const parsedById = new Map(parsed.candidates.map((c) => [c.stable_id, c]));
+    expect(parsedById.get("team:KT-MOD-0001")?.always_active).toBe(true);
   });
 });

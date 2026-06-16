@@ -185,10 +185,14 @@ describe("planContext", () => {
     expect(result.entries[0]?.path).toBe("src/index.ts");
     expect(result.entries[0]?.requirement_profile).toMatchObject({
       target_path: "src/index.ts",
-      user_intent: "rendering tweak",
       known_tech: ["TypeScript"],
       detected_entities: ["Renderer"],
     });
+    // ④ payload de-dup: user_intent was echoed verbatim into EVERY per-path
+    // requirement_profile (N paths → N copies of the same intent string). Lifted
+    // to a single top-level `intent` echo; per-entry profile no longer carries it.
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("user_intent");
+    expect(result.intent).toBe("rendering tweak");
     // v2.0.0-rc.38 UX-3: path_segments / extension dropped (derivable).
     expect(result.entries[0]?.requirement_profile).not.toHaveProperty("extension");
     expect(result.entries[0]?.requirement_profile).not.toHaveProperty("path_segments");
