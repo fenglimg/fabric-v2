@@ -143,18 +143,50 @@ function writeBindingsSnapshot(
   knowledgeStats?: Record<string, unknown>,
 ): void {
   mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+  const snapshot: Record<string, unknown> = {
+    version: 1,
+    project_id: projectId,
+    generated_at: "2026-05-30T00:00:00.000Z",
+    read_set: { stores: [] },
+    write_target: null,
+  };
+  if (knowledgeStats !== undefined) {
+    // #3: the hooks recount LIVE off knowledge_store_dirs (the cached
+    // knowledge_stats projection is no longer trusted). Seed a real store dir
+    // with the requested canonical / pending *.md counts so the live walk
+    // reproduces the numbers these tests assert. An old snapshot WITHOUT
+    // knowledge_store_dirs now yields skip (undeterminable), covered separately.
+    const canonical = Number(knowledgeStats.canonical_count ?? 0);
+    const pending = Number(knowledgeStats.pending_count ?? 0);
+    const root = join(home, ".fabric", "state", "test-store", projectId);
+    const types = ["decisions", "pitfalls", "guidelines", "models", "processes"];
+    for (let i = 0; i < canonical; i++) {
+      const typeDir = join(root, "knowledge", types[i % types.length]);
+      mkdirSync(typeDir, { recursive: true });
+      writeFileSync(join(typeDir, `K-${i}.md`), "# node\n", "utf8");
+    }
+    if (pending > 0) {
+      const pendingDir = join(root, "knowledge", "pending", "decisions");
+      mkdirSync(pendingDir, { recursive: true });
+      // #3: live recount derives oldestPendingMtimeMs from REAL file mtimes (not
+      // the cached projection). Stamp the seeded files to oldest_pending_mtime_ms
+      // so tests asserting oldestAgeMs (= now − oldest) stay valid post-cutover.
+      const oldestMs = Number(knowledgeStats.oldest_pending_mtime_ms ?? 0);
+      for (let i = 0; i < pending; i++) {
+        const p = join(pendingDir, `p-${i}.md`);
+        writeFileSync(p, "# pending\n", "utf8");
+        if (oldestMs > 0) {
+          const t = new Date(oldestMs);
+          utimesSync(p, t, t);
+        }
+      }
+    }
+    snapshot.knowledge_stats = knowledgeStats;
+    snapshot.knowledge_store_dirs = [root];
+  }
   writeFileSync(
     join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
-    JSON.stringify({
-      version: 1,
-      project_id: projectId,
-      generated_at: "2026-05-30T00:00:00.000Z",
-      read_set: { stores: [] },
-      write_target: null,
-      ...(knowledgeStats === undefined
-        ? {}
-        : { knowledge_stats: knowledgeStats }),
-    }),
+    JSON.stringify(snapshot),
     "utf8",
   );
 }

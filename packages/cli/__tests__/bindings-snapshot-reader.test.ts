@@ -136,11 +136,18 @@ describe("liveKnowledgeStats (recount live, never trust the stale cached project
     expect(typeof live?.oldestPendingMtimeMs).toBe("number");
   });
 
-  it("falls back to cached knowledge_stats when knowledge_store_dirs is absent (old snapshot)", () => {
+  it("returns null (undeterminable) when knowledge_store_dirs is absent, NEVER trusting the stale cached stats (#3)", () => {
+    // GH #3: the cached knowledge_stats projection freezes at snapshot-write
+    // time and goes stale out-of-band (store grew via git pull / cross-workspace
+    // sync). Trusting it re-introduced the false "knowledge sparse" underseed
+    // nudge (observed canonical frozen at 1 vs 61 live). With no store dirs there
+    // is no way to recount live (read_set carries alias/uuid only, not a root),
+    // so the lean fix is to return null → callers SKIP the nudge rather than act
+    // on stale data; the snapshot self-heals on the next install/sync.
     const live = lib.liveKnowledgeStats({
       knowledge_stats: { pending_count: 5, canonical_count: 12, oldest_pending_mtime_ms: 999 },
     });
-    expect(live).toEqual({ pendingCount: 5, canonicalCount: 12, oldestPendingMtimeMs: 999 });
+    expect(live).toBeNull();
   });
 
   it("returns zero counts when dirs are present but empty (missing dirs degrade silently)", () => {

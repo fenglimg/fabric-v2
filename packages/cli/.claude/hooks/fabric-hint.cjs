@@ -117,6 +117,10 @@ function readSnapshotKnowledgeStats(projectRoot, now) {
   }
   try {
     const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    // No snapshot file → empty corpus (KT-DEC-0007), preserving prior behavior.
+    if (!snapshot) {
+      return empty;
+    }
     // LIVE recount off the snapshot's resolved store dirs. The cached
     // knowledge_stats projection is frozen at snapshot-write time, so once the
     // pending queue is reviewed (or store content syncs out-of-band) it goes
@@ -124,8 +128,16 @@ function readSnapshotKnowledgeStats(projectRoot, now) {
     // (KT-PIT-0017). The authoritative count is the live *.md walk under the
     // resolved store dirs.
     const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
-    if (!live || typeof live !== "object") {
-      return empty;
+    // #3: a snapshot predating knowledge_store_dirs makes liveKnowledgeStats
+    // return null — counts are undeterminable and the cached projection is
+    // unreliable. Return `undefined` (a marker distinct from the `null` that
+    // lib/binding-absent returns, which readPendingStats uses as its legacy-
+    // fallback signal) so countCanonicalNodes maps it to "unknown" and the
+    // underseed signal SKIPS rather than false-firing on a stale corpus (snapshot
+    // self-heals on the next install/sync). Distinguished from the missing-
+    // snapshot case above, which stays `empty` (genuine fresh-project zero).
+    if (live === null) {
+      return undefined;
     }
     const pendingCount =
       Number.isFinite(live.pendingCount) && live.pendingCount > 0 ? Math.floor(live.pendingCount) : 0;
@@ -412,7 +424,10 @@ function readLedger(projectRoot) {
  */
 function readPendingStats(projectRoot, now) {
   const stats = readSnapshotKnowledgeStats(projectRoot, now);
-  if (stats !== null) {
+  // `!= null` (loose) also catches the `undefined` old-snapshot marker (#3) →
+  // fall through to the legacy reader (which degrades to 0 → no phantom review
+  // nudge), rather than dereferencing pendingCount on a non-object.
+  if (stats != null) {
     return { count: stats.pendingCount, oldestAgeMs: stats.oldestPendingAgeMs };
   }
   return readLegacyPendingStats(projectRoot, now);
@@ -425,6 +440,12 @@ function readPendingStats(projectRoot, now) {
  */
 function countCanonicalNodes(projectRoot) {
   const stats = readSnapshotKnowledgeStats(projectRoot);
+  // #3: `undefined` = snapshot EXISTS but predates knowledge_store_dirs →
+  // undeterminable → return null so decide()'s underseed signal SKIPS rather than
+  // false-firing on a stale corpus. `null` = no reader / not bound → degrade to 0
+  // (KT-DEC-0007, preserved). The `empty` object (missing snapshot) → canonical 0,
+  // still firing correctly for a genuinely fresh corpus.
+  if (stats === undefined) return null;
   return stats === null ? 0 : stats.canonicalCount;
 }
 
@@ -1010,6 +1031,10 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     lastInitScanTs === null ? null : (nowMs - lastInitScanTs) / MS_PER_HOUR;
   const hoursSinceProposed = hoursElapsed; // reuse archive-signal calc above
   const triggerUnderseed =
+    // #3: null = undeterminable canonical count (old snapshot) → skip. Guard
+    // first because `null < threshold` coerces to true in JS and would else
+    // false-fire the underseed nudge on a stale corpus.
+    underseed.nodeCount != null &&
     underseed.nodeCount < underseed.threshold &&
     hoursSinceInit !== null &&
     hoursSinceInit >= UNDERSEED_POST_INIT_QUIET_HOURS &&

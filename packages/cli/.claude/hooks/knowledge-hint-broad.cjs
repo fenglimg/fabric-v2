@@ -112,15 +112,23 @@ function readWorkspaceBindingId(cwd) {
 }
 
 function readSnapshotCanonicalCount(projectRoot) {
+  // No reader / not bound → degrade to an empty corpus (0), the documented
+  // store-only behavior (KT-DEC-0007). Only the "snapshot EXISTS but predates
+  // knowledge_store_dirs" case below is undeterminable → null (skip).
   if (bindingsSnapshotReader === null) {
-    return null;
+    return 0;
   }
   const bindingId = readWorkspaceBindingId(projectRoot);
   if (bindingId === null) {
-    return null;
+    return 0;
   }
   try {
     const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    // No snapshot file at all → treat as an empty corpus (KT-DEC-0007),
+    // preserving the fresh-project underseed nudge.
+    if (!snapshot) {
+      return 0;
+    }
     // LIVE recount off the snapshot's resolved store dirs. The cached
     // knowledge_stats.canonical_count is frozen at snapshot-write time and goes
     // stale when store content syncs in out-of-band (e.g. the store grew from 1
@@ -128,13 +136,21 @@ function readSnapshotCanonicalCount(projectRoot) {
     // THIS workspace's snapshot), which mis-fired the "knowledge sparse"
     // underseed nudge (KT-PIT-0017, same stale-projection root cause).
     const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
-    if (live && Number.isFinite(live.canonicalCount) && live.canonicalCount > 0) {
-      return Math.floor(live.canonicalCount);
+    // #3: a snapshot that predates knowledge_store_dirs makes liveKnowledgeStats
+    // return null — the count is undeterminable and the cached projection is
+    // unreliable. Return null (not 0) so countCanonicalNodes / shouldRecommendImport
+    // SKIP the nudge instead of false-firing on stale data; the snapshot
+    // self-heals on the next install/sync. A genuine live 0 (dirs present, no
+    // *.md) still returns 0 and fires correctly.
+    if (live === null) {
+      return null;
     }
+    return Number.isFinite(live.canonicalCount) ? Math.floor(live.canonicalCount) : 0;
   } catch {
-    // best-effort hint stats only
+    // Read/parse fault → degrade to empty (0), preserving prior behavior. The
+    // only undeterminable→skip path is the explicit live===null above.
+    return 0;
   }
-  return 0;
 }
 
 
@@ -205,8 +221,10 @@ const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
  * trees — a missing snapshot degrades to zero (KT-DEC-0007).
  */
 function countCanonicalNodes(projectRoot) {
-  const snapshotCount = readSnapshotCanonicalCount(projectRoot);
-  return snapshotCount === null ? 0 : snapshotCount;
+  // #3: null = undeterminable (old snapshot lacking store dirs, or no binding
+  // context). Propagate it — shouldRecommendImport SKIPS on null rather than
+  // treating it as zero and false-firing the underseed nudge on a stale corpus.
+  return readSnapshotCanonicalCount(projectRoot);
 }
 
 /**
@@ -338,6 +356,10 @@ function shouldRecommendImport(projectRoot) {
 
     const threshold = readUnderseedThreshold(projectRoot);
     const nodeCount = countCanonicalNodes(projectRoot);
+    // #3: undeterminable count (old snapshot predating knowledge_store_dirs) →
+    // skip. `null < threshold` coerces to true in JS, so an explicit guard is
+    // required — otherwise the stale-snapshot case would still false-fire.
+    if (nodeCount === null) return false;
     if (nodeCount >= threshold) return false;
 
     if (isImportTouched(projectRoot) !== "absent") return false;

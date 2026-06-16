@@ -148,18 +148,19 @@ function liveKnowledgeStats(snapshot) {
     }
     return { pendingCount, canonicalCount, oldestPendingMtimeMs };
   }
-  // Backward-compatible fallback: snapshot predates knowledge_store_dirs.
-  const stats = snapshot.knowledge_stats;
-  if (stats && typeof stats === "object") {
-    return {
-      pendingCount: Number.isFinite(stats.pending_count) ? Math.floor(stats.pending_count) : 0,
-      canonicalCount: Number.isFinite(stats.canonical_count) ? Math.floor(stats.canonical_count) : 0,
-      oldestPendingMtimeMs:
-        Number.isFinite(stats.oldest_pending_mtime_ms) && stats.oldest_pending_mtime_ms > 0
-          ? stats.oldest_pending_mtime_ms
-          : null,
-    };
-  }
+  // #3 (GH issue): snapshot predates knowledge_store_dirs. The cached
+  // `knowledge_stats` projection is frozen at snapshot-write time and goes stale
+  // out-of-band (store grew via git pull / cross-workspace sync), so trusting it
+  // re-introduced exactly the false-nudge this whole field cures — observed a
+  // store with 61 live canonical entries whose cached count was frozen at 1,
+  // mis-firing the "knowledge sparse → /fabric-import" underseed nudge AND
+  // defeating the fabric-import `canonical > 50 → SKIP` guard. read_set carries
+  // no resolved store root either (alias/uuid only), so a live recount is
+  // impossible without re-resolution (which hooks must not do). Return null
+  // ("undeterminable") so callers SKIP the nudge rather than act on a stale
+  // count — old snapshots self-heal on the next install/sync/store-op (which
+  // regenerates the snapshot WITH knowledge_store_dirs). 宁可不弹也别误弹
+  // (KT-DEC-0007: hook = nudge, never a false-positive gate).
   return null;
 }
 

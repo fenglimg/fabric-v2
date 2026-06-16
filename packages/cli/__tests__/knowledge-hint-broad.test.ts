@@ -118,18 +118,43 @@ function writeBindingsSnapshot(
   knowledgeStats?: Record<string, unknown>,
 ): void {
   mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+  const snapshot: Record<string, unknown> = {
+    version: 1,
+    project_id: projectId,
+    generated_at: "2026-05-30T00:00:00.000Z",
+    read_set: { stores: [] },
+    write_target: null,
+  };
+  if (knowledgeStats !== undefined) {
+    // #3: the hooks no longer trust the cached knowledge_stats projection — they
+    // recount LIVE off knowledge_store_dirs. Seed a real store dir with the
+    // requested canonical / pending *.md counts so the live walk reproduces the
+    // numbers these tests assert (mirrors seedStoreDir in
+    // bindings-snapshot-reader.test.ts). knowledge_stats is retained only as a
+    // provenance echo; an old snapshot WITHOUT knowledge_store_dirs now yields
+    // null (skip), covered by its own dedicated test below.
+    const canonical = Number(knowledgeStats.canonical_count ?? 0);
+    const pending = Number(knowledgeStats.pending_count ?? 0);
+    const root = join(home, ".fabric", "state", "test-store", projectId);
+    const types = ["decisions", "pitfalls", "guidelines", "models", "processes"];
+    for (let i = 0; i < canonical; i++) {
+      const typeDir = join(root, "knowledge", types[i % types.length]);
+      mkdirSync(typeDir, { recursive: true });
+      writeFileSync(join(typeDir, `K-${i}.md`), "# node\n", "utf8");
+    }
+    if (pending > 0) {
+      const pendingDir = join(root, "knowledge", "pending", "decisions");
+      mkdirSync(pendingDir, { recursive: true });
+      for (let i = 0; i < pending; i++) {
+        writeFileSync(join(pendingDir, `p-${i}.md`), "# pending\n", "utf8");
+      }
+    }
+    snapshot.knowledge_stats = knowledgeStats;
+    snapshot.knowledge_store_dirs = [root];
+  }
   writeFileSync(
     join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
-    JSON.stringify({
-      version: 1,
-      project_id: projectId,
-      generated_at: "2026-05-30T00:00:00.000Z",
-      read_set: { stores: [] },
-      write_target: null,
-      ...(knowledgeStats === undefined
-        ? {}
-        : { knowledge_stats: knowledgeStats }),
-    }),
+    JSON.stringify(snapshot),
     "utf8",
   );
 }
@@ -1001,6 +1026,34 @@ describe("knowledge-hint-broad.cjs — shouldRecommendImport (rc.8)", () => {
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 15 });
       // 15 < 50 → recommend
       expect(hook.shouldRecommendImport(tempRoot)).toBe(true);
+    });
+  });
+
+  it("SKIPS the nudge on an old snapshot lacking knowledge_store_dirs — never false-fires on the stale cached count (#3)", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      // Pre-#3 CLIs wrote a snapshot with a cached knowledge_stats projection but
+      // NO knowledge_store_dirs. That cached count freezes at install time and
+      // goes stale out-of-band (observed canonical frozen at 1 while the live
+      // store held 61) — trusting it false-fired "/fabric-import" every session.
+      // liveKnowledgeStats now returns null for such snapshots → shouldRecommendImport
+      // must SKIP rather than treat the stale 1 as "sparse".
+      mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+      writeFileSync(
+        join(home, ".fabric", "state", "bindings", `${PROJECT_ID}_resolved.json`),
+        JSON.stringify({
+          version: 1,
+          project_id: PROJECT_ID,
+          generated_at: "2026-05-30T00:00:00.000Z",
+          read_set: { stores: [] },
+          write_target: null,
+          knowledge_stats: { pending_count: 0, canonical_count: 1, oldest_pending_mtime_ms: null },
+        }),
+        "utf8",
+      );
+      // No import-state planted → phase 'absent', so ONLY the stale count could
+      // have triggered the banner pre-fix. Post-fix: skip.
+      expect(hook.shouldRecommendImport(tempRoot)).toBe(false);
     });
   });
 });
