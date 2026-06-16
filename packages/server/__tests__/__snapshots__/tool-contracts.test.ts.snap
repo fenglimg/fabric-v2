@@ -1170,6 +1170,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         "items": {
           "additionalProperties": false,
           "properties": {
+            "always_active": {
+              "type": "boolean",
+            },
             "description": {
               "additionalProperties": false,
               "properties": {
@@ -1309,14 +1312,10 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                 "target_path": {
                   "type": "string",
                 },
-                "user_intent": {
-                  "type": "string",
-                },
               },
               "required": [
                 "target_path",
                 "known_tech",
-                "user_intent",
                 "detected_entities",
               ],
               "type": "object",
@@ -1329,6 +1328,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
           "type": "object",
         },
         "type": "array",
+      },
+      "intent": {
+        "type": "string",
       },
       "omitted_candidate_count": {
         "minimum": 0,

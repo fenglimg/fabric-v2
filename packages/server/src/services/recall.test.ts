@@ -10,6 +10,7 @@ import {
   saveGlobalConfig,
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
+import { recallOutputSchema } from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 import { recall, attachPathStore } from "./recall.js";
 import { readEventLedger } from "./event-ledger.js";
@@ -287,7 +288,10 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   it("surfaces omitted_candidate_count + a next_steps hint when the budget omits candidates", async () => {
     const projectRoot = await seedTwoEntryProject();
     // top_k=1 over two candidates → one omitted by the retrieval budget.
-    await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ plan_context_top_k: 1 })}\n`);
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: 1 }, null, 2)}\n`,
+    );
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
@@ -310,5 +314,73 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     const fetched = await readEventLedger(projectRoot, { event_type: "knowledge_sections_fetched" });
     expect(fetched.events).toEqual([]);
+  });
+
+  // always-active dedupe marker: the SessionStart hook injects broad
+  // model/guideline BODIES in full ("ALWAYS-ACTIVE RULES") while broad
+  // decision/pitfall/process get a REFERENCE id+hook only. recall re-surfaces
+  // those same broad model/guideline entries; mark them `always_active:true` so
+  // the agent knows the body is already in context and need not re-Read it. The
+  // predicate is a pure function of (relevance_scope, knowledge_type) — no client
+  // state needed. NOT dropped/demoted: SessionStart injection degrades to an
+  // index line on budget overflow, so the body is not guaranteed present.
+  it("marks broad model/guideline candidates always_active:true; decisions are not", async () => {
+    const projectRoot = await createTempProject();
+    await writeStoreEntry("models", "KT-MOD-0001", [
+      "---",
+      "id: KT-MOD-0001",
+      "type: model",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: scope model",
+      "---",
+      "# body",
+      "",
+    ]);
+    await writeStoreEntry("guidelines", "KT-GLD-0001", [
+      "---",
+      "id: KT-GLD-0001",
+      "type: guideline",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: a guideline",
+      "---",
+      "# body",
+      "",
+    ]);
+    await writeStoreEntry("decisions", "KT-DEC-0001", [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: a decision",
+      "---",
+      "# body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, { paths: ["src/x.ts"], intent: "scope model guideline" });
+    const byId = new Map(result.candidates.map((c) => [c.stable_id, c]));
+
+    expect(byId.get("team:KT-MOD-0001")?.always_active).toBe(true);
+    expect(byId.get("team:KT-GLD-0001")?.always_active).toBe(true);
+    // REFERENCE-tier (decision) is NOT full-injected at SessionStart → no marker.
+    expect(byId.get("team:KT-DEC-0001")?.always_active ?? false).toBe(false);
+
+    // wire-strip lock (KT-PIT-0005): always_active must be DECLARED in
+    // recallOutputSchema, else zod .strip() silently drops it at the MCP boundary
+    // — the field would work in this unit test (direct call) yet vanish over the
+    // wire. Round-trip through the output schema and assert it survives.
+    const parsed = recallOutputSchema.parse(result);
+    const parsedById = new Map(parsed.candidates.map((c) => [c.stable_id, c]));
+    expect(parsedById.get("team:KT-MOD-0001")?.always_active).toBe(true);
   });
 });

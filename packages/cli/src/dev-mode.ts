@@ -1,7 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
-
-import type { FabricConfig } from "@fenglimg/fabric-shared";
+import { isAbsolute, resolve } from "node:path";
 
 export type DevModeSource = "cli" | "env" | "cwd";
 
@@ -12,20 +9,6 @@ export type DevModeResolution = {
 };
 
 export type DebugLogger = (message: string) => void;
-
-export function readFabricConfig(workspaceRoot: string = process.cwd()): FabricConfig {
-  const configPath = join(workspaceRoot, "fabric.config.json");
-  if (!existsSync(configPath)) {
-    return {};
-  }
-
-  const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`Expected object in ${configPath}`);
-  }
-
-  return parsed as FabricConfig;
-}
 
 // rc.17 (R-cut): the fabric.config.json fixture-path step was removed —
 // the resolution chain is now 3 sources (cli → env → cwd). The

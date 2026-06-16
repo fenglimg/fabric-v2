@@ -30,6 +30,8 @@ import { readPayloadLimits } from "../../src/config-loader.js";
 function makeTmp(): string {
   const dir = mkdtempSync(join(tmpdir(), "fabric-payload-guard-"));
   tempDirs.push(dir);
+  // A1 (KT-DEC-0003): config lives in `.fabric/fabric-config.json`.
+  mkdirSync(join(dir, ".fabric"), { recursive: true });
   return dir;
 }
 
@@ -130,7 +132,7 @@ describe("I2 — readPayloadLimits: mcpPayloadLimits from fabric.config.json", (
 
   it("returns undefined when fabric.config.json has no mcpPayloadLimits key", () => {
     const root = makeTmp();
-    writeFileSync(join(root, "fabric.config.json"), JSON.stringify({ someOtherKey: true }), "utf8");
+    writeFileSync(join(root, ".fabric", "fabric-config.json"), JSON.stringify({ someOtherKey: true }), "utf8");
     const limits = readPayloadLimits(root);
     expect(limits).toBeUndefined();
   });
@@ -138,7 +140,7 @@ describe("I2 — readPayloadLimits: mcpPayloadLimits from fabric.config.json", (
   it("returns mcpPayloadLimits values when present in config", () => {
     const root = makeTmp();
     writeFileSync(
-      join(root, "fabric.config.json"),
+      join(root, ".fabric", "fabric-config.json"),
       JSON.stringify({ mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 } }),
       "utf8",
     );
@@ -151,7 +153,7 @@ describe("I2 — readPayloadLimits: mcpPayloadLimits from fabric.config.json", (
   it("override passed to enforcePayloadLimit changes the warn threshold", () => {
     const root = makeTmp();
     writeFileSync(
-      join(root, "fabric.config.json"),
+      join(root, ".fabric", "fabric-config.json"),
       JSON.stringify({ mcpPayloadLimits: { warnBytes: 500 } }),
       "utf8",
     );
@@ -165,7 +167,7 @@ describe("I2 — readPayloadLimits: mcpPayloadLimits from fabric.config.json", (
   it("override passed to enforcePayloadLimit changes the hard limit", () => {
     const root = makeTmp();
     writeFileSync(
-      join(root, "fabric.config.json"),
+      join(root, ".fabric", "fabric-config.json"),
       JSON.stringify({ mcpPayloadLimits: { warnBytes: 100, hardBytes: 200 } }),
       "utf8",
     );

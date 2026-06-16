@@ -10,9 +10,22 @@
 // unreadable / malformed snapshot → null (harmless degrade; the hook proceeds
 // without store labels). Zero-dep CJS so it inline-loads at hook runtime.
 
-const { existsSync, readFileSync } = require("node:fs");
+const { existsSync, readFileSync, readdirSync, statSync } = require("node:fs");
 const { join } = require("node:path");
 const { homedir } = require("node:os");
+
+// Canonical knowledge type dirs (mirror STORE_KNOWLEDGE_TYPE_DIRS in
+// packages/shared/src/schemas/store.ts). Kept inline — this zero-dep reader
+// runs in user repos without node_modules access.
+const KNOWLEDGE_CANONICAL_TYPES = [
+  "decisions",
+  "pitfalls",
+  "guidelines",
+  "models",
+  "processes",
+];
+const KNOWLEDGE_SUBDIR = "knowledge";
+const PENDING_SUBDIR = "pending";
 
 // `~/.fabric` (FABRIC_HOME override mirrors the CLI's resolveGlobalRoot).
 function resolveGlobalRoot() {
@@ -54,6 +67,102 @@ function readBindingsSnapshot(bindingId, globalRoot) {
   }
 }
 
+// Recursively count *.md files under `dir`, tracking the oldest mtime. Missing
+// / unreadable dirs contribute zero (degrade silently — a hook never throws).
+function countMarkdownFiles(dir) {
+  let count = 0;
+  let oldestMtimeMs = null;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return { count, oldestMtimeMs };
+  }
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = countMarkdownFiles(fullPath);
+      count += nested.count;
+      if (
+        nested.oldestMtimeMs !== null &&
+        (oldestMtimeMs === null || nested.oldestMtimeMs < oldestMtimeMs)
+      ) {
+        oldestMtimeMs = nested.oldestMtimeMs;
+      }
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".md")) {
+      continue;
+    }
+    let mtimeMs;
+    try {
+      mtimeMs = statSync(fullPath).mtimeMs;
+    } catch {
+      continue;
+    }
+    count += 1;
+    if (oldestMtimeMs === null || mtimeMs < oldestMtimeMs) {
+      oldestMtimeMs = mtimeMs;
+    }
+  }
+  return { count, oldestMtimeMs };
+}
+
+// LIVE store-backed knowledge counts for nudges (underseed canonical_count,
+// review-backlog pending_count). The snapshot's cached `knowledge_stats` is a
+// store-global projection frozen at write time, so it goes stale whenever store
+// content changes out-of-band (a `git pull` in the store repo, a sync run from a
+// *different* bound workspace) — that staleness is the root cause of the phantom
+// review-backlog (KT-PIT-0017) and the false "knowledge sparse" underseed nudge.
+//
+// Fix: the snapshot persists the resolved store ROOT dirs (`knowledge_store_dirs`,
+// stable across content sync — they only change when mounts/bindings change,
+// which regenerates the snapshot). Recount the *.md files under those dirs LIVE
+// so the numbers are always fresh regardless of how content changed. Falls back
+// to the cached `knowledge_stats` for snapshots written before this field
+// existed. Returns null only when neither source is available.
+function liveKnowledgeStats(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+  const dirs = snapshot.knowledge_store_dirs;
+  if (Array.isArray(dirs) && dirs.length > 0) {
+    let pendingCount = 0;
+    let canonicalCount = 0;
+    let oldestPendingMtimeMs = null;
+    for (const storeDir of dirs) {
+      if (typeof storeDir !== "string" || storeDir.length === 0) {
+        continue;
+      }
+      for (const type of KNOWLEDGE_CANONICAL_TYPES) {
+        canonicalCount += countMarkdownFiles(join(storeDir, KNOWLEDGE_SUBDIR, type)).count;
+      }
+      const pending = countMarkdownFiles(join(storeDir, KNOWLEDGE_SUBDIR, PENDING_SUBDIR));
+      pendingCount += pending.count;
+      if (
+        pending.oldestMtimeMs !== null &&
+        (oldestPendingMtimeMs === null || pending.oldestMtimeMs < oldestPendingMtimeMs)
+      ) {
+        oldestPendingMtimeMs = pending.oldestMtimeMs;
+      }
+    }
+    return { pendingCount, canonicalCount, oldestPendingMtimeMs };
+  }
+  // Backward-compatible fallback: snapshot predates knowledge_store_dirs.
+  const stats = snapshot.knowledge_stats;
+  if (stats && typeof stats === "object") {
+    return {
+      pendingCount: Number.isFinite(stats.pending_count) ? Math.floor(stats.pending_count) : 0,
+      canonicalCount: Number.isFinite(stats.canonical_count) ? Math.floor(stats.canonical_count) : 0,
+      oldestPendingMtimeMs:
+        Number.isFinite(stats.oldest_pending_mtime_ms) && stats.oldest_pending_mtime_ms > 0
+          ? stats.oldest_pending_mtime_ms
+          : null,
+    };
+  }
+  return null;
+}
+
 // Render a compact, per-store label line for a SessionStart / Stop hook from a
 // snapshot. Empty string when there is nothing to show (degrade silently). The
 // label is provenance only — it never re-resolves; it just echoes the read-set
@@ -77,5 +186,6 @@ module.exports = {
   resolveGlobalRoot,
   bindingsSnapshotPath,
   readBindingsSnapshot,
+  liveKnowledgeStats,
   formatStoreLabels,
 };

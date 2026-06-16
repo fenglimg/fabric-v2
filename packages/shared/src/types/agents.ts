@@ -50,6 +50,12 @@ export interface RuleDescription {
 export interface RuleDescriptionIndexItem {
   stable_id: string;
   description: RuleDescription;
+  // recall dedupe marker: set true when this candidate is ALSO injected in full
+  // at SessionStart ("ALWAYS-ACTIVE RULES" = broad model/guideline bodies), so
+  // the agent knows the body is already in context and need not re-Read it.
+  // Predicate is a pure function of (relevance_scope, knowledge_type) — no client
+  // state. Only ever set to `true` (omitted otherwise) to keep the wire minimal.
+  always_active?: boolean;
 }
 
 export interface AgentsMetaNode {

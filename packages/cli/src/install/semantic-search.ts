@@ -5,18 +5,18 @@
 //      (global MCP install → `npm i -g fastembed`),
 //   2. warm the model cache (first run downloads weights; strict-offline pre-warms
 //      FABRIC_EMBED_CACHE_DIR),
-//   3. flip `embed_enabled` + pin `embed_model` in `fabric.config.json`.
+//   3. flip `embed_enabled` + pin `embed_model` in `.fabric/fabric-config.json`.
 //
 // This module owns step 3 (idempotent config merge) and renders the operator
 // instructions for steps 1+2 (which are network/host actions we never auto-run).
 // It is OPT-IN: a normal `fabric init` never touches embed config (the skip path).
 //
-// Config file: the SERVER runtime config `fabric.config.json` at the project
-// root — the file `readEmbedConfig` (config-loader) actually reads. NOT the
-// install-scaffolded `.fabric/fabric-config.json` (hooks/knowledge config).
+// Config file: `.fabric/fabric-config.json` — the single project-config source of
+// truth (A1, KT-DEC-0003). Both the server runtime (`readEmbedConfig` in
+// config-loader) and the hooks/panel read this same file.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { t } from "../i18n.js";
 
@@ -36,7 +36,7 @@ export interface EnableSemanticSearchResult {
 
 /**
  * Idempotently enable vector semantic search by merging `embed_enabled: true` +
- * `embed_model` into the root `fabric.config.json`. Preserves every other key.
+ * `embed_model` into `.fabric/fabric-config.json`. Preserves every other key.
  * Re-running with the same model is a no-op (alreadyEnabled, no write).
  */
 export function enableSemanticSearch(
@@ -44,7 +44,7 @@ export function enableSemanticSearch(
   opts: { model?: string } = {},
 ): EnableSemanticSearchResult {
   const model = typeof opts.model === "string" && opts.model.length > 0 ? opts.model : DEFAULT_EMBED_MODEL_PIN;
-  const configPath = join(projectRoot, "fabric.config.json");
+  const configPath = join(projectRoot, ".fabric", "fabric-config.json");
 
   let existing: Record<string, unknown> = {};
   if (existsSync(configPath)) {
@@ -66,6 +66,9 @@ export function enableSemanticSearch(
   }
 
   const merged = { ...existing, embed_enabled: true, embed_model: model };
+  // Ensure `.fabric/` exists — enableSemanticSearch may run before/independently
+  // of the install scaffold on a project whose `.fabric/` dir is not yet present.
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, JSON.stringify(merged, null, 2) + "\n", "utf8");
   return { configPath, model, alreadyEnabled: false, changed: true };
 }

@@ -48,14 +48,14 @@ type MockAlwaysBody = {
 
 type MockCensus = {
   by_type: Record<string, number>;
-  by_layer: { team: number; personal: number };
+  by_layer: { team: number; personal: number; project: number };
   dropped_other_project: number;
   total: number;
 };
 
 const EMPTY_CENSUS: MockCensus = {
   by_type: {},
-  by_layer: { team: 0, personal: 0 },
+  by_layer: { team: 0, personal: 0, project: 0 },
   dropped_other_project: 0,
   total: 0,
 };
@@ -466,7 +466,7 @@ describe("plan-context-hint — always_bodies projection (dual-sink D9)", () => 
   it("forwards the read-set census for the human sink", async () => {
     mockServer(freshResult(), [], {
       by_type: { guidelines: 2, models: 1, decisions: 5, pitfalls: 3, processes: 1 },
-      by_layer: { team: 10, personal: 2 },
+      by_layer: { team: 10, personal: 2, project: 0 },
       dropped_other_project: 4,
       total: 12,
     });

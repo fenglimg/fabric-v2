@@ -261,7 +261,7 @@ export async function runPlanContextHint(opts: {
   const census = await buildKnowledgeCensus(resolution.target).catch(
     (): KnowledgeCensus => ({
       by_type: {},
-      by_layer: { team: 0, personal: 0 },
+      by_layer: { team: 0, personal: 0, project: 0 },
       dropped_other_project: 0,
       total: 0,
     }),

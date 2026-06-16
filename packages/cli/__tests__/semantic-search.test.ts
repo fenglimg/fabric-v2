@@ -2,7 +2,7 @@
 // step. Covers idempotency (the install "可选步骤幂等") and the skip path (a
 // normal install never touches embed config).
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,9 +24,11 @@ afterEach(() => {
 function mkTemp(): string {
   const d = mkdtempSync(join(tmpdir(), "fab-embed-enable-"));
   tempDirs.push(d);
+  mkdirSync(join(d, ".fabric"), { recursive: true });
   return d;
 }
-const configPathOf = (root: string) => join(root, "fabric.config.json");
+// A1 (KT-DEC-0003): config lives in `.fabric/fabric-config.json`, the single source of truth.
+const configPathOf = (root: string) => join(root, ".fabric", "fabric-config.json");
 const readCfg = (root: string) => JSON.parse(readFileSync(configPathOf(root), "utf8")) as Record<string, unknown>;
 
 describe("enableSemanticSearch (v2.1 ③)", () => {

@@ -1345,6 +1345,40 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).not.toMatch(/ON-DEMAND/);
   });
 
+  it("census labels total as entry COUNT (not 'KB') and surfaces a [project] bucket", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en" });
+    const { out } = capture({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+      census: {
+        by_type: { guidelines: 1, models: 0, decisions: 4, pitfalls: 2, processes: 0 },
+        by_layer: { team: 4, personal: 1, project: 2 },
+        dropped_other_project: 0,
+        total: 7,
+      },
+      alwaysBodies,
+    });
+    const env = JSON.parse(out[0]);
+    // Block 3: `total` is the read-set ENTRY COUNT, labeled entries — never "KB".
+    expect(env.systemMessage).toMatch(/SessionStart \(7 entries\)/);
+    expect(env.systemMessage).not.toMatch(/\d+ KB/);
+    // Block 4: project-scoped entries get their own bucket between team & personal.
+    expect(env.systemMessage).toMatch(/\[team\] 4 · \[project\] 2 · \[personal\] 1/);
+  });
+
+  it("omits the [project] bucket when no project-scoped entries exist", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en" });
+    const { out } = capture({
+      payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+      census, // by_layer.project = 0 (absent)
+      alwaysBodies,
+    });
+    const env = JSON.parse(out[0]);
+    expect(env.systemMessage).toMatch(/\[team\] 6 · \[personal\] 1/);
+    expect(env.systemMessage).not.toMatch(/\[project\]/);
+  });
+
   it("nudge_mode=silent → AI additionalContext STILL emitted, systemMessage suppressed (D5 invariant)", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
     writeConfig({ fabric_language: "en", nudge_mode: "silent" });

@@ -185,10 +185,14 @@ describe("planContext", () => {
     expect(result.entries[0]?.path).toBe("src/index.ts");
     expect(result.entries[0]?.requirement_profile).toMatchObject({
       target_path: "src/index.ts",
-      user_intent: "rendering tweak",
       known_tech: ["TypeScript"],
       detected_entities: ["Renderer"],
     });
+    // ④ payload de-dup: user_intent was echoed verbatim into EVERY per-path
+    // requirement_profile (N paths → N copies of the same intent string). Lifted
+    // to a single top-level `intent` echo; per-entry profile no longer carries it.
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("user_intent");
+    expect(result.intent).toBe("rendering tweak");
     // v2.0.0-rc.38 UX-3: path_segments / extension dropped (derivable).
     expect(result.entries[0]?.requirement_profile).not.toHaveProperty("extension");
     expect(result.entries[0]?.requirement_profile).not.toHaveProperty("path_segments");
@@ -791,8 +795,8 @@ describe("planContext top_k truncation (W1-T3)", () => {
     const projectRoot = await createTeamProject();
     if (topK !== undefined) {
       await writeFile(
-        join(projectRoot, "fabric.config.json"),
-        `${JSON.stringify({ plan_context_top_k: topK }, null, 2)}\n`,
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: topK }, null, 2)}\n`,
       );
     }
     const topics: Array<[string, string]> = [
@@ -941,7 +945,10 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
       const projectRoot = await seedTwoOpaqueEntries();
       // embed_weight defaults to 30 (≤49 cap). BM25 is 0 for both candidates
       // (no shared token), so any positive vector weight is the deciding signal.
-      await writeFile(join(projectRoot, "fabric.config.json"), `${JSON.stringify({ embed_enabled: true })}\n`);
+      await writeFile(
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], embed_enabled: true }, null, 2)}\n`,
+      );
 
       // Query is 'a'-heavy and shares no lexical token with either summary, so
       // BM25 is 0 for both — the vector supplement is the deciding signal.
@@ -1001,6 +1008,51 @@ describe("planContext scoring calibration — BM25 leads (W3-REVIEW)", () => {
 
     // Content match (BM25 ~3 rare terms × 50) beats perfect same-file locality (100).
     expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-8001", "team:KT-DEC-8002"]);
+  });
+
+  // recency calibration lock: recency is a TIE-BREAK nudge (~same-package tier),
+  // NOT able to trample a stronger structural signal. A recently-created entry
+  // sitting only in the same PACKAGE must not outrank an old entry that matches
+  // the exact target FILE. Pre-fix recency was +100 (== same-file locality), so a
+  // burst of recent archives drowned older path-relevant entries; this pins the
+  // post-fix calibration where recency can no longer flip that ordering.
+  // created_at is computed relative to Date.now() so the test stays hermetic
+  // (no fixed near-future date that would stop earning the recency window).
+  it("recency is a tie-break nudge, not a trampler — recent same-package loses to old same-file", async () => {
+    const projectRoot = await createTeamProject();
+    const recent = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 1d ago → recency window
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); // 30d ago → no boost
+    // RECENT + same-PACKAGE locality only (+25), no content overlap.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8101",
+      summary: "recent same package",
+      maturity: "verified",
+      created_at: recent,
+      relevance_scope: "broad",
+      relevance_paths: ["packages/cli/other/bar.ts"],
+    });
+    // OLD + same-FILE locality (+100), no content overlap.
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8102",
+      summary: "old same file",
+      maturity: "verified",
+      created_at: old,
+      relevance_scope: "broad",
+      relevance_paths: ["packages/cli/src/foo.ts"],
+    });
+    mountStores();
+
+    // No intent → BM25 off → score = equal salience + recency + locality only.
+    const result = await planContext(projectRoot, {
+      paths: ["packages/cli/src/foo.ts"],
+      target_paths: ["packages/cli/src/foo.ts"],
+    });
+
+    // same-file locality (100) must lead same-package (25) + recency nudge (25).
+    expect(result.candidates.map((c) => c.stable_id)).toEqual([
+      "team:KT-DEC-8102",
+      "team:KT-DEC-8101",
+    ]);
   });
 });
 
@@ -1077,8 +1129,8 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     const projectRoot = await createTeamProject();
     if (opts.topK !== undefined) {
       await writeFile(
-        join(projectRoot, "fabric.config.json"),
-        `${JSON.stringify({ plan_context_top_k: opts.topK }, null, 2)}\n`,
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: opts.topK }, null, 2)}\n`,
       );
     }
     // KT-DEC-9201: strongly matches the intent (ranks top). KT-DEC-9202: the

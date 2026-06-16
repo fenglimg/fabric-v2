@@ -121,14 +121,15 @@ function readSnapshotCanonicalCount(projectRoot) {
   }
   try {
     const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
-    const stats = snapshot && snapshot.knowledge_stats;
-    if (
-      stats &&
-      typeof stats === "object" &&
-      Number.isFinite(stats.canonical_count) &&
-      stats.canonical_count > 0
-    ) {
-      return Math.floor(stats.canonical_count);
+    // LIVE recount off the snapshot's resolved store dirs. The cached
+    // knowledge_stats.canonical_count is frozen at snapshot-write time and goes
+    // stale when store content syncs in out-of-band (e.g. the store grew from 1
+    // → 57 nodes via a `git pull`/cross-workspace sync that never regenerated
+    // THIS workspace's snapshot), which mis-fired the "knowledge sparse"
+    // underseed nudge (KT-PIT-0017, same stale-projection root cause).
+    const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
+    if (live && Number.isFinite(live.canonicalCount) && live.canonicalCount > 0) {
+      return Math.floor(live.canonicalCount);
     }
   } catch {
     // best-effort hint stats only
@@ -805,7 +806,7 @@ function toPluralType(type) {
 // count the (possibly sliced) entries by knowledge_type so the human banner still
 // has something to group. Production payloads always carry the unsliced census.
 function deriveCensusFromEntries(entries) {
-  const census = { by_type: {}, by_layer: { team: 0, personal: 0 }, dropped_other_project: 0, total: 0 };
+  const census = { by_type: {}, by_layer: { team: 0, personal: 0, project: 0 }, dropped_other_project: 0, total: 0 };
   if (!Array.isArray(entries)) return census;
   for (const e of entries) {
     const type = e && typeof e.type === "string" ? toPluralType(e.type) : null;
@@ -833,7 +834,8 @@ function renderHumanCensus(census, opts) {
       .join(" · ");
 
   const lines = [];
-  lines.push(`▸ [fabric] SessionStart (${total} KB)`);
+  // `total` is the read-set ENTRY COUNT (not bytes) — label it as 条/entries.
+  lines.push(`▸ [fabric] SessionStart (${total} ${zh ? "条" : total === 1 ? "entry" : "entries"})`);
   // W2-2/W2-3 (KT-DEC-0027/0029): the human breadcrumb shows only the
   // always-loaded (guideline/model) census. The on-demand (decision/pitfall/
   // process) count line and the dropped-other-project line are retired — the
@@ -843,8 +845,14 @@ function renderHumanCensus(census, opts) {
   lines.push(zh ? "  ─ always-loaded(AI 也收到正文)─" : "  ─ always-loaded (AI also gets bodies) ─");
   lines.push(`   ${alwaysCounts.length > 0 ? alwaysCounts : zh ? "(无)" : "(none)"}`);
   const layer = c.by_layer || {};
-  if ((layer.team || 0) > 0 || (layer.personal || 0) > 0) {
-    lines.push(`  [team] ${layer.team || 0} · [personal] ${layer.personal || 0}`);
+  const teamCount = layer.team || 0;
+  const personalCount = layer.personal || 0;
+  const projectCount = layer.project || 0;
+  if (teamCount > 0 || personalCount > 0 || projectCount > 0) {
+    const segs = [`[team] ${teamCount}`];
+    if (projectCount > 0) segs.push(`[project] ${projectCount}`);
+    segs.push(`[personal] ${personalCount}`);
+    lines.push(`  ${segs.join(" · ")}`);
   }
   return lines;
 }
@@ -959,6 +967,114 @@ function renderAiSink(opts) {
 // by tests. Wraps the entire flow in try/catch: ANY error → silent exit 0.
 // -----------------------------------------------------------------------------
 
+// Block 5 (Option X): build the two SessionStart sinks (human systemMessage +
+// AI additionalContext) from a plan-context-hint payload, WITHOUT emitting or
+// recording telemetry. This is the single shared renderer: main() calls it then
+// emits + logs; `fabric context` calls it then prints (byte-identical injection
+// by construction — same code, same config/FS reads). Pure-ish: it reads config
+// + snapshot + .md summaries for `cwd` but has no stdout/ledger side effects.
+//
+// Returns:
+//   human               — gated final human text (null when gated off / empty)
+//   ai                  — gated final AI text (null when reminder-to-context off / empty)
+//   resolvedPayload     — payload with opaque summaries resolved (for telemetry / --explain)
+//   hasRenderedContent  — true when ANY sink rendered content (main's silent-exit gate)
+//   reminderToContext   — readReminderToContext(cwd) (telemetry target-channel)
+function buildSessionStartSinks(cwd, payload, env) {
+  // rc.35 TASK-06: opaque-summary substitution (best-effort; failure leaves
+  // the original summary untouched).
+  let resolvedPayload = payload;
+  try {
+    if (payload && Array.isArray(payload.entries)) {
+      const resolvedEntries = resolveOpaqueSummaries(
+        payload.entries,
+        cwd,
+        typeof payload.revision_hash === "string" ? payload.revision_hash : "",
+      );
+      resolvedPayload = { ...payload, entries: resolvedEntries };
+    }
+  } catch {
+    // resolveOpaqueSummaries swallows its own errors; belt + suspenders.
+  }
+
+  const recommendImport = shouldRecommendImport(cwd);
+  const summaryMaxLen = readSummaryMaxLen(cwd);
+  const broadBudgetChars = readBroadBudgetChars(cwd);
+  const fabricLanguageForEmit = readFabricLanguage(cwd);
+
+  const census =
+    env && env.census !== undefined
+      ? env.census
+      : payload && payload.census
+        ? payload.census
+        : deriveCensusFromEntries(resolvedPayload && resolvedPayload.entries);
+  const alwaysBodies =
+    env && env.alwaysBodies !== undefined
+      ? env.alwaysBodies
+      : payload && Array.isArray(payload.always_bodies)
+        ? payload.always_bodies
+        : [];
+
+  const humanGate =
+    nudgePolicy !== null
+      ? nudgePolicy.resolveHumanSink(cwd, "session_start", {})
+      : { emitHuman: true, verbosity: "normal" };
+
+  // ---- HUMAN sink: §3 grouped census (+ verbose per-entry detail). ----
+  const humanLines = renderHumanCensus(census, { lang: fabricLanguageForEmit });
+  if (humanLines.length > 0 && humanGate.verbosity === "verbose") {
+    const detail = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
+    humanLines.push(...detail);
+  }
+  if (bindingsSnapshotReader !== null && humanLines.length > 0) {
+    try {
+      const bindingId = readWorkspaceBindingId(cwd);
+      if (bindingId) {
+        const label = bindingsSnapshotReader.formatStoreLabels(
+          bindingsSnapshotReader.readBindingsSnapshot(bindingId),
+        );
+        if (label) humanLines.push(label);
+      }
+    } catch {
+      // store labels are decorative provenance — never crash the hook
+    }
+  }
+  if (recommendImport && humanLines.length > 0 && fabricLanguageForEmit !== null) {
+    humanLines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
+  }
+  if (humanLines.length > 0) {
+    humanLines.push(
+      fabricLanguageForEmit === "zh-CN"
+        ? "下一步: 改相关文件前调 fab_recall(paths) 拿 KB 条目的描述+读路径;按需 Read 路径取正文。"
+        : "Next: before editing related files, call fab_recall(paths) for the KB entries' descriptions + read paths; Read a path on demand for the body.",
+    );
+    // Block 5 (Option X): point to the byte-identical inspector for this injection.
+    humanLines.push(
+      fabricLanguageForEmit === "zh-CN"
+        ? "看具体注入: fabric context (--explain 看每条来源)"
+        : "Inspect this injection: fabric context (--explain for per-entry provenance)",
+    );
+  }
+
+  // ---- AI sink: spine — always-active bodies + reference, bounded. ----
+  const broadIndexBackstop = readBroadIndexBackstop(cwd);
+  const aiText = renderAiSink({
+    entries: resolvedPayload && Array.isArray(resolvedPayload.entries) ? resolvedPayload.entries : [],
+    alwaysBodies,
+    budgetChars: broadBudgetChars,
+    broadIndexBackstop,
+    summaryMaxLen,
+    lang: fabricLanguageForEmit,
+  });
+
+  const hasRenderedContent = humanLines.length > 0 || (typeof aiText === "string" && aiText.length > 0);
+  const human = humanGate.emitHuman && humanLines.length > 0 ? humanLines.join("\n") : null;
+  const reminderToContext = readReminderToContext(cwd);
+  const ai = reminderToContext && aiText && aiText.length > 0 ? aiText : null;
+
+  return { human, ai, resolvedPayload, hasRenderedContent, reminderToContext };
+}
+
 function main(env, stdio) {
   try {
     const cwd = (env && env.cwd) || process.cwd();
@@ -997,128 +1113,22 @@ function main(env, stdio) {
     if (payload === null || payload === undefined) return; // silent
 
     // W2-1 (KT-DEC-0028): broad 全显示 — the legacy hint_broad_top_k hard cap is
-    // retired. SessionStart must SEE every broad entry (completeness); scale is
-    // bounded by the per-line char cap (hint_summary_max_len) and the
-    // broad_index_backstop fold (D0028), not by silently dropping entries.
+    // retired. SessionStart must SEE every broad entry; scale is bounded by the
+    // per-line char cap + broad_index_backstop fold, not by dropping entries.
 
-    // rc.35 TASK-06 (P0-10.b): summary-fallback substitution. Entries whose
-    // description.summary equals stable_id render as "<id> · <id>" and the
-    // AI skips fetching them; the fallback reads `## Summary` from the
-    // entry's .md file and swaps in the first paragraph. Best-effort —
-    // failure leaves the original opaque summary untouched.
-    let resolvedPayload = payload;
-    try {
-      if (payload && Array.isArray(payload.entries)) {
-        const resolvedEntries = resolveOpaqueSummaries(
-          payload.entries,
-          cwd,
-          typeof payload.revision_hash === "string" ? payload.revision_hash : "",
-        );
-        resolvedPayload = { ...payload, entries: resolvedEntries };
-      }
-    } catch {
-      // resolveOpaqueSummaries swallows its own errors; this catch is belt
-      // + suspenders for any unexpected exception from the lib layer.
-    }
-
-    // rc.8 underseed self-check: decide whether to surface the one-line
-    // `/fabric-import` recommendation banner alongside the broad summary.
-    const recommendImport = shouldRecommendImport(cwd);
-
-    // rc.12: broad-summary body is unconditionally rendered on every
-    // SessionStart fire (Skill-style progressive disclosure). The prior
-    // revision_hash cooldown gate (rc.7 T8 — rc.11) was removed because
-    // compact/clear-triggered SessionStart re-fires must re-inject the menu
-    // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
-    // hours-based cooldown via fabric-config (see gate above).
-    const summaryMaxLen = readSummaryMaxLen(cwd);
-    // v2.2 HK2-degrade (W2-T2): thread the injection char-budget into the renderer.
-    const broadBudgetChars = readBroadBudgetChars(cwd);
-
-    // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path.
-    const fabricLanguageForEmit = readFabricLanguage(cwd);
-
-    // v2.2 dual-sink (Goal A): census drives the human grouped banner; always_bodies
-    // drives the AI sink. Both come from the plan-context-hint payload; tests /
-    // old CLIs lacking them fall back gracefully (census derived from entries).
-    const census =
-      env && env.census !== undefined
-        ? env.census
-        : payload && payload.census
-          ? payload.census
-          : deriveCensusFromEntries(resolvedPayload && resolvedPayload.entries);
-    const alwaysBodies =
-      env && env.alwaysBodies !== undefined
-        ? env.alwaysBodies
-        : payload && Array.isArray(payload.always_bodies)
-          ? payload.always_bodies
-          : [];
-
-    // v2.2 dual-sink (Goal A / D4): resolve the human-output gate. nudge_mode only
-    // adjusts the human systemMessage — the AI sink is emitted regardless (D5).
-    const humanGate =
-      nudgePolicy !== null
-        ? nudgePolicy.resolveHumanSink(cwd, "session_start", {})
-        : { emitHuman: true, verbosity: "normal" };
-
-    // ---- HUMAN sink: §3 grouped census (+ verbose per-entry detail). ----
-    const humanLines = renderHumanCensus(census, { lang: fabricLanguageForEmit });
-    if (humanLines.length > 0 && humanGate.verbosity === "verbose") {
-      // verbose nudge_mode: append the legacy per-entry listing under the census.
-      const detail = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
-      humanLines.push(...detail);
-    }
-    // v2.1.0-rc.1 P4 (F4/S63): per-store read-set label (which stores are read /
-    // where writes land). Best-effort; a missing snapshot omits the line.
-    if (bindingsSnapshotReader !== null && humanLines.length > 0) {
-      try {
-        const bindingId = readWorkspaceBindingId(cwd);
-        if (bindingId) {
-          const label = bindingsSnapshotReader.formatStoreLabels(
-            bindingsSnapshotReader.readBindingsSnapshot(bindingId),
-          );
-          if (label) humanLines.push(label);
-        }
-      } catch {
-        // store labels are decorative provenance — never crash the hook
-      }
-    }
-    // rc.8 underseed self-check: one-line `/fabric-import` recommendation banner.
-    if (recommendImport && humanLines.length > 0 && fabricLanguageForEmit !== null) {
-      humanLines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
-    }
-    // v2.0.0-rc.37 NEW-23: SessionStart "next step" guidance.
-    if (humanLines.length > 0) {
-      humanLines.push(
-        fabricLanguageForEmit === "zh-CN"
-          ? "下一步: 改相关文件前调 fab_recall(paths) 拿 KB 条目的描述+读路径;按需 Read 路径取正文。"
-          : "Next: before editing related files, call fab_recall(paths) for the KB entries' descriptions + read paths; Read a path on demand for the body.",
-      );
-    }
-
-    // ---- AI sink (KT-DEC-0027/0028): the spine — always-active bodies +
-    // decision/pitfall/process REFERENCE (title + must_read_if), bounded by the
-    // char budget and the broad_index_backstop fold. ----
-    const broadIndexBackstop = readBroadIndexBackstop(cwd);
-    const aiText = renderAiSink({
-      entries: resolvedPayload && Array.isArray(resolvedPayload.entries) ? resolvedPayload.entries : [],
-      alwaysBodies,
-      budgetChars: broadBudgetChars,
-      broadIndexBackstop,
-      summaryMaxLen,
-      lang: fabricLanguageForEmit,
-    });
+    // Block 5 (Option X): build both sinks via the shared renderer (same code
+    // `fabric context` uses → byte-identical injection). Side-effect-free; the
+    // emit + telemetry below stay in main().
+    const { human, ai, resolvedPayload, hasRenderedContent, reminderToContext } =
+      buildSessionStartSinks(cwd, payload, env);
 
     // Nothing to say at all → silent exit (preserves the empty-payload contract).
-    if (humanLines.length === 0 && (!aiText || aiText.length === 0)) return;
+    if (!hasRenderedContent) return;
 
     // v2.2 dual-sink (Goal A / D7): emit both channels in one render. The human
     // systemMessage is gated by nudge_mode (emitHuman); the AI additionalContext
     // is emitted regardless. emitDualSink shapes the protocol per client (CC/Codex
     // camelCase nested envelope; unknown → stderr).
-    const human = humanGate.emitHuman && humanLines.length > 0 ? humanLines.join("\n") : null;
-    const reminderToContext = readReminderToContext(cwd);
-    const ai = reminderToContext && aiText && aiText.length > 0 ? aiText : null;
     if (!(env && env.skipStdout === true)) {
       emitDualSink(
         { human, ai },
@@ -1210,6 +1220,7 @@ function main(env, stdio) {
 
 module.exports = {
   main,
+  buildSessionStartSinks,
   invokePlanContextHint,
   groupEntries,
   renderFull,

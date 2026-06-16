@@ -117,23 +117,27 @@ function readSnapshotKnowledgeStats(projectRoot, now) {
   }
   try {
     const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
-    const stats = snapshot && snapshot.knowledge_stats;
-    if (!stats || typeof stats !== "object") {
+    // LIVE recount off the snapshot's resolved store dirs. The cached
+    // knowledge_stats projection is frozen at snapshot-write time, so once the
+    // pending queue is reviewed (or store content syncs out-of-band) it goes
+    // stale — that is the phantom review-backlog this hook used to report
+    // (KT-PIT-0017). The authoritative count is the live *.md walk under the
+    // resolved store dirs.
+    const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
+    if (!live || typeof live !== "object") {
       return empty;
     }
     const pendingCount =
-      Number.isFinite(stats.pending_count) && stats.pending_count > 0
-        ? Math.floor(stats.pending_count)
-        : 0;
+      Number.isFinite(live.pendingCount) && live.pendingCount > 0 ? Math.floor(live.pendingCount) : 0;
     const canonicalCount =
-      Number.isFinite(stats.canonical_count) && stats.canonical_count > 0
-        ? Math.floor(stats.canonical_count)
+      Number.isFinite(live.canonicalCount) && live.canonicalCount > 0
+        ? Math.floor(live.canonicalCount)
         : 0;
     const oldestPendingAgeMs =
       pendingCount > 0 &&
-      Number.isFinite(stats.oldest_pending_mtime_ms) &&
-      stats.oldest_pending_mtime_ms > 0
-        ? Math.max(0, nowMs - stats.oldest_pending_mtime_ms)
+      Number.isFinite(live.oldestPendingMtimeMs) &&
+      live.oldestPendingMtimeMs > 0
+        ? Math.max(0, nowMs - live.oldestPendingMtimeMs)
         : null;
     return { pendingCount, oldestPendingAgeMs, canonicalCount };
   } catch {
@@ -478,6 +482,81 @@ function countEditsSince(projectRoot, anchorTs) {
     }
   }
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// Observability grill (a + Q4): session-activity status breadcrumb.
+//
+// A no-signal Stop used to return SILENT — the human only ever heard from
+// Fabric when there was a nudge to act on, never a "here is what I did" recap,
+// which reads as "Fabric does nothing in the background". These two helpers add
+// a HUMAN-ONLY trust anchor (the AI gets no activity recap — flow ⊥ observation,
+// D5) plus the nudge_mode tier-guidance line (so the human-channel volume knob
+// is discoverable). Cadence is gated by nudge_mode at emit time.
+// ---------------------------------------------------------------------------
+
+// Session-scoped tally. Counts ONLY events that carry session_id, filtered to
+// the current session — knowledge_context_planned / knowledge_proposed lack
+// session_id and are intentionally excluded (a cross-session count would
+// mislead). Exported for unit tests.
+function tallySessionActivity(events, sessionId) {
+  let edits = 0;
+  let consumed = 0;
+  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
+    return { edits, consumed };
+  }
+  for (const ev of events) {
+    if (!ev || ev.session_id !== sessionId) continue;
+    if (ev.event_type === "file_mutated") edits += 1;
+    else if (ev.event_type === "knowledge_consumed") consumed += 1;
+  }
+  return { edits, consumed };
+}
+
+// Emit the human-facing session status breadcrumb when no actionable signal
+// fired. Human sink ONLY. Cadence by nudge_mode: silent → never; minimal/normal
+// → once per session; verbose → every turn. Folds in the tier-guidance line on
+// the first status of the session so the volume knob is discoverable. Never
+// throws — the caller wraps it, but every branch degrades silently anyway.
+function emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out) {
+  if (nudgePolicy === null || clientAdapter === null) return;
+  if (typeof clientAdapter.emitDualSink !== "function") return;
+  const sessionId = resolveHookSessionId(stdinPayload);
+  if (typeof sessionId !== "string" || sessionId.length === 0) return;
+
+  const mode =
+    typeof nudgePolicy.readNudgeMode === "function" ? nudgePolicy.readNudgeMode(cwd) : "normal";
+  if (mode === "silent") return; // human channel globally muted
+
+  const tally = tallySessionActivity(events, sessionId);
+  const pending = pendingStats && typeof pendingStats.total === "number" ? pendingStats.total : 0;
+  // Nothing happened yet this session AND no backlog → no trust anchor to show.
+  if (tally.edits === 0 && tally.consumed === 0 && pending === 0) return;
+
+  // Cadence gate: normal/minimal show once per session; verbose every turn.
+  const cache = readShownCache(cwd, sessionId);
+  const firstThisSession = cache._status === undefined;
+  if (mode !== "verbose" && !firstThisSession) return;
+
+  const variant = readFabricLanguage(cwd);
+  const line1 = renderBanner("statusLine", variant, {
+    edits: tally.edits,
+    consumed: tally.consumed,
+    pending,
+  });
+  // Tier guidance only on the first status of the session (don't repeat it on
+  // every verbose turn).
+  const human = firstThisSession
+    ? `${line1}\n${renderBanner("statusTier", variant, { mode })}`
+    : line1;
+
+  clientAdapter.emitDualSink(
+    { human, ai: null },
+    { client: clientAdapter.detectClient(__dirname), eventName: "Stop", streams: { stdout: out } },
+  );
+
+  cache._status = nowMs;
+  writeShownCache(cwd, cache, sessionId);
 }
 
 /**
@@ -2142,7 +2221,18 @@ function main(env, stdio) {
       }
     }
 
-    if (result === null) return;
+    if (result === null) {
+      // Observability grill (a): no actionable signal — instead of returning
+      // silently (which made Fabric feel inert in the background), surface a
+      // session-activity status breadcrumb to the human sink (gated by
+      // nudge_mode). Best-effort: never block the Stop hook on it.
+      try {
+        emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out);
+      } catch {
+        // status breadcrumb is decorative — never throw
+      }
+      return;
+    }
 
     // v2.2 dual-sink (Goal A / D6): VALUE-GATE the archive nudge. Signal A's
     // edit/hours trigger is the CHECK cadence; the nudge only fires when a
@@ -2261,6 +2351,8 @@ module.exports = {
   readPendingStats,
   countCanonicalNodes,
   countEditsSince,
+  // observability grill (a): session-activity tally for the human status line.
+  tallySessionActivity,
   // rc.7 T4: top-edited-directories aggregator + banner overview formatter.
   getTopEditedDirectories,
   formatActivityOverview,

@@ -135,6 +135,12 @@ export const enMessages: Messages = {
   "cli.config.fields.audit_mode.label": "Audit mode",
   "cli.config.fields.audit_mode.description":
     "Audit verbosity for human-lock + drift detection (strict / warn / off).",
+  "cli.config.fields.nudge_mode.label": "Nudge level",
+  "cli.config.fields.nudge_mode.description":
+    "Preset for human-visible nudges (silent / minimal / normal / verbose). Governs only the human channel — never the knowledge injected to the AI.",
+  "cli.config.fields.embed_enabled.label": "Vector semantic search",
+  "cli.config.fields.embed_enabled.description":
+    "Enable vector semantic recall (true / false). Note: turning this on also needs `fabric install --enable-embed` for the host-side setup (fastembed + model cache); flipping it here alone does not enable it.",
 
   "cli.doctor.description":
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).\n" +
