@@ -805,7 +805,7 @@ function toPluralType(type) {
 // count the (possibly sliced) entries by knowledge_type so the human banner still
 // has something to group. Production payloads always carry the unsliced census.
 function deriveCensusFromEntries(entries) {
-  const census = { by_type: {}, by_layer: { team: 0, personal: 0 }, dropped_other_project: 0, total: 0 };
+  const census = { by_type: {}, by_layer: { team: 0, personal: 0, project: 0 }, dropped_other_project: 0, total: 0 };
   if (!Array.isArray(entries)) return census;
   for (const e of entries) {
     const type = e && typeof e.type === "string" ? toPluralType(e.type) : null;
@@ -833,7 +833,8 @@ function renderHumanCensus(census, opts) {
       .join(" · ");
 
   const lines = [];
-  lines.push(`▸ [fabric] SessionStart (${total} KB)`);
+  // `total` is the read-set ENTRY COUNT (not bytes) — label it as 条/entries.
+  lines.push(`▸ [fabric] SessionStart (${total} ${zh ? "条" : total === 1 ? "entry" : "entries"})`);
   // W2-2/W2-3 (KT-DEC-0027/0029): the human breadcrumb shows only the
   // always-loaded (guideline/model) census. The on-demand (decision/pitfall/
   // process) count line and the dropped-other-project line are retired — the
@@ -843,8 +844,14 @@ function renderHumanCensus(census, opts) {
   lines.push(zh ? "  ─ always-loaded(AI 也收到正文)─" : "  ─ always-loaded (AI also gets bodies) ─");
   lines.push(`   ${alwaysCounts.length > 0 ? alwaysCounts : zh ? "(无)" : "(none)"}`);
   const layer = c.by_layer || {};
-  if ((layer.team || 0) > 0 || (layer.personal || 0) > 0) {
-    lines.push(`  [team] ${layer.team || 0} · [personal] ${layer.personal || 0}`);
+  const teamCount = layer.team || 0;
+  const personalCount = layer.personal || 0;
+  const projectCount = layer.project || 0;
+  if (teamCount > 0 || personalCount > 0 || projectCount > 0) {
+    const segs = [`[team] ${teamCount}`];
+    if (projectCount > 0) segs.push(`[project] ${projectCount}`);
+    segs.push(`[personal] ${personalCount}`);
+    lines.push(`  ${segs.join(" · ")}`);
   }
   return lines;
 }

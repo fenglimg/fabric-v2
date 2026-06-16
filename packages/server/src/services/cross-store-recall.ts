@@ -313,7 +313,10 @@ export interface AlwaysActiveBody {
 export interface KnowledgeCensus {
   /** knowledge_type → count (decisions/pitfalls/guidelines/models/processes). */
   by_type: Record<string, number>;
-  by_layer: { team: number; personal: number };
+  // semantic_scope buckets: `team`/`personal` keyed on the physical layer, plus a
+  // `project` bucket for `project:<active>`-scoped entries (A1/KT-MOD-0001 — a
+  // project entry lives in a team store but is its own audience, not team-wide).
+  by_layer: { team: number; personal: number; project: number };
   /** entries专属 to OTHER projects that filterByActiveProject removed. */
   dropped_other_project: number;
   /** kept (post-filter) total. */
@@ -329,7 +332,7 @@ export interface KnowledgeCensus {
 export async function buildKnowledgeCensus(projectRoot: string): Promise<KnowledgeCensus> {
   const census: KnowledgeCensus = {
     by_type: {},
-    by_layer: { team: 0, personal: 0 },
+    by_layer: { team: 0, personal: 0, project: 0 },
     dropped_other_project: 0,
     total: 0,
   };
@@ -343,7 +346,14 @@ export async function buildKnowledgeCensus(projectRoot: string): Promise<Knowled
       if (typeof type === "string") {
         census.by_type[type] = (census.by_type[type] ?? 0) + 1;
       }
-      census.by_layer[entry.layer] += 1;
+      // Project-scoped entries get their own bucket (they physically live in a
+      // team store but are a distinct audience); everything else folds into its
+      // physical layer (team/personal).
+      if (scopeRoot(entry.semanticScope) === "project") {
+        census.by_layer.project += 1;
+      } else {
+        census.by_layer[entry.layer] += 1;
+      }
       census.total += 1;
     }
   } catch {
