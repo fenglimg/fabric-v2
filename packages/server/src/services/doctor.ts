@@ -81,6 +81,11 @@ import {
   inspectStoreCounters,
 } from "./doctor-store-counters.js";
 import {
+  createStoreOrphanCheck,
+  fixStoreOrphans,
+  inspectStoreOrphans,
+} from "./doctor-store-orphan.js";
+import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
   readEventLedger,
@@ -677,6 +682,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
   // replacement — disk-max FLOOR semantics over every read-set store.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
+  // store-onboarding grill (Q5): on-disk store dirs absent from the registry
+  // (orphans). Global-scoped (reads ~/.fabric/stores, not the project); never
+  // throws. `--fix` adopts them (re-register, never delete).
+  const storeOrphans = inspectStoreOrphans();
   // v2.2 Goal B (G-INTEGRITY): store-aware stable_id collision + layer mismatch.
   // Single walk of the read-set store canonical corpus; never throws (degrades
   // to no-findings when no store is mounted).
@@ -817,6 +826,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // counters.json, disk-max FLOOR / KT-DEC-0004). Registered below alongside
     // the scope lint, the other store-scoped doctor check.
     createStoreCounterCheck(t, storeCounterDrift),
+    // store-onboarding grill (Q5): on-disk store invisible to the registry
+    // (warning). `--fix` adopts it (rescue-before-delete — re-register, never
+    // an on-disk delete).
+    createStoreOrphanCheck(t, storeOrphans),
     // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
     // does not bump report status. Recommends running the fabric-import skill
     // to backfill knowledge when the corpus is below the threshold floor.
@@ -1021,6 +1034,17 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixStoreCounters(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "store_counter_drift"));
     contextCache.invalidate("meta_write", projectRoot);
+  }
+
+  // store-onboarding grill (Q5): adopt on-disk orphan stores into the registry.
+  // A WARNING (non-blocking), so it lives in before.warnings, not fixable_errors;
+  // --fix re-registers each (rescue-before-delete — the on-disk tree is never
+  // touched).
+  if (before.warnings.some((issue) => issue.code === "store_orphan")) {
+    const adopted = fixStoreOrphans();
+    if (adopted.length > 0) {
+      fixed.push(findIssue(before.warnings, "store_orphan"));
+    }
   }
 
   if (before.fixable_errors.some((issue) => issue.code === "event_ledger_partial_write")) {

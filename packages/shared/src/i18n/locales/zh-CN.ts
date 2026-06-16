@@ -538,6 +538,15 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 将每个 store 的 counters.json 提升（floor）到磁盘上观测到的最大 stable_id（floor 只升不降——KT-DEC-0004 单调不变量）。",
   "doctor.check.store_counter_drift.ok":
     "read-set 内每个 store 的 counters.json 都已 floor 到磁盘最大 stable_id。",
+  "doctor.check.store_orphan.name": "Store orphan",
+  "doctor.check.store_orphan.message.singular":
+    "{count} 个 store 在磁盘上存在但未登记到全局 registry（{detail}），recall / bind 都看不到它。运行 `fabric doctor --fix` 把它收编（重新登记，绝不删除磁盘文件）。",
+  "doctor.check.store_orphan.message.plural":
+    "{count} 个 store 在磁盘上存在但未登记到全局 registry（首个：{detail}），recall / bind 都看不到它们。运行 `fabric doctor --fix` 把它们收编（重新登记,绝不删除磁盘文件）。",
+  "doctor.check.store_orphan.remediation":
+    "运行 `fabric doctor --fix` 把这些孤儿 store 收编进 registry(按 store_uuid 重新登记、alias 撞库自动消歧;rescue-before-delete——只登记不删盘)。",
+  "doctor.check.store_orphan.ok":
+    "~/.fabric/stores 下没有未登记的孤儿 store。",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "project root 未检测到 CLAUDE.md 或 AGENTS.md。",
   "doctor.check.preexisting_root_files.message":
@@ -922,6 +931,9 @@ export const zhCNMessages: Messages = {
   // C5: store onboarding 交互文案统一走 t()。
   "cli.install.store.local-store": "本地 store",
   "cli.install.store.bind-mounted.prompt": "把一个已挂载的知识 store 绑定到本项目？",
+  "cli.install.store.setup.prompt": "为本项目设置知识 store？",
+  "cli.install.store.setup.bind-label": "绑定已挂载: {alias}",
+  "cli.install.store.setup.already-bound": "已绑定本项目: {aliases} ✓",
   "cli.install.store.skip-label": "跳过",
   "cli.install.store.bind-mounted.skip-hint": "暂不绑定已挂载的 store",
   "cli.install.store.project-coordinate": "在 store '{store}' 中的项目坐标 (project coordinate):",

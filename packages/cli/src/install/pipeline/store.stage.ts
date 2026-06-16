@@ -100,28 +100,35 @@ export class StoreStage implements Stage {
 
       const installed: string[] = [];
 
-      // Check for unbound stores. Interactive installs can bind one immediately;
-      // non-interactive installs only print the nudge and keep going.
+      // Merged store-setup step (single decision tree): list every mounted-but-
+      // unbound store as a direct bind option, alongside join-from-remote /
+      // create-local / skip. This kills the old two-prompt trap where a mounted
+      // store was invisible in the bind step, so the user re-cloned it via the
+      // onboarding step (KT-DEC-0017 — install is one flow of skippable steps,
+      // not separate sub-flows).
       const unboundStores = unboundAvailableStores(context.target);
-      if (unboundStores.length > 0) {
-        if (context.wizardEnabled) {
-          const bound = await this.promptBindMountedStore(context, unboundStores, globalRoot);
-          if (bound !== null) {
-            installed.push(`bound:${bound}`);
-            return stageRan("store", installed, []);
-          }
-        } else {
+      if (!context.wizardEnabled) {
+        // Non-interactive installs only print the nudge and keep going.
+        if (unboundStores.length > 0) {
           this.warnUnboundStores(unboundStores);
         }
+        return stageRan("store", installed, []);
       }
 
-      if (context.wizardEnabled) {
-        const onboarded = await this.promptStoreOnboarding(context.target, globalRoot);
-        if (onboarded !== null) {
-          installed.push(onboarded);
-        }
+      // Don't nag a fully-configured project: skip the prompt only when there is
+      // already an active write store AND nothing mounted is left to bind.
+      const projectConfig = loadProjectConfig(context.target);
+      const hasWriteStore =
+        typeof projectConfig?.active_write_store === "string" &&
+        projectConfig.active_write_store.length > 0;
+      if (hasWriteStore && unboundStores.length === 0) {
+        return stageRan("store", installed, []);
       }
 
+      const outcome = await this.promptStoreSetup(context, unboundStores, globalRoot);
+      if (outcome !== null) {
+        installed.push(outcome);
+      }
       return stageRan("store", installed, []);
     } catch (error) {
       return stageFailedFromError("store", error);
@@ -249,41 +256,142 @@ export class StoreStage implements Stage {
     return alias;
   }
 
-  private async promptBindMountedStore(
+  /**
+   * Merged store-setup prompt (Q1/Q2 of the store-onboarding grill): ONE select
+   * whose top options are every mounted-but-unbound store (direct bind, zero
+   * clone), followed by join-from-remote / create-local / skip. Replaces the old
+   * `promptBindMountedStore` + `promptStoreOnboarding` pair — a mounted store can
+   * no longer be invisible in one prompt and then re-cloned in the next.
+   *
+   * Already-bound non-personal stores are surfaced as an info line above the
+   * prompt (pure visibility); the personal store is implicit and never listed.
+   * Returns an install marker (`bound:<alias>` / `created:<alias>`) or null on
+   * skip / cancel.
+   */
+  private async promptStoreSetup(
     context: InstallContext,
     unboundStores: Array<{ alias: string; remote?: string }>,
     globalRoot: string,
   ): Promise<string | null> {
+    // Q2 — visibility of already-bound stores (info line, not selectable).
+    const boundAliases = this.boundStoreAliases(context.target, globalRoot);
+    if (boundAliases.length > 0) {
+      console.log(
+        paint.muted(
+          t("cli.install.store.setup.already-bound", {
+            aliases: boundAliases.map((a) => `'${a}'`).join(", "),
+          }),
+        ),
+      );
+    }
+
+    const JOIN = "__join__";
+    const CREATE = "__create__";
+    const SKIP = "skip";
     const choice = await select({
-      message: t("cli.install.store.bind-mounted.prompt"),
-      initialValue: "skip",
+      message: t("cli.install.store.setup.prompt"),
+      initialValue: unboundStores.length > 0 ? `bind:${unboundStores[0].alias}` : SKIP,
       options: [
         ...unboundStores.map((store) => ({
-          value: store.alias,
-          label: store.alias,
+          value: `bind:${store.alias}`,
+          label: t("cli.install.store.setup.bind-label", { alias: store.alias }),
           hint: store.remote ?? t("cli.install.store.local-store"),
         })),
         {
-          value: "skip",
+          value: JOIN,
+          label: t("cli.install.store.onboard.join-label"),
+          hint: t("cli.install.store.onboard.join-hint"),
+        },
+        {
+          value: CREATE,
+          label: t("cli.install.store.onboard.create-label"),
+          hint: t("cli.install.store.onboard.create-hint"),
+        },
+        {
+          value: SKIP,
           label: t("cli.install.store.skip-label"),
-          hint: t("cli.install.store.bind-mounted.skip-hint"),
+          hint: t("cli.install.store.onboard.skip-hint"),
         },
       ],
     });
-    if (isCancel(choice) || choice === "skip" || typeof choice !== "string") {
-      this.warnUnboundStores(unboundStores);
+    if (isCancel(choice) || choice === SKIP || typeof choice !== "string") {
+      if (unboundStores.length > 0) {
+        this.warnUnboundStores(unboundStores);
+      }
       return null;
     }
-    const bound = await this.bindStoreToProject(context.target, choice, globalRoot, {
-      interactive: true,
+
+    if (choice.startsWith("bind:")) {
+      const alias = choice.slice("bind:".length);
+      const bound = await this.bindStoreToProject(context.target, alias, globalRoot, {
+        interactive: true,
+      });
+      if (bound === null) {
+        this.warnUnboundStores(unboundStores);
+        return null;
+      }
+      console.log("");
+      console.log(paint.success(t("cli.install.store.bound-success", { alias })));
+      return `bound:${alias}`;
+    }
+
+    if (choice === JOIN) {
+      const url = await text({
+        message: t("cli.install.store.onboard.join-url"),
+        placeholder: "git@github.com:org/knowledge.git",
+      });
+      if (isCancel(url) || typeof url !== "string" || url.length === 0) {
+        return null;
+      }
+      return `bound:${await this.bindRemoteStoreToProject(context.target, url, globalRoot, true)}`;
+    }
+
+    // CREATE — fresh local store (optionally remote-backed).
+    const alias = await text({ message: t("cli.install.store.onboard.alias"), initialValue: "team" });
+    if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
+      return null;
+    }
+    const remote = await text({
+      message: t("cli.install.store.onboard.remote"),
+      placeholder: "git@github.com:org/knowledge.git",
     });
-    if (bound === null) {
-      this.warnUnboundStores(unboundStores);
-      return null;
+    const remoteStr =
+      !isCancel(remote) && typeof remote === "string" && remote.length > 0 ? remote : undefined;
+    return `created:${await this.bindCreatedStoreToProject(
+      context.target,
+      alias,
+      remoteStr === undefined
+        ? { globalRoot, interactive: true }
+        : { remote: remoteStr, globalRoot, interactive: true },
+    )}`;
+  }
+
+  /**
+   * The project's already-bound non-personal store aliases (Q2 visibility line).
+   * Reads `required_stores` from the project config and keeps only those still
+   * mounted as non-personal stores in the global registry.
+   */
+  private boundStoreAliases(projectRoot: string, globalRoot: string): string[] {
+    const declared = loadProjectConfig(projectRoot)?.required_stores ?? [];
+    if (declared.length === 0) {
+      return [];
     }
-    console.log("");
-    console.log(paint.success(t("cli.install.store.bound-success", { alias: choice })));
-    return choice;
+    const mounted = new Map(
+      storeList(globalRoot)
+        .filter((s) => s.personal !== true)
+        .flatMap((s) => [
+          [s.alias, s.alias] as const,
+          [s.store_uuid, s.alias] as const,
+        ]),
+    );
+    const aliases = new Set<string>();
+    for (const entry of declared) {
+      const alias = mounted.get(entry.id);
+      if (alias !== undefined) {
+        aliases.add(alias);
+      }
+    }
+    return [...aliases];
   }
 
   /**
@@ -342,73 +450,6 @@ export class StoreStage implements Stage {
       return null;
     }
     return normalizeStoreProjectId(entered);
-  }
-
-  /**
-   * Interactive "set up a team store" step.
-   *
-   * Idempotent: skipped when this project already has an active write store.
-   */
-  private async promptStoreOnboarding(projectRoot: string, globalRoot: string): Promise<string | null> {
-    const config = loadProjectConfig(projectRoot);
-    if (typeof config?.active_write_store === "string" && config.active_write_store.length > 0) {
-      return null;
-    }
-
-    const choice = await select({
-      message: t("cli.install.store.onboard.prompt"),
-      initialValue: "skip",
-      options: [
-        {
-          value: "skip",
-          label: t("cli.install.store.skip-label"),
-          hint: t("cli.install.store.onboard.skip-hint"),
-        },
-        {
-          value: "join",
-          label: t("cli.install.store.onboard.join-label"),
-          hint: t("cli.install.store.onboard.join-hint"),
-        },
-        {
-          value: "create",
-          label: t("cli.install.store.onboard.create-label"),
-          hint: t("cli.install.store.onboard.create-hint"),
-        },
-      ],
-    });
-    if (isCancel(choice) || choice === "skip") {
-      return null;
-    }
-
-    if (choice === "join") {
-      const url = await text({
-        message: t("cli.install.store.onboard.join-url"),
-        placeholder: "git@github.com:org/knowledge.git",
-      });
-      if (isCancel(url) || typeof url !== "string" || url.length === 0) {
-        return null;
-      }
-      // Onboarding only runs under the interactive wizard (execute gates it on
-      // wizardEnabled), so the disambiguation prompt is allowed here.
-      return `bound:${await this.bindRemoteStoreToProject(projectRoot, url, globalRoot, true)}`;
-    }
-
-    const alias = await text({ message: t("cli.install.store.onboard.alias"), initialValue: "team" });
-    if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
-      return null;
-    }
-    const remote = await text({
-      message: t("cli.install.store.onboard.remote"),
-      placeholder: "git@github.com:org/knowledge.git",
-    });
-    const remoteStr = !isCancel(remote) && typeof remote === "string" && remote.length > 0 ? remote : undefined;
-    return `created:${await this.bindCreatedStoreToProject(
-      projectRoot,
-      alias,
-      remoteStr === undefined
-        ? { globalRoot, interactive: true }
-        : { remote: remoteStr, globalRoot, interactive: true },
-    )}`;
   }
 
   private warnUnboundStores(unboundStores: Array<{ alias: string }>): void {

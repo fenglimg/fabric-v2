@@ -354,6 +354,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 ],
                 "type": "string",
               },
+              "related": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
               "relevance_paths": {
                 "items": {
                   "type": "string",
@@ -439,6 +445,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
               },
               "maturity": {
                 "$ref": "#/anyOf/3/properties/changes/properties/maturity",
+              },
+              "related": {
+                "$ref": "#/anyOf/3/properties/changes/properties/related",
               },
               "relevance_paths": {
                 "$ref": "#/anyOf/3/properties/changes/properties/relevance_paths",

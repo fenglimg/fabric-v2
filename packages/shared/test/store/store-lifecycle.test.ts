@@ -5,6 +5,7 @@ import {
   addMountedStore,
   bindRequiredStore,
   detachMountedStore,
+  disambiguateAlias,
   explainStore,
   findMountedStore,
 } from "../../src/store/store-lifecycle.js";
@@ -104,6 +105,21 @@ describe("P3 store lifecycle — bind + explain", () => {
       remote: "git@github.com:org/repo.git",
     });
     expect(findMountedStore(cfg, "platform")?.remote).toBe("git@github.com:org/repo.git");
+  });
+});
+
+describe("disambiguateAlias (store-onboarding grill Q6)", () => {
+  it("returns the desired alias unchanged when it is free", () => {
+    expect(disambiguateAlias(["personal", "team"], "platform")).toBe("platform");
+    expect(disambiguateAlias([], "team")).toBe("team");
+  });
+
+  it("appends a numeric suffix on collision", () => {
+    expect(disambiguateAlias(["team"], "team")).toBe("team-2");
+  });
+
+  it("skips already-taken suffixes until it finds a free one", () => {
+    expect(disambiguateAlias(["team", "team-2", "team-3"], "team")).toBe("team-4");
   });
 });
 

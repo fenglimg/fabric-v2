@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import {
   STORES_ROOT_DIR,
   addMountedStore,
   deriveMountLabel,
+  disambiguateAlias,
   globalConfigSchema,
   readStoreIdentity,
   storeRelativePathForMount,
@@ -69,6 +70,15 @@ function gitClone(url: string, dest: string): void {
 // store to the project + sets it as the write target). Returns the mounted
 // store's intrinsic identity so the caller never re-derives it from the remote.
 export function mountStoreFromRemote(url: string, globalRoot: string): { store_uuid: string; alias: string } {
+  const config = loadGlobalConfig(globalRoot);
+  if (config === null) {
+    // ISS-037: internal invariant — the global config should exist by now.
+    throw new GenericIOError("global config missing — run `fabric install --global` first", {
+      actionHint:
+        "re-run `fabric install --global` to (re)create the global config, then retry mounting the store; if it persists, inspect ~/.fabric for a partial install",
+    });
+  }
+
   const storesRoot = join(globalRoot, STORES_ROOT_DIR);
   mkdirSync(storesRoot, { recursive: true });
 
@@ -79,29 +89,65 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
   const identity = readStoreIdentity(cloneDest);
   if (identity === null) {
     // ISS-037: a successful clone of a repo that is not a Fabric store.
+    rmSync(tmp, { recursive: true, force: true }); // never leak the throwaway clone
     throw new GenericIOError(`cloned store at ${url} has no valid store.json (not a Fabric store)`, {
       actionHint:
         "verify the url points to a repository created by `fabric` (it must contain a store.json at its root); if you meant to mount a different store, re-run with the correct url",
     });
   }
 
-  const alias = identity.canonical_alias ?? "team";
+  // S55 — identity is the intrinsic store_uuid, never the url string or directory
+  // name. If this store is ALREADY mounted (same uuid), reuse the existing mount:
+  // re-cloning the same remote (or re-entering its url in the wizard) must be
+  // idempotent, never a duplicate clone or a rename onto a live directory.
+  const alreadyMounted = config.stores.find((s) => s.store_uuid === identity.store_uuid);
+  if (alreadyMounted !== undefined) {
+    rmSync(tmp, { recursive: true, force: true });
+    console.log(`store '${alreadyMounted.alias}' (${identity.store_uuid}) already mounted; reusing`);
+    return { store_uuid: identity.store_uuid, alias: alreadyMounted.alias };
+  }
+
+  // The canonical alias is just a human label — on collision with a DIFFERENT
+  // mounted store, auto-derive a unique one (`team` → `team-2`); the uuid stays
+  // the real identity, and the user can rename later via `fabric store`.
+  const desiredAlias = identity.canonical_alias ?? "team";
+  const alias = disambiguateAlias(config.stores.map((s) => s.alias), desiredAlias);
   // D4 — the directory LABEL is the remote-derived repo name (falls back to
   // alias / short uuid). A team clone is NOT personal → it lands in the `team/`
   // group bucket.
-  const mount_name = deriveMountLabel({ remote: url, alias, store_uuid: identity.store_uuid });
+  const mount_name = deriveMountLabel({ remote: url, alias: desiredAlias, store_uuid: identity.store_uuid });
   const finalDir = join(globalRoot, storeRelativePathForMount({ store_uuid: identity.store_uuid, mount_name }));
+
+  if (existsSync(finalDir)) {
+    // A directory already occupies the target. Reconcile by identity — never
+    // clobber blindly (the ENOTEMPTY bug): same uuid ⇒ adopt the on-disk tree
+    // (an orphan: on disk but absent from the registry) and just register it;
+    // different uuid (or no valid store.json) ⇒ refuse rather than overwrite.
+    const onDisk = readStoreIdentity(finalDir);
+    rmSync(tmp, { recursive: true, force: true }); // the fresh clone is redundant either way
+    if (onDisk === null || onDisk.store_uuid !== identity.store_uuid) {
+      throw new GenericIOError(
+        `cannot mount store from ${url}: a different store already occupies ${finalDir}` +
+          (onDisk === null ? " (no valid store.json there)" : ` (uuid ${onDisk.store_uuid})`),
+        {
+          actionHint:
+            "remove or relocate that directory, then retry — identity is the intrinsic store_uuid, not the directory name",
+        },
+      );
+    }
+    saveGlobalConfig(
+      addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
+      globalRoot,
+    );
+    syncStoreAliasLinks(globalRoot);
+    console.log(`adopted existing store '${alias}' (${identity.store_uuid}) at ${finalDir}`);
+    return { store_uuid: identity.store_uuid, alias };
+  }
+
   mkdirSync(join(finalDir, ".."), { recursive: true }); // ensure the `stores/<group>/` bucket exists
   renameSync(cloneDest, finalDir);
+  rmSync(tmp, { recursive: true, force: true }); // tmp parent is now empty — clean it up
 
-  const config = loadGlobalConfig(globalRoot);
-  if (config === null) {
-    // ISS-037: internal invariant — the global config should exist by now.
-    throw new GenericIOError("global config missing after install", {
-      actionHint:
-        "re-run `fabric install --global` to (re)create the global config, then retry mounting the store; if it persists, inspect ~/.fabric for a partial install",
-    });
-  }
   saveGlobalConfig(
     addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
     globalRoot,
