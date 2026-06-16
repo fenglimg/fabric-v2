@@ -12,28 +12,21 @@
  * narrow-injection sibling (E2, knowledge-hint-narrow.cjs) handles
  * per-Edit/Write hints with a session-hints cache.
  *
- * Output contract (stderr only):
+ * Output contract (W2 / KT-DEC-0027/0028/0029 — the SessionStart spine):
  *
- *   When narrow count <= 30 (full per-type listing mode):
- *     [fabric] Session start — N broad-scoped knowledge entries available:
- *       [decision] (proven)
- *         - <id> · <summary>
- *       [pitfall] (verified)
- *         - <id> · <summary>
- *       ...
- *     revision_hash: <hash>
- *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
+ *   AI sink (additionalContext) — the dynamically generated "MEMORY.md":
+ *     [fabric:SessionStart] <store>
+ *     ALWAYS-ACTIVE RULES (no recall needed):    # guideline/model — full BODY
+ *       [guideline] team:KT-GLD-0001
+ *       <full body>                              # over budget → degrade to index line
+ *     REFERENCE (read on demand / fab_recall):   # decision/pitfall/process — title + hook
+ *       [decision] team:KT-DEC-0001 — <must_read_if>
+ *       … N more folded (broad index > backstop 50; run fabric-audit)
+ *     Load full content: fab_recall(paths), or Read <store>/knowledge/<type>/<id>--*.md
  *
- *   When narrow count > 30 (grouped-truncation mode, per type):
- *     [fabric] Session start — N broad-scoped knowledge entries available (truncated):
- *       [decision] proven (3):
- *         - <id> · <summary>
- *         - ...
- *       [decision] verified (12): <id1>, <id2>, ...
- *       [decision] draft: 7 entries
- *       ...
- *     revision_hash: <hash>
- *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
+ *   Human sink (systemMessage) — broad-only census breadcrumb; SessionStart is
+ *   SILENT about narrow-scoped knowledge (no on-demand counts, no
+ *   dropped-other-project line).
  *
  *   When 0 entries / CLI unavailable / CLI error / parse failure:
  *     (no output — silent exit 0)
@@ -171,11 +164,12 @@ const KNOWLEDGE_CANONICAL_TYPES = [
 ];
 const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
 
-// v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound on broad-scoped entries surfaced
-// per SessionStart fire. Keeps the banner inside ~1 screenful so the agent
-// actually reads the top-priority entries instead of triaging a wall of text.
-// Overridable via fabric-config.json#hint_broad_top_k (range 1..50).
-const DEFAULT_HINT_BROAD_TOP_K = 8;
+// W2-1 (KT-DEC-0028): the broad index is shown in FULL (no top-K hard cap). The
+// only scale guard is a backstop: when the rendered broad index exceeds this
+// many lines, the overflow tail folds into one marker that doubles as a drift
+// signal (the W4 doctor `broad-index-drift` lint is the authoritative detector).
+// Overridable via fabric-config.json#broad_index_backstop (W4 schema range 20..500).
+const DEFAULT_HINT_BROAD_INDEX_BACKSTOP = 50;
 
 // v2.0.0-rc.33 W2-5 (P1-8): cooldown (in hours) between broad-hint re-emits.
 // Default 0 preserves rc.32 behavior — every SessionStart re-fires the banner.
@@ -228,14 +222,15 @@ function readUnderseedThreshold(projectRoot) {
 }
 
 /**
- * v2.0.0-rc.33 W2-1: resolve hint_broad_top_k from fabric-config.json. Slices
- * the broad entry list to TopK before group/truncation render. Validates the
- * schema's 1..50 range inline so a malformed config silently falls back.
+ * W2-1 (KT-DEC-0028): resolve broad_index_backstop from fabric-config.json. Caps
+ * the rendered broad index line count; the overflow tail folds into a drift
+ * marker. Validates the W4 schema's 20..500 range inline so a malformed config
+ * silently falls back to the default.
  */
-function readBroadTopK(projectRoot) {
-  return readConfigNumber(projectRoot, "hint_broad_top_k", DEFAULT_HINT_BROAD_TOP_K, {
-    min: 1,
-    max: 50,
+function readBroadIndexBackstop(projectRoot) {
+  return readConfigNumber(projectRoot, "broad_index_backstop", DEFAULT_HINT_BROAD_INDEX_BACKSTOP, {
+    min: 20,
+    max: 500,
     floor: true,
   });
 }
@@ -758,17 +753,11 @@ function renderSummary(payload, maxLen, budgetChars) {
     }
   }
 
-  // v2.2 MC3-fix-guidance (W1-T5): unify the footer with the canonical recall
-  // flow. The prior text ("Use `fab_get_knowledge_sections` to fetch full
-  // content.") told the agent to call a tool that REQUIRES a selection_token it
-  // does not yet have — directly contradicting the bilingual next-step nudge
-  // (and AGENTS.md) which leads with `fab_recall`. Footer now states the same
-  // two-path model: single-step `fab_recall`, or `fab_plan_context` →
-  // `fab_get_knowledge_sections` when the bodies must be trimmed first. Keeps
-  // the `fab_get_knowledge_sections` token (downstream substring contracts) but
-  // sequences it correctly behind the token-issuing `fab_plan_context`.
+  // W2-4 (KT-DEC-0026): single lean retrieval flow. The two-step
+  // fab_plan_context → fab_get_knowledge_sections footer is retired — fab_recall
+  // returns descriptions + read paths, and bodies load via a native Read.
   lines.push(
-    "  Load full content: `fab_recall(paths)` (one step), or `fab_plan_context` → `fab_get_knowledge_sections` to trim first.",
+    "  Load full content: `fab_recall(paths)`, or Read `<store>/knowledge/<type>/<id>--*.md` directly.",
   );
   return lines;
 }
@@ -797,7 +786,6 @@ const TYPE_SINGULAR = {
 };
 
 const ALWAYS_TYPES = ["guidelines", "models"];
-const ONDEMAND_TYPES = ["decisions", "pitfalls", "processes"];
 
 // Normalize a knowledge_type to its canonical PLURAL form. Frontmatter / entries
 // may carry the singular ("decision") while the census keys on the plural enum
@@ -846,39 +834,60 @@ function renderHumanCensus(census, opts) {
 
   const lines = [];
   lines.push(`▸ [fabric] SessionStart (${total} KB)`);
+  // W2-2/W2-3 (KT-DEC-0027/0029): the human breadcrumb shows only the
+  // always-loaded (guideline/model) census. The on-demand (decision/pitfall/
+  // process) count line and the dropped-other-project line are retired — the
+  // decision/pitfall/process REFERENCE lives in the AI sink (title + must_read_if),
+  // and SessionStart stays silent about narrow-scoped knowledge.
   const alwaysCounts = typeCounts(ALWAYS_TYPES);
   lines.push(zh ? "  ─ always-loaded(AI 也收到正文)─" : "  ─ always-loaded (AI also gets bodies) ─");
   lines.push(`   ${alwaysCounts.length > 0 ? alwaysCounts : zh ? "(无)" : "(none)"}`);
-  const ondemandCounts = typeCounts(ONDEMAND_TYPES);
-  lines.push(zh ? "  ─ on-demand(改文件时 fab_recall)─" : "  ─ on-demand (fab_recall when editing) ─");
-  lines.push(`   ${ondemandCounts.length > 0 ? ondemandCounts : zh ? "(无)" : "(none)"}`);
   const layer = c.by_layer || {};
   if ((layer.team || 0) > 0 || (layer.personal || 0) > 0) {
     lines.push(`  [team] ${layer.team || 0} · [personal] ${layer.personal || 0}`);
   }
-  const dropped = c.dropped_other_project || 0;
-  if (dropped > 0) {
-    lines.push(zh ? `  ✗ 已剔除他项目 ${dropped} 条` : `  ✗ dropped ${dropped} other-project entr${dropped === 1 ? "y" : "ies"}`);
-  }
   return lines;
 }
 
-// Render the AI-facing sink (§3): always-active bodies (bounded by budgetChars,
-// overflow degrading to summary + recall pointer) + on-demand category counts.
-// `alwaysBodies` is the plan-context-hint always_bodies[] ({id,type,layer,summary,body}).
+// W2 (KT-DEC-0027/0028/0029): render the AI-facing sink — the dynamically
+// generated "MEMORY.md" spine injected into the SessionStart context. Two
+// type-tiered sections over the BROAD knowledge (narrow stays silent — D0029):
+//
+//   ALWAYS-ACTIVE RULES (guideline/model): full BODIES injected, bounded by
+//     budgetChars. On overflow each entry degrades to an INDEX LINE (title +
+//     summary), NOT a folded count (D0028) — the entry stays individually
+//     visible and fetchable.
+//   REFERENCE (decision/pitfall/process): TITLE + must_read_if hook only
+//     (situational; the agent Reads the body on demand) — never the body.
+//
+// `broadIndexBackstop` (D0028) caps the total rendered index lines; the overflow
+// tail folds into one marker that doubles as the drift signal (fabric-audit /
+// the W4 doctor lint is the authoritative detector). `entries` is the broad
+// plan-context-hint entry list ({id,type,maturity,summary,relevance_scope,
+// must_read_if}); `alwaysBodies` is always_bodies[] ({id,type,layer,summary,body}).
+const REFERENCE_TYPES = new Set(["decision", "pitfall", "process"]);
+
 function renderAiSink(opts) {
-  const { census, alwaysBodies, storeLabel, budgetChars, lang } = opts || {};
+  const { entries, alwaysBodies, storeLabel, budgetChars, broadIndexBackstop, summaryMaxLen, lang } =
+    opts || {};
   const zh = lang === "zh-CN";
   const bodies = Array.isArray(alwaysBodies) ? alwaysBodies : [];
-  const byTypeAll = (census && census.by_type) || {};
-  const ondemandTotal = ONDEMAND_TYPES.reduce((n, t) => n + (byTypeAll[t] || 0), 0);
-  // Nothing to inject (no always-active bodies AND no on-demand knowledge) →
-  // empty so main() stays silent on an empty knowledge base.
-  if (bodies.length === 0 && ondemandTotal === 0) return "";
+  // REFERENCE = broad decision/pitfall/process. narrow entries stay silent (D0029).
+  const referenceEntries = (Array.isArray(entries) ? entries : []).filter((e) => {
+    if (!e || e.relevance_scope === "narrow") return false;
+    return REFERENCE_TYPES.has(TYPE_SINGULAR[toPluralType(e.type)] || e.type);
+  });
+  // Nothing to inject → empty so main() stays silent on an empty knowledge base.
+  if (bodies.length === 0 && referenceEntries.length === 0) return "";
+
+  const backstop =
+    typeof broadIndexBackstop === "number" && broadIndexBackstop > 0 ? broadIndexBackstop : 0;
+  let indexCount = 0; // total rendered index lines (always + reference), for the backstop.
+
   const lines = [];
   lines.push(`[fabric:SessionStart] ${storeLabel || "store"}`);
 
-  // ALWAYS-ACTIVE RULES — inject bodies up to the budget, degrade the tail.
+  // ALWAYS-ACTIVE RULES — inject bodies up to the budget, degrade to index line.
   lines.push(zh ? "ALWAYS-ACTIVE RULES (无需再 recall):" : "ALWAYS-ACTIVE RULES (no recall needed):");
   if (bodies.length === 0) {
     lines.push(zh ? "  (无 always-active 条目)" : "  (none)");
@@ -896,24 +905,51 @@ function renderAiSink(opts) {
         if (body.length > 0) lines.push(body);
         used += fullCost;
       } else {
-        // Budget exceeded → degrade this + remaining to summary + recall pointer.
+        // D0028: degrade to an INDEX LINE (title + summary), never a folded count.
         degraded = true;
         lines.push(
           `  ${label} · ${summary}${zh ? " (超预算; fab_recall 取正文)" : " (over budget; fab_recall for body)"}`,
         );
       }
+      indexCount += 1;
     }
   }
 
-  // ON-DEMAND category counts.
-  const byType = (census && census.by_type) || {};
-  const ondemand = ONDEMAND_TYPES.filter((t) => (byType[t] || 0) > 0)
-    .map((t) => `${t} ${byType[t]}`)
-    .join(" · ");
+  // REFERENCE — broad decision/pitfall/process: title + must_read_if hook.
+  if (referenceEntries.length > 0) {
+    lines.push(zh ? "REFERENCE (按需 Read / fab_recall):" : "REFERENCE (read on demand / fab_recall):");
+    let folded = 0;
+    for (const e of referenceEntries) {
+      if (backstop > 0 && indexCount >= backstop) {
+        folded += 1;
+        continue;
+      }
+      const type = TYPE_SINGULAR[toPluralType(e.type)] || e.type;
+      const rawHook =
+        typeof e.must_read_if === "string" && e.must_read_if.length > 0
+          ? e.must_read_if
+          : typeof e.summary === "string"
+            ? e.summary
+            : "";
+      const hookText = truncateSummary(rawHook, summaryMaxLen);
+      lines.push(hookText.length > 0 ? `  [${type}] ${e.id} — ${hookText}` : `  [${type}] ${e.id}`);
+      indexCount += 1;
+    }
+    // D0028 backstop: fold the overflow tail into one marker + drift signal.
+    if (folded > 0) {
+      lines.push(
+        zh
+          ? `  … 另 ${folded} 条 broad 条目折叠 (broad index > backstop ${backstop}; 跑 fabric-audit)`
+          : `  … ${folded} more broad entr${folded === 1 ? "y" : "ies"} folded (broad index > backstop ${backstop}; run fabric-audit)`,
+      );
+    }
+  }
+
+  // W2-4 footer: single lean retrieval flow — no two-step.
   lines.push(
     zh
-      ? `ON-DEMAND (改文件时 fab_recall(paths)): ${ondemand || "(无)"}`
-      : `ON-DEMAND (fab_recall(paths) when editing): ${ondemand || "(none)"}`,
+      ? "取正文: fab_recall(paths), 或 Read <store>/knowledge/<type>/<id>--*.md"
+      : "Load full content: fab_recall(paths), or Read <store>/knowledge/<type>/<id>--*.md",
   );
   return lines.join("\n");
 }
@@ -960,30 +996,25 @@ function main(env, stdio) {
       env && env.payload !== undefined ? env.payload : invokePlanContextHint(cwd);
     if (payload === null || payload === undefined) return; // silent
 
-    // v2.0.0-rc.33 W2-1 (P0-9): apply TopK slice BEFORE renderSummary so the
-    // grouped/truncation rendering operates on the bounded set. Slicing here
-    // (not inside renderSummary) keeps the formatter pure — it never has to
-    // know about the cap.
-    const topK = readBroadTopK(cwd);
-    const slicedPayload =
-      payload && Array.isArray(payload.entries) && payload.entries.length > topK
-        ? { ...payload, entries: payload.entries.slice(0, topK) }
-        : payload;
+    // W2-1 (KT-DEC-0028): broad 全显示 — the legacy hint_broad_top_k hard cap is
+    // retired. SessionStart must SEE every broad entry (completeness); scale is
+    // bounded by the per-line char cap (hint_summary_max_len) and the
+    // broad_index_backstop fold (D0028), not by silently dropping entries.
 
     // rc.35 TASK-06 (P0-10.b): summary-fallback substitution. Entries whose
     // description.summary equals stable_id render as "<id> · <id>" and the
     // AI skips fetching them; the fallback reads `## Summary` from the
     // entry's .md file and swaps in the first paragraph. Best-effort —
     // failure leaves the original opaque summary untouched.
-    let resolvedPayload = slicedPayload;
+    let resolvedPayload = payload;
     try {
-      if (slicedPayload && Array.isArray(slicedPayload.entries)) {
+      if (payload && Array.isArray(payload.entries)) {
         const resolvedEntries = resolveOpaqueSummaries(
-          slicedPayload.entries,
+          payload.entries,
           cwd,
-          typeof slicedPayload.revision_hash === "string" ? slicedPayload.revision_hash : "",
+          typeof payload.revision_hash === "string" ? payload.revision_hash : "",
         );
-        resolvedPayload = { ...slicedPayload, entries: resolvedEntries };
+        resolvedPayload = { ...payload, entries: resolvedEntries };
       }
     } catch {
       // resolveOpaqueSummaries swallows its own errors; this catch is belt
@@ -1060,16 +1091,21 @@ function main(env, stdio) {
     if (humanLines.length > 0) {
       humanLines.push(
         fabricLanguageForEmit === "zh-CN"
-          ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选描述(candidates)。"
-          : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the candidate descriptions first.",
+          ? "下一步: 改相关文件前调 fab_recall(paths) 拿 KB 条目的描述+读路径;按需 Read 路径取正文。"
+          : "Next: before editing related files, call fab_recall(paths) for the KB entries' descriptions + read paths; Read a path on demand for the body.",
       );
     }
 
-    // ---- AI sink: §3 always-active bodies + on-demand counts. ----
+    // ---- AI sink (KT-DEC-0027/0028): the spine — always-active bodies +
+    // decision/pitfall/process REFERENCE (title + must_read_if), bounded by the
+    // char budget and the broad_index_backstop fold. ----
+    const broadIndexBackstop = readBroadIndexBackstop(cwd);
     const aiText = renderAiSink({
-      census,
+      entries: resolvedPayload && Array.isArray(resolvedPayload.entries) ? resolvedPayload.entries : [],
       alwaysBodies,
       budgetChars: broadBudgetChars,
+      broadIndexBackstop,
+      summaryMaxLen,
       lang: fabricLanguageForEmit,
     });
 
@@ -1185,8 +1221,8 @@ module.exports = {
   readUnderseedThreshold,
   isImportTouched,
   shouldRecommendImport,
-  // v2.0.0-rc.33 W2-1 / W2-5 / W2-6 helpers.
-  readBroadTopK,
+  // W2-1 (KT-DEC-0028) + rc.33 W2-5 / W2-6 helpers.
+  readBroadIndexBackstop,
   readBroadCooldownHours,
   readReminderToContext,
   readBroadLastEmit,
@@ -1203,7 +1239,7 @@ module.exports = {
     MATURITY_DRAFT,
     DEFAULT_UNDERSEED_NODE_THRESHOLD,
     KNOWLEDGE_CANONICAL_TYPES,
-    DEFAULT_HINT_BROAD_TOP_K,
+    DEFAULT_HINT_BROAD_INDEX_BACKSTOP,
     DEFAULT_HINT_BROAD_COOLDOWN_HOURS,
     DEFAULT_HINT_REMINDER_TO_CONTEXT,
     HINT_BROAD_LAST_EMIT_FILE_NAME,

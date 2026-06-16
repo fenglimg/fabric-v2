@@ -98,9 +98,11 @@ const HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL = "hooks/cite-policy-evict.cjs";
 // append). Sibling to knowledge-hint-*.cjs — same install/copy plumbing,
 // registered against the SessionEnd event in each client config.
 const HOOK_SESSION_END_SCRIPT_TEMPLATE_REL = "hooks/session-end-marker.cjs";
-// lifecycle-refactor W2-T3: PostToolUse mutation marker hook (file_mutated
-// append, per-call key). Sibling to the narrow hook — same install/copy
-// plumbing, registered against PostToolUse with Edit|Write|MultiEdit matchers.
+// lifecycle-refactor W2-T3: PostToolUse marker hook. Emits `file_mutated` on
+// Edit/Write/MultiEdit (per-call key) and, since W3-3/KT-DEC-0030,
+// `knowledge_body_read` on a Read of a store knowledge body — so its matcher
+// adds `Read` to the Edit|Write|MultiEdit set. Sibling to the narrow hook —
+// same install/copy plumbing.
 const HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL = "hooks/post-tooluse-mutation.cjs";
 // rc.16 TASK-004 (F2-tests): shared `.cjs` helpers consumed by the three
 // hook scripts at runtime via `require("./lib/<name>.cjs")`. Currently

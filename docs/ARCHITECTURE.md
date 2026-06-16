@@ -18,7 +18,7 @@ Fabric 有 3 个用户可见 surface：
 
 - CLI：人类在 terminal 中运行，例如 `fabric install`、`fabric doctor`、`fabric store`、`fabric sync`、`fabric info`。
 - Skill：AI 在对话中做判断，例如 `fabric-archive`、`fabric-review`、`fabric-import`。
-- MCP：AI client 调用的 runtime primitive，例如 `fab_recall`、`fab_plan_context`、`fab_get_knowledge_sections`、`fab_extract_knowledge`、`fab_archive_scan`、`fab_review`。
+- MCP：AI client 调用的 runtime primitive，例如 `fab_recall`、`fab_extract_knowledge`、`fab_archive_scan`、`fab_review`。
 
 设计规则：确定性 I/O 放 CLI 或 server service；需要 LLM 判断的流程放 Skill；session 内知识读取走 MCP。
 
@@ -64,9 +64,8 @@ Shared store 写入使用 `write_routes`：
 route 是 hard error，不能静默回退到 `active_write_store`。`switch-write` /
 `active_write_store` 只保留为兼容/默认提示，不是最终路由语义。
 
-Pending entries 是 review-only，不进入普通 `fab_recall` /
-`fab_plan_context`。Recall/plan/get_sections 只读取 canonical store entries，
-并以 `alias:id` 加 structured provenance 表达引用。
+Pending entries 是 review-only，不进入普通 `fab_recall`。`fab_recall` 只读取
+canonical store entries，并以 `alias:id` 加 structured provenance 表达引用。
 
 ## Source Of Truth
 

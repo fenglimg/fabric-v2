@@ -46,7 +46,23 @@ type HookModule = {
     toolName: string | null,
     sessionId: string | null,
   ) => void;
-  CONSTANTS: { FABRIC_DIR_REL: string; EVENTS_LEDGER_FILE: string; EDIT_TOOL_NAMES: Set<string> };
+  extractKnowledgeBodyRead: (
+    filePath: string,
+  ) => { stable_id: string; store: string | null; path: string } | null;
+  appendKnowledgeBodyRead: (
+    projectRoot: string,
+    now: Date,
+    paths: string[],
+    toolCallId: string | null,
+    toolName: string | null,
+    sessionId: string | null,
+  ) => void;
+  CONSTANTS: {
+    FABRIC_DIR_REL: string;
+    EVENTS_LEDGER_FILE: string;
+    EDIT_TOOL_NAMES: Set<string>;
+    READ_TOOL_NAMES: Set<string>;
+  };
 };
 
 const hook = require(hookPath) as HookModule;
@@ -190,13 +206,24 @@ describe("post-tooluse-mutation.cjs — main marker append", () => {
     expect(eventLedgerEventSchema.safeParse(event).success).toBe(true);
   });
 
-  it("ignores non-edit tools (no append)", () => {
+  it("ignores a non-knowledge Read (no append)", () => {
     const root = mkRoot("post-tooluse-readtool");
     mkFabric(root);
     hook.main({
       cwd: root,
       now: new Date(),
       payload: { tool_name: "Read", tool_use_id: "t", tool_input: { file_path: "z.ts" } },
+    });
+    expect(readLedgerLines(root)).toHaveLength(0);
+  });
+
+  it("ignores an unrelated tool entirely (no append)", () => {
+    const root = mkRoot("post-tooluse-other");
+    mkFabric(root);
+    hook.main({
+      cwd: root,
+      now: new Date(),
+      payload: { tool_name: "Bash", tool_use_id: "t", tool_input: { command: "ls" } },
     });
     expect(readLedgerLines(root)).toHaveLength(0);
   });
@@ -212,5 +239,110 @@ describe("post-tooluse-mutation.cjs — main marker append", () => {
     mkFabric(nullRoot);
     expect(() => hook.main({ cwd: nullRoot, now: new Date(), payload: null })).not.toThrow();
     expect(readLedgerLines(nullRoot)).toHaveLength(0);
+  });
+});
+
+describe("post-tooluse-mutation.cjs — extractKnowledgeBodyRead (KT-DEC-0030)", () => {
+  it("parses stable_id + store from a multistore knowledge path", () => {
+    const r = hook.extractKnowledgeBodyRead(
+      "/Users/me/.fabric/stores/team/fabric-team-knowledge/knowledge/decisions/KT-DEC-0030--body-read-observability-hook.md",
+    );
+    expect(r).not.toBeNull();
+    expect(r?.stable_id).toBe("KT-DEC-0030");
+    expect(r?.store).toBe("team");
+  });
+
+  it("parses a personal-layer KP id and all 5 type tokens", () => {
+    expect(
+      hook.extractKnowledgeBodyRead(
+        "/home/u/.fabric/stores/personal/kb/knowledge/pitfalls/KP-PIT-0004--x.md",
+      )?.stable_id,
+    ).toBe("KP-PIT-0004");
+    expect(
+      hook.extractKnowledgeBodyRead("/x/knowledge/models/KT-MOD-0001--m.md")?.stable_id,
+    ).toBe("KT-MOD-0001");
+    expect(
+      hook.extractKnowledgeBodyRead("/x/knowledge/guidelines/KT-GLD-0005--g.md")?.stable_id,
+    ).toBe("KT-GLD-0005");
+    expect(
+      hook.extractKnowledgeBodyRead("/x/knowledge/processes/KT-PRO-0002--p.md")?.stable_id,
+    ).toBe("KT-PRO-0002");
+  });
+
+  it("returns null store when no stores/<alias>/ segment is present (legacy dual-root)", () => {
+    const r = hook.extractKnowledgeBodyRead(
+      "/Users/me/.fabric/knowledge/decisions/KT-DEC-0007--single-cjs-hook.md",
+    );
+    expect(r?.stable_id).toBe("KT-DEC-0007");
+    expect(r?.store).toBeNull();
+  });
+
+  it("returns null for non-knowledge paths and id-shaped tokens outside /knowledge/<type>/", () => {
+    expect(hook.extractKnowledgeBodyRead("src/app/KT-DEC-0001--note.md")).toBeNull(); // no /knowledge/<type>/
+    expect(hook.extractKnowledgeBodyRead("/x/knowledge/decisions/not-an-id.md")).toBeNull();
+    expect(hook.extractKnowledgeBodyRead("/x/knowledge/decisions/KT-DEC-0001.md")).toBeNull(); // no -- slug
+    expect(hook.extractKnowledgeBodyRead("")).toBeNull();
+  });
+});
+
+describe("post-tooluse-mutation.cjs — knowledge_body_read append (KT-DEC-0030)", () => {
+  const KB_PATH =
+    "/Users/me/.fabric/stores/team/fabric-team-knowledge/knowledge/decisions/KT-DEC-0030--body-read-observability-hook.md";
+
+  it("emits a schema-valid knowledge_body_read on a Read of a store knowledge body", () => {
+    const root = mkRoot("body-read-happy");
+    mkFabric(root);
+    const now = new Date("2026-06-15T00:00:00.000Z");
+    hook.main({
+      cwd: root,
+      now,
+      payload: {
+        tool_name: "Read",
+        tool_use_id: "toolu_read",
+        session_id: "sess-7",
+        tool_input: { file_path: KB_PATH },
+      },
+    });
+    const lines = readLedgerLines(root).map((l) => JSON.parse(l));
+    expect(lines).toHaveLength(1);
+    const ev = lines[0];
+    expect(ev.event_type).toBe("knowledge_body_read");
+    expect(ev.stable_id).toBe("KT-DEC-0030");
+    expect(ev.store).toBe("team");
+    expect(ev.tool_call_id).toBe("toolu_read");
+    expect(ev.tool_name).toBe("Read");
+    expect(ev.session_id).toBe("sess-7");
+    expect(ev.ts).toBe(now.getTime());
+    expect(eventLedgerEventSchema.safeParse(ev).success).toBe(true);
+  });
+
+  it("produces no event for a Read of an ordinary source file", () => {
+    const root = mkRoot("body-read-source");
+    mkFabric(root);
+    hook.main({
+      cwd: root,
+      now: new Date(),
+      payload: { tool_name: "Read", tool_use_id: "t", tool_input: { file_path: "src/index.ts" } },
+    });
+    expect(readLedgerLines(root)).toHaveLength(0);
+  });
+
+  it("omits store when the read path has no stores/<alias>/ segment but stays schema-valid", () => {
+    const root = mkRoot("body-read-nostore");
+    mkFabric(root);
+    hook.main({
+      cwd: root,
+      now: new Date(),
+      payload: {
+        tool_name: "Read",
+        tool_use_id: "t",
+        tool_input: { file_path: "/home/u/.fabric/knowledge/pitfalls/KP-PIT-0001--x.md" },
+      },
+    });
+    const ev = JSON.parse(readLedgerLines(root)[0]);
+    expect(ev.event_type).toBe("knowledge_body_read");
+    expect(ev.stable_id).toBe("KP-PIT-0001");
+    expect(ev.store).toBeUndefined();
+    expect(eventLedgerEventSchema.safeParse(ev).success).toBe(true);
   });
 });

@@ -56,6 +56,11 @@ export interface PlanContextHintEntry {
   type: string;
   maturity: string;
   summary: string;
+  // W2-2 (KT-DEC-0027): the entry's `must_read_if` trigger hook. The SessionStart
+  // spine renders decision/pitfall/process broad entries as `title — must_read_if`
+  // (situational reference, read on demand) rather than injecting their body.
+  // Omitted when the frontmatter declares none.
+  must_read_if?: string;
   // v2.0.0-rc.27 TASK-002 (audit §2.5/§2.7): relevance_scope per-entry so the
   // PreToolUse narrow hook can filter out broad-scoped entries. rc.26 emitted
   // the union of narrow+broad without this discriminator, and the hook
@@ -227,6 +232,11 @@ export async function runPlanContextHint(opts: {
       maturity: item.description.maturity ?? "",
       summary: item.description.summary,
       relevance_scope: item.description.relevance_scope ?? "broad",
+      // W2-2 (KT-DEC-0027): forward the must_read_if trigger hook for the
+      // SessionStart REFERENCE rendering. Omitted when absent/empty.
+      ...(typeof item.description.must_read_if === "string" && item.description.must_read_if.length > 0
+        ? { must_read_if: item.description.must_read_if }
+        : {}),
       // Only set when this entry was pulled in via a graph edge — its presence
       // is the honest signal, never synthesized for ordinarily-ranked entries.
       ...(typeof relatedTo === "string" ? { related_to: relatedTo } : {}),

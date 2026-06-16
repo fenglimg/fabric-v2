@@ -476,11 +476,12 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
     const codexHooksPath = join(target, ".codex/hooks.json");
 
     // Simulate a pre-upgrade install: rewrite all fabric-owned matchers to the
-    // OLD form (no apply_patch), mimicking a workspace installed before W5-1.
-    const before = readFileSync(codexHooksPath, "utf8").replace(
-      /"Edit\|Write\|MultiEdit\|apply_patch"/g,
-      '"Edit|Write|MultiEdit"',
-    );
+    // OLD form (no apply_patch, no Read), mimicking a workspace installed before
+    // W5-1 / W3-3. The longer (PostToolUse) form is stripped first so the shorter
+    // pattern doesn't leave a dangling `|Read` behind.
+    const before = readFileSync(codexHooksPath, "utf8")
+      .replace(/"Edit\|Write\|MultiEdit\|apply_patch\|Read"/g, '"Edit|Write|MultiEdit"')
+      .replace(/"Edit\|Write\|MultiEdit\|apply_patch"/g, '"Edit|Write|MultiEdit"');
     writeFileSync(codexHooksPath, before, "utf8");
     // Sanity: the downgrade actually removed every apply_patch occurrence.
     expect(readFileSync(codexHooksPath, "utf8")).not.toContain("apply_patch");
@@ -503,10 +504,15 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
       /(knowledge-hint-narrow|cite-policy-evict|post-tooluse-mutation)\.cjs/u.test(e.command),
     );
     // Three fabric-owned matcher-gated entries, each restored to apply_patch,
-    // with no stale-matcher duplicate left behind.
+    // with no stale-matcher duplicate left behind. W3-3: the PostToolUse
+    // mutation hook additionally carries `|Read` (knowledge_body_read marker),
+    // while the two PreToolUse-gated hooks keep the apply_patch-only matcher.
     expect(fabricEntries).toHaveLength(3);
     for (const entry of fabricEntries) {
-      expect(entry.matcher).toBe("Edit|Write|MultiEdit|apply_patch");
+      const isPostMutation = /post-tooluse-mutation\.cjs/u.test(entry.command);
+      expect(entry.matcher).toBe(
+        isPostMutation ? "Edit|Write|MultiEdit|apply_patch|Read" : "Edit|Write|MultiEdit|apply_patch",
+      );
     }
   });
 });

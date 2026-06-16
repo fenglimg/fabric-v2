@@ -834,6 +834,27 @@ export const fileMutatedEventSchema = z.object({
   store_id: z.string().optional(),
 });
 
+// knowledge_body_read — PostToolUse marker (KT-DEC-0030). After retrieval
+// collapsed to one lean tool (KT-DEC-0026), fab_recall no longer delivers
+// bodies; the agent reads a body on demand via a NATIVE Read of the store file
+// (`<store>/knowledge/<type>/<ID>--*.md`). This event is the observable trace of
+// that consumption — it replaces the retired `knowledge_consumed` (MCP-fetch
+// side-product) as the funnel's "model actually opened the body" signal
+// (planned → body_read → cite[applied]). The hook parses `stable_id` + `store`
+// straight from the file path; `path` is the workspace-or-home POSIX path read.
+// `tool_call_id` / `tool_name` mirror file_mutated for Pre/Post pairing. doctor
+// (cite-coverage recalled_unverified + the body_read misfire check) consumes it
+// OFFLINE — front-stage stays O(1) append (KT-DEC-0007: hook = marker, never a gate).
+export const knowledgeBodyReadEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_body_read"),
+  stable_id: z.string(),
+  store: z.string().optional(),
+  path: z.string(),
+  tool_call_id: z.string().optional(),
+  tool_name: z.string().optional(),
+});
+
 // precompact_observed — PreCompact marker. The injection capability is not yet
 // grounded, so this is an inert observation marker only (no payload): it lets
 // doctor see compaction cadence without the hook computing anything.
@@ -947,6 +968,9 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // lifecycle-refactor Wave 2 — dormant-hook activation markers.
   sessionEndedEventSchema,
   fileMutatedEventSchema,
+  // KT-DEC-0030: knowledge_body_read — PostToolUse native-Read consumption marker
+  // (replaces knowledge_consumed as the funnel's "body opened" signal).
+  knowledgeBodyReadEventSchema,
   precompactObservedEventSchema,
   graphEdgeCandidateRequestedEventSchema,
 ]);
@@ -1008,6 +1032,7 @@ export type ClientCapabilitySnapshotEvent = z.infer<typeof clientCapabilitySnaps
 // lifecycle-refactor Wave 2 — dormant-hook activation markers.
 export type SessionEndedEvent = z.infer<typeof sessionEndedEventSchema>;
 export type FileMutatedEvent = z.infer<typeof fileMutatedEventSchema>;
+export type KnowledgeBodyReadEvent = z.infer<typeof knowledgeBodyReadEventSchema>;
 export type PrecompactObservedEvent = z.infer<typeof precompactObservedEventSchema>;
 export type GraphEdgeCandidateRequestedEvent = z.infer<typeof graphEdgeCandidateRequestedEventSchema>;
 export type EventLedgerEvent =
@@ -1066,6 +1091,7 @@ export type EventLedgerEvent =
   | ClientCapabilitySnapshotEvent
   | SessionEndedEvent
   | FileMutatedEvent
+  | KnowledgeBodyReadEvent
   | PrecompactObservedEvent
   | GraphEdgeCandidateRequestedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];

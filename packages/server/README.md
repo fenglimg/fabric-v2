@@ -4,9 +4,7 @@ Fabric MCP knowledge server. Runs over stdio transport and serves Claude Code an
 
 ## Tools exposed
 
-- `fab_plan_context` — neutral rule description index + selection token
-- `fab_get_knowledge_sections` — fetch full markdown bodies by stable_id
-- `fab_recall` — combined one-call recall (plan + sections), the rc.37+ default
+- `fab_recall` — single-step recall: returns candidate descriptions + native read paths (no body delivery over MCP; read a body on demand via a native Read of the returned path)
 - `fab_archive_scan` — scan recent work for archive-worthy knowledge candidates
 - `fab_extract_knowledge` — persist a pending knowledge entry
 - `fab_review` — list / approve / reject / modify / defer pending entries

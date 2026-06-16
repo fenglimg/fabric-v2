@@ -20,7 +20,7 @@ a hook-driven reminder layer so the knowledge actually fires when it matters.
 ```text
                 ┌─────────────────────────────┐
                 │  fabric-knowledge-server    │
-                │  (MCP, 6 tools, stdio only) │
+                │  (MCP, 4 tools, stdio only) │
                 └──────────────┬──────────────┘
                                │
         ┌──────────────────────┴──────────────────────┐
@@ -56,8 +56,8 @@ without polluting agent context.
 ### 8 truly differentiated features
 
 1. **Cross-client MCP-first surface.** One server (`fabric-knowledge-server`),
-   six tools (`fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
-   `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`), two clients reading and writing
+   four tools (`fab_recall`, `fab_extract_knowledge`, `fab_archive_scan`,
+   `fab_review`), two clients reading and writing
    through the same protocol via stdio. Knowledge stops being a per-client artifact.
 
 2. **Harness-agnostic by design.** No 16-stage workflow state machine, no
@@ -66,12 +66,11 @@ without polluting agent context.
    PreToolUse hooks, Skill templates — so it works under Claude Code
    and Codex CLI without per-harness adapters.
 
-3. **Two-stage cold-start with degenerate single-stage fallback.**
-   `fab_plan_context` returns a candidate index with `selection_token` when the
-   knowledge base has >30 entries (cheap first call, then targeted fetch via
-   `fab_get_knowledge_sections`). When ≤30 entries, it skips the round-trip
-   and inlines `candidates_full_content` — fresh installs feel instant, mature
-   bases stay scalable.
+3. **Single-step lean recall.** `fab_recall(paths)` returns candidate
+   DESCRIPTIONS plus native READ PATHS in one call — no body delivery over MCP,
+   no multi-step fetch round-trip. The agent reads a body on demand via a
+   native Read of the returned file path, so recall stays cheap and context
+   only grows with what the agent actually opens.
 
 4. **Async-review primitive.** `fab_extract_knowledge` writes to `pending/`;
    nothing reaches canonical knowledge without `fab_review`. Promotion,
@@ -88,7 +87,7 @@ without polluting agent context.
 
 6. **Narrow vs broad scope with `relevance_paths` filtering.** Frontmatter
    `relevance_scope: narrow|broad` plus `relevance_paths: string[]` lets each
-   entry declare where it applies. `fab_plan_context` returns broad entries
+   entry declare where it applies. `fab_recall` returns broad entries
    unconditionally and narrow entries whose globs match the current path.
    Three lint checks (`narrow_no_paths` #23, `relevance_paths_dangling` #24,
    `relevance_paths_drift` #25) keep the bindings honest as the code moves.
@@ -144,12 +143,14 @@ server is offline, you can still curate the knowledge base with `$EDITOR`.
 ### MCP vs CLI — adapters, not redundancy
 
 `planContext()` is the engine. It computes the candidate set, applies the
-`relevance_paths` filter, builds the `description_index`, and decides
-single-stage vs two-stage mode. Two adapters expose it to different callers:
+`relevance_paths` filter, and builds the candidate description index. Two
+adapters expose it to different callers:
 
-- **MCP** (`fab_plan_context` on `fabric-knowledge-server`) — for the agent.
+- **MCP** (`fab_recall` on `fabric-knowledge-server`) — for the agent.
   Pull-mode call during a session: mid-session topic switches, post-compaction
   re-grounding, cross-file reasoning that the path-aware hook can't predict.
+  Returns candidate descriptions + native read paths; bodies are read on
+  demand via a native Read.
 - **CLI** (`fabric plan-context-hint --paths <p> | --all`) — for hook
   scripts. Hooks run in client subprocesses without `node_modules`, can't
   speak MCP, and need a stable JSON contract on stdout. The CLI subcommand
@@ -186,9 +187,8 @@ Fabric splits cleanly across three entry points; pick by who's in the loop:
   `fabric plan-context-hint`.
 - **Skill** — AI is in the conversation and needs to judge content:
   `/fabric-archive`, `/fabric-review`, `/fabric-import`.
-- **MCP** — primitives the above use internally: `fab_extract_knowledge`,
-  `fab_recall`, `fab_plan_context`, `fab_get_knowledge_sections`,
-  `fab_archive_scan`, `fab_review`.
+- **MCP** — primitives the above use internally: `fab_recall`,
+  `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`.
 
 → See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and
 [`docs/RUNTIME-CONTRACTS.md`](./docs/RUNTIME-CONTRACTS.md) for the current
@@ -232,23 +232,16 @@ Supported clients (v2.0):
 
 ## How It Works
 
-Fabric exposes six MCP tools and eight Skill templates: the `fabric` router plus
+Fabric exposes four MCP tools and eight Skill templates: the `fabric` router plus
 `fabric-archive`, `fabric-review`, `fabric-import`, `fabric-store`,
 `fabric-sync`, `fabric-connect`, and `fabric-audit`.
 
 **MCP tools** (called by clients, served by `fabric-knowledge-server`):
 
-- `fab_plan_context` — given the current task and optional path hints, return
-  a candidate pool filtered by `relevance_paths`. When ≤30 candidates,
-  returns full content inline (single-stage). When >30, returns a
-  `description_index` plus `selection_token` for a targeted follow-up.
-- `fab_recall` — preferred one-call read path. Given target paths and optional
-  intent/ids, returns relevant knowledge bodies directly while still backing
-  the response with a reusable `selection_token`.
-- `fab_get_knowledge_sections` — fetch full markdown bodies for selected
-  `stable_id`s via the `selection_token`. Emits one `knowledge_consumed` event
-  per fetched `stable_id` (deduped within a request) so decay metrics use real
-  consumption, not bare references.
+- `fab_recall` — the single-step recall path. Given target paths and optional
+  intent, returns candidate DESCRIPTIONS filtered by `relevance_paths` plus a
+  native READ PATH for each entry. It does not deliver bodies over MCP; the
+  agent reads a body on demand via a native Read of the returned file path.
 - `fab_extract_knowledge` — propose new pending entries from the current
   session. Entries land under the active write store's
   `knowledge/pending/<type>/` tree. Nothing reaches canonical knowledge without
@@ -300,7 +293,7 @@ This is a pnpm monorepo:
 
 - `packages/cli` — the `fabric` CLI (`install`, `store`, `sync`, `info`,
   `doctor`, `uninstall`, `config`, `metrics`).
-- `packages/server` — the MCP server `fabric-knowledge-server` (6 tools, stdio)
+- `packages/server` — the MCP server `fabric-knowledge-server` (4 tools, stdio)
   plus the lifecycle service (review, doctor, lint, event ledger, metrics).
 - `packages/shared` — schemas (event ledger, api contracts, knowledge
   frontmatter) shared between CLI and server.
@@ -329,6 +322,6 @@ The early Fabric design borrowed the cross-client `AGENTS.md` framing from
 Andrej Karpathy's gist on agent rule files. The v2.0 knowledge-sustainment
 direction is informed by methodology writeups from the Anthropic, Letta, and
 Tencent AI Team communities — credit to those teams for naming the lifecycle
-problem clearly. The specific shape of Fabric (6 MCP tools, 5 typed knowledge
+problem clearly. The specific shape of Fabric (4 MCP tools, 5 typed knowledge
 entries, 3-tier maturity, dual-root layout, `relevance_paths` filtering,
 hook reminder layer, lint-driven decay) is original to this project.

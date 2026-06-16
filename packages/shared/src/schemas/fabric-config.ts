@@ -365,6 +365,15 @@ export const fabricConfigSchema = z.object({
   // the agent's working memory. Default 2000 (~one screenful); 0 disables the
   // budget. Read by knowledge-hint-broad.cjs via readConfigNumber. Range 0..20000.
   hint_broad_budget_chars: z.number().int().min(0).max(20000).optional().default(2000),
+  // W4-1 (KT-DEC-0028 / KT-MOD-0001): scale backstop for the FULL broad index.
+  // After W2-1 retired the hint_broad_top_k hard cap, the broad banner shows
+  // every broad entry (completeness); this is the only guard — once a store's
+  // rendered broad index exceeds this many lines the overflow tail folds into a
+  // single drift marker. The doctor `broad-index-drift` lint (W4-2) warns at 80%
+  // of this value per store so the corpus can be pruned (fabric-audit) BEFORE the
+  // banner silently truncates. Default 50; range 20..500 (read inline by
+  // knowledge-hint-broad.cjs#readBroadIndexBackstop with the same bounds).
+  broad_index_backstop: z.number().int().min(20).max(500).optional().default(50),
   // v2.0.0-rc.37 NEW-16: durable per-signal dismiss for the fabric-hint Stop
   // hook nudges. Any signal type listed here is suppressed at emit time across
   // all sessions (the session-scoped sibling lives in a .fabric/.cache sidecar

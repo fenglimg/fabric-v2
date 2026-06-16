@@ -19,7 +19,7 @@ description: 知识库语义淘汰门面 — 审计 KB 健康并以 deprecate-ov
 ## When NOT to use
 
 - 写 / 提议新知识条目 → `fabric-archive`。
-- 批量审 `.fabric/knowledge/pending/` 的 draft → `fabric-review`。
+- 批量审 pending draft → `fabric-review`（内部走 `fab_review action="list"` / `pending_path`）。
 - store 运维 / 同步 → `fabric-store` / `fabric-sync`。
 
 ## 两条红线
@@ -47,7 +47,7 @@ description: 知识库语义淘汰门面 — 审计 KB 健康并以 deprecate-ov
 
 ## Constraints
 
-- 本 skill **只读 + 给处置建议**;实际写入(降级 / 标记 / 删)经 `fabric-review` 的写路径,不自行改 `.fabric/knowledge/`。
+- 本 skill **只读 + 给处置建议**;实际写入(降级 / 标记 / 删)经 `fabric-review` 的写路径,不自行改 store `knowledge/`。
 - NEVER 绕过 rescue 检查直接删;删前 MUST 先跑抢救检查。删是最后手段,默认是 deprecate。
-- `agents.meta.json` 派生态严禁手改;退役动作改的是 `.fabric/knowledge/<type>/` 下 markdown 的 frontmatter(maturity / deprecated / superseded-by),再 `fabric doctor --fix` reconcile。
+- store counters 派生态严禁手改;退役动作改的是 store `knowledge/<type>/` 下 markdown 的 frontmatter(maturity / deprecated / superseded-by),再 `fabric doctor --fix` reconcile。
 - health / orphan / stale 一律取自 `fabric doctor` 的 JSON 输出,不在 skill 内重算(单一真源)。

@@ -11,7 +11,7 @@ KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]
 KB: none [<reason>]
 ```
 
-- `[applied]` 前必须先 `fab_recall`(或 `fab_plan_context` → `fab_get_knowledge_sections`)实际抓 KB body —— 防编造 id。验证不通过 = 不能 cite。
+- `[applied]` 前必须先 `fab_recall`(并按需对其正文路径做原生 Read)实际抓 KB body —— 防编造 id。验证不通过 = 不能 cite。
 - **store 前缀** (多 store):read-set 含多 store 且同一 local id 跨 store shadow 时,cite 必须 store-qualified:`KB: <store-alias>:<id> ...`(如 `KB: team:KT-DEC-0001 (auth) [applied]`)。单 store / 无歧义时裸 `KB: <id>` 仍 valid。personal-only 条目 cite 进团队产物 = 强 warning(防泄漏 R5#3)。
 
 ## 2. Contract 语法 (decisions/pitfalls 类 `[applied]`)

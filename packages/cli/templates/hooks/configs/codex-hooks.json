@@ -22,7 +22,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|apply_patch",
+        "matcher": "Edit|Write|MultiEdit|apply_patch|Read",
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\""
       }
     ],

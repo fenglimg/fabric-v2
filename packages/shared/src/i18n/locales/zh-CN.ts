@@ -704,6 +704,26 @@ export const zhCNMessages: Messages = {
     "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
   "doctor.check.relevance_paths_drift.remediation":
     "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
+  // W4-3 (KT-MOD-0001): narrow scope 但 relevance_paths 为空。
+  "doctor.check.narrow_no_paths.name": "Knowledge narrow scope 缺路径",
+  "doctor.check.narrow_no_paths.ok":
+    "每条 narrow scope canonical entry 都至少带一个 relevance_path。",
+  "doctor.check.narrow_no_paths.message.singular":
+    "{count} 条 narrow scope entry 的 relevance_paths 为空 — 永远无法路径匹配,因此永不浮出(死条目)。首条: {detail}。",
+  "doctor.check.narrow_no_paths.message.plural":
+    "{count} 条 narrow scope entry 的 relevance_paths 为空 — 永远无法路径匹配,因此永不浮出(死条目)。首条: {detail}。",
+  "doctor.check.narrow_no_paths.remediation":
+    "用 `fab_review.modify` 补 relevance_paths glob 锚定该 entry,或若本意是常驻则把 relevance_scope 改为 `broad`。",
+  // W4-2 (KT-DEC-0028): 单 store broad 索引接近 backstop。
+  "doctor.check.broad_index_drift.name": "Knowledge broad 索引漂移",
+  "doctor.check.broad_index_drift.ok":
+    "没有 store 的 broad scope 条目数达到漂移阈值({threshold},backstop {backstop} 的 80%)。",
+  "doctor.check.broad_index_drift.message.singular":
+    "{count} 个 store 的 broad 索引已达 {threshold}(backstop {backstop} 的 80%) — SessionStart banner 接近截断 broad 条目。首条: {detail}。",
+  "doctor.check.broad_index_drift.message.plural":
+    "{count} 个 store 的 broad 索引已达 {threshold}(backstop {backstop} 的 80%) — SessionStart banner 接近截断 broad 条目。首条: {detail}。",
+  "doctor.check.broad_index_drift.remediation":
+    "跑 `fabric-audit` skill 在告警 store 内 prune/降级陈旧 broad 条目,或若语料确实大则在 .fabric/fabric-config.json 调高 `broad_index_backstop`。",
   // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive)。
   "doctor.check.orphan_demote.name": "Knowledge orphan demote",
   "doctor.check.orphan_demote.ok":
