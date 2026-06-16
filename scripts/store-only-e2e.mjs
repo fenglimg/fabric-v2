@@ -227,13 +227,18 @@ async function main() {
       session_id: "store-only-e2e",
       correlation_id: "store-only-e2e",
     });
+    // Lean recall (KT-DEC-0026): the old `selected_stable_ids` / `rules[]`
+    // fields were removed. The surfaced store-qualified id now lives in
+    // `paths[]` (the read-path index, scoped to the caller's `ids`), each entry
+    // carrying the on-disk read path + originating store alias.
+    const recalledPath = recalled.paths.find((p) => p.stable_id === `team:${stableId}`);
     assert(
-      recalled.selected_stable_ids.includes(`team:${stableId}`),
-      "recall did not fetch the approved store-qualified id",
+      recalledPath !== undefined,
+      "recall did not surface the approved store-qualified id in paths[]",
     );
     assert(
-      recalled.rules.some((rule) => rule.stable_id === `team:${stableId}`),
-      "recall rules did not include the approved store entry",
+      recalledPath.store?.alias === "team",
+      "recalled path is not attributed to the team store",
     );
 
     process.stdout.write(
