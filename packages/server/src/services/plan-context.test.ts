@@ -215,12 +215,12 @@ describe("planContext", () => {
     expect(result.entries[0]).not.toHaveProperty("description_index");
 
     const index = result.candidates;
-    // The intent "rendering tweak" floats the "UI batch rendering" guideline
-    // above the unrelated "Global protocol" decision via BM25 (content leads).
-    // Ids are store-qualified now.
+    // The intent "rendering tweak" matches the "UI batch rendering" guideline via
+    // BM25; the unrelated "Global protocol" decision scores below the KT-DEC-0038
+    // ratio-to-top floor (0.25 × top) and is dropped (content leads). Ids are
+    // store-qualified.
     expect(index.map((item) => item.stable_id)).toEqual([
       "team:KT-GLD-0001",
-      "team:KT-DEC-0001",
     ]);
 
     // v2.0-rc.7 T9: symmetric output — every response carries a
@@ -759,9 +759,9 @@ describe("planContext BM25 content ranking (W1-T2)", () => {
       intent: "add vector embedding semantic search",
     });
 
-    // BM25 ranks the vector entry first despite KT-DEC-9002 sorting earlier
-    // alphabetically — content relevance leads.
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9001", "team:KT-DEC-9002"]);
+    // BM25 floats the vector entry to the top; the disjoint archive entry scores
+    // below the KT-DEC-0038 ratio-to-top floor and is dropped (content leads).
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9001"]);
   });
 
   it("falls back to stable_id order when no intent is supplied (BM25 disabled)", async () => {
@@ -782,7 +782,9 @@ describe("planContext BM25 content ranking (W1-T2)", () => {
       intent: "git archive deprecation cadence",
     });
 
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9002", "team:KT-DEC-9001"]);
+    // Symmetric to the above: the matching archive entry survives, the disjoint
+    // vector entry falls below the KT-DEC-0038 ratio-to-top floor and is dropped.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-9002"]);
   });
 });
 
@@ -846,6 +848,125 @@ describe("planContext top_k truncation (W1-T3)", () => {
   });
 });
 
+// KT-DEC-0038: ratio-to-top relevance floor. After ranking, recall keeps only
+// candidates whose fused score >= α × the top candidate's score (α default 0.25).
+// top_k degrades to a pure safety cap; the floor is the primary relevance cut.
+// Gated on a query being present so the no-intent broad probe keeps completeness.
+describe("planContext ratio-to-top relevance floor (KT-DEC-0038)", () => {
+  it("drops a candidate scoring below α × top when an intent is supplied", async () => {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8001",
+      summary: "vector embedding semantic retrieval bm25 scoring tokenization",
+      maturity: "draft",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8002",
+      summary: "git lifecycle archive cadence deprecation nudge",
+      maturity: "draft",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    mountStores();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding semantic retrieval bm25 scoring",
+    });
+
+    // 8001 matches the intent; 8002 is disjoint (draft, no locality/recency →
+    // fused score 0) so it falls below 0.25 × top and is dropped. top_k default
+    // 24 is never reached — the cut is purely the ratio-to-top floor.
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-8001"]);
+    expect(result.omitted_candidate_count).toBe(1);
+  });
+
+  it("top_k stays a pure safety cap when every candidate is equally relevant", async () => {
+    // 3 byte-identical proven entries → identical fused score → none below the
+    // floor (all == top). With top_k=2 the cap (not the floor) drops exactly one.
+    const projectRoot = await createTeamProject({ plan_context_top_k: 2 });
+    for (const id of ["KT-DEC-8101", "KT-DEC-8102", "KT-DEC-8103"]) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id,
+        summary: "vector embedding semantic retrieval",
+        maturity: "proven",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      });
+    }
+    mountStores();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding semantic retrieval",
+    });
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.omitted_candidate_count).toBe(1);
+  });
+
+  it("keeps every candidate when no intent is supplied (no floor — broad completeness)", async () => {
+    // A locality-matching entry and a disjoint one, but NO query: the floor must
+    // not fire (KT-DEC-0028 SessionStart completeness / KT-DEC-0019 no-filter).
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8201",
+      summary: "Local entry",
+      maturity: "proven",
+      relevance_scope: "broad",
+      relevance_paths: ["src/index.ts"],
+    });
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8202",
+      summary: "Unrelated entry",
+      maturity: "draft",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    mountStores();
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
+      "team:KT-DEC-8201",
+      "team:KT-DEC-8202",
+    ]);
+    expect(result).not.toHaveProperty("omitted_candidate_count");
+  });
+
+  it("recall_relevance_ratio=0 disables the floor (keeps the disjoint candidate)", async () => {
+    const projectRoot = await createTeamProject({ recall_relevance_ratio: 0 });
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8301",
+      summary: "vector embedding semantic retrieval bm25 scoring",
+      maturity: "draft",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-8302",
+      summary: "git lifecycle archive cadence deprecation nudge",
+      maturity: "draft",
+      relevance_scope: "broad",
+      relevance_paths: [],
+    });
+    mountStores();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "vector embedding semantic retrieval bm25 scoring",
+    });
+
+    // α=0 → no floor → the disjoint entry survives (ranked last, but present).
+    expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
+      "team:KT-DEC-8301",
+      "team:KT-DEC-8302",
+    ]);
+  });
+});
+
 // v2.2 C3-salience (W2-T1): maturity as the finest tie-breaker. Asserts both
 // directions: (1) among equally-relevant entries, higher maturity floats up;
 // (2) the load-bearing invariant — a high-maturity entry that does NOT match
@@ -899,9 +1020,11 @@ describe("planContext salience tie-breaker (W2-T1)", () => {
       intent: "vector embedding semantic search",
     });
 
-    // The draft content-match outranks the proven non-match: BM25 (~50+/term)
-    // dwarfs the 15-point salience gap.
-    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-7101", "team:KT-DEC-7102"]);
+    // The draft content-match dwarfs the proven non-match: BM25 (~50+/term)
+    // overwhelms the 15-point salience gap, AND the proven non-match falls below
+    // the KT-DEC-0038 ratio-to-top floor so it is dropped entirely (content leads
+    // even harder than a tie-break — a non-match never surfaces over a match).
+    expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-7101"]);
   });
 });
 

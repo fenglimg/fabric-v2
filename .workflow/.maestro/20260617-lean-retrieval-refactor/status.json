@@ -82,8 +82,8 @@
       "done_when": "plan-context.ts 在 topK 截断前/后加 ratio-to-top 过滤(α 可配,默认 0.25);TDD 测试:低于 α×max 的候选被丢、topK 仅作 cap、强命中不受影响;与 KT-PIT-0020 recency 校准不冲突;tsc 绿",
       "ship_criteria_alignment": ["KT-DEC-0038"],
       "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "plan-context.test.ts 确定性翻转锁定 ratio 切 + tsc", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "plan-context.test.ts 确定性翻转锁定 ratio 切 + tsc", "evidence": "plan-context.ts sortDescriptionItems 返回 {item,score}; topK 后加 ratio-to-top floor(score>=α×max, α=0.25 可配 recall_relevance_ratio); floor gated on query 在场(无 intent broad probe 不触发, 守 KT-DEC-0028 completeness + KT-DEC-0019); 新增 4 测试(below-floor 丢弃/topK 纯 cap/no-intent 全留/α=0 关闭) + 改 5 既有 intent 测试为 gated 语义; tsc 绿; plan-context 49 pass; shared 633/server 717/cli 1081 全 pass", "verified_at": "2026-06-17T04:30:33.000Z" }
     },
     {
       "id": "A5",

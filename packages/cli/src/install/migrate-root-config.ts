@@ -26,6 +26,7 @@ const ROOT_AUTHORITATIVE_KEYS = new Set<string>([
   "embed_model",
   "embed_weight",
   "plan_context_top_k",
+  "recall_relevance_ratio",
   "mcpPayloadLimits",
   "selection_token_ttl_ms",
   "orphan_demote_proven_days",

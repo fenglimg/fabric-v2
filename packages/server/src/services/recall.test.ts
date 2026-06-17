@@ -125,7 +125,10 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     const result = await recall(projectRoot, {
       paths: ["src/index.ts"],
-      intent: "auth refactor",
+      // Intent matches BOTH seeded entries (auth → KT-DEC-0001, ui → KT-GLD-0001)
+      // symmetrically, so both clear the KT-DEC-0038 ratio-to-top floor and this
+      // test stays focused on the lean wire shape, not relevance filtering.
+      intent: "auth ui",
       correlation_id: "corr-recall-1",
       session_id: "session-recall-1",
     });

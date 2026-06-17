@@ -11,6 +11,12 @@ import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
 // the single field, so the default lives here too.
 export const PLAN_CONTEXT_TOP_K_DEFAULT = 24;
 
+// KT-DEC-0038: default ratio-to-top relevance floor (α). After ranking, recall
+// keeps only candidates whose fused score >= α × the top candidate's score.
+// 0.25 self-normalizes against the current query's max so it is immune to BM25's
+// uncalibrated cross-query scale. 0 disables the floor (keep all up to top_k).
+export const RECALL_RELEVANCE_RATIO_DEFAULT = 0.25;
+
 /**
  * Reads the project config from `.fabric/fabric-config.json` — the single source
  * of truth for project config (A1; KT-DEC-0003 dual-root `~/.fabric` + `<repo>/.fabric`).
@@ -148,6 +154,24 @@ export function readPlanContextTopK(projectRoot: string): number {
     return PLAN_CONTEXT_TOP_K_DEFAULT;
   } catch {
     return PLAN_CONTEXT_TOP_K_DEFAULT;
+  }
+}
+
+/**
+ * KT-DEC-0038: returns the `recall_relevance_ratio` override (α) from
+ * fabric-config.json, or RECALL_RELEVANCE_RATIO_DEFAULT (0.25) when absent /
+ * invalid. Best-effort and hot-path safe — any read/parse failure returns the
+ * default. Valid range [0, 1]; 0 disables the ratio-to-top floor.
+ */
+export function readRecallRelevanceRatio(projectRoot: string): number {
+  try {
+    const raw = readFabricConfig(projectRoot).recall_relevance_ratio;
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0 && raw <= 1) {
+      return raw;
+    }
+    return RECALL_RELEVANCE_RATIO_DEFAULT;
+  } catch {
+    return RECALL_RELEVANCE_RATIO_DEFAULT;
   }
 }
 

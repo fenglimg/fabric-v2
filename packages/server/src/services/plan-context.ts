@@ -12,7 +12,7 @@ import {
   type PayloadGuardOptions,
 } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
@@ -422,18 +422,49 @@ export async function planContext(
     }
   }
 
-  const builtItems = sortDescriptionItems(rawItems, scoringContext);
-  const rankedCandidates = dedupeDescriptionIndex(builtItems);
+  // ISS-006 / KT-DEC-0038: score once during the sort, then keep the per-item
+  // score paired through dedupe so the ratio-to-top floor below can read it
+  // without re-scoring. Sorted score-DESC, so the first surviving entry is the
+  // corpus max.
+  const scoredSorted = sortDescriptionItems(rawItems, scoringContext);
+  const seenStableIds = new Set<string>();
+  const rankedScored = scoredSorted.filter(({ item }) => {
+    if (seenStableIds.has(item.stable_id)) return false;
+    seenStableIds.add(item.stable_id);
+    return true;
+  });
+  const rankedCandidates = rankedScored.map((entry) => entry.item);
+
   // v2.2 A-INFRA-3 (W1-T3-TOPK): bounded top_k truncation. Applied AFTER BM25
-  // ranking (buildDescriptionIndex already sorted by score) so the entries we
-  // drop are the least content-relevant, not an alphabetic tail. This is the
-  // first link of the unified truncation chain (CJK→BM25→top_k→payload): rank
-  // first, then cap count here, then cap bytes at the MCP payload guard.
-  // Truncating BEFORE ranking would freeze a weak ordering into a hard data
-  // loss, so the dependency order is load-bearing.
+  // ranking so the entries we drop are the least content-relevant, not an
+  // alphabetic tail. KT-DEC-0038: top_k is now a pure SAFETY cap — the primary
+  // relevance cut is the ratio-to-top floor below, which top_k rarely reaches.
   const topK = readPlanContextTopK(projectRoot);
-  const omittedCandidateCount = Math.max(0, rankedCandidates.length - topK);
-  const topKCandidates = omittedCandidateCount > 0 ? rankedCandidates.slice(0, topK) : rankedCandidates;
+  const cappedScored = rankedScored.slice(0, topK);
+
+  // KT-DEC-0038: ratio-to-top relevance floor. Keep only candidates whose fused
+  // score >= α × the top candidate's score. Self-normalizing against the current
+  // query's max, so it is immune to BM25's uncalibrated cross-query scale (an
+  // absolute threshold would over/under-cut as corpus/query shift).
+  //
+  // Gated on a QUERY being present (queryTerms.length > 0): the floor treats the
+  // query-time "top_k 无脑回满 / signal dilution" problem. The no-intent broad
+  // probe (SessionStart completeness — KT-DEC-0028; the Wave-A1 no-server-filter
+  // path probe — KT-DEC-0019) carries no relevance query, so it keeps every
+  // candidate up to top_k. α=0 (operator opt-out) or a 0 top score also no-op.
+  // Scores are non-negative, so the floor never drops the max.
+  const relevanceRatio = readRecallRelevanceRatio(projectRoot);
+  const hasQuery = scoringContext.queryTerms.length > 0;
+  const maxScore = rankedScored.length > 0 ? rankedScored[0].score : 0;
+  const relevanceFloor = maxScore * relevanceRatio;
+  const survivingScored =
+    hasQuery && maxScore > 0 && relevanceRatio > 0
+      ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
+      : cappedScored;
+  const topKCandidates = survivingScored.map((entry) => entry.item);
+  // Total dropped = corpus minus surfaced (top_k cap + ratio-to-top floor),
+  // surfaced so neither cut is silent.
+  const omittedCandidateCount = Math.max(0, rankedCandidates.length - topKCandidates.length);
 
   // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when
   // include_related is on, follow the one-hop `related` graph edges of the
@@ -835,10 +866,13 @@ function compareScopeThenId(
   return compareStableIds(left.stable_id, right.stable_id);
 }
 
+// KT-DEC-0038: returns each item paired with its fused score, sorted score-DESC
+// (stable_id / scope tie-break). The caller keeps the score to apply the
+// ratio-to-top relevance floor without re-scoring.
 function sortDescriptionItems(
   rawItems: RuleDescriptionIndexItem[],
   scoringContext?: ScoringContext,
-): RuleDescriptionIndexItem[] {
+): Array<{ item: RuleDescriptionIndexItem; score: number }> {
   // ISS-006: score each item exactly ONCE here, then sort on the precomputed
   // score. The previous design called scoreDescriptionItem(left)+­(right) inside
   // the comparator, so every candidate was re-scored ~log n times per sort
@@ -848,7 +882,9 @@ function sortDescriptionItems(
   // ISS-024: scoringContext.bm25 is now pre-built (and cached) by the caller, so
   // this function no longer re-indexes the corpus per sort.
   if (scoringContext === undefined) {
-    return [...rawItems].sort((left, right) => compareStableIds(left.stable_id, right.stable_id));
+    return [...rawItems]
+      .sort((left, right) => compareStableIds(left.stable_id, right.stable_id))
+      .map((item) => ({ item, score: 0 }));
   }
   const scored = rawItems.map((item) => ({
     item,
@@ -859,7 +895,7 @@ function sortDescriptionItems(
       ? right.score - left.score // descending
       : compareScopeThenId(left.item, right.item, scoringContext.scopeRank), // W2/A4 scope tie-break
   );
-  return scored.map((entry) => entry.item);
+  return scored;
 }
 
 // v2.2 A-INFRA-1 (W1-T2-BM25): flatten a candidate's selection-signal fields
@@ -920,17 +956,6 @@ function dedupeStableIds(stableIds: string[]): string[] {
   return Array.from(new Set(stableIds));
 }
 
-function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescriptionIndexItem[] {
-  const seenStableIds = new Set<string>();
-  return items.filter((item) => {
-    if (seenStableIds.has(item.stable_id)) {
-      return false;
-    }
-
-    seenStableIds.add(item.stable_id);
-    return true;
-  });
-}
 
 // v2.0-rc.5 A3 (TASK-007): primary sort is stable_id only when no scoring
 // context — the legacy levelOrder switch keyed off L0/L1/L2 selection ceremony

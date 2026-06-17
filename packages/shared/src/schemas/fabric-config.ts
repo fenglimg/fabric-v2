@@ -474,6 +474,13 @@ export const fabricConfigSchema = z.object({
   // applied after BM25 ranking. Absent → library default (24). See
   // planContextTopKSchema for the range/calibration rationale.
   plan_context_top_k: planContextTopKSchema.optional(),
+  // KT-DEC-0038: ratio-to-top relevance floor (α) for recall / plan_context.
+  // After ranking, keep only candidates whose fused score >= α × the top
+  // candidate's score — self-normalizing against the current query's max, so it
+  // is immune to BM25's uncalibrated cross-query scale. top_k is a pure safety
+  // cap above this. Range 0..1; absent → library default (0.25). 0 disables the
+  // floor (keep all up to top_k).
+  recall_relevance_ratio: z.number().min(0).max(1).optional(),
   // KT-DEC-0037: the `retrieval_budget_profile` enum was deleted. top_k is the
   // sole retrieval knob (plan_context_top_k above); payload limits pass through
   // explicit `mcpPayloadLimits`, else the fixed PAYLOAD_LIMIT_DEFAULT_* guardrail.
