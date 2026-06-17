@@ -495,6 +495,72 @@ describe("extractKnowledge", () => {
     });
   });
 
+  // KT-GLD-0006: the write-time mechanical self-sufficiency floor. A degenerate
+  // summary (too short / === slug/title / stable_id-shaped) is rejected at the
+  // source so the SessionStart index line is never an un-actionable pointer — the
+  // floor is what lets the rc.35 resolveOpaqueSummaries runtime band-aid retire.
+  it("rejects a summary shorter than the 15-char floor (summary_too_short)", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-floor-1"],
+      user_messages_summary: "too short",
+      slug: "a-distinct-slug-here",
+    }));
+    expect(result.pending_path).toBe("");
+    const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(archive.events).toHaveLength(1);
+    expect(archive.events[0]).toMatchObject({
+      reason: "extract_knowledge:a-distinct-slug-here:summary_too_short",
+    });
+  });
+
+  it("rejects a summary that just echoes the slug (summary_equals_slug)", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-floor-2"],
+      // Long enough to clear the length floor, but identical to the (sanitized,
+      // kebab) slug → no new information beyond the title.
+      user_messages_summary: "recall-ratio-to-top-floor",
+      slug: "recall-ratio-to-top-floor",
+    }));
+    expect(result.pending_path).toBe("");
+    const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(archive.events).toHaveLength(1);
+    expect(archive.events[0]).toMatchObject({
+      reason: expect.stringMatching(/:summary_equals_slug$/u),
+    });
+  });
+
+  it("rejects a summary that is literally a stable_id", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-floor-3"],
+      // A stable_id (K[TP]-XXX-NNNN) is 11 chars, so the length floor (<15) fires
+      // first — either way the degenerate id-shaped summary never lands.
+      user_messages_summary: "KT-DEC-0042",
+      slug: "stable-id-shaped-summary",
+    }));
+    expect(result.pending_path).toBe("");
+    const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(archive.events).toHaveLength(1);
+    expect(archive.events[0]).toMatchObject({
+      reason: expect.stringMatching(/:summary_(too_short|looks_like_stable_id)$/u),
+    });
+  });
+
+  it("accepts a self-sufficient summary that clears the mechanical floor", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-floor-4"],
+      recent_paths: ["src/x.ts"],
+      user_messages_summary: "Ratio-to-top floor drops candidates below 0.25× the top BM25 score.",
+      slug: "ratio-to-top-floor",
+    }));
+    expect(result.pending_path).not.toBe("");
+    const proposed = await readEventLedger(projectRoot, { event_type: "knowledge_proposed" });
+    expect(proposed.events).toHaveLength(1);
+  });
+
   it("extractKnowledge_sanitizes_slug_to_kebab_case", async () => {
     const projectRoot = await createTempProject();
 

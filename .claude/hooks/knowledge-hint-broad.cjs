@@ -53,7 +53,6 @@ const { appendLockedLine } = require("./lib/injection-log.cjs");
 // (TASK-002). Variant is resolved ONCE per main() invocation via
 // readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
-const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 // v2.0.0-rc.37 NEW-19: shared fabric-config reader + sidecar I/O. Replaces the
 // five per-key readFileSync+parse config readers (one parse per fire now) and
 // the bespoke last-emit sidecar helpers. The L78 "refactor into lib/ if a
@@ -930,25 +929,13 @@ function main(env, stdio) {
     // bounded by the per-line char cap (hint_summary_max_len) and the
     // broad_index_backstop fold (D0028), not by silently dropping entries.
 
-    // rc.35 TASK-06 (P0-10.b): summary-fallback substitution. Entries whose
-    // description.summary equals stable_id render as "<id> · <id>" and the
-    // AI skips fetching them; the fallback reads `## Summary` from the
-    // entry's .md file and swaps in the first paragraph. Best-effort —
-    // failure leaves the original opaque summary untouched.
-    let resolvedPayload = payload;
-    try {
-      if (payload && Array.isArray(payload.entries)) {
-        const resolvedEntries = resolveOpaqueSummaries(
-          payload.entries,
-          cwd,
-          typeof payload.revision_hash === "string" ? payload.revision_hash : "",
-        );
-        resolvedPayload = { ...payload, entries: resolvedEntries };
-      }
-    } catch {
-      // resolveOpaqueSummaries swallows its own errors; this catch is belt
-      // + suspenders for any unexpected exception from the lib layer.
-    }
+    // KT-GLD-0006: the rc.35 opaque-summary runtime substitution
+    // (resolveOpaqueSummaries) is retired. The write-time mechanical floor in
+    // extractKnowledge (summary !== stable_id/slug + length floor) prevents
+    // degenerate summaries at the source, so SessionStart no longer band-aids
+    // them at render time; surviving legacy opaque summaries are fixed by the
+    // review-time cold-eval audit pass.
+    const resolvedPayload = payload;
 
     // rc.8 underseed self-check: decide whether to surface the one-line
     // `/fabric-import` recommendation banner alongside the broad summary.

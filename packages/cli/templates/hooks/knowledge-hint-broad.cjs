@@ -53,7 +53,6 @@ const { appendLockedLine } = require("./lib/injection-log.cjs");
 // (TASK-002). Variant is resolved ONCE per main() invocation via
 // readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
-const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 // v2.0.0-rc.37 NEW-19: shared fabric-config reader + sidecar I/O. Replaces the
 // five per-key readFileSync+parse config readers (one parse per fire now) and
 // the bespoke last-emit sidecar helpers. The L78 "refactor into lib/ if a
@@ -928,25 +927,17 @@ function renderAiSink(opts) {
 // Returns:
 //   human               — gated final human text (null when gated off / empty)
 //   ai                  — gated final AI text (null when reminder-to-context off / empty)
-//   resolvedPayload     — payload with opaque summaries resolved (for telemetry / --explain)
+//   resolvedPayload     — the plan-context payload, passed through unchanged (for telemetry / --explain)
 //   hasRenderedContent  — true when ANY sink rendered content (main's silent-exit gate)
 //   reminderToContext   — readReminderToContext(cwd) (telemetry target-channel)
 function buildSessionStartSinks(cwd, payload, env) {
-  // rc.35 TASK-06: opaque-summary substitution (best-effort; failure leaves
-  // the original summary untouched).
-  let resolvedPayload = payload;
-  try {
-    if (payload && Array.isArray(payload.entries)) {
-      const resolvedEntries = resolveOpaqueSummaries(
-        payload.entries,
-        cwd,
-        typeof payload.revision_hash === "string" ? payload.revision_hash : "",
-      );
-      resolvedPayload = { ...payload, entries: resolvedEntries };
-    }
-  } catch {
-    // resolveOpaqueSummaries swallows its own errors; belt + suspenders.
-  }
+  // KT-GLD-0006: the rc.35 opaque-summary runtime substitution
+  // (resolveOpaqueSummaries) is retired. The write-time mechanical floor in
+  // extractKnowledge (summary !== stable_id/slug + length floor) prevents
+  // degenerate summaries at the source, so SessionStart no longer band-aids them
+  // at render time; surviving legacy opaque summaries are fixed by the
+  // review-time cold-eval audit pass.
+  const resolvedPayload = payload;
 
   const recommendImport = shouldRecommendImport(cwd);
   const summaryMaxLen = readSummaryMaxLen(cwd);

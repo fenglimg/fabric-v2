@@ -20,6 +20,13 @@ import {
 } from "./cross-store-write.js";
 import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.js";
 
+// KT-GLD-0006: the review-time summary self-sufficiency gate is a COLD-EVAL judge
+// (zero-context, batched, offline via maestro delegate) — see summary-cold-eval.ts
+// for the protocol + batch builder. It is driven by the fabric-review skill, not
+// the synchronous fab_review service here, so a non-deterministic LLM call never
+// lands on this hot path. The write-time mechanical floor (extract-knowledge.ts)
+// is the deterministic first line of defence this review pass complements.
+
 // v2.2 全砍 Stage 2 (B2 cutover): store-only pending root. extract-knowledge
 // routes pending entries INTO the resolved write-target store
 // (cross-store-write.resolveStorePendingBase); review's list/search/approve read

@@ -95,8 +95,8 @@
       "done_when": "写入期机械校验落地(退化 summary 被拒/告警);resolveOpaqueSummaries 及调用删除;审核期冷评 judge 钩子接好(可先接桩+协议,judge 调用走 maestro delegate 冷评);TDD 覆盖机械地板;tsc 绿",
       "ship_criteria_alignment": ["KT-GLD-0006"],
       "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "机械地板单测 + grep resolveOpaqueSummaries 零残留 + tsc", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "机械地板单测 + grep resolveOpaqueSummaries 零残留 + tsc", "evidence": "① 写入期机械地板已存在(extract-knowledge NEW-37: 拒 empty/<15/===slug/stable-id-shaped), 补 4 TDD 测试锁定; ② 删 resolveOpaqueSummaries 创可贴: templates+root .claude 的 broad/narrow hook(require+call)+ summary-fallback.cjs lib(templates+root)+ 单测, narrow hook_surface renderedIds 改 dedupDecision.filtered; ③ 冷评 judge protocol+stub: summary-cold-eval.ts(buildColdEvalBatch+COLD_EVAL_RUBRIC+verdict 契约)+ index 导出 + review.ts pointer + 单测; i18n 快照按文件计数 -2 更新; tsc 绿 + knip lint 绿; shared 633/server 725/cli 1065 全 pass", "verified_at": "2026-06-17T04:30:33.000Z" }
     },
     {
       "id": "A6",

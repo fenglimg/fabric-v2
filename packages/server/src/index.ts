@@ -72,6 +72,15 @@ export {
 // deriveRuleIdentity / extractRuleDescription directly from the module.
 export { extractKnowledge } from "./services/extract-knowledge.js";
 export { reviewKnowledge } from "./services/review.js";
+// KT-GLD-0006: review-time cold-eval self-sufficiency judge protocol + batch builder
+// (driven offline by the fabric-review skill via maestro delegate; no hot-path LLM call).
+export {
+  buildColdEvalBatch,
+  COLD_EVAL_RUBRIC,
+  type ColdEvalCandidate,
+  type ColdEvalVerdict,
+  type ColdEvalBatch,
+} from "./services/summary-cold-eval.js";
 // v2.2 dual-sink (Goal A / D9): always-active body collector consumed by the
 // `fabric plan-context-hint` CLI adapter to populate the SessionStart AI sink.
 export {
