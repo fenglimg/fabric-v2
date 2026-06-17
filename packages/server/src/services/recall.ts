@@ -179,7 +179,7 @@ function buildNextSteps(
   const omitted = planResult.omitted_candidate_count ?? 0;
   if (omitted > 0) {
     nextSteps.push(
-      `${omitted} lower-ranked candidate(s) were omitted by the retrieval budget — pass a narrower intent (or raise plan_context_top_k / the retrieval_budget_profile) to surface them.`,
+      `${omitted} lower-ranked candidate(s) were omitted by the retrieval budget — pass a narrower intent (or raise plan_context_top_k) to surface them.`,
     );
   }
   const surfacedPaths = new Set(paths.map((p) => p.stable_id));

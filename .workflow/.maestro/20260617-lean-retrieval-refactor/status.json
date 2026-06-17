@@ -69,8 +69,8 @@
       "done_when": "retrieval-budget.ts profile 机制删除;config-loader 改直读 plan_context_top_k + 固定 hardBytes;fabric-config schema 移除 retrieval_budget_profile;migrate-root-config 同步;tsc 绿 + 测试更新",
       "ship_criteria_alignment": ["KT-DEC-0037"],
       "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "config-loader.test.ts + retrieval-budget.test.ts 重写 + tsc", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "config-loader.test.ts + retrieval-budget.test.ts 重写 + tsc", "evidence": "删 retrieval-budget.ts 整模块+test+index 导出; config-loader readPayloadLimits 退成 explicit pass-through, readPlanContextTopK 去 profile fallback; 删 fabric-config retrieval_budget_profile 字段 + migrate-root-config 同步 + recall.ts 消息; topK 唯一旋钮, payloadHardBytes=固定 guard 护栏; tsc 全绿; config-loader 23 pass; shared 633/server 713/cli 1081 全 pass", "verified_at": "2026-06-17T04:30:33.000Z" }
     },
     {
       "id": "A4",

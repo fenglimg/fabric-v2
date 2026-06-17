@@ -474,13 +474,9 @@ export const fabricConfigSchema = z.object({
   // applied after BM25 ranking. Absent → library default (24). See
   // planContextTopKSchema for the range/calibration rationale.
   plan_context_top_k: planContextTopKSchema.optional(),
-  // v2.2 C5-budget (W2-T3): layered retrieval budget profile for the MCP layer —
-  // `balanced` (default) reproduces the historical per-knob defaults exactly,
-  // `conservative` / `generous` scale the truncation chain (top_k + payload bytes)
-  // down / up together. Per-field knobs (plan_context_top_k, mcpPayloadLimits.*)
-  // still override the profile when set. See retrieval-budget.ts
-  // (resolveRetrievalBudget) for the resolution order.
-  retrieval_budget_profile: z.enum(["conservative", "balanced", "generous"]).optional(),
+  // KT-DEC-0037: the `retrieval_budget_profile` enum was deleted. top_k is the
+  // sole retrieval knob (plan_context_top_k above); payload limits pass through
+  // explicit `mcpPayloadLimits`, else the fixed PAYLOAD_LIMIT_DEFAULT_* guardrail.
   // v2.2 C2-vector (W2-T7): OPTIONAL dense-embedding semantic retrieval, layered
   // as a recall supplement after BM25. Default OFF (`--no-embed` is the baseline);
   // requires the operator to install the optional `fastembed` package — absent →

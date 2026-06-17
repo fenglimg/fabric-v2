@@ -1,20 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { selectionTokenTtlMsSchema, planContextTopKSchema, resolveRetrievalBudget } from "@fenglimg/fabric-shared";
-import type { FabricConfig, McpPayloadLimits, RetrievalBudgetProfile } from "@fenglimg/fabric-shared";
-
-// v2.2 C5-budget (W2-T3): the valid retrieval budget profiles. Kept as a const
-// tuple so the per-field reader can validate the config value without pulling in
-// the whole fabricConfigSchema on the hot read path.
-const RETRIEVAL_BUDGET_PROFILES: readonly RetrievalBudgetProfile[] = ["conservative", "balanced", "generous"];
-
-function readRetrievalBudgetProfile(config: FabricConfig): RetrievalBudgetProfile | undefined {
-  const raw = config.retrieval_budget_profile;
-  return typeof raw === "string" && (RETRIEVAL_BUDGET_PROFILES as readonly string[]).includes(raw)
-    ? (raw as RetrievalBudgetProfile)
-    : undefined;
-}
+import { selectionTokenTtlMsSchema, planContextTopKSchema } from "@fenglimg/fabric-shared";
+import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
 
 // v2.2 A-INFRA-3 (W1-T3-TOPK): library default for the plan_context candidate
 // cap when fabric.config.json omits `plan_context_top_k`. Mirrors the
@@ -44,30 +32,18 @@ function readFabricConfig(projectRoot: string): FabricConfig {
 }
 
 /**
- * Returns the effective MCP payload byte limits, or undefined when no budget
- * strategy is in play so call sites fall back to the guard's built-in defaults.
+ * Returns the explicit MCP payload byte limits from `mcpPayloadLimits`, or
+ * undefined when absent so call sites fall back to the payload guard's built-in
+ * fixed guardrail (PAYLOAD_LIMIT_DEFAULT_{WARN,HARD}_BYTES).
  *
- * v2.2 C5-budget (W2-T3): the limits now derive from the layered retrieval
- * budget — explicit `mcpPayloadLimits.{warn,hard}Bytes` win, else the
- * `retrieval_budget_profile` provides them. When NEITHER is set we still return
- * undefined (not the balanced numbers) so the historical "fall through to the
- * guard defaults" path — and doctor's `source: "default"` rendering — is byte-
- * identical. A conservative/generous profile (or any explicit limit) makes this
- * return concrete bytes, binding the payload rung to the chosen strategy.
+ * KT-DEC-0037: the `retrieval_budget_profile` enum was deleted, so the payload
+ * limits are no longer profile-scaled — `payloadHardBytes` is a fixed 413 safety
+ * guardrail (the guard default) unless the operator pins an explicit override.
+ * Any missing sub-field of an explicit override is filled by the guard default
+ * at the call site.
  */
 export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undefined {
-  const config = readFabricConfig(projectRoot);
-  const explicit = config.mcpPayloadLimits;
-  const profile = readRetrievalBudgetProfile(config);
-  if (profile === undefined && explicit === undefined) {
-    return undefined;
-  }
-  const resolved = resolveRetrievalBudget({
-    profile,
-    payloadWarnBytes: explicit?.warnBytes,
-    payloadHardBytes: explicit?.hardBytes,
-  });
-  return { warnBytes: resolved.payloadWarnBytes, hardBytes: resolved.payloadHardBytes };
+  return readFabricConfig(projectRoot).mcpPayloadLimits;
 }
 
 /**
@@ -163,17 +139,13 @@ export function readDefaultLayerFilter(projectRoot: string): "team" | "personal"
 
 export function readPlanContextTopK(projectRoot: string): number {
   try {
-    const config = readFabricConfig(projectRoot);
-    // Explicit per-field knob wins over the profile.
-    const raw = config.plan_context_top_k;
+    // KT-DEC-0037: top_k is the sole retrieval knob — the profile enum is gone.
+    const raw = readFabricConfig(projectRoot).plan_context_top_k;
     if (raw !== undefined) {
       const parsed = planContextTopKSchema.safeParse(raw);
       if (parsed.success) return parsed.data;
     }
-    // v2.2 C5-budget (W2-T3): else derive from the retrieval budget profile.
-    // `balanced` (and the absent-profile default) resolves to 24 ===
-    // PLAN_CONTEXT_TOP_K_DEFAULT, so the no-config behavior is unchanged.
-    return resolveRetrievalBudget({ profile: readRetrievalBudgetProfile(config) }).topK;
+    return PLAN_CONTEXT_TOP_K_DEFAULT;
   } catch {
     return PLAN_CONTEXT_TOP_K_DEFAULT;
   }

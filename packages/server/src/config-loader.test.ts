@@ -73,8 +73,10 @@ describe("config-loader — readSelectionTokenTtlMs (rc.29 REVIEW HIGH-3)", () =
   });
 });
 
-// v2.2 C5-budget (W2-T3): the retrieval budget profile binds top_k + payload.
-describe("config-loader — retrieval budget profile binding (C5 / W2-T3)", () => {
+// KT-DEC-0037: the retrieval_budget_profile enum was deleted. top_k is the sole
+// retrieval knob; payload limits pass through explicit mcpPayloadLimits, else the
+// fixed PAYLOAD_LIMIT_DEFAULT_* guardrail in the payload guard (undefined here).
+describe("config-loader — per-knob retrieval budget (KT-DEC-0037)", () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -90,36 +92,28 @@ describe("config-loader — retrieval budget profile binding (C5 / W2-T3)", () =
     writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(obj));
   }
 
-  it("no config → top_k 24 (balanced default) and payload limits undefined (guard defaults)", () => {
+  it("no config → top_k 24 (default) and payload limits undefined (guard defaults)", () => {
     expect(readPlanContextTopK(tempDir)).toBe(24);
     expect(readPayloadLimits(tempDir)).toBeUndefined();
   });
 
-  it("conservative profile lowers top_k and pins payload bytes", () => {
-    writeConfig({ retrieval_budget_profile: "conservative" });
-    expect(readPlanContextTopK(tempDir)).toBe(12);
-    expect(readPayloadLimits(tempDir)).toEqual({ warnBytes: 8192, hardBytes: 32768 });
-  });
-
-  it("generous profile raises top_k and pins payload bytes", () => {
-    writeConfig({ retrieval_budget_profile: "generous" });
-    expect(readPlanContextTopK(tempDir)).toBe(48);
-    expect(readPayloadLimits(tempDir)).toEqual({ warnBytes: 32768, hardBytes: 131072 });
-  });
-
-  it("explicit plan_context_top_k overrides the profile", () => {
-    writeConfig({ retrieval_budget_profile: "conservative", plan_context_top_k: 99 });
+  it("explicit plan_context_top_k is honored", () => {
+    writeConfig({ plan_context_top_k: 99 });
     expect(readPlanContextTopK(tempDir)).toBe(99);
   });
 
-  it("explicit mcpPayloadLimits override the profile per-field; profile fills the rest", () => {
-    writeConfig({ retrieval_budget_profile: "generous", mcpPayloadLimits: { hardBytes: 50000 } });
-    // hardBytes explicit wins; warnBytes follows the generous profile.
-    expect(readPayloadLimits(tempDir)).toEqual({ warnBytes: 32768, hardBytes: 50000 });
+  it("invalid plan_context_top_k falls back to the default", () => {
+    writeConfig({ plan_context_top_k: "bad" });
+    expect(readPlanContextTopK(tempDir)).toBe(24);
   });
 
-  it("unknown profile string is ignored (falls back to balanced semantics)", () => {
-    writeConfig({ retrieval_budget_profile: "bogus" });
+  it("explicit mcpPayloadLimits pass through unchanged", () => {
+    writeConfig({ mcpPayloadLimits: { warnBytes: 20000, hardBytes: 50000 } });
+    expect(readPayloadLimits(tempDir)).toEqual({ warnBytes: 20000, hardBytes: 50000 });
+  });
+
+  it("a retired retrieval_budget_profile field is ignored (no top_k / payload effect)", () => {
+    writeConfig({ retrieval_budget_profile: "generous" });
     expect(readPlanContextTopK(tempDir)).toBe(24);
     expect(readPayloadLimits(tempDir)).toBeUndefined();
   });
