@@ -320,6 +320,16 @@ export interface KnowledgeCensus {
   // `project` bucket for `project:<active>`-scoped entries (A1/KT-MOD-0001 — a
   // project entry lives in a team store but is its own audience, not team-wide).
   by_layer: { team: number; personal: number; project: number };
+  // v2.2 HUD (Goal H1): relevance_scope slice of by_type. The SessionStart human
+  // sink is scope-primary (KT-DEC-0029: SessionStart shows BROAD only; narrow
+  // surfaces via the PreToolUse hint). `broad_by_type` counts ONLY broad entries
+  // per knowledge_type — its sum is the "本会话注入" spine size — and `narrow_total`
+  // is the file-specific remainder. Invariant: sum(broad_by_type) + narrow_total
+  // == total (every store entry is typed + classified broad|narrow). Existing
+  // `by_type`/`by_layer`/`total` stay unsliced for backward compatibility.
+  broad_by_type: Record<string, number>;
+  /** count of narrow-scope kept entries (file-specific; only合计, not per-type). */
+  narrow_total: number;
   /** entries专属 to OTHER projects that filterByActiveProject removed. */
   dropped_other_project: number;
   /** kept (post-filter) total. */
@@ -336,6 +346,8 @@ export async function buildKnowledgeCensus(projectRoot: string): Promise<Knowled
   const census: KnowledgeCensus = {
     by_type: {},
     by_layer: { team: 0, personal: 0, project: 0 },
+    broad_by_type: {},
+    narrow_total: 0,
     dropped_other_project: 0,
     total: 0,
   };
@@ -345,10 +357,19 @@ export async function buildKnowledgeCensus(projectRoot: string): Promise<Knowled
     const kept = filterByActiveProject(all, activeProject);
     census.dropped_other_project = all.length - kept.length;
     for (const entry of kept) {
-      const type = extractRuleDescription(entry.source)?.knowledge_type;
+      const desc = extractRuleDescription(entry.source);
+      const type = desc?.knowledge_type;
+      // relevance_scope slice (KT-DEC-0029): narrow == file-specific, everything
+      // else (incl. undefined) is broad — same predicate buildAlwaysActiveBodies
+      // uses, so the spine size stays consistent across both sinks.
+      const isNarrow = desc?.relevance_scope === "narrow";
       if (typeof type === "string") {
         census.by_type[type] = (census.by_type[type] ?? 0) + 1;
+        if (!isNarrow) {
+          census.broad_by_type[type] = (census.broad_by_type[type] ?? 0) + 1;
+        }
       }
+      if (isNarrow) census.narrow_total += 1;
       // Project-scoped entries get their own bucket (they physically live in a
       // team store but are a distinct audience); everything else folds into its
       // physical layer (team/personal).

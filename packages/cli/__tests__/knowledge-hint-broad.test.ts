@@ -626,33 +626,46 @@ describe("knowledge-hint-broad.cjs — main", () => {
     const writes = captureStderr({ payload: makePayload(narrow) });
     expect(writes.length).toBeGreaterThan(0);
     const stderr = writes.join("");
-    expect(stderr).toMatch(/\[fabric\] SessionStart/);
+    // H2 scope-primary HUD header (▸ [fabric] 共 N 条 …) replaces the old
+    // "SessionStart (N entries)" line.
+    expect(stderr).toMatch(/▸ \[fabric\]/);
     // W2-3: the on-demand count line is retired.
     expect(stderr).not.toMatch(/on-demand/);
-    expect(stderr).toMatch(/fab_recall/); // next-step nudge
+    // H5: the human `下一步: …fab_recall…` AI-plumbing line is retired; only the
+    // byte-identical inspector pointer remains.
+    expect(stderr).not.toMatch(/下一步/);
+    expect(stderr).toMatch(/fabric context/);
   });
 
-  it("dual-sink: census drives the always-loaded breadcrumb; on-demand + dropped lines are retired (W2-3)", () => {
+  it("dual-sink: census drives the scope-primary HUD tree (broad spine + narrow remainder)", () => {
+    // 11 broad (g2+m1 resident, d5+p3 reference) + 5 narrow = 16 total. Default
+    // lang (cwd has no config) is zh-CN per back-compat.
     const writes = captureStderr({
       payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "s")]),
       census: {
         by_type: { guidelines: 2, models: 1, decisions: 5, pitfalls: 3, processes: 0 },
-        by_layer: { team: 9, personal: 2 },
+        by_layer: { team: 9, personal: 2, project: 5 },
+        broad_by_type: { guidelines: 2, models: 1, decisions: 5, pitfalls: 3 },
+        narrow_total: 5,
         dropped_other_project: 4,
-        total: 11,
+        total: 16,
       },
     });
     const stderr = writes.join("");
-    expect(stderr).toMatch(/always-active/);
-    expect(stderr).toMatch(/guideline 2 · model 1/);
-    expect(stderr).toMatch(/\[team\] 9 · \[personal\] 2/);
-    // W2-3 (KT-DEC-0029): the on-demand census count line + dropped-other-project
-    // line are retired — SessionStart stays silent about narrow knowledge.
-    expect(stderr).not.toMatch(/decision 5 · pitfall 3/);
+    // Header: total + semantic_scope breakdown (zh-CN wording).
+    expect(stderr).toMatch(/▸ \[fabric\] 共 16 条 · 团队 9 · 项目 5 · 个人 2/);
+    // broad spine = resident (g2+m1) + reference (d5+p3) = 11.
+    expect(stderr).toMatch(/broad 11 · 本会话注入/);
+    expect(stderr).toMatch(/常驻规则 3  guideline 2 · model 1/);
+    expect(stderr).toMatch(/情境参考 8  decision 5 · pitfall 3/);
+    // narrow remainder is 合计-only (no per-type breakdown).
+    expect(stderr).toMatch(/narrow 5 · 编辑对应文件时浮现/);
+    // Self-consistency invariant the HUD relies on: broad(11) + narrow(5) = 16.
+    // W2-3 (KT-DEC-0029): no dropped-other-project line.
     expect(stderr).not.toMatch(/已剔除他项目|dropped 4 other-project/);
   });
 
-  it("appends a per-store read-set label from the bindings snapshot (v2.1 P4, F4/S63)", () => {
+  it("appends a scope store label (写入/只读) from the bindings snapshot (H2)", () => {
     // Project config supplies the project_id that keys the snapshot.
     const projectId = "11111111-1111-4111-8111-111111111111";
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
@@ -689,9 +702,12 @@ describe("knowledge-hint-broad.cjs — main", () => {
         payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "s")]),
       });
       const stderr = writes.join("");
-      expect(stderr).toContain("read-set stores:");
-      expect(stderr).toContain("team (write)");
-      expect(stderr).toContain("personal");
+      // H2: write target → `write <alias>`; the rest → `readonly <alias>` (en).
+      expect(stderr).toContain("write team");
+      expect(stderr).toContain("readonly personal");
+      // legacy read-set jargon retired.
+      expect(stderr).not.toContain("read-set stores:");
+      expect(stderr).not.toContain("(write)");
     } finally {
       if (prevHome === undefined) delete process.env.FABRIC_HOME;
       else process.env.FABRIC_HOME = prevHome;
@@ -1042,11 +1058,25 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     }
   });
 
-  function captureStderr(env: { payload?: Payload | null }): string[] {
+  function captureStderr(env: { payload?: Payload | null; census?: unknown }): string[] {
     const writes: string[] = [];
     const stderr = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, ...env }, { stderr });
     return writes;
+  }
+
+  // H3: the import gate now reads the LIVE census total (single count source), so
+  // these integration tests drive it via an explicit census.total rather than the
+  // snapshot canonical count. A coherent census whose broad spine sums to total.
+  function censusWithTotal(total: number): Record<string, unknown> {
+    return {
+      by_type: { decisions: total },
+      by_layer: { team: total, personal: 0, project: 0 },
+      broad_by_type: { decisions: total },
+      narrow_total: 0,
+      dropped_other_project: 0,
+      total,
+    };
   }
 
   // Store-only cutover: bound via fabric-config binding id; canonical count
@@ -1071,7 +1101,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     );
   }
 
-  it("canonical=3 < 10 + no import-state → emits import banner alongside summary", () => {
+  it("census total=3 < 10 + no import-state → emits import banner alongside the HUD", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
@@ -1079,23 +1109,27 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
       const writes = captureStderr({
         payload: makePayload(narrow, { revision_hash: "rev-fresh" }),
+        census: censusWithTotal(3),
       });
       const stderr = writes.join("");
       expect(stderr).toMatch(/📋 Fabric:/);
       expect(stderr).toMatch(/\/fabric-import/);
-      // v2.2 dual-sink: the §3 census banner still present alongside the import nudge.
-      expect(stderr).toMatch(/\[fabric\] SessionStart/);
+      // The scope-primary HUD is present alongside the import nudge.
+      expect(stderr).toMatch(/▸ \[fabric\]/);
     });
   });
 
-  it("canonical=15 >= 10 → NO import banner emitted", () => {
+  it("P0 no-contradiction: census total=15 >= 10 → NEVER emits import banner (single live count source, H3)", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
-      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 15 });
+      // Even with a STALE snapshot canonical_count of 2, the live census total of
+      // 15 governs — killing the "15 entries but nudge says sparse" contradiction.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
 
       const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
       const writes = captureStderr({
         payload: makePayload(narrow, { revision_hash: "rev-seeded" }),
+        census: censusWithTotal(15),
       });
       const stderr = writes.join("");
       expect(stderr).not.toMatch(/📋 Fabric:/);
@@ -1112,6 +1146,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
       const writes = captureStderr({
         payload: makePayload(narrow, { revision_hash: "rev-done" }),
+        census: censusWithTotal(2),
       });
       const stderr = writes.join("");
       expect(stderr).not.toMatch(/📋 Fabric:/);
@@ -1128,6 +1163,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
       const writes = captureStderr({
         payload: makePayload(narrow, { revision_hash: "rev-mid" }),
+        census: censusWithTotal(2),
       });
       const stderr = writes.join("");
       expect(stderr).not.toMatch(/📋 Fabric:/);
@@ -1331,6 +1367,8 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
   const census = {
     by_type: { guidelines: 1, models: 0, decisions: 4, pitfalls: 2, processes: 0 },
     by_layer: { team: 6, personal: 1 },
+    broad_by_type: { guidelines: 1, decisions: 4, pitfalls: 2 },
+    narrow_total: 0,
     dropped_other_project: 0,
     total: 7,
   };
@@ -1348,9 +1386,9 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     });
     expect(out.length).toBe(1);
     const env = JSON.parse(out[0]);
-    // Human sink
-    expect(env.systemMessage).toMatch(/\[fabric\] SessionStart/);
-    expect(env.systemMessage).toMatch(/always-active/);
+    // Human sink — scope-primary HUD (H2): header + broad spine.
+    expect(env.systemMessage).toMatch(/▸ \[fabric\]/);
+    expect(env.systemMessage).toMatch(/broad 7 · injected this session/);
     // AI sink
     expect(env.hookSpecificOutput.hookEventName).toBe("SessionStart");
     expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/);
@@ -1365,7 +1403,7 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).not.toMatch(/ON-DEMAND/);
   });
 
-  it("census labels total as entry COUNT (not 'KB') and surfaces a [project] bucket", () => {
+  it("census header labels total as entry COUNT (not 'KB') and surfaces a project segment", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
     writeConfig({ fabric_language: "en" });
     const { out } = capture({
@@ -1373,20 +1411,22 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
       census: {
         by_type: { guidelines: 1, models: 0, decisions: 4, pitfalls: 2, processes: 0 },
         by_layer: { team: 4, personal: 1, project: 2 },
+        broad_by_type: { guidelines: 1, decisions: 4, pitfalls: 2 },
+        narrow_total: 0,
         dropped_other_project: 0,
         total: 7,
       },
       alwaysBodies,
     });
     const env = JSON.parse(out[0]);
-    // Block 3: `total` is the read-set ENTRY COUNT, labeled entries — never "KB".
-    expect(env.systemMessage).toMatch(/SessionStart \(7 entries\)/);
+    // H2: `total` is the read-set ENTRY COUNT, labeled entries — never "KB".
+    expect(env.systemMessage).toMatch(/▸ \[fabric\] 7 entries/);
     expect(env.systemMessage).not.toMatch(/\d+ KB/);
-    // Block 4: project-scoped entries get their own bucket between team & personal.
-    expect(env.systemMessage).toMatch(/\[team\] 4 · \[project\] 2 · \[personal\] 1/);
+    // Project-scoped entries get their own header segment between team & personal.
+    expect(env.systemMessage).toMatch(/team 4 · project 2 · personal 1/);
   });
 
-  it("omits the [project] bucket when no project-scoped entries exist", () => {
+  it("omits the project segment when no project-scoped entries exist", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
     writeConfig({ fabric_language: "en" });
     const { out } = capture({
@@ -1395,8 +1435,8 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
       alwaysBodies,
     });
     const env = JSON.parse(out[0]);
-    expect(env.systemMessage).toMatch(/\[team\] 6 · \[personal\] 1/);
-    expect(env.systemMessage).not.toMatch(/\[project\]/);
+    expect(env.systemMessage).toMatch(/team 6 · personal 1/);
+    expect(env.systemMessage).not.toMatch(/project/);
   });
 
   it("nudge_mode=silent → AI additionalContext STILL emitted, systemMessage suppressed (D5 invariant)", () => {
@@ -1444,7 +1484,7 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     });
     expect(out.length).toBe(1);
     const env = JSON.parse(out[0]);
-    expect(env.systemMessage).toMatch(/\[fabric\] SessionStart/);
+    expect(env.systemMessage).toMatch(/▸ \[fabric\]/);
     expect(env.hookSpecificOutput).toBeUndefined();
   });
 });
@@ -1571,5 +1611,155 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
     expect(ai).toMatch(/\[model\] team:KT-MOD-0001 · domain model/);
     expect(ai).not.toMatch(/xxxx/);
     expect(ai).not.toMatch(/over budget/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Goal H2/H4 — scope-primary HUD tree + single-line action ladder.
+// The human sink is a status HUD: a header (total + semantic_scope breakdown),
+// a broad spine (resident + reference tiers), and a narrow remainder line.
+// The action area shows AT MOST ONE line (import > review > silent).
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)", () => {
+  let tempRoot: string;
+  const savedClient = process.env.FABRIC_HINT_CLIENT;
+  const savedProjDir = process.env.CLAUDE_PROJECT_DIR;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "broad-hud-ladder-"));
+    delete process.env.FABRIC_HINT_CLIENT; // unknown client → stderr fallback
+    delete process.env.CLAUDE_PROJECT_DIR;
+  });
+  afterEach(() => {
+    if (savedClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+    else process.env.FABRIC_HINT_CLIENT = savedClient;
+    if (savedProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedProjDir;
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  const PROJECT_ID = "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3";
+
+  function plantBound(): void {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ project_id: PROJECT_ID, fabric_language: "en" }),
+      "utf8",
+    );
+  }
+
+  function capture(env: { payload?: Payload | null; census?: unknown }): string {
+    const writes: string[] = [];
+    hook.main({ cwd: tempRoot, ...env }, { stderr: { write: (c: string) => writes.push(c) } });
+    return writes.join("");
+  }
+
+  // A coherent census whose broad spine sums to `broadTotal` and adds a narrow tail.
+  function census(broadByType: Record<string, number>, narrow: number, byLayer: Record<string, number>) {
+    const broadSum = Object.values(broadByType).reduce((a, b) => a + b, 0);
+    return {
+      by_type: broadByType,
+      by_layer: { team: 0, personal: 0, project: 0, ...byLayer },
+      broad_by_type: broadByType,
+      narrow_total: narrow,
+      dropped_other_project: 0,
+      total: broadSum + narrow,
+    };
+  }
+
+  it("renders the full HUD tree with the broad + narrow == total invariant", () => {
+    withIsolatedFabricHome(() => {
+      plantBound(); // bound + no snapshot → no store label, no action line
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census(
+          { guidelines: 6, models: 1, decisions: 9, pitfalls: 4 },
+          41,
+          { team: 11, project: 49, personal: 1 },
+        ),
+      });
+      // Header: total (61) + semantic_scope breakdown.
+      expect(stderr).toMatch(/▸ \[fabric\] 61 entries · team 11 · project 49 · personal 1/);
+      // broad spine = resident(g6+m1=7) + reference(d9+p4=13) = 20.
+      expect(stderr).toMatch(/broad 20 · injected this session/);
+      expect(stderr).toMatch(/resident 7  guideline 6 · model 1/);
+      expect(stderr).toMatch(/reference 13  decision 9 · pitfall 4/);
+      // narrow remainder is 合计-only.
+      expect(stderr).toMatch(/narrow 41 · surfaces when you edit matching files/);
+      // Invariant the HUD relies on: broad(20) + narrow(41) == total(61).
+    });
+  });
+
+  it("action ladder: review rung fires when pending > threshold and import is suppressed", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      // 12 pending (> REVIEW_PENDING_THRESHOLD 10); canonical irrelevant to the gate.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 12 });
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 10 → import suppressed
+      });
+      expect(stderr).toMatch(/\/fabric-review/);
+      expect(stderr).toMatch(/12 pending/);
+      expect(stderr).not.toMatch(/\/fabric-import/);
+    });
+  });
+
+  it("action ladder is single-line: import wins over review when BOTH would fire", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 1, pending_count: 12 });
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 3 }, 0, { team: 3 }), // total 3 < 10 → import fires, takes priority
+      });
+      expect(stderr).toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-review/);
+    });
+  });
+
+  it("action ladder is steady-state SILENT: seeded KB + low pending → no import, no review", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 3 });
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 10, pending 3 <= 10
+      });
+      expect(stderr).not.toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-review/);
+      // The HUD and the inspector pointer still render in steady state.
+      expect(stderr).toMatch(/▸ \[fabric\]/);
+      expect(stderr).toMatch(/fabric context/);
+    });
+  });
+
+  it("AI sink footer carries the H6 scope discipline line (broad-only here; narrow via PreToolUse)", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    plantBound();
+    const out: string[] = [];
+    hook.main(
+      {
+        cwd: tempRoot,
+        payload: {
+          version: 2,
+          revision_hash: "rev-h6",
+          target_paths: ["**"],
+          entries: [{ id: "team:KT-DEC-0001", type: "decision", maturity: "draft", summary: "s", relevance_scope: "broad", must_read_if: "hook" }],
+          broad_count: 1,
+        } as unknown as Payload,
+        census: census({ decisions: 1 }, 0, { team: 1 }),
+        alwaysBodies: [],
+      },
+      { stdout: { write: (c: string) => out.push(c) }, stderr: { write: () => {} } },
+    );
+    const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
+    expect(ai).toMatch(/Scope: broad only/);
+    expect(ai).toMatch(/narrow .*surfaces via the PreToolUse hint/);
   });
 });

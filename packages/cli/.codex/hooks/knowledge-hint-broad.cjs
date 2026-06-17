@@ -348,12 +348,22 @@ function isImportTouched(projectRoot) {
  *
  * Best-effort: any unexpected error → return false (do not nag on faults).
  */
-function shouldRecommendImport(projectRoot) {
+function shouldRecommendImport(projectRoot, liveTotal) {
   try {
     if (readWorkspaceBindingId(projectRoot) === null) return false;
 
     const threshold = readUnderseedThreshold(projectRoot);
-    const nodeCount = countCanonicalNodes(projectRoot);
+    // P0 (Goal H3 / KT-PIT-0017 + KT-PIT-0019): prefer the LIVE census total the
+    // HUD displays as the single count source. The census walks the read-set
+    // fresh every fire (never a frozen snapshot projection), so feeding it here
+    // makes the import nudge and the HUD agree by construction — killing the
+    // "HUD shows 61 entries but the nudge claims the KB is sparse" contradiction
+    // the stale-snapshot count produced. Fall back to the snapshot-derived count
+    // only when no live total is supplied (e.g. direct unit-test calls).
+    const nodeCount =
+      typeof liveTotal === "number" && Number.isFinite(liveTotal)
+        ? liveTotal
+        : countCanonicalNodes(projectRoot);
     // #3: undeterminable count (old snapshot predating knowledge_store_dirs) →
     // skip. `null < threshold` coerces to true in JS, so an explicit guard is
     // required — otherwise the stale-snapshot case would still false-fire.
@@ -382,6 +392,12 @@ function shouldRecommendImport(projectRoot) {
 // stays a stable rendering boundary; downstream consumers (banner-i18n.cjs,
 // truncation summary lines) consume it as a single source of truth.
 const TRUNCATION_THRESHOLD = 12;
+
+// Goal H4 action ladder — review rung: surface a single `/fabric-review` line when
+// the LIVE pending backlog exceeds this. Mirrors fabric-hint.cjs's
+// DEFAULT_REVIEW_HINT_PENDING_COUNT (the Stop hook's review threshold) so the two
+// surfaces agree on "how much pending is too much". Strictly `> threshold`.
+const REVIEW_PENDING_THRESHOLD = 10;
 
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap is defensive — any
@@ -767,55 +783,124 @@ function toPluralType(type) {
 // count the (possibly sliced) entries by knowledge_type so the human banner still
 // has something to group. Production payloads always carry the unsliced census.
 function deriveCensusFromEntries(entries) {
-  const census = { by_type: {}, by_layer: { team: 0, personal: 0, project: 0 }, dropped_other_project: 0, total: 0 };
+  const census = {
+    by_type: {},
+    by_layer: { team: 0, personal: 0, project: 0 },
+    broad_by_type: {},
+    narrow_total: 0,
+    dropped_other_project: 0,
+    total: 0,
+  };
   if (!Array.isArray(entries)) return census;
   for (const e of entries) {
     const type = e && typeof e.type === "string" ? toPluralType(e.type) : null;
     if (type === null) continue;
+    const isNarrow = e.relevance_scope === "narrow";
     census.by_type[type] = (census.by_type[type] || 0) + 1;
+    if (isNarrow) census.narrow_total += 1;
+    else census.broad_by_type[type] = (census.broad_by_type[type] || 0) + 1;
     census.total += 1;
   }
   return census;
 }
 
-// Render the human-facing grouped census (§3). `lang` is "zh-CN" | other (en).
-// Returns an array of lines (may be empty when the census is empty).
+// Render the human-facing scope-primary status HUD (Goal H2). `lang` is
+// "zh-CN" | other (en). Returns an array of lines (empty when census is empty).
+//
+// Shape (KT-DEC-0029 — SessionStart is scope-primary; broad is the spine that's
+// injected this session, narrow surfaces contextually via the PreToolUse hint):
+//   ▸ [fabric] 共 N 条 · 团队X · 项目Y · 个人Z
+//     broad B · 本会话注入
+//       ├ 常驻规则 G+M  guideline G · model M     (KT-DEC-0027 resident tier)
+//       └ 情境参考 D+P+Pr  decision D · pitfall P · process Pr  (reference tier)
+//     narrow M · 编辑对应文件时浮现                (合计 only, no per-type)
+// Self-consistency invariant: broad (= 常驻 + 参考) + narrow == total.
 function renderHumanCensus(census, opts) {
   const { lang } = opts || {};
   const c = census || {};
-  const byType = c.by_type || {};
   const total = typeof c.total === "number" ? c.total : 0;
   if (total === 0 && (c.dropped_other_project || 0) === 0) return [];
   const zh = lang === "zh-CN";
 
-  const typeCounts = (types) =>
-    types
-      .filter((t) => (byType[t] || 0) > 0)
-      .map((t) => `${TYPE_SINGULAR[t] || t} ${byType[t]}`)
-      .join(" · ");
+  const broadByType = c.broad_by_type || {};
+  const narrowTotal = typeof c.narrow_total === "number" ? c.narrow_total : 0;
+  // Per-tier broad counts. `broad_by_type` keys on the plural enum.
+  const g = broadByType.guidelines || 0;
+  const m = broadByType.models || 0;
+  const d = broadByType.decisions || 0;
+  const p = broadByType.pitfalls || 0;
+  const pr = broadByType.processes || 0;
+  const residentN = g + m; // 常驻规则 (always-active: guideline + model)
+  const referenceN = d + p + pr; // 情境参考 (decision + pitfall + process)
+  const broadN = residentN + referenceN;
 
-  const lines = [];
-  // `total` is the read-set ENTRY COUNT (not bytes) — label it as 条/entries.
-  lines.push(`▸ [fabric] SessionStart (${total} ${zh ? "条" : total === 1 ? "entry" : "entries"})`);
-  // W2-2/W2-3 (KT-DEC-0027/0029): the human breadcrumb shows only the
-  // always-loaded (guideline/model) census. The on-demand (decision/pitfall/
-  // process) count line and the dropped-other-project line are retired — the
-  // decision/pitfall/process REFERENCE lives in the AI sink (title + must_read_if),
-  // and SessionStart stays silent about narrow-scoped knowledge.
-  const alwaysCounts = typeCounts(ALWAYS_TYPES);
-  lines.push(zh ? "  ─ always-active(无条件规则 · 正文按需取)─" : "  ─ always-active (unconditional rules · body on demand) ─");
-  lines.push(`   ${alwaysCounts.length > 0 ? alwaysCounts : zh ? "(无)" : "(none)"}`);
   const layer = c.by_layer || {};
   const teamCount = layer.team || 0;
   const personalCount = layer.personal || 0;
   const projectCount = layer.project || 0;
-  if (teamCount > 0 || personalCount > 0 || projectCount > 0) {
-    const segs = [`[team] ${teamCount}`];
-    if (projectCount > 0) segs.push(`[project] ${projectCount}`);
-    segs.push(`[personal] ${personalCount}`);
-    lines.push(`  ${segs.join(" · ")}`);
-  }
+
+  const lines = [];
+  // Header: total entry count + semantic_scope breakdown (KT-MOD-0001 三轴).
+  const scopeSegs = [zh ? `团队 ${teamCount}` : `team ${teamCount}`];
+  if (projectCount > 0) scopeSegs.push(zh ? `项目 ${projectCount}` : `project ${projectCount}`);
+  scopeSegs.push(zh ? `个人 ${personalCount}` : `personal ${personalCount}`);
+  const totalLabel = zh ? `共 ${total} 条` : `${total} ${total === 1 ? "entry" : "entries"}`;
+  lines.push(`▸ [fabric] ${totalLabel} · ${scopeSegs.join(" · ")}`);
+
+  // broad spine — injected this session.
+  lines.push(zh ? `  broad ${broadN} · 本会话注入` : `  broad ${broadN} · injected this session`);
+  const residentDetail = [];
+  if (g > 0) residentDetail.push(`guideline ${g}`);
+  if (m > 0) residentDetail.push(`model ${m}`);
+  const refDetail = [];
+  if (d > 0) refDetail.push(`decision ${d}`);
+  if (p > 0) refDetail.push(`pitfall ${p}`);
+  if (pr > 0) refDetail.push(`process ${pr}`);
+  const dash = zh ? "—" : "—";
+  lines.push(
+    zh
+      ? `    ├ 常驻规则 ${residentN}  ${residentDetail.join(" · ") || dash}`
+      : `    ├ resident ${residentN}  ${residentDetail.join(" · ") || dash}`,
+  );
+  lines.push(
+    zh
+      ? `    └ 情境参考 ${referenceN}  ${refDetail.join(" · ") || dash}`
+      : `    └ reference ${referenceN}  ${refDetail.join(" · ") || dash}`,
+  );
+
+  // narrow remainder — 合计 only (no per-type; it's file-specific, surfaces on edit).
+  lines.push(
+    zh
+      ? `  narrow ${narrowTotal} · 编辑对应文件时浮现`
+      : `  narrow ${narrowTotal} · surfaces when you edit matching files`,
+  );
   return lines;
+}
+
+// Goal H2: the SessionStart store label, scope-primary wording — `写入 X · 只读 Y`
+// (write target receives new knowledge; the rest are read-only sources). Replaces
+// the legacy `read-set stores: a (write), b (ro)` jargon line inline (kept local
+// to this hook so the shared lib formatStoreLabels — used by other hooks — is
+// untouched). Empty string when there is nothing to show.
+function renderScopeStoreLabel(snapshot, lang) {
+  if (!snapshot || !snapshot.read_set || !Array.isArray(snapshot.read_set.stores)) return "";
+  const stores = snapshot.read_set.stores;
+  if (stores.length === 0) return "";
+  const zh = lang === "zh-CN";
+  const writeAlias = snapshot.write_target && snapshot.write_target.alias;
+  const writeStores = [];
+  const readonlyStores = [];
+  for (const s of stores) {
+    const alias = s && typeof s.alias === "string" ? s.alias : null;
+    if (alias === null) continue;
+    if (alias === writeAlias) writeStores.push(alias);
+    else readonlyStores.push(alias);
+  }
+  const segs = [];
+  if (writeStores.length > 0) segs.push((zh ? "写入 " : "write ") + writeStores.join(", "));
+  if (readonlyStores.length > 0) segs.push((zh ? "只读 " : "readonly ") + readonlyStores.join(", "));
+  if (segs.length === 0) return "";
+  return "  " + segs.join(" · ");
 }
 
 // W2 (KT-DEC-0027/0028/0029): render the AI-facing sink — the dynamically
@@ -917,6 +1002,15 @@ function renderAiSink(opts) {
       ? "取正文: fab_recall(paths), 或 Read <store>/knowledge/<type>/<id>--*.md"
       : "Load full content: fab_recall(paths), or Read <store>/knowledge/<type>/<id>--*.md",
   );
+  // H6 scope discipline: this sink carries ONLY broad (always-relevant) knowledge;
+  // narrow (file-specific) entries surface contextually via the PreToolUse hint
+  // when you edit a matching file (KT-DEC-0029). Stops the agent from assuming
+  // SessionStart is the whole KB.
+  lines.push(
+    zh
+      ? "范围: 此处仅 broad(始终相关);narrow(文件专属)在你编辑对应文件时由 PreToolUse 浮现"
+      : "Scope: broad only (always relevant) here; narrow (file-specific) surfaces via the PreToolUse hint when you edit a matching file",
+  );
   return lines.join("\n");
 }
 
@@ -947,7 +1041,6 @@ function buildSessionStartSinks(cwd, payload, env) {
   // review-time cold-eval audit pass.
   const resolvedPayload = payload;
 
-  const recommendImport = shouldRecommendImport(cwd);
   const summaryMaxLen = readSummaryMaxLen(cwd);
   const fabricLanguageForEmit = readFabricLanguage(cwd);
 
@@ -964,6 +1057,24 @@ function buildSessionStartSinks(cwd, payload, env) {
         ? payload.always_bodies
         : [];
 
+  // H3: the LIVE census total is the single count source for the import gate —
+  // computed AFTER census so the nudge and the HUD agree by construction.
+  const censusTotal = census && typeof census.total === "number" ? census.total : undefined;
+  const recommendImport = shouldRecommendImport(cwd, censusTotal);
+
+  // Read the resolved-bindings snapshot ONCE — reused for the scope store label
+  // (写入/只读) and the H4 review-rung pending count. Best-effort/decorative: any
+  // failure leaves snapshot null and the dependent lines simply don't render.
+  let snapshot = null;
+  if (bindingsSnapshotReader !== null) {
+    try {
+      const bindingId = readWorkspaceBindingId(cwd);
+      if (bindingId) snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
+    } catch {
+      snapshot = null;
+    }
+  }
+
   const humanGate =
     nudgePolicy !== null
       ? nudgePolicy.resolveHumanSink(cwd, "session_start", {})
@@ -975,33 +1086,46 @@ function buildSessionStartSinks(cwd, payload, env) {
     const detail = renderSummary(resolvedPayload, summaryMaxLen);
     humanLines.push(...detail);
   }
-  if (bindingsSnapshotReader !== null && humanLines.length > 0) {
-    try {
-      const bindingId = readWorkspaceBindingId(cwd);
-      if (bindingId) {
-        const label = bindingsSnapshotReader.formatStoreLabels(
-          bindingsSnapshotReader.readBindingsSnapshot(bindingId),
-        );
-        if (label) humanLines.push(label);
+  // H2: scope store label — `写入 X · 只读 Y` (replaces the legacy read-set jargon).
+  if (humanLines.length > 0 && snapshot !== null) {
+    const storeLabel = renderScopeStoreLabel(snapshot, fabricLanguageForEmit);
+    if (storeLabel) humanLines.push(storeLabel);
+  }
+
+  // H4 action ladder (KT-DEC-0007: nudge, never a gate). AT MOST ONE line, the
+  // highest-priority rung wins, and steady state is fully silent:
+  //   1. import  — KB is sparse (recommendImport, off the live census total)
+  //   2. review  — pending backlog exceeds REVIEW_PENDING_THRESHOLD (live count)
+  //   3. (silent)
+  if (humanLines.length > 0 && fabricLanguageForEmit !== null) {
+    if (recommendImport) {
+      humanLines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
+    } else if (snapshot !== null && bindingsSnapshotReader !== null) {
+      let pendingCount = 0;
+      try {
+        const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
+        if (live && Number.isFinite(live.pendingCount)) pendingCount = Math.floor(live.pendingCount);
+      } catch {
+        pendingCount = 0;
       }
-    } catch {
-      // store labels are decorative provenance — never crash the hook
+      if (pendingCount > REVIEW_PENDING_THRESHOLD) {
+        humanLines.push(
+          fabricLanguageForEmit === "zh-CN"
+            ? `  📋 Fabric: ${pendingCount} 条 pending 待审,是否调 /fabric-review?`
+            : `  📋 Fabric: ${pendingCount} pending entries — run /fabric-review?`,
+        );
+      }
     }
   }
-  if (recommendImport && humanLines.length > 0 && fabricLanguageForEmit !== null) {
-    humanLines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
-  }
+
+  // H5: the `下一步: …fab_recall…` AI-plumbing line is retired from the human sink
+  // (the AI gets it from its own footer + the MCP server directive). Keep only the
+  // pointer to the byte-identical inspector for this injection.
   if (humanLines.length > 0) {
     humanLines.push(
       fabricLanguageForEmit === "zh-CN"
-        ? "下一步: 改相关文件前调 fab_recall(paths) 拿 KB 条目的描述+读路径;按需 Read 路径取正文。"
-        : "Next: before editing related files, call fab_recall(paths) for the KB entries' descriptions + read paths; Read a path on demand for the body.",
-    );
-    // Block 5 (Option X): point to the byte-identical inspector for this injection.
-    humanLines.push(
-      fabricLanguageForEmit === "zh-CN"
-        ? "看具体注入: fabric context (--explain 看每条来源)"
-        : "Inspect this injection: fabric context (--explain for per-entry provenance)",
+        ? "  看具体注入: fabric context (--explain 看每条来源)"
+        : "  Inspect this injection: fabric context (--explain for per-entry provenance)",
     );
   }
 

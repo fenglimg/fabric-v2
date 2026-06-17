@@ -100,8 +100,8 @@ describe("fabric context — shared renderer, byte-identical to hook injection",
     const cwd = tmpProject();
     const payload = cannedPayload();
     const out = await runContext({ target: cwd, payload });
-    expect(out).toContain("ALWAYS-ACTIVE RULES");
-    expect(out).toContain("[fabric] SessionStart");
+    expect(out).toContain("ALWAYS-ACTIVE RULES"); // AI sink
+    expect(out).toContain("▸ [fabric]"); // human sink: scope-primary HUD header (H2)
   });
 
   it("--explain appends per-entry provenance (id + type)", async () => {

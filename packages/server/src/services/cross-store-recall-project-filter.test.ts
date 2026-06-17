@@ -12,7 +12,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { planContext } from "./plan-context.js";
-import { buildAlwaysActiveBodies } from "./cross-store-recall.js";
+import { buildAlwaysActiveBodies, buildKnowledgeCensus } from "./cross-store-recall.js";
 import { contextCache } from "../cache.js";
 
 // v2.1 global-refactor (W2/A3): recall must filter cross-store candidates by the
@@ -154,6 +154,61 @@ async function seedAlwaysStore(): Promise<void> {
     stores: [{ store_uuid: STORE, alias: "team", remote: "git@e:t.git" }],
   });
 }
+
+// v2.2 HUD (Goal H1): buildKnowledgeCensus must slice by relevance_scope so the
+// scope-primary human sink can render `broad N · 本会话注入` (spine) separately
+// from `narrow M · 编辑对应文件时浮现`. Invariant: sum(broad_by_type) +
+// narrow_total == total, and existing by_type stays unsliced (backward compat).
+async function seedCensusStore(): Promise<void> {
+  const root = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE }), STORE_LAYOUT.knowledgeDir);
+  const ddir = join(root, "decisions");
+  const pdir = join(root, "pitfalls");
+  const gdir = join(root, "guidelines");
+  const mdir = join(root, "models");
+  for (const d of [ddir, pdir, gdir, mdir]) await mkdir(d, { recursive: true });
+  // 2 decisions (1 broad, 1 narrow), 1 broad pitfall, 2 guidelines (1 broad, 1
+  // narrow), 1 broad model → total 6, narrow 2, broad_by_type sums to 4.
+  await writeFile(join(ddir, "KT-DEC-7001.md"), entry("KT-DEC-7001", "team", "Broad decision", "decision", "broad"));
+  await writeFile(join(ddir, "KT-DEC-7002.md"), entry("KT-DEC-7002", "team", "Narrow decision", "decision", "narrow"));
+  await writeFile(join(pdir, "KT-PIT-7001.md"), entry("KT-PIT-7001", "team", "Broad pitfall", "pitfall", "broad"));
+  await writeFile(join(gdir, "KT-GLD-7001.md"), entry("KT-GLD-7001", "team", "Broad guideline", "guideline", "broad"));
+  await writeFile(join(gdir, "KT-GLD-7002.md"), entry("KT-GLD-7002", "team", "Narrow guideline", "guideline", "narrow"));
+  await writeFile(join(mdir, "KT-MOD-7001.md"), entry("KT-MOD-7001", "team", "Broad model", "model", "broad"));
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores: [{ store_uuid: STORE, alias: "team", remote: "git@e:t.git" }],
+  });
+}
+
+describe("HUD — buildKnowledgeCensus relevance_scope slice", () => {
+  it("splits broad_by_type / narrow_total with sum(broad)+narrow == total", async () => {
+    const projectRoot = await createProject({ required_stores: [{ id: "team" }] });
+    await seedCensusStore();
+
+    const census = await buildKnowledgeCensus(projectRoot);
+
+    expect(census.total).toBe(6);
+    expect(census.narrow_total).toBe(2);
+    // broad-only per type (narrow decision + narrow guideline excluded)
+    expect(census.broad_by_type).toEqual({
+      decisions: 1,
+      pitfalls: 1,
+      guidelines: 1,
+      models: 1,
+    });
+    // backward compat: full (unsliced) by_type still counts narrow too
+    expect(census.by_type).toEqual({
+      decisions: 2,
+      pitfalls: 1,
+      guidelines: 2,
+      models: 1,
+    });
+    // self-consistency invariant the scope-primary HUD relies on
+    const broadSum = Object.values(census.broad_by_type).reduce((a, b) => a + b, 0);
+    expect(broadSum + census.narrow_total).toBe(census.total);
+    expect(broadSum).toBe(4);
+  });
+});
 
 describe("dual-sink — buildAlwaysActiveBodies project filter + type selection", () => {
   it("bound to project:alpha → keeps alpha + team always-types, drops beta + non-always types", async () => {

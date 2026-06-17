@@ -263,6 +263,8 @@ export async function runPlanContextHint(opts: {
     (): KnowledgeCensus => ({
       by_type: {},
       by_layer: { team: 0, personal: 0, project: 0 },
+      broad_by_type: {},
+      narrow_total: 0,
       dropped_other_project: 0,
       total: 0,
     }),
