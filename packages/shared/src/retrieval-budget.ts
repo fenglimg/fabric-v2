@@ -24,17 +24,6 @@ export interface ResolvedRetrievalBudget {
   payloadHardBytes: number;
   /** Injection layer — SessionStart broad-menu body char budget. */
   injectionChars: number;
-  // grill-report C-009 (body-tier): fab_recall returns DESCRIPTIONS for every
-  // top_k candidate but full BODIES only for the highest-ranked few — accumulate
-  // body bytes in rank order, stop at this budget, the rest stay description-only
-  // (fetchable on demand via fab_get_knowledge_sections). Deliberately an
-  // INDEPENDENT small budget, NOT payloadWarnBytes (~16KB ≈ 8 bodies = too fat):
-  // description = discovery layer (cheap, always shown), body = application layer
-  // (a permanent per-recall context tax). A missed body is one cheap on-demand
-  // fetch (recoverable); an eager body is paid on every recall (not). So this
-  // leans lean — typically 1~3 bodies. Scales with the profile like every other
-  // rung.
-  bodyBudgetBytes: number;
 }
 
 // `balanced` MUST equal the pre-C5 per-knob defaults (PLAN_CONTEXT_TOP_K_DEFAULT
@@ -47,23 +36,18 @@ const PROFILES: Record<RetrievalBudgetProfile, ResolvedRetrievalBudget> = {
     payloadWarnBytes: 8192,
     payloadHardBytes: 32768,
     injectionChars: 1000,
-    bodyBudgetBytes: 2048,
   },
   balanced: {
     topK: 24,
     payloadWarnBytes: 16384,
     payloadHardBytes: 65536,
     injectionChars: 2000,
-    // grill-report C-009: ~4KB ≈ 1~3 typical bodies. Independent of the 16KB
-    // payloadWarnBytes (the response cap), small on purpose — see field doc.
-    bodyBudgetBytes: 4096,
   },
   generous: {
     topK: 48,
     payloadWarnBytes: 32768,
     payloadHardBytes: 131072,
     injectionChars: 4000,
-    bodyBudgetBytes: 8192,
   },
 };
 
@@ -76,10 +60,6 @@ export interface RetrievalBudgetOverrides {
   payloadWarnBytes?: number;
   payloadHardBytes?: number;
   injectionChars?: number;
-  // grill-report R2/R5 mitigation knob: an operator who finds the lean default
-  // drops too many bodies (AI not following up with fab_get_knowledge_sections)
-  // can dial this up to make recall eager again, without changing the profile.
-  bodyBudgetBytes?: number;
 }
 
 /**
@@ -95,7 +75,6 @@ export function resolveRetrievalBudget(overrides?: RetrievalBudgetOverrides): Re
     payloadWarnBytes: overrides?.payloadWarnBytes ?? base.payloadWarnBytes,
     payloadHardBytes: overrides?.payloadHardBytes ?? base.payloadHardBytes,
     injectionChars: overrides?.injectionChars ?? base.injectionChars,
-    bodyBudgetBytes: overrides?.bodyBudgetBytes ?? base.bodyBudgetBytes,
   };
 }
 

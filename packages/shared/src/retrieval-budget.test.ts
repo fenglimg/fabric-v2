@@ -14,14 +14,11 @@ describe("resolveRetrievalBudget (C5 layered budget)", () => {
 
   it("balanced reproduces the historical per-knob defaults exactly (zero regression)", () => {
     // top_k 24, payload warn/hard 16384/65536, injection 2000 — the pre-C5 defaults.
-    // grill-report C-009: bodyBudgetBytes is a NEW additive rung (no historical
-    // equivalent) — balanced = 4096.
     expect(resolveRetrievalBudget({ profile: "balanced" })).toEqual({
       topK: 24,
       payloadWarnBytes: 16384,
       payloadHardBytes: 65536,
       injectionChars: 2000,
-      bodyBudgetBytes: 4096,
     });
   });
 
@@ -31,17 +28,9 @@ describe("resolveRetrievalBudget (C5 layered budget)", () => {
     expect(c.topK).toBeLessThan(24);
     expect(c.payloadHardBytes).toBeLessThan(65536);
     expect(c.injectionChars).toBeLessThan(2000);
-    expect(c.bodyBudgetBytes).toBeLessThan(4096);
     expect(g.topK).toBeGreaterThan(24);
     expect(g.payloadHardBytes).toBeGreaterThan(65536);
     expect(g.injectionChars).toBeGreaterThan(2000);
-    expect(g.bodyBudgetBytes).toBeGreaterThan(4096);
-  });
-
-  it("lets the bodyBudgetBytes per-field override win while the rest follow the profile", () => {
-    const resolved = resolveRetrievalBudget({ profile: "conservative", bodyBudgetBytes: 12345 });
-    expect(resolved.bodyBudgetBytes).toBe(12345); // override wins
-    expect(resolved.topK).toBe(retrievalBudgetProfile("conservative").topK); // profile holds
   });
 
   it("lets a per-field override win while the rest follow the profile", () => {

@@ -28,7 +28,6 @@ const ROOT_AUTHORITATIVE_KEYS = new Set<string>([
   "plan_context_top_k",
   "mcpPayloadLimits",
   "retrieval_budget_profile",
-  "recall_body_budget_bytes",
   "selection_token_ttl_ms",
   "orphan_demote_proven_days",
   "orphan_demote_verified_days",
