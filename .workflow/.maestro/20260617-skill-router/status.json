@@ -72,8 +72,8 @@
       "subdivision_depth": 0,
       "subject": "doctor lint 兜底 S_CHAIN 引用",
       "done_when": "doctor-skill-lints.ts 新增 inspect 函数:解析 fabric/SKILL.md 的 S_CHAIN,引用的 leaf 名必须都在 SKILL_SPECS;不一致报 drift;接进 doctor.ts 的 check 列表 + i18n 文案",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "fabric doctor 跑通含新 check;构造一个不存在的 chain 引用 → check 报红;还原后绿", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "fabric doctor 跑通含新 check;构造一个不存在的 chain 引用 → check 报红;还原后绿", "evidence": "inspectRouterChainRef + createRouterChainRefCheck 加进 doctor-skill-lints.ts(code=router_chain_ref_drift, warn/maintainer); ROUTER_VALID_LEAF_SLUGS 列 7 leaf(本地常量, 不依赖 CLI 保 server→cli 方向); extractMarkdownSectionBody 取 S_CHAIN 段, 抽 `fabric-*` token 验成员。接进 doctor.ts(import + inspect await + check push)。i18n 5 键加 en + zh-CN 双语。新增 doctor-router-chain-ref.test.ts 4 用例全绿: 合法全 ok / 构造 fabric-nonexistent+fabric-ghost → drift 报红(unknownRefs 排序去重, message 含坏名) / 未装 no-op / 无 S_CHAIN no-op。shared 已 rebuild(i18n 改)。", "verified_at": "2026-06-17" }
     },
     {
       "id": "A5",

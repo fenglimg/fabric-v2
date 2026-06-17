@@ -791,6 +791,15 @@ export const enMessages: Messages = {
     "{count} SKILL.md frontmatter values contain an unquoted ': ' that strict YAML parsers reject (Claude Code tolerates it; Codex CLI drops the skill at load). First: {detail}.",
   "doctor.check.skill_md_yaml_invalid.remediation":
     "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
+  "doctor.check.router_chain_ref.name": "Router chain refs",
+  "doctor.check.router_chain_ref.ok":
+    "Every fabric-* reference in the fabric/ router S_CHAIN points at an installed leaf skill.",
+  "doctor.check.router_chain_ref.message.singular":
+    "{count} S_CHAIN reference in the fabric/ router points at a skill not in the install set: {list}. The chain step will dead-end at runtime.",
+  "doctor.check.router_chain_ref.message.plural":
+    "{count} S_CHAIN references in the fabric/ router point at skills not in the install set: {list}. Those chain steps will dead-end at runtime.",
+  "doctor.check.router_chain_ref.remediation":
+    "Edit the S_CHAIN table in templates/skills/fabric/SKILL.md to reference a real leaf skill (one of the installed fabric-* skills), or remove the stale chain row.",
   "doctor.check.onboard_coverage.name": "Onboard coverage",
   "doctor.check.onboard_coverage.ok.complete":
     "Onboard coverage: {filledCount}/{total} ✓ (opted-out: {optedOutCount}).",

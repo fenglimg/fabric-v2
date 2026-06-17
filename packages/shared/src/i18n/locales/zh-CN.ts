@@ -775,6 +775,15 @@ export const zhCNMessages: Messages = {
     "{count} 个 SKILL.md frontmatter values 包含未加引号的 ': '，strict YAML parsers 会拒绝（Claude Code tolerates it；Codex CLI drops the skill at load）。首个：{detail}。",
   "doctor.check.skill_md_yaml_invalid.remediation":
     "使用双引号包裹该 value（`description: \"…\"`），或将内部的 `key: value` token 改写为 `key=value`。",
+  "doctor.check.router_chain_ref.name": "Router chain refs",
+  "doctor.check.router_chain_ref.ok":
+    "fabric/ 路由器 S_CHAIN 里的每个 fabric-* 引用都指向已安装的 leaf skill。",
+  "doctor.check.router_chain_ref.message.singular":
+    "{count} 个 fabric/ 路由器 S_CHAIN 引用指向不在 install set 的 skill：{list}。该 chain 步骤在运行时会断链。",
+  "doctor.check.router_chain_ref.message.plural":
+    "{count} 个 fabric/ 路由器 S_CHAIN 引用指向不在 install set 的 skill：{list}。这些 chain 步骤在运行时会断链。",
+  "doctor.check.router_chain_ref.remediation":
+    "编辑 templates/skills/fabric/SKILL.md 的 S_CHAIN 表，改为引用真实的 leaf skill（已安装的 fabric-* 之一），或删除该陈旧 chain 行。",
   "doctor.check.onboard_coverage.name": "Onboard coverage",
   "doctor.check.onboard_coverage.ok.complete":
     "Onboard coverage：{filledCount}/{total} ✓（opted-out：{optedOutCount}）。",

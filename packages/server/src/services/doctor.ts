@@ -102,10 +102,12 @@ import {
   type EventsJsonlGatesReport,
 } from "./events-jsonl-gates.js";
 import {
+  createRouterChainRefCheck,
   createSkillDescriptionCheck,
   createSkillMdYamlInvalidCheck,
   createSkillRefMirrorCheck,
   createSkillTokenBudgetCheck,
+  inspectRouterChainRef,
   inspectSkillDescription,
   inspectSkillMdYamlInvalid,
   inspectSkillRefMirror,
@@ -735,6 +737,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // strict YAML parser rejects (Claude Code is lenient). Warning kind —
   // manual fix only.
   const skillMdYamlInvalid = await inspectSkillMdYamlInvalid(projectRoot);
+  // B2 skill-router (A4): backstop lint — every `fabric-*` reference in the
+  // fabric/ router's hand-authored S_CHAIN section must point at a real leaf
+  // skill (the generated Intent Map cannot catch a stale chain reference).
+  const routerChainRef = await inspectRouterChainRef(projectRoot);
   // v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory. Info kind —
   // does not bump report status. Mirrors the fabric onboard-coverage CLI
   // scanner; reports which of the 5 S5 slots are unclaimed and recommends
@@ -844,6 +850,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
     // SKILL.md frontmatter that Codex CLI silently drops at load.
     createSkillMdYamlInvalidCheck(t, skillMdYamlInvalid),
+    // B2 skill-router (A4): S_CHAIN reference backstop. Warning kind — flags an
+    // S_CHAIN `fabric-*` reference to a leaf no longer in the install set.
+    createRouterChainRefCheck(t, routerChainRef),
     // v2.0.0-rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind.
     // Surfaces uncovered S5 onboard slots and recommends /fabric-archive
     // first-run phase. Sits adjacent to Skill markdown YAML — both are
