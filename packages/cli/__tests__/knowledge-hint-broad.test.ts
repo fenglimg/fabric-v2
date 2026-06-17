@@ -643,7 +643,7 @@ describe("knowledge-hint-broad.cjs — main", () => {
       },
     });
     const stderr = writes.join("");
-    expect(stderr).toMatch(/always-loaded/);
+    expect(stderr).toMatch(/always-active/);
     expect(stderr).toMatch(/guideline 2 · model 1/);
     expect(stderr).toMatch(/\[team\] 9 · \[personal\] 2/);
     // W2-3 (KT-DEC-0029): the on-demand census count line + dropped-other-project
@@ -1350,7 +1350,7 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     const env = JSON.parse(out[0]);
     // Human sink
     expect(env.systemMessage).toMatch(/\[fabric\] SessionStart/);
-    expect(env.systemMessage).toMatch(/always-loaded/);
+    expect(env.systemMessage).toMatch(/always-active/);
     // AI sink
     expect(env.hookSpecificOutput.hookEventName).toBe("SessionStart");
     expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/);
@@ -1554,7 +1554,7 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
     }));
     const ai = aiContext({ payload: makeSpinePayload(entries), alwaysBodies: [] });
     // 20 reference lines rendered, 10 folded into the drift marker.
-    expect(ai).toMatch(/10 more broad entries folded \(broad index > backstop 20; run fabric-audit\)/);
+    expect(ai).toMatch(/10 more broad entries folded \(broad index > backstop 20\)\. Run fabric-audit to prune first/);
   });
 
   it("guideline/model render as index lines (title + summary), never the eager body (KT-DEC-0036)", () => {

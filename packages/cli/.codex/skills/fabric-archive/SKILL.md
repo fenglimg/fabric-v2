@@ -28,10 +28,10 @@ This skill runs automatically — it does not interview the user for preferences
 rc.37 NEW-9 collapsed the flow to **3 macro-phases**; the legacy fine-grained phases survive as labelled sub-steps:
 
 - **GATHER** = Phase 0 (range) → 0.5 (config) → 1 (ledger scan via `fab_archive_scan`) → [1.5 onboard] → 2 (candidates).
-- **REVIEW** = Phase 2.5 (viability gate) → 3 (classify / layer / slug + batch review) → 3.5 (scope + relevance_paths). The single user review round lives here.
+- **REVIEW** = Phase 2.5 (viability gate) → 3 (classify / layer / slug + batch review) → 3.5 (relevance scope + relevance_paths) → 3.7 (semantic scope / audience axis). The single user review round lives here.
 - **PERSIST** = Phase 4 (`fab_extract_knowledge`, one call per candidate) → 4.5 (archive-attempt ledger).
 
-Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 4 → 4.5`. Each below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
+Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 3.7 → 4 → 4.5`. Each below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
 
 ### Phase 0 — Range Resolution
 
@@ -93,6 +93,8 @@ Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_review action="search"
 
 For each candidate, propose **type** ∈ {model, decision, guideline, pitfall, process}, **layer** ∈ {team, personal} via the verbatim heuristic below, **slug** (kebab-case 2-5 words, 20-40 chars, unique within type+layer bucket), **summary** (1-2 sentences).
 
+> **Self-sufficiency standard — guideline / model summaries (KT-GLD-0001/0006).** These two types land in the SessionStart **ALWAYS-ACTIVE** sink as a single INDEX line with NO body injected — so the summary IS the operative rule the agent acts on. Author it as a self-contained imperative that states the thesis (the *what* + the operative *so-what*), e.g. `改源码前先读 bootstrap+compiler config;scripts 为 init 主执行边界`. A topic label that only points at the body (`Code style guidelines`, `Scope model`) is NOT acceptable here — the reader can't act on it without a fetch, breaking the always-active contract. decision/pitfall/process summaries are exempt (they surface as `must_read_if` triggers, deliberately pointers). Do NOT self-judge sufficiency in this phase (curse-of-knowledge rubber-stamps — KT-GLD-0006); authoring to the standard is the write-time floor, the zero-context cold-eval at review time is the real gate.
+
 #### Layer Classification Heuristic (verbatim, contract-locked)
 
 > - **强 team**: 引用本项目代码、团队共识用语（"we decided"）、fabric-import 路径产物、业务领域、绑定本项目代码的 pitfall
@@ -101,7 +103,7 @@ For each candidate, propose **type** ∈ {model, decision, guideline, pitfall, p
 
 Resolution: 强 team first; assign personal only if 强 personal dominates AND no 强 team applies; else default team.
 
-`Read ref/phase-3-classify.md` for per-type worth-archive vs skip signals, slug samples, decision tree, and en + zh-CN batch review templates. User MAY inline-edit `type` / `layer` / `slug` / `relevance_scope` / `relevance_paths` before confirming; scope edits trigger Phase 3.5 re-derivation.
+`Read ref/phase-3-classify.md` for per-type worth-archive vs skip signals, slug samples, decision tree, and en + zh-CN batch review templates. User MAY inline-edit `type` / `layer` / `slug` / `relevance_scope` / `relevance_paths` / `semantic_scope` before confirming; scope edits trigger Phase 3.5 re-derivation.
 
 ### Phase 3.5 — Scope Decision + relevance_paths Derivation
 
@@ -115,9 +117,15 @@ For each candidate, record the `related` graph edges (store-qualified `stable_id
 
 `Read ref/phase-3-6-related-edges.md` for the allowed/forbidden edge matrix and worked examples.
 
+### Phase 3.7 — Semantic scope (audience axis, multi-project)
+
+Sets the entry's **audience** `semantic_scope` (orthogonal to `layer`=store and `relevance_scope`=display). ONLY when `layer=team` AND `.fabric/fabric-config.json` has a non-empty `active_project`; else SKIP — the engine derives it. Default = OMIT → `project:<active_project>` (this-project-only). Escape hatch: pass explicit `semantic_scope: team` to keep a cross-project team-wide entry from being narrowed to this project. Phase 3 picks the STORE; this picks the AUDIENCE within the team store.
+
+`Read ref/phase-3-7-semantic-scope.md` for the three-axis model, the this-project-only vs team-wide decision tree, and worked examples.
+
 ### Phase 4 — Persist via MCP
 
-For each user-confirmed candidate, call `fab_extract_knowledge` ONCE (NEVER batch). Required: `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `layer`, `relevance_scope`, `relevance_paths[]`, `proposed_reason` (enum), `session_context` (3-5 line narrative). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
+For each user-confirmed candidate, call `fab_extract_knowledge` ONCE (NEVER batch). Required: `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `layer`, `relevance_scope`, `relevance_paths[]`, `proposed_reason` (enum), `session_context` (3-5 line narrative). One OPTIONAL audience field: `semantic_scope` — pass `team` ONLY when Phase 3.7 classified a team candidate as team-wide (cross-project); OMIT otherwise so the engine auto-derives `project:<active_project>` (or `team` when the repo has no `active_project`). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
 
 Server returns `{ pending_path, idempotency_key }`. Display `pending_path` for the user. `idempotency_key = sha256({source_session, type, slug})` — repeated calls SAFE (server merges evidence).
 
@@ -140,10 +148,11 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - MUST present every candidate with explicit `[type=...]`, `[layer=...]`, `[relevance_scope=...]`, and `slug=...` fields plus a `relevance_paths` line.
 - MUST include a one-line `Layer reasoning:` for each candidate citing which 强 team / 强 personal signal applied (or default team).
 - MUST include a one-line `Scope reasoning:` for each candidate citing why narrow or broad was chosen (or that personal forced broad).
+- WHEN `active_project` is set AND `layer=team`, MUST present `[semantic_scope=...]` (`team` for team-wide, or `project:<active_project>` for this-project-only) plus a one-line `Audience reasoning:` citing this-project-only vs team-wide (Phase 3.7).
 - MUST classify against the canonical singular nouns: model / decision / guideline / pitfall / process. NEVER invent new types.
 - MUST cap the batch at `archive_max_candidates_per_batch` candidates (config-resolved, default 8); drop weaker ones over the cap.
 - MUST display the resolved `pending_path` returned by `fab_extract_knowledge` so the user can verify.
-- MUST treat user inline edits to type/layer/slug/relevance_scope/relevance_paths as authoritative replacements before Phase 2.
+- MUST treat user inline edits to type/layer/slug/relevance_scope/relevance_paths/semantic_scope as authoritative replacements before Phase 2.
 - MUST skip rather than guess when an observation does not fit any of the 5 types.
 
 ### WRITE Rules
@@ -157,7 +166,7 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - v2.0.0-rc.37 NEW-7 widened Phase 3.5: `edit_paths` ∪ `user_mentioned_paths` drives `relevance_paths`; `read_paths` flows separately to `evidence_paths` (structured frontmatter, not body markdown). NEVER lift body regex / symbol extraction into `relevance_paths` — those remain reserved for v2.1+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `semantic_scope`, `active_project`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
 
 ## Worked Examples / E5 Cron / Dry-run (ref-only)
 

@@ -16,11 +16,11 @@
  *
  *   AI sink (additionalContext) — the dynamically generated "MEMORY.md":
  *     [fabric:SessionStart] <store>
- *     ALWAYS-ACTIVE RULES (no recall needed):    # guideline/model — INDEX line only
- *       [guideline] team:KT-GLD-0001 · <summary> # KT-DEC-0036: no eager body
- *     REFERENCE (read on demand / fab_recall):   # decision/pitfall/process — title + hook
+ *     ALWAYS-ACTIVE RULES (unconditional · act on the line): # guideline/model, BROAD only
+ *       [guideline] team:KT-GLD-0001 · <summary> # INDEX line; body on demand (KT-DEC-0036)
+ *     REFERENCE (situational · Read when must_read_if fires): # decision/pitfall/process, BROAD
  *       [decision] team:KT-DEC-0001 — <must_read_if>
- *       … N more folded (broad index > backstop 50; run fabric-audit)
+ *       … N more folded (broad index > backstop 50; prune via fabric-audit)
  *     Load full content: fab_recall(paths), or Read <store>/knowledge/<type>/<id>--*.md
  *
  *   Human sink (systemMessage) — broad-only census breadcrumb; SessionStart is
@@ -803,7 +803,7 @@ function renderHumanCensus(census, opts) {
   // decision/pitfall/process REFERENCE lives in the AI sink (title + must_read_if),
   // and SessionStart stays silent about narrow-scoped knowledge.
   const alwaysCounts = typeCounts(ALWAYS_TYPES);
-  lines.push(zh ? "  ─ always-loaded(AI 也收到正文)─" : "  ─ always-loaded (AI also gets bodies) ─");
+  lines.push(zh ? "  ─ always-active(无条件规则 · 正文按需取)─" : "  ─ always-active (unconditional rules · body on demand) ─");
   lines.push(`   ${alwaysCounts.length > 0 ? alwaysCounts : zh ? "(无)" : "(none)"}`);
   const layer = c.by_layer || {};
   const teamCount = layer.team || 0;
@@ -857,7 +857,11 @@ function renderAiSink(opts) {
   lines.push(`[fabric:SessionStart] ${storeLabel || "store"}`);
 
   // ALWAYS-ACTIVE RULES — index-only (title + summary), never the eager body.
-  lines.push(zh ? "ALWAYS-ACTIVE RULES (无需再 recall):" : "ALWAYS-ACTIVE RULES (no recall needed):");
+  lines.push(
+    zh
+      ? "ALWAYS-ACTIVE RULES (无条件适用 · 照此行遵循,正文按需取):"
+      : "ALWAYS-ACTIVE RULES (unconditional · act on the line; body on demand):",
+  );
   if (bodies.length === 0) {
     lines.push(zh ? "  (无 always-active 条目)" : "  (none)");
   } else {
@@ -875,7 +879,11 @@ function renderAiSink(opts) {
 
   // REFERENCE — broad decision/pitfall/process: title + must_read_if hook.
   if (referenceEntries.length > 0) {
-    lines.push(zh ? "REFERENCE (按需 Read / fab_recall):" : "REFERENCE (read on demand / fab_recall):");
+    lines.push(
+      zh
+        ? "REFERENCE (情境触发 · 命中 must_read_if 时 Read / fab_recall):"
+        : "REFERENCE (situational · Read when must_read_if fires / fab_recall):",
+    );
     let folded = 0;
     for (const e of referenceEntries) {
       if (backstop > 0 && indexCount >= backstop) {
@@ -897,8 +905,8 @@ function renderAiSink(opts) {
     if (folded > 0) {
       lines.push(
         zh
-          ? `  … 另 ${folded} 条 broad 条目折叠 (broad index > backstop ${backstop}; 跑 fabric-audit)`
-          : `  … ${folded} more broad entr${folded === 1 ? "y" : "ies"} folded (broad index > backstop ${backstop}; run fabric-audit)`,
+          ? `  … 另 ${folded} 条 broad 条目折叠 (broad index > backstop ${backstop})。先跑 fabric-audit 瘦身;确需全展示再调 .fabric/fabric-config.json#broad_index_backstop (20..500)`
+          : `  … ${folded} more broad entr${folded === 1 ? "y" : "ies"} folded (broad index > backstop ${backstop}). Run fabric-audit to prune first; raise .fabric/fabric-config.json#broad_index_backstop (20..500) only if you truly need them all`,
       );
     }
   }

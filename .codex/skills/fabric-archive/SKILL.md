@@ -93,6 +93,8 @@ Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_review action="search"
 
 For each candidate, propose **type** ∈ {model, decision, guideline, pitfall, process}, **layer** ∈ {team, personal} via the verbatim heuristic below, **slug** (kebab-case 2-5 words, 20-40 chars, unique within type+layer bucket), **summary** (1-2 sentences).
 
+> **Self-sufficiency standard — guideline / model summaries (KT-GLD-0001/0006).** These two types land in the SessionStart **ALWAYS-ACTIVE** sink as a single INDEX line with NO body injected — so the summary IS the operative rule the agent acts on. Author it as a self-contained imperative that states the thesis (the *what* + the operative *so-what*), e.g. `改源码前先读 bootstrap+compiler config;scripts 为 init 主执行边界`. A topic label that only points at the body (`Code style guidelines`, `Scope model`) is NOT acceptable here — the reader can't act on it without a fetch, breaking the always-active contract. decision/pitfall/process summaries are exempt (they surface as `must_read_if` triggers, deliberately pointers). Do NOT self-judge sufficiency in this phase (curse-of-knowledge rubber-stamps — KT-GLD-0006); authoring to the standard is the write-time floor, the zero-context cold-eval at review time is the real gate.
+
 #### Layer Classification Heuristic (verbatim, contract-locked)
 
 > - **强 team**: 引用本项目代码、团队共识用语（"we decided"）、fabric-import 路径产物、业务领域、绑定本项目代码的 pitfall

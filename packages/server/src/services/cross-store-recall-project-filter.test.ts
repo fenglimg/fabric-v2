@@ -55,13 +55,20 @@ async function createProject(config: object): Promise<string> {
   return projectRoot;
 }
 
-function entry(id: string, scope: string, title: string, type = "decision"): string {
+function entry(
+  id: string,
+  scope: string,
+  title: string,
+  type = "decision",
+  relevanceScope: "broad" | "narrow" = "broad",
+): string {
   return [
     "---",
     `id: ${id}`,
     `type: ${type}`,
     "layer: team",
     `semantic_scope: ${scope}`,
+    `relevance_scope: ${relevanceScope}`,
     `visibility_store: "team"`,
     "maturity: proven",
     "created_at: 2026-06-04T00:00:00.000Z",
@@ -136,6 +143,12 @@ async function seedAlwaysStore(): Promise<void> {
   await writeFile(join(gdir, "KT-GLD-9002.md"), entry("KT-GLD-9002", "project:beta", "Beta guideline", "guideline"));
   await writeFile(join(mdir, "KT-MOD-9001.md"), entry("KT-MOD-9001", "team", "Team model", "model"));
   await writeFile(join(ddir, "KT-DEC-9009.md"), entry("KT-DEC-9009", "team", "Team decision", "decision"));
+  // narrow guideline: an always-type but NOT unconditional → must be dropped from
+  // the always-active sink (surfaces via PreToolUse narrow hint instead).
+  await writeFile(
+    join(gdir, "KT-GLD-9003.md"),
+    entry("KT-GLD-9003", "team", "Narrow guideline", "guideline", "narrow"),
+  );
   saveGlobalConfig({
     uid: "test-uid",
     stores: [{ store_uuid: STORE, alias: "team", remote: "git@e:t.git" }],
@@ -157,6 +170,7 @@ describe("dual-sink — buildAlwaysActiveBodies project filter + type selection"
     expect(ids).toContain("team:KT-MOD-9001"); // team model → kept (always-type)
     expect(ids).not.toContain("team:KT-GLD-9002"); // beta guideline → other project
     expect(ids).not.toContain("team:KT-DEC-9009"); // decision → not an always-type
+    expect(ids).not.toContain("team:KT-GLD-9003"); // narrow guideline → broad-only invariant
     // every returned entry is a guideline/model with a non-empty body
     for (const b of bodies) {
       expect(["guidelines", "models"]).toContain(b.type);

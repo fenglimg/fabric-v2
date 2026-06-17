@@ -119,6 +119,15 @@ DO NOT AskUserQuestion "is this a duplicate?" — LLM already judged. User only 
 
 `Read ref/semantic-check.md` for full procedure + 三类判断的细化定义.
 
+## Summary Self-Sufficiency Gate (guideline / model only — KT-GLD-0006)
+
+Guideline/model entries surface in the SessionStart **ALWAYS-ACTIVE** sink as a body-less INDEX line, so an opaque summary (`Code style guidelines`) leaks in as an unactionable "rule". Before approving/promoting a **guideline or model** (only these two types — decision/pitfall/process surface as `must_read_if` triggers and are exempt), run the summary through the **zero-context cold-eval judge**, never your own judgment:
+
+- The reviewing agent self-judging sufficiency is curse-of-knowledge — it back-fills from context it already has and rubber-stamps pointers (KT-GLD-0006). The withheld-body cold eval is the whole point.
+- Build the batch with `summary-cold-eval.ts#buildColdEvalBatch` (rubric = `COLD_EVAL_RUBRIC`, candidates = the guideline/model summaries) and hand it to an **offline** judge via `maestro delegate` (zero-context, batched — NOT on the hot path). The judge returns `ColdEvalVerdict[]`.
+- For each `self_sufficient=false` verdict: surface `⚠ Summary not act-on-able (cold-eval); suggested: <suggested_summary>` and route to `modify-content` (summary rewrite, stable_id preserved) — do NOT approve as-is. `self_sufficient=true` → no action.
+- This is a nudge, not a hard block (KT-DEC-0007): the user may still approve over a failed verdict, but the flag must be shown.
+
 ## Narrowing Imported Entries & Modify Sub-Flow
 
 `modify` is the only action that mutates frontmatter or stable_id. Two paths:

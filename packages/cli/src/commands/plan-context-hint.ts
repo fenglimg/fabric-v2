@@ -94,11 +94,12 @@ export interface PlanContextHintEntry {
 // breaking v2 consumers, but introduce explicit narrow_count / broad_count
 // computed from the entry's relevance_scope. Hook scripts should prefer the
 // split fields and treat the legacy `broad_count` as deprecated.
-// v2.2 dual-sink (Goal A / D9): one always-active (guideline/model) entry whose
-// BODY is injected straight into the SessionStart AI context. The hook renders
-// these as ALWAYS-ACTIVE RULES (bounded by the injection char budget, overflow
-// degrading to `summary` + a recall pointer — D10) and emits category counts for
-// the on-demand remainder (decisions/pitfalls/processes).
+// v2.2 dual-sink (Goal A / D9): one always-active (broad guideline/model) entry.
+// The hook renders these as ALWAYS-ACTIVE RULES — INDEX lines (title + summary),
+// never the eager body (KT-DEC-0036); the body is one on-demand fetch away. The
+// `body` field is retained on the wire for callers that still want it, but the
+// SessionStart sink no longer injects it. Decisions/pitfalls/processes render as
+// situational REFERENCE (title + must_read_if).
 export interface PlanContextHintAlwaysBody {
   id: string;
   type: string;

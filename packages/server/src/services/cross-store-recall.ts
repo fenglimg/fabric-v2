@@ -267,12 +267,15 @@ export async function buildCrossStoreBodyIndex(
   return index;
 }
 
-// v2.2 dual-sink (Goal A / D9): the "always-active" knowledge subset whose BODY
-// is injected straight into the SessionStart AI context (no recall needed). Per
-// the rev4.4 §3 AI-sink contract, the always-active types are guidelines +
-// models — the standing rules (code style, domain models) you want permanently
-// active; decisions / pitfalls / processes are situational and stay ON-DEMAND
-// (surfaced as category counts, fetched via fab_recall when a path matches).
+// v2.2 dual-sink (Goal A / D9): the "always-active" knowledge subset surfaced in
+// the SessionStart AI sink as INDEX lines (title + summary, body on demand —
+// KT-DEC-0036; eager-body injection retired). Per the rev4.4 §3 AI-sink contract
+// the always-active types are guidelines + models — the standing rules (code
+// style, domain models) that apply UNCONDITIONALLY; decisions / pitfalls /
+// processes are situational REFERENCE (surfaced as title + must_read_if, Read on
+// demand when a trigger fires). BROAD-only on both sides (KT-DEC-0029): narrow
+// guideline/model is filtered out here and surfaces via the PreToolUse narrow
+// hint, never as an unconditional rule.
 //
 // NOTE (Goal-A boundary): store candidates carry `relevance_scope` (broad|narrow)
 // but NOT `activation.tier` (always|path|description) — the latter lives on the
@@ -376,6 +379,13 @@ export async function buildAlwaysActiveBodies(
       if (desc === undefined) continue;
       const type = desc.knowledge_type;
       if (typeof type !== "string" || !ALWAYS_ACTIVE_TYPES.has(type)) continue;
+      // SessionStart invariant: both sinks show BROAD only — narrow stays silent
+      // here and surfaces contextually via the PreToolUse narrow hint. Without
+      // this, a narrow guideline/model would leak into "always-active" and be
+      // presented as an unconditional rule, contradicting its narrow scope.
+      // (knowledge_type is today's always-active proxy; when Goal B lands
+      // activation.tier this whole selector switches to tier === "always".)
+      if (desc.relevance_scope === "narrow") continue;
       out.push({
         stable_id: entry.qualifiedId,
         type,
