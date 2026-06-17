@@ -1,17 +1,21 @@
 // v2.2 C5-budget (W2-T3): layered retrieval budget strategy. Until now each rung
 // of the truncation chain carried its OWN independent default — plan_context_top_k
-// (count, MCP layer), mcpPayloadLimits.{warn,hard}Bytes (bytes, MCP layer),
-// hint_broad_budget_chars (chars, injection layer). There was no single place
-// that related them, so scaling "how much knowledge Fabric surfaces" meant tuning
-// four numbers in different units and hoping they stayed coherent.
+// (count, MCP layer) and mcpPayloadLimits.{warn,hard}Bytes (bytes, MCP layer).
+// There was no single place that related them, so scaling "how much knowledge
+// Fabric surfaces" meant tuning several numbers in different units and hoping they
+// stayed coherent.
 //
 // This module adds the missing STRATEGY layer: a `retrieval_budget_profile`
-// (conservative | balanced | generous) that provides coherent defaults across
-// BOTH layers at once. Per-field config overrides still win — the profile only
+// (conservative | balanced | generous) that provides coherent defaults for the
+// MCP layer at once. Per-field config overrides still win — the profile only
 // fills the values the operator did not pin explicitly. The `balanced` profile
 // reproduces the historical per-knob defaults exactly, so the default behavior is
 // unchanged (zero regression); `conservative` / `generous` scale the whole chain
 // up or down together.
+//
+// KT-DEC-0036: the SessionStart injection layer is now index-only (no eager
+// body), so the former `injectionChars` rung was retired — the budget only spans
+// the MCP layer rungs (topK + payload bytes).
 
 export type RetrievalBudgetProfile = "conservative" | "balanced" | "generous";
 
@@ -22,32 +26,27 @@ export interface ResolvedRetrievalBudget {
   payloadWarnBytes: number;
   /** MCP layer — payload hard trim ceiling (bytes). */
   payloadHardBytes: number;
-  /** Injection layer — SessionStart broad-menu body char budget. */
-  injectionChars: number;
 }
 
 // `balanced` MUST equal the pre-C5 per-knob defaults (PLAN_CONTEXT_TOP_K_DEFAULT
-// = 24, PAYLOAD_LIMIT_DEFAULT_{WARN,HARD}_BYTES = 16384/65536,
-// DEFAULT_HINT_BROAD_BUDGET_CHARS = 2000) so flipping the default profile on is a
-// no-op. conservative ≈ half, generous ≈ double — coherent across every layer.
+// = 24, PAYLOAD_LIMIT_DEFAULT_{WARN,HARD}_BYTES = 16384/65536) so flipping the
+// default profile on is a no-op. conservative ≈ half, generous ≈ double —
+// coherent across every layer.
 const PROFILES: Record<RetrievalBudgetProfile, ResolvedRetrievalBudget> = {
   conservative: {
     topK: 12,
     payloadWarnBytes: 8192,
     payloadHardBytes: 32768,
-    injectionChars: 1000,
   },
   balanced: {
     topK: 24,
     payloadWarnBytes: 16384,
     payloadHardBytes: 65536,
-    injectionChars: 2000,
   },
   generous: {
     topK: 48,
     payloadWarnBytes: 32768,
     payloadHardBytes: 131072,
-    injectionChars: 4000,
   },
 };
 
@@ -59,7 +58,6 @@ export interface RetrievalBudgetOverrides {
   topK?: number;
   payloadWarnBytes?: number;
   payloadHardBytes?: number;
-  injectionChars?: number;
 }
 
 /**
@@ -74,7 +72,6 @@ export function resolveRetrievalBudget(overrides?: RetrievalBudgetOverrides): Re
     topK: overrides?.topK ?? base.topK,
     payloadWarnBytes: overrides?.payloadWarnBytes ?? base.payloadWarnBytes,
     payloadHardBytes: overrides?.payloadHardBytes ?? base.payloadHardBytes,
-    injectionChars: overrides?.injectionChars ?? base.injectionChars,
   };
 }
 

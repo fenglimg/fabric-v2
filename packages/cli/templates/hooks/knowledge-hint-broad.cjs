@@ -16,9 +16,8 @@
  *
  *   AI sink (additionalContext) — the dynamically generated "MEMORY.md":
  *     [fabric:SessionStart] <store>
- *     ALWAYS-ACTIVE RULES (no recall needed):    # guideline/model — full BODY
- *       [guideline] team:KT-GLD-0001
- *       <full body>                              # over budget → degrade to index line
+ *     ALWAYS-ACTIVE RULES (no recall needed):    # guideline/model — INDEX line only
+ *       [guideline] team:KT-GLD-0001 · <summary> # KT-DEC-0036: no eager body
  *     REFERENCE (read on demand / fab_recall):   # decision/pitfall/process — title + hook
  *       [decision] team:KT-DEC-0001 — <must_read_if>
  *       … N more folded (broad index > backstop 50; run fabric-audit)
@@ -396,65 +395,6 @@ const CLI_TIMEOUT_MS = 2000;
 // `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 
-// v2.2 HK2-degrade (W2-T2): char budget for the rendered broad-menu BODY. The
-// hook already degrades by COUNT (hint_broad_top_k slice + TRUNCATION_THRESHOLD
-// grouped mode), but nothing bounded the total rendered SIZE — a corpus with
-// many types or long (near-maxLen) summaries could still emit a wall of text
-// that displaces the agent's working memory. Borrowing the maestro
-// context-budget idea, this is the final rung of the degradation ladder: once
-// the body exceeds the budget, the tail collapses to a single "N more omitted"
-// marker. Default 2000 chars ≈ one screenful. Overridable via
-// fabric-config.json#hint_broad_budget_chars (range 200..20000); 0 disables.
-const DEFAULT_HINT_BROAD_BUDGET_CHARS = 2000;
-
-// v2.2 C5-budget (W2-T3): bind the injection char budget to the layered retrieval
-// budget profile. Mirrors the injectionChars column of shared/retrieval-budget.ts
-// PROFILES (kept in sync — the hook cannot require the TS resolver). The explicit
-// `hint_broad_budget_chars` knob still wins; the profile only supplies the
-// default. `balanced` (and an absent/unknown profile) keeps the historical 2000.
-const RETRIEVAL_BUDGET_INJECTION_CHARS = {
-  conservative: 1000,
-  balanced: 2000,
-  generous: 4000,
-};
-
-function readBroadBudgetChars(projectRoot) {
-  const profile = readConfigString(projectRoot, "retrieval_budget_profile", "balanced");
-  const profileDefault =
-    RETRIEVAL_BUDGET_INJECTION_CHARS[profile] ?? DEFAULT_HINT_BROAD_BUDGET_CHARS;
-  return readConfigNumber(projectRoot, "hint_broad_budget_chars", profileDefault, {
-    min: 0,
-    max: 20000,
-    floor: true,
-  });
-}
-
-// v2.2 HK2-degrade (W2-T2): cap the rendered body to `budgetChars`, collapsing
-// the overflow tail into one marker line. Structural lines (banner, revision_hash,
-// footer) are appended by renderSummary AFTER this pass, so they always survive —
-// only entry/group body lines are subject to the budget. `budgetChars` of 0 or
-// undefined is a no-op (preserves the pre-HK2 unbounded behavior and all
-// existing snapshot tests).
-function capBodyToBudget(body, budgetChars) {
-  if (!budgetChars || budgetChars <= 0) return body;
-  const kept = [];
-  let total = 0;
-  for (let i = 0; i < body.length; i += 1) {
-    const line = body[i];
-    // +1 for the newline each line costs once joined.
-    if (kept.length > 0 && total + line.length + 1 > budgetChars) {
-      const remaining = body.length - i;
-      kept.push(
-        `  … ${remaining} more entr${remaining === 1 ? "y" : "ies"} omitted (injection budget ${budgetChars} chars; raise hint_broad_budget_chars or narrow scope)`,
-      );
-      return kept;
-    }
-    kept.push(line);
-    total += line.length + 1;
-  }
-  return kept;
-}
-
 function readSummaryMaxLen(projectRoot) {
   return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
     min: 40,
@@ -704,7 +644,7 @@ function renderTruncated(narrow, maxLen) {
  * after writing exactly one stderr breadcrumb so operators grepping a stuck-
  * banner report can diagnose the version drift without source-diving.
  */
-function renderSummary(payload, maxLen, budgetChars) {
+function renderSummary(payload, maxLen) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       try {
@@ -727,9 +667,9 @@ function renderSummary(payload, maxLen, budgetChars) {
     ? `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available (truncated):`
     : `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available:`;
 
-  const renderedBody = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
-  // v2.2 HK2-degrade (W2-T2): final budget rung — cap the body's rendered size.
-  const body = capBodyToBudget(renderedBody, budgetChars);
+  // KT-DEC-0028 completeness: the rendered census is bounded by the per-line
+  // maxLen + TRUNCATION_THRESHOLD grouped mode, not by a body char budget.
+  const body = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
 
   const lines = [banner, ...body];
   const revHash = typeof payload.revision_hash === "string" ? payload.revision_hash : null;
@@ -883,10 +823,10 @@ function renderHumanCensus(census, opts) {
 // generated "MEMORY.md" spine injected into the SessionStart context. Two
 // type-tiered sections over the BROAD knowledge (narrow stays silent — D0029):
 //
-//   ALWAYS-ACTIVE RULES (guideline/model): full BODIES injected, bounded by
-//     budgetChars. On overflow each entry degrades to an INDEX LINE (title +
-//     summary), NOT a folded count (D0028) — the entry stays individually
-//     visible and fetchable.
+//   ALWAYS-ACTIVE RULES (guideline/model): INDEX LINE only (title + summary) —
+//     never the eager body (KT-DEC-0036). The body is one cheap on-demand fetch
+//     away, so injecting it on every SessionStart is a permanent context tax
+//     (KT-GLD-0005) we no longer pay; each entry stays individually visible.
 //   REFERENCE (decision/pitfall/process): TITLE + must_read_if hook only
 //     (situational; the agent Reads the body on demand) — never the body.
 //
@@ -898,7 +838,7 @@ function renderHumanCensus(census, opts) {
 const REFERENCE_TYPES = new Set(["decision", "pitfall", "process"]);
 
 function renderAiSink(opts) {
-  const { entries, alwaysBodies, storeLabel, budgetChars, broadIndexBackstop, summaryMaxLen, lang } =
+  const { entries, alwaysBodies, storeLabel, broadIndexBackstop, summaryMaxLen, lang } =
     opts || {};
   const zh = lang === "zh-CN";
   const bodies = Array.isArray(alwaysBodies) ? alwaysBodies : [];
@@ -917,30 +857,19 @@ function renderAiSink(opts) {
   const lines = [];
   lines.push(`[fabric:SessionStart] ${storeLabel || "store"}`);
 
-  // ALWAYS-ACTIVE RULES — inject bodies up to the budget, degrade to index line.
+  // ALWAYS-ACTIVE RULES — index-only (title + summary), never the eager body.
   lines.push(zh ? "ALWAYS-ACTIVE RULES (无需再 recall):" : "ALWAYS-ACTIVE RULES (no recall needed):");
   if (bodies.length === 0) {
     lines.push(zh ? "  (无 always-active 条目)" : "  (none)");
   } else {
-    const budget = typeof budgetChars === "number" && budgetChars > 0 ? budgetChars : 0;
-    let used = 0;
-    let degraded = false;
+    // KT-DEC-0036: render each always-active entry as a single index line
+    // (title + summary). The body is one cheap on-demand fetch away (see footer),
+    // so injecting it on every SessionStart is a permanent context tax
+    // (KT-GLD-0005) we no longer pay.
     for (const b of bodies) {
       const label = `[${TYPE_SINGULAR[b.type] || b.type}] ${b.id}`;
-      const body = typeof b.body === "string" ? b.body.trim() : "";
-      const summary = typeof b.summary === "string" ? b.summary : "";
-      const fullCost = label.length + body.length + 2;
-      if (!degraded && (budget === 0 || used + fullCost <= budget)) {
-        lines.push(`  ${label}`);
-        if (body.length > 0) lines.push(body);
-        used += fullCost;
-      } else {
-        // D0028: degrade to an INDEX LINE (title + summary), never a folded count.
-        degraded = true;
-        lines.push(
-          `  ${label} · ${summary}${zh ? " (超预算; fab_recall 取正文)" : " (over budget; fab_recall for body)"}`,
-        );
-      }
+      const summary = typeof b.summary === "string" ? b.summary.trim() : "";
+      lines.push(summary.length > 0 ? `  ${label} · ${summary}` : `  ${label}`);
       indexCount += 1;
     }
   }
@@ -1021,7 +950,6 @@ function buildSessionStartSinks(cwd, payload, env) {
 
   const recommendImport = shouldRecommendImport(cwd);
   const summaryMaxLen = readSummaryMaxLen(cwd);
-  const broadBudgetChars = readBroadBudgetChars(cwd);
   const fabricLanguageForEmit = readFabricLanguage(cwd);
 
   const census =
@@ -1045,7 +973,7 @@ function buildSessionStartSinks(cwd, payload, env) {
   // ---- HUMAN sink: §3 grouped census (+ verbose per-entry detail). ----
   const humanLines = renderHumanCensus(census, { lang: fabricLanguageForEmit });
   if (humanLines.length > 0 && humanGate.verbosity === "verbose") {
-    const detail = renderSummary(resolvedPayload, summaryMaxLen, broadBudgetChars);
+    const detail = renderSummary(resolvedPayload, summaryMaxLen);
     humanLines.push(...detail);
   }
   if (bindingsSnapshotReader !== null && humanLines.length > 0) {
@@ -1078,12 +1006,12 @@ function buildSessionStartSinks(cwd, payload, env) {
     );
   }
 
-  // ---- AI sink: spine — always-active bodies + reference, bounded. ----
+  // ---- AI sink: spine — always-active INDEX lines (no eager body, KT-DEC-0036)
+  // + reference, bounded by the broad_index_backstop fold. ----
   const broadIndexBackstop = readBroadIndexBackstop(cwd);
   const aiText = renderAiSink({
     entries: resolvedPayload && Array.isArray(resolvedPayload.entries) ? resolvedPayload.entries : [],
     alwaysBodies,
-    budgetChars: broadBudgetChars,
     broadIndexBackstop,
     summaryMaxLen,
     lang: fabricLanguageForEmit,

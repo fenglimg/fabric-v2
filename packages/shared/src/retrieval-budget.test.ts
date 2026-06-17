@@ -13,12 +13,11 @@ describe("resolveRetrievalBudget (C5 layered budget)", () => {
   });
 
   it("balanced reproduces the historical per-knob defaults exactly (zero regression)", () => {
-    // top_k 24, payload warn/hard 16384/65536, injection 2000 — the pre-C5 defaults.
+    // top_k 24, payload warn/hard 16384/65536 — the pre-C5 defaults.
     expect(resolveRetrievalBudget({ profile: "balanced" })).toEqual({
       topK: 24,
       payloadWarnBytes: 16384,
       payloadHardBytes: 65536,
-      injectionChars: 2000,
     });
   });
 
@@ -27,10 +26,8 @@ describe("resolveRetrievalBudget (C5 layered budget)", () => {
     const g = resolveRetrievalBudget({ profile: "generous" });
     expect(c.topK).toBeLessThan(24);
     expect(c.payloadHardBytes).toBeLessThan(65536);
-    expect(c.injectionChars).toBeLessThan(2000);
     expect(g.topK).toBeGreaterThan(24);
     expect(g.payloadHardBytes).toBeGreaterThan(65536);
-    expect(g.injectionChars).toBeGreaterThan(2000);
   });
 
   it("lets a per-field override win while the rest follow the profile", () => {

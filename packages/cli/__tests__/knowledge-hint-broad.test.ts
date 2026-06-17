@@ -317,41 +317,6 @@ describe("knowledge-hint-broad.cjs — renderSummary (full mode, count <= TRUNCA
   });
 });
 
-// v2.2 HK2-degrade (W2-T2): SessionStart injection budget ladder. With a tight
-// char budget the rendered body collapses its tail into a single marker, while
-// the structural lines (banner / revision_hash / footer) always survive.
-describe("knowledge-hint-broad.cjs — HK2 injection budget ladder (W2-T2)", () => {
-  it("collapses the body tail into a marker once the char budget is exceeded", () => {
-    const narrow = Array.from({ length: 10 }, (_, i) =>
-      makeEntry(`KT-DEC-${1000 + i}`, "decision", "proven", `summary number ${i} with some length`),
-    );
-    // Tiny budget forces a cap after only a couple of body lines.
-    const lines = hook.renderSummary(makePayload(narrow, { revision_hash: "budget-rev" }), 80, 120);
-
-    // Banner + revision_hash + footer survive regardless of budget.
-    expect(lines[0]).toMatch(/Session start/);
-    expect(lines.some((l) => l.includes("revision_hash: budget-rev"))).toBe(true);
-    expect(lines.some((l) => l.includes("fab_recall(paths)"))).toBe(true);
-    // The overflow marker is present and reports the remaining count.
-    expect(lines.some((l) => /more entr(y|ies) omitted \(injection budget 120 chars/.test(l))).toBe(true);
-    // Far fewer than 10 entry lines survived under the 120-char body budget.
-    const entryLines = lines.filter((l) => /^\s+- KT-DEC-/.test(l));
-    expect(entryLines.length).toBeLessThan(10);
-  });
-
-  it("is a no-op when budgetChars is 0 or omitted (backward compatible)", () => {
-    const narrow = Array.from({ length: 6 }, (_, i) =>
-      makeEntry(`KT-DEC-${2000 + i}`, "decision", "proven", `s${i}`),
-    );
-    const capped = hook.renderSummary(makePayload(narrow), 80, 0);
-    const uncapped = hook.renderSummary(makePayload(narrow), 80);
-    // 0 budget disables the ladder → identical to no-budget rendering, and no
-    // overflow marker appears.
-    expect(capped).toEqual(uncapped);
-    expect(capped.some((l) => /omitted \(injection budget/.test(l))).toBe(false);
-  });
-});
-
 describe("knowledge-hint-broad.cjs — renderSummary (truncated mode, count > TRUNCATION_THRESHOLD)", () => {
   it("emits (truncated) banner when count > TRUNCATION_THRESHOLD", () => {
     const max = hook.CONSTANTS.TRUNCATION_THRESHOLD;
@@ -1389,8 +1354,10 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     // AI sink
     expect(env.hookSpecificOutput.hookEventName).toBe("SessionStart");
     expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/);
-    expect(env.hookSpecificOutput.additionalContext).toMatch(/team:KT-GLD-0001/);
-    expect(env.hookSpecificOutput.additionalContext).toMatch(/Use 2-space indent/);
+    // KT-DEC-0036 index-only: always-active renders a title + summary index line,
+    // never the eager body (the body is one cheap on-demand fetch away).
+    expect(env.hookSpecificOutput.additionalContext).toMatch(/team:KT-GLD-0001 · Code style/);
+    expect(env.hookSpecificOutput.additionalContext).not.toMatch(/Use 2-space indent/);
     // W2-2 (KT-DEC-0027): decision/pitfall/process render as a REFERENCE section
     // (title + must_read_if hook), not an ON-DEMAND count line.
     expect(env.hookSpecificOutput.additionalContext).toMatch(/REFERENCE/);
@@ -1446,9 +1413,9 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).toMatch(/ALWAYS-ACTIVE RULES/); // AI intact
   });
 
-  it("always-body over budget degrades to summary + recall pointer (D10)", () => {
+  it("always-active renders as index lines (title + summary), never the eager body (KT-DEC-0036)", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
-    writeConfig({ fabric_language: "en", hint_broad_budget_chars: 30 });
+    writeConfig({ fabric_language: "en" });
     const bigBodies = [
       { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: "S1", body: "x".repeat(500) },
       { id: "team:KT-MOD-0001", type: "models", layer: "team", summary: "S2", body: "y".repeat(500) },
@@ -1459,8 +1426,12 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
       alwaysBodies: bigBodies,
     });
     const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
-    // The second body cannot fit the 30-char budget → degraded to summary + pointer.
-    expect(ai).toMatch(/over budget; fab_recall for body/);
+    // Index-only: every always-active entry is a title + summary line; no body, no
+    // budget machinery, no "over budget" suffix.
+    expect(ai).toMatch(/\[guideline\] team:KT-GLD-0001 · S1/);
+    expect(ai).toMatch(/\[model\] team:KT-MOD-0001 · S2/);
+    expect(ai).not.toMatch(/xxxx/);
+    expect(ai).not.toMatch(/over budget/);
   });
 
   it("reminder_to_context=false → no AI sink, human systemMessage still emitted", () => {
@@ -1586,8 +1557,8 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
     expect(ai).toMatch(/10 more broad entries folded \(broad index > backstop 20; run fabric-audit\)/);
   });
 
-  it("guideline/model body over budget degrades to an index line, never a folded count (KT-DEC-0028)", () => {
-    writeConfig({ fabric_language: "en", hint_broad_budget_chars: 30 });
+  it("guideline/model render as index lines (title + summary), never the eager body (KT-DEC-0036)", () => {
+    writeConfig({ fabric_language: "en" });
     const ai = aiContext({
       payload: makeSpinePayload([]),
       alwaysBodies: [
@@ -1595,7 +1566,10 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
         { id: "team:KT-MOD-0001", type: "models", layer: "team", summary: "domain model", body: "y".repeat(500) },
       ],
     });
-    // The over-budget entry stays an individually-visible index line, not a count.
-    expect(ai).toMatch(/\[model\] team:KT-MOD-0001 · domain model \(over budget; fab_recall for body\)/);
+    // Each always-active entry is an individually-visible index line, never the body.
+    expect(ai).toMatch(/\[guideline\] team:KT-GLD-0001 · style rule/);
+    expect(ai).toMatch(/\[model\] team:KT-MOD-0001 · domain model/);
+    expect(ai).not.toMatch(/xxxx/);
+    expect(ai).not.toMatch(/over budget/);
   });
 });

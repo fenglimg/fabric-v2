@@ -358,13 +358,9 @@ export const fabricConfigSchema = z.object({
   // TRUNCATION_THRESHOLD=12 grouped-render kicks in. Mirrors the rc.7 T7 +
   // archive_max_* pattern of externalizing previously-hardcoded thresholds.
   hint_broad_top_k: z.number().int().min(1).max(50).optional().default(8),
-  // v2.2 HK2-degrade (W2-T2): char budget for the rendered SessionStart broad-menu
-  // body — the final rung of the degradation ladder after the hint_broad_top_k
-  // count slice. Once the rendered entry/group lines exceed this, the tail
-  // collapses to a single "N more omitted" marker so a large corpus cannot blow
-  // the agent's working memory. Default 2000 (~one screenful); 0 disables the
-  // budget. Read by knowledge-hint-broad.cjs via readConfigNumber. Range 0..20000.
-  hint_broad_budget_chars: z.number().int().min(0).max(20000).optional().default(2000),
+  // KT-DEC-0036: the SessionStart broad-menu is now index-only (title + summary
+  // per always-active entry, no eager body), so the former `hint_broad_budget_chars`
+  // body char-budget knob was retired — there is no rendered body left to bound.
   // W4-1 (KT-DEC-0028 / KT-MOD-0001): scale backstop for the FULL broad index.
   // After W2-1 retired the hint_broad_top_k hard cap, the broad banner shows
   // every broad entry (completeness); this is the only guard — once a store's
@@ -478,13 +474,12 @@ export const fabricConfigSchema = z.object({
   // applied after BM25 ranking. Absent → library default (24). See
   // planContextTopKSchema for the range/calibration rationale.
   plan_context_top_k: planContextTopKSchema.optional(),
-  // v2.2 C5-budget (W2-T3): layered retrieval budget profile. A single coherent
-  // strategy across the injection + MCP layers — `balanced` (default) reproduces
-  // the historical per-knob defaults exactly, `conservative` / `generous` scale
-  // the whole truncation chain (top_k + payload bytes + injection chars) down /
-  // up together. Per-field knobs (plan_context_top_k, mcpPayloadLimits.*,
-  // hint_broad_budget_chars) still override the profile when set. See
-  // retrieval-budget.ts (resolveRetrievalBudget) for the resolution order.
+  // v2.2 C5-budget (W2-T3): layered retrieval budget profile for the MCP layer —
+  // `balanced` (default) reproduces the historical per-knob defaults exactly,
+  // `conservative` / `generous` scale the truncation chain (top_k + payload bytes)
+  // down / up together. Per-field knobs (plan_context_top_k, mcpPayloadLimits.*)
+  // still override the profile when set. See retrieval-budget.ts
+  // (resolveRetrievalBudget) for the resolution order.
   retrieval_budget_profile: z.enum(["conservative", "balanced", "generous"]).optional(),
   // v2.2 C2-vector (W2-T7): OPTIONAL dense-embedding semantic retrieval, layered
   // as a recall supplement after BM25. Default OFF (`--no-embed` is the baseline);

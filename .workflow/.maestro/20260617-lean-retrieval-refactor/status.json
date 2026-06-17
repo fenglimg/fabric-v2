@@ -56,8 +56,8 @@
       "done_when": "renderAiSink 对 guideline/model 只输出 title+summary 索引行(无 body);capBodyToBudget/readBroadBudgetChars/hint_broad_budget_chars 相关逻辑移除;hook 单测+快照按 index-only 更新(TDD 先改测试);两端 templates 镜像同步;tsc 绿",
       "ship_criteria_alignment": ["KT-DEC-0036"],
       "alignment_strength": "direct",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "knowledge-hint-broad.test.ts 断言 index-only 无 body + 快照 + tsc", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "knowledge-hint-broad.test.ts 断言 index-only 无 body + 快照 + tsc", "evidence": "renderAiSink ALWAYS-ACTIVE 改 index-only(title+summary, 无 body); 删 capBodyToBudget/readBroadBudgetChars/RETRIEVAL_BUDGET_INJECTION_CHARS/DEFAULT_HINT_BROAD_BUDGET_CHARS + hint_broad_budget_chars schema + injectionChars 维; 两端 .cjs 镜像同步; tsc 全绿; cli 1081/server 714/shared 638 全 pass(含 cross-client byte-parity)", "verified_at": "2026-06-17T04:30:33.000Z" }
     },
     {
       "id": "A3",
