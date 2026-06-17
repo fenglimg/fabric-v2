@@ -1,8 +1,8 @@
 {
   "version": "1.0",
-  "generated_at": "2026-06-10T09:32:21.185Z",
-  "generated_by": "fabric-cli@2.2.0-rc.6",
-  "target": "/Users/wepie/Desktop/personal-projects/pcf",
+  "generated_at": "2026-06-17T05:59:15.318Z",
+  "generated_by": "fabric-cli@2.2.0-rc.8",
+  "target": "/Users/wepie/Desktop/personal-projects/pcf-lean-retrieval",
   "project_name": "fabric-monorepo",
   "framework": {
     "kind": "unknown",
@@ -13,44 +13,34 @@
     ]
   },
   "topology": {
-    "total_files": 4042,
+    "total_files": 2317,
     "by_ext": {
-      ".cjs": 179,
-      ".csv": 180,
-      ".gz": 10,
-      ".html": 8,
-      ".json": 1481,
-      ".jsonl": 32,
-      ".log": 22,
-      ".md": 1107,
-      ".mdc": 3,
-      ".meta": 6,
-      ".mjs": 27,
-      ".ndjson": 26,
+      ".cjs": 89,
+      ".csv": 105,
+      ".gz": 5,
+      ".html": 4,
+      ".json": 825,
+      ".jsonl": 23,
+      ".log": 11,
+      ".md": 677,
+      ".meta": 3,
+      ".mjs": 25,
+      ".ndjson": 20,
       ".onnx": 1,
-      ".py": 6,
-      ".pyc": 10,
-      ".sh": 8,
-      ".snap": 13,
-      ".svg": 4,
-      ".ts": 817,
+      ".py": 3,
+      ".pyc": 5,
+      ".sh": 4,
+      ".snap": 6,
+      ".svg": 2,
+      ".ts": 452,
       ".tsx": 10,
-      ".txt": 67,
-      ".yaml": 4,
-      ".yml": 7,
-      "[none]": 14
+      ".txt": 35,
+      ".yaml": 2,
+      ".yml": 4,
+      "[none]": 6
     },
     "key_dirs": [
       ".claude/skills/ui-ux-pro-max/scripts",
-      ".claude/worktrees/embed-cache-config-merge/.claude/skills/ui-ux-pro-max/scripts",
-      ".claude/worktrees/embed-cache-config-merge/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".claude/worktrees/embed-cache-config-merge/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".claude/worktrees/embed-cache-config-merge/packages/cli/src",
-      ".claude/worktrees/embed-cache-config-merge/packages/server-http-experimental/src",
-      ".claude/worktrees/embed-cache-config-merge/packages/server/src",
-      ".claude/worktrees/embed-cache-config-merge/packages/shared/src",
-      ".claude/worktrees/embed-cache-config-merge/scripts",
       ".workflow/.scratchpad/rc34-werewolf-eval/scripts",
       ".workflow/.scratchpad/rc36-werewolf-eval/scripts",
       "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
@@ -60,7 +50,7 @@
       "packages/shared/src",
       "scripts"
     ],
-    "max_depth": 11
+    "max_depth": 8
   },
   "entry_points": [
     {
@@ -147,25 +137,25 @@
       "confidence": "LOW",
       "evidence": [
         {
-          "file": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta",
+          "file": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta sidecar present"
+          "snippet": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta sidecar present"
         },
         {
-          "file": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta",
+          "file": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta sidecar present"
+          "snippet": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta sidecar present"
         },
         {
-          "file": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta",
+          "file": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta sidecar present"
+          "snippet": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta sidecar present"
         }
       ],
       "coverage": {
-        "ratio": 0.007,
-        "total": 827,
-        "matched": 6,
+        "ratio": 0.006,
+        "total": 462,
+        "matched": 3,
         "co_occurring_patterns": [
           "meta-sidecar"
         ]
@@ -206,42 +196,42 @@
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/package.json",
+      "path": "packages/cli/__tests__/fixtures/cocos-stub/package.json",
       "family": "config",
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/fixtures/cocos-stub/package.json",
+      "path": "packages/cli/__tests__/fixtures/cocos-stub/project.config.json",
       "family": "config",
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
+      "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/__snapshots__/client-configs.test.ts.snap",
+      "path": "packages/cli/__tests__/__snapshots__/client-configs.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "path": "packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/knip.config.ts",
+      "path": "knip.config.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/src/colors.ts",
+      "path": "packages/cli/src/colors.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     },
     {
-      "path": ".claude/worktrees/embed-cache-config-merge/packages/cli/src/commands/config.ts",
+      "path": "packages/cli/src/commands/config.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     }
@@ -252,7 +242,7 @@
   },
   "readme": {
     "quality": "ok",
-    "line_count": 336,
+    "line_count": 328,
     "has_contributing": true
   },
   "recommendations_for_skill": [

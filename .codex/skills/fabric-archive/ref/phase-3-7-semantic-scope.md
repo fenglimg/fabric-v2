@@ -39,6 +39,7 @@ Is the knowledge tied to THIS project's code / business domain / workspace paths
 | "The resolver's two-axis tie-break lives in `cross-store-write.ts`" | team | OMIT | `project:fabric-v2` — binds this repo's code |
 | "We always write commit messages in Chinese, type: prefix" | team | `team` | `team` — team convention, spans every project |
 | "Black-edge sprite root cause = inverted `premultiplyAlpha`" (a different game repo's domain) | team | `team` | `team` — not about fabric-v2 |
+| "VoiceRoom 组件被本 app 多个玩法复用"(同一 app 内跨功能,**不**跨项目) | team | OMIT | `project:<active>` — 跨玩法复用 ≠ 跨项目;app 内共享组件仍绑本项目,**不是** team |
 | First-person editor preference | personal | (n/a) | `personal` — store=personal, phase skipped |
 
 ## Inline-edit support during batch review

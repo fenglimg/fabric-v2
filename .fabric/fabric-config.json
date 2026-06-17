@@ -50,7 +50,7 @@
   "hint_narrow_cooldown_hours": 0,
   "hint_summary_max_len": 80,
   "hint_reminder_to_context": true,
-  "embed_enabled": false,
+  "embed_enabled": true,
   "embed_weight": 30,
   "embed_model": "fast-bge-small-zh-v1.5"
 }
