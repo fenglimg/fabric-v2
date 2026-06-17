@@ -3,6 +3,7 @@ import { stageFailed, stageRan, stageSkipped, stageFailedFromError } from "./pip
 import { installHooks, validateHookPaths } from "../hooks-orchestrator.js";
 import {
   cleanupDeprecatedSkills,
+  installFabricRouterSkill,
   installFabricArchiveSkill,
   installFabricReviewSkill,
   installFabricImportSkill,
@@ -65,7 +66,9 @@ export class HooksStage implements Stage {
       // Clean up deprecated skills
       installResults.push(...await this.runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(target)));
 
-      // Install all skills
+      // Install all skills (B2 skill-router: fabric/ router first — its Intent
+      // Map is regenerated from the 7 leaf descriptions)
+      installResults.push(...await this.runBestEffort("skill-router-install", () => installFabricRouterSkill(target)));
       installResults.push(...await this.runBestEffort("skill-install", () => installFabricArchiveSkill(target)));
       installResults.push(...await this.runBestEffort("skill-review-install", () => installFabricReviewSkill(target)));
       installResults.push(...await this.runBestEffort("skill-import-install", () => installFabricImportSkill(target)));

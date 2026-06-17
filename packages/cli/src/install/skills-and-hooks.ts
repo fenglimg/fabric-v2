@@ -71,6 +71,11 @@ export type InstallOptions = {
   // public surface is unchanged (consumers continue passing `{}`).
 };
 
+// B2 skill-router: the fabric/ router skill — the single human-facing entry
+// point that dispatches to the 7 leaf skills. Its Intent Map + S_CLASSIFY enum
+// are regenerated from the leaf descriptions at install time (see
+// installFabricRouterSkill), so the template is NOT a plain byte-copy.
+const SKILL_ROUTER_TEMPLATE_REL = "skills/fabric/SKILL.md";
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
@@ -125,6 +130,12 @@ const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
  * (the two clients that surface a Skills directory).
  */
 export const SKILL_DESTINATIONS = {
+  // B2 skill-router: the fabric/ router skill — single-file (no ref/), installed
+  // alongside the 7 leaf skills as the human-facing dispatch entry point.
+  fabricRouter: [
+    ".claude/skills/fabric/SKILL.md",
+    ".codex/skills/fabric/SKILL.md",
+  ],
   fabricArchive: [
     ".claude/skills/fabric-archive/SKILL.md",
     ".codex/skills/fabric-archive/SKILL.md",
@@ -171,6 +182,12 @@ type FabricSkillInstallSpec = {
 };
 
 const FABRIC_SKILL_INSTALL_SPECS = {
+  fabricRouter: {
+    slug: "fabric",
+    templateRel: SKILL_ROUTER_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricRouter,
+    step: "skill-router",
+  },
   fabricArchive: {
     slug: "fabric-archive",
     templateRel: SKILL_TEMPLATE_REL,
@@ -581,6 +598,23 @@ export async function installFabricConnectSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricConnect);
+}
+
+/**
+ * B2 skill-router: install the fabric/ router Skill — the single human-facing
+ * dispatch entry point over the 7 leaf skills. Sibling installer to
+ * archive/review/import/etc; same 2-client coverage. Single-file skill (no
+ * `ref/` dir).
+ *
+ * NOTE: A3 upgrades this to regenerate the ROUTER_INTENT marker block (Intent
+ * Map + S_CLASSIFY enum) from the leaf descriptions before copy. Until then it
+ * is a plain idempotent byte-copy of the template.
+ */
+export async function installFabricRouterSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricRouter);
 }
 
 /**

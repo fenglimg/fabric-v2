@@ -1,0 +1,94 @@
+{
+  "session_id": "20260617-skill-router",
+  "active_session_id": null,
+  "sessions": [],
+  "intent": "Fabric skill 路由器 B2 重构:保留 fabric/ 路由器当人类门面,Intent Map + S_CLASSIFY 枚举改由 install 从 7 个 leaf 的 description Triggers 子句生成(managed block),消除手维护 drift。",
+  "goal": "实现 B2 四步并通过验证门:fabric/ 进 install + SKILL.md 圈生成块 + install 写生成逻辑 + doctor lint 兜底,最后 tsc --noEmit 绿 + 相关 test 绿。",
+  "mode": "1",
+  "current_phase": "execute",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "packages/cli/src/install/skills-and-hooks.ts (SKILL_SPECS + 生成逻辑)",
+      "packages/cli/templates/skills/fabric/SKILL.md (ROUTER_INTENT marker block)",
+      "packages/server/src/services/doctor-skill-lints.ts (chain-ref lint)",
+      "packages/shared (若需新增 ROUTER_INTENT_MARKER 常量,导出 + rebuild dist)"
+    ],
+    "out_of_scope": [
+      "不塌缩 8 个 skill 为单一 skill",
+      "不修改任何 leaf skill 的业务逻辑/SKILL.md 正文",
+      "不给 leaf 新增 routing_label 字段(源头唯一=description Triggers)",
+      "不动 lib/shared-policy.md",
+      "不改 S_CHAIN/Guardrails/Report 的手写 prose 语义(仅 Intent Map+枚举进 marker)"
+    ],
+    "constraints": [
+      "marker 内容由 install 生成,严禁手编;复用 BOOTSTRAP_MARKER_BEGIN/END 的写法风格",
+      "源头唯一=7 个 leaf 的 description Triggers 子句;slug 取自 SKILL_SPECS",
+      "路由器只读不写 store(保留现有 Guardrail)",
+      "收尾前必须本地跑 pnpm -r exec tsc --noEmit(local tsc != CI tsc 教训)",
+      "若动 packages/shared 导出,必须 pnpm --filter @fenglimg/fabric-shared build 再验运行时",
+      "每个 task done 即 git commit(分批 commit 习惯)"
+    ]
+  },
+  "task_decomposition": [
+    {
+      "id": "A1",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "fabric/ 路由器加进 install SKILL_SPECS",
+      "done_when": "SKILL_SPECS 含 slug='fabric' 的单文件 skill 条目(无 ref/);install 把 templates/skills/fabric/SKILL.md 装到 .claude/skills/fabric/ 和 .codex/skills/fabric/ 两端;uninstall-skills-and-hooks.ts 对称清理",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep 'fabric' SKILL_SPECS; 在 worktree 跑 install 后 ls 两端 fabric/SKILL.md 存在", "evidence": "fabricRouter 进 SKILL_DESTINATIONS+FABRIC_SKILL_INSTALL_SPECS(slug='fabric', step='skill-router', 无 includeRefFiles); installFabricRouterSkill 已加; 3 安装站点全接线(commands/install.ts:887, hooks-orchestrator.ts:96, pipeline/hooks.stage.ts:71); uninstallFabricRouterSkill + uninstallBootstrapStage:595 对称清理。运行时两端落盘验证并入 A3 dogfood install(幂等)。", "verified_at": "2026-06-17" }
+    },
+    {
+      "id": "A2",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "SKILL.md 用 ROUTER_INTENT marker 圈出 Intent Map + S_CLASSIFY 枚举",
+      "done_when": "templates/skills/fabric/SKILL.md 的 Intent Map 表与 S_CLASSIFY 的 task_type 枚举被 ROUTER_INTENT_MARKER_BEGIN/END 包裹;块外手写 prose(Routing Contract/S_CHAIN/Guardrails/Report)不变",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "grep marker BEGIN/END 各出现一次且夹住 Intent Map 段", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "A3",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "install 写 Intent Map 生成逻辑",
+      "done_when": "install 读 7 个 leaf 的 description → 抽 slug + Triggers 子句 → 重写 fabric/SKILL.md 的 marker 块(两端字节一致,idempotent);新增 leaf 重跑 install 后 Intent Map 自动含新行",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "worktree 跑 install;读两端 fabric/SKILL.md marker 块内容与 7 leaf Triggers 对齐;再跑一次 install 内容不变(幂等)", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "A4",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "doctor lint 兜底 S_CHAIN 引用",
+      "done_when": "doctor-skill-lints.ts 新增 inspect 函数:解析 fabric/SKILL.md 的 S_CHAIN,引用的 leaf 名必须都在 SKILL_SPECS;不一致报 drift;接进 doctor.ts 的 check 列表 + i18n 文案",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "fabric doctor 跑通含新 check;构造一个不存在的 chain 引用 → check 报红;还原后绿", "evidence": null, "verified_at": null }
+    },
+    {
+      "id": "A5",
+      "round": 1,
+      "parent_id": null,
+      "relationship": null,
+      "subdivision_depth": 0,
+      "subject": "终止验证门",
+      "done_when": "pnpm -r exec tsc --noEmit 全绿;受影响包的 test 绿(install + doctor 相关用例)",
+      "status": "open",
+      "verification": { "method": "deterministic", "verifier": "pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-cli test; pnpm --filter @fenglimg/fabric-server test", "evidence": null, "verified_at": null }
+    }
+  ],
+  "needs_adjudication": [],
+  "goal_checklist_path": ".workflow/.maestro/20260617-skill-router/goal-checklist.md",
+  "status": "running",
+  "loop_exit_status": null
+}

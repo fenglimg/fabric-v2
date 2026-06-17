@@ -5,6 +5,7 @@ import { t } from "../i18n.js";
 import {
   installArchiveHintHook,
   installFabricArchiveSkill,
+  installFabricRouterSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
@@ -90,6 +91,9 @@ export async function installHooks(
   assertExistingDirectory(normalizedTarget);
 
   const results: InstallStepResult[] = [];
+  // B2 skill-router: the fabric/ router (human-facing dispatch entry) installs
+  // first; its Intent Map is regenerated from the 7 leaf descriptions.
+  results.push(...await runStep(() => installFabricRouterSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));

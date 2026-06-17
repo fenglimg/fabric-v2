@@ -79,6 +79,7 @@ import {
   installFabricConnectSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installFabricRouterSkill,
   installFabricStoreSkill,
   installFabricSyncSkill,
   installHookLibs,
@@ -881,6 +882,9 @@ async function executeInitStagePlan(
         // fabric-init) before installing modern skills, so rc.30 → rc.35
         // upgraders see deprecation cleanup as part of the install diff.
         installResults.push(...await runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(plan.target)));
+        // B2 skill-router: the fabric/ router (human-facing dispatch entry) installs
+        // first; its Intent Map is regenerated from the 7 leaf descriptions.
+        installResults.push(...await runBestEffort("skill-router-install", () => installFabricRouterSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-import-install", () => installFabricImportSkill(plan.target)));
