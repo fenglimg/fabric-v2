@@ -50,8 +50,8 @@
       "subdivision_depth": 0,
       "subject": "SKILL.md 用 ROUTER_INTENT marker 圈出 Intent Map + S_CLASSIFY 枚举",
       "done_when": "templates/skills/fabric/SKILL.md 的 Intent Map 表与 S_CLASSIFY 的 task_type 枚举被 ROUTER_INTENT_MARKER_BEGIN/END 包裹;块外手写 prose(Routing Contract/S_CHAIN/Guardrails/Report)不变",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "grep marker BEGIN/END 各出现一次且夹住 Intent Map 段", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "grep marker BEGIN/END 各出现一次且夹住 Intent Map 段", "evidence": "marker <!-- fabric:router-intent:begin/end --> 各出现 1 次(L20/L34),夹住 Intent Map 表(7 行,来自 leaf Triggers)+ `task_type` 枚举行。S_CLASSIFY JSON 的 task_type 改为引用枚举(去掉手维护副本=drift 源)。块外 Routing Contract/S_CHAIN/Guardrails/Report prose 字节不变(grep 命中 3/3)。", "verified_at": "2026-06-17" }
     },
     {
       "id": "A3",
