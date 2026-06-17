@@ -76,6 +76,18 @@ export type InstallOptions = {
 // are regenerated from the leaf descriptions at install time (see
 // installFabricRouterSkill), so the template is NOT a plain byte-copy.
 const SKILL_ROUTER_TEMPLATE_REL = "skills/fabric/SKILL.md";
+// B2 skill-router (A2/A3): marker pair wrapping the generated Intent Map +
+// S_CLASSIFY task_type enum inside fabric/SKILL.md. install regenerates the
+// content between these markers from the 7 leaf descriptions; everything
+// outside the markers (Routing Contract / S_CHAIN / Guardrails / Report) is
+// hand-authored prose preserved verbatim. Comment-style markers mirror the
+// BOOTSTRAP_MARKER pair so a reader sees the block is install-managed.
+const ROUTER_INTENT_MARKER_BEGIN = "<!-- fabric:router-intent:begin -->";
+const ROUTER_INTENT_MARKER_END = "<!-- fabric:router-intent:end -->";
+const ROUTER_INTENT_GENERATED_NOTE =
+  "<!-- 本块由 `fabric install` 从 7 个 leaf skill 的 description Triggers 子句生成。严禁手编;改 leaf description 后重跑 `fabric install`。 -->";
+const ROUTER_INTENT_REGEX =
+  /<!-- fabric:router-intent:begin -->[\s\S]*?<!-- fabric:router-intent:end -->/u;
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
@@ -601,20 +613,116 @@ export async function installFabricConnectSkill(
 }
 
 /**
+ * B2 skill-router (A3): extract the `description:` frontmatter value from a leaf
+ * SKILL.md source. Returns "" when frontmatter or the field is absent.
+ */
+function extractSkillMdDescription(skillMd: string): string {
+  const fm = skillMd.match(/^---\n([\s\S]*?)\n---/u);
+  if (!fm) return "";
+  const desc = fm[1]!.match(/^description:\s*(.+?)\s*$/mu);
+  if (!desc) return "";
+  return desc[1]!.replace(/^["'](.+)["']$/u, "$1").trim();
+}
+
+/**
+ * B2 skill-router (A3): isolate the `Triggers …` clause of a leaf description —
+ * the routing signal that becomes the Intent Map cell. Takes everything after
+ * the `Triggers` keyword to end-of-string, drops a trailing period (`.`/`。`),
+ * and escapes any `|` so it cannot break the markdown table. Returns "" when no
+ * `Triggers` clause is present (defensive — every leaf description carries one).
+ */
+function extractTriggersClause(description: string): string {
+  const m = description.match(/Triggers?\s+([\s\S]+)$/u);
+  if (!m) return "";
+  return m[1]!.trim().replace(/[.。]\s*$/u, "").replace(/\|/gu, "\\|");
+}
+
+/**
+ * B2 skill-router (A3): render the generated ROUTER_INTENT block — the Intent
+ * Map table (one row per leaf, cell = its Triggers clause) plus the canonical
+ * `task_type` enum (leaf slugs minus the `fabric-` prefix). Output byte-format
+ * is fixed so re-running install against unchanged leaf descriptions produces
+ * an identical block (idempotent copy).
+ */
+function renderRouterIntentBlock(leaves: ReadonlyArray<{ slug: string; triggers: string }>): string {
+  const rows = leaves.map((l) => `| ${l.triggers} | \`${l.slug}\` |`).join("\n");
+  const enumVals = leaves.map((l) => l.slug.replace(/^fabric-/u, "")).join(" | ");
+  return [
+    ROUTER_INTENT_MARKER_BEGIN,
+    ROUTER_INTENT_GENERATED_NOTE,
+    "",
+    "| 用户意图(leaf description Triggers) | 下游 skill |",
+    "| --- | --- |",
+    rows,
+    "",
+    `\`S_CLASSIFY\` 的 \`task_type\` 枚举:\`${enumVals}\``,
+    ROUTER_INTENT_MARKER_END,
+  ].join("\n");
+}
+
+/**
+ * B2 skill-router (A3): build the router SKILL.md content that install writes —
+ * the canonical template with its ROUTER_INTENT marker block replaced by a
+ * block freshly generated from the 7 leaf descriptions (read from their
+ * canonical templates). The source of truth is therefore the leaf
+ * descriptions' `Triggers` clauses; adding a leaf to FABRIC_SKILL_INSTALL_SPECS
+ * makes its row appear here on the next install with no hand-edit.
+ *
+ * Throws if the template lost its marker pair (a release bug — the template was
+ * hand-edited away from the A2 contract), so the failure is loud rather than
+ * silently shipping a stale Intent Map.
+ */
+async function buildRouterSkillSource(): Promise<string> {
+  const template = await readTemplate(SKILL_ROUTER_TEMPLATE_REL);
+  if (!ROUTER_INTENT_REGEX.test(template)) {
+    throw new Error(
+      `fabric/SKILL.md is missing the ${ROUTER_INTENT_MARKER_BEGIN} … ${ROUTER_INTENT_MARKER_END} ` +
+        `marker pair — cannot regenerate the Intent Map. This is a Fabric release bug ` +
+        `(router template was hand-edited away from the managed-block contract).`,
+    );
+  }
+  // Iterate every spec except the router itself, in declaration order — that
+  // order is the Intent Map row order and the enum order.
+  const leafSpecs = Object.values(FABRIC_SKILL_INSTALL_SPECS).filter(
+    (spec) => spec.slug !== "fabric",
+  );
+  const leaves: Array<{ slug: string; triggers: string }> = [];
+  for (const spec of leafSpecs) {
+    const leafMd = await readTemplate(spec.templateRel);
+    leaves.push({ slug: spec.slug, triggers: extractTriggersClause(extractSkillMdDescription(leafMd)) });
+  }
+  return template.replace(ROUTER_INTENT_REGEX, renderRouterIntentBlock(leaves));
+}
+
+/**
  * B2 skill-router: install the fabric/ router Skill — the single human-facing
  * dispatch entry point over the 7 leaf skills. Sibling installer to
  * archive/review/import/etc; same 2-client coverage. Single-file skill (no
  * `ref/` dir).
  *
- * NOTE: A3 upgrades this to regenerate the ROUTER_INTENT marker block (Intent
- * Map + S_CLASSIFY enum) from the leaf descriptions before copy. Until then it
- * is a plain idempotent byte-copy of the template.
+ * Unlike the leaf installers this is NOT a plain byte-copy: it regenerates the
+ * ROUTER_INTENT marker block (Intent Map + S_CLASSIFY enum) from the leaf
+ * descriptions via {@link buildRouterSkillSource} before the idempotent copy,
+ * so both client copies are byte-identical and re-running install is a no-op.
  */
 export async function installFabricRouterSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricRouter);
+  const source = await buildRouterSkillSource();
+  validateSkillCanonicalSize(source, "fabric");
+  const spec = FABRIC_SKILL_INSTALL_SPECS.fabricRouter;
+  const targets = spec.destinations.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent(spec.step, source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
+  return results;
 }
 
 /**

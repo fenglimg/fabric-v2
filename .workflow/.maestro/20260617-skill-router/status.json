@@ -61,8 +61,8 @@
       "subdivision_depth": 0,
       "subject": "install 写 Intent Map 生成逻辑",
       "done_when": "install 读 7 个 leaf 的 description → 抽 slug + Triggers 子句 → 重写 fabric/SKILL.md 的 marker 块(两端字节一致,idempotent);新增 leaf 重跑 install 后 Intent Map 自动含新行",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "worktree 跑 install;读两端 fabric/SKILL.md marker 块内容与 7 leaf Triggers 对齐;再跑一次 install 内容不变(幂等)", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "worktree 跑 install;读两端 fabric/SKILL.md marker 块内容与 7 leaf Triggers 对齐;再跑一次 install 内容不变(幂等)", "evidence": "installFabricRouterSkill 改为 buildRouterSkillSource: 读 router 模板→校验 marker→遍历 leaf specs(slug!='fabric',声明序)读各 leaf 模板 description→extractTriggersClause→renderRouterIntentBlock splice 进 marker→两端幂等 copy。新增测试 skill-router-intent-generation.test.ts 4 用例全绿: (a)两端字节一致+marker 各 1 次+块外 prose 留存 (b)round-trip oracle(KT-PIT-0014): 每行 `| <leaf Triggers> | `slug` |` 实读 leaf 模板验证, 防 hardcode 假绿 (c)枚举=7 leaf slug 去 fabric- 按 spec 序 (d)二次 install 全 skipped 幂等。", "verified_at": "2026-06-17" }
     },
     {
       "id": "A4",
