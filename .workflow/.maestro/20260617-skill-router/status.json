@@ -83,12 +83,17 @@
       "subdivision_depth": 0,
       "subject": "终止验证门",
       "done_when": "pnpm -r exec tsc --noEmit 全绿;受影响包的 test 绿(install + doctor 相关用例)",
-      "status": "open",
-      "verification": { "method": "deterministic", "verifier": "pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-cli test; pnpm --filter @fenglimg/fabric-server test", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-cli test; pnpm --filter @fenglimg/fabric-server test", "evidence": "pnpm -r build 全绿后 pnpm -r exec tsc --noEmit exit=0/0 error。CLI test 107 files/1069 passed(i18n forensic snapshot 因 router 落两端 installed 111→113 / skipped 121→123 更新, 是 A1 接线 end-to-end 真证)。Server test 61 files/729 passed(doctor-i18n snapshot 加 Router chain refs check 更新; doctor.test.ts check 列表 +Router chain refs、toHaveLength 40→41)。shared 已 rebuild。", "verified_at": "2026-06-17" }
     }
   ],
   "needs_adjudication": [],
   "goal_checklist_path": ".workflow/.maestro/20260617-skill-router/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "completed",
+  "loop_exit_status": {
+    "reached": true,
+    "terminate_reason": "ALL_GOALS_DONE",
+    "summary": "B2 skill-router 重构 5 任务全 done: A1 fabric/ 路由器进 SKILL_SPECS+3 安装站点+uninstall 对称; A2 SKILL.md 用 ROUTER_INTENT marker 圈 Intent Map+枚举(task_type 改引用消 drift 源); A3 install 从 7 leaf description Triggers 生成 marker 块(buildRouterSkillSource, round-trip 测试防 hardcode, 幂等); A4 doctor router_chain_ref lint 兜底 S_CHAIN 引用(+i18n 双语+test). A5 门: tsc --noEmit exit0, CLI 1069 / Server 729 test 全绿. 未越界(未塌缩 skill/未动 leaf 业务/未加 routing_label/marker 内全生成).",
+    "at": "2026-06-17"
+  }
 }

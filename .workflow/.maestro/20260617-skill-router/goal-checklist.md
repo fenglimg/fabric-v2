@@ -12,12 +12,12 @@
 **OUT**:不塌缩 8→1 · 不动 leaf 业务逻辑 · 不加 `routing_label` 字段 · 不动 `lib/shared-policy.md` · 不改 S_CHAIN/Guardrails 语义
 **约束**:marker 内 install 生成严禁手编(复用 BOOTSTRAP_MARKER 写法)· 源头唯一=leaf description Triggers · 路由器只读不写 store · 收尾必跑 `pnpm -r exec tsc --noEmit` · 动 shared 必 rebuild dist · 每 task done 即 commit
 
-## 任务清单
-- [ ] **A1** fabric/ 加进 SKILL_SPECS(单文件)+ 装两端 + uninstall 对称清理
-- [ ] **A2** SKILL.md 用 `ROUTER_INTENT_MARKER_BEGIN/END` 圈 Intent Map + 枚举
-- [ ] **A3** install 写生成逻辑:读 7 leaf description → 抽 slug+Triggers → 重写 marker 块(幂等/两端一致)
-- [ ] **A4** doctor lint:S_CHAIN 引用的 leaf 名 ∈ SKILL_SPECS,否则报 drift
-- [ ] **A5** 验证门:`tsc --noEmit` 绿 + install/doctor test 绿
+## 任务清单(全 done — 已 completed)
+- [x] **A1** fabric/ 加进 SKILL_SPECS(单文件)+ 装两端 + uninstall 对称清理
+- [x] **A2** SKILL.md 用 `ROUTER_INTENT_MARKER_BEGIN/END` 圈 Intent Map + 枚举
+- [x] **A3** install 写生成逻辑:读 7 leaf description → 抽 slug+Triggers → 重写 marker 块(幂等/两端一致)
+- [x] **A4** doctor lint:S_CHAIN 引用的 leaf 名 ∈ SKILL_SPECS,否则报 drift
+- [x] **A5** 验证门:`tsc --noEmit` 绿(exit0)+ CLI 1069 / Server 729 test 绿
 
 ## 执行准则(行动手册)
 1. 先读现状:`SKILL_SPECS`(line ~166-216)、现有 ref/lib 安装逻辑(line ~629/706 可参照)、现有 lint 函数(`inspectSkillRefMirror` 等)作模板。

@@ -188,6 +188,9 @@ describe("runDoctorReport", () => {
       // report status.
       "Serve lock",
       "Skill markdown YAML",
+      // B2 skill-router (A4): fabric/ router S_CHAIN reference backstop —
+      // warning kind. Pushed right after Skill markdown YAML in doctor.ts.
+      "Router chain refs",
       // rc.23 TASK-014 (F8c): Onboard coverage advisory — info kind. Sits
       // adjacent to Skill markdown YAML (both are Skill-adjacent advisories).
       "Onboard coverage",
@@ -257,7 +260,9 @@ describe("runDoctorReport", () => {
     // W4-3 narrow_no_paths (KT-MOD-0001) + W4-2 broad-index-drift (KT-DEC-0028) → 39.
     // store-onboarding grill (Q5): +1 store_orphan (on-disk store invisible to
     // the registry) → 40.
-    expect(report.checks).toHaveLength(40);
+    // B2 skill-router (A4): +1 router_chain_ref (fabric/ S_CHAIN reference
+    // backstop) → 41.
+    expect(report.checks).toHaveLength(41);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
