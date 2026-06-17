@@ -15,12 +15,15 @@
 5. 每步重检终止 gate + drift gate(direct alignment <60% 停下报告)。
 
 ## 任务清单
-- [ ] **A1** 死代码清理 — 删 `readRecallBodyBudget`(零调用)+ `bodyBudgetBytes` 僵尸维 · KT-DEC-0037 · _verify: tsc + grep 零残留 + 测试绿_
-- [ ] **A2** SessionStart index-only — 删 renderAiSink eager body 段 + `hint_broad_budget_chars` + `injectionChars` 维 · KT-DEC-0036 · _verify: hook 测试断言 index-only 无 body + 快照_
-- [ ] **A3** 删 `retrieval_budget_profile` enum 落 per-knob — topK 唯一旋钮 + payloadHardBytes 固定护栏 · KT-DEC-0037 · _verify: config-loader/retrieval-budget 测试重写_
-- [ ] **A4** recall ratio-to-top relevance 闸 — `score >= α×max`(α≈0.25)+ topK 退护栏 · KT-DEC-0038 · _verify: 确定性翻转锁定_
-- [ ] **A5** summary 自足 gate — 写入期机械地板 + 删 `resolveOpaqueSummaries` + 审核期冷评 judge · KT-GLD-0006 · _verify: 机械地板单测 + grep 零残留_
-- [ ] **A6** 延迟 supersession — A2 后 deprecate KT-DEC-0027 body 部分 + 部分 KT-DEC-0028(不硬删)· _blocked on A2_ · _verify: A2.done 前置 + KB 标记_
+- [x] **A1** 死代码清理 — 删 `readRecallBodyBudget`(零调用)+ `bodyBudgetBytes` 僵尸维 · KT-DEC-0037 · _verify: tsc + grep 零残留 + 测试绿_
+- [x] **A2** SessionStart index-only — 删 renderAiSink eager body 段 + `hint_broad_budget_chars` + `injectionChars` 维 · KT-DEC-0036 · _verify: hook 测试断言 index-only 无 body + 快照_
+- [x] **A3** 删 `retrieval_budget_profile` enum 落 per-knob — topK 唯一旋钮 + payloadHardBytes 固定护栏 · KT-DEC-0037 · _verify: config-loader/retrieval-budget 测试重写_
+- [x] **A4** recall ratio-to-top relevance 闸 — `score >= α×max`(α≈0.25)+ topK 退护栏 · KT-DEC-0038 · _verify: 确定性翻转锁定_
+- [x] **A5** summary 自足 gate — 写入期机械地板 + 删 `resolveOpaqueSummaries` + 审核期冷评 judge · KT-GLD-0006 · _verify: 机械地板单测 + grep 零残留_
+- [x] **A6** 延迟 supersession — A2 后 deprecate KT-DEC-0027 body 部分 + 部分 KT-DEC-0028(不硬删)· _verify: A2.done 前置 + KB 标记_
+
+## 完成
+6/6 任务全 `done`。终止判据满足:typecheck(tsc --noEmit)绿 · lint(knip --strict)绿 · test(shared 633 / server 725 / cli 1065)全绿。分批 commit 见 git log(feat/lean-retrieval-refactor)。
 
 ## Resume
 续跑:在本 worktree 跑 `/goal-mode continue`(单步推进 + 重检 gate),或用 status.json 顶部的 `/goal` 绑定让会话自主跑到终止判据。

@@ -108,12 +108,12 @@
       "done_when": "A2 已 done 为前置;KT-DEC-0027 标 superseded-by KT-DEC-0036(body 部分);KT-DEC-0028 部分 deprecate;走 fabric-audit/fab_review 路径不硬删",
       "ship_criteria_alignment": ["KT-DEC-0036"],
       "alignment_strength": "direct",
-      "status": "blocked",
-      "verification": { "method": "deterministic", "verifier": "A2.status==done 前置检查 + KB 标记落盘验证", "evidence": null, "verified_at": null }
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "A2.status==done 前置检查 + KB 标记落盘验证", "evidence": "A2 已 done(前置满足); KT-DEC-0027 加 ## Supersession(body-injection 半 superseded-by KT-DEC-0036, type-split 半保留)+ related 加 KT-DEC-0036; KT-DEC-0028 加 ## Supersession(正文超预算退索引行半 deprecated-by KT-DEC-0036, completeness+backstop 半保留)+ related 加 KT-DEC-0036; deprecate-over-delete 不硬删; team store commit a9098ed 落盘", "verified_at": "2026-06-17T04:30:33.000Z" }
     }
   ],
   "needs_adjudication": [],
   "goal_checklist_path": ".workflow/.maestro/20260617-lean-retrieval-refactor/goal-checklist.md",
-  "status": "running",
-  "loop_exit_status": null
+  "status": "complete",
+  "loop_exit_status": "all_tasks_done_gates_green"
 }
