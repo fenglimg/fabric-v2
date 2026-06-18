@@ -19,6 +19,7 @@ import {
   resolveWriteTargetStoreDir,
 } from "./cross-store-write.js";
 import { atomicWriteText, ensureParentDirectory, extractBody } from "./_shared.js";
+import { mergePendingTwins } from "./pending-dedupe.js";
 
 // KT-GLD-0006: the review-time summary self-sufficiency gate is a COLD-EVAL judge
 // (zero-context, batched, offline via maestro delegate) — see summary-cold-eval.ts
@@ -370,6 +371,16 @@ async function listPending(
   projectRoot: string,
   filters: ListFilters | undefined,
 ): Promise<ListItem[]> {
+  // crack 4: deterministic pre-pass — collapse cross-session (type, slug) twins
+  // BEFORE enumerating, so the reviewer never sees a duplicate pair that only
+  // exists because two sessions archived the same knowledge under different
+  // idempotency keys. Best-effort: a merge failure must never break the list.
+  try {
+    await mergePendingTwins(projectRoot);
+  } catch {
+    // never let the self-healing pre-pass break a read
+  }
+
   const items: ListItem[] = [];
 
   const typesToScan = filters?.type !== undefined ? [filters.type] : PLURAL_TYPES;

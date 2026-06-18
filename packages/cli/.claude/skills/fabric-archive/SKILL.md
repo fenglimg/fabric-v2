@@ -65,6 +65,18 @@ The deterministic ledger scan now runs **server-side** — call `fab_archive_sca
 
 Then (LLM side, Boundary B): for each returned `session_id`, load `.fabric/.cache/session-digests/<session_id>.md`, concatenate into a `### Cross-session digest` block, and populate `source_sessions[]` + `session_context` for Phase 4. Cap at `archive_digest_max_sessions`. Missing digest files degrade silently.
 
+**Coverage transparency (crack 3 — cheap recall backstop).** BEFORE collecting candidates, surface the scan's watermark + drops to the user so a human can act as the recall detector and manually override (`--range <session_id>` to force a dropped session back in). This is the affordable substitute for the (deferred) periodic cold-eval miss-rate audit — show, don't hide, what the deterministic filter skipped:
+
+```
+📋 归档覆盖到 <covered_through_ts 转人类可读时间>。
+   纳入会话: <session_ids.length> 个。
+   跳过 <dropped.length> 个: <每个 {session_id 短码} (reason)>
+     reason 含义: user_dismissed=用户曾拒绝 / cooldown=12h 防抖内 / no_new_signal=自上次归档无新高价值活
+   若某个被跳过的会话其实有该归档的内容,显式 `fabric-archive --range <session_id>` 强制纳入。
+```
+
+Render `dropped` only when non-empty; render the watermark line always. en variant mirrors the same fields. Keep it ONE compact block — this is a backstop affordance, not a report.
+
 `Read ref/phase-1-cross-session.md` for the filter state machine + digest-stitch + graceful-degradation notes. The hand-rolled `tail -n 200` scan is retired — `fab_archive_scan` is the source of truth.
 
 Graceful degradation: missing digest cache → single-session fallback. Missing `session_archive_attempted` events (pre-rc.25) → legacy "scan everything since anchor" behaviour.

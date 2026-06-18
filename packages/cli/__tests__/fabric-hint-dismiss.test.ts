@@ -42,9 +42,9 @@ function writeConfig(body: object): void {
 }
 
 describe("fabric-hint dismiss helpers (rc.37 NEW-16)", () => {
-  it("DISMISSABLE_SIGNALS covers the four signal types", () => {
+  it("DISMISSABLE_SIGNALS covers the five signal types (crack 2 added archive_backlog)", () => {
     expect(new Set(hook.DISMISSABLE_SIGNALS)).toEqual(
-      new Set(["archive", "review", "import", "maintenance"]),
+      new Set(["archive", "archive_backlog", "review", "import", "maintenance"]),
     );
   });
 
@@ -85,14 +85,17 @@ describe("fabric-hint main() dismiss suppression (rc.37 NEW-16)", () => {
   const now = new Date(NOW_MS);
 
   function seedArchiveTrigger(): void {
-    // knowledge_proposed 25h ago → archive Signal A fires by hours. v2.2 dual-sink
-    // (Goal A / D6): + a high-value event after the watermark so the value-gate
-    // passes (otherwise the nudge is correctly suppressed).
-    const proposedTs = NOW_MS - 25 * 60 * 60 * 1000;
-    const lines = [
-      { kind: "fabric-event", schema_version: 1, id: "event:knowledge_proposed:1", event_type: "knowledge_proposed", ts: proposedTs },
-      { kind: "fabric-event", schema_version: 1, id: "event:eic:1", event_type: "edit_intent_checked", ts: proposedTs + 1000, path: "src/foo.ts" },
+    // crack 1: archive Signal A fires on the per-session file_mutated count.
+    // Seed session "s1" with a first-activity anchor + a high-value event (so
+    // the D6 value-gate passes) + 20 mutations past the anchor.
+    const base = NOW_MS - 5 * 60 * 60 * 1000;
+    const lines: Record<string, unknown>[] = [
+      { kind: "fabric-event", schema_version: 1, id: "event:eic:anchor", event_type: "edit_intent_checked", ts: base, session_id: "s1", path: "src/anchor.ts" },
+      { kind: "fabric-event", schema_version: 1, id: "event:eic:hv", event_type: "edit_intent_checked", ts: base + 30000, session_id: "s1", path: "src/hv.ts" },
     ];
+    for (let i = 1; i <= 20; i += 1) {
+      lines.push({ kind: "fabric-event", schema_version: 1, id: `event:fm:${i}`, event_type: "file_mutated", ts: base + i * 60000, session_id: "s1", path: `src/f${i}.ts`, tool_call_id: `tc-${i}` });
+    }
     writeFileSync(join(cwd, ".fabric", "events.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   }
 
@@ -104,7 +107,7 @@ describe("fabric-hint main() dismiss suppression (rc.37 NEW-16)", () => {
     try {
       seedArchiveTrigger();
       const writes: string[] = [];
-      hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
+      hook.main({ cwd, now, stdin_payload: { session_id: "s1" } }, { stdout: { write: (s) => writes.push(s) } });
       expect(writes).toHaveLength(1);
       const env = JSON.parse(writes[0]) as { decision?: string; systemMessage?: string };
       expect(env.decision).toBeUndefined(); // soft, not block (D3)
@@ -121,24 +124,23 @@ describe("fabric-hint main() dismiss suppression (rc.37 NEW-16)", () => {
     seedArchiveTrigger();
     writeConfig({ hint_dismiss_signals: ["archive"] });
     const writes: string[] = [];
-    hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
+    hook.main({ cwd, now, stdin_payload: { session_id: "s1" } }, { stdout: { write: (s) => writes.push(s) } });
     expect(writes).toEqual([]);
   });
 
   it("value-gate (D6): Signal A trigger but NO high-value signal → silent", () => {
-    // knowledge_proposed 25h ago triggers Signal A by hours, but with NO
-    // high-value event after the watermark the archive nudge is suppressed.
-    const proposedTs = NOW_MS - 25 * 60 * 60 * 1000;
-    const ev = {
-      kind: "fabric-event",
-      schema_version: 1,
-      id: "event:knowledge_proposed:1",
-      event_type: "knowledge_proposed",
-      ts: proposedTs,
-    };
-    writeFileSync(join(cwd, ".fabric", "events.jsonl"), `${JSON.stringify(ev)}\n`);
+    // crack 1: 21 session mutations cross the threshold (anchor = first mutation,
+    // 20 counted past it), but with NO high-value event the value-gate suppresses
+    // the nudge. nudge_mode silent mutes the orthogonal activity breadcrumb.
+    const base = NOW_MS - 5 * 60 * 60 * 1000;
+    const lines: Record<string, unknown>[] = [];
+    for (let i = 0; i <= 20; i += 1) {
+      lines.push({ kind: "fabric-event", schema_version: 1, id: `event:fm:${i}`, event_type: "file_mutated", ts: base + i * 60000, session_id: "s1", path: `src/f${i}.ts`, tool_call_id: `tc-${i}` });
+    }
+    writeFileSync(join(cwd, ".fabric", "events.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+    writeConfig({ nudge_mode: "silent" });
     const writes: string[] = [];
-    hook.main({ cwd, now }, { stdout: { write: (s) => writes.push(s) } });
+    hook.main({ cwd, now, stdin_payload: { session_id: "s1" } }, { stdout: { write: (s) => writes.push(s) } });
     expect(writes).toEqual([]);
   });
 });
