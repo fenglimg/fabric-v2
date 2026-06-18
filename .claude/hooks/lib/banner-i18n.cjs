@@ -28,8 +28,9 @@
  *
  *   - STRINGS — exported for test introspection only (read-only by convention).
  *
- * Banner keys (11 total):
+ * Banner keys:
  *   Signal A (archive):     archiveLine1, archiveActivity, archiveCta
+ *   Archive backlog:        backlogLine1, backlogCta
  *   Signal B (review):      reviewLine1, reviewCta
  *   Signal C (import):      importLine1, importCta
  *   Signal D (maintenance): maintenanceLine1Never, maintenanceLine1Aged, maintenanceLine2
@@ -163,6 +164,23 @@ const STRINGS = {
     "zh-CN": () => "   是否调 /fabric-archive 检查值得归档的决策/踩坑/复用?",
     en: () => "   Run /fabric-archive to review decisions/pitfalls/reusables worth archiving?",
     "zh-CN-hybrid": () => "   是否调 /fabric-archive 检查值得归档的决策/踩坑/复用?",
+  },
+
+  // ---- Archive backlog (cross-session safety net, crack 2) ------------------
+  // Replaces the old global-24h archive timer: counts DEAD sessions (session
+  // ended / idle) carrying unarchived high-value work. Substring "${count}" is
+  // addressable for tests. params: { count: number }
+  backlogLine1: {
+    "zh-CN": (p) => `📋 Fabric: ${p.count} 个已结束的会话有未归档的高价值改动。`,
+    en: (p) => `📋 Fabric: ${p.count} ended session(s) carry unarchived high-value work.`,
+    "zh-CN-hybrid": (p) => `📋 Fabric: ${p.count} 个已结束的会话有未归档的高价值改动。`,
+  },
+
+  // params: {} — protected token /fabric-archive verbatim across all variants.
+  backlogCta: {
+    "zh-CN": () => "   是否调 /fabric-archive 跨会话补归档这些遗漏?",
+    en: () => "   Run /fabric-archive to sweep these missed sessions across the backlog?",
+    "zh-CN-hybrid": () => "   是否调 /fabric-archive 跨会话补归档这些遗漏?",
   },
 
   // ---- Signal B: review -----------------------------------------------------

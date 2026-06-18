@@ -248,12 +248,18 @@ const ARCHIVE_NORMATIVE_KEYWORDS = [
 // (D6): a workspace that crossed the edit threshold but produced no high-value
 // signal stays quiet. watermarkTs null (never archived) → treat all events as
 // past-watermark (a never-archived repo with any edit signal is worth nudging).
-function hasHighValueArchiveSignal(events, watermarkTs) {
+// crack 1: optional `sessionId` scopes the probe to ONE session's events so a
+// neighbour window's high-value work (past the same global watermark) cannot
+// keep THIS session's archive nudge alive (or, in the backlog scan, attribute a
+// neighbour's signal to a dead session). Omitted → workspace-wide (legacy).
+function hasHighValueArchiveSignal(events, watermarkTs, sessionId) {
   if (!Array.isArray(events)) return false;
   const wm = typeof watermarkTs === "number" ? watermarkTs : 0;
+  const scoped = typeof sessionId === "string" && sessionId.length > 0;
   let latestTurn = null;
   for (const e of events) {
     if (!e || typeof e.ts !== "number" || e.ts <= wm) continue;
+    if (scoped && e.session_id !== sessionId) continue;
     if (typeof e.event_type === "string" && ARCHIVE_HIGH_VALUE_EVENT_TYPES.has(e.event_type)) {
       return true;
     }
@@ -501,6 +507,138 @@ function countEditsSince(projectRoot, anchorTs) {
     if (anchorTs === null || ms > anchorTs) {
       count += 1;
     }
+  }
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// Two-lane archive strategy (crack 1 + 2).
+//
+// In-session lane (crack 1): the archive nudge's edit trigger counts ONLY the
+// current session's `file_mutated` events since the current session's OWN
+// archive watermark — a neighbour window archiving (which moves the GLOBAL
+// `knowledge_proposed` anchor) must never zero THIS window's unarchived work.
+// We read the event ledger (file_mutated carries session_id, written by
+// post-tooluse-mutation.cjs; session_archive_attempted carries
+// covered_through_ts), NOT the session-blind `.fabric/.cache/edit-counter`
+// sidecar — that stays for the activity-overview DISPLAY line only.
+//
+// Cross-session lane (crack 2): `countBacklogSessions` is the safety net that
+// replaces the old global-24h timer (which any neighbour's archive reset, so a
+// low-signal "dead" session was orphaned forever). It reads events.jsonl
+// directly — never the resolved-bindings snapshot (KT-PIT-0017/0019 stale
+// projection class).
+// ---------------------------------------------------------------------------
+
+// rc cross-session backlog constants. ANTI_LOOP mirrors archive-scan.ts.
+const ARCHIVE_BACKLOG_ANTI_LOOP_HOURS = 12;
+const DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT = 2;
+const DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS = 24;
+
+// Latest session_archive_attempted.covered_through_ts for this session, else null.
+function sessionArchiveWatermark(events, sessionId) {
+  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
+    return null;
+  }
+  let wm = null;
+  for (const ev of events) {
+    if (!ev || ev.session_id !== sessionId) continue;
+    if (ev.event_type !== "session_archive_attempted") continue;
+    if (typeof ev.covered_through_ts !== "number") continue;
+    if (wm === null || ev.covered_through_ts > wm) wm = ev.covered_through_ts;
+  }
+  return wm;
+}
+
+// Earliest event ts carrying this session_id, else null.
+function sessionFirstActivityTs(events, sessionId) {
+  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
+    return null;
+  }
+  let first = null;
+  for (const ev of events) {
+    if (!ev || ev.session_id !== sessionId || typeof ev.ts !== "number") continue;
+    if (first === null || ev.ts < first) first = ev.ts;
+  }
+  return first;
+}
+
+// Per-session archive anchor: this session's own last archive watermark, else
+// its first activity ts. null only when the session has zero ledger presence.
+function sessionAnchorTs(events, sessionId) {
+  const wm = sessionArchiveWatermark(events, sessionId);
+  if (wm !== null) return wm;
+  return sessionFirstActivityTs(events, sessionId);
+}
+
+// Count this session's `file_mutated` events strictly after the anchor (anchor
+// null → count all of the session's mutations). Replaces the session-blind
+// countEditsSince(edit-counter) for the archive TRIGGER (crack 1).
+function countSessionMutationsSince(events, sessionId, anchorTs) {
+  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
+    return 0;
+  }
+  let count = 0;
+  for (const ev of events) {
+    if (!ev || ev.session_id !== sessionId) continue;
+    if (ev.event_type !== "file_mutated" || typeof ev.ts !== "number") continue;
+    if (anchorTs === null || ev.ts > anchorTs) count += 1;
+  }
+  return count;
+}
+
+// Cross-session safety net (crack 2). Counts DEAD sessions (carry a
+// `session_ended` marker OR have been idle beyond idleHours) — OTHER than the
+// current one — that hold unarchived high-value work and are NOT
+// `user_dismissed` / inside the 12h anti-loop cooldown. This is the per-session
+// replacement for the global-24h archive timer: it is NOT reset by any
+// neighbour's archive, so a low-signal session that simply ended is no longer
+// orphaned. Mirrors archive-scan.ts's outcome-filter semantics.
+function countBacklogSessions(events, nowMs, currentSessionId, idleHours) {
+  if (!Array.isArray(events)) return 0;
+  const idleMs =
+    (typeof idleHours === "number" && idleHours > 0 ? idleHours : DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS) *
+    MS_PER_HOUR;
+  const lastActivity = new Map(); // sid -> max ts
+  const ended = new Set(); // sid with a session_ended marker
+  const lastAttempt = new Map(); // sid -> latest session_archive_attempted event
+  const sessions = new Set();
+  for (const ev of events) {
+    if (!ev || typeof ev.session_id !== "string" || ev.session_id.length === 0) continue;
+    const sid = ev.session_id;
+    sessions.add(sid);
+    if (typeof ev.ts === "number") {
+      const prev = lastActivity.get(sid);
+      if (prev === undefined || ev.ts > prev) lastActivity.set(sid, ev.ts);
+    }
+    if (ev.event_type === "session_ended") ended.add(sid);
+    if (ev.event_type === "session_archive_attempted" && typeof ev.ts === "number") {
+      const prior = lastAttempt.get(sid);
+      if (!prior || (typeof prior.ts === "number" && ev.ts > prior.ts)) lastAttempt.set(sid, ev);
+    }
+  }
+  let count = 0;
+  for (const sid of sessions) {
+    if (sid === currentSessionId) continue; // live lane handles the current session
+    const last = lastActivity.get(sid);
+    const isDead = ended.has(sid) || (typeof last === "number" && nowMs - last >= idleMs);
+    if (!isDead) continue;
+    const attempt = lastAttempt.get(sid);
+    if (attempt && attempt.outcome === "user_dismissed") continue; // respect dismissal
+    if (
+      attempt &&
+      typeof attempt.ts === "number" &&
+      nowMs - attempt.ts < ARCHIVE_BACKLOG_ANTI_LOOP_HOURS * MS_PER_HOUR
+    ) {
+      continue; // inside anti-loop cooldown
+    }
+    // Probe high-value work since the session's OWN archive watermark — null
+    // (never archived) means probe the whole session (wm→0), so a high-value
+    // signal that was the session's first event still counts. Using the
+    // first-activity anchor here would wrongly exclude it (strict `> anchor`).
+    const wm = sessionArchiveWatermark(events, sid);
+    if (!hasHighValueArchiveSignal(events, wm, sid)) continue; // no unarchived high-value work
+    count += 1;
   }
   return count;
 }
@@ -830,14 +968,17 @@ function readArchiveEditThreshold(projectRoot) {
  * Review wins over import because pending overflow is a sharper backlog signal
  * than a sparse corpus.
  *
- * The `editCounterStats` parameter is the parsed edit-counter view used by
- * the new Signal A edit branch:
- *   { editsSinceLastProposed: number, threshold: number }
- * Defaults to { editsSinceLastProposed: 0, threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD }
- * when omitted — preserves existing tests that don't populate it.
+ * The `editCounterStats` parameter is the per-session edit view (crack 1)
+ * computed in main() from file_mutated events:
+ *   { editsSinceArchive: number, threshold: number, anchorPresent: boolean }
+ * The `backlogStats` parameter (crack 2) is the cross-session view:
+ *   { deadSessionCount: number, threshold: number }
+ * Both default to a no-trigger shape when omitted (back-compat for callers
+ * pre-dating the two-lane split).
  *
  * Returns one of:
  *   - { decision: 'block', reason, signal: 'archive', recommended_skill: 'fabric-archive' }
+ *   - { decision: 'block', reason, signal: 'archive_backlog', recommended_skill: 'fabric-archive' }
  *   - { decision: 'block', reason, signal: 'review', recommended_skill: 'fabric-review' }
  *   - { decision: 'block', reason, signal: 'import', recommended_skill: 'fabric-import' }
  *   - null on no trigger
@@ -847,21 +988,31 @@ function readArchiveEditThreshold(projectRoot) {
 // without touching the filesystem. Omitting the arg falls back to documented
 // defaults so existing in-process callers (tests that pre-date T7) still
 // pass without modification — they implicitly exercise the default path.
-function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner, importInFlight) {
+function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner, importInFlight, backlogStats) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
   const stats = pendingStats || { count: 0, oldestAgeMs: null };
   const underseed =
     underseedStats || { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
+  // crack 1: per-session edit view. `editsSinceArchive` = current session's
+  // file_mutated count since its own archive anchor; `anchorPresent` = the
+  // session has any ledger activity (the trigger gate, replacing the old
+  // "global knowledge_proposed exists" gate).
   const editStats =
     editCounterStats || {
-      editsSinceLastProposed: 0,
+      editsSinceArchive: 0,
       threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+      anchorPresent: false,
+    };
+  // crack 2: cross-session backlog view (dead sessions with unarchived work).
+  const backlog =
+    backlogStats || {
+      deadSessionCount: 0,
+      threshold: DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT,
     };
   const cfg = thresholds || {};
-  const archiveHintHours =
-    typeof cfg.archiveHintHours === "number" && cfg.archiveHintHours > 0
-      ? cfg.archiveHintHours
-      : DEFAULT_ARCHIVE_HINT_HOURS;
+  // crack 2: the global archive_hint_hours timer is retired (the cross-session
+  // case is now the archive_backlog signal). cfg.archiveHintHours is still
+  // accepted on the thresholds bag for back-compat but no longer drives Signal A.
   const reviewHintPendingCount =
     typeof cfg.reviewHintPendingCount === "number" && cfg.reviewHintPendingCount > 0
       ? cfg.reviewHintPendingCount
@@ -875,10 +1026,18 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
   // byte-identical Chinese output. main() always supplies the resolved variant.
   const variant = typeof cfg.variant === "string" ? cfg.variant : "zh-CN";
 
-  // ---- Archive signal (rc.6 TASK-022 — Signal A, 24h-OR-N-edits) -----------
-  // Locate the most-recent knowledge_proposed event. If none exists, Signal A
-  // stays silent — a never-archived workspace is the import signal's domain.
-  // Edit count without an anchor is meaningless and intentionally ignored.
+  // ---- Archive signal (crack 1 — per-session edit count) -------------------
+  // In-session lane: nudge when THIS session has accumulated >= threshold file
+  // mutations since its OWN archive anchor (computed per-session in main() from
+  // file_mutated events — `editStats.editsSinceArchive`). The old global
+  // 24h-OR-N-edits trigger is retired: the hours branch became the
+  // archive_backlog signal below (crack 2), and the edit count is now
+  // session-scoped so a neighbour window's archive can't zero this window's
+  // work. `anchorPresent` gates the trigger (a session with zero ledger
+  // activity has nothing to count).
+  //
+  // `lastProposedTs` / `hoursElapsed` are still derived here for the IMPORT
+  // signal's "no knowledge_proposed in last 24h" guard further down.
   let lastProposedTs = null;
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const ev = events[i];
@@ -887,63 +1046,27 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       break;
     }
   }
-
   const hoursElapsed =
     lastProposedTs === null ? null : (nowMs - lastProposedTs) / MS_PER_HOUR;
 
-  const triggerByHours =
-    hoursElapsed !== null && hoursElapsed >= archiveHintHours;
   const triggerByEdits =
-    lastProposedTs !== null &&
-    editStats.editsSinceLastProposed >= editStats.threshold;
+    editStats.anchorPresent === true &&
+    typeof editStats.editsSinceArchive === "number" &&
+    editStats.editsSinceArchive >= editStats.threshold;
 
-  // PRECEDENCE: archive wins when Signal A fires, regardless of review/import
-  // state. The user gets the archive reminder first; other reminders wait
-  // until after archive happens.
-  if (triggerByHours || triggerByEdits) {
-    // rc.7 T4: 人-first banner — the first reader is the human user in the
-    // AI client UI, Agent reads incidentally (Q-13). We DROP the prior
-    // Agent-jussive imperative ("建议调用 fabric-archive skill ...") in
-    // favour of a polite question framing and an honest activity overview
-    // from the edit-counter sidecar (Q-6: the hook has zero content
-    // awareness, only file-fire awareness — no fabricated "N candidates
-    // detected" framing).
-    //
-    // The activity overview is injected by the caller (main() supplies it
-    // via the `banner` arg) so decide() stays pure / filesystem-free for
-    // tests. When omitted (legacy callers / tests pre-T4) the overview
-    // line is skipped — the banner remains valid 3-or-2 lines depending
-    // on data availability.
-    //
-    // Substring contract preserved for existing tests:
-    //   - "<hoursElapsed.toFixed(1)>h" (e.g. "25.0h")
-    //   - "<editCount> 次编辑"
-    //   - "阈值 <N>"
-    //   - "fabric-archive"
-    // v2.0.0-rc.27 TASK-005 (audit §2.17): parts now assembled per-variant
-    // via banner-i18n's archivePartsHours / archivePartsEdits so en mode
-    // gets fully-English fragments instead of mixed-language output. zh-CN
-    // / zh-CN-hybrid still render the original substring contract verbatim.
-    const parts = [];
-    if (triggerByHours) {
-      parts.push(
-        renderBanner("archivePartsHours", variant, {
-          hoursFixed: hoursElapsed.toFixed(1),
-          threshold: archiveHintHours,
-        }),
-      );
-    }
-    if (triggerByEdits) {
-      parts.push(
-        renderBanner("archivePartsEdits", variant, {
-          count: editStats.editsSinceLastProposed,
-          threshold: editStats.threshold,
-        }),
-      );
-    }
-    // rc.16 TASK-002: 5-banner i18n via lib/banner-i18n.cjs. Substring
-    // contracts ('25.0h', '阈值 N', 'fabric-archive') preserved by the lib's
-    // zh-CN templates — see lib header for the full contract.
+  // PRECEDENCE: in-session archive wins over backlog/review/import — recent
+  // local work is the most actionable reminder.
+  if (triggerByEdits) {
+    // 人-first banner: edit-count fragment only (the hours fragment retired with
+    // the global timer). Substring contracts ('次编辑', '阈值 N', 'fabric-archive')
+    // preserved by banner-i18n's zh-CN templates. The activity overview line is
+    // injected by main() via `banner` so decide() stays pure / filesystem-free.
+    const parts = [
+      renderBanner("archivePartsEdits", variant, {
+        count: editStats.editsSinceArchive,
+        threshold: editStats.threshold,
+      }),
+    ];
     const line1 = renderBanner("archiveLine1", variant, { parts: parts.join(" / ") });
     const activity = banner && typeof banner.activityOverview === "string"
       ? banner.activityOverview
@@ -959,10 +1082,30 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       signal: "archive",
       recommended_skill: "fabric-archive",
       // v2.1 NEW-N-3: surface the firing sub-signal's numbers for the
-      // hook_signal_emitted ledger row main() writes. Dual trigger (24h OR
-      // N-edits): report the hours pair when it fired, else the edit-count pair.
-      threshold: triggerByHours ? archiveHintHours : editStats.threshold,
-      actual_value: triggerByHours ? hoursElapsed : editStats.editsSinceLastProposed,
+      // hook_signal_emitted ledger row main() writes.
+      threshold: editStats.threshold,
+      actual_value: editStats.editsSinceArchive,
+    };
+  }
+
+  // ---- Archive backlog signal (crack 2 — cross-session safety net) ---------
+  // Fires when N+ DEAD sessions (session_ended / idle) carry unarchived
+  // high-value work — the per-session replacement for the old global-24h timer
+  // (which any neighbour's archive reset, orphaning low-signal ended sessions).
+  // KT-DEC-0007: a soft reminder, never a gate. Ranked AFTER in-session archive
+  // but BEFORE review/import: losing knowledge from an ended session is a
+  // sharper signal than a review/import backlog.
+  if (backlog.threshold > 0 && backlog.deadSessionCount >= backlog.threshold) {
+    const line1 = renderBanner("backlogLine1", variant, { count: backlog.deadSessionCount });
+    const line2 = renderBanner("backlogCta", variant, {});
+    const reason = `${line1}\n${line2}`;
+    return {
+      decision: "block",
+      reason,
+      signal: "archive_backlog",
+      recommended_skill: "fabric-archive",
+      threshold: backlog.threshold,
+      actual_value: backlog.deadSessionCount,
     };
   }
 
@@ -1121,6 +1264,23 @@ function readMaintenanceHintCooldownDays(projectRoot) {
   );
 }
 
+// crack 2: cross-session backlog signal thresholds.
+function readArchiveBacklogSessionCount(projectRoot) {
+  return _readConfigNumber(
+    projectRoot,
+    "archive_backlog_session_count",
+    DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT,
+  );
+}
+
+function readArchiveBacklogIdleHours(projectRoot) {
+  return _readConfigNumber(
+    projectRoot,
+    "archive_backlog_idle_hours",
+    DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS,
+  );
+}
+
 /**
  * Resolve the cooldown setting from .fabric/fabric-config.json
  * (archive_hint_cooldown_hours), falling back to DEFAULT_COOLDOWN_HOURS.
@@ -1231,7 +1391,7 @@ function writeShownCache(projectRoot, cache, sessionId) {
 // precedence model — KT-DEC-0007 anti-nag spirit).
 // -----------------------------------------------------------------------------
 
-const DISMISSABLE_SIGNALS = ["archive", "review", "import", "maintenance"];
+const DISMISSABLE_SIGNALS = ["archive", "archive_backlog", "review", "import", "maintenance"];
 
 function sessionDismissFileName(sessionId) {
   const safe = String(sessionId || "anonymous").replace(/[^A-Za-z0-9_.-]/g, "-");
@@ -2123,24 +2283,41 @@ function main(env, stdio) {
     // ts to anchor the count; rather than rescanning events here, we mirror
     // decide()'s scan locally to keep the helper pure. The threshold comes
     // from fabric-config.json (archive_edit_threshold, default 20).
+    // crack 1: per-session edit view. anchor = THIS session's own last archive
+    // watermark (session_archive_attempted.covered_through_ts) else its first
+    // ledger activity; count = THIS session's file_mutated events since anchor.
+    // Reads the event ledger, NOT the session-blind edit-counter sidecar.
     let editCounterStats;
     try {
-      let anchorTs = null;
-      for (let i = events.length - 1; i >= 0; i -= 1) {
-        const ev = events[i];
-        if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
-          anchorTs = ev.ts;
-          break;
-        }
-      }
+      const sid = resolveHookSessionId(stdinPayload);
+      const anchorTs = sessionAnchorTs(events, sid);
       editCounterStats = {
-        editsSinceLastProposed: countEditsSince(cwd, anchorTs),
+        editsSinceArchive: countSessionMutationsSince(events, sid, anchorTs),
         threshold: readArchiveEditThreshold(cwd),
+        anchorPresent: anchorTs !== null,
       };
     } catch {
       editCounterStats = {
-        editsSinceLastProposed: 0,
+        editsSinceArchive: 0,
         threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+        anchorPresent: false,
+      };
+    }
+
+    // crack 2: cross-session backlog view — count DEAD sessions (other than the
+    // current one) carrying unarchived high-value work. Drives the
+    // archive_backlog signal that replaces the retired global-24h timer.
+    let backlogStats;
+    try {
+      const sid = resolveHookSessionId(stdinPayload);
+      backlogStats = {
+        deadSessionCount: countBacklogSessions(events, nowMs, sid, readArchiveBacklogIdleHours(cwd)),
+        threshold: readArchiveBacklogSessionCount(cwd),
+      };
+    } catch {
+      backlogStats = {
+        deadSessionCount: 0,
+        threshold: DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT,
       };
     }
 
@@ -2223,6 +2400,7 @@ function main(env, stdio) {
       thresholds,
       { activityOverview },
       importInFlight,
+      backlogStats,
     );
 
     // v2.0.0-rc.7 T10: Signal D — maintenance hint. Evaluated AFTER A/B/C
@@ -2259,22 +2437,18 @@ function main(env, stdio) {
       return;
     }
 
-    // v2.2 dual-sink (Goal A / D6): VALUE-GATE the archive nudge. Signal A's
-    // edit/hours trigger is the CHECK cadence; the nudge only fires when a
-    // deterministic high-value signal accrued since the last archive (decouples
-    // check frequency from disturb frequency). Boundary-correct: replicates
-    // archive-scan's ledger probe (no semantic judgement). Other signals
-    // (review/import/maintenance) are unaffected.
+    // v2.2 dual-sink (Goal A / D6): VALUE-GATE the in-session archive nudge. The
+    // edit trigger is the CHECK cadence; the nudge only fires when a high-value
+    // signal accrued since the last archive (decouples check from disturb).
+    // crack 1: re-anchored PER SESSION (watermark = this session's own anchor,
+    // probe scoped to this session) so a neighbour window's high-value work past
+    // the same global watermark can't keep — or suppress — THIS window's nudge.
+    // archive_backlog already incorporates high-value in its count, so it is not
+    // re-gated here. Other signals (review/import/maintenance) are unaffected.
     if (result.signal === "archive") {
-      let watermarkTs = null;
-      for (let i = events.length - 1; i >= 0; i -= 1) {
-        const ev = events[i];
-        if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
-          watermarkTs = ev.ts;
-          break;
-        }
-      }
-      if (!hasHighValueArchiveSignal(events, watermarkTs)) {
+      const sid = resolveHookSessionId(stdinPayload);
+      const watermarkTs = sessionAnchorTs(events, sid);
+      if (!hasHighValueArchiveSignal(events, watermarkTs, sid)) {
         return; // no high-value candidate → stay quiet (D6 value-gate)
       }
     }
@@ -2385,6 +2559,14 @@ module.exports = {
   // for unit testing of the truth table).
   isImportInFlight,
   decide,
+  // crack 1 + 2: two-lane archive strategy helpers (exported for unit testing).
+  sessionArchiveWatermark,
+  sessionFirstActivityTs,
+  sessionAnchorTs,
+  countSessionMutationsSince,
+  countBacklogSessions,
+  readArchiveBacklogSessionCount,
+  readArchiveBacklogIdleHours,
   readCooldownHours,
   readUnderseedThreshold,
   readArchiveEditThreshold,

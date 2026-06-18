@@ -36,12 +36,21 @@ type HookDecision =
   | {
       decision: "block";
       reason: string;
-      signal: "archive" | "review" | "import";
+      signal: "archive" | "archive_backlog" | "review" | "import";
       recommended_skill: "fabric-archive" | "fabric-review" | "fabric-import";
     }
   | null;
 
-type EditCounterStats = { editsSinceLastProposed: number; threshold: number };
+// crack 1: per-session edit view. editsSinceArchive = current session's
+// file_mutated count since its own archive anchor; anchorPresent gates the
+// trigger (the session has ledger activity to count from).
+type EditCounterStats = {
+  editsSinceArchive: number;
+  threshold: number;
+  anchorPresent: boolean;
+};
+// crack 2: cross-session backlog view (dead sessions with unarchived work).
+type BacklogStats = { deadSessionCount: number; threshold: number };
 
 type HookModule = {
   main: (
@@ -70,9 +79,36 @@ type HookModule = {
     },
     banner?: { activityOverview?: string },
     importInFlight?: boolean,
+    backlogStats?: BacklogStats,
   ) => HookDecision;
   // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
   isImportInFlight: (projectRoot: string, now?: Date) => boolean;
+  // crack 1 + 2: two-lane archive strategy helpers.
+  sessionArchiveWatermark: (
+    events: Array<Record<string, unknown>>,
+    sessionId: string,
+  ) => number | null;
+  sessionFirstActivityTs: (
+    events: Array<Record<string, unknown>>,
+    sessionId: string,
+  ) => number | null;
+  sessionAnchorTs: (
+    events: Array<Record<string, unknown>>,
+    sessionId: string,
+  ) => number | null;
+  countSessionMutationsSince: (
+    events: Array<Record<string, unknown>>,
+    sessionId: string,
+    anchorTs: number | null,
+  ) => number;
+  countBacklogSessions: (
+    events: Array<Record<string, unknown>>,
+    nowMs: number,
+    currentSessionId: string | null,
+    idleHours?: number,
+  ) => number;
+  readArchiveBacklogSessionCount: (projectRoot: string) => number;
+  readArchiveBacklogIdleHours: (projectRoot: string) => number;
   readUnderseedThreshold: (projectRoot: string) => number;
   readArchiveEditThreshold: (projectRoot: string) => number;
   // rc.7 T7: externalized-threshold readers.
@@ -280,162 +316,238 @@ describe("fabric-hint.cjs — readLedger", () => {
 // pass `editCounterStats` undefined so they exercise the time-only branch.
 // plan_context events present in the ledger MUST NOT influence Signal A
 // (auto-fire-resistant — see TASK-015 rationale).
-describe("fabric-hint.cjs — decide (Signal A: 24h-only path)", () => {
-  it("returns null on empty ledger (no-trigger silence)", () => {
+// crack 1: Signal A is now a PER-SESSION edit-count nudge. `editStats` carries
+// the current session's file_mutated count since its own archive anchor +
+// `anchorPresent` (the session has ledger activity). The old global
+// 24h-OR-N-edits trigger is retired — the cross-session case moved to the
+// archive_backlog signal (crack 2). decide() stays pure: it consumes synthetic
+// editStats, so these tests never seed file_mutated events.
+describe("fabric-hint.cjs — decide (Signal A: per-session edit count, crack 1)", () => {
+  const edits = (editsSinceArchive: number, threshold = 20, anchorPresent = true) => ({
+    editsSinceArchive,
+    threshold,
+    anchorPresent,
+  });
+
+  it("returns null on empty ledger + no edit stats", () => {
     expect(hook.decide([], FIXED_NOW)).toBeNull();
   });
 
-  it("returns null when no knowledge_proposed event has ever been recorded (never-archived workspace is Signal C's domain)", () => {
-    // Ten plan_contexts and zero knowledge_proposed → Signal A stays silent.
-    const events: Array<Record<string, unknown>> = [];
-    for (let i = 0; i < 10; i += 1) {
-      events.push(
-        makeEvent("knowledge_context_planned", NOW_MS - (10 - i) * HOUR_MS),
-      );
-    }
-    expect(hook.decide(events, FIXED_NOW)).toBeNull();
+  it("silent when session edits < threshold", () => {
+    expect(hook.decide([], FIXED_NOW, undefined, undefined, edits(5, 20))).toBeNull();
   });
 
-  it("triggers when knowledge_proposed >=24h ago", () => {
-    const proposedTs = NOW_MS - 25 * HOUR_MS;
+  it("fires archive when session edits >= threshold", () => {
+    const r = hook.decide([], FIXED_NOW, undefined, undefined, edits(20, 20));
+    expect(r).not.toBeNull();
+    expect(r?.decision).toBe("block");
+    expect(r?.signal).toBe("archive");
+    expect(r?.recommended_skill).toBe("fabric-archive");
+    expect(r?.reason).toMatch(/20 次编辑/);
+    expect(r?.reason).toMatch(/fabric-archive/);
+  });
+
+  it("silent when anchorPresent is false even with a huge edit count", () => {
+    // A session with zero ledger activity has no anchor to count from.
+    expect(hook.decide([], FIXED_NOW, undefined, undefined, edits(100, 20, false))).toBeNull();
+  });
+
+  it("no longer fires on the retired global 24h timer", () => {
+    // knowledge_proposed 25h ago used to trigger archive; with the hours branch
+    // retired (crack 2 owns cross-session), it is silent absent a session edit
+    // count.
     const events = [
-      makeEvent("knowledge_proposed", proposedTs, {
-        timestamp: new Date(proposedTs).toISOString(),
+      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
+        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
       }),
     ];
-    const result = hook.decide(events, FIXED_NOW);
-    expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
-    expect(result?.signal).toBe("archive");
-    expect(result?.recommended_skill).toBe("fabric-archive");
-    expect(result?.reason).toMatch(/fabric-archive/);
-    expect(result?.reason).toMatch(/25\.0h/);
-  });
-
-  it("returns null when knowledge_proposed <24h ago (regardless of plan_context count since)", () => {
-    const proposedTs = NOW_MS - 23 * HOUR_MS;
-    const events: Array<Record<string, unknown>> = [
-      makeEvent("knowledge_proposed", proposedTs, {
-        timestamp: new Date(proposedTs).toISOString(),
-      }),
-    ];
-    // Sprinkle in 20 plan_contexts since the last archive — MUST NOT trigger.
-    for (let i = 0; i < 20; i += 1) {
-      events.push(
-        makeEvent(
-          "knowledge_context_planned",
-          proposedTs + (i + 1) * 30 * 60 * 1000,
-        ),
-      );
-    }
     expect(hook.decide(events, FIXED_NOW)).toBeNull();
   });
 
-  it("plan_context count does NOT influence Signal A (auto-fire-resistant)", () => {
-    // knowledge_proposed exactly 12h ago (within 24h window). 50 auto-fired
-    // plan_contexts after it MUST NOT trigger Signal A in rc.5.
-    const proposedTs = NOW_MS - 12 * HOUR_MS;
-    const events: Array<Record<string, unknown>> = [
-      makeEvent("knowledge_proposed", proposedTs),
-    ];
-    for (let i = 0; i < 50; i += 1) {
-      events.push(
-        makeEvent("knowledge_context_planned", proposedTs + i * 60 * 1000),
-      );
-    }
-    expect(hook.decide(events, FIXED_NOW)).toBeNull();
-  });
-});
-
-// rc.6 TASK-022 (E5): Signal A upgrade to 24h-OR-N-edits.
-// New OR-branch fires when edit-counter line count since last
-// knowledge_proposed ts >= archive_edit_threshold (default 20). Time-only
-// behaviour preserved when edit count < threshold. Missing/malformed
-// edit-counter → editsSinceLastProposed=0 → degrades to 24h-only.
-describe("fabric-hint.cjs — decide (Signal A: edit-count OR branch)", () => {
-  it("silent when edits<threshold AND <24h elapsed (both branches below)", () => {
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
-      editsSinceLastProposed: 5,
-      threshold: 20,
-    });
-    expect(result).toBeNull();
-  });
-
-  it("fires (24h branch) when edits<threshold AND >=24h elapsed", () => {
-    const proposedTs = NOW_MS - 25 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
-      editsSinceLastProposed: 3,
-      threshold: 20,
-    });
-    expect(result).not.toBeNull();
-    expect(result?.signal).toBe("archive");
-    expect(result?.recommended_skill).toBe("fabric-archive");
-    expect(result?.reason).toMatch(/25\.0h/);
-  });
-
-  it("fires (edit-count branch) when edits>=threshold AND <24h elapsed", () => {
-    const proposedTs = NOW_MS - 3 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
-      editsSinceLastProposed: 20,
-      threshold: 20,
-    });
-    expect(result).not.toBeNull();
-    expect(result?.signal).toBe("archive");
-    expect(result?.recommended_skill).toBe("fabric-archive");
-    // Reason should mention edit count, NOT hours (since 24h branch silent).
-    expect(result?.reason).toMatch(/20 次编辑/);
-    expect(result?.reason).not.toMatch(/\bh（阈值/);
-  });
-
-  it("fires (both branches) when edits>=threshold AND >=24h elapsed — reason mentions both", () => {
-    const proposedTs = NOW_MS - 30 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
-      editsSinceLastProposed: 25,
-      threshold: 20,
-    });
-    expect(result).not.toBeNull();
-    expect(result?.signal).toBe("archive");
-    expect(result?.reason).toMatch(/30\.0h/);
-    expect(result?.reason).toMatch(/25 次编辑/);
-  });
-
-  it("silent when no knowledge_proposed event recorded, even with huge edit count", () => {
-    // Anchor-less workspace: edit count is meaningless without an anchor
-    // because we can't say "edits since archive" if there's never been one.
-    // Signal A stays silent; Signal C (import) is the right reminder.
-    const result = hook.decide([], FIXED_NOW, undefined, undefined, {
-      editsSinceLastProposed: 100,
-      threshold: 20,
-    });
-    expect(result).toBeNull();
-  });
-
-  it("honours custom threshold (50) — fires only when edits>=50", () => {
-    const proposedTs = NOW_MS - 3 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-
-    // 30 edits, threshold 50 → silent
-    expect(
-      hook.decide(events, FIXED_NOW, undefined, undefined, {
-        editsSinceLastProposed: 30,
-        threshold: 50,
-      }),
-    ).toBeNull();
-
-    // 50 edits, threshold 50 → fires
-    const fired = hook.decide(events, FIXED_NOW, undefined, undefined, {
-      editsSinceLastProposed: 50,
-      threshold: 50,
-    });
-    expect(fired).not.toBeNull();
+  it("honours a custom threshold", () => {
+    expect(hook.decide([], FIXED_NOW, undefined, undefined, edits(30, 50))).toBeNull();
+    const fired = hook.decide([], FIXED_NOW, undefined, undefined, edits(50, 50));
     expect(fired?.signal).toBe("archive");
     expect(fired?.reason).toMatch(/50 次编辑/);
     expect(fired?.reason).toMatch(/阈值 50/);
+  });
+
+  it("reason mentions edits, never hours", () => {
+    const r = hook.decide([], FIXED_NOW, undefined, undefined, edits(25, 20));
+    expect(r?.reason).toMatch(/25 次编辑/);
+    expect(r?.reason).not.toMatch(/h（阈值/);
+  });
+});
+
+// crack 2: the archive_backlog signal — cross-session safety net replacing the
+// retired global-24h timer. decide() consumes a synthetic backlogStats (the
+// 9th positional arg) so the precedence + threshold logic is testable in
+// isolation; countBacklogSessions() is tested separately against real ledgers.
+describe("fabric-hint.cjs — decide (archive_backlog signal, crack 2)", () => {
+  const noEdits = { editsSinceArchive: 0, threshold: 20, anchorPresent: false };
+  const backlog = (deadSessionCount: number, threshold = 2) => ({ deadSessionCount, threshold });
+
+  it("silent when dead-session count < threshold", () => {
+    expect(
+      hook.decide([], FIXED_NOW, undefined, undefined, noEdits, undefined, undefined, undefined, backlog(1, 2)),
+    ).toBeNull();
+  });
+
+  it("fires archive_backlog when dead-session count >= threshold", () => {
+    const r = hook.decide(
+      [], FIXED_NOW, undefined, undefined, noEdits, undefined, undefined, undefined, backlog(2, 2),
+    );
+    expect(r).not.toBeNull();
+    expect(r?.decision).toBe("block");
+    expect(r?.signal).toBe("archive_backlog");
+    expect(r?.recommended_skill).toBe("fabric-archive");
+    expect(r?.reason).toMatch(/2 个已结束/);
+    expect(r?.reason).toMatch(/fabric-archive/);
+  });
+
+  it("in-session archive takes precedence over backlog", () => {
+    const r = hook.decide(
+      [], FIXED_NOW, undefined, undefined,
+      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
+      undefined, undefined, undefined, backlog(5, 2),
+    );
+    expect(r?.signal).toBe("archive");
+  });
+
+  it("backlog takes precedence over review", () => {
+    const r = hook.decide(
+      [], FIXED_NOW, { count: 12, oldestAgeMs: 9 * DAY_MS }, undefined, noEdits,
+      undefined, undefined, undefined, backlog(2, 2),
+    );
+    expect(r?.signal).toBe("archive_backlog");
+  });
+
+  it("threshold 0 disables the backlog signal", () => {
+    expect(
+      hook.decide([], FIXED_NOW, undefined, undefined, noEdits, undefined, undefined, undefined, backlog(5, 0)),
+    ).toBeNull();
+  });
+});
+
+// crack 1 + 2: deterministic unit tests for the per-session anchor + count
+// helpers and the cross-session backlog scan. These pin the concurrency
+// semantics the design brief mandates (a neighbour window's archive must not
+// zero this window's unarchived count).
+describe("fabric-hint.cjs — two-lane archive helpers (crack 1 + 2)", () => {
+  const mut = (sid: string, ts: number) =>
+    makeEvent("file_mutated", ts, { session_id: sid, path: `f${ts}.ts`, tool_call_id: `tc-${sid}-${ts}` });
+  const attempt = (sid: string, ts: number, coveredThrough: number, outcome = "proposed") =>
+    makeEvent("session_archive_attempted", ts, {
+      session_id: sid,
+      outcome,
+      covered_through_ts: coveredThrough,
+      candidates_proposed: outcome === "proposed" ? 1 : 0,
+      knowledge_proposed_ids: outcome === "proposed" ? ["k1"] : [],
+    });
+  const hv = (sid: string, ts: number) =>
+    makeEvent("edit_intent_checked", ts, { session_id: sid, path: `hv${ts}.ts` });
+
+  it("sessionAnchorTs prefers the session's own archive watermark over first activity", () => {
+    const events = [hv("A", 1000), attempt("A", 2000, 1500), mut("A", 3000)];
+    expect(hook.sessionAnchorTs(events, "A")).toBe(1500);
+  });
+
+  it("sessionAnchorTs falls back to first activity when never archived", () => {
+    const events = [hv("A", 1000), mut("A", 2000), mut("A", 3000)];
+    expect(hook.sessionAnchorTs(events, "A")).toBe(1000);
+  });
+
+  it("countSessionMutationsSince counts only this session's file_mutated past the anchor", () => {
+    const events = [
+      mut("A", 1000), // at/below anchor → excluded
+      mut("A", 2000),
+      mut("A", 3000),
+      mut("B", 2500), // other session → excluded
+    ];
+    expect(hook.countSessionMutationsSince(events, "A", 1000)).toBe(2);
+  });
+
+  it("crack 1 concurrency: session B's count is NOT zeroed by neighbour A's archive", () => {
+    // A archives at ts 5000 (covered_through 5000). B has done 3 edits, never
+    // archived. The session-blind global anchor would jump to 5000 and wipe B's
+    // pre-5000 edits; the per-session anchor keeps B's first-activity anchor.
+    const events = [
+      hv("B", 1000), // B first activity
+      mut("B", 1100),
+      mut("B", 1200),
+      mut("B", 1300),
+      hv("A", 4000),
+      attempt("A", 5000, 5000), // neighbour A archives — global watermark jumps
+    ];
+    const anchorB = hook.sessionAnchorTs(events, "B");
+    expect(anchorB).toBe(1000);
+    expect(hook.countSessionMutationsSince(events, "B", anchorB)).toBe(3);
+  });
+
+  it("countBacklogSessions counts a dead (session_ended) neighbour with unarchived high-value work", () => {
+    const now = 100 * HOUR_MS;
+    const events = [
+      hv("dead", now - 50 * HOUR_MS),
+      mut("dead", now - 49 * HOUR_MS),
+      makeEvent("session_ended", now - 48 * HOUR_MS, { session_id: "dead" }),
+    ];
+    expect(hook.countBacklogSessions(events, now, "current", 24)).toBe(1);
+  });
+
+  it("countBacklogSessions counts an idle neighbour past the idle horizon", () => {
+    const now = 100 * HOUR_MS;
+    const events = [
+      hv("idle", now - 50 * HOUR_MS),
+      mut("idle", now - 49 * HOUR_MS), // last activity 49h ago > 24h idle
+    ];
+    expect(hook.countBacklogSessions(events, now, "current", 24)).toBe(1);
+  });
+
+  it("countBacklogSessions excludes the current session", () => {
+    const now = 100 * HOUR_MS;
+    const events = [
+      hv("current", now - 50 * HOUR_MS),
+      mut("current", now - 49 * HOUR_MS),
+      makeEvent("session_ended", now - 48 * HOUR_MS, { session_id: "current" }),
+    ];
+    expect(hook.countBacklogSessions(events, now, "current", 24)).toBe(0);
+  });
+
+  it("countBacklogSessions skips a still-active (not idle, not ended) neighbour", () => {
+    const now = 100 * HOUR_MS;
+    const events = [hv("live", now - 1 * HOUR_MS), mut("live", now - 30 * 60 * 1000)];
+    expect(hook.countBacklogSessions(events, now, "current", 24)).toBe(0);
+  });
+
+  it("countBacklogSessions respects user_dismissed and the 12h cooldown", () => {
+    const now = 100 * HOUR_MS;
+    const dismissed = [
+      hv("d", now - 50 * HOUR_MS),
+      mut("d", now - 49 * HOUR_MS),
+      makeEvent("session_ended", now - 48 * HOUR_MS, { session_id: "d" }),
+      attempt("d", now - 40 * HOUR_MS, 0, "user_dismissed"),
+    ];
+    expect(hook.countBacklogSessions(dismissed, now, "current", 24)).toBe(0);
+
+    const cooling = [
+      hv("c", now - 50 * HOUR_MS),
+      mut("c", now - 49 * HOUR_MS),
+      makeEvent("session_ended", now - 48 * HOUR_MS, { session_id: "c" }),
+      // attempted 6h ago (< 12h cooldown), new high-value since → still cooling.
+      attempt("c", now - 6 * HOUR_MS, now - 49 * HOUR_MS),
+      hv("c", now - 5 * HOUR_MS),
+    ];
+    expect(hook.countBacklogSessions(cooling, now, "current", 24)).toBe(0);
+  });
+
+  it("countBacklogSessions skips a dead session with no unarchived high-value work", () => {
+    const now = 100 * HOUR_MS;
+    const events = [
+      // only file_mutated (not a high-value type) → value-gate fails.
+      mut("dead", now - 50 * HOUR_MS),
+      makeEvent("session_ended", now - 48 * HOUR_MS, { session_id: "dead" }),
+    ];
+    expect(hook.countBacklogSessions(events, now, "current", 24)).toBe(0);
   });
 });
 
@@ -586,25 +698,53 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     }
   });
 
-  function seedEditCounter(root: string, isoLines: string[]): void {
-    const dir = join(root, ".fabric", ".cache");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "edit-counter"),
-      isoLines.map((l) => `${l}\n`).join(""),
-      "utf8",
-    );
-  }
-
-  // v2.2 dual-sink (Goal A / D6): write the archive ledger with a high-value
-  // signal AFTER the watermark so the value-gate passes. Without a high-value
-  // event (edit_intent_checked) the archive nudge is correctly suppressed.
-  function seedArchiveLedger(root: string, proposedTs: number): void {
+  // crack 1: seed a per-session ledger. The archive trigger counts THIS
+  // session's `file_mutated` events since its own anchor; the value-gate needs
+  // an `edit_intent_checked` (high-value) past the anchor in the SAME session.
+  // anchor = the session's session_archive_attempted watermark when present,
+  // else its first ledger activity.
+  function seedSessionLedger(
+    root: string,
+    sid: string,
+    mutations: number,
+    opts: { base?: number; watermark?: number; extra?: Record<string, unknown>[] } = {},
+  ): void {
     mkdirSync(join(root, ".fabric"), { recursive: true });
-    const lines = [
-      JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
-      JSON.stringify(makeEvent("edit_intent_checked", proposedTs + 60 * 1000, { path: "src/foo.ts" })),
+    const base = opts.base ?? NOW_MS - 5 * HOUR_MS;
+    const lines: string[] = [
+      // first ledger activity → the first-activity anchor when no watermark.
+      JSON.stringify(makeEvent("edit_intent_checked", base, { session_id: sid, path: "src/anchor.ts" })),
     ];
+    if (opts.watermark !== undefined) {
+      lines.push(
+        JSON.stringify(
+          makeEvent("session_archive_attempted", opts.watermark, {
+            session_id: sid,
+            outcome: "proposed",
+            covered_through_ts: opts.watermark,
+            candidates_proposed: 1,
+            knowledge_proposed_ids: ["k1"],
+          }),
+        ),
+      );
+    }
+    const start = opts.watermark ?? base;
+    // high-value signal AFTER the anchor so the value-gate passes.
+    lines.push(
+      JSON.stringify(makeEvent("edit_intent_checked", start + 30 * 1000, { session_id: sid, path: "src/hv.ts" })),
+    );
+    for (let i = 1; i <= mutations; i += 1) {
+      lines.push(
+        JSON.stringify(
+          makeEvent("file_mutated", start + i * 60 * 1000, {
+            session_id: sid,
+            path: `src/f${i}.ts`,
+            tool_call_id: `tc-${sid}-${i}`,
+          }),
+        ),
+      );
+    }
+    for (const e of opts.extra ?? []) lines.push(JSON.stringify(e));
     writeFileSync(join(root, ".fabric", "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
   }
 
@@ -619,20 +759,12 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     };
   }
 
-  it("fires archive signal (soft dual-sink) when 20 edits accumulated since knowledge_proposed (within 24h)", () => {
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    seedArchiveLedger(tempRoot, proposedTs);
-
-    // 20 edits all AFTER proposedTs.
-    const editLines: string[] = [];
-    for (let i = 1; i <= 20; i += 1) {
-      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
-    }
-    seedEditCounter(tempRoot, editLines);
+  it("fires archive signal (soft dual-sink) when 20 session mutations accumulate since the session anchor", () => {
+    seedSessionLedger(tempRoot, "s1", 20);
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
     expect(writes).toHaveLength(1);
     // v2.2 dual-sink (Goal A / D3): soft envelope, NOT decision:block.
@@ -642,21 +774,73 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     expect(emit.ai).toMatch(/20 次编辑/); // AI sink
   });
 
+  it("crack 1 regression: a neighbour session's mutations do NOT count toward this session", () => {
+    // Session s1 has 5 mutations (< 20); a busy neighbour s2 has 30. The old
+    // session-blind counter would have summed to 35 and fired; the per-session
+    // anchor must keep s1's archive nudge silent. nudge_mode silent mutes the
+    // (orthogonal) human session-activity breadcrumb so we isolate the nudge.
+    const base = NOW_MS - 5 * HOUR_MS;
+    const extra: Record<string, unknown>[] = [
+      makeEvent("edit_intent_checked", base + 10 * 1000, { session_id: "s2", path: "src/n.ts" }),
+    ];
+    for (let i = 1; i <= 30; i += 1) {
+      extra.push(
+        makeEvent("file_mutated", base + i * 60 * 1000, {
+          session_id: "s2",
+          path: `src/n${i}.ts`,
+          tool_call_id: `tc-s2-${i}`,
+        }),
+      );
+    }
+    seedSessionLedger(tempRoot, "s1", 5, { base, extra });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ nudge_mode: "silent" }),
+      "utf8",
+    );
+
+    const writes: string[] = [];
+    hook.main(
+      { cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } },
+      { stdout: { write: (c: string) => writes.push(c) } },
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it("crack 1: this session's own archive watermark excludes pre-watermark mutations", () => {
+    // s1 archived at watermark; 5 stale mutations sit BEFORE it, 20 fresh ones
+    // AFTER. Only the 20 post-watermark mutations count.
+    const base = NOW_MS - 8 * HOUR_MS;
+    const watermark = NOW_MS - 5 * HOUR_MS;
+    const extra: Record<string, unknown>[] = [];
+    for (let i = 1; i <= 5; i += 1) {
+      extra.push(
+        makeEvent("file_mutated", base + i * 60 * 1000, {
+          session_id: "s1",
+          path: `src/stale${i}.ts`,
+          tool_call_id: `tc-stale-${i}`,
+        }),
+      );
+    }
+    seedSessionLedger(tempRoot, "s1", 20, { base, watermark, extra });
+
+    const writes: string[] = [];
+    hook.main(
+      { cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } },
+      { stdout: { write: (c: string) => writes.push(c) } },
+    );
+    expect(writes).toHaveLength(1);
+    expect(archiveEmit(writes).systemMessage).toMatch(/20 次编辑/);
+  });
+
   it("appends per-store read-set label to the Stop hint reason (v2.1 P4, F4/S63)", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     const projectId = "11111111-1111-4111-8111-111111111111";
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    seedArchiveLedger(tempRoot, proposedTs);
+    seedSessionLedger(tempRoot, "s1", 20);
     writeFileSync(
       join(tempRoot, ".fabric", "fabric-config.json"),
       JSON.stringify({ project_id: projectId }),
       "utf8",
     );
-    const editLines: string[] = [];
-    for (let i = 1; i <= 20; i += 1) {
-      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
-    }
-    seedEditCounter(tempRoot, editLines);
 
     const home = mkdtempSync(join(tmpdir(), "fabric-hint-store-home-"));
     const prevHome = process.env.FABRIC_HOME;
@@ -681,7 +865,10 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     );
     try {
       const writes: string[] = [];
-      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout: { write: (c: string) => writes.push(c) } });
+      hook.main(
+        { cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } },
+        { stdout: { write: (c: string) => writes.push(c) } },
+      );
       expect(writes).toHaveLength(1);
       const emit = archiveEmit(writes);
       expect(emit.systemMessage).toContain("read-set stores:");
@@ -693,85 +880,49 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     }
   });
 
-  it("stays silent when 19 edits accumulated (just below default threshold 20) and <24h", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
-
-    const editLines: string[] = [];
-    for (let i = 1; i <= 19; i += 1) {
-      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
-    }
-    seedEditCounter(tempRoot, editLines);
+  it("stays silent when 19 session mutations accumulate (just below default threshold 20)", () => {
+    seedSessionLedger(tempRoot, "s1", 19);
+    // Mute the orthogonal human activity breadcrumb so we isolate the nudge.
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ nudge_mode: "silent" }),
+      "utf8",
+    );
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
     expect(writes).toEqual([]);
   });
 
-  it("missing edit-counter degrades to 24h-only (existing rc.5 behaviour preserved)", () => {
-    // No edit-counter file. knowledge_proposed 5h ago → no time trigger.
-    // Hook MUST be silent — verifies safe-degrade contract.
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const proposedTs = NOW_MS - 5 * HOUR_MS;
-    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+  it("stays silent when the session has no file_mutated activity", () => {
+    // edit_intent_checked anchor + high-value but zero file_mutated → nothing to
+    // count → no trigger (the per-session safe-degrade contract).
+    seedSessionLedger(tempRoot, "s1", 0);
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
     expect(writes).toEqual([]);
   });
 
   it("honours custom archive_edit_threshold=10 from fabric-config.json", () => {
-    const proposedTs = NOW_MS - 2 * HOUR_MS;
-    seedArchiveLedger(tempRoot, proposedTs);
+    seedSessionLedger(tempRoot, "s1", 10, { base: NOW_MS - 2 * HOUR_MS });
     writeFileSync(
       join(tempRoot, ".fabric", "fabric-config.json"),
       JSON.stringify({ archive_edit_threshold: 10 }),
       "utf8",
     );
 
-    // 10 edits — exactly at custom threshold, well within 24h.
-    const editLines: string[] = [];
-    for (let i = 1; i <= 10; i += 1) {
-      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
-    }
-    seedEditCounter(tempRoot, editLines);
-
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
     expect(writes).toHaveLength(1);
     // soft dual-sink envelope carries the archive reason (no decision:block).
     expect(archiveEmit(writes).systemMessage).toMatch(/fabric-archive/);
-  });
-
-  it("malformed lines in edit-counter are skipped; valid count still drives trigger", () => {
-    const proposedTs = NOW_MS - 4 * HOUR_MS;
-    seedArchiveLedger(tempRoot, proposedTs);
-
-    const editLines: string[] = [];
-    // 20 valid lines.
-    for (let i = 1; i <= 20; i += 1) {
-      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
-    }
-    // Mix in 5 malformed lines that MUST be skipped (not count toward trigger).
-    editLines.push("bogus", "not-a-date", "{{{", "", "2026/05/12 broken");
-
-    seedEditCounter(tempRoot, editLines);
-
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-
-    expect(writes).toHaveLength(1);
-    expect(archiveEmit(writes).systemMessage).toMatch(/20 次编辑/);
   });
 });
 
@@ -790,26 +941,37 @@ describe("fabric-hint.cjs — main", () => {
     }
   });
 
-  it("emits the SOFT archive dual-sink envelope (no decision:block) when last knowledge_proposed >=24h ago", () => {
-    // v2.2 dual-sink (Goal A / D3): the archive nudge is now a soft envelope
-    // (systemMessage + additionalContext), never decision:block. Force cc so the
-    // envelope lands on stdout; seed a high-value event so the value-gate passes.
+  it("emits the SOFT archive dual-sink envelope (no decision:block) when the session crosses the edit threshold", () => {
+    // v2.2 dual-sink (Goal A / D3): the archive nudge is a soft envelope
+    // (systemMessage + additionalContext), never decision:block. crack 1: the
+    // trigger is now per-session file_mutated count, not the global 24h timer.
     const prevClient = process.env.FABRIC_HINT_CLIENT;
     const prevProjDir = process.env.CLAUDE_PROJECT_DIR;
     process.env.FABRIC_HINT_CLIENT = "cc";
     delete process.env.CLAUDE_PROJECT_DIR;
     try {
       mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-      const proposedTs = NOW_MS - 26 * HOUR_MS;
+      const base = NOW_MS - 5 * HOUR_MS;
       const lines = [
-        JSON.stringify(makeEvent("knowledge_proposed", proposedTs, { timestamp: new Date(proposedTs).toISOString() })),
-        JSON.stringify(makeEvent("edit_intent_checked", proposedTs + 60 * 1000, { path: "src/foo.ts" })),
+        JSON.stringify(makeEvent("edit_intent_checked", base, { session_id: "s1", path: "src/anchor.ts" })),
+        JSON.stringify(makeEvent("edit_intent_checked", base + 30 * 1000, { session_id: "s1", path: "src/hv.ts" })),
       ];
+      for (let i = 1; i <= 20; i += 1) {
+        lines.push(
+          JSON.stringify(
+            makeEvent("file_mutated", base + i * 60 * 1000, {
+              session_id: "s1",
+              path: `src/f${i}.ts`,
+              tool_call_id: `tc-${i}`,
+            }),
+          ),
+        );
+      }
       writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
 
       const writes: string[] = [];
       const stdout = { write: (chunk: string) => writes.push(chunk) };
-      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
       expect(writes).toHaveLength(1);
       const env = JSON.parse(writes[0] as string);
@@ -995,19 +1157,16 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
     expect(result).toBeNull();
   });
 
-  it("archive precedence: archive wins when both archive AND review triggers fire (NEW-6)", () => {
-    // Build events that trigger archive under rc.5 Signal A (24h-only):
-    // knowledge_proposed 25h ago.
-    const events: Array<Record<string, unknown>> = [
-      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
-        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
-      }),
-    ];
-    // Pending stats also trigger review.
-    const result = hook.decide(events, FIXED_NOW, {
-      count: 12,
-      oldestAgeMs: 9 * DAY_MS,
-    });
+  it("archive precedence: in-session archive wins when both archive AND review triggers fire (NEW-6)", () => {
+    // crack 1: archive now fires on the per-session edit count, not the 24h
+    // timer. Pending stats also trigger review; in-session archive must win.
+    const result = hook.decide(
+      [],
+      FIXED_NOW,
+      { count: 12, oldestAgeMs: 9 * DAY_MS },
+      undefined,
+      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
+    );
     expect(result).not.toBeNull();
     expect(result?.decision).toBe("block");
     expect(result?.signal).toBe("archive");
@@ -1174,22 +1333,23 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
     expect(result).toBeNull();
   });
 
-  it("archive precedence: archive wins when both archive AND import triggers fire", () => {
-    // knowledge_proposed 25h ago → Signal A (archive) triggers under rc.5.
-    // Sparse corpus + init >=24h ago would also trigger import, but archive wins.
+  it("archive precedence: in-session archive wins when both archive AND import triggers fire", () => {
+    // crack 1: archive fires on the per-session edit count. A sparse corpus +
+    // init >=24h ago + knowledge_proposed >24h ago would also trigger import,
+    // but in-session archive supersedes it.
     const events: Array<Record<string, unknown>> = [
       initEvent,
       makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
         timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
       }),
     ];
-    // NOTE: knowledge_proposed 25h ago > 24h NO_PROPOSED window, so the import
-    // signal's "no recent knowledge_proposed" guard still allows import to fire
-    // — but archive precedence supersedes it.
-    const result = hook.decide(events, FIXED_NOW, undefined, {
-      nodeCount: 1,
-      threshold: 10,
-    });
+    const result = hook.decide(
+      events,
+      FIXED_NOW,
+      undefined,
+      { nodeCount: 1, threshold: 10 },
+      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
+    );
     expect(result).not.toBeNull();
     expect(result?.signal).toBe("archive");
     expect(result?.recommended_skill).toBe("fabric-archive");
@@ -1210,12 +1370,11 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
   });
 
   it("includes recommended_skill='fabric-archive' on archive trigger", () => {
-    const events: Array<Record<string, unknown>> = [
-      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
-        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
-      }),
-    ];
-    const result = hook.decide(events, FIXED_NOW);
+    const result = hook.decide([], FIXED_NOW, undefined, undefined, {
+      editsSinceArchive: 20,
+      threshold: 20,
+      anchorPresent: true,
+    });
     expect(result?.recommended_skill).toBe("fabric-archive");
   });
 
@@ -1480,19 +1639,18 @@ describe("fabric-hint.cjs — rc.7 T7 externalized threshold readers", () => {
     expect(hook.readMaintenanceHintCooldownDays(tempRoot)).toBe(7);
   });
 
-  it("decide threads externalized archiveHintHours through Signal A trigger", () => {
-    // 25h elapsed > default 24h would trigger; but raise threshold to 48h →
-    // signal stays silent.
-    const events = [
-      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS),
-    ];
+  it("archive_hint_hours is retired — a 25h-old knowledge_proposed no longer triggers archive (crack 2)", () => {
+    // The global 24h timer moved to the archive_backlog signal. A stale
+    // knowledge_proposed with no per-session edit count stays silent regardless
+    // of archive_hint_hours (the knob no longer drives Signal A).
+    const events = [makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS)];
     const result = hook.decide(
       events,
       FIXED_NOW,
       { count: 0, oldestAgeMs: null },
       { nodeCount: 50, threshold: 10 },
-      { editsSinceLastProposed: 0, threshold: 20 },
-      { archiveHintHours: 48 },
+      { editsSinceArchive: 0, threshold: 20, anchorPresent: false },
+      { archiveHintHours: 24 },
     );
     expect(result).toBeNull();
   });
@@ -1505,22 +1663,22 @@ describe("fabric-hint.cjs — rc.7 T7 externalized threshold readers", () => {
       FIXED_NOW,
       { count: 11, oldestAgeMs: 1000 },
       { nodeCount: 50, threshold: 10 },
-      { editsSinceLastProposed: 0, threshold: 20 },
+      { editsSinceArchive: 0, threshold: 20, anchorPresent: false },
       { reviewHintPendingCount: 20 },
     );
     expect(result).toBeNull();
   });
 
-  it("decide uses defaults when thresholds arg is omitted (back-compat)", () => {
-    // Pre-T7 call shape: no thresholds arg. Must still trigger Signal A at
-    // 25h elapsed using the documented default of 24h.
-    const events = [makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS)];
+  it("decide uses defaults when thresholds arg is omitted (back-compat) — fires on per-session edits", () => {
+    // Pre-T7 call shape: no thresholds arg. crack 1: archive fires on the
+    // per-session edit count, so the default-threshold path is exercised via
+    // editStats rather than the retired 24h timer.
     const result = hook.decide(
-      events,
+      [],
       FIXED_NOW,
       { count: 0, oldestAgeMs: null },
       { nodeCount: 50, threshold: 10 },
-      { editsSinceLastProposed: 0, threshold: 20 },
+      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
     );
     expect(result).not.toBeNull();
     expect(result?.signal).toBe("archive");
@@ -1989,30 +2147,28 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(t4Hook.formatActivityOverview(tempRoot, NOW_MS)).toBe("");
   });
 
+  const archiveEdits = { editsSinceArchive: 20, threshold: 20, anchorPresent: true };
+
   it("Signal A banner uses 人-first format with emoji prefix and question framing", () => {
-    const proposedTs = NOW_MS - 25 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-    const result = hook.decide(events, FIXED_NOW, undefined, undefined, undefined, undefined);
+    const result = hook.decide([], FIXED_NOW, undefined, undefined, archiveEdits, undefined);
     expect(result).not.toBeNull();
     expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
     // Question framing — uses 是否 not 建议调用.
     expect(result?.reason).toMatch(/是否调 \/fabric-archive/);
     expect(result?.reason).not.toMatch(/建议调用/);
-    // Substring contract preserved.
-    expect(result?.reason).toMatch(/25\.0h/);
+    // crack 1: edit-count substring contract (the hours fragment is retired).
+    expect(result?.reason).toMatch(/20 次编辑/);
     // No fabricated content-aware framing.
     expect(result?.reason.toLowerCase()).not.toMatch(/candidates detected/);
   });
 
   it("Signal A banner injects activity overview when supplied via banner arg", () => {
-    const proposedTs = NOW_MS - 25 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
     const result = hook.decide(
-      events,
+      [],
       FIXED_NOW,
       undefined,
       undefined,
-      undefined,
+      archiveEdits,
       undefined,
       // 7th arg: banner overlay supplying the activity overview.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2025,9 +2181,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
   });
 
   it("Signal A banner omits activity line when overview is empty (back-compat)", () => {
-    const proposedTs = NOW_MS - 25 * HOUR_MS;
-    const events = [makeEvent("knowledge_proposed", proposedTs)];
-    const result = hook.decide(events, FIXED_NOW, undefined, undefined, undefined, undefined);
+    const result = hook.decide([], FIXED_NOW, undefined, undefined, archiveEdits, undefined);
     expect(result).not.toBeNull();
     expect(result?.reason).not.toMatch(/最近活动集中在/);
     // Banner is still well-formed (line1 + line3 only).
@@ -2066,29 +2220,42 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     delete process.env.CLAUDE_PROJECT_DIR;
     try {
       mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-      const proposedTs = NOW_MS - 5 * HOUR_MS;
-      // v2.2 dual-sink (Goal A / D6): high-value event after the watermark so the
-      // archive value-gate passes.
+      const base = NOW_MS - 5 * HOUR_MS;
+      // crack 1: the trigger count is now per-session file_mutated events. The
+      // activity overview ("最近活动集中在") still reads the edit-counter sidecar
+      // (display only). Seed both: 28 session file_mutated events for the count,
+      // and a matching 28-entry edit-counter for the dir distribution.
       const ledger = [
-        JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
-        JSON.stringify(makeEvent("edit_intent_checked", proposedTs + 30 * 1000, { path: "packages/server/services/x.ts" })),
+        JSON.stringify(makeEvent("edit_intent_checked", base, { session_id: "s1", path: "packages/server/services/anchor.ts" })),
+        JSON.stringify(makeEvent("edit_intent_checked", base + 30 * 1000, { session_id: "s1", path: "packages/server/services/hv.ts" })),
       ];
+      for (let i = 1; i <= 28; i += 1) {
+        ledger.push(
+          JSON.stringify(
+            makeEvent("file_mutated", base + i * 60 * 1000, {
+              session_id: "s1",
+              path: `packages/x/f${i}.ts`,
+              tool_call_id: `tc-${i}`,
+            }),
+          ),
+        );
+      }
       writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${ledger.join("\n")}\n`, "utf8");
-      // Edit counter: 20 fires under packages/server/services/, 8 under packages/cli/
+      // Edit counter (display only): 20 fires under packages/server/, 8 under packages/cli/.
       seedEditCounterJson(tempRoot, [
         ...Array.from({ length: 20 }, (_, i) => ({
-          ts: proposedTs + (i + 1) * 60 * 1000,
+          ts: base + (i + 1) * 60 * 1000,
           paths: [`packages/server/services/file${i}.ts`],
         })),
         ...Array.from({ length: 8 }, (_, i) => ({
-          ts: proposedTs + (i + 21) * 60 * 1000,
+          ts: base + (i + 21) * 60 * 1000,
           paths: [`packages/cli/x${i}.ts`],
         })),
       ]);
 
       const writes: string[] = [];
       const stdout = { write: (chunk: string) => writes.push(chunk) };
-      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+      hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
       expect(writes).toHaveLength(1);
       const reason = JSON.parse(writes[0] as string).systemMessage as string;
@@ -2098,7 +2265,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       expect(reason).toMatch(/packages\/server\/ \(20 edits\)/);
       expect(reason).toMatch(/packages\/cli\/ \(8 edits\)/);
       expect(reason).toMatch(/是否调 \/fabric-archive/);
-      // 20 + 8 = 28 fires post-anchor (each entry one fire).
+      // 28 session file_mutated events since the anchor drive the count.
       expect(reason).toMatch(/28 次编辑/);
     } finally {
       if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
@@ -2259,13 +2426,18 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       "utf8",
     );
 
-    // Signal A: knowledge_proposed 25h ago → must still fire.
-    const archiveEvents = [
-      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
-        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
-      }),
-    ];
-    const a = hook.decide(archiveEvents, FIXED_NOW, undefined, undefined, undefined, undefined, undefined, true);
+    // Signal A: per-session edit count crosses threshold → must still fire
+    // even with importInFlight=true (gate only suppresses Signal B).
+    const a = hook.decide(
+      [],
+      FIXED_NOW,
+      undefined,
+      undefined,
+      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
+      undefined,
+      undefined,
+      true,
+    );
     expect(a?.signal).toBe("archive");
 
     // Signal C: underseeded + init_scan_completed >24h ago + no proposed
@@ -2315,10 +2487,13 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
   });
 
   it("none of the rendered reason strings mention 'candidates detected'", () => {
-    // Drive all 4 signals and assert. Signal A first.
+    // Drive all 4 signals and assert. Signal A first (per-session edits).
     const archive = hook.decide(
-      [makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS)],
+      [],
       FIXED_NOW,
+      undefined,
+      undefined,
+      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
     );
     const review = hook.decide([], FIXED_NOW, { count: 10, oldestAgeMs: 1 * 24 * HOUR_MS });
     const importSig = hook.decide(

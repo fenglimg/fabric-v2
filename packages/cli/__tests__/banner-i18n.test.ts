@@ -70,6 +70,9 @@ const FIXTURE_PARAMS: Record<string, Record<string, unknown>> = {
   archivePartsEdits: { count: 21, threshold: 20 },
   archiveActivity: { activity: "src/app.ts, src/util.ts" },
   archiveCta: {},
+  // crack 2: archive backlog (cross-session safety net) banners.
+  backlogLine1: { count: 3 },
+  backlogCta: {},
   reviewLine1: { count: 7, ageSuffix: " / 最早一条 3.2 天前" },
   reviewCta: {},
   importLine1: { nodeCount: 3, threshold: 12, hoursSinceInit: "48.5" },
@@ -104,10 +107,11 @@ describe("banner-i18n: STRINGS table coverage envelope", () => {
     expect(fixtureKeys).toEqual(stringsKeys);
   });
 
-  it("exposes exactly 17 banner keys (observability grill added statusLine + statusTier)", () => {
+  it("exposes exactly 19 banner keys (crack 2 added backlogLine1 + backlogCta)", () => {
     // rc.27 TASK-005 added archivePartsHours + archivePartsEdits (audit §2.17);
-    // observability grill added statusLine + statusTier (15 → 17).
-    expect(Object.keys(lib.STRINGS)).toHaveLength(17);
+    // observability grill added statusLine + statusTier (15 → 17); crack 2
+    // added backlogLine1 + backlogCta (17 → 19).
+    expect(Object.keys(lib.STRINGS)).toHaveLength(19);
   });
 });
 
@@ -171,6 +175,16 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["/fabric-archive"],
     zhCNContract: ["是否调"],
     enHints: ["Run"],
+  },
+  backlogLine1: {
+    protectedTokens: ["📋 Fabric:", "3 "], // numeric "${count} " survives
+    zhCNContract: ["已结束", "高价值"],
+    enHints: ["ended session", "unarchived"],
+  },
+  backlogCta: {
+    protectedTokens: ["/fabric-archive"],
+    zhCNContract: ["跨会话"],
+    enHints: ["sweep"],
   },
   reviewLine1: {
     protectedTokens: ["📋 Fabric:", "7 "], // numeric "${count} " survives
