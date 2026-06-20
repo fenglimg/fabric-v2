@@ -1,0 +1,338 @@
+{
+  "analysis_id": "KB-ARCH-COMPLETE-CROSS-PRODUCT",
+  "timestamp": "2026-06-19T00:00:00.000Z",
+  "purpose": "补充轴6对标对比完整性 — Cursor/Copilot/Windsurf 知识注入机制对比",
+  
+  "comparison_matrix": {
+    "dimensions": [
+      "注入触发机制",
+      "存储位置与作用域",
+      "召回机制与上下文权重",
+      "生命周期与版本控制",
+      "格式与结构复杂度",
+      "团队协作能力",
+      "动态上下文感知",
+      "跨客户端互操作性"
+    ],
+    
+    "products": {
+      "Cursor": {
+        "注入触发机制": {
+          "modes": ["Always Apply", "Auto-attached (glob)", "Agent-decided", "Manual (@mention)"],
+          "trigger_logic": "YAML frontmatter控制：alwaysApply=true全时注入；globs模式匹配文件路径时自动附加；description字段供AI判断相关性；@显式引用手动触发",
+          "granularity": "高 — 四种触发模式精确控制"
+        },
+        "存储位置与作用域": {
+          "locations": [
+            ".cursor/rules/*.mdc (项目级，推荐)",
+            ".cursorrules (项目级，legacy)",
+            "AGENTS.md (目录级，自动递归)",
+            "用户设置 (全局级)",
+            "团队仪表板 (团队级)"
+          ],
+          "scope_hierarchy": "团队规则 < 用户规则 < 项目规则 < 目录级AGENTS.md",
+          "version_control": "完全支持 — .cursor/rules/和.cursorrules均存于仓库"
+        },
+        "召回机制与上下文权重": {
+          "injection_point": "系统提示词前缀 — 每次交互前注入",
+          "context_weight": "高优先级 — 规则在用户提示之前处理",
+          "size_limit": "建议500-2000词，总上限约6000 token",
+          "context_gauge": "有 — 悬停提示框显示当前激活规则"
+        },
+        "生命周期与版本控制": {
+          "creation": "命令面板>New Cursor Rule，或手动创建.mdc文件",
+          "evolution": "随代码演进持续更新，PR级diff",
+          "deprecation": ".cursorrules已标记为legacy，建议迁移至.cursor/rules/"
+        },
+        "格式与结构复杂度": {
+          "format": "Markdown + YAML frontmatter (.mdc) 或纯文本 (.cursorrules)",
+          "frontmatter_fields": ["alwaysApply", "globs", "description"],
+          "complexity": "中等 — 需理解四种触发模式语义"
+        },
+        "团队协作能力": {
+          "shared_via_git": "是 — 项目规则存于仓库",
+          "team_dashboard": "有 — 团队级规则同步，支持glob作用域",
+          "review_workflow": "PR级 — 每条规则一个文件，易于code review"
+        },
+        "动态上下文感知": {
+          "glob_matching": "支持 — 精确文件模式匹配",
+          "ai_decision": "支持 — Agent-decided模式由AI判断相关性",
+          "realtime_tracking": "有限 — 主要依赖静态规则"
+        },
+        "跨客户端互操作性": {
+          "agents_md_compat": "是 — AGENTS.md格式与Claude Code/Windsurf共享",
+          "cursorrules_legacy": "是 — .cursorrules可移植至其他工具(需改名)"
+        }
+      },
+      
+      "GitHub Copilot": {
+        "注入触发机制": {
+          "modes": ["Repository-wide", "Path-specific (applyTo glob)", "Personal", "Organization"],
+          "trigger_logic": "层级优先级：Personal > Repository > Organization；Path-specific通过applyTo glob模式匹配文件路径",
+          "granularity": "中高 — 四级作用域，path-specific支持细粒度控制"
+        },
+        "存储位置与作用域": {
+          "locations": [
+            ".github/copilot-instructions.md (仓库级)",
+            ".github/instructions/*.instructions.md (路径级)",
+            "$HOME/.copilot/copilot-instructions.md (个人级)",
+            "组织级配置 (云端)"
+          ],
+          "scope_hierarchy": "Organization < Repository-wide < Path-specific < Personal",
+          "version_control": "是 — .github目录下文件可提交至仓库"
+        },
+        "召回机制与上下文权重": {
+          "injection_point": "聊天上下文前缀 — 参考文献区显示已用指令文件",
+          "context_weight": "中 — 作为补充上下文，非最高优先级",
+          "size_limit": "建议简短、自包含语句",
+          "context_gauge": "有 — References部分显示已用指令"
+        },
+        "生命周期与版本控制": {
+          "creation": "手动创建文件，或请求Copilot cloud agent生成",
+          "evolution": "随项目演进更新",
+          "deprecation": "无明确废弃机制"
+        },
+        "格式与结构复杂度": {
+          "format": "纯Markdown或Markdown + YAML frontmatter (path-specific)",
+          "frontmatter_fields": ["applyTo", "excludeAgent"],
+          "complexity": "低中 — 结构简单，语义清晰"
+        },
+        "团队协作能力": {
+          "shared_via_git": "是 — .github目录存于仓库",
+          "team_dashboard": "有 — 组织级指令云端管理",
+          "review_workflow": "是 — 标准PR流程"
+        },
+        "动态上下文感知": {
+          "glob_matching": "支持 — applyTo字段控制作用文件",
+          "ai_decision": "无 — 纯glob匹配，无AI判断",
+          "realtime_tracking": "无 — 静态规则"
+        },
+        "跨客户端互操作性": {
+          "agents_md_compat": "是 — AGENTS.md作为仓库指令备选",
+          "multi_ide": "是 — VS Code/JetBrains/Xcode均支持"
+        }
+      },
+      
+      "Windsurf": {
+        "注入触发机制": {
+          "modes": ["always_on", "model_decision", "glob", "manual"],
+          "trigger_logic": "YAML frontmatter的trigger字段控制；always_on全时注入；model_decision由AI判断description相关性；glob匹配文件路径；manual需@引用",
+          "granularity": "高 — 四种触发模式与Cursor类似"
+        },
+        "存储位置与作用域": {
+          "locations": [
+            ".windsurf/rules/*.md (项目级，推荐)",
+            ".windsurfrules (项目级，legacy)",
+            "~/.codeium/windsurf/memories/global_rules.md (用户级)",
+            "AGENTS.md (目录级)",
+            "系统级规则 (企业)"
+          ],
+          "scope_hierarchy": "系统级 < 用户级 < 项目级 < 目录级AGENTS.md",
+          "version_control": "是 — .windsurf/rules和.windsurfrules可提交"
+        },
+        "召回机制与上下文权重": {
+          "injection_point": "Cascade上下文加载流程第一步 — 规则在Memories和索引之前加载",
+          "context_weight": "高 — 规则在上下文窗口早期位置",
+          "size_limit": "项目规则12000字符/文件，全局规则6000字符",
+          "context_gauge": "有 — Customizations面板显示激活规则"
+        },
+        "生命周期与版本控制": {
+          "creation": "Customizations面板点击+按钮，或手动创建.md文件",
+          "evolution": "随项目演进更新",
+          "deprecation": ".windsurfrules已不再推荐，建议迁移至.windsurf/rules/"
+        },
+        "格式与结构复杂度": {
+          "format": "Markdown + YAML frontmatter",
+          "frontmatter_fields": ["trigger", "description", "globs"],
+          "complexity": "中 — 与Cursor类似，需理解触发模式"
+        },
+        "团队协作能力": {
+          "shared_via_git": "是 — 项目规则存于仓库",
+          "team_dashboard": "有 — 企业级系统规则",
+          "review_workflow": "是 — 标准PR流程"
+        },
+        "动态上下文感知": {
+          "glob_matching": "支持 — globs字段精确匹配",
+          "ai_decision": "支持 — model_decision模式",
+          "realtime_tracking": "强 — Cascade跟踪编辑/终端/导航动作历史"
+        },
+        "跨客户端互操作性": {
+          "agents_md_compat": "是 — AGENTS.md与Claude Code/Cursor共享",
+          "cascade_memory": "有 — 自动记忆会话级事实，但会话结束即消失"
+        }
+      }
+    }
+  },
+  
+  "fabric_v2_comparison": {
+    "uniqueness": [
+      {
+        "feature": "知识类型分层",
+        "fabric_v2": "decisions/pitfalls/guidelines/models/processes 五类型，每类型有独立schema和治理",
+        "others": "无类型区分 — 所有规则平铺在单一文件中"
+      },
+      {
+        "feature": "多Store架构",
+        "fabric_v2": "团队Store + 个人Store物理隔离，UUID标识，写路由选择",
+        "others": "单仓库级存储，无跨仓库知识共享机制"
+      },
+      {
+        "feature": "生命周期治理",
+        "fabric_v2": "draft → verified → proven 成熟度阶梯，pending审批流程，归档扫描",
+        "others": "无生命周期 — 规则静态存在直到手动删除"
+      },
+      {
+        "feature": "引用追踪",
+        "fabric_v2": "cite policy自动记录KB应用，doctor统计覆盖率",
+        "others": "无引用追踪 — 无法知道规则是否被实际使用"
+      },
+      {
+        "feature": "MCP协议",
+        "fabric_v2": "fab_recall/fab_extract_knowledge等MCP工具，跨客户端统一接口",
+        "others": "IDE内嵌实现，无外部协议"
+      },
+      {
+        "feature": "自归档机制",
+        "fabric_v2": "AI触发信号(User-driven normative/Wrong-turn-and-revert)自动提议新KB",
+        "others": "需手动创建/更新规则文件"
+      }
+    ],
+    
+    "borrowable_patterns": [
+      {
+        "source": "Cursor",
+        "pattern": "四种触发模式",
+        "applicability": "Fabric v2.2可借鉴always_apply vs model_decision语义，增强activation字段表达力"
+      },
+      {
+        "source": "Cursor",
+        "pattern": "context_gauge可视化",
+        "applicability": "Fabric v2.2可提供SessionStart HUD显示召回KB计数，增强用户感知"
+      },
+      {
+        "source": "Copilot",
+        "pattern": "applyTo glob frontmatter",
+        "applicability": "Fabric v2.2的relevance_paths字段可增加glob语法支持"
+      },
+      {
+        "source": "Copilot",
+        "pattern": "excludeAgent关键字",
+        "applicability": "Fabric v2.2可增加exclude_from字段控制KB是否参与特定agent流程"
+      },
+      {
+        "source": "Windsurf",
+        "pattern": "Cascade实时动作跟踪",
+        "applicability": "Fabric v2.2可增加session级edit counter nudge，触发archive提议"
+      },
+      {
+        "source": "Windsurf",
+        "pattern": "Memories自动生成",
+        "applicability": "Fabric v2.2的archive scan可借鉴自动发现候选KB的逻辑"
+      }
+    ]
+  },
+  
+  "maestro_flow_comparison": {
+    "uniqueness": [
+      {
+        "feature": "spec + knowhow双层",
+        "maestro": "spec持久规则 + knowhow会话级洞察，分离normative与empirical",
+        "others": "单一层级，无经验知识捕获"
+      },
+      {
+        "feature": "wiki/spec/knowhow三层索引",
+        "maestro": "WikiIndexer统一索引，agent注入时按category筛选",
+        "others": "仅文件级存储，无语义索引"
+      },
+      {
+        "feature": "knowhow类型丰富",
+        "maestro": "session/tip/template/recipe/reference/decision/asset/blueprint/document 9类型",
+        "others": "单一规则格式，无模板/配方等产出物类型"
+      }
+    ]
+  },
+  
+  "cross_product_interop": {
+    "agents_md_consensus": {
+      "status": "emerging_standard",
+      "supported_by": ["Cursor", "Claude Code", "Windsurf", "Copilot (备选)"],
+      "semantic_scope": "目录级自动递归，无frontmatter，纯markdown",
+      "recommendation": "Fabric v2.2 AGENTS.md同步机制应保持，作为跨客户端知识入口"
+    },
+    
+    "portability_matrix": {
+      "from_cursor_to_windsurf": {
+        "method": "cp .cursor/rules/*.mdc .windsurf/rules/ && 修改frontmatter",
+        "effort": "低 — frontmatter字段映射简单"
+      },
+      "from_cursor_to_copilot": {
+        "method": "合并.cursor/rules/*.mdc到.github/copilot-instructions.md",
+        "effort": "中 — 失去per-rule粒度，需合并"
+      },
+      "from_any_to_fabric": {
+        "method": "解析规则内容，提取为KB类型，fab_extract_knowledge导入",
+        "effort": "高 — 需语义理解与类型分类"
+      }
+    }
+  },
+  
+  "conclusions": {
+    "competitive_positioning": {
+      "Fabric v2": "企业级知识治理平台 — 生命周期管理、多Store隔离、引用追踪、MCP协议",
+      "Cursor": "开发者友好型规则系统 — 四种触发模式、可视化反馈、团队同步",
+      "Copilot": "多IDE兼容型指令系统 — 四级作用域、组织级管理、GitHub生态集成",
+      "Windsurf": "Agentic工作流优化 — Cascade实时跟踪、Memories自动生成、离线模式支持"
+    },
+    
+    "actionable_insights": [
+      {
+        "insight": "AGENTS.md作为跨客户端标准入口",
+        "rationale": "四产品均支持AGENTS.md，语义一致，无frontmatter负担",
+        "action": "Fabric v2.2保持AGENTS.md生成能力，确保知识可移植性"
+      },
+      {
+        "insight": "触发模式语义趋同",
+        "rationale": "Cursor/Windsurf均使用always_on/glob/model_decision/manual四模式",
+        "action": "Fabric v2.2的activation字段可扩展为enum: always | path-match | ai-decided | manual"
+      },
+      {
+        "insight": "生命周期治理是Fabric独占优势",
+        "rationale": "三竞品均无KB成熟度阶梯/审批流程/归档扫描",
+        "action": "强化fabric-review/fabric-archive技能，作为差异化卖点"
+      },
+      {
+        "insight": "MCP协议打开跨客户端想象空间",
+        "rationale": "fab_*工具可被任何MCP兼容客户端调用",
+        "action": "构建Fabric MCP SDK，支持第三方客户端集成"
+      }
+    ],
+    
+    "gaps_identified": [
+      {
+        "gap": "无实时上下文可视化",
+        "current": "Fabric v2.2 SessionStart HUD显示召回计数，但无交互时context gauge",
+        "target": "类似Cursor的hover context gauge，显示当前激活KB列表"
+      },
+      {
+        "gap": "无团队级云端管理",
+        "current": "Store基于本地目录，无云端同步",
+        "target": "类似Cursor Team Dashboard的云端Store管理界面"
+      },
+      {
+        "gap": "无自动Memories生成",
+        "current": "archive scan需AI触发，无后台自动发现",
+        "target": "类似Windsurf的后台Cascade Memories生成机制"
+      }
+    ]
+  },
+  
+  "sources": [
+    "https://cursor.com/docs/rules",
+    "https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions",
+    "https://docs.windsurf.com/plugins/cascade/memories",
+    "https://design.dev/guides/cursor-rules/",
+    "https://skillsplayground.com/guides/windsurf-rules/",
+    "https://thepromptshelf.dev/blog/windsurfrules-complete-guide-2026/",
+    "https://agentconfig.ing/files/windsurf-rules-md/"
+  ]
+}

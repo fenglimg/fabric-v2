@@ -1,0 +1,182 @@
+{
+  "analysis_session": "kb-arch-complete-ax4-wizard",
+  "generated_at": "2026-06-19",
+  "wizard_architecture": {
+    "overview": "Maestro 提供两类 wizard：Install Wizard（Dashboard UI）用于安装命令/代理/工作流，Spec-Setup（Skill）用于初始化项目规范。两者独立运作，Install Wizard 是 UI 驱动的多步引导，Spec-Setup 是 AI 执行的代码扫描+生成流程。",
+    "install_wizard": {
+      "location": "dashboard/src/client/components/install/",
+      "trigger": "Dashboard UI 中的 Install 按钮或菜单项",
+      "store": "dashboard/src/client/store/install-store.ts",
+      "api_routes": "dashboard/src/server/routes/install.ts",
+      "steps": [
+        {
+          "name": "mode",
+          "component": "StepModeSelect.tsx",
+          "description": "选择安装模式：Global（推荐，~/.claude/ + ~/.maestro/）或 Project（指定项目路径）",
+          "user_actions": [
+            "选择 Global/Project 模式",
+            "如选 Project，输入项目路径",
+            "点击 Next 触发 detect()"
+          ],
+          "api_call": "POST /api/install/detect → 扫描可用组件"
+        },
+        {
+          "name": "configure",
+          "component": "StepConfigure.tsx",
+          "description": "配置安装组件、MCP 工具、Addon 选择",
+          "user_actions": [
+            "勾选要安装的组件（commands/agents/skills/workflows）",
+            "如选 MCP，配置启用的工具",
+            "浏览并安装 Addons（impeccable/ui-ux-pro-max 等）",
+            "查看已禁用项（将保留）"
+          ],
+          "features": {
+            "component_selection": "checkbox 列表显示每个组件的文件数和目标路径",
+            "mcp_config": "可启用/禁用 MCP Server，选择启用的工具",
+            "addon_marketplace": "显示可用 addons 及其安装状态，支持按 harness 安装",
+            "existing_installation": "检测已存在安装，提示备份选项"
+          }
+        },
+        {
+          "name": "review",
+          "component": "StepReview.tsx",
+          "description": "确认安装配置",
+          "user_actions": [
+            "查看安装摘要（模式/组件数/文件数/备份）",
+            "确认组件列表和目标路径",
+            "点击 Install 开始安装"
+          ]
+        },
+        {
+          "name": "progress",
+          "component": "StepProgress.tsx",
+          "description": "执行安装并显示结果",
+          "api_call": "POST /api/install/execute → 执行文件复制、manifest 写入、MCP 注册",
+          "result_display": "成功/失败状态、文件数、manifest 路径、MCP 注册结果"
+        }
+      ],
+      "state_management": {
+        "mode": "'global' | 'project'",
+        "projectPath": "string",
+        "detection": "DetectionResult (组件列表、现有 manifest、禁用项)",
+        "selectedComponents": "Set<string>",
+        "backup": "boolean",
+        "mcpEnabled": "boolean",
+        "enabledTools": "Set<string>",
+        "addons": "AddonInfo[]",
+        "installing": "boolean",
+        "result": "InstallResult"
+      },
+      "addon_registry": [
+        {
+          "id": "impeccable",
+          "name": "Impeccable",
+          "description": "Production-grade frontend design — 23 commands",
+          "repo": "pbakaus/impeccable",
+          "harnesses": ["claude", "codex"]
+        },
+        {
+          "id": "ui-ux-pro-max",
+          "name": "UI/UX Pro Max",
+          "description": "Design intelligence — 50+ styles, 97 palettes",
+          "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+          "harnesses": ["claude", "codex"]
+        }
+      ]
+    },
+    "spec_setup_skill": {
+      "trigger": "/spec-setup 命令或 /maestro-init 后自动调用",
+      "skill_file": ".claude/commands/spec-setup.md",
+      "workflow_file": "workflows/specs-setup.md",
+      "purpose": "扫描项目结构，检测技术栈和代码模式，生成规范文件和工作流食谱",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Ensure Directory Structure",
+          "action": "创建 .workflow/ 和 .workflow/specs/ 目录"
+        },
+        {
+          "step": 2,
+          "name": "Scan Project Structure",
+          "action": "检测 manifest files (package.json, tsconfig.json, pyproject.toml 等) → 确定 runtime 和 frameworks"
+        },
+        {
+          "step": 3,
+          "name": "Detect Code Patterns",
+          "action": "分析前 20 个源文件 → 检测缩进风格、命名规范、导入风格、文件命名模式"
+        },
+        {
+          "step": 4,
+          "name": "Generate Core Files",
+          "always_created": [
+            "coding-conventions.md",
+            "architecture-constraints.md",
+            "learnings.md"
+          ]
+        },
+        {
+          "step": 5,
+          "name": "Generate Optional Files",
+          "conditionally_created": {
+            "quality-rules.md": "检测到 linter config 或 CI",
+            "test-conventions.md": "检测到测试框架或测试文件",
+            "ui-conventions.md": "检测到前端框架"
+          },
+          "deferred": ["debug-notes.md", "review-standards.md (on demand via /spec-add)"]
+        },
+        {
+          "step": 6,
+          "name": "Generate Workflow Knowhow Recipes",
+          "output_dir": ".workflow/knowhow/",
+          "recipes": {
+            "test-workflow": "检测到测试框架",
+            "debug-workflow": "检测到 .vscode/launch.json 或日志库",
+            "build-workflow": "检测到 build script",
+            "dev-workflow": "检测到 dev/start script",
+            "lint-workflow": "检测到 linter+formatter 配置"
+          },
+          "filename_pattern": "RCP-{YYYYMMDD}-{slug}.md",
+          "idempotency": "已存在时写 .proposed.md 避免覆盖"
+        },
+        {
+          "step": 7,
+          "name": "Summary",
+          "action": "显示创建的文件列表（specs/recipes/skipped/deferred）"
+        }
+      ],
+      "generated_spec_schema": {
+        "frontmatter": ["title", "category"],
+        "sections": ["Auto-generated header", "Detected patterns", "Entries section (for /spec-add)"]
+      },
+      "generated_recipe_schema": {
+        "frontmatter": ["title", "type=recipe", "tags", "created", "source=spec-setup"],
+        "sections": ["Goal", "Prerequisites", "Steps (runnable commands)", "Expected Outcome", "Common Pitfalls", "Related"]
+      }
+    }
+  },
+  "comparison": {
+    "install_wizard": {
+      "type": "UI-driven multi-step wizard",
+      "scope": "安装 maestro 组件到全局或项目",
+      "user_interaction": "点击、选择、输入",
+      "execution": "服务端 API 执行文件复制和配置"
+    },
+    "spec_setup": {
+      "type": "AI-executed skill workflow",
+      "scope": "分析项目并生成规范和工作流食谱",
+      "user_interaction": "触发命令后全自动",
+      "execution": "AI agent 执行代码扫描和文件生成"
+    }
+  },
+  "interaction_entry_points": {
+    "dashboard_install": "Dashboard → Settings/Install → Install Wizard Dialog",
+    "cli_init": "maestro init → /maestro-init → /spec-setup",
+    "manual_spec_setup": "/spec-setup 命令"
+  },
+  "key_insights": {
+    "dual_path": "Install Wizard 管理工具链安装，Spec-Setup 管理项目规范初始化，两者互补",
+    "addon_ecosystem": "Install Wizard 集成 addon marketplace，支持从 GitHub 安装第三方 skill",
+    "recipe_generation": "Spec-Setup 不仅生成静态规范，还生成可执行的工作流食谱（test/debug/build/dev/lint）",
+    "idempotency": "Spec-Setup 采用 .proposed.md 机制避免覆盖用户修改"
+  }
+}

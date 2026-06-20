@@ -1,0 +1,121 @@
+{
+  "system": "maestro-flow",
+  "analysis_date": "2026-06-19",
+  "governance_mechanisms": {
+    "audit_skill": {
+      "name": "manage-knowledge-audit",
+      "description": "审查 spec/knowhow/artifact 存储，识别矛盾/失效/孤儿，通过 keep/deprecate/delete 三态清理",
+      "scope": ["spec", "knowhow", "artifact", "all"],
+      "actions": ["keep", "deprecate", "delete", "purge"],
+      "phases": [
+        "Stage 1-2: Scope 解析 + 存储加载",
+        "Stage 3: 时间线索引建立 (mtime ↔ session/milestone)",
+        "Stage 4: Finding 池按 P0/P1/P2 分级输出",
+        "Stage 5: 用户决策 (三态面板)",
+        "Stage 6: Backup tarball 生成",
+        "Stage 7: 执行变更 (deprecate/delete/purge)",
+        "Stage 8: 报告生成"
+      ],
+      "deletion_policy": {
+        "default": "--interactive (三态面板逐项决策)",
+        "non_interactive": {
+          "--mark": "仅打标",
+          "--delete": "软删到 .trash/",
+          "--purge": "物理擦除 (仅 artifact, 需双重确认)"
+        }
+      },
+      "phase_gates": [
+        {
+          "gate": "GATE 1: Load → Detect",
+          "required": ["Scope 解析通过", "互斥标志校验完成", "三存储按 scope 加载完成"],
+          "blocked_on": ["scope 非法或存储不可读: E001/E002"]
+        },
+        {
+          "gate": "GATE 2: Detect → Decision",
+          "required": ["Finding 池按 P0/P1/P2 分级输出", "未 harvest 的 artifact 删除前触发抢救确认"],
+          "blocked_on": ["finding 为空: 无需淘汰, 直接输出报告"]
+        },
+        {
+          "gate": "GATE 3: Decision → Mutate",
+          "required": ["Backup tarball 生成于 .workflow/.trash/knowledge-audit-{timestamp}/", "备份成功后方可执行变更", "--purge 需双重确认"],
+          "blocked_on": ["备份失败: E005, 禁止执行变更"]
+        }
+      ],
+      "execution_constraints": [
+        "Deprecate over delete: 文本存储首选 status=\"deprecated\", 保留历史",
+        "Purge 仅 artifact: --purge 不作用于 spec/knowhow",
+        "Rescue before delete: 未抽取 artifact 删除前强制提示先 /manage-harvest"
+      ]
+    },
+    "knowledge_lifecycle": {
+      "status_states": ["active", "deprecated", "deleted"],
+      "transition_triggers": {
+        "deprecate": "检测到矛盾/失效/过时",
+        "delete": "显式删除决策或 purge 操作",
+        "resurrect": "通过 backup tarball 恢复"
+      }
+    }
+  },
+  "audit_detection_categories": {
+    "P0_critical": "严重错误需立即处理",
+    "P1_high": "高优先级问题",
+    "P2_medium": "中等优先级问题"
+  },
+  "error_codes": [
+    {"code": "E001", "severity": "error", "condition": ".workflow/ 未初始化", "recovery": "先跑 /maestro-init"},
+    {"code": "E002", "severity": "error", "condition": "--scope 缺失或非法", "recovery": "提供 spec/knowhow/artifact/all"},
+    {"code": "E003", "severity": "error", "condition": "--purge 与 --dry-run 同用", "recovery": "二选一"},
+    {"code": "E004", "severity": "error", "condition": "--purge 作用于非 artifact 范围", "recovery": "purge 仅支持 artifact scope"},
+    {"code": "E005", "severity": "error", "condition": "备份失败", "recovery": "检查磁盘空间与权限, 重试"},
+    {"code": "W001", "severity": "warning", "condition": "检出冲突但用户选择 keep", "recovery": "记入 report, 不阻断"},
+    {"code": "W002", "severity": "warning", "condition": "待删 artifact 无 harvest-log 记录", "recovery": "提示先跑 manage-harvest"},
+    {"code": "W003", "severity": "warning", "condition": "循环 supersedes 链", "recovery": "自动断环或交互选保留节点"},
+    {"code": "W004", "severity": "warning", "condition": "检测耗时 >120s", "recovery": "建议加 --scope 收敛或 --since 增量"},
+    {"code": "W005", "severity": "warning", "condition": "LLM detector 不可用", "recovery": "降级到正则+图算法子集"}
+  ],
+  "governance_flow": {
+    "entry_points": [
+      "Stop-hook 触发 (pending overflow)",
+      "用户显式调用 (/manage-knowledge-audit)",
+      "周期巡检 (--scope all --report)"
+    ],
+    "workflow": [
+      "1. 解析 scope 和 flags",
+      "2. 加载对应存储 (spec/knowhow/artifact)",
+      "3. 建立时间线索引",
+      "4. 执行检测算法 (矛盾/失效/孤儿)",
+      "5. 输出 finding 池 (P0/P1/P2 分级)",
+      "6. 用户决策 (keep/deprecate/delete)",
+      "7. 生成 backup tarball",
+      "8. 执行变更",
+      "9. 生成 audit-report-{date}.md + audit-log.jsonl"
+    ],
+    "output": {
+      "report": "audit-report-{date}.md",
+      "log": "audit-log.jsonl",
+      "backup": ".workflow/.trash/knowledge-audit-{timestamp}/"
+    }
+  },
+  "deprecation_strategy": {
+    "text_storage": {
+      "method": "status=\"deprecated\"",
+      "preserves_history": true,
+      "location": "原地保留"
+    },
+    "artifact_storage": {
+      "method": "软删到 .trash/ 或 物理擦除",
+      "preserves_history": false,
+      "requires_double_confirm": true
+    }
+  },
+  "comparison_with_fabric": {
+    "key_differences": [
+      "maestro-flow: 显式三态决策 (keep/deprecate/delete), 用户驱动",
+      "fabric-v2: 自动化 lint + doctor 修复, 可选用户确认",
+      "maestro-flow: 集中式审计 skill",
+      "fabric-v2: 分布式 lint checks (48+) + 专用命令 (doctor/review/archive)",
+      "maestro-flow: 单一 backup tarball",
+      "fabric-v2: events.jsonl 审计追踪 + id-redirect 机制"
+    ]
+  }
+}
