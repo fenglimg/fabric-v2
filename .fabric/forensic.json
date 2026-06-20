@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-06-20T04:16:10.723Z",
-  "generated_by": "fabric-cli@2.2.0-rc.13",
+  "generated_at": "2026-06-20T07:18:53.485Z",
+  "generated_by": "fabric-cli@2.2.0-rc.11",
   "target": "C:\\Project\\fabric-v2",
   "project_name": "fabric-monorepo",
   "framework": {
@@ -13,15 +13,15 @@
     ]
   },
   "topology": {
-    "total_files": 18365,
+    "total_files": 18363,
     "by_ext": {
       ".cjs": 1024,
       ".csv": 697,
-      ".db": 1,
+      ".db": 2,
       ".gz": 42,
       ".html": 34,
       ".json": 5985,
-      ".jsonl": 116,
+      ".jsonl": 117,
       ".log": 88,
       ".md": 5321,
       ".mdc": 14,
@@ -34,8 +34,7 @@
       ".sh": 32,
       ".snap": 68,
       ".svg": 16,
-      ".tgz": 1,
-      ".ts": 4114,
+      ".ts": 4111,
       ".tsx": 100,
       ".txt": 268,
       ".yaml": 21,
@@ -231,7 +230,7 @@
       ],
       "coverage": {
         "ratio": 0.007,
-        "total": 4214,
+        "total": 4211,
         "matched": 30,
         "co_occurring_patterns": [
           "meta-sidecar"
