@@ -758,6 +758,16 @@ export const zhCNMessages: Messages = {
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
   "doctor.check.stale_archive.remediation":
     "通过 `/fabric-review reject <id>` 归档该 stale draft,或若仍相关则复活它。(移动 store 文件是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露陈旧。)",
+  // v2.2 C1: knowledge promotion lint (promotion_candidate, info kind)。
+  "doctor.check.promotion_candidate.name": "Knowledge promotion candidate",
+  "doctor.check.promotion_candidate.ok":
+    "没有 verified knowledge entries 达到 proven 晋升的 related 入度门槛。",
+  "doctor.check.promotion_candidate.message.singular":
+    "{count} 个 verified knowledge entry 的 related 入度 ≥{threshold},结构上够中心,值得 review 晋升到 proven。首个:{detail}。",
+  "doctor.check.promotion_candidate.message.plural":
+    "{count} 个 verified knowledge entries 的 related 入度 ≥{threshold},结构上够中心,值得 review 晋升到 proven。首个:{detail}。",
+  "doctor.check.promotion_candidate.remediation":
+    "通过 `/fabric-review` 复核这些 entry,确认 0 dismiss、cold-eval 自足、属地基级后 `modify <id>` 升到 proven。(晋升判定是 store 写侧 review 的职责 — 这个读侧 lint 只 surface 结构中心的候选。)",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

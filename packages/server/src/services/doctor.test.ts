@@ -231,6 +231,8 @@ describe("runDoctorReport", () => {
       // rebuilt store-aware (age from events.jsonl last-active, KT-DEC-0023).
       "Knowledge orphan demote",
       "Knowledge stale archive",
+      // v2.2 C1: knowledge promotion candidate (info kind — growth counterpart).
+      "Knowledge promotion candidate",
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
@@ -262,7 +264,8 @@ describe("runDoctorReport", () => {
     // the registry) → 40.
     // B2 skill-router (A4): +1 router_chain_ref (fabric/ S_CHAIN reference
     // backstop) → 41.
-    expect(report.checks).toHaveLength(41);
+    // v2.2 C1: +1 promotion_candidate (knowledge growth lint, info kind) → 42.
+    expect(report.checks).toHaveLength(42);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

@@ -774,6 +774,16 @@ export const enMessages: Messages = {
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
     "Archive the stale draft via `/fabric-review reject <id>`, or revive it if still relevant. (Moving store-backed files is the store-write flow's job — this read-side lint only surfaces the staleness.)",
+  // v2.2 C1: knowledge promotion lint (promotion_candidate, info kind).
+  "doctor.check.promotion_candidate.name": "Knowledge promotion candidate",
+  "doctor.check.promotion_candidate.ok":
+    "No verified knowledge entries reach the related in-degree threshold for proven promotion.",
+  "doctor.check.promotion_candidate.message.singular":
+    "{count} verified knowledge entry has related in-degree ≥{threshold} (structurally central) and is worth reviewing for promotion to proven. First: {detail}.",
+  "doctor.check.promotion_candidate.message.plural":
+    "{count} verified knowledge entries have related in-degree ≥{threshold} (structurally central) and are worth reviewing for promotion to proven. First: {detail}.",
+  "doctor.check.promotion_candidate.remediation":
+    "Review these entries via `/fabric-review` and (after confirming 0 dismissals, cold-eval self-sufficiency, and foundational value) `modify <id>` to proven. (The promotion judgment is the store-write review's job — this read-side lint only surfaces the structurally-central candidates.)",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

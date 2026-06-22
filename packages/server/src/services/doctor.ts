@@ -63,6 +63,10 @@ import {
   createStaleArchiveCheck,
   inspectStoreKnowledgeAge,
 } from "./doctor-knowledge-age.js";
+import {
+  createPromotionCandidateCheck,
+  inspectStoreKnowledgePromotion,
+} from "./doctor-knowledge-promotion.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -710,6 +714,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // / KT-DEC-0023), so the last-active index is built once and injected.
   const lastActiveIndex = await buildLastActiveIndex(projectRoot);
   const knowledgeAge = await inspectStoreKnowledgeAge(projectRoot, lintNow, lastActiveIndex);
+  // v2.2 C1: knowledge PROMOTION (growth counterpart of the decay lints).
+  // Surfaces verified entries with `related` in-degree ≥ threshold as proven
+  // candidates (decisions/importance-is-maturity-not-usage-count: in-degree is
+  // the one importance proxy that is neither usage-blind to broad nor
+  // self-reinforcing). Detection-only — promotion judgment is fabric-review's.
+  const knowledgePromotion = await inspectStoreKnowledgePromotion(projectRoot);
   const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a store summary count, not a time-decayed
@@ -904,6 +914,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
     createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
     createStaleArchiveCheck(t, knowledgeAge.staleArchive),
+    // v2.2 C1: knowledge promotion candidate (info kind — opportunity, not defect).
+    createPromotionCandidateCheck(t, knowledgePromotion),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos
