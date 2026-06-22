@@ -98,16 +98,16 @@ function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowl
     user_messages_summary: partial.user_messages_summary ?? "Test summary body.",
     type: partial.type ?? "decisions",
     slug: partial.slug ?? "test-slug",
-    layer: partial.layer,
+    // v2.2 C1 (W1): author-facing scope is `audience` + `paths` only.
+    audience: partial.audience,
     proposed_reason: partial.proposed_reason ?? "diagnostic-then-fix",
     session_context:
       partial.session_context ??
       "Session goal: validate extract-knowledge. Turning point: contract evolved at rc.7 to capture reason + context.",
-    // v2.0.0-rc.8 A1: optional relevance fields. Defaults to undefined so
-    // existing tests exercise the omit-line code path; opt-in tests set them
-    // explicitly through `partial` to verify the YAML emit + degrade flow.
-    relevance_scope: partial.relevance_scope,
-    relevance_paths: partial.relevance_paths,
+    // v2.2 C1 (W1): `paths` presence derives relevance_scope (narrow|broad).
+    // Defaults to undefined so existing tests exercise the omit-line path;
+    // opt-in tests set it explicitly to verify the YAML emit + degrade flow.
+    paths: partial.paths,
     // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields.
     // Default to undefined so the existing suite exercises the omit-line path.
     intent_clues: partial.intent_clues,
@@ -866,7 +866,7 @@ describe("extractKnowledge", () => {
       user_messages_summary: "Team-layer body.",
       type: "decisions",
       slug: "team-write",
-      layer: "team",
+      audience: "team",
     }));
 
     expect(result.pending_path).toContain("knowledge/pending/decisions/team-write.md");
@@ -896,7 +896,7 @@ describe("extractKnowledge", () => {
       user_messages_summary: "Personal-layer body.",
       type: "guidelines",
       slug: "personal-write",
-      layer: "personal",
+      audience: "personal",
     }));
 
     expect(result.pending_path).toContain("knowledge/pending/guidelines/personal-write.md");
@@ -975,9 +975,8 @@ describe("extractKnowledge", () => {
       user_messages_summary: "Narrow team-layer decision body.",
       type: "decisions",
       slug: "a1-narrow-team",
-      layer: "team",
-      relevance_scope: "narrow",
-      relevance_paths: ["src/auth/**", "src/oauth/**"],
+      audience: "team",
+      paths: ["src/auth/**", "src/oauth/**"],
     }));
 
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
@@ -1024,9 +1023,8 @@ describe("extractKnowledge", () => {
       user_messages_summary: "Personal-layer entry that tried to declare narrow scope.",
       type: "decisions",
       slug: "a1-personal-narrow",
-      layer: "personal",
-      relevance_scope: "narrow",
-      relevance_paths: ["src/personal/**"],
+      audience: "personal",
+      paths: ["src/personal/**"],
     }));
 
     // Pending file landed in the personal store with degraded frontmatter.
@@ -1083,8 +1081,7 @@ describe("extractKnowledge", () => {
       projectRootB,
       buildInput({
         ...baseTriple,
-        relevance_scope: "narrow",
-        relevance_paths: ["src/**"],
+        paths: ["src/**"],
       }),
     );
 
@@ -1093,8 +1090,7 @@ describe("extractKnowledge", () => {
       projectRootC,
       buildInput({
         ...baseTriple,
-        relevance_scope: "broad",
-        relevance_paths: [],
+        paths: [],
       }),
     );
 

@@ -364,32 +364,33 @@ export async function extractKnowledge(
   //                                                    mirrors review.ts search
   //                                                    convention for personal
   //                                                    canonical entries)
-  const semanticScope = input.semantic_scope;
+  // v2.2 C1 (W1): author-facing scope is now `audience` + `paths` only. The
+  // engine derives the rest:
+  //   layer           ← audience personal-ness (no separate author `layer`; the
+  //                     physical write store is the hard privacy boundary, R5#3).
+  //   relevance_scope ← `paths` presence: non-empty → narrow, empty → broad.
+  //                     This eliminates the old narrow+empty illegal state by
+  //                     construction (KT-MOD-0001) — there is no flag to conflict.
+  const semanticScope = input.audience;
   const scopeIsPersonal = semanticScope !== undefined && isPersonalScope(semanticScope);
-  if (
-    semanticScope !== undefined &&
-    input.layer !== undefined &&
-    scopeIsPersonal !== (input.layer === "personal")
-  ) {
-    throw new Error(
-      `semantic_scope '${semanticScope}' conflicts with compatibility layer '${input.layer}'`,
-    );
-  }
-  const layer = scopeIsPersonal ? "personal" : input.layer ?? "team";
+  const layer = scopeIsPersonal ? "personal" : "team";
 
-  // v2.0.0-rc.8 A1: personal-implies-broad silent degrade. When the caller
-  // declares both `layer: personal` and `relevance_scope: narrow`, the scope
-  // is invalid by construction — personal knowledge crosses projects so
-  // workspace-relative `relevance_paths` lose meaning. Mirror the rc.5
-  // review.ts:725-739 behaviour: flip to broad + [] and emit a
-  // `knowledge_scope_degraded` event so the audit trail records the original
-  // intent. The pending file has no canonical stable_id yet (id late-bind at
-  // approve), so we use a `pending:<idempotency_key>` sentinel — review.ts
-  // can later attach the real stable_id when the entry approves. The event
-  // is emitted BEFORE the knowledge_proposed write so log readers see the
-  // degrade before the pending file appears.
-  let relevanceScope = input.relevance_scope;
-  let relevancePaths = input.relevance_paths;
+  // v2.0.0-rc.8 A1 (carried into C1): personal-implies-broad silent degrade.
+  // Personal knowledge crosses projects, so workspace-relative `paths` lose
+  // meaning — flip to broad + [] and emit a `knowledge_scope_degraded` event so
+  // the audit trail records the original intent. The pending file has no
+  // canonical stable_id yet (id late-binds at approve), so we use a
+  // `pending:<idempotency_key>` sentinel — review.ts can attach the real
+  // stable_id when the entry approves. The event is emitted BEFORE the
+  // knowledge_proposed write so log readers see the degrade before the pending
+  // file appears.
+  // C1: relevance is DERIVED from `paths` presence, and the YAML lines are
+  // emitted only when the author actually supplied `paths` — mirroring the rc.8
+  // A1 "supplied → emit (verbatim/degraded), omitted → meta-builder defaults to
+  // broad+[]" contract. Author omits paths → undefined → no relevance YAML line.
+  let relevancePaths = input.paths;
+  let relevanceScope: "narrow" | "broad" | undefined =
+    relevancePaths === undefined ? undefined : relevancePaths.length > 0 ? "narrow" : "broad";
   const shouldAutoDegrade =
     layer === "personal" && relevanceScope === "narrow";
   if (shouldAutoDegrade) {

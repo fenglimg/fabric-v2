@@ -685,22 +685,23 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
   slug: z
     .string()
     .describe("URL-safe short identifier proposed by the Skill; server may sanitize"),
-  // Store-only cutover: layer is a compatibility audience hint. The server
-  // resolves the actual write target through semantic_scope/write_routes and
-  // writes to the selected mounted store's knowledge/pending/<type>/ tree.
-  // Defaults to 'team' to preserve existing call sites (Skill bumps as needed).
-  layer: z
-    .enum(["team", "personal"])
-    .optional()
-    .describe(
-      "Compatibility storage audience. 'personal' writes to the personal store; non-personal writes resolve by semantic_scope/write_routes. Defaults to 'team'.",
-    ),
-  semantic_scope: z
+  // v2.2 C1 (W1) — author-facing scope is now TWO fields only: `audience` +
+  // `paths`. Everything else (layer / visibility_store / relevance_scope /
+  // store) is engine-derived, never author input (C1 §一.1). The physical write
+  // store is the hard privacy boundary (cross-store-write R5#3); `audience` only
+  // subdivides WHO within that boundary.
+  //
+  //   audience — the open scope coordinate describing WHO the entry is for
+  //              (personal | team | project:x | org:y...). Replaces the old
+  //              `layer` + `semantic_scope` pair: a `personal` coordinate routes
+  //              to the personal store; everything else resolves via write_routes.
+  //              Omit → engine defaults to project:<active> (bound repo) or team.
+  audience: z
     .string()
     .regex(SCOPE_COORDINATE_PATTERN)
     .optional()
     .describe(
-      "Logical audience/write route coordinate for this pending entry, e.g. personal, team, project:fabric-v2, org:acme:team:platform. Server validates and resolves it through write_routes.",
+      "WHO this entry is for — an open scope coordinate (personal | team | project:x | org:y...). The sole author-facing audience field; the engine derives layer/visibility_store/store from it + the physical write store. Omit to default to project:<active> (bound repo) or team.",
     ),
   // v2.0.0-rc.7 T6: proposed_reason — required enum that drives `## Why
   // proposed` rendering. Skills (archive / import / review) infer the
@@ -729,17 +730,19 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
   // a `knowledge_scope_degraded` event keyed by `pending:<idempotency_key>`.
   // NOTE: these fields MUST NOT be part of the idempotency hash inputs at
   // extract-knowledge.ts:78 — preserves rc.5→rc.7 collision detection.
-  relevance_scope: z
-    .enum(["narrow", "broad"])
-    .optional()
-    .describe(
-      "Optional relevance scope. 'narrow' restricts plan-context-hint surfacing to relevance_paths; 'broad' always surfaces. Omit to let the meta-builder default to 'broad'. Personal + narrow is silently degraded to broad + [].",
-    ),
-  relevance_paths: z
+  //   paths — relevance anchors (workspace-relative globs/paths). The engine
+  //           DERIVES relevance_scope from this field's presence: non-empty →
+  //           narrow (surface only when an edit matches an anchor); empty/omitted
+  //           → broad (always surface). This eliminates the old separate
+  //           relevance_scope flag and its narrow+empty illegal state by
+  //           construction (KT-MOD-0001). Glob syntax follows Copilot `applyTo`
+  //           / Cursor `globs` (cross-client moat). Personal audience forces
+  //           broad+[] (workspace-relative paths cross-project lose meaning).
+  paths: z
     .array(z.string())
     .optional()
     .describe(
-      "Optional path anchors for narrow scope. Workspace-relative globs or paths. Omit to let the meta-builder default to []. Ignored when scope is broad (server preserves the array for audit).",
+      "Relevance anchors (workspace-relative globs/paths). Non-empty → narrow (surface only on matching edits); empty/omitted → broad (always surface). The engine derives relevance_scope from this — there is no separate scope flag.",
     ),
   // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured fields that the
   // skill-side LLM populates from raw observations. The same information

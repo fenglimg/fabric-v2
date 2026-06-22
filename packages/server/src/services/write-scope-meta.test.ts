@@ -121,7 +121,7 @@ describe("W1/A1 — semantic_scope + visibility_store frontmatter", () => {
       required_stores: [{ id: "team" }],
       active_write_store: "team",
     });
-    await extractKnowledge(projectRoot, { ...teamInput, layer: "personal", slug: "personal-pref" });
+    await extractKnowledge(projectRoot, { ...teamInput, audience: "personal", slug: "personal-pref" });
     const fm = readPendingFrontmatter(PERSONAL, "decisions");
     expect(fm).toMatch(/^semantic_scope: personal$/mu);
     expect(fm).toMatch(/^visibility_store: "personal"$/mu);

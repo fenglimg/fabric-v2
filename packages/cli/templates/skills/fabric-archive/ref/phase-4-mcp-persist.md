@@ -11,9 +11,10 @@ mcp__fabric__fab_extract_knowledge({
   user_messages_summary: "<compact prose ≤500 chars>",
   type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
   slug: "<kebab-case-2-to-5-words>",
-  layer: "team" | "personal",
-  relevance_scope: "narrow" | "broad",         // from Phase 3.5
-  relevance_paths: ["<glob1>", "<literal2>", ...],  // narrow ⇒ derived; broad ⇒ []
+  // v2.2 C1 (W1): author-facing scope is TWO fields only — `audience` + `paths`.
+  // The engine derives layer / visibility_store / store / relevance_scope.
+  audience: "team" | "personal" | "project:<id>" | "org:<...>",  // WHO it's for (open coordinate); omit → engine default (project:<active> | team)
+  paths: ["<glob1>", "<literal2>", ...],  // relevance anchors; non-empty ⇒ narrow, empty/omit ⇒ broad (relevance_scope is derived from this — no separate flag)
   // v2.0.0-rc.7 T6: required fields for future-self reviewability.
   proposed_reason:
     "explicit-user-mark"      // user said "always / never / 下次注意" etc.

@@ -279,44 +279,44 @@ describe("FabExtractKnowledgeInputSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  // v2.0.0-rc.8 A1: relevance_scope / relevance_paths surface coverage.
-  it("A1: accepts narrow + relevance_paths array", () => {
+  // v2.2 C1 (W1): author-facing scope is `audience` + `paths` only. Relevance
+  // (narrow|broad) is DERIVED downstream from `paths` presence — the schema
+  // surface no longer carries layer / semantic_scope / relevance_scope.
+  it("C1: accepts a paths array (derives narrow downstream)", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       source_sessions: ["sess-rel"],
       recent_paths: [],
       user_messages_summary: "x",
       type: "decisions",
       slug: "rel-narrow",
-      relevance_scope: "narrow",
-      relevance_paths: ["src/**"],
+      audience: "team",
+      paths: ["src/**"],
       ...requiredExtras,
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.relevance_scope).toBe("narrow");
-      expect(result.data.relevance_paths).toEqual(["src/**"]);
+      expect(result.data.paths).toEqual(["src/**"]);
+      expect(result.data.audience).toBe("team");
     }
   });
 
-  it("A1: accepts broad + empty paths array", () => {
+  it("C1: accepts an empty paths array (derives broad downstream)", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       source_sessions: ["sess-rel"],
       recent_paths: [],
       user_messages_summary: "x",
       type: "decisions",
       slug: "rel-broad",
-      relevance_scope: "broad",
-      relevance_paths: [],
+      paths: [],
       ...requiredExtras,
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.relevance_scope).toBe("broad");
-      expect(result.data.relevance_paths).toEqual([]);
+      expect(result.data.paths).toEqual([]);
     }
   });
 
-  it("A1: omitting relevance fields stays valid (defaults applied downstream)", () => {
+  it("C1: omitting audience + paths stays valid (engine defaults downstream)", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       source_sessions: ["sess-rel"],
       recent_paths: [],
@@ -327,32 +327,32 @@ describe("FabExtractKnowledgeInputSchema", () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.relevance_scope).toBeUndefined();
-      expect(result.data.relevance_paths).toBeUndefined();
+      expect(result.data.audience).toBeUndefined();
+      expect(result.data.paths).toBeUndefined();
     }
   });
 
-  it("A1: rejects unknown relevance_scope enum value", () => {
+  it("C1: rejects an audience that is not a valid scope coordinate", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       source_sessions: ["sess-rel"],
       recent_paths: [],
       user_messages_summary: "x",
       type: "decisions",
-      slug: "rel-bad-scope",
-      relevance_scope: "global",
+      slug: "rel-bad-audience",
+      audience: "Has Spaces!",
       ...requiredExtras,
     });
     expect(result.success).toBe(false);
   });
 
-  it("A1: rejects relevance_paths with non-string items", () => {
+  it("C1: rejects paths with non-string items", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       source_sessions: ["sess-rel"],
       recent_paths: [],
       user_messages_summary: "x",
       type: "decisions",
       slug: "rel-bad-paths",
-      relevance_paths: ["src/**", 42],
+      paths: ["src/**", 42],
       ...requiredExtras,
     });
     expect(result.success).toBe(false);

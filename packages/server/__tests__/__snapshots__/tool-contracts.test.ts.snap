@@ -13,6 +13,11 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
     "properties": {
+      "audience": {
+        "description": "WHO this entry is for — an open scope coordinate (personal | team | project:x | org:y...). The sole author-facing audience field; the engine derives layer/visibility_store/store from it + the physical write store. Omit to default to project:<active> (bound repo) or team.",
+        "pattern": "^[a-z0-9_-]+(:[a-z0-9_-]+)*$",
+        "type": "string",
+      },
       "evidence_paths": {
         "description": "Workspace-relative paths the agent CONSULTED (read but never modified) while building this knowledge. Documents context without affecting activation. Lifted from the legacy body ## Evidence markdown block into structured frontmatter so plan-context retrieval can read it as data.",
         "items": {
@@ -34,14 +39,6 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         },
         "type": "array",
       },
-      "layer": {
-        "description": "Compatibility storage audience. 'personal' writes to the personal store; non-personal writes resolve by semantic_scope/write_routes. Defaults to 'team'.",
-        "enum": [
-          "team",
-          "personal",
-        ],
-        "type": "string",
-      },
       "must_read_if": {
         "description": "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
         "type": "string",
@@ -56,6 +53,13 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
           "domain-vocabulary",
         ],
         "type": "string",
+      },
+      "paths": {
+        "description": "Relevance anchors (workspace-relative globs/paths). Non-empty → narrow (surface only on matching edits); empty/omitted → broad (always surface). The engine derives relevance_scope from this — there is no separate scope flag.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
       },
       "proposed_reason": {
         "description": "Why this entry is being proposed. Drives \`## Why proposed\` rendering and enables future maturity-promotion scoring.",
@@ -75,26 +79,6 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
           "type": "string",
         },
         "type": "array",
-      },
-      "relevance_paths": {
-        "description": "Optional path anchors for narrow scope. Workspace-relative globs or paths. Omit to let the meta-builder default to []. Ignored when scope is broad (server preserves the array for audit).",
-        "items": {
-          "type": "string",
-        },
-        "type": "array",
-      },
-      "relevance_scope": {
-        "description": "Optional relevance scope. 'narrow' restricts plan-context-hint surfacing to relevance_paths; 'broad' always surfaces. Omit to let the meta-builder default to 'broad'. Personal + narrow is silently degraded to broad + [].",
-        "enum": [
-          "narrow",
-          "broad",
-        ],
-        "type": "string",
-      },
-      "semantic_scope": {
-        "description": "Logical audience/write route coordinate for this pending entry, e.g. personal, team, project:fabric-v2, org:acme:team:platform. Server validates and resolves it through write_routes.",
-        "pattern": "^[a-z0-9_-]+(:[a-z0-9_-]+)*$",
-        "type": "string",
       },
       "session_context": {
         "description": "3-5 line markdown blob — session goal + key turning point. Reviewed by future-self without transcript access.",

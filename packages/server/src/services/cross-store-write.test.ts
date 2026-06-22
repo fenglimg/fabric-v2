@@ -250,7 +250,7 @@ describe("cross-store write (W1-T2)", () => {
 
     const result = await extractKnowledge(projectRoot, {
       ...goodInput,
-      semantic_scope: "project:fabric-v2",
+      audience: "project:fabric-v2",
     });
     expect(result.pending_path).not.toBe("");
     expect(existsSync(platformPendingDir("decisions"))).toBe(true);
@@ -272,14 +272,14 @@ describe("cross-store write (W1-T2)", () => {
     await expect(
       extractKnowledge(projectRoot, {
         ...goodInput,
-        semantic_scope: "project:fabric-v2",
+        audience: "project:fabric-v2",
       }),
     ).rejects.toThrow(/write-target store resolved/u);
     expect(existsSync(platformPendingDir("decisions"))).toBe(false);
     expect(existsSync(storePendingDir("decisions"))).toBe(false);
   });
 
-  it("semantic_scope personal without layer writes as personal compatibility layer", async () => {
+  it("audience personal routes to the personal store (layer derived from audience)", async () => {
     const projectRoot = await createProject();
     mountTeamStore();
     await writeFile(
@@ -289,31 +289,17 @@ describe("cross-store write (W1-T2)", () => {
 
     const result = await extractKnowledge(projectRoot, {
       ...goodInput,
-      layer: undefined,
-      slug: "personal-semantic-scope",
-      semantic_scope: "personal",
+      slug: "personal-audience",
+      audience: "personal",
     });
     expect(result.pending_path).not.toBe("");
     expect(existsSync(personalPendingDir("decisions"))).toBe(true);
     expect(existsSync(storePendingDir("decisions"))).toBe(false);
   });
 
-  it("rejects conflicting semantic_scope and compatibility layer", async () => {
-    const projectRoot = await createProject();
-    mountTeamStore();
-    await writeFile(
-      join(projectRoot, ".fabric", "fabric-config.json"),
-      `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2)}\n`,
-    );
-
-    await expect(
-      extractKnowledge(projectRoot, {
-        ...goodInput,
-        layer: "team",
-        semantic_scope: "personal",
-      }),
-    ).rejects.toThrow(/conflicts with compatibility layer/u);
-  });
+  // v2.2 C1 (W1): the old "semantic_scope ⊥ layer conflict" test is gone — with
+  // no author-facing `layer`, layer is derived from `audience` and the conflict
+  // state is structurally impossible (good-taste edge-case elimination).
 
   it("hard-fails (no dual-root fallback) when no global config exists", async () => {
     const projectRoot = await createProject();
