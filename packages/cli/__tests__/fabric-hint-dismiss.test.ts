@@ -106,6 +106,9 @@ describe("fabric-hint main() dismiss suppression (rc.37 NEW-16)", () => {
     delete process.env.CLAUDE_PROJECT_DIR;
     try {
       seedArchiveTrigger();
+      // v2.2 C1 (W5): the Stop human nudge is QUIET by default — opt in to the
+      // human sink (verbose) to assert the human-facing dismiss-option affordance.
+      writeConfig({ nudge_mode: "verbose" });
       const writes: string[] = [];
       hook.main({ cwd, now, stdin_payload: { session_id: "s1" } }, { stdout: { write: (s) => writes.push(s) } });
       expect(writes).toHaveLength(1);

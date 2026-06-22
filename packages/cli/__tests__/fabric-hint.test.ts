@@ -770,8 +770,11 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     // v2.2 dual-sink (Goal A / D3): soft envelope, NOT decision:block.
     const emit = archiveEmit(writes);
     expect(JSON.parse(writes[0] as string).decision).toBeUndefined();
-    expect(emit.systemMessage).toMatch(/20 次编辑/); // human sink
-    expect(emit.ai).toMatch(/20 次编辑/); // AI sink
+    // v2.2 C1 (W5): Stop human nudge is QUIET by default — the archive signal
+    // lives in the always-on AI/observation sink + events.jsonl telemetry, not a
+    // real-time human banner (opt back in via observe.stop=true / verbose).
+    expect(emit.systemMessage).toBeUndefined(); // human sink gated quiet
+    expect(emit.ai).toMatch(/20 次编辑/); // AI sink (always-on, observation)
   });
 
   it("crack 1 regression: a neighbour session's mutations do NOT count toward this session", () => {
@@ -830,7 +833,7 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
       { stdout: { write: (c: string) => writes.push(c) } },
     );
     expect(writes).toHaveLength(1);
-    expect(archiveEmit(writes).systemMessage).toMatch(/20 次编辑/);
+    expect(archiveEmit(writes).ai).toMatch(/20 次编辑/); // W5: AI sink carries it; human quiet by default
   });
 
   it("appends per-store read-set label to the Stop hint reason (v2.1 P4, F4/S63)", () => {
@@ -871,8 +874,8 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
       );
       expect(writes).toHaveLength(1);
       const emit = archiveEmit(writes);
-      expect(emit.systemMessage).toContain("read-set stores:");
-      expect(emit.systemMessage).toContain("team (write)");
+      expect(emit.ai).toContain("read-set stores:"); // W5: reason on AI sink; human quiet by default
+      expect(emit.ai).toContain("team (write)");
     } finally {
       if (prevHome === undefined) delete process.env.FABRIC_HOME;
       else process.env.FABRIC_HOME = prevHome;
@@ -922,7 +925,8 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
 
     expect(writes).toHaveLength(1);
     // soft dual-sink envelope carries the archive reason (no decision:block).
-    expect(archiveEmit(writes).systemMessage).toMatch(/fabric-archive/);
+    // W5: AI sink carries it; the human banner is quiet by default.
+    expect(archiveEmit(writes).ai).toMatch(/fabric-archive/);
   });
 });
 
@@ -976,7 +980,8 @@ describe("fabric-hint.cjs — main", () => {
       expect(writes).toHaveLength(1);
       const env = JSON.parse(writes[0] as string);
       expect(env.decision).toBeUndefined(); // NOT a block contract
-      expect(env.systemMessage).toMatch(/fabric-archive/); // human sink
+      // W5: human sink quiet by default; AI sink (always-on) carries the reason.
+      expect(env.systemMessage).toBeUndefined(); // human sink gated quiet
       expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-archive/); // AI sink
     } finally {
       if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
@@ -2258,7 +2263,9 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
       expect(writes).toHaveLength(1);
-      const reason = JSON.parse(writes[0] as string).systemMessage as string;
+      // W5: human banner quiet by default; the identical reason text rides the
+      // always-on AI/observation sink, so assert the banner content there.
+      const reason = JSON.parse(writes[0] as string).hookSpecificOutput.additionalContext as string;
       expect(reason).toMatch(/📋 Fabric:/);
       expect(reason).toMatch(/最近活动集中在:/);
       // 2-level dir bucketing: packages/server/* collapses to "packages/server/".

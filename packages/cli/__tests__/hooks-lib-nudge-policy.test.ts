@@ -127,10 +127,36 @@ describe("nudge-policy — structural gates (mode-independent, C5/D6)", () => {
     }
   });
 
-  it("Stop low-value suppresses; high-value emits (value-gate)", () => {
+  it("Stop low-value suppresses (value-gate)", () => {
     const root = makeRoot({ nudge_mode: "normal" });
     expect(nudgePolicy.resolveHumanSink(root, "stop", { highValue: false }).emitHuman).toBe(false);
-    expect(nudgePolicy.resolveHumanSink(root, "stop", { highValue: true }).emitHuman).toBe(true);
+  });
+
+  // v2.2 C1 (W5): the Stop human nudge defaults to QUIET (observe-only telemetry)
+  // even with a high-value signal — the edit-count/session lives in events.jsonl
+  // for after-the-fact querying; the Stop hook should not interrupt with a
+  // real-time human UI (user directive 2026-06-22). Opt back in via the verbose
+  // preset or observe.stop=true.
+  it("Stop high-value is QUIET by default; verbose / observe.stop=true opts back in", () => {
+    expect(
+      nudgePolicy.resolveHumanSink(makeRoot({ nudge_mode: "normal" }), "stop", { highValue: true })
+        .emitHuman,
+    ).toBe(false);
+    expect(
+      nudgePolicy.resolveHumanSink(makeRoot({ nudge_mode: "minimal" }), "stop", { highValue: true })
+        .emitHuman,
+    ).toBe(false);
+    expect(
+      nudgePolicy.resolveHumanSink(makeRoot({ nudge_mode: "verbose" }), "stop", { highValue: true })
+        .emitHuman,
+    ).toBe(true);
+    expect(
+      nudgePolicy.resolveHumanSink(
+        makeRoot({ nudge_mode: "normal", observe: { stop: true } }),
+        "stop",
+        { highValue: true },
+      ).emitHuman,
+    ).toBe(true);
   });
 });
 
