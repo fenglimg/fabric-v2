@@ -233,6 +233,9 @@ describe("runDoctorReport", () => {
       "Knowledge stale archive",
       // v2.2 C1: knowledge promotion candidate (info kind — growth counterpart).
       "Knowledge promotion candidate",
+      // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
+      // counterpart to the usage-age decay it is exempt from).
+      "Knowledge broad review recheck",
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
@@ -265,7 +268,8 @@ describe("runDoctorReport", () => {
     // B2 skill-router (A4): +1 router_chain_ref (fabric/ S_CHAIN reference
     // backstop) → 41.
     // v2.2 C1: +1 promotion_candidate (knowledge growth lint, info kind) → 42.
-    expect(report.checks).toHaveLength(42);
+    // v2.2 C1: +1 broad_review_recheck (broad's review-clock lint, info kind) → 43.
+    expect(report.checks).toHaveLength(43);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

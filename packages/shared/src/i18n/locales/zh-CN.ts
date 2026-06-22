@@ -768,6 +768,16 @@ export const zhCNMessages: Messages = {
     "{count} 个 verified knowledge entries 的 related 入度 ≥{threshold},结构上够中心,值得 review 晋升到 proven。首个:{detail}。",
   "doctor.check.promotion_candidate.remediation":
     "通过 `/fabric-review` 复核这些 entry,确认 0 dismiss、cold-eval 自足、属地基级后 `modify <id>` 升到 proven。(晋升判定是 store 写侧 review 的职责 — 这个读侧 lint 只 surface 结构中心的候选。)",
+  // v2.2 C1: broad review-recheck lint (broad_review_recheck, info kind)。
+  "doctor.check.broad_review_recheck.name": "Knowledge broad review recheck",
+  "doctor.check.broad_review_recheck.ok":
+    "没有 broad-scope knowledge entries 超期未做 review 再确认。",
+  "doctor.check.broad_review_recheck.message.singular":
+    "{count} 个 broad-scope knowledge entry 已 {thresholdDays}d+ 没经过 fab-review 再确认,值得复查(broad 豁免 usage-age 降级,这是它的 review 时钟)。首个:{detail}。",
+  "doctor.check.broad_review_recheck.message.plural":
+    "{count} 个 broad-scope knowledge entries 已 {thresholdDays}d+ 没经过 fab-review 再确认,值得复查(broad 豁免 usage-age 降级,这是它的 review 时钟)。首个:{detail}。",
+  "doctor.check.broad_review_recheck.remediation":
+    "通过 `/fabric-review` 再确认每条(approve/modify 会盖一个新的 review 时间戳),或若不再成立则降级/驳回。这是非阻塞提示,绝不自动降级 — broad 知识在 reviewer 动手前持续 surface。",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

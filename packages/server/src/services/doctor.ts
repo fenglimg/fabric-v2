@@ -67,6 +67,10 @@ import {
   createPromotionCandidateCheck,
   inspectStoreKnowledgePromotion,
 } from "./doctor-knowledge-promotion.js";
+import {
+  createBroadReviewRecheckCheck,
+  inspectStoreBroadReviewRecheck,
+} from "./doctor-knowledge-review-recheck.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -720,6 +724,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // the one importance proxy that is neither usage-blind to broad nor
   // self-reinforcing). Detection-only — promotion judgment is fabric-review's.
   const knowledgePromotion = await inspectStoreKnowledgePromotion(projectRoot);
+  // v2.2 C1: broad REVIEW-RECHECK (the follow-up to broad's age-decay exemption).
+  // broad is usage-blind so it is exempt from orphan_demote; instead its
+  // continued validity is checked against the review-confirmation clock
+  // (last_review_confirmed_at, stamped at approve/modify). Surfaces broad entries
+  // unconfirmed beyond the threshold as a non-blocking recheck nudge (info kind).
+  const broadReviewRecheck = await inspectStoreBroadReviewRecheck(projectRoot, lintNow);
   const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a store summary count, not a time-decayed
@@ -916,6 +926,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createStaleArchiveCheck(t, knowledgeAge.staleArchive),
     // v2.2 C1: knowledge promotion candidate (info kind — opportunity, not defect).
     createPromotionCandidateCheck(t, knowledgePromotion),
+    // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
+    // counterpart to the usage-age decay it is exempt from).
+    createBroadReviewRecheckCheck(t, broadReviewRecheck),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos

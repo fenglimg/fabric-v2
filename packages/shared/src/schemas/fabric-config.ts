@@ -437,6 +437,15 @@ export const fabricConfigSchema = z.object({
   orphan_demote_proven_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_verified_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
+  // v2.2 C1 (processes/maturity-promotion-rubric-v1): days a `broad` entry may
+  // go without a fab-review re-confirmation before doctor surfaces a RECHECK
+  // nudge. `broad` is EXEMPT from usage-age decay (it is SessionStart-pushed,
+  // never pull-recalled → usage-blind, KT-DEC; see doctor-knowledge-age.ts), so
+  // its continued validity is instead checked against the review-confirmation
+  // clock (`last_review_confirmed_at`, stamped at approve/modify). This is a
+  // non-blocking INFO nudge ("re-confirm"), NEVER an auto-demote. Absent → the
+  // config-loader default (180d) applies. Range 1..3650 mirrors orphan_demote.
+  broad_review_recheck_days: z.number().int().min(1).max(3650).optional(),
   // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
   // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
   // short for entries with parameterized summaries (e.g. "Use bcrypt with

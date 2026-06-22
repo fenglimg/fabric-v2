@@ -784,6 +784,16 @@ export const enMessages: Messages = {
     "{count} verified knowledge entries have related in-degree ≥{threshold} (structurally central) and are worth reviewing for promotion to proven. First: {detail}.",
   "doctor.check.promotion_candidate.remediation":
     "Review these entries via `/fabric-review` and (after confirming 0 dismissals, cold-eval self-sufficiency, and foundational value) `modify <id>` to proven. (The promotion judgment is the store-write review's job — this read-side lint only surfaces the structurally-central candidates.)",
+  // v2.2 C1: broad review-recheck lint (broad_review_recheck, info kind).
+  "doctor.check.broad_review_recheck.name": "Knowledge broad review recheck",
+  "doctor.check.broad_review_recheck.ok":
+    "No broad-scope knowledge entries are overdue for a review re-confirmation.",
+  "doctor.check.broad_review_recheck.message.singular":
+    "{count} broad-scope knowledge entry has gone {thresholdDays}d+ without a fab-review re-confirmation and is worth a recheck (broad is exempt from usage-age decay, so this is its review clock). First: {detail}.",
+  "doctor.check.broad_review_recheck.message.plural":
+    "{count} broad-scope knowledge entries have gone {thresholdDays}d+ without a fab-review re-confirmation and are worth a recheck (broad is exempt from usage-age decay, so this is its review clock). First: {detail}.",
+  "doctor.check.broad_review_recheck.remediation":
+    "Re-confirm each entry via `/fabric-review` (approve/modify stamps a fresh review timestamp), or demote/reject it if it no longer holds. This is a non-blocking nudge, never an auto-demote — broad knowledge stays surfaced until a reviewer acts.",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":
