@@ -1,6 +1,6 @@
 {
   "name": "@fenglimg/fabric-shared",
-  "version": "2.2.0-rc.11",
+  "version": "2.2.0",
   "description": "Fabric shared types — Zod schemas, i18n, atomic-write helpers, MCP payload guard, error classes. Consumed by @fenglimg/fabric-server + @fenglimg/fabric-cli.",
   "license": "MIT",
   "author": "wangzhichao <fenglimg90@gmail.com>",
