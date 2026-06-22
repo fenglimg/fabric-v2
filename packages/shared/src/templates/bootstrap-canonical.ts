@@ -94,33 +94,14 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config \`archive_edit_threshold\` 一致)/ 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 \`fab_review action="list"\` 或 \`fabric-review\` 返回的 \`pending_path\`;不要 glob 项目本地 \`.fabric/knowledge/pending\`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
 
-## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
+## Self-archive policy (v2.2 C1: 精简说明书)
 
-- **触发** (本会话出现以下任一信号, 在该 turn 回复末尾自主调用 \`fabric-archive\` skill, 走 AI 自触发入口 E3_ai_self_trigger):
-  1. **User-driven normative** — 用户消息中显式表达 normative 意图: \`以后\` / \`always\` / \`never\` / \`from now on\` / \`下次注意\` / \`记一下\` / \`永远不要\`, OR 用户在 ≥2 候选间权衡后给出 rationale 锁定方向, OR 用户拒了某建议**并**说了原因 (拒绝理由本身是知识)
-  2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑); 涵盖技术决策反转 + 工具/范式切换 + 失败重试。Anchor: 一定有"否定+替代"的两步结构, 不是单纯探索失败
+出现明确归档信号时, 于该 turn 末尾自主调用 \`fabric-archive\` skill(AI 自触发入口 E3):
 
-  老 4-state (Normative / Decision-confirmation / Explicit-dismissal / Wrong-turn) 现合并: 前 3 个全是"用户消息中显式表达"性质, 折成 1 类; 第 4 是"AI 自己的反思路径", 独立 1 类。两类各自的本质判别不变, 触发面没变窄。
-
-- **Anti-trigger** (明确不触发):
-  - 用户纯询问 (无 normative 表达)
-  - 简单 refactor / typo fix
-  - AI 自己产生的'洞察' (必须由用户消息中信号或 AI 自己的 wrong-turn 触发, 不是凭空"我学到了"性质)
-
-- **Anti-loop 三条防护**:
-  - 同 turn 最多自调 1 次
-  - 同 session 同 outcome 不重复 (若 user_dismissed, 本会话不再自调相同主题)
-  - Phase 2.5 viability gate 兜底 (skill 内部仍跑 gate, AI 判错不会乱写 pending)
-
-- **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 1.5 检测, 再 user-facing 提示):
-  \`\`\`
-  self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>
-  顺手归档: 注意到你说 \`<触发短语>\`, 已调用 fabric-archive 抓 N 条候选 → 当前 write store 的 knowledge/pending/...
-  若不该记, 答 '撤销' 我会调 fab_review reject。
-  \`\`\`
-  第一行是 Phase 1.5 Trigger Gate 识别 E3 入口的 structured marker (verbatim 字符串 \`self-archive policy triggered by signal\`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
-
-  Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
+- **触发** (二选一): ① **User-driven normative** — 用户说 \`以后\` / \`always\` / \`never\` / \`下次\` / \`记一下\`, 或在 ≥2 候选间权衡后锁定方向, 或拒了建议并给了理由(理由即知识); ② **Wrong-turn-and-revert** — 你试了 path X 反思后改走 path Y("否定+替代"两步结构, 非单纯探索失败)。
+- **不触发**: 用户纯询问 / 简单 refactor·typo / 凭空"我学到了"的洞察。
+- **防 loop**: 同 turn 最多自调 1 次; 同 session 同 outcome 不重复; skill 内 Phase 2.5 viability gate 兜底。
+- **路由 marker**: 调用时回复含一行 \`self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>\` 供 skill Phase 0 识别 E3(向后兼容老 4 信号名)。无需再写额外 user-facing 模板; skill 落 pending 后返回 \`pending_path\`, 不该记就回 \`undo\`(我调 fab_review reject)。
 
 ## Cite policy (v2.2 C1: recall 自动记账, 零首行负担)
 
@@ -181,33 +162,14 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 - **Archive cadence nudge** (rc.36): after each batch of edits (default ~20, matching the Stop hook threshold config \`archive_edit_threshold\`) / a significant decision, proactively propose the \`fabric-archive\` skill at a suitable turn — without an archive cadence the KB slowly dies.
 - **Review backlog nudge** (rc.36): to judge the pending backlog, go through \`fab_review action="list"\` or the \`pending_path\` returned by \`fabric-review\`; don't glob the project-local \`.fabric/knowledge/pending\`. When the visible pending count exceeds 10, proactively propose the \`fabric-review\` skill at a suitable turn to batch-review and avoid draft deadlock.
 
-## Self-archive policy (v2.0.0-rc.37 NEW-2: simplified 4 signals → 2 classes)
+## Self-archive policy (v2.2 C1: lean spec)
 
-- **Trigger** (when any of the following signals appears this session, autonomously invoke the \`fabric-archive\` skill at the end of that turn, via the AI self-trigger entry E3_ai_self_trigger):
-  1. **User-driven normative** — the user's message explicitly expresses normative intent: \`以后\` / \`always\` / \`never\` / \`from now on\` / \`下次注意\` / \`记一下\` / \`永远不要\`, OR the user locks a direction with rationale after weighing ≥2 candidates, OR the user rejects a suggestion **and** states a reason (the rejection reason itself is knowledge)
-  2. **Wrong-turn-and-revert** — the AI tries path X, then after reflection switches to path Y (especially when path X is a non-obvious pitfall); covers technical-decision reversals + tool/paradigm switches + failed retries. Anchor: there is always a two-step "negate + replace" structure, not mere exploratory failure
+When a clear archival signal appears, autonomously invoke the \`fabric-archive\` skill at the end of that turn (AI self-trigger entry E3):
 
-  The old 4-state set (Normative / Decision-confirmation / Explicit-dismissal / Wrong-turn) is now merged: the first 3 are all "explicitly expressed in the user's message" and fold into 1 class; the 4th is "the AI's own reflective path" and stands alone as 1 class. Each class's underlying test is unchanged; the trigger surface did not narrow.
-
-- **Anti-trigger** (explicitly does NOT trigger):
-  - Pure user questions (no normative expression)
-  - Simple refactor / typo fix
-  - AI's own 'insights' (must be triggered by a signal in the user's message or the AI's own wrong-turn, not a baseless "I learned something")
-
-- **Anti-loop, 3 guards**:
-  - At most 1 self-invocation per turn
-  - No repeat for the same outcome in the same session (if user_dismissed, don't self-invoke the same topic again this session)
-  - Phase 2.5 viability gate as backstop (the skill still runs the gate internally, so a misjudgment won't write junk pending)
-
-- **Presentation template** (insert at the end of the turn, two lines: first the marker line for Phase 1.5 detection, then the user-facing prompt):
-  \`\`\`
-  self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>
-  Archived along the way: noticed you said \`<trigger phrase>\`, invoked fabric-archive to capture N candidates → the current write store's knowledge/pending/...
-  If this shouldn't be recorded, reply 'undo' and I'll call fab_review reject.
-  \`\`\`
-  The first line is the structured marker the Phase 1.5 Trigger Gate uses to route the E3 entry (verbatim string \`self-archive policy triggered by signal\`, followed by a colon + the trigger signal name). From the second line on it's the user-facing prompt. Both lines MUST appear; without the marker line Phase 1.5 cannot route to E3_ai_self_trigger.
-
-  Backward compat: the Phase 1.5 entry-point regex recognises both the old 4 signal names (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) and the new 2 class names, so markers from old sessions still route correctly.
+- **Trigger** (either): ① **User-driven normative** — the user says \`以后\` / \`always\` / \`never\` / \`下次\` / \`记一下\`, or locks a direction with rationale after weighing ≥2 candidates, or rejects a suggestion and states a reason (the reason is knowledge); ② **Wrong-turn-and-revert** — you tried path X, then after reflection switched to path Y (a two-step "negate + replace" structure, not mere exploratory failure).
+- **Does NOT trigger**: pure user questions / simple refactor·typo / a baseless "I learned something" insight.
+- **Anti-loop**: at most 1 self-invocation per turn; no repeat for the same outcome in the same session; the skill's Phase 2.5 viability gate is the backstop.
+- **Routing marker**: when invoking, include one line \`self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>\` so the skill's Phase 0 routes E3 (back-compatible with the old 4 signal names). No extra user-facing template needed; the skill returns \`pending_path\` after writing pending — reply \`undo\` if it shouldn't be recorded (I'll call fab_review reject).
 
 ## Cite policy (v2.2 C1: recall auto-accounting, zero first-line burden)
 
