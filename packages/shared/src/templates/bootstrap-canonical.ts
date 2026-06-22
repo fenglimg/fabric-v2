@@ -122,21 +122,12 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 
   Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
 
-## Cite policy (v2.1 ⑤ recall-based: 自动记账优先, 首行 KB: 可选 override)
+## Cite policy (v2.2 C1: recall 自动记账, 零首行负担)
 
-- **核心 (recall-first 自动记账)**: 改任何文件前先 \`fab_recall(paths=[<被改文件>])\`。系统按"本 session 近期 recall 命中的 path 与编辑目标重叠"自动把召回的 KB 关联为该次 edit 的引用 —— **无需手写回复首行**。PreToolUse hook 在检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007);改前 recall 过(或已手写 cite)即静默。为什么不再逼首行:先想后说,recall 才是引用发生的真实信号,手写首行违背 CoT 且 \`KB: none\` 逃逸使旧规则形同虚设。
-- **可选 override (首行 KB:)**: 仍可在回复首行手写 \`KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]\` 或 \`KB: none [<reason>]\` 来显式标注/精确化引用;cite-line 解析器保留(向后兼容),旧习惯不破。
-- **\`[applied]\` 验证义务**: 引用任何 id(自动或手写)的前提是先用 fab_recall 实际抓回 KB(并按需对其正文路径做原生 Read), 防止编造 id。验证不通过 = 不能 cite。
-- **store 前缀 (v2.1, 多 store)**: 当 read-set 含多个 store 且同一 local id 在多 store 间 shadow 时,cite 必须 store-qualified: \`KB: <store-alias>:<id> ...\`(如 \`KB: team:KT-DEC-0001 (auth) [applied]\`);alias 用户自定/canonical,底层 UUID。单 store 或无歧义时裸 \`KB: <id>\` 仍 valid。personal-only 条目 cite 进团队产物=强 warning(接 P2 写路径防泄漏 R5#3)。
-- **contract 语法**: decisions/pitfalls 类 \`[applied]\` cite 尾段加 contract: \`→ <operator> [<operator> ...]\`,operator ∈ {\`edit:<glob>\` \`!edit:<glob>\` \`require:<symbol>\` \`forbid:<symbol>\` \`skip:<reason>\`}。例:\`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**\`。
-- **skip reason 词典**: \`sequencing | conditional | semantic | aesthetic | architectural | other:<text>\`。
-- **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
-- **用户口头提规则没给 id**: 先调 \`fab_recall(paths)\` 或 \`fab_extract_knowledge\` 反查。
-- **dismissed reason**: 枚举 \`scope-mismatch | outdated | not-applicable | other:<text>\`。
-- **\`KB: none\` sentinel**: 枚举两种合规理由——\`[no-relevant]\` 已调 \`fab_recall\`(或 hook 输出可见)但无可用条目;\`[not-applicable]\` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 \`KB: none\`(无后缀)仍然 valid,归类为 \`[unspecified]\`(legacy 兼容,鼓励后续补注)。
-- **稽核**: \`fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]\` 输出 cite 覆盖率,含 \`KB: none\` sentinel 拆分。本规则不阻断你工作,只记录。
-- **Clean-slate (无 backward compat)**: 解析器只认 \`applied\` / \`dismissed\` / \`none\` 三态;任何无法识别的老 tag (\`planned\` / \`recalled\` / \`chained-from <id>\`) 一律降级为 \`none\`(\`chained-from\` 的内嵌 id 仍被抢救为 sibling cite_id)。旧 session 留下的 legacy cite 以 \`none\` 计入 cite-coverage。
-- **完整参考下沉** (v2.2 SK5): contract operator / skip·dismissed 词典 / 类型路由 / 稽核口径 / **裁决阶梯** (AI自决 → 多-LLM 含零上下文冷评 → 非阻塞队列) 的权威详参在 \`fabric-review\` skill 的 \`ref/cite-contract.md\` —— bootstrap 只留可执行 core,治理细节归 ref 不再撑大 bootstrap。
+- **核心 (recall-first 自动记账)**: 改任何文件前先 \`fab_recall(paths=[<被改文件>])\`。系统按"本 session recall 命中的 path 与编辑目标重叠"自动把召回的 KB 记为该次 edit 的引用 —— **无需手写任何回复首行**(C1 删除首行 \`KB:\` contract 八股:先想后说,recall 才是引用发生的真实信号)。PreToolUse 检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007)。
+- **唯一要开口的时候 (dismissed / override)**: 你判断某召回 KB 不该应用时,说一句 \`dismissed: <id> (<reason>)\`;reason 枚举 \`scope-mismatch | outdated | not-applicable | other:<text>\`。需精确标注仍可用首行 \`KB: <id> [applied|dismissed]\`(解析器保留,向后兼容)。
+- **\`[applied]\` 验证义务**: 引用任何 id(自动或手写)前必须先 fab_recall 实际抓回 KB(按需对正文路径做原生 Read),防止编造 id。验证不通过 = 不能 cite。
+- **稽核与完整规约**: \`fabric doctor --cite-coverage\` 输出覆盖率(不阻断工作,只记录);contract operator / store 前缀 / skip·dismissed 词典 / 类型路由 / 裁决阶梯等完整规约权威详参 \`fabric-review\` skill 的 \`ref/cite-contract.md\` —— bootstrap 只留可执行 core。
 `;
 
 /**
@@ -218,21 +209,12 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 
   Backward compat: the Phase 1.5 entry-point regex recognises both the old 4 signal names (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) and the new 2 class names, so markers from old sessions still route correctly.
 
-## Cite policy (v2.1 ⑤ recall-based: auto-accounting first, optional first-line KB: override)
+## Cite policy (v2.2 C1: recall auto-accounting, zero first-line burden)
 
-- **Core (recall-first auto-accounting)**: before changing any file, run \`fab_recall(paths=[<file-being-edited>])\` first. The system auto-associates the recalled KB as that edit's citation by "paths recall-hit recently this session overlap the edit target" —— **no need to hand-write a first reply line**. The PreToolUse hook gives a soft nudge when it detects no relevant recall (nudge, not a gate, per KT-DEC-0007); having recalled before the edit (or already hand-written a cite) keeps it silent. Why no longer force a first line: think-then-speak, recall is the real signal that a citation happened, hand-writing a first line violates CoT and the \`KB: none\` escape hatch made the old rule toothless.
-- **Optional override (first-line KB:)**: you may still hand-write \`KB: <id> (<≤8-char usage>) [applied|dismissed:<reason>]\` or \`KB: none [<reason>]\` as the first reply line to explicitly annotate/refine the citation; the cite-line parser is retained (backward compatible), old habits aren't broken.
-- **\`[applied]\` verification duty**: citing any id (auto or hand-written) requires first actually fetching the KB via fab_recall (and a native Read of its body path when needed), to prevent fabricated ids. Verification failing = you cannot cite.
-- **store prefix (v2.1, multi-store)**: when the read-set spans multiple stores and the same local id is shadowed across stores, the cite MUST be store-qualified: \`KB: <store-alias>:<id> ...\` (e.g. \`KB: team:KT-DEC-0001 (auth) [applied]\`); the alias is user-defined/canonical, the underlying id a UUID. A bare \`KB: <id>\` is still valid for a single store or no ambiguity. Citing a personal-only entry into a team artifact = strong warning (ties into the P2 write-path leak guard R5#3).
-- **contract syntax**: for decisions/pitfalls-type \`[applied]\` cites, append a contract tail: \`→ <operator> [<operator> ...]\`, operator ∈ {\`edit:<glob>\` \`!edit:<glob>\` \`require:<symbol>\` \`forbid:<symbol>\` \`skip:<reason>\`}. E.g. \`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**\`.
-- **skip reason dictionary**: \`sequencing | conditional | semantic | aesthetic | architectural | other:<text>\`.
-- **type routing**: a models-type citation is a reference cite, no contract needed; guidelines/processes types are not yet enforced, deferred to an LLM-judge.
-- **user mentions a rule verbally without an id**: first call \`fab_recall(paths)\` or \`fab_extract_knowledge\` to look it up.
-- **dismissed reason**: enum \`scope-mismatch | outdated | not-applicable | other:<text>\`.
-- **\`KB: none\` sentinel**: two compliant reasons —— \`[no-relevant]\` you called \`fab_recall\` (or hook output is visible) but no usable entry; \`[not-applicable]\` the current action is not in cite scope (pure exploration / read-only Bash / user Q&A). A bare \`KB: none\` (no suffix) is still valid, classified as \`[unspecified]\` (legacy compatible, annotating later is encouraged).
-- **audit**: \`fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]\` reports cite coverage, including the \`KB: none\` sentinel breakdown. This rule does not block your work, it only records.
-- **Clean-slate (no backward compat)**: the parser recognises only the three states \`applied\` / \`dismissed\` / \`none\`; any unrecognised legacy tag (\`planned\` / \`recalled\` / \`chained-from <id>\`) degrades to \`none\` (\`chained-from\`'s embedded id is still rescued as a sibling cite_id). Legacy cites left by old sessions count toward cite-coverage as \`none\`.
-- **Full reference offloaded** (v2.2 SK5): the authoritative details for contract operators / skip·dismissed dictionaries / type routing / audit semantics / **adjudication ladder** (AI self-decide → multi-LLM incl. zero-context cold review → non-blocking queue) live in the \`fabric-review\` skill's \`ref/cite-contract.md\` —— bootstrap keeps only the executable core, governance detail goes to ref so it doesn't bloat bootstrap.
+- **Core (recall-first auto-accounting)**: before changing any file, run \`fab_recall(paths=[<file-being-edited>])\` first. The system auto-accounts the recalled KB as that edit's citation by "paths recall-hit this session overlap the edit target" —— **no hand-written first reply line needed** (C1 removes the first-line \`KB:\` contract boilerplate: think-then-speak, recall is the real signal that a citation happened). The PreToolUse hook gives a soft nudge when it detects no relevant recall (nudge, not a gate, per KT-DEC-0007).
+- **The only time to speak up (dismissed / override)**: when you judge a recalled KB should NOT apply, say one line \`dismissed: <id> (<reason>)\`; reason enum \`scope-mismatch | outdated | not-applicable | other:<text>\`. For precise annotation you may still use a first-line \`KB: <id> [applied|dismissed]\` (parser retained, backward compatible).
+- **\`[applied]\` verification duty**: citing any id (auto or hand-written) requires first fetching the KB via fab_recall (a native Read of its body path when needed) to prevent fabricated ids. Verification failing = you cannot cite.
+- **Audit & full spec**: \`fabric doctor --cite-coverage\` reports coverage (does not block your work, only records); the full spec (contract operators / store prefix / skip·dismissed dictionaries / type routing / adjudication ladder) lives authoritatively in the \`fabric-review\` skill's \`ref/cite-contract.md\` —— bootstrap keeps only the executable core.
 `;
 
 /**

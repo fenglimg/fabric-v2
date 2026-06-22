@@ -60,10 +60,11 @@ export type RecallResult = Omit<
   next_steps?: string[];
 };
 
-// v2.2 MC1-recall-pack: the standing behavioral directive returned on every
-// recall. Reinforces the cite-before-edit contract (D4 AI-in-loop).
+// v2.2 C1 (W2): recall auto-accounting. The system records these recalled
+// entries as citations for edits whose paths overlap this recall — no
+// hand-written first line is required. The AI only speaks up to DISMISS one.
 const RECALL_DIRECTIVE =
-  "Before you edit or commit to a decision, cite the KB id you apply or dismiss (first reply line: `KB: <id> [applied|dismissed:<reason>]`).";
+  "These entries are auto-accounted as citations for edits whose paths overlap this recall — no first-line cite needed. Speak up only to dismiss one you judge inapplicable: `dismissed: <id> (<reason>)`.";
 
 export async function recall(projectRoot: string, input: RecallInput): Promise<RecallResult> {
   const planResult = await planContext(projectRoot, input);

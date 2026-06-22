@@ -39,7 +39,6 @@ const PROTECTED_TOKENS: readonly string[] = [
   // those tokens no longer appear in either bootstrap body.
   "fab_recall",
   'fab_review action="list"',
-  "fab_extract_knowledge",
   // paths / config
   ".fabric/agents.meta.json",
   ".fabric/fabric-config.json",
@@ -58,27 +57,18 @@ const PROTECTED_TOKENS: readonly string[] = [
   "fabric-sync",
   "fabric-connect",
   "fabric-audit",
-  // cite syntax + vocabulary
+  // cite syntax + vocabulary — v2.2 C1 (W2): the cite contract is internalised.
+  // Contract operators (→ edit: / skip:<reason> / …), the store-qualified prefix,
+  // KB: none sentinels, and the skip·dismissed dictionaries moved OUT of the
+  // byte-locked bootstrap into the fabric-review skill's ref/cite-contract.md.
+  // The lean bootstrap keeps only the cite-line anchor, the dismissed-reason
+  // enum, and the offload pointer.
   "KB: <id>",
-  "KB: <store-alias>:<id>",
-  "KB: none [<reason>]",
-  "applied|dismissed:<reason>",
-  "dismissed:<reason>",
-  "personal-only",
-  // contract operators
-  "→ edit:",
-  "edit:<glob>",
-  "!edit:<glob>",
-  "require:<symbol>",
-  "forbid:<symbol>",
-  "skip:<reason>",
-  "sequencing | conditional | semantic | aesthetic | architectural | other:<text>",
-  // dismissed reasons + KB:none sentinels
+  "ref/cite-contract.md",
+  // dismissed reasons (the only cite vocabulary the lean bootstrap still carries)
   "scope-mismatch",
   "outdated",
   "not-applicable",
-  "[no-relevant]",
-  "[unspecified]",
   // discovery / markers
   "KP-*",
   "self-archive policy triggered by signal",

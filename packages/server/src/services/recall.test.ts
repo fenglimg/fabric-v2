@@ -186,7 +186,10 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   it("always returns a cite directive in the packaging", async () => {
     const projectRoot = await seedTwoEntryProject();
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
-    expect(result.directive).toMatch(/cite the KB id/i);
+    // v2.2 C1 (W2): directive describes recall auto-accounting + dismissed-only,
+    // not the retired first-line cite contract.
+    expect(result.directive).toMatch(/auto-accounted as citations/i);
+    expect(result.directive).toMatch(/dismiss/i);
   });
 
   // W1-3 (KT-DEC-0031): include_related surfaces the related neighbour's read
@@ -313,7 +316,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     expect(result.candidates).toEqual([]);
     expect(result.paths).toEqual([]);
-    expect(result.directive).toMatch(/cite the KB id/i);
+    expect(result.directive).toMatch(/auto-accounted as citations/i);
 
     const fetched = await readEventLedger(projectRoot, { event_type: "knowledge_sections_fetched" });
     expect(fetched.events).toEqual([]);

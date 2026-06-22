@@ -47,25 +47,17 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: <id>");
       });
 
-      it("documents the v2.1 store-qualified cite prefix (F3/S62)", () => {
-        // Multi-store read-sets disambiguate a shadowed local id via a
-        // `<store-alias>:<id>` cite prefix; the canonical policy must teach it.
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: <store-alias>:<id>");
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("personal-only");
+      it("teaches recall auto-accounting as the core (zero first-line burden)", () => {
+        // v2.2 C1 (W2): the cite contract is internalised — recall auto-accounts
+        // the citation; no hand-written first reply line is required.
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("自动记账");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("无需手写");
       });
 
-      it("exposes the clean-slate 3-state cite vocabulary (applied/dismissed/none)", () => {
-        // ADJ-3: the canonical cite-policy bullet must describe the parser's
-        // ACTUAL clean-slate behaviour, not the obsolete "legacy tags map to
-        // applied" claim. `cite-line-parser.ts` (normalizeCiteTag) recognises
-        // only `applied` / `dismissed` / `none`; any unrecognised legacy tag
-        // (`planned` / `recalled` / `chained-from`) degrades to `none`, with
-        // `chained-from`'s embedded id rescued as a sibling cite_id. The bullet
-        // still enumerates the legacy token names so readers know what degrades.
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("applied|dismissed:<reason>");
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("dismissed:<reason>");
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("Clean-slate");
-        expect(BOOTSTRAP_CANONICAL_ZH).toMatch(/planned.*recalled.*chained-from/);
+      it("keeps the dismissed/override speak-up path", () => {
+        // The AI only speaks up to dismiss an inapplicable recalled entry.
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("dismissed: <id>");
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("applied|dismissed");
       });
 
       it("enumerates all dismissed-reason values", () => {
@@ -78,63 +70,16 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL_ZH).toContain("fabric doctor --cite-coverage");
       });
 
-      describe("cite contract syntax (rc.24)", () => {
-        // rc.24: `[recalled]` cite lines for decisions/pitfalls类 entries must
-        // append operator-based contract commitments. BOOTSTRAP_CANONICAL_ZH is
-        // the byte-locked source of truth for the contract vocabulary —
-        // operators, skip-reason dictionary, and type routing all live here
-        // first, then propagate to hooks + doctor via fabric install.
-
-        it("contains-operator-syntax — shows the `→ edit:` operator anchor", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("→ edit:");
-        });
-
-        it("contains-operator-syntax — enumerates all 5 operators", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("edit:<glob>");
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("!edit:<glob>");
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("require:<symbol>");
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("forbid:<symbol>");
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("skip:<reason>");
-        });
-
-        it("contains-skip-reason-dict — enumerates all 6 skip reasons", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain(
-            "sequencing | conditional | semantic | aesthetic | architectural | other:<text>",
-          );
-        });
-
-        it("contains-type-routing-bullet — documents models reference-cite policy", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("models 类引用为 reference cite");
-        });
-
-        it("contains-KP-personal-mention — Discovery bullet calls out personal layer", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("KP-*");
-        });
-      });
-
-      describe("KB: none sentinel enums (rc.23 T8c)", () => {
-        // rc.23 T8c: `KB: none` accepts two reason sentinels — `[no-relevant]`
-        // (LLM searched but found nothing) and `[not-applicable]` (action not
-        // in cite scope). Bare `KB: none` is treated as `[unspecified]` for
-        // legacy/lazy emissions.
-
-        it("documents the [no-relevant] sentinel", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("[no-relevant]");
-        });
-
-        it("documents the [not-applicable] sentinel as a KB: none reason", () => {
-          // 'not-applicable' already exists as a dismissed reason — the T8c
-          // addition is the explanatory phrase tying it to KB: none scope.
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("不在 cite 范围");
-        });
-
-        it("retains bare `KB: none` as legacy [unspecified] form", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("[unspecified]");
-        });
-
-        it("uses the new bracketed reply-line shape `KB: none [<reason>]`", () => {
-          expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: none [<reason>]");
-        });
+      it("offloads the full cite-contract spec to the fabric-review ref", () => {
+        // v2.2 C1 (W2): contract operators / store prefix / skip·dismissed
+        // dictionaries / type routing / KB: none sentinels / adjudication ladder
+        // all moved OUT of the byte-locked bootstrap into the fabric-review
+        // skill's ref/cite-contract.md — bootstrap keeps only the executable core.
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("ref/cite-contract.md");
+        // the verbose contract vocabulary must NOT bloat the bootstrap anymore.
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("→ edit:");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("[no-relevant]");
+        expect(BOOTSTRAP_CANONICAL_ZH).not.toContain("skip:<reason>");
       });
     });
 
