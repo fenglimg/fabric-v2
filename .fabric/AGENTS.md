@@ -40,46 +40,18 @@
 - **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config `archive_edit_threshold` 一致)/ 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_review action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
-## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
+## Self-archive policy (v2.2 C1: 精简说明书)
 
-- **触发** (本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill, 走 AI 自触发入口 E3_ai_self_trigger):
-  1. **User-driven normative** — 用户消息中显式表达 normative 意图: `以后` / `always` / `never` / `from now on` / `下次注意` / `记一下` / `永远不要`, OR 用户在 ≥2 候选间权衡后给出 rationale 锁定方向, OR 用户拒了某建议**并**说了原因 (拒绝理由本身是知识)
-  2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑); 涵盖技术决策反转 + 工具/范式切换 + 失败重试。Anchor: 一定有"否定+替代"的两步结构, 不是单纯探索失败
+出现明确归档信号时, 于该 turn 末尾自主调用 `fabric-archive` skill(AI 自触发入口 E3):
 
-  老 4-state (Normative / Decision-confirmation / Explicit-dismissal / Wrong-turn) 现合并: 前 3 个全是"用户消息中显式表达"性质, 折成 1 类; 第 4 是"AI 自己的反思路径", 独立 1 类。两类各自的本质判别不变, 触发面没变窄。
+- **触发** (二选一): ① **User-driven normative** — 用户说 `以后` / `always` / `never` / `下次` / `记一下`, 或在 ≥2 候选间权衡后锁定方向, 或拒了建议并给了理由(理由即知识); ② **Wrong-turn-and-revert** — 你试了 path X 反思后改走 path Y("否定+替代"两步结构, 非单纯探索失败)。
+- **不触发**: 用户纯询问 / 简单 refactor·typo / 凭空"我学到了"的洞察。
+- **防 loop**: 同 turn 最多自调 1 次; 同 session 同 outcome 不重复; skill 内 Phase 2.5 viability gate 兜底。
+- **回执 (marker-free)**: 直接自调 `fabric-archive` skill 即可, 无需打印任何暗号字符串 —— skill 默认把 AI 自调识别为 E3(确定性 else 路由, 不再依赖 AI 输出精确字符串)。skill 落 pending 后返回 `pending_path`, 不该记就回 `undo`(我调 fab_review reject)。
 
-- **Anti-trigger** (明确不触发):
-  - 用户纯询问 (无 normative 表达)
-  - 简单 refactor / typo fix
-  - AI 自己产生的'洞察' (必须由用户消息中信号或 AI 自己的 wrong-turn 触发, 不是凭空"我学到了"性质)
+## Cite policy (v2.2 C1: recall 自动记账, 零首行负担)
 
-- **Anti-loop 三条防护**:
-  - 同 turn 最多自调 1 次
-  - 同 session 同 outcome 不重复 (若 user_dismissed, 本会话不再自调相同主题)
-  - Phase 2.5 viability gate 兜底 (skill 内部仍跑 gate, AI 判错不会乱写 pending)
-
-- **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 1.5 检测, 再 user-facing 提示):
-  ```
-  self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>
-  顺手归档: 注意到你说 `<触发短语>`, 已调用 fabric-archive 抓 N 条候选 → 当前 write store 的 knowledge/pending/...
-  若不该记, 答 '撤销' 我会调 fab_review reject。
-  ```
-  第一行是 Phase 1.5 Trigger Gate 识别 E3 入口的 structured marker (verbatim 字符串 `self-archive policy triggered by signal`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
-
-  Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
-
-## Cite policy (v2.1 ⑤ recall-based: 自动记账优先, 首行 KB: 可选 override)
-
-- **核心 (recall-first 自动记账)**: 改任何文件前先 `fab_recall(paths=[<被改文件>])`。系统按"本 session 近期 recall 命中的 path 与编辑目标重叠"自动把召回的 KB 关联为该次 edit 的引用 —— **无需手写回复首行**。PreToolUse hook 在检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007);改前 recall 过(或已手写 cite)即静默。为什么不再逼首行:先想后说,recall 才是引用发生的真实信号,手写首行违背 CoT 且 `KB: none` 逃逸使旧规则形同虚设。
-- **可选 override (首行 KB:)**: 仍可在回复首行手写 `KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]` 或 `KB: none [<reason>]` 来显式标注/精确化引用;cite-line 解析器保留(向后兼容),旧习惯不破。
-- **`[applied]` 验证义务**: 引用任何 id(自动或手写)的前提是先用 fab_recall 实际抓回 KB(并按需对其正文路径做原生 Read), 防止编造 id。验证不通过 = 不能 cite。
-- **store 前缀 (v2.1, 多 store)**: 当 read-set 含多个 store 且同一 local id 在多 store 间 shadow 时,cite 必须 store-qualified: `KB: <store-alias>:<id> ...`(如 `KB: team:KT-DEC-0001 (auth) [applied]`);alias 用户自定/canonical,底层 UUID。单 store 或无歧义时裸 `KB: <id>` 仍 valid。personal-only 条目 cite 进团队产物=强 warning(接 P2 写路径防泄漏 R5#3)。
-- **contract 语法**: decisions/pitfalls 类 `[applied]` cite 尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
-- **skip reason 词典**: `sequencing | conditional | semantic | aesthetic | architectural | other:<text>`。
-- **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
-- **用户口头提规则没给 id**: 先调 `fab_recall(paths)` 或 `fab_extract_knowledge` 反查。
-- **dismissed reason**: 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。
-- **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_recall`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
-- **稽核**: `fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出 cite 覆盖率,含 `KB: none` sentinel 拆分。本规则不阻断你工作,只记录。
-- **Clean-slate (无 backward compat)**: 解析器只认 `applied` / `dismissed` / `none` 三态;任何无法识别的老 tag (`planned` / `recalled` / `chained-from <id>`) 一律降级为 `none`(`chained-from` 的内嵌 id 仍被抢救为 sibling cite_id)。旧 session 留下的 legacy cite 以 `none` 计入 cite-coverage。
-- **完整参考下沉** (v2.2 SK5): contract operator / skip·dismissed 词典 / 类型路由 / 稽核口径 / **裁决阶梯** (AI自决 → 多-LLM 含零上下文冷评 → 非阻塞队列) 的权威详参在 `fabric-review` skill 的 `ref/cite-contract.md` —— bootstrap 只留可执行 core,治理细节归 ref 不再撑大 bootstrap。
+- **核心 (recall-first 自动记账)**: 改任何文件前先 `fab_recall(paths=[<被改文件>])`。系统按"本 session recall 命中的 path 与编辑目标重叠"自动把召回的 KB 记为该次 edit 的引用 —— **无需手写任何回复首行**(C1 删除首行 `KB:` contract 八股:先想后说,recall 才是引用发生的真实信号)。PreToolUse 检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007)。
+- **唯一要开口的时候 (dismissed / override)**: 你判断某召回 KB 不该应用时,说一句 `dismissed: <id> (<reason>)`;reason 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。需精确标注仍可用首行 `KB: <id> [applied|dismissed]`(解析器保留,向后兼容)。
+- **`[applied]` 验证义务**: 引用任何 id(自动或手写)前必须先 fab_recall 实际抓回 KB(按需对正文路径做原生 Read),防止编造 id。验证不通过 = 不能 cite。
+- **稽核与完整规约**: `fabric doctor --cite-coverage` 输出覆盖率(不阻断工作,只记录);contract operator / store 前缀 / skip·dismissed 词典 / 类型路由 / 裁决阶梯等完整规约权威详参 `fabric-review` skill 的 `ref/cite-contract.md` —— bootstrap 只留可执行 core。

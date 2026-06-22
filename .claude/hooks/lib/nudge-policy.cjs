@@ -103,6 +103,17 @@ function resolveHumanSink(projectRoot, event, gate) {
   // 4. global human-channel mute.
   if (mode === "silent") return { emitHuman: false, verbosity, mode };
 
+  // 4b. v2.2 C1 (W5): the `stop` human nudge (archive cadence) defaults to QUIET.
+  // The edit-count / session signal already lives in the events.jsonl ledger as
+  // queryable telemetry (KT-DEC-0030), so the Stop hook should NOT carry a
+  // real-time human-observation UI that interrupts execution flow — find the
+  // specific session after the fact instead (user directive 2026-06-22). It stays
+  // OBSERVE-only by default; opt back in explicitly via observe.stop=true (handled
+  // at step 3) or the verbose preset. SessionStart / pre_tool_use are unaffected.
+  if (event === "stop" && mode !== "verbose") {
+    return { emitHuman: false, verbosity, mode };
+  }
+
   // 5. preset default — emit at the preset's verbosity.
   return { emitHuman: true, verbosity, mode };
 }
