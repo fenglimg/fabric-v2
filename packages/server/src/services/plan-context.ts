@@ -20,6 +20,8 @@ import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 import { buildBm25Model, buildQueryTerms, type Bm25Field, type Bm25Model } from "./bm25.js";
 import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
+import { buildLastActiveIndex } from "./last-active-index.js";
+import { decayFactor } from "./credibility-decay.js";
 
 // v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
 // and the sort comparator. `queryTerms` are the CJK-tokenized caller intent;
@@ -46,6 +48,11 @@ type ScoringContext = {
   // tie-break). Used as the tie-break under EQUAL relevance score so a more
   // specific scope outranks a broader one without overriding BM25 relevance.
   scopeRank?: Map<string, number>;
+  // C1-W6: per-candidate credibility decay multiplier in [floor, 1], applied to
+  // the BM25 relevance term (see credibility-decay.ts). Present only on the
+  // query-bearing path; undefined → factor 1 (no decay), so the broad
+  // no-query ranking is byte-identical to pre-W6.
+  decay?: (item: RuleDescriptionIndexItem) => number;
 };
 
 export type PlanContextInput = {
@@ -388,6 +395,24 @@ export async function planContext(
   // feed scoreDoc (cheap); the model is corpus-only.
   if (scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
     scoringContext.bm25 = getOrBuildBm25Model(revision, rawItems, docTexts);
+
+    // C1-W6: credibility decay. Reuse the events.jsonl last-active index (the
+    // same reducer the doctor orphan/stale lints use) to age each candidate, and
+    // discount its BM25 relevance by a continuous decay factor. Only the
+    // query-bearing path pays the ledger read — the broad SessionStart probe has
+    // no BM25 term to multiply, so decay is skipped (ranking unchanged). Best-
+    // effort: a ledger read failure degrades to an empty index → every age falls
+    // back to created_at, never crashes the hint.
+    const lastActive = await buildLastActiveIndex(projectRoot).catch(
+      () => new Map<string, number>(),
+    );
+    scoringContext.decay = (item) =>
+      decayFactor({
+        lastActiveMs: lastActive.get(item.stable_id),
+        createdAt: item.description?.created_at,
+        nowMs: scoringContext.nowMs,
+        knowledgeType: item.description?.knowledge_type ?? "",
+      });
   }
 
   // v2.1 global-refactor (W2/A4): scope-resolution rank for the equal-relevance
@@ -1058,8 +1083,14 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
   // v2.2 A-INFRA-1 (W1-T2-BM25): content relevance — the lead signal. 0 when no
   // query terms / no BM25 model (broad probe), preserving recency+locality-only
   // ranking for the backward-compatible path.
+  // C1-W6: the relevance term is multiplied by the candidate's credibility decay
+  // (a stale entry's content match counts for less). decay is in [floor, 1] and
+  // undefined → 1, so this can only discount, never amplify, and never zero out
+  // a candidate (KT-DEC-0019 no-floor / KT-PIT-0020 content stays primary).
   if (context.bm25 !== undefined && context.queryTerms.length > 0) {
-    score += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
+    const relevance = context.bm25.scoreDoc(item.stable_id, context.queryTerms);
+    const decay = context.decay?.(item) ?? 1;
+    score += BM25_WEIGHT * relevance * decay;
   }
 
   // v2.2 C2-vector (W2-T7): semantic recall SUPPLEMENT, layered after BM25. 0
