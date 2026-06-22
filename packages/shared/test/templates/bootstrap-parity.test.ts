@@ -71,7 +71,10 @@ const PROTECTED_TOKENS: readonly string[] = [
   "not-applicable",
   // discovery / markers
   "KP-*",
-  "self-archive policy triggered by signal",
+  // (v2.2 C1 W3b) the `self-archive policy triggered by signal` routing marker
+  // was retired: the AI no longer prints a magic string to signal E3 — the
+  // fabric-archive skill routes an AI self-invocation to E3 as the deterministic
+  // else-branch. The marker is therefore no longer a protected bootstrap token.
   // language-neutral heading kept identical in both
   "## For Developers",
 ];

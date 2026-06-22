@@ -101,7 +101,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **触发** (二选一): ① **User-driven normative** — 用户说 \`以后\` / \`always\` / \`never\` / \`下次\` / \`记一下\`, 或在 ≥2 候选间权衡后锁定方向, 或拒了建议并给了理由(理由即知识); ② **Wrong-turn-and-revert** — 你试了 path X 反思后改走 path Y("否定+替代"两步结构, 非单纯探索失败)。
 - **不触发**: 用户纯询问 / 简单 refactor·typo / 凭空"我学到了"的洞察。
 - **防 loop**: 同 turn 最多自调 1 次; 同 session 同 outcome 不重复; skill 内 Phase 2.5 viability gate 兜底。
-- **路由 marker**: 调用时回复含一行 \`self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>\` 供 skill Phase 0 识别 E3(向后兼容老 4 信号名)。无需再写额外 user-facing 模板; skill 落 pending 后返回 \`pending_path\`, 不该记就回 \`undo\`(我调 fab_review reject)。
+- **回执 (marker-free)**: 直接自调 \`fabric-archive\` skill 即可, 无需打印任何暗号字符串 —— skill 默认把 AI 自调识别为 E3(确定性 else 路由, 不再依赖 AI 输出精确字符串)。skill 落 pending 后返回 \`pending_path\`, 不该记就回 \`undo\`(我调 fab_review reject)。
 
 ## Cite policy (v2.2 C1: recall 自动记账, 零首行负担)
 
@@ -169,7 +169,7 @@ When a clear archival signal appears, autonomously invoke the \`fabric-archive\`
 - **Trigger** (either): ① **User-driven normative** — the user says \`以后\` / \`always\` / \`never\` / \`下次\` / \`记一下\`, or locks a direction with rationale after weighing ≥2 candidates, or rejects a suggestion and states a reason (the reason is knowledge); ② **Wrong-turn-and-revert** — you tried path X, then after reflection switched to path Y (a two-step "negate + replace" structure, not mere exploratory failure).
 - **Does NOT trigger**: pure user questions / simple refactor·typo / a baseless "I learned something" insight.
 - **Anti-loop**: at most 1 self-invocation per turn; no repeat for the same outcome in the same session; the skill's Phase 2.5 viability gate is the backstop.
-- **Routing marker**: when invoking, include one line \`self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>\` so the skill's Phase 0 routes E3 (back-compatible with the old 4 signal names). No extra user-facing template needed; the skill returns \`pending_path\` after writing pending — reply \`undo\` if it shouldn't be recorded (I'll call fab_review reject).
+- **Receipt (marker-free)**: just invoke the \`fabric-archive\` skill directly — no marker string to print: the skill routes an AI self-invocation to E3 by default (deterministic else-branch, no longer dependent on the AI emitting an exact string). The skill returns \`pending_path\` after writing pending — reply \`undo\` if it shouldn't be recorded (I'll call fab_review reject).
 
 ## Cite policy (v2.2 C1: recall auto-accounting, zero first-line burden)
 
