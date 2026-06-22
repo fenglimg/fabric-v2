@@ -18,7 +18,7 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
-import { buildBm25Model, buildQueryTerms, type Bm25Model } from "./bm25.js";
+import { buildBm25Model, buildQueryTerms, type Bm25Field, type Bm25Model } from "./bm25.js";
 import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
 
 // v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
@@ -777,7 +777,7 @@ function getOrBuildBm25Model(
   const model = buildBm25Model(
     rawItems.map((item) => ({
       id: item.stable_id,
-      tokens: tokenize(docTexts.get(item.stable_id) ?? documentTextForItem(item.description)),
+      fields: documentFieldsForItem(item.description),
     })),
   );
   bm25ModelCache = { revision, model };
@@ -911,6 +911,25 @@ function documentTextForItem(description: RuleDescription): string {
     ...(description.entities ?? []),
     ...(description.tags ?? []),
   ].join(" ");
+}
+
+// C1-W6 (BM25F): map a candidate's selection-signal fields onto the four BM25F
+// slots so the field a query term hits is weighted (see bm25.ts FIELD_CONFIGS):
+//   title   ← summary           — the headline; the first thing the LLM reads.
+//   tags    ← tags + tech_stack + entities — keyword-like, length-insensitive.
+//   summary ← must_read_if + intent_clues  — the "when to use" trigger signal.
+//   body    ← impact            — the descriptive consequence prose.
+// Tokenized here once per corpus build (cached via getOrBuildBm25Model). The
+// flat documentTextForItem above is kept verbatim for the vector-embedding path.
+function documentFieldsForItem(description: RuleDescription): Record<Bm25Field, string[]> {
+  return {
+    title: tokenize(description.summary),
+    tags: tokenize(
+      [...(description.tags ?? []), ...description.tech_stack, ...(description.entities ?? [])].join(" "),
+    ),
+    summary: tokenize([description.must_read_if, ...description.intent_clues].join(" ")),
+    body: tokenize(description.impact.join(" ")),
+  };
 }
 
 // v2.0.0-rc.38 UX-2: an entry whose summary just echoes its stable_id and whose

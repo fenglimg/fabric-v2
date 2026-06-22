@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBm25Model, buildQueryTerms } from "./bm25.js";
+import { buildBm25Model, buildQueryTerms, type Bm25Field } from "./bm25.js";
 
+// Single-field helper: puts all text in `body` (boost 1, b 0.75) so these
+// classic BM25 invariants are exercised without field-boost interference.
 function model(docs: Record<string, string>) {
   return buildBm25Model(
-    Object.entries(docs).map(([id, text]) => ({ id, tokens: buildQueryTerms(text) })),
+    Object.entries(docs).map(([id, text]) => ({
+      id,
+      fields: { title: [], summary: [], tags: [], body: buildQueryTerms(text) },
+    })),
   );
 }
 
-describe("buildBm25Model", () => {
+// Build a doc that places `text` into a single named field, the rest empty.
+function fieldDoc(id: string, field: Bm25Field, text: string) {
+  const fields: Record<Bm25Field, string[]> = { title: [], summary: [], tags: [], body: [] };
+  fields[field] = buildQueryTerms(text);
+  return { id, fields };
+}
+
+describe("buildBm25Model (BM25F)", () => {
   it("scores a document containing the query term above one that does not", () => {
     const m = model({
       a: "BM25 content relevance scoring for retrieval",
@@ -49,7 +61,7 @@ describe("buildBm25Model", () => {
     expect(twice).toBe(once);
   });
 
-  it("scores CJK content via shared bigram tokenization", () => {
+  it("scores CJK content via shared n-gram tokenization", () => {
     const m = model({
       zh: "检索治理里程碑实现",
       other: "无关条目内容",
@@ -57,5 +69,16 @@ describe("buildBm25Model", () => {
     const q = buildQueryTerms("检索治理");
     expect(m.scoreDoc("zh", q)).toBeGreaterThan(0);
     expect(m.scoreDoc("other", q)).toBe(0);
+  });
+
+  it("boosts a term hit in a high-weight field (title) over a low-weight one (body)", () => {
+    // Same single term, same corpus size — only the field it lands in differs.
+    // title boost 3 > body boost 1, so the title hit must score strictly higher.
+    const m = buildBm25Model([
+      fieldDoc("inTitle", "title", "auth"),
+      fieldDoc("inBody", "body", "auth"),
+    ]);
+    const q = buildQueryTerms("auth");
+    expect(m.scoreDoc("inTitle", q)).toBeGreaterThan(m.scoreDoc("inBody", q));
   });
 });
