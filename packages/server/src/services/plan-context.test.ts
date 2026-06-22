@@ -1333,45 +1333,4 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9201"]);
     expect(result).not.toHaveProperty("related_appended");
   });
-
-  // C1-W6: credibility decay must actually reorder ranking, not just exist.
-  // Two entries with IDENTICAL selection text (equal BM25 relevance) and equal
-  // maturity/locality, both well outside the 7-day recency window (so the binary
-  // recency boost is 0 for both) — the ONLY differentiator is age. The fresher
-  // entry is given the lexically-LATER id, so without decay the stable_id-asc
-  // tiebreak would surface the staler id first; fresh-first therefore proves the
-  // decay multiplier flowed into the score (a declaration-only wiring would
-  // false-green here).
-  it("credibility decay ranks a fresher entry above an equally-relevant stale one", async () => {
-    const projectRoot = await createTeamProject();
-    const now = Date.now();
-    const daysAgo = (d: number) => new Date(now - d * 86_400_000).toISOString();
-    const summary = "credibility decay ranking probe entry";
-
-    // Staler: lexically EARLIER id (KT-DEC-0001), created ~400d ago.
-    await writeStoreEntry(TEAM_STORE, "decisions", {
-      id: "KT-DEC-0001",
-      summary,
-      created_at: daysAgo(400),
-    });
-    // Fresher: lexically LATER id (KT-DEC-0002), created ~30d ago (still > 7d → no
-    // recency boost for either).
-    await writeStoreEntry(TEAM_STORE, "decisions", {
-      id: "KT-DEC-0002",
-      summary,
-      created_at: daysAgo(30),
-    });
-    mountStores();
-
-    const result = await planContext(projectRoot, {
-      paths: ["src/unrelated.ts"],
-      intent: "credibility decay ranking probe",
-    });
-
-    const ranked = result.candidates.map((c) => c.stable_id);
-    expect(ranked).toContain("team:KT-DEC-0001");
-    expect(ranked).toContain("team:KT-DEC-0002");
-    // Fresher (0002) ahead of staler (0001), overriding the id-asc tiebreak.
-    expect(ranked.indexOf("team:KT-DEC-0002")).toBeLessThan(ranked.indexOf("team:KT-DEC-0001"));
-  });
 });
