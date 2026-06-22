@@ -13,6 +13,8 @@ import { hasSecrets, isPersonalScope, redactPii, resolveGlobalLocale } from "@fe
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
+import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
+import { classifyArchiveCandidate, formatDedupMarker } from "./archive-dedup-gate.js";
 import {
   atomicWriteText,
   ensureParentDirectory,
@@ -513,6 +515,26 @@ export async function extractKnowledge(
     );
   }
 
+  // C1-W4: archive kernel Stage 2 — dedup/conflict gate. Compare this fresh
+  // candidate against the curated canonical corpus (same type+layer bucket) and
+  // stamp a `x-fabric-dedup` review hint when it looks like a near-duplicate or
+  // a conflict. NEVER drops/merges here (KT-DEC-0019 no-server-filter) — the
+  // verdict travels to the single downstream review point (fabric-review).
+  // Candidate text mirrors the corpus text (same structured fields) so the
+  // similarity is symmetric. Best-effort: a corpus read failure → no marker,
+  // never blocks the archive.
+  const dedupMarker = await computeDedupMarker(projectRoot, {
+    text: [
+      summary,
+      input.must_read_if ?? "",
+      ...(input.intent_clues ?? []),
+      ...(input.impact ?? []),
+      ...(input.tags ?? []),
+    ].join(" "),
+    knowledge_type: input.type,
+    layer,
+  });
+
   const fresh = renderFreshEntry({
     type: input.type,
     sourceSessions,
@@ -534,6 +556,7 @@ export async function extractKnowledge(
     tags: input.tags,
     // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
     evidencePaths: input.evidence_paths,
+    dedupMarker,
   });
   await atomicWriteText(absolutePath, fresh);
 
@@ -549,6 +572,41 @@ export async function extractKnowledge(
     pending_path: reportedPath,
     idempotency_key: effectiveIdempotencyKey,
   };
+}
+
+// C1-W4: load the canonical corpus and classify the candidate through the dedup
+// gate, returning the one-line `x-fabric-dedup` marker (or undefined when the
+// candidate is unique / the corpus is unreadable). Corpus text mirrors the
+// candidate text (same structured fields) so the BM25 similarity is symmetric.
+// Best-effort by contract — never throws into the archive write path.
+async function computeDedupMarker(
+  projectRoot: string,
+  candidate: { text: string; knowledge_type: string; layer: "team" | "personal" },
+): Promise<string | undefined> {
+  try {
+    const corpus = await collectStoreCanonicalEntries(projectRoot);
+    const result = classifyArchiveCandidate(
+      candidate,
+      corpus.map((e) => ({
+        stable_id: e.qualifiedId,
+        knowledge_type:
+          typeof e.description.knowledge_type === "string" && e.description.knowledge_type.length > 0
+            ? e.description.knowledge_type
+            : e.type,
+        layer: e.layer,
+        text: [
+          e.description.summary ?? "",
+          e.description.must_read_if ?? "",
+          ...(e.description.intent_clues ?? []),
+          ...(e.description.impact ?? []),
+          ...(e.description.tags ?? []),
+        ].join(" "),
+      })),
+    );
+    return formatDedupMarker(result);
+  } catch {
+    return undefined;
+  }
 }
 
 // v2.0.0-rc.37 NEW-6: scan slug.md → slug-2.md → ... → slug-9.md, returning
@@ -668,6 +726,11 @@ type FreshEntryArgs = {
   // current request paths as data. Optional; omit when no read-only signal
   // captured. NOT part of idempotency_key (mutable, like relevance_paths).
   evidencePaths?: string[];
+  // C1-W4: archive dedup/conflict review hint (`x-fabric-dedup`). Set ONLY when
+  // the dedup gate flagged a near-duplicate or conflict against the canonical
+  // corpus; omitted for a clean/unique candidate so the steady-state pending
+  // shape is unchanged. NOT part of idempotency_key.
+  dedupMarker?: string;
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
@@ -759,6 +822,12 @@ function renderFreshEntry(args: FreshEntryArgs): string {
   if (args.evidencePaths !== undefined && args.evidencePaths.length > 0) {
     const body = args.evidencePaths.map((p) => quoteRelevancePath(p)).join(", ");
     frontmatterLines.push(`evidence_paths: [${body}]`);
+  }
+  // C1-W4: archive dedup/conflict review hint. Emitted only when the gate
+  // flagged a near-duplicate or conflict, so fabric-review sees "this is 0.91
+  // similar to team:KT-DEC-0026" without re-running similarity.
+  if (args.dedupMarker !== undefined) {
+    frontmatterLines.push(`x-fabric-dedup: ${quoteRelevancePath(args.dedupMarker)}`);
   }
   frontmatterLines.push(
     `x-fabric-idempotency-key: ${args.idempotencyKey}`,

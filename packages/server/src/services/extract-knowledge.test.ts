@@ -185,6 +185,77 @@ describe("extractKnowledge", () => {
     expect(result.pending_path).not.toBe("");
   });
 
+  // C1-W4: archive dedup/conflict gate (Stage 2) — the verdict must land in the
+  // written pending frontmatter so the single downstream review point sees it.
+  // Round-trip oracle: seed a canonical twin, archive a near-identical candidate,
+  // assert the on-disk pending file carries the x-fabric-dedup marker (a
+  // declaration-only wiring would false-green the unique case below).
+  async function seedCanonicalDecision(
+    id: string,
+    fields: { summary: string; must_read_if?: string; intent_clues?: string[]; impact?: string[] },
+  ): Promise<void> {
+    const dir = join(
+      resolveGlobalRoot(),
+      storeRelativePathForMount({ store_uuid: TEST_TEAM_UUID, personal: false }),
+      STORE_LAYOUT.knowledgeDir,
+      "decisions",
+    );
+    await mkdir(dir, { recursive: true });
+    const lines = [
+      "---",
+      `id: ${id}`,
+      "type: decision",
+      "layer: team",
+      'visibility_store: "team"',
+      "maturity: proven",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      `summary: ${JSON.stringify(fields.summary)}`,
+    ];
+    if (fields.must_read_if) lines.push(`must_read_if: ${JSON.stringify(fields.must_read_if)}`);
+    if (fields.intent_clues) {
+      lines.push(`intent_clues: [${fields.intent_clues.map((s) => JSON.stringify(s)).join(", ")}]`);
+    }
+    if (fields.impact) lines.push(`impact: [${fields.impact.map((s) => JSON.stringify(s)).join(", ")}]`);
+    lines.push("---", "", `# ${id}`, "", "Body.", "");
+    await writeFile(join(dir, `${id}.md`), lines.join("\n"));
+  }
+
+  it("extractKnowledge_dedup_gate_stamps_marker_for_near_duplicate", async () => {
+    const projectRoot = await createTempProject();
+    const summary = "Atlas premultiplyAlpha flag inverted produces sprite black edge halo artifacts";
+    const mustRead = "touching atlas premultiplyAlpha sprite rendering pipeline";
+    const intent = ["when sprites render with unexpected black edges or halos"];
+    const impact = ["a visible dark halo surrounds every premultiplied sprite"];
+    await seedCanonicalDecision("KT-DEC-0001", { summary, must_read_if: mustRead, intent_clues: intent, impact });
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-dedup"],
+      user_messages_summary: summary,
+      must_read_if: mustRead,
+      intent_clues: intent,
+      impact,
+      type: "decisions",
+      slug: "atlas-premultiply-dup",
+    }));
+
+    expect(result.pending_path).not.toBe("");
+    const written = await readFile(pendingAbs(result.pending_path), "utf8");
+    expect(written).toMatch(/x-fabric-dedup:\s*"(near-duplicate|conflict) of team:KT-DEC-0001/);
+  });
+
+  it("extractKnowledge_dedup_gate_omits_marker_for_unique_candidate", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-unique"],
+      user_messages_summary: "Completely novel topic about scheduler backpressure tuning under sustained load",
+      type: "decisions",
+      slug: "novel-scheduler-topic",
+    }));
+    expect(result.pending_path).not.toBe("");
+    const written = await readFile(pendingAbs(result.pending_path), "utf8");
+    expect(written).not.toContain("x-fabric-dedup:");
+  });
+
   it("extractKnowledge_redacts_pii_before_persisting_pending_content", async () => {
     const projectRoot = await createTempProject();
     const result = await extractKnowledge(projectRoot, buildInput({
