@@ -228,17 +228,18 @@ async function main() {
       correlation_id: "store-only-e2e",
     });
     // Lean recall (KT-DEC-0026): the old `selected_stable_ids` / `rules[]`
-    // fields were removed. The surfaced store-qualified id now lives in
-    // `paths[]` (the read-path index, scoped to the caller's `ids`), each entry
-    // carrying the on-disk read path + originating store alias.
-    const recalledPath = recalled.paths.find((p) => p.stable_id === `team:${stableId}`);
+    // fields were removed. ux-w2-4 then folded the description `candidates[]` and
+    // read-path `paths[]` into a single `entries[]` — the surfaced store-qualified
+    // id now lives there (scoped to the caller's `ids`), each entry carrying the
+    // on-disk read_path + originating store alias.
+    const recalledEntry = recalled.entries.find((e) => e.stable_id === `team:${stableId}`);
     assert(
-      recalledPath !== undefined,
-      "recall did not surface the approved store-qualified id in paths[]",
+      recalledEntry !== undefined,
+      "recall did not surface the approved store-qualified id in entries[]",
     );
     assert(
-      recalledPath.store?.alias === "team",
-      "recalled path is not attributed to the team store",
+      recalledEntry.store?.alias === "team",
+      "recalled entry is not attributed to the team store",
     );
 
     process.stdout.write(
