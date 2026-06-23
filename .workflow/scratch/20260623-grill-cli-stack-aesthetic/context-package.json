@@ -1,0 +1,56 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-20260623",
+    "session_path": ".maestro/../scratch/20260623-grill-cli-stack-aesthetic",
+    "generated_at": "2026-06-23"
+  },
+  "requirements": [
+    { "id": "R-001", "title": "退 Ink = 仅 install wizard 重写", "description": "彻底删 ink+react 依赖,10 个 tui/*.tsx 用 @clack/prompts + theme.ts 重写;唯一真 Ink TUI 是 install wizard。", "priority": "must", "ref": "grill-report.md#Q1.1" },
+    { "id": "R-002", "title": "焕然一新 = 全面 theme 皮肤,独立子目标", "description": "退 Ink(W3-A)与焕然一新(W3-B)拆成两个独立 PR,解耦可并行。", "priority": "must", "ref": "grill-report.md#Q1.2" }
+  ],
+  "constraints": [
+    { "id": "C-001", "area": "stack", "constraint": "MUST 删除 ink + react 依赖,渲染收敛到 theme.ts(输出)+ @clack/prompts(交互)双底座", "rationale": "Ink 误用(React 当 console.log);hook 是 cjs 无法 require Ink", "status": "locked", "ref": "grill-report.md#Q1.1" },
+    { "id": "C-002", "area": "aesthetic", "constraint": "MUST 差异化来自结构(tree/grid/badge/分组),色板冻结 7 语义角色,禁渐变/背景色", "rationale": "渐变与 byte-locked cjs 镜像+parity 冲突;7 色已够鲜明;结构比色彩更决定可读", "status": "locked", "ref": "grill-report.md#Q2.1" },
+    { "id": "C-003", "area": "architecture", "constraint": "结构基元 MUST 分层:HUD-shared(theme.ts+cjs+parity,保 parity-trivial 复杂度)/ 其余 CLI-only", "rationale": "byte-identical 只约束 HUD;手写双份越复杂越易漂", "status": "locked", "ref": "grill-report.md#Q2.2,Q3.2" },
+    { "id": "C-004", "area": "compat", "constraint": "MUST truecolor/none 二档(不建 256/16);所有结构字符提供 ASCII fallback", "rationale": "受众=现代终端开发者;管道重定向需兜底;阶梯过度工程", "status": "locked", "ref": "grill-report.md#Q3.1" },
+    { "id": "C-005", "area": "integration", "constraint": "MUST colors.ts → theme.ts 单一色彩真源,迁 14 消费者后删 colors.ts + picocolors", "rationale": "双色系统永久撕裂;picocolors 仅 colors.ts 引", "status": "locked", "ref": "grill-report.md#Q4.1" },
+    { "id": "C-006", "area": "integration", "constraint": "@clack 集成 MUST 仅包裹上下文(theme 化 intro/outro/log/error),不 restyle 控件、不弃 @clack", "rationale": "@clack 深度主题化需 fork,性价比低", "status": "locked", "ref": "grill-report.md#Q4.2" },
+    { "id": "C-007", "area": "acceptance", "constraint": "W3-A 验收 MUST 架构判据(依赖移除+单栈+功能等价+parity);perf 量一次存档非硬线", "rationale": "perf 声称未实测;CLI 启动非热路径;真收益是架构", "status": "locked", "ref": "grill-report.md#Q5.1" },
+    { "id": "C-008", "area": "migration", "constraint": "W3-B MUST 增量 per-surface 迁移 + 每面 output snapshot test,禁 big-bang", "rationale": "14 消费者迁移面大;snapshot 拦视觉回归", "status": "locked", "ref": "grill-report.md#Q5.2" }
+  ],
+  "domain": {
+    "problem_statement": "Fabric CLI 退 Ink + 鲜明多色审美北极星落地:把 React/Ink 渲染栈收敛到 theme.ts(纯字符串)+ @clack,并让 CLI 输出与 hook 注入统一到一套以结构取胜的视觉语言。",
+    "terminology": [
+      { "term": "theme.ts", "definition": "渲染真源:7 语义角色色板 + paint/symbol,纯字符串", "code_ref": "packages/shared/src/theme.ts", "status": "locked" },
+      { "term": "焕然一新", "definition": "全面 theme 皮肤,差异化靠结构(tree/grid/badge)非色彩堆叠", "code_ref": "grill-report.md#Q2.1", "status": "locked" },
+      { "term": "退 Ink", "definition": "删 ink+react,仅 install wizard 重写为 @clack", "code_ref": "install-v2.ts + tui/*.tsx", "status": "locked" },
+      { "term": "HUD 共享层", "definition": "CLI context ⊥ SessionStart hook 共享的 byte-identical 渲染,保 parity-trivial", "code_ref": "theme.ts + lib/theme.cjs", "status": "locked" }
+    ],
+    "audience": "Fabric 维护者 + Claude Code/Codex CLI 开发者用户",
+    "industry": "developer tooling / CLI"
+  },
+  "non_goals": [
+    { "title": "渐变 / 背景色", "rationale": "与 byte-locked cjs 镜像+parity 冲突;差异化押结构", "ref": "grill-report.md#Q2.1" },
+    { "title": "256/16 色降级阶梯", "rationale": "受众现代终端,过度工程", "ref": "grill-report.md#Q3.1" },
+    { "title": "fork/深度 restyle @clack 控件", "rationale": "性价比低", "ref": "grill-report.md#Q4.2" },
+    { "title": "big-bang 一次性换皮", "rationale": "回归面大,改增量+snapshot", "ref": "grill-report.md#Q5.2" },
+    { "title": "退 Ink 设 perf 硬验收线", "rationale": "CLI 启动非热路径,真收益是架构", "ref": "grill-report.md#Q5.1" },
+    { "title": "复杂实时全屏 dashboard(Ink territory)", "rationale": "Fabric 当前/W3 无此面;若未来需要,作隔离 CLI-only 面局部引 Ink,不翻退 Ink 主决策;Ink 仍服务不了 cjs hook。此为 D1 的显式翻案条件(R6)", "ref": "grill-report.md#R6" }
+  ],
+  "insights": [
+    { "area": "scope", "summary": "唯一真 Ink TUI 是 install wizard(install-v2→tui/*.tsx);config 已是 @clack、doctor 是输出+少量 clack、info/store/sync 纯输出 —— '退 Ink'与'焕然一新'是两件 scope 差一量级的事", "evidence": "grep: 仅 install-v2.ts import tui/;config ink=0/clack=13", "ref": "grill-report.md#Branch-1-Insight" },
+    { "area": "integration", "summary": "三套色彩/渲染并存:theme.ts(新 raw ANSI)/ colors.ts(老 picocolors,14 消费者)/ @clack(裸默认)。焕然一新主体工作量=并 colors.ts 进 theme", "evidence": "colors.ts 14 consumers + picocolors;@clack 9 处裸用", "ref": "grill-report.md#Branch-4" }
+  ],
+  "open_questions": [
+    { "area": "visual-language", "question": "具体 tree 字符集/badge 样式/栅格列宽 + 4 命令(doctor/install/HUD/error)before→after mockup", "options": ["brainstorm 出 mockup", "实现时定"], "ref": "grill-report.md#OQ1" },
+    { "area": "api", "question": "@clack '包上下文'的具体包装层 API 签名(theme.intro/outro/log)", "options": [], "ref": "grill-report.md#OQ2" },
+    { "area": "test-infra", "question": "per-surface output snapshot 是否复用 W1-4 help snapshot 机制", "options": [], "ref": "grill-report.md#OQ3" }
+  ],
+  "references": [
+    { "type": "grill-report", "path": "grill-report.md" },
+    { "type": "terminology", "path": "terminology.md" },
+    { "type": "north-star", "path": "../../20260623-fabric-ux-census/proposals/north-star/NS-02-cli-stack-aesthetic.md" }
+  ]
+}

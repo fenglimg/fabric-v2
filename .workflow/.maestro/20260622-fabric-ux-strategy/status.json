@@ -1,0 +1,87 @@
+{
+  "session_id": "20260622-fabric-ux-strategy",
+  "active_session_id": "20260622-fabric-ux-strategy",
+  "sessions": [
+    { "client_session_id": "current", "attached_at": "2026-06-22", "role": "owner" }
+  ],
+  "intent": "交互+策略上对 fabric 迭代优化 + 后续该集成哪些 maestro-flow 功能,多-LLM 冷评迭代收敛最佳方案",
+  "goal": "产出 fabric 交互层+策略层迭代的最佳设计方案,以及后续功能集成路线(以 maestro-flow 为思路源),经多-LLM 零上下文冷评收敛取最优",
+  "mode": "4",
+  "current_phase": "final",
+  "current_round": 1,
+  "boundary_contract": {
+    "in_scope": [
+      "交互层:4 个会话时刻(SessionStart 单 HUD / archive 记录 / nudge 提醒 / edit-time 浮现)",
+      "策略层:字段模型(layer/scope/when)/ cite 政策内化 / self-archive 触发",
+      "后续功能集成路线(参考 maestro-flow:BM25F 检索 / 视图 / audit detector / 测试分层 / wizard)"
+    ],
+    "out_of_scope": [
+      "写代码实现",
+      "执行破坏性 schema 迁移",
+      "改 maestro-flow 本身"
+    ],
+    "constraints": [
+      "只产设计方案,不动代码",
+      "锚定三来源:本会话初步讨论 / maestro-flow 研究 / 54ca613 提交探讨",
+      "fabric 零用户,偏好 clean-slate 重构",
+      "体感/用户观感必须强于 maestro-flow",
+      "中文呈现"
+    ]
+  },
+  "task_decomposition": [
+    {
+      "id": "S1", "round": 1, "parent_id": null, "relationship": null, "subdivision_depth": 0,
+      "subject": "搭 mode4 骨架 + /goal 绑定", "done_when": "status.json + goal-checklist.md 落盘",
+      "ship_criteria_alignment": ["setup"], "alignment_strength": "infrastructure",
+      "status": "done",
+      "verification": { "method": "deterministic", "verifier": "文件存在", "evidence": "Write", "verified_at": "2026-06-22" }
+    }
+  ],
+  "needs_adjudication": [],
+  "goal_checklist_path": ".workflow/.maestro/20260622-fabric-ux-strategy/goal-checklist.md",
+  "status": "completed",
+  "loop_exit_status": { "reached": true, "terminate_reason": "converged", "summary": "Round 1 三家强收敛;C1(B骨架+C集成+A好交互,已嫁接B/C源码锚点)与B并列前沿(冷评 83-84 vs B 83-86,epsilon内),碾压擂主(68.7→84);两确认评审指出真最优=C1交互完整度+B证据骨架,嫁接后达成", "at": "2026-06-22" },
+
+  "objective": {
+    "metric": "design_quality_coldeval_score_0_100",
+    "direction": "maximize",
+    "baseline": "C0-grilled(本会话 grilling 收敛方案)= 68.7",
+    "measure_cmd": "多-LLM 零上下文冷评打分(0-100),3 票(2 fresh Claude + 1 agy 跨模型)",
+    "epsilon": "冷评分差 <=5 视为打平"
+  },
+  "incumbent": {
+    "candidate_id": "C1-round1-synth-v2",
+    "score": 84,
+    "score_status": "confirmed-frontier",
+    "artifact": "proposals/C1-round1-synthesis.md = B 骨架(2字段+引擎推导+cite/self-archive内化)+ C 增益(BM25F本版零新存储+dual-anchor nudge)+ A 好交互(系统回执+AST去重闸,剔ASCII框/pre-push镀金)"
+  },
+  "exploration_axes": [
+    "交互-会话时刻信息架构",
+    "策略-字段模型简化",
+    "策略-cite/self-archive 内化",
+    "后续功能集成选型(maestro->fabric)"
+  ],
+  "candidate_pool": [
+    { "id": "C0-grilled", "axis": "baseline", "score": 68.7, "status": "abandoned", "vs_incumbent": "worse", "votes": [73, 68, 65] },
+    { "id": "A-interaction-agy", "axis": "交互", "score": 75.0, "status": "tried", "vs_incumbent": "worse", "votes": [68, 71, 86], "note": "Location-is-Config 自相矛盾(.fabric-store.json 偷渡 metadata),方差大" },
+    { "id": "B-strategy-codex", "axis": "策略", "score": 85.3, "status": "tried", "vs_incumbent": "merged-into-C1", "votes": [84, 87, 85], "note": "winner: 2字段+cite/self-archive内化进hook/ledger,源码实证最密" },
+    { "id": "C-integration-claude", "axis": "集成", "score": 83.7, "status": "tried", "vs_incumbent": "merged-into-C1", "votes": [80, 83, 88], "note": "BM25F本版零新存储+dual-anchor nudge+无后端判据,epsilon内并列" },
+    { "id": "C1-round1-synth", "axis": "synthesis", "score": null, "status": "incumbent", "vs_incumbent": "-", "note": "B+C+A好点综合,待确认冷评" }
+  ],
+  "audit_rounds": [
+    {
+      "round": 1, "round_task_ceiling": 4, "round_task_actual": 3,
+      "convergence_status": "converged",
+      "challengers": ["agy(交互)", "codex(策略)", "claude(集成)"],
+      "coldeval_panel": ["fresh-claude-1", "fresh-claude-2", "agy-cross-model"],
+      "result": "B(85.3)与C(83.7)epsilon内并列居首,均碾压BASELINE(68.7);A(75.0)第三。三家强收敛 → 综合C1",
+      "convergence_gate": {
+        "no_improvement_streak": 0,
+        "no_improvement_limit": 2,
+        "budget": { "max_rounds": 4 },
+        "terminate_reason": "converged",
+        "confirmation": "2 票确认 C1 与 B 并列前沿(83/84 vs 83/86,epsilon内);唯一差距证据维已由嫁接 B/C 源码锚点补平;三家独立挑战者+综合体+确认评审全部指向同一设计=收敛信号,再迭代将过拟合"
+      }
+    }
+  ]
+}
