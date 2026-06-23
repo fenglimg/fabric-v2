@@ -210,6 +210,20 @@ export async function removeCitePolicyEvictHook(
 }
 
 /**
+ * ux-w2-6: inverse of `installKnowledgePretoolUseHook`. Removes the single
+ * PreToolUse orchestrator script from each client's `.<client>/hooks/`.
+ */
+export async function removeKnowledgePretoolUseHook(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeHookScripts(
+    "hook-pretooluse-script",
+    HOOK_SCRIPT_DESTINATIONS.knowledgePretoolUse,
+    projectRoot,
+  );
+}
+
+/**
  * lifecycle-refactor W2-T2: inverse of `installSessionEndMarkerHook`. Removes
  * the `session-end-marker.cjs` script from each client's `.<client>/hooks/`
  * directory.
@@ -563,6 +577,10 @@ export async function uninstallBootstrapStage(
   // F3: cite-policy-evict.cjs (rc.34 TASK-06) was installed but never removed.
   await runAndCollect(results, "hook-cite-policy-evict-script", projectRoot, () =>
     removeCitePolicyEvictHook(projectRoot),
+  );
+  // ux-w2-6: the single PreToolUse orchestrator script.
+  await runAndCollect(results, "hook-pretooluse-script", projectRoot, () =>
+    removeKnowledgePretoolUseHook(projectRoot),
   );
   // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hook scripts.
   await runAndCollect(results, "hook-session-end-script", projectRoot, () =>

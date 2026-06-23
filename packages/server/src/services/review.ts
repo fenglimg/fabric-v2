@@ -12,6 +12,7 @@ import type {
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
+import { hasUnresolvedDismissal } from "./promotion-gate.js";
 import { allocateStoreKnowledgeId, isPersonalScope } from "@fenglimg/fabric-shared";
 import {
   resolveStoreCanonicalBase,
@@ -83,6 +84,11 @@ type ParsedFrontmatter = {
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3 frontmatter authoring path).
   status?: LifecycleStatus;
   deferred_until?: string;
+  // v2.2 C1 (processes/maturity-promotion-rubric-v1): the review-confirmation
+  // clock. Stamped at approve/modify (every fab-review touch IS a re-confirmation)
+  // and read by the doctor broad review-recheck lint to nudge stale broad
+  // knowledge — broad is exempt from usage-age decay, so this is its only clock.
+  last_review_confirmed_at?: string;
 };
 
 /**
@@ -577,7 +583,7 @@ async function approveOne(
 
   // rc.31 BUG-G2: previously `knowledge_proposed` was only emitted by
   // extract-knowledge.ts (i.e. only when a pending file was created via the
-  // fab_extract_knowledge MCP tool). Pending files written by hand or by
+  // fab_propose MCP tool). Pending files written by hand or by
   // third-party Skills would never produce a proposed event, so the ledger
   // invariant `proposed_count >= promoted_count` got silently violated (in
   // werewolf-minigame rc.30 audit: proposed=17, promoted=52). Synthesize a
@@ -641,7 +647,13 @@ async function approveOne(
     await ensureParentDirectory(targetAbs);
 
     // Inject id, drop x-fabric-idempotency-key (no longer meaningful post-promote).
-    const rewritten = rewriteFrontmatterForPromote(content, stableId);
+    // v2.2 C1: approve is THE review-confirmation moment — stamp the recheck clock
+    // so the doctor broad review-recheck lint measures from "last confirmed by a
+    // reviewer", not from authoring time.
+    const rewritten = rewriteFrontmatterMerge(
+      rewriteFrontmatterForPromote(content, stableId),
+      { last_review_confirmed_at: new Date().toISOString() },
+    );
     await atomicWriteText(targetAbs, rewritten);
     writtenTarget = true;
 
@@ -850,6 +862,10 @@ type ModifyChanges = {
 type FrontmatterScalarPatch = ModifyChanges & {
   status?: LifecycleStatus;
   deferred_until?: string;
+  // v2.2 C1: review-confirmation stamp. Internal-only (like status/deferred_until)
+  // — never part of the public modify `changes` surface; authored automatically
+  // by approve/modify, never by a caller.
+  last_review_confirmed_at?: string;
 };
 
 async function modifyEntry(
@@ -865,6 +881,25 @@ async function modifyEntry(
   const content = await readFile(target.absPath, "utf8");
   const fm = parseFrontmatter(content);
   const currentLayer: Layer = fm.layer ?? "team";
+
+  // v2.2 C1 (processes/maturity-promotion-rubric-v1): verified→proven NECESSARY
+  // gate "0 dismiss". The promotion's importance signal is mechanical (related
+  // in-degree, surfaced by doctor); the SUFFICIENT judgment is offline/human
+  // (guideline/model summary cold-eval + a reviewer's "this is foundational"
+  // affirmation, driven by the fabric-review skill — see summary-cold-eval.ts).
+  // The one necessary condition enforceable server-side is "0 dismiss": an entry
+  // carrying an UNRESOLVED dismissed cite has a live objection on record and must
+  // not be laundered into the foundational tier. Hard-fail (fix-don't-hide); the
+  // reviewer resolves the dismissal (re-affirm with an applied cite, or address
+  // the objection) before retrying. Scoped to the exact verified→proven edge so
+  // draft→verified and verified-staying-verified are untouched.
+  if (fm.maturity === "verified" && changes.maturity === "proven" && fm.id !== undefined) {
+    if (await hasUnresolvedDismissal(projectRoot, fm.id)) {
+      throw new Error(
+        `verified→proven promotion blocked for ${fm.id}: an unresolved dismissed cite is on record (rubric necessary gate "0 dismiss"). Re-affirm the entry with an applied cite or address the objection, then retry.`,
+      );
+    }
+  }
 
   // v2.2 project-scope migration: a personal-root semantic_scope would move the
   // entry into the personal store (R5#3 privacy boundary) — that is a store
@@ -886,7 +921,14 @@ async function modifyEntry(
   // the modify branch accepts both pending and canonical paths (resolved by
   // `resolveModifyTarget`), so a narrow→broad rescope on a post-approve entry
   // flows through the same in-place rewrite as a scalar tag/maturity edit.
-  const merged = rewriteFrontmatterMerge(content, changes);
+  // v2.2 C1: a modify IS a review touch — stamp the recheck clock. The stamp is
+  // merged into the write but kept OUT of `changedFields` (it is an automatic
+  // side-effect, not a caller-requested change) so the knowledge_modified event
+  // stays a faithful record of the operator's intent.
+  const merged = rewriteFrontmatterMerge(content, {
+    ...changes,
+    last_review_confirmed_at: new Date().toISOString(),
+  });
   await atomicWriteText(target.absPath, merged);
   const changedFields = Object.keys(changes).filter(
     (field) => changes[field as keyof ModifyChanges] !== undefined,
@@ -1063,7 +1105,12 @@ async function modifyLayerFlip(
     : { ...changes, layer: toLayer };
 
   // Rewrite frontmatter with new id + new layer + any other merged changes.
-  const rewritten = rewriteFrontmatterMerge(content, effectivePatch, { id: newStableId });
+  // v2.2 C1: a layer-flip is a reviewer reclassification — stamp the recheck clock.
+  const rewritten = rewriteFrontmatterMerge(
+    content,
+    { ...effectivePatch, last_review_confirmed_at: new Date().toISOString() },
+    { id: newStableId },
+  );
 
   await atomicWriteText(toAbs, rewritten);
 
@@ -1576,6 +1623,11 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
         // ISO, and malformed values lose that comparison (treated as past).
         out.deferred_until = stripQuotes(value);
         break;
+      case "last_review_confirmed_at":
+        // v2.2 C1: ISO-8601 review-confirmation stamp (approve/modify). Parsed
+        // for round-trip read; the doctor recheck lint reads it from raw body.
+        out.last_review_confirmed_at = stripQuotes(value);
+        break;
       default:
         break;
     }
@@ -1679,6 +1731,8 @@ function rewriteFrontmatterMerge(
   // but the `T` and `Z` separators are unambiguous YAML bareword chars).
   if (patch.status !== undefined) updates.status = `status: ${patch.status}`;
   if (patch.deferred_until !== undefined) updates.deferred_until = `deferred_until: ${quoteIfNeeded(patch.deferred_until)}`;
+  // v2.2 C1: review-confirmation stamp (approve/modify).
+  if (patch.last_review_confirmed_at !== undefined) updates.last_review_confirmed_at = `last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`;
 
   const lines = block.split(/\r?\n/u);
   const seen = new Set<string>();
@@ -1719,6 +1773,7 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.related !== undefined) lines.push(`related: ${flowArray(patch.related)}`);
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
+  if (patch.last_review_confirmed_at !== undefined) lines.push(`last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`);
 }
 
 // F55 (ISS-20260531-055): flow-array emit must escape EACH element, not

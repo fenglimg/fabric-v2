@@ -41,9 +41,10 @@ const { isAbsolute, join, relative } = require("node:path");
 
 // W1-01 (ISS-011) parity: route every shared-ledger append through the
 // advisory-lock primitive so concurrent PostToolUse fires (multi-window /
-// parallel edits) never interleave a partial line. Best-effort, drop-on-
-// contention — same primitive the narrow/broad hooks use.
-const { appendLockedLine } = require("./lib/injection-log.cjs");
+// parallel edits) never interleave a partial line. ux-w2-9: route batched event
+// writes through the single guarded event-writer (envelope stamp + event_type
+// guard + advisory-lock append) so every row satisfies the event-ledger schema.
+const { appendEvents } = require("./lib/event-writer.cjs");
 
 const FABRIC_DIR_REL = ".fabric";
 const EVENTS_LEDGER_FILE = "events.jsonl";
@@ -223,23 +224,17 @@ function appendFileMutated(projectRoot, now, paths, toolCallId, toolName, sessio
       typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
     const validToolName =
       typeof toolName === "string" && toolName.length > 0 ? toolName : null;
-    const lines =
-      pathList
-        .map((p) =>
-          JSON.stringify({
-            kind: "fabric-event",
-            id: `event:${randomUUID()}`,
-            ts: tsMs,
-            schema_version: 1,
-            ...(validSessionId ? { session_id: validSessionId } : {}),
-            event_type: "file_mutated",
-            path: p,
-            tool_call_id: callId,
-            ...(validToolName ? { tool_name: validToolName } : {}),
-          }),
-        )
-        .join("\n") + "\n";
-    appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), lines);
+    appendEvents(
+      fabricDir,
+      pathList.map((p) => ({
+        ts: tsMs,
+        ...(validSessionId ? { session_id: validSessionId } : {}),
+        event_type: "file_mutated",
+        path: p,
+        tool_call_id: callId,
+        ...(validToolName ? { tool_name: validToolName } : {}),
+      })),
+    );
   } catch {
     // Silent — marker failure must never block the tool pipeline.
   }
@@ -290,25 +285,19 @@ function appendKnowledgeBodyRead(projectRoot, now, paths, toolCallId, toolName, 
       typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
     const validToolName =
       typeof toolName === "string" && toolName.length > 0 ? toolName : null;
-    const lines =
-      reads
-        .map((r) =>
-          JSON.stringify({
-            kind: "fabric-event",
-            id: `event:${randomUUID()}`,
-            ts: tsMs,
-            schema_version: 1,
-            ...(validSessionId ? { session_id: validSessionId } : {}),
-            event_type: "knowledge_body_read",
-            stable_id: r.stable_id,
-            ...(r.store ? { store: r.store } : {}),
-            path: r.path,
-            tool_call_id: callId,
-            ...(validToolName ? { tool_name: validToolName } : {}),
-          }),
-        )
-        .join("\n") + "\n";
-    appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), lines);
+    appendEvents(
+      fabricDir,
+      reads.map((r) => ({
+        ts: tsMs,
+        ...(validSessionId ? { session_id: validSessionId } : {}),
+        event_type: "knowledge_body_read",
+        stable_id: r.stable_id,
+        ...(r.store ? { store: r.store } : {}),
+        path: r.path,
+        tool_call_id: callId,
+        ...(validToolName ? { tool_name: validToolName } : {}),
+      })),
+    );
   } catch {
     // Silent — marker failure must never block the tool pipeline.
   }

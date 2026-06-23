@@ -445,7 +445,9 @@ describe("knowledge-hint-narrow.cjs — renderSummary", () => {
       "  [KT-PIT-0007] (pitfall/verified) do not reorder middleware",
     );
     expect(lines[3]).toMatch(/如需重读 broad 决策/);
-    expect(lines[3]).toMatch(/fab_plan_context/);
+    // W0-1: retired MCP tool fab_plan_context dropped from the footer; only the
+    // live CLI fallback remains.
+    expect(lines[3]).not.toMatch(/fab_plan_context/);
     expect(lines[3]).toMatch(/fabric plan-context-hint --all/);
   });
 });

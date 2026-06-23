@@ -11,7 +11,7 @@ Session: User and agent debated whether the Stop-hook should be one .cjs script 
 Skill output:
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["WFS-2026-05-10-rc2"],
   recent_paths: ["templates/claude-hooks/", "packages/cli/src/commands/hooks.ts"],
   user_messages_summary: "User pushed back on three-script proposal; agreed single .cjs because stdout JSON shape is universal across Claude Code and Codex CLI.",
@@ -37,7 +37,7 @@ Session: deepMerge silently replaced the existing `hooks.Stop[]` array in `.clau
 Skill output:
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["WFS-2026-05-10-rc2"],
   recent_paths: ["packages/cli/src/config/json.ts"],
   user_messages_summary: "deepMerge default behavior REPLACES arrays. hooks.Stop[] needs an array-append-with-dedupe special case keyed on .command string match.",
@@ -60,7 +60,7 @@ Session: User mentioned across three projects that they prefer 2-space indent in
 Skill output:
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["WFS-2026-05-10-rc2"],
   recent_paths: [".editorconfig"],
   user_messages_summary: "Personal indent preference: 2-space TS / 4-space Py. Stable across multiple projects, not project-specific.",

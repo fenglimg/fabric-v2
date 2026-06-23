@@ -192,6 +192,33 @@ export function readRecallRelevanceRatio(projectRoot: string): number {
  * years). Out-of-range or non-numeric values are silently dropped so a
  * partial override file does not nuke the hardcoded defaults wholesale.
  */
+// v2.2 C1 (processes/maturity-promotion-rubric-v1): default days a `broad` entry
+// may go without a fab-review re-confirmation before doctor surfaces a RECHECK
+// nudge. 180d (≈6 months) deliberately sits ABOVE the proven decay threshold
+// (90d, KT-DEC-0008) — broad knowledge is the most stable/important, so its
+// re-confirmation cadence is gentler than the usage-decay clock narrow entries
+// run on. Non-blocking INFO nudge, never an auto-demote.
+export const BROAD_REVIEW_RECHECK_DAYS_DEFAULT = 180;
+
+/**
+ * v2.2 C1: returns the `broad_review_recheck_days` override from
+ * fabric-config.json, or BROAD_REVIEW_RECHECK_DAYS_DEFAULT (180) when absent /
+ * invalid. Best-effort and hot-path safe — any read/parse failure returns the
+ * default. Validation mirrors the orphan_demote keys: integer in [1, 3650].
+ */
+export function readBroadReviewRecheckThresholdDays(projectRoot: string): number {
+  try {
+    const raw = (readFabricConfig(projectRoot) as { broad_review_recheck_days?: unknown })
+      .broad_review_recheck_days;
+    if (typeof raw === "number" && Number.isFinite(raw) && Number.isInteger(raw) && raw >= 1 && raw <= 3650) {
+      return raw;
+    }
+    return BROAD_REVIEW_RECHECK_DAYS_DEFAULT;
+  } catch {
+    return BROAD_REVIEW_RECHECK_DAYS_DEFAULT;
+  }
+}
+
 export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Record<"proven" | "verified" | "draft", number>> {
   try {
     const cfg = readFabricConfig(projectRoot) as Partial<

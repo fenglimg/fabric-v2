@@ -28,11 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs"
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-pretooluse.cjs"
           }
         ]
       }

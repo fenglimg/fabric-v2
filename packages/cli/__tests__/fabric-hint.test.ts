@@ -34,7 +34,8 @@ type UnderseedStats = { nodeCount: number; threshold: number };
 
 type HookDecision =
   | {
-      decision: "block";
+      // ux-w0-3: signals are SOFT (reminder layer), never decision:block.
+      decision: "soft";
       reason: string;
       signal: "archive" | "archive_backlog" | "review" | "import";
       recommended_skill: "fabric-archive" | "fabric-review" | "fabric-import";
@@ -127,7 +128,7 @@ type HookModule = {
       maintenanceHintDays?: number;
       maintenanceHintCooldownDays?: number;
     },
-  ) => HookDecision | { decision: "block"; reason: string; signal: "maintenance"; recommended_skill: null } | null;
+  ) => HookDecision | { decision: "soft"; reason: string; signal: "maintenance"; recommended_skill: null } | null;
   findLastDoctorRunTs: (events: Array<Record<string, unknown>>) => number | null;
   readMaintenanceLastEmit: (projectRoot: string, sessionId?: string | null) => number | null;
   writeMaintenanceLastEmit: (projectRoot: string, nowMs: number, sessionId?: string | null) => void;
@@ -340,7 +341,7 @@ describe("fabric-hint.cjs — decide (Signal A: per-session edit count, crack 1)
   it("fires archive when session edits >= threshold", () => {
     const r = hook.decide([], FIXED_NOW, undefined, undefined, edits(20, 20));
     expect(r).not.toBeNull();
-    expect(r?.decision).toBe("block");
+    expect(r?.decision).toBe("soft");
     expect(r?.signal).toBe("archive");
     expect(r?.recommended_skill).toBe("fabric-archive");
     expect(r?.reason).toMatch(/20 次编辑/);
@@ -398,7 +399,7 @@ describe("fabric-hint.cjs — decide (archive_backlog signal, crack 2)", () => {
       [], FIXED_NOW, undefined, undefined, noEdits, undefined, undefined, undefined, backlog(2, 2),
     );
     expect(r).not.toBeNull();
-    expect(r?.decision).toBe("block");
+    expect(r?.decision).toBe("soft");
     expect(r?.signal).toBe("archive_backlog");
     expect(r?.recommended_skill).toBe("fabric-archive");
     expect(r?.reason).toMatch(/2 个已结束/);
@@ -1137,7 +1138,7 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
       oldestAgeMs: 1 * DAY_MS,
     });
     expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
+    expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("review");
     expect(result?.reason).toMatch(/fabric-review/);
     expect(result?.reason).toMatch(/10/);
@@ -1149,7 +1150,7 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
       oldestAgeMs: 8 * DAY_MS,
     });
     expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
+    expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("review");
     expect(result?.reason).toMatch(/fabric-review/);
   });
@@ -1173,7 +1174,7 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
       { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
     );
     expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
+    expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("archive");
     expect(result?.reason).toMatch(/fabric-archive/);
     expect(result?.reason).not.toMatch(/fabric-review/);
@@ -1195,24 +1196,28 @@ describe("fabric-hint.cjs — main (review signal integration)", () => {
     }
   });
 
-  it("emits review JSON with signal:'review' when pending count >= 10 and no archive trigger", () => {
-    for (let i = 0; i < 10; i += 1) {
-      seedPendingFile(tempRoot, "decisions", `d-${i}`, NOW_MS - 1 * DAY_MS);
+  it("emits the SOFT review dual-sink envelope (no decision:block) when pending count >= 10 and no archive trigger", () => {
+    // ux-w0-3 (KT-DEC-0007): review is now a soft nudge (additionalContext, human
+    // gated by nudge_mode), never decision:block.
+    const prevClient = process.env.FABRIC_HINT_CLIENT;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        seedPendingFile(tempRoot, "decisions", `d-${i}`, NOW_MS - 1 * DAY_MS);
+      }
+
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+      expect(writes).toHaveLength(1);
+      const env = JSON.parse(writes[0] as string);
+      expect(env.decision).toBeUndefined(); // NOT a block contract
+      expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-review/); // AI sink
+    } finally {
+      if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+      else process.env.FABRIC_HINT_CLIENT = prevClient;
     }
-
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      decision: string;
-      reason: string;
-      signal: string;
-    };
-    expect(payload.decision).toBe("block");
-    expect(payload.signal).toBe("review");
-    expect(payload.reason).toMatch(/fabric-review/);
   });
 
   it("silent exit 0 when pending dir does not exist and no events (NEW-7)", () => {
@@ -1318,7 +1323,7 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
       threshold: 10,
     });
     expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
+    expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("import");
     expect(result?.recommended_skill).toBe("fabric-import");
     expect(result?.reason).toMatch(/fabric-import/);
@@ -1462,36 +1467,37 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
   // walk. Workspace is bound via fabric-config.json project_id.
   const PROJECT_ID = "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3";
 
-  it("emits import JSON with signal:'import' + recommended_skill:'fabric-import' on underseeded corpus", () => {
-    withIsolatedFabricHome((home) => {
-      writeProjectConfig(tempRoot, PROJECT_ID);
-      // Seed an init_scan_completed event 48h before NOW.
-      const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
-      writeFileSync(
-        join(tempRoot, ".fabric", "events.jsonl"),
-        `${JSON.stringify(initEvent)}\n`,
-        "utf8",
-      );
-      // 3 canonical entries (< default threshold 10) via snapshot stats.
-      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
+  it("emits the SOFT import dual-sink envelope (no decision:block) on underseeded corpus", () => {
+    // ux-w0-3 (KT-DEC-0007): import is now a soft nudge, never decision:block.
+    const prevClient = process.env.FABRIC_HINT_CLIENT;
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    try {
+      withIsolatedFabricHome((home) => {
+        writeProjectConfig(tempRoot, PROJECT_ID);
+        // Seed an init_scan_completed event 48h before NOW.
+        const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+        writeFileSync(
+          join(tempRoot, ".fabric", "events.jsonl"),
+          `${JSON.stringify(initEvent)}\n`,
+          "utf8",
+        );
+        // 3 canonical entries (< default threshold 10) via snapshot stats.
+        writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
 
-      const writes: string[] = [];
-      const stdout = { write: (chunk: string) => writes.push(chunk) };
-      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+        const writes: string[] = [];
+        const stdout = { write: (chunk: string) => writes.push(chunk) };
+        hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-      expect(writes).toHaveLength(1);
-      const payload = JSON.parse(writes[0] as string) as {
-        decision: string;
-        reason: string;
-        signal: string;
-        recommended_skill: string;
-      };
-      expect(payload.decision).toBe("block");
-      expect(payload.signal).toBe("import");
-      expect(payload.recommended_skill).toBe("fabric-import");
-      expect(payload.reason).toMatch(/fabric-import/);
-      expect(payload.reason).toMatch(/3\/10/);
-    });
+        expect(writes).toHaveLength(1);
+        const env = JSON.parse(writes[0] as string);
+        expect(env.decision).toBeUndefined(); // NOT a block contract
+        expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-import/); // AI sink
+        expect(env.hookSpecificOutput.additionalContext).toMatch(/3\/10/);
+      });
+    } finally {
+      if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
+      else process.env.FABRIC_HINT_CLIENT = prevClient;
+    }
   });
 
   it("silent exit 0 when corpus is well-seeded (>= threshold)", () => {

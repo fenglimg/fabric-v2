@@ -10,7 +10,7 @@ import { storeUuidSchema } from "./store.js";
 // Surfaces: F1 (provenance visible) · S61 (store-qualified ids; shadowing not
 // silently merged). Every knowledge entry surfaced by the 6 MCP tools
 // (fab_recall / fab_plan_context / fab_get_knowledge_sections / fab_archive_scan
-// / fab_extract_knowledge / fab_review) carries this envelope so the AI can tell
+// / fab_propose / fab_review) carries this envelope so the AI can tell
 // WHICH store an entry came from and cite it store-qualified.
 //
 //   store_uuid — intrinsic store identity (authoritative)

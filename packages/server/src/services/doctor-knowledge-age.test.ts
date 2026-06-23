@@ -61,13 +61,21 @@ async function createProject(): Promise<string> {
   return projectRoot;
 }
 
-function entryMd(id: string, maturity: "proven" | "verified" | "draft"): string {
+// v2.2 C1: age decay only applies to `narrow` entries now (broad is usage-blind
+// and exempt). Fixtures default to narrow so the decay cases keep firing; the
+// broad-exemption cases pass relevance_scope="broad" explicitly.
+function entryMd(
+  id: string,
+  maturity: "proven" | "verified" | "draft",
+  relevanceScope: "narrow" | "broad" = "narrow",
+): string {
   return [
     "---",
     `id: ${id}`,
     "type: decisions",
     "layer: team",
     `maturity: ${maturity}`,
+    `relevance_scope: ${relevanceScope}`,
     "summary: fixture entry",
     "---",
     "",
@@ -76,7 +84,12 @@ function entryMd(id: string, maturity: "proven" | "verified" | "draft"): string 
   ].join("\n");
 }
 
-async function seedEntry(fileName: string, id: string, maturity: "proven" | "verified" | "draft"): Promise<void> {
+async function seedEntry(
+  fileName: string,
+  id: string,
+  maturity: "proven" | "verified" | "draft",
+  relevanceScope: "narrow" | "broad" = "narrow",
+): Promise<void> {
   const dir = join(
     resolveGlobalRoot(),
     storeRelativePathForMount({ store_uuid: TEAM_STORE, personal: false }),
@@ -84,7 +97,7 @@ async function seedEntry(fileName: string, id: string, maturity: "proven" | "ver
     "decisions",
   );
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, fileName), entryMd(id, maturity));
+  await writeFile(join(dir, fileName), entryMd(id, maturity, relevanceScope));
 }
 
 function mountTeam(): void {
@@ -146,6 +159,25 @@ describe("inspectStoreKnowledgeAge — orphan_demote (G-AGE)", () => {
     mountTeam();
 
     const result = await inspectStoreKnowledgeAge(projectRoot, NOW, new Map());
+    expect(result.orphanDemote.candidates).toEqual([]);
+    expect(result.staleArchive.candidates).toEqual([]);
+  });
+
+  it("EXEMPTS broad entries from age decay even when long inactive (C1: usage-blind)", async () => {
+    await freshHome();
+    const projectRoot = await createProject();
+    // A broad proven entry AND a broad draft, both ancient — neither should
+    // surface: broad is SessionStart-pushed, never pull-recalled, so usage-age
+    // is structurally blind to it (decisions/importance-is-maturity-not-usage-count).
+    await seedEntry("KT-DEC-0006--broad-proven.md", "KT-DEC-0006", "proven", "broad");
+    await seedEntry("KT-DEC-0007--broad-draft.md", "KT-DEC-0007", "draft", "broad");
+    mountTeam();
+
+    const index = new Map([
+      ["KT-DEC-0006", ageDaysAgo(400)],
+      ["KT-DEC-0007", ageDaysAgo(400)],
+    ]);
+    const result = await inspectStoreKnowledgeAge(projectRoot, NOW, index);
     expect(result.orphanDemote.candidates).toEqual([]);
     expect(result.staleArchive.candidates).toEqual([]);
   });

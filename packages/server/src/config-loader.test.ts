@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readPayloadLimits, readEmbedConfig, readOrphanDemoteThresholdDays } from "./config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readPayloadLimits, readEmbedConfig, readOrphanDemoteThresholdDays, readBroadReviewRecheckThresholdDays, BROAD_REVIEW_RECHECK_DAYS_DEFAULT } from "./config-loader.js";
 
 // v2.0.0-rc.29 REVIEW (codex HIGH-3): the raw JSON read previously cast the
 // `selection_token_ttl_ms` field straight onto the typed config without going
@@ -215,5 +215,41 @@ describe("config-loader — readOrphanDemoteThresholdDays (G-VOCAB)", () => {
       orphan_demote_draft_days: 4000, // above max → dropped
     });
     expect(readOrphanDemoteThresholdDays(tempDir)).toEqual({ verified: 30 });
+  });
+});
+
+// v2.2 C1: broad review-recheck threshold (processes/maturity-promotion-rubric-v1).
+describe("config-loader — readBroadReviewRecheckThresholdDays (C1)", () => {
+  let tempDir: string;
+  beforeEach(() => {
+    tempDir = join(process.cwd(), ".tmp-config-loader-recheck", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    mkdirSync(tempDir, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+  function writeConfig(obj: unknown): void {
+    const dir = join(tempDir, ".fabric");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(obj));
+  }
+
+  it("returns the 180d default when no config is present", () => {
+    expect(readBroadReviewRecheckThresholdDays(tempDir)).toBe(BROAD_REVIEW_RECHECK_DAYS_DEFAULT);
+    expect(BROAD_REVIEW_RECHECK_DAYS_DEFAULT).toBe(180);
+  });
+
+  it("honors a valid in-range override", () => {
+    writeConfig({ broad_review_recheck_days: 90 });
+    expect(readBroadReviewRecheckThresholdDays(tempDir)).toBe(90);
+  });
+
+  it("falls back to the default for out-of-range / non-integer values", () => {
+    writeConfig({ broad_review_recheck_days: 0 }); // below min
+    expect(readBroadReviewRecheckThresholdDays(tempDir)).toBe(BROAD_REVIEW_RECHECK_DAYS_DEFAULT);
+    writeConfig({ broad_review_recheck_days: 5000 }); // above max
+    expect(readBroadReviewRecheckThresholdDays(tempDir)).toBe(BROAD_REVIEW_RECHECK_DAYS_DEFAULT);
+    writeConfig({ broad_review_recheck_days: 90.5 }); // non-integer
+    expect(readBroadReviewRecheckThresholdDays(tempDir)).toBe(BROAD_REVIEW_RECHECK_DAYS_DEFAULT);
   });
 });

@@ -11,7 +11,7 @@ export const PROTECTED_TOKENS = [
   "fab_recall",
   "fab_plan_context",
   "fab_get_knowledge_sections",
-  "fab_extract_knowledge",
+  "fab_propose",
   "fab_review",
   // Project convergence point + knowledge tree paths
   "AGENTS.md",
@@ -28,7 +28,7 @@ export const PROTECTED_TOKENS = [
   // Phase 1.5 scope enum values (rc.9 — TASK-008 D1)
   "narrow",
   "broad",
-  // v2.0.0-rc.7 T5/T6 fab_extract_knowledge contract fields (TASK-008 D1)
+  // v2.0.0-rc.7 T5/T6 fab_propose contract fields (TASK-008 D1)
   "source_sessions",
   "proposed_reason",
   "session_context",

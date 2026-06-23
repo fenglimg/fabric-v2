@@ -16,7 +16,7 @@ import { storeUuidSchema } from "./store.js";
 //   - READ tools (fab_recall / fab_plan_context / fab_get_knowledge_sections /
 //     fab_review): each surfaced entry carries a `provenance` envelope and is
 //     cited by `global_ref` (store-qualified).
-//   - WRITE tools (fab_extract_knowledge / fab_review write actions): the output echoes
+//   - WRITE tools (fab_propose / fab_review write actions): the output echoes
 //     `written_to_store` so the AI sees WHERE the entry landed (F1).
 //   - `fab_archive_scan` is intentionally read-only: it scans the event ledger
 //     and does not surface knowledge entries or write to a store.
@@ -28,7 +28,7 @@ export const MCP_STORE_AWARE_TOOLS = [
   "fab_plan_context",
   "fab_get_knowledge_sections",
   "fab_archive_scan",
-  "fab_extract_knowledge",
+  "fab_propose",
   "fab_review",
 ] as const;
 export type McpStoreAwareTool = (typeof MCP_STORE_AWARE_TOOLS)[number];
@@ -77,8 +77,8 @@ export const MCP_STORE_AWARE_CONTRACTS: Record<McpStoreAwareTool, McpStoreAwareC
     surfacesEntries: false,
     echoesWrittenStore: false,
   },
-  fab_extract_knowledge: {
-    tool: "fab_extract_knowledge",
+  fab_propose: {
+    tool: "fab_propose",
     surfacesEntries: false,
     echoesWrittenStore: true,
   },

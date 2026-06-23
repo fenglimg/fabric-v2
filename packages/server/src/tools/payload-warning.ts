@@ -2,7 +2,7 @@
 // MCP tool. The api-contracts structuredWarningSchema has carried `action_hint`
 // since R24, but the tools applied it ASYMMETRICALLY: plan_context /
 // fab_get_knowledge_sections / fab_recall / fab_archive_scan surfaced a
-// soft-warn banner with a hint, while fab_extract_knowledge / fab_review called
+// soft-warn banner with a hint, while fab_propose / fab_review called
 // enforcePayloadLimit and DISCARDED its result — so a near-limit response from
 // those two told the agent nothing. This helper converges all of them onto one
 // shape: when the guard flags an over-warn payload, append a structured warning

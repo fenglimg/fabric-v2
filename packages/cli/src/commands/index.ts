@@ -10,12 +10,10 @@ export const allCommands = {
   store: () => import("./store.js").then((module) => module.default),
   // v2.1.0-rc.1 P3 (S9/S17/S37): multi-store pull --rebase + push, conflict resume.
   sync: () => import("./sync.js").then((module) => module.default),
-  // EPIC-010: Unified info command (replaces whoami/status/scope-explain).
+  // EPIC-010: Unified info command (replaces the retired whoami/status aliases).
   info: () => import("./info.js").then((module) => module.default),
-  // v2.1.0-rc.1 P3 (F5): read-only identity/status info commands.
-  // DEPRECATED: Use `fabric info` instead. These will be removed in v3.
-  whoami: () => import("./whoami.js").then((module) => module.default),
-  status: () => import("./status.js").then((module) => module.default),
+  // ux-w1-7: internal RPC — invoked by skills (fabric scope-explain <layer>),
+  // not a human-facing command. Hidden from grouped help (see grouped-help.ts).
   "scope-explain": () => import("./scope-explain.js").then((module) => module.default),
   doctor: () => import("./doctor.js").then((module) => module.default),
   uninstall: () => import("./uninstall.js").then((module) => module.default),

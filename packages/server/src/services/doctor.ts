@@ -63,6 +63,14 @@ import {
   createStaleArchiveCheck,
   inspectStoreKnowledgeAge,
 } from "./doctor-knowledge-age.js";
+import {
+  createPromotionCandidateCheck,
+  inspectStoreKnowledgePromotion,
+} from "./doctor-knowledge-promotion.js";
+import {
+  createBroadReviewRecheckCheck,
+  inspectStoreBroadReviewRecheck,
+} from "./doctor-knowledge-review-recheck.js";
 // v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
 // co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
 // readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
@@ -113,6 +121,10 @@ import {
   inspectSkillRefMirror,
   inspectSkillTokenBudget,
 } from "./doctor-skill-lints.js";
+import {
+  createRetiredReferenceCheck,
+  inspectRetiredReferences,
+} from "./doctor-retired-references-lint.js";
 import {
   createHookCacheWritabilityCheck,
   createHooksContentDriftCheck,
@@ -632,6 +644,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     skillRefMirror,
     skillTokenBudget,
     skillDescription,
+    retiredReferences,
   ] = await Promise.all([
     inspectForensic(projectRoot),
     // v2.2 W5 R4 (agents.meta decolo): `inspectMeta` (read co-location
@@ -652,6 +665,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectSkillRefMirror(projectRoot),
     inspectSkillTokenBudget(projectRoot),
     inspectSkillDescription(projectRoot),
+    // ux-w2-2: registry-driven stale-pointer scan over the agent-consumed
+    // surface (bootstrap + SKILL.md + installed hooks).
+    inspectRetiredReferences(projectRoot),
   ]);
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Async
   // (reads event ledger); placed after the sync inspections so the await
@@ -710,6 +726,18 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // / KT-DEC-0023), so the last-active index is built once and injected.
   const lastActiveIndex = await buildLastActiveIndex(projectRoot);
   const knowledgeAge = await inspectStoreKnowledgeAge(projectRoot, lintNow, lastActiveIndex);
+  // v2.2 C1: knowledge PROMOTION (growth counterpart of the decay lints).
+  // Surfaces verified entries with `related` in-degree ≥ threshold as proven
+  // candidates (decisions/importance-is-maturity-not-usage-count: in-degree is
+  // the one importance proxy that is neither usage-blind to broad nor
+  // self-reinforcing). Detection-only — promotion judgment is fabric-review's.
+  const knowledgePromotion = await inspectStoreKnowledgePromotion(projectRoot);
+  // v2.2 C1: broad REVIEW-RECHECK (the follow-up to broad's age-decay exemption).
+  // broad is usage-blind so it is exempt from orphan_demote; instead its
+  // continued validity is checked against the review-confirmation clock
+  // (last_review_confirmed_at, stamped at approve/modify). Surfaces broad entries
+  // unconfirmed beyond the threshold as a non-blocking recheck nudge (info kind).
+  const broadReviewRecheck = await inspectStoreBroadReviewRecheck(projectRoot, lintNow);
   const preexistingRootFiles = await inspectPreexistingRootFiles(projectRoot);
   // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
   // of lintNow — corpus size is a store summary count, not a time-decayed
@@ -823,6 +851,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillRefMirrorCheck(t, skillRefMirror),
     createSkillTokenBudgetCheck(t, skillTokenBudget),
     createSkillDescriptionCheck(t, skillDescription),
+    // ux-w2-2: retired-reference (stale-pointer) lint — registry-driven.
+    createRetiredReferenceCheck(t, retiredReferences),
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
@@ -904,6 +934,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
     createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
     createStaleArchiveCheck(t, knowledgeAge.staleArchive),
+    // v2.2 C1: knowledge promotion candidate (info kind — opportunity, not defect).
+    createPromotionCandidateCheck(t, knowledgePromotion),
+    // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
+    // counterpart to the usage-age decay it is exempt from).
+    createBroadReviewRecheckCheck(t, broadReviewRecheck),
     // project-scope binding backfill lint — a store bound as the write target
     // but with no project_id / active_project parks the project axis. The
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos
@@ -2063,7 +2098,7 @@ function createPromoteLedgerInvariantCheck(
  *
  * Werewolf 实测: proposed=20 < promote_started=49 < promoted=53 — 部分 approve
  * 在 rc.31 BUG-G2 fix 之前 happened without emitting knowledge_proposed (real
- * extract didn't go through fab_extract_knowledge → no propose event). The
+ * extract didn't go through fab_propose → no propose event). The
  * rc.31 fix made approve emit synth proposed unconditionally going forward,
  * but it CANNOT retroactively heal pre-fix events.
  *

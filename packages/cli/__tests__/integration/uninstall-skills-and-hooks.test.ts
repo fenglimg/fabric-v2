@@ -164,25 +164,31 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
         `${dir} cite-policy-evict.cjs should exist after init`,
       ).toBe(true);
     }
-    // ...and the Claude settings register it under UserPromptSubmit.
+    // ux-w2-6: the PreToolUse config now wires the single orchestrator
+    // (knowledge-pretooluse.cjs); cite-policy-evict.cjs ships as its lib.
     const settingsBefore = readFileSync(join(target, ".claude", "settings.json"), "utf8");
-    expect(settingsBefore).toContain("cite-policy-evict.cjs");
+    expect(settingsBefore).toContain("knowledge-pretooluse.cjs");
 
     await runUninstall(target);
 
-    // Scripts gone on every client.
+    // Scripts gone on every client — both the cite lib AND the orchestrator.
     for (const dir of [".claude", ".codex"]) {
       expect(
         existsSync(join(target, dir, "hooks", "cite-policy-evict.cjs")),
         `${dir} cite-policy-evict.cjs should be removed`,
       ).toBe(false);
+      expect(
+        existsSync(join(target, dir, "hooks", "knowledge-pretooluse.cjs")),
+        `${dir} knowledge-pretooluse.cjs should be removed`,
+      ).toBe(false);
     }
-    // Config entry pruned: no surviving config across the clients still
-    // references the script.
+    // Config entry pruned: no surviving config references either script.
     for (const rel of [".claude/settings.json", ".codex/hooks.json"]) {
       const p = join(target, rel);
       if (existsSync(p)) {
-        expect(readFileSync(p, "utf8")).not.toContain("cite-policy-evict.cjs");
+        const text = readFileSync(p, "utf8");
+        expect(text).not.toContain("cite-policy-evict.cjs");
+        expect(text).not.toContain("knowledge-pretooluse.cjs");
       }
     }
   });

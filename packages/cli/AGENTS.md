@@ -29,15 +29,15 @@
 完整 maintainer 版见 `docs/USER-QUICKSTART.md`。
 
 ## 行为规则
-- **修改任何文件前**:先 `fab_recall(paths=[<被改文件>])` —— 一次调用拿回相关 KB 的描述 + 原生读取路径(`paths[].path`)。`fab_recall` 不再投递正文;需要某条正文时直接对其 `paths[].path` 做原生 Read(`Read <store>/knowledge/<type>/<id>--*.md`),这会被 PostToolUse hook 记为 `knowledge_body_read`。lean 默认:描述+索引已够发现条目,正文按需读一次,不每轮重灌(KT-GLD-0005)。
+- **修改任何文件前**:先 `fab_recall(paths=[<被改文件>])` —— 一次调用拿回相关 KB 的描述 + 原生读取路径(`entries[].read_path`)。`fab_recall` 不再投递正文;需要某条正文时直接对其 `entries[].read_path` 做原生 Read(`Read <store>/knowledge/<type>/<id>--*.md`),这会被 PostToolUse hook 记为 `knowledge_body_read`。lean 默认:描述+索引已够发现条目,正文按需读一次,不每轮重灌(KT-GLD-0005)。
 - **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fabric doctor --fix`。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer `KP-*` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
-- **Usage**:走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 `paths[].path` 做原生 Read 取回(不再走 MCP 二次取正文)。
+- **Usage**:走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 `entries[].read_path` 做原生 Read 取回(不再走 MCP 二次取正文)。
 - **session_id**: 调用 `fab_recall` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 `fabric-hint.cjs` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (7)**:写流程 `fabric-archive` / `fabric-review` / `fabric-import`;store 流程 `fabric-store` / `fabric-sync` / `fabric-connect`;诊断 `fabric-audit`。
-- **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
+- **Language**:渲染按 `~/.fabric/fabric-global.json` 的 `language` 字段(machine-wide tone)。
 - **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config `archive_edit_threshold` 一致)/ 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_review action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
@@ -78,7 +78,7 @@
 - **contract 语法**: decisions/pitfalls 类 `[applied]` cite 尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
 - **skip reason 词典**: `sequencing | conditional | semantic | aesthetic | architectural | other:<text>`。
 - **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
-- **用户口头提规则没给 id**: 先调 `fab_recall(paths)` 或 `fab_extract_knowledge` 反查。
+- **用户口头提规则没给 id**: 先调 `fab_recall(paths)` 或 `fab_propose` 反查。
 - **dismissed reason**: 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。
 - **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_recall`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
 - **稽核**: `fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出 cite 覆盖率,含 `KB: none` sentinel 拆分。本规则不阻断你工作,只记录。

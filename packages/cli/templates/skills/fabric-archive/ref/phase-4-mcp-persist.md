@@ -5,7 +5,7 @@
 ## Full MCP tool call shape
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["<session id1>", "<session id2>", ...],  // T5: array form (Phase 1)
   recent_paths: ["<path1>", "<path2>", ...],   // capped at archive_max_recent_paths (config-resolved, default 20)
   user_messages_summary: "<compact prose ≤500 chars>",
@@ -79,7 +79,7 @@ The server returns `{ pending_path, idempotency_key }`. Display `pending_path` t
 
 ## Idempotency Notes (T5 array-form, rc.7+)
 
-The MCP tool derives `idempotency_key = sha256({source_session, type, slug})`. Calling `fab_extract_knowledge` twice with the same `(source_session, type, slug)` triple is SAFE: the server appends new evidence to the existing pending file rather than overwriting or producing duplicates. The skill MAY be re-invoked on the same session without producing junk.
+The MCP tool derives `idempotency_key = sha256({source_session, type, slug})`. Calling `fab_propose` twice with the same `(source_session, type, slug)` triple is SAFE: the server appends new evidence to the existing pending file rather than overwriting or producing duplicates. The skill MAY be re-invoked on the same session without producing junk.
 
 If the skill needs to record a genuinely separate observation in the same session+type, the slug MUST differ.
 

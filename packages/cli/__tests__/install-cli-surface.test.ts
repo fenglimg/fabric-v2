@@ -17,6 +17,8 @@ const EXPECTED_FABRIC_CONFIG_FIELDS = [
   // grill-6fixes (D1): `fabric_language` is no longer scaffolded into the
   // project config — language is a single machine-wide tone in
   // ~/.fabric/fabric-global.json.
+  // ux-w1-9: nudge_mode master switch is scaffolded into the shipped config.
+  "nudge_mode",
   "archive_hint_hours",
   "archive_hint_cooldown_hours",
   "review_hint_pending_count",

@@ -46,7 +46,7 @@ const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER"];
 // layer enums + server event names that templates reference verbatim.
 const SKILL_MCP_TOKENS: Record<string, string[]> = {
   "fabric-archive": [
-    "fab_extract_knowledge",
+    "fab_propose",
     "relevance_scope",
     "relevance_paths",
     "pending_path",
@@ -59,7 +59,7 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
     "knowledge_scope_degraded",
   ],
   "fabric-import": [
-    "fab_extract_knowledge",
+    "fab_propose",
     "fab_review",
     "pending_path",
     "proposed_reason",
@@ -85,7 +85,7 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
 const REGISTRY_REQUIRED_TOKENS = [
   ...BOOTSTRAP_REQUIRED_TOKENS,
   ...SKILL_REQUIRED_TOKENS,
-  "fab_extract_knowledge",
+  "fab_propose",
   "fab_review",
   "relevance_scope",
   "relevance_paths",

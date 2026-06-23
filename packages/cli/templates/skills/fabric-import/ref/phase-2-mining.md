@@ -4,7 +4,7 @@
 
 ## Mandatory Scope Rule — Always Broad + Empty Paths (Q-1 Resolution)
 
-**EVERY `fab_extract_knowledge` call issued from this skill MUST set:**
+**EVERY `fab_propose` call issued from this skill MUST set:**
 
 - `relevance_scope = "broad"`
 - `relevance_paths = []`
@@ -77,10 +77,10 @@ For each commit:
    - `chore(...)`, `test(...)`, `ci(...)` → almost always skip (mechanical; no reusable insight)
 2. Read the commit body. Extract the LLM-judged "core observation" — what would a future engineer want to know about this commit beyond the diff? Aim for 1–2 sentences in zh-CN (project fabric_language; mirror fabric-archive M3 style).
 3. Apply the **Skip Decision Tree** below. If the commit is skip-worthy, record it in `p2_processed_commits[]` with `skipped: true` and move on.
-4. For non-skipped commits, classify type / propose slug / draft summary. Then call `fab_extract_knowledge` with the **mandatory broad + [] scope** (see "Mandatory Scope Rule" above):
+4. For non-skipped commits, classify type / propose slug / draft summary. Then call `fab_propose` with the **mandatory broad + [] scope** (see "Mandatory Scope Rule" above):
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["fabric-import-<ISO8601-date>"],   // T5: array form; stable per import run
   recent_paths: ["<files touched by this commit, capped at 20>"],   // provenance only, NOT a path-binding signal
   user_messages_summary: "<zh-CN 1-2 sentence summary of the commit's core observation; cite the commit sha as 'src=<sha7>'>",
@@ -108,7 +108,7 @@ Note: `recent_paths` carries the touched-file list for **provenance display** on
 
 ## Step 2.1.5 — Proposed Reason Inference (rc.7 T6)
 
-For each non-skipped commit OR doc section, infer `proposed_reason` from prefix + body signal jointly. The 6 reasons below are the full enum accepted by `fab_extract_knowledge` (schema-locked):
+For each non-skipped commit OR doc section, infer `proposed_reason` from prefix + body signal jointly. The 6 reasons below are the full enum accepted by `fab_propose` (schema-locked):
 
 | Source signal | Body cue | Inferred reason |
 |---|---|---|
@@ -148,7 +148,7 @@ For each Markdown file:
    - `LICENSE.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` → skip (boilerplate)
    - Files <300 bytes → skip (too thin to extract meaningful observations)
 2. Read the file. Identify candidate observations: section headings that read like decisions ("we chose X over Y"), guidelines ("always do X"), pitfalls ("don't do Y because..."), or process steps ("the deploy procedure is..."). Architecture diagrams in fenced code blocks are strong **model** signals.
-3. For each observation, classify type / propose slug / draft summary. Call `fab_extract_knowledge` with the same shape as Step 2.1 (including the **mandatory `relevance_scope: "broad"` + `relevance_paths: []`**), replacing `recent_paths` with `[<this doc path>]` and citing `src=<doc-relative-path>` in the summary.
+3. For each observation, classify type / propose slug / draft summary. Call `fab_propose` with the same shape as Step 2.1 (including the **mandatory `relevance_scope: "broad"` + `relevance_paths: []`**), replacing `recent_paths` with `[<this doc path>]` and citing `src=<doc-relative-path>` in the summary.
 4. Append to `.fabric/.import-state.json`:
    - `p2_processed_docs[].push({path: <doc path>, observations_proposed: <count>, pending_paths: [...]})`
 5. **Hard cap shared with Step 2.1**: total new pending entries across git + docs is capped at `import_max_pending_per_run` (config-resolved, default 10) per Phase 2 run.
@@ -167,14 +167,14 @@ A candidate signal surfaces (commit body or doc section).
   │    └─ NO  → skip (not classifiable = not yet ripe)
   ├─ Is the slug derivable as 2-5 kebab-case words?
   │    └─ NO  → skip (signal too vague for stable identifier)
-  └─ Else → propose via fab_extract_knowledge
+  └─ Else → propose via fab_propose
 ```
 
 After Step 2.2 completes (or hits the cap), update `.fabric/.import-state.json`: `phase = "P2-done"`, `last_checkpoint_at = <ISO8601 now>`.
 
 ## Dry-Run Mode
 
-When the user invocation carries the verbatim token `--dry-run`, Phase 2 runs WITHOUT calling `fab_extract_knowledge`. Instead it prints a table. v2.0.0-rc.37 NEW-10 dropped the legacy substring fallback on bare `dry-run` / `预览` because those caused false positives on incidental mentions ("preview the table" / "do a dry run later"). UX i18n Policy class 4 — header + column titles bilingualized; row content (slug / commit sha / doc path) NOT translated. Protected tokens `broad`, `relevance_scope`, `relevance_paths` appear verbatim:
+When the user invocation carries the verbatim token `--dry-run`, Phase 2 runs WITHOUT calling `fab_propose`. Instead it prints a table. v2.0.0-rc.37 NEW-10 dropped the legacy substring fallback on bare `dry-run` / `预览` because those caused false positives on incidental mentions ("preview the table" / "do a dry run later"). UX i18n Policy class 4 — header + column titles bilingualized; row content (slug / commit sha / doc path) NOT translated. Protected tokens `broad`, `relevance_scope`, `relevance_paths` appear verbatim:
 
 ### zh-CN variant (`fabric_language === "zh-CN"`)
 
@@ -204,7 +204,7 @@ Every dry-run row MUST show `broad+[]` in the Scope column (constant for fabric-
 
 ## Idempotency Note — T5 array form
 
-The server derives `idempotency_key = sha256({source_session, type, slug})` for every `fab_extract_knowledge` call. Re-invoking with the same `(source_session, type, slug)` triple is SAFE: the server appends new evidence to the existing pending file rather than overwriting or producing duplicates — this is why `fabric-import` resume after Ctrl-C / crash never produces duplicate pending entries for already-processed commits.
+The server derives `idempotency_key = sha256({source_session, type, slug})` for every `fab_propose` call. Re-invoking with the same `(source_session, type, slug)` triple is SAFE: the server appends new evidence to the existing pending file rather than overwriting or producing duplicates — this is why `fabric-import` resume after Ctrl-C / crash never produces duplicate pending entries for already-processed commits.
 
 **T5 array-form note (rc.7+)**: when `source_sessions` is passed as an array (rc.7 T5 contract), only `source_sessions[0]` participates in the server-side idempotency hash. Server formula at `packages/server/src/services/extract-knowledge.ts:78` is `sha256(JSON.stringify({source_session: sourceSessions[0], type, slug}))`. Implications for fabric-import:
 

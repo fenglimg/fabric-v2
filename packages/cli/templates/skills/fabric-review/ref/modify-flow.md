@@ -49,6 +49,18 @@ mcp__fabric__fab_review({
 
 ---
 
+## Promotion Gate — verified → proven (v2.2 C1)
+
+`maturity` promotion to `proven` is the foundational tier and runs a 3-part gate from `processes/maturity-promotion-rubric-v1`. The doctor `knowledge_broad_review_recheck`-adjacent `promotion_candidate` lint only SURFACES candidates (verified entries with `related` in-degree ≥3); the SUFFICIENT judgment lives here in review.
+
+Before issuing `fab_review modify ... { maturity: "proven" }`, satisfy all three:
+
+1. **0 dismiss (NECESSARY — server-enforced).** The server REFUSES the verified→proven modify when the entry carries an unresolved dismissed cite (latest `assistant_turn_observed` verdict for its id is `dismissed`, last-write-wins). You do NOT need to pre-check this — the modify throws with an actionable message. To clear it, the entry must be re-affirmed (a later `applied` cite) or the objection addressed. Do not work around the block; resolving it IS the gate.
+2. **guideline/model summary cold-eval (NECESSARY for those two types).** For `guidelines`/`models`, run the zero-context self-sufficiency judge before promoting: build the batch with `summary-cold-eval.buildColdEvalBatch([{stable_id, summary}])` + `COLD_EVAL_RUBRIC`, hand it to a `maestro delegate` cold judge (body WITHHELD), and only proceed if `self_sufficient=true`. A FAIL means the summary only points at the body — fix the summary (modify) first, then re-judge. (decisions/pitfalls/processes skip this — they are reference, not always-active rules.)
+3. **Foundational affirmation (SUFFICIENT — human).** Surface AskUserQuestion confirming the reviewer judges the entry "foundational / load-bearing", not merely correct. Promotion to proven is a standing-rule claim; the human makes it.
+
+Only after 1–3 hold, call `fab_review action="modify-content" changes={ maturity: "proven" }`. The modify itself stamps `last_review_confirmed_at` (every approve/modify is a review re-confirmation — this also resets the broad review-recheck clock).
+
 ## Narrowing Imported Entries
 
 The fabric-import skill creates pending entries with `relevance_scope=broad` + `relevance_paths=[]` as a deliberate contract — it cannot derive paths from git history. **Narrowing imported entries is fabric-review's responsibility.**

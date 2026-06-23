@@ -14,7 +14,8 @@ import {
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
-import { readEventLedger } from "./event-ledger.js";
+import { appendEventLedgerEvent, readEventLedger } from "./event-ledger.js";
+import { inspectStoreBroadReviewRecheck } from "./doctor-knowledge-review-recheck.js";
 import {
   __getReviewSearchIndexCacheStatsForTests,
   __isPendingKnowledgePathForTest,
@@ -1861,5 +1862,129 @@ describe("reviewKnowledge", () => {
       `${result.approved[0].stable_id}--boundary-flip.md`,
     );
     expect(existsSync(canonicalAbs)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.2 C1 — review-confirmation stamp + verified→proven 0-dismiss gate
+// (processes/maturity-promotion-rubric-v1). Producer side: review.ts stamps
+// last_review_confirmed_at at approve/modify, and refuses verified→proven when
+// an unresolved dismissed cite is on record.
+// ---------------------------------------------------------------------------
+
+const LAST_REVIEW_LINE = /^last_review_confirmed_at:\s*"?([^"\n]+?)"?\s*$/mu;
+
+async function dismissCite(projectRoot: string, ts: number, id: string, tag: "applied" | "dismissed"): Promise<void> {
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "assistant_turn_observed",
+    ts,
+    kb_line_raw: `KB: ${id} [${tag}]`,
+    cite_ids: [id],
+    cite_tags: [tag],
+    cite_commitments: [],
+    turn_id: `turn-${ts}`,
+    timestamp: new Date(ts).toISOString(),
+  });
+}
+
+describe("review C1 — review-confirmation stamp", () => {
+  it("approve stamps last_review_confirmed_at on the promoted entry, and the broad recheck lint reads it (round-trip)", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "stamped-on-approve");
+
+    const result = await reviewKnowledge(projectRoot, { action: "approve", pending_paths: [pendingPath] });
+    if (result.action !== "approve") throw new Error("unreachable");
+    const stableId = result.approved[0].stable_id;
+    const canonicalPath = storeKnowledgeDir("team", "decisions", `${stableId}--stamped-on-approve.md`);
+    const content = await readFile(canonicalPath, "utf8");
+
+    const stamped = LAST_REVIEW_LINE.exec(content)?.[1];
+    expect(stamped).toBeDefined();
+    const stampedMs = Date.parse(stamped!);
+    expect(Number.isNaN(stampedMs)).toBe(false);
+
+    // Consumer round-trip: pushing `now` past the threshold surfaces THIS entry
+    // for recheck — proving the field the producer wrote is exactly what the
+    // lint reads (no false-green from a name mismatch, KT-PIT-0014). The seeded
+    // entry has no relevance_scope → defaults broad → in scope for the lint.
+    const fresh = await inspectStoreBroadReviewRecheck(projectRoot, stampedMs, 180);
+    expect(fresh.candidates).toEqual([]); // just confirmed → not yet due.
+    const future = stampedMs + 200 * 24 * 60 * 60 * 1000;
+    const due = await inspectStoreBroadReviewRecheck(projectRoot, future, 180);
+    expect(due.candidates.map((c) => c.stable_id)).toContain(`team:${stableId}`);
+    expect(due.candidates.find((c) => c.stable_id === `team:${stableId}`)?.clock_source).toBe("review");
+  });
+
+  it("modify stamps last_review_confirmed_at (every review touch re-confirms)", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "stamped-on-modify");
+
+    await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { tags: ["touched"] },
+    });
+    const content = await readFile(pendingPath, "utf8");
+    const stamped = LAST_REVIEW_LINE.exec(content)?.[1];
+    expect(stamped).toBeDefined();
+    expect(Number.isNaN(Date.parse(stamped!))).toBe(false);
+  });
+});
+
+describe("review C1 — verified→proven 0-dismiss gate", () => {
+  // Approve a pending entry, then bring it to maturity=verified in place, and
+  // return its canonical path + stable_id.
+  async function approveThenVerify(projectRoot: string, slug: string): Promise<{ id: string; path: string }> {
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", slug);
+    const approved = await reviewKnowledge(projectRoot, { action: "approve", pending_paths: [pendingPath] });
+    if (approved.action !== "approve") throw new Error("unreachable");
+    const id = approved.approved[0].stable_id;
+    const path = storeKnowledgeDir("team", "decisions", `${id}--${slug}.md`);
+    await reviewKnowledge(projectRoot, { action: "modify", pending_path: path, changes: { maturity: "verified" } });
+    return { id, path };
+  }
+
+  it("BLOCKS verified→proven when an unresolved dismissed cite is on record", async () => {
+    const projectRoot = await createTempProject();
+    const { id, path } = await approveThenVerify(projectRoot, "gated-by-dismissal");
+    await dismissCite(projectRoot, 1000, id, "dismissed");
+
+    await expect(
+      reviewKnowledge(projectRoot, { action: "modify", pending_path: path, changes: { maturity: "proven" } }),
+    ).rejects.toThrow(/0 dismiss|unresolved dismissed/u);
+
+    // The block is a hard-fail BEFORE the write — maturity stays verified.
+    const content = await readFile(path, "utf8");
+    expect(content).toMatch(/^maturity: verified$/mu);
+  });
+
+  it("ALLOWS verified→proven once a later applied cite re-affirms the entry", async () => {
+    const projectRoot = await createTempProject();
+    const { id, path } = await approveThenVerify(projectRoot, "ungated-after-reaffirm");
+    await dismissCite(projectRoot, 1000, id, "dismissed");
+    await dismissCite(projectRoot, 2000, id, "applied"); // re-affirm clears the objection.
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: path,
+      changes: { maturity: "proven" },
+    });
+    expect(result.action).toBe("modify");
+    const content = await readFile(path, "utf8");
+    expect(content).toMatch(/^maturity: proven$/mu);
+  });
+
+  it("ALLOWS verified→proven when the entry was never dismissed", async () => {
+    const projectRoot = await createTempProject();
+    const { path } = await approveThenVerify(projectRoot, "ungated-clean");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: path,
+      changes: { maturity: "proven" },
+    });
+    expect(result.action).toBe("modify");
+    const content = await readFile(path, "utf8");
+    expect(content).toMatch(/^maturity: proven$/mu);
   });
 });

@@ -24,7 +24,7 @@ import { extractKnowledge } from "../services/extract-knowledge.js";
 
 export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
-    "fab_extract_knowledge",
+    "fab_propose",
     {
       description:
         "Persist a proposed pending knowledge entry into the resolved write-target store under knowledge/pending/<type>/<slug>.md. Idempotent on (source_sessions[0], type, slug); repeat calls append evidence rather than overwrite. Skill-side tool — invoked at session-stop.",
@@ -65,7 +65,7 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
         response.warnings = appendPayloadWarning(
           response.warnings,
           guardResult,
-          "fab_extract_knowledge produced an unexpectedly large response — extract from a smaller span of text.",
+          "fab_propose produced an unexpectedly large response — extract from a smaller span of text.",
         );
 
         return {

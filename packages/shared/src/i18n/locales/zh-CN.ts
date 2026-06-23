@@ -43,14 +43,10 @@ export const zhCNMessages: Messages = {
   "cli.help.group.setup.config": "配置 Fabric 设置",
   "cli.help.group.daily.sync": "与远程 store 同步团队知识",
   "cli.help.group.daily.info": "显示项目状态",
+  "cli.help.group.daily.context": "显示本会话 SessionStart 注入了什么",
   "cli.help.group.diagnostic.doctor": "检查 Fabric 健康状态并修复问题",
+  "cli.help.group.diagnostic.metrics": "显示知识度量面板",
   "cli.help.group.advanced.store": "管理知识 store (详见: fabric store --help)",
-  "cli.help.group.advanced.whoami": "显示机器标识",
-  "cli.help.group.advanced.whoami.deprecated": "已弃用 → info --global",
-  "cli.help.group.advanced.status": "显示项目状态",
-  "cli.help.group.advanced.status.deprecated": "已弃用 → info",
-  "cli.help.group.advanced.scope-explain": "解释 scope",
-  "cli.help.group.advanced.scope-explain.deprecated": "已弃用 → info scope",
 
 
   "cli.config.description":
@@ -444,6 +440,14 @@ export const zhCNMessages: Messages = {
     "有 {count} 个 ref 文件在 `.claude/skills/` 与 `.codex/skills/` 之间不一致（路径: {list}）。可能某端被手动编辑或 install 写入失败。",
   "doctor.check.skill_ref_mirror.remediation":
     "跑 `fabric install` 从 canonical templates 重写两端 ref 子树以恢复一致。",
+  // ux-w2-2: retired-reference (stale pointer) lint。
+  "doctor.check.retired_reference.name": "退役引用",
+  "doctor.check.retired_reference.ok":
+    "bootstrap、SKILL.md、已安装 hooks 中无残留的退役工具/字段名。",
+  "doctor.check.retired_reference.message":
+    "agent 可见文本中有 {count} 处指向退役工具/字段名的 stale pointer: {sample}",
+  "doctor.check.retired_reference.remediation":
+    "把命中文本改为替代 token (或删除), 再跑 `fabric install` 重同步 dogfood 镜像。",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
@@ -644,7 +648,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.promote_ledger_invariant.ok":
     "knowledge_proposed={proposed} ≥ knowledge_promote_started={started} ≥ knowledge_promoted={promoted}，ledger 不变量持有。",
   "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
-    "knowledge_proposed={proposed} 小于 knowledge_promote_started={started}（ledger 不变量被破坏；部分 pending 在 approve 时未经过 fab_extract_knowledge → 缺少 propose 事件）。",
+    "knowledge_proposed={proposed} 小于 knowledge_promote_started={started}（ledger 不变量被破坏；部分 pending 在 approve 时未经过 fab_propose → 缺少 propose 事件）。",
   "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
     "knowledge_promote_started={started} 小于 knowledge_promoted={promoted}（ledger 不变量被破坏；存在未配对的 promoted 事件，可能来自 doctor filesystem-edit fallback 或外部写入）。",
   "doctor.check.promote_ledger_invariant.remediation":
@@ -758,6 +762,26 @@ export const zhCNMessages: Messages = {
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个:{detail}。",
   "doctor.check.stale_archive.remediation":
     "通过 `/fabric-review reject <id>` 归档该 stale draft,或若仍相关则复活它。(移动 store 文件是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露陈旧。)",
+  // v2.2 C1: knowledge promotion lint (promotion_candidate, info kind)。
+  "doctor.check.promotion_candidate.name": "Knowledge promotion candidate",
+  "doctor.check.promotion_candidate.ok":
+    "没有 verified knowledge entries 达到 proven 晋升的 related 入度门槛。",
+  "doctor.check.promotion_candidate.message.singular":
+    "{count} 个 verified knowledge entry 的 related 入度 ≥{threshold},结构上够中心,值得 review 晋升到 proven。首个:{detail}。",
+  "doctor.check.promotion_candidate.message.plural":
+    "{count} 个 verified knowledge entries 的 related 入度 ≥{threshold},结构上够中心,值得 review 晋升到 proven。首个:{detail}。",
+  "doctor.check.promotion_candidate.remediation":
+    "通过 `/fabric-review` 复核这些 entry,确认 0 dismiss、cold-eval 自足、属地基级后 `modify <id>` 升到 proven。(晋升判定是 store 写侧 review 的职责 — 这个读侧 lint 只 surface 结构中心的候选。)",
+  // v2.2 C1: broad review-recheck lint (broad_review_recheck, info kind)。
+  "doctor.check.broad_review_recheck.name": "Knowledge broad review recheck",
+  "doctor.check.broad_review_recheck.ok":
+    "没有 broad-scope knowledge entries 超期未做 review 再确认。",
+  "doctor.check.broad_review_recheck.message.singular":
+    "{count} 个 broad-scope knowledge entry 已 {thresholdDays}d+ 没经过 fab-review 再确认,值得复查(broad 豁免 usage-age 降级,这是它的 review 时钟)。首个:{detail}。",
+  "doctor.check.broad_review_recheck.message.plural":
+    "{count} 个 broad-scope knowledge entries 已 {thresholdDays}d+ 没经过 fab-review 再确认,值得复查(broad 豁免 usage-age 降级,这是它的 review 时钟)。首个:{detail}。",
+  "doctor.check.broad_review_recheck.remediation":
+    "通过 `/fabric-review` 再确认每条(approve/modify 会盖一个新的 review 时间戳),或若不再成立则降级/驳回。这是非阻塞提示,绝不自动降级 — broad 知识在 reviewer 动手前持续 surface。",
   // project-scope binding 回填 lint (unbound_project)。
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

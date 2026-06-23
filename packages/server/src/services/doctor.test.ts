@@ -166,6 +166,8 @@ describe("runDoctorReport", () => {
       // observability checks (no mutation), inserted adjacent to skill_ref_mirror.
       "Skill token budget",
       "Skill description quality",
+      // ux-w2-2: registry-driven retired-reference (stale-pointer) lint.
+      "Retired reference",
       "Cite-policy Goodhart",
       // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Inserted adjacent to
       // cite_goodhart — both are observability checks built on disk + ledger.
@@ -231,6 +233,11 @@ describe("runDoctorReport", () => {
       // rebuilt store-aware (age from events.jsonl last-active, KT-DEC-0023).
       "Knowledge orphan demote",
       "Knowledge stale archive",
+      // v2.2 C1: knowledge promotion candidate (info kind — growth counterpart).
+      "Knowledge promotion candidate",
+      // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
+      // counterpart to the usage-age decay it is exempt from).
+      "Knowledge broad review recheck",
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
@@ -262,7 +269,10 @@ describe("runDoctorReport", () => {
     // the registry) → 40.
     // B2 skill-router (A4): +1 router_chain_ref (fabric/ S_CHAIN reference
     // backstop) → 41.
-    expect(report.checks).toHaveLength(41);
+    // v2.2 C1: +1 promotion_candidate (knowledge growth lint, info kind) → 42.
+    // v2.2 C1: +1 broad_review_recheck (broad's review-clock lint, info kind) → 43.
+    // ux-w2-2: +1 retired_reference (stale-pointer lint) → 44.
+    expect(report.checks).toHaveLength(44);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

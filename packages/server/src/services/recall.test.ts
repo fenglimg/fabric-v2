@@ -133,22 +133,23 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       session_id: "session-recall-1",
     });
 
-    // Discovery index intact.
+    // ux-w2-4: one unified ranked entries[] (description + read_path merged).
     expect(result.revision_hash).toEqual(expect.any(String));
-    expect(result.entries).toHaveLength(1);
-    expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
+    expect(result.entries.map((e) => e.stable_id).sort()).toEqual([
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
+    // Ranked best-first: every entry carries a 1-based rank.
+    expect(result.entries.map((e) => e.rank).sort()).toEqual([1, 2]);
 
-    // One read path per surfaced candidate — pointing at the on-disk store file.
-    expect(result.paths.map((p) => p.stable_id).sort()).toEqual([
+    // Each surfaced entry carries a read_path pointing at the on-disk store file.
+    expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id).sort()).toEqual([
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
-    const authPath = result.paths.find((p) => p.stable_id === "team:KT-DEC-0001");
-    expect(authPath?.path).toMatch(/KT-DEC-0001\.md$/);
-    expect(authPath?.store).toEqual({ alias: "team" });
+    const authEntry = result.entries.find((e) => e.stable_id === "team:KT-DEC-0001");
+    expect(authEntry?.read_path).toMatch(/KT-DEC-0001\.md$/);
+    expect(authEntry?.store).toEqual({ alias: "team" });
 
     // No bodies / no two-step fields leak into the wire shape.
     expect(result).not.toHaveProperty("rules");
@@ -174,10 +175,12 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       ids: ["team:KT-DEC-0001", "non-existent-id"],
     });
 
-    // Only the intersection of `ids` and surfaced candidates gets a read path.
-    expect(result.paths.map((p) => p.stable_id)).toEqual(["team:KT-DEC-0001"]);
-    // The candidate description index still shows the full set for discovery.
-    expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
+    // Only the intersection of `ids` and surfaced candidates gets a read_path.
+    expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id)).toEqual([
+      "team:KT-DEC-0001",
+    ]);
+    // The entry list still shows the full set for discovery (descriptions intact).
+    expect(result.entries.map((e) => e.stable_id).sort()).toEqual([
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
@@ -234,7 +237,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       include_related: true,
     });
 
-    expect(result.paths.map((p) => p.stable_id).sort()).toEqual([
+    expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id).sort()).toEqual([
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
@@ -249,7 +252,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       include_related: true,
     });
 
-    expect(result.paths.map((p) => p.stable_id).sort()).toEqual([
+    expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id).sort()).toEqual([
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
@@ -263,8 +266,10 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       ids: ["team:KT-DEC-0001"],
     });
 
-    // Only auth got a read path, but the packaging nudges include_related.
-    expect(result.paths.map((p) => p.stable_id)).toEqual(["team:KT-DEC-0001"]);
+    // Only auth got a read_path, but the packaging nudges include_related.
+    expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id)).toEqual([
+      "team:KT-DEC-0001",
+    ]);
     expect(result.next_steps ?? []).toEqual(
       expect.arrayContaining([expect.stringMatching(/include_related:true/)]),
     );
@@ -273,9 +278,10 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   it("attaches store provenance for store-backed read paths", async () => {
     const projectRoot = await seedTwoEntryProject();
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
-    expect(result.paths.length).toBeGreaterThan(0);
-    for (const p of result.paths) {
-      expect(p.store).toEqual({ alias: "team" });
+    const withPath = result.entries.filter((e) => e.read_path);
+    expect(withPath.length).toBeGreaterThan(0);
+    for (const e of withPath) {
+      expect(e.store).toEqual({ alias: "team" });
     }
   });
 
@@ -302,8 +308,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
     expect(result.omitted_candidate_count).toBe(1);
-    // Only the surviving candidate gets a read path.
-    expect(result.paths).toHaveLength(1);
+    // Only the surviving candidate is surfaced (with a read_path).
+    expect(result.entries.filter((e) => e.read_path)).toHaveLength(1);
     expect(result.next_steps ?? []).toEqual(
       expect.arrayContaining([expect.stringMatching(/omitted by the retrieval budget/)]),
     );
@@ -314,8 +320,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
-    expect(result.candidates).toEqual([]);
-    expect(result.paths).toEqual([]);
+    expect(result.entries).toEqual([]);
     expect(result.directive).toMatch(/auto-accounted as citations/i);
 
     const fetched = await readEventLedger(projectRoot, { event_type: "knowledge_sections_fetched" });
@@ -330,7 +335,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   // predicate is a pure function of (relevance_scope, knowledge_type) — no client
   // state needed. NOT dropped/demoted: SessionStart injection degrades to an
   // index line on budget overflow, so the body is not guaranteed present.
-  it("marks broad model/guideline candidates always_active:true; decisions are not", async () => {
+  it("marks broad model/guideline entries body_in_context:true; decisions are not", async () => {
     const projectRoot = await createTempProject();
     await writeStoreEntry("models", "KT-MOD-0001", [
       "---",
@@ -374,19 +379,19 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     mountStores();
 
     const result = await recall(projectRoot, { paths: ["src/x.ts"], intent: "scope model guideline" });
-    const byId = new Map(result.candidates.map((c) => [c.stable_id, c]));
+    const byId = new Map(result.entries.map((e) => [e.stable_id, e]));
 
-    expect(byId.get("team:KT-MOD-0001")?.always_active).toBe(true);
-    expect(byId.get("team:KT-GLD-0001")?.always_active).toBe(true);
+    expect(byId.get("team:KT-MOD-0001")?.body_in_context).toBe(true);
+    expect(byId.get("team:KT-GLD-0001")?.body_in_context).toBe(true);
     // REFERENCE-tier (decision) is NOT full-injected at SessionStart → no marker.
-    expect(byId.get("team:KT-DEC-0001")?.always_active ?? false).toBe(false);
+    expect(byId.get("team:KT-DEC-0001")?.body_in_context ?? false).toBe(false);
 
-    // wire-strip lock (KT-PIT-0005): always_active must be DECLARED in
+    // wire-strip lock (KT-PIT-0005): body_in_context must be DECLARED in
     // recallOutputSchema, else zod .strip() silently drops it at the MCP boundary
     // — the field would work in this unit test (direct call) yet vanish over the
     // wire. Round-trip through the output schema and assert it survives.
     const parsed = recallOutputSchema.parse(result);
-    const parsedById = new Map(parsed.candidates.map((c) => [c.stable_id, c]));
-    expect(parsedById.get("team:KT-MOD-0001")?.always_active).toBe(true);
+    const parsedById = new Map(parsed.entries.map((e) => [e.stable_id, e]));
+    expect(parsedById.get("team:KT-MOD-0001")?.body_in_context).toBe(true);
   });
 });

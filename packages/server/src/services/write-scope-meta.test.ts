@@ -16,7 +16,7 @@ import {
 
 import { extractKnowledge } from "./extract-knowledge.js";
 
-// v2.1 global-refactor (W1/A1): fab_extract_knowledge frontmatter must carry
+// v2.1 global-refactor (W1/A1): fab_propose frontmatter must carry
 // `semantic_scope` (resolution axis) + `visibility_store` (physical store), and
 // personal scope must never land in a shared store (R5#3).
 

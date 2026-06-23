@@ -47,6 +47,10 @@ export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string)
   // selector. The README/docs detection + fixation that used to run here was
   // removed.
   const FABRIC_CONFIG_DEFAULTS = {
+    // ux-w1-9: nudge_mode is the master switch for the human-visible nudge
+    // experience (silent | minimal | normal | verbose). Scaffolded up-front so
+    // the one volume dial is discoverable in the shipped config.
+    nudge_mode: "normal",
     archive_hint_hours: 24,
     archive_hint_cooldown_hours: 12,
     review_hint_pending_count: 10,
@@ -55,15 +59,10 @@ export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string)
     maintenance_hint_cooldown_days: 7,
     archive_edit_threshold: 20,
     underseed_node_threshold: 10,
-    import_window_first_run_months: 60,
-    import_window_rerun_months: 2,
-    import_max_pending_per_run: 10,
-    import_max_commits_scan: 500,
-    import_skip_canonical_threshold: 50,
-    archive_max_candidates_per_batch: 8,
-    archive_max_recent_paths: 20,
-    archive_digest_max_sessions: 10,
-    review_topic_result_cap: 8,
+    // ux-w2-3: import_*/archive_max_*/review_topic_result_cap skill thresholds
+    // are no longer scaffolded — they were hardcoded (✂ census Table 1). The
+    // fabric-import/archive/review skills read a built-in default when the key
+    // is absent, so the shipped config stays lean (panel knobs only).
     review_stale_pending_days: 14,
   };
 

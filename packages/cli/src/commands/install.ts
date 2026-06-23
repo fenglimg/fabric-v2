@@ -85,6 +85,7 @@ import {
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
+  installKnowledgePretoolUseHook,
   installSessionEndMarkerHook,
   installPostTooluseMutationHook,
   installSharedSkillLib,
@@ -910,6 +911,10 @@ async function executeInitStagePlan(
         // stage) left configs pointing at a missing file. Inlined here too,
         // mirroring the hook-config note below.
         installResults.push(...await runBestEffort("hook-cite-policy-evict-script", () => installCitePolicyEvictHook(plan.target)));
+        // ux-w2-6: the single PreToolUse orchestrator (the config wires THIS;
+        // narrow + cite above are its runtime libs). Copy it here too so a
+        // bootstrap-only install doesn't leave the config pointing at a missing file.
+        installResults.push(...await runBestEffort("hook-pretooluse-script", () => installKnowledgePretoolUseHook(plan.target)));
         // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hook
         // scripts. Mirror the sibling hook-script copies (config merges below
         // register these events; the SCRIPT must be on disk for a bootstrap-

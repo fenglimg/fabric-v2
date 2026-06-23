@@ -33,7 +33,7 @@ describe("createFabricServer", () => {
     // MCP tools are retired — recall collapsed to ONE lean tool.
     expect(toolNames.sort()).toEqual([
       "fab_archive_scan",
-      "fab_extract_knowledge",
+      "fab_propose",
       "fab_recall",
       "fab_review",
     ]);
@@ -73,11 +73,22 @@ describe("createFabricServer", () => {
     expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("fab_get_knowledge_sections");
     expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("selection_token");
     // Full tool manifest — the four current tools are described.
-    for (const tool of ["fab_recall", "fab_extract_knowledge", "fab_archive_scan", "fab_review"]) {
+    for (const tool of ["fab_recall", "fab_propose", "fab_archive_scan", "fab_review"]) {
       expect(FABRIC_SERVER_INSTRUCTIONS).toContain(tool);
     }
     // Conventions: session_id + cite.
     expect(FABRIC_SERVER_INSTRUCTIONS).toContain("session_id");
     expect(FABRIC_SERVER_INSTRUCTIONS.toLowerCase()).toContain("cite");
+    // ux-w2-7: tools are grouped by audience — AGENT-DIRECT (the agent calls
+    // fab_recall itself) vs SKILL-DRIVEN (fab_propose/scan/review invoked by skills).
+    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("AGENT-DIRECT");
+    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("SKILL-DRIVEN");
+    // fab_recall sits under AGENT-DIRECT, ahead of the SKILL-DRIVEN group.
+    expect(FABRIC_SERVER_INSTRUCTIONS.indexOf("AGENT-DIRECT")).toBeLessThan(
+      FABRIC_SERVER_INSTRUCTIONS.indexOf("SKILL-DRIVEN"),
+    );
+    expect(FABRIC_SERVER_INSTRUCTIONS.indexOf("fab_recall")).toBeLessThan(
+      FABRIC_SERVER_INSTRUCTIONS.indexOf("SKILL-DRIVEN"),
+    );
   });
 });

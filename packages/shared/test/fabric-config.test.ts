@@ -259,73 +259,52 @@ describe("fabricConfigSchema — archive_edit_threshold (rc.6 TASK-022)", () => 
 // reject out-of-range values explicitly.
 // ---------------------------------------------------------------------------
 
-describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
-  it("applies all ten defaults when fields are absent", () => {
-    const parsed = fabricConfigSchema.parse({});
-    expect(parsed.import_window_first_run_months).toBe(60);
-    expect(parsed.import_window_rerun_months).toBe(2);
-    expect(parsed.import_max_pending_per_run).toBe(10);
-    expect(parsed.import_max_commits_scan).toBe(500);
-    expect(parsed.import_skip_canonical_threshold).toBe(50);
-    expect(parsed.archive_max_candidates_per_batch).toBe(8);
-    expect(parsed.archive_max_recent_paths).toBe(20);
-    expect(parsed.archive_digest_max_sessions).toBe(10);
-    expect(parsed.review_topic_result_cap).toBe(8);
-    expect(parsed.review_stale_pending_days).toBe(14);
-  });
-
-  it("accepts explicit overrides for all ten fields", () => {
+describe("fabricConfigSchema — ux-w2-3: hardcoded skill thresholds dropped (lenient)", () => {
+  // import_*/archive_max_*/review_topic_result_cap were ✂ hardcoded per census
+  // Table 1 — never-tuned skill-internal pagination/window caps with no code
+  // reader (the fabric-import/archive/review SKILL.md markdown consumed them).
+  // The schema no longer declares them, so the lenient root parser silently
+  // DROPS any stale on-disk value (zero migration); the skills fall to a
+  // built-in default in their place.
+  it("drops the retired skill-threshold keys instead of surfacing them", () => {
     const parsed = fabricConfigSchema.parse({
       import_window_first_run_months: 24,
-      import_window_rerun_months: 6,
-      import_max_pending_per_run: 20,
       import_max_commits_scan: 1500,
       import_skip_canonical_threshold: 100,
       archive_max_candidates_per_batch: 15,
       archive_max_recent_paths: 50,
       archive_digest_max_sessions: 20,
       review_topic_result_cap: 15,
-      review_stale_pending_days: 30,
-    });
-    expect(parsed.import_window_first_run_months).toBe(24);
-    expect(parsed.import_window_rerun_months).toBe(6);
-    expect(parsed.import_max_pending_per_run).toBe(20);
-    expect(parsed.import_max_commits_scan).toBe(1500);
-    expect(parsed.import_skip_canonical_threshold).toBe(100);
-    expect(parsed.archive_max_candidates_per_batch).toBe(15);
-    expect(parsed.archive_max_recent_paths).toBe(50);
-    expect(parsed.archive_digest_max_sessions).toBe(20);
-    expect(parsed.review_topic_result_cap).toBe(15);
-    expect(parsed.review_stale_pending_days).toBe(30);
+    }) as Record<string, unknown>;
+    for (const k of [
+      "import_window_first_run_months",
+      "import_window_rerun_months",
+      "import_max_pending_per_run",
+      "import_max_commits_scan",
+      "import_skip_canonical_threshold",
+      "archive_max_candidates_per_batch",
+      "archive_max_recent_paths",
+      "archive_digest_max_sessions",
+      "review_topic_result_cap",
+    ]) {
+      expect(parsed[k]).toBeUndefined();
+    }
   });
 
-  it("user's 6-key minimal fabric-config.json still parses (back-compat regression)", () => {
-    // Snapshot of the actual user config at .fabric/fabric-config.json as of
-    // rc.12 — six keys (fabric_language + five rc.7-era hint knobs). None
-    // of the rc.9+ skill tunables are present and the schema must resolve
-    // every one to its default.
-    const minimalUserConfig = {
-      // grill-6fixes (D1): a stale fabric_language key from an old config is
-      // silently dropped (language is global now); the rest still default.
-      fabric_language: "zh-CN-hybrid",
+  it("review_stale_pending_days (merge-target, kept) still defaults to 14", () => {
+    expect(fabricConfigSchema.parse({}).review_stale_pending_days).toBe(14);
+  });
+
+  it("a minimal user config still parses with the retired keys absent", () => {
+    const parsed = fabricConfigSchema.parse({
+      fabric_language: "zh-CN-hybrid", // stale global key — dropped
       archive_hint_hours: 24,
       review_hint_pending_count: 10,
       review_hint_pending_age_days: 7,
-      maintenance_hint_days: 14,
-      maintenance_hint_cooldown_days: 7,
-    } as Record<string, unknown>;
-    const parsed = fabricConfigSchema.parse(minimalUserConfig) as Record<string, unknown>;
+    }) as Record<string, unknown>;
     expect(parsed.fabric_language).toBeUndefined();
-    expect(parsed.import_window_first_run_months).toBe(60);
-    expect(parsed.import_window_rerun_months).toBe(2);
-    expect(parsed.import_max_pending_per_run).toBe(10);
-    expect(parsed.import_max_commits_scan).toBe(500);
-    expect(parsed.import_skip_canonical_threshold).toBe(50);
-    expect(parsed.archive_max_candidates_per_batch).toBe(8);
-    expect(parsed.archive_max_recent_paths).toBe(20);
-    expect(parsed.archive_digest_max_sessions).toBe(10);
-    expect(parsed.review_topic_result_cap).toBe(8);
-    expect(parsed.review_stale_pending_days).toBe(14);
+    expect(parsed.archive_hint_hours).toBe(24);
+    expect(parsed.review_hint_pending_count).toBe(10);
   });
 
   it("root schema remains lenient — unknown keys are silently dropped (no .strict())", () => {
@@ -342,66 +321,11 @@ describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
   });
 });
 
-describe("fabricConfigSchema — rc.9+ skill tunables boundaries", () => {
-  it("import_window_first_run_months rejects values below min 1", () => {
-    expect(() =>
-      fabricConfigSchema.parse({ import_window_first_run_months: 0 }),
-    ).toThrow();
-    expect(() =>
-      fabricConfigSchema.parse({ import_window_first_run_months: -5 }),
-    ).toThrow();
-    // min 1 is inclusive
-    expect(
-      fabricConfigSchema.parse({ import_window_first_run_months: 1 })
-        .import_window_first_run_months,
-    ).toBe(1);
-  });
-
-  it("import_window_rerun_months rejects values below min 1", () => {
-    expect(() =>
-      fabricConfigSchema.parse({ import_window_rerun_months: 0 }),
-    ).toThrow();
-    expect(
-      fabricConfigSchema.parse({ import_window_rerun_months: 1 })
-        .import_window_rerun_months,
-    ).toBe(1);
-  });
-
-  it("import_max_pending_per_run enforces range 1-50", () => {
-    expect(() =>
-      fabricConfigSchema.parse({ import_max_pending_per_run: 0 }),
-    ).toThrow();
-    expect(() =>
-      fabricConfigSchema.parse({ import_max_pending_per_run: 51 }),
-    ).toThrow();
-    // Inclusive endpoints
-    expect(
-      fabricConfigSchema.parse({ import_max_pending_per_run: 1 })
-        .import_max_pending_per_run,
-    ).toBe(1);
-    expect(
-      fabricConfigSchema.parse({ import_max_pending_per_run: 50 })
-        .import_max_pending_per_run,
-    ).toBe(50);
-  });
-
-  it("import_max_commits_scan enforces range 50-2000", () => {
-    expect(() =>
-      fabricConfigSchema.parse({ import_max_commits_scan: 49 }),
-    ).toThrow();
-    expect(() =>
-      fabricConfigSchema.parse({ import_max_commits_scan: 2001 }),
-    ).toThrow();
-    // Inclusive endpoints
-    expect(
-      fabricConfigSchema.parse({ import_max_commits_scan: 50 })
-        .import_max_commits_scan,
-    ).toBe(50);
-    expect(
-      fabricConfigSchema.parse({ import_max_commits_scan: 2000 })
-        .import_max_commits_scan,
-    ).toBe(2000);
-  });
+describe("fabricConfigSchema — fabric_event_retention_days boundary", () => {
+  // ux-w2-3: the import_*/archive_max_* boundary tests were removed alongside
+  // their schema fields (hardcoded per census Table 1). fabric_event_retention_days
+  // stays in the schema (its rotation primitive still reads it), so its literal-
+  // union boundary is still asserted below.
 
   // v2.0.0-rc.22 Scope A T3: fabric_event_retention_days literal union
   // (7 / 30 / 90). Optional with NO `.default()` — absence is meaningful
@@ -431,14 +355,10 @@ describe("fabricConfigSchema — rc.9+ skill tunables boundaries", () => {
   });
 
   it("positive-int fields reject zero, negative, non-integer, and non-number", () => {
-    const positiveFields = [
-      "import_skip_canonical_threshold",
-      "archive_max_candidates_per_batch",
-      "archive_max_recent_paths",
-      "archive_digest_max_sessions",
-      "review_topic_result_cap",
-      "review_stale_pending_days",
-    ] as const;
+    // ux-w2-3: import_skip_canonical_threshold / archive_max_* / review_topic_result_cap
+    // were removed (hardcoded). review_stale_pending_days (merge-target, kept) still
+    // enforces the positive-int contract.
+    const positiveFields = ["review_stale_pending_days"] as const;
     for (const field of positiveFields) {
       expect(() => fabricConfigSchema.parse({ [field]: 0 })).toThrow();
       expect(() => fabricConfigSchema.parse({ [field]: -1 })).toThrow();

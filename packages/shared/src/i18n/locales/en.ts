@@ -43,14 +43,10 @@ export const enMessages: Messages = {
   "cli.help.group.setup.config": "Configure Fabric settings",
   "cli.help.group.daily.sync": "Sync team knowledge with remote stores",
   "cli.help.group.daily.info": "Show project status",
+  "cli.help.group.daily.context": "Show what SessionStart injects this session",
   "cli.help.group.diagnostic.doctor": "Check Fabric health and repair issues",
+  "cli.help.group.diagnostic.metrics": "Show the knowledge metrics dashboard",
   "cli.help.group.advanced.store": "Manage knowledge stores (see: fabric store --help)",
-  "cli.help.group.advanced.whoami": "Show machine identity",
-  "cli.help.group.advanced.whoami.deprecated": "deprecated → info --global",
-  "cli.help.group.advanced.status": "Show project status",
-  "cli.help.group.advanced.status.deprecated": "deprecated → info",
-  "cli.help.group.advanced.scope-explain": "Explain scope",
-  "cli.help.group.advanced.scope-explain.deprecated": "deprecated → info scope",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI
@@ -460,6 +456,14 @@ export const enMessages: Messages = {
     "{count} skill ref file(s) differ between `.claude/skills/` and `.codex/skills/` (paths: {list}). One client was hand-edited or partially installed.",
   "doctor.check.skill_ref_mirror.remediation":
     "Run `fabric install` to rewrite both client subtrees from the canonical templates and restore parity.",
+  // ux-w2-2: retired-reference (stale-pointer) lint.
+  "doctor.check.retired_reference.name": "Retired reference",
+  "doctor.check.retired_reference.ok":
+    "No retired tool/field names linger in the bootstrap, SKILL.md, or installed hooks.",
+  "doctor.check.retired_reference.message":
+    "{count} stale pointer(s) to retired tool/field names in agent-facing text: {sample}",
+  "doctor.check.retired_reference.remediation":
+    "Update the flagged text to the replacement token (or remove it), then re-run `fabric install` to resync the dogfood mirrors.",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 5K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K; over 5K hurts progressive disclosure; over 10K is blocking (wasted model context + load latency).
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
@@ -660,7 +664,7 @@ export const enMessages: Messages = {
   "doctor.check.promote_ledger_invariant.ok":
     "knowledge_proposed={proposed} >= knowledge_promote_started={started} >= knowledge_promoted={promoted}; ledger invariant holds.",
   "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
-    "knowledge_proposed={proposed} is less than knowledge_promote_started={started} (ledger invariant violated; some pending entries were approved without going through fab_extract_knowledge, so no propose event was emitted for them).",
+    "knowledge_proposed={proposed} is less than knowledge_promote_started={started} (ledger invariant violated; some pending entries were approved without going through fab_propose, so no propose event was emitted for them).",
   "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
     "knowledge_promote_started={started} is less than knowledge_promoted={promoted} (ledger invariant violated; unpaired promoted events exist, possibly from doctor filesystem-edit fallback or external writers).",
   "doctor.check.promote_ledger_invariant.remediation":
@@ -774,6 +778,26 @@ export const enMessages: Messages = {
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
     "Archive the stale draft via `/fabric-review reject <id>`, or revive it if still relevant. (Moving store-backed files is the store-write flow's job — this read-side lint only surfaces the staleness.)",
+  // v2.2 C1: knowledge promotion lint (promotion_candidate, info kind).
+  "doctor.check.promotion_candidate.name": "Knowledge promotion candidate",
+  "doctor.check.promotion_candidate.ok":
+    "No verified knowledge entries reach the related in-degree threshold for proven promotion.",
+  "doctor.check.promotion_candidate.message.singular":
+    "{count} verified knowledge entry has related in-degree ≥{threshold} (structurally central) and is worth reviewing for promotion to proven. First: {detail}.",
+  "doctor.check.promotion_candidate.message.plural":
+    "{count} verified knowledge entries have related in-degree ≥{threshold} (structurally central) and are worth reviewing for promotion to proven. First: {detail}.",
+  "doctor.check.promotion_candidate.remediation":
+    "Review these entries via `/fabric-review` and (after confirming 0 dismissals, cold-eval self-sufficiency, and foundational value) `modify <id>` to proven. (The promotion judgment is the store-write review's job — this read-side lint only surfaces the structurally-central candidates.)",
+  // v2.2 C1: broad review-recheck lint (broad_review_recheck, info kind).
+  "doctor.check.broad_review_recheck.name": "Knowledge broad review recheck",
+  "doctor.check.broad_review_recheck.ok":
+    "No broad-scope knowledge entries are overdue for a review re-confirmation.",
+  "doctor.check.broad_review_recheck.message.singular":
+    "{count} broad-scope knowledge entry has gone {thresholdDays}d+ without a fab-review re-confirmation and is worth a recheck (broad is exempt from usage-age decay, so this is its review clock). First: {detail}.",
+  "doctor.check.broad_review_recheck.message.plural":
+    "{count} broad-scope knowledge entries have gone {thresholdDays}d+ without a fab-review re-confirmation and are worth a recheck (broad is exempt from usage-age decay, so this is its review clock). First: {detail}.",
+  "doctor.check.broad_review_recheck.remediation":
+    "Re-confirm each entry via `/fabric-review` (approve/modify stamps a fresh review timestamp), or demote/reject it if it no longer holds. This is a non-blocking nudge, never an auto-demote — broad knowledge stays surfaced until a reviewer acts.",
   // project-scope binding backfill lint (unbound_project).
   "doctor.check.unbound_project.name": "Project-scope binding",
   "doctor.check.unbound_project.ok":

@@ -215,92 +215,28 @@ export const fabricConfigSchema = z.object({
   // worst — pairing 14d trigger + 7d cooldown means at most ~2 reminders
   // per month for a workspace that ignores them.
   maintenance_hint_cooldown_days: z.number().int().positive().optional().default(7),
-  // rc.9+ (skill-contract-fix B1): first-run import window in months. The
-  // `fabric-import` skill scans this many months of git history on the very
-  // first invocation (when no prior `import_run_completed` event exists).
-  // Default 60 (~5 years) captures the bulk of a mature repo's signal in
-  // one pass; small / fresh repos can lower to 12-24 with no loss.
-  import_window_first_run_months: z.number().int().min(1).optional().default(60),
-  // rc.9+ (skill-contract-fix B1): rerun import window in months. After
-  // the first successful import, subsequent runs only scan this many
-  // recent months — assumed everything older has already been crystallized
-  // into pending or canonical knowledge. Default 2 keeps incremental cost
-  // low; raise to 6 if the workspace pauses fabric-import for long stretches.
-  import_window_rerun_months: z.number().int().min(1).optional().default(2),
-  // rc.9+ (skill-contract-fix B1): hard cap on pending entries produced
-  // per fabric-import invocation. Prevents one run from dumping hundreds
-  // of proposals when a backfill window is wide open. Default 10 matches
-  // the rule-of-thumb "human can triage ~10 pending entries in one
-  // review pass." Range 1-50.
-  import_max_pending_per_run: z.number().int().min(1).max(50).optional().default(10),
-  // rc.9+ (skill-contract-fix B1): hard cap on commits scanned per
-  // fabric-import invocation. Bounds runtime on monorepos with high
-  // commit velocity. Default 500 covers ~2 months of typical churn;
-  // range 50-2000. Hitting the cap mid-window is logged but non-fatal.
-  import_max_commits_scan: z.number().int().min(50).max(2000).optional().default(500),
-  // rc.9+ (skill-contract-fix B1): canonical-node count above which
-  // fabric-import's pre-flight should warn / suggest review instead of
-  // proceeding. A workspace with 50+ canonical entries usually benefits
-  // more from `fabric-review` to consolidate than from importing more.
-  // Default 50; raise to 100+ for large polyglot repos.
-  import_skip_canonical_threshold: z.number().int().positive().optional().default(50),
-  // rc.9+ (skill-contract-fix B1): max candidate entries surfaced per
-  // fabric-archive batch (one invocation of the skill). Pagination knob
-  // for the archive UI flow. Default 8 keeps each batch reviewable in
-  // one sitting; raise for large repos with high archive throughput.
-  archive_max_candidates_per_batch: z.number().int().positive().optional().default(8),
-  // rc.9+ (skill-contract-fix B1): max recently-touched paths included
-  // in fabric-archive's "relevant context" lookup. Limits the size of
-  // the path-relevance digest the skill emits when ranking candidates.
-  // Default 20; large repos with deep directory fan-out can raise to
-  // 50+ if archive candidates feel under-contextualized.
-  archive_max_recent_paths: z.number().int().positive().optional().default(20),
-  // rc.9+ (skill-contract-fix B1): max prior fabric-archive sessions
-  // summarised in the digest the skill loads on start. Prevents the
-  // digest from ballooning past the model context budget on workspaces
-  // that have archived repeatedly. Default 10; lower if context pressure
-  // bites, raise if you want longer-range archive trend visibility.
-  archive_digest_max_sessions: z.number().int().positive().optional().default(10),
-  // rc.9+ (skill-contract-fix B1): max review results returned per
-  // topic when `fabric-review` clusters pending entries. Pagination
-  // knob analogous to archive_max_candidates_per_batch but scoped to
-  // each topic cluster. Default 8; raise to 15-20 for large repos
-  // where each topic legitimately groups many pending entries.
-  review_topic_result_cap: z.number().int().positive().optional().default(8),
+  // ux-w2-3: import_*/archive_max_*/review_topic_result_cap skill thresholds
+  // were hardcoded (✂ per census Table 1) — never tuned, pure skill-internal
+  // pagination/window caps. Removed from the schema; the skills/services read
+  // raw config with a built-in default, so an absent key falls to that default
+  // (60/2/10/500/50/8/20/10/8 respectively). Lenient parser drops any stale
+  // on-disk value.
   // rc.9+ (skill-contract-fix B1): age threshold (in days) above which
   // a pending entry is considered "stale" by fabric-review and surfaced
   // for explicit resolve-or-drop decision. Default 14; tighter than the
   // 7d Signal-B trigger because review specifically targets the long
   // tail. Large repos with slower cadence can raise to 30.
   review_stale_pending_days: z.number().int().positive().optional().default(14),
-  // v2.0.0-rc.34 TASK-05: reverse-unarchive opt-in. When true, callers of the
-  // `unarchiveKnowledge` primitive (and any future doctor auto-detect lint built
-  // on top) will execute the file move + ledger emit. When false (default),
-  // the same callers MUST short-circuit before any mutation — the primitive is
-  // shipped but inert until explicitly enabled. Opt-in posture mirrors the
-  // archive-flow precedent: destructive-ish file moves stay behind a flag.
-  reverse_unarchive_enabled: z.boolean().optional().default(false),
-  // v2.0.0-rc.34 TASK-05: forces `unarchiveKnowledge` into dry-run mode even
-  // when called with `options.dryRun=false`. Lets operators preview a
-  // restoration pass before flipping `reverse_unarchive_enabled` to true.
-  reverse_unarchive_dry_run: z.boolean().optional().default(false),
-  // v2.0.0-rc.34 TASK-06: long-session cite-policy evict window in user-prompt
-  // turns. UserPromptSubmit hook (Claude Code only) maintains a per-session
-  // counter and re-injects the cite contract reminder via
-  // hookSpecificOutput.additionalContext when `turn_count % interval === 0`.
-  // Default 0 = OFF (opt-in). Recommend 10-20 for active sessions; 5 for
-  // high-contract-criticality projects. Other strategies (time-based,
-  // token-budget) deferred to rc.35 per plan locked-decisions 2026-05-26.
-  cite_evict_interval: z.number().int().min(0).optional().default(0),
   // v2.1 ⑤ cite-redesign (P5): recall-based cite-accounting hook config. The
-  // rc.34 cite_evict_interval turn-counter above is superseded by the
-  // PreToolUse(Edit/Write) recall-aware nudge in cite-policy-evict.cjs; the old
-  // key is retained for back-compat (inert now that the hook moved off
-  // UserPromptSubmit). `cite_recall_nudge` is the master switch (default true =
-  // ON); set false to silence the "改前先 fab_recall" nudge entirely (mirrors
-  // the cite_evict_interval=0 opt-out convention). `cite_recall_window_minutes`
-  // bounds how far back an in-session fab_recall counts as "informing" the edit
-  // (default 30; 0 = unbounded).
+  // PreToolUse(Edit/Write) recall-aware nudge in cite-policy-evict.cjs replaced
+  // the retired rc.34 `cite_evict_interval` turn-counter. ux-w1-5: that inert
+  // key — plus the never-wired `reverse_unarchive_enabled`/`reverse_unarchive_dry_run`
+  // opt-in flags (the unarchiveKnowledge primitive takes dryRun from its caller,
+  // not from config) — were deleted; the lenient root parser drops any stale
+  // value left in an on-disk config. `cite_recall_nudge` is the master switch
+  // (default true = ON); set false to silence the "改前先 fab_recall" nudge
+  // entirely. `cite_recall_window_minutes` bounds how far back an in-session
+  // fab_recall counts as "informing" the edit (default 30; 0 = unbounded).
   cite_recall_nudge: z.boolean().optional().default(true),
   cite_recall_window_minutes: z.number().int().min(0).optional().default(30),
   // F2: glob exemptions for the cite nudge (cite-policy-evict.cjs). Edit paths
@@ -437,6 +373,15 @@ export const fabricConfigSchema = z.object({
   orphan_demote_proven_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_verified_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
+  // v2.2 C1 (processes/maturity-promotion-rubric-v1): days a `broad` entry may
+  // go without a fab-review re-confirmation before doctor surfaces a RECHECK
+  // nudge. `broad` is EXEMPT from usage-age decay (it is SessionStart-pushed,
+  // never pull-recalled → usage-blind, KT-DEC; see doctor-knowledge-age.ts), so
+  // its continued validity is instead checked against the review-confirmation
+  // clock (`last_review_confirmed_at`, stamped at approve/modify). This is a
+  // non-blocking INFO nudge ("re-confirm"), NEVER an auto-demote. Absent → the
+  // config-loader default (180d) applies. Range 1..3650 mirrors orphan_demote.
+  broad_review_recheck_days: z.number().int().min(1).max(3650).optional(),
   // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
   // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
   // short for entries with parameterized summaries (e.g. "Use bcrypt with

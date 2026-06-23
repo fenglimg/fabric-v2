@@ -18,7 +18,7 @@ Fabric 有 3 个用户可见 surface：
 
 - CLI：人类在 terminal 中运行，例如 `fabric install`、`fabric doctor`、`fabric store`、`fabric sync`、`fabric info`。
 - Skill：AI 在对话中做判断，例如 `fabric-archive`、`fabric-review`、`fabric-import`。
-- MCP：AI client 调用的 runtime primitive，例如 `fab_recall`、`fab_extract_knowledge`、`fab_archive_scan`、`fab_review`。
+- MCP：AI client 调用的 runtime primitive，例如 `fab_recall`、`fab_propose`、`fab_archive_scan`、`fab_review`。
 
 设计规则：确定性 I/O 放 CLI 或 server service；需要 LLM 判断的流程放 Skill；session 内知识读取走 MCP。
 
@@ -112,7 +112,7 @@ Grill 后锁定的架构不是单个 resolver 改动，而是 surface alignment 
   `workspace_binding_id`、read-set/write-target contract 有测试。
 - CLI install/store：onboarding 写 `project:<active_project> -> store`
   route；multi shared store 缺 route hard fail。
-- Server write/MCP：`fab_extract_knowledge` 接受 `semantic_scope`，写入
+- Server write/MCP：`fab_propose` 接受 `semantic_scope`，写入
   resolved store；MCP schema 不再描述 workspace/home pending root。
 - Hooks：只读 generated binding snapshot；snapshot key 为
   `workspace_binding_id`，不自行解析 store tree。

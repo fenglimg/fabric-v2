@@ -107,6 +107,16 @@ export async function inspectStoreKnowledgeAge(
     if (maturity === undefined) {
       continue; // no maturity → cannot tier the decay threshold.
     }
+    // v2.2 C1 (decisions/importance-is-maturity-not-usage-count): `broad`
+    // entries are SessionStart-injected (push), never pull-recalled, so they
+    // emit NO usage events — age-from-last-use is structurally blind to them
+    // and would misfire as "inactive" on the most influential knowledge. Exempt
+    // broad from usage-age decay; their continued validity is a fabric-review /
+    // rubric concern, not a usage clock. (A review-confirmation-age recheck for
+    // broad is a follow-up — it needs a last-confirmed timestamp not yet tracked.)
+    if (entry.description.relevance_scope === "broad") {
+      continue;
+    }
     const lastActive = lastActiveIndex.get(entry.stableId);
     if (lastActive === undefined) {
       continue; // no event history → no staleness evidence (conservative).

@@ -16,6 +16,7 @@ export default defineConfig({
       "@fenglimg/fabric-shared/errors": resolve(packageRoot, "../shared/src/errors/index.ts"),
       "@fenglimg/fabric-shared/schemas/api-contracts": resolve(packageRoot, "../shared/src/schemas/api-contracts.ts"),
       "@fenglimg/fabric-shared/templates/bootstrap-canonical": resolve(packageRoot, "../shared/src/templates/bootstrap-canonical.ts"),
+      "@fenglimg/fabric-shared/theme": resolve(packageRoot, "../shared/src/theme.ts"),
       "@fenglimg/fabric-shared": resolve(packageRoot, "../shared/src/index.ts"),
     },
   },
