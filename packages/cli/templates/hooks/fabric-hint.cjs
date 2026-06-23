@@ -6,7 +6,11 @@ const { dirname, join } = require("node:path");
 // ledgers (events.jsonl, metrics.jsonl). Under multi-window concurrency a bare
 // appendFileSync can interleave a partial write; route through the advisory-lock
 // primitive (drop-on-contention, best-effort — matches injection-log).
+// ux-w2-9: events.jsonl writes go through the single guarded event-writer
+// (envelope stamp + event_type guard); metrics.jsonl stays on the raw locked
+// primitive (it is not a schema-governed event ledger).
 const { appendLockedLine } = require("./lib/injection-log.cjs");
+const { appendEvent } = require("./lib/event-writer.cjs");
 
 // v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
 // on failure — see contract in lib/session-digest-writer.cjs).
@@ -1681,7 +1685,7 @@ function emitGraphEdgeCandidateBestEffort(cwd, events, sessionId) {
     };
     if (store !== undefined) event.store = store;
     if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
-    appendLockedLine(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n");
+    appendEvent(fabricDir, event);
 
     // Record the de-dup marker (best-effort; atomic when state-store lib loaded).
     try {
@@ -1743,7 +1747,7 @@ function emitSignalFiredEvent(cwd, sessionId, result) {
       fired: true,
     };
     if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
-    appendLockedLine(join(fabricDir, EVENT_LEDGER_FILE), JSON.stringify(event) + "\n");
+    appendEvent(fabricDir, event);
   } catch {
     // best-effort telemetry — never block the hook
   }
@@ -1896,7 +1900,6 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
       // writer applies the same guard via its own internal check.
       return;
     }
-    const ledgerPath = join(fabricDir, EVENT_LEDGER_FILE);
     const client = detectClient();
     let randomUUID;
     try {
@@ -1952,7 +1955,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           timestamp: new Date().toISOString(),
         };
         if (client !== undefined) event.client = client;
-        appendLockedLine(ledgerPath, JSON.stringify(event) + "\n");
+        appendEvent(fabricDir, event);
       } catch {
         // Per-turn failure must not abort the remaining turns; the Stop hook
         // contract is "never block on hook failure". Best-effort continues.

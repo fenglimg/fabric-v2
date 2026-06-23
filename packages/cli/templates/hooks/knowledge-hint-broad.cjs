@@ -43,10 +43,10 @@ const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 // W1-01 (ISS-012): the SessionStart broad hook appends a hook_surface_emitted
-// event to the shared events.jsonl. Under multi-window concurrency a bare
-// appendFileSync can interleave a partial write; route through the advisory-lock
-// primitive (drop-on-contention, best-effort — matches injection-log).
-const { appendLockedLine } = require("./lib/injection-log.cjs");
+// event to the shared events.jsonl. ux-w2-9: route through the single guarded
+// event-writer (envelope stamp + event_type guard + advisory-lock append) so
+// the row always satisfies the event-ledger schema the doctor reads.
+const { appendEvent } = require("./lib/event-writer.cjs");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
@@ -1277,7 +1277,7 @@ function main(env, stdio) {
           rendered_ids: renderedIds,
           delivery_status: "delivered",
         };
-        appendLockedLine(join(fabricDir, "events.jsonl"), JSON.stringify(surfaceEvent) + "\n");
+        appendEvent(fabricDir, surfaceEvent);
       }
     } catch {
       // best-effort telemetry — never block session start
