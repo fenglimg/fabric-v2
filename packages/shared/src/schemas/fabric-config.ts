@@ -215,58 +215,12 @@ export const fabricConfigSchema = z.object({
   // worst — pairing 14d trigger + 7d cooldown means at most ~2 reminders
   // per month for a workspace that ignores them.
   maintenance_hint_cooldown_days: z.number().int().positive().optional().default(7),
-  // rc.9+ (skill-contract-fix B1): first-run import window in months. The
-  // `fabric-import` skill scans this many months of git history on the very
-  // first invocation (when no prior `import_run_completed` event exists).
-  // Default 60 (~5 years) captures the bulk of a mature repo's signal in
-  // one pass; small / fresh repos can lower to 12-24 with no loss.
-  import_window_first_run_months: z.number().int().min(1).optional().default(60),
-  // rc.9+ (skill-contract-fix B1): rerun import window in months. After
-  // the first successful import, subsequent runs only scan this many
-  // recent months — assumed everything older has already been crystallized
-  // into pending or canonical knowledge. Default 2 keeps incremental cost
-  // low; raise to 6 if the workspace pauses fabric-import for long stretches.
-  import_window_rerun_months: z.number().int().min(1).optional().default(2),
-  // rc.9+ (skill-contract-fix B1): hard cap on pending entries produced
-  // per fabric-import invocation. Prevents one run from dumping hundreds
-  // of proposals when a backfill window is wide open. Default 10 matches
-  // the rule-of-thumb "human can triage ~10 pending entries in one
-  // review pass." Range 1-50.
-  import_max_pending_per_run: z.number().int().min(1).max(50).optional().default(10),
-  // rc.9+ (skill-contract-fix B1): hard cap on commits scanned per
-  // fabric-import invocation. Bounds runtime on monorepos with high
-  // commit velocity. Default 500 covers ~2 months of typical churn;
-  // range 50-2000. Hitting the cap mid-window is logged but non-fatal.
-  import_max_commits_scan: z.number().int().min(50).max(2000).optional().default(500),
-  // rc.9+ (skill-contract-fix B1): canonical-node count above which
-  // fabric-import's pre-flight should warn / suggest review instead of
-  // proceeding. A workspace with 50+ canonical entries usually benefits
-  // more from `fabric-review` to consolidate than from importing more.
-  // Default 50; raise to 100+ for large polyglot repos.
-  import_skip_canonical_threshold: z.number().int().positive().optional().default(50),
-  // rc.9+ (skill-contract-fix B1): max candidate entries surfaced per
-  // fabric-archive batch (one invocation of the skill). Pagination knob
-  // for the archive UI flow. Default 8 keeps each batch reviewable in
-  // one sitting; raise for large repos with high archive throughput.
-  archive_max_candidates_per_batch: z.number().int().positive().optional().default(8),
-  // rc.9+ (skill-contract-fix B1): max recently-touched paths included
-  // in fabric-archive's "relevant context" lookup. Limits the size of
-  // the path-relevance digest the skill emits when ranking candidates.
-  // Default 20; large repos with deep directory fan-out can raise to
-  // 50+ if archive candidates feel under-contextualized.
-  archive_max_recent_paths: z.number().int().positive().optional().default(20),
-  // rc.9+ (skill-contract-fix B1): max prior fabric-archive sessions
-  // summarised in the digest the skill loads on start. Prevents the
-  // digest from ballooning past the model context budget on workspaces
-  // that have archived repeatedly. Default 10; lower if context pressure
-  // bites, raise if you want longer-range archive trend visibility.
-  archive_digest_max_sessions: z.number().int().positive().optional().default(10),
-  // rc.9+ (skill-contract-fix B1): max review results returned per
-  // topic when `fabric-review` clusters pending entries. Pagination
-  // knob analogous to archive_max_candidates_per_batch but scoped to
-  // each topic cluster. Default 8; raise to 15-20 for large repos
-  // where each topic legitimately groups many pending entries.
-  review_topic_result_cap: z.number().int().positive().optional().default(8),
+  // ux-w2-3: import_*/archive_max_*/review_topic_result_cap skill thresholds
+  // were hardcoded (✂ per census Table 1) — never tuned, pure skill-internal
+  // pagination/window caps. Removed from the schema; the skills/services read
+  // raw config with a built-in default, so an absent key falls to that default
+  // (60/2/10/500/50/8/20/10/8 respectively). Lenient parser drops any stale
+  // on-disk value.
   // rc.9+ (skill-contract-fix B1): age threshold (in days) above which
   // a pending entry is considered "stale" by fabric-review and surfaced
   // for explicit resolve-or-drop decision. Default 14; tighter than the

@@ -181,15 +181,9 @@ export class EnvStage implements Stage {
       maintenance_hint_cooldown_days: 7,
       archive_edit_threshold: 20,
       underseed_node_threshold: 10,
-      import_window_first_run_months: 60,
-      import_window_rerun_months: 2,
-      import_max_pending_per_run: 10,
-      import_max_commits_scan: 500,
-      import_skip_canonical_threshold: 50,
-      archive_max_candidates_per_batch: 8,
-      archive_max_recent_paths: 20,
-      archive_digest_max_sessions: 10,
-      review_topic_result_cap: 8,
+      // ux-w2-3: import_*/archive_max_*/review_topic_result_cap skill thresholds
+      // hardcoded (✂ census Table 1) — no longer scaffolded; skills fall to a
+      // built-in default when the key is absent.
       review_stale_pending_days: 14,
     };
 
