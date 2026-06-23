@@ -79,5 +79,16 @@ describe("createFabricServer", () => {
     // Conventions: session_id + cite.
     expect(FABRIC_SERVER_INSTRUCTIONS).toContain("session_id");
     expect(FABRIC_SERVER_INSTRUCTIONS.toLowerCase()).toContain("cite");
+    // ux-w2-7: tools are grouped by audience — AGENT-DIRECT (the agent calls
+    // fab_recall itself) vs SKILL-DRIVEN (fab_propose/scan/review invoked by skills).
+    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("AGENT-DIRECT");
+    expect(FABRIC_SERVER_INSTRUCTIONS).toContain("SKILL-DRIVEN");
+    // fab_recall sits under AGENT-DIRECT, ahead of the SKILL-DRIVEN group.
+    expect(FABRIC_SERVER_INSTRUCTIONS.indexOf("AGENT-DIRECT")).toBeLessThan(
+      FABRIC_SERVER_INSTRUCTIONS.indexOf("SKILL-DRIVEN"),
+    );
+    expect(FABRIC_SERVER_INSTRUCTIONS.indexOf("fab_recall")).toBeLessThan(
+      FABRIC_SERVER_INSTRUCTIONS.indexOf("SKILL-DRIVEN"),
+    );
   });
 });
