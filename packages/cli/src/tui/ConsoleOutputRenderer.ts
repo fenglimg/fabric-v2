@@ -11,7 +11,7 @@ import type {
 /**
  * ConsoleOutputRenderer — theme.ts-backed OutputRenderer (W3-A 退 Ink).
  *
- * Replaces the Ink/React InkOutputRenderer with pure string composition over
+ * Replaces the former Ink/React renderer with pure string composition over
  * the shared theme palette (packages/shared/src/theme.ts). The OutputRenderer
  * interface (the seam consumed by install/pipeline/pipeline.ts) is unchanged;
  * only the rendering engine moves from mounted React components to console
@@ -233,7 +233,7 @@ export function toErrorInfo(error: Error | ErrorInfo): ErrorInfo {
 
 /**
  * Create the install wizard's output renderer (theme.ts-backed, non-Ink).
- * Same signature semantics as the former createInkRenderer(config?).
+ * Same signature semantics as the former Ink renderer factory (config?).
  */
 export function createInstallRenderer(config?: OutputRendererConfig): ConsoleOutputRenderer {
   return new ConsoleOutputRenderer(config);
