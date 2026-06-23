@@ -47,6 +47,10 @@ export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string)
   // selector. The README/docs detection + fixation that used to run here was
   // removed.
   const FABRIC_CONFIG_DEFAULTS = {
+    // ux-w1-9: nudge_mode is the master switch for the human-visible nudge
+    // experience (silent | minimal | normal | verbose). Scaffolded up-front so
+    // the one volume dial is discoverable in the shipped config.
+    nudge_mode: "normal",
     archive_hint_hours: 24,
     archive_hint_cooldown_hours: 12,
     review_hint_pending_count: 10,

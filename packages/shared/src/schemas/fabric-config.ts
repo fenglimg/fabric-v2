@@ -273,34 +273,16 @@ export const fabricConfigSchema = z.object({
   // 7d Signal-B trigger because review specifically targets the long
   // tail. Large repos with slower cadence can raise to 30.
   review_stale_pending_days: z.number().int().positive().optional().default(14),
-  // v2.0.0-rc.34 TASK-05: reverse-unarchive opt-in. When true, callers of the
-  // `unarchiveKnowledge` primitive (and any future doctor auto-detect lint built
-  // on top) will execute the file move + ledger emit. When false (default),
-  // the same callers MUST short-circuit before any mutation — the primitive is
-  // shipped but inert until explicitly enabled. Opt-in posture mirrors the
-  // archive-flow precedent: destructive-ish file moves stay behind a flag.
-  reverse_unarchive_enabled: z.boolean().optional().default(false),
-  // v2.0.0-rc.34 TASK-05: forces `unarchiveKnowledge` into dry-run mode even
-  // when called with `options.dryRun=false`. Lets operators preview a
-  // restoration pass before flipping `reverse_unarchive_enabled` to true.
-  reverse_unarchive_dry_run: z.boolean().optional().default(false),
-  // v2.0.0-rc.34 TASK-06: long-session cite-policy evict window in user-prompt
-  // turns. UserPromptSubmit hook (Claude Code only) maintains a per-session
-  // counter and re-injects the cite contract reminder via
-  // hookSpecificOutput.additionalContext when `turn_count % interval === 0`.
-  // Default 0 = OFF (opt-in). Recommend 10-20 for active sessions; 5 for
-  // high-contract-criticality projects. Other strategies (time-based,
-  // token-budget) deferred to rc.35 per plan locked-decisions 2026-05-26.
-  cite_evict_interval: z.number().int().min(0).optional().default(0),
   // v2.1 ⑤ cite-redesign (P5): recall-based cite-accounting hook config. The
-  // rc.34 cite_evict_interval turn-counter above is superseded by the
-  // PreToolUse(Edit/Write) recall-aware nudge in cite-policy-evict.cjs; the old
-  // key is retained for back-compat (inert now that the hook moved off
-  // UserPromptSubmit). `cite_recall_nudge` is the master switch (default true =
-  // ON); set false to silence the "改前先 fab_recall" nudge entirely (mirrors
-  // the cite_evict_interval=0 opt-out convention). `cite_recall_window_minutes`
-  // bounds how far back an in-session fab_recall counts as "informing" the edit
-  // (default 30; 0 = unbounded).
+  // PreToolUse(Edit/Write) recall-aware nudge in cite-policy-evict.cjs replaced
+  // the retired rc.34 `cite_evict_interval` turn-counter. ux-w1-5: that inert
+  // key — plus the never-wired `reverse_unarchive_enabled`/`reverse_unarchive_dry_run`
+  // opt-in flags (the unarchiveKnowledge primitive takes dryRun from its caller,
+  // not from config) — were deleted; the lenient root parser drops any stale
+  // value left in an on-disk config. `cite_recall_nudge` is the master switch
+  // (default true = ON); set false to silence the "改前先 fab_recall" nudge
+  // entirely. `cite_recall_window_minutes` bounds how far back an in-session
+  // fab_recall counts as "informing" the edit (default 30; 0 = unbounded).
   cite_recall_nudge: z.boolean().optional().default(true),
   cite_recall_window_minutes: z.number().int().min(0).optional().default(30),
   // F2: glob exemptions for the cite nudge (cite-policy-evict.cjs). Edit paths
