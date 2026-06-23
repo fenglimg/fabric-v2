@@ -28,38 +28,47 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "development": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./i18n": {
+      "development": "./src/i18n/index.ts",
       "types": "./dist/i18n/index.d.ts",
       "import": "./dist/i18n/index.js"
     },
     "./types": {
+      "development": "./src/types/index.ts",
       "types": "./dist/types/index.d.ts",
       "import": "./dist/types/index.js"
     },
     "./node": {
+      "development": "./src/node.ts",
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
     },
     "./node/atomic-write": {
+      "development": "./src/node/atomic-write.ts",
       "types": "./dist/node/atomic-write.d.ts",
       "import": "./dist/node/atomic-write.js"
     },
     "./node/mcp-payload-guard": {
+      "development": "./src/node/mcp-payload-guard.ts",
       "types": "./dist/node/mcp-payload-guard.d.ts",
       "import": "./dist/node/mcp-payload-guard.js"
     },
     "./errors": {
+      "development": "./src/errors/index.ts",
       "types": "./dist/errors/index.d.ts",
       "import": "./dist/errors/index.js"
     },
     "./schemas/api-contracts": {
+      "development": "./src/schemas/api-contracts.ts",
       "types": "./dist/schemas/api-contracts.d.ts",
       "import": "./dist/schemas/api-contracts.js"
     },
     "./templates/bootstrap-canonical": {
+      "development": "./src/templates/bootstrap-canonical.ts",
       "types": "./dist/templates/bootstrap-canonical.d.ts",
       "import": "./dist/templates/bootstrap-canonical.js"
     }

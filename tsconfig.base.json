@@ -3,6 +3,12 @@
     "target": "ES2022",
     "module": "Node16",
     "moduleResolution": "Node16",
+    // ux-w2-8: resolve workspace deps (@fenglimg/fabric-shared) via the
+    // `development` exports condition → src/*.ts, so type-checking sees fresh
+    // shared source without a prior `pnpm --filter shared build`. The published
+    // build picks `import`/`types` → dist (no `development` condition set), so
+    // production output is unaffected. Roots out the rc.21/24/29 stale-dist class.
+    "customConditions": ["development"],
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
