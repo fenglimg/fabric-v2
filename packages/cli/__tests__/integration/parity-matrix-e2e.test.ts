@@ -29,7 +29,7 @@ const matrix = parityMatrixSchema.parse(parityMatrixRaw);
 // hooks.json#events.*.
 const HOOK_SCRIPT = {
   "hook.session-start-hint": "knowledge-hint-broad.cjs",
-  "hook.pretooluse-hint": "knowledge-hint-narrow.cjs",
+  "hook.pretooluse-hint": "knowledge-pretooluse.cjs",
   "hook.stop-backlog-hint": "fabric-hint.cjs",
 } as const;
 

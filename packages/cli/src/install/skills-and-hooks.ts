@@ -109,6 +109,8 @@ const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
 // plumbing but registered against PreToolUse with Edit|Write|MultiEdit
 // matchers in each client config.
 const HOOK_NARROW_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-narrow.cjs";
+// ux-w2-6: single PreToolUse orchestrator (merges narrow + cite into one envelope).
+const HOOK_PRETOOLUSE_SCRIPT_TEMPLATE_REL = "hooks/knowledge-pretooluse.cjs";
 // v2.0.0-rc.34 TASK-06: cite-policy long-session evict sidecar.
 const HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL = "hooks/cite-policy-evict.cjs";
 // lifecycle-refactor W2-T2: SessionEnd marker hook (zero-compute session_ended
@@ -279,6 +281,14 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".claude/hooks/knowledge-hint-narrow.cjs",
     ".codex/hooks/knowledge-hint-narrow.cjs",
   ],
+  // ux-w2-6: the single PreToolUse orchestrator. Requires knowledge-hint-narrow
+  // + cite-policy-evict as libs (both still copied) and merges their output into
+  // one envelope, so the Edit|Write|MultiEdit matcher carries ONE command (was
+  // two = 双弹).
+  knowledgePretoolUse: [
+    ".claude/hooks/knowledge-pretooluse.cjs",
+    ".codex/hooks/knowledge-pretooluse.cjs",
+  ],
   // v2.0.0-rc.34 TASK-06: Claude Code — UserPromptSubmit cite-policy long-
   // session evict sidecar.
   // v2.0.0-rc.37 NEW-21: extended to Codex SessionStart slot.
@@ -376,6 +386,8 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
     fabricHint: "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs",
     knowledgeHintBroad: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-broad.cjs",
     knowledgeHintNarrow: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs",
+    // ux-w2-6: the single PreToolUse orchestrator command (wired in claude-code.json).
+    knowledgePretoolUse: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-pretooluse.cjs",
     // F3: the UserPromptSubmit cite-policy-evict hook must be a known fabric
     // command so uninstall prunes it (matches the literal in claude-code.json).
     citePolicyEvict: "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs",
@@ -387,6 +399,7 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
     fabricHint: "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\"",
     knowledgeHintBroad: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\"",
     knowledgeHintNarrow: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\"",
+    knowledgePretoolUse: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-pretooluse.cjs\"",
     citePolicyEvict: "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\"",
     sessionEndMarker: "\"$(git rev-parse --show-toplevel)/.codex/hooks/session-end-marker.cjs\"",
     postTooluseMutation: "\"$(git rev-parse --show-toplevel)/.codex/hooks/post-tooluse-mutation.cjs\"",
@@ -991,6 +1004,33 @@ export async function installKnowledgeHintNarrowHook(
 }
 
 /**
+ * ux-w2-6: copy templates/hooks/knowledge-pretooluse.cjs (the single PreToolUse
+ * orchestrator) into both clients' hooks directories. Sibling copy plumbing to
+ * {@link installKnowledgeHintNarrowHook}; the orchestrator requires narrow +
+ * cite-policy-evict at runtime, so those two are still copied as well.
+ */
+export async function installKnowledgePretoolUseHook(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(HOOK_PRETOOLUSE_SCRIPT_TEMPLATE_REL);
+  const targets = HOOK_SCRIPT_DESTINATIONS.knowledgePretoolUse.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const result = await copyTextIdempotent("hook-pretooluse-script", source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
  * v2.0.0-rc.34 TASK-06: copy templates/hooks/cite-policy-evict.cjs into the
  * Claude Code hooks directory ONLY. The sidecar relies on Claude Code's
  * UserPromptSubmit event + hookSpecificOutput stdout JSON envelope, neither
@@ -1508,6 +1548,9 @@ export const FABRIC_HOOK_SCRIPT_BASENAMES: ReadonlySet<string> = new Set([
   "fabric-hint.cjs",
   "knowledge-hint-broad.cjs",
   "knowledge-hint-narrow.cjs",
+  // ux-w2-6: the single PreToolUse orchestrator — must be in the strip set so a
+  // template matcher edit re-syncs on re-install (same reason as the others below).
+  "knowledge-pretooluse.cjs",
   // dual-sink W5-1: the strip set must enumerate the COMPLETE fabric-owned hook
   // surface — same set as FABRIC_HOOK_COMMAND_PATHS. Otherwise a matcher change
   // in the template (e.g. adding `apply_patch` to the Codex PreToolUse/PostToolUse

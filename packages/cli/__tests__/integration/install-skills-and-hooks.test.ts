@@ -174,8 +174,10 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
       ".claude/hooks/knowledge-hint-broad.cjs",
     );
     expect(Array.isArray(claudeSettings.hooks?.PreToolUse)).toBe(true);
+    // ux-w2-6: PreToolUse wires the single orchestrator (merges narrow + cite);
+    // the narrow/cite scripts are still copied (asserted above) as its libs.
     expect(JSON.stringify(claudeSettings.hooks?.PreToolUse)).toContain(
-      ".claude/hooks/knowledge-hint-narrow.cjs",
+      ".claude/hooks/knowledge-pretooluse.cjs",
     );
     // PreToolUse matcher must restrict to Edit|Write|MultiEdit per TASK-020 spec.
     expect(JSON.stringify(claudeSettings.hooks?.PreToolUse)).toContain("Edit|Write|MultiEdit");
@@ -191,8 +193,9 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
       ".codex/hooks/knowledge-hint-broad.cjs",
     );
     expect(Array.isArray(codexHooks.events?.PreToolUse)).toBe(true);
+    // ux-w2-6: single PreToolUse orchestrator command.
     expect(JSON.stringify(codexHooks.events?.PreToolUse)).toContain(
-      ".codex/hooks/knowledge-hint-narrow.cjs",
+      ".codex/hooks/knowledge-pretooluse.cjs",
     );
     expect(JSON.stringify(codexHooks.events?.PreToolUse)).toContain("Edit|Write|MultiEdit");
   });
@@ -268,7 +271,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
   // downstream `hooks` stage did. A bootstrap-only install (skipHooks) thus
   // left configs pointing at a missing file. The script must now be copied by
   // the bootstrap stage too.
-  it("bootstrap-only install copies cite-policy-evict.cjs the config references (F4)", async () => {
+  it("bootstrap-only install copies the PreToolUse orchestrator the config references (F4 / ux-w2-6)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-cite");
     tempRoots.push(target);
 
@@ -279,11 +282,11 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     });
     await executeInitExecutionPlan(plan);
 
-    // The Claude config (written by the bootstrap stage) references the script...
+    // ux-w2-6: the Claude config now wires the single PreToolUse orchestrator...
     const settings = readFileSync(join(target, ".claude/settings.json"), "utf8");
-    expect(settings).toContain("cite-policy-evict.cjs");
-    // ...and the bootstrap stage must have copied the actual script too.
-    expect(existsSync(join(target, ".claude/hooks/cite-policy-evict.cjs"))).toBe(true);
+    expect(settings).toContain("knowledge-pretooluse.cjs");
+    // ...and the bootstrap stage must have copied the orchestrator script too.
+    expect(existsSync(join(target, ".claude/hooks/knowledge-pretooluse.cjs"))).toBe(true);
   });
 
   // W2-03 (F7): the bootstrap stage installed only 3 of 7 skills
@@ -360,11 +363,13 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     // ...and the fabric template no longer adds anything to UserPromptSubmit.
     expect(upsCommands).not.toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
 
-    // cite-policy-evict now rides PreToolUse (recall-based nudge).
+    // ux-w2-6: the recall-cite nudge now rides the single PreToolUse orchestrator
+    // (knowledge-pretooluse.cjs merges narrow + cite), not a standalone cite entry.
     const preToolCommands = (merged.hooks?.PreToolUse ?? [])
       .flatMap((entry) => entry.hooks ?? [])
       .map((h) => h.command);
-    expect(preToolCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
+    expect(preToolCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-pretooluse.cjs");
+    expect(preToolCommands).not.toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs");
   });
 });
 
@@ -500,14 +505,18 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
       ...(codexHooks.events?.PreToolUse ?? []),
       ...(codexHooks.events?.PostToolUse ?? []),
     ];
+    // ux-w2-6: the two PreToolUse commands (narrow + cite) collapsed into one
+    // orchestrator (knowledge-pretooluse.cjs), so the matcher-gated fabric slots
+    // are now the orchestrator (PreToolUse) + the post-tooluse mutation hook
+    // (PostToolUse).
     const fabricEntries = slotEntries.filter((e) =>
-      /(knowledge-hint-narrow|cite-policy-evict|post-tooluse-mutation)\.cjs/u.test(e.command),
+      /(knowledge-pretooluse|post-tooluse-mutation)\.cjs/u.test(e.command),
     );
-    // Three fabric-owned matcher-gated entries, each restored to apply_patch,
-    // with no stale-matcher duplicate left behind. W3-3: the PostToolUse
-    // mutation hook additionally carries `|Read` (knowledge_body_read marker),
-    // while the two PreToolUse-gated hooks keep the apply_patch-only matcher.
-    expect(fabricEntries).toHaveLength(3);
+    // Two fabric-owned matcher-gated entries, each restored to apply_patch, with
+    // no stale-matcher duplicate left behind. W3-3: the PostToolUse mutation hook
+    // additionally carries `|Read` (knowledge_body_read marker), while the
+    // PreToolUse orchestrator keeps the apply_patch-only matcher.
+    expect(fabricEntries).toHaveLength(2);
     for (const entry of fabricEntries) {
       const isPostMutation = /post-tooluse-mutation\.cjs/u.test(entry.command);
       expect(entry.matcher).toBe(

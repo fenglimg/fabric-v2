@@ -16,6 +16,7 @@ import {
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
+  installKnowledgePretoolUseHook,
   installCitePolicyEvictHook,
   installSessionEndMarkerHook,
   installPostTooluseMutationHook,
@@ -119,6 +120,8 @@ export async function installHooks(
   // lacks the event registration. Default OFF; user opt-in via
   // fabric-config.json#cite_evict_interval.
   results.push(...await runStep(() => installCitePolicyEvictHook(normalizedTarget)));
+  // ux-w2-6: single PreToolUse orchestrator (requires narrow + cite above).
+  results.push(...await runStep(() => installKnowledgePretoolUseHook(normalizedTarget)));
   // lifecycle-refactor W2-T2: SessionEnd marker hook (session_ended append).
   // lifecycle-refactor W2-T3: PostToolUse mutation marker hook (file_mutated
   // append). Both copy across both clients (chmod 0o755 on POSIX) BEFORE
@@ -172,6 +175,8 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
     { stepSuffix: "", hookFile: "fabric-hint.cjs" },
     { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
     { stepSuffix: "-narrow", hookFile: "knowledge-hint-narrow.cjs" },
+    // ux-w2-6: single PreToolUse orchestrator (merges narrow + cite).
+    { stepSuffix: "-pretooluse", hookFile: "knowledge-pretooluse.cjs" },
     // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.
     { stepSuffix: "-session-end", hookFile: "session-end-marker.cjs" },
     { stepSuffix: "-post-tooluse", hookFile: "post-tooluse-mutation.cjs" },
