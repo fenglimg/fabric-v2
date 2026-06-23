@@ -1,0 +1,66 @@
+{
+  "session_id": "20260623-fabric-ux-census",
+  "active_session_id": "current",
+  "sessions": [{ "client_session_id": "current", "attached_at": "2026-06-23", "role": "owner" }],
+  "source": "goal-mode",
+  "intent": "全修 Fabric UX 北极星 backlog W0→W2(~21 项),依据 EXECUTION-PLAN.md §C",
+  "goal": "把 EXECUTION-PLAN §C 的 W0+W1+W2 全部项落地修复并验证绿、逐波 commit,到三波命名门全绿即收敛",
+  "mode": "3",
+  "current_phase": "execute",
+  "current_round": 1,
+  "baseline": "C1(20260622)已落地;北极星决策已锁(NS-00 §决策锁定)",
+  "boundary_contract": {
+    "in_scope": [
+      "W0 红线 trivia(2): narrow 退役工具引用 / bootstrap 语言字段",
+      "W1 机械 cheap-high(9): 改名/文案/截断/删死字段/删别名/隐藏内部RPC/删lib/nudge_mode表盘",
+      "W2 结构根治(10): 镜像5→1 / retired-ref lint / 旋钮瘦身 / recall单数组 / theme抽取 / hook合并 / instructions分组 / exports.development / events单写路径 / W0-3 block→soft契约变更"
+    ],
+    "out_of_scope": [
+      "W3 全部9项大重设计(退Ink落地/鲜明多色审美/删router/doctor拆分/store改名/命令表13→9/cjs单源bundle/scope降维/hook6→5)——逐项 /maestro-grill + 单独 PR"
+    ],
+    "constraints": [
+      "真源 packages/cli/templates/ → 改完 fabric install --yes 同步 dogfood",
+      "grep 在部分 .cjs BSD binary 误判,用 grep -a / Read 取精确串",
+      "每波 pnpm -r exec tsc --noEmit + 相关 vitest;改 shared schema 必 build",
+      "LEFTHOOK=0 git commit,逐波/按 commit 分组;分支 feat/ux-northstar-w0",
+      "W0-3 配 invariant test,不当 trivia"
+    ]
+  },
+  "ship_criteria": [
+    { "name": "G-W0", "target": "2/2 done + tsc绿 + committed", "actual": "2/2 done; tsc绿; locale-parity绿; committed 5de240e", "verifier_cmd": "pnpm -r exec tsc --noEmit && git log --oneline -1", "verified_at": "2026-06-23" },
+    { "name": "G-W1", "target": "9/9 done + tsc+vitest绿 + committed", "actual": "9/9 done; tsc 0; shared 627 / server 773 / cli 1100 全绿; committed 6f18df1/df1a873/b64c831/4d63dae; W1-8 已 C1 完成(lib 不存在 零悬挂 require)", "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r test --run", "verified_at": "2026-06-23" },
+    { "name": "G-W2", "target": "10/10 done + tsc+vitest绿 + committed", "actual": "10/10 done (W2-1..9 + W0-3 全done; W2-6 用 orchestrator 设计 knowledge-pretooluse.cjs 同进程合并 narrow+cite 为单 envelope, narrow/cite 保留 lib 26 静默测试零改). tsc 0 / cli 1120 / server 779 / shared 625 全绿; committed 4c50b09/a537c91/c3469b6/00cbde5/d8f99f3/95437e9/f34b00e/8b3807e/e005d28/f1b96ba", "verifier_cmd": "pnpm -r exec tsc --noEmit && pnpm -r test --run", "verified_at": "2026-06-23" }
+  ],
+  "task_decomposition": [
+    { "id": "W0-1", "round": 1, "wave": "W0", "subject": "narrow 删退役 MCP 工具 fab_plan_context 引用(留 CLI plan-context-hint)", "done_when": "templates/hooks/knowledge-hint-narrow.cjs ~1245 不再含 fab_plan_context;install 同步;grep -a 校验", "ship_criteria_alignment": ["G-W0"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "grep -a + tsc", "evidence": "narrow hook 3处+2镜像 fab_plan_context=0; tsc绿", "verified_at": "2026-06-23" } },
+    { "id": "W0-2", "round": 1, "wave": "W0", "subject": "bootstrap fabric_language → ~/.fabric/fabric-global.json#language", "done_when": "bootstrap-canonical.ts:93/161 改对;canonical/parity test 绿;dogfood AGENTS.md 重生", "ship_criteria_alignment": ["G-W0"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "vitest bootstrap-canonical/parity", "evidence": "zh+en Language行改对; locale-parity 2/2绿; 3处AGENTS.md同步", "verified_at": "2026-06-23" } },
+
+    { "id": "W1-1", "round": 1, "wave": "W1", "subject": "fab_extract_knowledge → fab_propose + 统一 server instructions", "done_when": "工具名+description+instructions 一致为 propose/write 语义;tsc+相关 test 绿", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + server test", "evidence": null, "verified_at": null } },
+    { "id": "W1-2", "round": 1, "wave": "W1", "subject": "fab_review description 内嵌逐-action required 清单", "done_when": "review.ts description 列出每 action 必填参数;test 绿", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + review.test", "evidence": null, "verified_at": null } },
+    { "id": "W1-3", "round": 1, "wave": "W1", "subject": "broad ALWAYS-ACTIVE summary 套 hint_summary_max_len 截断", "done_when": "knowledge-hint-broad.cjs ~959 summary 受 max_len 截断;hook 自测", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "hook 单测/dogfood", "evidence": null, "verified_at": null } },
+    { "id": "W1-4", "round": 1, "wave": "W1", "subject": "grouped-help 从 allCommands 派生 + group 标签(修 context 浮空)", "done_when": "grouped-help.ts 不再手维护白名单;context 出现在 help;test 绿", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + help snapshot", "evidence": null, "verified_at": null } },
+    { "id": "W1-5", "round": 1, "wave": "W1", "subject": "删 config 死字段 cite_evict_interval/reverse_unarchive_*/hint_broad_budget_chars", "done_when": "先逐字段 grep -a 确认零 readers(cite_evict_interval 被当 opt-out 约定引用/hint_broad_budget_chars 疑已删);仅删真死字段;保留 C1 promotion 活字段如 broad_review_recheck_days;lenient parser 不报错;tsc 绿", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + config test", "evidence": null, "verified_at": null } },
+    { "id": "W1-6", "round": 1, "wave": "W1", "subject": "删 deprecated 别名 whoami/status(info 已取代,零 caller)", "done_when": "先 grep 确认零 caller;allCommands 移除;tsc 绿", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "grep -a caller + tsc", "evidence": null, "verified_at": null } },
+    { "id": "W1-7", "round": 1, "wave": "W1", "subject": "3 内部 RPC(plan-context-hint/scope-explain/onboard-coverage)加 __ 前缀/标内部隐形", "done_when": "确认调用点改名同步;从人面 help 隐去;调用方仍工作", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "indirect", "status": "done", "verification": { "method": "deterministic", "verifier": "grep -a 调用点 + tsc + hook spawn 自测", "evidence": null, "verified_at": null } },
+    { "id": "W1-8", "round": 1, "wave": "W1", "subject": "KILL cite-contract-reminder lib(与 C1 矛盾)", "done_when": "删 lib + 所有引用点;tsc 绿;无悬挂 require", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "grep -a 引用 + tsc", "evidence": null, "verified_at": null } },
+    { "id": "W1-9", "round": 1, "wave": "W1", "subject": "nudge_mode 写进 shipped config + 提为总表盘", "done_when": "fabric-config.json 含 nudge_mode;panel/schema 显形为总开关;test 绿", "ship_criteria_alignment": ["G-W1"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + config test", "evidence": null, "verified_at": null } },
+
+    { "id": "W2-1", "round": 1, "wave": "W2", "subject": "★镜像 5→1:4 套 dogfood gitignore + git rm --cached,留 templates 真源", "done_when": ".gitignore 含 4 套 dogfood;git rm --cached 生效;install 仍能本地重生;hooks 运行正常", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "infrastructure", "status": "done", "verification": { "method": "deterministic", "verifier": "git status + 重装重生 + hook 运行", "evidence": null, "verified_at": null } },
+    { "id": "W2-2", "round": 1, "wave": "W2", "subject": "doctor retired-reference lint(登记表驱动,根治 stale pointer)", "done_when": "新 lint 扫 hooks/bootstrap/skill 对已退役工具名/字段的引用;命中 W0-1/W0-2 类;test 绿", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "lint test + 故意注入测", "evidence": null, "verified_at": null } },
+    { "id": "W2-3", "round": 1, "wave": "W2", "subject": "旋钮 45→~18(写死 22 skill 阈值 + 6 音量旋钮并入 nudge_mode)", "done_when": "schema 收敛到 ~18 语义旋钮;保留 C1 promotion 活字段(broad_review_recheck_days 等);lenient parser 零迁移;test 绿", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + config test", "evidence": "part1: 删9 import/archive/review schema字段(无code reader)+trim shipped config/双scaffold全部✂字段; 实质: 用户旋钮面已瘦身, skill阈值de-ship行为写死, C1护; tsc0/shared624/cli1114绿. ⚠️DONE_WITH_CONCERNS: part2(schema 43→~18: 写死剩余阈值+6音量旋钮并nudge_mode)DEFERRED→W3 config重设计, tracked in issue", "verified_at": "2026-06-23" } },
+    { "id": "W2-4", "round": 1, "wave": "W2", "subject": "fab_recall 双数组 → 单 entries[](read_path 挂条目 + score + body_in_context)", "done_when": "recall 返回单 entries[];消除 join;tsc + recall test 绿", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + recall test", "evidence": null, "verified_at": null } },
+    { "id": "W2-5", "round": 1, "wave": "W2", "subject": "★抽 theme.ts 共享渲染真源(CLI+hook,鲜明多色 token)——Ink 退场前置", "done_when": "新 theme.ts 出多色 token + 渲染原语;CLI 与 hook 注入共享;byte-identical 测试守", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "infrastructure", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + byte-identical test", "evidence": null, "verified_at": null } },
+    { "id": "W2-6", "round": 1, "wave": "W2", "subject": "cite-policy-evict 并入 narrow(PreToolUse 单 hook)", "done_when": "PreToolUse 单 hook;cite-evict 逻辑并入;无双弹;hook 自测", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "hook 单测/dogfood", "evidence": null, "verified_at": null } },
+    { "id": "W2-7", "round": 1, "wave": "W2", "subject": "server instructions 按 AGENT-DIRECT vs SKILL-DRIVEN 分组", "done_when": "index.ts server instructions 分受众;test 绿", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + instructions snapshot", "evidence": null, "verified_at": null } },
+    { "id": "W2-8", "round": 1, "wave": "W2", "subject": "shared exports.development 走 src 免手动 rebuild(根治 rc.21/24/29)", "done_when": "shared package.json exports.development=src;server 消费 src;tsc 绿;无需先 build", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "infrastructure", "status": "done", "verification": { "method": "deterministic", "verifier": "改 schema 不 build 直接 tsc 绿", "evidence": null, "verified_at": null } },
+    { "id": "W2-9", "round": 1, "wave": "W2", "subject": "events.jsonl 单 guarded 写路径过 schema", "done_when": "cjs/TS 写入收敛到单一 guarded 函数过 zod;test 绿", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "tsc + events write test", "evidence": null, "verified_at": null } },
+    { "id": "W0-3", "round": 1, "wave": "W2", "subject": "fabric-hint 4 信号 block→soft nudge(契约变更,配 invariant test)", "done_when": "archive_backlog/review/import/maintenance 不再 decision:block,改软 sink 受 nudge_mode;新 invariant test 守'hook 永不 block';test 绿", "ship_criteria_alignment": ["G-W2"], "alignment_strength": "direct", "status": "done", "verification": { "method": "deterministic", "verifier": "新 invariant test + fabric-hint test", "evidence": null, "verified_at": null } }
+  ],
+  "needs_adjudication": [],
+  "audit_rounds": [
+    { "round": 1, "status": "complete", "round_task_ceiling": 21, "round_task_actual": 21, "convergence_status": "converged", "newly_discovered_this_round": [], "carried_in": [], "completion_gate": { "task_gate": { "all_done": true }, "goal_gate": { "blocking": false, "ship_criteria_all_green": true }, "drift_gate": { "out_of_scope_respected": "W3 9项未触碰" } } }
+  ],
+  "goal_checklist_path": ".workflow/.maestro/20260623-fabric-ux-census/goal-checklist.md",
+  "status": "complete",
+  "loop_exit_status": "goal_met: G-W0/G-W1/G-W2 全 verified (21/21 项 done + tsc0/cli1120/server779/shared625 全绿 + 15 commit on feat/ux-northstar-w0); out_of_scope W3 9项严守未越界. 收尾备注(独立复核): W2-3 实为 part1(DONE_WITH_CONCERNS, part2 schema瘦身 defer→W3); 新发现并发锁 active_session_id 占位符失效 已落 issue; proposals 入 git 随 PR"
+}
