@@ -1,38 +1,38 @@
-import pc from "picocolors";
+import {
+  isColorEnabled as themeColorEnabled,
+  paint as themePaint,
+  symbol as themeSymbol,
+  type ThemeToken,
+} from "@fenglimg/fabric-shared/theme";
 import stringWidth from "string-width";
+
+// ux-w2-5: the CLI colour surface is now a thin adapter over the SHARED theme
+// (packages/shared/src/theme.ts) — the same palette the .cjs hooks render through
+// (lib/theme.cjs, byte-locked by theme-parity.test.ts). The CLI no longer owns a
+// private picocolors palette, so `fabric install` output and a SessionStart hook
+// paint identical colours. Width helpers stay here (they need the CLI-only
+// string-width dep). isColorEnabled re-reads env/TTY per call so NO_COLOR /
+// FORCE_COLOR / a piped stdout are honoured at render time.
+
+// ISS-040 / no-color.org: re-exported for direct unit tests; delegates to theme.
+export function isColorEnabled(): boolean {
+  return themeColorEnabled();
+}
 
 type PaintFn = (value: string) => string;
 
-// ISS-040: FORCE_COLOR is the dual of NO_COLOR. Exported for direct unit tests.
-export function isColorEnabled(): boolean {
-  // NO_COLOR (https://no-color.org) is an unconditional opt-out and takes
-  // precedence over FORCE_COLOR when both are set.
-  if (process.env.NO_COLOR) {
-    return false;
-  }
-  // FORCE_COLOR forces color ON regardless of TTY (e.g. piping into a pager or
-  // a CI runner that strips the TTY but renders ANSI). FORCE_COLOR=0 / "false"
-  // is an explicit disable; any other value (incl. empty string) enables —
-  // matching the de-facto supports-color convention.
-  const force = process.env.FORCE_COLOR;
-  if (force !== undefined) {
-    return force !== "0" && force.toLowerCase() !== "false";
-  }
-  return Boolean(process.stdout.isTTY);
-}
-
-function colorize(painter: PaintFn): PaintFn {
-  return (value: string) => (isColorEnabled() ? painter(value) : value);
+function tokenPainter(token: ThemeToken): PaintFn {
+  return (value: string) => themePaint(token, value, isColorEnabled());
 }
 
 export const paint = {
-  success: colorize(pc.green),
-  warn: colorize(pc.yellow),
-  error: colorize(pc.red),
-  drift: colorize(pc.magenta),
-  ai: colorize(pc.blue),
-  human: colorize(pc.cyan),
-  muted: colorize(pc.dim),
+  success: tokenPainter("success"),
+  warn: tokenPainter("warn"),
+  error: tokenPainter("error"),
+  drift: tokenPainter("drift"),
+  ai: tokenPainter("ai"),
+  human: tokenPainter("human"),
+  muted: tokenPainter("muted"),
 } as const;
 
 export const label = {
@@ -52,13 +52,13 @@ export const label = {
 
 export const symbol = {
   get ok(): string {
-    return isColorEnabled() ? paint.success("[ok] ✓") : "[ok]";
+    return themeSymbol("ok", isColorEnabled());
   },
   get warn(): string {
-    return isColorEnabled() ? paint.warn("[warn] !") : "[warn]";
+    return themeSymbol("warn", isColorEnabled());
   },
   get error(): string {
-    return isColorEnabled() ? paint.error("[error] x") : "[error]";
+    return themeSymbol("error", isColorEnabled());
   },
 };
 

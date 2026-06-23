@@ -71,6 +71,11 @@
       "development": "./src/templates/bootstrap-canonical.ts",
       "types": "./dist/templates/bootstrap-canonical.d.ts",
       "import": "./dist/templates/bootstrap-canonical.js"
+    },
+    "./theme": {
+      "development": "./src/theme.ts",
+      "types": "./dist/theme.d.ts",
+      "import": "./dist/theme.js"
     }
   },
   "files": [
@@ -79,8 +84,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts src/templates/bootstrap-canonical.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts src/templates/bootstrap-canonical.ts --format esm --dts --watch",
+    "build": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts src/templates/bootstrap-canonical.ts src/theme.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts src/templates/bootstrap-canonical.ts src/theme.ts --format esm --dts --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:smoke": "vitest run --config vitest.smoke.config.ts"
