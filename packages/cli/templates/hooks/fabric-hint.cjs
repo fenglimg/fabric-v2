@@ -980,11 +980,11 @@ function readArchiveEditThreshold(projectRoot) {
  * Both default to a no-trigger shape when omitted (back-compat for callers
  * pre-dating the two-lane split).
  *
- * Returns one of:
- *   - { decision: 'block', reason, signal: 'archive', recommended_skill: 'fabric-archive' }
- *   - { decision: 'block', reason, signal: 'archive_backlog', recommended_skill: 'fabric-archive' }
- *   - { decision: 'block', reason, signal: 'review', recommended_skill: 'fabric-review' }
- *   - { decision: 'block', reason, signal: 'import', recommended_skill: 'fabric-import' }
+ * Returns one of (ux-w0-3: `decision: 'soft'` — a reminder, never a gate):
+ *   - { decision: 'soft', reason, signal: 'archive', recommended_skill: 'fabric-archive' }
+ *   - { decision: 'soft', reason, signal: 'archive_backlog', recommended_skill: 'fabric-archive' }
+ *   - { decision: 'soft', reason, signal: 'review', recommended_skill: 'fabric-review' }
+ *   - { decision: 'soft', reason, signal: 'import', recommended_skill: 'fabric-import' }
  *   - null on no trigger
  */
 // rc.7 T7: thresholds is the externalized-config view passed in by main().
@@ -1081,7 +1081,7 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     const line3 = renderBanner("archiveCta", variant, {});
     const reason = [line1, line2, line3].filter((l) => l.length > 0).join("\n");
     return {
-      decision: "block",
+      decision: "soft",
       reason,
       signal: "archive",
       recommended_skill: "fabric-archive",
@@ -1104,7 +1104,7 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     const line2 = renderBanner("backlogCta", variant, {});
     const reason = `${line1}\n${line2}`;
     return {
-      decision: "block",
+      decision: "soft",
       reason,
       signal: "archive_backlog",
       recommended_skill: "fabric-archive",
@@ -1142,7 +1142,7 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     const line2 = renderBanner("reviewCta", variant, {});
     const reason = `${line1}\n${line2}`;
     return {
-      decision: "block",
+      decision: "soft",
       reason,
       signal: "review",
       recommended_skill: "fabric-review",
@@ -1200,7 +1200,7 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     const line2 = renderBanner("importCta", variant, {});
     const reason = `${line1}\n${line2}`;
     return {
-      decision: "block",
+      decision: "soft",
       reason,
       signal: "import",
       recommended_skill: "fabric-import",
@@ -1529,8 +1529,8 @@ function writeMaintenanceLastEmit(projectRoot, nowMs, sessionId) {
  *      the previous Signal-D emit. Tracked via dedicated sidecar
  *      `.fabric/.cache/maintenance-hint-last-emit`.
  *
- * Returns one of:
- *   - { decision: 'block', reason, signal: 'maintenance', recommended_skill: null }
+ * Returns one of (ux-w0-3: `decision: 'soft'` — a reminder, never a gate):
+ *   - { decision: 'soft', reason, signal: 'maintenance', recommended_skill: null }
  *   - null on no trigger
  *
  * `recommended_skill` is intentionally null — the maintenance prompt
@@ -1595,7 +1595,7 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
   const reason = `${line1}\n${line2}`;
 
   return {
-    decision: "block",
+    decision: "soft",
     reason,
     signal: "maintenance",
     // CLI recommendation rather than Skill — doctor is a CLI surface.
@@ -2223,6 +2223,45 @@ function writeSessionDigestBestEffort(projectRoot, stdinPayload) {
   }
 }
 
+// ux-w0-3 (KT-DEC-0007): the SINGLE soft-emit path for EVERY Stop-hook signal
+// (archive / archive_backlog / review / import / maintenance). A nudge is a
+// reminder layer, NEVER a gate — so no signal ever emits a blocking decision.
+// The AI channel always carries the reason (flow ⊥ observation, D3); the human
+// systemMessage is gated by nudge_mode (D4/D5), with high-value signals
+// (knowledge-loss: archive / archive_backlog) surfacing at lower volumes.
+// Mutates `result` (strips telemetry-only threshold/actual_value, like the prior
+// inline paths). When the client adapter is unavailable, falls back to a plain
+// non-blocking JSON payload (decision stays "soft", never blocking).
+function emitSoftSignal(out, result, cwd, highValue) {
+  const reasonText = typeof result.reason === "string" ? result.reason : "";
+  delete result.threshold;
+  delete result.actual_value;
+  const client =
+    clientAdapter && typeof clientAdapter.detectClient === "function"
+      ? clientAdapter.detectClient(__dirname)
+      : undefined;
+  // Known client (cc / codex): emit the dual-sink envelope on stdout —
+  // additionalContext(AI, always) + systemMessage(human, gated by nudge_mode).
+  if (client && clientAdapter && typeof clientAdapter.emitDualSink === "function") {
+    const humanGate =
+      nudgePolicy !== null
+        ? nudgePolicy.resolveHumanSink(cwd, "stop", { highValue })
+        : { emitHuman: true };
+    clientAdapter.emitDualSink(
+      { human: humanGate.emitHuman ? reasonText : null, ai: reasonText },
+      { client, eventName: "Stop", streams: { stdout: out } },
+    );
+    return;
+  }
+  // Unknown client / no adapter → emit the reason as a plain, non-blocking
+  // payload on stdout. `result.decision` is "soft" (non-blocking), so this is
+  // a reminder, not a gate (KT-DEC-0007).
+  out.write(JSON.stringify(result));
+}
+
+// High-value (knowledge-loss) signals surface at lower nudge_mode volumes.
+const HIGH_VALUE_SIGNALS = new Set(["archive", "archive_backlog"]);
+
 /**
  * Main entry — invoked both as a CLI (require.main === module) and in-process by tests.
  *
@@ -2495,9 +2534,7 @@ function main(env, stdio) {
     // uses hours, so we branch here to avoid mixing semantics.
     if (result.signal === "maintenance") {
       emitSignalFiredEvent(cwd, sessionId, result);
-      delete result.threshold;
-      delete result.actual_value;
-      out.write(JSON.stringify(result));
+      emitSoftSignal(out, result, cwd, HIGH_VALUE_SIGNALS.has(result.signal));
       writeMaintenanceLastEmit(cwd, nowMs, resolveHookSessionId(stdinPayload));
       return;
     }
@@ -2519,27 +2556,12 @@ function main(env, stdio) {
     }
 
     emitSignalFiredEvent(cwd, sessionId, result);
-    const reasonText = typeof result.reason === "string" ? result.reason : "";
-    delete result.threshold;
-    delete result.actual_value;
-    // v2.2 dual-sink (Goal A / D3): the archive nudge is SOFT — emitted as
-    // additionalContext(AI) + systemMessage(human), NEVER decision:block. The
-    // human channel is gated by nudge_mode (D4/D5); the AI channel always carries
-    // it (flow ⊥ observation). Missing it is backstopped by the SessionEnd marker
-    // + cross-session debt (D3). Review/import keep the decision:block contract
-    // (out of Goal A scope; KT-DEC-0007 nudge semantics unchanged for them).
-    if (result.signal === "archive" && clientAdapter && typeof clientAdapter.emitDualSink === "function") {
-      const humanGate =
-        nudgePolicy !== null
-          ? nudgePolicy.resolveHumanSink(cwd, "stop", { highValue: true })
-          : { emitHuman: true };
-      clientAdapter.emitDualSink(
-        { human: humanGate.emitHuman ? reasonText : null, ai: reasonText },
-        { client: clientAdapter.detectClient(__dirname), eventName: "Stop", streams: { stdout: out } },
-      );
-    } else {
-      out.write(JSON.stringify(result));
-    }
+    // ux-w0-3 (KT-DEC-0007): EVERY A/B/C signal (archive / archive_backlog /
+    // review / import) emits SOFT via the shared path — additionalContext(AI) +
+    // nudge_mode-gated systemMessage(human), NEVER decision:block. Previously
+    // only `archive` was soft and review/import blocked; the block contract is
+    // retired (a nudge is a reminder layer, never a gate).
+    emitSoftSignal(out, result, cwd, HIGH_VALUE_SIGNALS.has(result.signal));
     cache[result.signal] = nowMs;
     writeShownCache(cwd, cache, resolveHookSessionId(stdinPayload));
   } catch {
