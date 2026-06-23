@@ -1,0 +1,57 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "brainstorm",
+    "artifact_id": "BRS-W3B-20260623",
+    "session_path": "scratch/20260623-brainstorm-w3b-visual-language",
+    "generated_at": "2026-06-23"
+  },
+  "requirements": [
+    { "id": "F-001", "title": "结构基元模块(tree/grid/badge/section + ASCII fallback)", "priority": "must", "ref": "guidance-specification.md#§3" },
+    { "id": "F-002", "title": "@clack wrap API(themeIntro/outro/log/note,仅包上下文不 restyle 控件)", "priority": "must", "ref": "guidance-specification.md#§4" },
+    { "id": "F-003", "title": "doctor 换皮(段落头+tree 分组+grid 清单)", "priority": "must", "ref": "mockups.md#1" },
+    { "id": "F-004", "title": "install 换皮(ConsoleOutputRenderer 用结构基元)", "priority": "must", "ref": "mockups.md#2" },
+    { "id": "F-005", "title": "HUD/SessionStart 换皮(badge 作用域 + tree;结构基元同步 lib/theme.cjs 保 parity)", "priority": "should", "ref": "mockups.md#3" },
+    { "id": "F-006", "title": "error 换皮(badge 标题 + 左竖条分组块)", "priority": "should", "ref": "mockups.md#4" },
+    { "id": "F-007", "title": "删死依赖 picocolors(全仓 0 真实 import)", "priority": "must", "ref": "guidance-specification.md#§7" },
+    { "id": "F-008", "title": "per-surface NO_COLOR snapshot 测试(复用 W1-4 help snapshot 机制)", "priority": "must", "ref": "guidance-specification.md#§5" }
+  ],
+  "constraints": [
+    { "id": "C-002", "area": "aesthetic", "constraint": "差异化来自结构基元(tree/grid/badge/分组);7 语义角色色板冻结;禁渐变/背景色", "status": "locked", "ref": "guidance-specification.md#§3" },
+    { "id": "C-004", "area": "compat", "constraint": "truecolor/none 二档;所有结构字符提供 ASCII fallback(├─→+-、│→|、└─→`-、▌→#、━→=)", "status": "locked", "ref": "guidance-specification.md#§2,§3" },
+    { "id": "C-005", "area": "integration", "constraint": "colors.ts 已是 theme 适配层(ux-w2-5)、picocolors 已死依赖 — 迁移~90%已完成;剩余=删 picocolors + plan 定 colors.ts 去留", "status": "locked", "ref": "guidance-specification.md#§6,§7" },
+    { "id": "C-006", "area": "integration", "constraint": "@clack 仅包裹上下文(theme 化 intro/outro/log/error/note),不 restyle prompt 控件、不弃 @clack", "status": "locked", "ref": "guidance-specification.md#§4" },
+    { "id": "C-008", "area": "migration", "constraint": "增量 per-surface 迁移 + 每面 NO_COLOR output snapshot(复用 W1-4 机制),禁 big-bang", "status": "locked", "ref": "guidance-specification.md#§5" },
+    { "id": "C-003", "area": "architecture", "constraint": "HUD-shared 结构基元须同步进 lib/theme.cjs 并保 theme-parity byte-identical", "status": "locked", "ref": "guidance-specification.md#§3,mockups.md#3" }
+  ],
+  "domain": {
+    "problem_statement": "把 Fabric CLI 扁平彩色行输出升级为靠结构(tree/grid/badge/分组)取胜的鲜明界面,色彩只做 7 语义角色点缀。视觉方向用户已锁定(▌ 紫色段落头 + 树 + 方括号 badge + 对齐网格)。",
+    "terminology": [
+      { "term": "结构基元", "definition": "tree(层级)/grid(对齐表)/badge(方括号语义标签)/分组(左竖条段落)", "ref": "guidance-specification.md#§2" },
+      { "term": "二档色", "definition": "truecolor / none,无 256/16 阶梯", "ref": "guidance-specification.md#§2" }
+    ],
+    "audience": "Fabric 维护者 + Claude Code/Codex CLI 开发者用户",
+    "industry": "developer tooling / CLI"
+  },
+  "non_goals": [
+    { "title": "渐变/背景色", "ref": "guidance-specification.md#§8" },
+    { "title": "256/16 色阶梯", "ref": "guidance-specification.md#§8" },
+    { "title": "fork/restyle @clack 控件", "ref": "guidance-specification.md#§8" },
+    { "title": "big-bang 一次性换皮", "ref": "guidance-specification.md#§8" },
+    { "title": "动 theme.ts 7 色取值或破 theme-parity", "ref": "guidance-specification.md#§8" },
+    { "title": "退 Ink(W3-A 已完成 PR #9)", "ref": "guidance-specification.md#§8" }
+  ],
+  "insights": [
+    { "role": "scope-verify", "area": "integration", "summary": "grill C-005 前提过时:colors.ts 已是 theme 适配层、picocolors 已死依赖(0 真实 import),迁移~90%已完成。W3-B 真活是结构视觉语言(C-002),非色彩迁移。", "ref": "guidance-specification.md#§6" },
+    { "role": "ui-designer", "area": "visual-language", "summary": "视觉方向锁定:▌(U+258C)accent 段落头 + ├─└ 树 + [badge] 语义标签(状态 ok/warn/err + 作用域 team/project/personal)+ padEnd 对齐网格。色彩 7 角色点缀,结构承载层级。", "ref": "mockups.md" },
+    { "role": "test-strategist", "area": "snapshot", "summary": "snapshot 复用 W1-4 help 机制:每 surface 抽纯函数 renderX(data):string,对 NO_COLOR 输出 toMatchSnapshot,producer-consumer round-trip oracle。", "ref": "guidance-specification.md#§5" }
+  ],
+  "open_questions": [
+    { "area": "integration", "question": "colors.ts 去留:A 保留作 CLI 便利层(改动小,推荐) vs B 折叠进 theme 删除(更纯,触 14 引用)", "options": ["A 保留", "B 折叠"], "ref": "guidance-specification.md#§6" }
+  ],
+  "references": [
+    { "type": "guidance", "path": "guidance-specification.md" },
+    { "type": "mockups", "path": "mockups.md" },
+    { "type": "grill-upstream", "path": "../20260623-grill-cli-stack-aesthetic/context-package.json" }
+  ]
+}
