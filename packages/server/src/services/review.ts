@@ -583,7 +583,7 @@ async function approveOne(
 
   // rc.31 BUG-G2: previously `knowledge_proposed` was only emitted by
   // extract-knowledge.ts (i.e. only when a pending file was created via the
-  // fab_extract_knowledge MCP tool). Pending files written by hand or by
+  // fab_propose MCP tool). Pending files written by hand or by
   // third-party Skills would never produce a proposed event, so the ledger
   // invariant `proposed_count >= promoted_count` got silently violated (in
   // werewolf-minigame rc.30 audit: proposed=17, promoted=52). Synthesize a

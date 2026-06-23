@@ -78,7 +78,7 @@
 - **contract 语法**: decisions/pitfalls 类 `[applied]` cite 尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
 - **skip reason 词典**: `sequencing | conditional | semantic | aesthetic | architectural | other:<text>`。
 - **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
-- **用户口头提规则没给 id**: 先调 `fab_recall(paths)` 或 `fab_extract_knowledge` 反查。
+- **用户口头提规则没给 id**: 先调 `fab_recall(paths)` 或 `fab_propose` 反查。
 - **dismissed reason**: 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。
 - **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_recall`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
 - **稽核**: `fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出 cite 覆盖率,含 `KB: none` sentinel 拆分。本规则不阻断你工作,只记录。

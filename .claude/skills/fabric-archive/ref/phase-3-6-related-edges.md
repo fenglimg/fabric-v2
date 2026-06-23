@@ -2,7 +2,7 @@
 
 For each candidate, identify the **`related`** graph edges to other KB entries — the store-qualified `stable_id`s this entry semantically links to (the decision it supersedes, the pitfall it explains, the model it instantiates). You discovered these ids during the session via `fab_recall` / plan-context, so cite the ones you actually saw, NEVER invent stable_ids.
 
-Because `fab_extract_knowledge` has no dedicated `related` input, record the candidate edges as one line inside `session_context` (e.g. `related: team:KT-DEC-0007, team:KT-PIT-0011`) so they survive to approve-time frontmatter authoring (`fabric-review` writes the canonical `related: [...]` frontmatter).
+Because `fab_propose` has no dedicated `related` input, record the candidate edges as one line inside `session_context` (e.g. `related: team:KT-DEC-0007, team:KT-PIT-0011`) so they survive to approve-time frontmatter authoring (`fabric-review` writes the canonical `related: [...]` frontmatter).
 
 ## §4 privacy iron law — KT→KP is FORBIDDEN
 

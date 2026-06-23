@@ -62,7 +62,7 @@ Step 5: SCOPE GATE
 
 Step 6: ATTACH evidence_paths to FRONTMATTER (rc.37 NEW-7 upgrade)
   Pass evidence_candidate_paths (from Step 2, post-blacklist Step 3) to
-  fab_extract_knowledge as the `evidence_paths` input field. Server writes
+  fab_propose as the `evidence_paths` input field. Server writes
   them to frontmatter `evidence_paths: [...]` (NOT to body `## Evidence`).
   This makes evidence consumable by plan-context retrieval as structured
   data instead of forcing markdown re-parsing every recall. The legacy

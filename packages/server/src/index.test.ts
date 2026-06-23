@@ -33,7 +33,7 @@ describe("createFabricServer", () => {
     // MCP tools are retired — recall collapsed to ONE lean tool.
     expect(toolNames.sort()).toEqual([
       "fab_archive_scan",
-      "fab_extract_knowledge",
+      "fab_propose",
       "fab_recall",
       "fab_review",
     ]);
@@ -73,7 +73,7 @@ describe("createFabricServer", () => {
     expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("fab_get_knowledge_sections");
     expect(FABRIC_SERVER_INSTRUCTIONS).not.toContain("selection_token");
     // Full tool manifest — the four current tools are described.
-    for (const tool of ["fab_recall", "fab_extract_knowledge", "fab_archive_scan", "fab_review"]) {
+    for (const tool of ["fab_recall", "fab_propose", "fab_archive_scan", "fab_review"]) {
       expect(FABRIC_SERVER_INSTRUCTIONS).toContain(tool);
     }
     // Conventions: session_id + cite.

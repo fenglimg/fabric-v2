@@ -2088,7 +2088,7 @@ function createPromoteLedgerInvariantCheck(
  *
  * Werewolf 实测: proposed=20 < promote_started=49 < promoted=53 — 部分 approve
  * 在 rc.31 BUG-G2 fix 之前 happened without emitting knowledge_proposed (real
- * extract didn't go through fab_extract_knowledge → no propose event). The
+ * extract didn't go through fab_propose → no propose event). The
  * rc.31 fix made approve emit synth proposed unconditionally going forward,
  * but it CANNOT retroactively heal pre-fix events.
  *

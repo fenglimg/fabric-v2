@@ -25,7 +25,7 @@ For EACH `session_id` in the run's scope (multi-session E4 runs emit MULTIPLE ev
 
 | Skill terminal state                                                 | outcome              | candidates_proposed | knowledge_proposed_ids                          |
 |----------------------------------------------------------------------|----------------------|---------------------|-------------------------------------------------|
-| Phase 4 wrote ≥ 1 pending entry                                      | `proposed`           | N (count written)   | `[idempotency_key_1, idempotency_key_2, ...]` (from each fab_extract_knowledge response) |
+| Phase 4 wrote ≥ 1 pending entry                                      | `proposed`           | N (count written)   | `[idempotency_key_1, idempotency_key_2, ...]` (from each fab_propose response) |
 | Phase 2.5 viability_failed AND entry_point ∈ {E2_explicit, E4_user_range} AND user saw + accepted the gate-FAIL message | `viability_failed`   | 0                   | `[]`                                            |
 | Phase 3 batch review — user dismissed ALL presented candidates       | `user_dismissed`     | 0                   | `[]`                                            |
 | Phase 1 filter dropped every session in scope OR Phase 2.5 silent-skip path (E1_hook / E3_ai_self_trigger / E5_cron) | `skipped_no_signal`  | 0                   | `[]`                                            |

@@ -112,11 +112,11 @@ function captureRegistration(): { tool: () => RegisteredTool; server: McpServer 
 }
 
 describe("registerExtractKnowledge", () => {
-  it("registers fab_extract_knowledge with correct name and schemas", () => {
+  it("registers fab_propose with correct name and schemas", () => {
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
     const t = tool();
-    expect(t.name).toBe("fab_extract_knowledge");
+    expect(t.name).toBe("fab_propose");
     expect(t.definition.inputSchema).toBeDefined();
     expect(t.definition.outputSchema).toBeDefined();
     expect(t.definition.annotations).toBeDefined();

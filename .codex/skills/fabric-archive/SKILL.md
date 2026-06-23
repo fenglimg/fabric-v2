@@ -1,7 +1,7 @@
 ---
 name: fabric-archive
 description: 归档对话洞察到 active write store 的 pending knowledge (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
-allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge
+allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_propose
 ---
 
 > **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
@@ -29,7 +29,7 @@ rc.37 NEW-9 collapsed the flow to **3 macro-phases**; the legacy fine-grained ph
 
 - **GATHER** = Phase 0 (range) → 0.5 (config) → 1 (ledger scan via `fab_archive_scan`) → [1.5 onboard] → 2 (candidates).
 - **REVIEW** = Phase 2.5 (viability gate) → 3 (classify / layer / slug + batch review) → 3.5 (relevance scope + relevance_paths) → 3.7 (semantic scope / audience axis). The single user review round lives here.
-- **PERSIST** = Phase 4 (`fab_extract_knowledge`, one call per candidate) → 4.5 (archive-attempt ledger).
+- **PERSIST** = Phase 4 (`fab_propose`, one call per candidate) → 4.5 (archive-attempt ledger).
 
 Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 3.7 → 4 → 4.5`. Each below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
 
@@ -45,7 +45,7 @@ Read `.fabric/fabric-config.json`; resolve `archive_max_candidates_per_batch` (d
 
 ### Phase 0.6 — Store routing (v2.1 multi-store)
 
-Archives land in the **active write store** for the entry's scope — NEVER pick a store yourself. Run `fabric scope-explain team` (or the relevant scope) to get the resolved `writeTarget`; that is where `fab_extract_knowledge` persists. Single-store → the lone store (back-compat). After persisting, **echo the target store alias** (`归档到 store '<alias>'`). Personal-scope entries route to the personal store (never the shared team store, R5#3). Do NOT read `~/.fabric` store trees directly — go through `scope-explain` / the MCP write path.
+Archives land in the **active write store** for the entry's scope — NEVER pick a store yourself. Run `fabric scope-explain team` (or the relevant scope) to get the resolved `writeTarget`; that is where `fab_propose` persists. Single-store → the lone store (back-compat). After persisting, **echo the target store alias** (`归档到 store '<alias>'`). Personal-scope entries route to the personal store (never the shared team store, R5#3). Do NOT read `~/.fabric` store trees directly — go through `scope-explain` / the MCP write path.
 
 ### UX i18n Policy
 
@@ -137,7 +137,7 @@ Sets the entry's **audience** `semantic_scope` (orthogonal to `layer`=store and 
 
 ### Phase 4 — Persist via MCP
 
-For each user-confirmed candidate, call `fab_extract_knowledge` ONCE (NEVER batch). Required: `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `layer`, `relevance_scope`, `relevance_paths[]`, `proposed_reason` (enum), `session_context` (3-5 line narrative). One OPTIONAL audience field: `semantic_scope` — pass `team` ONLY when Phase 3.7 classified a team candidate as team-wide (cross-project); OMIT otherwise so the engine auto-derives `project:<active_project>` (or `team` when the repo has no `active_project`). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
+For each user-confirmed candidate, call `fab_propose` ONCE (NEVER batch). Required: `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `layer`, `relevance_scope`, `relevance_paths[]`, `proposed_reason` (enum), `session_context` (3-5 line narrative). One OPTIONAL audience field: `semantic_scope` — pass `team` ONLY when Phase 3.7 classified a team candidate as team-wide (cross-project); OMIT otherwise so the engine auto-derives `project:<active_project>` (or `team` when the repo has no `active_project`). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
 
 Server returns `{ pending_path, idempotency_key }`. Display `pending_path` for the user. `idempotency_key = sha256({source_session, type, slug})` — repeated calls SAFE (server merges evidence).
 
@@ -163,25 +163,25 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - WHEN `active_project` is set AND `layer=team`, MUST present `[semantic_scope=...]` (`team` for team-wide, or `project:<active_project>` for this-project-only) plus a one-line `Audience reasoning:` citing this-project-only vs team-wide (Phase 3.7).
 - MUST classify against the canonical singular nouns: model / decision / guideline / pitfall / process. NEVER invent new types.
 - MUST cap the batch at `archive_max_candidates_per_batch` candidates (config-resolved, default 8); drop weaker ones over the cap.
-- MUST display the resolved `pending_path` returned by `fab_extract_knowledge` so the user can verify.
+- MUST display the resolved `pending_path` returned by `fab_propose` so the user can verify.
 - MUST treat user inline edits to type/layer/slug/relevance_scope/relevance_paths/semantic_scope as authoritative replacements before Phase 2.
 - MUST skip rather than guess when an observation does not fit any of the 5 types.
 
 ### WRITE Rules
 
-- NEVER write a knowledge entry directly to the filesystem; the only legal write path is `mcp__fabric__fab_extract_knowledge`.
-- NEVER infer or glob a project-local pending directory — persist through `fab_extract_knowledge` and use the returned store-resolved `pending_path`; promotion to canonical knowledge is fab_review concern, NOT this skill.
+- NEVER write a knowledge entry directly to the filesystem; the only legal write path is `mcp__fabric__fab_propose`.
+- NEVER infer or glob a project-local pending directory — persist through `fab_propose` and use the returned store-resolved `pending_path`; promotion to canonical knowledge is fab_review concern, NOT this skill.
 - NEVER include an `id` field anywhere — pending entries have no id (late-bind on approve).
 - NEVER classify a candidate as `personal` when a 强 team signal applies. Default to team on ambiguity.
 - NEVER emit a non-empty `relevance_paths` when `relevance_scope=broad` — broad MUST always carry `relevance_paths=[]`.
 - NEVER emit a non-empty `relevance_paths` when `layer=personal` — personal forces `relevance_scope=broad` + `relevance_paths=[]`.
 - v2.0.0-rc.37 NEW-7 widened Phase 3.5: `edit_paths` ∪ `user_mentioned_paths` drives `relevance_paths`; `read_paths` flows separately to `evidence_paths` (structured frontmatter, not body markdown). NEVER lift body regex / symbol extraction into `relevance_paths` — those remain reserved for v2.1+.
-- NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
+- NEVER batch multiple candidates into a single fab_propose call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `semantic_scope`, `active_project`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `fab_propose`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `semantic_scope`, `active_project`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
 
 ## Worked Examples / E5 Cron / Dry-run (ref-only)
 
-- **Worked examples** (3 end-to-end fab_extract_knowledge calls: decision/team, pitfall/team, guideline/personal): `Read ref/worked-examples.md`
+- **Worked examples** (3 end-to-end fab_propose calls: decision/team, pitfall/team, guideline/personal): `Read ref/worked-examples.md`
 - **E5 Scheduled Daily Recap** (only when entry_point=E5_cron — OS cron, `/loop`, or scheduled trigger): `Read ref/e5-cron-recap.md`
 - **Dry-run Scope** (authoritative catalogue of all writes suspended by `--dry-run`): `Read ref/dry-run-scope.md`

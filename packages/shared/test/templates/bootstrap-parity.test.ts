@@ -41,8 +41,10 @@ const PROTECTED_TOKENS: readonly string[] = [
   'fab_review action="list"',
   // paths / config
   ".fabric/agents.meta.json",
-  ".fabric/fabric-config.json",
-  "fabric_language",
+  // W0-2: language is the single machine-wide tone in ~/.fabric/fabric-global.json
+  // (the old per-project `.fabric/fabric-config.json` `fabric_language` field is
+  // retired — KT-DEC-0034 — so neither token appears in the bootstrap body).
+  "~/.fabric/fabric-global.json",
   "docs/USER-QUICKSTART.md",
   "knowledge/pitfalls/",
   ".fabric/knowledge/pending",

@@ -1,7 +1,7 @@
 ---
 name: fabric-import
 description: 冷启动从 git log + docs/*.md 回灌 active write store pending knowledge (NOT code/data import). Triggers 导入历史/bootstrap fabric/mine changelog/挖掘 commit.
-allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__fabric__fab_review
+allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_propose, mcp__fabric__fab_review
 ---
 
 > **Surface**: Skill (LLM judgment over git + docs). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
@@ -18,7 +18,7 @@ Else stop: `没有触发 import 信号；如需手动 import 请显式调用 fab
 
 SKIP when: `.fabric/` missing (→ `fabric install`); canonical > `import_skip_canonical_threshold` (default 50); state file `phase=complete` + `last_checkpoint_at <24h`.
 
-Required: `.fabric/` exists, target store resolved, MCP `fab_extract_knowledge` + `fab_review` registered, working tree reasonably clean.
+Required: `.fabric/` exists, target store resolved, MCP `fab_propose` + `fab_review` registered, working tree reasonably clean.
 
 ## Phase 0 — Init
 
@@ -42,11 +42,11 @@ First-run vs re-run by state file (ENOENT or `phase != complete && proposed == 0
 
 ### Store routing (v2.1 multi-store)
 
-Import requires an **explicit target store** (E7) — mined entries are NOT auto-routed. Resolve candidates via `fabric scope-explain team` (writable stores in the read-set); if more than one writable store exists, `AskUserQuestion` for the target store alias before persisting (header/question translate, the alias options stay English routing keys). Single writable store → use it. Persist through `fab_extract_knowledge` with the chosen store; echo the target alias. Never write to a store the project did not declare (read-set bound).
+Import requires an **explicit target store** (E7) — mined entries are NOT auto-routed. Resolve candidates via `fabric scope-explain team` (writable stores in the read-set); if more than one writable store exists, `AskUserQuestion` for the target store alias before persisting (header/question translate, the alias options stay English routing keys). Single writable store → use it. Persist through `fab_propose` with the chosen store; echo the target alias. Never write to a store the project did not declare (read-set bound).
 
 ## UX i18n Policy
 
-Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Emit prose per variant. Protected tokens NEVER translate (`fab_extract_knowledge`, `fab_review`, `.fabric/.import-state.json`, all enum strings, `MUST`/`NEVER`). Full 5-class taxonomy → `Read .../ref/i18n-policy.md`.
+Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Emit prose per variant. Protected tokens NEVER translate (`fab_propose`, `fab_review`, `.fabric/.import-state.json`, all enum strings, `MUST`/`NEVER`). Full 5-class taxonomy → `Read .../ref/i18n-policy.md`.
 
 ## 3-Phase Pipeline
 
@@ -65,7 +65,7 @@ No MCP calls.
 
 ### Phase 2 — LLM-Driven Mining
 
-Classify each candidate into 5 types (decisions/pitfalls/guidelines/models/processes), draft slug, propose via `fab_extract_knowledge`. Layer: `team`.
+Classify each candidate into 5 types (decisions/pitfalls/guidelines/models/processes), draft slug, propose via `fab_propose`. Layer: `team`.
 
 #### Mandatory Scope Rule — broad + empty paths (NON-NEGOTIABLE)
 
@@ -73,7 +73,7 @@ Every call MUST `relevance_scope="broad"` AND `relevance_paths=[]`. No exception
 
 #### Step 2.1 — Git Mining
 
-`git log --since="<window> months ago" --pretty=format:"%H%n%s%n%b%n---ENDCOMMIT---" -n <cap>`. Conventional prefix → type signal (feat→decision/model, fix→pitfall, refactor→decision, docs→guideline; chore/test/ci skip). Extract observation → Skip Tree → `fab_extract_knowledge` (broad+[]). Cap: `import_max_pending_per_run`.
+`git log --since="<window> months ago" --pretty=format:"%H%n%s%n%b%n---ENDCOMMIT---" -n <cap>`. Conventional prefix → type signal (feat→decision/model, fix→pitfall, refactor→decision, docs→guideline; chore/test/ci skip). Extract observation → Skip Tree → `fab_propose` (broad+[]). Cap: `import_max_pending_per_run`.
 
 #### Step 2.1.5 — Proposed Reason
 
@@ -124,13 +124,13 @@ Layer `team` / scope `broad` / paths `[]` are contract-locked (no override). Max
 
 ### WRITE
 
-NEVER write entry via `Edit`/`Write`/`Bash` — only `fab_extract_knowledge` (P2) + `fab_review` (P3).
+NEVER write entry via `Edit`/`Write`/`Bash` — only `fab_propose` (P2) + `fab_review` (P3).
 
 NEVER batch P2 candidates / skip P1 ref / call `fab_review.approve` / `git mv` directly / infer layer-flip / non-atomic state / exceed cap / `relevance_scope="narrow"` / non-empty `relevance_paths` / copy fabric-archive Phase 1.5 logic.
 
 Narrowing post-import = `fab_review.modify` (out-of-band).
 
-Protected tokens (verbatim, no translate): `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_proposed`, `fab_extract_knowledge`, `fab_review`, `MUST`, `NEVER`, `phase`, `.import-state.json`, `relevance_scope`, `relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`.
+Protected tokens (verbatim, no translate): `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_proposed`, `fab_propose`, `fab_review`, `MUST`, `NEVER`, `phase`, `.import-state.json`, `relevance_scope`, `relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`.
 
 ## Output Contract
 

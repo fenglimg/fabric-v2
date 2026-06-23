@@ -660,7 +660,7 @@ export const enMessages: Messages = {
   "doctor.check.promote_ledger_invariant.ok":
     "knowledge_proposed={proposed} >= knowledge_promote_started={started} >= knowledge_promoted={promoted}; ledger invariant holds.",
   "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
-    "knowledge_proposed={proposed} is less than knowledge_promote_started={started} (ledger invariant violated; some pending entries were approved without going through fab_extract_knowledge, so no propose event was emitted for them).",
+    "knowledge_proposed={proposed} is less than knowledge_promote_started={started} (ledger invariant violated; some pending entries were approved without going through fab_propose, so no propose event was emitted for them).",
   "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
     "knowledge_promote_started={started} is less than knowledge_promoted={promoted} (ledger invariant violated; unpaired promoted events exist, possibly from doctor filesystem-edit fallback or external writers).",
   "doctor.check.promote_ledger_invariant.remediation":

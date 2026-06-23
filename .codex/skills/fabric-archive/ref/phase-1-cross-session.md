@@ -35,7 +35,7 @@ Before Step 5 builds the cross-session context, drop sessions that the outcome l
 - **(e) Never attempted (no `session_archive_attempted` event found for this `session_id`) → keep.** First-time scan; nothing to filter against.
 - **(f) Cross-session pending dedupe** (operates on candidate observations, not on `session_id` filter): gather all `knowledge_proposed_ids` from `session_archive_attempted` events with `outcome === "proposed"` across ALL sessions in the recent window (NOT just the current candidate session). This builds a global set of idempotency keys already proposed by prior archive runs but not yet reviewed by the user (the active write store may still contain matching pending entries). When classifying new observations in Phase 3, drop any candidate whose computed `idempotency_key` matches an id already in this set — it was already proposed by an earlier archive run, the user just hasn't reviewed it yet, so re-proposing would duplicate pending entries and inflate `candidates_proposed` counts. Per Phase 4.5 dedupe consumer of `knowledge_proposed_ids`.
 
-The resulting filtered `session_id[]` proceeds into Step 5's digest concatenation. Sessions filtered out in this step do NOT contribute to `### Cross-session digest`, are NOT included in `source_sessions` on any fab_extract_knowledge call, and are NOT referenced in `session_context` bodies.
+The resulting filtered `session_id[]` proceeds into Step 5's digest concatenation. Sessions filtered out in this step do NOT contribute to `### Cross-session digest`, are NOT included in `source_sessions` on any fab_propose call, and are NOT referenced in `session_context` bodies.
 
 ### Constants (rc.25 — verbatim)
 
@@ -54,7 +54,7 @@ The resulting filtered `session_id[]` proceeds into Step 5's digest concatenatio
 Concatenate the loaded digests into a single `### Cross-session digest` block to carry into Phase 2.5 + Phase 1. Use this block to:
 
 - Detect session-spanning patterns (e.g. a discussion that started in session A and continued in session B).
-- Populate the `source_sessions` array on every fab_extract_knowledge call — the array form (T5) replaces the legacy `source_session` string.
+- Populate the `source_sessions` array on every fab_propose call — the array form (T5) replaces the legacy `source_session` string.
 - Inform the `session_context` blob written to each pending entry's body (3-5 lines summarizing goal + key turning point, per T6).
 
 ## Graceful degradation

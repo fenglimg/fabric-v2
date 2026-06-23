@@ -54,7 +54,7 @@ describe("P2 — 6 MCP tools carry a store edge", () => {
       (t) => MCP_STORE_AWARE_CONTRACTS[t].echoesWrittenStore,
     );
     expect(writeTools).not.toContain("fab_archive_scan");
-    expect(writeTools).toContain("fab_extract_knowledge");
+    expect(writeTools).toContain("fab_propose");
 
     expect(() => writtenToStoreSchema.parse({ store_uuid: TEAM, alias: "team" })).not.toThrow();
     // bare/invalid store uuid rejected

@@ -644,7 +644,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.promote_ledger_invariant.ok":
     "knowledge_proposed={proposed} ≥ knowledge_promote_started={started} ≥ knowledge_promoted={promoted}，ledger 不变量持有。",
   "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
-    "knowledge_proposed={proposed} 小于 knowledge_promote_started={started}（ledger 不变量被破坏；部分 pending 在 approve 时未经过 fab_extract_knowledge → 缺少 propose 事件）。",
+    "knowledge_proposed={proposed} 小于 knowledge_promote_started={started}（ledger 不变量被破坏；部分 pending 在 approve 时未经过 fab_propose → 缺少 propose 事件）。",
   "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
     "knowledge_promote_started={started} 小于 knowledge_promoted={promoted}（ledger 不变量被破坏；存在未配对的 promoted 事件，可能来自 doctor filesystem-edit fallback 或外部写入）。",
   "doctor.check.promote_ledger_invariant.remediation":

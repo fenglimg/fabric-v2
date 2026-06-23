@@ -56,7 +56,7 @@ without polluting agent context.
 ### 8 truly differentiated features
 
 1. **Cross-client MCP-first surface.** One server (`fabric-knowledge-server`),
-   four tools (`fab_recall`, `fab_extract_knowledge`, `fab_archive_scan`,
+   four tools (`fab_recall`, `fab_propose`, `fab_archive_scan`,
    `fab_review`), two clients reading and writing
    through the same protocol via stdio. Knowledge stops being a per-client artifact.
 
@@ -72,7 +72,7 @@ without polluting agent context.
    native Read of the returned file path, so recall stays cheap and context
    only grows with what the agent actually opens.
 
-4. **Async-review primitive.** `fab_extract_knowledge` writes to `pending/`;
+4. **Async-review primitive.** `fab_propose` writes to `pending/`;
    nothing reaches canonical knowledge without `fab_review`. Promotion,
    rejection, deferral, and modification are all auditable actions, not
    side-effects of session end. Knowledge proposals can sit overnight without
@@ -188,7 +188,7 @@ Fabric splits cleanly across three entry points; pick by who's in the loop:
 - **Skill** — AI is in the conversation and needs to judge content:
   `/fabric-archive`, `/fabric-review`, `/fabric-import`.
 - **MCP** — primitives the above use internally: `fab_recall`,
-  `fab_extract_knowledge`, `fab_archive_scan`, `fab_review`.
+  `fab_propose`, `fab_archive_scan`, `fab_review`.
 
 → See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and
 [`docs/RUNTIME-CONTRACTS.md`](./docs/RUNTIME-CONTRACTS.md) for the current
@@ -242,7 +242,7 @@ Fabric exposes four MCP tools and eight Skill templates: the `fabric` router plu
   intent, returns candidate DESCRIPTIONS filtered by `relevance_paths` plus a
   native READ PATH for each entry. It does not deliver bodies over MCP; the
   agent reads a body on demand via a native Read of the returned file path.
-- `fab_extract_knowledge` — propose new pending entries from the current
+- `fab_propose` — propose new pending entries from the current
   session. Entries land under the active write store's
   `knowledge/pending/<type>/` tree. Nothing reaches canonical knowledge without
   review.

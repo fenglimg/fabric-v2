@@ -17,7 +17,7 @@ description: Archive worth-keeping knowledge from the current session.
 
 ## Phase 2 — Persist
 
-For each user-confirmed candidate, call \`fab_extract_knowledge\` ONCE.
+For each user-confirmed candidate, call \`fab_propose\` ONCE.
 The server returns the store-resolved \`pending_path\`; do not glob local pending directories.
 Each call carries \`relevance_scope\`, \`relevance_paths\`, \`source_sessions\` array,
 \`proposed_reason\` enum, and a multi-line \`session_context\` per Phase 1.5 / T6.
@@ -91,9 +91,9 @@ describe("validateSkillFile", () => {
 
   it("flags fabric-archive missing the Phase 1.5 contract fields (relevance_scope / relevance_paths)", () => {
     const filePath = "/tmp/skills/fabric-archive/SKILL.md";
-    // Has the universal anchors + fab_extract_knowledge, but lacks the
+    // Has the universal anchors + fab_propose, but lacks the
     // Phase 1.5 contract surface that fabric-archive must pin verbatim.
-    const source = `MUST do things. NEVER skip. pending_path matters. fab_extract_knowledge call.`;
+    const source = `MUST do things. NEVER skip. pending_path matters. fab_propose call.`;
     const violations = validateSkillFile(filePath, source);
     expect(violations).toContainEqual({
       filePath,
@@ -114,7 +114,7 @@ describe("validateSkillFile", () => {
 
   it("flags fabric-archive missing T5/T6 + layer-enum tokens (TASK-008 D1)", () => {
     const filePath = "/tmp/skills/fabric-archive/SKILL.md";
-    const source = `MUST do things. NEVER skip. fab_extract_knowledge call. relevance_scope. relevance_paths.`;
+    const source = `MUST do things. NEVER skip. fab_propose call. relevance_scope. relevance_paths.`;
     const violations = validateSkillFile(filePath, source);
     for (const token of [
       "pending_path",
@@ -135,7 +135,7 @@ describe("validateSkillFile", () => {
 
   it("flags fabric-import missing T5/T6 contract tokens (TASK-008 D1)", () => {
     const filePath = "/tmp/skills/fabric-import/SKILL.md";
-    const source = `MUST do things. NEVER skip. pending_path matters. fab_extract_knowledge call. fab_review call.`;
+    const source = `MUST do things. NEVER skip. pending_path matters. fab_propose call. fab_review call.`;
     const violations = validateSkillFile(filePath, source);
     for (const token of [
       "proposed_reason",

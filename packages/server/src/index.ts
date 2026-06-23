@@ -200,7 +200,7 @@ export const FABRIC_SERVER_INSTRUCTIONS = [
   "",
   "Tools:",
   "- `fab_recall` — one-shot KB recall: descriptions + read paths for the given files.",
-  "- `fab_extract_knowledge` — extract structured knowledge from text you supply.",
+  "- `fab_propose` — propose/persist a pending knowledge entry into the write-target store for later review.",
   "- `fab_archive_scan` — scan recent work for archive-worthy knowledge candidates.",
   "- `fab_review` — review and triage pending knowledge entries.",
   "",

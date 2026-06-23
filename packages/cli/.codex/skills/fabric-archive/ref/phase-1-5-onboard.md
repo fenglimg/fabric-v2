@@ -141,7 +141,7 @@ AskUserQuestion({
 })
 ```
 
-`fab_extract_knowledge` is called with `onboard_slot: <slot>` set so each
+`fab_propose` is called with `onboard_slot: <slot>` set so each
 proposed entry counts toward coverage once approved via fab_review.
 
 | User choice    | Action |
@@ -172,7 +172,7 @@ After Read-ing the slot-specific sources, classify the observation:
 - `build-system-idiom` → type=`processes`, `proposed_reason=new-dependency-or-pattern`
 - `domain-vocabulary` → type=`models`, `proposed_reason=new-dependency-or-pattern`
 
-Call `fab_extract_knowledge` with the inferred fields PLUS `onboard_slot:
+Call `fab_propose` with the inferred fields PLUS `onboard_slot:
 <slot>`. The pending file's frontmatter will carry the slot label, and the
 next `fabric onboard-coverage` run will see the slot as filled (once approved
 via fab_review).
@@ -180,7 +180,7 @@ via fab_review).
 Example:
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["<current-session-id>"],
   recent_paths: ["package.json", "tsconfig.json"],
   user_messages_summary: "Project uses TypeScript + pnpm workspace + Vitest. Node 20 LTS target. ESM-only.",
@@ -214,4 +214,4 @@ mcp__fabric__fab_extract_knowledge({
 - MUST emit `onboard_slot: <slot>` verbatim — the slot name is one of
   the locked S5 strings (tech-stack-decision / architecture-pattern /
   code-style-tone / build-system-idiom / domain-vocabulary). The
-  fab_extract_knowledge schema enum will reject anything else.
+  fab_propose schema enum will reject anything else.

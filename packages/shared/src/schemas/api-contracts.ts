@@ -302,7 +302,7 @@ export const planContextHintOutputSchema = z.object({
 // CONTEXT_INFO — the A-set `## [BRACKET]` heading discipline) was removed.
 // After F8a deleted the scan baseline writers, the A-set has no writer; B-set
 // `## <Title>` headings (Summary / Why proposed / Session context / Evidence
-// from rc.7 fab_extract_knowledge) are now the only convention. The `sections`
+// from rc.7 fab_propose) are now the only convention. The `sections`
 // input parameter on fab_get_knowledge_sections went with it — callers fetch
 // the full markdown body keyed by stable_id (`rules[].body: string`) and the
 // LLM scans/extracts what it needs.
@@ -592,7 +592,7 @@ export type ArchiveScanInput = z.infer<typeof archiveScanInputSchema>;
 export type ArchiveScanOutput = z.infer<typeof archiveScanOutputSchema>;
 
 // ---------------------------------------------------------------------------
-// MCP tool contracts — fab_extract_knowledge (rc.2 protocol pre-lock)
+// MCP tool contracts — fab_propose (rc.2 protocol pre-lock)
 //
 // Semi-thick design: the Skill summarizes the user/session context, the MCP
 // server persists a pending knowledge entry under the resolved write store's
@@ -604,7 +604,7 @@ export type ArchiveScanOutput = z.infer<typeof archiveScanOutputSchema>;
 // MUST pick one — the value is greppable/lintable for future maturity-promotion
 // scoring (deferred). The 1-line human descriptions live in
 // PROPOSED_REASON_DESCRIPTIONS below and drive the `## Why proposed` body
-// section that fab_extract_knowledge writes.
+// section that fab_propose writes.
 export const ProposedReasonSchema = z.enum([
   "explicit-user-mark",
   "diagnostic-then-fix",
@@ -803,7 +803,7 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
   // discover unclaimed slots, then propagates the chosen slot label here
   // so the resulting pending entry counts toward coverage.
   //
-  // STRICT optionality: every non-onboard fab_extract_knowledge call MUST
+  // STRICT optionality: every non-onboard fab_propose call MUST
   // omit this field. The skill is the only producer; downstream consumers
   // (plan_context retrieval, doctor lints) treat missing as a steady-state
   // signal that the entry was NOT part of an onboard pass.

@@ -11,7 +11,7 @@ LLM analysis: this is a **pitfall** (a non-obvious trap that wasted time and is 
 Skill output (note `relevance_scope: "broad"` + `relevance_paths: []` — mandatory for fabric-import):
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["fabric-import-2026-05-10"],
   recent_paths: ["packages/server/src/lib/retry.ts"],     // provenance only
   user_messages_summary: "重试无指数退避会在短暂上游故障下放大成雪崩。修正：jittered exponential backoff，30 秒上限。src=50367b5",
@@ -29,7 +29,7 @@ Counter-example — DO NOT do this:
 ```ts
 // WRONG — this skill must never produce narrow + paths from git metadata.
 // The retry pitfall applies to every retry site, not just the file touched by 50367b5.
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   // ...
   relevance_scope: "narrow",                                // VIOLATION
   relevance_paths: ["packages/server/src/lib/retry.ts"]     // VIOLATION
@@ -57,7 +57,7 @@ LLM analysis: this is a **decision** (≥2 alternatives weighed — monolith vs 
 Skill output (broad+[] mandatory; the doc's own path stays in `recent_paths` for provenance, NOT in `relevance_paths`):
 
 ```ts
-mcp__fabric__fab_extract_knowledge({
+mcp__fabric__fab_propose({
   source_sessions: ["fabric-import-2026-05-10"],
   recent_paths: ["docs/architecture.md"],                  // provenance only
   user_messages_summary: "选择单体架构而非微服务：3 人团队无法承担多服务运维成本，且主要性能瓶颈在 DB 吞吐而非应用层水平扩展。src=docs/architecture.md",
@@ -123,5 +123,5 @@ mcp__fabric__fab_review({
 Key invariants of this flow:
 
 - The narrowing decision originates from the **user**, informed by the actual paths they propose — not from `fabric-import` inferring paths from git metadata.
-- The modify call goes through `fab_review`, not `fab_extract_knowledge`, because the entry already exists (post-import or post-approval).
+- The modify call goes through `fab_review`, not `fab_propose`, because the entry already exists (post-import or post-approval).
 - If the user later flips the entry's layer from `team` to `personal`, server-side auto-degrades scope back to `broad` and clears `relevance_paths` (see rc.5 C3 acceptance criterion; personal knowledge crosses projects so paths don't generalize). This is the only legal way for `relevance_paths` to be re-cleared.

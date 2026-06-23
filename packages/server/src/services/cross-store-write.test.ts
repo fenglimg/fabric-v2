@@ -16,7 +16,7 @@ import {
 import { extractKnowledge } from "./extract-knowledge.js";
 
 // v2.1 global-refactor (W1-T2): proves the cross-store write-side wiring — when
-// the project selects an active write store, fab_extract_knowledge routes the
+// the project selects an active write store, fab_propose routes the
 // pending entry into THAT store's pending dir instead of the project .fabric.
 
 const tempDirs: string[] = [];
