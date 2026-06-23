@@ -1474,6 +1474,27 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(ai).not.toMatch(/over budget/);
   });
 
+  it("ux-w1-3: always-active summary is bounded by hint_summary_max_len", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en", hint_summary_max_len: 40 });
+    const longSummary = "L".repeat(200);
+    const { out } = capture({
+      payload: makePayload([]),
+      census,
+      alwaysBodies: [
+        { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: longSummary, body: "b" },
+      ],
+    });
+    const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
+    const line = ai.split("\n").find((l) => l.includes("team:KT-GLD-0001")) ?? "";
+    // Truncated with the ellipsis marker; the raw 200-char summary never appears verbatim.
+    expect(line).toContain("…");
+    expect(line).not.toContain(longSummary);
+    // The summary segment after the id label is capped at hint_summary_max_len (40).
+    const summarySegment = line.split(" · ")[1] ?? "";
+    expect(summarySegment.length).toBeLessThanOrEqual(40);
+  });
+
   it("reminder_to_context=false → no AI sink, human systemMessage still emitted", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
     writeConfig({ fabric_language: "en", hint_reminder_to_context: false });

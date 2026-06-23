@@ -956,7 +956,11 @@ function renderAiSink(opts) {
     // (KT-GLD-0005) we no longer pay.
     for (const b of bodies) {
       const label = `[${TYPE_SINGULAR[b.type] || b.type}] ${b.id}`;
-      const summary = typeof b.summary === "string" ? b.summary.trim() : "";
+      // ux-w1-3: bound the always-active summary by hint_summary_max_len, mirroring
+      // the REFERENCE must_read_if hook below — one long entry must not blow up the
+      // SessionStart sink.
+      const raw = typeof b.summary === "string" ? b.summary.trim() : "";
+      const summary = truncateSummary(raw, summaryMaxLen);
       lines.push(summary.length > 0 ? `  ${label} · ${summary}` : `  ${label}`);
       indexCount += 1;
     }
