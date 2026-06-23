@@ -1,0 +1,85 @@
+{
+  "id": "TASK-002",
+  "title": "F-007 删除死依赖 picocolors",
+  "description": "picocolors is already a dead dependency in packages/cli — there are 0 real imports (verified: the only mention in src is a comment in colors.ts; the only declaration is the dependency line in package.json). Remove the dependency line from packages/cli/package.json and delete the stale 'picocolors' word from the colors.ts comment so knip --strict reports no unused/undeclared dependency.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "chore",
+  "priority": "medium",
+  "effort": "small",
+  "action": "Delete the line `\"picocolors\": \"^1.1.1\",` from the dependencies block of packages/cli/package.json. In packages/cli/src/colors.ts, remove the stale reference to picocolors in the ux-w2-5 comment (the phrase 'private picocolors palette') so no 'picocolors' token remains in src/. Run pnpm install to refresh the lockfile, then knip.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+
+  "scope": "packages/cli/package.json + packages/cli/src/colors.ts",
+  "focus_paths": ["packages/cli/package.json", "packages/cli/src/colors.ts"],
+
+  "read_first": ["packages/cli/package.json", "packages/cli/src/colors.ts"],
+
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "foundation",
+  "execution_group": null,
+  "executor": "agent",
+
+  "convergence": {
+    "criteria": [
+      "grep -c picocolors packages/cli/package.json returns 0",
+      "grep -rc picocolors packages/cli/src returns 0",
+      "pnpm lint (knip --strict) exits 0 with no picocolors finding",
+      "pnpm -r exec tsc --noEmit exits 0"
+    ],
+    "verification": "grep -rn picocolors packages/cli/package.json packages/cli/src; pnpm install; pnpm lint",
+    "definition_of_done": "picocolors is fully removed from the CLI package manifest and source; knip is clean."
+  },
+
+  "files": [
+    { "path": "packages/cli/package.json", "action": "modify", "target": "dependencies", "change": "Remove the \"picocolors\": \"^1.1.1\" line." },
+    { "path": "packages/cli/src/colors.ts", "action": "modify", "target": "ux-w2-5 header comment", "change": "Drop the stale 'private picocolors palette' phrasing so no picocolors token remains in src." }
+  ],
+
+  "implementation": [
+    "Edit package.json: remove the picocolors dependency line (mind trailing comma on the preceding/following line).",
+    "Edit colors.ts: reword the comment to drop 'picocolors'.",
+    "Run pnpm install to update the lockfile (drops the unused package).",
+    "Run pnpm lint (knip --strict) and tsc --noEmit to confirm clean."
+  ],
+
+  "test": {
+    "commands": ["pnpm install", "pnpm lint", "pnpm -r exec tsc --noEmit"],
+    "unit": [],
+    "integration": [],
+    "success_metrics": ["knip clean", "no picocolors token anywhere in cli package"]
+  },
+
+  "reference": {
+    "pattern": "dead-dep removal verified by knip --strict + grep census across manifest + src",
+    "files": ["packages/cli/src/colors.ts"],
+    "examples": null
+  },
+
+  "rationale": {
+    "chosen_approach": "Trivial one-line manifest delete + comment cleanup. Kept as its own tiny wave-1 task so it lands independently of the F-001 primitive work and the lockfile change is isolated in one commit.",
+    "decision_factors": ["already 0 real imports (verified)", "knip --strict gate"],
+    "tradeoffs": null
+  },
+
+  "risks": ["Removing the wrong comma in package.json breaks JSON — verify with a parse (node -e require)."],
+
+  "code_skeleton": null,
+
+  "doc_context": {
+    "affected_features": ["F-007"],
+    "affected_components": ["packages/cli/package.json", "colors.ts"],
+    "affected_requirements": ["C-005"],
+    "adr_ids": []
+  },
+
+  "meta": {
+    "estimated_time": "15m",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "id": "TASK-004",
+  "title": "F-003 doctor 换皮 (段落头 + tree + grid + badge) + NO_COLOR snapshot",
+  "description": "Reskin the fabric doctor human-readable output (packages/cli/src/commands/doctor.ts) from flat coloured lines to the W3-B structural language per mockups.md#1: section-bar headers (▌ Store Health / ▌ Checks), a tree (├─/└─) for store-health rows, padEnd grid alignment for the store/check rows, and status/scope badges. Touch ONLY the human renderer paths (renderHumanReport / renderStoreDiagnostics / renderTldrHeader / writeIssueSection-headers) — the JSON output path (args.json) MUST stay byte-unchanged. Extract the reskinned section renderers into pure renderX(report):string helpers and ship a NO_COLOR snapshot (C-008).",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "high",
+  "effort": "large",
+  "action": "In doctor.ts, replace flat lines with structural primitives: (1) renderStoreDiagnostics' `paint.ai(\"store health\")` → sectionBar(\"Store Health\") followed by tree() rows where each row uses scopeBadge + padEnd-aligned name/count columns + status badge; (2) the top summary line (renderHumanReport first writeStdout) → sectionBar(\"fabric doctor · <target>\") + trailing status badge; (3) renderTldrHeader 'TL;DR' block → sectionBar(\"Checks\") + tree of top issues; (4) issue section titles (writeIssueSection) → sectionBar. Import sectionBar/scopeBadge from @fenglimg/fabric-shared/theme, tree/grid from ../tui/structure.js, paint/symbol from ../colors.js. Refactor the rendering bodies into exported pure fns (renderDoctorHeader(report):string, renderDoctorStoreHealth(diagnostics):string, renderDoctorChecks(report):string) that return strings; the writeStdout wrappers call them. Leave the args.json===true branch untouched.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+
+  "scope": "packages/cli/src/commands/doctor.ts",
+  "focus_paths": ["packages/cli/src/commands/doctor.ts"],
+
+  "read_first": [
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/tui/structure.ts",
+    "packages/shared/src/theme.ts",
+    "packages/cli/src/colors.ts",
+    "packages/cli/src/store/doctor-checks.ts"
+  ],
+
+  "depends_on": ["TASK-001"],
+  "wave": 2,
+  "parallel_group": "consumers",
+  "execution_group": null,
+  "executor": "agent",
+
+  "convergence": {
+    "criteria": [
+      "doctor.ts imports sectionBar from @fenglimg/fabric-shared/theme and tree/grid from ../tui/structure.js (grep both)",
+      "the literal `paint.ai(\"store health\")` no longer appears in doctor.ts (grep -c returns 0); replaced by sectionBar(\"Store Health\")",
+      "doctor store-health + checks render via tree() and/or grid() (grep -E 'tree\\(|grid\\(' packages/cli/src/commands/doctor.ts returns >=1)",
+      "the args.json===true output path is unchanged (git diff shows no edit inside the `if (args.json === true)` blocks)",
+      "a NO_COLOR snapshot test for the pure doctor render helpers exists and passes (toMatchSnapshot, NO_COLOR=1)",
+      "pnpm --filter @fenglimg/fabric-cli test exits 0 (existing doctor render tests + new snapshot)",
+      "pnpm -r exec tsc --noEmit exits 0"
+    ],
+    "verification": "pnpm --filter @fenglimg/fabric-cli test -- doctor && pnpm -r exec tsc --noEmit",
+    "definition_of_done": "fabric doctor renders section-bar + tree + grid + badges per mockup #1; JSON output is untouched; the new look is snapshot-pinned for NO_COLOR."
+  },
+
+  "files": [
+    { "path": "packages/cli/src/commands/doctor.ts", "action": "modify", "target": "renderHumanReport / renderStoreDiagnostics / renderTldrHeader / writeIssueSection", "change": "Replace flat coloured lines with sectionBar headers + tree/grid rows + status/scope badges; extract pure render* string helpers; leave JSON path intact." },
+    { "path": "packages/cli/__tests__/doctor-reskin.test.ts", "action": "create", "target": "NO_COLOR snapshot", "change": "Snapshot renderDoctorHeader/renderDoctorStoreHealth/renderDoctorChecks over fixture DoctorReport + StoreDiagnostic[] under NO_COLOR=1." }
+  ],
+
+  "implementation": [
+    "Map mockup #1 to the existing render fns: header line, store-health block, TL;DR/checks block, issue sections.",
+    "Extract each block's string composition into an exported pure fn taking the already-computed report/diagnostics data.",
+    "Rewrite bodies using sectionBar + tree (store rows, last row →└─) + grid padEnd alignment (name | count columns) + scopeBadge + status badge.",
+    "Keep writeStdout wrappers calling the pure fns; do not touch the JSON branch.",
+    "Add doctor-reskin.test.ts with fixture data + NO_COLOR snapshot.",
+    "Run doctor tests + tsc; commit (incremental per-surface)."
+  ],
+
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-cli test -- doctor", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/cli/__tests__/doctor-reskin.test.ts"],
+    "integration": [],
+    "success_metrics": ["mockup #1 structure present", "JSON path unchanged", "NO_COLOR snapshot green"]
+  },
+
+  "reference": {
+    "pattern": "existing exported renderTldrHeader as a pure-fn precedent in doctor.ts; establish a NEW vitest toMatchSnapshot test with NO_COLOR=1 (grouped-help.test.ts uses toContain/toMatch, not toMatchSnapshot, and does not pin NO_COLOR — do not reuse it; add a fresh NO_COLOR=1 snapshot test)",
+    "files": ["packages/cli/src/commands/doctor.ts", "packages/cli/__tests__/grouped-help.test.ts"],
+    "examples": null
+  },
+
+  "rationale": {
+    "chosen_approach": "Reskin only the human path and extract pure render fns so the new look is snapshot-testable; JSON contract (CI/dashboards) is sacred and left byte-identical.",
+    "decision_factors": ["C-008 per-surface snapshot", "JSON output is a stable downstream contract", "renderTldrHeader already exported as pure-ish fn — follow that"],
+    "tradeoffs": "doctor.ts is large (1650 lines) with many flags; only the default human report surface is reskinned — report sub-surfaces (cite-coverage/history) stay as-is to bound scope."
+  },
+
+  "risks": ["doctor has many report sub-renderers; over-reaching risks churn — scope is the default report human path only.", "Accidentally editing the JSON branch — guarded by a git-diff convergence criterion."],
+
+  "code_skeleton": null,
+
+  "doc_context": {
+    "affected_features": ["F-003", "F-008"],
+    "affected_components": ["commands/doctor.ts"],
+    "affected_requirements": ["C-002", "C-008"],
+    "adr_ids": []
+  },
+
+  "meta": {
+    "estimated_time": "2h",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}
