@@ -45,4 +45,18 @@ function symbol(kind, colorOn) {
   return on ? paint(SYMBOL_TOKEN[kind], SYMBOL_GLYPH[kind], true) : SYMBOL_ASCII[kind];
 }
 
-module.exports = { ANSI, PALETTE, isColorEnabled, paint, symbol, SYMBOL_ASCII };
+// W3-B structural primitives — HUD-shared layer (C-003), byte-mirror of the TS
+// source (packages/shared/src/theme.ts), pinned by theme-parity.test.ts.
+function sectionBar(title, colorOn) {
+  const on = colorOn === undefined ? isColorEnabled() : colorOn;
+  return on ? `${ANSI.bold}${PALETTE.accent}▌ ${title}${ANSI.reset}` : `# ${title}`;
+}
+
+const SCOPE_BADGE_TOKEN = { team: "drift", project: "ai", personal: "human" };
+function scopeBadge(scope, colorOn) {
+  const on = colorOn === undefined ? isColorEnabled() : colorOn;
+  const text = `[${scope}]`;
+  return on ? paint(SCOPE_BADGE_TOKEN[scope], text, true) : text;
+}
+
+module.exports = { ANSI, PALETTE, isColorEnabled, paint, symbol, SYMBOL_ASCII, sectionBar, scopeBadge };

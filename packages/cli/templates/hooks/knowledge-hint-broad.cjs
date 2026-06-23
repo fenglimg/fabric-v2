@@ -42,6 +42,16 @@ const { spawnSync } = require("node:child_process");
 const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
+// W3-B F-005 (C-003 HUD-shared layer): the SessionStart AI sink reskin consumes
+// the parity-trivial shared structural primitives — sectionBar (title row) +
+// scopeBadge ([team]/[project]/[personal]) — from the .cjs theme mirror. This is
+// the ONLY shared-theme dependency the hook may take: lib/theme.cjs is byte-locked
+// to packages/shared/src/theme.ts by theme-parity.test.ts (G-THEME). The hook MUST
+// NEVER reach for the CLI-only ESM/TS structure layer (the tree / grid primitives
+// under packages/cli/src/tui) — it is unrequireable from a .cjs runtime; the HUD
+// deliberately uses plain two-space indent instead of the complex tree() primitive.
+const { sectionBar, scopeBadge } = require("./lib/theme.cjs");
+
 // W1-01 (ISS-012): the SessionStart broad hook appends a hook_surface_emitted
 // event to the shared events.jsonl. ux-w2-9: route through the single guarded
 // event-writer (envelope stamp + event_type guard + advisory-lock append) so
@@ -921,6 +931,24 @@ function renderScopeStoreLabel(snapshot, lang) {
 // must_read_if}); `alwaysBodies` is always_bodies[] ({id,type,layer,summary,body}).
 const REFERENCE_TYPES = new Set(["decision", "pitfall", "process"]);
 
+// W3-B F-005: map a knowledge entry's layer to a scopeBadge() scope key
+// (team→'team' · project→'project' · personal→'personal'). Bodies carry an
+// explicit `.layer`; plan-context reference entries do not, so the layer is
+// recovered from the id prefix (`team:KT-…` / `project:…` / `personal:…`), with a
+// `KP-` id always personal. Anything unrecognized falls back to 'team' — the
+// broadest, default tier — so the badge never renders an undefined scope.
+const VALID_SCOPES = new Set(["team", "project", "personal"]);
+function layerToScope(entry) {
+  const e = entry || {};
+  if (typeof e.layer === "string" && VALID_SCOPES.has(e.layer)) return e.layer;
+  const id = typeof e.id === "string" ? e.id : "";
+  const prefix = id.includes(":") ? id.slice(0, id.indexOf(":")) : "";
+  if (VALID_SCOPES.has(prefix)) return prefix;
+  // `KP-*` ids are the personal convention even without a `personal:` prefix.
+  if (/(^|:)KP-/.test(id)) return "personal";
+  return "team";
+}
+
 function renderAiSink(opts) {
   const { entries, alwaysBodies, storeLabel, broadIndexBackstop, summaryMaxLen, lang } =
     opts || {};
@@ -939,39 +967,56 @@ function renderAiSink(opts) {
   let indexCount = 0; // total rendered index lines (always + reference), for the backstop.
 
   const lines = [];
-  lines.push(`[fabric:SessionStart] ${storeLabel || "store"}`);
+  // W3-B F-005 (mockup #3): a single sectionBar title carrying the active /
+  // reference counts, replacing the legacy `[fabric:SessionStart] <store>` +
+  // flat `ALWAYS-ACTIVE RULES (...)` header. The store label is preserved on the
+  // human sink (renderScopeStoreLabel); the AI sink leads with the count title.
+  // sectionBar degrades to `# <title>` when color is off (NO_COLOR / non-TTY),
+  // byte-locked to the TS source by theme-parity.
+  lines.push(
+    sectionBar(
+      zh
+        ? `Fabric Knowledge · ${bodies.length} 常驻 · ${referenceEntries.length} 参考`
+        : `Fabric Knowledge · ${bodies.length} active · ${referenceEntries.length} reference`,
+    ),
+  );
 
-  // ALWAYS-ACTIVE RULES — index-only (title + summary), never the eager body.
+  // ALWAYS-ACTIVE — plain sub-section label (the `RULES (...)` qualifier is kept
+  // so the contract substring + framing survive the reskin). Index-only (title +
+  // summary), never the eager body.
   lines.push(
     zh
-      ? "ALWAYS-ACTIVE RULES (无条件适用 · 照此行遵循,正文按需取):"
-      : "ALWAYS-ACTIVE RULES (unconditional · act on the line; body on demand):",
+      ? "  ALWAYS-ACTIVE RULES (无条件适用 · 照此行遵循,正文按需取):"
+      : "  ALWAYS-ACTIVE RULES (unconditional · act on the line; body on demand):",
   );
   if (bodies.length === 0) {
     lines.push(zh ? "  (无 always-active 条目)" : "  (none)");
   } else {
     // KT-DEC-0036: render each always-active entry as a single index line
-    // (title + summary). The body is one cheap on-demand fetch away (see footer),
-    // so injecting it on every SessionStart is a permanent context tax
-    // (KT-GLD-0005) we no longer pay.
+    // (scope badge + title + summary). The body is one cheap on-demand fetch away
+    // (see footer), so injecting it on every SessionStart is a permanent context
+    // tax (KT-GLD-0005) we no longer pay.
     for (const b of bodies) {
+      const badge = scopeBadge(layerToScope(b));
       const label = `[${TYPE_SINGULAR[b.type] || b.type}] ${b.id}`;
       // ux-w1-3: bound the always-active summary by hint_summary_max_len, mirroring
       // the REFERENCE must_read_if hook below — one long entry must not blow up the
       // SessionStart sink.
       const raw = typeof b.summary === "string" ? b.summary.trim() : "";
       const summary = truncateSummary(raw, summaryMaxLen);
-      lines.push(summary.length > 0 ? `  ${label} · ${summary}` : `  ${label}`);
+      lines.push(
+        summary.length > 0 ? `  ${badge} ${label} · ${summary}` : `  ${badge} ${label}`,
+      );
       indexCount += 1;
     }
   }
 
-  // REFERENCE — broad decision/pitfall/process: title + must_read_if hook.
+  // REFERENCE — broad decision/pitfall/process: scope badge + title + must_read_if hook.
   if (referenceEntries.length > 0) {
     lines.push(
       zh
-        ? "REFERENCE (情境触发 · 命中 must_read_if 时 Read / fab_recall):"
-        : "REFERENCE (situational · Read when must_read_if fires / fab_recall):",
+        ? "  REFERENCE (情境触发 · 命中 must_read_if 时 Read / fab_recall):"
+        : "  REFERENCE (situational · Read when must_read_if fires / fab_recall):",
     );
     let folded = 0;
     for (const e of referenceEntries) {
@@ -979,6 +1024,7 @@ function renderAiSink(opts) {
         folded += 1;
         continue;
       }
+      const badge = scopeBadge(layerToScope(e));
       const type = TYPE_SINGULAR[toPluralType(e.type)] || e.type;
       const rawHook =
         typeof e.must_read_if === "string" && e.must_read_if.length > 0
@@ -987,7 +1033,11 @@ function renderAiSink(opts) {
             ? e.summary
             : "";
       const hookText = truncateSummary(rawHook, summaryMaxLen);
-      lines.push(hookText.length > 0 ? `  [${type}] ${e.id} — ${hookText}` : `  [${type}] ${e.id}`);
+      lines.push(
+        hookText.length > 0
+          ? `  ${badge} [${type}] ${e.id} — ${hookText}`
+          : `  ${badge} [${type}] ${e.id}`,
+      );
       indexCount += 1;
     }
     // D0028 backstop: fold the overflow tail into one marker + drift signal.
@@ -1303,6 +1353,10 @@ module.exports = {
   renderFull,
   renderTruncated,
   renderSummary,
+  // W3-B F-005: the reskinned SessionStart AI sink + its layer→scope mapper,
+  // exported for the NO_COLOR snapshot test (hud-reskin.test.ts).
+  renderAiSink,
+  layerToScope,
   truncateSummary,
   // rc.8 underseed self-check helpers (exported for unit testing).
   countCanonicalNodes,

@@ -1,0 +1,26 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`theme-clack context wrap (NO_COLOR) > buildIntro renders section bar + rule 1`] = `
+"# Fabric install
+----------------------------------------"
+`;
+
+exports[`theme-clack context wrap (NO_COLOR) > buildLog renders all four levels 1`] = `
+{
+  "error": "[error] error message",
+  "info": "info message",
+  "success": "[ok] success message",
+  "warn": "[warn] warn message",
+}
+`;
+
+exports[`theme-clack context wrap (NO_COLOR) > buildNote renders a left-bar block with optional title 1`] = `
+{
+  "titled": "# Overview
+| line one
+| line two",
+  "untitled": "| solo line",
+}
+`;
+
+exports[`theme-clack context wrap (NO_COLOR) > buildOutro renders a closing line 1`] = `"Done"`;

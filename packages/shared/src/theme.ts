@@ -66,3 +66,23 @@ const SYMBOL_TOKEN = { ok: "success", warn: "warn", error: "error" } as const;
 export function symbol(kind: keyof typeof SYMBOL_ASCII, colorOn = isColorEnabled()): string {
   return colorOn ? paint(SYMBOL_TOKEN[kind], SYMBOL_GLYPH[kind], true) : SYMBOL_ASCII[kind];
 }
+
+// W3-B structural primitives — HUD-shared layer (C-003): kept parity-trivial so
+// the .cjs hook mirror (lib/theme.cjs) stays byte-identical. Complex tree/grid
+// are CLI-only (packages/cli/src/tui/structure.ts), never mirrored here.
+
+// Section header: accent bold ▌ bar + title (truecolor) / `# ` prefix (none).
+export function sectionBar(title: string, colorOn = isColorEnabled()): string {
+  return colorOn ? `${ANSI.bold}${PALETTE.accent}▌ ${title}${ANSI.reset}` : `# ${title}`;
+}
+
+// Scope badge: knowledge-layer label painted by role token — team→drift,
+// project→ai, personal→human (truecolor) / plain `[scope]` (none).
+const SCOPE_BADGE_TOKEN = { team: "drift", project: "ai", personal: "human" } as const;
+export function scopeBadge(
+  scope: keyof typeof SCOPE_BADGE_TOKEN,
+  colorOn = isColorEnabled(),
+): string {
+  const text = `[${scope}]`;
+  return colorOn ? paint(SCOPE_BADGE_TOKEN[scope], text, true) : text;
+}

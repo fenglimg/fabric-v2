@@ -24,6 +24,8 @@ import {
 import { backfillUnboundProject } from "../install/backfill-unbound-project.js";
 import { migrateRootConfig } from "../install/migrate-root-config.js";
 import { paint, symbol } from "../colors.js";
+import { sectionBar } from "@fenglimg/fabric-shared/theme";
+import { tree } from "../tui/structure.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
@@ -681,7 +683,7 @@ export const doctorCommand = defineCommand({
 export default doctorCommand;
 
 function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
-  writeStdout(`${renderStatus(report.status)} ${paint.ai("fabric doctor")} ${paint.human(report.summary.target)}`);
+  writeStdout(renderDoctorHeader(report));
   // v2.0.0-rc.37 NEW-25: TL;DR top-3 critical surface. Doctor's full check
   // list runs 48 long now; without a header summary the user has to scroll
   // through every OK row to find the actionable issues. Pick top-3 from
@@ -695,11 +697,9 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: 
   // already surfaces the top issues, and the fixable/manual/warning sections
   // below list every actionable issue in full, so the default surface stays
   // signal-only instead of scrolling ~30 OK rows.
-  for (const check of report.checks) {
-    if (!verbose && check.status === "ok") {
-      continue;
-    }
-    writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
+  const checksBlock = renderDoctorChecks(report, verbose);
+  if (checksBlock.length > 0) {
+    writeStdout(checksBlock);
   }
   const opts = { verbose, dt };
   writeIssueSection(dt("doctor.section.fixable"), report.fixable_errors, opts);
@@ -721,12 +721,36 @@ function collectStoreDiagnostics(projectRoot: string): StoreDiagnostic[] {
 }
 
 function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
-  if (diagnostics.length === 0) {
+  const block = renderDoctorStoreHealth(diagnostics);
+  if (block.length === 0) {
     return;
   }
   writeStdout("");
-  writeStdout(paint.ai("store health"));
-  for (const diagnostic of diagnostics) {
+  writeStdout(block);
+}
+
+// W3-B F-003 reskin — pure string composers for the doctor human surface. Each
+// returns the rendered block (no stdout side-effect) so the new look is
+// snapshot-pinnable (doctor-reskin.test.ts, NO_COLOR=1). The writeStdout
+// wrappers above call them; the JSON output path (args.json) never touches
+// these. Structure (sectionBar header + tree rows + status badge) is the
+// differentiator per mockups.md#1; colour stays the 7-token accent layer.
+
+// Header: `▌ fabric doctor · <target>` accent bar + a trailing status badge.
+// Replaces the flat `<status> fabric doctor <target>` line.
+export function renderDoctorHeader(report: DoctorReport): string {
+  return `${sectionBar(`fabric doctor · ${report.summary.target}`)} ${renderStatus(report.status)}`;
+}
+
+// Store health: `▌ Store Health` section bar + a tree() of diagnostic rows. Each
+// row keeps the original `<severity-badge> [<ref>] <message>` text verbatim so
+// the diagnostic wording/semantics (and the existing string assertions) are
+// preserved — only the branch glyph + section header are new.
+export function renderDoctorStoreHealth(diagnostics: StoreDiagnostic[]): string {
+  if (diagnostics.length === 0) {
+    return "";
+  }
+  const rows = diagnostics.map((diagnostic) => {
     const mark =
       diagnostic.severity === "error"
         ? symbol.error
@@ -734,8 +758,23 @@ function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
           ? symbol.warn
           : "[info]";
     const ref = diagnostic.ref === undefined ? "" : ` [${diagnostic.ref}]`;
-    writeStdout(`${mark}${ref} ${diagnostic.message}`);
+    return { text: `${mark}${ref} ${diagnostic.message}` };
+  });
+  return `${sectionBar("Store Health")}\n${tree(rows)}`;
+}
+
+// Checks: `▌ Checks` section bar + a tree() of the actionable per-check rows.
+// G-QUIET still applies — only warn/error rows show by default; --verbose adds
+// the passing rows. Returns "" when there is nothing to show (quiet + all OK),
+// so the header is suppressed rather than dangling over an empty tree.
+export function renderDoctorChecks(report: DoctorReport, verbose: boolean): string {
+  const rows = report.checks
+    .filter((check) => verbose || check.status !== "ok")
+    .map((check) => ({ text: `${renderStatus(check.status)} ${check.name}: ${check.message}` }));
+  if (rows.length === 0) {
+    return "";
   }
+  return `${sectionBar("Checks")}\n${tree(rows)}`;
 }
 
 // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's `payload_limits` reached the JSON
