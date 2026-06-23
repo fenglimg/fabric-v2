@@ -2,33 +2,34 @@
   "id": "TASK-003",
   "title": "Verify functional equivalence + green gates (tsc, install-v2 suites, theme-parity, grep residue)",
   "description": "Final acceptance gate for W3-A. Confirm zero Ink/React residue (imports, files, deps), confirm the OutputRenderer seam and pipeline are intact, and run the green gates: pnpm -r exec tsc --noEmit, the full install-v2-* test suite, and theme-parity. This task verifies C-007 acceptance (deps removed + single stack + functional equivalence + parity green) for the install wizard. If any gate fails, report the exact failing gate and the minimal fix needed (do not expand scope into W3-B). No production code changes expected — verification + at most trivial fixes to keep gates green.",
-
   "issue_id": null,
   "issue_refs": [],
   "type": "test",
   "priority": "high",
   "effort": "small",
   "action": "Run and confirm all of: (1) grep -rn for ink/react imports under packages/cli/src returns nothing; (2) find packages/cli/src/tui -name '*.tsx' returns nothing and InkOutputRenderer.ts is absent; (3) `grep -E '\\\"(ink|react|@types/react)\\\"\\s*:' packages/cli/package.json` returns nothing but @clack/prompts + picocolors are still present; (4a) pipeline seam preserved: `git diff --quiet -- packages/cli/src/install/pipeline/pipeline.ts` exits 0; (4b) types.ts SEAM invariant: `git diff -- packages/cli/src/tui/types.ts` shows ONLY the `import type { ReactNode } from \"react\";` line + the dead `InkOutputRenderer extends OutputRenderer` interface block removed, with the `OutputRenderer` interface body byte-identical (do NOT use --quiet full-file pin on types.ts; also confirm grep 'from \"react\"' and grep 'InkOutputRenderer' in types.ts return nothing); (5) pnpm -r exec tsc --noEmit exits 0; (6) the install-v2-* suite passes: install-v2-dry-run, install-v2-hooks-stage, install-v2-pipeline, install-v2-guidance-dedupe, install-v2-preflight-stage; (7) packages/cli/__tests__/theme-parity.test.ts passes; (8) ink-react-compat.test.ts is absent; (9) EQUIVALENCE BAR check: the install wizard output holds content + wording + semantic color-role equivalence to the prior Ink rendering — NOT byte-identical glyphs/animation (box-drawing borders + live spinner animation are intentionally dropped, staying out of W3-B visual-redesign scope); assert via the green install-v2-pipeline contract + preserved OutputRenderer seam rather than per-glyph snapshots; (10) current branch is feat/w3a-ink-exit. Aggregate results into a pass/fail report per gate.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-06-23T11:13:39.787Z",
   "actual_duration": null,
-
   "scope": "packages/cli",
-  "focus_paths": ["packages/cli/__tests__/", "packages/cli/src/", "packages/cli/package.json"],
-
+  "focus_paths": [
+    "packages/cli/__tests__/",
+    "packages/cli/src/",
+    "packages/cli/package.json"
+  ],
   "read_first": [
     "packages/cli/__tests__/install-v2-pipeline.test.ts",
     "packages/cli/__tests__/theme-parity.test.ts",
     "packages/cli/package.json",
     "packages/cli/src/tui/index.ts"
   ],
-
-  "depends_on": ["TASK-002"],
+  "depends_on": [
+    "TASK-002"
+  ],
   "wave": 3,
   "parallel_group": null,
   "execution_group": null,
   "executor": "agent",
-
   "convergence": {
     "criteria": [
       "grep -rn \"from \\\"ink\\\"\\|from 'ink'\\|from \\\"react\\\"\\|from 'react'\" packages/cli/src returns nothing",
@@ -46,7 +47,6 @@
     "verification": "git rev-parse --abbrev-ref HEAD; grep -rn \"from \\\"ink\\\"\\|from 'ink'\\|from \\\"react\\\"\\|from 'react'\" packages/cli/src || echo NO_INK_REACT_IMPORTS; find packages/cli/src/tui -name '*.tsx'; test ! -e packages/cli/src/tui/InkOutputRenderer.ts && echo INK_RENDERER_GONE; test ! -e packages/cli/__tests__/ink-react-compat.test.ts && echo COMPAT_TEST_GONE; grep -E '\\\"(ink|react|@types/react)\\\"\\s*:' packages/cli/package.json || echo NO_INK_REACT_DEPS; grep -E '\\\"@clack/prompts\\\"|\\\"picocolors\\\"' packages/cli/package.json; git diff --quiet -- packages/cli/src/install/pipeline/pipeline.ts && echo PIPELINE_UNCHANGED; git diff -- packages/cli/src/tui/types.ts && echo 'TYPES_DIFF_SHOWN (must be ONLY react import + dead InkOutputRenderer interface removed; OutputRenderer body byte-identical)'; grep -n 'from \"react\"\\|InkOutputRenderer' packages/cli/src/tui/types.ts || echo TYPES_NO_REACT_NO_INKRENDERER; pnpm -r exec tsc --noEmit && pnpm --filter @fenglimg/fabric-cli test -- install-v2 && pnpm --filter @fenglimg/fabric-cli test -- theme-parity",
     "definition_of_done": "W3-A acceptance proven: the install wizard runs on the single theme.ts + @clack stack with ink/react fully removed, functional equivalence held behind the unchanged OutputRenderer seam, and tsc + install-v2-* + theme-parity all green on branch feat/w3a-ink-exit."
   },
-
   "files": [
     {
       "path": "packages/cli/__tests__/install-v2-pipeline.test.ts",
@@ -61,7 +61,6 @@
       "change": "Confirm passes (theme.ts API not edited in W3-A)"
     }
   ],
-
   "implementation": [
     "Confirm branch is feat/w3a-ink-exit.",
     "Run the grep/find/package.json residue checks (incl. @types/react in the dep grep) and record pass/fail per gate.",
@@ -71,7 +70,6 @@
     "If any gate fails, report the exact gate + minimal fix scoped to W3-A only (do NOT pull in colors.ts / @clack theming / snapshot infra — those are W3-B). Re-run until all gates green.",
     "Emit a final per-gate pass/fail summary."
   ],
-
   "test": {
     "commands": [
       "pnpm -r exec tsc --noEmit",
@@ -95,13 +93,14 @@
       "equivalence bar met: content + wording + semantic color-role equivalence (not byte-identical glyphs/animation)"
     ]
   },
-
   "reference": {
     "pattern": "Grep-verifiable acceptance gate + green test suites (local tsc gate per project memory to prevent CI relapse)",
-    "files": ["packages/cli/__tests__/install-v2-pipeline.test.ts", "packages/cli/__tests__/theme-parity.test.ts"],
+    "files": [
+      "packages/cli/__tests__/install-v2-pipeline.test.ts",
+      "packages/cli/__tests__/theme-parity.test.ts"
+    ],
     "examples": null
   },
-
   "rationale": {
     "chosen_approach": "A dedicated verification task converts the C-007 acceptance criteria into mechanical, grep/test-checkable gates run after deletion, catching residue or regressions before merge; local tsc gate per project memory prevents CI relapse.",
     "decision_factors": [
@@ -112,20 +111,24 @@
     ],
     "tradeoffs": "Functional equivalence beyond the interface/test level is asserted via preserved seam + passing suites rather than per-surface snapshots (snapshot infra is explicitly W3-B). types.ts is no longer fully byte-pinned: the narrower OutputRenderer-body-byte-identical invariant replaces the prior --quiet full-file pin so the dead react import/interface removal in TASK-002 does not trip this gate."
   },
-
   "risks": [
     "If a gate reveals a real equivalence gap, the fix must stay W3-A-scoped; resist pulling in W3-B work (colors.ts, @clack theming, snapshots)."
   ],
-
   "code_skeleton": null,
-
   "doc_context": {
-    "affected_features": ["install wizard rendering"],
-    "affected_components": ["packages/cli"],
-    "affected_requirements": ["C-007"],
-    "adr_ids": ["GRL-20260623"]
+    "affected_features": [
+      "install wizard rendering"
+    ],
+    "affected_components": [
+      "packages/cli"
+    ],
+    "affected_requirements": [
+      "C-007"
+    ],
+    "adr_ids": [
+      "GRL-20260623"
+    ]
   },
-
   "meta": {
     "estimated_time": "25m",
     "risk": "low",
