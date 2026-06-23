@@ -25,3 +25,4 @@ export type { StoreWizardResult } from "./StoreWizardFlow.js";
 
 // Renderer
 export { InkOutputRenderer, createInkRenderer } from "./InkOutputRenderer.js";
+export { ConsoleOutputRenderer, createInstallRenderer } from "./ConsoleOutputRenderer.js";
