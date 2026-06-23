@@ -122,6 +122,10 @@ import {
   inspectSkillTokenBudget,
 } from "./doctor-skill-lints.js";
 import {
+  createRetiredReferenceCheck,
+  inspectRetiredReferences,
+} from "./doctor-retired-references-lint.js";
+import {
   createHookCacheWritabilityCheck,
   createHooksContentDriftCheck,
   createHooksRuntimeCheck,
@@ -640,6 +644,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     skillRefMirror,
     skillTokenBudget,
     skillDescription,
+    retiredReferences,
   ] = await Promise.all([
     inspectForensic(projectRoot),
     // v2.2 W5 R4 (agents.meta decolo): `inspectMeta` (read co-location
@@ -660,6 +665,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectSkillRefMirror(projectRoot),
     inspectSkillTokenBudget(projectRoot),
     inspectSkillDescription(projectRoot),
+    // ux-w2-2: registry-driven stale-pointer scan over the agent-consumed
+    // surface (bootstrap + SKILL.md + installed hooks).
+    inspectRetiredReferences(projectRoot),
   ]);
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Async
   // (reads event ledger); placed after the sync inspections so the await
@@ -843,6 +851,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillRefMirrorCheck(t, skillRefMirror),
     createSkillTokenBudgetCheck(t, skillTokenBudget),
     createSkillDescriptionCheck(t, skillDescription),
+    // ux-w2-2: retired-reference (stale-pointer) lint — registry-driven.
+    createRetiredReferenceCheck(t, retiredReferences),
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),

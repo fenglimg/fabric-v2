@@ -440,6 +440,14 @@ export const zhCNMessages: Messages = {
     "有 {count} 个 ref 文件在 `.claude/skills/` 与 `.codex/skills/` 之间不一致（路径: {list}）。可能某端被手动编辑或 install 写入失败。",
   "doctor.check.skill_ref_mirror.remediation":
     "跑 `fabric install` 从 canonical templates 重写两端 ref 子树以恢复一致。",
+  // ux-w2-2: retired-reference (stale pointer) lint。
+  "doctor.check.retired_reference.name": "退役引用",
+  "doctor.check.retired_reference.ok":
+    "bootstrap、SKILL.md、已安装 hooks 中无残留的退役工具/字段名。",
+  "doctor.check.retired_reference.message":
+    "agent 可见文本中有 {count} 处指向退役工具/字段名的 stale pointer: {sample}",
+  "doctor.check.retired_reference.remediation":
+    "把命中文本改为替代 token (或删除), 再跑 `fabric install` 重同步 dogfood 镜像。",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":

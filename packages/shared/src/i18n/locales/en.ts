@@ -456,6 +456,14 @@ export const enMessages: Messages = {
     "{count} skill ref file(s) differ between `.claude/skills/` and `.codex/skills/` (paths: {list}). One client was hand-edited or partially installed.",
   "doctor.check.skill_ref_mirror.remediation":
     "Run `fabric install` to rewrite both client subtrees from the canonical templates and restore parity.",
+  // ux-w2-2: retired-reference (stale-pointer) lint.
+  "doctor.check.retired_reference.name": "Retired reference",
+  "doctor.check.retired_reference.ok":
+    "No retired tool/field names linger in the bootstrap, SKILL.md, or installed hooks.",
+  "doctor.check.retired_reference.message":
+    "{count} stale pointer(s) to retired tool/field names in agent-facing text: {sample}",
+  "doctor.check.retired_reference.remediation":
+    "Update the flagged text to the replacement token (or remove it), then re-run `fabric install` to resync the dogfood mirrors.",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 5K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K; over 5K hurts progressive disclosure; over 10K is blocking (wasted model context + load latency).
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
