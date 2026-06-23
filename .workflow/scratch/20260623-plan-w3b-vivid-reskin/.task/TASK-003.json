@@ -8,26 +8,26 @@
   "priority": "high",
   "effort": "medium",
   "action": "Create packages/cli/src/install/theme-clack.ts exporting: `themeIntro(title: string): void` → writes sectionBar(title) + a muted rule line (─── / -----); `themeOutro(msg: string): void` → writes a success-painted closing line; `themeLog = { info, success, warn, error }` each `(msg: string) => void` → writes `${symbol/badge} ${paint(role, msg)}`; `themeNote(body: string, title?: string): void` → writes a left-bar (│ / |) grouped block with optional sectionBar title. Import sectionBar from @fenglimg/fabric-shared/theme, symbol/paint/isColorEnabled via colors.ts, and the grid rule helper from ../tui/structure.js. Each fn writes via process.stdout.write. Extract the pure string builders (buildIntro/buildOutro/buildLog/buildNote) so the snapshot test can assert NO_COLOR output without spying on stdout.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-06-23T12:26:27.294Z",
   "actual_duration": null,
-
   "scope": "packages/cli/src/install/theme-clack.ts",
-  "focus_paths": ["packages/cli/src/install/theme-clack.ts"],
-
+  "focus_paths": [
+    "packages/cli/src/install/theme-clack.ts"
+  ],
   "read_first": [
     "packages/cli/src/colors.ts",
     "packages/shared/src/theme.ts",
     "packages/cli/src/tui/structure.ts",
     "packages/cli/src/install/install-wizard.ts"
   ],
-
-  "depends_on": ["TASK-001"],
+  "depends_on": [
+    "TASK-001"
+  ],
   "wave": 2,
   "parallel_group": "consumers",
   "execution_group": null,
   "executor": "agent",
-
   "convergence": {
     "criteria": [
       "packages/cli/src/install/theme-clack.ts exports themeIntro, themeOutro, themeLog, themeNote (grep -E 'export (function|const) (themeIntro|themeOutro|themeLog|themeNote)' returns all four)",
@@ -39,12 +39,20 @@
     "verification": "pnpm --filter @fenglimg/fabric-cli test -- theme-clack && pnpm -r exec tsc --noEmit",
     "definition_of_done": "@clack context output (intro/outro/log/note) renders through the W3-B primitives via a thin wrap; prompt controls are untouched; the wrap output is snapshot-pinned."
   },
-
   "files": [
-    { "path": "packages/cli/src/install/theme-clack.ts", "action": "create", "target": "themeIntro/themeOutro/themeLog/themeNote", "change": "Context-only @clack wrap using sectionBar + badge/paint + left-bar group; pure build* helpers for snapshotting." },
-    { "path": "packages/cli/__tests__/theme-clack.test.ts", "action": "create", "target": "NO_COLOR snapshot", "change": "Snapshot buildIntro/buildOutro/buildLog(all 4 levels)/buildNote under NO_COLOR=1." }
+    {
+      "path": "packages/cli/src/install/theme-clack.ts",
+      "action": "create",
+      "target": "themeIntro/themeOutro/themeLog/themeNote",
+      "change": "Context-only @clack wrap using sectionBar + badge/paint + left-bar group; pure build* helpers for snapshotting."
+    },
+    {
+      "path": "packages/cli/__tests__/theme-clack.test.ts",
+      "action": "create",
+      "target": "NO_COLOR snapshot",
+      "change": "Snapshot buildIntro/buildOutro/buildLog(all 4 levels)/buildNote under NO_COLOR=1."
+    }
   ],
-
   "implementation": [
     "Inspect install-wizard.ts to see how @clack intro/outro/log/note are currently called (so the wrap is a drop-in for the context calls only).",
     "Create theme-clack.ts with pure build* string builders + thin void wrappers that write to stdout.",
@@ -52,37 +60,53 @@
     "Add theme-clack.test.ts: NO_COLOR=1 snapshot of all builders.",
     "Run the snapshot test + tsc --noEmit."
   ],
-
   "test": {
-    "commands": ["pnpm --filter @fenglimg/fabric-cli test -- theme-clack", "pnpm -r exec tsc --noEmit"],
-    "unit": ["packages/cli/__tests__/theme-clack.test.ts"],
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli test -- theme-clack",
+      "pnpm -r exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/cli/__tests__/theme-clack.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["four wrap fns exported", "snapshot green", "zero prompt-control wraps"]
+    "success_metrics": [
+      "four wrap fns exported",
+      "snapshot green",
+      "zero prompt-control wraps"
+    ]
   },
-
   "reference": {
     "pattern": "pure render fn + establish a NEW vitest toMatchSnapshot test with NO_COLOR=1 (grouped-help.test.ts uses toContain/toMatch, not toMatchSnapshot, and does not pin NO_COLOR — do not reuse it; add a fresh NO_COLOR=1 snapshot test)",
-    "files": ["packages/cli/__tests__/grouped-help.test.ts", "packages/cli/src/install/install-wizard.ts"],
+    "files": [
+      "packages/cli/__tests__/grouped-help.test.ts",
+      "packages/cli/src/install/install-wizard.ts"
+    ],
     "examples": null
   },
-
   "rationale": {
     "chosen_approach": "Wrap only the @clack context surface (intro/outro/log/note) per C-006 — restyling prompt controls is an explicit non-goal. Pure build* helpers make the wrap snapshot-testable without stdout spies.",
-    "decision_factors": ["C-006 (don't fork @clack controls)", "snapshot needs pure fns"],
+    "decision_factors": [
+      "C-006 (don't fork @clack controls)",
+      "snapshot needs pure fns"
+    ],
     "tradeoffs": "Two call styles coexist (themed context + raw @clack controls) — accepted; this is the locked scope."
   },
-
-  "risks": ["Accidentally importing/wrapping a control fn would violate C-006 — guarded by the grep convergence criterion."],
-
+  "risks": [
+    "Accidentally importing/wrapping a control fn would violate C-006 — guarded by the grep convergence criterion."
+  ],
   "code_skeleton": null,
-
   "doc_context": {
-    "affected_features": ["F-002"],
-    "affected_components": ["install/theme-clack.ts"],
-    "affected_requirements": ["C-006"],
+    "affected_features": [
+      "F-002"
+    ],
+    "affected_components": [
+      "install/theme-clack.ts"
+    ],
+    "affected_requirements": [
+      "C-006"
+    ],
     "adr_ids": []
   },
-
   "meta": {
     "estimated_time": "1h",
     "risk": "low",

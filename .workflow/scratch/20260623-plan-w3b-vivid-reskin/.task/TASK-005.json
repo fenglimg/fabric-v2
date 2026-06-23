@@ -8,26 +8,26 @@
   "priority": "high",
   "effort": "large",
   "action": "In ConsoleOutputRenderer.ts: (1) replace boldAccent() header with sectionBar(); (2) accumulate steps and render them as a tree() with per-step status badge + (current/total) per mockup #2 (or render each step as a tree branch line); (3) renderSummaryCard → sectionBar(\"Summary\") + grid of ✓ succeeded / ○ skipped / × failed counts; (4) renderError → first line `sectionBar('[err] '+title)` (badge in title), then a left-bar block: each of message / hint / stack-frame prefixed with painted '│ ' (ASCII '| '), per mockup #4. Import sectionBar from @fenglimg/fabric-shared/theme, tree/grid from ./structure.js, keep existing paint/symbol/isColorEnabled imports. Extract pure builders (buildStepLine/buildSummaryBlock/buildErrorBlock) usable by the snapshot test. Do NOT change tui/types.ts interface signatures.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-06-23T12:26:27.294Z",
   "actual_duration": null,
-
   "scope": "packages/cli/src/tui/ConsoleOutputRenderer.ts",
-  "focus_paths": ["packages/cli/src/tui/ConsoleOutputRenderer.ts"],
-
+  "focus_paths": [
+    "packages/cli/src/tui/ConsoleOutputRenderer.ts"
+  ],
   "read_first": [
     "packages/cli/src/tui/ConsoleOutputRenderer.ts",
     "packages/cli/src/tui/types.ts",
     "packages/cli/src/tui/structure.ts",
     "packages/shared/src/theme.ts"
   ],
-
-  "depends_on": ["TASK-001"],
+  "depends_on": [
+    "TASK-001"
+  ],
   "wave": 2,
   "parallel_group": "consumers",
   "execution_group": null,
   "executor": "agent",
-
   "convergence": {
     "criteria": [
       "ConsoleOutputRenderer.ts imports sectionBar from @fenglimg/fabric-shared/theme and tree/grid from ./structure.js (grep both)",
@@ -41,12 +41,20 @@
     "verification": "pnpm --filter @fenglimg/fabric-cli test -- ConsoleOutputRenderer && pnpm -r exec tsc --noEmit",
     "definition_of_done": "install pipeline output and error output render via section-bar + tree + grid + left-bar group per mockups #2 and #4; the OutputRenderer interface is unchanged; both surfaces are snapshot-pinned for NO_COLOR."
   },
-
   "files": [
-    { "path": "packages/cli/src/tui/ConsoleOutputRenderer.ts", "action": "modify", "target": "renderStep / renderSection / renderSummaryCard / renderError", "change": "Swap flat composition for sectionBar + tree (stages) + grid (summary counts) + left-bar error block; extract pure build* helpers; preserve OutputRenderer interface." },
-    { "path": "packages/cli/__tests__/install-renderer-reskin.test.ts", "action": "create", "target": "NO_COLOR snapshot", "change": "Snapshot buildStepLine sequence + buildSummaryBlock + buildErrorBlock over fixtures under NO_COLOR=1." }
+    {
+      "path": "packages/cli/src/tui/ConsoleOutputRenderer.ts",
+      "action": "modify",
+      "target": "renderStep / renderSection / renderSummaryCard / renderError",
+      "change": "Swap flat composition for sectionBar + tree (stages) + grid (summary counts) + left-bar error block; extract pure build* helpers; preserve OutputRenderer interface."
+    },
+    {
+      "path": "packages/cli/__tests__/install-renderer-reskin.test.ts",
+      "action": "create",
+      "target": "NO_COLOR snapshot",
+      "change": "Snapshot buildStepLine sequence + buildSummaryBlock + buildErrorBlock over fixtures under NO_COLOR=1."
+    }
   ],
-
   "implementation": [
     "Map mockup #2 (install tree + summary grid) and mockup #4 (error badge title + left-bar block) to renderStep/renderSummaryCard/renderError.",
     "Extract pure builders: buildStepLine(step), buildSummaryBlock(summary), buildErrorBlock(info) returning strings.",
@@ -55,37 +63,57 @@
     "Add install-renderer-reskin.test.ts with NO_COLOR snapshots for both install and error.",
     "Run tests + tsc; commit (incremental)."
   ],
-
   "test": {
-    "commands": ["pnpm --filter @fenglimg/fabric-cli test -- ConsoleOutputRenderer", "pnpm -r exec tsc --noEmit"],
-    "unit": ["packages/cli/__tests__/install-renderer-reskin.test.ts"],
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli test -- ConsoleOutputRenderer",
+      "pnpm -r exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/cli/__tests__/install-renderer-reskin.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["mockups #2 + #4 structure present", "interface stable", "NO_COLOR snapshots green"]
+    "success_metrics": [
+      "mockups #2 + #4 structure present",
+      "interface stable",
+      "NO_COLOR snapshots green"
+    ]
   },
-
   "reference": {
     "pattern": "W3-A ConsoleOutputRenderer pure string composition; establish a NEW vitest toMatchSnapshot test with NO_COLOR=1 (grouped-help.test.ts uses toContain/toMatch, not toMatchSnapshot, and does not pin NO_COLOR — do not reuse it; add a fresh NO_COLOR=1 snapshot test)",
-    "files": ["packages/cli/src/tui/ConsoleOutputRenderer.ts", "packages/cli/__tests__/grouped-help.test.ts"],
+    "files": [
+      "packages/cli/src/tui/ConsoleOutputRenderer.ts",
+      "packages/cli/__tests__/grouped-help.test.ts"
+    ],
     "examples": null
   },
-
   "rationale": {
     "chosen_approach": "F-004 (install) and F-006 (error) are bundled because renderError lives inside ConsoleOutputRenderer — same file, same renderer, same import set. One feature-grouped task avoids a redundant agent spawn over the same module.",
-    "decision_factors": ["one feature = one task; both surfaces in one file", "interface seam (OutputRenderer) must stay stable"],
+    "decision_factors": [
+      "one feature = one task; both surfaces in one file",
+      "interface seam (OutputRenderer) must stay stable"
+    ],
     "tradeoffs": "Slightly larger task, but cohesive — both surfaces share the same primitive wiring."
   },
-
-  "risks": ["renderStep is called per-step (streaming) while the mockup shows a final tree — accept a per-line tree-branch render (├─/└─ inferred from current==total) rather than buffering, to keep the streaming contract.", "Touching tui/types.ts would break the install/pipeline seam — guarded by a git-diff criterion."],
-
+  "risks": [
+    "renderStep is called per-step (streaming) while the mockup shows a final tree — accept a per-line tree-branch render (├─/└─ inferred from current==total) rather than buffering, to keep the streaming contract.",
+    "Touching tui/types.ts would break the install/pipeline seam — guarded by a git-diff criterion."
+  ],
   "code_skeleton": null,
-
   "doc_context": {
-    "affected_features": ["F-004", "F-006", "F-008"],
-    "affected_components": ["tui/ConsoleOutputRenderer.ts"],
-    "affected_requirements": ["C-002", "C-008"],
+    "affected_features": [
+      "F-004",
+      "F-006",
+      "F-008"
+    ],
+    "affected_components": [
+      "tui/ConsoleOutputRenderer.ts"
+    ],
+    "affected_requirements": [
+      "C-002",
+      "C-008"
+    ],
     "adr_ids": []
   },
-
   "meta": {
     "estimated_time": "2h",
     "risk": "medium",

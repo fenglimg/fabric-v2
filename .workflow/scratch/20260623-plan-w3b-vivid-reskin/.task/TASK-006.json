@@ -8,25 +8,25 @@
   "priority": "medium",
   "effort": "large",
   "action": "In knowledge-hint-broad.cjs renderAiSink: (1) replace the `[fabric:SessionStart] <store>` + 'ALWAYS-ACTIVE RULES (...)' / 'REFERENCE (...)' flat headers with sectionBar(`Fabric Knowledge · ${bodies.length} active · ${referenceEntries.length} reference`) from require('./lib/theme.cjs'); (2) sub-group labels 'ALWAYS-ACTIVE' / 'REFERENCE' as plain section sub-lines; (3) each entry line prefixed with scopeBadge(layerToScope(entry)) + plain two-space tree indent ('├─ '/'└─ ' optional but only if a minimal branch helper is byte-mirrored into theme.cjs — default plain indent to keep parity surface small) + type + id + summary. Map layer→scope: team→'team', project→'project', personal→'personal'. Use ONLY lib/theme.cjs primitives (sectionBar/scopeBadge/paint/symbol), NEVER ../tui/structure.js. Add renderAiSink to module.exports. Keep the footer/scope lines and the lang (zh/en) branching intact.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-06-23T12:26:27.294Z",
   "actual_duration": null,
-
   "scope": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
-  "focus_paths": ["packages/cli/templates/hooks/knowledge-hint-broad.cjs"],
-
+  "focus_paths": [
+    "packages/cli/templates/hooks/knowledge-hint-broad.cjs"
+  ],
   "read_first": [
     "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
     "packages/cli/templates/hooks/lib/theme.cjs",
     "packages/cli/__tests__/theme-parity.test.ts"
   ],
-
-  "depends_on": ["TASK-001"],
+  "depends_on": [
+    "TASK-001"
+  ],
   "wave": 2,
   "parallel_group": "consumers",
   "execution_group": null,
   "executor": "agent",
-
   "convergence": {
     "criteria": [
       "knowledge-hint-broad.cjs requires sectionBar/scopeBadge from ./lib/theme.cjs (grep 'theme.cjs' + 'sectionBar' present in the hook)",
@@ -41,12 +41,20 @@
     "verification": "pnpm --filter @fenglimg/fabric-cli test -- theme-parity && pnpm --filter @fenglimg/fabric-cli test -- knowledge-hint && pnpm -r exec tsc --noEmit",
     "definition_of_done": "The SessionStart HUD renders section-bar title + counts + scope-badge tree groups per mockup #3 using only parity-safe shared primitives; theme-parity stays byte-green; the HUD output is snapshot-pinned for NO_COLOR."
   },
-
   "files": [
-    { "path": "packages/cli/templates/hooks/knowledge-hint-broad.cjs", "action": "modify", "target": "renderAiSink + module.exports", "change": "Reskin renderAiSink to sectionBar title + counts + scope-badge + plain tree groups using lib/theme.cjs primitives only; export renderAiSink." },
-    { "path": "packages/cli/__tests__/hud-reskin.test.ts", "action": "create", "target": "NO_COLOR snapshot", "change": "require renderAiSink, snapshot output over fixture {entries, alwaysBodies, storeLabel, lang} under NO_COLOR=1." }
+    {
+      "path": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "action": "modify",
+      "target": "renderAiSink + module.exports",
+      "change": "Reskin renderAiSink to sectionBar title + counts + scope-badge + plain tree groups using lib/theme.cjs primitives only; export renderAiSink."
+    },
+    {
+      "path": "packages/cli/__tests__/hud-reskin.test.ts",
+      "action": "create",
+      "target": "NO_COLOR snapshot",
+      "change": "require renderAiSink, snapshot output over fixture {entries, alwaysBodies, storeLabel, lang} under NO_COLOR=1."
+    }
   ],
-
   "implementation": [
     "Read renderAiSink fully (lines ~924-1019) and lib/theme.cjs exports (sectionBar/scopeBadge added in TASK-001).",
     "Replace the store-label header + section headers with sectionBar('Fabric Knowledge · N active · M reference').",
@@ -55,37 +63,60 @@
     "Add hud-reskin.test.ts requiring the hook and snapshotting renderAiSink under NO_COLOR=1.",
     "Run theme-parity + hook tests + tsc; commit (incremental)."
   ],
-
   "test": {
-    "commands": ["pnpm --filter @fenglimg/fabric-cli test -- theme-parity", "pnpm --filter @fenglimg/fabric-cli test -- knowledge-hint", "pnpm -r exec tsc --noEmit"],
-    "unit": ["packages/cli/__tests__/hud-reskin.test.ts"],
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli test -- theme-parity",
+      "pnpm --filter @fenglimg/fabric-cli test -- knowledge-hint",
+      "pnpm -r exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/cli/__tests__/hud-reskin.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["mockup #3 structure present", "parity green", "only parity-safe primitives used", "NO_COLOR snapshot green"]
+    "success_metrics": [
+      "mockup #3 structure present",
+      "parity green",
+      "only parity-safe primitives used",
+      "NO_COLOR snapshot green"
+    ]
   },
-
   "reference": {
     "pattern": "lib/theme.cjs byte-mirror primitives; existing renderAiSink as a pure fn; establish a NEW vitest toMatchSnapshot test with NO_COLOR=1 (grouped-help.test.ts uses toContain/toMatch, not toMatchSnapshot, and does not pin NO_COLOR — do not reuse it; add a fresh NO_COLOR=1 snapshot test)",
-    "files": ["packages/cli/templates/hooks/knowledge-hint-broad.cjs", "packages/cli/templates/hooks/lib/theme.cjs"],
+    "files": [
+      "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "packages/cli/templates/hooks/lib/theme.cjs"
+    ],
     "examples": null
   },
-
   "rationale": {
     "chosen_approach": "HUD renders through the .cjs hook, so per C-003 it may only use parity-trivial shared primitives (sectionBar/scopeBadge mirrored in TASK-001) plus plain indent — keeping the byte-parity surface minimal. The complex CLI-only tree/grid are deliberately NOT used here.",
-    "decision_factors": ["C-003 HUD-shared layer must stay parity-safe", "renderAiSink is already a pure fn (just not exported)"],
+    "decision_factors": [
+      "C-003 HUD-shared layer must stay parity-safe",
+      "renderAiSink is already a pure fn (just not exported)"
+    ],
     "tradeoffs": "HUD tree is plain-indent (not ├─└) by default to avoid growing theme.cjs; mockup #3's ├─ is approximated unless a minimal branch helper is judged parity-trivial and mirrored."
   },
-
-  "risks": ["Reaching for tui/structure.js in the .cjs hook would break the runtime (ESM import in CJS) and C-003 — guarded by a grep criterion.", "Any new glyph used in the HUD must be parity-mirrored or parity breaks — covered by the theme-parity gate."],
-
+  "risks": [
+    "Reaching for tui/structure.js in the .cjs hook would break the runtime (ESM import in CJS) and C-003 — guarded by a grep criterion.",
+    "Any new glyph used in the HUD must be parity-mirrored or parity breaks — covered by the theme-parity gate."
+  ],
   "code_skeleton": null,
-
   "doc_context": {
-    "affected_features": ["F-005", "F-008"],
-    "affected_components": ["hooks/knowledge-hint-broad.cjs", "hooks/lib/theme.cjs"],
-    "affected_requirements": ["C-002", "C-003", "C-008"],
+    "affected_features": [
+      "F-005",
+      "F-008"
+    ],
+    "affected_components": [
+      "hooks/knowledge-hint-broad.cjs",
+      "hooks/lib/theme.cjs"
+    ],
+    "affected_requirements": [
+      "C-002",
+      "C-003",
+      "C-008"
+    ],
     "adr_ids": []
   },
-
   "meta": {
     "estimated_time": "2h",
     "risk": "medium",

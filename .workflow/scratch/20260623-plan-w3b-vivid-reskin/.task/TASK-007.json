@@ -8,10 +8,9 @@
   "priority": "high",
   "effort": "medium",
   "action": "Run the full gate from repo root: `pnpm -r exec tsc --noEmit` (exit 0), `pnpm lint` (knip --strict, exit 0), `pnpm --filter @fenglimg/fabric-cli test` (all green incl. theme-parity + doctor-reskin + install-renderer-reskin + hud-reskin + theme-clack snapshots). Census-grep that every reskin surface wires a structural primitive (sectionBar/tree/grid/scopeBadge) and that picocolors is gone (grep -rn picocolors across packages/cli returns only zero-or-comment-free). Confirm theme.ts 7-token PALETTE values unchanged (git diff). Verify @clack prompt controls untouched (grep text()/select()/confirm()/multiselect() call-site count unchanged vs main). Fix any small failures inline; final incremental commit.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-06-23T12:26:27.294Z",
   "actual_duration": null,
-
   "scope": "packages/cli (repo-wide verification)",
   "focus_paths": [
     "packages/cli/src",
@@ -19,7 +18,6 @@
     "packages/shared/src/theme.ts",
     "packages/cli/__tests__"
   ],
-
   "read_first": [
     "packages/cli/src/tui/structure.ts",
     "packages/cli/src/commands/doctor.ts",
@@ -27,13 +25,17 @@
     "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
     "packages/cli/package.json"
   ],
-
-  "depends_on": ["TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"],
+  "depends_on": [
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006"
+  ],
   "wave": 3,
   "parallel_group": null,
   "execution_group": null,
   "executor": "agent",
-
   "convergence": {
     "criteria": [
       "pnpm -r exec tsc --noEmit exits 0",
@@ -48,11 +50,14 @@
     "verification": "pnpm -r exec tsc --noEmit && pnpm lint && pnpm --filter @fenglimg/fabric-cli test && grep -rn picocolors packages/cli || true",
     "definition_of_done": "The entire W3-B reskin is green and coherent: typecheck + knip + full suite pass, every surface renders via structural primitives, all NO_COLOR snapshots are committed, picocolors is gone, the 7-token palette and @clack controls are untouched."
   },
-
   "files": [
-    { "path": "packages/cli/__tests__/__snapshots__", "action": "verify", "target": "four per-surface NO_COLOR snapshots", "change": "Confirm doctor-reskin / install-renderer-reskin / hud-reskin / theme-clack snapshot files exist and are committed." }
+    {
+      "path": "packages/cli/__tests__/__snapshots__",
+      "action": "verify",
+      "target": "four per-surface NO_COLOR snapshots",
+      "change": "Confirm doctor-reskin / install-renderer-reskin / hud-reskin / theme-clack snapshot files exist and are committed."
+    }
   ],
-
   "implementation": [
     "From repo root run tsc --noEmit, then pnpm lint (knip --strict).",
     "Run the full CLI test suite; confirm theme-parity + all four reskin snapshots + theme-clack snapshot are green.",
@@ -60,7 +65,6 @@
     "Fix any small gaps inline (missing import, snapshot drift from a legit change → update snapshot intentionally).",
     "Final incremental commit on feat/w3b-vivid-reskin."
   ],
-
   "test": {
     "commands": [
       "pnpm -r exec tsc --noEmit",
@@ -69,32 +73,51 @@
     ],
     "unit": [],
     "integration": [],
-    "success_metrics": ["all gates green", "4 snapshots committed", "picocolors absent", "primitives wired everywhere"]
+    "success_metrics": [
+      "all gates green",
+      "4 snapshots committed",
+      "picocolors absent",
+      "primitives wired everywhere"
+    ]
   },
-
   "reference": {
     "pattern": "release-gate discipline: local tsc --noEmit ≠ build; knip --strict dead-code gate; full-suite green before merge",
-    "files": ["packages/cli/package.json"],
+    "files": [
+      "packages/cli/package.json"
+    ],
     "examples": null
   },
-
   "rationale": {
     "chosen_approach": "Per C-008 each surface owns its snapshot, so F-008 is not a separate authoring phase — it collapses into a single goal-backward verification gate that proves the increments cohere. Mirrors the known pitfall that local build ≠ tsc --noEmit and that knip catches dead deps.",
-    "decision_factors": ["C-008 per-surface increment", "tsc --noEmit vs build pitfall", "knip --strict gate"],
+    "decision_factors": [
+      "C-008 per-surface increment",
+      "tsc --noEmit vs build pitfall",
+      "knip --strict gate"
+    ],
     "tradeoffs": null
   },
-
-  "risks": ["A reskin surface might pass its own task tests but fail the cross-cutting tsc/knip — this gate is exactly where that surfaces.", "Snapshot drift from a legitimate change must be intentionally re-blessed, not blindly -u'd."],
-
+  "risks": [
+    "A reskin surface might pass its own task tests but fail the cross-cutting tsc/knip — this gate is exactly where that surfaces.",
+    "Snapshot drift from a legitimate change must be intentionally re-blessed, not blindly -u'd."
+  ],
   "code_skeleton": null,
-
   "doc_context": {
-    "affected_features": ["F-008"],
-    "affected_components": ["packages/cli (all reskinned surfaces)"],
-    "affected_requirements": ["C-002", "C-003", "C-004", "C-005", "C-006", "C-008"],
+    "affected_features": [
+      "F-008"
+    ],
+    "affected_components": [
+      "packages/cli (all reskinned surfaces)"
+    ],
+    "affected_requirements": [
+      "C-002",
+      "C-003",
+      "C-004",
+      "C-005",
+      "C-006",
+      "C-008"
+    ],
     "adr_ids": []
   },
-
   "meta": {
     "estimated_time": "1h",
     "risk": "low",

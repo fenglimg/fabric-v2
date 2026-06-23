@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`knowledge-hint-broad.cjs renderAiSink — W3-B reskin (NO_COLOR) > renders the section-bar title + counts + scope-badge groups (en) 1`] = `
+"# Fabric Knowledge · 2 active · 2 reference
+  ALWAYS-ACTIVE RULES (unconditional · act on the line; body on demand):
+  [team] [guideline] team:KT-GLD-0001 · 改源码前先读 bootstrap
+  [project] [model] project:KP-MOD-0002 · scope 是三维度独立
+  REFERENCE (situational · Read when must_read_if fires / fab_recall):
+  [team] [decision] team:KT-DEC-0036 — 改 renderAiSink / 注入预算逻辑时
+  [personal] [pitfall] personal:KP-PIT-0007 — co-location 删除是读侧迁移
+Load full content: fab_recall(paths), or Read <store>/knowledge/<type>/<id>--*.md
+Scope: broad only (always relevant) here; narrow (file-specific) surfaces via the PreToolUse hint when you edit a matching file"
+`;
+
+exports[`knowledge-hint-broad.cjs renderAiSink — W3-B reskin (NO_COLOR) > renders the section-bar title + counts + scope-badge groups (zh-CN) 1`] = `
+"# Fabric Knowledge · 2 常驻 · 2 参考
+  ALWAYS-ACTIVE RULES (无条件适用 · 照此行遵循,正文按需取):
+  [team] [guideline] team:KT-GLD-0001 · 改源码前先读 bootstrap
+  [project] [model] project:KP-MOD-0002 · scope 是三维度独立
+  REFERENCE (情境触发 · 命中 must_read_if 时 Read / fab_recall):
+  [team] [decision] team:KT-DEC-0036 — 改 renderAiSink / 注入预算逻辑时
+  [personal] [pitfall] personal:KP-PIT-0007 — co-location 删除是读侧迁移
+取正文: fab_recall(paths), 或 Read <store>/knowledge/<type>/<id>--*.md
+范围: 此处仅 broad(始终相关);narrow(文件专属)在你编辑对应文件时由 PreToolUse 浮现"
+`;
