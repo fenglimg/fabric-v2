@@ -34,3 +34,18 @@ packages/*/.fabric/
 
 .antigravitycli
 .ace-tool/
+
+# ux-w2-1: Fabric dogfood mirror trees (5→1). Single source of truth is
+# packages/cli/templates/{hooks,skills}; `fabric install` regenerates these
+# per-client mirrors locally, so they need not be tracked (kills the 4-copy
+# maintenance tax — ISS-20260608-022). Tests read templates + tmpdir fixtures,
+# never these repo mirrors, so CI fresh-checkout is unaffected. Project-owned,
+# non-mirror content stays tracked: .claude/settings*.json and the hand-kept
+# .claude/skills/{release-rc,ui-ux-pro-max}.
+.claude/hooks/
+.claude/skills/fabric/
+.claude/skills/fabric-*/
+.claude/skills/lib/
+.codex/
+packages/cli/.claude/
+packages/cli/.codex/
