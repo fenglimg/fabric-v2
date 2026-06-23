@@ -69,15 +69,17 @@ describe("project-scoped command i18n", () => {
     expect(zh("cli.store.mounted", { alias: "x", count: "2" })).toContain("2");
   });
 
-  it("whoami renders Chinese when fabric_language is zh-CN (ISS-033/034)", async () => {
+  // ux-w1-6: the whoami alias was retired; `info --global` is the surviving
+  // surface for global identity and carries the same i18n (ISS-033/034).
+  it("info --global renders Chinese when fabric_language is zh-CN (ISS-033/034)", async () => {
     isolateHome();
     process.chdir(zhProject());
     const logs: string[] = [];
     vi.spyOn(console, "log").mockImplementation((...a) => {
       logs.push(a.map(String).join(" "));
     });
-    const whoamiCmd = (await import("../src/commands/whoami.ts")).default;
-    await whoamiCmd.run?.({ args: {} } as never);
+    const infoCmd = (await import("../src/commands/info.ts")).default;
+    await infoCmd.run?.({ args: { global: true } } as never);
     expect(logs.join("\n")).toMatch(/全局 Fabric 配置/);
   });
 

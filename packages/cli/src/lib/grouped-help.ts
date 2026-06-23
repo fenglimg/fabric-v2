@@ -1,21 +1,57 @@
 import type { CommandDef, ArgsDef } from "citty";
+import { allCommands } from "../commands/index.js";
 import { t } from "../i18n.js";
 
 /**
- * EPIC-011: Grouped help display for fabric CLI.
+ * EPIC-011 / ux-w1-4 + ux-w1-7: grouped help for the fabric CLI.
  *
- * Commands are organized into logical groups:
- * - Setup: install, config
- * - Daily: sync, info
- * - Diagnostic: doctor
- * - Advanced: store, whoami, status, scope-explain (deprecated commands)
+ * Help is DERIVED from `allCommands` (the single command registry) rather than a
+ * hand-maintained whitelist. Before this, `context` and `metrics` were registered
+ * but absent from the help groups — they floated invisibly. Deriving from the
+ * registry means a newly-registered command can never silently float: it either
+ * has a `COMMAND_META` entry (placed in a group) or falls through to the default
+ * group, but it always surfaces.
+ *
+ * Commands marked `internal` are hook/skill-invoked RPCs (plan-context-hint,
+ * scope-explain, onboard-coverage). They stay callable but are hidden from the
+ * human-facing help.
  */
+
+const GROUP_ORDER = ["Setup", "Daily", "Diagnostic", "Advanced"] as const;
+type Group = (typeof GROUP_ORDER)[number];
+const DEFAULT_GROUP: Group = "Advanced";
+
+interface CommandMeta {
+  /** Display group. Omitted only when `internal` is true. */
+  group?: Group;
+  /** i18n key for the description. Omitted commands fall back to a derived label. */
+  descriptionKey?: string;
+  /** Hook/skill RPC — hidden from human help but still callable. */
+  internal?: boolean;
+}
+
+// Classification of every command in `allCommands`. A command missing from this
+// map still surfaces (DEFAULT_GROUP) so it never floats; the derivation test
+// asserts the map and the registry stay in sync.
+const COMMAND_META: Record<string, CommandMeta> = {
+  install: { group: "Setup", descriptionKey: "cli.help.group.setup.install" },
+  config: { group: "Setup", descriptionKey: "cli.help.group.setup.config" },
+  uninstall: { group: "Setup" },
+  sync: { group: "Daily", descriptionKey: "cli.help.group.daily.sync" },
+  info: { group: "Daily", descriptionKey: "cli.help.group.daily.info" },
+  context: { group: "Daily", descriptionKey: "cli.help.group.daily.context" },
+  doctor: { group: "Diagnostic", descriptionKey: "cli.help.group.diagnostic.doctor" },
+  metrics: { group: "Diagnostic", descriptionKey: "cli.help.group.diagnostic.metrics" },
+  store: { group: "Advanced", descriptionKey: "cli.help.group.advanced.store" },
+  // Internal RPCs — hidden from human help, invoked by hooks/skills.
+  "plan-context-hint": { internal: true },
+  "scope-explain": { internal: true },
+  "onboard-coverage": { internal: true },
+};
 
 interface CommandInfo {
   name: string;
   description: string;
-  deprecated?: boolean;
-  deprecatedNote?: string;
 }
 
 interface CommandGroup {
@@ -23,67 +59,46 @@ interface CommandGroup {
   commands: CommandInfo[];
 }
 
-/**
- * Get all subcommands with their metadata, organized into groups.
- */
-function getGroupedCommands(): CommandGroup[] {
-  const groups: CommandGroup[] = [
-    {
-      name: "Setup",
-      commands: [
-        { name: "install", description: t("cli.help.group.setup.install") },
-        { name: "uninstall", description: t("cli.uninstall.description").split("\n")[0] ?? "Uninstall Fabric" },
-        { name: "config", description: t("cli.help.group.setup.config") },
-      ],
-    },
-    {
-      name: "Daily",
-      commands: [
-        { name: "sync", description: t("cli.help.group.daily.sync") },
-        { name: "info", description: t("cli.help.group.daily.info") },
-      ],
-    },
-    {
-      name: "Diagnostic",
-      commands: [
-        { name: "doctor", description: t("cli.help.group.diagnostic.doctor") },
-      ],
-    },
-    {
-      name: "Advanced",
-      commands: [
-        { name: "store", description: t("cli.help.group.advanced.store") },
-        {
-          name: "whoami",
-          description: t("cli.help.group.advanced.whoami"),
-          deprecated: true,
-          deprecatedNote: t("cli.help.group.advanced.whoami.deprecated"),
-        },
-        {
-          name: "status",
-          description: t("cli.help.group.advanced.status"),
-          deprecated: true,
-          deprecatedNote: t("cli.help.group.advanced.status.deprecated"),
-        },
-        {
-          name: "scope-explain",
-          description: t("cli.help.group.advanced.scope-explain"),
-          deprecated: true,
-          deprecatedNote: t("cli.help.group.advanced.scope-explain.deprecated"),
-        },
-      ],
-    },
-  ];
+function describe(name: string, meta: CommandMeta | undefined): string {
+  if (name === "uninstall") {
+    return t("cli.uninstall.description").split("\n")[0] ?? "Uninstall Fabric";
+  }
+  if (meta?.descriptionKey) {
+    return t(meta.descriptionKey);
+  }
+  return name;
+}
 
-  return groups;
+/**
+ * Build the visible (non-internal) command groups by iterating the registry.
+ * Exported for the derivation test so the registry↔help contract is asserted.
+ */
+export function getGroupedCommands(): CommandGroup[] {
+  const byGroup = new Map<Group, CommandInfo[]>();
+  for (const group of GROUP_ORDER) {
+    byGroup.set(group, []);
+  }
+
+  for (const name of Object.keys(allCommands)) {
+    const meta = COMMAND_META[name];
+    if (meta?.internal) {
+      continue;
+    }
+    const group = meta?.group ?? DEFAULT_GROUP;
+    byGroup.get(group)?.push({ name, description: describe(name, meta) });
+  }
+
+  return GROUP_ORDER.map((name) => ({ name, commands: byGroup.get(name) ?? [] })).filter(
+    (g) => g.commands.length > 0,
+  );
 }
 
 /**
  * Render the grouped help output.
  */
 export function renderGroupedHelp(
-  cmd: CommandDef<ArgsDef>,
-  version: string,
+  _cmd: CommandDef<ArgsDef>,
+  _version: string,
 ): string {
   const groups = getGroupedCommands();
 
@@ -100,11 +115,7 @@ export function renderGroupedHelp(
     lines.push(`${group.name}:`);
     for (const command of group.commands) {
       const name = command.name.padEnd(14);
-      let line = `  ${name}${command.description}`;
-      if (command.deprecated) {
-        line += ` (${command.deprecatedNote})`;
-      }
-      lines.push(line);
+      lines.push(`  ${name}${command.description}`);
     }
     lines.push("");
   }

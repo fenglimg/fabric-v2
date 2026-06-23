@@ -43,14 +43,10 @@ export const enMessages: Messages = {
   "cli.help.group.setup.config": "Configure Fabric settings",
   "cli.help.group.daily.sync": "Sync team knowledge with remote stores",
   "cli.help.group.daily.info": "Show project status",
+  "cli.help.group.daily.context": "Show what SessionStart injects this session",
   "cli.help.group.diagnostic.doctor": "Check Fabric health and repair issues",
+  "cli.help.group.diagnostic.metrics": "Show the knowledge metrics dashboard",
   "cli.help.group.advanced.store": "Manage knowledge stores (see: fabric store --help)",
-  "cli.help.group.advanced.whoami": "Show machine identity",
-  "cli.help.group.advanced.whoami.deprecated": "deprecated → info --global",
-  "cli.help.group.advanced.status": "Show project status",
-  "cli.help.group.advanced.status.deprecated": "deprecated → info",
-  "cli.help.group.advanced.scope-explain": "Explain scope",
-  "cli.help.group.advanced.scope-explain.deprecated": "deprecated → info scope",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI
