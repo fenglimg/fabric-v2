@@ -44,16 +44,28 @@ export type RecallPath = {
   store?: { alias: string };
 };
 
-// W1 (KT-DEC-0026): the lean recall envelope. Extends the plan envelope's
-// discovery fields (candidates / entries / omitted_candidate_count / redirects /
-// related_appended / preflight_diagnostics) and adds the read-path index. The
-// two-step `selection_token` is intentionally dropped — there is no
-// fab_get_knowledge_sections fetch to feed it (clean-slate, KT-DEC-0002).
+// ux-w2-4: one unified entry folds the former candidates[] (description) ×
+// paths[] (read path) join into a single self-contained item.
+export type RecallEntry = {
+  stable_id: string;
+  rank: number;
+  description: PlanContextResult["candidates"][number]["description"];
+  read_path?: string;
+  store?: { alias: string };
+  body_in_context?: boolean;
+};
+
+// W1 (KT-DEC-0026) + ux-w2-4: the lean recall envelope. Inherits the plan
+// envelope's discovery fields EXCEPT its two list shapes (the per-path
+// requirement-profile `entries[]` and the description `candidates[]`) — recall
+// replaces both with a single merged `entries[]` (description + read_path + rank
+// + body_in_context). The two-step `selection_token` is intentionally dropped —
+// there is no fab_get_knowledge_sections fetch to feed it (KT-DEC-0002).
 export type RecallResult = Omit<
   PlanContextResult,
-  "selection_token" | "payload_trimmed" | "payload_over_budget"
+  "selection_token" | "payload_trimmed" | "payload_over_budget" | "entries" | "candidates"
 > & {
-  paths: RecallPath[];
+  entries: RecallEntry[];
   // v2.2 MC1-recall-pack: standing behavioral directive (cite-before-edit),
   // reinforced at the moment the agent has the read paths in hand.
   directive: string;
@@ -140,14 +152,32 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   // Pure function of (relevance_scope, knowledge_type); no client state needed.
   // NOT dropped/demoted: SessionStart injection degrades to an index line on
   // budget overflow, so the body's presence is not guaranteed.
-  const markedCandidates = planRest.candidates.map((c) =>
-    isAlwaysActive(c) ? { ...c, always_active: true as const } : c,
-  );
+  // ux-w2-4: fold candidates (description) × paths (read path) into ONE entry
+  // list. Candidates are already in ranked order, so the array index is the
+  // 1-based relevance rank. read_path/store are attached when the candidate has
+  // a resolvable on-disk file; body_in_context marks the SessionStart-injected
+  // always-active bodies so the agent skips a redundant Read.
+  const pathByStableId = new Map(paths.map((p) => [p.stable_id, p]));
+  const entries: RecallEntry[] = planRest.candidates.map((c, index) => {
+    const readPath = pathByStableId.get(c.stable_id);
+    return {
+      stable_id: c.stable_id,
+      rank: index + 1,
+      description: c.description,
+      ...(readPath ? { read_path: readPath.path } : {}),
+      ...(readPath?.store ? { store: readPath.store } : {}),
+      ...(isAlwaysActive(c) ? { body_in_context: true as const } : {}),
+    };
+  });
+
+  // Drop the plan envelope's two list shapes — recall surfaces the merged
+  // `entries[]` instead (the per-path requirement-profile entries[] and the
+  // description candidates[] are both folded away).
+  const { entries: _reqProfiles, candidates: _candidates, ...planRestNoLists } = planRest;
 
   return {
-    ...planRest,
-    candidates: markedCandidates,
-    paths,
+    ...planRestNoLists,
+    entries,
     directive: RECALL_DIRECTIVE,
     ...(nextSteps.length > 0 ? { next_steps: nextSteps } : {}),
   };

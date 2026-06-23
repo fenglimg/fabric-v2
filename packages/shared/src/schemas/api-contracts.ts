@@ -471,35 +471,37 @@ export const recallInputSchema = z.object({
     ),
 });
 
+// ux-w2-4: the unified recall entry. Folds the former dual `candidates[]`
+// (descriptions) × `paths[]` (read paths) — which the consumer had to JOIN on
+// stable_id — into ONE self-contained item: description + where-to-Read +
+// relevance rank + body-already-in-context flag. No join, no second array.
+const _recallEntrySchema = z.object({
+  stable_id: z.string(),
+  // 1-based relevance rank (entries are returned best-first). The surfaced
+  // ranking signal — entries are already sorted, rank makes the order explicit.
+  rank: z.number().int().positive(),
+  // The DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
+  description: _ruleDescriptionSchema,
+  // on-disk knowledge file to Read for the full body. Omitted when the entry has
+  // no resolvable file (description-only discovery) or was scoped out by `ids`.
+  read_path: z.string().optional(),
+  // originating store alias (omitted for unqualified / single-store entries).
+  store: z.object({ alias: z.string() }).optional(),
+  // true when this entry's body is ALSO injected at SessionStart (broad
+  // model/guideline "ALWAYS-ACTIVE") — skip the Read, it is already in context.
+  body_in_context: z.boolean().optional(),
+});
+
 export const recallOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
-  // v2.0.0-rc.38 UX-1/UX-4: mirrors planContextOutputSchema fold ① — per-path
-  // description_index collapsed into a single top-level `candidates`, and
-  // `preflight_diagnostics` lifted out of the removed `shared` wrapper.
-  entries: z.array(
-    z.object({
-      path: z.string(),
-      requirement_profile: _requirementProfileSchema,
-    }),
-  ),
-  // v2.2 payload de-dup: single top-level echo of the caller's `intent` (was
-  // duplicated into every entry's requirement_profile). Omitted when no intent.
+  // ux-w2-4: single unified entry list (was candidates[] + paths[] + per-path
+  // requirement-profile entries[]). Each item carries description + read_path +
+  // rank + body_in_context, so the agent never joins two arrays on stable_id.
+  entries: z.array(_recallEntrySchema),
+  // v2.2 payload de-dup: single top-level echo of the caller's `intent`.
+  // Omitted when no intent.
   intent: z.string().optional(),
-  // W1 (KT-DEC-0026): the discovery index — every surfaced candidate's
-  // DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
-  candidates: z.array(_descriptionIndexItemSchema),
-  // W1 (KT-DEC-0026): the read-path index — one entry per surfaced candidate
-  // (scoped by `ids` when provided), in ranked order. `path` is the on-disk
-  // knowledge file the agent Reads to load the body on demand; `store` is the
-  // originating store alias (omitted for unqualified entries).
-  paths: z.array(
-    z.object({
-      stable_id: z.string(),
-      path: z.string(),
-      store: z.object({ alias: z.string() }).optional(),
-    }),
-  ),
   // Number of lower-ranked candidates dropped by the retrieval budget. Present
   // (and > 0) ONLY when truncation fired — keeps the steady-state wire shape
   // unchanged while signalling "more exist; narrow your intent".

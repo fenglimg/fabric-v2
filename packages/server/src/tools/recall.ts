@@ -28,7 +28,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
     "fab_recall",
     {
       description:
-        "Recall the Fabric knowledge relevant to the files you are about to touch. Pass candidate `paths` (+ optional `intent`) and receive a DESCRIPTION index (`candidates[]`: summary / intent_clues / must_read_if / related) plus a READ-PATH index (`paths[]`: one on-disk knowledge file per surfaced candidate). It does NOT return bodies — Read a `paths[].path` to load the full entry on demand (cheap, and recoverable), instead of paying a permanent per-recall context tax for bodies you may not use. Pass `ids` to scope which read paths are surfaced when you already know which entries you want; `include_related:true` to also surface one-hop `related` neighbours' descriptions + read paths.",
+        "Recall the Fabric knowledge relevant to the files you are about to touch. Pass candidate `paths` (+ optional `intent`) and receive a single ranked `entries[]` list — each entry carries its DESCRIPTION (summary / intent_clues / must_read_if / related), a `read_path` (the on-disk knowledge file to Read for the body), `rank` (1 = most relevant), and `body_in_context:true` when the body is already injected at SessionStart. It does NOT return bodies — Read an entry's `read_path` on demand (cheap, recoverable) instead of paying a permanent per-recall context tax for bodies you may not use. Pass `ids` to scope which entries surface a read_path when you already know which you want; `include_related:true` to also surface one-hop `related` neighbours.",
       inputSchema: recallInputSchema,
       outputSchema: recallOutputSchema,
       annotations: recallAnnotations,
@@ -90,7 +90,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         response.warnings = appendPayloadWarning(
           response.warnings,
           guardResult,
-          "Pass an explicit `ids` array (or a narrower `intent`) to scope fab_recall's read-path index — recall returns descriptions + read paths, so Read a `paths[].path` to load any body on demand.",
+          "Pass an explicit `ids` array (or a narrower `intent`) to scope fab_recall's entries — each entry carries a `read_path`, so Read it to load any body on demand.",
         );
 
         payloadBytesOut = Buffer.byteLength(serialized, "utf8");
