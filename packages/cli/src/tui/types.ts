@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 /**
  * Step information for progress tracking
  */
@@ -112,21 +110,6 @@ export interface OutputRenderer {
    * Clean up any pending renders (for async Ink renders)
    */
   cleanup?(): Promise<void>;
-}
-
-/**
- * InkOutputRenderer - Ink-specific renderer that uses React components
- */
-export interface InkOutputRenderer extends OutputRenderer {
-  /**
-   * Render a custom React node directly
-   */
-  renderCustom(node: ReactNode): void;
-
-  /**
-   * Get the underlying Ink instance for advanced use
-   */
-  getInkInstance(): unknown;
 }
 
 /**

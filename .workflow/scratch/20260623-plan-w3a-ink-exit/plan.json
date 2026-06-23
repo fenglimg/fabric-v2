@@ -1,0 +1,74 @@
+{
+  "summary": "W3-A '退 Ink': remove ink + react (+ the @types/react devDep) from the Fabric CLI install wizard by swapping the rendering ENGINE (not behavior) from Ink TUI components to theme.ts strings. The OutputRenderer interface (tui/types.ts) and the InstallContext.renderer contract consumed by pipeline.ts are preserved exactly, so install-v2.ts only changes its factory call site. Equivalence bar = content + wording + semantic color-role (NOT byte-identical glyphs/animation): theme.ts's narrower vocabulary (3 SYMBOL kinds + 7 role tokens) maps down the Ink glyph/color set (○ ● ✓ ✗ ! ℹ 💡, box borders, cyan/gray) per a deterministic table, keeping box-redesign in W3-B. After the non-Ink renderer reaches that equivalence, all 10 tui/*.tsx + InkOutputRenderer.ts are deleted, the dead react import + dead InkOutputRenderer interface are stripped from tui/types.ts (OutputRenderer body byte-identical), ink+react+@types/react are dropped from packages/cli/package.json (picocolors + @clack/prompts KEPT for W3-B), and the ink-react-compat.test.ts dep-enforcement test is removed. Convergence is grep-verifiable + green gates (tsc --noEmit, install-v2-* suites, theme-parity).",
+  "approach": "Strangler-swap behind the stable OutputRenderer interface. Wave 1 builds the replacement renderer (ConsoleOutputRenderer) implementing all 9 render methods + cleanup at the equivalence bar (content + wording + semantic color-role, NOT byte-identical glyphs/animation) using theme.ts paint/symbol/ANSI primitives + console output and a deterministic glyph/color map, wired into install-v2.ts via the preserved createInstallRenderer factory signature — Ink still present so the tree compiles at every step. Wave 2 removes the now-dead Ink surface (10 tsx + InkOutputRenderer.ts), strips the dead react import + dead InkOutputRenderer interface from tui/types.ts (OutputRenderer body byte-identical) + the line-8 InkOutputRenderer re-export from tui/index.ts, trims the barrel, deletes the dep-enforcement test, and removes ink+react+@types/react from package.json. Wave 3 verifies equivalence + green gates and grep-confirms zero ink/react/@types/react residue. Sequential dep chain (W1->W2->W3) because deletion (W2) must not precede a working replacement (W1), and verification (W3) needs both done. theme.ts API is treated as byte-locked (parity-mirrored to .cjs); compose from existing primitives rather than editing it. NOTE: types.ts is NOT byte-pinned (the dead react import + dead InkOutputRenderer interface must go so tsc passes once react/@types/react are removed); the narrower invariant is that the OutputRenderer interface body stays byte-identical.",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003"],
+  "task_count": 3,
+  "complexity": "medium",
+  "estimated_time": "2.5h",
+  "recommended_execution": "Agent",
+
+  "waves": [
+    {
+      "wave": 1,
+      "tasks": ["TASK-001"]
+    },
+    {
+      "wave": 2,
+      "tasks": ["TASK-002"]
+    },
+    {
+      "wave": 3,
+      "tasks": ["TASK-003"]
+    }
+  ],
+
+  "data_flow": {
+    "diagram": null,
+    "stages": [
+      "install-v2.ts shouldUseInstallRenderer gate -> createInstallRenderer({verbose}) factory",
+      "InstallContext.renderer (OutputRenderer interface) handed to pipeline",
+      "pipeline.ts calls renderSection/renderInfo/renderStep/renderError/renderSummaryCard/renderComplete",
+      "renderer methods compose theme.ts paint/symbol/ANSI strings -> console output (was: Ink render())",
+      "renderer.cleanup() at pipeline end (was: Ink unmount; now no-op / flush)"
+    ]
+  },
+
+  "design_decisions": [
+    "Preserve the OutputRenderer interface body in tui/types.ts byte-identical — it is the seam that keeps pipeline.ts and the install-v2-pipeline.test.ts mock contract stable while the engine is swapped. types.ts is NOT fully byte-pinned: TASK-002 removes the dead `import type { ReactNode } from \"react\"` (line 1) + the dead `InkOutputRenderer extends OutputRenderer` interface (renderCustom/getInkInstance), which are the sole react references — they must go or tsc fails once react/@types/react are removed.",
+    "Equivalence bar = content + wording + semantic color-role, NOT byte-identical glyphs/animation. theme.ts exposes only 3 SYMBOL kinds (ok/warn/error) + 7 role tokens (no cyan/gray), so the richer Ink glyph/color set (○ ● ✓ ✗ ! ℹ 💡, rounded box borders, cyan/blue/gray/white) is mapped DOWN deterministically: step glyphs pending/skipped->○, running->●, success->symbol('ok'), error->symbol('error'), warn->symbol('warn'), info->ℹ; color tokens info/running->ai, success->success, error->error, warn->warn, muted/gray->ANSI.dim/muted, accent->accent; ErrorBox/SummaryCard render as multi-line plain-text blocks (box borders deferred to W3-B).",
+    "Name the replacement ConsoleOutputRenderer.ts (class ConsoleOutputRenderer implements OutputRenderer) and keep a factory createInstallRenderer(config?) with the same signature semantics as createInkRenderer so install-v2.ts call site is a one-symbol swap.",
+    "Reimplement the 6 LIVE output components (SectionHeader, StepCounter, Spinner, StatusMessage, ErrorBox+toErrorInfo, SummaryCard) as inline string builders inside the renderer using theme.ts primitives — no React, no per-component file.",
+    "Spinner has no Ink animation loop in a non-TTY string engine: renderStep(running) emits a single static in-progress line (running glyph ● + label), renderStep(done) emits the StepCounter-equivalent completed line (symbol('ok') + counter + label). Animation drop is within the equivalence bar (semantic role preserved), not a W3-B regression.",
+    "Treat theme.ts as byte-locked (parity-mirrored to a .cjs, enforced by theme-parity.test.ts). Compose needed glyphs/layout from existing PALETTE/SYMBOL_ASCII/symbol/paint/ANSI rather than editing theme.ts; editing it is flagged as a risk requiring a parity-mirror update.",
+    "DELETE the 3 DEAD interactive components (InputField, StoreWizard, StoreWizardFlow) — the interactive path already runs on @clack in install-onboarding.ts + pipeline stage files; runStoreWizard has no caller outside tui/.",
+    "SCOPE GUARD: do NOT touch picocolors or colors.ts, do NOT redesign visual language/tree/grid/badge, do NOT add per-surface snapshot infra, do NOT theme @clack intro/outro/log — all W3-B."
+  ],
+
+  "shared_context": {
+    "patterns": [
+      "Strangler-fig: build replacement behind stable interface, then delete legacy",
+      "OutputRenderer interface as the rendering-engine seam",
+      "theme.ts string-composition rendering (paint(token,text)/symbol(kind)/ANSI) replacing Ink JSX components"
+    ],
+    "conventions": [
+      "ESM imports, strict TypeScript (pnpm -r exec tsc --noEmit must exit 0)",
+      "theme.ts is byte-locked-mirrored to .cjs — do not edit its public API in W3-A",
+      "Work confined to branch feat/w3a-ink-exit",
+      "picocolors + @clack/prompts are KEPT dependencies (W3-B owns colors.ts migration); ink + react + @types/react are REMOVED"
+    ],
+    "dependencies": [
+      "@clack/prompts (KEEP — interaction base)",
+      "picocolors (KEEP — W3-B)",
+      "@fenglimg/fabric-shared theme.ts (PALETTE, ThemeToken, isColorEnabled, paint, SYMBOL_ASCII, symbol, ANSI)"
+    ]
+  },
+
+  "_metadata": {
+    "timestamp": "2026-06-23T10:50:20Z",
+    "source": "workflow-planner",
+    "planning_mode": "full",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "git_commit": "90faec3015f7f5a058d1ab62949b9676e6941414"
+  }
+}

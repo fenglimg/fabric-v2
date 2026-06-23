@@ -16,8 +16,8 @@ import { McpStage } from "../install/pipeline/mcp.stage.js";
 import { ValidateStage } from "../install/pipeline/validate.stage.js";
 import { GuidanceStage } from "../install/pipeline/guidance.stage.js";
 
-// Import the TUI renderer (EPIC-005/006/007/008)
-import { createInkRenderer } from "../tui/index.js";
+// Import the TUI renderer (W3-A: theme.ts-backed, non-Ink)
+import { createInstallRenderer } from "../tui/index.js";
 import type { OutputRenderer } from "../tui/types.js";
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
   // Build the install context with TUI renderer
   const terminalInteractive = isInteractiveInit();
   const renderer = shouldUseInstallRenderer(args, terminalInteractive)
-    ? createInkRenderer({ verbose: args.debug })
+    ? createInstallRenderer({ verbose: args.debug })
     : undefined;
   const context = createInstallContext(args, resolution.target, renderer);
 
