@@ -19,7 +19,7 @@
  *         [<id>] (<type>/<maturity>) <summary-line>
  *         [<id>] (<type>/<maturity>) <summary-line>
  *         ...
- *       (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)
+ *       (如需重读 broad 决策，跑 fabric plan-context-hint --all)
  *
  *     When narrow.length === 0: complete silence (exit 0, no stderr).
  *
@@ -1215,7 +1215,7 @@ function readSummaryMaxLen(projectRoot) {
  *   [fabric] N narrow-scoped knowledge entries match your edit targets:
  *     [<id>] (<type>/<maturity>) <summary>
  *     ...
- *   (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)
+ *   (如需重读 broad 决策，跑 fabric plan-context-hint --all)
  */
 function renderSummary(payload, maxLen) {
   if (!payload || payload.version !== 2) {
@@ -1242,7 +1242,7 @@ function renderSummary(payload, maxLen) {
   for (const entry of entries) {
     lines.push(formatEntryLine(entry, maxLen));
   }
-  lines.push("  (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)");
+  lines.push("  (如需重读 broad 决策，跑 fabric plan-context-hint --all)");
   return lines;
 }
 

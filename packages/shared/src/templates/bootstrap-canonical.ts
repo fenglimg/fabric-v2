@@ -90,7 +90,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **Usage**:走单步 \`fab_recall(paths=[...])\` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 \`paths[].path\` 做原生 Read 取回(不再走 MCP 二次取正文)。
 - **session_id**: 调用 \`fab_recall\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 \`fabric-hint.cjs\` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (7)**:写流程 \`fabric-archive\` / \`fabric-review\` / \`fabric-import\`;store 流程 \`fabric-store\` / \`fabric-sync\` / \`fabric-connect\`;诊断 \`fabric-audit\`。
-- **Language**:渲染按 \`.fabric/fabric-config.json\` 的 \`fabric_language\` 字段。
+- **Language**:渲染按 \`~/.fabric/fabric-global.json\` 的 \`language\` 字段(machine-wide tone)。
 - **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config \`archive_edit_threshold\` 一致)/ 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 \`fab_review action="list"\` 或 \`fabric-review\` 返回的 \`pending_path\`;不要 glob 项目本地 \`.fabric/knowledge/pending\`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
 
@@ -158,7 +158,7 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 - **Usage**: go one-step \`fab_recall(paths=[...])\` to fetch the relevant KB descriptions + read paths in one call; when you need a body, do a native Read of its \`paths[].path\` (no second MCP round-trip for the body).
 - **session_id**: when calling \`fab_recall\`, always pass the current client session id as the \`session_id\` argument (Claude Code's session id is in the stdin payload; Codex's corresponding identifier likewise). This lets \`fabric doctor --archive-history\` and the \`fabric-hint.cjs\` Stop hook track cross-session debt accurately.
 - **Skills (7)**: write flow \`fabric-archive\` / \`fabric-review\` / \`fabric-import\`; store flow \`fabric-store\` / \`fabric-sync\` / \`fabric-connect\`; diagnostics \`fabric-audit\`.
-- **Language**: rendered per the \`fabric_language\` field in \`.fabric/fabric-config.json\`.
+- **Language**: rendered per the \`language\` field in \`~/.fabric/fabric-global.json\` (machine-wide tone).
 - **Archive cadence nudge** (rc.36): after each batch of edits (default ~20, matching the Stop hook threshold config \`archive_edit_threshold\`) / a significant decision, proactively propose the \`fabric-archive\` skill at a suitable turn — without an archive cadence the KB slowly dies.
 - **Review backlog nudge** (rc.36): to judge the pending backlog, go through \`fab_review action="list"\` or the \`pending_path\` returned by \`fabric-review\`; don't glob the project-local \`.fabric/knowledge/pending\`. When the visible pending count exceeds 10, proactively propose the \`fabric-review\` skill at a suitable turn to batch-review and avoid draft deadlock.
 
