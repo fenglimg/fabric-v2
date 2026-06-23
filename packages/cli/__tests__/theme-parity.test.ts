@@ -46,6 +46,24 @@ describe("theme TS ↔ cjs byte parity (ux-w2-5)", () => {
     }
   });
 
+  it("sectionBar() is byte-identical on and off (W3-B)", () => {
+    for (const on of [true, false]) {
+      expect(themeCjs.sectionBar("Store Health", on), String(on)).toBe(
+        themeTs.sectionBar("Store Health", on),
+      );
+    }
+  });
+
+  it("scopeBadge() is byte-identical for every scope on and off (W3-B)", () => {
+    for (const scope of ["team", "project", "personal"] as const) {
+      for (const on of [true, false]) {
+        expect(themeCjs.scopeBadge(scope, on), `${scope}:${on}`).toBe(
+          themeTs.scopeBadge(scope, on),
+        );
+      }
+    }
+  });
+
   it("isColorEnabled() agrees across NO_COLOR / FORCE_COLOR / TTY", () => {
     const cases: Array<[NodeJS.ProcessEnv, boolean]> = [
       [{ NO_COLOR: "1" }, false],

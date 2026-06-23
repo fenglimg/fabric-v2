@@ -8,30 +8,26 @@
   "priority": "high",
   "effort": "medium",
   "action": "Create packages/cli/src/tui/structure.ts exporting: `tree(items: {marker?: string; text: string}[], opts?): string` (├─ for non-last, └─ for last, ASCII +-/`- ); `grid(rows: string[][], opts?): string` using padEnd(col, maxWidth) per column + optional rule line ─── (ASCII -----) painted via `paint.muted` from ./colors.js (the colors.ts `paint` object's `.muted` method — NOT theme.ts's `paint(token, text)` function; they collide by name in this repo); both gating glyphs on isColorEnabled() from ./colors.js. Add to packages/shared/src/theme.ts: `export function sectionBar(title: string, colorOn = isColorEnabled()): string` returning colorOn ? `${ANSI.bold}${PALETTE.accent}▌ ${title}${ANSI.reset}` : `# ${title}`; and `export function scopeBadge(scope: 'team'|'project'|'personal', colorOn = isColorEnabled()): string` mapping team→drift '[team]', project→ai '[project]', personal→human '[personal]' (none: plain '[scope]'). Mirror sectionBar + scopeBadge byte-identically into packages/cli/templates/hooks/lib/theme.cjs and add them to its module.exports. Extend theme-parity.test.ts to assert byte parity for sectionBar + scopeBadge across all branches.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-06-23T12:14:56.633Z",
   "actual_duration": null,
-
   "scope": "packages/cli/src/tui + packages/shared/src/theme.ts + packages/cli/templates/hooks/lib/theme.cjs",
   "focus_paths": [
     "packages/cli/src/tui/structure.ts",
     "packages/shared/src/theme.ts",
     "packages/cli/templates/hooks/lib/theme.cjs"
   ],
-
   "read_first": [
     "packages/shared/src/theme.ts",
     "packages/cli/templates/hooks/lib/theme.cjs",
     "packages/cli/__tests__/theme-parity.test.ts",
     "packages/cli/src/colors.ts"
   ],
-
   "depends_on": [],
   "wave": 1,
   "parallel_group": "foundation",
   "execution_group": null,
   "executor": "agent",
-
   "convergence": {
     "criteria": [
       "packages/cli/src/tui/structure.ts exists and exports `tree` and `grid` (grep -E 'export function (tree|grid)' packages/cli/src/tui/structure.ts returns both)",
@@ -46,14 +42,32 @@
     "verification": "pnpm --filter @fenglimg/fabric-shared build && pnpm --filter @fenglimg/fabric-cli test -- theme-parity && pnpm -r exec tsc --noEmit",
     "definition_of_done": "The structural visual vocabulary exists: tree + grid as CLI-only primitives, section-bar + scope-badge as parity-mirrored shared primitives, all with ASCII fallback, and the byte-parity test still passes."
   },
-
   "files": [
-    { "path": "packages/cli/src/tui/structure.ts", "action": "create", "target": "tree, grid", "change": "New CLI-only module: tree(items) renders ├─/└─/│ (ASCII +-/`- /|); grid(rows) renders padEnd-aligned columns + optional ─── rule (ASCII -----) painted via `paint.muted` from ./colors.js (the colors.ts `paint` object's `.muted` method — NOT theme.ts's `paint(token, text)` function; they collide by name in this repo). ASCII fallback gated on isColorEnabled() from ./colors.js." },
-    { "path": "packages/shared/src/theme.ts", "action": "modify", "target": "sectionBar, scopeBadge", "change": "Add sectionBar(title) (▌ accent bold / '# ' none) and scopeBadge(scope) (team→drift/project→ai/personal→human, '[scope]' core). Do NOT touch PALETTE/ANSI/paint/symbol values." },
-    { "path": "packages/cli/templates/hooks/lib/theme.cjs", "action": "modify", "target": "sectionBar, scopeBadge + module.exports", "change": "Byte-mirror sectionBar + scopeBadge from theme.ts; add both to module.exports." },
-    { "path": "packages/cli/__tests__/theme-parity.test.ts", "action": "modify", "target": "byte parity census", "change": "Add assertions that themeCjs.sectionBar / scopeBadge equal themeTs equivalents on color-on and color-off branches." }
+    {
+      "path": "packages/cli/src/tui/structure.ts",
+      "action": "create",
+      "target": "tree, grid",
+      "change": "New CLI-only module: tree(items) renders ├─/└─/│ (ASCII +-/`- /|); grid(rows) renders padEnd-aligned columns + optional ─── rule (ASCII -----) painted via `paint.muted` from ./colors.js (the colors.ts `paint` object's `.muted` method — NOT theme.ts's `paint(token, text)` function; they collide by name in this repo). ASCII fallback gated on isColorEnabled() from ./colors.js."
+    },
+    {
+      "path": "packages/shared/src/theme.ts",
+      "action": "modify",
+      "target": "sectionBar, scopeBadge",
+      "change": "Add sectionBar(title) (▌ accent bold / '# ' none) and scopeBadge(scope) (team→drift/project→ai/personal→human, '[scope]' core). Do NOT touch PALETTE/ANSI/paint/symbol values."
+    },
+    {
+      "path": "packages/cli/templates/hooks/lib/theme.cjs",
+      "action": "modify",
+      "target": "sectionBar, scopeBadge + module.exports",
+      "change": "Byte-mirror sectionBar + scopeBadge from theme.ts; add both to module.exports."
+    },
+    {
+      "path": "packages/cli/__tests__/theme-parity.test.ts",
+      "action": "modify",
+      "target": "byte parity census",
+      "change": "Add assertions that themeCjs.sectionBar / scopeBadge equal themeTs equivalents on color-on and color-off branches."
+    }
   ],
-
   "implementation": [
     "Read theme.ts to confirm ANSI.bold/reset + PALETTE.accent/drift/ai/human are the exact codes to reuse; read theme.cjs mirror formatting (\\x1b escapes, no leading-escape literal) so the mirror is byte-identical at runtime.",
     "Add sectionBar + scopeBadge to theme.ts (named exports, default colorOn = isColorEnabled()).",
@@ -62,44 +76,62 @@
     "Extend theme-parity.test.ts with sectionBar/scopeBadge byte assertions (color on + off).",
     "Run pnpm --filter @fenglimg/fabric-shared build (schema/dist must rebuild before cli consumes), then theme-parity test, then tsc --noEmit."
   ],
-
   "test": {
     "commands": [
       "pnpm --filter @fenglimg/fabric-shared build",
       "pnpm --filter @fenglimg/fabric-cli test -- theme-parity",
       "pnpm -r exec tsc --noEmit"
     ],
-    "unit": ["packages/cli/__tests__/theme-parity.test.ts", "packages/cli/__tests__/structure.test.ts"],
+    "unit": [
+      "packages/cli/__tests__/theme-parity.test.ts",
+      "packages/cli/__tests__/structure.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["theme-parity green", "tsc --noEmit exit 0", "tree/grid ASCII fallback unit-asserted"]
+    "success_metrics": [
+      "theme-parity green",
+      "tsc --noEmit exit 0",
+      "tree/grid ASCII fallback unit-asserted"
+    ]
   },
-
   "reference": {
     "pattern": "ux-w2-5 shared theme + byte-mirror parity; colors.ts width helpers (displayWidth/padEnd)",
-    "files": ["packages/shared/src/theme.ts", "packages/cli/src/colors.ts", "packages/cli/__tests__/theme-parity.test.ts"],
+    "files": [
+      "packages/shared/src/theme.ts",
+      "packages/cli/src/colors.ts",
+      "packages/cli/__tests__/theme-parity.test.ts"
+    ],
     "examples": null
   },
-
   "rationale": {
     "chosen_approach": "Two-layer split keeps the byte-parity surface minimal: only parity-trivial primitives (section-bar/badge) enter the shared+mirrored layer; complex tree/grid stay CLI-only. This satisfies C-003 while keeping theme.cjs cheap to keep in sync.",
-    "decision_factors": ["C-003 parity discipline", "colors.ts already owns width helpers (reuse, don't duplicate)", "frozen 7-token palette"],
+    "decision_factors": [
+      "C-003 parity discipline",
+      "colors.ts already owns width helpers (reuse, don't duplicate)",
+      "frozen 7-token palette"
+    ],
     "tradeoffs": "tree/grid are not available to the HUD .cjs hook — accepted: HUD renders with the parity-safe shared primitives (F-005)."
   },
-
   "risks": [
     "theme.cjs mirror drift (escape style mismatch) breaks theme-parity — mitigated by extending the parity test in this same task.",
     "Forgetting to rebuild fabric-shared dist → cli sees stale theme exports (known pitfall: shared schema change needs build)."
   ],
-
   "code_skeleton": null,
-
   "doc_context": {
-    "affected_features": ["F-001"],
-    "affected_components": ["tui/structure.ts", "shared/theme.ts", "hooks/lib/theme.cjs"],
-    "affected_requirements": ["C-002", "C-003", "C-004"],
+    "affected_features": [
+      "F-001"
+    ],
+    "affected_components": [
+      "tui/structure.ts",
+      "shared/theme.ts",
+      "hooks/lib/theme.cjs"
+    ],
+    "affected_requirements": [
+      "C-002",
+      "C-003",
+      "C-004"
+    ],
     "adr_ids": []
   },
-
   "meta": {
     "estimated_time": "2h",
     "risk": "medium",

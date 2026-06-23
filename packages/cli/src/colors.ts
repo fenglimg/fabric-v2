@@ -9,7 +9,7 @@ import stringWidth from "string-width";
 // ux-w2-5: the CLI colour surface is now a thin adapter over the SHARED theme
 // (packages/shared/src/theme.ts) — the same palette the .cjs hooks render through
 // (lib/theme.cjs, byte-locked by theme-parity.test.ts). The CLI no longer owns a
-// private picocolors palette, so `fabric install` output and a SessionStart hook
+// private colour palette, so `fabric install` output and a SessionStart hook
 // paint identical colours. Width helpers stay here (they need the CLI-only
 // string-width dep). isColorEnabled re-reads env/TTY per call so NO_COLOR /
 // FORCE_COLOR / a piped stdout are honoured at render time.
