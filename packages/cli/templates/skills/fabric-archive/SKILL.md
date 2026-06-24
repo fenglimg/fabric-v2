@@ -48,7 +48,7 @@ Source-mode pipeline (replaces GATHER; REVIEW+PERSIST unchanged):
 
 Source-mode config knobs (read from `.fabric/fabric-config.json`, defaults if absent): `import_window_first_run_months` (60), `import_window_rerun_months` (2), `import_max_pending_per_run` (10), `import_max_commits_scan` (500), `import_skip_canonical_threshold` (50).
 
-Source-mode output roll-up + worked examples → `Read ref/source-output-contract.md` / `ref/source-worked-examples.md`. Source mode requires an **explicit target store** (E7) — never auto-route mined entries; resolve writable candidates via `fabric scope-explain team` and `AskUserQuestion` for the alias when more than one exists.
+Source-mode output roll-up + worked examples → `Read ref/source-output-contract.md` / `ref/source-worked-examples.md`. Source mode requires an **explicit target store** (E7) — never auto-route mined entries; resolve writable candidates via `fabric info scope team` and `AskUserQuestion` for the alias when more than one exists.
 
 ### Phase 0 — Range Resolution
 
@@ -62,7 +62,7 @@ Read `.fabric/fabric-config.json`; resolve `archive_max_candidates_per_batch` (d
 
 ### Phase 0.6 — Store routing (v2.1 multi-store)
 
-Archives land in the **active write store** for the entry's scope — NEVER pick a store yourself. Run `fabric scope-explain team` (or the relevant scope) to get the resolved `writeTarget`; that is where `fab_propose` persists. Single-store → the lone store (back-compat). After persisting, **echo the target store alias** (`归档到 store '<alias>'`). Personal-scope entries route to the personal store (never the shared team store, R5#3). Do NOT read `~/.fabric` store trees directly — go through `scope-explain` / the MCP write path.
+Archives land in the **active write store** for the entry's scope — NEVER pick a store yourself. Run `fabric info scope team` (or the relevant scope) to get the resolved `writeTarget`; that is where `fab_propose` persists. Single-store → the lone store (back-compat). After persisting, **echo the target store alias** (`归档到 store '<alias>'`). Personal-scope entries route to the personal store (never the shared team store, R5#3). Do NOT read `~/.fabric` store trees directly — go through `fabric info scope` / the MCP write path.
 
 ### UX i18n Policy
 

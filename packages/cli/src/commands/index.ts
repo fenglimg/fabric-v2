@@ -11,10 +11,9 @@ export const allCommands = {
   // v2.1.0-rc.1 P3 (S9/S17/S37): multi-store pull --rebase + push, conflict resume.
   sync: () => import("./sync.js").then((module) => module.default),
   // EPIC-010: Unified info command (replaces the retired whoami/status aliases).
+  // W3-F: `info scope <coord>` is now a real subcommand (was the retired
+  // top-level `scope-explain` command); skills call `fabric info scope`.
   info: () => import("./info.js").then((module) => module.default),
-  // ux-w1-7: internal RPC — invoked by skills (fabric scope-explain <layer>),
-  // not a human-facing command. Hidden from grouped help (see grouped-help.ts).
-  "scope-explain": () => import("./scope-explain.js").then((module) => module.default),
   doctor: () => import("./doctor.js").then((module) => module.default),
   uninstall: () => import("./uninstall.js").then((module) => module.default),
   config: () => import("./config.js").then((module) => module.default),
@@ -27,11 +26,11 @@ export const allCommands = {
   // W3-D (UX northstar): knowledge & telemetry audit group — the surfaces that
   // used to ride on `fabric doctor --<flag>` (cite / conflicts / history /
   // descriptions / metrics / retired). doctor now keeps only health + fix.
+  // W3-F: the metrics dashboard is reachable ONLY as `fabric audit metrics`
+  // (top-level `metrics` alias retired — metrics.ts lives on as that subcommand).
   audit: () => import("./audit.js").then((module) => module.default),
-  // v2.0.0-rc.37 NEW-34: text dashboard over .fabric/metrics.jsonl. Retained as
-  // a thin top-level alias of `fabric audit metrics` (zero-migration; W3-D).
-  metrics: () => import("./metrics.js").then((module) => module.default),
-  // Block 5 (Option X): show what SessionStart injects (shared renderer with the
-  // hook → byte-identical). --explain for per-entry provenance.
-  context: () => import("./context.js").then((module) => module.default),
+  // Block 5 (Option X) / W3-F: show what SessionStart injects (shared renderer
+  // with the hook → byte-identical). Renamed from `context`. --explain for
+  // per-entry provenance.
+  inspect: () => import("./inspect.js").then((module) => module.default),
 };

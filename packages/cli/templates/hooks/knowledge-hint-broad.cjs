@@ -1076,7 +1076,7 @@ function renderAiSink(opts) {
 // Block 5 (Option X): build the two SessionStart sinks (human systemMessage +
 // AI additionalContext) from a plan-context-hint payload, WITHOUT emitting or
 // recording telemetry. This is the single shared renderer: main() calls it then
-// emits + logs; `fabric context` calls it then prints (byte-identical injection
+// emits + logs; `fabric inspect` calls it then prints (byte-identical injection
 // by construction — same code, same config/FS reads). Pure-ish: it reads config
 // + snapshot + .md summaries for `cwd` but has no stdout/ledger side effects.
 //
@@ -1178,8 +1178,8 @@ function buildSessionStartSinks(cwd, payload, env) {
   if (humanLines.length > 0) {
     humanLines.push(
       fabricLanguageForEmit === "zh-CN"
-        ? "  看具体注入: fabric context (--explain 看每条来源)"
-        : "  Inspect this injection: fabric context (--explain for per-entry provenance)",
+        ? "  看具体注入: fabric inspect (--explain 看每条来源)"
+        : "  Inspect this injection: fabric inspect (--explain for per-entry provenance)",
     );
   }
 
@@ -1244,7 +1244,7 @@ function main(env, stdio) {
     // per-line char cap + broad_index_backstop fold, not by dropping entries.
 
     // Block 5 (Option X): build both sinks via the shared renderer (same code
-    // `fabric context` uses → byte-identical injection). Side-effect-free; the
+    // `fabric inspect` uses → byte-identical injection). Side-effect-free; the
     // emit + telemetry below stay in main().
     const { human, ai, resolvedPayload, hasRenderedContent, reminderToContext } =
       buildSessionStartSinks(cwd, payload, env);

@@ -38,15 +38,15 @@ export const enMessages: Messages = {
   "cli.shared.invalid-port": "Invalid port: {value}",
   "cli.shared.error": "Error",
 
-  // EPIC-011: Grouped help display i18n keys
-  "cli.help.group.setup.install": "Initialize Fabric in this repository",
-  "cli.help.group.setup.config": "Configure Fabric settings",
-  "cli.help.group.daily.sync": "Sync team knowledge with remote stores",
-  "cli.help.group.daily.info": "Show project status",
-  "cli.help.group.daily.context": "Show what SessionStart injects this session",
-  "cli.help.group.diagnostic.doctor": "Check Fabric health and repair issues",
-  "cli.help.group.diagnostic.metrics": "Show the knowledge metrics dashboard",
-  "cli.help.group.advanced.store": "Manage knowledge stores (see: fabric store --help)",
+  // EPIC-011 / W3-F: Grouped help display i18n keys (Knowledge/Project/Maintain).
+  "cli.help.group.knowledge.store": "Manage knowledge stores (see: fabric store --help)",
+  "cli.help.group.knowledge.sync": "Sync team knowledge with remote stores",
+  "cli.help.group.project.install": "Initialize Fabric in this repository",
+  "cli.help.group.project.config": "Configure Fabric settings",
+  "cli.help.group.project.info": "Show project status",
+  "cli.help.group.project.inspect": "Show what SessionStart injects this session",
+  "cli.help.group.maintain.doctor": "Check Fabric health and repair issues",
+  "cli.help.group.maintain.audit": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI

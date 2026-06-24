@@ -6,22 +6,24 @@
 
 当前 top-level CLI registry 在 `packages/cli/src/commands/index.ts`。
 
-Public commands:
+Public commands (W3-F: 9 human-facing, on the Knowledge / Project / Maintain axes):
 
-- `install`
 - `store`
 - `sync`
-- `info`
-- `doctor`
+- `install`
 - `uninstall`
 - `config`
-- `metrics`
+- `info`（`info scope <coord>` 为真子命令）
+- `inspect`（W3-F 由 `context` 改名）
+- `doctor`
+- `audit`（`audit metrics` 取代了顶层 `metrics`）
 
-Deprecated aliases:
+Retired (W3-F / earlier waves — removed from the registry, no aliases kept):
 
-- `whoami`
-- `status`
-- `scope-explain`
+- `whoami` / `status` → `info`（早期波）
+- `scope-explain` → `info scope`（W3-F：4 skill JSON 调用已迁移）
+- `metrics` → `audit metrics`（W3-F）
+- `context` → `inspect`（W3-F）
 
 Hidden or script-facing commands:
 

@@ -41,6 +41,9 @@ export const RETIRED_TOKENS: readonly RetiredToken[] = [
   { token: "store re-scope", replacement: "store migrate scope", reason: "scope-rewrite ops grouped under `store migrate` (W3-E)" },
   { token: "store backfill-scope", replacement: "store migrate backfill", reason: "scope-rewrite ops grouped under `store migrate` (W3-E)" },
   { token: "store promote", replacement: "store migrate promote", reason: "scope-rewrite ops grouped under `store migrate` (W3-E)" },
+  { token: "fabric scope-explain", replacement: "fabric info scope", reason: "scope-explain command merged into the `info scope` subcommand (W3-F)" },
+  { token: "fabric context", replacement: "fabric inspect", reason: "renamed: `context` of what? → `inspect` the injection (W3-F / NS-01 §1)" },
+  { token: "fabric metrics", replacement: "fabric audit metrics", reason: "top-level metrics retired; reachable as `audit metrics` (W3-F)" },
 ];
 
 export interface RetiredReferenceHit {

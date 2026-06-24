@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createTranslator } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// W3-05 (ISS-033/034) — whoami / store / scope-explain / sync / metrics must
+// W3-05 (ISS-033/034) — whoami / store / info-scope / sync / metrics must
 // render in the project's configured fabric_language, not the OS env locale.
 // We lock the zh-CN catalog for the new keys and verify the projectRoot-aware
 // translator path end-to-end via the commands' null/empty branches.
@@ -83,15 +83,18 @@ describe("project-scoped command i18n", () => {
     expect(logs.join("\n")).toMatch(/全局 Fabric 配置/);
   });
 
-  it("scope-explain renders Chinese when fabric_language is zh-CN", async () => {
+  // W3-F: scope-explain was retired into the `info scope` real subcommand; the
+  // localized null-branch line is identical (same scopeExplain resolver).
+  it("info scope renders Chinese when fabric_language is zh-CN", async () => {
     isolateHome();
     process.chdir(zhProject());
     const logs: string[] = [];
     vi.spyOn(console, "log").mockImplementation((...a) => {
       logs.push(a.map(String).join(" "));
     });
-    const scopeCmd = (await import("../src/commands/scope-explain.ts")).default;
-    await scopeCmd.run?.({ args: { scope: "team" } } as never);
+    const infoCmd = (await import("../src/commands/info.ts")).default;
+    const scopeCmd = (infoCmd.subCommands as Record<string, { run?: (ctx: never) => unknown }>).scope;
+    await scopeCmd.run?.({ args: { coord: "team" } } as never);
     expect(logs.join("\n")).toMatch(/全局 Fabric 配置/);
   });
 });
