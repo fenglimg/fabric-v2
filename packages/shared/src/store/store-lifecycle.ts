@@ -4,7 +4,7 @@ import { scrubRemoteUrl } from "./secret-scan.js";
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — Store lifecycle config core (pure transforms).
 //
-// The testable heart of `fabric store add / remove / bind / switch-write /
+// The testable heart of `fabric store mount / remove / bind / switch-write /
 // explain` (S57/E4/S7). These functions mutate CONFIG OBJECTS only — the CLI
 // command wrappers handle the surrounding I/O (clone the remote, write the
 // config, etc.). Keeping the logic pure makes the lifecycle deterministically

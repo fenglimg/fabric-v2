@@ -108,7 +108,7 @@ export function createStoreResolver(): StoreResolver {
             warnings.push({
               code: "missing_store",
               ref: req.id,
-              message: `required store '${req.id}' is not mounted; run \`fabric store add\` (suggested remote: $personal)`,
+              message: `required store '${req.id}' is not mounted; run \`fabric store mount\` (suggested remote: $personal)`,
             });
           }
           continue;
@@ -125,7 +125,7 @@ export function createStoreResolver(): StoreResolver {
           warnings.push({
             code: "missing_store",
             ref: req.id,
-            message: `required store '${req.id}' is not mounted; run \`fabric store add\`${suffix}`,
+            message: `required store '${req.id}' is not mounted; run \`fabric store mount\`${suffix}`,
           });
           continue;
         }
@@ -178,7 +178,7 @@ export function createStoreResolver(): StoreResolver {
             {
               code: "missing_write_route",
               ref: scope,
-              message: `scope '${scope}' has no explicit write route; set \`fabric store route-write ${scope} <alias>\``,
+              message: `scope '${scope}' has no explicit write route; set \`fabric store switch-write <alias> --scope ${scope}\``,
             },
           ],
         };

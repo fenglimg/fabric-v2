@@ -49,7 +49,7 @@ export function storeDoctorChecks(
       code: "missing_required_store",
       severity: "warn",
       ref: missing.id,
-      message: `required store '${missing.id}' is not mounted; run \`fabric store add\``,
+      message: `required store '${missing.id}' is not mounted; run \`fabric store mount\``,
     });
   }
 

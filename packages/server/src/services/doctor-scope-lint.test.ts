@@ -231,7 +231,7 @@ describe("createScopeLintCheck", () => {
     expect(check.kind).toBe("warning");
     expect(check.code).toBe("store_scope_lint");
     expect(check.message).toContain("missing-scope");
-    expect(check.actionHint).toContain("store backfill-scope");
+    expect(check.actionHint).toContain("store migrate backfill");
   });
 
   it("renders personal leaks as manual errors", () => {

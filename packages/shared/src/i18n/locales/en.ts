@@ -698,7 +698,7 @@ export const enMessages: Messages = {
   "doctor.check.store_scope_lint.message":
     "{total} store scope issue(s): {breakdown}. e.g. {sample}.",
   "doctor.check.store_scope_lint.remediation":
-    "Run `fabric store backfill-scope` to add missing semantic_scope/visibility_store; `fabric store re-scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
+    "Run `fabric store migrate backfill` to add missing semantic_scope/visibility_store; `fabric store migrate scope` to fix a dangling project: coordinate; move any personal-scope entry out of a shared store (personal knowledge lives only in your personal store, R5#3).",
   // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints.
   "doctor.check.stable_id_collision.name": "Stable ID collision",
   "doctor.check.stable_id_collision.message.singular":
@@ -1365,6 +1365,7 @@ export const enMessages: Messages = {
   "cli.store.detached": "detached '{alias}' — on-disk store tree left intact (detach ≠ delete)",
   "cli.store.bound": "bound required store '{id}' ({count} required)",
   "cli.store.switch-write": "active write store set to '{alias}' for this project",
+  "cli.store.routed": "write route: scope '{scope}' → store '{alias}'",
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",

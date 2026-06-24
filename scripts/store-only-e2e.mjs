@@ -144,7 +144,7 @@ async function main() {
     runCli(["store", "project", "create", "team", "fabric-v2"], { cwd: projectRoot, env });
     runCli(["store", "bind", "team", "--project", "fabric-v2"], { cwd: projectRoot, env });
     runCli(["store", "switch-write", "team"], { cwd: projectRoot, env });
-    runCli(["store", "route-write", "project:fabric-v2", "team"], { cwd: projectRoot, env });
+    runCli(["store", "switch-write", "team", "--scope", "project:fabric-v2"], { cwd: projectRoot, env });
 
     const projectConfig = readJson(join(projectRoot, ".fabric", "fabric-config.json"));
     assert(
@@ -157,7 +157,7 @@ async function main() {
       projectConfig.write_routes?.some(
         (route) => route.scope === "project:fabric-v2" && route.store === "team",
       ) === true,
-      "route-write did not persist project:fabric-v2 -> team",
+      "switch-write --scope did not persist project:fabric-v2 -> team",
     );
 
     const server = await import(pathToFileURL(SERVER_PATH).href);

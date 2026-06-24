@@ -208,7 +208,7 @@ export function storeAdd(
 //
 // Wave0 found there was no CLI path to birth a fresh store: `install --global`
 // only mints the personal store, `install --global --url` clones an EXISTING
-// remote, and `store add` merely registers an already-on-disk store. The first
+// remote, and `store mount` merely registers an already-on-disk store. The first
 // team store therefore had to be hand-rolled (git init + the internal initStore
 // symbol). This wraps that into a first-class command: mint an intrinsic uuid
 // (S55 identity-is-intrinsic), scaffold the store tree via initStore (git), and
@@ -338,7 +338,7 @@ export function storeGitRemote(
   }
 }
 
-// ADJ-NEWN-6 (v2.1 dogfood): refuse a "phantom mount". `store add` previously
+// ADJ-NEWN-6 (v2.1 dogfood): refuse a "phantom mount". `store mount` previously
 // wrote the registry entry even when no store tree existed on disk for that
 // uuid — the failure only surfaced later when `fabric sync` crashed on a
 // non-existent cwd (spawnSync git ENOENT). This guard moves the failure to
@@ -370,7 +370,7 @@ export function assertStoreMountable(
     throw new Error(
       `cannot mount store ${uuid}: no store tree at ${storeDir} — ` +
         `clone it first (\`fabric install --global --url <remote>\`) or create it locally, ` +
-        `then re-run \`fabric store add\`. Refusing to register a phantom store.`,
+        `then re-run \`fabric store mount\`. Refusing to register a phantom store.`,
     );
   }
 }
@@ -481,7 +481,7 @@ export async function storeBind(
     if (storeDir === null) {
       throw new Error(
         `cannot bind project '${options.project}': store '${entry.id}' is not mounted — ` +
-          `mount it first (\`fabric store add\` / \`fabric install --global --url <remote>\`)`,
+          `mount it first (\`fabric store mount\` / \`fabric install --global --url <remote>\`)`,
       );
     }
     if (!(await storeHasProject(storeDir, options.project))) {
@@ -545,7 +545,7 @@ export function storeSetWriteRoute(
 
 // Clone-onboarding guidance core (S51): which of this project's required_stores
 // are NOT mounted in the global registry. After `git clone` of a Fabric project
-// the CLI runs this to guide the user to `fabric store add` the missing stores.
+// the CLI runs this to guide the user to `fabric store mount` the missing stores.
 // Empty global config ⇒ every required store is missing (nothing mounted yet).
 export function missingRequiredStores(
   projectRoot: string,

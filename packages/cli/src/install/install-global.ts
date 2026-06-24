@@ -14,7 +14,7 @@ import { runInstallTransaction, type InstallReceipt } from "./transaction.js";
 // the install transaction so a mid-setup failure rolls back cleanly (no half
 // global state). Idempotent: a second run with an existing global config is a
 // no-op. The MCP-client registration + cloning a team store from a remote are
-// handled by the surrounding `install` command (existing flow / `store add`);
+// handled by the surrounding `install` command (existing flow / `store mount`);
 // this is the multi-store global-state core they build on.
 //
 // `uid` and `personalStoreUuid` are injected (the command derives uid from

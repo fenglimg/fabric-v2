@@ -17,7 +17,7 @@ mid-session so it stops re-arguing every architecture decision from scratch.
 | --- | --- |
 | Run `fabric install` once per repo | Hand-edit Fabric-managed hook/bootstrap artifacts |
 | Run `fabric doctor` when something feels off | Hand-edit hook scripts under `.claude/hooks/` |
-| Use `fabric store bind` / `fabric store route-write` and the Fabric Skills to manage knowledge | Hand-write project-local `.fabric/knowledge/<type>/` roots |
+| Use `fabric store bind` / `fabric store switch-write --scope` and the Fabric Skills to manage knowledge | Hand-write project-local `.fabric/knowledge/<type>/` roots |
 | `npm install -g @fenglimg/fabric-cli@latest` to upgrade | Memorise the 35 doctor lint codes |
 
 ## The 4-step flow
@@ -72,7 +72,7 @@ promote it, and now every PreToolUse Edit on `src/render/*` surfaces this
 pitfall in-context. The next contributor never sees the black edges.
 
 For one team store, install/onboarding writes the project route for you. For
-multiple shared stores, use `fabric store route-write <semantic_scope> <alias>`
+multiple shared stores, use `fabric store switch-write <alias> --scope <semantic_scope>`
 so Fabric knows where a scope such as `project:fabric-v2` should write.
 
 ## First 30 minutes — troubleshooting

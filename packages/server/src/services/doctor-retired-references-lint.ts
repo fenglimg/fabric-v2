@@ -36,6 +36,11 @@ export const RETIRED_TOKENS: readonly RetiredToken[] = [
   { token: "reverse_unarchive_dry_run", replacement: null, reason: "unarchive dryRun comes from the caller, not config (ux-w1-5)" },
   { token: "doctor --cite-coverage", replacement: "audit cite", reason: "cite audit moved to the audit group (W3-D)" },
   { token: "doctor --fix-knowledge", replacement: "doctor --fix", reason: "fix-knowledge merged into a single --fix (W3-D)" },
+  { token: "store add", replacement: "store mount", reason: "de-synonymised: add → mount (W3-E)" },
+  { token: "store route-write", replacement: "store switch-write --scope", reason: "route-write folded into switch-write --scope (W3-E)" },
+  { token: "store re-scope", replacement: "store migrate scope", reason: "scope-rewrite ops grouped under `store migrate` (W3-E)" },
+  { token: "store backfill-scope", replacement: "store migrate backfill", reason: "scope-rewrite ops grouped under `store migrate` (W3-E)" },
+  { token: "store promote", replacement: "store migrate promote", reason: "scope-rewrite ops grouped under `store migrate` (W3-E)" },
 ];
 
 export interface RetiredReferenceHit {
