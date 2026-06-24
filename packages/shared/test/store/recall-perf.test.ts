@@ -2,7 +2,19 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// Count real directory reads deterministically. ESM forbids vi.spyOn on a
+// node:fs/promises export ("namespace is not configurable"), so we mock the
+// module and route readdir through a hoisted counting spy that delegates to the
+// real implementation. The spy lets us assert bounded work without wall-clock
+// timing (the old p95 assertion flaked under parallel load — ISS-20260609-018).
+const readdirSpy = vi.hoisted(() => vi.fn());
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  readdirSpy.mockImplementation(actual.readdir as never);
+  return { ...actual, readdir: readdirSpy };
+});
 
 import { readKnowledgeAcrossStores, type MountedStoreDir } from "../../src/store/core.js";
 import { STORE_LAYOUT } from "../../src/schemas/store.js";
@@ -11,7 +23,9 @@ import { STORE_LAYOUT } from "../../src/schemas/store.js";
 // does NOT full-scan. Fixture: 1000 entries across 5 stores (200 each). The
 // load-bearing guarantee is structural: recall over a 2-store read-set returns
 // ONLY those stores' entries (scan count ≤ read-set size, never the other 3) —
-// and is consequently faster than a full 5-store scan (p95 ≤ baseline × 1.2).
+// and consequently opens proportionally fewer directories than a full 5-store
+// scan. We assert that deterministically via a readdir count, not wall-clock
+// timing (the old p95 assertion flaked under parallel load — ISS-20260609-018).
 
 const STORES = 5;
 const PER_STORE = 200; // 5 × 200 = 1000 total
@@ -43,11 +57,6 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function p95(samples: number[]): number {
-  const sorted = [...samples].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
-}
-
 describe("recall is bounded to the read-set (S35, 不全扫)", () => {
   it("recall over a 2-store read-set returns ONLY those stores' entries", async () => {
     const readSet = allStores.slice(0, READ_SET_SIZE);
@@ -63,23 +72,24 @@ describe("recall is bounded to the read-set (S35, 不全扫)", () => {
     }
   });
 
-  it("read-set recall p95 ≤ full-scan baseline × 1.2 (bounded work → no degradation)", async () => {
+  it("read-set recall does directory work proportional to the read-set, never the full store count (bounded work, no degradation)", async () => {
     const readSet = allStores.slice(0, READ_SET_SIZE);
-    const ITER = 30;
-    const fullScan: number[] = [];
-    const readSetScan: number[] = [];
-    // Interleave to share cache/GC conditions fairly between the two.
-    for (let i = 0; i < ITER; i++) {
-      let t = performance.now();
-      await readKnowledgeAcrossStores(allStores);
-      fullScan.push(performance.now() - t);
-      t = performance.now();
-      await readKnowledgeAcrossStores(readSet);
-      readSetScan.push(performance.now() - t);
-    }
-    // Baseline = full-scan p95; read-set scans 2/5 the stores so its p95 must
-    // not exceed baseline × 1.2 (generous slack for timer noise).
-    const baseline = p95(fullScan);
-    expect(p95(readSetScan)).toBeLessThanOrEqual(baseline * 1.2);
+    // The bounded-work guarantee is structural: recall only opens the dirs of
+    // the stores it is handed, so the readdir count proves it deterministically.
+    readdirSpy.mockClear();
+    await readKnowledgeAcrossStores(allStores);
+    const fullScanReaddirs = readdirSpy.mock.calls.length;
+
+    readdirSpy.mockClear();
+    await readKnowledgeAcrossStores(readSet);
+    const readSetReaddirs = readdirSpy.mock.calls.length;
+
+    // Guard: the spy must actually have intercepted, else a silent no-op would
+    // false-pass with both counts at 0.
+    expect(fullScanReaddirs).toBeGreaterThan(0);
+    // Bounded work: read-set directory reads are strictly fewer than a full scan
+    // and scale exactly with the read-set fraction (READ_SET_SIZE / STORES).
+    expect(readSetReaddirs).toBeLessThan(fullScanReaddirs);
+    expect(readSetReaddirs * STORES).toBe(fullScanReaddirs * READ_SET_SIZE);
   });
 });
