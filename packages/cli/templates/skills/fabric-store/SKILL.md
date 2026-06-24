@@ -25,5 +25,5 @@ description: store 运维 thin shim — 把「创建/挂载/绑定/列出/切换
 
 - `store remove` = detach ≠ delete:卸 registry,保留磁盘 git 树。
 - `store mount` 拒绝幽灵挂载(磁盘无 store 树的 uuid)。
-- 破坏性 `store migrate *` 的 confirm-before-mutate 由 CLI 本身把关(不靠本 skill 厚度);本 skill 不自行改 store `knowledge/` 或 counters(派生态)。
+- 破坏性 `store migrate *` MUST 经 CLI 本身的 confirm-before-mutate 门(确定性来自 CLI 不靠本 skill 厚度);本 skill 不自行改 store `knowledge/` 或 counters(派生态)。
 - Hook/skill NEVER 直接解析或执行 store 内文件(S65:store 是数据-only);store 状态一律经 CLI JSON 输出取。

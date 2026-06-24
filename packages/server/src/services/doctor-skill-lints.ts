@@ -246,30 +246,8 @@ function extractSkillFrontmatterLines(
   return null;
 }
 
-/**
- * Extract the body lines of a `## <name>` / `### <name>` markdown section,
- * stopping at the next level-2/3 heading. Returns null when the section heading
- * is absent.
- */
-function extractMarkdownSectionBody(markdown: string, sectionName: string): string | null {
-  const lines = markdown.split(/\r?\n/u);
-  const headingRe = /^(#{2,3})\s+(.+?)\s*$/u;
-  let start = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const h = headingRe.exec(lines[i]!);
-    if (h && h[2] === sectionName) {
-      start = i + 1;
-      break;
-    }
-  }
-  if (start === -1) return null;
-  const out: string[] = [];
-  for (let i = start; i < lines.length; i++) {
-    if (headingRe.test(lines[i]!)) break;
-    out.push(lines[i]!);
-  }
-  return out.join("\n");
-}
+// W3-C: extractMarkdownSectionBody removed — its only caller was the retired
+// router-chain S_CHAIN lint (the fabric/ router is gone, 0-router skill set).
 
 export function createSkillRefMirrorCheck(t: Translator, inspection: SkillRefMirrorInspection): DoctorCheck {
   if (inspection.status === "ok") {
