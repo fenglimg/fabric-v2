@@ -508,7 +508,7 @@ export const enMessages: Messages = {
   "doctor.check.knowledge_tags_empty.ok":
     "empty-tag ratio is healthy (≤ 50%, or workspace too small to compute).",
   "doctor.check.knowledge_tags_empty.message":
-    "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries have empty `tags:` — topical clustering and cross-entry retrieval degrade. The fabric-archive / fabric-import skills should produce 2-4 tags per entry.",
+    "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries have empty `tags:` — topical clustering and cross-entry retrieval degrade. The fabric-archive skill should produce 2-4 tags per entry.",
   "doctor.check.knowledge_tags_empty.remediation":
     "On the next archive/import run, populate `tags:` in the frontmatter with 2-4 kebab-case keywords. To backfill existing entries in bulk, use `/fabric-review` with the modify flow.",
   // rc.36 TASK-09 (P1-NEW1): drift_detected events unconsumed by demote.
@@ -598,7 +598,7 @@ export const enMessages: Messages = {
   "doctor.check.underseeded.message.plural":
     "Knowledge corpus has only {count} canonical entries (< {threshold} threshold). The plan_context retrieval surface is below its useful floor.",
   "doctor.check.underseeded.remediation":
-    "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+    "Run the fabric-archive skill's source mode (`/fabric-archive`) to backfill knowledge from git history and existing docs.",
   "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
   "doctor.check.session_hints_stale.ok":
     "No session-hints cache files older than {days} days under .fabric/.cache/.",
@@ -758,7 +758,7 @@ export const enMessages: Messages = {
   "doctor.check.broad_index_drift.message.plural":
     "{count} stores' broad-scope indexes have reached {threshold} (80% of backstop {backstop}) — the SessionStart banner is close to truncating broad entries. First: {detail}.",
   "doctor.check.broad_index_drift.remediation":
-    "Run the `fabric-audit` skill to prune or demote stale broad-scope entries in the flagged store, or raise `broad_index_backstop` in .fabric/fabric-config.json if the corpus is legitimately large.",
+    "Run the `fabric-review` skill's retire sub-flow to prune or demote stale broad-scope entries in the flagged store, or raise `broad_index_backstop` in .fabric/fabric-config.json if the corpus is legitimately large.",
   // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive).
   "doctor.check.orphan_demote.name": "Knowledge orphan demote",
   "doctor.check.orphan_demote.ok":
@@ -815,15 +815,6 @@ export const enMessages: Messages = {
     "{count} SKILL.md frontmatter values contain an unquoted ': ' that strict YAML parsers reject (Claude Code tolerates it; Codex CLI drops the skill at load). First: {detail}.",
   "doctor.check.skill_md_yaml_invalid.remediation":
     "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
-  "doctor.check.router_chain_ref.name": "Router chain refs",
-  "doctor.check.router_chain_ref.ok":
-    "Every fabric-* reference in the fabric/ router S_CHAIN points at an installed leaf skill.",
-  "doctor.check.router_chain_ref.message.singular":
-    "{count} S_CHAIN reference in the fabric/ router points at a skill not in the install set: {list}. The chain step will dead-end at runtime.",
-  "doctor.check.router_chain_ref.message.plural":
-    "{count} S_CHAIN references in the fabric/ router point at skills not in the install set: {list}. Those chain steps will dead-end at runtime.",
-  "doctor.check.router_chain_ref.remediation":
-    "Edit the S_CHAIN table in templates/skills/fabric/SKILL.md to reference a real leaf skill (one of the installed fabric-* skills), or remove the stale chain row.",
   "doctor.check.onboard_coverage.name": "Onboard coverage",
   "doctor.check.onboard_coverage.ok.complete":
     "Onboard coverage: {filledCount}/{total} ✓ (opted-out: {optedOutCount}).",
@@ -967,7 +958,7 @@ export const enMessages: Messages = {
   "cli.install.next-steps":
     "Next steps — get your first value:\n" +
     "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
-    "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
+    "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-archive skill's source mode to backfill from git history.\n" +
     "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
   "cli.install.store-bind-nudge":
     "💡 Mounted store(s) not bound to this project: {aliases}. Run `fabric store bind {first}` to read their knowledge here, then `fabric store switch-write {first}` to write team knowledge into it.",

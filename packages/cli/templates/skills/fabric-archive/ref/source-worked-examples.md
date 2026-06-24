@@ -8,11 +8,11 @@ Source signal: `git log` surfaces commit `50367b5` with subject `feat(server): a
 
 LLM analysis: this is a **pitfall** (a non-obvious trap that wasted time and is repeatable across services). The body itself documents the trap. Slug candidates: `retry-without-backoff-thundering-herd` (5 words, 38 chars — passes 5 rules).
 
-Skill output (note `relevance_scope: "broad"` + `relevance_paths: []` — mandatory for fabric-import):
+Skill output (note `relevance_scope: "broad"` + `relevance_paths: []` — mandatory for archive source mode):
 
 ```ts
 mcp__fabric__fab_propose({
-  source_sessions: ["fabric-import-2026-05-10"],
+  source_sessions: ["fabric-archive-source-2026-05-10"],
   recent_paths: ["packages/server/src/lib/retry.ts"],     // provenance only
   user_messages_summary: "重试无指数退避会在短暂上游故障下放大成雪崩。修正：jittered exponential backoff，30 秒上限。src=50367b5",
   type: "pitfalls",
@@ -58,7 +58,7 @@ Skill output (broad+[] mandatory; the doc's own path stays in `recent_paths` for
 
 ```ts
 mcp__fabric__fab_propose({
-  source_sessions: ["fabric-import-2026-05-10"],
+  source_sessions: ["fabric-archive-source-2026-05-10"],
   recent_paths: ["docs/architecture.md"],                  // provenance only
   user_messages_summary: "选择单体架构而非微服务：3 人团队无法承担多服务运维成本，且主要性能瓶颈在 DB 吞吐而非应用层水平扩展。src=docs/architecture.md",
   type: "decisions",
@@ -105,7 +105,7 @@ Final roll-up to user reflects: 1 proposed, 0 kept, 1 rejected_dup, 0 merged, 0 
 
 ## Example D — Post-import narrowing (out-of-band, NOT this skill)
 
-This example documents the legal narrowing path; it is NOT performed by `fabric-import` itself. After Example B's `monolith-over-microservices-small-team` decision is imported (with `relevance_scope=broad`, `relevance_paths=[]`) and later approved into canonical via `fabric-review`, the user decides the decision is actually narrow to the server package's deploy tooling.
+This example documents the legal narrowing path; it is NOT performed by `archive source mode` itself. After Example B's `monolith-over-microservices-small-team` decision is imported (with `relevance_scope=broad`, `relevance_paths=[]`) and later approved into canonical via `fabric-review`, the user decides the decision is actually narrow to the server package's deploy tooling.
 
 The user issues (via `fabric-review`, NOT via this skill):
 
@@ -122,6 +122,6 @@ mcp__fabric__fab_review({
 
 Key invariants of this flow:
 
-- The narrowing decision originates from the **user**, informed by the actual paths they propose — not from `fabric-import` inferring paths from git metadata.
+- The narrowing decision originates from the **user**, informed by the actual paths they propose — not from `archive source mode` inferring paths from git metadata.
 - The modify call goes through `fab_review`, not `fab_propose`, because the entry already exists (post-import or post-approval).
 - If the user later flips the entry's layer from `team` to `personal`, server-side auto-degrades scope back to `broad` and clears `relevance_paths` (see rc.5 C3 acceptance criterion; personal knowledge crosses projects so paths don't generalize). This is the only legal way for `relevance_paths` to be re-cleared.

@@ -1203,7 +1203,8 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       decision: "soft",
       reason,
       signal: "import",
-      recommended_skill: "fabric-import",
+      // W3-C: fabric-import folded into fabric-archive `source` mode.
+      recommended_skill: "fabric-archive",
       // v2.1 NEW-N-3: underseed corpus trigger — node-count vs threshold. The
       // "import" signal collapses to schema signal_type "other" in main().
       threshold: underseed.threshold,

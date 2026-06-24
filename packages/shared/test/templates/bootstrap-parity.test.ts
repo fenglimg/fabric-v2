@@ -51,14 +51,11 @@ const PROTECTED_TOKENS: readonly string[] = [
   "fabric-hint.cjs",
   "archive_edit_threshold",
   "atlas.premultiplyAlpha",
-  // skills (7)
+  // skills (4) — W3-C: import→archive source, audit/connect→review retire/relate
   "fabric-archive",
   "fabric-review",
-  "fabric-import",
   "fabric-store",
   "fabric-sync",
-  "fabric-connect",
-  "fabric-audit",
   // cite syntax + vocabulary — v2.2 C1 (W2): the cite contract is internalised.
   // Contract operators (→ edit: / skip:<reason> / …), the store-qualified prefix,
   // KB: none sentinels, and the skip·dismissed dictionaries moved OUT of the

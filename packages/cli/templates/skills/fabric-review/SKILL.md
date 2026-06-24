@@ -1,7 +1,7 @@
 ---
 name: fabric-review
-description: 审 store-backed pending+canonical knowledge (NOT PR review):approve/reject/modify/revisit/defer。Triggers 审批/驳回/复审/重审/approve/reject/review pending.
-allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
+description: 审 store-backed pending+canonical knowledge (NOT PR review):pending triage + maintain(含 retire 语义淘汰 + relate 关联建边)。Triggers 审批/review pending;淘汰陈旧/deprecate;连接知识/补 related 边.
+allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_recall, mcp__fabric__fab_review
 ---
 
 > **Surface**: Skill (AI-driven, per-entry human-judgment routing). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
@@ -69,7 +69,9 @@ The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc
 | Keywords (zh-CN + en) | Inferred mode |
 |---|---|
 | "approve", "review pending", "promote", "what's queued", "审核 pending", "通过" | `pending` |
-| "search/find about <topic>", "what's stale", "demote old", "health check", "look at <id>", "revisit KT-…", "关于…的知识", "过期的", "陈旧的", "整理一下", "再看下 <id>", "回顾" | `maintain` |
+| "search/find about <topic>", "what's stale", "demote old", "health check", "look at <id>", "revisit KT-…", "关于…的知识", "过期的", "陈旧的", "整理一下", "再看下 <id>", "回顾" | `maintain` (browse/health/revisit) |
+| "审计知识库", "清理陈旧知识", "知识库瘦身", "淘汰旧决策", "deprecate", "prune stale", "这些旧决策还要吗" | `maintain` → **retire** sub-flow |
+| "连接知识", "找相关条目", "补 related 边", "知识库连通性", "link related", "建知识图谱" | `maintain` → **relate** sub-flow |
 
 A `maintain`-row match → lock `maintain`. A `pending`-row match (or 0/ambiguous) → fall to Step 2.
 
@@ -94,6 +96,8 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
   - *browse-by-topic*: extract keywords → `fab_review action="search"` → render top-N (cap `review_topic_result_cap`) → AskUserQuestion only on an action verb.
   - *health/staleness*: `fab_review action="list"` + tail events → compute stale → render dashboard → per-stale AskUserQuestion `{defer, demote, skip}`.
   - *revisit*: user referenced a specific id/slug → `Read` canonical file directly OR `fab_review action="list"` with narrow filters → display body + history → AskUserQuestion only if actionable.
+  - *retire* (W3-C, 吸收原 fabric-audit): 语义淘汰陈旧/孤儿/被取代的 **canonical** 条目。引擎 `fabric doctor`(给 orphan/stale/health 信号);守两条红线 **deprecate-over-delete**(陈旧≠该删,降 maturity / 标 `superseded-by` 保留 rationale)+ **rescue-before-delete**(删前必做独特-rationale 抢救检查)。逐条判三态 still-valid / superseded(deprecate)/ never-valid(rescue 后删空壳),处置经 `fab_review` 写路径落盘。**完整两条红线定义 / 意图→动作映射 / 三态流程 / scope 纠偏 → `Read ref/retire-mode.md`。**
+  - *relate* (W3-C, 吸收原 fabric-connect): **默认不主动建边**,仅用户显式「连一下 / 补 related」时进入。`fab_recall` 拿候选 + 现有 `related` → 按互补/规避/取代/同域/引用链判**高置信**隐藏关联(稀疏优于稠密)→ 落盘**复用 `fab_review` modify 写路径**(零新写面,追加源条目 `related` 数组)。§4 隐私铁律 `KT→KP` FORBIDDEN。**关联类型判据表 / 流程 / 约束 → `Read ref/relate-mode.md`。**
 
 `Read ref/per-mode-flows.md` for full step-by-step procedures, bilingual rendering blocks (en + zh-CN per-item display, AskUserQuestion templates, health dashboard format), and the rc.7 T6 `proposed_reason` + `## Why proposed` + `## Session context` rendering contract.
 
@@ -135,7 +139,7 @@ Guideline/model entries surface in the SessionStart **ALWAYS-ACTIVE** sink as a 
 - **Title/summary/tags/maturity** → in-place rewrite; stable_id PRESERVED.
 - **Layer change** → ONLY legal stable_id mutation. BEFORE call, AskUserQuestion `{team, personal}` to confirm target (this IS genuine choice). AFTER server returns, surface BOTH `prior_stable_id` and `new_stable_id` in roll-up — downstream agents may cache the prior id.
 
-**Import-origin entries** (`source_sessions[0]` starts with `fabric-import-`) ship with `relevance_scope=broad + relevance_paths=[]` by design; narrowing is fabric-review's responsibility. Render `⚠ Imported (relevance_scope=broad, relevance_paths=[]) — pick 'modify' + say 'narrow to <paths>'` as informational hint. On `modify` of import-origin: extended option list `{narrow scope, edit summary, change layer, change maturity, skip}`; "narrow scope" → free-text follow-up → `changes: { relevance_scope: "narrow", relevance_paths: [<parsed>] }`. Personal layer auto-degrades narrow → broad+[] (server-side), emitting `knowledge_scope_degraded`.
+**Source-mode entries** (`source_sessions[0]` starts with `fabric-archive-source-`) ship with `relevance_scope=broad + relevance_paths=[]` by design; narrowing is fabric-review's responsibility. Render `⚠ Imported (relevance_scope=broad, relevance_paths=[]) — pick 'modify' + say 'narrow to <paths>'` as informational hint. On `modify` of import-origin: extended option list `{narrow scope, edit summary, change layer, change maturity, skip}`; "narrow scope" → free-text follow-up → `changes: { relevance_scope: "narrow", relevance_paths: [<parsed>] }`. Personal layer auto-degrades narrow → broad+[] (server-side), emitting `knowledge_scope_degraded`.
 
 `Read ref/modify-flow.md` for layer-flip server transaction (4-step), modify call shape examples (maturity bump / layer flip), and full narrowing flow with bilingual AskUserQuestion templates.
 

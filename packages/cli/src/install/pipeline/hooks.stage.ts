@@ -3,14 +3,10 @@ import { stageFailed, stageRan, stageSkipped, stageFailedFromError } from "./pip
 import { installHooks, validateHookPaths } from "../hooks-orchestrator.js";
 import {
   cleanupDeprecatedSkills,
-  installFabricRouterSkill,
   installFabricArchiveSkill,
   installFabricReviewSkill,
-  installFabricImportSkill,
   installFabricSyncSkill,
   installFabricStoreSkill,
-  installFabricAuditSkill,
-  installFabricConnectSkill,
   installSharedSkillLib,
   installArchiveHintHook,
   installKnowledgeHintBroadHook,
@@ -67,16 +63,12 @@ export class HooksStage implements Stage {
       // Clean up deprecated skills
       installResults.push(...await this.runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(target)));
 
-      // Install all skills (B2 skill-router: fabric/ router first — its Intent
-      // Map is regenerated from the 7 leaf descriptions)
-      installResults.push(...await this.runBestEffort("skill-router-install", () => installFabricRouterSkill(target)));
+      // W3-C: 4-skill terminal set (0 router) — archive/review real leaves,
+      // sync/store thin shims.
       installResults.push(...await this.runBestEffort("skill-install", () => installFabricArchiveSkill(target)));
       installResults.push(...await this.runBestEffort("skill-review-install", () => installFabricReviewSkill(target)));
-      installResults.push(...await this.runBestEffort("skill-import-install", () => installFabricImportSkill(target)));
       installResults.push(...await this.runBestEffort("skill-sync-install", () => installFabricSyncSkill(target)));
       installResults.push(...await this.runBestEffort("skill-store-install", () => installFabricStoreSkill(target)));
-      installResults.push(...await this.runBestEffort("skill-audit-install", () => installFabricAuditSkill(target)));
-      installResults.push(...await this.runBestEffort("skill-connect-install", () => installFabricConnectSkill(target)));
       installResults.push(...await this.runBestEffort("skill-shared-lib", () => installSharedSkillLib(target)));
 
       // Install hook scripts

@@ -25,7 +25,7 @@ For each `(pending, canonical)` pair the LLM judges:
 - **Duplicate** — same essential claim. LLM 主观判断：标题与摘要表达同一核心结论，新 pending 未提供新证据。具体阈值不可量化。Action: **reject** the new pending.
 - **Subsumption** (pending narrower) — canonical fully covers the pending plus more. Action: **reject** the new pending (canonical already serves).
 - **Subsumption-with-novelty** (pending adds evidence) — canonical covers the claim but the new pending brings new evidence (commit sha, file paths). Action: **modify** the canonical to merge in the new evidence; **reject** the new pending citing the modified canonical.
-- **Contradiction** — opposing claims about the same scope. Action: leave pending; flag for user via roll-up. The user must decide via `fabric-review` later — `fabric-import` does NOT auto-resolve contradictions.
+- **Contradiction** — opposing claims about the same scope. Action: leave pending; flag for user via roll-up. The user must decide via `fabric-review` later — `archive source mode` does NOT auto-resolve contradictions.
 - **Genuinely new** — no canonical match. Action: leave pending in place (will surface in next `fabric-review` run for normal approval flow).
 
 ## Step 3.3 — Issue Dedup MCP Calls
@@ -68,7 +68,7 @@ Append to `.fabric/.import-state.json` after EACH successful MCP call:
 After all Phase 2 outputs are dedup-reviewed:
 
 - Update `.fabric/.import-state.json`: `phase = "complete"`, `last_checkpoint_at = <ISO8601 now>`, `final_summary = {proposed: N, kept: K, rejected_dup: R, merged: M, contradictions_flagged: C}`.
-- Render the final roll-up to the user (see Output Contract — see `ref/output-contract.md`).
+- Render the final roll-up to the user (see Output Contract — see `ref/source-output-contract.md`).
 
 > Setting `phase = "complete"` in `.fabric/.import-state.json` is enough to silence the SessionStart underseed self-check banner (`shouldRecommendImport()` returns false for any non-`absent` state). 无需额外清理 sentinel 文件 — 该机制已在 rc.8 下线。
 

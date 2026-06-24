@@ -1,4 +1,5 @@
 import type { MountedStore } from "@fenglimg/fabric-shared";
+import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
 import { join } from "node:path";
 
@@ -37,6 +38,67 @@ import {
 // v2.1.0-rc.1 P3 — `fabric store` command group (S57/E4/S7).
 // Presentation-only shell over store-ops (which holds the testable logic).
 // ---------------------------------------------------------------------------
+
+// W3-C: confirm-before-mutate gate for destructive `store migrate *` ops. The
+// safety lives in the CLI itself (not in skill prose) — mirrors doctor --fix
+// consent + KT-PIT-0016 honesty: a preflight DRY run computes the real change
+// count, we only prompt when something would actually mutate, and a non-TTY
+// shell must opt in via --yes / FABRIC_NONINTERACTIVE=1 (never silently mutate).
+async function resolveStoreMutationConsent(opts: {
+  label: string;
+  count: number;
+  yes: boolean;
+}): Promise<"proceed" | "abort"> {
+  if (opts.yes || process.env.FABRIC_NONINTERACTIVE === "1") {
+    return "proceed";
+  }
+  if (process.stdin.isTTY !== true) {
+    console.error(
+      `store ${opts.label}: stdin is not a TTY and neither --yes nor FABRIC_NONINTERACTIVE=1 is set. Refusing to mutate.`,
+    );
+    return "abort";
+  }
+  const answer = await confirm({
+    message: `About to rewrite ${opts.count} knowledge entr${opts.count === 1 ? "y" : "ies"} (store ${opts.label}). Proceed?`,
+    initialValue: false,
+  });
+  if (isCancel(answer) || answer !== true) {
+    console.error(`store ${opts.label}: aborted by user.`);
+    return "abort";
+  }
+  return "proceed";
+}
+
+// Run a destructive migrate op behind the consent gate: a DRY preflight counts
+// real changes; 0 → print the no-op report and return (no prompt for a no-op);
+// otherwise confirm, then apply for real. `--dry-run` short-circuits to preview.
+async function runGatedMigrate<R extends { changes: readonly unknown[] }>(opts: {
+  label: string;
+  dryRun: boolean;
+  yes: boolean;
+  run: (dryRun: boolean) => Promise<R> | R;
+  print: (report: R) => void;
+}): Promise<void> {
+  if (opts.dryRun) {
+    opts.print(await opts.run(true));
+    return;
+  }
+  const preview = await opts.run(true);
+  if (preview.changes.length === 0) {
+    opts.print(preview);
+    return;
+  }
+  const decision = await resolveStoreMutationConsent({
+    label: opts.label,
+    count: preview.changes.length,
+    yes: opts.yes,
+  });
+  if (decision === "abort") {
+    process.exitCode = 1;
+    return;
+  }
+  opts.print(await opts.run(false));
+}
 
 const listCommand = defineCommand({
   meta: { name: "list", description: "List mounted knowledge stores" },
@@ -286,8 +348,9 @@ const backfillScopeCommand = defineCommand({
   args: {
     store: { type: "string", description: "Backfill a mounted store's knowledge" },
     "dry-run": { type: "boolean", description: "Preview changes without writing" },
+    yes: { type: "boolean", description: "Skip the confirm-before-mutate prompt (CI / non-interactive)" },
   },
-  run({ args }) {
+  async run({ args }) {
     const dryRun = args["dry-run"] === true;
     let knowledgeDir: string;
     let visibilityStore: string;
@@ -312,27 +375,50 @@ const backfillScopeCommand = defineCommand({
       knowledgeDir = join(storeDir, STORE_LAYOUT.knowledgeDir);
       visibilityStore = selectedStore;
     }
-    const report = backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun });
-    if (report.changes.length === 0) {
-      console.log(`scope backfill: nothing to do (${report.unchanged} already consistent).`);
+    const printReport = (
+      report: ReturnType<typeof backfillKnowledgeDir>,
+      preview: boolean,
+    ): void => {
+      if (report.changes.length === 0) {
+        console.log(`scope backfill: nothing to do (${report.unchanged} already consistent).`);
+        return;
+      }
+      console.log(
+        `${preview ? "[dry-run] " : ""}scope backfill: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
+      );
+      for (const c of report.changes) {
+        console.log(`  ${c.id ?? "(no id)"}  [${c.changed.join(", ")}]`);
+      }
+      // Guardrail: backfill defaults every team-layer entry to `semantic_scope:
+      // team` — over-broad. Project-specific entries (incl. components reused
+      // across gameplay WITHIN one app — NOT cross-project) must be demoted.
+      const scopeAssigned = report.changes.filter((c) => c.changed.includes("semantic_scope")).length;
+      if (scopeAssigned > 0) {
+        console.error(
+          `${preview ? "[dry-run] " : ""}note: ${scopeAssigned} entr${scopeAssigned === 1 ? "y" : "ies"} defaulted to semantic_scope: team. Demote project-specific ones with \`fabric store migrate scope <store> --to project:<id> --id <id>\`.`,
+        );
+      }
+    };
+    // W3-C confirm-before-mutate gate (preflight DRY counts real changes).
+    if (dryRun) {
+      printReport(backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun: true }), true);
       return;
     }
-    console.log(
-      `${dryRun ? "[dry-run] " : ""}scope backfill: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
-    );
-    for (const c of report.changes) {
-      console.log(`  ${c.id ?? "(no id)"}  [${c.changed.join(", ")}]`);
+    const preview = backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun: true });
+    if (preview.changes.length === 0) {
+      printReport(preview, false);
+      return;
     }
-    // Guardrail (no behavior change): backfill defaults every team-layer entry to
-    // `semantic_scope: team` — an over-broad default. Project-specific entries
-    // (incl. components reused across gameplay WITHIN one app — that is NOT
-    // cross-project) must be demoted. See fabric-archive/ref/phase-3-7-semantic-scope.md.
-    const scopeAssigned = report.changes.filter((c) => c.changed.includes("semantic_scope")).length;
-    if (scopeAssigned > 0) {
-      console.error(
-        `${dryRun ? "[dry-run] " : ""}note: ${scopeAssigned} entr${scopeAssigned === 1 ? "y" : "ies"} defaulted to semantic_scope: team. Demote project-specific ones with \`fabric store migrate scope <store> --to project:<id> --id <id>\`.`,
-      );
+    const decision = await resolveStoreMutationConsent({
+      label: "migrate backfill",
+      count: preview.changes.length,
+      yes: args.yes === true,
+    });
+    if (decision === "abort") {
+      process.exitCode = 1;
+      return;
     }
+    printReport(backfillKnowledgeDir(knowledgeDir, { visibilityStore, dryRun: false }), false);
   },
 });
 
@@ -383,6 +469,7 @@ const rescopeCommand = defineCommand({
     id: { type: "string", description: "Only the entry with this stable_id" },
     from: { type: "string", description: "Only entries currently at this semantic_scope" },
     "dry-run": { type: "boolean", description: "Preview changes without writing" },
+    yes: { type: "boolean", description: "Skip the confirm-before-mutate prompt (CI / non-interactive)" },
   },
   async run({ args }) {
     const resolved = resolveStoreDirAndVisibility(args.store);
@@ -391,14 +478,19 @@ const rescopeCommand = defineCommand({
       process.exitCode = 1;
       return;
     }
-    printRescopeReport(
-      await rescopeStore(resolved.dir, args.to, {
-        id: args.id,
-        fromScope: args.from,
-        storeVisibility: resolved.visibility,
-        dryRun: args["dry-run"] === true,
-      }),
-    );
+    await runGatedMigrate({
+      label: "migrate scope",
+      dryRun: args["dry-run"] === true,
+      yes: args.yes === true,
+      run: (dryRun) =>
+        rescopeStore(resolved.dir, args.to, {
+          id: args.id,
+          fromScope: args.from,
+          storeVisibility: resolved.visibility,
+          dryRun,
+        }),
+      print: printRescopeReport,
+    });
   },
 });
 
@@ -411,6 +503,7 @@ const promoteCommand = defineCommand({
     store: { type: "positional", required: true, description: "Target store alias or uuid" },
     project: { type: "string", description: "Only this project's entries (default: all project:*)" },
     "dry-run": { type: "boolean", description: "Preview changes without writing" },
+    yes: { type: "boolean", description: "Skip the confirm-before-mutate prompt (CI / non-interactive)" },
   },
   async run({ args }) {
     const resolved = resolveStoreDirAndVisibility(args.store);
@@ -419,13 +512,18 @@ const promoteCommand = defineCommand({
       process.exitCode = 1;
       return;
     }
-    printRescopeReport(
-      await promoteProjectToTeam(resolved.dir, {
-        projectId: args.project,
-        storeVisibility: resolved.visibility,
-        dryRun: args["dry-run"] === true,
-      }),
-    );
+    await runGatedMigrate({
+      label: "migrate promote",
+      dryRun: args["dry-run"] === true,
+      yes: args.yes === true,
+      run: (dryRun) =>
+        promoteProjectToTeam(resolved.dir, {
+          projectId: args.project,
+          storeVisibility: resolved.visibility,
+          dryRun,
+        }),
+      print: printRescopeReport,
+    });
   },
 });
 

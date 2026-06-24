@@ -1,7 +1,7 @@
 ---
 name: fabric-archive
-description: 归档对话洞察到 active write store 的 pending knowledge (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
-allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_propose
+description: 归档对话洞察(default)+ 冷启动从 git log/docs 回灌(source mode)到 active write store 的 pending knowledge (NOT code review). Triggers 归档/记一下/always·never/wrong-turn-revert;source mode bootstrap fabric/import 历史/mine commit.
+allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_archive_scan, mcp__fabric__fab_propose, mcp__fabric__fab_review
 ---
 
 > **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
@@ -32,6 +32,23 @@ rc.37 NEW-9 collapsed the flow to **3 macro-phases**; the legacy fine-grained ph
 - **PERSIST** = Phase 4 (`fab_propose`, one call per candidate) → 4.5 (archive-attempt ledger).
 
 Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 3.7 → 4 → 4.5`. Each below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
+
+## Source Mode — cold-start bootstrap (W3-C: 吸收原 fabric-import)
+
+**Default mode** GATHERs candidates from the cross-session digest ledger (Phase 1, `fab_archive_scan`). **Source mode** swaps ONLY the GATHER source: it mines `git log` + `docs/*.md` for one-time per-project cold-start — the REVIEW (classify / layer / scope / semantic_scope) and PERSIST (`fab_propose`) pipeline below is **shared, byte-for-byte the same contract**. No new write path: mined entries land as `team`-layer pending via the same `fab_propose`, then dedupe vs canonical via `fab_review`.
+
+**Enter source mode when** the user explicitly asks to bootstrap / import history / mine commits, OR the SessionStart hook fired `shouldRecommendImport()`. Else stay in default mode. **SKIP** when `.fabric/` missing (→ `fabric install`), canonical count > `import_skip_canonical_threshold` (default 50), or checkpoint `phase=complete` + `last_checkpoint_at <24h`.
+
+Source-mode pipeline (replaces GATHER; REVIEW+PERSIST unchanged):
+
+1. **Init / checkpoint** — read/init `.fabric/.import-state.json` (single resumability source; atomic `Write .tmp` → `Bash mv`). Corruption → `Read ref/source-state-recovery.md`. Full state schema + 6-step resume → `Read ref/source-checkpoint.md`.
+2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_review action="search"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
+3. **Mine (git + docs)** — `git log --since="<window> months ago"` (conventional prefix → type signal) + `docs/*.md`; classify into the 5 types; `fab_propose` per candidate. **Source-mode scope lock (NON-NEGOTIABLE): every mined entry `relevance_scope="broad"` + `relevance_paths=[]`** — LLM-inferred narrow lies about applicability; narrowing is deferred to `fab_review.modify` post-import. Cap `import_max_pending_per_run` (default 10). Full mining procedure, conventional-prefix table, `--dry-run` template → `Read ref/source-mining.md`.
+4. **Dedupe vs canonical** — for each pending, `fab_review action="search"` (top 5 by type), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. `fab_review` does NOT compare meaning — semantic compare is the LLM's job. Full 5-way classification → `Read ref/source-dedup.md`.
+
+Source-mode config knobs (read from `.fabric/fabric-config.json`, defaults if absent): `import_window_first_run_months` (60), `import_window_rerun_months` (2), `import_max_pending_per_run` (10), `import_max_commits_scan` (500), `import_skip_canonical_threshold` (50).
+
+Source-mode output roll-up + worked examples → `Read ref/source-output-contract.md` / `ref/source-worked-examples.md`. Source mode requires an **explicit target store** (E7) — never auto-route mined entries; resolve writable candidates via `fabric scope-explain team` and `AskUserQuestion` for the alias when more than one exists.
 
 ### Phase 0 — Range Resolution
 

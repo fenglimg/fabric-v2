@@ -32,10 +32,10 @@ Examples:
       "Created <fixture-2>/.fabric/events.jsonl",
       "Created <fixture-2>/.fabric/forensic.json",
       "Next Installing bootstrap templates...",
-      "completed bootstrap: installed=119 skipped=2",
+      "completed bootstrap: installed=113 skipped=10",
       "Next Configuring MCP clients...",
       "Next Installing git hooks...",
-      "completed hooks: installed=0 skipped=131",
+      "completed hooks: installed=0 skipped=125",
       "Reason .fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
       "ran: bootstrap, hooks",
       "skipped: none",
@@ -49,7 +49,7 @@ Examples:
       "",
       "Next steps — get your first value:
   1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.
-  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.
+  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-archive skill's source mode to backfill from git history.
   3. Verify it works: ask your AI "what does Fabric know about this repo?", or run \`fabric doctor\` to check health.",
       "",
       "More: docs/surfaces.md explains when to use CLI vs Skill vs MCP.",
@@ -105,10 +105,10 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "已创建 <fixture-2>/.fabric/events.jsonl",
       "已创建 <fixture-2>/.fabric/forensic.json",
       "下一步 正在安装 bootstrap 模板...",
-      "已完成 bootstrap: installed=119 skipped=2",
+      "已完成 bootstrap: installed=113 skipped=10",
       "下一步 正在配置 MCP 客户端...",
       "下一步 正在安装 git hooks...",
-      "已完成 hooks: installed=0 skipped=131",
+      "已完成 hooks: installed=0 skipped=125",
       "原因 .fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
       "已执行: bootstrap, hooks",
       "已跳过: 无",
@@ -122,7 +122,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "",
       "下一步 —— 拿到第一份价值:
   1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。
-  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。
+  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-archive skill 的 source mode 从 git 历史回灌。
   3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 \`fabric doctor\` 查健康。",
       "",
       "More: docs/surfaces.md explains when to use CLI vs Skill vs MCP.",

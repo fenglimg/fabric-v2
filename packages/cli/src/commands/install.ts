@@ -75,11 +75,7 @@ import {
   installArchiveHintHook,
   installCitePolicyEvictHook,
   installFabricArchiveSkill,
-  installFabricAuditSkill,
-  installFabricConnectSkill,
-  installFabricImportSkill,
   installFabricReviewSkill,
-  installFabricRouterSkill,
   installFabricStoreSkill,
   installFabricSyncSkill,
   installHookLibs,
@@ -883,21 +879,12 @@ async function executeInitStagePlan(
         // fabric-init) before installing modern skills, so rc.30 → rc.35
         // upgraders see deprecation cleanup as part of the install diff.
         installResults.push(...await runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(plan.target)));
-        // B2 skill-router: the fabric/ router (human-facing dispatch entry) installs
-        // first; its Intent Map is regenerated from the 7 leaf descriptions.
-        installResults.push(...await runBestEffort("skill-router-install", () => installFabricRouterSkill(plan.target)));
+        // W3-C: 4-skill terminal set (0 router) — archive (real, +source mode) /
+        // review (real, +retire +relate) / sync / store (thin shims) + shared lib.
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
-        installResults.push(...await runBestEffort("skill-import-install", () => installFabricImportSkill(plan.target)));
-        // F7: the bootstrap stage previously installed only archive/review/import
-        // (3 of 7 skills). installHooks() covered the rest, but a bootstrap-only
-        // invocation (hooks stage skipped) shipped an incomplete skill set.
-        // Mirror installHooks' full set here: sync/store/audit/connect + the
-        // shared skill lib they depend on.
         installResults.push(...await runBestEffort("skill-sync-install", () => installFabricSyncSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-store-install", () => installFabricStoreSkill(plan.target)));
-        installResults.push(...await runBestEffort("skill-audit-install", () => installFabricAuditSkill(plan.target)));
-        installResults.push(...await runBestEffort("skill-connect-install", () => installFabricConnectSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-shared-lib", () => installSharedSkillLib(plan.target)));
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
         // rc.6 TASK-019 (E1): SessionStart broad-injection hook script.

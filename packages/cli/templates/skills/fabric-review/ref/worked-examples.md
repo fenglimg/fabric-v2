@@ -74,7 +74,7 @@ Skill flow:
 User: "review the pending knowledge".
 
 Inferred mode: `pending`. Skill lists 5 pending entries; entry 3's frontmatter 
-shows `source_sessions[0] = "fabric-import-2026-05-10"` → import-origin.
+shows `source_sessions[0] = "fabric-archive-source-2026-05-10"` → import-origin.
 
 Display block prepends warning line. User picks `modify` on entry 3.
 AskUserQuestion fires with extended options including `narrow scope`.

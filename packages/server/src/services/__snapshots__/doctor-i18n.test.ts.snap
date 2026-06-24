@@ -147,7 +147,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "status": "ok",
   },
   {
-    "actionHint_prefix_30_chars": "运行 fabric-import Skill（\`/fabri",
+    "actionHint_prefix_30_chars": "运行 fabric-archive skill 的 sour",
     "code": "knowledge_underseeded",
     "kind": "info",
     "message_prefix_30_chars": "知识库仅有 0 个 canonical entries（< ",
@@ -184,14 +184,6 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "kind": null,
     "message_prefix_30_chars": "所有 .claude/.codex SKILL.md fro",
     "name": "Skill markdown YAML",
-    "status": "ok",
-  },
-  {
-    "actionHint_prefix_30_chars": null,
-    "code": null,
-    "kind": null,
-    "message_prefix_30_chars": "fabric/ 路由器 S_CHAIN 里的每个 fabri",
-    "name": "Router chain refs",
     "status": "ok",
   },
   {
@@ -504,7 +496,7 @@ exports[`runDoctorReport i18n snapshots > renders stable English doctor checks f
     "status": "ok",
   },
   {
-    "actionHint_prefix_30_chars": "Run the fabric-import Skill (\`",
+    "actionHint_prefix_30_chars": "Run the fabric-archive skill's",
     "code": "knowledge_underseeded",
     "kind": "info",
     "message_prefix_30_chars": "Knowledge corpus has only 0 ca",
@@ -541,14 +533,6 @@ exports[`runDoctorReport i18n snapshots > renders stable English doctor checks f
     "kind": null,
     "message_prefix_30_chars": "All .claude/.codex SKILL.md fr",
     "name": "Skill markdown YAML",
-    "status": "ok",
-  },
-  {
-    "actionHint_prefix_30_chars": null,
-    "code": null,
-    "kind": null,
-    "message_prefix_30_chars": "Every fabric-* reference in th",
-    "name": "Router chain refs",
     "status": "ok",
   },
   {

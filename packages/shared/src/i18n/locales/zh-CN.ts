@@ -492,7 +492,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_tags_empty.ok":
     "canonical knowledge entries 中 empty tags 占比正常 (≤ 50%, 或 workspace 太小不评)。",
   "doctor.check.knowledge_tags_empty.message":
-    "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries 的 `tags:` 为空 — 主题聚类与跨条目检索退化。fabric-archive / fabric-import skill 应每个 entry 产 2-4 个 tag。",
+    "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries 的 `tags:` 为空 — 主题聚类与跨条目检索退化。fabric-archive skill 应每个 entry 产 2-4 个 tag。",
   "doctor.check.knowledge_tags_empty.remediation":
     "下一轮 archive/import 时,在 frontmatter `tags:` 写 2-4 个 kebab-case 主题词;批量补旧 entry tag 用 `/fabric-review` modify 流。",
   // rc.36 TASK-09 (P1-NEW1): drift_detected 未消化告警。
@@ -582,7 +582,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.underseeded.message.plural":
     "知识库仅有 {count} 个 canonical entries（< {threshold} threshold）。plan_context 检索面低于可用下限。",
   "doctor.check.underseeded.remediation":
-    "运行 fabric-import Skill（`/fabric-import`）从 git history 与现有文档回填 knowledge。",
+    "运行 fabric-archive skill 的 source mode（`/fabric-archive`）从 git history 与现有文档回填 knowledge。",
   "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
   "doctor.check.session_hints_stale.ok":
     ".fabric/.cache/ 下没有超过 {days} 天的 session-hints cache files。",
@@ -742,7 +742,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.broad_index_drift.message.plural":
     "{count} 个 store 的 broad 索引已达 {threshold}(backstop {backstop} 的 80%) — SessionStart banner 接近截断 broad 条目。首条: {detail}。",
   "doctor.check.broad_index_drift.remediation":
-    "跑 `fabric-audit` skill 在告警 store 内 prune/降级陈旧 broad 条目,或若语料确实大则在 .fabric/fabric-config.json 调高 `broad_index_backstop`。",
+    "跑 `fabric-review` skill 的 retire 子流程在告警 store 内 prune/降级陈旧 broad 条目,或若语料确实大则在 .fabric/fabric-config.json 调高 `broad_index_backstop`。",
   // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive)。
   "doctor.check.orphan_demote.name": "Knowledge orphan demote",
   "doctor.check.orphan_demote.ok":
@@ -799,15 +799,6 @@ export const zhCNMessages: Messages = {
     "{count} 个 SKILL.md frontmatter values 包含未加引号的 ': '，strict YAML parsers 会拒绝（Claude Code tolerates it；Codex CLI drops the skill at load）。首个：{detail}。",
   "doctor.check.skill_md_yaml_invalid.remediation":
     "使用双引号包裹该 value（`description: \"…\"`），或将内部的 `key: value` token 改写为 `key=value`。",
-  "doctor.check.router_chain_ref.name": "Router chain refs",
-  "doctor.check.router_chain_ref.ok":
-    "fabric/ 路由器 S_CHAIN 里的每个 fabric-* 引用都指向已安装的 leaf skill。",
-  "doctor.check.router_chain_ref.message.singular":
-    "{count} 个 fabric/ 路由器 S_CHAIN 引用指向不在 install set 的 skill：{list}。该 chain 步骤在运行时会断链。",
-  "doctor.check.router_chain_ref.message.plural":
-    "{count} 个 fabric/ 路由器 S_CHAIN 引用指向不在 install set 的 skill：{list}。这些 chain 步骤在运行时会断链。",
-  "doctor.check.router_chain_ref.remediation":
-    "编辑 templates/skills/fabric/SKILL.md 的 S_CHAIN 表，改为引用真实的 leaf skill（已安装的 fabric-* 之一），或删除该陈旧 chain 行。",
   "doctor.check.onboard_coverage.name": "Onboard coverage",
   "doctor.check.onboard_coverage.ok.complete":
     "Onboard coverage：{filledCount}/{total} ✓（opted-out：{optedOutCount}）。",
@@ -948,7 +939,7 @@ export const zhCNMessages: Messages = {
   "cli.install.next-steps":
     "下一步 —— 拿到第一份价值:\n" +
     "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。\n" +
-    "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
+    "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-archive skill 的 source mode 从 git 历史回灌。\n" +
     "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
   "cli.install.store-bind-nudge":
     "💡 检测到已挂载但未绑定本项目的知识 store: {aliases}。运行 `fabric store bind {first}` 把它的知识接入本项目, 再 `fabric store switch-write {first}` 设为团队知识的写入目标。",

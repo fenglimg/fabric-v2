@@ -187,6 +187,6 @@ describe("broad_index_drift renderer", () => {
     });
     expect(fired.status).toBe("warn");
     expect(fired.code).toBe("knowledge_broad_index_drift");
-    expect(fired.actionHint).toContain("fabric-audit");
+    expect(fired.actionHint).toContain("fabric-review");
   });
 });

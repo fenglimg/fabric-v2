@@ -1,4 +1,4 @@
-# Phase 0 + 0.1 — State Recovery (fabric-import ref-only)
+# Phase 0 + 0.1 — State Recovery (archive source mode ref-only)
 
 > **Loaded on demand.** Only relevant when a prior import crashed mid-phase, leaving `.tmp-*` residue or a torn `.fabric/.import-state.json`. SKILL.md's hot path inline says "scan for .tmp residue + load state" — this file is the full recovery procedure (atomic-write pattern, sweep rules, corruption detection, fallback to fresh import).
 

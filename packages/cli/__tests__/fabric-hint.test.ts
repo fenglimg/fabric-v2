@@ -1325,8 +1325,8 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
     expect(result).not.toBeNull();
     expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("import");
-    expect(result?.recommended_skill).toBe("fabric-import");
-    expect(result?.reason).toMatch(/fabric-import/);
+    expect(result?.recommended_skill).toBe("fabric-archive");
+    expect(result?.reason).toMatch(/fabric-archive/);
     expect(result?.reason).toMatch(/4/);
   });
 
@@ -1491,7 +1491,7 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
         expect(writes).toHaveLength(1);
         const env = JSON.parse(writes[0] as string);
         expect(env.decision).toBeUndefined(); // NOT a block contract
-        expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-import/); // AI sink
+        expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-archive/); // AI sink
         expect(env.hookSpecificOutput.additionalContext).toMatch(/3\/10/);
       });
     } finally {
@@ -2219,7 +2219,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     );
     expect(result).not.toBeNull();
     expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
-    expect(result?.reason).toMatch(/是否调 \/fabric-import/);
+    expect(result?.reason).toMatch(/是否调 \/fabric-archive/);
     expect(result?.reason).not.toMatch(/建议调用/);
     expect(result?.reason).toMatch(/3\/10/);
   });

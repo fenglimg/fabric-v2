@@ -52,14 +52,18 @@ export type UninstallOptions = Record<string, never>;
 // -----------------------------------------------------------------------
 
 /**
- * B2 skill-router. Inverse of `installFabricRouterSkill`. Removes each SKILL.md
- * at `SKILL_DESTINATIONS.fabricRouter`, then attempts to remove the empty
- * parent `fabric/` directory.
+ * W3-C legacy cleanup: the fabric/ router was retired (0-router terminal set).
+ * Kept so `fabric uninstall` still sweeps the residual dir from pre-W3-C
+ * installs — paths are inlined since the destination key no longer exists.
  */
 export async function uninstallFabricRouterSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-router", SKILL_DESTINATIONS.fabricRouter, projectRoot);
+  return removeSkill(
+    "skill-router",
+    [".claude/skills/fabric/SKILL.md", ".codex/skills/fabric/SKILL.md"],
+    projectRoot,
+  );
 }
 
 /**
@@ -85,14 +89,17 @@ export async function uninstallFabricReviewSkill(
 }
 
 /**
- * Inverse of `installFabricImportSkill`. Removes each SKILL.md at
- * `SKILL_DESTINATIONS.fabricImport`, then attempts to remove the parent
- * `fabric-import/` directory if it is empty.
+ * W3-C legacy cleanup: fabric-import folded into archive `source` mode. Kept so
+ * uninstall sweeps the residual dir from pre-W3-C installs.
  */
 export async function uninstallFabricImportSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-import", SKILL_DESTINATIONS.fabricImport, projectRoot);
+  return removeSkill(
+    "skill-import",
+    [".claude/skills/fabric-import/SKILL.md", ".codex/skills/fabric-import/SKILL.md"],
+    projectRoot,
+  );
 }
 
 /**
@@ -116,23 +123,31 @@ export async function uninstallFabricStoreSkill(
 }
 
 /**
- * v2.2 SK1-audit (W2-T5). Inverse of `installFabricAuditSkill`. Removes each
- * SKILL.md at `SKILL_DESTINATIONS.fabricAudit`, then removes the empty parent.
+ * W3-C legacy cleanup: fabric-audit folded into review `retire` sub-flow. Kept
+ * so uninstall sweeps the residual dir from pre-W3-C installs.
  */
 export async function uninstallFabricAuditSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-audit", SKILL_DESTINATIONS.fabricAudit, projectRoot);
+  return removeSkill(
+    "skill-audit",
+    [".claude/skills/fabric-audit/SKILL.md", ".codex/skills/fabric-audit/SKILL.md"],
+    projectRoot,
+  );
 }
 
 /**
- * v2.2 SK2-connect (W3-T2). Inverse of `installFabricConnectSkill`. Removes each
- * SKILL.md at `SKILL_DESTINATIONS.fabricConnect`, then removes the empty parent.
+ * W3-C legacy cleanup: fabric-connect folded into review `relate` sub-flow. Kept
+ * so uninstall sweeps the residual dir from pre-W3-C installs.
  */
 export async function uninstallFabricConnectSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-connect", SKILL_DESTINATIONS.fabricConnect, projectRoot);
+  return removeSkill(
+    "skill-connect",
+    [".claude/skills/fabric-connect/SKILL.md", ".codex/skills/fabric-connect/SKILL.md"],
+    projectRoot,
+  );
 }
 
 async function removeSkill(
