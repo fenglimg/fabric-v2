@@ -7,7 +7,7 @@ import { defineCommand, renderUsage, runCommand, runMain } from "citty";
 
 import { allCommands } from "./commands/index.js";
 import { renderDoctorFilteredHelp } from "./commands/doctor.js";
-import { renderTopLevelError } from "./lib/error-render.js";
+import { renderTopLevelError, renderUnexpectedError } from "./lib/error-render.js";
 import { customShowUsageGrouped } from "./lib/grouped-help.js";
 import { t } from "./i18n.js";
 
@@ -86,7 +86,11 @@ export async function run(): Promise<void> {
       await runMain(main, { rawArgs });
       return;
     }
-    console.error(err, "\n");
+    // W3-I ③: a genuinely-unexpected failure. Render a single themed error line
+    // for the user; keep the full stack behind --debug / FABRIC_DEBUG=1 instead
+    // of dumping the raw error object (the old `console.error(err, "\n")`).
+    const showStack = rawArgs.includes("--debug") || process.env.FABRIC_DEBUG === "1";
+    renderUnexpectedError(err, showStack);
     process.exit(1);
   }
 }
