@@ -10,6 +10,8 @@
 import type { Writable } from "node:stream";
 import { hasActionHint, type FabricErrorShape } from "@fenglimg/fabric-shared/errors";
 
+import { paint, symbol } from "../colors.js";
+
 export { hasActionHint };
 export type { FabricErrorShape };
 
@@ -51,4 +53,33 @@ export function renderTopLevelError(
     return "fabric-error";
   }
   return "other";
+}
+
+/**
+ * W3-I ③: render a genuinely-unexpected failure (NOT a FabricError, NOT a citty
+ * usage error) for humans. The top-level catch in index.ts previously dumped the
+ * raw error object + full stack via `console.error(err, "\n")`, which surfaces a
+ * wall of internal stack noise to a user who can do nothing with it.
+ *
+ * This renders a single themed error line (`symbol.error` + the human message);
+ * the full stack is kept for the maintainer path and only printed when
+ * `showStack` is set (`--debug` flag / `FABRIC_DEBUG=1`). When the stack is
+ * withheld, a muted one-liner tells the user how to get it. Stream is injectable
+ * so the renderer stays pure and unit-testable (no color codes asserted — color
+ * degrades to ASCII when stdout is not a TTY).
+ */
+export function renderUnexpectedError(
+  err: unknown,
+  showStack: boolean,
+  stream: Writable = process.stderr,
+): void {
+  const message = err instanceof Error ? err.message : String(err);
+  stream.write(`${symbol.error} ${paint.error(message)}\n`);
+  if (showStack && err instanceof Error && err.stack) {
+    stream.write(`${err.stack}\n`);
+  } else if (!showStack) {
+    stream.write(
+      `${paint.muted("  Run with --debug (or FABRIC_DEBUG=1) for the full stack trace.")}\n`,
+    );
+  }
 }

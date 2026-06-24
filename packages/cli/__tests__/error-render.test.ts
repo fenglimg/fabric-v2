@@ -27,7 +27,12 @@ import { describe, expect, it } from "vitest";
 // FabricError subclass coverage is still provided by the plain-object tests
 // below (`hasActionHint` / `renderFabricError` only care about the structural
 // shape `{ message: string, actionHint: string }`).
-import { hasActionHint, renderFabricError, renderTopLevelError } from "../src/lib/error-render.js";
+import {
+  hasActionHint,
+  renderFabricError,
+  renderTopLevelError,
+  renderUnexpectedError,
+} from "../src/lib/error-render.js";
 
 function captureStream(): Writable & { captured: string } {
   let buf = "";
@@ -124,5 +129,40 @@ describe("renderFabricError", () => {
     const stream = captureStream();
     renderFabricError({ message: "M", actionHint: "A" }, stream);
     expect(stream.captured).toBe("M\n  -> A\n");
+  });
+});
+
+describe("renderUnexpectedError (W3-I ③ top-level fallback)", () => {
+  it("renders a single themed error line with the message, no stack by default", () => {
+    const stream = captureStream();
+    renderUnexpectedError(new Error("disk exploded"), false, stream);
+    expect(stream.captured).toContain("[error]");
+    expect(stream.captured).toContain("disk exploded");
+    // no stack frames when showStack is false
+    expect(stream.captured).not.toContain("at ");
+  });
+
+  it("withholds the stack but tells the user how to get it (--debug hint)", () => {
+    const stream = captureStream();
+    renderUnexpectedError(new Error("boom"), false, stream);
+    expect(stream.captured).toContain("--debug");
+    expect(stream.captured).toContain("FABRIC_DEBUG=1");
+  });
+
+  it("prints the full stack when showStack is true and omits the hint", () => {
+    const stream = captureStream();
+    const err = new Error("kaboom");
+    renderUnexpectedError(err, true, stream);
+    expect(stream.captured).toContain("kaboom");
+    expect(stream.captured).toContain("at "); // a real stack frame
+    expect(stream.captured).not.toContain("--debug");
+  });
+
+  it("stringifies a non-Error throwable (string) without crashing", () => {
+    const stream = captureStream();
+    renderUnexpectedError("plain string failure", false, stream);
+    expect(stream.captured).toContain("plain string failure");
+    // a string has no stack — the --debug hint still renders
+    expect(stream.captured).toContain("--debug");
   });
 });
