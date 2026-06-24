@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runContext } from "../src/commands/context.js";
+import { runInspect } from "../src/commands/inspect.js";
 
-// Block 5 (Option X): `fabric context` shares ONE renderer with the SessionStart
-// hook (buildSessionStartSinks), so its output is BYTE-IDENTICAL to what the hook
-// injects. This is the producer-consumer round-trip oracle — pinned as a test so
-// any future renderer drift between the two surfaces fails here.
+// Block 5 (Option X) / W3-F: `fabric inspect` shares ONE renderer with the
+// SessionStart hook (buildSessionStartSinks), so its output is BYTE-IDENTICAL to
+// what the hook injects. This is the producer-consumer round-trip oracle — pinned
+// as a test so any future renderer drift between the two surfaces fails here.
 
 const require = createRequire(import.meta.url);
 const hook = require(
@@ -75,14 +75,14 @@ function cannedPayload() {
   };
 }
 
-describe("fabric context — shared renderer, byte-identical to hook injection", () => {
+describe("fabric inspect — shared renderer, byte-identical to hook injection", () => {
   it("--render ai output is byte-identical to the hook's AI sink (round-trip oracle)", async () => {
     const cwd = tmpProject();
     const payload = cannedPayload();
     const sinks = hook.buildSessionStartSinks(cwd, payload, {});
     expect(sinks.ai).toBeTruthy();
 
-    const out = await runContext({ render: "ai", target: cwd, payload });
+    const out = await runInspect({ render: "ai", target: cwd, payload });
     expect(out).toBe(sinks.ai);
   });
 
@@ -92,14 +92,14 @@ describe("fabric context — shared renderer, byte-identical to hook injection",
     const sinks = hook.buildSessionStartSinks(cwd, payload, {});
     expect(sinks.human).toBeTruthy();
 
-    const out = await runContext({ render: "human", target: cwd, payload });
+    const out = await runInspect({ render: "human", target: cwd, payload });
     expect(out).toBe(sinks.human);
   });
 
   it("default (no --render) shows both sinks", async () => {
     const cwd = tmpProject();
     const payload = cannedPayload();
-    const out = await runContext({ target: cwd, payload });
+    const out = await runInspect({ target: cwd, payload });
     expect(out).toContain("ALWAYS-ACTIVE RULES"); // AI sink
     expect(out).toContain("▸ [fabric]"); // human sink: scope-primary HUD header (H2)
   });
@@ -107,11 +107,11 @@ describe("fabric context — shared renderer, byte-identical to hook injection",
   it("--explain appends per-entry provenance (id + type)", async () => {
     const cwd = tmpProject();
     const payload = cannedPayload();
-    const out = await runContext({ render: "ai", explain: true, target: cwd, payload });
+    const out = await runInspect({ render: "ai", explain: true, target: cwd, payload });
     expect(out).toContain("KT-DEC-0001");
     expect(out).toContain("decision");
     // explain mode adds a detail section the plain render does not.
-    const plain = await runContext({ render: "ai", target: cwd, payload });
+    const plain = await runInspect({ render: "ai", target: cwd, payload });
     expect(out.length).toBeGreaterThan(plain.length);
   });
 
@@ -128,7 +128,7 @@ describe("fabric context — shared renderer, byte-identical to hook injection",
       always_bodies: [],
       census: { by_type: {}, by_layer: { team: 0, personal: 0, project: 0 }, dropped_other_project: 0, total: 0 },
     };
-    const out = await runContext({ render: "ai", target: cwd, payload: emptyPayload });
+    const out = await runInspect({ render: "ai", target: cwd, payload: emptyPayload });
     expect(out).toBe("");
   });
 });

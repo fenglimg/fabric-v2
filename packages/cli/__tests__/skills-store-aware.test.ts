@@ -21,7 +21,8 @@ describe("skills are store-aware (v2.1 P4)", () => {
     const md = skill("fabric-archive");
     expect(md).toContain("Store routing");
     expect(md).toMatch(/active write store/i);
-    expect(md).toContain("scope-explain");
+    // W3-F: scope-explain command retired → skills resolve via `info scope`.
+    expect(md).toContain("info scope");
   });
 
   it("fabric-review iterates per-store and cites with a store prefix", () => {
@@ -51,8 +52,8 @@ describe("skills are store-aware (v2.1 P4)", () => {
   it("none of the skills tell the agent to read ~/.fabric store trees directly", () => {
     for (const slug of ["fabric-archive", "fabric-review", "fabric-sync"]) {
       const md = skill(slug);
-      // They go through the CLI / MCP / scope-explain, not raw store reads.
-      expect(md).toMatch(/不直接读|不直读|scope-explain|MCP|数据-only|CLI JSON/);
+      // They go through the CLI / MCP / info scope, not raw store reads.
+      expect(md).toMatch(/不直接读|不直读|info scope|MCP|数据-only|CLI JSON/);
     }
   });
 });

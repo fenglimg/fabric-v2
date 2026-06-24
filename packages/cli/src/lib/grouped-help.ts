@@ -13,13 +13,21 @@ import { t } from "../i18n.js";
  * group, but it always surfaces.
  *
  * Commands marked `internal` are hook/skill-invoked RPCs (plan-context-hint,
- * scope-explain, onboard-coverage). They stay callable but are hidden from the
- * human-facing help.
+ * onboard-coverage). They stay callable but are hidden from the human-facing
+ * help.
+ *
+ * W3-F (NS-01 §2/§3.3): the visible 9 human-facing commands are organised on the
+ * three knowledge-value axes — Knowledge (the store/sync heart), Project (single-
+ * repo onboarding + inspection), Maintain (health + telemetry). `metrics` is no
+ * longer a top-level command (it lives only as `audit metrics`), and the
+ * `scope-explain` command is retired (merged into `info scope`).
  */
 
-const GROUP_ORDER = ["Setup", "Daily", "Diagnostic", "Advanced"] as const;
+const GROUP_ORDER = ["Knowledge", "Project", "Maintain"] as const;
 type Group = (typeof GROUP_ORDER)[number];
-const DEFAULT_GROUP: Group = "Advanced";
+// Unmapped non-internal commands fall here so a newly-registered command can
+// never silently float (the derivation test pins registry↔help in sync).
+const DEFAULT_GROUP: Group = "Project";
 
 interface CommandMeta {
   /** Display group. Omitted only when `internal` is true. */
@@ -34,18 +42,20 @@ interface CommandMeta {
 // map still surfaces (DEFAULT_GROUP) so it never floats; the derivation test
 // asserts the map and the registry stay in sync.
 const COMMAND_META: Record<string, CommandMeta> = {
-  install: { group: "Setup", descriptionKey: "cli.help.group.setup.install" },
-  config: { group: "Setup", descriptionKey: "cli.help.group.setup.config" },
-  uninstall: { group: "Setup" },
-  sync: { group: "Daily", descriptionKey: "cli.help.group.daily.sync" },
-  info: { group: "Daily", descriptionKey: "cli.help.group.daily.info" },
-  context: { group: "Daily", descriptionKey: "cli.help.group.daily.context" },
-  doctor: { group: "Diagnostic", descriptionKey: "cli.help.group.diagnostic.doctor" },
-  metrics: { group: "Diagnostic", descriptionKey: "cli.help.group.diagnostic.metrics" },
-  store: { group: "Advanced", descriptionKey: "cli.help.group.advanced.store" },
+  // Knowledge — the store/sync heart of Fabric.
+  store: { group: "Knowledge", descriptionKey: "cli.help.group.knowledge.store" },
+  sync: { group: "Knowledge", descriptionKey: "cli.help.group.knowledge.sync" },
+  // Project — single-repo onboarding, config, status, and injection inspection.
+  install: { group: "Project", descriptionKey: "cli.help.group.project.install" },
+  uninstall: { group: "Project" },
+  config: { group: "Project", descriptionKey: "cli.help.group.project.config" },
+  info: { group: "Project", descriptionKey: "cli.help.group.project.info" },
+  inspect: { group: "Project", descriptionKey: "cli.help.group.project.inspect" },
+  // Maintain — health + telemetry, kept cleanly separate (D1).
+  doctor: { group: "Maintain", descriptionKey: "cli.help.group.maintain.doctor" },
+  audit: { group: "Maintain", descriptionKey: "cli.help.group.maintain.audit" },
   // Internal RPCs — hidden from human help, invoked by hooks/skills.
   "plan-context-hint": { internal: true },
-  "scope-explain": { internal: true },
   "onboard-coverage": { internal: true },
 };
 

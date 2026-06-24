@@ -634,7 +634,7 @@ describe("knowledge-hint-broad.cjs — main", () => {
     // H5: the human `下一步: …fab_recall…` AI-plumbing line is retired; only the
     // byte-identical inspector pointer remains.
     expect(stderr).not.toMatch(/下一步/);
-    expect(stderr).toMatch(/fabric context/);
+    expect(stderr).toMatch(/fabric inspect/);
   });
 
   it("dual-sink: census drives the scope-primary HUD tree (broad spine + narrow remainder)", () => {
@@ -1745,7 +1745,7 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)
       expect(stderr).not.toMatch(/\/fabric-review/);
       // The HUD and the inspector pointer still render in steady state.
       expect(stderr).toMatch(/▸ \[fabric\]/);
-      expect(stderr).toMatch(/fabric context/);
+      expect(stderr).toMatch(/fabric inspect/);
     });
   });
 

@@ -8,14 +8,15 @@ import { defineCommand } from "citty";
 import { runPlanContextHint, type PlanContextHintOutput } from "./plan-context-hint.js";
 
 // ---------------------------------------------------------------------------
-// Block 5 (Option X) — `fabric context [--render human|ai] [--explain]`
+// Block 5 (Option X) / W3-F — `fabric inspect [--render human|ai] [--explain]`
+// (renamed from `fabric context`; NS-01 §1: "context of what?" was unintuitive).
 //
 // Shows exactly what the SessionStart hook injects this session. Byte-identity
 // is structural, not best-effort: this command runs the SAME producer
 // (`runPlanContextHint`) and the SAME renderer (`buildSessionStartSinks`, the
 // hook's own exported orchestration) that the SessionStart hook uses — so
-// `fabric context --render ai` === the hook's AI additionalContext, verbatim.
-// The producer-consumer round-trip oracle (context-command.test.ts) pins this.
+// `fabric inspect --render ai` === the hook's AI additionalContext, verbatim.
+// The producer-consumer round-trip oracle (inspect-command.test.ts) pins this.
 //
 // `--explain` appends a per-entry provenance section (id · type · maturity ·
 // scope · why-surfaced) on top of the byte-identical render — a diagnostic
@@ -63,7 +64,7 @@ function loadHookRenderer(): HookRenderer {
   return require(findTemplatePath("hooks/knowledge-hint-broad.cjs")) as HookRenderer;
 }
 
-export interface RunContextOptions {
+export interface RunInspectOptions {
   render?: RenderMode;
   explain?: boolean;
   target?: string;
@@ -112,7 +113,7 @@ function renderExplain(sinks: SessionStartSinks): string {
  * string (NOT printed). With `payload` injected it skips the producer so the
  * render path is testable without a built server fixture.
  */
-export async function runContext(opts: RunContextOptions): Promise<string> {
+export async function runInspect(opts: RunInspectOptions): Promise<string> {
   const cwd = opts.target ? resolve(opts.target) : process.cwd();
   const payload =
     opts.payload !== undefined
@@ -139,9 +140,9 @@ export async function runContext(opts: RunContextOptions): Promise<string> {
   return opts.explain === true ? base + "\n" + renderExplain(sinks) : base;
 }
 
-export const contextCommand = defineCommand({
+export const inspectCommand = defineCommand({
   meta: {
-    name: "context",
+    name: "inspect",
     description: "Show what Fabric injects at SessionStart (the knowledge spine). --explain for per-entry provenance.",
   },
   args: {
@@ -162,14 +163,14 @@ export const contextCommand = defineCommand({
   async run({ args }: { args: { render?: string; explain?: boolean; target?: string } }) {
     try {
       const render = args.render === "human" || args.render === "ai" ? args.render : undefined;
-      const out = await runContext({ render, explain: args.explain === true, target: args.target });
+      const out = await runInspect({ render, explain: args.explain === true, target: args.target });
       if (out.length > 0) process.stdout.write(`${out}\n`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`context failed: ${message}\n`);
+      process.stderr.write(`inspect failed: ${message}\n`);
       process.exitCode = 1;
     }
   },
 });
 
-export default contextCommand;
+export default inspectCommand;

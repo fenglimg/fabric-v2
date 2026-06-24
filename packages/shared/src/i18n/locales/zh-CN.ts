@@ -38,15 +38,15 @@ export const zhCNMessages: Messages = {
   "cli.shared.invalid-port": "无效端口：{value}",
   "cli.shared.error": "错误",
 
-  // EPIC-011: 分组帮助显示 i18n 键
-  "cli.help.group.setup.install": "在当前仓库初始化 Fabric",
-  "cli.help.group.setup.config": "配置 Fabric 设置",
-  "cli.help.group.daily.sync": "与远程 store 同步团队知识",
-  "cli.help.group.daily.info": "显示项目状态",
-  "cli.help.group.daily.context": "显示本会话 SessionStart 注入了什么",
-  "cli.help.group.diagnostic.doctor": "检查 Fabric 健康状态并修复问题",
-  "cli.help.group.diagnostic.metrics": "显示知识度量面板",
-  "cli.help.group.advanced.store": "管理知识 store (详见: fabric store --help)",
+  // EPIC-011 / W3-F: 分组帮助显示 i18n 键 (Knowledge/Project/Maintain)
+  "cli.help.group.knowledge.store": "管理知识 store (详见: fabric store --help)",
+  "cli.help.group.knowledge.sync": "与远程 store 同步团队知识",
+  "cli.help.group.project.install": "在当前仓库初始化 Fabric",
+  "cli.help.group.project.config": "配置 Fabric 设置",
+  "cli.help.group.project.info": "显示项目状态",
+  "cli.help.group.project.inspect": "显示本会话 SessionStart 注入了什么",
+  "cli.help.group.maintain.doctor": "检查 Fabric 健康状态并修复问题",
+  "cli.help.group.maintain.audit": "知识与遥测审计 (cite/conflicts/history/metrics)",
 
 
   "cli.config.description":

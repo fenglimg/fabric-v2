@@ -42,7 +42,7 @@ Missing or unreadable → defaults silently.
 
 ### Store routing (v2.1 multi-store)
 
-Review iterates **per-store** — the read-set may span multiple stores (`fabric scope-explain team` → resolved `readSet.stores`). Pending/backlog is reported per-store (NOT aggregated into one undifferentiated pile); each candidate's provenance store is surfaced in cites as `KB: <store-alias>:<id>`. Promotion (draft → verified/proven) is a normal edit + git commit **inside that store's own repo** — no cross-store move. A `dismissed`/`modify` that flips layer between team and personal still goes through `AskUserQuestion`. Never read `~/.fabric` store trees directly; go through the MCP recall path / `scope-explain`.
+Review iterates **per-store** — the read-set may span multiple stores (`fabric info scope team` → resolved `readSet.stores`). Pending/backlog is reported per-store (NOT aggregated into one undifferentiated pile); each candidate's provenance store is surfaced in cites as `KB: <store-alias>:<id>`. Promotion (draft → verified/proven) is a normal edit + git commit **inside that store's own repo** — no cross-store move. A `dismissed`/`modify` that flips layer between team and personal still goes through `AskUserQuestion`. Never read `~/.fabric` store trees directly; go through the MCP recall path / `fabric info scope`.
 
 `Read ref/cite-contract.md` (v2.2 SK5) for the authoritative cite-contract reference — operator syntax, skip/dismissed reason dictionaries, type routing, audit semantics, backward-compat, and the adjudication ladder (AI-self → multi-LLM cold-eval → non-blocking queue) — sunk out of the bootstrap so cite/governance depth lives here, not in `.fabric/AGENTS.md`.
 

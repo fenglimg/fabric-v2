@@ -8,13 +8,42 @@ import { whoami, projectStatus } from "../store/info-ops.js";
 import { scopeExplain } from "../store/scope-explain.js";
 
 // ---------------------------------------------------------------------------
-// EPIC-010: Unified `fabric info` command combining whoami/status/scope-explain.
+// EPIC-010 / W3-F: Unified `fabric info` command combining whoami/status/scope.
 //
 // Usage:
-//   fabric info              → project status (原 status)
-//   fabric info --global     → global identity (原 whoami)
-//   fabric info scope <path> → scope resolution (原 scope-explain)
+//   fabric info               → project status (原 status)
+//   fabric info --global      → global identity (原 whoami)
+//   fabric info scope <coord> → scope resolution (real subcommand; 原 scope-explain)
+//
+// W3-F (NS-01 §1/I1): `scope` was a positional-detected pseudo-subcommand; it is
+// now a real citty subCommand, so `fabric info scope --help` works and `coord`
+// is a citty-validated required positional. Skills resolve the read-set / write
+// target via `fabric info scope <coord>` (JSON) — the retired top-level
+// `scope-explain` command shared this exact resolver.
 // ---------------------------------------------------------------------------
+
+const scopeCommand = defineCommand({
+  meta: {
+    name: "scope",
+    description: "Resolve a scope coordinate's read-set + write target (JSON)",
+  },
+  args: {
+    coord: {
+      type: "positional",
+      required: true,
+      description: "Scope coordinate (e.g. team, project:x, personal)",
+    },
+    // Accepted for symmetry with other commands; scope output is always JSON.
+    json: {
+      type: "boolean",
+      description: "Emit machine-readable JSON (scope always emits JSON)",
+    },
+  },
+  run({ args }: { args: { coord: string } }) {
+    warnUnknownFlags(["json"]);
+    runScopeExplain(args.coord);
+  },
+});
 
 export default defineCommand({
   meta: {
@@ -22,18 +51,6 @@ export default defineCommand({
     description: "Unified information command for Fabric identity, project status, and scope resolution",
   },
   args: {
-    // Subcommand detection
-    subcommand: {
-      type: "positional",
-      required: false,
-      description: "Subcommand: 'scope' for scope explanation",
-    },
-    scope: {
-      type: "positional",
-      required: false,
-      description: "Scope coordinate (used with 'scope' subcommand)",
-    },
-    // Flags
     global: {
       type: "boolean",
       description: "Show global identity (whoami) instead of project status",
@@ -44,56 +61,18 @@ export default defineCommand({
       description: "Emit machine-readable JSON instead of text",
     },
   },
-  run({ args }: { args: { subcommand?: string; scope?: string; global?: boolean; json?: boolean } }) {
+  subCommands: {
+    scope: scopeCommand,
+  },
+  run({ args }: { args: { global?: boolean; json?: boolean } }) {
     warnUnknownFlags(["global", "g", "json"]);
-
-    // Determine which mode to run
-    const mode = resolveMode(args);
-
-    switch (mode) {
-      case "whoami":
-        runWhoami(args.json);
-        break;
-      case "scope-explain":
-        if (typeof args.scope !== "string" || args.scope.length === 0) {
-          console.error("Usage: fabric info scope <scope>");
-          process.exitCode = 1;
-          break;
-        }
-        runScopeExplain(args.scope!);
-        break;
-      case "status":
-      default:
-        runStatus(args.json);
-        break;
+    if (args.global === true) {
+      runWhoami(args.json);
+      return;
     }
+    runStatus(args.json);
   },
 });
-
-// ---------------------------------------------------------------------------
-// Mode resolution logic
-// ---------------------------------------------------------------------------
-
-type InfoMode = "whoami" | "status" | "scope-explain";
-
-function resolveMode(args: {
-  subcommand?: string;
-  scope?: string;
-  global?: boolean;
-}): InfoMode {
-  // Explicit subcommand takes priority
-  if (args.subcommand === "scope") {
-    return "scope-explain";
-  }
-
-  // --global flag triggers whoami
-  if (args.global === true) {
-    return "whoami";
-  }
-
-  // Default to project status
-  return "status";
-}
 
 // ---------------------------------------------------------------------------
 // Command implementations (ported from original commands)
