@@ -31,8 +31,10 @@ describe("skills are store-aware (v2.1 P4)", () => {
     expect(md).toContain("KB: <store-alias>:<id>");
   });
 
-  it("fabric-import requires an explicit target store (E7)", () => {
-    const md = skill("fabric-import");
+  it("fabric-archive source mode requires an explicit target store (E7)", () => {
+    // W3-C: fabric-import folded into archive `source` mode; the explicit-store
+    // requirement moved with it.
+    const md = skill("fabric-archive");
     expect(md).toContain("Store routing");
     expect(md).toMatch(/explicit target store/i);
   });
@@ -50,7 +52,7 @@ describe("skills are store-aware (v2.1 P4)", () => {
     for (const slug of ["fabric-archive", "fabric-review", "fabric-sync"]) {
       const md = skill(slug);
       // They go through the CLI / MCP / scope-explain, not raw store reads.
-      expect(md).toMatch(/不直接读|不直读|scope-explain|MCP/);
+      expect(md).toMatch(/不直接读|不直读|scope-explain|MCP|数据-only|CLI JSON/);
     }
   });
 });

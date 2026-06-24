@@ -5,12 +5,8 @@ import { t } from "../i18n.js";
 import {
   installArchiveHintHook,
   installFabricArchiveSkill,
-  installFabricRouterSkill,
-  installFabricImportSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
-  installFabricAuditSkill,
-  installFabricConnectSkill,
   installFabricSyncSkill,
   installSharedSkillLib,
   installHookLibs,
@@ -92,16 +88,12 @@ export async function installHooks(
   assertExistingDirectory(normalizedTarget);
 
   const results: InstallStepResult[] = [];
-  // B2 skill-router: the fabric/ router (human-facing dispatch entry) installs
-  // first; its Intent Map is regenerated from the 7 leaf descriptions.
-  results.push(...await runStep(() => installFabricRouterSkill(normalizedTarget)));
+  // W3-C: 4-skill terminal set (0 router) — archive (real, +source) / review
+  // (real, +retire +relate) / sync / store (thin shims).
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
-  results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricSyncSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricStoreSkill(normalizedTarget)));
-  results.push(...await runStep(() => installFabricAuditSkill(normalizedTarget)));
-  results.push(...await runStep(() => installFabricConnectSkill(normalizedTarget)));
   // rc.37 NEW-13: cross-skill shared policy lib (single source the 3 skills'
   // ref files reference for protected tokens / routing keys / layer heuristic).
   results.push(...await runStep(() => installSharedSkillLib(normalizedTarget)));

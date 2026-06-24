@@ -190,9 +190,8 @@ describe("runDoctorReport", () => {
       // report status.
       "Serve lock",
       "Skill markdown YAML",
-      // B2 skill-router (A4): fabric/ router S_CHAIN reference backstop —
-      // warning kind. Pushed right after Skill markdown YAML in doctor.ts.
-      "Router chain refs",
+      // W3-C: "Router chain refs" check removed — the fabric/ router was retired
+      // (0-router skill set), so the S_CHAIN backstop has nothing to lint.
       // rc.23 TASK-014 (F8c): Onboard coverage advisory — info kind. Sits
       // adjacent to Skill markdown YAML (both are Skill-adjacent advisories).
       "Onboard coverage",
@@ -272,7 +271,8 @@ describe("runDoctorReport", () => {
     // v2.2 C1: +1 promotion_candidate (knowledge growth lint, info kind) → 42.
     // v2.2 C1: +1 broad_review_recheck (broad's review-clock lint, info kind) → 43.
     // ux-w2-2: +1 retired_reference (stale-pointer lint) → 44.
-    expect(report.checks).toHaveLength(44);
+    // W3-C: -1 router_chain_ref (fabric/ router retired, 0-router skill set) → 43.
+    expect(report.checks).toHaveLength(43);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

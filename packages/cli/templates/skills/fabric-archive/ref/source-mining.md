@@ -11,9 +11,9 @@
 
 This is non-negotiable and applies to BOTH Step 2.1 (git mining) AND Step 2.2 (docs mining). No exceptions, no per-candidate override, no Agent judgment.
 
-**Rationale — why fabric-import cannot bind paths from git history:**
+**Rationale — why archive source mode cannot bind paths from git history:**
 
-1. `fabric-import` is LLM-driven (mines git log + docs), not session-driven (no live `edit_paths` signal).
+1. `archive source mode` is LLM-driven (mines git log + docs), not session-driven (no live `edit_paths` signal).
 2. `git diff --stat` lists files touched by a commit, but those files are the commit's **effect surface**, not the **applicability surface** of the underlying observation. A pitfall surfaced by a fix in `packages/server/src/retry.ts` may apply to every retry call-site in the repo, not just that one file.
 3. LLM-inferred `relevance_paths` from historical commit metadata produces false-narrow bindings — `relevance_paths` becomes a lie about applicability. Post-rc.37 A1 the server no longer filters by `relevance_scope`, so false-narrow does NOT hide knowledge from AI recall (every selectable entry is surfaced regardless of scope). The damage is now downstream: doctor lint accounting, future-AI judgment, and any consumer that reads `relevance_paths` literally treats the wrong globs as ground truth. Broad+[] keeps the metadata honest until the user has the real applicability surface in hand to declare narrow.
 4. Doc-mined observations are usually architectural / cross-cutting (a `docs/architecture.md` "Why a monolith?" decision applies to the whole codebase, not just to `docs/`).
@@ -24,16 +24,16 @@ This is non-negotiable and applies to BOTH Step 2.1 (git mining) AND Step 2.2 (d
 - DO NOT derive `relevance_paths` from the path of a mined Markdown file (e.g. do NOT bind a `docs/architecture.md` observation to `["docs/**"]`).
 - DO NOT extract path-shaped tokens from commit subjects / bodies / doc text and lift them into `relevance_paths`.
 - DO NOT classify a candidate as `relevance_scope = "narrow"` under ANY heuristic.
-- DO NOT copy the public-prefix-generalization logic from fabric-archive Phase 3.5 — that logic is valid only when bound to a real-time `edit_paths` signal from an active session, which fabric-import lacks.
+- DO NOT copy the public-prefix-generalization logic from fabric-archive Phase 3.5 — that logic is valid only when bound to a real-time `edit_paths` signal from an active session, which archive source mode lacks.
 
-**Cross-reference — fabric-import vs fabric-archive scope handling:**
+**Cross-reference — archive source mode vs fabric-archive scope handling:**
 
 | Skill            | Scope decision     | Why                                                                   |
 |------------------|--------------------|-----------------------------------------------------------------------|
 | `fabric-archive` | narrow OR broad, case-by-case per Phase 3.5 rules | Has live `edit_paths` from the active session — the actual applicability surface. |
-| `fabric-import`  | ALWAYS broad + `[]` (this skill) | LLM-only, no live session signal; git-history paths are effect-surface, not applicability-surface. |
+| `archive source mode`  | ALWAYS broad + `[]` (this skill) | LLM-only, no live session signal; git-history paths are effect-surface, not applicability-surface. |
 
-`fabric-archive`'s Phase 3.5 scope decision (narrow-vs-broad rules + public-prefix generalization + glob blacklist) is INTENTIONALLY MORE PERMISSIVE than fabric-import because archive has the data to bind safely. fabric-import is the STRICTER case.
+`fabric-archive`'s Phase 3.5 scope decision (narrow-vs-broad rules + public-prefix generalization + glob blacklist) is INTENTIONALLY MORE PERMISSIVE than archive source mode because archive has the data to bind safely. archive source mode is the STRICTER case.
 
 **Post-import narrowing path — deferred to user, via `fab_review.modify`:**
 
@@ -81,12 +81,12 @@ For each commit:
 
 ```ts
 mcp__fabric__fab_propose({
-  source_sessions: ["fabric-import-<ISO8601-date>"],   // T5: array form; stable per import run
+  source_sessions: ["fabric-archive-source-<ISO8601-date>"],   // T5: array form; stable per import run
   recent_paths: ["<files touched by this commit, capped at 20>"],   // provenance only, NOT a path-binding signal
   user_messages_summary: "<zh-CN 1-2 sentence summary of the commit's core observation; cite the commit sha as 'src=<sha7>'>",
   type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
   slug: "<kebab-case 2-5 words derived from commit subject + body>",
-  relevance_scope: "broad",                                          // MANDATORY — never "narrow" from fabric-import
+  relevance_scope: "broad",                                          // MANDATORY — never "narrow" from archive source mode
   relevance_paths: [],                                               // MANDATORY — never derived from git history
   proposed_reason: "<inferred per Step 2.1.5 — varies>",
   session_context: "Imported from git log analysis. Origin: commit <sha7> (<subject 30 chars>). No live session — see commit body for full context.",
@@ -200,14 +200,14 @@ When the user invocation carries the verbatim token `--dry-run`, Phase 2 runs WI
 | 3 | git 50367b5           | pitfalls  | thundering-herd-no-backoff    | broad+[] | Retries without exponential backoff caused a thundering herd outage. |
 ```
 
-Every dry-run row MUST show `broad+[]` in the Scope column (constant for fabric-import). A row showing anything else is a skill bug — refuse to proceed and surface the violation. Dry-run output is informational only. The state file is NOT written to in dry-run mode (so a real run later starts clean). Phase 3 is also skipped in dry-run.
+Every dry-run row MUST show `broad+[]` in the Scope column (constant for archive source mode). A row showing anything else is a skill bug — refuse to proceed and surface the violation. Dry-run output is informational only. The state file is NOT written to in dry-run mode (so a real run later starts clean). Phase 3 is also skipped in dry-run.
 
 ## Idempotency Note — T5 array form
 
-The server derives `idempotency_key = sha256({source_session, type, slug})` for every `fab_propose` call. Re-invoking with the same `(source_session, type, slug)` triple is SAFE: the server appends new evidence to the existing pending file rather than overwriting or producing duplicates — this is why `fabric-import` resume after Ctrl-C / crash never produces duplicate pending entries for already-processed commits.
+The server derives `idempotency_key = sha256({source_session, type, slug})` for every `fab_propose` call. Re-invoking with the same `(source_session, type, slug)` triple is SAFE: the server appends new evidence to the existing pending file rather than overwriting or producing duplicates — this is why `archive source mode` resume after Ctrl-C / crash never produces duplicate pending entries for already-processed commits.
 
-**T5 array-form note (rc.7+)**: when `source_sessions` is passed as an array (rc.7 T5 contract), only `source_sessions[0]` participates in the server-side idempotency hash. Server formula at `packages/server/src/services/extract-knowledge.ts:78` is `sha256(JSON.stringify({source_session: sourceSessions[0], type, slug}))`. Implications for fabric-import:
+**T5 array-form note (rc.7+)**: when `source_sessions` is passed as an array (rc.7 T5 contract), only `source_sessions[0]` participates in the server-side idempotency hash. Server formula at `packages/server/src/services/extract-knowledge.ts:78` is `sha256(JSON.stringify({source_session: sourceSessions[0], type, slug}))`. Implications for archive source mode:
 
-- Every Phase 2 call uses `source_sessions: ["fabric-import-<ISO8601-date>"]` (single-element array, stable per import run). First-element-only rule means re-runs on the same date produce the same idempotency key per `(type, slug)` → resume-safe by construction.
-- If a future enhancement adds a trailing element (e.g. `["fabric-import-<date>", "<commit-sha>"]`), only the first element participates in the hash — the commit-sha tail would NOT change the idempotency key for the same `(type, slug)`. Plan accordingly.
+- Every Phase 2 call uses `source_sessions: ["fabric-archive-source-<ISO8601-date>"]` (single-element array, stable per import run). First-element-only rule means re-runs on the same date produce the same idempotency key per `(type, slug)` → resume-safe by construction.
+- If a future enhancement adds a trailing element (e.g. `["fabric-archive-source-<date>", "<commit-sha>"]`), only the first element participates in the hash — the commit-sha tail would NOT change the idempotency key for the same `(type, slug)`. Plan accordingly.
 - The formula is intentionally stable across the rc.5 → rc.7 migration; adding or removing tail entries does NOT change the idempotency key, preserving rc.5 single-session compat.

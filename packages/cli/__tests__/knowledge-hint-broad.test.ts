@@ -1016,7 +1016,7 @@ describe("knowledge-hint-broad.cjs — shouldRecommendImport (rc.8)", () => {
       // Pre-#3 CLIs wrote a snapshot with a cached knowledge_stats projection but
       // NO knowledge_store_dirs. That cached count freezes at install time and
       // goes stale out-of-band (observed canonical frozen at 1 while the live
-      // store held 61) — trusting it false-fired "/fabric-import" every session.
+      // store held 61) — trusting it false-fired "/fabric-archive" every session.
       // liveKnowledgeStats now returns null for such snapshots → shouldRecommendImport
       // must SKIP rather than treat the stale 1 as "sparse".
       mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
@@ -1113,7 +1113,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       });
       const stderr = writes.join("");
       expect(stderr).toMatch(/📋 Fabric:/);
-      expect(stderr).toMatch(/\/fabric-import/);
+      expect(stderr).toMatch(/\/fabric-archive/);
       // The scope-primary HUD is present alongside the import nudge.
       expect(stderr).toMatch(/▸ \[fabric\]/);
     });
@@ -1133,7 +1133,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       });
       const stderr = writes.join("");
       expect(stderr).not.toMatch(/📋 Fabric:/);
-      expect(stderr).not.toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-archive/);
     });
   });
 
@@ -1150,7 +1150,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       });
       const stderr = writes.join("");
       expect(stderr).not.toMatch(/📋 Fabric:/);
-      expect(stderr).not.toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-archive/);
     });
   });
 
@@ -1167,7 +1167,7 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
       });
       const stderr = writes.join("");
       expect(stderr).not.toMatch(/📋 Fabric:/);
-      expect(stderr).not.toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-archive/);
     });
   });
 
@@ -1196,21 +1196,10 @@ describe("knowledge-hint-broad.cjs — sentinel surface fully removed (rc.8)", (
   });
 });
 
-describe("knowledge-hint-broad.cjs — fabric-import SKILL.md sentinel cleanup (rc.8)", () => {
-  it("Phase 0 'Sentinel Contract' section is removed; Phase 3.4 sentinel-clear step is removed", () => {
-    const skillPath = fileURLToPath(
-      new URL(
-        "../templates/skills/fabric-import/SKILL.md",
-        import.meta.url,
-      ),
-    );
-    const md = readFileSync(skillPath, "utf8");
-    expect(md).not.toMatch(/### Phase 0 — Sentinel Contract/);
-    expect(md).not.toMatch(/rc\.7 T1 sentinel clear/);
-    // The retirement note SHOULD be present
-    expect(md).toMatch(/sentinel 机制已下线/);
-  });
-});
+// W3-C: the "fabric-import SKILL.md sentinel cleanup" regression guard is
+// retired — fabric-import was folded into fabric-archive `source` mode and its
+// SKILL.md no longer exists. The sentinel mechanism's full removal is still
+// guarded by the "sentinel surface fully removed (rc.8)" describe above.
 
 // ---------------------------------------------------------------------------
 // rc.18 TASK-005 — v1-receipt stance (protocol v2 cut).
@@ -1727,7 +1716,7 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)
       });
       expect(stderr).toMatch(/\/fabric-review/);
       expect(stderr).toMatch(/12 pending/);
-      expect(stderr).not.toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-archive/);
     });
   });
 
@@ -1739,7 +1728,7 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)
         payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
         census: census({ decisions: 3 }, 0, { team: 3 }), // total 3 < 10 → import fires, takes priority
       });
-      expect(stderr).toMatch(/\/fabric-import/);
+      expect(stderr).toMatch(/\/fabric-archive/);
       expect(stderr).not.toMatch(/\/fabric-review/);
     });
   });
@@ -1752,7 +1741,7 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)
         payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
         census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 10, pending 3 <= 10
       });
-      expect(stderr).not.toMatch(/\/fabric-import/);
+      expect(stderr).not.toMatch(/\/fabric-archive/);
       expect(stderr).not.toMatch(/\/fabric-review/);
       // The HUD and the inspector pointer still render in steady state.
       expect(stderr).toMatch(/▸ \[fabric\]/);

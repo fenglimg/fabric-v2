@@ -340,7 +340,7 @@ function isImportTouched(projectRoot) {
 
 /**
  * rc.8 underseed self-check: determine whether the SessionStart hook should
- * surface the one-line `/fabric-import` recommendation banner.
+ * surface the one-line `/fabric-archive` recommendation banner.
  *
  * Three-condition truth table (ALL must hold to return true):
  *   1. the workspace is fabric-bound — readWorkspaceBindingId(cwd) !== null
@@ -451,7 +451,7 @@ const MATURITY_DRAFT = "draft";
 // fabric-hint.cjs Signal C `📋 Fabric:`). rc.16 TASK-003 routed the literal
 // through the banner-i18n lib (key: 'broadImportBanner') — see main() below
 // for the renderBanner call site. Substring contracts preserved across all
-// variants: leading two-space indent, `📋 Fabric:` prefix, `/fabric-import`
+// variants: leading two-space indent, `📋 Fabric:` prefix, `/fabric-archive`
 // verbatim token (asserted by knowledge-hint-broad.test.ts).
 
 // -----------------------------------------------------------------------------

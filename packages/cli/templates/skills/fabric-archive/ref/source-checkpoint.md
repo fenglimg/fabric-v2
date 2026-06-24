@@ -2,7 +2,7 @@
 
 > **Loaded on demand.** SKILL.md hot path retains a 2-line mention of the 2-step atomic write pattern + a pointer to this file. This file holds the full Atomic State Write rationale, events.jsonl 4KB constraint, complete schema, and resume-logic state machine.
 
-The state file lives at `.fabric/.import-state.json` and is the single source of resumability for fabric-import. It is written via the explicit 2-step atomic pattern documented below so a crash between phases / between sub-steps never corrupts it.
+The state file lives at `.fabric/.import-state.json` and is the single source of resumability for archive source mode. It is written via the explicit 2-step atomic pattern documented below so a crash between phases / between sub-steps never corrupts it.
 
 ## Atomic State Write (2-step pattern)
 
@@ -15,7 +15,7 @@ This 2-step pattern is mandatory for every state file update. `mv` is atomic on 
 
 Crash safety expectations:
 
-- Crash between Step A and Step B → leaves `.fabric/.import-state.json.tmp`. Phase 0 residue scan (see `ref/state-recovery.md`) triages it on next invocation.
+- Crash between Step A and Step B → leaves `.fabric/.import-state.json.tmp`. Phase 0 residue scan (see `ref/source-state-recovery.md`) triages it on next invocation.
 - Crash during Step B (between the `rename` syscall start and return) → POSIX `rename` is atomic; either the prior `.import-state.json` is intact, or the new one is in place. No torn state.
 - Crash before Step A → no state mutation occurred; prior state file is unchanged.
 
@@ -82,4 +82,4 @@ On every skill invocation, BEFORE Phase 1 starts:
 5. If `phase === "P2-done"` → skip Phase 1 + Phase 2; resume from Phase 3 Step 3.1; iterate Phase 2 outputs skipping any pending_path already in `p3_dedup_completed[]`.
 6. After every successful sub-step (one commit processed, one doc processed, one dedup pair resolved), write the updated state file via the 2-step `.tmp` + `mv` pattern. Failures append to `errors[]` and proceed (or halt with prompt if cumulative errors `>5`).
 
-The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, network blip on MCP) MUST NOT propose duplicates of already-proposed entries and MUST NOT redo already-completed dedup decisions.
+The contract: re-invoking archive source mode after ANY interruption (Ctrl-C, crash, network blip on MCP) MUST NOT propose duplicates of already-proposed entries and MUST NOT redo already-completed dedup decisions.

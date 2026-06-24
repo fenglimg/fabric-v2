@@ -1,7 +1,8 @@
 # Shared skill policy — cross-skill canonical core (rc.37 NEW-13)
 
-> **Single source of truth** for the policy invariants that fabric-archive,
-> fabric-review, and fabric-import all depend on. Each skill's `ref/` keeps
+> **Single source of truth** for the policy invariants that fabric-archive
+> (incl. its source mode) and fabric-review (incl. its retire / relate
+> sub-flows) depend on. Each skill's `ref/` keeps
 > only its skill-specific examples and points here (`../../lib/shared-policy.md`)
 > for the common rules. Edit invariants HERE — never fork them per skill.
 

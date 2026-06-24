@@ -74,7 +74,7 @@ function readTemplate(rel: string): string {
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fresh init", () => {
-  it("writes all 16 artifacts (archive+review+import skills + Stop + SessionStart + PreToolUse hooks + per-client configs)", async () => {
+  it("writes archive+review skills + Stop + SessionStart + PreToolUse hooks + per-client configs (W3-C: 0 router, 4-skill set)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-fresh");
     tempRoots.push(target);
 
@@ -82,7 +82,6 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
 
     const archiveSkillTemplate = readTemplate("skills/fabric-archive/SKILL.md");
     const reviewSkillTemplate = readTemplate("skills/fabric-review/SKILL.md");
-    const importSkillTemplate = readTemplate("skills/fabric-import/SKILL.md");
     const hookTemplate = readTemplate("hooks/fabric-hint.cjs");
     // rc.6 TASK-019 (E1): SessionStart broad-injection hook script template.
     const broadHookTemplate = readTemplate("hooks/knowledge-hint-broad.cjs");
@@ -101,25 +100,9 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(claudeReviewSkill).toBe(reviewSkillTemplate);
     expect(codexReviewSkill).toBe(reviewSkillTemplate);
 
-    // Import skill copies (rc.4) — byte-identical
-    const claudeImportSkill = readFileSync(join(target, ".claude/skills/fabric-import/SKILL.md"), "utf8");
-    const codexImportSkill = readFileSync(join(target, ".codex/skills/fabric-import/SKILL.md"), "utf8");
-    expect(claudeImportSkill).toBe(importSkillTemplate);
-    expect(codexImportSkill).toBe(importSkillTemplate);
-
-    // v2.2 SK1-audit (W2-T5): fabric-audit skill copies — byte-identical to template.
-    const auditSkillTemplate = readTemplate("skills/fabric-audit/SKILL.md");
-    const claudeAuditSkill = readFileSync(join(target, ".claude/skills/fabric-audit/SKILL.md"), "utf8");
-    const codexAuditSkill = readFileSync(join(target, ".codex/skills/fabric-audit/SKILL.md"), "utf8");
-    expect(claudeAuditSkill).toBe(auditSkillTemplate);
-    expect(codexAuditSkill).toBe(auditSkillTemplate);
-
-    // v2.2 SK2-connect (W3-T2): fabric-connect skill copies — byte-identical to template.
-    const connectSkillTemplate = readTemplate("skills/fabric-connect/SKILL.md");
-    const claudeConnectSkill = readFileSync(join(target, ".claude/skills/fabric-connect/SKILL.md"), "utf8");
-    const codexConnectSkill = readFileSync(join(target, ".codex/skills/fabric-connect/SKILL.md"), "utf8");
-    expect(claudeConnectSkill).toBe(connectSkillTemplate);
-    expect(codexConnectSkill).toBe(connectSkillTemplate);
+    // W3-C: fabric-import (→archive source mode), fabric-audit (→review retire),
+    // fabric-connect (→review relate) + the fabric/ router are no longer
+    // installed — the terminal set is archive/review (real) + store/sync (shim).
 
     // Hook script copies — byte-identical
     const claudeHook = readFileSync(join(target, ".claude/hooks/fabric-hint.cjs"), "utf8");
@@ -293,7 +276,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
   // (archive/review/import); sync/store/audit/connect + the shared skill lib
   // came only from the downstream hooks stage. A bootstrap-only install must
   // ship the complete 7-skill set.
-  it("bootstrap-only install ships all 7 skills + shared skill lib (F7)", async () => {
+  it("bootstrap-only install ships all 4 skills + shared skill lib (W3-C: 0 router)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-skills");
     tempRoots.push(target);
 
@@ -304,19 +287,24 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     });
     await executeInitExecutionPlan(plan);
 
+    // W3-C terminal set: archive/review (real leaves) + store/sync (thin shims).
     for (const skill of [
       "fabric-archive",
       "fabric-review",
-      "fabric-import",
       "fabric-sync",
       "fabric-store",
-      "fabric-audit",
-      "fabric-connect",
     ]) {
       expect(
         existsSync(join(target, ".claude/skills", skill, "SKILL.md")),
         `${skill}/SKILL.md should be installed by the bootstrap stage`,
       ).toBe(true);
+    }
+    // The folded / retired skills must NOT be installed.
+    for (const gone of ["fabric", "fabric-import", "fabric-audit", "fabric-connect"]) {
+      expect(
+        existsSync(join(target, ".claude/skills", gone, "SKILL.md")),
+        `${gone}/SKILL.md should NOT be installed (W3-C fold)`,
+      ).toBe(false);
     }
     // Shared skill lib the skills depend on.
     expect(existsSync(join(target, ".claude/skills/lib"))).toBe(true);
@@ -571,20 +559,18 @@ describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fabric hooks idempotent", () => {
-  it("running installHooks after init reports zero installed and no errors (covers archive+review+import)", async () => {
+  it("running installHooks after init reports zero installed and no errors (covers archive+review)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-hooks-cmd");
     tempRoots.push(target);
 
     await runInit(target);
 
-    // After init, all three skills must be on disk (proof installHooks
-    // would see them as up-to-date on the next call).
+    // After init, the real-leaf skills must be on disk (proof installHooks
+    // would see them as up-to-date on the next call). W3-C: import folded.
     expect(existsSync(join(target, ".claude/skills/fabric-archive/SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".codex/skills/fabric-archive/SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".claude/skills/fabric-review/SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".codex/skills/fabric-review/SKILL.md"))).toBe(true);
-    expect(existsSync(join(target, ".claude/skills/fabric-import/SKILL.md"))).toBe(true);
-    expect(existsSync(join(target, ".codex/skills/fabric-import/SKILL.md"))).toBe(true);
 
     const result = await installHooks(target);
 

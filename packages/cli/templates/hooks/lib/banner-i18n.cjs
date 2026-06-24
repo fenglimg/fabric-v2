@@ -37,7 +37,7 @@
  *   Broad hook:             broadImportBanner
  *
  * Protected tokens — NEVER translated, kept verbatim across all 4 variants:
- *   - Slash commands: /fabric-archive, /fabric-review, /fabric-import
+ *   - Slash commands: /fabric-archive, /fabric-review, /fabric-archive
  *   - CLI commands:   `fabric doctor --lint`
  *   - Numeric / template substrings the existing tests assert on:
  *       "${hoursElapsed.toFixed(1)}h" (e.g. "25.0h"), "阈值 ${N}h",
@@ -222,12 +222,13 @@ const STRINGS = {
       `📋 Fabric: 知识库节点数 ${p.nodeCount}/${p.threshold}，距 init_scan_completed ${p.hoursSinceInit}h。`,
   },
 
-  // Source (zh-CN): fabric-hint.cjs:698  `   是否调 /fabric-import 从 git 历史与现有文档回灌知识?`
-  // params: {} — protected token /fabric-import verbatim across all variants.
+  // W3-C: fabric-import folded into fabric-archive `source` mode — the underseed
+  // cold-start nudge now points at /fabric-archive (its source mode). Protected
+  // token /fabric-archive verbatim across all variants.
   importCta: {
-    "zh-CN": () => "   是否调 /fabric-import 从 git 历史与现有文档回灌知识?",
-    en: () => "   Run /fabric-import to backfill knowledge from git history and existing docs?",
-    "zh-CN-hybrid": () => "   是否调 /fabric-import 从 git 历史与现有文档回灌知识?",
+    "zh-CN": () => "   是否调 /fabric-archive 的 source mode 从 git 历史与现有文档回灌知识?",
+    en: () => "   Run /fabric-archive source mode to backfill knowledge from git history and existing docs?",
+    "zh-CN-hybrid": () => "   是否调 /fabric-archive 的 source mode 从 git 历史与现有文档回灌知识?",
   },
 
   // ---- Signal D: maintenance -----------------------------------------------
@@ -289,15 +290,15 @@ const STRINGS = {
 
   // ---- Broad hook: import recommendation ------------------------------------
   // Source (zh-CN): knowledge-hint-broad.cjs:262
-  //   "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?"
+  //   "  📋 Fabric: 知识库稀疏，是否调 /fabric-archive 从 git 历史与现有文档回灌知识?"
   // Note: leading two spaces are intentional (existing banner indent).
-  // params: {} — protected token /fabric-import verbatim.
+  // params: {} — protected token /fabric-archive verbatim.
   broadImportBanner: {
-    "zh-CN": () => "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?",
+    "zh-CN": () => "  📋 Fabric: 知识库稀疏，是否调 /fabric-archive 从 git 历史与现有文档回灌知识?",
     en: () =>
-      "  📋 Fabric: knowledge base is sparse — run /fabric-import to backfill from git history and existing docs?",
+      "  📋 Fabric: knowledge base is sparse — run /fabric-archive to backfill from git history and existing docs?",
     "zh-CN-hybrid": () =>
-      "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?",
+      "  📋 Fabric: 知识库稀疏，是否调 /fabric-archive 从 git 历史与现有文档回灌知识?",
   },
 
   // ---- Broad hook: meta auto-refresh breadcrumb (rc.22 Scope D T-D4) -------

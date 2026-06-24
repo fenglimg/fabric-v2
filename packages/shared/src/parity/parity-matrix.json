@@ -75,15 +75,6 @@
       }
     },
     {
-      "id": "skill.fabric-import",
-      "surface": "skill",
-      "description": "Cold-start import flow mines git log + docs into pending. Delivered to both clients (SKILL_DESTINATIONS.import). ADJ-NEWN-2 coverage fill.",
-      "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-import" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-import" }
-      }
-    },
-    {
       "id": "skill.fabric-sync",
       "surface": "skill",
       "description": "Multi-store pull+push sync flow delivered as a Skill (ADJ-NEWN-1 direction: sync semantics live in a Skill). Delivered to both clients (SKILL_DESTINATIONS.sync). ADJ-NEWN-2 coverage fill.",

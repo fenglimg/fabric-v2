@@ -13,7 +13,7 @@ UX i18n Policy class 1 — render either the en variant or the zh-CN variant per
 - Commits scanned: <N>     (skipped: <S> — cosmetic/metadata/baseline-overlap)
 - Docs scanned:    <D>     (skipped: <DS> — README/CHANGELOG/boilerplate)
 - Pending proposed: <P>     (cap_reached: <true|false>)
-- Scope: all <P> proposed entries use relevance_scope=broad, relevance_paths=[] (fabric-import contract).
+- Scope: all <P> proposed entries use relevance_scope=broad, relevance_paths=[] (archive source mode contract).
 
 ## Phase 3 — Dedup
 - Kept (genuinely new):       <K>
@@ -41,7 +41,7 @@ UX i18n Policy class 1 — render either the en variant or the zh-CN variant per
 - 扫描 commit 数: <N>      (跳过: <S> — cosmetic/metadata/与 baseline 重叠)
 - 扫描文档数:    <D>      (跳过: <DS> — README/CHANGELOG/样板文件)
 - 提议 pending:  <P>      (cap_reached: <true|false>)
-- 作用域: 全部 <P> 条提议使用 relevance_scope=broad, relevance_paths=[] (fabric-import 契约)。
+- 作用域: 全部 <P> 条提议使用 relevance_scope=broad, relevance_paths=[] (archive source mode 契约)。
 
 ## Phase 3 — 去重
 - 保留 (新知识):              <K>
@@ -52,7 +52,7 @@ UX i18n Policy class 1 — render either the en variant or the zh-CN variant per
 ## 状态
 - .fabric/.import-state.json phase: <phase>
 - last_checkpoint_at: <ISO8601>
-- 如 phase != complete, 请重新调用 fabric-import 续作。
+- 如 phase != complete, 请重新调用 archive source mode 续作。
 
 ## 下一步
 - 运行 `fabric-review` 审批 <K> 条新 pending。

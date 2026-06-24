@@ -67,7 +67,7 @@ The fabric-import skill creates pending entries with `relevance_scope=broad` + `
 
 ### Detection
 
-An entry is "import-origin" when `source_sessions[0]` starts with `fabric-import-` (e.g. `fabric-import-2026-05-10`).
+An entry is "import-origin" when `source_sessions[0]` starts with `fabric-archive-source-` (e.g. `fabric-archive-source-2026-05-10`).
 
 ### Pending mode rendering
 

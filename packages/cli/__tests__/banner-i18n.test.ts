@@ -202,7 +202,7 @@ const CONTRACTS: Record<string, KeyContract> = {
     enHints: ["knowledge node count", "since init_scan_completed"],
   },
   importCta: {
-    protectedTokens: ["/fabric-import"],
+    protectedTokens: ["/fabric-archive"],
     zhCNContract: ["是否调"],
     enHints: ["Run"],
   },
@@ -222,7 +222,7 @@ const CONTRACTS: Record<string, KeyContract> = {
     enHints: ["Run"],
   },
   broadImportBanner: {
-    protectedTokens: ["📋 Fabric:", "/fabric-import"],
+    protectedTokens: ["📋 Fabric:", "/fabric-archive"],
     zhCNContract: ["知识库稀疏"],
     enHints: ["knowledge base is sparse"],
   },

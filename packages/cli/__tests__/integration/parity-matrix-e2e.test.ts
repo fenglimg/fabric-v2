@@ -41,8 +41,7 @@ const CLIENT_DIR: Record<ParityClient, string> = {
 const SKILL_SLUG = {
   "skill.fabric-archive": "fabric-archive",
   "skill.fabric-review": "fabric-review",
-  // ADJ-NEWN-2 coverage fill: import + sync skills are delivered too.
-  "skill.fabric-import": "fabric-import",
+  // W3-C: fabric-import folded into archive source mode (matrix row removed).
   "skill.fabric-sync": "fabric-sync",
   // ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill.
   "skill.fabric-store": "fabric-store",

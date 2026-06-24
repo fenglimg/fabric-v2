@@ -153,7 +153,7 @@ function liveKnowledgeStats(snapshot) {
   // out-of-band (store grew via git pull / cross-workspace sync), so trusting it
   // re-introduced exactly the false-nudge this whole field cures — observed a
   // store with 61 live canonical entries whose cached count was frozen at 1,
-  // mis-firing the "knowledge sparse → /fabric-import" underseed nudge AND
+  // mis-firing the "knowledge sparse → /fabric-archive" underseed nudge AND
   // defeating the fabric-import `canonical > 50 → SKIP` guard. read_set carries
   // no resolved store root either (alias/uuid only), so a live recount is
   // impossible without re-resolution (which hooks must not do). Return null
