@@ -44,6 +44,7 @@ export const RETIRED_TOKENS: readonly RetiredToken[] = [
   { token: "fabric scope-explain", replacement: "fabric info scope", reason: "scope-explain command merged into the `info scope` subcommand (W3-F)" },
   { token: "fabric context", replacement: "fabric inspect", reason: "renamed: `context` of what? → `inspect` the injection (W3-F / NS-01 §1)" },
   { token: "fabric metrics", replacement: "fabric audit metrics", reason: "top-level metrics retired; reachable as `audit metrics` (W3-F)" },
+  { token: "hint_broad_top_k", replacement: null, reason: "W2-1 retired the broad hard cap; broad_index_backstop is the sole guard (W3-J)" },
 ];
 
 export interface RetiredReferenceHit {

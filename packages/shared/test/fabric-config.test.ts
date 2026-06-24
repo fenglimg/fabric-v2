@@ -295,6 +295,29 @@ describe("fabricConfigSchema — ux-w2-3: hardcoded skill thresholds dropped (le
     expect(fabricConfigSchema.parse({}).review_stale_pending_days).toBe(14);
   });
 
+  // W3-J: only hint_broad_top_k is removed. W2-1 made the broad banner show
+  // everything (broad_index_backstop is the sole guard), leaving the field with
+  // no code reader — its last references are retirement comments. Lenient root
+  // parser drops any stale on-disk value (zero migration).
+  //
+  // The three hint_narrow_* knobs are NOT removed: knowledge-hint-narrow.cjs
+  // actively reads them (readNarrowTopK / readNarrowDedupWindow /
+  // readNarrowCooldownHours at template lines 929/940/951). Deleting them from
+  // the schema would create unvalidated "ghost knobs" the hook still reads raw —
+  // caught by the `fabric audit retired` producer-consumer round-trip oracle.
+  it("drops the retired hint_broad_top_k knob instead of surfacing it (W3-J)", () => {
+    const parsed = fabricConfigSchema.parse({ hint_broad_top_k: 8 }) as Record<string, unknown>;
+    expect(parsed.hint_broad_top_k).toBeUndefined();
+  });
+
+  it("keeps the still-wired narrow knobs (read by knowledge-hint-narrow.cjs)", () => {
+    const parsed = fabricConfigSchema.parse({});
+    expect(parsed.hint_narrow_top_k).toBe(5);
+    expect(parsed.hint_narrow_dedup_window_turns).toBe(5);
+    expect(parsed.hint_narrow_cooldown_hours).toBe(0);
+    expect(parsed.hint_broad_cooldown_hours).toBe(0);
+  });
+
   it("a minimal user config still parses with the retired keys absent", () => {
     const parsed = fabricConfigSchema.parse({
       fabric_language: "zh-CN-hybrid", // stale global key — dropped

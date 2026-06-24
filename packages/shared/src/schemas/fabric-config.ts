@@ -282,18 +282,11 @@ export const fabricConfigSchema = z.object({
   // Default `[]` keeps the field optional on existing configs — fresh
   // installs land with no opt-outs.
   onboard_slots_opted_out: z.array(z.string()).optional().default([]),
-  // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the broad SessionStart hint
-  // banner emitted by knowledge-hint-broad.cjs. After plan-context-hint returns
-  // its full broad-scoped index, the hook slices the entries to this many
-  // before grouping/truncation rendering — keeps the banner from scrolling off
-  // screen on well-seeded repos (Werewolf-class projects routinely surface 40+
-  // broad entries which buried the actually-relevant top hits). Default 8 is
-  // calibrated against the rc.32 eval baseline (cite-coverage 3.1%): the
-  // banner needs to fit in ~1 screenful so the agent actually reads it.
-  // Range 1..50; values above 20 effectively disable the cap because the
-  // TRUNCATION_THRESHOLD=12 grouped-render kicks in. Mirrors the rc.7 T7 +
-  // archive_max_* pattern of externalizing previously-hardcoded thresholds.
-  hint_broad_top_k: z.number().int().min(1).max(50).optional().default(8),
+  // ux-w3-j (W3-J): `hint_broad_top_k` was deleted. W2-1 (KT-DEC-0028) retired its
+  // hard-cap function — the SessionStart broad banner now shows EVERY broad entry
+  // and `broad_index_backstop` (below) is the sole scale guard; the field had been
+  // inert ever since (its only remaining refs were retirement comments). The lenient
+  // root parser drops any stale on-disk value (zero migration).
   // KT-DEC-0036: the SessionStart broad-menu is now index-only (title + summary
   // per always-active entry, no eager body), so the former `hint_broad_budget_chars`
   // body char-budget knob was retired — there is no rendered body left to bound.
