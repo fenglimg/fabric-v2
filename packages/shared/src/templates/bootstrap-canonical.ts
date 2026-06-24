@@ -87,6 +87,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(条目按 \`semantic_scope\` 分三层:\`team\` 团队通用 / \`project:<id>\` 本项目专属(仅在绑定该项目的仓库浮现)/ \`personal\` 个人 \`KP-*\`,三者引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
+- **Scope 三轴(为什么没浮现)** (KT-MOD-0001):一条知识是否浮现由三个**正交**轴决定 —— ① \`semantic_scope\` 受众(\`team\` / \`project:<id>\` / \`personal\`;绑错项目则不显)② \`relevance_scope\` 时机(\`broad\` 常驻 / \`narrow\` 仅编辑匹配文件时浮现)③ \`store\` 物理库(没 \`fabric store bind\` 就不读)。三轴名字会撞("team" 既是受众值也可是 store 别名),所以困惑"为什么这条没浮现"时跑 \`fabric audit why-not-surfaced <id>\` 逐因诊断(store 没绑 / scope 不匹配 / narrow 时机)。
 - **Usage**:走单步 \`fab_recall(paths=[...])\` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 \`entries[].read_path\` 做原生 Read 取回(不再走 MCP 二次取正文)。
 - **session_id**: 调用 \`fab_recall\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 \`fabric-hint.cjs\` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (4)**:写流程 \`fabric-archive\`(含 source mode 冷启动从 git/docs 回灌)/ \`fabric-review\`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 \`fabric-store\` / \`fabric-sync\`。
@@ -155,6 +156,7 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 
 ## Knowledge Base (KB)
 - **Discovery**: the SessionStart hook lists broad-scoped entries (scoped by \`semantic_scope\` across three tiers: \`team\` team-wide / \`project:<id>\` this-project-only (surfaces only in repos bound to that project) / \`personal\` \`KP-*\`, all three referenced the same way); editing a file may trigger a narrow hint via the PreToolUse hook.
+- **Scope's 3 axes (why something isn't surfacing)** (KT-MOD-0001): whether an entry surfaces is decided by three **orthogonal** axes — ① \`semantic_scope\` audience (\`team\` / \`project:<id>\` / \`personal\`; the wrong project binding hides it) ② \`relevance_scope\` timing (\`broad\` always-on / \`narrow\` only when you edit a matching file) ③ \`store\` physical lib (not read without \`fabric store bind\`). The axis names collide ("team" is both an audience value and a possible store alias), so when puzzled about "why isn't this surfacing" run \`fabric audit why-not-surfaced <id>\` for a per-cause diagnosis (store unbound / scope mismatch / narrow timing).
 - **Usage**: go one-step \`fab_recall(paths=[...])\` to fetch the relevant KB descriptions + read paths in one call; when you need a body, do a native Read of its \`entries[].read_path\` (no second MCP round-trip for the body).
 - **session_id**: when calling \`fab_recall\`, always pass the current client session id as the \`session_id\` argument (Claude Code's session id is in the stdin payload; Codex's corresponding identifier likewise). This lets \`fabric doctor --archive-history\` and the \`fabric-hint.cjs\` Stop hook track cross-session debt accurately.
 - **Skills (4)**: write flow \`fabric-archive\` (with source-mode cold-start backfill from git/docs) / \`fabric-review\` (with retire-deprecation + relate-edge sub-flows); store ops \`fabric-store\` / \`fabric-sync\`.

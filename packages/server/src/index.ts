@@ -71,6 +71,12 @@ export {
   type RetiredReferenceInspection,
   type RetiredToken,
 } from "./services/doctor-retired-references-lint.js";
+// W3-H (S6): `fabric audit why-not-surfaced <id>` self-serve scope diagnostic.
+export {
+  explainWhyNotSurfaced,
+  type SurfaceVerdict,
+  type WhyNotSurfacedResult,
+} from "./services/why-not-surfaced.js";
 // v2.2 W5 R2 (agents.meta decolo): the co-location agents.meta build/write
 // surface (buildKnowledgeMeta / writeKnowledgeMeta / computeKnowledgeBasedAgentsMeta
 // / computeKnowledgeTestIndex / loadKbIdTypeMap / isSameKnowledgeTestIndex /

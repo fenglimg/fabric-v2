@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 
 import {
   enrichDescriptions,
+  explainWhyNotSurfaced,
   inspectRetiredReferences,
   runDoctorArchiveHistory,
   runDoctorCiteCoverage,
@@ -13,6 +14,7 @@ import {
   type EnrichDescriptionsReport,
   type HistoryAllReport,
   type RetiredReferenceInspection,
+  type WhyNotSurfacedResult,
 } from "@fenglimg/fabric-server";
 
 import { paint, symbol } from "../colors.js";
@@ -514,6 +516,71 @@ function renderRetiredReport(inspection: RetiredReferenceInspection): void {
 }
 
 // ---------------------------------------------------------------------------
+// `fabric audit why-not-surfaced <id>` renderer (W3-H / S6): the self-serve
+// answer to "why isn't this knowledge showing?", reporting the FIRST blocking
+// cause across the three scope axes (store binding · semantic_scope · timing).
+// ---------------------------------------------------------------------------
+
+function renderWhyNotSurfaced(r: WhyNotSurfacedResult): void {
+  const id = r.localId;
+  switch (r.verdict) {
+    case "not_found":
+      writeStdout(
+        `${symbol.error} '${id}' not found in any mounted store. Check the id (try \`fabric store list\`).`,
+      );
+      return;
+    case "store_unbound":
+      writeStdout(
+        `${symbol.error} '${id}' lives in store '${r.storeAlias}', which is NOT bound to this project.`,
+      );
+      writeStdout(`  → bind it: fabric store bind ${r.storeAlias}`);
+      return;
+    case "project_mismatch":
+      writeStdout(
+        `${symbol.error} '${id}' is scoped to '${r.semanticScope}', but this repo is bound to 'project:${r.activeProject}'.`,
+      );
+      writeStdout(`  → it surfaces only in repos bound to '${r.semanticScope}' (semantic_scope axis).`);
+      return;
+    case "narrow_timing":
+      writeStdout(
+        `${symbol.warn} '${id}' is relevance_scope=narrow — it surfaces via the PreToolUse hint when you EDIT a matching file, not at SessionStart.`,
+      );
+      writeStdout(`  → broad entries are the always-on spine; narrow ones are edit-time only (timing axis).`);
+      return;
+    case "should_surface":
+      writeStdout(
+        `${symbol.ok} '${id}' should be surfacing — store '${r.storeAlias}' bound, scope matches, relevance_scope=broad.`,
+      );
+      writeStdout(`  → if it isn't, the SessionStart snapshot may be stale: start a fresh session or re-run \`fabric install\`.`);
+      return;
+  }
+}
+
+const whyNotSurfacedCommand = defineCommand({
+  meta: {
+    name: "why-not-surfaced",
+    description: "Diagnose why a knowledge entry isn't surfacing (store / scope / timing)",
+  },
+  args: {
+    id: { type: "positional", required: true, description: "Knowledge id (e.g. KT-DEC-0001 or team:KT-DEC-0001)" },
+    target: { type: "string", description: "Override project root (defaults to cwd)" },
+    json: { type: "boolean", description: "Output as JSON", default: false },
+  },
+  async run({ args }) {
+    const resolution = resolveDevMode(args.target as string | undefined, process.cwd());
+    const result = await explainWhyNotSurfaced(resolution.target, String(args.id));
+    if (args.json === true) {
+      writeStdout(JSON.stringify(result, null, 2));
+    } else {
+      renderWhyNotSurfaced(result);
+    }
+    if (result.verdict === "not_found") {
+      process.exitCode = 1;
+    }
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
 
@@ -684,6 +751,7 @@ export const auditCommand = defineCommand({
     descriptions: descriptionsCommand,
     metrics: metricsCommand,
     retired: retiredCommand,
+    "why-not-surfaced": whyNotSurfacedCommand,
   },
 });
 
