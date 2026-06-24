@@ -66,8 +66,8 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL_ZH).toContain("not-applicable");
       });
 
-      it("references the fabric doctor --cite-coverage audit command", () => {
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("fabric doctor --cite-coverage");
+      it("references the fabric audit cite command", () => {
+        expect(BOOTSTRAP_CANONICAL_ZH).toContain("fabric audit cite");
       });
 
       it("offloads the full cite-contract spec to the fabric-review ref", () => {

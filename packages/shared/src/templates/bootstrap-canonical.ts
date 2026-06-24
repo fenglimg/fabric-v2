@@ -108,7 +108,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **核心 (recall-first 自动记账)**: 改任何文件前先 \`fab_recall(paths=[<被改文件>])\`。系统按"本 session recall 命中的 path 与编辑目标重叠"自动把召回的 KB 记为该次 edit 的引用 —— **无需手写任何回复首行**(C1 删除首行 \`KB:\` contract 八股:先想后说,recall 才是引用发生的真实信号)。PreToolUse 检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007)。
 - **唯一要开口的时候 (dismissed / override)**: 你判断某召回 KB 不该应用时,说一句 \`dismissed: <id> (<reason>)\`;reason 枚举 \`scope-mismatch | outdated | not-applicable | other:<text>\`。需精确标注仍可用首行 \`KB: <id> [applied|dismissed]\`(解析器保留,向后兼容)。
 - **\`[applied]\` 验证义务**: 引用任何 id(自动或手写)前必须先 fab_recall 实际抓回 KB(按需对正文路径做原生 Read),防止编造 id。验证不通过 = 不能 cite。
-- **稽核与完整规约**: \`fabric doctor --cite-coverage\` 输出覆盖率(不阻断工作,只记录);contract operator / store 前缀 / skip·dismissed 词典 / 类型路由 / 裁决阶梯等完整规约权威详参 \`fabric-review\` skill 的 \`ref/cite-contract.md\` —— bootstrap 只留可执行 core。
+- **稽核与完整规约**: \`fabric audit cite\` 输出覆盖率(不阻断工作,只记录);contract operator / store 前缀 / skip·dismissed 词典 / 类型路由 / 裁决阶梯等完整规约权威详参 \`fabric-review\` skill 的 \`ref/cite-contract.md\` —— bootstrap 只留可执行 core。
 `;
 
 /**
@@ -176,7 +176,7 @@ When a clear archival signal appears, autonomously invoke the \`fabric-archive\`
 - **Core (recall-first auto-accounting)**: before changing any file, run \`fab_recall(paths=[<file-being-edited>])\` first. The system auto-accounts the recalled KB as that edit's citation by "paths recall-hit this session overlap the edit target" —— **no hand-written first reply line needed** (C1 removes the first-line \`KB:\` contract boilerplate: think-then-speak, recall is the real signal that a citation happened). The PreToolUse hook gives a soft nudge when it detects no relevant recall (nudge, not a gate, per KT-DEC-0007).
 - **The only time to speak up (dismissed / override)**: when you judge a recalled KB should NOT apply, say one line \`dismissed: <id> (<reason>)\`; reason enum \`scope-mismatch | outdated | not-applicable | other:<text>\`. For precise annotation you may still use a first-line \`KB: <id> [applied|dismissed]\` (parser retained, backward compatible).
 - **\`[applied]\` verification duty**: citing any id (auto or hand-written) requires first fetching the KB via fab_recall (a native Read of its body path when needed) to prevent fabricated ids. Verification failing = you cannot cite.
-- **Audit & full spec**: \`fabric doctor --cite-coverage\` reports coverage (does not block your work, only records); the full spec (contract operators / store prefix / skip·dismissed dictionaries / type routing / adjudication ladder) lives authoritatively in the \`fabric-review\` skill's \`ref/cite-contract.md\` —— bootstrap keeps only the executable core.
+- **Audit & full spec**: \`fabric audit cite\` reports coverage (does not block your work, only records); the full spec (contract operators / store prefix / skip·dismissed dictionaries / type routing / adjudication ladder) lives authoritatively in the \`fabric-review\` skill's \`ref/cite-contract.md\` —— bootstrap keeps only the executable core.
 `;
 
 /**

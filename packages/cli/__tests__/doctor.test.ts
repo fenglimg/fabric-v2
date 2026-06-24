@@ -251,7 +251,7 @@ describe("doctor command", () => {
   it("runs doctor --fix and prints deterministic fix summary", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
-      runDoctorReport: vi.fn(),
+      runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
       runDoctorFix: vi.fn().mockResolvedValue({
         changed: true,
         fixed: [{ code: "agents_meta_stale", name: "Agents metadata", message: "stale" }],
@@ -285,8 +285,8 @@ describe("doctor command", () => {
     expect(process.exitCode).toBe(originalExitCode);
   });
 
-  // rc.4 TASK-003 (rc.15 rename): --fix-knowledge flag plumbing.
-  describe("--fix-knowledge flag", () => {
+  // W3-D: --fix-knowledge merged into a single --fix (derived-state + knowledge arms).
+  describe("--fix (merged: derived-state + knowledge)", () => {
     it("default invocation does NOT call runDoctorApplyLint (fix-knowledge flag absent)", async () => {
       const applyLintSpy = vi.fn();
       const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
@@ -294,6 +294,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: reportSpy,
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -343,6 +344,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -353,10 +355,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -383,6 +384,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: reportSpy,
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -392,10 +394,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
             "dry-run": true,
             yes: true,
           },
@@ -431,47 +432,8 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: vi.fn().mockResolvedValue(applyLintReport),
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stdout = captureStdout();
-      const stderrLines: string[] = [];
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation(((chunk: string | Uint8Array) => {
-          stderrLines.push(String(chunk).replace(/\n$/, ""));
-          return true;
-        }) as typeof process.stderr.write);
-
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            fix: false,
-            json: false,
-            strict: false,
-            "fix-knowledge": true,
-            yes: true,
-          },
-        } as never);
-      } finally {
-        stdout.restore();
-        stderrSpy.mockRestore();
-      }
-
-      expect(stderrLines.some((line) => line.includes("Manual repair required"))).toBe(true);
-      expect(process.exitCode).toBe(1);
-    });
-
-    it("--fix-knowledge combined with --fix errors out and does NOT invoke either repair function", async () => {
-      const applyLintSpy = vi.fn();
-      const fixSpy = vi.fn();
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn(),
-        runDoctorFix: fixSpy,
-        runDoctorApplyLint: applyLintSpy,
       }));
 
       const { doctorCommand } = await import("../src/commands/doctor.ts");
@@ -491,7 +453,7 @@ describe("doctor command", () => {
             fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
+            yes: true,
           },
         } as never);
       } finally {
@@ -499,11 +461,7 @@ describe("doctor command", () => {
         stderrSpy.mockRestore();
       }
 
-      expect(applyLintSpy).not.toHaveBeenCalled();
-      expect(fixSpy).not.toHaveBeenCalled();
-      expect(
-        stderrLines.some((line) => line.toLowerCase().includes("fix-knowledge")),
-      ).toBe(true);
+      expect(stderrLines.some((line) => line.includes("Manual repair required"))).toBe(true);
       expect(process.exitCode).toBe(1);
     });
 
@@ -528,6 +486,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: vi.fn().mockResolvedValue(applyLintReport),
       }));
 
@@ -538,10 +497,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -586,6 +544,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(preReport),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -595,10 +554,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -631,6 +589,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(preReport),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -642,10 +601,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -673,6 +631,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(preReport),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -696,10 +655,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -733,6 +691,7 @@ describe("doctor command", () => {
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(preReport),
         runDoctorFix: vi.fn(),
+        detectUnboundProject: vi.fn().mockReturnValue(null),
         runDoctorApplyLint: applyLintSpy,
       }));
 
@@ -742,10 +701,9 @@ describe("doctor command", () => {
         await doctorCommand.run?.({
           args: {
             target: "/tmp/fabric-target",
-            fix: false,
+            fix: true,
             json: false,
             strict: false,
-            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -762,162 +720,6 @@ describe("doctor command", () => {
   // were removed clean-slate. The describe block previously covering --rescan
   // call-order assertions has been deleted along with the scan.ts module.
 
-  // v2.0.0-rc.25 TASK-10: --archive-history flag dispatch + --since parsing.
-  describe("--archive-history flag", () => {
-    it("invokes runDoctorArchiveHistory with default --since=7d window", async () => {
-      const archiveSpy = vi.fn().mockResolvedValue({
-        entries: [],
-        total: 0,
-        since_ms: Date.now() - 7 * 86_400_000,
-        generated_at: new Date().toISOString(),
-      });
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn(),
-        runDoctorFix: vi.fn(),
-        runDoctorApplyLint: vi.fn(),
-        runDoctorCiteCoverage: vi.fn(),
-        runDoctorArchiveHistory: archiveSpy,
-        enrichDescriptions: vi.fn(),
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stdout = captureStdout();
-      const now = Date.now();
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            fix: false,
-            json: false,
-            strict: false,
-            "archive-history": true,
-            since: "7d",
-          },
-        } as never);
-      } finally {
-        stdout.restore();
-      }
-
-      expect(archiveSpy).toHaveBeenCalledTimes(1);
-      const [resolvedTarget, opts] = archiveSpy.mock.calls[0] as [string, { since: number }];
-      expect(typeof resolvedTarget).toBe("string");
-      // Default 7d window: since should be approximately now - 7*86400000.
-      // Allow a 5-second slack for the inner Date.now() vs ours.
-      const expected = now - 7 * 86_400_000;
-      expect(Math.abs(opts.since - expected)).toBeLessThan(5_000);
-    });
-
-    it("parses --since=14d to 14 * 86_400_000 ms", async () => {
-      const archiveSpy = vi.fn().mockResolvedValue({
-        entries: [],
-        total: 0,
-        since_ms: 0,
-        generated_at: new Date().toISOString(),
-      });
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn(),
-        runDoctorFix: vi.fn(),
-        runDoctorApplyLint: vi.fn(),
-        runDoctorCiteCoverage: vi.fn(),
-        runDoctorArchiveHistory: archiveSpy,
-        enrichDescriptions: vi.fn(),
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stdout = captureStdout();
-      const now = Date.now();
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            fix: false,
-            json: false,
-            strict: false,
-            "archive-history": true,
-            since: "14d",
-          },
-        } as never);
-      } finally {
-        stdout.restore();
-      }
-
-      expect(archiveSpy).toHaveBeenCalledTimes(1);
-      const [, opts] = archiveSpy.mock.calls[0] as [string, { since: number }];
-      const expected = now - 14 * 86_400_000;
-      // Same 5-second slack window — `parseSinceDuration` calls `Date.now()`
-      // internally so the floor moves slightly between the test and the
-      // command. 5s is generous; CI flakes have never crossed that bound.
-      expect(Math.abs(opts.since - expected)).toBeLessThan(5_000);
-    });
-  });
-
-  // v2.0.0-rc.29 TASK-007 (BUG-M2): --since is now validated up-front before
-  // any dispatch arm checks. Previously bare `fabric doctor --since=bogus`
-  // (without --cite-coverage / --archive-history) silently dropped the value
-  // and exited 0; now it fails fast with exit 1 and the standard
-  // cli.doctor.errors.invalid-since stderr line.
-  describe("--since up-front validation (rc.29 BUG-M2)", () => {
-    it("rejects bogus --since on a bare `fabric doctor` invocation (no --cite-coverage / --archive-history)", async () => {
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
-        runDoctorFix: vi.fn(),
-        runDoctorApplyLint: vi.fn(),
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stderr = captureStderr();
-
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            json: false,
-            strict: false,
-            fix: false,
-            since: "bogus-format",
-          },
-        } as never);
-      } finally {
-        stderr.restore();
-      }
-
-      expect(process.exitCode).toBe(1);
-      expect(stderr.lines.join("\n")).toContain("bogus-format");
-    });
-
-    it("accepts a valid --since on a bare `fabric doctor` invocation and still runs the standard check pipeline", async () => {
-      const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: reportSpy,
-        runDoctorFix: vi.fn(),
-        runDoctorApplyLint: vi.fn(),
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stdout = captureStdout();
-
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            json: false,
-            strict: false,
-            fix: false,
-            since: "7d",
-          },
-        } as never);
-      } finally {
-        stdout.restore();
-      }
-
-      // No fail-fast → bare doctor pipeline executed.
-      expect(reportSpy).toHaveBeenCalledTimes(1);
-    });
-  });
 });
 
 function captureStdout(): { lines: string[]; restore: () => void } {

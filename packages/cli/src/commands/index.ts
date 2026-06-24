@@ -24,7 +24,12 @@ export const allCommands = {
   // fabric-archive Skill's first-run phase to detect unclaimed slots.
   "onboard-coverage": () =>
     import("./onboard-coverage.js").then((module) => module.default),
-  // v2.0.0-rc.37 NEW-34: text dashboard over .fabric/metrics.jsonl.
+  // W3-D (UX northstar): knowledge & telemetry audit group — the surfaces that
+  // used to ride on `fabric doctor --<flag>` (cite / conflicts / history /
+  // descriptions / metrics / retired). doctor now keeps only health + fix.
+  audit: () => import("./audit.js").then((module) => module.default),
+  // v2.0.0-rc.37 NEW-34: text dashboard over .fabric/metrics.jsonl. Retained as
+  // a thin top-level alias of `fabric audit metrics` (zero-migration; W3-D).
   metrics: () => import("./metrics.js").then((module) => module.default),
   // Block 5 (Option X): show what SessionStart injects (shared renderer with the
   // hook → byte-identical). --explain for per-entry provenance.

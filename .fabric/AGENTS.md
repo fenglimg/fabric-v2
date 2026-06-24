@@ -54,4 +54,4 @@
 - **核心 (recall-first 自动记账)**: 改任何文件前先 `fab_recall(paths=[<被改文件>])`。系统按"本 session recall 命中的 path 与编辑目标重叠"自动把召回的 KB 记为该次 edit 的引用 —— **无需手写任何回复首行**(C1 删除首行 `KB:` contract 八股:先想后说,recall 才是引用发生的真实信号)。PreToolUse 检测不到相关 recall 时给一条软 nudge(nudge 非 gate,守 KT-DEC-0007)。
 - **唯一要开口的时候 (dismissed / override)**: 你判断某召回 KB 不该应用时,说一句 `dismissed: <id> (<reason>)`;reason 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。需精确标注仍可用首行 `KB: <id> [applied|dismissed]`(解析器保留,向后兼容)。
 - **`[applied]` 验证义务**: 引用任何 id(自动或手写)前必须先 fab_recall 实际抓回 KB(按需对正文路径做原生 Read),防止编造 id。验证不通过 = 不能 cite。
-- **稽核与完整规约**: `fabric doctor --cite-coverage` 输出覆盖率(不阻断工作,只记录);contract operator / store 前缀 / skip·dismissed 词典 / 类型路由 / 裁决阶梯等完整规约权威详参 `fabric-review` skill 的 `ref/cite-contract.md` —— bootstrap 只留可执行 core。
+- **稽核与完整规约**: `fabric audit cite` 输出覆盖率(不阻断工作,只记录);contract operator / store 前缀 / skip·dismissed 词典 / 类型路由 / 裁决阶梯等完整规约权威详参 `fabric-review` skill 的 `ref/cite-contract.md` —— bootstrap 只留可执行 core。

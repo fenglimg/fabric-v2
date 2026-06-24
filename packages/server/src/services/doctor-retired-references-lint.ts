@@ -34,6 +34,8 @@ export const RETIRED_TOKENS: readonly RetiredToken[] = [
   { token: "cite_evict_interval", replacement: "cite_recall_nudge", reason: "turn-counter superseded by recall-aware nudge (ux-w1-5)" },
   { token: "reverse_unarchive_enabled", replacement: null, reason: "never-wired opt-in flag deleted (ux-w1-5)" },
   { token: "reverse_unarchive_dry_run", replacement: null, reason: "unarchive dryRun comes from the caller, not config (ux-w1-5)" },
+  { token: "doctor --cite-coverage", replacement: "audit cite", reason: "cite audit moved to the audit group (W3-D)" },
+  { token: "doctor --fix-knowledge", replacement: "doctor --fix", reason: "fix-knowledge merged into a single --fix (W3-D)" },
 ];
 
 export interface RetiredReferenceHit {

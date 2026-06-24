@@ -37,7 +37,7 @@ mid-session so it stops re-arguing every architecture decision from scratch.
   │                                   pending/                    │
   │                                                                │
   │                                                                │
-  │   ↻ knowledge maintenance: use `fabric doctor --fix-knowledge` │
+  │   ↻ knowledge maintenance: use `fabric doctor --fix` │
   │     for store counters, pending defaults, and cache cleanup      │
   │                                                                │
   └────────────────────────────────────────────────────────────────┘
@@ -67,7 +67,7 @@ relevance_paths: ["src/render/**", "assets/atlas/**"]
 ```
 
 You review it (`/fabric-review` slash command; deterministic store-backed
-maintenance uses `fabric doctor --fix-knowledge`),
+maintenance uses `fabric doctor --fix`),
 promote it, and now every PreToolUse Edit on `src/render/*` surfaces this
 pitfall in-context. The next contributor never sees the black edges.
 

@@ -1,5 +1,5 @@
 /**
- * Integration tests: doctor --cite-coverage --layer flag + contract renderer
+ * Integration tests: `fabric audit cite` --layer flag + contract renderer (W3-D)
  * v2.0.0-rc.24 TASK-10
  *
  * Covers:
@@ -101,7 +101,7 @@ function makeCiteReport(
   };
 }
 
-describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
+describe("audit cite --layer (W3-D; was doctor --cite-coverage)", () => {
   it("(1) --layer=team passes through to runDoctorCiteCoverage", async () => {
     const citeSpy = vi.fn().mockResolvedValue(makeCiteReport({ layer_filter: "team" }));
     vi.doMock("@fenglimg/fabric-server", () => ({
@@ -114,10 +114,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -151,11 +151,11 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     const stderr = captureStderr();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -196,10 +196,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -234,10 +234,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -277,10 +277,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -321,10 +321,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -366,10 +366,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -406,10 +406,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -452,10 +452,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,
@@ -495,10 +495,10 @@ describe("doctor --cite-coverage --layer (rc.24 TASK-10)", () => {
       appendEventLedgerEvent: vi.fn(),
     }));
 
-    const { doctorCommand } = await import("../../src/commands/doctor.ts");
+    const { citeCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await doctorCommand.run?.({
+      await citeCommand.run?.({
         args: {
           target: "/tmp/itg-cite",
           "cite-coverage": true,

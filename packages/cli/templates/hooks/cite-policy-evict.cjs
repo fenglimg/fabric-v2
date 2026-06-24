@@ -385,7 +385,7 @@ function renderNudge(editPaths) {
     `[fabric cite] 改 ${target} 前未检测到相关 fab_recall —`,
     "建议先调 fab_recall(paths=[<被改文件>]) 让系统自动记账引用的 KB(无需手写首行 KB:)。",
     "已 recall 过可忽略本提示。仍可手写首行 `KB: <id> [applied]` 显式 override。",
-    "(nudge only — 不阻塞本次编辑;cite 覆盖率见 fabric doctor --cite-coverage)",
+    "(nudge only — 不阻塞本次编辑;cite 覆盖率见 fabric audit cite)",
   ].join("\n");
 }
 
