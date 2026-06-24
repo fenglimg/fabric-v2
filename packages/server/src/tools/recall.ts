@@ -94,8 +94,16 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         );
 
         payloadBytesOut = Buffer.byteLength(serialized, "utf8");
+        // W3-K K4: content[].text is a single-line human glance; the full data
+        // rides in structuredContent (the agent reads that). Eliminates the
+        // double-payload that bloated this response past the 16KB warn limit.
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(response) }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Fabric recall: ${result.entries.length} entries (see structuredContent)`,
+            },
+          ],
           structuredContent: response,
         };
       } catch (error) {

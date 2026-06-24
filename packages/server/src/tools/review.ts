@@ -73,8 +73,14 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
           "fab_review returned a large result set — pass a narrower filter (topic / status / id) to reduce response size.",
         );
 
+        // W3-K K4: single-line summary; full data in structuredContent.
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(response) }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Fabric review: ${response.action} (see structuredContent)`,
+            },
+          ],
           structuredContent: response,
         };
       } finally {

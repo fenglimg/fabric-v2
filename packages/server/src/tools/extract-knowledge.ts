@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ZodError } from "zod";
 
 import {
   FabExtractKnowledgeInputShape,
@@ -9,6 +10,7 @@ import {
   fabExtractKnowledgeAnnotations,
   type FabExtractKnowledgeInput,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
+import { SCOPE_COORDINATE_HINT } from "@fenglimg/fabric-shared";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
 import { appendPayloadWarning } from "./payload-warning.js";
@@ -46,7 +48,28 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
         // schema (mirrors review.ts) so a missing/empty source_sessions is
         // rejected here instead of silently persisting a contract-violating
         // pending entry with source_sessions=[].
-        const validated = FabExtractKnowledgeInputSchema.parse(input);
+        // W3-K K5: on a scope-coordinate (audience) regex failure, surface a
+        // structured error carrying an `action_hint` with a legal example so the
+        // agent can self-correct. The example is single-sourced from
+        // SCOPE_COORDINATE_HINT (also the zod regex message), so it never drifts.
+        let validated: FabExtractKnowledgeInput;
+        try {
+          validated = FabExtractKnowledgeInputSchema.parse(input);
+        } catch (parseErr) {
+          if (parseErr instanceof ZodError) {
+            const audienceIssue = parseErr.issues.find((issue) => issue.path.includes("audience"));
+            if (audienceIssue !== undefined) {
+              const hinted = new Error(audienceIssue.message) as Error & {
+                code: string;
+                action_hint: string;
+              };
+              hinted.code = "scope_coordinate_invalid";
+              hinted.action_hint = SCOPE_COORDINATE_HINT;
+              throw hinted;
+            }
+          }
+          throw parseErr;
+        }
 
         const projectRoot = resolveProjectRoot();
         const result = await extractKnowledge(projectRoot, validated);
@@ -68,8 +91,14 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
           "fab_propose produced an unexpectedly large response — extract from a smaller span of text.",
         );
 
+        // W3-K K4: single-line summary; full data in structuredContent.
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(response) }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Fabric propose: ${response.pending_path} (see structuredContent)`,
+            },
+          ],
           structuredContent: response,
         };
       } finally {

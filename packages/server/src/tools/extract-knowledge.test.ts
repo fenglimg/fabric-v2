@@ -143,12 +143,11 @@ describe("registerExtractKnowledge", () => {
     expect(result.structuredContent.idempotency_key).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(result.content).toHaveLength(1);
     expect(result.content[0]?.type).toBe("text");
-    // text mirrors structuredContent
-    const textParsed = JSON.parse(result.content[0]!.text) as {
-      pending_path: string;
-      idempotency_key: string;
-    };
-    expect(textParsed).toEqual(result.structuredContent);
+    // W3-K K4: content[].text is a single-line human summary, NOT a full
+    // JSON mirror of structuredContent (eliminates the double-payload).
+    expect(result.content[0]!.text).toContain("Fabric propose:");
+    expect(result.content[0]!.text).toContain("see structuredContent");
+    expect(result.content[0]!.text).not.toBe(JSON.stringify(result.structuredContent));
   });
 
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
@@ -359,6 +358,30 @@ describe("registerExtractKnowledge", () => {
         slug: "empty-source-sessions",
       }),
     ).rejects.toBeTruthy();
+  });
+
+  it("rejects an illegal audience scope coordinate with a structured action_hint (W3-K K5)", async () => {
+    await createProjectWithStores();
+
+    const { server, tool } = captureRegistration();
+    registerExtractKnowledge(server);
+    const t = tool();
+
+    await expect(
+      t.handler({
+        source_sessions: ["s1"],
+        recent_paths: [],
+        user_messages_summary: "Illegal audience must be rejected with a legal-example hint.",
+        proposed_reason: "decision-confirmation",
+        session_context: "Session goal: cover the audience scope-coordinate validation. Turning point: asserted the action_hint carries a legal example.",
+        type: "decisions",
+        slug: "illegal-audience",
+        audience: "Project:Bad Caps",
+      }),
+    ).rejects.toMatchObject({
+      code: "scope_coordinate_invalid",
+      action_hint: expect.stringContaining("project:fabric-v2"),
+    });
   });
 
   it("works without a tracker (optional argument)", async () => {
