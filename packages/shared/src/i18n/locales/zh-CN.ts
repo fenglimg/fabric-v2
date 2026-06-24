@@ -682,7 +682,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.store_scope_lint.message":
     "{total} 个 store scope 问题: {breakdown}。例如 {sample}。",
   "doctor.check.store_scope_lint.remediation":
-    "调 `fabric store backfill-scope` 补缺失的 semantic_scope/visibility_store;`fabric store re-scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
+    "调 `fabric store migrate backfill` 补缺失的 semantic_scope/visibility_store;`fabric store migrate scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
   // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints。
   "doctor.check.stable_id_collision.name": "Stable ID collision",
   "doctor.check.stable_id_collision.message.singular":
@@ -1345,6 +1345,7 @@ export const zhCNMessages: Messages = {
   "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
   "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
   "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
+  "cli.store.routed": "写入路由:scope '{scope}' → store '{alias}'",
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",

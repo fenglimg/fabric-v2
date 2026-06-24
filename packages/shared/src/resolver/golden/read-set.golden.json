@@ -68,7 +68,7 @@
             { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
           ],
           "warnings": [
-            { "code": "missing_store", "ref": "platform", "message": "required store 'platform' is not mounted; run `fabric store add` (suggested remote: git@github.com:acme/platform-kb.git)" }
+            { "code": "missing_store", "ref": "platform", "message": "required store 'platform' is not mounted; run `fabric store mount` (suggested remote: git@github.com:acme/platform-kb.git)" }
           ]
         },
         "writeTarget": { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal" },
@@ -127,7 +127,7 @@
         },
         "writeTarget": null,
         "writeWarnings": [
-          { "code": "missing_write_route", "ref": "project:fabric-v2", "message": "scope 'project:fabric-v2' has no explicit write route; set `fabric store route-write project:fabric-v2 <alias>`" }
+          { "code": "missing_write_route", "ref": "project:fabric-v2", "message": "scope 'project:fabric-v2' has no explicit write route; set `fabric store switch-write <alias> --scope project:fabric-v2`" }
         ]
       }
     },

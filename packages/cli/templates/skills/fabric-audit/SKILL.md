@@ -47,12 +47,12 @@ description: 知识库语义淘汰门面 — 审计 KB 健康并以 deprecate-ov
 
 ## Scope re-assignment(迁移 / backfill 后纠偏)
 
-`fabric store backfill-scope` 给老条目补 `semantic_scope`,**默认把所有 team-layer 条目标成 `semantic_scope: team`** —— over-broad 的保守默认,会让项目专属知识错误地暴露给所有项目。审计时按下面的测试纠偏:
+`fabric store migrate backfill` 给老条目补 `semantic_scope`,**默认把所有 team-layer 条目标成 `semantic_scope: team`** —— over-broad 的保守默认,会让项目专属知识错误地暴露给所有项目。审计时按下面的测试纠偏:
 
 - **team-scope 判定测试**:「换一个**没有本 app 代码**的不同 repo,这条知识还成立吗?」—— 成立才是 `team`。
   - app **内部**跨功能 / 跨玩法复用的共享组件(同一 app 多处用)**≠ team** —— 它仍绑这个项目,应是 `project:<id>`。**跨玩法复用 ≠ 跨项目复用**(如语音房 VoiceRoom 被多个玩法共用,仍是 `project:<id>`)。
 - **纠偏动作**:把被默认成 team 的项目专属条目降级 ——
-  `fabric store re-scope <store> --to project:<id> --id <id>`
+  `fabric store migrate scope <store> --to project:<id> --id <id>`
 - 完整判定树 / worked examples 见单一真源:`fabric-archive/ref/phase-3-7-semantic-scope.md`(本 skill 不重述,避免镜像漂移)。
 
 ## Constraints

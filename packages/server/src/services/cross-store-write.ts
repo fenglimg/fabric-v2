@@ -38,7 +38,7 @@ function writeTargetUnresolved(scope: string, layer: "team" | "personal"): Store
   const actionHint =
     layer === "personal"
       ? "run `fabric install --global` to mint your personal store, then retry"
-      : `mount + bind a shared store, then set an explicit route: \`fabric store route-write ${scope} <alias>\``;
+      : `mount + bind a shared store, then set an explicit route: \`fabric store switch-write <alias> --scope ${scope}\``;
   return new StoreWriteTargetUnresolvedError(
     `no write-target store resolved for scope '${scope}' — knowledge writes are store-only (dual-root co-location removed)`,
     { actionHint, fixable: true, details: { layer, scope } },

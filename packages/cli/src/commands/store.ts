@@ -48,21 +48,32 @@ const listCommand = defineCommand({
       return;
     }
     const localOnly = t("cli.shared.local-only");
-    for (const store of stores) {
-      // F14 (W2-T4): the local-only label reflects the store repo's TRUE git
-      // remote, not the config metadata. A store whose config records a remote
-      // but whose repo has no `origin` (created before the F-SYNC-REMOTE fix, or
-      // a personal store) is honestly shown as local-only.
-      const realRemote = storeGitRemote(store.alias);
+    // F14 (W2-T4): the local-only label reflects the store repo's TRUE git
+    // remote, not the config metadata. A store whose config records a remote
+    // but whose repo has no `origin` (created before the F-SYNC-REMOTE fix, or
+    // a personal store) is honestly shown as local-only.
+    // W3-E: padEnd columns replace the bare `\t` join, which misaligns whenever
+    // alias / mount-name / uuid widths differ. The trailing remote column stays
+    // ragged-right (no pointless trailing pad).
+    const rows = stores.map((store) => ({
+      alias: store.alias,
+      name: store.mount_name ?? store.store_uuid,
+      uuid: store.store_uuid,
+      remote: storeGitRemote(store.alias) ?? localOnly,
+    }));
+    const aliasW = Math.max(...rows.map((r) => r.alias.length));
+    const nameW = Math.max(...rows.map((r) => r.name.length));
+    const uuidW = Math.max(...rows.map((r) => r.uuid.length));
+    for (const r of rows) {
       console.log(
-        `${store.alias}\t${store.mount_name ?? store.store_uuid}\t${store.store_uuid}\t${realRemote ?? localOnly}`,
+        `${r.alias.padEnd(aliasW)}  ${r.name.padEnd(nameW)}  ${r.uuid.padEnd(uuidW)}  ${r.remote}`,
       );
     }
   },
 });
 
-const addCommand = defineCommand({
-  meta: { name: "add", description: "Mount a knowledge store into the global registry" },
+const mountCommand = defineCommand({
+  meta: { name: "mount", description: "Mount a knowledge store into the global registry" },
   args: {
     uuid: { type: "string", required: true, description: "Intrinsic store UUID" },
     alias: { type: "string", required: true, description: "Local alias for this store" },
@@ -185,29 +196,39 @@ const bindCommand = defineCommand({
   },
 });
 
+// W3-E: `switch-write` owns BOTH write-target modes (the old `route-write` is
+// folded in via `--scope`). Without `--scope` it sets the project's default
+// write store (storeSwitchWrite → default_write_store); with `--scope <s>` it
+// routes one semantic scope to a store (storeSetWriteRoute → write_routes[]).
+// Both are config "where do writes go" mutations — siblings, one command.
 const switchWriteCommand = defineCommand({
-  meta: { name: "switch-write", description: "Set the default write store for non-personal scopes" },
+  meta: {
+    name: "switch-write",
+    description: "Set the default write store, or route one semantic scope with --scope",
+  },
   args: {
     alias: { type: "positional", required: true, description: "Alias of the store to write to" },
+    scope: {
+      type: "string",
+      description: "Route only this semantic scope (e.g. team or project:fabric-v2) to the store",
+    },
   },
   async run({ args }) {
     const projectRoot = process.cwd();
+    if (typeof args.scope === "string" && args.scope.length > 0) {
+      storeSetWriteRoute(projectRoot, args.scope, args.alias);
+      regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
+      console.log(
+        getProjectTranslator(projectRoot)("cli.store.routed", {
+          scope: args.scope,
+          alias: args.alias,
+        }),
+      );
+      return;
+    }
     storeSwitchWrite(projectRoot, args.alias);
     regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
     console.log(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias }));
-  },
-});
-
-const routeWriteCommand = defineCommand({
-  meta: { name: "route-write", description: "Route a semantic scope to a writable shared store" },
-  args: {
-    scope: { type: "positional", required: true, description: "Semantic scope, e.g. team or project:fabric-v2" },
-    alias: { type: "positional", required: true, description: "Alias of the shared store to write to" },
-  },
-  run({ args }) {
-    const projectRoot = process.cwd();
-    storeSetWriteRoute(projectRoot, args.scope, args.alias);
-    console.log(`write route: ${args.scope} -> ${args.alias}`);
   },
 });
 
@@ -259,7 +280,7 @@ const projectCommand = defineCommand({
 // mounted store via `--store <alias>`, or the project's active write store.
 const backfillScopeCommand = defineCommand({
   meta: {
-    name: "backfill-scope",
+    name: "backfill",
     description: "Backfill semantic_scope + visibility_store on existing knowledge (repairs dirty layer)",
   },
   args: {
@@ -309,7 +330,7 @@ const backfillScopeCommand = defineCommand({
     const scopeAssigned = report.changes.filter((c) => c.changed.includes("semantic_scope")).length;
     if (scopeAssigned > 0) {
       console.error(
-        `${dryRun ? "[dry-run] " : ""}note: ${scopeAssigned} entr${scopeAssigned === 1 ? "y" : "ies"} defaulted to semantic_scope: team. Demote project-specific ones with \`fabric store re-scope <store> --to project:<id> --id <id>\`.`,
+        `${dryRun ? "[dry-run] " : ""}note: ${scopeAssigned} entr${scopeAssigned === 1 ? "y" : "ies"} defaulted to semantic_scope: team. Demote project-specific ones with \`fabric store migrate scope <store> --to project:<id> --id <id>\`.`,
       );
     }
   },
@@ -353,7 +374,7 @@ function printRescopeReport(report: RescopeReport): void {
 
 const rescopeCommand = defineCommand({
   meta: {
-    name: "re-scope",
+    name: "scope",
     description: "Rewrite knowledge entries' semantic_scope coordinate in a store",
   },
   args: {
@@ -408,20 +429,38 @@ const promoteCommand = defineCommand({
   },
 });
 
+// W3-E: knowledge-coordinate migration ops grouped under `store migrate <sub>`.
+// All three REWRITE on-disk knowledge entries' scope coordinates (scope = the
+// old `re-scope`, promote = project→team absorption, backfill = fill missing
+// semantic_scope/visibility) — distinct from the config-only write-routing of
+// `switch-write`. Grouping keeps the migrate surface semantically pure.
+const migrateCommand = defineCommand({
+  meta: { name: "migrate", description: "Rewrite knowledge entries' scope coordinates in a store" },
+  subCommands: {
+    scope: rescopeCommand,
+    promote: promoteCommand,
+    backfill: backfillScopeCommand,
+  },
+});
+
 export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
+  // W3-E: subCommands ordered by value axis — registry (which stores exist) →
+  // project wiring (where this repo reads/writes) → knowledge migration →
+  // store-internal project registry.
   subCommands: {
+    // registry
+    mount: mountCommand,
     list: listCommand,
     create: createCommand,
-    add: addCommand,
     remove: removeCommand,
     explain: explainCommand,
+    // project wiring
     bind: bindCommand,
     "switch-write": switchWriteCommand,
-    "route-write": routeWriteCommand,
-    "backfill-scope": backfillScopeCommand,
-    "re-scope": rescopeCommand,
-    promote: promoteCommand,
+    // knowledge migration
+    migrate: migrateCommand,
+    // store-internal projects
     project: projectCommand,
   },
 });

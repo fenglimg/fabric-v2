@@ -55,7 +55,7 @@ afterEach(() => {
   }
 });
 
-describe("fabric store add/list", () => {
+describe("fabric store mount/list", () => {
   it("adds a store and persists it to the global config", () => {
     storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
     expect(storeList(globalRoot)).toHaveLength(1);
@@ -78,10 +78,10 @@ describe("fabric store add/list", () => {
   });
 });
 
-// ADJ-NEWN-6 (v2.1 Wave0 dogfood): `store add` registered a uuid whose store
+// ADJ-NEWN-6 (v2.1 Wave0 dogfood): `store mount` registered a uuid whose store
 // tree never existed (phantom mount), deferring the crash to `fabric sync`
 // (spawnSync git ENOENT on a non-existent cwd). The guard moves the failure to
-// add time.
+// mount time.
 describe("assertStoreMountable (ADJ-NEWN-6 phantom-mount guard)", () => {
   it("throws when the store directory has no store.json", () => {
     expect(() => assertStoreMountable(PLATFORM, globalRoot)).toThrow(/phantom store/);
@@ -304,7 +304,7 @@ describe("fabric store bind / switch-write (project config)", () => {
     ).toBe("platform");
   });
 
-  it("route-write persists a semantic scope write route", () => {
+  it("switch-write --scope persists a semantic scope write route", () => {
     const projectRoot = seedProject();
     storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
     storeSetWriteRoute(projectRoot, "project:fabric-v2", "platform", { globalRoot });

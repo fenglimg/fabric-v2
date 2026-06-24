@@ -23,7 +23,7 @@ import type { DoctorCheck } from "./doctor.js";
 // (semantic_scope + visibility_store, schemas/scope.ts):
 //
 //   missing_scope_fields          — a canonical entry lacking semantic_scope or
-//                                    visibility_store (fixable: `store backfill-scope`).
+//                                    visibility_store (fixable: `store migrate backfill`).
 //   personal_leak_in_shared_store — a personal-scope entry (or KP- id) physically
 //                                    living in a SHARED store (R5#3 privacy red line).
 //   dangling_project_ref          — semantic_scope `project:<id>` whose <id> is not

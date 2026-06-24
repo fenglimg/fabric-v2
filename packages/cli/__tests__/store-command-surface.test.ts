@@ -32,10 +32,35 @@ afterEach(() => {
 });
 
 describe("fabric store command surface", () => {
-  it("does not expose the retired dual-root migration subcommand", () => {
+  it("exposes the W3-E value-axis subcommand set (registry → wiring → migrate → project)", () => {
     const subCommands = Object.keys(storeCommand.subCommands ?? {});
 
-    expect(subCommands).not.toContain("migrate");
+    expect(subCommands).toEqual([
+      "mount",
+      "list",
+      "create",
+      "remove",
+      "explain",
+      "bind",
+      "switch-write",
+      "migrate",
+      "project",
+    ]);
+    // W3-E de-synonymised the flat surface: these old top-level names are gone.
+    expect(subCommands).not.toContain("add"); // → mount
+    expect(subCommands).not.toContain("route-write"); // → switch-write --scope
+    expect(subCommands).not.toContain("re-scope"); // → migrate scope
+    expect(subCommands).not.toContain("backfill-scope"); // → migrate backfill
+    expect(subCommands).not.toContain("promote"); // → migrate promote
+  });
+
+  it("`migrate` is the knowledge-scope migration group, NOT the retired dual-root migrator", () => {
+    // The store-only cutover removed the old dual-root `store migrate`. W3-E
+    // reuses the word for knowledge-coordinate rewrites — assert it carries
+    // exactly the three scope-rewrite ops, so the dead meaning cannot creep back.
+    const migrateSubs = Object.keys(storeCommand.subCommands?.migrate?.subCommands ?? {});
+
+    expect(migrateSubs).toEqual(["scope", "promote", "backfill"]);
   });
 
   it("sets a failing exit code when removing a missing alias", async () => {
