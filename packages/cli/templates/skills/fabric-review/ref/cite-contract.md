@@ -1,6 +1,6 @@
 # Cite-contract + 裁决阶梯参考 (v2.2 SK5)
 
-> 本文是 cite policy 与裁决(adjudication)的**权威详参**,从 bootstrap (`.fabric/AGENTS.md`) 下沉至此,避免 bootstrap 随治理细节膨胀。bootstrap 只留**可执行 core**(cite 行格式 + 验证义务 + operator 例),完整 enum 词典 / 类型路由 / 稽核 / backward-compat / 裁决阶梯看这里。`fabric doctor --cite-coverage` 的稽核口径以本文为准。
+> 本文是 cite policy 与裁决(adjudication)的**权威详参**,从 bootstrap (`.fabric/AGENTS.md`) 下沉至此,避免 bootstrap 随治理细节膨胀。bootstrap 只留**可执行 core**(cite 行格式 + 验证义务 + operator 例),完整 enum 词典 / 类型路由 / 稽核 / backward-compat / 裁决阶梯看这里。`fabric audit cite` 的稽核口径以本文为准。
 
 ## 1. Cite 行格式 (回顾)
 
@@ -42,7 +42,7 @@ cite 尾段加 contract:`→ <operator> [<operator> ...]`
 
 ## 5. 稽核 + Backward compat
 
-- 稽核:`fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出覆盖率,含 `KB: none` sentinel 拆分。不阻断工作,只记录。
+- 稽核:`fabric audit cite [--since=7d] [--client=cc|codex|all]` 输出覆盖率,含 `KB: none` sentinel 拆分。不阻断工作,只记录。
 - Backward compat:解析器同时接受老 4-state tags(`planned` / `recalled` / `chained-from <id>`),都映射到 `[applied]` 语义;旧 session cite 仍计入 cite-coverage。
 
 ## 6. 裁决阶梯 (adjudication ladder)

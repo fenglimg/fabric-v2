@@ -62,6 +62,15 @@ export {
   type ConflictPair,
   type ConflictVerdict,
 } from "./services/conflict-lint.js";
+// W3-D (UX northstar): retired-reference lint surfaced standalone under the new
+// `fabric audit retired` subcommand (was folded into the doctor check suite).
+export {
+  inspectRetiredReferences,
+  RETIRED_TOKENS,
+  type RetiredReferenceHit,
+  type RetiredReferenceInspection,
+  type RetiredToken,
+} from "./services/doctor-retired-references-lint.js";
 // v2.2 W5 R2 (agents.meta decolo): the co-location agents.meta build/write
 // surface (buildKnowledgeMeta / writeKnowledgeMeta / computeKnowledgeBasedAgentsMeta
 // / computeKnowledgeTestIndex / loadKbIdTypeMap / isSameKnowledgeTestIndex /

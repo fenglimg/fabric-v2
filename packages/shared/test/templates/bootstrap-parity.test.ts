@@ -29,7 +29,7 @@ const PROTECTED_TOKENS: readonly string[] = [
   "fabric install",
   "fabric doctor",
   "fabric doctor --fix",
-  "fabric doctor --cite-coverage",
+  "fabric audit cite",
   "fabric store bind <alias>",
   "fabric store switch-write <alias>",
   "npm install -g @fenglimg/fabric-cli@latest",
