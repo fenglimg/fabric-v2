@@ -5,6 +5,7 @@ import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { log } from "@clack/prompts";
 
 import { resolveGlobalLocale } from "@fenglimg/fabric-shared";
+import type { ForensicReport } from "@fenglimg/fabric-shared";
 
 import { t } from "../../i18n.js";
 import { buildForensicReport } from "../../scanner/forensic.js";
@@ -55,6 +56,14 @@ export class EnvStage implements Stage {
       // Execute scaffold (create directories and files)
       const created = await this.executeScaffold(scaffold, target);
 
+      // grill F2/C-03: surface up to 4 high-signal scan findings as the
+      // "it-gets-me" payoff. The forensic report is already built (no extra scan
+      // cost) — it just used to be written to forensic.json and never shown, so
+      // the whole scan read as a content-free "scan complete".
+      if (process.stdout.isTTY === true) {
+        this.renderScanFindings(scaffold.forensicReport);
+      }
+
       // Detect and store language preference
       const fabricLanguage = this.readFabricLanguagePreference(target);
       context.state.fabricLanguage = fabricLanguage;
@@ -68,6 +77,29 @@ export class EnvStage implements Stage {
       return stageRan("env", installed, [], created);
     } catch (error) {
       return stageFailedFromError("env", error);
+    }
+  }
+
+  /**
+   * grill F2/C-03: render ≤4 high-information findings from the already-built
+   * forensic report. Hard-capped at 4 lines so the payoff never re-creates an
+   * information wall (R3).
+   */
+  private renderScanFindings(report: ForensicReport): void {
+    const lines: string[] = [];
+    const kind = report.framework?.kind;
+    if (kind && kind !== "unknown" && kind !== "none") {
+      const version = report.framework.version ? ` ${report.framework.version}` : "";
+      lines.push(t("cli.install.scan.finding.framework", { framework: `${kind}${version}` }));
+    }
+    lines.push(
+      t("cli.install.scan.finding.scale", {
+        files: String(report.topology?.total_files ?? 0),
+        entries: String(report.entry_points?.length ?? 0),
+      }),
+    );
+    for (const line of lines.slice(0, 4)) {
+      console.log(`  ${line}`);
     }
   }
 
