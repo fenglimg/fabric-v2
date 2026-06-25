@@ -119,7 +119,9 @@ export class HooksStage implements Stage {
       }
       console.log(this.formatHooksOutcome(installResults, installed.length, skipped.length, context.args.debug === true));
 
-      return stageRan("hooks", installed, skipped);
+      // TASK-004/Bug-A: the hooks stage already distinguishes "无需改动" (everything
+      // skipped) from real writes — changed iff something was actually written.
+      return stageRan("hooks", installed, skipped, undefined, installed.length > 0);
     } catch (error) {
       return stageFailedFromError("hooks", error);
     }

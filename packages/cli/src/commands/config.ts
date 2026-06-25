@@ -65,6 +65,13 @@ export type InstallMcpClientsResult = {
   installed: ClientKind[];
   skipped: ClientKind[];
   details: McpInstallDetail[];
+  /**
+   * TASK-004/Bug-A: the subset of `installed` whose target file content actually
+   * changed this run. An idempotent re-write (byte-identical before/after) is NOT
+   * counted, so the mcp stage can report changed=false on a settled re-install
+   * even though it still lists every configured client in `installed` for display.
+   */
+  changed: ClientKind[];
 };
 
 // `.fabric/fabric-config.json` — the single project-config source of truth (A1).
@@ -525,6 +532,7 @@ export async function installMcpClients(
   const installed: ClientKind[] = [];
   const skipped: ClientKind[] = [];
   const details: McpInstallDetail[] = [];
+  const changed: ClientKind[] = [];
 
   for (const writer of writers) {
     const configPath = await writer.detect(workspaceRoot);
@@ -540,10 +548,27 @@ export async function installMcpClients(
       continue;
     }
 
+    // TASK-004/Bug-A: snapshot the target file BEFORE the (unconditional) write,
+    // then compare AFTER, so an idempotent re-write doesn't read as a real change.
+    const before = await readFileIfExists(configPath);
     await writer.write(serverPath, workspaceRoot);
+    const after = await readFileIfExists(configPath);
     installed.push(writer.clientKind);
+    if (before !== after) {
+      changed.push(writer.clientKind);
+    }
     details.push({ client: writer.clientKind, path: configPath, action: "wrote" });
   }
 
-  return { installed, skipped, details };
+  return { installed, skipped, details, changed };
+}
+
+/** Read a file's content, or null when it does not exist / is unreadable. */
+async function readFileIfExists(path: string): Promise<string | null> {
+  if (!existsSync(path)) return null;
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return null;
+  }
 }

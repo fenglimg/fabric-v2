@@ -73,7 +73,10 @@ export class McpStage implements Stage {
 
       console.log(this.formatMcpOutcome(result.installed, result.skipped.length, context.args.debug === true));
 
-      return stageRan("mcp", result.installed, result.skipped);
+      // TASK-004/Bug-A: changed iff at least one client's config file content
+      // actually changed this run (idempotent re-writes don't count). `installed`
+      // / display stay as-is (per-phase still lists every configured client name).
+      return stageRan("mcp", result.installed, result.skipped, undefined, result.changed.length > 0);
     } catch (error) {
       return stageFailedFromError("mcp", error);
     }

@@ -178,4 +178,86 @@ describe("store.stage dual-slot model (TASK-002)", () => {
     // renderInfo / renderStep are the unified-renderer surface TASK-001 wired.
     expect(info.length + steps.length).toBeGreaterThan(0);
   });
+
+  // ── Bug-B: settled wizard re-install does NOT prompt (collapse reachable) ────
+  it("settled wizard config (team bound, no unbound candidate) does NOT prompt, still renders personal slot, changed=false", async () => {
+    const home = await tempDir("fabric-dualslot-home-");
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
+    // One team store, and it is the only non-personal store → bound + no unbound.
+    await storeCreate("team", "2026-06-08T00:00:00.000Z", {
+      uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      git: false,
+      globalRoot,
+    });
+
+    const target = await tempDir("fabric-dualslot-proj-");
+    saveProjectConfig(
+      { project_id: "p-done", required_stores: [{ id: "team" }], active_write_store: "team" },
+      target,
+    );
+
+    const { renderer, info } = recordingRenderer();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const selectMock = vi.mocked(select);
+
+    const result = await new StoreStage().execute(
+      baseContext(target, { renderer, interactive: true, wizardEnabled: true }),
+    );
+
+    // No prompt fired on the settled wizard path.
+    expect(selectMock).not.toHaveBeenCalled();
+    // Personal slot status still rendered.
+    expect(info.some((line) => /personal store/i.test(line))).toBe(true);
+    // changed=false so a settled interactive re-install can reach the collapse.
+    expect(result.disposition).toBe("ran");
+    expect(result.changed).toBe(false);
+  });
+
+  // ── Bug-B: actionable wizard re-install flushes render buffer before prompt ──
+  it("actionable wizard config (an unbound team candidate) flushes the render buffer before the prompt", async () => {
+    const home = await tempDir("fabric-dualslot-home-");
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
+    // Two team stores; only "team-a" is bound → "team-b" is an unbound candidate.
+    await storeCreate("team-a", "2026-06-08T00:00:00.000Z", {
+      uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      git: false,
+      globalRoot,
+    });
+    await storeCreate("team-b", "2026-06-08T00:00:00.000Z", {
+      uuid: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      git: false,
+      globalRoot,
+    });
+
+    const target = await tempDir("fabric-dualslot-proj-");
+    saveProjectConfig(
+      { project_id: "p-actionable", required_stores: [{ id: "team-a" }], active_write_store: "team-a" },
+      target,
+    );
+
+    const { renderer } = recordingRenderer();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    // The team-slot prompt resolves to SKIP (no side effects beyond the prompt).
+    vi.mocked(select).mockResolvedValue("skip");
+
+    const flushRenderBuffer = vi.fn();
+
+    await new StoreStage().execute(
+      baseContext(target, {
+        renderer,
+        interactive: true,
+        wizardEnabled: true,
+        flushRenderBuffer,
+      }),
+    );
+
+    // flushRenderBuffer was invoked (before the prompt) on the actionable path.
+    expect(flushRenderBuffer).toHaveBeenCalledTimes(1);
+    // And the prompt did fire (actionable → a real decision).
+    expect(vi.mocked(select)).toHaveBeenCalled();
+  });
 });

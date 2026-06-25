@@ -112,7 +112,8 @@ export class StoreStage implements Stage {
           globalRoot,
           context.interactive,
         );
-        return stageRan("store", [context.args.url], []);
+        // A bind happened — a real change.
+        return stageRan("store", [context.args.url], [], undefined, true);
       }
 
       const installed: string[] = [];
@@ -125,31 +126,48 @@ export class StoreStage implements Stage {
       // and re-saved so the rest of the flow sees the regularized read-set.
       this.migrateTeamSlotIfNeeded(context.target);
 
-      // W2 dual-slot (TASK-002 / R8/R9): personal slot status is ALWAYS surfaced
-      // (the old implicit-and-hidden personal behavior is gone) — even on a
-      // fully-configured project the phase MUST speak, not go mute. Single install
-      // flow of skippable steps (KT-DEC-0017): language → personal slot → team slot.
-      this.renderPersonalSlot(context, globalRoot);
-
       // W2 dual-slot (TASK-002): the team slot is a single-select over ALL
       // team-type candidates (currently-bound highlighted + mounted-but-unbound
       // + join-from-remote / create-local / skip). Non-interactive installs still
-      // render the slot status (above) but only nudge instead of prompting.
+      // render the slot status but only nudge instead of prompting.
       const candidates = teamStoreCandidates(context.target, globalRoot);
       if (!context.wizardEnabled) {
+        // W2 dual-slot (TASK-002 / R8/R9): personal slot status is ALWAYS surfaced
+        // — even on a fully-configured project the phase MUST speak, not go mute.
+        this.renderPersonalSlot(context, globalRoot);
         this.renderTeamSlotStatus(context, candidates);
         const unbound = candidates.filter((c) => !c.bound);
         if (unbound.length > 0) {
           this.warnUnboundStores(unbound);
         }
-        return stageRan("store", installed, []);
+        // Non-interactive nudge path makes no change — never blocks the collapse.
+        return stageRan("store", installed, [], undefined, false);
       }
+
+      // TASK-004/Bug-B: an "actionable" team slot is a real decision — an unbound
+      // team-type candidate exists OR nothing is bound yet. Only then do we prompt.
+      const actionable = candidates.some((c) => !c.bound) || !candidates.some((c) => c.bound);
+      if (!actionable) {
+        // Settled (team bound, no unbound candidates): NO prompt. Render the slot
+        // status through the (possibly buffered) renderer and return changed=false,
+        // so a settled interactive re-install can still reach the end-pass collapse.
+        this.renderPersonalSlot(context, globalRoot);
+        this.renderTeamSlotStatus(context, candidates);
+        return stageRan("store", installed, [], undefined, false);
+      }
+
+      // TASK-004/Bug-B: a prompt IS about to fire. Flush any buffered render
+      // context (slot status + prior phase visuals) LIVE first, so it is visible
+      // ahead of the clack select that writes to stdout directly. Flushing also
+      // abandons this run's end-pass collapse (the user has seen live output).
+      context.flushRenderBuffer?.();
+      this.renderPersonalSlot(context, globalRoot);
 
       const outcome = await this.promptTeamSlot(context, candidates, globalRoot);
       if (outcome !== null) {
         installed.push(outcome);
       }
-      return stageRan("store", installed, []);
+      return stageRan("store", installed, [], undefined, outcome !== null);
     } catch (error) {
       return stageFailedFromError("store", error);
     }
