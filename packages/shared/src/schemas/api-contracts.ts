@@ -509,6 +509,27 @@ const _recallEntrySchema = z.object({
   // true when this entry's body is ALSO injected at SessionStart (broad
   // model/guideline "ALWAYS-ACTIVE") — skip the Read, it is already in context.
   body_in_context: z.boolean().optional(),
+  // P1 recall-observability: the fused relevance score this entry scored during
+  // the plan-context sort (was computed internally but dropped before this wave).
+  // Optional + additive — backward-compatible. MUST be declared here or zod
+  // .strip() silently drops it at the MCP boundary (KT-PIT-0005).
+  score: z.number().optional(),
+  // P1 recall-observability: numbers-only decomposition of `score` into its
+  // weighted signal contributions. NEVER carries body/description text — preserves
+  // the lean read_path contract (KT-DEC-0019 / KT-GLD-0005). bm25_rank/vector_rank
+  // are reserved for a later RRF wave (declared so the wire never strips them).
+  score_breakdown: z
+    .object({
+      final: z.number(),
+      bm25: z.number().optional(),
+      bm25_rank: z.number().optional(),
+      vector: z.number().optional(),
+      vector_rank: z.number().optional(),
+      salience: z.number(),
+      recency: z.number(),
+      locality: z.number(),
+    })
+    .optional(),
 });
 
 export const recallOutputSchema = z.object({

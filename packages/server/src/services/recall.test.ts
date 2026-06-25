@@ -399,4 +399,44 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const parsedById = new Map(parsed.entries.map((e) => [e.stable_id, e]));
     expect(parsedById.get("team:KT-MOD-0001")?.body_in_context).toBe(true);
   });
+
+  // P1 recall-observability: the fused score (computed internally during the
+  // plan-context sort) is now EXPOSED on each entry, with an optional numbers-only
+  // breakdown. Mirrors the body_in_context wire-strip precedent above: the field
+  // must be DECLARED in recallOutputSchema or zod .strip() drops it at the MCP
+  // boundary (KT-PIT-0005) — so we round-trip through the schema and assert it
+  // survives. Lean read_path contract (KT-DEC-0019 / KT-GLD-0005): the breakdown
+  // is numbers-only and never carries body text.
+  it("exposes a numeric score + numbers-only score_breakdown per entry, surviving schema round-trip", async () => {
+    const projectRoot = await seedTwoEntryProject();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      // A query is required for BM25 to contribute; matches both seeded entries.
+      intent: "auth ui",
+    });
+
+    expect(result.entries.length).toBeGreaterThan(0);
+    // Every surfaced entry carries a numeric score.
+    for (const entry of result.entries) {
+      expect(typeof entry.score).toBe("number");
+      expect(entry.score_breakdown).toBeDefined();
+      // breakdown.final reconciles to the threaded score (same computation).
+      expect(entry.score_breakdown?.final).toBe(entry.score);
+      // numbers-only: every breakdown value is a number, never body text.
+      for (const value of Object.values(entry.score_breakdown ?? {})) {
+        expect(typeof value).toBe("number");
+      }
+    }
+    // entries[0] is the top-ranked entry and carries a numeric score.
+    expect(typeof result.entries[0].score).toBe("number");
+
+    // wire-strip lock (KT-PIT-0005): score / score_breakdown must survive the
+    // recallOutputSchema round-trip — else zod .strip() drops them over the wire
+    // while this direct-call test would still pass.
+    const parsed = recallOutputSchema.parse(result);
+    expect(typeof parsed.entries[0].score).toBe("number");
+    expect(parsed.entries[0].score).toBe(result.entries[0].score);
+    expect(parsed.entries[0].score_breakdown).toEqual(result.entries[0].score_breakdown);
+  });
 });

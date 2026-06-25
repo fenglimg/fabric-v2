@@ -58,6 +58,33 @@ export interface RuleDescriptionIndexItem {
   always_active?: boolean;
 }
 
+// P1 recall-observability: the fused relevance score + numbers-only breakdown an
+// item scored during the plan-context sort. Plan-context surfaces these in a
+// SEPARATE runtime-only `candidate_scores` Map (NOT on the item, NOT on the
+// plan-context wire payload — a Map serializes to {}), and recall EXPOSES them
+// per entry. Kept off RuleDescriptionIndexItem so the plan-context payload budget
+// is untouched (the score signal belongs to recall, not plan-context).
+export interface RecallScore {
+  score: number;
+  score_breakdown: RecallScoreBreakdown;
+}
+
+// P1 recall-observability: numbers-only signal decomposition. `final` is the
+// fused score (sum of the weighted components below). bm25/vector are the
+// WEIGHTED contributions actually added during scoring (0 when the signal is
+// absent — no query / no embedder). bm25_rank / vector_rank are reserved for a
+// later RRF wave and unset today (declared so the wire schema never strips them).
+export interface RecallScoreBreakdown {
+  final: number;
+  bm25?: number;
+  bm25_rank?: number;
+  vector?: number;
+  vector_rank?: number;
+  salience: number;
+  recency: number;
+  locality: number;
+}
+
 export interface AgentsMetaNode {
   file: string;
   content_ref?: string;

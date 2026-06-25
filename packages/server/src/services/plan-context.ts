@@ -5,6 +5,8 @@ import {
   type ResolutionCandidate,
   type RuleDescription,
   type RuleDescriptionIndexItem,
+  type RecallScoreBreakdown,
+  type RecallScore,
   tokenize,
 } from "@fenglimg/fabric-shared";
 import {
@@ -182,6 +184,12 @@ export type PlanContextResult = {
   // related edge to follow (honest graph-empty no-op). Additive — steady-state
   // callers never see it.
   related_appended?: Record<string, string>;
+  // P1 recall-observability: stable_id → fused score + numbers-only breakdown for
+  // each surfaced candidate. RUNTIME-ONLY: a Map serializes to {} so it never
+  // bloats the plan-context wire payload, and recall folds it into each entry's
+  // `score` / `score_breakdown` rather than re-surfacing it as a Map. Plan-context
+  // itself does NOT expose score on the wire — the signal belongs to recall.
+  candidate_scores?: Map<string, RecallScore>;
   /** Internal service→tool signal; stripped before MCP output. */
   payload_trimmed?: boolean;
   /** Internal service→tool signal; stripped before MCP output. */
@@ -464,6 +472,19 @@ export async function planContext(
       ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
       : cappedScored;
   const topKCandidates = survivingScored.map((entry) => entry.item);
+  // P1 recall-observability: capture each surfaced item's fused `score` (already
+  // computed during the sort, previously dropped when {item,score} collapsed to
+  // just `item`) + a numbers-only `score_breakdown`, keyed by stable_id. Kept in a
+  // SEPARATE Map so it never bloats the plan-context wire payload (a Map serializes
+  // to {}); recall reads it to EXPOSE the score per entry. Pure observability — it
+  // does NOT touch ranking, and `score_breakdown.final` === `score` by construction.
+  const candidateScores = new Map<string, RecallScore>();
+  for (const entry of survivingScored) {
+    candidateScores.set(entry.item.stable_id, {
+      score: entry.score,
+      score_breakdown: scoreBreakdownForItem(entry.item, scoringContext),
+    });
+  }
   // K6 (W3-K): the retrieval_budget drop set = corpus minus surfaced (top_k cap
   // + ratio-to-top floor). Computed ONCE here, BEFORE the payload trim — it is
   // CONSTANT across every trim-search iteration (the trim only ever removes more
@@ -630,6 +651,8 @@ export async function planContext(
     // ONLY when at least one neighbour was actually appended. Empty (graph-empty
     // no-op) → field omitted, steady-state wire shape unchanged.
     ...(Object.keys(relatedAppended).length > 0 ? { related_appended: relatedAppended } : {}),
+    // P1 recall-observability: runtime-only score channel (Map → {} on the wire).
+    ...(candidateScores.size > 0 ? { candidate_scores: candidateScores } : {}),
     ...(payloadTrimDropped > 0 ? { payload_trimmed: true } : {}),
     ...(payloadOverBudget ? { payload_over_budget: true } : {}),
   };
@@ -1141,6 +1164,61 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
   }
 
   return score;
+}
+
+// P1 recall-observability: numbers-only decomposition of scoreDescriptionItem's
+// fused score into its weighted signal contributions. Mirrors scoreDescriptionItem
+// EXACTLY component-for-component so `final` === scoreDescriptionItem(item, ctx)
+// — pure observability, NOT a second scoring path that could drift from ranking.
+// bm25/vector are the WEIGHTED contributions actually summed in (0 when the
+// signal is absent). bm25_rank/vector_rank are reserved for a later RRF wave and
+// left unset today.
+function scoreBreakdownForItem(
+  item: RuleDescriptionIndexItem,
+  context: ScoringContext,
+): RecallScoreBreakdown {
+  const bm25 =
+    context.bm25 !== undefined && context.queryTerms.length > 0
+      ? BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms)
+      : 0;
+  const vector =
+    context.vectorScores !== undefined
+      ? (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0)
+      : 0;
+  const salience = salienceScore(item);
+
+  let recency = 0;
+  const createdAtRaw = item.description?.created_at;
+  if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
+    const createdMs = Date.parse(createdAtRaw);
+    if (Number.isFinite(createdMs) && context.nowMs - createdMs < RECENCY_WINDOW_MS) {
+      recency = RECENCY_BOOST;
+    }
+  }
+
+  let locality = 0;
+  if (context.targetPaths.length > 0) {
+    const relevancePaths = item.description?.relevance_paths ?? [];
+    let best = 0;
+    outer: for (const rp of relevancePaths) {
+      for (const tp of context.targetPaths) {
+        const tier = localityTier(rp, tp);
+        if (tier > best) best = tier;
+        if (best === LOCALITY_SAME_FILE) break outer;
+      }
+    }
+    locality = best;
+  }
+
+  const final = bm25 + vector + salience + recency + locality;
+  return {
+    final,
+    ...(bm25 !== 0 ? { bm25 } : {}),
+    ...(vector !== 0 ? { vector } : {}),
+    salience,
+    recency,
+    locality,
+  };
 }
 
 function localityTier(relevancePath: string, targetPath: string): number {
