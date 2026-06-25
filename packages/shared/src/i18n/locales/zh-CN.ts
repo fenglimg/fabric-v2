@@ -1001,6 +1001,14 @@ export const zhCNMessages: Messages = {
   // 该库必须叫 'team'(team 是类别非别名,守 KT-MOD-0001 命名撞轴)。
   "cli.install.store.slot.personal.status": "个人库(本机全局): '{alias}' ✓",
   "cli.install.store.slot.personal.absent": "个人库(本机全局): 尚未建立",
+  "cli.install.store.slot.personal.multi-none": "个人库(本机全局): 已挂 {count} 个,尚未选定 active",
+  "cli.install.store.slot.personal.multi-prompt": "选择本机当前要用的 personal store(active):",
+  "cli.install.store.slot.personal.multi-active-label": "'{alias}'(当前 active)",
+  "cli.install.store.slot.personal.multi-switch-label": "切到 '{alias}'",
+  "cli.install.store.slot.personal.multi-new-label": "新建本地 personal store",
+  "cli.install.store.slot.personal.multi-new-hint": "全新空 personal store,并设为 active",
+  "cli.install.store.slot.personal.new-alias": "新 personal store 的别名:",
+  "cli.install.store.slot.personal.switched": "已将本机活动 personal store 切到 '{alias}'",
   "cli.install.store.slot.team.status": "团队库(team 类): '{alias}' ✓",
   "cli.install.store.slot.team.empty": "团队库(team 类): 尚未绑定",
   "cli.install.store.slot.team.prompt": "为本项目挑选团队库(team 类) —— 选一个,或加入已有/新建/跳过:",
@@ -1394,6 +1402,7 @@ export const zhCNMessages: Messages = {
   "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
   "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
   "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
+  "cli.store.switch-personal": "已将本机活动 personal store 设为 '{alias}'",
   "cli.store.routed": "写入路由:scope '{scope}' → store '{alias}'",
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":

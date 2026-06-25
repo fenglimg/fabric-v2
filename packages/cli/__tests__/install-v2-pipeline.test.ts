@@ -387,7 +387,12 @@ describe("install-v2 pipeline UX", () => {
     expect(repaired?.stores.map((store) => store.alias).sort()).toEqual(["personal", "team"]);
   });
 
-  it("prefers alias=personal and demotes accidental duplicate personal markers", async () => {
+  // 语义 A (multi-personal): the personal:true FLAG is authoritative — when a
+  // flagged personal store already exists, ensurePersonalStore is a complete
+  // no-op. It does NOT demote the flagged store (multiple personals are now
+  // legitimate) and does NOT promote an unflagged alias=personal store by name
+  // (the old alias-based force-demote is gone, KT-MOD-0001 naming-axis trap).
+  it("leaves a flagged personal store untouched and does not promote an unflagged alias=personal", async () => {
     const home = await mkdtemp(join(tmpdir(), "fabric-install-v2-home-"));
     tempRoots.push(home);
     vi.stubEnv("FABRIC_HOME", home);
@@ -424,7 +429,10 @@ describe("install-v2 pipeline UX", () => {
 
     expect(result.disposition).toBe("ran");
     const repaired = loadGlobalConfig(globalRoot);
-    expect(repaired?.stores.filter((store) => store.personal === true).map((store) => store.alias)).toEqual(["personal"]);
+    // Flag is authoritative: the already-flagged 'personal-dup' stays the personal
+    // store; the unflagged alias=personal is NOT force-promoted, nor is anything
+    // demoted. No duplicate minted.
+    expect(repaired?.stores.filter((store) => store.personal === true).map((store) => store.alias)).toEqual(["personal-dup"]);
     expect(repaired?.stores.map((store) => store.alias).sort()).toEqual(["personal", "personal-dup", "team"]);
   });
 });

@@ -17,10 +17,13 @@ import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../sto
 import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
 import { refreshLocale, t } from "../../i18n.js";
 import {
+  personalStoreCandidates,
   storeCreate,
   storeList,
   storeProjectList,
+  storeSwitchPersonal,
   teamStoreCandidates,
+  type PersonalStoreCandidate,
   type TeamStoreCandidate,
 } from "../../store/store-ops.js";
 import { saveProjectConfig } from "../../store/project-config-io.js";
@@ -134,7 +137,7 @@ export class StoreStage implements Stage {
       if (!context.wizardEnabled) {
         // W2 dual-slot (TASK-002 / R8/R9): personal slot status is ALWAYS surfaced
         // — even on a fully-configured project the phase MUST speak, not go mute.
-        this.renderPersonalSlot(context, globalRoot);
+        await this.renderPersonalSlot(context, globalRoot);
         this.renderTeamSlotStatus(context, candidates);
         const unbound = candidates.filter((c) => !c.bound);
         if (unbound.length > 0) {
@@ -151,7 +154,7 @@ export class StoreStage implements Stage {
         // Settled (team bound, no unbound candidates): NO prompt. Render the slot
         // status through the (possibly buffered) renderer and return changed=false,
         // so a settled interactive re-install can still reach the end-pass collapse.
-        this.renderPersonalSlot(context, globalRoot);
+        await this.renderPersonalSlot(context, globalRoot);
         this.renderTeamSlotStatus(context, candidates);
         return stageRan("store", installed, [], undefined, false);
       }
@@ -161,7 +164,7 @@ export class StoreStage implements Stage {
       // ahead of the clack select that writes to stdout directly. Flushing also
       // abandons this run's end-pass collapse (the user has seen live output).
       context.flushRenderBuffer?.();
-      this.renderPersonalSlot(context, globalRoot);
+      await this.renderPersonalSlot(context, globalRoot);
 
       const outcome = await this.promptTeamSlot(context, candidates, globalRoot);
       if (outcome !== null) {
@@ -344,20 +347,110 @@ export class StoreStage implements Stage {
   }
 
   /**
-   * W2 dual-slot (TASK-002 / R8): the PERSONAL slot status line — ALWAYS rendered
-   * (the old implicit-and-hidden personal behavior is gone; the phase must speak
-   * even on a fully-configured project). Personal is the machine-wide store
-   * ("本机全局"), virtually always auto-managed, so this is a status row, not a
-   * prompt. Routed through the TASK-001 unified renderer (renderInfo) when present,
-   * falling back to console.log on the plain path.
+   * 语义 A (multi-personal): the PERSONAL slot, three-state by candidate count
+   * (the grilled B shape — progressive disclosure, never nags a single-identity
+   * user). The slot status is ALWAYS surfaced (the phase must speak):
+   *   0 personal → "not set up yet" line (the mint/clone onboarding runs in the
+   *     first-install path of execute(), so this is just status here).
+   *   1 personal → silent status line — zero friction, the common case.
+   *   ≥2 personal → status line for the active (or "none active yet"), AND in the
+   *     wizard a single-select to pick the active among them (+ create-new / skip).
+   * Personal switching is machine-wide (active_personal_store), distinct from the
+   * team slot's per-project bind (KT-MOD-0001 / KT-DEC-0020).
    */
-  private renderPersonalSlot(context: InstallContext, globalRoot: string): void {
-    const personal = storeList(globalRoot).find((store) => store.personal === true);
-    const line =
-      personal === undefined
-        ? t("cli.install.store.slot.personal.absent")
-        : t("cli.install.store.slot.personal.status", { alias: personal.alias });
-    this.emitInfo(context, line);
+  private async renderPersonalSlot(context: InstallContext, globalRoot: string): Promise<void> {
+    const candidates = personalStoreCandidates(globalRoot);
+    if (candidates.length === 0) {
+      this.emitInfo(context, t("cli.install.store.slot.personal.absent"));
+      return;
+    }
+    if (candidates.length === 1) {
+      this.emitInfo(
+        context,
+        t("cli.install.store.slot.personal.status", { alias: candidates[0].alias }),
+      );
+      return;
+    }
+    // ≥2 personal: surface the active (or none-active) status, then — only in the
+    // wizard — offer the single-select to switch / add.
+    const active = candidates.find((c) => c.active);
+    this.emitInfo(
+      context,
+      active === undefined
+        ? t("cli.install.store.slot.personal.multi-none", { count: String(candidates.length) })
+        : t("cli.install.store.slot.personal.status", { alias: active.alias }),
+    );
+    if (context.wizardEnabled) {
+      await this.promptPersonalSlotSwitch(context, candidates, globalRoot);
+    }
+  }
+
+  /**
+   * 语义 A (multi-personal): the ≥2-personal single-select — mirrors promptTeamSlot
+   * but switches the MACHINE-WIDE active personal (storeSwitchPersonal → global
+   * config) rather than a per-project bind. Rows: every mounted personal (the
+   * active one highlighted, picking it is a no-op), then create-a-new-local-personal
+   * and skip. The `switch:` / `__new__` / `skip` routing values stay English
+   * (KT-GLD-0002 — only labels/messages are translated). Cloning an ADDITIONAL
+   * personal from a remote is deferred (the first-touch clone in
+   * promptPersonalStoreOnboarding already covers the new-machine restore case).
+   */
+  private async promptPersonalSlotSwitch(
+    context: InstallContext,
+    candidates: PersonalStoreCandidate[],
+    globalRoot: string,
+  ): Promise<void> {
+    const NEW = "__new__";
+    const SKIP = "skip";
+    const active = candidates.find((c) => c.active);
+    const choice = await select({
+      message: t("cli.install.store.slot.personal.multi-prompt"),
+      initialValue: active !== undefined ? `switch:${active.alias}` : SKIP,
+      options: [
+        ...candidates.map((store) => ({
+          value: `switch:${store.alias}`,
+          label: store.active
+            ? t("cli.install.store.slot.personal.multi-active-label", { alias: store.alias })
+            : t("cli.install.store.slot.personal.multi-switch-label", { alias: store.alias }),
+          hint: store.remote ?? t("cli.install.store.local-store"),
+        })),
+        {
+          value: NEW,
+          label: t("cli.install.store.slot.personal.multi-new-label"),
+          hint: t("cli.install.store.slot.personal.multi-new-hint"),
+        },
+        {
+          value: SKIP,
+          label: t("cli.install.store.skip-label"),
+          hint: t("cli.install.store.onboard.skip-hint"),
+        },
+      ],
+    });
+    if (isCancel(choice) || choice === SKIP || typeof choice !== "string") {
+      return;
+    }
+
+    if (choice.startsWith("switch:")) {
+      const alias = choice.slice("switch:".length);
+      // Picking the already-active personal is a no-op.
+      if (active !== undefined && alias === active.alias) {
+        return;
+      }
+      storeSwitchPersonal(alias, { globalRoot });
+      console.log("");
+      console.log(paint.success(t("cli.install.store.slot.personal.switched", { alias })));
+      return;
+    }
+
+    // __new__ — mint a fresh local personal store and switch to it.
+    const alias = await text({ message: t("cli.install.store.slot.personal.new-alias") });
+    if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
+      return;
+    }
+    await storeCreate(alias, new Date().toISOString(), { personal: true, globalRoot });
+    storeSwitchPersonal(alias, { globalRoot });
+    console.log("");
+    console.log(paint.success(t("cli.install.store.slot.personal.switched", { alias })));
   }
 
   /**
@@ -631,25 +724,40 @@ export class StoreStage implements Stage {
     }
   }
 
+  /**
+   * 语义 A (multi-personal): ensure the machine has AT LEAST ONE personal store —
+   * mint a fresh one only when none exists. Existence is keyed on the
+   * `personal === true` FLAG, not the literal alias "personal", because a machine
+   * may now mount several personal stores under arbitrary aliases. The old
+   * force-demote (rewriting every non-"personal"-aliased store to personal:false)
+   * is GONE: it would clobber additional personal stores on every install, which
+   * directly contradicts the multi-personal model. A config that already carries
+   * ≥1 personal store is left entirely untouched.
+   */
   private async ensurePersonalStore(config: GlobalConfig, globalRoot: string): Promise<void> {
-    const personalAlias = config.stores.find((store) => store.alias === "personal");
-    if (personalAlias === undefined) {
-      const uuid = randomUUID();
-      const mounted = { store_uuid: uuid, alias: "personal", mount_name: "personal", personal: true };
-      await initStore(
-        join(globalRoot, storeRelativePathForMount(mounted)),
-        { store_uuid: uuid, created_at: new Date().toISOString(), canonical_alias: "personal" },
-      );
-      saveGlobalConfig({ ...config, stores: [mounted, ...config.stores] }, globalRoot);
+    // Flag is authoritative: ANY personal:true store means the machine is set —
+    // leave the whole config untouched (multi-personal: ≥1 personal:true is fine,
+    // and we never demote a flagged personal).
+    if (config.stores.some((store) => store.personal === true)) {
       return;
     }
-
-    const nextStores = config.stores.map((store) => ({
-      ...store,
-      ...(store.alias === "personal" ? { personal: true } : { personal: false }),
-    }));
-    if (JSON.stringify(nextStores) !== JSON.stringify(config.stores)) {
+    // Legacy repair: a store aliased "personal" but missing the flag (a pre-flag
+    // config or a hand-edit) is promoted IN PLACE rather than minting a duplicate
+    // "personal" store. Only fires when NO flagged personal exists.
+    const legacyPersonal = config.stores.find((store) => store.alias === "personal");
+    if (legacyPersonal !== undefined) {
+      const nextStores = config.stores.map((store) =>
+        store.alias === "personal" ? { ...store, personal: true } : store,
+      );
       saveGlobalConfig({ ...config, stores: nextStores }, globalRoot);
+      return;
     }
+    const uuid = randomUUID();
+    const mounted = { store_uuid: uuid, alias: "personal", mount_name: "personal", personal: true };
+    await initStore(
+      join(globalRoot, storeRelativePathForMount(mounted)),
+      { store_uuid: uuid, created_at: new Date().toISOString(), canonical_alias: "personal" },
+    );
+    saveGlobalConfig({ ...config, stores: [mounted, ...config.stores] }, globalRoot);
   }
 }

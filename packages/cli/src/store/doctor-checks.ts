@@ -19,7 +19,13 @@ export type StoreDiagnosticCode =
   | "unbound_available_store"
   | "local_only_store"
   | "executable_in_store"
-  | "store_alias_link_drift";
+  | "store_alias_link_drift"
+  // 语义 A (multi-personal): active_personal_store points at a store that is not
+  // a mounted personal store (dangling/typo/non-personal) — error.
+  | "active_personal_invalid"
+  // 语义 A (multi-personal): ≥2 personal stores mounted but no active pointer —
+  // the resolver falls back to the first, but the user should pick (info nudge).
+  | "active_personal_unset";
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;
@@ -97,6 +103,33 @@ export function storeDoctorChecks(
         message: `store '${store.alias}' contains executable/script files (${violations.slice(0, 3).join(", ")}${violations.length > 3 ? ", …" : ""}) — stores are data-only; Fabric never runs them (S65)`,
       });
     }
+  }
+
+  // 语义 A (multi-personal): active_personal_store pointer integrity. An invalid
+  // pointer (set but not a mounted personal store) silently mis-routes personal
+  // reads/writes via the resolver fallback, so it is an ERROR. ≥2 personal stores
+  // with no active pointer is only an INFO nudge (the resolver deterministically
+  // falls back to the first; KT-DEC-0007 — nudge, never a gate). `fabric doctor
+  // --fix` repairs both via fixActivePersonalPointer. A single personal (the
+  // common case) with no pointer is correct and silent.
+  const personals = global.stores.filter((store) => store.personal === true);
+  const activePersonal = global.active_personal_store;
+  if (
+    activePersonal !== undefined &&
+    !personals.some((p) => p.alias === activePersonal || p.store_uuid === activePersonal)
+  ) {
+    diagnostics.push({
+      code: "active_personal_invalid",
+      severity: "error",
+      ref: activePersonal,
+      message: `active personal store '${activePersonal}' is not a mounted personal store; run \`fabric store switch-personal <alias>\` or \`fabric doctor --fix\``,
+    });
+  } else if (activePersonal === undefined && personals.length >= 2) {
+    diagnostics.push({
+      code: "active_personal_unset",
+      severity: "info",
+      message: `${personals.length} personal stores are mounted but none is active; run \`fabric store switch-personal <alias>\` to pick one (or \`fabric doctor --fix\` to default to the first)`,
+    });
   }
 
   return diagnostics;

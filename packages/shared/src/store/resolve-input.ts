@@ -45,6 +45,9 @@ export function buildStoreResolveInput(
     ...(project?.active_write_store === undefined
       ? {}
       : { activeWriteAlias: project.active_write_store }),
+    ...(global.active_personal_store === undefined
+      ? {}
+      : { activePersonalAlias: global.active_personal_store }),
     writeRoutes: project?.write_routes ?? [],
     ...(project?.default_write_store === undefined
       ? {}

@@ -319,11 +319,15 @@ export const mountedStoreSchema = z
     // Git remote locator for this clone, if any. Absent = local-only store
     // (valid; doctor nudges to add a remote for backup — R5#5, P6).
     remote: z.string().min(1).optional(),
-    // v2.1.0-rc.1 P3: marks the implicit personal store (the one minted by
-    // `install --global`). Exactly one mounted store carries personal=true; it
-    // is the write target for personal-scope entries (R5#3) and always in the
-    // read-set (S11). Optional (no default) so the output type stays a plain
-    // optional — consumers coalesce `?? false` when building resolver input.
+    // v2.1.0-rc.1 P3: marks a personal store (the kind minted by
+    // `install --global`). 语义 A (multi-personal): MULTIPLE mounted stores may
+    // carry personal=true — a machine can mount several personal stores and
+    // switch which is ACTIVE via globalConfig.active_personal_store. The ACTIVE
+    // personal is the write target for personal-scope entries (R5#3) and the one
+    // in the read-set (S11); non-active personal stores stay mounted but out of
+    // the read-set. Absent active pointer ⇒ resolver falls back to the first
+    // mounted personal (back-compat). Optional (no default) so the output type
+    // stays a plain optional — consumers coalesce `?? false`.
     personal: z.boolean().optional(),
     // Whether writes are accepted into this store from this machine. Optional;
     // consumers coalesce `?? true`. Shared stores cloned read-only set false.
@@ -348,6 +352,13 @@ export const globalConfigSchema = z
     // included here once initialized. Default empty so a fresh global config
     // (before `install --global`) parses cleanly.
     stores: z.array(mountedStoreSchema).optional().default([]),
+    // 语义 A (multi-personal): alias/UUID of the ACTIVE personal store among the
+    // possibly-many `personal:true` stores in `stores[]`. Machine-wide (personal
+    // is uid-scoped identity, KT-DEC-0020) — switching it in any repo takes
+    // effect everywhere. Set by `fabric store switch-personal <alias>` and the
+    // install personal slot. Absent ⇒ the resolver falls back to the first
+    // mounted personal, so legacy single-personal configs are unchanged.
+    active_personal_store: z.string().min(1).optional(),
   })
   // Root NOT strict: tolerate forward-compat keys without aborting the hot
   // read path, mirroring fabricConfigSchema's lenient-root convention.

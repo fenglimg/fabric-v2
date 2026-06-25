@@ -43,6 +43,7 @@ describe("fabric store command surface", () => {
       "explain",
       "bind",
       "switch-write",
+      "switch-personal",
       "migrate",
       "project",
     ]);

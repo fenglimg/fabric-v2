@@ -223,7 +223,18 @@ export interface StoreCreateResult {
 export async function storeCreate(
   alias: string,
   now: string,
-  options: { uuid?: string; remote?: string; git?: boolean; globalRoot?: string; mountName?: string } = {},
+  options: {
+    uuid?: string;
+    remote?: string;
+    git?: boolean;
+    globalRoot?: string;
+    mountName?: string;
+    // 语义 A (multi-personal): mint a PERSONAL store (personal:true) rather than a
+    // team-class one. Threaded into mountedBase BEFORE the storeDir is computed so
+    // storeRelativePathForMount groups it under the `personal/` bucket (not team/).
+    // Lets `store create --personal` / the install slot add an Nth personal store.
+    personal?: boolean;
+  } = {},
 ): Promise<StoreCreateResult> {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   // requireConfig first: refuse to create before `install --global` (no uid).
@@ -235,7 +246,12 @@ export async function storeCreate(
     options.mountName !== undefined
       ? storeMountNameSchema.parse(options.mountName)
       : deriveMountLabel({ remote: options.remote, alias, store_uuid: uuid });
-  const mountedBase: MountedStore = { store_uuid: uuid, alias, mount_name };
+  const mountedBase: MountedStore = {
+    store_uuid: uuid,
+    alias,
+    mount_name,
+    ...(options.personal === true ? { personal: true } : {}),
+  };
   const storeDir = mountedStoreDir(mountedBase, globalRoot);
 
   const identity = { store_uuid: uuid, created_at: now, canonical_alias: alias };
@@ -522,6 +538,67 @@ export function storeSwitchWrite(
   return next;
 }
 
+// 语义 A (multi-personal): `fabric store switch-personal <alias>` — set the
+// machine-wide ACTIVE personal store. Unlike `storeSwitchWrite` (which writes the
+// PROJECT config's active_write_store for team scopes), this writes the GLOBAL
+// config's `active_personal_store` because personal is uid-scoped machine
+// identity (KT-DEC-0020): switching it in any repo takes effect everywhere. The
+// target MUST be a mounted `personal:true` store — switch-write stays team-only
+// and is unchanged. The resolver's findPersonal honors this pointer for both the
+// read-set and the personal write-target.
+export function storeSwitchPersonal(
+  alias: string,
+  options: { globalRoot?: string } = {},
+): GlobalConfig {
+  const globalRoot = options.globalRoot ?? resolveGlobalRoot();
+  const config = requireConfig(globalRoot);
+  const store = resolveStoreByAliasOrUuid(alias, globalRoot);
+  if (store === null || store.personal !== true) {
+    throw new Error(
+      `cannot switch active personal store to '${alias}': mount a personal store first ` +
+        "(`fabric install --global` mints one; `--url <remote>` clones an existing one)",
+    );
+  }
+  const next: GlobalConfig = { ...config, active_personal_store: alias };
+  saveGlobalConfig(next, globalRoot);
+  return next;
+}
+
+// 语义 A (multi-personal): `fabric doctor --fix` repair for the active-personal
+// pointer (parallels syncStoreAliasLinks — idempotent global-config repair).
+// Repairs two doctor lints: a DANGLING active_personal_store (set but not a
+// mounted personal store) is rewritten to the first mounted personal (or the
+// field is dropped when no personal exists at all); an UNSET pointer with ≥2
+// personal stores is defaulted to the first. A valid pointer, or the 0/1-personal
+// no-pointer common case, is a no-op. Returns true iff the config was rewritten.
+export function fixActivePersonalPointer(globalRoot: string = resolveGlobalRoot()): boolean {
+  const config = loadGlobalConfig(globalRoot);
+  if (config === null) {
+    return false;
+  }
+  const personals = config.stores.filter((s) => s.personal === true);
+  const active = config.active_personal_store;
+  const valid =
+    active !== undefined && personals.some((p) => p.alias === active || p.store_uuid === active);
+  if (valid) {
+    return false;
+  }
+  // Nothing to fix: no pointer and fewer than 2 personals (0/1-personal default).
+  if (active === undefined && personals.length < 2) {
+    return false;
+  }
+  const first = personals[0];
+  if (first === undefined) {
+    // Stale pointer with no personal store mounted at all → clear it.
+    const cleared = { ...config };
+    delete cleared.active_personal_store;
+    saveGlobalConfig(cleared, globalRoot);
+    return true;
+  }
+  saveGlobalConfig({ ...config, active_personal_store: first.alias }, globalRoot);
+  return true;
+}
+
 export function storeSetWriteRoute(
   projectRoot: string,
   scope: string,
@@ -622,4 +699,41 @@ export function teamStoreCandidates(
       bound: declared.has(s.alias) || declared.has(s.store_uuid),
     }));
   return candidates.sort((a, b) => Number(b.bound) - Number(a.bound));
+}
+
+// 语义 A (multi-personal): a single personal-slot candidate — one row of the
+// install personal slot's single-select. `active:true` flags the machine's
+// current active personal (the one resolved for read-set + personal writes); the
+// rest are mounted-but-inactive personal stores the user can switch to. Mirrors
+// `teamStoreCandidates` so the install slot reuses the same data shape, but
+// filters to `personal === true` and partitions by the GLOBAL active pointer
+// (active_personal_store) rather than the project's required_stores.
+export interface PersonalStoreCandidate {
+  alias: string;
+  remote?: string;
+  active: boolean;
+}
+
+// 语义 A (multi-personal): the personal-slot candidate lister — EVERY mounted
+// `personal:true` store, with the active one (per global active_personal_store,
+// matched by alias OR store_uuid) flagged and sorted first so the slot's default
+// selection lands on the current active (no-op pick). Empty/absent global config
+// ⇒ no candidates. When no active pointer is set, no candidate is marked active
+// (the resolver still falls back to the first personal at read time).
+export function personalStoreCandidates(
+  globalRoot: string = resolveGlobalRoot(),
+): PersonalStoreCandidate[] {
+  const global = loadGlobalConfig(globalRoot);
+  if (global === null) {
+    return [];
+  }
+  const active = global.active_personal_store;
+  const candidates = global.stores
+    .filter((s) => s.personal === true)
+    .map((s) => ({
+      alias: s.alias,
+      ...(s.remote === undefined ? {} : { remote: s.remote }),
+      active: active !== undefined && (s.alias === active || s.store_uuid === active),
+    }));
+  return candidates.sort((a, b) => Number(b.active) - Number(a.active));
 }

@@ -25,6 +25,7 @@ import {
   storeProjectList,
   storeRemove,
   storeSetWriteRoute,
+  storeSwitchPersonal,
   storeSwitchWrite,
   resolveStoreDir,
 } from "../store/store-ops.js";
@@ -176,11 +177,16 @@ const createCommand = defineCommand({
     alias: { type: "string", required: true, description: "Local alias for the new store" },
     "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
     remote: { type: "string", description: "Git remote to associate (push target; optional)" },
+    personal: {
+      type: "boolean",
+      description: "Mint a personal store (personal:true) — adds another machine-wide personal identity",
+    },
   },
   async run({ args }) {
     const result = await storeCreate(args.alias, new Date().toISOString(), {
       ...(args["mount-name"] === undefined ? {} : { mountName: args["mount-name"] }),
       ...(args.remote === undefined ? {} : { remote: args.remote }),
+      ...(args.personal === true ? { personal: true } : {}),
     });
     const t = getProjectTranslator();
     console.log(
@@ -291,6 +297,25 @@ const switchWriteCommand = defineCommand({
     storeSwitchWrite(projectRoot, args.alias);
     regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
     console.log(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias }));
+  },
+});
+
+// 语义 A (multi-personal): `switch-personal` sets the machine-wide ACTIVE
+// personal store among possibly-many mounted `personal:true` stores. Distinct
+// from `switch-write` (which writes the PROJECT config for team scopes) — this
+// writes the GLOBAL config's active_personal_store because personal is uid-scoped
+// machine identity (KT-DEC-0020). Refuses a non-personal target.
+const switchPersonalCommand = defineCommand({
+  meta: {
+    name: "switch-personal",
+    description: "Set the active personal store for this machine (among mounted personal stores)",
+  },
+  args: {
+    alias: { type: "positional", required: true, description: "Alias/UUID of the personal store" },
+  },
+  run({ args }) {
+    storeSwitchPersonal(args.alias);
+    console.log(getProjectTranslator()("cli.store.switch-personal", { alias: args.alias }));
   },
 });
 
@@ -556,6 +581,7 @@ export default defineCommand({
     // project wiring
     bind: bindCommand,
     "switch-write": switchWriteCommand,
+    "switch-personal": switchPersonalCommand,
     // knowledge migration
     migrate: migrateCommand,
     // store-internal projects
