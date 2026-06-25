@@ -183,6 +183,15 @@ export class GuidanceStage implements Stage {
       return;
     }
 
+    // C-006 (TASK-004): the dense 4×6 ASCII capability table buried the summary
+    // card's closing impression. By default print a single one-line summary and
+    // let the summary card lead; the full per-client table only renders under
+    // --verbose, where the user explicitly asked for the detail.
+    if (context.args.verbose !== true) {
+      console.log(t("cli.install.capabilities.summaryLine", { count: String(detected.length) }));
+      return;
+    }
+
     console.log(t("cli.install.capabilities.title"));
 
     // Print table headers

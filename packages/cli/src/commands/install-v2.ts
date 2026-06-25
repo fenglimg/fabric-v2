@@ -3,6 +3,7 @@ import { defineCommand } from "citty";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
+import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
 import { paint } from "../colors.js";
 
 // Import the new pipeline
@@ -67,6 +68,11 @@ export const installCommand = defineCommand({
     "embed-model": {
       type: "string",
       description: t("cli.install.args.embed-model.description"),
+    },
+    verbose: {
+      type: "boolean",
+      description: t("cli.install.args.verbose.description"),
+      default: false,
     },
   },
   async run({ args }: { args: InitArgs }) {
@@ -148,6 +154,13 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
   const terminalInteractive = isInteractiveInit();
   const planOnly = args["dry-run"] === true;
 
+  // TASK-004: distinguish first-ever install (no global config yet) from a
+  // re-install, set EARLY so the pipeline intro can pick the onboarding tone and
+  // the end-pass collapse can refuse to fold a first install. The signal is the
+  // same `globalConfig === null` the store stage uses (read here read-only); the
+  // store stage re-affirms it once it has loaded the config in-stage.
+  const firstInstall = loadGlobalConfig(resolveGlobalRoot()) === null;
+
   return {
     target,
     args,
@@ -163,7 +176,7 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
     wizardEnabled: terminalInteractive && !args.yes && !planOnly,
     stageResults: [],
     rollbackStack: [],
-    state: {},
+    state: { firstInstall },
     renderer,
   };
 }

@@ -583,3 +583,43 @@ export function unboundAvailableStores(
     (s) => s.personal !== true && !declared.has(s.alias) && !declared.has(s.store_uuid),
   );
 }
+
+// W2 dual-slot (TASK-002): a single team-type candidate is one row of the team
+// slot's single-select. `bound:true` flags the store this project currently
+// reads/writes (rendered highlighted as the slot's status); the rest are
+// mounted-but-unbound stores the user can switch to. The store's REAL alias is
+// carried so the UI shows it verbatim — the team slot is named by category
+// ("团队库 / team-class"), NEVER implying the store must be aliased `team`
+// (KT-MOD-0001 naming-axis trap).
+export interface TeamStoreCandidate {
+  alias: string;
+  remote?: string;
+  bound: boolean;
+}
+
+// W2 dual-slot (TASK-002): the team-slot candidate lister — EVERY mounted
+// non-personal store, partitioned into the currently-bound one (if any) and the
+// mounted-but-unbound rest. Replaces the bind-only `unboundAvailableStores` view
+// for the install team slot: a bound store is no longer invisible to the prompt,
+// so the slot can render its status AND offer a switch in one single-select.
+// Empty global config ⇒ no candidates (nothing mounted). The bound store sorts
+// first so the slot's default selection lands on the current binding (no-op pick).
+export function teamStoreCandidates(
+  projectRoot: string,
+  globalRoot: string = resolveGlobalRoot(),
+): TeamStoreCandidate[] {
+  const global = loadGlobalConfig(globalRoot);
+  if (global === null) {
+    return [];
+  }
+  const project = loadProjectConfig(projectRoot);
+  const declared = new Set((project?.required_stores ?? []).map((r) => r.id));
+  const candidates = global.stores
+    .filter((s) => s.personal !== true)
+    .map((s) => ({
+      alias: s.alias,
+      ...(s.remote === undefined ? {} : { remote: s.remote }),
+      bound: declared.has(s.alias) || declared.has(s.store_uuid),
+    }));
+  return candidates.sort((a, b) => Number(b.bound) - Number(a.bound));
+}

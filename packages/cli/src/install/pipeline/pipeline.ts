@@ -1,7 +1,7 @@
 import { t } from "../../i18n.js";
 
 import type { Stage, InstallContext, StageResult, PipelineResult, StageName } from "./types.js";
-import type { StepInfo, SummaryInfo, SummaryDetailRow, ErrorInfo } from "../../tui/types.js";
+import type { StepInfo, SummaryInfo, SummaryDetailRow, ErrorInfo, OutputRenderer } from "../../tui/types.js";
 
 // ---------------------------------------------------------------------------
 // Stage visual anchors (EPIC-005)
@@ -33,6 +33,61 @@ const STAGE_ICONS: Record<StageName, string> = {
   validate: "✅",
   guidance: "📖",
 };
+
+// ---------------------------------------------------------------------------
+// Recording Renderer (TASK-004)
+// ---------------------------------------------------------------------------
+
+/**
+ * TASK-004 (R13): a buffering OutputRenderer that records every render call made
+ * during the stage loop instead of emitting it, so the smart-collapse decision
+ * can be made END-PASS — once every stage has run and idempotency is known. On a
+ * normal (non-collapsed) run the recording is `replay`ed verbatim to the live
+ * renderer, preserving the interleaved order of pipeline visuals and stage-emitted
+ * lines. On a collapsed all-idempotent re-install the recording is simply dropped
+ * in favour of a single health-check card. Only constructed for re-installs
+ * (firstInstall===false) with a live renderer; a first install streams live.
+ */
+class RecordingRenderer implements OutputRenderer {
+  private readonly calls: Array<(target: OutputRenderer) => void> = [];
+
+  constructor(private readonly live: OutputRenderer) {}
+
+  renderStep(step: StepInfo): void {
+    this.calls.push((t) => t.renderStep(step));
+  }
+  renderSuccess(message: string): void {
+    this.calls.push((t) => t.renderSuccess(message));
+  }
+  renderError(error: ErrorInfo | Error): void {
+    this.calls.push((t) => t.renderError(error));
+  }
+  renderWarning(message: string): void {
+    this.calls.push((t) => t.renderWarning(message));
+  }
+  renderInfo(message: string): void {
+    this.calls.push((t) => t.renderInfo(message));
+  }
+  renderSummaryCard(summary: SummaryInfo): void {
+    this.calls.push((t) => t.renderSummaryCard(summary));
+  }
+  renderSection(title: string): void {
+    this.calls.push((t) => t.renderSection(title));
+  }
+  renderComplete(): void {
+    this.calls.push((t) => t.renderComplete());
+  }
+  cleanup(): Promise<void> {
+    return this.live.cleanup?.() ?? Promise.resolve();
+  }
+
+  /** Replay every recorded call against the live renderer, in order. */
+  replay(target: OutputRenderer): void {
+    for (const call of this.calls) {
+      call(target);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Install Pipeline
@@ -72,14 +127,37 @@ export class InstallPipeline {
   async execute(initialContext: InstallContext): Promise<PipelineResult> {
     const context = initialContext;
     const totalStages = this.stages.length;
-    const renderer = context.renderer;
+    const liveRenderer = context.renderer;
 
-    // EPIC-005: Render pipeline intro
+    // TASK-004 (R13): the smart-collapse decision is END-PASS — we cannot know a
+    // re-install is fully idempotent until every stage has run. So we BUFFER the
+    // per-phase streaming visuals through a recording proxy during the loop, then
+    // at the end either FLUSH them (normal per-phase output) or DISCARD them in
+    // favour of a single health-check card (collapsed re-install). Buffering the
+    // whole renderer (not just pipeline visuals) preserves the interleaved order
+    // of stage-emitted lines on replay. A first install never buffers — it always
+    // streams live and never collapses.
+    const buffer = liveRenderer !== undefined && context.state.firstInstall === false
+      ? new RecordingRenderer(liveRenderer)
+      : undefined;
+    const renderer = buffer ?? liveRenderer;
+    // Swap the context renderer so stages emit through the buffer too while it is
+    // active; restored before the end-pass card render.
+    if (buffer !== undefined) {
+      context.renderer = buffer;
+    }
+
+    // EPIC-005: Render pipeline intro. TASK-004: a first-ever install gets an
+    // onboarding-tone intro (welcoming, sets up the one-time setup); a re-install
+    // keeps the terse "running N stages" line.
+    const introLine = context.state.firstInstall === true
+      ? t("cli.install.pipeline.intro.firstRun", { count: String(totalStages) })
+      : t("cli.install.pipeline.running", { count: String(totalStages) });
     if (renderer) {
       renderer.renderSection(t("cli.install.pipeline.title"));
-      renderer.renderInfo(t("cli.install.pipeline.running", { count: String(totalStages) }));
+      renderer.renderInfo(introLine);
     } else {
-      console.log(t("cli.install.pipeline.running", { count: String(totalStages) }));
+      console.log(introLine);
     }
 
     for (let i = 0; i < this.stages.length; i++) {
@@ -147,16 +225,20 @@ export class InstallPipeline {
 
         // If a stage fails, trigger rollback
         if (result.disposition === "failed") {
+          // Any failure cancels collapse: flush buffered per-phase visuals so the
+          // user sees the progress leading up to the error, then restore the live
+          // renderer for the error box / rollback feedback.
+          this.flushBuffer(context, buffer, liveRenderer);
           await this.rollback(context);
 
           // EPIC-007: Render error box
-          if (renderer) {
+          if (liveRenderer) {
             const errorInfo: ErrorInfo = {
               title: `${stageLabel(stageName)} ${t("cli.install.stages.failed")}`,
               message: result.errors.join(", "),
               hint: "Check the error details above. Run with --debug for more information.",
             };
-            renderer.renderError(errorInfo);
+            liveRenderer.renderError(errorInfo);
           }
 
           return {
@@ -166,12 +248,13 @@ export class InstallPipeline {
           };
         }
       } catch (error) {
+        this.flushBuffer(context, buffer, liveRenderer);
         await this.rollback(context);
         const err = error instanceof Error ? error : new Error(String(error));
 
         // EPIC-007: Render error box for uncaught errors
-        if (renderer) {
-          renderer.renderError(err);
+        if (liveRenderer) {
+          liveRenderer.renderError(err);
         }
 
         return {
@@ -182,16 +265,77 @@ export class InstallPipeline {
       }
     }
 
-    // EPIC-006: Render summary card on success
-    if (renderer) {
+    // TASK-004 end-pass: with all stages succeeded, decide between the collapsed
+    // health-check card and the normal per-phase output. Collapse only when this
+    // is a re-install (buffer was set ⇒ firstInstall===false) AND every stage was
+    // idempotent (skipped, or ran with nothing installed). Any install at all, or
+    // a first install (no buffer), falls through to the normal per-phase replay +
+    // summary card.
+    if (buffer !== undefined && this.allIdempotent(context)) {
+      context.renderer = liveRenderer;
+      if (liveRenderer) {
+        liveRenderer.renderSummaryCard(this.buildHealthCheckSummary(context, totalStages));
+        liveRenderer.renderComplete();
+      }
+      return { success: true, context };
+    }
+
+    // Normal path: flush any buffered per-phase visuals to the live renderer,
+    // then render the standard summary card.
+    this.flushBuffer(context, buffer, liveRenderer);
+    if (liveRenderer) {
       const summary = this.buildSummary(context);
-      renderer.renderSummaryCard(summary);
-      renderer.renderComplete();
+      liveRenderer.renderSummaryCard(summary);
+      liveRenderer.renderComplete();
     }
 
     return {
       success: true,
       context,
+    };
+  }
+
+  /**
+   * TASK-004: replay any buffered renderer calls to the live renderer and restore
+   * the context renderer. No-op when buffering was never active (first install /
+   * non-renderer path).
+   */
+  private flushBuffer(
+    context: InstallContext,
+    buffer: RecordingRenderer | undefined,
+    liveRenderer: OutputRenderer | undefined,
+  ): void {
+    if (buffer === undefined) {
+      return;
+    }
+    context.renderer = liveRenderer;
+    if (liveRenderer) {
+      buffer.replay(liveRenderer);
+    }
+  }
+
+  /**
+   * TASK-004: an all-idempotent run is one where every stage either skipped or ran
+   * without installing anything — the "nothing changed" re-install that the
+   * flatness grill flagged as 7×"installed=0" noise.
+   */
+  private allIdempotent(context: InstallContext): boolean {
+    return context.stageResults.every(
+      (r) => r.disposition === "skipped" || (r.disposition === "ran" && r.installed.length === 0),
+    );
+  }
+
+  /**
+   * TASK-004: the single reassurance card for a fully-idempotent re-install —
+   * "✓ Fabric 已是最新 · N 阶段就绪 · 无改动". No per-stage detail rows; the title
+   * carries the whole message.
+   */
+  private buildHealthCheckSummary(context: InstallContext, totalStages: number): SummaryInfo {
+    return {
+      title: t("cli.install.healthcheck.title", { count: String(totalStages) }),
+      successCount: context.stageResults.length,
+      skippedCount: 0,
+      errorCount: 0,
     };
   }
 

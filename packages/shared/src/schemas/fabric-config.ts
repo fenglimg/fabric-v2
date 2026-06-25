@@ -1,7 +1,65 @@
 import { z } from "zod";
 
-import { requiredStoreEntrySchema } from "./store.js";
+import { PERSONAL_STORE_SENTINEL, requiredStoreEntrySchema, type RequiredStoreEntry } from "./store.js";
 import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
+
+// W2 dual-slot (TASK-002 / R6): a project's read/write topology is locked to the
+// two-slot model — exactly one implicit personal store + AT MOST ONE team-type
+// (non-personal) store. `required_stores` historically allowed binding many
+// non-personal stores (multi-read), a raw state the author could not parse. We
+// regularize to max-1 team store: this predicate is the single source of truth
+// for "is this entry a team-slot entry" (everything that is NOT the `$personal`
+// sentinel). The personal store is implicit and never appears in required_stores
+// by id, but a `$personal`-sentinel entry (if present) is explicitly excluded.
+export function isNonPersonalRequiredStore(entry: RequiredStoreEntry): boolean {
+  return entry.id !== PERSONAL_STORE_SENTINEL;
+}
+
+// W2 dual-slot (TASK-002 / R6): the schema-level max-1-team guard, applied as a
+// `.superRefine` on `required_stores`. A config that already carries >1
+// non-personal entry is a pre-dual-slot artifact; it FAILS parse so the loader /
+// install can route it through `migrateRequiredStores` (the runtime safety net)
+// rather than silently honoring an over-bound read-set.
+function refineMaxOneTeamStore(
+  entries: RequiredStoreEntry[],
+  ctx: z.RefinementCtx,
+): void {
+  const teamCount = entries.filter(isNonPersonalRequiredStore).length;
+  if (teamCount > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        `a project may bind at most one team store (found ${teamCount}); ` +
+        "run `fabric install` to migrate to the single team slot",
+    });
+  }
+}
+
+// W2 dual-slot (TASK-002 / R6): reduce a >1-team `required_stores` to exactly one
+// team store, preserving the personal-sentinel entry/entries verbatim. The kept
+// team store is the one matching `active_write_store` when that alias is among
+// the candidates, else the first declared team entry — the install flow then
+// re-renders the team slot so the user can pick a different primary. A config
+// already at ≤1 team store is returned UNCHANGED (clean-slate no-op: the
+// author's live config already holds exactly one).
+export function migrateRequiredStores(config: {
+  required_stores?: RequiredStoreEntry[];
+  active_write_store?: string;
+}): { required_stores?: RequiredStoreEntry[]; active_write_store?: string } {
+  const declared = config.required_stores;
+  if (declared === undefined) {
+    return config;
+  }
+  const team = declared.filter(isNonPersonalRequiredStore);
+  if (team.length <= 1) {
+    return config;
+  }
+  const personal = declared.filter((entry) => !isNonPersonalRequiredStore(entry));
+  const active = config.active_write_store;
+  const kept =
+    (active !== undefined ? team.find((entry) => entry.id === active) : undefined) ?? team[0]!;
+  return { ...config, required_stores: [...personal, kept] };
+}
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
@@ -116,7 +174,9 @@ export const fabricConfigSchema = z.object({
   // `$personal` sentinel). Drives the read-set (required_stores ∪ implicit
   // personal, S11/S54) and `clone`'s missing-store onboarding (S51). Optional
   // + absent → read-set is just the implicit personal store.
-  required_stores: z.array(requiredStoreEntrySchema).optional(),
+  // W2 dual-slot (TASK-002 / R6): at most ONE non-personal (team-type) store —
+  // the two-slot model. >1 fails parse and is migrated by `migrateRequiredStores`.
+  required_stores: z.array(requiredStoreEntrySchema).superRefine(refineMaxOneTeamStore).optional(),
   // v2.1.0-rc.1 P3 (S60 / `store switch-write`): alias of the store that
   // non-personal-scope writes land in for this project. Set by
   // `fabric store switch-write <alias>`; consumed as the resolver's
@@ -456,3 +516,17 @@ export const fabricConfigSchema = z.object({
     .optional()
     .default("fast-bge-small-zh-v1.5"),
 });
+
+// W2 dual-slot (TASK-002 / R6): the LOAD-tolerant variant of fabricConfigSchema.
+// Identical field shapes, but WITHOUT the `required_stores` max-1-team
+// `.superRefine`. `loadProjectConfig` falls back to this only when the strict
+// schema rejects a config SOLELY because it still carries a pre-dual-slot >1-team
+// read-set — so existing configs keep loading (server write-routes / doctor /
+// recall) and the install flow migrates them forward, while `saveProjectConfig`
+// still enforces max-1 so no NEW over-bound config is ever written. Every other
+// field constraint is preserved (genuine corruption still throws).
+export const fabricConfigLoadSchema = fabricConfigSchema.merge(
+  z.object({
+    required_stores: z.array(requiredStoreEntrySchema).optional(),
+  }),
+);
