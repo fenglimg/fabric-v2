@@ -401,7 +401,10 @@ describe("planContext", () => {
     // first — here no query, so the alphabetic tail) and the omitted count is
     // surfaced so the cap is not silent.
     expect(result.candidates).toHaveLength(24);
-    expect(result.omitted_candidate_count).toBe(76);
+    // K6: the 76 dropped are reported as structured dropped[]{id,reason}; with no
+    // payload_budget every drop is a retrieval_budget (top_k cap) omission.
+    expect(result.dropped).toHaveLength(76);
+    expect(result.dropped?.every((d) => d.reason === "retrieval_budget")).toBe(true);
   });
 
   // ---------------------------------------------------------------------------
@@ -717,12 +720,94 @@ describe("planContext payload size (UX-1/UX-4 regression)", () => {
 
     expect(result.payload_trimmed).toBe(true);
     expect(result.candidates.length).toBeLessThan(4);
-    expect(result.omitted_candidate_count).toBeGreaterThan(0);
+    // K6: the payload trim surfaces structured payload_budget drops in dropped[].
+    expect((result.dropped ?? []).length).toBeGreaterThan(0);
+    expect(result.dropped?.some((d) => d.reason === "payload_budget")).toBe(true);
 
     const token = readSelectionToken(result.selection_token);
     expect(token?.ai_selectable_stable_ids).toEqual(
       result.candidates.map((item) => item.stable_id),
     );
+  });
+
+  // K6 (W3-K) FEEDBACK-LOOP GUARD: a LARGE omission set (50 candidates, a small
+  // top_k AND a tight payload_budget) must still trim to a SETTLED result. This
+  // is the regression guard for the deferral reason — if the structured
+  // dropped[]{id,reason} array leaked into the serialize MEASUREMENT closure it
+  // would grow as the trim removed candidates, making the measured payload size
+  // non-monotonic and the trim search oscillate (never converge / drop the wrong
+  // count). With the numeric dropped_count proxy kept in the closure and the real
+  // dropped[] assembled only AFTER the trim settles, the cut is exact and stable:
+  // every corpus entry is either surfaced or dropped exactly once, retrieval_budget
+  // (top_k cut, constant pre-trim) and payload_budget (post-trim) reasons partition
+  // the dropped set, and the two sets are disjoint.
+  it("trims a large omission set to a SETTLED result with correct reason counts (no oscillation)", async () => {
+    const projectRoot = await createTeamProject({ plan_context_top_k: 8 });
+    const longSummary = "Large omission stability corpus entry ".repeat(40);
+    const CORPUS = 50;
+    for (let i = 0; i < CORPUS; i += 1) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id: `KT-DEC-7${String(i).padStart(3, "0")}`,
+        summary: `${longSummary}${i}`,
+        maturity: "proven",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      });
+    }
+    mountStores();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      // Tight budget so the payload trim fires ON TOP OF the top_k=8 cut — the
+      // exact "two cuts compound" scenario the serialize closure must survive.
+      payload_budget: {
+        limits: { warnBytes: 1500, hardBytes: 3000 },
+        warnings: [],
+        trim_warning: {
+          code: "mcp_payload_trimmed",
+          file: "<response>",
+          action_hint: "trimmed for test",
+        },
+      },
+    });
+
+    const surfaced = result.candidates.map((item) => item.stable_id);
+    const dropped = result.dropped ?? [];
+
+    // The trim SETTLED: a positive, bounded surfaced set (≤ top_k, never empty,
+    // never the full corpus — both cuts fired) and a stable dropped tally.
+    expect(surfaced.length).toBeGreaterThan(0);
+    expect(surfaced.length).toBeLessThanOrEqual(8);
+    expect(result.payload_trimmed).toBe(true);
+
+    // Exact partition: every corpus entry is surfaced XOR dropped — no entry is
+    // lost, double-counted, or appears in both sets (the oscillation symptom).
+    expect(surfaced.length + dropped.length).toBe(CORPUS);
+    const surfacedSet = new Set(surfaced);
+    expect(dropped.every((d) => !surfacedSet.has(d.id))).toBe(true);
+    expect(new Set(dropped.map((d) => d.id)).size).toBe(dropped.length);
+
+    // Both reasons present and partitioning the dropped set: retrieval_budget
+    // (the top_k cut, computed once pre-trim) + payload_budget (post-trim).
+    const retrievalDrops = dropped.filter((d) => d.reason === "retrieval_budget");
+    const payloadDrops = dropped.filter((d) => d.reason === "payload_budget");
+    expect(retrievalDrops.length).toBeGreaterThan(0);
+    expect(payloadDrops.length).toBeGreaterThan(0);
+    expect(retrievalDrops.length + payloadDrops.length).toBe(dropped.length);
+
+    // DETERMINISM (no oscillation across calls): a second identical call yields a
+    // byte-identical surfaced set and dropped tally — the trim search converges to
+    // the same fixed point, not a flapping one.
+    const again = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      payload_budget: {
+        limits: { warnBytes: 1500, hardBytes: 3000 },
+        warnings: [],
+        trim_warning: { code: "mcp_payload_trimmed", file: "<response>", action_hint: "trimmed for test" },
+      },
+    });
+    expect(again.candidates.map((item) => item.stable_id)).toEqual(surfaced);
+    expect((again.dropped ?? []).length).toBe(dropped.length);
   });
 });
 
@@ -831,7 +916,10 @@ describe("planContext top_k truncation (W1-T3)", () => {
     // archive one (no overlap with the intent), so the two retrieval-relevant
     // entries survive.
     expect(result.candidates).toHaveLength(2);
-    expect(result.omitted_candidate_count).toBe(1);
+    // K6: the dropped entry is reported as a structured retrieval_budget drop.
+    expect(result.dropped).toEqual([
+      { id: "team:KT-DEC-9103", reason: "retrieval_budget" },
+    ]);
     const ids = result.candidates.map((item) => item.stable_id);
     expect(ids).toContain("team:KT-DEC-9101");
     expect(ids).toContain("team:KT-DEC-9102");
@@ -844,7 +932,8 @@ describe("planContext top_k truncation (W1-T3)", () => {
     const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
 
     expect(result.candidates).toHaveLength(3);
-    expect(result).not.toHaveProperty("omitted_candidate_count");
+    // K6: nothing truncated → the dropped[] field is omitted entirely.
+    expect(result).not.toHaveProperty("dropped");
   });
 });
 
@@ -880,7 +969,10 @@ describe("planContext ratio-to-top relevance floor (KT-DEC-0038)", () => {
     // fused score 0) so it falls below 0.25 × top and is dropped. top_k default
     // 24 is never reached — the cut is purely the ratio-to-top floor.
     expect(result.candidates.map((item) => item.stable_id)).toEqual(["team:KT-DEC-8001"]);
-    expect(result.omitted_candidate_count).toBe(1);
+    // K6: the ratio-to-top floor cut is a retrieval_budget drop in dropped[].
+    expect(result.dropped).toEqual([
+      { id: "team:KT-DEC-8002", reason: "retrieval_budget" },
+    ]);
   });
 
   it("top_k stays a pure safety cap when every candidate is equally relevant", async () => {
@@ -904,7 +996,11 @@ describe("planContext ratio-to-top relevance floor (KT-DEC-0038)", () => {
     });
 
     expect(result.candidates).toHaveLength(2);
-    expect(result.omitted_candidate_count).toBe(1);
+    // K6: the top_k safety cap drops exactly one (the stable_id-tiebreak tail) as
+    // a retrieval_budget omission.
+    expect(result.dropped).toEqual([
+      { id: "team:KT-DEC-8103", reason: "retrieval_budget" },
+    ]);
   });
 
   it("keeps every candidate when no intent is supplied (no floor — broad completeness)", async () => {
@@ -933,7 +1029,8 @@ describe("planContext ratio-to-top relevance floor (KT-DEC-0038)", () => {
       "team:KT-DEC-8201",
       "team:KT-DEC-8202",
     ]);
-    expect(result).not.toHaveProperty("omitted_candidate_count");
+    // K6: no truncation → dropped[] omitted entirely.
+    expect(result).not.toHaveProperty("dropped");
   });
 
   it("recall_relevance_ratio=0 disables the floor (keeps the disjoint candidate)", async () => {
