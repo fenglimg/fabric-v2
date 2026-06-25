@@ -21,7 +21,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSyn
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { reviewKnowledge, runDoctorReport } from "../packages/server/dist/index.js";
+import { reviewKnowledge, reviewPending, runDoctorReport } from "../packages/server/dist/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,7 +54,7 @@ async function main() {
 
   // ---------- Step A: list ----------
   header("STEP A: list pending");
-  const listResult = await reviewKnowledge(REPO_ROOT, { action: "list", filters: {} });
+  const listResult = await reviewPending(REPO_ROOT, { action: "list", filters: {} });
   dump("list result", listResult);
 
   // ---------- Step B: approve decision ----------

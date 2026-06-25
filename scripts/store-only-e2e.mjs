@@ -183,7 +183,7 @@ async function main() {
       "pending path is not inside store knowledge/pending/decisions",
     );
 
-    const listed = await server.reviewKnowledge(projectRoot, { action: "list" });
+    const listed = await server.reviewPending(projectRoot, { action: "list" });
     assert(listed.action === "list", "review list returned wrong action");
     const pendingItem = listed.items.find((item) => item.pending_path === extracted.pending_path);
     assert(pendingItem !== undefined, "review list did not surface store-routed pending entry");
