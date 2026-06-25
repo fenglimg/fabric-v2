@@ -62,7 +62,7 @@ export class GuidanceStage implements Stage {
       console.log("");
       console.log(translate("cli.install.next-steps"));
       console.log("");
-      console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+      console.log(paint.muted(translate("cli.install.guidance.more")));
 
       // Print restart banner
       console.log("");
