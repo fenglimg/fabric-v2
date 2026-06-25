@@ -1381,6 +1381,7 @@ export const zhCNMessages: Messages = {
   "cli.store.detached": "已分离 '{alias}' —— 磁盘上的 store 目录保留 (分离 ≠ 删除)",
   "cli.store.bound": "已绑定必需 store '{id}' (共 {count} 个必需)",
   "cli.store.switch-write": "已将本项目的活动写入 store 设为 '{alias}'",
+  "cli.store.switch-personal": "已将本机活动 personal store 设为 '{alias}'",
   "cli.store.routed": "写入路由:scope '{scope}' → store '{alias}'",
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":

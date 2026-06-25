@@ -6,12 +6,14 @@ import { globalConfigSchema, storeRelativePathForMount } from "@fenglimg/fabric-
 import { afterEach, describe, expect, it } from "vitest";
 
 import { storeDoctorChecks } from "../src/store/doctor-checks.js";
-import { saveGlobalConfig } from "../src/store/global-config-io.js";
+import { fixActivePersonalPointer } from "../src/store/store-ops.js";
+import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { saveProjectConfig } from "../src/store/project-config-io.js";
 
 // v2.1.0-rc.1 P3 — doctor multi-store health checks (S10/S51/R5#5).
 
 const PERSONAL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const PERSONAL2 = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const TEAM = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const dirs: string[] = [];
 
@@ -125,5 +127,114 @@ describe("doctor store checks", () => {
     expect(exec).toBeDefined();
     expect(exec?.severity).toBe("warn");
     expect(exec?.ref).toBe("team");
+  });
+
+  // 语义 A (multi-personal): active_personal_store pointer integrity lints.
+  it("errors when active_personal_store points at a non-personal store", () => {
+    const globalRoot = join(tmp("dr-ap1-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        active_personal_store: "team",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true },
+          { store_uuid: TEAM, alias: "team", remote: "git@h:team.git" },
+        ],
+      }),
+      globalRoot,
+    );
+    const projectRoot = tmp("dr-ap1p-");
+    saveProjectConfig({ project_id: "11111111-1111-4111-8111-111111111111" }, projectRoot);
+    const diag = storeDoctorChecks(projectRoot, globalRoot).find(
+      (d) => d.code === "active_personal_invalid",
+    );
+    expect(diag?.severity).toBe("error");
+    expect(diag?.ref).toBe("team");
+  });
+
+  it("info-nudges when ≥2 personal stores are mounted but none is active", () => {
+    const globalRoot = join(tmp("dr-ap2-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true },
+          { store_uuid: PERSONAL2, alias: "personal-work", personal: true },
+        ],
+      }),
+      globalRoot,
+    );
+    const projectRoot = tmp("dr-ap2p-");
+    saveProjectConfig({ project_id: "11111111-1111-4111-8111-111111111111" }, projectRoot);
+    const diag = storeDoctorChecks(projectRoot, globalRoot).find(
+      (d) => d.code === "active_personal_unset",
+    );
+    expect(diag?.severity).toBe("info");
+  });
+
+  it("is silent for a single personal store with no active pointer", () => {
+    const globalRoot = join(tmp("dr-ap3-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores: [{ store_uuid: PERSONAL, alias: "personal", personal: true }],
+      }),
+      globalRoot,
+    );
+    const projectRoot = tmp("dr-ap3p-");
+    saveProjectConfig({ project_id: "11111111-1111-4111-8111-111111111111" }, projectRoot);
+    const codes = storeDoctorChecks(projectRoot, globalRoot).map((d) => d.code);
+    expect(codes).not.toContain("active_personal_invalid");
+    expect(codes).not.toContain("active_personal_unset");
+  });
+
+  it("--fix rewrites a dangling active pointer to the first personal store", () => {
+    const globalRoot = join(tmp("dr-ap4-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        active_personal_store: "team",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true },
+          { store_uuid: TEAM, alias: "team", remote: "git@h:team.git" },
+        ],
+      }),
+      globalRoot,
+    );
+    expect(fixActivePersonalPointer(globalRoot)).toBe(true);
+    expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal");
+  });
+
+  it("--fix sets the active pointer to the first personal when unset with ≥2 personal", () => {
+    const globalRoot = join(tmp("dr-ap5-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true },
+          { store_uuid: PERSONAL2, alias: "personal-work", personal: true },
+        ],
+      }),
+      globalRoot,
+    );
+    expect(fixActivePersonalPointer(globalRoot)).toBe(true);
+    expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal");
+  });
+
+  it("--fix is a no-op (returns false) when the pointer is already valid", () => {
+    const globalRoot = join(tmp("dr-ap6-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        active_personal_store: "personal-work",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true },
+          { store_uuid: PERSONAL2, alias: "personal-work", personal: true },
+        ],
+      }),
+      globalRoot,
+    );
+    expect(fixActivePersonalPointer(globalRoot)).toBe(false);
+    expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal-work");
   });
 });

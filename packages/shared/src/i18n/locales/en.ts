@@ -1404,6 +1404,7 @@ export const enMessages: Messages = {
   "cli.store.detached": "detached '{alias}' — on-disk store tree left intact (detach ≠ delete)",
   "cli.store.bound": "bound required store '{id}' ({count} required)",
   "cli.store.switch-write": "active write store set to '{alias}' for this project",
+  "cli.store.switch-personal": "active personal store set to '{alias}' for this machine",
   "cli.store.routed": "write route: scope '{scope}' → store '{alias}'",
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":

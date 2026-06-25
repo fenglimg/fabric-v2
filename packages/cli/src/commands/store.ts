@@ -25,6 +25,7 @@ import {
   storeProjectList,
   storeRemove,
   storeSetWriteRoute,
+  storeSwitchPersonal,
   storeSwitchWrite,
   resolveStoreDir,
 } from "../store/store-ops.js";
@@ -294,6 +295,25 @@ const switchWriteCommand = defineCommand({
   },
 });
 
+// 语义 A (multi-personal): `switch-personal` sets the machine-wide ACTIVE
+// personal store among possibly-many mounted `personal:true` stores. Distinct
+// from `switch-write` (which writes the PROJECT config for team scopes) — this
+// writes the GLOBAL config's active_personal_store because personal is uid-scoped
+// machine identity (KT-DEC-0020). Refuses a non-personal target.
+const switchPersonalCommand = defineCommand({
+  meta: {
+    name: "switch-personal",
+    description: "Set the active personal store for this machine (among mounted personal stores)",
+  },
+  args: {
+    alias: { type: "positional", required: true, description: "Alias/UUID of the personal store" },
+  },
+  run({ args }) {
+    storeSwitchPersonal(args.alias);
+    console.log(getProjectTranslator()("cli.store.switch-personal", { alias: args.alias }));
+  },
+});
+
 // W1/A2 — store-internal project registry. `store project list <alias>` /
 // `store project create <alias> <id>` enumerate / register the projects a store
 // serves (the `<id>` segments forming `project:<id>` coordinates).
@@ -556,6 +576,7 @@ export default defineCommand({
     // project wiring
     bind: bindCommand,
     "switch-write": switchWriteCommand,
+    "switch-personal": switchPersonalCommand,
     // knowledge migration
     migrate: migrateCommand,
     // store-internal projects
