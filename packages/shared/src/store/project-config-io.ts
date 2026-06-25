@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { fabricConfigSchema } from "../schemas/fabric-config.js";
+import { fabricConfigLoadSchema, fabricConfigSchema } from "../schemas/fabric-config.js";
 import type { FabricConfig } from "../types/config.js";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,21 @@ export function loadProjectConfig(projectRoot: string): FabricConfig | null {
   if (!existsSync(path)) {
     return null;
   }
-  return fabricConfigSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const parsed = fabricConfigSchema.safeParse(raw);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  // W2 dual-slot (TASK-002 / R6): the ONLY tolerated parse failure on the read
+  // path is the max-1-team `required_stores` refinement — a pre-dual-slot config
+  // that still carries >1 non-personal store. Hard-rejecting it here would break
+  // every existing consumer (server write-routes, doctor, recall) the moment a
+  // legacy config is read, violating backward-compat. Instead the LOAD path stays
+  // tolerant (parse field shapes, skip the max-1 contract) and the INSTALL flow
+  // migrates the file forward on next run; `saveProjectConfig` still enforces the
+  // contract so no NEW >1-team config is ever written. Any OTHER schema error
+  // (genuine corruption) still throws via the strict parse below.
+  return fabricConfigLoadSchema.parse(raw);
 }
 
 export function saveProjectConfig(config: FabricConfig, projectRoot: string): void {

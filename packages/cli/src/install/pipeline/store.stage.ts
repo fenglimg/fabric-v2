@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
 
-import { initStore, resolveGlobalLocale, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
+import {
+  initStore,
+  migrateRequiredStores,
+  resolveGlobalLocale,
+  storeRelativePathForMount,
+  type FabricConfig,
+  type GlobalConfig,
+  type RequiredStoreEntry,
+} from "@fenglimg/fabric-shared";
 import { isCancel, select, text } from "@clack/prompts";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../store/global-config-io.js";
@@ -11,9 +20,10 @@ import {
   storeCreate,
   storeList,
   storeProjectList,
-  unboundAvailableStores,
+  teamStoreCandidates,
+  type TeamStoreCandidate,
 } from "../../store/store-ops.js";
-import { loadProjectConfig } from "../../store/project-config-io.js";
+import { saveProjectConfig } from "../../store/project-config-io.js";
 import { paint } from "../../colors.js";
 import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
@@ -100,32 +110,35 @@ export class StoreStage implements Stage {
 
       const installed: string[] = [];
 
-      // Merged store-setup step (single decision tree): list every mounted-but-
-      // unbound store as a direct bind option, alongside join-from-remote /
-      // create-local / skip. This kills the old two-prompt trap where a mounted
-      // store was invisible in the bind step, so the user re-cloned it via the
-      // onboarding step (KT-DEC-0017 — install is one flow of skippable steps,
-      // not separate sub-flows).
-      const unboundStores = unboundAvailableStores(context.target);
+      // W2 dual-slot (TASK-002 / R6): regularize any pre-dual-slot config that
+      // over-bound the team slot (>1 non-personal store) DOWN to exactly one
+      // before rendering — the runtime safety net behind the schema's max-1
+      // refinement. Clean-slate no-op (the live config already holds one); a
+      // legacy >1 config is reduced (keep active_write_store's store, else first)
+      // and re-saved so the rest of the flow sees the regularized read-set.
+      this.migrateTeamSlotIfNeeded(context.target);
+
+      // W2 dual-slot (TASK-002 / R8/R9): personal slot status is ALWAYS surfaced
+      // (the old implicit-and-hidden personal behavior is gone) — even on a
+      // fully-configured project the phase MUST speak, not go mute. Single install
+      // flow of skippable steps (KT-DEC-0017): language → personal slot → team slot.
+      this.renderPersonalSlot(context, globalRoot);
+
+      // W2 dual-slot (TASK-002): the team slot is a single-select over ALL
+      // team-type candidates (currently-bound highlighted + mounted-but-unbound
+      // + join-from-remote / create-local / skip). Non-interactive installs still
+      // render the slot status (above) but only nudge instead of prompting.
+      const candidates = teamStoreCandidates(context.target, globalRoot);
       if (!context.wizardEnabled) {
-        // Non-interactive installs only print the nudge and keep going.
-        if (unboundStores.length > 0) {
-          this.warnUnboundStores(unboundStores);
+        this.renderTeamSlotStatus(context, candidates);
+        const unbound = candidates.filter((c) => !c.bound);
+        if (unbound.length > 0) {
+          this.warnUnboundStores(unbound);
         }
         return stageRan("store", installed, []);
       }
 
-      // Don't nag a fully-configured project: skip the prompt only when there is
-      // already an active write store AND nothing mounted is left to bind.
-      const projectConfig = loadProjectConfig(context.target);
-      const hasWriteStore =
-        typeof projectConfig?.active_write_store === "string" &&
-        projectConfig.active_write_store.length > 0;
-      if (hasWriteStore && unboundStores.length === 0) {
-        return stageRan("store", installed, []);
-      }
-
-      const outcome = await this.promptStoreSetup(context, unboundStores, globalRoot);
+      const outcome = await this.promptTeamSlot(context, candidates, globalRoot);
       if (outcome !== null) {
         installed.push(outcome);
       }
@@ -257,44 +270,126 @@ export class StoreStage implements Stage {
   }
 
   /**
-   * Merged store-setup prompt (Q1/Q2 of the store-onboarding grill): ONE select
-   * whose top options are every mounted-but-unbound store (direct bind, zero
-   * clone), followed by join-from-remote / create-local / skip. Replaces the old
-   * `promptBindMountedStore` + `promptStoreOnboarding` pair — a mounted store can
-   * no longer be invisible in one prompt and then re-cloned in the next.
-   *
-   * Already-bound non-personal stores are surfaced as an info line above the
-   * prompt (pure visibility); the personal store is implicit and never listed.
-   * Returns an install marker (`bound:<alias>` / `created:<alias>`) or null on
-   * skip / cancel.
+   * W2 dual-slot (TASK-002 / R6): regularize a pre-dual-slot project config that
+   * over-bound the team slot (>1 non-personal `required_stores`) down to exactly
+   * one. The schema's max-1 `.superRefine` makes a >1 config FAIL the strict
+   * `loadProjectConfig` parse, so this step reads the config file RAW (the
+   * lenient JSON read below) to regularize it BEFORE any strict load runs:
+   * `migrateRequiredStores` keeps the `active_write_store`'s store (else the
+   * first declared team store) and drops the rest, then `saveProjectConfig`
+   * re-validates the now-≤1 config. Pure no-op when the config already holds ≤1
+   * team store (the clean-slate common case) or doesn't exist — it never
+   * rewrites a healthy config and never throws on a legacy one.
    */
-  private async promptStoreSetup(
-    context: InstallContext,
-    unboundStores: Array<{ alias: string; remote?: string }>,
-    globalRoot: string,
-  ): Promise<string | null> {
-    // Q2 — visibility of already-bound stores (info line, not selectable).
-    const boundAliases = this.boundStoreAliases(context.target, globalRoot);
-    if (boundAliases.length > 0) {
-      console.log(
-        paint.muted(
-          t("cli.install.store.setup.already-bound", {
-            aliases: boundAliases.map((a) => `'${a}'`).join(", "),
-          }),
-        ),
+  private migrateTeamSlotIfNeeded(projectRoot: string): void {
+    const raw = this.readProjectConfigRaw(projectRoot);
+    if (raw === null) {
+      return;
+    }
+    const migrated = migrateRequiredStores(raw);
+    if (migrated.required_stores !== raw.required_stores) {
+      saveProjectConfig(
+        { ...(raw as FabricConfig), required_stores: migrated.required_stores },
+        projectRoot,
       );
     }
+  }
+
+  /**
+   * Lenient raw read of the project config JSON — no schema parse — so the
+   * dual-slot migration can inspect a legacy >1-team config that the strict
+   * schema (max-1 refine) would reject. Returns null when the file is absent or
+   * unreadable; the caller treats that as "nothing to migrate".
+   */
+  private readProjectConfigRaw(
+    projectRoot: string,
+  ): { required_stores?: RequiredStoreEntry[]; active_write_store?: string } | null {
+    const path = join(projectRoot, ".fabric", "fabric-config.json");
+    if (!existsSync(path)) {
+      return null;
+    }
+    try {
+      return JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * W2 dual-slot (TASK-002 / R8): the PERSONAL slot status line — ALWAYS rendered
+   * (the old implicit-and-hidden personal behavior is gone; the phase must speak
+   * even on a fully-configured project). Personal is the machine-wide store
+   * ("本机全局"), virtually always auto-managed, so this is a status row, not a
+   * prompt. Routed through the TASK-001 unified renderer (renderInfo) when present,
+   * falling back to console.log on the plain path.
+   */
+  private renderPersonalSlot(context: InstallContext, globalRoot: string): void {
+    const personal = storeList(globalRoot).find((store) => store.personal === true);
+    const line =
+      personal === undefined
+        ? t("cli.install.store.slot.personal.absent")
+        : t("cli.install.store.slot.personal.status", { alias: personal.alias });
+    this.emitInfo(context, line);
+  }
+
+  /**
+   * W2 dual-slot (TASK-002): the TEAM slot status line (non-interactive + the
+   * header above the interactive prompt). Names the slot by CATEGORY ("团队库 /
+   * team-class") and shows the REAL bound alias — NEVER implying the store must be
+   * aliased `team` (KT-MOD-0001 naming-axis trap). When nothing is bound the line
+   * says so explicitly rather than going silent.
+   */
+  private renderTeamSlotStatus(context: InstallContext, candidates: TeamStoreCandidate[]): void {
+    const bound = candidates.find((c) => c.bound);
+    const line =
+      bound === undefined
+        ? t("cli.install.store.slot.team.empty")
+        : t("cli.install.store.slot.team.status", { alias: bound.alias });
+    this.emitInfo(context, line);
+  }
+
+  /**
+   * Render an info line through the TASK-001 unified renderer when one is wired
+   * (interactive installs), else fall back to a plain console.log (non-TTY / CI).
+   * Single rendering path — no third bespoke render channel (grill C-13 / F4-1).
+   */
+  private emitInfo(context: InstallContext, message: string): void {
+    if (context.renderer) {
+      context.renderer.renderInfo(message);
+    } else {
+      console.log(message);
+    }
+  }
+
+  /**
+   * W2 dual-slot (TASK-002): the team slot's single-select. ONE prompt listing
+   * EVERY team-type candidate — the currently-bound store (highlighted as the
+   * default, picking it is a no-op), every mounted-but-unbound team store (a
+   * switch), then join-from-remote / create-local / skip. The slot is named by
+   * category, the rows show real aliases (KT-MOD-0001). Returns an install marker
+   * (`bound:<alias>` / `created:<alias>`) or null on skip / cancel / no-op.
+   */
+  private async promptTeamSlot(
+    context: InstallContext,
+    candidates: TeamStoreCandidate[],
+    globalRoot: string,
+  ): Promise<string | null> {
+    // Slot status header (also the only output on the non-interactive path).
+    this.renderTeamSlotStatus(context, candidates);
 
     const JOIN = "__join__";
     const CREATE = "__create__";
     const SKIP = "skip";
+    const boundCandidate = candidates.find((c) => c.bound);
     const choice = await select({
-      message: t("cli.install.store.setup.prompt"),
-      initialValue: unboundStores.length > 0 ? `bind:${unboundStores[0].alias}` : SKIP,
+      message: t("cli.install.store.slot.team.prompt"),
+      initialValue: boundCandidate !== undefined ? `bind:${boundCandidate.alias}` : SKIP,
       options: [
-        ...unboundStores.map((store) => ({
+        ...candidates.map((store) => ({
           value: `bind:${store.alias}`,
-          label: t("cli.install.store.setup.bind-label", { alias: store.alias }),
+          label: store.bound
+            ? t("cli.install.store.slot.team.bound-label", { alias: store.alias })
+            : t("cli.install.store.slot.team.switch-label", { alias: store.alias }),
           hint: store.remote ?? t("cli.install.store.local-store"),
         })),
         {
@@ -315,19 +410,24 @@ export class StoreStage implements Stage {
       ],
     });
     if (isCancel(choice) || choice === SKIP || typeof choice !== "string") {
-      if (unboundStores.length > 0) {
-        this.warnUnboundStores(unboundStores);
+      const unbound = candidates.filter((c) => !c.bound);
+      if (unbound.length > 0) {
+        this.warnUnboundStores(unbound);
       }
       return null;
     }
 
     if (choice.startsWith("bind:")) {
       const alias = choice.slice("bind:".length);
+      // Picking the already-bound store is a no-op — the slot stays as-is.
+      if (boundCandidate !== undefined && alias === boundCandidate.alias) {
+        return null;
+      }
       const bound = await this.bindStoreToProject(context.target, alias, globalRoot, {
         interactive: true,
       });
       if (bound === null) {
-        this.warnUnboundStores(unboundStores);
+        this.warnUnboundStores(candidates.filter((c) => !c.bound));
         return null;
       }
       console.log("");
@@ -346,7 +446,9 @@ export class StoreStage implements Stage {
       return `bound:${await this.bindRemoteStoreToProject(context.target, url, globalRoot, true)}`;
     }
 
-    // CREATE — fresh local store (optionally remote-backed).
+    // CREATE — fresh local team-class store (optionally remote-backed). The
+    // `initialValue: "team"` is only a DEFAULT alias suggestion the user can
+    // overwrite; the team SLOT itself is category-named (KT-MOD-0001).
     const alias = await text({ message: t("cli.install.store.onboard.alias"), initialValue: "team" });
     if (isCancel(alias) || typeof alias !== "string" || alias.length === 0) {
       return null;
@@ -364,34 +466,6 @@ export class StoreStage implements Stage {
         ? { globalRoot, interactive: true }
         : { remote: remoteStr, globalRoot, interactive: true },
     )}`;
-  }
-
-  /**
-   * The project's already-bound non-personal store aliases (Q2 visibility line).
-   * Reads `required_stores` from the project config and keeps only those still
-   * mounted as non-personal stores in the global registry.
-   */
-  private boundStoreAliases(projectRoot: string, globalRoot: string): string[] {
-    const declared = loadProjectConfig(projectRoot)?.required_stores ?? [];
-    if (declared.length === 0) {
-      return [];
-    }
-    const mounted = new Map(
-      storeList(globalRoot)
-        .filter((s) => s.personal !== true)
-        .flatMap((s) => [
-          [s.alias, s.alias] as const,
-          [s.store_uuid, s.alias] as const,
-        ]),
-    );
-    const aliases = new Set<string>();
-    for (const entry of declared) {
-      const alias = mounted.get(entry.id);
-      if (alias !== undefined) {
-        aliases.add(alias);
-      }
-    }
-    return [...aliases];
   }
 
   /**

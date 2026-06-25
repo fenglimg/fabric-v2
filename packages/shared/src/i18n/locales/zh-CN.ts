@@ -983,6 +983,16 @@ export const zhCNMessages: Messages = {
   "cli.install.store.setup.prompt": "为本项目设置知识 store？",
   "cli.install.store.setup.bind-label": "绑定已挂载: {alias}",
   "cli.install.store.setup.already-bound": "已绑定本项目: {aliases} ✓",
+  // W2 dual-slot (TASK-002): 个人库槽 + 团队库槽 的状态 / 提示文案。团队库槽按
+  // 「类别」命名(team 类),候选项显示 store 的真实 alias —— 文案 MUST NOT 暗示
+  // 该库必须叫 'team'(team 是类别非别名,守 KT-MOD-0001 命名撞轴)。
+  "cli.install.store.slot.personal.status": "个人库(本机全局): '{alias}' ✓",
+  "cli.install.store.slot.personal.absent": "个人库(本机全局): 尚未建立",
+  "cli.install.store.slot.team.status": "团队库(team 类): '{alias}' ✓",
+  "cli.install.store.slot.team.empty": "团队库(team 类): 尚未绑定",
+  "cli.install.store.slot.team.prompt": "为本项目挑选团队库(team 类) —— 选一个,或加入已有/新建/跳过:",
+  "cli.install.store.slot.team.bound-label": "保持当前: {alias}",
+  "cli.install.store.slot.team.switch-label": "切到已挂载: {alias}",
   "cli.install.store.skip-label": "跳过",
   "cli.install.store.bind-mounted.skip-hint": "暂不绑定已挂载的 store",
   "cli.install.store.project-coordinate": "在 store '{store}' 中的项目坐标 (project coordinate):",

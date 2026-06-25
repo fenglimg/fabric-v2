@@ -260,13 +260,16 @@ describe("fabric store bind / switch-write (project config)", () => {
 
   it("switch-write command refreshes the resolved-bindings snapshot write target", () => {
     const projectRoot = seedProject();
+    // W2 dual-slot (TASK-002): a project binds at most ONE team store. The team
+    // slot here is `platform` (the single read-set store); the test asserts that
+    // `switch-write platform` re-points the resolved-bindings snapshot write
+    // target onto it. (The pre-dual-slot variant switched between two co-bound
+    // read-set stores — a multi-read scenario the max-1 model removes.)
     saveProjectConfig(
       {
         project_id: "11111111-1111-4111-8111-111111111111",
         fabric_language: "en",
-        required_stores: [{ id: "team" }, { id: "platform" }],
-        active_write_store: "team",
-        default_write_store: "team",
+        required_stores: [{ id: "platform" }],
       },
       projectRoot,
     );
@@ -276,10 +279,11 @@ describe("fabric store bind / switch-write (project config)", () => {
       globalRoot,
       now: "2026-06-01T00:00:00.000Z",
     });
+    // No active write store yet → snapshot has no team write target.
     expect(
       readBindingsSnapshot(globalRoot, "11111111-1111-4111-8111-111111111111")
         ?.write_target?.alias,
-    ).toBe("team");
+    ).toBeUndefined();
 
     const prevHome = process.env.FABRIC_HOME;
     const prevCwd = process.cwd();
@@ -325,10 +329,13 @@ describe("clone onboarding — missing required stores (S51)", () => {
     storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
     const projectRoot = mkdtempSync(join(tmpdir(), "fabric-clone-"));
     dirs.push(projectRoot);
+    // W2 dual-slot (TASK-002): a project binds at most one team store. Declare
+    // the single required team store as `platform` (NOT mounted — only `team` is
+    // in the registry) so the missing-store onboarding still surfaces it.
     saveProjectConfig(
       {
         project_id: "11111111-1111-4111-8111-111111111111",
-        required_stores: [{ id: "team" }, { id: "platform", suggested_remote: "git@h:platform.git" }],
+        required_stores: [{ id: "platform", suggested_remote: "git@h:platform.git" }],
       },
       projectRoot,
     );

@@ -193,10 +193,11 @@ describe("install-v2 pipeline UX", () => {
 
     expect(result.disposition).toBe("ran");
     expect(result.installed).toEqual(["bound:team"]);
-    // C5: prompts route through t() now — assert via the same translator the
-    // StoreStage uses, so the check is locale-agnostic.
+    // W2 dual-slot (TASK-002): prompts route through t() — assert via the same
+    // translator the StoreStage uses (locale-agnostic). The store-setup prompt is
+    // now the team SLOT single-select.
     expect(select).toHaveBeenCalledWith(expect.objectContaining({
-      message: t("cli.install.store.setup.prompt"),
+      message: t("cli.install.store.slot.team.prompt"),
     }));
     // grill-6fixes (D6): silent path — no project text prompt was shown.
     expect(text).not.toHaveBeenCalled();

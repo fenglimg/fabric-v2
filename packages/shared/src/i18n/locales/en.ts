@@ -1002,6 +1002,17 @@ export const enMessages: Messages = {
   "cli.install.store.setup.prompt": "Set up a knowledge store for this project?",
   "cli.install.store.setup.bind-label": "bind mounted: {alias}",
   "cli.install.store.setup.already-bound": "already bound to this project: {aliases} ✓",
+  // W2 dual-slot (TASK-002): personal slot + team slot status / prompt copy. The
+  // team slot is named by CATEGORY (team-class), and rows show the store's REAL
+  // alias — the copy MUST NOT imply the store has to be aliased literally `team`
+  // (KT-MOD-0001 naming-axis trap).
+  "cli.install.store.slot.personal.status": "Personal store (machine-wide): '{alias}' ✓",
+  "cli.install.store.slot.personal.absent": "Personal store (machine-wide): not set up yet",
+  "cli.install.store.slot.team.status": "Team store (team-class): '{alias}' ✓",
+  "cli.install.store.slot.team.empty": "Team store (team-class): none bound yet",
+  "cli.install.store.slot.team.prompt": "Team store (team-class) for this project — pick one, or join/create/skip:",
+  "cli.install.store.slot.team.bound-label": "keep current: {alias}",
+  "cli.install.store.slot.team.switch-label": "switch to mounted: {alias}",
   "cli.install.store.skip-label": "skip",
   "cli.install.store.bind-mounted.skip-hint": "leave mounted stores unbound for now",
   "cli.install.store.project-coordinate": "Project coordinate in store '{store}':",
