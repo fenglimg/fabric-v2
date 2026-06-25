@@ -74,7 +74,9 @@ export async function uninstallFabricRouterSkill(
 export async function uninstallFabricArchiveSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill", SKILL_DESTINATIONS.fabricArchive, projectRoot);
+  return removeSkill("skill", SKILL_DESTINATIONS.fabricArchive, projectRoot, {
+    includeRefFiles: true,
+  });
 }
 
 /**
@@ -85,7 +87,9 @@ export async function uninstallFabricArchiveSkill(
 export async function uninstallFabricReviewSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot);
+  return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot, {
+    includeRefFiles: true,
+  });
 }
 
 /**
@@ -150,17 +154,75 @@ export async function uninstallFabricConnectSkill(
   );
 }
 
+type RemoveSkillOptions = {
+  /**
+   * Inverse of the install-side `FabricSkillInstallSpec.includeRefFiles`. When
+   * set, the skill ships `ref/*.md` companion files (installed by
+   * `installSkillRefFiles`) into `<skillDir>/ref/`. Without removing them the
+   * `ref/` directory keeps `<skillDir>` non-empty, so `rmDirIfEmpty` below
+   * leaves the whole skill directory (plus its ref files) orphaned after
+   * `fabric uninstall`. Removing the install-written `.md` files first lets the
+   * parent prune succeed.
+   */
+  includeRefFiles?: boolean;
+};
+
 async function removeSkill(
   step: string,
   rels: readonly string[],
   projectRoot: string,
+  opts: RemoveSkillOptions = {},
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
   for (const rel of rels) {
     const target = join(projectRoot, rel);
     results.push(await rmIfExists(step, target));
-    results.push(await rmDirIfEmpty(`${step}-dir`, dirname(target)));
+    const skillDir = dirname(target);
+    if (opts.includeRefFiles) {
+      results.push(...(await removeSkillRefFiles(step, skillDir)));
+    }
+    results.push(await rmDirIfEmpty(`${step}-dir`, skillDir));
   }
+  return results;
+}
+
+/**
+ * Inverse of install-side `installSkillRefFiles`. Removes every `.md` file
+ * under `<skillDir>/ref/` (the only files install writes there), then attempts
+ * to rmdir the now-empty `ref/` directory.
+ *
+ * The `.md` glob is intentional and mirrors {@link removeHookLibs}' `.cjs`
+ * conservatism: install only ever ships `*.md` ref companions, so any
+ * non-`.md` file a user dropped into `ref/` is preserved (and keeps `ref/`
+ * non-empty, which is the correct outcome — we never created it).
+ */
+async function removeSkillRefFiles(
+  step: string,
+  skillDir: string,
+): Promise<UninstallStepResult[]> {
+  const refDir = join(skillDir, "ref");
+  if (!existsSync(refDir)) {
+    return [{ step: `${step}-ref`, path: refDir, status: "skipped", message: "absent" }];
+  }
+  let entries: string[];
+  try {
+    entries = await readdir(refDir);
+  } catch (error: unknown) {
+    return [
+      {
+        step: `${step}-ref`,
+        path: refDir,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    ];
+  }
+  const results: UninstallStepResult[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".md")) continue;
+    results.push(await rmIfExists(`${step}-ref`, join(refDir, entry)));
+  }
+  results.push(await rmDirIfEmpty(`${step}-ref-dir`, refDir));
   return results;
 }
 
