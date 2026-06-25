@@ -1333,6 +1333,38 @@ describe("planContext BM25 model cache (ISS-024)", () => {
     await planContext(p2, { paths: ["src/x.ts"], intent: "zephyr" });
     expect(__bm25CacheStats().builds).toBe(2);
   });
+
+  // P1 recall-engine-refactor (TASK-002): cold-process disk-cache hit. The first
+  // call builds + serializes the model to `.fabric/cache/bm25/<revision>.json`.
+  // Clearing ONLY the in-memory tier (__resetBm25Cache) simulates a fresh hook
+  // process whose memory cache is empty but whose disk cache survives — the
+  // second call over the SAME revision must rehydrate from disk and NOT call
+  // buildBm25Model again (build counter stays 1).
+  it("a cold process hits the disk cache and skips rebuild (same revision)", async () => {
+    __resetBm25Cache();
+    const projectRoot = await seedQueryableProject("disk-cache", TEAM_STORE);
+
+    const r1 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr retrieval" });
+    expect(__bm25CacheStats().builds).toBe(1);
+
+    // The disk snapshot is now written. Drop only the memory tier (cold process).
+    __resetBm25Cache();
+    expect(__bm25CacheStats().builds).toBe(0);
+
+    const r2 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr retrieval" });
+    // Disk hit → rehydrate, no rebuild.
+    expect(__bm25CacheStats().builds).toBe(0);
+    // Ranking is unchanged across the disk round-trip (same corpus, same query).
+    expect(r2.candidates.map((c) => c.stable_id)).toEqual(r1.candidates.map((c) => c.stable_id));
+  });
+
+  it("a cold process with no disk snapshot rebuilds (honest miss)", async () => {
+    __resetBm25Cache();
+    const projectRoot = await seedQueryableProject("no-disk", TEAM_STORE);
+    // First-ever call for this revision: memory miss + disk miss → build.
+    await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr" });
+    expect(__bm25CacheStats().builds).toBe(1);
+  });
 });
 
 // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): planContext

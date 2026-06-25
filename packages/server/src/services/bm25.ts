@@ -61,6 +61,13 @@ export interface Bm25Model {
    * query property).
    */
   scoreDoc(id: string, queryTerms: string[]): number;
+  /**
+   * P1 recall-engine-refactor (TASK-002): the plain JSON-safe snapshot of the
+   * corpus statistics this model scores against, attached so the model can be
+   * serialized to disk (`serializeBm25Model`) and a cold hook can `rehydrate`
+   * an identical scorer without re-tokenizing the corpus.
+   */
+  readonly __serialized: SerializedBm25Model;
 }
 
 interface DocStats {
@@ -68,6 +75,28 @@ interface DocStats {
   fieldTermFreq: Record<Bm25Field, Map<string, number>>;
   /** Per-field token count. */
   fieldLength: Record<Bm25Field, number>;
+}
+
+// P1 recall-engine-refactor (TASK-002): the model's internal statistics, in a
+// PLAIN JSON-safe shape (no Map / closure). This is what serialize/rehydrate
+// round-trips so a cold hook can skip rebuild — the runtime Bm25Model below is
+// reconstructed FROM this. `fieldTermFreq` is an array of [term, freq] pairs per
+// field (Map is not JSON-serializable); everything else is already primitive.
+export interface SerializedBm25Model {
+  /** Schema/format version — bump on any layout change so a stale on-disk cache
+   *  (different shape) is detected and discarded rather than mis-rehydrated. */
+  version: 1;
+  totalDocs: number;
+  /** term → document frequency (union-of-fields df), as [term, count] pairs. */
+  documentFrequency: [string, number][];
+  /** Per-field corpus average length. */
+  avgFieldLength: Record<Bm25Field, number>;
+  /** Per-doc stats: id → { per-field [term,freq] pairs, per-field length }. */
+  perDoc: {
+    id: string;
+    fieldTermFreq: Record<Bm25Field, [string, number][]>;
+    fieldLength: Record<Bm25Field, number>;
+  }[];
 }
 
 function emptyFieldRecord<T>(make: () => T): Record<Bm25Field, T> {
@@ -115,6 +144,52 @@ export function buildBm25Model(docs: Bm25Document[]): Bm25Model {
     avgFieldLength[field] = totalDocs > 0 ? totalFieldLength[field] / totalDocs : 0;
   }
 
+  // P1 recall-engine-refactor (TASK-002): flatten the in-memory Maps into the
+  // plain JSON-safe snapshot, then build the runtime scorer FROM it — exactly
+  // the path rehydrate takes — so a freshly-built and a disk-rehydrated model
+  // score identically by construction.
+  const serialized: SerializedBm25Model = {
+    version: 1,
+    totalDocs,
+    documentFrequency: [...documentFrequency],
+    avgFieldLength,
+    perDoc: [...perDoc].map(([id, stats]) => ({
+      id,
+      fieldTermFreq: emptyFieldRecord<[string, number][]>(() => []),
+      fieldLength: { ...stats.fieldLength },
+    })),
+  };
+  // Fill the per-field [term,freq] pairs (separate pass to keep the map literal
+  // above readable; emptyFieldRecord seeds each field with a fresh [] array).
+  for (const entry of serialized.perDoc) {
+    const stats = perDoc.get(entry.id);
+    if (stats === undefined) continue;
+    for (const field of BM25_FIELDS) {
+      entry.fieldTermFreq[field] = [...stats.fieldTermFreq[field]];
+    }
+  }
+  return modelFromStats(serialized);
+}
+
+// P1 recall-engine-refactor (TASK-002): the single scoring engine. Both the
+// freshly-built model (buildBm25Model) and the rehydrated one
+// (rehydrateBm25Model) call this with the SAME serialized stats, so scoreDoc is
+// guaranteed numerically identical between them — there is no second code path
+// that could drift. Reconstructs the in-memory Maps (O(1) lookups) from the
+// plain snapshot and attaches the snapshot for re-serialization.
+function modelFromStats(serialized: SerializedBm25Model): Bm25Model {
+  const totalDocs = serialized.totalDocs;
+  const documentFrequency = new Map<string, number>(serialized.documentFrequency);
+  const avgFieldLength = serialized.avgFieldLength;
+  const perDoc = new Map<string, DocStats>();
+  for (const entry of serialized.perDoc) {
+    const fieldTermFreq = emptyFieldRecord<Map<string, number>>(() => new Map());
+    for (const field of BM25_FIELDS) {
+      fieldTermFreq[field] = new Map(entry.fieldTermFreq[field]);
+    }
+    perDoc.set(entry.id, { fieldTermFreq, fieldLength: entry.fieldLength });
+  }
+
   // Probabilistic IDF with the +0.5 smoothing that keeps the value positive
   // even for a term present in every document (the canonical BM25 variant adds
   // the leading 1 inside the log for exactly this reason).
@@ -124,6 +199,7 @@ export function buildBm25Model(docs: Bm25Document[]): Bm25Model {
   };
 
   return {
+    __serialized: serialized,
     scoreDoc(id: string, queryTerms: string[]): number {
       const data = perDoc.get(id);
       if (data === undefined || queryTerms.length === 0) {
@@ -163,6 +239,28 @@ export function buildBm25Model(docs: Bm25Document[]): Bm25Model {
       return score;
     },
   };
+}
+
+/**
+ * P1 recall-engine-refactor (TASK-002): extract a model's corpus statistics as a
+ * plain JSON-serializable structure. `JSON.stringify(serializeBm25Model(m))` is
+ * what the disk cache persists; `rehydrateBm25Model` reverses it into a scorer
+ * that returns numerically IDENTICAL `scoreDoc` results (both go through the
+ * same `modelFromStats` engine — the snapshot IS the model's sole state).
+ */
+export function serializeBm25Model(model: Bm25Model): SerializedBm25Model {
+  return model.__serialized;
+}
+
+/**
+ * P1 recall-engine-refactor (TASK-002): rebuild a runtime scorer from a snapshot
+ * produced by `serializeBm25Model` (round-tripped through JSON on disk). The
+ * rehydrated model's `scoreDoc(id, queryTerms)` equals the original's for the
+ * same id/queryTerms — no re-tokenization, no corpus walk; a cold hook loads the
+ * snapshot and scores immediately.
+ */
+export function rehydrateBm25Model(serialized: SerializedBm25Model): Bm25Model {
+  return modelFromStats(serialized);
 }
 
 /**

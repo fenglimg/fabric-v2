@@ -20,7 +20,18 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
-import { buildBm25Model, buildQueryTerms, type Bm25Field, type Bm25Model } from "./bm25.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import {
+  buildBm25Model,
+  buildQueryTerms,
+  serializeBm25Model,
+  rehydrateBm25Model,
+  type Bm25Field,
+  type Bm25Model,
+  type SerializedBm25Model,
+} from "./bm25.js";
 import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
 
 // v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
@@ -397,7 +408,7 @@ export async function planContext(
   // whole corpus on every query-bearing call. queryTerms vary per call but only
   // feed scoreDoc (cheap); the model is corpus-only.
   if (scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
-    scoringContext.bm25 = getOrBuildBm25Model(revision, rawItems, docTexts);
+    scoringContext.bm25 = await getOrBuildBm25Model(projectRoot, revision, rawItems, docTexts);
   }
 
   // v2.1 global-refactor (W2/A4): scope-resolution rank for the equal-relevance
@@ -827,14 +838,77 @@ function partitionEmptyShells(items: RuleDescriptionIndexItem[]): {
 let bm25ModelCache: { revision: string; model: Bm25Model } | null = null;
 let bm25BuildCount = 0;
 
-function getOrBuildBm25Model(
+// P1 recall-engine-refactor (TASK-002): on-disk BM25 model cache. The model is a
+// pure function of the candidate corpus, so it is keyed on the read-set revision
+// (computeReadSetRevision — cross-store-recall.ts). A COLD process (a fresh hook
+// invocation with an empty in-memory cache) can then `rehydrateBm25Model` from
+// disk instead of re-tokenizing + re-indexing the whole corpus — the cold-start
+// perf win. The key BINDS the read-set version: any content change moves the
+// revision → a different filename → a miss → rebuild (whole-revision granularity,
+// the chosen invalidation; no incremental). Stored under `.fabric/cache/bm25/`,
+// alongside the other `.fabric/`-rooted runtime state (metrics/events ledgers).
+const BM25_CACHE_DIR = ".fabric/cache/bm25";
+
+function bm25CachePath(projectRoot: string, revision: string): string {
+  // The revision is a sha256 hex string (computeReadSetRevision), optionally
+  // `sha256:`-prefixed — safe as a filename once the colon is normalized.
+  const safe = revision.replace(/[^A-Za-z0-9_-]/g, "_");
+  return join(projectRoot, BM25_CACHE_DIR, `${safe}.json`);
+}
+
+async function loadBm25ModelFromDisk(
+  projectRoot: string,
+  revision: string,
+): Promise<Bm25Model | null> {
+  try {
+    const raw = await readFile(bm25CachePath(projectRoot, revision), "utf8");
+    const parsed = JSON.parse(raw) as SerializedBm25Model;
+    // Reject a snapshot from a different serialization layout (version bump)
+    // rather than rehydrating a mismatched shape into a broken scorer.
+    if (parsed.version !== 1) return null;
+    return rehydrateBm25Model(parsed);
+  } catch {
+    // Missing file / parse error / corrupt snapshot → treat as a miss. The cache
+    // is a perf accelerator, never load-bearing: a bad read just rebuilds.
+    return null;
+  }
+}
+
+async function saveBm25ModelToDisk(
+  projectRoot: string,
+  revision: string,
+  model: Bm25Model,
+): Promise<void> {
+  try {
+    const path = bm25CachePath(projectRoot, revision);
+    await mkdir(join(projectRoot, BM25_CACHE_DIR), { recursive: true });
+    await writeFile(path, JSON.stringify(serializeBm25Model(model)), "utf8");
+  } catch {
+    // Best-effort: a write failure (read-only FS, concurrent writer) must never
+    // block ranking — the in-memory cache still serves this process.
+  }
+}
+
+// ISS-024 + P1 (TASK-002): two-tier corpus-keyed BM25 cache. Tier 1 (process
+// memory) serves hot repeat calls; tier 2 (disk, this function's addition) lets
+// a COLD process skip the rebuild by rehydrating the persisted snapshot. On a
+// total miss the model is built once, then written through to BOTH tiers.
+async function getOrBuildBm25Model(
+  projectRoot: string,
   revision: string,
   rawItems: RuleDescriptionIndexItem[],
   docTexts: Map<string, string>,
-): Bm25Model {
+): Promise<Bm25Model> {
   if (bm25ModelCache !== null && bm25ModelCache.revision === revision) {
     return bm25ModelCache.model;
   }
+  // Tier 2: cold-process disk hit — rehydrate, skip buildBm25Model entirely.
+  const fromDisk = await loadBm25ModelFromDisk(projectRoot, revision);
+  if (fromDisk !== null) {
+    bm25ModelCache = { revision, model: fromDisk };
+    return fromDisk;
+  }
+  // Total miss — build once, write through to memory + disk.
   bm25BuildCount += 1;
   const model = buildBm25Model(
     rawItems.map((item) => ({
@@ -843,6 +917,7 @@ function getOrBuildBm25Model(
     })),
   );
   bm25ModelCache = { revision, model };
+  await saveBm25ModelToDisk(projectRoot, revision, model);
   return model;
 }
 

@@ -167,6 +167,34 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(consumed.events).toEqual([]);
   });
 
+  // P1 recall-engine-refactor (TASK-002) — lean read_path contract (KT-GLD-0005 /
+  // KT-DEC-0019): the default entry carries the discovery INDEX (description +
+  // score) + a read_path, but NOT the entry's markdown BODY. The body ("# Auth
+  // body") is reached on demand via read_path, never packaged into the payload —
+  // hard-cutting the description itself is explicitly rejected by KT-DEC-0019
+  // ("硬砍丢描述会背叛 no-server-filter 哲学并漏可发现性"), so this asserts the
+  // body is absent while the description index + read_path stay present.
+  it("default payload omits the entry body, keeps the description index + read_path (lean)", async () => {
+    const projectRoot = await seedTwoEntryProject();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "auth ui",
+    });
+
+    const authEntry = result.entries.find((e) => e.stable_id === "team:KT-DEC-0001");
+    expect(authEntry).toBeDefined();
+    // read_path is present and points at the on-disk store file (body on demand).
+    expect(authEntry?.read_path).toMatch(/KT-DEC-0001\.md$/);
+    // The discovery index survives (summary is the headline the LLM selects on).
+    expect(authEntry?.description.summary).toBe("Auth decision");
+
+    // The markdown BODY text never enters the payload, anywhere in the envelope.
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("# Auth body");
+    expect(serialized).not.toContain("# UI body");
+  });
+
   it("scopes the read-path index when `ids` provided, intersecting surfaced candidates; descriptions stay full", async () => {
     const projectRoot = await seedTwoEntryProject();
 
