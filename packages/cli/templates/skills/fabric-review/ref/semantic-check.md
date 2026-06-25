@@ -10,7 +10,7 @@ Semantic check is the LLM's job — the MCP tool does NOT compare meaning.
 
 For each pending entry to be presented:
 
-1. Call `fab_review action="search"` with `query=<title or summary keywords>` and `filters.type=<same type>` to fetch already-canonical entries of the same type.
+1. Call `fab_pending action="search"` with `query=<title or summary keywords>` and `filters.type=<same type>` to fetch already-canonical entries of the same type.
 2. Compare semantically (LLM judgment, not string match). 三类判断均为 LLM 主观判断 dup/subsumption；具体阈值不可量化（不使用百分比 / 相似度数值伪精度）：
    - **Duplicate** — same essential claim. 标题与摘要表达同一核心结论，pending 未提供新证据或新上下文。Flag: `⚠ Possible duplicate of <stable_id>`.
    - **Contradiction** — opposing claims about the same subject. 例：一个 entry 说 "use X"，pending 说 "avoid X"，且作用域一致。Flag: `⚠ Contradicts <stable_id>`.

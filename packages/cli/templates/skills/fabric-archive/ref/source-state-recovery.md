@@ -46,7 +46,7 @@ On corruption (any condition above):
 1. `Bash: mv .fabric/.import-state.json .fabric/.import-state.json.corrupt-<ISO8601>`
    (preserve the corrupt file for postmortem; do NOT silently overwrite).
 2. Phase 1 restarts from scratch (Phase 1 produces no MCP calls, so re-run
-   is safe — re-querying mounted store canonical titles via `fab_review search`
+   is safe — re-querying mounted store canonical titles via `fab_pending search`
    idempotent; the `p1_baseline_titles` array is regenerated).
 3. DO NOT attempt automatic partial recovery; corrupt state is a signal
    that something serious happened (disk-full, kill -9 mid-write, fs

@@ -2,14 +2,14 @@
 
 > **Loaded on demand.** SKILL.md hot path retains the Phase 3 purpose statement + 4-step outline + completion sentinel. This file holds the full Step 3.1/3.2/3.3/3.4 MCP call shapes, semantic compare 5-way classification, and the underseed sentinel rationale.
 
-For each pending entry created in Phase 2 (read from `p2_processed_commits[].pending_path` and `p2_processed_docs[].pending_paths`), check if it duplicates / contradicts / is subsumed by an existing canonical entry. **Semantic comparison is the LLM's job — `fab_review` does not compare meaning.**
+For each pending entry created in Phase 2 (read from `p2_processed_commits[].pending_path` and `p2_processed_docs[].pending_paths`), check if it duplicates / contradicts / is subsumed by an existing canonical entry. **Semantic comparison is the LLM's job — `fab_pending` does not compare meaning.**
 
 ## Step 3.1 — Search Canonical of Same Type
 
 For each just-proposed pending entry (read its frontmatter via the `Read` tool to get type + slug + title):
 
 ```ts
-mcp__fabric__fab_review({
+mcp__fabric__fab_pending({
   action: "search",
   query: "<title or summary keywords from the pending entry>",
   filters: { type: "<same type as pending>" }

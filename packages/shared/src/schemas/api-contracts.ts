@@ -885,11 +885,16 @@ export const fabExtractKnowledgeAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// MCP tool contracts — fab_review (rc.3 protocol pre-lock)
+// MCP tool contracts — fab_review (rc.3 protocol pre-lock) + fab_pending (W3-K K2)
 //
-// Discriminated union over a fixed `action` field. 6 actions exhaustively
-// cover the human review loop: list, approve, reject, modify, search, defer.
-// Consumers should `switch (input.action)` for type-narrowed handling.
+// W3-K K2 (read/write split): the two READ actions (`list` + `search`) were
+// lifted out of fab_review into a dedicated read-only tool `fab_pending`
+// (readOnlyHint:true, idempotentHint:true). fab_review now carries ONLY the 6
+// WRITE actions: approve, reject, modify, modify-content, modify-layer, defer.
+// The filter + item shapes (_fabReviewFiltersSchema / _fabReviewListItemSchema /
+// _fabReviewSearchItemSchema) stay SHARED between the two tools — fab_pending is
+// a pure relocation of the read surface, ZERO behavior change. Consumers should
+// `switch (input.action)` for type-narrowed handling on either tool.
 // ---------------------------------------------------------------------------
 
 const _fabReviewFiltersSchema = z
@@ -956,10 +961,6 @@ const _fabReviewModifyChangesSchema = z.object({
 
 export const FabReviewInputSchema = z.discriminatedUnion("action", [
   z.object({
-    action: z.literal("list"),
-    filters: _fabReviewFiltersSchema,
-  }),
-  z.object({
     action: z.literal("approve"),
     pending_paths: z.array(z.string()).min(1),
   }),
@@ -992,11 +993,6 @@ export const FabReviewInputSchema = z.discriminatedUnion("action", [
     }),
   }),
   z.object({
-    action: z.literal("search"),
-    query: z.string().min(1),
-    filters: _fabReviewFiltersSchema,
-  }),
-  z.object({
     action: z.literal("defer"),
     pending_paths: z.array(z.string()).min(1),
     until: z.string().datetime().optional(),
@@ -1004,6 +1000,54 @@ export const FabReviewInputSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
+
+// ---------------------------------------------------------------------------
+// fab_pending (W3-K K2) — read-only browse/search surface lifted out of
+// fab_review. Discriminated union over `action` with the two READ literals
+// (list / search). Reuses the SAME _fabReviewFiltersSchema as the (now
+// write-only) fab_review tool — pure relocation, ZERO behavior change.
+// ---------------------------------------------------------------------------
+
+export const FabPendingInputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("list"),
+    filters: _fabReviewFiltersSchema,
+  }),
+  z.object({
+    action: z.literal("search"),
+    query: z.string().min(1),
+    filters: _fabReviewFiltersSchema,
+  }),
+]);
+export type FabPendingInput = z.infer<typeof FabPendingInputSchema>;
+
+// MCP SDK 1.29.0 surface: registerTool's `inputSchema` requires a flat
+// ZodRawShape (z.object-friendly); passing FabPendingInputSchema (a
+// discriminatedUnion) directly crashes the SDK with `_zod undefined` AND
+// publishes JSON Schema with empty `properties: {}`. FabPendingInputShape
+// mirrors the union of all branch fields with `action` as the required
+// discriminator and every other field `.optional()`. Cross-field strictness
+// (action=search requires query) is preserved at runtime by the handler
+// narrowing through FabPendingInputSchema. Drift between this shape and the
+// union branches is caught by a unit test in
+// packages/server/src/tools/pending.test.ts.
+export const FabPendingInputShape = {
+  action: z
+    .enum(["list", "search"])
+    .describe(
+      "Action selector. Discriminates the per-action fields below; required. list browses pending entries; search ranges over pending + canonical knowledge.",
+    ),
+  filters: _fabReviewFiltersSchema.describe(
+    "Optional filters (type/layer/maturity/tags/created_after). Used by action=list and action=search.",
+  ),
+  query: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Substring query against title/summary/tags/path. Required (non-empty) when action=search.",
+    ),
+} as const;
 
 // MCP SDK 1.29.0 surface (TASK-001 fix): registerTool's `inputSchema` requires
 // a flat ZodRawShape (z.object-friendly) so its internal `validateToolOutput`
@@ -1020,13 +1064,10 @@ export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
 // branches is caught by a unit test in packages/server/src/tools/review.test.ts.
 export const FabReviewInputShape = {
   action: z
-    .enum(["list", "approve", "reject", "modify", "modify-content", "modify-layer", "search", "defer"])
+    .enum(["approve", "reject", "modify", "modify-content", "modify-layer", "defer"])
     .describe(
-      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias.",
+      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias. (list/search moved to the read-only fab_pending tool.)",
     ),
-  filters: _fabReviewFiltersSchema.describe(
-    "Optional filters (type/layer/maturity/tags/created_after). Used by action=list and action=search.",
-  ),
   pending_paths: z
     .array(z.string())
     .min(1)
@@ -1050,13 +1091,6 @@ export const FabReviewInputShape = {
   changes: _fabReviewModifyChangesSchema.optional().describe(
     "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*/semantic_scope/related). Required when action=modify. semantic_scope re-scopes the entry's resolution coordinate in place (e.g. team → project:<id>) without moving stores; personal-root coordinates are rejected (use modify-layer).",
   ),
-  query: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      "Substring query against title/summary/tags/path. Required (non-empty) when action=search.",
-    ),
   until: z
     .string()
     .datetime()
@@ -1146,11 +1180,6 @@ const _fabReviewSearchItemSchema = z.object({
 // steady-state path — no wire shape change for existing consumers.
 export const FabReviewOutputSchema = z.discriminatedUnion("action", [
   z.object({
-    action: z.literal("list"),
-    items: z.array(_fabReviewListItemSchema),
-    warnings: z.array(structuredWarningSchema).optional(),
-  }),
-  z.object({
     action: z.literal("approve"),
     approved: z.array(z.object({ pending_path: z.string(), stable_id: z.string() })),
     warnings: z.array(structuredWarningSchema).optional(),
@@ -1169,19 +1198,50 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
     warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
-    action: z.literal("search"),
-    // v2.0.0-rc.29 TASK-007 (BUG-M4): search returns the new search-item
-    // shape with `area` discriminator + neutrally-named `path` field.
-    items: z.array(_fabReviewSearchItemSchema),
-    warnings: z.array(structuredWarningSchema).optional(),
-  }),
-  z.object({
     action: z.literal("defer"),
     deferred: z.array(z.string()),
     warnings: z.array(structuredWarningSchema).optional(),
   }),
 ]);
 export type FabReviewOutput = z.infer<typeof FabReviewOutputSchema>;
+
+// fab_pending (W3-K K2) output union — the relocated list/search result shapes.
+// list returns pending-only entries (`_fabReviewListItemSchema`, `pending_path`
+// semantics); search ranges over pending + canonical (`_fabReviewSearchItemSchema`,
+// `area` discriminator + neutrally-named `path`). Both item schemas stay SHARED
+// with the (now write-only) fab_review surface.
+export const FabPendingOutputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("list"),
+    items: z.array(_fabReviewListItemSchema),
+    warnings: z.array(structuredWarningSchema).optional(),
+  }),
+  z.object({
+    action: z.literal("search"),
+    items: z.array(_fabReviewSearchItemSchema),
+    warnings: z.array(structuredWarningSchema).optional(),
+  }),
+]);
+export type FabPendingOutput = z.infer<typeof FabPendingOutputSchema>;
+
+// MCP SDK 1.29.0 surface: flat ZodRawShape for registerTool's `outputSchema`
+// (mirrors FabReviewOutputShape rationale). Unions the list/search variant
+// fields with `action` as the required discriminator; structuredContent is
+// re-validated against FabPendingOutputSchema for per-action precision.
+export const FabPendingOutputShape = {
+  action: z
+    .enum(["list", "search"])
+    .describe(
+      "Echoes the input action; clients can switch on it for per-variant fields below.",
+    ),
+  items: z
+    .array(z.union([_fabReviewListItemSchema, _fabReviewSearchItemSchema]))
+    .optional()
+    .describe(
+      "Pending entries (action=list, `pending_path` shape) or pending+canonical entries (action=search, `area`+`path` shape).",
+    ),
+  warnings: z.array(structuredWarningSchema).optional(),
+} as const;
 
 // MCP SDK 1.29.0 surface (TASK-001 fix): mirrors FabReviewInputShape rationale
 // for the output side. registerTool's `outputSchema` consumer
@@ -1195,21 +1255,9 @@ export type FabReviewOutput = z.infer<typeof FabReviewOutputSchema>;
 // (and may be at runtime by callers) for full per-action precision.
 export const FabReviewOutputShape = {
   action: z
-    .enum(["list", "approve", "reject", "modify", "search", "defer"])
+    .enum(["approve", "reject", "modify", "defer"])
     .describe(
-      "Echoes the input action; clients can switch on it for per-variant fields below.",
-    ),
-  items: z
-    // v2.0.0-rc.29 TASK-007 (BUG-M4): list returns list-item shape (pending
-    // only, `pending_path`); search returns search-item shape (pending or
-    // canonical, with `area` discriminator + `path` field). The flat
-    // MCP-output shape accepts either via a per-element union so existing
-    // FlatOutput.safeParse() callers don't need to know about the per-action
-    // narrowing — FabReviewOutputSchema retains per-variant precision.
-    .array(z.union([_fabReviewListItemSchema, _fabReviewSearchItemSchema]))
-    .optional()
-    .describe(
-      "Pending entries (action=list, `pending_path` shape) or pending+canonical entries (action=search, `area`+`path` shape).",
+      "Echoes the input action; clients can switch on it for per-variant fields below. (list/search results moved to the read-only fab_pending tool.)",
     ),
   approved: z
     .array(z.object({ pending_path: z.string(), stable_id: z.string() }))
@@ -1258,6 +1306,17 @@ export const fabReviewAnnotations = {
   destructiveHint: false,
   openWorldHint: false,
   title: "Review pending knowledge entries",
+} as const;
+
+// fab_pending (W3-K K2): the read-only browse/search surface. C-002 honest
+// read tool — readOnlyHint:true + idempotentHint:true (mirrors recallAnnotations
+// at the top of this file). list/search never mutate state.
+export const fabPendingAnnotations = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+  title: "Browse and search pending knowledge entries",
 } as const;
 
 // ---------------------------------------------------------------------------

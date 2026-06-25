@@ -12,8 +12,8 @@ Inferred mode: `pending` (Step 1 keyword "review … pending").
 
 Skill flow:
 
-1. `fab_review action="list"` → returns 3 pending items.
-2. Semantic check on item 2 (`pending/decisions/single-cjs-hook.md`) — `fab_review action="search"` with `query="single cjs hook"` filter `type=decisions` returns canonical `KT-D-0007--single-cjs-hook-across-clients.md` (similarity high).
+1. `fab_pending action="list"` → returns 3 pending items.
+2. Semantic check on item 2 (`pending/decisions/single-cjs-hook.md`) — `fab_pending action="search"` with `query="single cjs hook"` filter `type=decisions` returns canonical `KT-D-0007--single-cjs-hook-across-clients.md` (similarity high).
 3. Display block:
 
    ```md
@@ -36,7 +36,7 @@ Inferred mode: `revisit` (Step 1 keyword "look at <id>").
 
 Skill flow:
 
-1. Read the canonical path returned by `fab_review search` for `KT-G-0003`. Display body to user.
+1. Read the canonical path returned by `fab_pending search` for `KT-G-0003`. Display body to user.
 2. AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` — user picks `modify`.
 3. Skill detects user-stated intent "actually personal not team" — surface AskUserQuestion `{options: ["team", "personal"]}` with current layer=team noted; user confirms `personal`.
 4. Call:
@@ -60,7 +60,7 @@ Inferred mode: `health` (Step 1 keyword "stale").
 
 Skill flow:
 
-1. `fab_review action="list"` (no filter) + tail events.jsonl for trailing-30d demoted/layer_changed counts.
+1. `fab_pending action="list"` (no filter) + tail events.jsonl for trailing-30d demoted/layer_changed counts.
 2. Compute stale candidates: 3 pending entries with mtime >14d (KP-G-5 candidate-pending, KT-P-9 candidate-pending, KP-G-3 canonical draft with no evidence-append in 21d).
 3. Render dashboard then loop per stale item.
 4. Per-item AskUserQuestion fires:

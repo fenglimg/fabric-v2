@@ -21,6 +21,7 @@ import {
   __isPendingKnowledgePathForTest,
   __resetReviewSearchIndexCacheForTests,
   reviewKnowledge,
+  reviewPending,
 } from "./review.js";
 
 const tempDirs: string[] = [];
@@ -161,7 +162,7 @@ describe("reviewKnowledge", () => {
     await seedPendingFile(projectRoot, "decisions", "first-decision");
     await seedPendingFile(projectRoot, "guidelines", "naming-rule", { tags: ["style"] });
 
-    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const result = await reviewPending(projectRoot, { action: "list", filters: undefined });
     expect(result.action).toBe("list");
     if (result.action !== "list") throw new Error("unreachable");
 
@@ -347,14 +348,14 @@ describe("reviewKnowledge", () => {
       reason: "audit-only",
     });
 
-    const hidden = await reviewKnowledge(projectRoot, {
+    const hidden = await reviewPending(projectRoot, {
       action: "search",
       query: "rejected-search-target",
     });
     if (hidden.action !== "search") throw new Error("unreachable");
     expect(hidden.items).toHaveLength(0);
 
-    const visible = await reviewKnowledge(projectRoot, {
+    const visible = await reviewPending(projectRoot, {
       action: "search",
       query: "rejected-search-target",
       filters: { include_rejected: true },
@@ -934,7 +935,7 @@ describe("reviewKnowledge", () => {
     await seedPendingFile(projectRoot, "guidelines", "naming-rule", { tags: ["style"] });
     await seedPendingFile(projectRoot, "pitfalls", "auth-bypass", { tags: ["auth"] });
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "auth",
       filters: { type: "decisions" },
@@ -952,7 +953,7 @@ describe("reviewKnowledge", () => {
     await seedPendingFile(projectRoot, "decisions", "beta", { tags: ["auth"] });
     await seedPendingFile(projectRoot, "decisions", "gamma", { tags: ["routing"] });
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "a",
       filters: { tags: ["auth", "rbac"] },
@@ -967,7 +968,7 @@ describe("reviewKnowledge", () => {
     const projectRoot = await createTempProject();
     await seedPendingFile(projectRoot, "decisions", "MyImportantDecision");
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "important",
       filters: undefined,
@@ -990,7 +991,7 @@ describe("reviewKnowledge", () => {
       pending_paths: [otherPending],
     });
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "topic",
       filters: undefined,
@@ -1009,7 +1010,7 @@ describe("reviewKnowledge", () => {
     await seedPendingFile(projectRoot, "guidelines", "naming-rule", { tags: ["style"] });
     await seedPendingFile(projectRoot, "pitfalls", "auth-bypass", { tags: ["auth"] });
 
-    const first = await reviewKnowledge(projectRoot, {
+    const first = await reviewPending(projectRoot, {
       action: "search",
       query: "auth",
       filters: undefined,
@@ -1020,7 +1021,7 @@ describe("reviewKnowledge", () => {
     expect(afterFirst.indexedFiles).toBe(3);
     expect(afterFirst.contentReads).toBe(3);
 
-    const second = await reviewKnowledge(projectRoot, {
+    const second = await reviewPending(projectRoot, {
       action: "search",
       query: "style",
       filters: undefined,
@@ -1036,7 +1037,7 @@ describe("reviewKnowledge", () => {
     const changedPath = await seedPendingFile(projectRoot, "decisions", "alpha", { tags: ["old"] });
     await seedPendingFile(projectRoot, "decisions", "beta", { tags: ["stable"] });
 
-    const first = await reviewKnowledge(projectRoot, {
+    const first = await reviewPending(projectRoot, {
       action: "search",
       query: "old",
       filters: undefined,
@@ -1064,7 +1065,7 @@ describe("reviewKnowledge", () => {
       "utf8",
     );
 
-    const second = await reviewKnowledge(projectRoot, {
+    const second = await reviewPending(projectRoot, {
       action: "search",
       query: "changed-index-entry",
       filters: undefined,
@@ -1190,7 +1191,7 @@ describe("reviewKnowledge", () => {
     });
 
     // layer filter narrows to team only
-    const teamOnly = await reviewKnowledge(projectRoot, {
+    const teamOnly = await reviewPending(projectRoot, {
       action: "list",
       filters: { layer: "team" },
     });
@@ -1199,7 +1200,7 @@ describe("reviewKnowledge", () => {
     expect(teamOnly.items[0].layer).toBe("team");
 
     // tags subset filter — only entries containing both 'auth' and 'rbac'
-    const tagged = await reviewKnowledge(projectRoot, {
+    const tagged = await reviewPending(projectRoot, {
       action: "list",
       filters: { tags: ["auth", "rbac"] },
     });
@@ -1208,7 +1209,7 @@ describe("reviewKnowledge", () => {
     expect(tagged.items[0].pending_path).toContain("team-auth");
 
     // maturity filter — none of the seeded files are 'verified'
-    const verified = await reviewKnowledge(projectRoot, {
+    const verified = await reviewPending(projectRoot, {
       action: "list",
       filters: { maturity: "verified" },
     });
@@ -1216,7 +1217,7 @@ describe("reviewKnowledge", () => {
     expect(verified.items).toHaveLength(0);
 
     // layer 'both' (string-equal match-all branch)
-    const both = await reviewKnowledge(projectRoot, {
+    const both = await reviewPending(projectRoot, {
       action: "list",
       filters: { layer: "both" },
     });
@@ -1227,7 +1228,7 @@ describe("reviewKnowledge", () => {
   it("list_skips_directories_that_do_not_exist", async () => {
     const projectRoot = await createTempProject();
     // No pending dir at all → list returns empty.
-    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const result = await reviewPending(projectRoot, { action: "list", filters: undefined });
     if (result.action !== "list") throw new Error("unreachable");
     expect(result.items).toHaveLength(0);
   });
@@ -1361,7 +1362,7 @@ describe("reviewKnowledge", () => {
     });
     if (approve.action !== "approve") throw new Error("unreachable");
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "personal-search",
       filters: undefined,
@@ -1377,7 +1378,7 @@ describe("reviewKnowledge", () => {
   it("search_filters_by_maturity_excludes_non_matching", async () => {
     const projectRoot = await createTempProject();
     await seedPendingFile(projectRoot, "decisions", "draft-only");
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "draft",
       filters: { maturity: "verified" },
@@ -1525,7 +1526,7 @@ describe("reviewKnowledge", () => {
     ].join("\n");
     await writeFile(join(dir, "with-title.md"), fm, "utf8");
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "search",
       query: "hello title",
       filters: undefined,
@@ -1570,7 +1571,7 @@ describe("reviewKnowledge", () => {
     expect(titleLine).not.toMatch(/\n/u);
     // Round-trip: searching by the first segment of the title must find the
     // entry (proves the body+frontmatter remain parseable post-rewrite).
-    const search = await reviewKnowledge(projectRoot, {
+    const search = await reviewPending(projectRoot, {
       action: "search",
       query: "line one",
       filters: undefined,
@@ -1644,7 +1645,7 @@ describe("reviewKnowledge", () => {
     await writeFile(join(dir, "new.md"), newEntry, "utf8");
 
     // Threshold between the two timestamps.
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "list",
       filters: { created_after: "2026-03-01T00:00:00.000Z" },
     });
@@ -1680,7 +1681,7 @@ describe("reviewKnowledge", () => {
     }
 
     // Without filter: both visible.
-    const all = await reviewKnowledge(projectRoot, {
+    const all = await reviewPending(projectRoot, {
       action: "search",
       query: "shared keyword",
       filters: undefined,
@@ -1689,7 +1690,7 @@ describe("reviewKnowledge", () => {
     expect(all.items).toHaveLength(2);
 
     // With threshold: only newer entry visible.
-    const filtered = await reviewKnowledge(projectRoot, {
+    const filtered = await reviewPending(projectRoot, {
       action: "search",
       query: "shared keyword",
       filters: { created_after: "2026-03-01T00:00:00.000Z" },
@@ -1751,7 +1752,7 @@ describe("reviewKnowledge", () => {
       layer: "personal",
     });
 
-    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const result = await reviewPending(projectRoot, { action: "list", filters: undefined });
     if (result.action !== "list") throw new Error("unreachable");
     expect(result.items).toHaveLength(2);
 
@@ -1777,7 +1778,7 @@ describe("reviewKnowledge", () => {
     await seedPendingFile(projectRoot, "decisions", "team-only", { layer: "team" });
     await seedPersonalPendingFile("decisions", "personal-only", { layer: "personal" });
 
-    const result = await reviewKnowledge(projectRoot, {
+    const result = await reviewPending(projectRoot, {
       action: "list",
       filters: { layer: "personal" },
     });
@@ -1793,7 +1794,7 @@ describe("reviewKnowledge", () => {
     // simply skip that source. Only the team entry remains.
     const projectRoot = await createTempProject();
     await seedPendingFile(projectRoot, "decisions", "only-team");
-    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const result = await reviewPending(projectRoot, { action: "list", filters: undefined });
     if (result.action !== "list") throw new Error("unreachable");
     expect(result.items).toHaveLength(1);
     expect(result.items[0].origin).toBe("team");

@@ -38,7 +38,9 @@ const PROTECTED_TOKENS: readonly string[] = [
   // / ai_selected_stable_ids / candidates[].stable_id) surface is retired, so
   // those tokens no longer appear in either bootstrap body.
   "fab_recall",
-  'fab_review action="list"',
+  // W3-K K2: read-only browse/search lifted out of fab_review into fab_pending;
+  // the backlog nudge now routes list through the read tool.
+  'fab_pending action="list"',
   // paths / config
   ".fabric/agents.meta.json",
   // W0-2: language is the single machine-wide tone in ~/.fabric/fabric-global.json

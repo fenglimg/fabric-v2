@@ -41,6 +41,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import {
+  FabPendingInputSchema,
+  FabPendingOutputSchema,
+  FabPendingOutputShape,
   FabReviewInputSchema,
   FabReviewInputShape,
   FabReviewOutputSchema,
@@ -72,8 +75,9 @@ function storeCountersFile(layer: "team" | "personal"): string {
 
 import { runDoctorReport } from "../../src/services/doctor.js";
 import { readEventLedger } from "../../src/services/event-ledger.js";
-import { reviewKnowledge } from "../../src/services/review.js";
+import { reviewKnowledge, reviewPending } from "../../src/services/review.js";
 import { registerReview } from "../../src/tools/review.js";
+import { registerPending } from "../../src/tools/pending.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -207,7 +211,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     const b = await seedPending(projectRoot, "decisions", "rc3-decision-b");
 
     // list — confirms both pending entries are surfaced.
-    const listed = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const listed = await reviewPending(projectRoot, { action: "list", filters: undefined });
     if (listed.action !== "list") throw new Error("unreachable");
     expect(listed.items).toHaveLength(2);
     const slugs = listed.items.map((i) => i.pending_path).sort();
@@ -307,12 +311,12 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(aContent).toMatch(/^status:\s*rejected\s*$/mu);
 
     // Default list hides rejected entries.
-    const listedDefault = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const listedDefault = await reviewPending(projectRoot, { action: "list", filters: undefined });
     if (listedDefault.action !== "list") throw new Error("unreachable");
     expect(listedDefault.items).toHaveLength(0);
 
     // Opt-in surfacing returns all three with status=rejected.
-    const listedAll = await reviewKnowledge(projectRoot, {
+    const listedAll = await reviewPending(projectRoot, {
       action: "list",
       filters: { include_rejected: true },
     });
@@ -451,7 +455,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     });
 
     // search type=decisions → 2 results (one pending team-dec-a, one canonical team-dec-b).
-    const decResult = await reviewKnowledge(projectRoot, {
+    const decResult = await reviewPending(projectRoot, {
       action: "search",
       query: "team-dec",
       filters: { type: "decisions" },
@@ -463,7 +467,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     }
 
     // search layer=personal → 1 result (the layer-flipped guideline under FABRIC_HOME).
-    const personalResult = await reviewKnowledge(projectRoot, {
+    const personalResult = await reviewPending(projectRoot, {
       action: "search",
       query: "personal-glb",
       filters: { layer: "personal" },
@@ -478,7 +482,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(personalResult.items[0].area).toBe("canonical");
 
     // search tags subset — all four entries share `topic-search`, so match by query+tag returns the 4.
-    const tagResult = await reviewKnowledge(projectRoot, {
+    const tagResult = await reviewPending(projectRoot, {
       action: "search",
       query: "topic-search",
       filters: { tags: ["topic-search"] },
@@ -612,24 +616,25 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     await seedPending(projectRoot, "decisions", "contract-a", { tags: ["c8"] });
     await seedPending(projectRoot, "guidelines", "contract-b", { tags: ["c8"] });
 
-    // Validate inputs through the schema (mirrors what the MCP runtime does
-    // before invoking the handler).
-    const listInput = FabReviewInputSchema.parse({ action: "list", filters: undefined });
-    const listOutput = await reviewKnowledge(projectRoot, listInput);
+    // W3-K K2: list/search moved to the read-only fab_pending tool — validate
+    // inputs/outputs through the Pending schemas (mirrors what the MCP runtime
+    // does before invoking the handler).
+    const listInput = FabPendingInputSchema.parse({ action: "list", filters: undefined });
+    const listOutput = await reviewPending(projectRoot, listInput);
     // Validate the OUTPUT shape — this is the contract guarantee that
     // structuredContent conforms to the declared output schema.
-    const parsedListOutput = FabReviewOutputSchema.parse(listOutput);
+    const parsedListOutput = FabPendingOutputSchema.parse(listOutput);
     expect(parsedListOutput.action).toBe("list");
     if (parsedListOutput.action !== "list") throw new Error("unreachable");
     expect(parsedListOutput.items).toHaveLength(2);
 
-    const searchInput = FabReviewInputSchema.parse({
+    const searchInput = FabPendingInputSchema.parse({
       action: "search",
       query: "contract",
       filters: { type: "decisions" },
     });
-    const searchOutput = await reviewKnowledge(projectRoot, searchInput);
-    const parsedSearchOutput = FabReviewOutputSchema.parse(searchOutput);
+    const searchOutput = await reviewPending(projectRoot, searchInput);
+    const parsedSearchOutput = FabPendingOutputSchema.parse(searchOutput);
     expect(parsedSearchOutput.action).toBe("search");
     if (parsedSearchOutput.action !== "search") throw new Error("unreachable");
     expect(parsedSearchOutput.items).toHaveLength(1);
@@ -698,26 +703,33 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
       content: Array<{ type: string; text: string }>;
       structuredContent: unknown;
     }>;
-    let handler: CapturedHandler | undefined;
+    const handlers = new Map<string, CapturedHandler>();
     const fakeServer = {
-      registerTool: (_name: string, _def: unknown, h: CapturedHandler) => {
-        handler = h;
+      registerTool: (name: string, _def: unknown, h: CapturedHandler) => {
+        handlers.set(name, h);
       },
     } as unknown as McpServer;
+    // W3-K K2: list/search route through the read-only fab_pending tool; the
+    // 6 write actions through fab_review.
     registerReview(fakeServer);
+    registerPending(fakeServer);
+    const handler = handlers.get("fab_review");
+    const pendingHandler = handlers.get("fab_pending");
     expect(handler).toBeDefined();
+    expect(pendingHandler).toBeDefined();
 
     const FlatOutput = z.object(FabReviewOutputShape);
+    const FlatPendingOutput = z.object(FabPendingOutputShape);
 
-    // 1. list
-    const listOut = await handler!({ action: "list" });
-    expect(FlatOutput.safeParse(listOut.structuredContent).success).toBe(true);
-    expect(FabReviewOutputSchema.safeParse(listOut.structuredContent).success).toBe(true);
+    // 1. list (fab_pending)
+    const listOut = await pendingHandler!({ action: "list" });
+    expect(FlatPendingOutput.safeParse(listOut.structuredContent).success).toBe(true);
+    expect(FabPendingOutputSchema.safeParse(listOut.structuredContent).success).toBe(true);
 
-    // 2. search
-    const searchOut = await handler!({ action: "search", query: "rt-action" });
-    expect(FlatOutput.safeParse(searchOut.structuredContent).success).toBe(true);
-    expect(FabReviewOutputSchema.safeParse(searchOut.structuredContent).success).toBe(true);
+    // 2. search (fab_pending)
+    const searchOut = await pendingHandler!({ action: "search", query: "rt-action" });
+    expect(FlatPendingOutput.safeParse(searchOut.structuredContent).success).toBe(true);
+    expect(FabPendingOutputSchema.safeParse(searchOut.structuredContent).success).toBe(true);
     expect(
       (searchOut.structuredContent as { items: Array<unknown> }).items.length,
     ).toBeGreaterThanOrEqual(3);
@@ -771,13 +783,13 @@ describe("fab_review rc.27 §2.23 include_body", () => {
     });
 
     // Default — no body field.
-    const defaultList = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    const defaultList = await reviewPending(projectRoot, { action: "list", filters: undefined });
     if (defaultList.action !== "list") throw new Error("unreachable");
     expect(defaultList.items).toHaveLength(1);
     expect(defaultList.items[0].body).toBeUndefined();
 
     // Opt-in — body present, contains the "## Summary" section we seeded.
-    const withBody = await reviewKnowledge(projectRoot, {
+    const withBody = await reviewPending(projectRoot, {
       action: "list",
       filters: { include_body: true },
     });
@@ -821,7 +833,7 @@ describe("fab_review rc.27 §2.23 include_body", () => {
     );
 
     // Default search — body-only term must NOT match.
-    const defaultSearch = await reviewKnowledge(projectRoot, {
+    const defaultSearch = await reviewPending(projectRoot, {
       action: "search",
       query: "PROMPT_INJECTION_PAYLOAD_MARKER",
       filters: undefined,
@@ -830,7 +842,7 @@ describe("fab_review rc.27 §2.23 include_body", () => {
     expect(defaultSearch.items).toHaveLength(0);
 
     // include_body=true — body-scan now matches.
-    const bodySearch = await reviewKnowledge(projectRoot, {
+    const bodySearch = await reviewPending(projectRoot, {
       action: "search",
       query: "PROMPT_INJECTION_PAYLOAD_MARKER",
       filters: { include_body: true },

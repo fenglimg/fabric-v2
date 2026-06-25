@@ -1,7 +1,7 @@
 ---
 name: fabric-archive
 description: 归档对话洞察(default)+ 冷启动从 git log/docs 回灌(source mode)到 active write store 的 pending knowledge (NOT code review). Triggers 归档/记一下/always·never/wrong-turn-revert;source mode bootstrap fabric/import 历史/mine commit.
-allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_archive_scan, mcp__fabric__fab_propose, mcp__fabric__fab_review
+allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_archive_scan, mcp__fabric__fab_propose, mcp__fabric__fab_pending, mcp__fabric__fab_review
 ---
 
 > **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
@@ -42,9 +42,9 @@ Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 3.7 �
 Source-mode pipeline (replaces GATHER; REVIEW+PERSIST unchanged):
 
 1. **Init / checkpoint** — read/init `.fabric/.import-state.json` (single resumability source; atomic `Write .tmp` → `Bash mv`). Corruption → `Read ref/source-state-recovery.md`. Full state schema + 6-step resume → `Read ref/source-checkpoint.md`.
-2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_review action="search"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
+2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_pending action="search"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
 3. **Mine (git + docs)** — `git log --since="<window> months ago"` (conventional prefix → type signal) + `docs/*.md`; classify into the 5 types; `fab_propose` per candidate. **Source-mode scope lock (NON-NEGOTIABLE): every mined entry `relevance_scope="broad"` + `relevance_paths=[]`** — LLM-inferred narrow lies about applicability; narrowing is deferred to `fab_review.modify` post-import. Cap `import_max_pending_per_run` (default 10). Full mining procedure, conventional-prefix table, `--dry-run` template → `Read ref/source-mining.md`.
-4. **Dedupe vs canonical** — for each pending, `fab_review action="search"` (top 5 by type), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. `fab_review` does NOT compare meaning — semantic compare is the LLM's job. Full 5-way classification → `Read ref/source-dedup.md`.
+4. **Dedupe vs canonical** — for each pending, `fab_pending action="search"` (top 5 by type), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. `fab_pending` does NOT compare meaning — semantic compare is the LLM's job. Full 5-way classification → `Read ref/source-dedup.md`.
 
 Source-mode config knobs (read from `.fabric/fabric-config.json`, defaults if absent): `import_window_first_run_months` (60), `import_window_rerun_months` (2), `import_max_pending_per_run` (10), `import_max_commits_scan` (500), `import_skip_canonical_threshold` (50).
 
@@ -112,7 +112,7 @@ Gather raw evidence: tail `.fabric/events.jsonl` since last `knowledge_proposed`
 
 Coarse viability check. **PASS**: user_explicit_invoke OR ≥1 archive signal hit. rc.37 NEW-4 folds the legacy 8 signals into **3 categories**: (1) **User-driven knowledge expression** (normative language `always`/`never`/`以后`/`记一下`/`永远不要`, OR decision-with-rationale, OR dismissal-with-reason); (2) **Reflective discovery** (wrong-turn-and-revert, OR long diagnostic loop, OR a named reusable pattern); (3) **Concrete artifact change** (new dependency diff, OR a formalized multi-step procedure).
 
-Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_review action="search"` against the mounted read-set; duplicate canonical → drop the candidate (anti-signal #4). Silently writing a near-duplicate is the highest-noise failure mode.
+Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_pending action="search"` against the mounted read-set; duplicate canonical → drop the candidate (anti-signal #4). Silently writing a near-duplicate is the highest-noise failure mode.
 
 **FAIL → branch**: E1/E3/E5 silent-skip (`outcome='skipped_no_signal'`); E2/E4 render gate-FAIL (`outcome='viability_failed'`) and MUST include the force-archive escape hatch (zh-CN: `如需强制归档，请显式调用 fabric-archive` / en: `To force-archive, explicitly invoke fabric-archive`).
 

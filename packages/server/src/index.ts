@@ -18,6 +18,7 @@ import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerRecall } from "./tools/recall.js";
 import { registerArchiveScan } from "./tools/archive-scan.js";
 import { registerReview } from "./tools/review.js";
+import { registerPending } from "./tools/pending.js";
 
 declare const __SERVER_VERSION__: string;
 
@@ -86,7 +87,7 @@ export {
 // (W4 allocateStoreKnowledgeId). cross-store-recall still consumes
 // deriveRuleIdentity / extractRuleDescription directly from the module.
 export { extractKnowledge } from "./services/extract-knowledge.js";
-export { reviewKnowledge } from "./services/review.js";
+export { reviewKnowledge, reviewPending } from "./services/review.js";
 // KT-GLD-0006: review-time cold-eval self-sufficiency judge protocol + batch builder
 // (driven offline by the fabric-review skill via maestro delegate; no hot-path LLM call).
 export {
@@ -217,7 +218,8 @@ export const FABRIC_SERVER_INSTRUCTIONS = [
   "SKILL-DRIVEN tools — invoked by the Fabric skills (fabric-archive / fabric-review) at the right lifecycle moment, not called ad-hoc:",
   "- `fab_propose` — propose/persist a pending knowledge entry into the write-target store for later review.",
   "- `fab_archive_scan` — scan recent work for archive-worthy knowledge candidates.",
-  "- `fab_review` — review and triage pending knowledge entries.",
+  "- `fab_pending` — read-only browse/search of pending + canonical knowledge (list / search).",
+  "- `fab_review` — write-only triage of pending knowledge entries (approve / reject / modify / defer).",
   "",
   "Conventions:",
   "- Candidate lists are ranked best-first (content relevance) and bounded; `omitted_candidate_count > 0` means more exist — narrow your intent to surface them.",
@@ -240,6 +242,8 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
   registerArchiveScan(server, tracker);
   registerExtractKnowledge(server, tracker);
   registerReview(server, tracker);
+  // W3-K K2: the read-only browse/search surface lifted out of fab_review.
+  registerPending(server, tracker);
 
   // v2.0: the legacy bootstrap README MCP resource is preserved as a contract
   // shim. Knowledge now lives in mounted stores; this resource returns an

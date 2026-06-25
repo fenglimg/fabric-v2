@@ -1,7 +1,7 @@
 ---
 name: fabric-review
 description: 审 store-backed pending+canonical knowledge (NOT PR review):pending triage + maintain(含 retire 语义淘汰 + relate 关联建边)。Triggers 审批/review pending;淘汰陈旧/deprecate;连接知识/补 related 边.
-allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_recall, mcp__fabric__fab_review
+allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_recall, mcp__fabric__fab_pending, mcp__fabric__fab_review
 ---
 
 > **Surface**: Skill (AI-driven, per-entry human-judgment routing). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
@@ -25,7 +25,7 @@ This skill is `Infer-not-Ask` for mode and `Ask-when-genuine` for per-item actio
 - Per-item action (approve / reject / modify / defer) IS surfaced via AskUserQuestion — the user must judge
 - Layer-flip target (team vs personal) IS surfaced via AskUserQuestion when modify includes layer change
 
-Required preconditions before any `fab_review` call: `.fabric/` exists; `mcp__fabric__fab_review` MCP tool registered; a write store is resolved for mutations; `.fabric/events.jsonl` exists (tolerate ENOENT — empty ledger normal first-run).
+Required preconditions before any `fab_review` / `fab_pending` call: `.fabric/` exists; `mcp__fabric__fab_review` (write) + `mcp__fabric__fab_pending` (read) MCP tools registered; a write store is resolved for mutations; `.fabric/events.jsonl` exists (tolerate ENOENT — empty ledger normal first-run).
 
 ### Config Load
 
@@ -48,7 +48,7 @@ Review iterates **per-store** — the read-set may span multiple stores (`fabric
 
 ### UX i18n Policy
 
-Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (`fab_review`, `fab_propose`, `relevance_scope`, layer/scope enums, `stable_id`, the verbatim `强 team` / `强 personal` / `默认 team` block) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
+Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (`fab_review`, `fab_pending`, `fab_propose`, `relevance_scope`, layer/scope enums, `stable_id`, the verbatim `强 team` / `强 personal` / `默认 team` block) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
 
 `Read ref/i18n-policy.md` for the full 5-class taxonomy + edge cases.
 
@@ -59,7 +59,7 @@ Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emi
 
 The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc.37 NEW-12 simplified 4 → 2):
 
-- **`pending`** — triage the write-side backlog returned by `fab_review action="list"` (`pending_path` identifies each store-backed entry): approve / reject / modify / defer per item. The dominant entry point.
+- **`pending`** — triage the write-side backlog returned by `fab_pending action="list"` (`pending_path` identifies each store-backed entry): approve / reject / modify / defer per item via `fab_review`. The dominant entry point.
 - **`maintain`** — sustain the EXISTING canonical KB: browse by topic (search), survey staleness/health, or revisit a specific entry. Merges the legacy `topic` + `health` + `revisit` modes — they are all "operate on already-canonical knowledge", distinct from triaging new drafts.
 
 ### 2-Step Inference Algorithm
@@ -75,7 +75,7 @@ The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc
 
 A `maintain`-row match → lock `maintain`. A `pending`-row match (or 0/ambiguous) → fall to Step 2.
 
-**Step 2 — Backlog default.** Call `fab_review action="list"` and inspect returned `items[].pending_path`:
+**Step 2 — Backlog default.** Call `fab_pending action="list"` and inspect returned `items[].pending_path`:
 
 - Count ≥ `review_hint_pending_count` (default 10) OR oldest mtime > `review_hint_pending_age_days` (default 7) → `pending` (overflow, same threshold as Stop-hook).
 - Otherwise → default `pending` (most common review entry point).
@@ -93,9 +93,9 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
   - `fab_review action="modify-layer"` — the dedicated layer-flip path (`changes.layer` required); may reallocate the stable_id + emit an id-redirect.
   - (Legacy `action="modify"` still works — it routes by whether `changes.layer` is present.) See `ref/modify-flow.md`.
 - **`maintain`** — sub-flow inferred from the same keywords:
-  - *browse-by-topic*: extract keywords → `fab_review action="search"` → render top-N (cap `review_topic_result_cap`) → AskUserQuestion only on an action verb.
-  - *health/staleness*: `fab_review action="list"` + tail events → compute stale → render dashboard → per-stale AskUserQuestion `{defer, demote, skip}`.
-  - *revisit*: user referenced a specific id/slug → `Read` canonical file directly OR `fab_review action="list"` with narrow filters → display body + history → AskUserQuestion only if actionable.
+  - *browse-by-topic*: extract keywords → `fab_pending action="search"` → render top-N (cap `review_topic_result_cap`) → AskUserQuestion only on an action verb.
+  - *health/staleness*: `fab_pending action="list"` + tail events → compute stale → render dashboard → per-stale AskUserQuestion `{defer, demote, skip}`.
+  - *revisit*: user referenced a specific id/slug → `Read` canonical file directly OR `fab_pending action="list"` with narrow filters → display body + history → AskUserQuestion only if actionable.
   - *retire* (W3-C, 吸收原 fabric-audit): 语义淘汰陈旧/孤儿/被取代的 **canonical** 条目。引擎 `fabric doctor`(给 orphan/stale/health 信号);守两条红线 **deprecate-over-delete**(陈旧≠该删,降 maturity / 标 `superseded-by` 保留 rationale)+ **rescue-before-delete**(删前必做独特-rationale 抢救检查)。逐条判三态 still-valid / superseded(deprecate)/ never-valid(rescue 后删空壳),处置经 `fab_review` 写路径落盘。**完整两条红线定义 / 意图→动作映射 / 三态流程 / scope 纠偏 → `Read ref/retire-mode.md`。**
   - *relate* (W3-C, 吸收原 fabric-connect): **默认不主动建边**,仅用户显式「连一下 / 补 related」时进入。`fab_recall` 拿候选 + 现有 `related` → 按互补/规避/取代/同域/引用链判**高置信**隐藏关联(稀疏优于稠密)→ 落盘**复用 `fab_review` modify 写路径**(零新写面,追加源条目 `related` 数组)。§4 隐私铁律 `KT→KP` FORBIDDEN。**关联类型判据表 / 流程 / 约束 → `Read ref/relate-mode.md`。**
 
@@ -105,7 +105,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 > Boundary B (locked): "extraction / classification / layer / slug / mode / **semantic dedup** → Skill (LLM); file write / frontmatter / idempotency / counter / layer-flip / atomic promote → MCP (deterministic)"
 
-Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `topic`): for each pending entry, `fab_review action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface one of three flags as informational:
+Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `topic`): for each pending entry, `fab_pending action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface one of three flags as informational:
 
 - `⚠ Possible duplicate of <stable_id> (overlap: high)` — same essential claim
 - `⚠ Contradicts <stable_id> (overlap: high)` — opposing claims, same scope
@@ -184,11 +184,11 @@ Pending entry presented for review
 
 - NEVER write a knowledge file directly via Edit/Write/Bash; the only legal mutation path is `mcp__fabric__fab_review`.
 - NEVER call `git mv` from this skill — layer flip and slug rename are server-side transactions.
-- NEVER invent an `action` value — `action` MUST be one of {`list`, `approve`, `reject`, `modify`, `search`, `defer`}.
+- NEVER invent an `action` value — `fab_review action` MUST be one of {`approve`, `reject`, `modify`, `modify-content`, `modify-layer`, `defer`} (write-only); read actions {`list`, `search`} go through the read-only `fab_pending` tool.
 - NEVER batch heterogeneous decisions into a single MCP call. Approve and reject MAY be batched within their own action; modify MUST be one call per entry.
 - NEVER invoke `fab_review action="approve"` without at least one `pending_paths` entry.
 - NEVER infer a layer-flip target — the user MUST choose via AskUserQuestion.
-- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_proposed`, `knowledge_scope_degraded`, `fab_review`, `MUST`, `NEVER`, `relevance_scope`, `relevance_paths`, `narrow`, `broad`, `proposed_reason`, `session_context`.
+- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_proposed`, `knowledge_scope_degraded`, `fab_review`, `fab_pending`, `MUST`, `NEVER`, `relevance_scope`, `relevance_paths`, `narrow`, `broad`, `proposed_reason`, `session_context`.
 
 ## Output Contract & events.jsonl Constraint (ref-only)
 

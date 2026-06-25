@@ -190,14 +190,14 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
 }
 `;
 
-exports[`tool contracts > fab-review contract matches snapshot 1`] = `
+exports[`tool contracts > fab-pending contract matches snapshot 1`] = `
 {
   "annotations": {
     "destructiveHint": false,
-    "idempotentHint": false,
+    "idempotentHint": true,
     "openWorldHint": false,
-    "readOnlyHint": false,
-    "title": "Review pending knowledge entries",
+    "readOnlyHint": true,
+    "title": "Browse and search pending knowledge entries",
   },
   "inputSchema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -270,209 +270,6 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "additionalProperties": false,
         "properties": {
           "action": {
-            "const": "approve",
-            "type": "string",
-          },
-          "pending_paths": {
-            "items": {
-              "type": "string",
-            },
-            "minItems": 1,
-            "type": "array",
-          },
-        },
-        "required": [
-          "action",
-          "pending_paths",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "reject",
-            "type": "string",
-          },
-          "pending_paths": {
-            "items": {
-              "type": "string",
-            },
-            "minItems": 1,
-            "type": "array",
-          },
-          "reason": {
-            "minLength": 1,
-            "type": "string",
-          },
-        },
-        "required": [
-          "action",
-          "pending_paths",
-          "reason",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "modify",
-            "type": "string",
-          },
-          "changes": {
-            "additionalProperties": false,
-            "properties": {
-              "layer": {
-                "enum": [
-                  "team",
-                  "personal",
-                ],
-                "type": "string",
-              },
-              "maturity": {
-                "enum": [
-                  "draft",
-                  "verified",
-                  "proven",
-                ],
-                "type": "string",
-              },
-              "related": {
-                "items": {
-                  "type": "string",
-                },
-                "type": "array",
-              },
-              "relevance_paths": {
-                "items": {
-                  "type": "string",
-                },
-                "type": "array",
-              },
-              "relevance_scope": {
-                "enum": [
-                  "narrow",
-                  "broad",
-                ],
-                "type": "string",
-              },
-              "semantic_scope": {
-                "pattern": "^[a-z0-9_-]+(:[a-z0-9_-]+)*$",
-                "type": "string",
-              },
-              "summary": {
-                "type": "string",
-              },
-              "tags": {
-                "items": {
-                  "type": "string",
-                },
-                "type": "array",
-              },
-              "title": {
-                "type": "string",
-              },
-            },
-            "type": "object",
-          },
-          "pending_path": {
-            "minLength": 1,
-            "type": "string",
-          },
-        },
-        "required": [
-          "action",
-          "pending_path",
-          "changes",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "modify-content",
-            "type": "string",
-          },
-          "changes": {
-            "$ref": "#/anyOf/3/properties/changes",
-          },
-          "pending_path": {
-            "minLength": 1,
-            "type": "string",
-          },
-        },
-        "required": [
-          "action",
-          "pending_path",
-          "changes",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "modify-layer",
-            "type": "string",
-          },
-          "changes": {
-            "additionalProperties": false,
-            "properties": {
-              "layer": {
-                "enum": [
-                  "team",
-                  "personal",
-                ],
-                "type": "string",
-              },
-              "maturity": {
-                "$ref": "#/anyOf/3/properties/changes/properties/maturity",
-              },
-              "related": {
-                "$ref": "#/anyOf/3/properties/changes/properties/related",
-              },
-              "relevance_paths": {
-                "$ref": "#/anyOf/3/properties/changes/properties/relevance_paths",
-              },
-              "relevance_scope": {
-                "$ref": "#/anyOf/3/properties/changes/properties/relevance_scope",
-              },
-              "semantic_scope": {
-                "$ref": "#/anyOf/3/properties/changes/properties/semantic_scope",
-              },
-              "summary": {
-                "$ref": "#/anyOf/3/properties/changes/properties/summary",
-              },
-              "tags": {
-                "$ref": "#/anyOf/3/properties/changes/properties/tags",
-              },
-              "title": {
-                "$ref": "#/anyOf/3/properties/changes/properties/title",
-              },
-            },
-            "required": [
-              "layer",
-            ],
-            "type": "object",
-          },
-          "pending_path": {
-            "minLength": 1,
-            "type": "string",
-          },
-        },
-        "required": [
-          "action",
-          "pending_path",
-          "changes",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
             "const": "search",
             "type": "string",
           },
@@ -487,34 +284,6 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "required": [
           "action",
           "query",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "defer",
-            "type": "string",
-          },
-          "pending_paths": {
-            "items": {
-              "type": "string",
-            },
-            "minItems": 1,
-            "type": "array",
-          },
-          "reason": {
-            "type": "string",
-          },
-          "until": {
-            "format": "date-time",
-            "type": "string",
-          },
-        },
-        "required": [
-          "action",
-          "pending_paths",
         ],
         "type": "object",
       },
@@ -650,100 +419,6 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "additionalProperties": false,
         "properties": {
           "action": {
-            "const": "approve",
-            "type": "string",
-          },
-          "approved": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "pending_path": {
-                  "type": "string",
-                },
-                "stable_id": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "pending_path",
-                "stable_id",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/anyOf/0/properties/warnings/items",
-            },
-            "type": "array",
-          },
-        },
-        "required": [
-          "action",
-          "approved",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "reject",
-            "type": "string",
-          },
-          "rejected": {
-            "items": {
-              "type": "string",
-            },
-            "type": "array",
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/anyOf/0/properties/warnings/items",
-            },
-            "type": "array",
-          },
-        },
-        "required": [
-          "action",
-          "rejected",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "const": "modify",
-            "type": "string",
-          },
-          "new_stable_id": {
-            "type": "string",
-          },
-          "pending_path": {
-            "type": "string",
-          },
-          "prior_stable_id": {
-            "type": "string",
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/anyOf/0/properties/warnings/items",
-            },
-            "type": "array",
-          },
-        },
-        "required": [
-          "action",
-          "pending_path",
-        ],
-        "type": "object",
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
             "const": "search",
             "type": "string",
           },
@@ -848,6 +523,376 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "required": [
           "action",
           "items",
+        ],
+        "type": "object",
+      },
+    ],
+  },
+}
+`;
+
+exports[`tool contracts > fab-review contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": false,
+    "title": "Review pending knowledge entries",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "approve",
+            "type": "string",
+          },
+          "pending_paths": {
+            "items": {
+              "type": "string",
+            },
+            "minItems": 1,
+            "type": "array",
+          },
+        },
+        "required": [
+          "action",
+          "pending_paths",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "reject",
+            "type": "string",
+          },
+          "pending_paths": {
+            "items": {
+              "type": "string",
+            },
+            "minItems": 1,
+            "type": "array",
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_paths",
+          "reason",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "modify",
+            "type": "string",
+          },
+          "changes": {
+            "additionalProperties": false,
+            "properties": {
+              "layer": {
+                "enum": [
+                  "team",
+                  "personal",
+                ],
+                "type": "string",
+              },
+              "maturity": {
+                "enum": [
+                  "draft",
+                  "verified",
+                  "proven",
+                ],
+                "type": "string",
+              },
+              "related": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "relevance_paths": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "relevance_scope": {
+                "enum": [
+                  "narrow",
+                  "broad",
+                ],
+                "type": "string",
+              },
+              "semantic_scope": {
+                "pattern": "^[a-z0-9_-]+(:[a-z0-9_-]+)*$",
+                "type": "string",
+              },
+              "summary": {
+                "type": "string",
+              },
+              "tags": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "title": {
+                "type": "string",
+              },
+            },
+            "type": "object",
+          },
+          "pending_path": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_path",
+          "changes",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "modify-content",
+            "type": "string",
+          },
+          "changes": {
+            "$ref": "#/anyOf/2/properties/changes",
+          },
+          "pending_path": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_path",
+          "changes",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "modify-layer",
+            "type": "string",
+          },
+          "changes": {
+            "additionalProperties": false,
+            "properties": {
+              "layer": {
+                "enum": [
+                  "team",
+                  "personal",
+                ],
+                "type": "string",
+              },
+              "maturity": {
+                "$ref": "#/anyOf/2/properties/changes/properties/maturity",
+              },
+              "related": {
+                "$ref": "#/anyOf/2/properties/changes/properties/related",
+              },
+              "relevance_paths": {
+                "$ref": "#/anyOf/2/properties/changes/properties/relevance_paths",
+              },
+              "relevance_scope": {
+                "$ref": "#/anyOf/2/properties/changes/properties/relevance_scope",
+              },
+              "semantic_scope": {
+                "$ref": "#/anyOf/2/properties/changes/properties/semantic_scope",
+              },
+              "summary": {
+                "$ref": "#/anyOf/2/properties/changes/properties/summary",
+              },
+              "tags": {
+                "$ref": "#/anyOf/2/properties/changes/properties/tags",
+              },
+              "title": {
+                "$ref": "#/anyOf/2/properties/changes/properties/title",
+              },
+            },
+            "required": [
+              "layer",
+            ],
+            "type": "object",
+          },
+          "pending_path": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_path",
+          "changes",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "defer",
+            "type": "string",
+          },
+          "pending_paths": {
+            "items": {
+              "type": "string",
+            },
+            "minItems": 1,
+            "type": "array",
+          },
+          "reason": {
+            "type": "string",
+          },
+          "until": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_paths",
+        ],
+        "type": "object",
+      },
+    ],
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "approve",
+            "type": "string",
+          },
+          "approved": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "pending_path": {
+                  "type": "string",
+                },
+                "stable_id": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "pending_path",
+                "stable_id",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "action_hint": {
+                  "type": "string",
+                },
+                "code": {
+                  "type": "string",
+                },
+                "file": {
+                  "type": "string",
+                },
+                "line": {
+                  "type": "number",
+                },
+                "message": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "code",
+                "file",
+                "action_hint",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "action",
+          "approved",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "reject",
+            "type": "string",
+          },
+          "rejected": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "action",
+          "rejected",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "modify",
+            "type": "string",
+          },
+          "new_stable_id": {
+            "type": "string",
+          },
+          "pending_path": {
+            "type": "string",
+          },
+          "prior_stable_id": {
+            "type": "string",
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "action",
+          "pending_path",
         ],
         "type": "object",
       },
