@@ -105,8 +105,9 @@ export class HooksStage implements Stage {
       const skipped = installResults.filter((r) => r.status === "skipped").map((r) => r.path);
       const errors = installResults.filter((r) => r.status === "error").map((r) => `${r.step}: ${r.message}`);
 
-      // Print stage header and result
-      console.log(this.formatStageHeader(t("cli.install.stages.hooks")));
+      // Print stage result. The phase header is owned solely by the pipeline
+      // ([N/7] / renderSection) — the stage no longer prints a second "下一步"
+      // header (grill C-13: one header per phase).
       if (errors.length > 0) {
         console.log(this.formatStageResult("hooks", "failed", installed.length, skipped.length));
         return {
@@ -116,7 +117,7 @@ export class HooksStage implements Stage {
           payload: { installResults },
         };
       }
-      console.log(this.formatStageResult("hooks", "completed", installed.length, skipped.length));
+      console.log(this.formatHooksOutcome(installResults, installed.length, skipped.length, context.args.debug === true));
 
       return stageRan("hooks", installed, skipped);
     } catch (error) {
@@ -158,9 +159,27 @@ export class HooksStage implements Stage {
     }
   }
 
-  private formatStageHeader(message: string): string {
-    const nextLabel = () => paint.ai(t("cli.shared.next"));
-    return `${nextLabel()} ${paint.muted(message)}`;
+  /**
+   * grill C-14: "result + key items" instead of an opaque `installed=0 skipped=135`.
+   * Surfaces the skill category (the header says "skill" but the old output never
+   * mentioned it) and applies the 已最新 rule when nothing changed. Raw path
+   * counts move behind --debug.
+   */
+  private formatHooksOutcome(
+    results: InstallStepResult[],
+    installedCount: number,
+    skippedCount: number,
+    debug: boolean,
+  ): string {
+    const ok = paint.success(t("cli.install.stages.completed"));
+    const skills = results.filter((r) => r.step.includes("skill") && r.status === "written").length;
+    const hooks = results.filter((r) => r.step.includes("hook") && r.status === "written").length;
+    const body =
+      installedCount === 0
+        ? t("cli.install.hooks.uptodate", { count: String(skippedCount) })
+        : t("cli.install.hooks.installed", { skills: String(skills), hooks: String(hooks) });
+    const raw = debug ? ` ${paint.muted(`(installed=${installedCount} skipped=${skippedCount})`)}` : "";
+    return `${ok} ${body}${raw}`;
   }
 
   private formatStageResult(

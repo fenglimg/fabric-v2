@@ -58,10 +58,15 @@ function baseContext(target: string, overrides: Partial<InstallContext> = {}): I
 }
 
 describe("install-v2 pipeline UX", () => {
-  it("does not enable Ink renderer when wizard prompts may run", () => {
-    expect(shouldUseInstallRenderer({}, true)).toBe(false);
+  it("enables the renderer for every interactive install, not just --yes/--dry-run (F1)", () => {
+    // F1 fix (grill GRL-20260625): a plain interactive install (no flags) now
+    // gets the rich renderer — static section bars / step badges / summary card /
+    // error box — instead of the bare console.log fallback ("平淡" path).
+    expect(shouldUseInstallRenderer({}, true)).toBe(true);
     expect(shouldUseInstallRenderer({ yes: true }, true)).toBe(true);
     expect(shouldUseInstallRenderer({ "dry-run": true }, true)).toBe(true);
+    // Non-TTY (pipes/CI) still falls back to the plain numbered output.
+    expect(shouldUseInstallRenderer({}, false)).toBe(false);
     expect(shouldUseInstallRenderer({ yes: true }, false)).toBe(false);
   });
 

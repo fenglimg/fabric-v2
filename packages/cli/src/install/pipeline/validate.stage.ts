@@ -70,13 +70,14 @@ export class ValidateStage implements Stage {
         installed.push(eventsPath);
       }
 
-      // Print validation result
+      // Print validation result as a localized checklist (grill C-15: a whole
+      // "安装校验" phase used to collapse to one bare English line).
       if (errors.length === 0) {
-        console.log(paint.success("Validation passed"));
+        console.log(paint.success(t("cli.install.validate.passed")));
       } else {
-        console.log(paint.error(`Validation failed: ${errors.length} error(s)`));
+        console.log(paint.error(t("cli.install.validate.failed", { count: String(errors.length) })));
         for (const error of errors) {
-          console.log(paint.error(`  - ${error}`));
+          console.log(paint.error(t("cli.install.validate.failed-item", { error })));
         }
       }
 

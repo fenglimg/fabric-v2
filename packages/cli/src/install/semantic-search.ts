@@ -74,6 +74,28 @@ export function enableSemanticSearch(
 }
 
 /**
+ * grill C-17: read-only check whether vector semantic search is ALREADY enabled,
+ * WITHOUT the enable side-effect of enableSemanticSearch. Lets the install prompt
+ * detect-first and skip the Yes/No confirm (which used to ask → get "yes" → then
+ * anticlimactically report "already enabled, nothing changed").
+ */
+export function isSemanticSearchEnabled(projectRoot: string): { enabled: boolean; model?: string } {
+  const configPath = join(projectRoot, ".fabric", "fabric-config.json");
+  if (!existsSync(configPath)) {
+    return { enabled: false };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    if (parsed?.embed_enabled === true) {
+      return { enabled: true, model: typeof parsed.embed_model === "string" ? parsed.embed_model : undefined };
+    }
+  } catch {
+    // Corrupt config — treat as not enabled (the enable path re-seeds it).
+  }
+  return { enabled: false };
+}
+
+/**
  * Operator instructions for the host-side steps (install fastembed + warm cache
  * + reindex). Returned as lines so the caller can route them through its logger.
  *

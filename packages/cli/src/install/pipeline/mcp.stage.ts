@@ -11,6 +11,15 @@ import { paint } from "../../colors.js";
 const LOCAL_FABRIC_SERVER_PATH = join("node_modules", "@fenglimg", "fabric-server", "dist", "index.js");
 const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
 
+/** ClientKind → friendly label (grill C-14): mcp output lists names, not a count. */
+const MCP_CLIENT_LABELS: Record<string, string> = {
+  ClaudeCodeCLI: "Claude Code CLI",
+  ClaudeCodeDesktop: "Claude Code Desktop",
+  CodexCLI: "Codex CLI",
+  CodexDesktop: "Codex Desktop",
+  Cursor: "Cursor",
+};
+
 // ---------------------------------------------------------------------------
 // MCP Stage
 // ---------------------------------------------------------------------------
@@ -40,9 +49,8 @@ export class McpStage implements Stage {
       const target = context.target;
       const mode = context.mcpInstallMode;
 
-      // Print stage header
-      console.log(this.formatStageHeader(t("cli.install.stages.mcp")));
-
+      // The phase header is owned solely by the pipeline ([N/7] / renderSection);
+      // the stage no longer prints a second "下一步" header (grill C-13).
       if (mode === "local") {
         const manager = detectPackageManager(target);
         process.stderr.write(`${t("cli.install.mcp.install.local")}\n`);
@@ -63,7 +71,7 @@ export class McpStage implements Stage {
         return stageSkipped("mcp", "no MCP configs to install");
       }
 
-      console.log(this.formatStageResult("mcp", "completed", result.installed.length, result.skipped.length));
+      console.log(this.formatMcpOutcome(result.installed, result.skipped.length, context.args.debug === true));
 
       return stageRan("mcp", result.installed, result.skipped);
     } catch (error) {
@@ -83,9 +91,19 @@ export class McpStage implements Stage {
     });
   }
 
-  private formatStageHeader(message: string): string {
-    const nextLabel = () => paint.ai(t("cli.shared.next"));
-    return `${nextLabel()} ${paint.muted(message)}`;
+  /**
+   * grill C-14: list the configured client NAMES instead of an opaque
+   * `installed=3`. result.installed is a ClientKind[]; map to friendly labels.
+   * Raw skipped count moves behind --debug.
+   */
+  private formatMcpOutcome(installed: string[], skippedCount: number, debug: boolean): string {
+    const ok = paint.success(t("cli.install.stages.completed"));
+    if (installed.length === 0) {
+      return `${ok} ${t("cli.install.mcp.none")}`;
+    }
+    const names = installed.map((kind) => MCP_CLIENT_LABELS[kind] ?? kind).join(" / ");
+    const raw = debug ? ` ${paint.muted(`(skipped=${skippedCount})`)}` : "";
+    return `${ok} ${t("cli.install.mcp.configured", { clients: names })}${raw}`;
   }
 
   private formatStageResult(

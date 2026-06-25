@@ -8,7 +8,9 @@ import { paint } from "../../colors.js";
 import { loadProjectConfig } from "../../store/project-config-io.js";
 import {
   enableSemanticSearch,
+  isSemanticSearchEnabled,
   renderSemanticSearchInstructions,
+  DEFAULT_EMBED_MODEL_PIN,
 } from "../semantic-search.js";
 import { detectClientSupports } from "../../config/resolver.js";
 import {
@@ -62,7 +64,7 @@ export class GuidanceStage implements Stage {
       console.log("");
       console.log(translate("cli.install.next-steps"));
       console.log("");
-      console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+      console.log(paint.muted(translate("cli.install.guidance.more")));
 
       // Print restart banner
       console.log("");
@@ -99,6 +101,24 @@ export class GuidanceStage implements Stage {
   }
 
   private async promptSemanticSearch(projectRoot: string): Promise<void> {
+    // grill C-17: detect already-enabled BEFORE prompting. The old flow asked a
+    // Yes/No unconditionally, then — after "yes" — discovered it was already on
+    // and reported "nothing changed" (the anticlimax). Now: already on → just
+    // report status, no confirm. The disabled-case confirm below is byte-identical
+    // (C-07 red-line: do not change clack logic when disabled).
+    const current = isSemanticSearchEnabled(projectRoot);
+    if (current.enabled) {
+      console.log("");
+      console.log(
+        paint.muted(
+          t("cli.install.semantic.already-enabled", {
+            model: current.model ?? DEFAULT_EMBED_MODEL_PIN,
+            path: join(projectRoot, ".fabric", "fabric-config.json"),
+          }),
+        ),
+      );
+      return;
+    }
     const enable = await confirm({
       message: t("cli.install.semantic.prompt"),
       initialValue: false,

@@ -72,7 +72,7 @@ export class PreflightStage implements Stage {
     // Default global root: ~/.fabric
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     if (!home) {
-      throw new Error("Cannot determine home directory for global root");
+      throw new Error(t("cli.install.preflight.error.no-home"));
     }
     return resolve(home, ".fabric");
   }
@@ -81,40 +81,40 @@ export class PreflightStage implements Stage {
     // If exists, check it's a directory and writable
     if (existsSync(globalRoot)) {
       if (!statSync(globalRoot).isDirectory()) {
-        throw new Error(`Global Fabric root is not a directory: ${globalRoot}`);
+        throw new Error(t("cli.install.preflight.error.not-dir", { path: globalRoot }));
       }
-      this.assertWritable(globalRoot, "Global Fabric root");
+      this.assertWritable(globalRoot, t("cli.install.preflight.label.global-root"));
       return;
     }
 
     const parent = dirname(globalRoot);
     if (!existsSync(parent) || !statSync(parent).isDirectory()) {
-      throw new Error(`Global Fabric root parent is not a directory: ${parent}`);
+      throw new Error(t("cli.install.preflight.error.parent-not-dir", { path: parent }));
     }
-    this.assertWritable(parent, "Global Fabric root parent");
+    this.assertWritable(parent, t("cli.install.preflight.label.global-root-parent"));
   }
 
   private assertGlobalRootPlannable(globalRoot: string): void {
     if (existsSync(globalRoot)) {
       if (!statSync(globalRoot).isDirectory()) {
-        throw new Error(`Global Fabric root is not a directory: ${globalRoot}`);
+        throw new Error(t("cli.install.preflight.error.not-dir", { path: globalRoot }));
       }
       return;
     }
 
     const parent = dirname(globalRoot);
     if (!existsSync(parent) || !statSync(parent).isDirectory()) {
-      throw new Error(`Global Fabric root parent is not a directory: ${parent}`);
+      throw new Error(t("cli.install.preflight.error.parent-not-dir", { path: parent }));
     }
   }
 
-  private assertWritable(path: string, label = "Target"): void {
+  private assertWritable(path: string, label = t("cli.install.preflight.label.target")): void {
     const probePath = join(path, `.fabric-preflight-${process.pid}-${Date.now()}.tmp`);
     try {
       writeFileSync(probePath, "", { flag: "wx" });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`${label} is not writable: ${path} (${message})`);
+      throw new Error(t("cli.install.preflight.error.not-writable", { label, path, reason: message }));
     } finally {
       rmSync(probePath, { force: true });
     }
@@ -125,7 +125,7 @@ export class PreflightStage implements Stage {
       execFileSync("git", ["--version"], { stdio: ["ignore", "ignore", "ignore"] });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`git is required for --url installs but was not available: ${message}`);
+      throw new Error(t("cli.install.preflight.error.git-required", { reason: message }));
     }
   }
 }
