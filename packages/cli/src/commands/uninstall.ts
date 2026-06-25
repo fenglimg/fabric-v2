@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { cancel, confirm, intro, isCancel, multiselect, note, outro } from "@clack/prompts";
+import { cancel, confirm, intro, isCancel, multiselect, outro } from "@clack/prompts";
 import { defineCommand } from "citty";
 // v2.0.0-rc.37 Wave A2: serve-lock preflight removed alongside fabric serve
 // quarantine — no main-line process writes `.fabric/.serve.lock` any more.
@@ -19,23 +19,40 @@ import {
   type UninstallOptions as BootstrapUninstallOptions,
   type UninstallStepResult,
 } from "../install/uninstall-skills-and-hooks.js";
+import { unbindStoreProject } from "../install/uninstall-store.js";
+import { HOOK_SCRIPT_DESTINATIONS, SKILL_DESTINATIONS } from "../install/skills-and-hooks.js";
+
+// W4 uninstall-symmetry: `fabric uninstall` is now the visual + semantic inverse
+// of the install-v2 pipeline. It drives the SAME TASK-001 OutputRenderer that
+// install uses (section bar / step badge / summary card / error box) instead of
+// the old bare console.log self-draw, and adds an OPTIONAL store-unbind stage
+// symmetric to install's store binding. The orchestration stays uninstall's own
+// (NOT the install-coupled `InstallPipeline` class) — rollback/firstInstall
+// collapse are meaningless for a best-effort teardown.
+import { createInstallRenderer } from "../tui/index.js";
+import type { ErrorInfo, OutputRenderer, SummaryDetailRow, SummaryInfo } from "../tui/types.js";
 
 /**
  * `fabric uninstall` — symmetric inverse of `fabric install`.
  *
- * Three-stage pipeline mirroring init (reverse order is enforced by the
- * stage helpers themselves; this orchestrator dispatches them):
- *   1. scaffold   — best-effort rm of project-local Fabric state files
- *                   written by install. Knowledge lives in global stores and is
- *                   not part of project uninstall.
- *   2. bootstrap  — Skills + hook scripts + hook-config un-merge + pointer-line
- *                   strip. Delegates to {@link uninstallBootstrapStage}.
- *   3. mcp        — Per-client `writer.remove('fabric')` against the JSON /
- *                   TOML configs.
+ * Five-stage pipeline, the reverse of the install-v2 pipeline:
+ *   1. bootstrap — Skills + hook scripts + hook-config un-merge + pointer-line
+ *                  strip + snapshot removal. Inverse of install's hooks stage.
+ *                  Delegates to {@link uninstallBootstrapStage}.
+ *   2. mcp       — Per-client `writer.remove('fabric')`. Inverse of install mcp.
+ *   3. store     — OPTIONAL (default skipped). Unbinds THIS project from its team
+ *                  store (clears required_stores / active_write_store / write_routes
+ *                  / active_project) via {@link unbindStoreProject}. Inverse of
+ *                  install's store binding. NEVER deletes the global store.
+ *   4. scaffold  — best-effort rm of project-local Fabric state files written by
+ *                  install. Inverse of install's env scaffold.
+ *   5. validate  — confirms the bootstrap artifacts were cleared. Inverse of
+ *                  install's validate stage.
  *
- * Hard invariants (clarifications #1, #2):
+ * Hard invariants:
  *   - Global stores under `~/.fabric/stores/` are NEVER touched, regardless of
- *     any flag — encoded as a guard in {@link buildUninstallFabricPlan}.
+ *     any flag — encoded as a guard in {@link buildUninstallFabricPlan} and in
+ *     {@link unbindStoreProject} (which never imports a global-store mutator).
  *   - Best-effort everywhere: missing artifacts log as `skipped`, never throw.
  */
 
@@ -43,6 +60,8 @@ type UninstallArgs = {
   target?: string;
   debug?: boolean;
   yes?: boolean;
+  verbose?: boolean;
+  "unbind-store"?: boolean;
   "dry-run"?: boolean;
 };
 
@@ -50,10 +69,15 @@ export type UninstallOptions = {
   skipBootstrap?: boolean;
   skipMcp?: boolean;
   skipScaffold?: boolean;
+  // store-unbind defaults to SKIPPED: it mutates the project's team binding, an
+  // opt-in action (wizard checkbox or --unbind-store). Plan-building treats an
+  // unset skipStore as "skip" so the default uninstall never touches the binding.
+  skipStore?: boolean;
+  skipValidate?: boolean;
   planOnly?: boolean;
 };
 
-type UninstallStageName = "scaffold" | "bootstrap" | "mcp";
+type UninstallStageName = "bootstrap" | "mcp" | "store" | "scaffold" | "validate";
 
 type UninstallStageDisposition = "ran" | "skipped" | "failed";
 
@@ -81,25 +105,10 @@ export type UninstallScaffoldPlan = {
   entries: UninstallScaffoldEntry[];
 };
 
-type UninstallMcpStagePlan = {
-  name: "mcp";
+type UninstallStagePlan = {
+  name: UninstallStageName;
   skipped: boolean;
 };
-
-type UninstallBootstrapStagePlan = {
-  name: "bootstrap";
-  skipped: boolean;
-};
-
-type UninstallScaffoldStagePlan = {
-  name: "scaffold";
-  skipped: boolean;
-};
-
-type UninstallStagePlan =
-  | UninstallBootstrapStagePlan
-  | UninstallMcpStagePlan
-  | UninstallScaffoldStagePlan;
 
 export type UninstallExecutionPlan = {
   target: string;
@@ -123,16 +132,16 @@ type UninstallCliIntent = {
 };
 
 type UninstallWizardSelection = {
-  scaffold: boolean;
   bootstrap: boolean;
   mcp: boolean;
+  scaffold: boolean;
+  store: boolean;
 };
 
 type UninstallWizardContext = {
   target: string;
   options: UninstallOptions;
   supports: DetectedClientSupport[];
-  lockedStages: UninstallStageName[];
 };
 
 export type UninstallWizardAdapter = {
@@ -146,11 +155,39 @@ type McpRemovalDetail = {
   message?: string;
 };
 
-
-// Top-level `.fabric/` state files written by `fabric install`. The default scaffold
+// Top-level `.fabric/` state files written by `fabric install`. The scaffold
 // stage prunes these. Knowledge content is stored under global stores, not under
-// the project-local `.fabric/knowledge` tree.
+// the project-local `.fabric/knowledge` tree, and the binding config
+// (`fabric-config.json`) is handled by the optional store stage — never deleted.
 const FABRIC_STATE_FILES = ["agents.meta.json", "events.jsonl", "forensic.json"] as const;
+
+// W4: stage visual anchors, mirroring install's STAGE_ICONS (pipeline.ts). The
+// StageName stays an English routing key; only the displayed label is localized.
+const UNINSTALL_STAGE_ICONS: Record<UninstallStageName, string> = {
+  bootstrap: "🧹",
+  mcp: "🔌",
+  store: "🔗",
+  scaffold: "🗑️",
+  validate: "✅",
+};
+
+// Canonical execution order — the reverse of the install-v2 pipeline.
+const UNINSTALL_STAGE_ORDER: readonly UninstallStageName[] = [
+  "bootstrap",
+  "mcp",
+  "store",
+  "scaffold",
+  "validate",
+];
+
+// Wizard-selectable stages (validate always runs; it is a verification closer,
+// not a teardown choice). `store` is offered but UNCHECKED by default.
+const UNINSTALL_WIZARD_KEYS: readonly Exclude<UninstallStageName, "validate">[] = [
+  "bootstrap",
+  "mcp",
+  "scaffold",
+  "store",
+];
 
 export const uninstallCommand = defineCommand({
   meta: {
@@ -161,6 +198,16 @@ export const uninstallCommand = defineCommand({
     debug: {
       type: "boolean",
       description: t("cli.uninstall.args.debug.description"),
+      default: false,
+    },
+    verbose: {
+      type: "boolean",
+      description: t("cli.uninstall.args.verbose.description"),
+      default: false,
+    },
+    "unbind-store": {
+      type: "boolean",
+      description: t("cli.uninstall.args.unbind-store.description"),
       default: false,
     },
     "dry-run": {
@@ -195,16 +242,8 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
     logger(step);
   }
 
-  // v2.0.0-rc.37 Wave A2: rc.15 serve-lock preflight removed — no main-line
-  // process writes `.fabric/.serve.lock` any more (per
-  // [[fabric-serve-quarantine-not-delete]]). Legacy lock files left over from
-  // rc ≤36 are reaped by the doctor's stale-serve-lock advisory + --fix.
-
   const supports = detectClientSupports(intent.target);
-  const basePlan = await buildUninstallExecutionPlan(intent.target, {
-    ...intent.options,
-    // Carry through interactive flag for plan-summary printing.
-  });
+  const basePlan = await buildUninstallExecutionPlan(intent.target, intent.options);
   const planWithSupports: UninstallExecutionPlan = {
     ...basePlan,
     interactive: intent.interactiveSummary && !intent.wizardEnabled,
@@ -241,8 +280,18 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
     }
   }
 
-  const result = await executeUninstallExecutionPlan(finalPlan);
-  printUninstallSummary(result);
+  // W4: drive the shared OutputRenderer on interactive (TTY) runs — same gate as
+  // install's shouldUseInstallRenderer. Non-TTY (pipes/CI) keeps the plain
+  // numbered console.log fallback so log scrapers / snapshots stay stable.
+  const renderer = shouldUseUninstallRenderer(intent.interactiveSummary)
+    ? createInstallRenderer({ verbose: args.verbose === true || args.debug === true })
+    : undefined;
+
+  const result = await executeUninstallExecutionPlan(finalPlan, renderer);
+
+  if (renderer) {
+    await renderer.cleanup();
+  }
   return result;
 }
 
@@ -252,6 +301,8 @@ function resolveUninstallCliIntent(args: UninstallArgs, targetInput: string): Un
   const planOnly = args["dry-run"] === true;
   const options: UninstallOptions = {
     planOnly,
+    // Non-wizard opt-in: --unbind-store enables the store stage (default skip).
+    skipStore: args["unbind-store"] !== true,
   };
 
   return {
@@ -269,6 +320,16 @@ export function shouldUseUninstallWizard(
   return terminalInteractive && args.yes !== true;
 }
 
+/**
+ * W4: same gate as install's `shouldUseInstallRenderer` — the renderer carries
+ * the static richness (section bars, step badges, summary card, error box) and
+ * is pure print-and-go, so it never fights interactive clack prompts. Enabled
+ * for every interactive run; non-TTY keeps the plain fallback.
+ */
+export function shouldUseUninstallRenderer(terminalInteractive: boolean): boolean {
+  return terminalInteractive;
+}
+
 export async function buildUninstallExecutionPlan(
   target: string,
   options: UninstallOptions = {},
@@ -276,11 +337,10 @@ export async function buildUninstallExecutionPlan(
   const scaffold = buildUninstallFabricPlan(target, options);
   const supports = detectClientSupports(target);
 
-  const stages: UninstallStagePlan[] = [
-    { name: "scaffold", skipped: Boolean(options.skipScaffold) },
-    { name: "bootstrap", skipped: Boolean(options.skipBootstrap) },
-    { name: "mcp", skipped: Boolean(options.skipMcp) },
-  ];
+  const stages: UninstallStagePlan[] = UNINSTALL_STAGE_ORDER.map((name) => ({
+    name,
+    skipped: isStagePlanSkipped(options, name),
+  }));
 
   return {
     target,
@@ -290,6 +350,27 @@ export async function buildUninstallExecutionPlan(
     scaffold,
     stages,
   };
+}
+
+/**
+ * Resolve a stage's default skip disposition from options. `store` is the only
+ * stage that defaults to SKIPPED (opt-in unbind); every other stage runs unless
+ * explicitly skipped.
+ */
+function isStagePlanSkipped(options: UninstallOptions, name: UninstallStageName): boolean {
+  switch (name) {
+    case "bootstrap":
+      return Boolean(options.skipBootstrap);
+    case "mcp":
+      return Boolean(options.skipMcp);
+    case "store":
+      // Unset → skipped. Only an explicit skipStore===false runs the unbind.
+      return options.skipStore !== false;
+    case "scaffold":
+      return Boolean(options.skipScaffold);
+    case "validate":
+      return Boolean(options.skipValidate);
+  }
 }
 
 /**
@@ -462,63 +543,115 @@ export async function uninstallMcpClients(
 }
 
 /**
+ * W4 store stage: project-side unbind, surfaced as uniform step results.
+ * Delegates to {@link unbindStoreProject} which never touches the global store.
+ */
+function executeUninstallStoreStage(target: string): UninstallStepResult[] {
+  const configPath = join(target, ".fabric", "fabric-config.json");
+  const result = unbindStoreProject(target);
+  if (result.status === "skipped") {
+    return [{ step: "store-unbind", path: configPath, status: "skipped", message: result.reason }];
+  }
+  if (result.unboundAliases.length === 0) {
+    return [{ step: "store-unbind", path: configPath, status: "removed", message: "binding cleared" }];
+  }
+  return result.unboundAliases.map((alias) => ({
+    step: "store-unbind",
+    path: configPath,
+    status: "removed" as const,
+    message: alias,
+  }));
+}
+
+/**
+ * W4 validate stage: confirm the bootstrap artifacts (skills + hook scripts) are
+ * gone. Only meaningful when the bootstrap stage actually ran — when it was
+ * deselected, residual skill/hook files are EXPECTED, so validation is scoped
+ * out (a single skipped row) rather than flagging false residuals.
+ */
+function validateUninstallCleared(target: string, bootstrapRan: boolean): UninstallStepResult[] {
+  if (!bootstrapRan) {
+    return [{ step: "validate", path: target, status: "skipped", message: "validation-scope-skipped" }];
+  }
+  const residualRels = [
+    ...Object.values(SKILL_DESTINATIONS).flat(),
+    ...Object.values(HOOK_SCRIPT_DESTINATIONS).flat(),
+  ];
+  const residuals: UninstallStepResult[] = [];
+  for (const rel of residualRels) {
+    const p = join(target, rel);
+    if (existsSync(p)) {
+      residuals.push({ step: "validate-residual", path: p, status: "error", message: "residual artifact" });
+    }
+  }
+  if (residuals.length === 0) {
+    return [{ step: "validate", path: target, status: "skipped", message: "cleared" }];
+  }
+  return residuals;
+}
+
+/**
  * Execute the full plan. Each stage is invoked in order; a stage that throws
  * is reported as `failed` but does not abort the pipeline — subsequent stages
- * still run. Mirrors init's executeInitExecutionPlan contract.
+ * still run. Mirrors install's executeInitExecutionPlan contract.
+ *
+ * `renderer` (W4) drives the shared TASK-001 OutputRenderer when present
+ * (interactive runs); when undefined the executor falls back to plain
+ * console.log so non-TTY / test paths stay stable.
  */
 export async function executeUninstallExecutionPlan(
   plan: UninstallExecutionPlan,
+  renderer?: OutputRenderer,
 ): Promise<UninstallExecutionResult> {
   const stageResults: UninstallStageRecord[] = [];
-
-  // C3: mirror install's phase display — upfront "runs in N phases" banner plus
-  // a numbered `[n/N] <stage>` header per phase (install prints the same shape
-  // via pipeline.ts). Skipped phases stay visible so the run reads symmetric.
   const totalStages = plan.stages.length;
-  console.log(t("cli.uninstall.plan.phase-banner", { total: String(totalStages) }));
+
+  // Intro banner — section bar + "runs in N phases" line through the renderer,
+  // or the plain banner on the fallback path.
+  if (renderer) {
+    renderer.renderSection(t("cli.uninstall.pipeline.title"));
+    renderer.renderInfo(t("cli.uninstall.plan.phase-banner", { total: String(totalStages) }));
+  } else {
+    console.log(t("cli.uninstall.plan.phase-banner", { total: String(totalStages) }));
+  }
 
   let stepNum = 0;
   for (const stage of plan.stages) {
     stepNum += 1;
+
     if (stage.skipped) {
-      console.log(formatUninstallStageHeader(stage.name, stepNum, totalStages, true));
+      renderStageSkipped(renderer, stage.name, stepNum, totalStages);
       stageResults.push({ name: stage.name, disposition: "skipped", steps: [] });
       continue;
     }
 
-    console.log(formatUninstallStageHeader(stage.name, stepNum, totalStages));
+    renderStageHeader(renderer, stage.name, stepNum, totalStages);
     try {
-      const steps = await executeUninstallStage(plan, stage.name);
+      const steps = await executeUninstallStage(plan, stage.name, stageResults);
       const disposition: UninstallStageDisposition = steps.some((s) => s.status === "error") ? "failed" : "ran";
       stageResults.push({ name: stage.name, disposition, steps });
-      console.log(formatUninstallStageResult(stage.name, steps));
+      renderStageResult(renderer, stage.name, stepNum, totalStages, steps);
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       stageResults.push({
         name: stage.name,
         disposition: "failed",
-        steps: [
-          {
-            step: stage.name,
-            path: plan.target,
-            status: "error",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        ],
+        steps: [{ step: stage.name, path: plan.target, status: "error", message }],
       });
-      writeStderr(formatUninstallStageFailure(stage.name, error));
+      renderStageFailure(renderer, stage.name, stepNum, totalStages, error);
     }
   }
 
+  renderUninstallSummary(renderer, { plan, stageResults });
   return { plan, stageResults };
 }
 
 async function executeUninstallStage(
   plan: UninstallExecutionPlan,
   stageName: UninstallStageName,
+  priorResults: UninstallStageRecord[],
 ): Promise<UninstallStepResult[]> {
   switch (stageName) {
-    case "scaffold":
-      return executeUninstallFabricPlan(plan.scaffold);
     case "bootstrap": {
       const opts: BootstrapUninstallOptions = {};
       return uninstallBootstrapStage(plan.target, opts);
@@ -526,6 +659,14 @@ async function executeUninstallStage(
     case "mcp": {
       const { results } = await uninstallMcpClients(plan.target);
       return results;
+    }
+    case "store":
+      return executeUninstallStoreStage(plan.target);
+    case "scaffold":
+      return executeUninstallFabricPlan(plan.scaffold);
+    case "validate": {
+      const bootstrapRan = priorResults.some((r) => r.name === "bootstrap" && r.disposition === "ran");
+      return validateUninstallCleared(plan.target, bootstrapRan);
     }
   }
 }
@@ -554,7 +695,6 @@ export async function resolveUninstallExecutionPlanWithWizard(
     target: basePlan.target,
     options: basePlan.options,
     supports: basePlan.supports,
-    lockedStages: [],
   });
 
   if (selection === null) {
@@ -563,9 +703,12 @@ export async function resolveUninstallExecutionPlanWithWizard(
 
   const nextOptions: UninstallOptions = {
     ...basePlan.options,
-    skipScaffold: !selection.scaffold,
     skipBootstrap: !selection.bootstrap,
     skipMcp: !selection.mcp,
+    skipScaffold: !selection.scaffold,
+    // store-unbind only runs when the user explicitly checks it.
+    skipStore: !selection.store,
+    skipValidate: false,
   };
 
   const rebuilt = await buildUninstallExecutionPlan(basePlan.target, nextOptions);
@@ -576,25 +719,20 @@ export async function resolveUninstallExecutionPlanWithWizard(
   };
 }
 
-// grill-6fixes (③): the uninstall wizard now mirrors the install UX —
-// a single multiselect of what to remove (pre-checked per the resolved
-// defaults), ONE plan summary of the selection, and ONE final confirm.
-// The previous flow stacked ~5 [Y/n] confirms (a redundant target-confirm,
-// three per-stage confirms, an execute-confirm) and printed the plan twice
-// behind a mis-aligned overview box — which read as unpolished next to install.
+// grill-6fixes (③) + W4: the uninstall wizard mirrors the install UX — a single
+// multiselect of what to remove (pre-checked per the resolved defaults, with the
+// store-unbind row UNCHECKED), ONE plan summary of the selection, and ONE final
+// confirm.
 export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
   return {
     async run(context) {
       intro(t("cli.uninstall.wizard.intro"));
 
-      const available = UNINSTALL_STAGE_KEYS.filter(
-        (key) => !context.lockedStages.includes(key),
-      );
-      const initialValues = available.filter((key) => !isStageSkipped(context.options, key));
+      const initialValues = UNINSTALL_WIZARD_KEYS.filter((key) => !isStagePlanSkipped(context.options, key));
 
-      const picked = await multiselect<UninstallStageName>({
+      const picked = await multiselect<Exclude<UninstallStageName, "validate">>({
         message: t("cli.uninstall.wizard.select.prompt", { target: context.target }),
-        options: available.map((key) => ({
+        options: UNINSTALL_WIZARD_KEYS.map((key) => ({
           value: key,
           label: t(`cli.uninstall.wizard.select.${key}.label`),
           hint: t(`cli.uninstall.wizard.select.${key}.hint`),
@@ -607,19 +745,21 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
         return null;
       }
 
-      const selected = new Set(picked as UninstallStageName[]);
+      const selected = new Set(picked as Array<Exclude<UninstallStageName, "validate">>);
       const selection: UninstallWizardSelection = {
-        scaffold: selected.has("scaffold"),
         bootstrap: selected.has("bootstrap"),
         mcp: selected.has("mcp"),
+        scaffold: selected.has("scaffold"),
+        store: selected.has("store"),
       };
 
       // ONE plan summary of the SELECTED plan — no duplicate print.
       const previewOptions: UninstallOptions = {
         ...context.options,
-        skipScaffold: !selection.scaffold,
         skipBootstrap: !selection.bootstrap,
         skipMcp: !selection.mcp,
+        skipScaffold: !selection.scaffold,
+        skipStore: !selection.store,
       };
       printUninstallPlanSummary(context.target, previewOptions, context.supports);
 
@@ -638,19 +778,6 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
       return selection;
     },
   };
-}
-
-const UNINSTALL_STAGE_KEYS: readonly UninstallStageName[] = ["scaffold", "bootstrap", "mcp"];
-
-function isStageSkipped(options: UninstallOptions, key: UninstallStageName): boolean {
-  switch (key) {
-    case "scaffold":
-      return Boolean(options.skipScaffold);
-    case "bootstrap":
-      return Boolean(options.skipBootstrap);
-    case "mcp":
-      return Boolean(options.skipMcp);
-  }
 }
 
 function emitUninstallWizardCancellation(): void {
@@ -677,20 +804,193 @@ async function confirmDestructive(plan: UninstallExecutionPlan): Promise<boolean
 // Output formatting
 // -----------------------------------------------------------------------
 
+function stageLabel(name: UninstallStageName): string {
+  return t(`cli.uninstall.pipeline.label.${name}`);
+}
+
+function renderStageHeader(
+  renderer: OutputRenderer | undefined,
+  name: UninstallStageName,
+  stepNum: number,
+  total: number,
+): void {
+  const label = stageLabel(name);
+  if (renderer) {
+    renderer.renderSection(`${UNINSTALL_STAGE_ICONS[name]} ${label}`);
+    renderer.renderStep({ name: label, current: stepNum, total, status: "running" });
+  } else {
+    console.log(`[${stepNum}/${total}] ${label}`);
+  }
+}
+
+function renderStageSkipped(
+  renderer: OutputRenderer | undefined,
+  name: UninstallStageName,
+  stepNum: number,
+  total: number,
+): void {
+  const label = stageLabel(name);
+  if (renderer) {
+    renderer.renderSection(`${UNINSTALL_STAGE_ICONS[name]} ${label}`);
+    renderer.renderStep({ name: label, current: stepNum, total, status: "skipped" });
+  } else {
+    console.log(paint.muted(`[${stepNum}/${total}] ${label} (${t("cli.shared.skipped")})`));
+  }
+}
+
+function renderStageResult(
+  renderer: OutputRenderer | undefined,
+  name: UninstallStageName,
+  stepNum: number,
+  total: number,
+  steps: UninstallStepResult[],
+): void {
+  const removed = steps.filter((s) => s.status === "removed").length;
+  const skipped = steps.filter((s) => s.status === "skipped").length;
+  const errors = steps.filter((s) => s.status === "error").length;
+
+  // Human body: result + key counts. The renderer step badge carries the status.
+  const detail =
+    removed === 0 && errors === 0
+      ? t("cli.uninstall.stages.uptodate", { count: String(skipped) })
+      : t("cli.uninstall.stages.summary", {
+          removed: String(removed),
+          skipped: String(skipped),
+          errors: String(errors),
+        });
+
+  if (renderer) {
+    renderer.renderStep({
+      name: stageLabel(name),
+      current: stepNum,
+      total,
+      status: errors > 0 ? "error" : "success",
+      detail,
+    });
+  } else {
+    const label =
+      errors > 0
+        ? paint.warn(t("cli.uninstall.stages.completed-with-errors"))
+        : paint.success(t("cli.uninstall.stages.completed"));
+    console.log(`${label} ${name}: ${detail}`);
+  }
+}
+
+function renderStageFailure(
+  renderer: OutputRenderer | undefined,
+  name: UninstallStageName,
+  stepNum: number,
+  total: number,
+  error: unknown,
+): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (renderer) {
+    renderer.renderStep({ name: stageLabel(name), current: stepNum, total, status: "error", detail: message });
+    const info: ErrorInfo = {
+      title: `${stageLabel(name)} ${t("cli.uninstall.stages.failed")}`,
+      message,
+      hint: t("cli.uninstall.stages.failed-hint"),
+    };
+    renderer.renderError(info);
+  } else {
+    writeStderr(`${paint.error(t("cli.uninstall.stages.failed"))} ${name}: ${message}`);
+  }
+}
+
+function renderUninstallSummary(
+  renderer: OutputRenderer | undefined,
+  result: UninstallExecutionResult,
+): void {
+  const allSteps = result.stageResults.flatMap((stage) => stage.steps);
+  const removed = allSteps.filter((s) => s.status === "removed").length;
+  const skipped = allSteps.filter((s) => s.status === "skipped").length;
+  const errors = allSteps.filter((s) => s.status === "error").length;
+
+  // "Nothing to remove" health card — a re-uninstall where every stage skipped
+  // or removed nothing. Mirrors install's idempotent health-check collapse.
+  const nothingRemoved = removed === 0 && errors === 0;
+
+  if (renderer) {
+    if (nothingRemoved) {
+      renderer.renderSummaryCard({
+        title: t("cli.uninstall.healthcheck.title"),
+        successCount: result.stageResults.filter((s) => s.disposition !== "skipped").length,
+        skippedCount: result.stageResults.filter((s) => s.disposition === "skipped").length,
+        errorCount: 0,
+      });
+    } else {
+      renderer.renderSummaryCard(buildUninstallSummaryCard(result, removed, skipped, errors));
+    }
+    renderer.renderComplete();
+  } else {
+    console.log(
+      t("cli.uninstall.summary.body", {
+        removed: String(removed),
+        skipped: String(skipped),
+        errors: String(errors),
+      }),
+    );
+  }
+
+  // Surface error details on stderr regardless of renderer so users can react.
+  for (const stage of result.stageResults) {
+    for (const step of stage.steps) {
+      if (step.status === "error") {
+        writeStderr(
+          `${paint.error(t("cli.shared.error"))} ${stage.name}/${step.step} ${step.path}: ${step.message ?? "unknown error"}`,
+        );
+      }
+    }
+  }
+}
+
+function buildUninstallSummaryCard(
+  result: UninstallExecutionResult,
+  removed: number,
+  skipped: number,
+  errors: number,
+): SummaryInfo {
+  const details: SummaryDetailRow[] = result.stageResults.map((stage) => {
+    const stageRemoved = stage.steps.filter((s) => s.status === "removed").length;
+    const stageErrors = stage.steps.filter((s) => s.status === "error").length;
+    return {
+      label: stageLabel(stage.name),
+      value:
+        stage.disposition === "skipped"
+          ? t("cli.shared.skipped")
+          : stageErrors > 0
+            ? t("cli.uninstall.stages.summary", {
+                removed: String(stageRemoved),
+                skipped: String(stage.steps.filter((s) => s.status === "skipped").length),
+                errors: String(stageErrors),
+              })
+            : t("cli.uninstall.stages.removed-count", { count: String(stageRemoved) }),
+      status:
+        stage.disposition === "skipped"
+          ? "skipped"
+          : stage.disposition === "failed"
+            ? "error"
+            : "success",
+    };
+  });
+
+  return {
+    title: t("cli.uninstall.summary.title"),
+    successCount: removed,
+    skippedCount: skipped,
+    errorCount: errors,
+    details,
+  };
+}
+
 function printUninstallPlanPreview(plan: UninstallExecutionPlan): void {
   console.log(t("cli.uninstall.plan.preview-title"));
   printUninstallPlanSummary(plan.target, plan.options, plan.supports);
-  console.log(
-    t("cli.uninstall.plan.preview-result", {
-      scaffold: yesNoLabel(!plan.options.skipScaffold),
-      bootstrap: yesNoLabel(!plan.options.skipBootstrap),
-      mcp: yesNoLabel(!plan.options.skipMcp),
-    }),
-  );
 
   // Enumerate scaffold entries for transparency. Helps the user verify what
   // will actually be touched before they commit.
-  if (!plan.options.skipScaffold && plan.scaffold.entries.length > 0) {
+  const scaffoldRuns = !isStagePlanSkipped(plan.options, "scaffold");
+  if (scaffoldRuns && plan.scaffold.entries.length > 0) {
     console.log(t("cli.uninstall.plan.scaffold-entries.title"));
     for (const entry of plan.scaffold.entries) {
       const marker = entry.absent ? paint.muted("(absent)") : paint.success("(present)");
@@ -708,9 +1008,10 @@ function printUninstallPlanSummary(
   console.log(t("cli.uninstall.plan.target", { target }));
   console.log(
     t("cli.uninstall.plan.actions", {
-      scaffold: yesNoLabel(!options.skipScaffold),
-      bootstrap: yesNoLabel(!options.skipBootstrap),
-      mcp: yesNoLabel(!options.skipMcp),
+      bootstrap: yesNoLabel(!isStagePlanSkipped(options, "bootstrap")),
+      mcp: yesNoLabel(!isStagePlanSkipped(options, "mcp")),
+      scaffold: yesNoLabel(!isStagePlanSkipped(options, "scaffold")),
+      store: yesNoLabel(!isStagePlanSkipped(options, "store")),
     }),
   );
   const detected = supports.filter((support) => support.detected);
@@ -721,66 +1022,6 @@ function printUninstallPlanSummary(
   );
   console.log(t("cli.uninstall.plan.preserves"));
   console.log(`  - ~/.fabric/stores/  ${paint.muted(t("cli.uninstall.plan.preserves.stores"))}`);
-}
-
-function printUninstallSummary(result: UninstallExecutionResult): void {
-  const removed = result.stageResults.flatMap((stage) =>
-    stage.steps.filter((s) => s.status === "removed"),
-  ).length;
-  const skipped = result.stageResults.flatMap((stage) =>
-    stage.steps.filter((s) => s.status === "skipped"),
-  ).length;
-  const errors = result.stageResults.flatMap((stage) =>
-    stage.steps.filter((s) => s.status === "error"),
-  ).length;
-
-  note(
-    t("cli.uninstall.summary.body", {
-      removed: String(removed),
-      skipped: String(skipped),
-      errors: String(errors),
-    }),
-    t("cli.uninstall.summary.title"),
-  );
-
-  // Surface error details so users can react.
-  for (const stage of result.stageResults) {
-    for (const step of stage.steps) {
-      if (step.status === "error") {
-        writeStderr(`${paint.error(t("cli.shared.error"))} ${stage.name}/${step.step} ${step.path}: ${step.message ?? "unknown error"}`);
-      }
-    }
-  }
-}
-
-function formatUninstallStageHeader(
-  stageName: UninstallStageName,
-  stepNum: number,
-  total: number,
-  skipped = false,
-): string {
-  const label = t(`cli.uninstall.stages.${stageName}`);
-  const head = `[${stepNum}/${total}] ${label}`;
-  return skipped ? paint.muted(`${head} (${t("cli.shared.skipped")})`) : head;
-}
-
-function formatUninstallStageResult(
-  stageName: UninstallStageName,
-  steps: UninstallStepResult[],
-): string {
-  const removedCount = steps.filter((s) => s.status === "removed").length;
-  const skippedCount = steps.filter((s) => s.status === "skipped").length;
-  const errorCount = steps.filter((s) => s.status === "error").length;
-  const counts = `removed=${removedCount} skipped=${skippedCount} errors=${errorCount}`;
-  const label = errorCount > 0
-    ? paint.warn(t("cli.uninstall.stages.completed-with-errors"))
-    : paint.success(t("cli.uninstall.stages.completed"));
-  return `${label} ${stageName}: ${counts}`;
-}
-
-function formatUninstallStageFailure(stage: UninstallStageName, error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return `${paint.error(t("cli.uninstall.stages.failed"))} ${stage}: ${message}`;
 }
 
 // -----------------------------------------------------------------------

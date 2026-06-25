@@ -605,12 +605,19 @@ export async function uninstallBootstrapStage(
     removePostTooluseMutationHook(projectRoot),
   );
 
-  // 5. Skill files (reverse of install order: connect → audit → sync → import → review → archive)
+  // 5. Skill files (reverse of install order: connect → audit → store → sync → import → review → archive)
   await runAndCollect(results, "skill-connect", projectRoot, () =>
     uninstallFabricConnectSkill(projectRoot),
   );
   await runAndCollect(results, "skill-audit", projectRoot, () =>
     uninstallFabricAuditSkill(projectRoot),
+  );
+  // W4 uninstall-symmetry: the fabric-store skill is installed by the hooks
+  // stage (installFabricStoreSkill) but was never swept on uninstall — surfaced
+  // by the W4 validate stage as a residual artifact. Install order is sync →
+  // store, so uninstall removes store before sync.
+  await runAndCollect(results, "skill-store", projectRoot, () =>
+    uninstallFabricStoreSkill(projectRoot),
   );
   await runAndCollect(results, "skill-sync", projectRoot, () =>
     uninstallFabricSyncSkill(projectRoot),

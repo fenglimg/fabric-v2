@@ -25,12 +25,23 @@ import { initFabric } from "../src/commands/install.ts";
 import {
   buildUninstallExecutionPlan,
   executeUninstallExecutionPlan,
+  uninstallFabric,
 } from "../src/commands/uninstall.ts";
+import { unbindStoreProject } from "../src/install/uninstall-store.ts";
+import { ensureStoreProjectBinding } from "../src/install/store-project-onboarding.ts";
+import { runGlobalInstall } from "../src/install/run-global-install.ts";
+import { storeCreate, storeProjectList } from "../src/store/store-ops.ts";
+import { loadGlobalConfig } from "../src/store/global-config-io.ts";
+import { loadProjectConfig } from "../src/store/project-config-io.ts";
+import type { OutputRenderer } from "../src/tui/types.ts";
 import {
   cleanupFixtureRoot,
+  createEmptyFixtureRoot,
   createWerewolfFixtureRoot,
   setProcessTty,
 } from "./helpers/init-test-utils.ts";
+
+const UNBIND_NOW = "2026-06-25T00:00:00.000Z";
 
 const tempRoots: string[] = [];
 const restoreTtyMocks: Array<() => void> = [];
@@ -101,13 +112,22 @@ describe("uninstall plan enumeration", () => {
     expect(plan.scaffold.target).toBe(target);
     expect(plan.scaffold.fabricDir).toBe(join(target, ".fabric"));
 
-    // Three stages in the canonical order.
-    expect(plan.stages.map((s) => s.name)).toEqual(["scaffold", "bootstrap", "mcp"]);
+    // Five stages in the canonical order — the reverse of the install pipeline.
+    expect(plan.stages.map((s) => s.name)).toEqual([
+      "bootstrap",
+      "mcp",
+      "store",
+      "scaffold",
+      "validate",
+    ]);
     // mcp must be skipped because we passed skipMcp.
     expect(plan.stages.find((s) => s.name === "mcp")?.skipped).toBe(true);
-    // scaffold + bootstrap must NOT be skipped by default.
-    expect(plan.stages.find((s) => s.name === "scaffold")?.skipped).toBe(false);
+    // bootstrap + scaffold + validate run by default.
     expect(plan.stages.find((s) => s.name === "bootstrap")?.skipped).toBe(false);
+    expect(plan.stages.find((s) => s.name === "scaffold")?.skipped).toBe(false);
+    expect(plan.stages.find((s) => s.name === "validate")?.skipped).toBe(false);
+    // store-unbind is OPT-IN: skipped unless skipStore===false is passed.
+    expect(plan.stages.find((s) => s.name === "store")?.skipped).toBe(true);
 
     // Scaffold entries: project-local Fabric state only. Knowledge lives in
     // global stores now, so uninstall no longer enumerates any .fabric/knowledge
@@ -308,8 +328,16 @@ describe("uninstallFabric top-level entrypoint", () => {
     const result = await uninstallFabric(target, { skipMcp: true });
 
     expect(result.plan.target).toBe(target);
-    expect(result.stageResults.map((s) => s.name)).toEqual(["scaffold", "bootstrap", "mcp"]);
+    expect(result.stageResults.map((s) => s.name)).toEqual([
+      "bootstrap",
+      "mcp",
+      "store",
+      "scaffold",
+      "validate",
+    ]);
     expect(result.stageResults.find((s) => s.name === "mcp")?.disposition).toBe("skipped");
+    // store-unbind is opt-in → skipped by default.
+    expect(result.stageResults.find((s) => s.name === "store")?.disposition).toBe("skipped");
     expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
   });
 });
@@ -419,5 +447,144 @@ describe("buildUninstallFabricPlan global-store guard", () => {
     const storesPrefix = join(target, ".fabric", "stores");
     const overlapping = plan.entries.filter((e) => e.path.startsWith(storesPrefix));
     expect(overlapping).toEqual([]);
+  });
+});
+
+// W4 store-unbind: the project-side inverse of install's store binding. The
+// round-trip oracle (bind → unbind) is the only honest check that the global
+// store + its team-shared projects.json stay byte-identical.
+describe("uninstall store-unbind stage", () => {
+  async function seedBoundProject(prefix: string, projectId: string) {
+    const projectRoot = createEmptyFixtureRoot(`${prefix}-p`);
+    const globalDir = createEmptyFixtureRoot(`${prefix}-g`);
+    tempRoots.push(projectRoot, globalDir);
+    const globalRoot = join(globalDir, ".fabric");
+
+    await runGlobalInstall(
+      { uid: "u-unbind", personalStoreUuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", now: UNBIND_NOW },
+      globalRoot,
+    );
+    await storeCreate("team", UNBIND_NOW, { globalRoot, git: false });
+    await ensureStoreProjectBinding(projectRoot, "team", {
+      globalRoot,
+      requestedProjectId: projectId,
+      now: UNBIND_NOW,
+    });
+    return { projectRoot, globalRoot };
+  }
+
+  it("default uninstall leaves the team binding untouched (store stage opt-in)", async () => {
+    const { projectRoot } = await seedBoundProject("fab-unbind-default", "proj-x");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const plan = await buildUninstallExecutionPlan(projectRoot, { skipMcp: true });
+    await executeUninstallExecutionPlan(plan);
+
+    const cfg = loadProjectConfig(projectRoot);
+    expect(cfg?.required_stores?.map((r) => r.id)).toEqual(["team"]);
+    expect(cfg?.active_write_store).toBe("team");
+    expect(cfg?.active_project).toBe("proj-x");
+  });
+
+  it("explicit unbind clears the project-side binding but never the global store", async () => {
+    const { projectRoot, globalRoot } = await seedBoundProject("fab-unbind-explicit", "proj-y");
+
+    // Snapshot the GLOBAL side BEFORE unbind — must be byte-identical after.
+    const globalBefore = JSON.stringify(loadGlobalConfig(globalRoot));
+    const projectsBefore = JSON.stringify(await storeProjectList("team", globalRoot));
+
+    const before = loadProjectConfig(projectRoot);
+    expect(before?.required_stores?.map((r) => r.id)).toEqual(["team"]);
+    expect(before?.active_write_store).toBe("team");
+    const projectId = before?.project_id;
+    expect(typeof projectId).toBe("string");
+
+    const result = unbindStoreProject(projectRoot, { globalRoot, now: UNBIND_NOW });
+    expect(result.status).toBe("unbound");
+    expect(result.unboundAliases).toEqual(["team"]);
+
+    // Project-side binding cleared, project_id + file preserved.
+    const after = loadProjectConfig(projectRoot);
+    expect(after?.required_stores ?? []).toEqual([]);
+    expect(after?.active_write_store).toBeUndefined();
+    expect(after?.default_write_store).toBeUndefined();
+    expect(after?.write_routes ?? []).toEqual([]);
+    expect(after?.active_project).toBeUndefined();
+    expect(after?.project_id).toBe(projectId);
+    expect(existsSync(join(projectRoot, ".fabric", "fabric-config.json"))).toBe(true);
+
+    // Global store + its projects.json are byte-identical — never touched.
+    expect(JSON.stringify(loadGlobalConfig(globalRoot))).toBe(globalBefore);
+    expect(JSON.stringify(await storeProjectList("team", globalRoot))).toBe(projectsBefore);
+  });
+
+  it("unbind on a project with no config is a no-op skip", () => {
+    const projectRoot = createEmptyFixtureRoot("fab-unbind-noop-p");
+    const globalDir = createEmptyFixtureRoot("fab-unbind-noop-g");
+    tempRoots.push(projectRoot, globalDir);
+    const result = unbindStoreProject(projectRoot, { globalRoot: join(globalDir, ".fabric"), now: UNBIND_NOW });
+    expect(result.status).toBe("skipped");
+    expect(result.unboundAliases).toEqual([]);
+  });
+
+  it("explicit unbind via the plan runs the store stage", async () => {
+    const { projectRoot, globalRoot } = await seedBoundProject("fab-unbind-plan", "proj-z");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const plan = await buildUninstallExecutionPlan(projectRoot, {
+      skipBootstrap: true,
+      skipMcp: true,
+      skipScaffold: true,
+      skipStore: false,
+    });
+    const result = await executeUninstallExecutionPlan(plan);
+
+    expect(result.stageResults.find((s) => s.name === "store")?.disposition).toBe("ran");
+    // Binding gone; global store untouched (still mounted + projects intact).
+    expect(loadProjectConfig(projectRoot)?.required_stores ?? []).toEqual([]);
+    expect(loadGlobalConfig(globalRoot)?.stores.some((s) => s.alias === "team")).toBe(true);
+    expect((await storeProjectList("team", globalRoot)).some((p) => p.id === "proj-z")).toBe(true);
+  });
+});
+
+describe("uninstall validate stage", () => {
+  it("reports cleared after a full bootstrap teardown", async () => {
+    const target = createWerewolfFixtureRoot("fab-uninstall-validate");
+    tempRoots.push(target);
+    await initFabric(target);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = await uninstallFabric(target, { skipMcp: true });
+    const validate = result.stageResults.find((s) => s.name === "validate");
+    expect(validate?.disposition).toBe("ran");
+    expect(validate?.steps.some((s) => s.message === "cleared")).toBe(true);
+  });
+});
+
+describe("uninstall renderer wiring", () => {
+  it("drives the OutputRenderer without throwing and emits section + summary + complete", async () => {
+    const target = createWerewolfFixtureRoot("fab-uninstall-renderer");
+    tempRoots.push(target);
+    await initFabric(target);
+
+    const calls: string[] = [];
+    const renderer: OutputRenderer = {
+      renderStep: () => calls.push("step"),
+      renderSuccess: () => calls.push("success"),
+      renderError: () => calls.push("error"),
+      renderWarning: () => calls.push("warning"),
+      renderInfo: () => calls.push("info"),
+      renderSummaryCard: () => calls.push("summary"),
+      renderSection: () => calls.push("section"),
+      renderComplete: () => calls.push("complete"),
+      cleanup: async () => {},
+    };
+
+    const plan = await buildUninstallExecutionPlan(target, { skipMcp: true });
+    await executeUninstallExecutionPlan(plan, renderer);
+
+    expect(calls).toContain("section");
+    expect(calls).toContain("summary");
+    expect(calls).toContain("complete");
   });
 });
