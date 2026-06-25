@@ -35,6 +35,13 @@ export const KNOWN_SCOPE_PREFIXES = ["personal", "team", "project", "org"] as co
 // deep it interprets. Lowercased to keep coordinates canonical/comparable.
 export const SCOPE_COORDINATE_PATTERN = /^[a-z0-9_-]+(:[a-z0-9_-]+)*$/u;
 
+// W3-K K5: single-source legal-example hint surfaced when a scope coordinate
+// (e.g. an `audience` value) fails SCOPE_COORDINATE_PATTERN. Reused verbatim as
+// the zod regex `message` AND the MCP tool's structured `action_hint`, so the
+// example never drifts between the schema rejection and the error envelope.
+export const SCOPE_COORDINATE_HINT =
+  'scope coordinate must look like "project:fabric-v2", "team", or "personal" — lowercase [a-z0-9_-] segments joined by ":"';
+
 export const scopeCoordinateSchema = z
   .string()
   .min(1)

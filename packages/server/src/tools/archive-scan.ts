@@ -48,8 +48,14 @@ export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker
           guardResult,
           "fab_archive_scan returned a large candidate set — pass an explicit `range` of session_ids to narrow the scan.",
         );
+        // W3-K K4: single-line summary; full data in structuredContent.
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Fabric archive scan: ${result.session_ids.length} sessions, ${result.dropped.length} dropped (see structuredContent)`,
+            },
+          ],
           structuredContent: result,
         };
       } finally {

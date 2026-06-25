@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { Locale } from "../i18n/types.js";
 import { onboardSlotSchema } from "../onboard-slots.js";
-import { SCOPE_COORDINATE_PATTERN } from "./scope.js";
+import { SCOPE_COORDINATE_PATTERN, SCOPE_COORDINATE_HINT } from "./scope.js";
 
 // ---------------------------------------------------------------------------
 // Shared warning schema (R24 contract)
@@ -700,7 +700,7 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
   //              Omit → engine defaults to project:<active> (bound repo) or team.
   audience: z
     .string()
-    .regex(SCOPE_COORDINATE_PATTERN)
+    .regex(SCOPE_COORDINATE_PATTERN, { message: SCOPE_COORDINATE_HINT })
     .optional()
     .describe(
       "WHO this entry is for — an open scope coordinate (personal | team | project:x | org:y...). The sole author-facing audience field; the engine derives layer/visibility_store/store from it + the physical write store. Omit to default to project:<active> (bound repo) or team.",

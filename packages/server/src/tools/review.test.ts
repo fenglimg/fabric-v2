@@ -158,8 +158,10 @@ describe("registerReview", () => {
     expect(Array.isArray((result.structuredContent as { items: unknown }).items)).toBe(true);
     expect(result.content).toHaveLength(1);
     expect(result.content[0]?.type).toBe("text");
-    const parsed = JSON.parse(result.content[0]!.text) as { action: string };
-    expect(parsed.action).toBe("list");
+    // W3-K K4: content[].text is a single-line summary, not a JSON mirror.
+    expect(result.content[0]!.text).toContain("Fabric review: list");
+    expect(result.content[0]!.text).toContain("see structuredContent");
+    expect(result.content[0]!.text).not.toBe(JSON.stringify(result.structuredContent));
   });
 
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
