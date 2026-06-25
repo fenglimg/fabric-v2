@@ -1316,6 +1316,29 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         },
         "type": "array",
       },
+      "dropped": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+            },
+            "reason": {
+              "enum": [
+                "retrieval_budget",
+                "payload_budget",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "id",
+            "reason",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
       "entries": {
         "items": {
           "additionalProperties": false,
@@ -1360,10 +1383,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       },
       "intent": {
         "type": "string",
-      },
-      "omitted_candidate_count": {
-        "minimum": 0,
-        "type": "integer",
       },
       "preflight_diagnostics": {
         "items": {

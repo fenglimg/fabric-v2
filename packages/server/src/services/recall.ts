@@ -207,7 +207,11 @@ function buildNextSteps(
   candidateLookup: Map<string, string>,
 ): string[] {
   const nextSteps: string[] = [];
-  const omitted = planResult.omitted_candidate_count ?? 0;
+  // K6 (W3-K): the "more candidates exist" hint fires on the retrieval_budget
+  // omissions (top_k cap + ratio-to-top floor) — the cut a narrower intent /
+  // higher plan_context_top_k can recover. payload_budget drops are not surfaced
+  // here (they are a wire-size cap, not a relevance signal the caller controls).
+  const omitted = (planResult.dropped ?? []).filter((d) => d.reason === "retrieval_budget").length;
   if (omitted > 0) {
     nextSteps.push(
       `${omitted} lower-ranked candidate(s) were omitted by the retrieval budget — pass a narrower intent (or raise plan_context_top_k) to surface them.`,

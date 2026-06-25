@@ -222,7 +222,7 @@ export const FABRIC_SERVER_INSTRUCTIONS = [
   "- `fab_review` — write-only triage of pending knowledge entries (approve / reject / modify / defer).",
   "",
   "Conventions:",
-  "- Candidate lists are ranked best-first (content relevance) and bounded; `omitted_candidate_count > 0` means more exist — narrow your intent to surface them.",
+  "- Candidate lists are ranked best-first (content relevance) and bounded; a non-empty `dropped[]` (each entry `{ id, reason }`, reason `retrieval_budget` | `payload_budget`) means more exist — narrow your intent to surface them.",
   "- Pass the client `session_id` to `fab_recall` so cross-session knowledge-debt tracking stays accurate.",
   "- Cite the KB id you applied or dismissed before edits, per the project's cite policy.",
 ].join("\n");

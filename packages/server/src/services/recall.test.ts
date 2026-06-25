@@ -297,7 +297,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     });
   });
 
-  it("surfaces omitted_candidate_count + a next_steps hint when the budget omits candidates", async () => {
+  it("surfaces a structured dropped[]{id,reason} + a next_steps hint when the budget omits candidates", async () => {
     const projectRoot = await seedTwoEntryProject();
     // top_k=1 over two candidates → one omitted by the retrieval budget.
     await writeFile(
@@ -307,7 +307,12 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
-    expect(result.omitted_candidate_count).toBe(1);
+    // K6: omissions are reported as a structured dropped[]{id,reason} list with a
+    // controlled reason enum — here exactly one retrieval_budget drop (the
+    // lower-ranked candidate the top_k cap removed).
+    expect(result.dropped).toEqual([
+      { id: "team:KT-GLD-0001", reason: "retrieval_budget" },
+    ]);
     // Only the surviving candidate is surfaced (with a read_path).
     expect(result.entries.filter((e) => e.read_path)).toHaveLength(1);
     expect(result.next_steps ?? []).toEqual(

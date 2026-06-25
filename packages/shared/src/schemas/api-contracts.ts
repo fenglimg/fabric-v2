@@ -199,6 +199,19 @@ const _preflightDiagnosticSchema = z.object({
   path: z.string().optional(),
 });
 
+// K6 (W3-K): shared {key,reason} omission convention — the archive-scan
+// dropped[] (archiveScanOutputSchema, further down) uses {session_id,reason};
+// recall/plan-context dropped[] uses {id,reason}. Both report WHAT was dropped +
+// WHY (a controlled reason enum) instead of a bare count, so the LLM sees which
+// entries were omitted and can act on it. The recall reasons are the two
+// truncation cuts the retrieval pipeline applies: `retrieval_budget` (top_k cap
+// + ratio-to-top floor) and `payload_budget` (the MCP payload-byte trim).
+// (Declared here — ahead of planContextOutputSchema/recallOutputSchema that
+// consume it — rather than beside archiveScanOutputSchema: a `const` is not
+// hoisted, so a later declaration would hit the temporal dead zone when these
+// eagerly-evaluated z.object() schemas initialize at module load.)
+const _recallDropReasonSchema = z.enum(["retrieval_budget", "payload_budget"]);
+
 export const planContextOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
@@ -213,12 +226,18 @@ export const planContextOutputSchema = z.object({
   // duplicated into every entry's requirement_profile). Omitted when no intent.
   intent: z.string().optional(),
   candidates: z.array(_descriptionIndexItemSchema),
-  // v2.2 A-INFRA-3 (W1-T3-TOPK) / MC4-payload-budget (W1-T4): number of
-  // lower-ranked candidates dropped by the unified truncation chain (top_k cap
-  // + payload-budget trim). Present and > 0 ONLY when truncation fired, so the
-  // steady-state wire shape is unchanged. Lets the LLM know the returned set is
-  // not exhaustive ("N more exist; narrow your intent").
-  omitted_candidate_count: z.number().int().nonnegative().optional(),
+  // v2.2 A-INFRA-3 (W1-T3-TOPK) / MC4-payload-budget (W1-T4) / K6 (W3-K):
+  // structured list of lower-ranked candidates dropped by the unified truncation
+  // chain, each tagged with WHY it was dropped (`retrieval_budget` = top_k cap +
+  // ratio-to-top floor; `payload_budget` = MCP payload-byte trim). Present and
+  // non-empty ONLY when truncation fired, so the steady-state wire shape is
+  // unchanged. Replaces the bare numeric omission count so the LLM sees WHICH
+  // candidates were dropped and can act ("these N exist; narrow your intent").
+  // Reuses the archive-scan {key,reason} omission convention
+  // (_recallDropReasonSchema, keyed on id here).
+  dropped: z
+    .array(z.object({ id: z.string(), reason: _recallDropReasonSchema }))
+    .optional(),
   preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   warnings: z.array(structuredWarningSchema).optional(),
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced
@@ -502,10 +521,16 @@ export const recallOutputSchema = z.object({
   // v2.2 payload de-dup: single top-level echo of the caller's `intent`.
   // Omitted when no intent.
   intent: z.string().optional(),
-  // Number of lower-ranked candidates dropped by the retrieval budget. Present
-  // (and > 0) ONLY when truncation fired — keeps the steady-state wire shape
-  // unchanged while signalling "more exist; narrow your intent".
-  omitted_candidate_count: z.number().int().nonnegative().optional(),
+  // K6 (W3-K): structured list of lower-ranked candidates dropped by the
+  // retrieval pipeline, each tagged with WHY (`retrieval_budget` = top_k cap +
+  // ratio-to-top floor; `payload_budget` = MCP payload-byte trim). Present (and
+  // non-empty) ONLY when truncation fired — keeps the steady-state wire shape
+  // unchanged while signalling which entries exist ("narrow your intent"), now
+  // with a controlled reason instead of a bare count. Reuses the archive-scan
+  // {key,reason} omission convention (_recallDropReasonSchema, keyed on id).
+  dropped: z
+    .array(z.object({ id: z.string(), reason: _recallDropReasonSchema }))
+    .optional(),
   preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   warnings: z.array(structuredWarningSchema).optional(),
   auto_healed: z.boolean().optional(),
@@ -569,6 +594,8 @@ export const archiveScanOutputSchema = z.object({
   // in first-seen order — ready for the Skill to load digests + stitch.
   session_ids: z.array(z.string()),
   // Sessions dropped by the filter, with the rule that fired (audit/debug).
+  // Shares the {key,reason} omission convention with recall's dropped[] above
+  // (keys on session_id here, on id in recall).
   dropped: z.array(
     z.object({
       session_id: z.string(),

@@ -153,12 +153,14 @@ export type PlanContextResult = {
   // top-level array; `preflight_diagnostics` lifted alongside it (the `shared`
   // wrapper held nothing else).
   candidates: RuleDescriptionIndexItem[];
-  // v2.2 A-INFRA-3 (W1-T3-TOPK): number of lower-ranked candidates dropped by
-  // the top_k cap. Present (and > 0) ONLY when truncation actually fired, so
-  // the steady-state wire shape is unchanged. Surfacing the count keeps the cap
-  // honest — the LLM sees "N more exist; narrow your intent" instead of silently
-  // believing the returned set is exhaustive.
-  omitted_candidate_count?: number;
+  // v2.2 A-INFRA-3 (W1-T3-TOPK) / K6 (W3-K): structured list of lower-ranked
+  // candidates dropped by the retrieval pipeline, each tagged with WHY:
+  // `retrieval_budget` (top_k cap + ratio-to-top floor) or `payload_budget` (the
+  // MCP payload-byte trim). Present (and non-empty) ONLY when truncation actually
+  // fired, so the steady-state wire shape is unchanged. Replaces the bare numeric
+  // omission count — the LLM sees WHICH ids dropped and WHY ("these N
+  // exist; narrow your intent") instead of believing the set is exhaustive.
+  dropped?: { id: string; reason: "retrieval_budget" | "payload_budget" }[];
   preflight_diagnostics: PreflightDiagnostic[];
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced ONLY
   // when loadActiveMetaOrStale detected drift between on-disk meta and the
@@ -462,9 +464,17 @@ export async function planContext(
       ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
       : cappedScored;
   const topKCandidates = survivingScored.map((entry) => entry.item);
-  // Total dropped = corpus minus surfaced (top_k cap + ratio-to-top floor),
-  // surfaced so neither cut is silent.
-  const omittedCandidateCount = Math.max(0, rankedCandidates.length - topKCandidates.length);
+  // K6 (W3-K): the retrieval_budget drop set = corpus minus surfaced (top_k cap
+  // + ratio-to-top floor). Computed ONCE here, BEFORE the payload trim — it is
+  // CONSTANT across every trim-search iteration (the trim only ever removes more
+  // candidates from `candidates`, never resurrects a retrieval-dropped one). The
+  // numeric count is retained as a monotone size-proxy for the serialize
+  // measurement closure below (the real dropped[] must NOT grow inside it).
+  const topKIds = new Set(topKCandidates.map((item) => item.stable_id));
+  const retrievalDropped = rankedCandidates
+    .filter((item) => !topKIds.has(item.stable_id))
+    .map((item) => ({ id: item.stable_id, reason: "retrieval_budget" as const }));
+  const omittedCandidateCount = retrievalDropped.length;
 
   // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when
   // include_related is on, follow the one-hop `related` graph edges of the
@@ -525,11 +535,28 @@ export async function planContext(
   const basePreflightDiagnostics = buildPreflightDiagnostics(suppressedStableIds);
   let payloadTrimDropped = 0;
   let payloadOverBudget = false;
+  // K6 (W3-K): the payload_budget drop set — candidate ids present BEFORE the
+  // trim but absent AFTER it settles. Built ONCE, after the trim search
+  // converges (never inside the serialize measurement closure). Empty unless a
+  // payload trim actually fired.
+  let payloadDropped: { id: string; reason: "payload_budget" }[] = [];
   if (input.payload_budget !== undefined) {
     const fullCandidateCount = candidates.length;
+    // Snapshot the pre-trim candidate ids so the post-trim diff yields the exact
+    // payload_budget-dropped set.
+    const preTrimIds = candidates.map((item) => item.stable_id);
     const serialize = (candidateSlice: RuleDescriptionIndexItem[]): string => {
       const dropped = fullCandidateCount - candidateSlice.length;
       const totalOmitted = omittedCandidateCount + dropped;
+      // K6 (W3-K) FEEDBACK-LOOP MITIGATION: trimToPayloadBudget calls this closure
+      // REPEATEDLY to MEASURE each candidate-slice's serialized byte size during
+      // its trim search. We must NOT embed the real dropped[]{id,reason} array
+      // here — it GROWS as the slice shrinks (more payload_budget drops), which
+      // would make the measured size grow non-monotonically and destabilize /
+      // oscillate the trim search. Keep only a NUMERIC size-proxy (dropped_count)
+      // — it rises monotonically with each trimmed candidate, so per-slice size
+      // stays monotone. The real dropped[]{id,reason} is assembled ONCE at final
+      // result assembly below, AFTER the trim settles.
       return JSON.stringify({
         revision_hash: revision,
         stale,
@@ -537,7 +564,7 @@ export async function planContext(
         entries,
         ...(input.intent !== undefined ? { intent: input.intent } : {}),
         candidates: candidateSlice,
-        ...(totalOmitted > 0 ? { omitted_candidate_count: totalOmitted } : {}),
+        ...(totalOmitted > 0 ? { dropped_count: totalOmitted } : {}),
         preflight_diagnostics: basePreflightDiagnostics,
         warnings:
           dropped > 0 && input.payload_budget?.trim_warning !== undefined
@@ -548,6 +575,12 @@ export async function planContext(
     };
     const trim = trimToPayloadBudget(candidates, serialize, input.payload_budget.limits);
     if (trim.dropped > 0) {
+      // K6 (W3-K): build the real payload_budget dropped[] AFTER the trim settles
+      // — pre-trim ids minus the survivors in trim.items.
+      const survivingIds = new Set(trim.items.map((item) => item.stable_id));
+      payloadDropped = preTrimIds
+        .filter((id) => !survivingIds.has(id))
+        .map((id) => ({ id, reason: "payload_budget" as const }));
       candidates = trim.items;
       payloadTrimDropped = trim.dropped;
     }
@@ -579,7 +612,13 @@ export async function planContext(
     entries,
     ...(input.intent !== undefined ? { intent: input.intent } : {}),
     candidates,
-    ...(omittedCandidateCount + payloadTrimDropped > 0 ? { omitted_candidate_count: omittedCandidateCount + payloadTrimDropped } : {}),
+    // K6 (W3-K): assemble the structured dropped[] ONCE, here at final result
+    // assembly — the CONSTANT retrieval_budget set (computed pre-trim) followed
+    // by the payload_budget set (computed after the trim settled). Omitted when
+    // nothing was dropped, keeping the steady-state wire shape unchanged.
+    ...(retrievalDropped.length + payloadDropped.length > 0
+      ? { dropped: [...retrievalDropped, ...payloadDropped] }
+      : {}),
     preflight_diagnostics: basePreflightDiagnostics,
     // v2.2 W5 R1: the auto_healed / previous_revision_hash pair was tied to the
     // co-location loadActiveMetaOrStale read-path auto-heal, which is retired.
