@@ -896,7 +896,7 @@ export const enMessages: Messages = {
   "cli.install.steps.bootstrap-claude": "Updated CLAUDE.md with @-import directives",
   "cli.install.steps.bootstrap-codex": "Updated AGENTS.md with fabric:bootstrap managed block",
   "cli.install.stages.mcp": "Configuring MCP clients...",
-  "cli.install.stages.hooks": "Installing git hooks...",
+  "cli.install.stages.hooks": "Installing hooks & skills...",
   "cli.install.stages.skipped": "skipped",
   "cli.install.stages.completed": "completed",
   "cli.install.stages.failed": "failed",

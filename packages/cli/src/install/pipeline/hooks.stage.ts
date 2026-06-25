@@ -105,8 +105,9 @@ export class HooksStage implements Stage {
       const skipped = installResults.filter((r) => r.status === "skipped").map((r) => r.path);
       const errors = installResults.filter((r) => r.status === "error").map((r) => `${r.step}: ${r.message}`);
 
-      // Print stage header and result
-      console.log(this.formatStageHeader(t("cli.install.stages.hooks")));
+      // Print stage result. The phase header is owned solely by the pipeline
+      // ([N/7] / renderSection) — the stage no longer prints a second "下一步"
+      // header (grill C-13: one header per phase).
       if (errors.length > 0) {
         console.log(this.formatStageResult("hooks", "failed", installed.length, skipped.length));
         return {
@@ -156,11 +157,6 @@ export class HooksStage implements Stage {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-  }
-
-  private formatStageHeader(message: string): string {
-    const nextLabel = () => paint.ai(t("cli.shared.next"));
-    return `${nextLabel()} ${paint.muted(message)}`;
   }
 
   private formatStageResult(

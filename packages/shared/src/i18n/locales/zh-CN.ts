@@ -878,7 +878,7 @@ export const zhCNMessages: Messages = {
   "cli.install.steps.bootstrap-claude": "已更新 CLAUDE.md 的 @-import 引用",
   "cli.install.steps.bootstrap-codex": "已更新 AGENTS.md 的 fabric:bootstrap managed block",
   "cli.install.stages.mcp": "正在配置 MCP 客户端...",
-  "cli.install.stages.hooks": "正在安装 git hooks...",
+  "cli.install.stages.hooks": "正在安装 hook 与 skill...",
   "cli.install.stages.skipped": "已跳过",
   "cli.install.stages.completed": "已完成",
   "cli.install.stages.failed": "失败",

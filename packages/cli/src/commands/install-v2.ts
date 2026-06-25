@@ -172,11 +172,15 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
 // Helper Functions
 // ---------------------------------------------------------------------------
 
-export function shouldUseInstallRenderer(args: InitArgs, terminalInteractive: boolean): boolean {
-  if (!terminalInteractive) {
-    return false;
-  }
-  return args.yes === true || args["dry-run"] === true;
+export function shouldUseInstallRenderer(_args: InitArgs, terminalInteractive: boolean): boolean {
+  // F1 (grill GRL-20260625-install-flatness): the renderer carries the static
+  // richness (section bars, step badges, summary card, error box) and is pure
+  // print-and-go — it does NOT animate, so it never fights the interactive clack
+  // prompts. The old gate reserved it for --yes/--dry-run, which left every real
+  // interactive install on the bare console.log fallback (the "平淡" path the
+  // grill diagnosed). Enable it for EVERY interactive run; only non-TTY
+  // (pipes/CI) keeps the plain numbered fallback.
+  return terminalInteractive;
 }
 
 function isInteractiveInit(): boolean {

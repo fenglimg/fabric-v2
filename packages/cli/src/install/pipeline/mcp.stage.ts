@@ -40,9 +40,8 @@ export class McpStage implements Stage {
       const target = context.target;
       const mode = context.mcpInstallMode;
 
-      // Print stage header
-      console.log(this.formatStageHeader(t("cli.install.stages.mcp")));
-
+      // The phase header is owned solely by the pipeline ([N/7] / renderSection);
+      // the stage no longer prints a second "下一步" header (grill C-13).
       if (mode === "local") {
         const manager = detectPackageManager(target);
         process.stderr.write(`${t("cli.install.mcp.install.local")}\n`);
@@ -81,11 +80,6 @@ export class McpStage implements Stage {
       stdio: "inherit",
       shell: process.platform === "win32",
     });
-  }
-
-  private formatStageHeader(message: string): string {
-    const nextLabel = () => paint.ai(t("cli.shared.next"));
-    return `${nextLabel()} ${paint.muted(message)}`;
   }
 
   private formatStageResult(
