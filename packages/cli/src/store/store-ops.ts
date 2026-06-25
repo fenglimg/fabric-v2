@@ -223,7 +223,18 @@ export interface StoreCreateResult {
 export async function storeCreate(
   alias: string,
   now: string,
-  options: { uuid?: string; remote?: string; git?: boolean; globalRoot?: string; mountName?: string } = {},
+  options: {
+    uuid?: string;
+    remote?: string;
+    git?: boolean;
+    globalRoot?: string;
+    mountName?: string;
+    // 语义 A (multi-personal): mint a PERSONAL store (personal:true) rather than a
+    // team-class one. Threaded into mountedBase BEFORE the storeDir is computed so
+    // storeRelativePathForMount groups it under the `personal/` bucket (not team/).
+    // Lets `store create --personal` / the install slot add an Nth personal store.
+    personal?: boolean;
+  } = {},
 ): Promise<StoreCreateResult> {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   // requireConfig first: refuse to create before `install --global` (no uid).
@@ -235,7 +246,12 @@ export async function storeCreate(
     options.mountName !== undefined
       ? storeMountNameSchema.parse(options.mountName)
       : deriveMountLabel({ remote: options.remote, alias, store_uuid: uuid });
-  const mountedBase: MountedStore = { store_uuid: uuid, alias, mount_name };
+  const mountedBase: MountedStore = {
+    store_uuid: uuid,
+    alias,
+    mount_name,
+    ...(options.personal === true ? { personal: true } : {}),
+  };
   const storeDir = mountedStoreDir(mountedBase, globalRoot);
 
   const identity = { store_uuid: uuid, created_at: now, canonical_alias: alias };

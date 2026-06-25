@@ -177,11 +177,16 @@ const createCommand = defineCommand({
     alias: { type: "string", required: true, description: "Local alias for the new store" },
     "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
     remote: { type: "string", description: "Git remote to associate (push target; optional)" },
+    personal: {
+      type: "boolean",
+      description: "Mint a personal store (personal:true) — adds another machine-wide personal identity",
+    },
   },
   async run({ args }) {
     const result = await storeCreate(args.alias, new Date().toISOString(), {
       ...(args["mount-name"] === undefined ? {} : { mountName: args["mount-name"] }),
       ...(args.remote === undefined ? {} : { remote: args.remote }),
+      ...(args.personal === true ? { personal: true } : {}),
     });
     const t = getProjectTranslator();
     console.log(

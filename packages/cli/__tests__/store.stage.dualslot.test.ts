@@ -14,9 +14,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StoreStage } from "../src/install/pipeline/store.stage.js";
 import type { InstallContext, OutputRenderer } from "../src/install/pipeline/types.js";
-import { saveGlobalConfig } from "../src/store/global-config-io.js";
+import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
-import { storeCreate } from "../src/store/store-ops.js";
+import { personalStoreCandidates, storeCreate } from "../src/store/store-ops.js";
+
+const P1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const P2 = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 vi.mock("@clack/prompts", () => ({
   confirm: vi.fn(),
@@ -259,5 +262,112 @@ describe("store.stage dual-slot model (TASK-002)", () => {
     expect(flushRenderBuffer).toHaveBeenCalledTimes(1);
     // And the prompt did fire (actionable → a real decision).
     expect(vi.mocked(select)).toHaveBeenCalled();
+  });
+
+  // ── 语义 A (multi-personal): three-state personal slot + no force-demote ─────
+  it("ensurePersonalStore does NOT demote additional personal stores on install", async () => {
+    const home = await tempDir("fabric-mp-home-");
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        language: "en",
+        stores: [
+          { store_uuid: P1, alias: "personal", mount_name: "personal", personal: true },
+          { store_uuid: P2, alias: "personal-work", mount_name: "personal-work", personal: true },
+        ],
+      }),
+      globalRoot,
+    );
+    const target = await tempDir("fabric-mp-proj-");
+    saveProjectConfig({ project_id: "p-mp" }, target);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await new StoreStage().execute(baseContext(target, { wizardEnabled: false }));
+
+    // Both personal stores remain personal:true — the old force-demote is gone.
+    const stores = loadGlobalConfig(globalRoot)?.stores ?? [];
+    expect(stores.filter((s) => s.personal === true).map((s) => s.alias).sort()).toEqual([
+      "personal",
+      "personal-work",
+    ]);
+  });
+
+  it("personal slot stays silent (no select) for a single personal store", async () => {
+    const home = await tempDir("fabric-mp1-home-");
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        language: "en",
+        stores: [{ store_uuid: P1, alias: "personal", mount_name: "personal", personal: true }],
+      }),
+      globalRoot,
+    );
+    const target = await tempDir("fabric-mp1-proj-");
+    saveProjectConfig({ project_id: "p-mp1" }, target);
+    const { renderer, info } = recordingRenderer();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await new StoreStage().execute(
+      baseContext(target, { renderer, wizardEnabled: false }),
+    );
+
+    expect(vi.mocked(select)).not.toHaveBeenCalled();
+    expect(info.some((line) => /personal store/i.test(line))).toBe(true);
+  });
+
+  it("≥2 personal in the wizard: picking switch:<alias> sets the machine active personal", async () => {
+    const home = await tempDir("fabric-mp2-home-");
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        language: "en",
+        stores: [
+          { store_uuid: P1, alias: "personal", mount_name: "personal", personal: true },
+          { store_uuid: P2, alias: "personal-work", mount_name: "personal-work", personal: true },
+        ],
+      }),
+      globalRoot,
+    );
+    const target = await tempDir("fabric-mp2-proj-");
+    saveProjectConfig({ project_id: "p-mp2" }, target);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    // First select = personal slot (pick personal-work); second = team slot (skip).
+    vi.mocked(select)
+      .mockResolvedValueOnce("switch:personal-work" as never)
+      .mockResolvedValueOnce("skip" as never);
+
+    await new StoreStage().execute(baseContext(target, { wizardEnabled: true, interactive: true }));
+
+    expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal-work");
+  });
+
+  it("storeCreate({ personal: true }) mints a personal-flagged store (the add-path)", async () => {
+    const home = await tempDir("fabric-mp3-home-");
+    vi.stubEnv("FABRIC_HOME", home);
+    const globalRoot = join(home, ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-test",
+        language: "en",
+        stores: [{ store_uuid: P1, alias: "personal", mount_name: "personal", personal: true }],
+      }),
+      globalRoot,
+    );
+    await storeCreate("personal-oss", "2026-06-25T00:00:00.000Z", {
+      uuid: P2,
+      git: false,
+      personal: true,
+      globalRoot,
+    });
+    expect(personalStoreCandidates(globalRoot).map((c) => c.alias).sort()).toEqual([
+      "personal",
+      "personal-oss",
+    ]);
   });
 });
