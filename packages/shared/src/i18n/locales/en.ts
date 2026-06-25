@@ -915,6 +915,7 @@ export const enMessages: Messages = {
   "cli.install.mcp.none": "no MCP clients to configure",
   "cli.install.scan.finding.framework": "Detected: {framework} project",
   "cli.install.scan.finding.scale": "Scale: {files} files · {entries} entry points",
+  "cli.install.rollback.feedback": "Rolled back {count} change(s); project left unchanged.",
   "cli.install.stages.skipped": "skipped",
   "cli.install.stages.completed": "completed",
   "cli.install.stages.failed": "failed",

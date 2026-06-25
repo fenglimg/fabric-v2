@@ -234,9 +234,11 @@ export class InstallPipeline {
     // Execute rollback actions in reverse order
     const rollbackStack = [...context.rollbackStack].reverse();
 
+    let rolledBack = 0;
     for (const { action } of rollbackStack) {
       try {
         await action();
+        rolledBack++;
       } catch {
         // Swallow rollback errors - best effort cleanup
       }
@@ -251,6 +253,16 @@ export class InstallPipeline {
           // Swallow rollback errors - best effort cleanup
         }
       }
+    }
+
+    // grill C-19: rollback is no longer a silent swallow — tell the user what
+    // happened (count of reverted changes + project left unchanged), WITHOUT
+    // leaking stack traces or filesystem paths (R15).
+    const feedback = t("cli.install.rollback.feedback", { count: String(rolledBack) });
+    if (context.renderer) {
+      context.renderer.renderWarning(feedback);
+    } else {
+      console.log(feedback);
     }
   }
 }

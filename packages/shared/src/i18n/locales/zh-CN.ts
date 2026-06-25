@@ -897,6 +897,7 @@ export const zhCNMessages: Messages = {
   "cli.install.mcp.none": "无需配置 MCP 客户端",
   "cli.install.scan.finding.framework": "检测到: {framework} 项目",
   "cli.install.scan.finding.scale": "规模: {files} 文件 · {entries} 个入口",
+  "cli.install.rollback.feedback": "已回滚 {count} 项改动,项目保持原状。",
   "cli.install.stages.skipped": "已跳过",
   "cli.install.stages.completed": "已完成",
   "cli.install.stages.failed": "失败",
