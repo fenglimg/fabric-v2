@@ -862,6 +862,10 @@ export const enMessages: Messages = {
     "Opt in to vector semantic search (sets embed_enabled + embed_model; prints fastembed install steps)",
   "cli.install.args.embed-model.description":
     "With --enable-embed: override the pinned embed model (default fast-bge-small-zh-v1.5)",
+  // TASK-004: --verbose expands the per-phase detail a collapsed re-install would
+  // fold, and prints the full per-client capability table.
+  "cli.install.args.verbose.description":
+    "Show full detail: don't collapse an idempotent re-install into a health-check card, and print the per-client capability table",
   // rc.35 TASK-08 (P0-5/6): --force-skills-only.
   "cli.install.args.force-skills-only.description":
     "Skip bootstrap / MCP / hooks / settings; refresh ONLY the fabric Skill template copies (.claude/.codex/skills/*).",
@@ -925,6 +929,13 @@ export const enMessages: Messages = {
   "cli.install.pipeline.title": "Fabric Install",
   "cli.install.pipeline.complete": "Fabric Install Complete",
   "cli.install.pipeline.running": "Running {count} stages...",
+  // TASK-004: a first-ever install gets an onboarding-tone intro; a re-install
+  // keeps the terse "Running N stages" line. {count} = total stages.
+  "cli.install.pipeline.intro.firstRun":
+    "Welcome to Fabric — this is your first install. I'll walk you through a one-time setup ({count} stages); later runs skip anything already in place.",
+  // TASK-004: the single collapsed health-check card title for a fully-idempotent
+  // re-install. {count} = total stages. Detail is behind --verbose.
+  "cli.install.healthcheck.title": "✓ Fabric is up to date · {count} stages ready · no changes",
   "cli.install.pipeline.label.preflight": "Preflight check",
   "cli.install.pipeline.label.env": "Environment setup",
   "cli.install.pipeline.label.store": "Store configuration",
@@ -969,6 +980,10 @@ export const enMessages: Messages = {
   "cli.install.wizard.invalid-select": "Invalid value. Use one of: {options}.",
   "cli.install.wizard.cancelled": "Fabric install cancelled before execution.",
   "cli.install.capabilities.title": "Client capability summary",
+  // C-006 (TASK-004): print a single one-line capability summary by default and
+  // let the summary card lead the closing impression; the full 4×6 per-client
+  // table only renders under --verbose. {count} = detected client count.
+  "cli.install.capabilities.summaryLine": "Detected {count} client(s) and configured their capabilities (run with --verbose for the per-client table).",
   // v2.0.0-rc.37 NEW-22: post-install restart banner. The MCP server is
   // spawned by the client; already-running Claude Code / Codex
   // sessions won't pick up the new mcp config until they restart.
@@ -1034,6 +1049,9 @@ export const enMessages: Messages = {
   "cli.install.store.unbound-note": "Note: The following stores are mounted but not bound to this project: {aliases}.",
   "cli.install.store.unbound-hint": "  Run 'fabric store bind {first}' to bind one.",
   // C4: personal store clone-or-new.
+  // TASK-004: prefixed onto a first-install one-time prompt (language / personal
+  // store onboarding) so the user knows these questions only appear at first setup.
+  "cli.install.store.firstRunContext": "First-time setup — the following are one-time choices that appear only on first install:",
   "cli.install.store.personal.prompt": "No personal store on this machine yet. Create a fresh one, or clone your existing one from a remote?",
   "cli.install.store.personal.new-label": "create local (default)",
   "cli.install.store.personal.new-hint": "a fresh empty personal store",

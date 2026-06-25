@@ -64,6 +64,13 @@ export class StoreStage implements Stage {
       // Ensure global config exists
       const globalConfig = loadGlobalConfig(globalRoot);
 
+      // TASK-004: re-affirm the first-install signal from the in-stage config
+      // load (the authoritative `globalConfig === null` first-run check). Set
+      // early in createInstallContext too, but pinned here so the store stage is
+      // self-sufficient and the '首次设置中' context labels below stay in sync.
+      const firstInstall = globalConfig === null;
+      context.state.firstInstall = firstInstall;
+
       // grill-6fixes (D1b) + language-first: pick the single global language
       // base tone as the VERY FIRST interactive prompt — before any personal /
       // team store onboarding — so the choice sets the tone for the rest of the
@@ -74,7 +81,7 @@ export class StoreStage implements Stage {
       // guaranteed to exist (freshly minted, cloned, or pre-existing).
       const pickedLanguage =
         context.wizardEnabled && globalConfig?.language === undefined
-          ? await this.promptLanguage(globalRoot)
+          ? await this.promptLanguage(globalRoot, firstInstall)
           : undefined;
 
       if (globalConfig === null) {
@@ -82,7 +89,7 @@ export class StoreStage implements Stage {
         // store from a remote instead of always minting a fresh empty one.
         // Default (and every non-interactive path) stays the fresh local mint.
         const cloned = context.wizardEnabled
-          ? await this.promptPersonalStoreOnboarding(globalRoot)
+          ? await this.promptPersonalStoreOnboarding(globalRoot, firstInstall)
           : false;
         if (!cloned) {
           await runGlobalInstall({}, globalRoot);
@@ -157,9 +164,12 @@ export class StoreStage implements Stage {
    * Persistence is deferred to persistLanguageSelection so the pick can be
    * captured before the global config exists on a first-ever install.
    */
-  private async promptLanguage(globalRoot: string): Promise<"zh-CN" | "en" | undefined> {
+  private async promptLanguage(
+    globalRoot: string,
+    firstInstall = false,
+  ): Promise<"zh-CN" | "en" | undefined> {
     const picked = await select<"zh-CN" | "en">({
-      message: t("cli.install.language.prompt"),
+      message: this.withFirstRunContext(t("cli.install.language.prompt"), firstInstall),
       options: [
         { value: "zh-CN", label: t("cli.install.language.option.zh-CN") },
         { value: "en", label: t("cli.install.language.option.en") },
@@ -362,6 +372,16 @@ export class StoreStage implements Stage {
   }
 
   /**
+   * TASK-004: on a first-ever install, prefix an extra interactive prompt
+   * (language / personal-store onboarding) with a '首次设置中' context label so the
+   * user knows these one-time questions only appear during first setup. A re-run
+   * leaves the prompt copy untouched.
+   */
+  private withFirstRunContext(message: string, firstInstall: boolean): string {
+    return firstInstall ? `${t("cli.install.store.firstRunContext")}\n${message}` : message;
+  }
+
+  /**
    * W2 dual-slot (TASK-002): the team slot's single-select. ONE prompt listing
    * EVERY team-type candidate — the currently-bound store (highlighted as the
    * default, picking it is a no-op), every mounted-but-unbound team store (a
@@ -544,9 +564,12 @@ export class StoreStage implements Stage {
    * fresh via runGlobalInstall. Never adds a keystroke to the non-interactive
    * path (only invoked when wizardEnabled).
    */
-  private async promptPersonalStoreOnboarding(globalRoot: string): Promise<boolean> {
+  private async promptPersonalStoreOnboarding(
+    globalRoot: string,
+    firstInstall = false,
+  ): Promise<boolean> {
     const choice = await select({
-      message: t("cli.install.store.personal.prompt"),
+      message: this.withFirstRunContext(t("cli.install.store.personal.prompt"), firstInstall),
       initialValue: "new",
       options: [
         {

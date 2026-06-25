@@ -17,6 +17,12 @@ export type InitArgs = {
   url?: string;
   "enable-embed"?: boolean;
   "embed-model"?: string;
+  /**
+   * TASK-004: surface the full per-phase detail / capability table even when the
+   * re-install would otherwise collapse to a single health-check card. Owns all
+   * --verbose logic (collapse opt-out + C-006 capability-table reveal).
+   */
+  verbose?: boolean;
 };
 
 /**
@@ -117,6 +123,13 @@ export interface InstallContext {
 export interface InstallState {
   /** Global root path (~/.fabric) */
   globalRoot?: string;
+  /**
+   * TASK-004: true on a first-ever install (no global config existed at entry).
+   * Set early in createInstallContext and re-affirmed by the store stage once it
+   * loads the global config. Drives the onboarding intro tone and forbids the
+   * end-pass health-check collapse (a first install never folds).
+   */
+  firstInstall?: boolean;
   /** Whether global config was created this session */
   globalConfigCreated?: boolean;
   /** Personal store UUID */

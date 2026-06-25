@@ -844,6 +844,9 @@ export const zhCNMessages: Messages = {
     "启用向量语义搜索 (设 embed_enabled + embed_model;打印 fastembed 安装步骤)",
   "cli.install.args.embed-model.description":
     "配合 --enable-embed:覆盖固定的 embed 模型 (默认 fast-bge-small-zh-v1.5)",
+  // TASK-004: --verbose 展开重装折叠的逐 phase 明细 + 完整客户端能力表。
+  "cli.install.args.verbose.description":
+    "展开完整明细:重装幂等时不折叠为体检卡片,并打印逐客户端能力表",
   // rc.35 TASK-08 (P0-5/6): --force-skills-only。
   "cli.install.args.force-skills-only.description":
     "跳过 bootstrap / MCP / hooks / settings,只重新刷新 fabric Skill 模板 (.claude/.codex/skills/*)。",
@@ -907,6 +910,13 @@ export const zhCNMessages: Messages = {
   "cli.install.pipeline.title": "Fabric 安装",
   "cli.install.pipeline.complete": "Fabric 安装完成",
   "cli.install.pipeline.running": "将按 {count} 个阶段执行",
+  // TASK-004: 首装走 onboarding 定调(欢迎语 + 一次性设置说明);重装保持简洁的
+  // "将按 N 阶段执行"。{count} = 阶段总数。
+  "cli.install.pipeline.intro.firstRun":
+    "欢迎使用 Fabric —— 这是首次安装,我会引导你完成一次性设置(共 {count} 个阶段);之后再跑会自动跳过已就绪项。",
+  // TASK-004: 重装且全程幂等(无任何 install)时折叠成的单张体检卡片标题。
+  // {count} = 阶段总数。明细走 --verbose。
+  "cli.install.healthcheck.title": "✓ Fabric 已是最新 · {count} 阶段就绪 · 无改动",
   "cli.install.pipeline.label.preflight": "全局与项目预检",
   "cli.install.pipeline.label.env": "项目环境初始化",
   "cli.install.pipeline.label.store": "知识库拓扑",
@@ -950,6 +960,9 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.invalid-select": "无效输入。可选值：{options}。",
   "cli.install.wizard.cancelled": "Fabric 安装已在执行前取消。",
   "cli.install.capabilities.title": "客户端能力摘要",
+  // C-006 (TASK-004):默认只打一行能力摘要,让收尾的 summary card 主导收口印象;
+  // 完整 4×6 能力表只在 --verbose 下展开。{count} = 检测到的客户端数。
+  "cli.install.capabilities.summaryLine": "已检测到 {count} 个客户端并完成能力配置(加 --verbose 查看逐客户端明细表)。",
   // v2.0.0-rc.37 NEW-22: post-install 重启提示。MCP server 在 client 启动
   // 时 spawn, 已运行的 Claude Code / Codex session 不会自动加载
   // 新 mcp config — 必须重启才能拿到 Fabric tools。
@@ -1014,6 +1027,9 @@ export const zhCNMessages: Messages = {
   "cli.install.store.unbound-note": "注意: 以下 store 已挂载但未绑定到本项目: {aliases}。",
   "cli.install.store.unbound-hint": "  运行 'fabric store bind {first}' 绑定其一。",
   // C4: personal store clone-or-new。
+  // TASK-004: 首装时为额外的一次性提问(语言 / 个人库 onboarding)加的语境前缀,
+  // 让用户知道这些问题只在首次设置时出现。
+  "cli.install.store.firstRunContext": "首次设置中 —— 以下为仅首装出现的一次性选择:",
   "cli.install.store.personal.prompt": "本机还没有 personal store (个人知识库)。新建一个，还是从 remote 克隆你已有的？",
   "cli.install.store.personal.new-label": "新建本地 (默认)",
   "cli.install.store.personal.new-hint": "全新空 personal store",
