@@ -6,9 +6,9 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
 ## Mode: pending — Approve / Reject / Modify Backlog
 
-1. Call `fab_review` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
+1. Call `fab_pending` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
-3. Before presenting, perform **Semantic Check** (see `ref/semantic-check.md`) by issuing one or more `action: "search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries.
+3. Before presenting, perform **Semantic Check** (see `ref/semantic-check.md`) by issuing one or more `fab_pending action="search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries.
 4. For each pending item, render a per-item block. v2.0.0-rc.7 T6: render `proposed_reason` (frontmatter) + `## Why proposed` line (body, 1-line enum explanation) + first line of `## Session context` so future-self has full context without re-reading the transcript. UX i18n Policy class 1 — roll-up templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`, `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
 
    **en variant** (`fabric_language === "en"`):
@@ -74,7 +74,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 ## Mode: topic — Search & Surface Findings
 
 1. Extract the topic keyword(s) from the user's message (e.g. "find about deepMerge" → query="deepMerge").
-2. Call `fab_review action="search"` with `query` and any obvious filters (if user said "team-only" → `filters.layer="team"`).
+2. Call `fab_pending action="search"` with `query` and any obvious filters (if user said "team-only" → `filters.layer="team"`).
 3. Server returns `items[]` ranked by relevance — these are entries already in mounted store `knowledge/<type>/` (NOT pending), unless `filters` says otherwise.
 4. Render top-N (cap at `review_topic_result_cap`, config-resolved, default 8) results with title / summary / pending_path.
 5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), pivot into the corresponding pending mode action — the search result already gives the `pending_path` needed for the action.
@@ -84,7 +84,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
 ## Mode: health — Corpus Health & Stale Detection
 
-1. Call `fab_review action="list"` with `filters.maturity="draft"` (or no filter for full corpus inspection).
+1. Call `fab_pending action="list"` with `filters.maturity="draft"` (or no filter for full corpus inspection).
 2. Tail `.fabric/events.jsonl` for layer_changed / demoted / rejected counts in the trailing 30 days.
 3. Compute stale candidates: pending entries with mtime older than `review_stale_pending_days` (config-resolved, default 14) OR maturity=draft entries with no recent evidence-append events.
 4. Render a corpus dashboard. UX i18n Policy class 1 — roll-up templates; render per `fabric_language`:
@@ -134,7 +134,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 ## Mode: revisit — Specific Entry Deep Dive
 
 1. The user referenced a specific entry (by id `KT-D-7` or by slug `single-cjs-hook`).
-2. Call `fab_review action="list"` with `filters` narrowed by best-guess fields; if the entry is canonical (has stable_id), use the path returned by `fab_review` instead of inventing a store path.
+2. Call `fab_pending action="list"` with `filters` narrowed by best-guess fields; if the entry is canonical (has stable_id), use the path returned by `fab_pending` instead of inventing a store path.
 3. Display the full body (frontmatter + content). Tail the events.jsonl for any history events tagged with this stable_id.
 4. Surface AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` only if the entry is still pending; for canonical entries the only mutation path is `modify` (incl. layer flip).
 

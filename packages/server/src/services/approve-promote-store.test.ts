@@ -13,7 +13,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
-import { reviewKnowledge } from "./review.js";
+import { reviewKnowledge, reviewPending } from "./review.js";
 import { planContext } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 
@@ -114,7 +114,7 @@ describe("approve→store-canonical promote (NEW-APPROVE-PROMOTE)", () => {
     expect(extracted.pending_path).not.toBe("");
 
     // 2. list surfaces the store-routed pending entry with an absolute path.
-    const listed = await reviewKnowledge(projectRoot, { action: "list" });
+    const listed = await reviewPending(projectRoot, { action: "list" });
     expect(listed.action).toBe("list");
     if (listed.action !== "list") throw new Error("unreachable");
     const pendingItem = listed.items.find((i) => i.pending_path.endsWith(".md"));

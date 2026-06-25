@@ -73,7 +73,7 @@ mcp__fabric__fab_propose({
 After Example A's pending entry (`retry-without-backoff-thundering-herd`) is proposed, Phase 3 runs:
 
 ```ts
-mcp__fabric__fab_review({
+mcp__fabric__fab_pending({
   action: "search",
   query: "retry backoff thundering herd",
   filters: { type: "pitfalls" }

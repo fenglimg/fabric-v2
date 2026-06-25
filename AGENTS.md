@@ -34,12 +34,13 @@
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(条目按 `semantic_scope` 分三层:`team` 团队通用 / `project:<id>` 本项目专属(仅在绑定该项目的仓库浮现)/ `personal` 个人 `KP-*`,三者引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
+- **Scope 三轴(为什么没浮现)** (KT-MOD-0001):一条知识是否浮现由三个**正交**轴决定 —— ① `semantic_scope` 受众(`team` / `project:<id>` / `personal`;绑错项目则不显)② `relevance_scope` 时机(`broad` 常驻 / `narrow` 仅编辑匹配文件时浮现)③ `store` 物理库(没 `fabric store bind` 就不读)。三轴名字会撞("team" 既是受众值也可是 store 别名),所以困惑"为什么这条没浮现"时跑 `fabric audit why-not-surfaced <id>` 逐因诊断(store 没绑 / scope 不匹配 / narrow 时机)。
 - **Usage**:走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 `entries[].read_path` 做原生 Read 取回(不再走 MCP 二次取正文)。
 - **session_id**: 调用 `fab_recall` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 `fabric-hint.cjs` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (4)**:写流程 `fabric-archive`(含 source mode 冷启动从 git/docs 回灌)/ `fabric-review`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 `fabric-store` / `fabric-sync`。
 - **Language**:渲染按 `~/.fabric/fabric-global.json` 的 `language` 字段(machine-wide tone)。
 - **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config `archive_edit_threshold` 一致)/ 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
-- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_review action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
+- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_pending action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.2 C1: 精简说明书)
 

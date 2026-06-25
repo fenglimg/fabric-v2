@@ -16,9 +16,12 @@ import * as apiContracts from "@fenglimg/fabric-shared/schemas/api-contracts";
 import {
   FabExtractKnowledgeInputSchema,
   FabExtractKnowledgeOutputSchema,
+  FabPendingInputSchema,
+  FabPendingOutputSchema,
   FabReviewInputSchema,
   FabReviewOutputSchema,
   fabExtractKnowledgeAnnotations,
+  fabPendingAnnotations,
   fabReviewAnnotations,
   planContextAnnotations,
   planContextInputSchema,
@@ -60,6 +63,12 @@ const contracts: Record<string, ToolContract> = {
     inputSchema: zodToJsonSchema(FabReviewInputSchema),
     outputSchema: zodToJsonSchema(FabReviewOutputSchema),
     annotations: fabReviewAnnotations,
+  },
+  // W3-K K2: read-only browse/search surface lifted out of fab_review.
+  "fab-pending": {
+    inputSchema: zodToJsonSchema(FabPendingInputSchema),
+    outputSchema: zodToJsonSchema(FabPendingOutputSchema),
+    annotations: fabPendingAnnotations,
   },
 };
 

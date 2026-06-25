@@ -144,22 +144,24 @@ describe("registerReview", () => {
     expect(t.definition.annotations).toBeDefined();
   });
 
-  it("invokes reviewKnowledge end-to-end (list action) and returns structured content", async () => {
+  it("invokes reviewKnowledge end-to-end (defer action) and returns structured content", async () => {
+    // W3-K K2: list/search relocated to pending.test.ts. This exercises the
+    // write-side envelope (single-line content + structuredContent) via a
+    // benign defer against a seeded pending entry.
     const projectRoot = await makeProject();
     process.env.FABRIC_PROJECT_ROOT = projectRoot;
-    await seedPendingFile(projectRoot, "decisions", "tool-list-target");
+    const seeded = await seedPendingFile(projectRoot, "decisions", "tool-defer-target");
 
     const { server, tool } = captureRegistration();
     registerReview(server);
     const t = tool();
 
-    const result = await t.handler({ action: "list" });
-    expect(result.structuredContent).toMatchObject({ action: "list" });
-    expect(Array.isArray((result.structuredContent as { items: unknown }).items)).toBe(true);
+    const result = await t.handler({ action: "defer", pending_paths: [seeded], reason: "later" });
+    expect(result.structuredContent).toMatchObject({ action: "defer" });
     expect(result.content).toHaveLength(1);
     expect(result.content[0]?.type).toBe("text");
     // W3-K K4: content[].text is a single-line summary, not a JSON mirror.
-    expect(result.content[0]!.text).toContain("Fabric review: list");
+    expect(result.content[0]!.text).toContain("Fabric review: defer");
     expect(result.content[0]!.text).toContain("see structuredContent");
     expect(result.content[0]!.text).not.toBe(JSON.stringify(result.structuredContent));
   });
@@ -167,6 +169,7 @@ describe("registerReview", () => {
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
     const projectRoot = await makeProject();
     process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const seeded = await seedPendingFile(projectRoot, "decisions", "tracker-target");
 
     const enter = vi.fn();
     const exit = vi.fn();
@@ -176,7 +179,7 @@ describe("registerReview", () => {
     registerReview(server, tracker);
     const t = tool();
 
-    await t.handler({ action: "list" });
+    await t.handler({ action: "defer", pending_paths: [seeded], reason: "later" });
 
     expect(enter).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
@@ -214,13 +217,14 @@ describe("registerReview", () => {
   it("works without a tracker (optional argument)", async () => {
     const projectRoot = await makeProject();
     process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const seeded = await seedPendingFile(projectRoot, "decisions", "no-tracker-target");
 
     const { server, tool } = captureRegistration();
     registerReview(server); // no tracker
     const t = tool();
 
-    const result = await t.handler({ action: "list" });
-    expect((result.structuredContent as { action: string }).action).toBe("list");
+    const result = await t.handler({ action: "defer", pending_paths: [seeded], reason: "later" });
+    expect((result.structuredContent as { action: string }).action).toBe("defer");
   });
 
   // -------------------------------------------------------------------------
@@ -230,17 +234,19 @@ describe("registerReview", () => {
   // -------------------------------------------------------------------------
 
   it("test_fab_review_input_shape_exposes_action_enum_and_optional_fields", () => {
-    // (a) action is a required ZodEnum exposing all 8 literals (rc.37 NEW-12
-    // added modify-content + modify-layer alongside the legacy modify alias).
+    // (a) action is a required ZodEnum exposing exactly the 6 WRITE literals.
+    // W3-K K2: the two READ actions (list / search) moved to the read-only
+    // fab_pending tool, so fab_review is now write-only.
     const actionSchema = FabReviewInputShape.action;
     expect(actionSchema).toBeInstanceOf(z.ZodEnum);
     expect(actionSchema.options.sort()).toEqual(
-      ["approve", "defer", "list", "modify", "modify-content", "modify-layer", "reject", "search"],
+      ["approve", "defer", "modify", "modify-content", "modify-layer", "reject"],
     );
 
     // (b) Every other declared field is optional (so the SDK-flattened shape
-    // never rejects valid per-action inputs at the top level).
-    const optionalFields = ["filters", "pending_paths", "pending_path", "reason", "changes", "query", "until"];
+    // never rejects valid per-action inputs at the top level). W3-K K2: the
+    // read-only `filters` / `query` fields left with list/search.
+    const optionalFields = ["pending_paths", "pending_path", "reason", "changes", "until"];
     for (const field of optionalFields) {
       const sub = (FabReviewInputShape as Record<string, z.ZodTypeAny>)[field];
       expect(sub, `field=${field}`).toBeDefined();
@@ -276,8 +282,8 @@ describe("registerReview", () => {
     const keys = Object.keys(inputSchema);
     expect(keys).toContain("action");
     expect(keys.length).toBeGreaterThanOrEqual(2);
-    // Sanity: a representative subset of branch fields is published.
-    for (const k of ["pending_paths", "pending_path", "filters", "changes", "query"]) {
+    // Sanity: a representative subset of WRITE branch fields is published.
+    for (const k of ["pending_paths", "pending_path", "changes", "reason"]) {
       expect(keys, `inputSchema must publish '${k}'`).toContain(k);
     }
 
@@ -344,37 +350,28 @@ describe("registerReview", () => {
 
     // Output validator built from the flat shape (mirrors what the SDK would
     // run). We additionally re-validate against the strict union for
-    // belt-and-braces.
+    // belt-and-braces. W3-K K2: list/search moved to fab_pending (covered in
+    // pending.test.ts) — this exercises only the 6 WRITE actions.
     const FlatOutput = z.object(FabReviewOutputShape);
 
-    // 1. list
-    const listOut = await t.handler({ action: "list" });
-    expect(FlatOutput.safeParse(listOut.structuredContent).success).toBe(true);
-    expect(FabReviewOutputSchema.safeParse(listOut.structuredContent).success).toBe(true);
-
-    // 2. search
-    const searchOut = await t.handler({ action: "search", query: "happy" });
-    expect(FlatOutput.safeParse(searchOut.structuredContent).success).toBe(true);
-    expect(FabReviewOutputSchema.safeParse(searchOut.structuredContent).success).toBe(true);
-
-    // 3. defer
+    // 1. defer
     const deferOut = await t.handler({ action: "defer", pending_paths: [b], reason: "later" });
     expect(FlatOutput.safeParse(deferOut.structuredContent).success).toBe(true);
     expect(FabReviewOutputSchema.safeParse(deferOut.structuredContent).success).toBe(true);
 
-    // 4. reject
+    // 2. reject
     const rejectOut = await t.handler({ action: "reject", pending_paths: [b], reason: "stale" });
     expect(FlatOutput.safeParse(rejectOut.structuredContent).success).toBe(true);
     expect(FabReviewOutputSchema.safeParse(rejectOut.structuredContent).success).toBe(true);
 
-    // 5. approve (consumes `a`).
+    // 3. approve (consumes `a`).
     const approveOut = await t.handler({ action: "approve", pending_paths: [a] });
     expect(FlatOutput.safeParse(approveOut.structuredContent).success).toBe(true);
     expect(FabReviewOutputSchema.safeParse(approveOut.structuredContent).success).toBe(true);
     const approved = (approveOut.structuredContent as { approved: Array<{ stable_id: string }> }).approved;
     expect(approved).toHaveLength(1);
 
-    // 6. modify (against the canonical entry just produced by approve — now in
+    // 4. modify (against the canonical entry just produced by approve — now in
     // the team store).
     const stableId = approved[0].stable_id;
     const canonicalRel = join(

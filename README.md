@@ -188,7 +188,7 @@ Fabric splits cleanly across three entry points; pick by who's in the loop:
 - **Skill** — AI is in the conversation and needs to judge content:
   `/fabric-archive`, `/fabric-review`, `/fabric-import`.
 - **MCP** — primitives the above use internally: `fab_recall`,
-  `fab_propose`, `fab_archive_scan`, `fab_review`.
+  `fab_propose`, `fab_archive_scan`, `fab_pending`, `fab_review`.
 
 → See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and
 [`docs/RUNTIME-CONTRACTS.md`](./docs/RUNTIME-CONTRACTS.md) for the current
@@ -248,9 +248,11 @@ Fabric exposes four MCP tools and eight Skill templates: the `fabric` router plu
   review.
 - `fab_archive_scan` — scan recent work/session history for archive-worthy
   candidates before a Skill decides what to persist.
-- `fab_review` — list, search, approve, reject, modify, defer pending and
-  canonical entries. `modify` works on both layers and detects narrow-team to
-  personal flips, auto-degrading scope to broad.
+- `fab_pending` — read-only list / search of pending and canonical entries
+  (browse the backlog, dedupe against canonical). Honest `readOnlyHint:true`.
+- `fab_review` — write-only approve, reject, modify, modify-content,
+  modify-layer, defer of pending and canonical entries. `modify` works on both
+  layers and detects narrow-team to personal flips, auto-degrading scope to broad.
 
 **Skills** (LLM-side prose templates installed into each client):
 

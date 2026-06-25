@@ -7,6 +7,8 @@ import {
   FabExtractKnowledgeInputSchema,
   FabExtractKnowledgeInputShape,
   FabExtractKnowledgeOutputSchema,
+  FabPendingInputSchema,
+  FabPendingOutputSchema,
   FabReviewInputSchema,
   FabReviewOutputSchema,
   KnowledgeTypeSchema,
@@ -528,13 +530,8 @@ describe("FabExtractKnowledgeOutputSchema", () => {
 });
 
 describe("FabReviewInputSchema (discriminated union)", () => {
-  it("accepts action='list'", () => {
-    const parsed = FabReviewInputSchema.parse({
-      action: "list",
-      filters: { type: "decisions", layer: "team" },
-    });
-    expect(parsed.action).toBe("list");
-  });
+  // W3-K K2: action='list' / action='search' moved to FabPendingInputSchema
+  // (covered in the FabPendingInputSchema describe block below).
 
   it("accepts action='approve'", () => {
     const parsed = FabReviewInputSchema.parse({
@@ -565,15 +562,6 @@ describe("FabReviewInputSchema (discriminated union)", () => {
     }
   });
 
-  it("accepts action='search'", () => {
-    const parsed = FabReviewInputSchema.parse({
-      action: "search",
-      query: "oauth",
-      filters: { tags: ["security"] },
-    });
-    expect(parsed.action).toBe("search");
-  });
-
   it("accepts action='defer'", () => {
     const parsed = FabReviewInputSchema.parse({
       action: "defer",
@@ -590,8 +578,8 @@ describe("FabReviewInputSchema (discriminated union)", () => {
   });
 
   it("supports exhaustive switch narrowing (TS sanity)", () => {
+    // W3-K K2: list/search narrowing moved to the FabPendingInputSchema test.
     const inputs = [
-      { action: "list" as const },
       { action: "approve" as const, pending_paths: ["x"] },
       { action: "reject" as const, pending_paths: ["x"], reason: "r" },
       {
@@ -599,52 +587,83 @@ describe("FabReviewInputSchema (discriminated union)", () => {
         pending_path: "x",
         changes: { tags: ["t"] },
       },
-      { action: "search" as const, query: "q" },
       { action: "defer" as const, pending_paths: ["x"] },
     ];
     const labels = inputs.map((raw) => {
       const parsed = FabReviewInputSchema.parse(raw);
       switch (parsed.action) {
-        case "list":
-          return "list";
         case "approve":
           return `approve:${parsed.pending_paths.length}`;
         case "reject":
           return `reject:${parsed.reason}`;
         case "modify":
+        case "modify-content":
+        case "modify-layer":
           return `modify:${parsed.pending_path}`;
-        case "search":
-          return `search:${parsed.query}`;
         case "defer":
           return `defer:${parsed.pending_paths.length}`;
       }
     });
     expect(labels).toEqual([
-      "list",
       "approve:1",
       "reject:r",
       "modify:x",
-      "search:q",
       "defer:1",
     ]);
   });
 });
 
-describe("FabReviewOutputSchema", () => {
-  it("accepts list result", () => {
-    const parsed = FabReviewOutputSchema.parse({
+describe("FabPendingInputSchema (discriminated union)", () => {
+  it("accepts action='list'", () => {
+    const parsed = FabPendingInputSchema.parse({
       action: "list",
-      items: [
-        {
-          pending_path: "a",
-          type: "decisions",
-          layer: "team",
-          maturity: "draft",
-        },
-      ],
+      filters: { type: "decisions", layer: "team" },
     });
     expect(parsed.action).toBe("list");
   });
+
+  it("accepts action='search'", () => {
+    const parsed = FabPendingInputSchema.parse({
+      action: "search",
+      query: "oauth",
+      filters: { tags: ["security"] },
+    });
+    expect(parsed.action).toBe("search");
+  });
+
+  it("rejects action='search' without a query", () => {
+    const result = FabPendingInputSchema.safeParse({ action: "search" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects write actions (now write-only on fab_review)", () => {
+    const result = FabPendingInputSchema.safeParse({
+      action: "approve",
+      pending_paths: ["x"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("supports exhaustive switch narrowing (TS sanity)", () => {
+    const inputs = [
+      { action: "list" as const },
+      { action: "search" as const, query: "q" },
+    ];
+    const labels = inputs.map((raw) => {
+      const parsed = FabPendingInputSchema.parse(raw);
+      switch (parsed.action) {
+        case "list":
+          return "list";
+        case "search":
+          return `search:${parsed.query}`;
+      }
+    });
+    expect(labels).toEqual(["list", "search:q"]);
+  });
+});
+
+describe("FabReviewOutputSchema", () => {
+  // W3-K K2: list/search result shapes moved to FabPendingOutputSchema (below).
 
   it("accepts approve result", () => {
     const parsed = FabReviewOutputSchema.parse({
@@ -672,20 +691,37 @@ describe("FabReviewOutputSchema", () => {
     expect(parsed.action).toBe("modify");
   });
 
-  it("accepts search result", () => {
-    const parsed = FabReviewOutputSchema.parse({
-      action: "search",
-      items: [],
-    });
-    expect(parsed.action).toBe("search");
-  });
-
   it("accepts defer result", () => {
     const parsed = FabReviewOutputSchema.parse({
       action: "defer",
       deferred: ["a"],
     });
     expect(parsed.action).toBe("defer");
+  });
+});
+
+describe("FabPendingOutputSchema", () => {
+  it("accepts list result", () => {
+    const parsed = FabPendingOutputSchema.parse({
+      action: "list",
+      items: [
+        {
+          pending_path: "a",
+          type: "decisions",
+          layer: "team",
+          maturity: "draft",
+        },
+      ],
+    });
+    expect(parsed.action).toBe("list");
+  });
+
+  it("accepts search result", () => {
+    const parsed = FabPendingOutputSchema.parse({
+      action: "search",
+      items: [],
+    });
+    expect(parsed.action).toBe("search");
   });
 });
 

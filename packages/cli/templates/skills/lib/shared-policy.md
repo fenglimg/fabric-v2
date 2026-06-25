@@ -11,7 +11,7 @@
 When rendering bilingual (zh-CN ↔ en) output, prose is translated but the
 following classes of token appear **verbatim in both variants**:
 
-- **MCP tool + field names**: `fab_propose`, `fab_review`,
+- **MCP tool + field names**: `fab_propose`, `fab_review`, `fab_pending`,
   `fab_recall`, `fab_archive_scan`,
   `relevance_scope`, `relevance_paths`, `source_sessions`, `proposed_reason`,
   `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
@@ -65,6 +65,7 @@ they do NOT hand-write `.fabric/events.jsonl`:
 - `fab_propose` → `knowledge_proposed` (+ archive-attempt events).
 - `fab_review` approve → `knowledge_promote_started` → `knowledge_promoted`.
 - `fab_review` modify-layer → `knowledge_layer_changed` (+ id-redirect).
+- `fab_pending` list/search → read-only browse/search (no events emitted).
 
 Never instruct the user to delete or hand-edit the event ledger; it is the
 append-only audit trail. Counter rollups live in `.fabric/metrics.jsonl`.

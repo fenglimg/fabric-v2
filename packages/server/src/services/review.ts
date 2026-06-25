@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
+  FabPendingInput,
+  FabPendingOutput,
   FabReviewInput,
   FabReviewOutput,
   KnowledgeType,
@@ -92,10 +94,12 @@ type ParsedFrontmatter = {
 };
 
 /**
- * v2.0 rc.3 fab_review service.
+ * v2.0 rc.3 fab_review service (W3-K K2: WRITE-only).
  *
- * Pure async dispatcher over a discriminated union of 6 actions (list, approve,
- * reject, modify, search, defer). All branches are implemented as of TASK-002.
+ * Pure async dispatcher over a discriminated union of 6 WRITE actions (approve,
+ * reject, modify, modify-content, modify-layer, defer). The two READ actions
+ * (list / search) were lifted out into `reviewPending` (the fab_pending tool) —
+ * pure relocation, ZERO behavior change.
  *
  * Approve performs late-bind id allocation (KP-/KT- + type-code + monotonic
  * counter via KnowledgeIdAllocator), emits 2-phase events (knowledge_promote_started
@@ -113,11 +117,6 @@ export async function reviewKnowledge(
   input: FabReviewInput,
 ): Promise<FabReviewOutput> {
   switch (input.action) {
-    case "list":
-      return {
-        action: "list",
-        items: await listPending(projectRoot, input.filters),
-      };
     case "approve":
       return {
         action: "approve",
@@ -142,11 +141,6 @@ export async function reviewKnowledge(
     case "modify-layer":
       // changes.layer is REQUIRED by the modify-layer input schema.
       return await modifyEntry(projectRoot, input.pending_path, input.changes);
-    case "search":
-      return {
-        action: "search",
-        items: await searchEntries(projectRoot, input.query, input.filters),
-      };
     case "defer":
       return {
         action: "defer",
@@ -156,6 +150,38 @@ export async function reviewKnowledge(
           input.until,
           input.reason,
         ),
+      };
+    default: {
+      const exhaustive: never = input;
+      throw new Error(`unsupported action: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+/**
+ * fab_pending service (W3-K K2: READ-only).
+ *
+ * Pure async dispatcher over the two READ actions (list / search) relocated
+ * from `reviewKnowledge`. list browses the store-backed pending backlog;
+ * search ranges over BOTH pending and canonical knowledge. Neither mutates
+ * state — the fab_pending tool is registered readOnlyHint:true / idempotentHint:true.
+ * The underlying listPending / searchEntries helpers are unchanged (verbatim
+ * relocation), so behavior is identical to the prior fab_review list/search.
+ */
+export async function reviewPending(
+  projectRoot: string,
+  input: FabPendingInput,
+): Promise<FabPendingOutput> {
+  switch (input.action) {
+    case "list":
+      return {
+        action: "list",
+        items: await listPending(projectRoot, input.filters),
+      };
+    case "search":
+      return {
+        action: "search",
+        items: await searchEntries(projectRoot, input.query, input.filters),
       };
     default: {
       const exhaustive: never = input;
