@@ -16,12 +16,20 @@
  * idempotency on missing artifacts is exercised by case (f).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { initFabric } from "../src/commands/install.ts";
+import {
+  installFabricArchiveSkill,
+  installFabricReviewSkill,
+} from "../src/install/skills-and-hooks.ts";
+import {
+  uninstallFabricArchiveSkill,
+  uninstallFabricReviewSkill,
+} from "../src/install/uninstall-skills-and-hooks.ts";
 import {
   buildUninstallExecutionPlan,
   executeUninstallExecutionPlan,
@@ -285,6 +293,68 @@ describe("uninstall wizard cancellation", () => {
     expect(process.exitCode).toBe(130);
     // Cancel banner emitted exactly once.
     expect(cancelMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("uninstall skill ref/ directory removal", () => {
+  // Round-trip oracle for the install↔uninstall symmetry on ref-bearing
+  // skills (FabricSkillInstallSpec.includeRefFiles). install ships SKILL.md +
+  // ref/*.md; uninstall must remove BOTH so the parent skill dir prunes —
+  // before the fix the non-empty ref/ left the whole skill dir orphaned.
+  // Driven through the install/uninstall HELPERS directly (initFabric only
+  // runs the scaffold stage; skills install in the bootstrap pipeline).
+  it.each([
+    {
+      slug: "fabric-archive",
+      install: installFabricArchiveSkill,
+      uninstall: uninstallFabricArchiveSkill,
+    },
+    {
+      slug: "fabric-review",
+      install: installFabricReviewSkill,
+      uninstall: uninstallFabricReviewSkill,
+    },
+  ])("install → uninstall leaves no residual dir for $slug", async ({ slug, install, uninstall }) => {
+    const target = createWerewolfFixtureRoot(`fab-uninstall-skill-ref-${slug}`);
+    tempRoots.push(target);
+
+    await install(target);
+
+    // Pre-condition: both clients get SKILL.md + a populated ref/ dir.
+    for (const client of [".claude", ".codex"]) {
+      const refDir = join(target, client, "skills", slug, "ref");
+      expect(existsSync(join(target, client, "skills", slug, "SKILL.md"))).toBe(true);
+      expect(existsSync(refDir)).toBe(true);
+      expect(readdirSync(refDir).some((f) => f.endsWith(".md"))).toBe(true);
+    }
+
+    await uninstall(target);
+
+    // The whole skill directory (SKILL.md + ref/ + ref/*.md) is gone.
+    for (const client of [".claude", ".codex"]) {
+      expect(existsSync(join(target, client, "skills", slug))).toBe(false);
+    }
+  });
+
+  it("preserves a user-authored non-.md file in ref/ (and keeps the dir)", async () => {
+    const target = createWerewolfFixtureRoot("fab-uninstall-skill-ref-userfile");
+    tempRoots.push(target);
+
+    await installFabricArchiveSkill(target);
+
+    // A user drops a non-.md companion into the installed ref/ dir. uninstall
+    // only ever wrote *.md there, so it must not clobber this file — which in
+    // turn keeps ref/ (and the skill dir) intact.
+    const refDir = join(target, ".claude", "skills", "fabric-archive", "ref");
+    const userFile = join(refDir, "NOTES.txt");
+    writeFileSync(userFile, "user-authored", "utf8");
+
+    await uninstallFabricArchiveSkill(target);
+
+    expect(existsSync(userFile)).toBe(true);
+    expect(readFileSync(userFile, "utf8")).toBe("user-authored");
+    // Install-written .md ref files are gone even though the dir survives.
+    expect(readdirSync(refDir).some((f) => f.endsWith(".md"))).toBe(false);
   });
 });
 
