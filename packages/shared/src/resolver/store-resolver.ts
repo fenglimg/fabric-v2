@@ -24,8 +24,23 @@ import type {
 // `personal` defaults are materialized on every mounted store.
 // ---------------------------------------------------------------------------
 
+// The ACTIVE personal store among possibly-many mounted `personal:true` stores
+// (语义 A: singleton-at-a-time). This is the SINGLE personal choke point — both
+// read-set inclusion (personalEntry) and the personal-scope write-target route
+// through here, so honoring `activePersonalAlias` in one place fixes both sides.
+// The pointer matches by alias OR store_uuid; absent/dangling ⇒ first mounted
+// personal (back-compat: legacy single-personal configs select that one).
 function findPersonal(input: StoreResolveInput) {
-  return input.mountedStores.find((s) => s.personal);
+  const actives = input.mountedStores.filter((s) => s.personal);
+  if (input.activePersonalAlias !== undefined) {
+    const picked = actives.find(
+      (s) => s.alias === input.activePersonalAlias || s.store_uuid === input.activePersonalAlias,
+    );
+    if (picked !== undefined) {
+      return picked;
+    }
+  }
+  return actives[0];
 }
 
 function personalEntry(input: StoreResolveInput): ReadSetEntry | undefined {

@@ -172,6 +172,13 @@ export const storeResolveInputSchema = z
     ),
     // Alias selected as the active write store for non-personal scopes, if any.
     activeWriteAlias: z.string().min(1).optional(),
+    // Alias/UUID of the ACTIVE personal store among possibly-many mounted
+    // `personal:true` stores (语义 A: singleton-at-a-time). Drives the SINGLE
+    // personal choke point (findPersonal) → both read-set inclusion and the
+    // personal-scope write-target. Absent or dangling ⇒ the resolver falls back
+    // to the first mounted personal, so legacy single-personal configs are
+    // unchanged. Sourced from `~/.fabric/fabric-global.json` → active_personal_store.
+    activePersonalAlias: z.string().min(1).optional(),
     // Scope-aware write routes. Exact scope wins first, then longest prefix route.
     writeRoutes: z
       .array(
