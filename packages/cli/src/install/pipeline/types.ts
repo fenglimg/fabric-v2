@@ -87,6 +87,12 @@ export type StageResult = {
   errors: string[];
   /** Optional payload for stage-specific data */
   payload?: unknown;
+  /**
+   * true when the stage materially created/modified something this run; drives
+   * TASK-004 end-pass collapse. Idempotent re-ensure of already-present artifacts
+   * is changed=false.
+   */
+  changed?: boolean;
 };
 
 /**
@@ -115,6 +121,13 @@ export interface InstallContext {
   state: InstallState;
   /** TUI output renderer (EPIC-005/006/007/008) */
   renderer?: OutputRenderer;
+  /**
+   * TASK-004/Bug-B: when set (re-install buffering active), a stage about to issue
+   * an interactive prompt calls this FIRST so buffered context (slot status, prior
+   * phase visuals) is flushed live before the prompt; flushing also abandons the
+   * end-pass collapse for this run.
+   */
+  flushRenderBuffer?: () => void;
 }
 
 /**

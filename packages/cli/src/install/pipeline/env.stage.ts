@@ -54,7 +54,7 @@ export class EnvStage implements Stage {
       }
 
       // Execute scaffold (create directories and files)
-      const created = await this.executeScaffold(scaffold, target);
+      const { scaffold: created, materialChange } = await this.executeScaffold(scaffold, target);
 
       // grill F2/C-03: surface up to 4 high-signal scan findings as the
       // "it-gets-me" payoff. The forensic report is already built (no extra scan
@@ -74,7 +74,7 @@ export class EnvStage implements Stage {
         scaffold.forensicPath,
       ].filter((p) => existsSync(p));
 
-      return stageRan("env", installed, [], created);
+      return stageRan("env", installed, [], created, materialChange);
     } catch (error) {
       return stageFailedFromError("env", error);
     }
@@ -147,31 +147,39 @@ export class EnvStage implements Stage {
   private async executeScaffold(
     scaffold: ScaffoldResult,
     target: string,
-  ): Promise<ScaffoldResult> {
+  ): Promise<{ scaffold: ScaffoldResult; materialChange: boolean }> {
     // Create .fabric directory
     mkdirSync(scaffold.fabricDir, { recursive: true });
 
-    // Write default fabric-config.json
-    this.writeDefaultFabricConfig(scaffold.fabricDir, target);
+    // Write default fabric-config.json (returns true only on a NEW write).
+    const configWrote = this.writeDefaultFabricConfig(scaffold.fabricDir, target);
 
     // A1 (KT-DEC-0003): fold any legacy project-root fabric.config.json into
     // .fabric/fabric-config.json so there is a single config source of truth.
     // No-op when no legacy root file exists (every new install).
     migrateRootConfig(target);
 
-    // Write .gitignore
-    this.writeDefaultGitignore(scaffold.fabricDir);
+    // Write .gitignore (returns true only on a NEW write).
+    const gitignoreWrote = this.writeDefaultGitignore(scaffold.fabricDir);
 
     // Create events.jsonl if missing
-    if (scaffold.eventsState === "missing") {
+    const eventsWrote = scaffold.eventsState === "missing";
+    if (eventsWrote) {
       mkdirSync(dirname(scaffold.eventsPath), { recursive: true });
       writeFileSync(scaffold.eventsPath, "", "utf8");
     }
 
-    // Always rewrite forensic.json (it's a snapshot)
+    // Always rewrite forensic.json (it's a snapshot) — a snapshot rewrite is NOT
+    // a material change (Bug-A: it would otherwise force changed=true every run).
     await atomicWriteJson(scaffold.forensicPath, scaffold.forensicReport);
 
-    return scaffold;
+    // TASK-004/Bug-A: a genuinely-new material write happened this run iff the
+    // config / events / .gitignore was newly written OR AGENTS.md was created.
+    // The always-rewritten forensic snapshot is deliberately excluded.
+    const materialChange =
+      configWrote || gitignoreWrote || eventsWrote || scaffold.agentsMdAction === "created";
+
+    return { scaffold, materialChange };
   }
 
   private classifyPath(
@@ -200,9 +208,9 @@ export class EnvStage implements Stage {
     return "created";
   }
 
-  private writeDefaultFabricConfig(fabricDir: string, _targetRoot: string): void {
+  private writeDefaultFabricConfig(fabricDir: string, _targetRoot: string): boolean {
     const target = join(fabricDir, "fabric-config.json");
-    if (existsSync(target)) return;
+    if (existsSync(target)) return false;
 
     const FABRIC_CONFIG_DEFAULTS = {
       archive_hint_hours: 24,
@@ -221,11 +229,12 @@ export class EnvStage implements Stage {
 
     mkdirSync(fabricDir, { recursive: true });
     writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
+    return true;
   }
 
-  private writeDefaultGitignore(fabricDir: string): void {
+  private writeDefaultGitignore(fabricDir: string): boolean {
     const target = join(fabricDir, ".gitignore");
-    if (existsSync(target)) return;
+    if (existsSync(target)) return false;
 
     const FABRIC_GITIGNORE_CONTENT = [
       "# Fabric per-dev activity ledgers & caches — auto-generated, not shared.",
@@ -242,6 +251,7 @@ export class EnvStage implements Stage {
 
     mkdirSync(fabricDir, { recursive: true });
     writeFileSync(target, FABRIC_GITIGNORE_CONTENT, "utf8");
+    return true;
   }
 
   private readFabricLanguagePreference(_projectRoot: string): string {

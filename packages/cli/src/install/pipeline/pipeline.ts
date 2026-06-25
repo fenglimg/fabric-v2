@@ -51,30 +51,53 @@ const STAGE_ICONS: Record<StageName, string> = {
 class RecordingRenderer implements OutputRenderer {
   private readonly calls: Array<(target: OutputRenderer) => void> = [];
 
+  /**
+   * TASK-004/Bug-B: once flushed (see flushTo), the buffer becomes a transparent
+   * passthrough — every subsequent render goes straight to the live renderer
+   * instead of being buffered. Used when a stage must show context (slot status,
+   * prior visuals) LIVE ahead of an interactive prompt that writes to stdout
+   * directly. Flushing also abandons the end-pass collapse for this run.
+   */
+  private passthrough?: OutputRenderer;
+  private _flushed = false;
+
   constructor(private readonly live: OutputRenderer) {}
 
+  /** true once flushTo has been called — end-pass collapse is then abandoned. */
+  get flushed(): boolean {
+    return this._flushed;
+  }
+
   renderStep(step: StepInfo): void {
+    if (this.passthrough) { this.passthrough.renderStep(step); return; }
     this.calls.push((t) => t.renderStep(step));
   }
   renderSuccess(message: string): void {
+    if (this.passthrough) { this.passthrough.renderSuccess(message); return; }
     this.calls.push((t) => t.renderSuccess(message));
   }
   renderError(error: ErrorInfo | Error): void {
+    if (this.passthrough) { this.passthrough.renderError(error); return; }
     this.calls.push((t) => t.renderError(error));
   }
   renderWarning(message: string): void {
+    if (this.passthrough) { this.passthrough.renderWarning(message); return; }
     this.calls.push((t) => t.renderWarning(message));
   }
   renderInfo(message: string): void {
+    if (this.passthrough) { this.passthrough.renderInfo(message); return; }
     this.calls.push((t) => t.renderInfo(message));
   }
   renderSummaryCard(summary: SummaryInfo): void {
+    if (this.passthrough) { this.passthrough.renderSummaryCard(summary); return; }
     this.calls.push((t) => t.renderSummaryCard(summary));
   }
   renderSection(title: string): void {
+    if (this.passthrough) { this.passthrough.renderSection(title); return; }
     this.calls.push((t) => t.renderSection(title));
   }
   renderComplete(): void {
+    if (this.passthrough) { this.passthrough.renderComplete(); return; }
     this.calls.push((t) => t.renderComplete());
   }
   cleanup(): Promise<void> {
@@ -86,6 +109,18 @@ class RecordingRenderer implements OutputRenderer {
     for (const call of this.calls) {
       call(target);
     }
+  }
+
+  /**
+   * TASK-004/Bug-B: replay all buffered calls to `live` in order, then become a
+   * transparent passthrough so every subsequent render goes straight to `live`.
+   * Marks `flushed`, which abandons the end-pass collapse for this run (the user
+   * has already seen live output, so a single health-check card would be a lie).
+   */
+  flushTo(live: OutputRenderer): void {
+    this.replay(live);
+    this.passthrough = live;
+    this._flushed = true;
   }
 }
 
@@ -145,6 +180,13 @@ export class InstallPipeline {
     // active; restored before the end-pass card render.
     if (buffer !== undefined) {
       context.renderer = buffer;
+      // TASK-004/Bug-B: hand stages a way to flush the buffer LIVE before an
+      // interactive prompt (slot status etc. must be visible ahead of the clack
+      // select that writes to stdout directly). Only wired when a live renderer
+      // exists; flushing abandons collapse for this run.
+      if (liveRenderer !== undefined) {
+        context.flushRenderBuffer = () => buffer.flushTo(liveRenderer);
+      }
     }
 
     // EPIC-005: Render pipeline intro. TASK-004: a first-ever install gets an
@@ -271,7 +313,7 @@ export class InstallPipeline {
     // idempotent (skipped, or ran with nothing installed). Any install at all, or
     // a first install (no buffer), falls through to the normal per-phase replay +
     // summary card.
-    if (buffer !== undefined && this.allIdempotent(context)) {
+    if (buffer !== undefined && !buffer.flushed && this.allIdempotent(context)) {
       context.renderer = liveRenderer;
       if (liveRenderer) {
         liveRenderer.renderSummaryCard(this.buildHealthCheckSummary(context, totalStages));
@@ -309,19 +351,26 @@ export class InstallPipeline {
       return;
     }
     context.renderer = liveRenderer;
+    // TASK-004/Bug-B: a flushTo already replayed the buffer and switched it to
+    // live passthrough — replaying again would double-emit every buffered line.
+    if (buffer.flushed) {
+      return;
+    }
     if (liveRenderer) {
       buffer.replay(liveRenderer);
     }
   }
 
   /**
-   * TASK-004: an all-idempotent run is one where every stage either skipped or ran
-   * without installing anything — the "nothing changed" re-install that the
-   * flatness grill flagged as 7×"installed=0" noise.
+   * TASK-004: an all-idempotent run is one where no stage materially changed
+   * anything — every stage neither failed nor reported `changed`. Keying off the
+   * explicit `changed` flag (not `installed.length`) is the Bug-A fix: several
+   * stages legitimately list already-present artifacts in `installed[]` for
+   * display, so an installed>0 stage can still be a no-change re-ensure.
    */
   private allIdempotent(context: InstallContext): boolean {
     return context.stageResults.every(
-      (r) => r.disposition === "skipped" || (r.disposition === "ran" && r.installed.length === 0),
+      (r) => r.disposition !== "failed" && r.changed !== true,
     );
   }
 
@@ -423,6 +472,7 @@ export function stageRan(
   installed: string[] = [],
   skipped: string[] = [],
   payload?: unknown,
+  changed = false,
 ): StageResult {
   return {
     name,
@@ -431,6 +481,7 @@ export function stageRan(
     skipped,
     errors: [],
     payload,
+    changed,
   };
 }
 
@@ -445,6 +496,7 @@ export function stageSkipped(name: StageName, reason?: string): StageResult {
     skipped: [],
     errors: [],
     payload: reason ? { reason } : undefined,
+    changed: false,
   };
 }
 
@@ -458,6 +510,7 @@ export function stageFailed(name: StageName, errors: string[]): StageResult {
     installed: [],
     skipped: [],
     errors,
+    changed: false,
   };
 }
 

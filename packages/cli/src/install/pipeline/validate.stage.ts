@@ -33,6 +33,9 @@ export class ValidateStage implements Stage {
     try {
       const target = context.target;
       const errors: string[] = [];
+      // TASK-004/Bug-A: validate VERIFIES, it never installs. Present artifacts go
+      // into skipped[] (honest per-phase display = 0 installed), and the stage is
+      // changed=false so it never blocks the end-pass collapse.
       const installed: string[] = [];
       const skipped: string[] = [];
 
@@ -51,7 +54,7 @@ export class ValidateStage implements Stage {
       if (!existsSync(fabricDir)) {
         errors.push(".fabric directory missing");
       } else {
-        installed.push(fabricDir);
+        skipped.push(fabricDir);
       }
 
       // Validate fabric-config.json
@@ -59,7 +62,7 @@ export class ValidateStage implements Stage {
       if (!existsSync(configPath)) {
         errors.push("fabric-config.json missing");
       } else {
-        installed.push(configPath);
+        skipped.push(configPath);
       }
 
       // Validate events.jsonl
@@ -67,7 +70,7 @@ export class ValidateStage implements Stage {
       if (!existsSync(eventsPath)) {
         errors.push("events.jsonl missing");
       } else {
-        installed.push(eventsPath);
+        skipped.push(eventsPath);
       }
 
       // Print validation result as a localized checklist (grill C-15: a whole
@@ -85,7 +88,7 @@ export class ValidateStage implements Stage {
         return stageFailedFromError("validate", new Error(errors.join("; ")));
       }
 
-      return stageRan("validate", installed, skipped);
+      return stageRan("validate", installed, skipped, undefined, false);
     } catch (error) {
       return stageFailedFromError("validate", error);
     }
