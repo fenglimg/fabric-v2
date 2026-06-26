@@ -861,15 +861,14 @@ function renderStageResult(
   const skipped = steps.filter((s) => s.status === "skipped").length;
   const errors = steps.filter((s) => s.status === "error").length;
 
-  // Human body: result + key counts. The renderer step badge carries the status.
+  // flat-design-system Wave5 (TASK-006 G3): human result words, not raw
+  // `removed=/skipped=/errors=` counts. The renderer step badge carries status.
   const detail =
-    removed === 0 && errors === 0
-      ? t("cli.uninstall.stages.uptodate", { count: String(skipped) })
-      : t("cli.uninstall.stages.summary", {
-          removed: String(removed),
-          skipped: String(skipped),
-          errors: String(errors),
-        });
+    errors > 0
+      ? t("cli.uninstall.stages.completed-with-errors")
+      : removed === 0
+        ? t("cli.uninstall.stages.uptodate", { count: String(skipped) })
+        : t("cli.uninstall.stage.cleaned-count", { count: String(removed) });
 
   if (renderer) {
     renderer.renderStep({
@@ -965,18 +964,20 @@ function buildUninstallSummaryCard(
   const details: SummaryDetailRow[] = result.stageResults.map((stage) => {
     const stageRemoved = stage.steps.filter((s) => s.status === "removed").length;
     const stageErrors = stage.steps.filter((s) => s.status === "error").length;
+    // flat-design-system Wave5 (TASK-006 G3): human result words, not raw
+    // `removed=/skipped=/errors=` counts. Symmetric with install's detail rows
+    // (`{count} installed` / `up to date`): a ran stage that cleaned something
+    // → "{count} cleaned"; a ran stage that found nothing → "already clean".
     return {
       label: stageLabel(stage.name),
       value:
         stage.disposition === "skipped"
           ? t("cli.shared.skipped")
           : stageErrors > 0
-            ? t("cli.uninstall.stages.summary", {
-                removed: String(stageRemoved),
-                skipped: String(stage.steps.filter((s) => s.status === "skipped").length),
-                errors: String(stageErrors),
-              })
-            : t("cli.uninstall.stages.removed-count", { count: String(stageRemoved) }),
+            ? t("cli.uninstall.stages.completed-with-errors")
+            : stageRemoved > 0
+              ? t("cli.uninstall.stage.cleaned-count", { count: String(stageRemoved) })
+              : t("cli.uninstall.stage.already-clean"),
       status:
         stage.disposition === "skipped"
           ? "skipped"
@@ -1018,14 +1019,27 @@ function printUninstallPlanSummary(
 ): void {
   console.log(t("cli.uninstall.plan.title"));
   console.log(t("cli.uninstall.plan.target", { target }));
-  console.log(
-    t("cli.uninstall.plan.actions", {
-      bootstrap: yesNoLabel(!isStagePlanSkipped(options, "bootstrap")),
-      mcp: yesNoLabel(!isStagePlanSkipped(options, "mcp")),
-      scaffold: yesNoLabel(!isStagePlanSkipped(options, "scaffold")),
-      store: yesNoLabel(!isStagePlanSkipped(options, "store")),
-    }),
-  );
+
+  // flat-design-system Wave5 (TASK-006 G3): per-stage human action sentences
+  // instead of the `bootstrap=yes mcp=yes …` jargon line. Enabled stages list
+  // under "Will remove:"; deselected stages list (muted) under "Will keep:".
+  // StageName routing keys stay English — only the displayed copy changes.
+  const planKeys = UNINSTALL_WIZARD_KEYS;
+  const willRemove = planKeys.filter((key) => !isStagePlanSkipped(options, key));
+  const willKeep = planKeys.filter((key) => isStagePlanSkipped(options, key));
+  if (willRemove.length > 0) {
+    console.log(t("cli.uninstall.plan.will-remove"));
+    for (const key of willRemove) {
+      console.log(`  - ${t(`cli.uninstall.plan.action.${key}`)}`);
+    }
+  }
+  if (willKeep.length > 0) {
+    console.log(t("cli.uninstall.plan.will-keep"));
+    for (const key of willKeep) {
+      console.log(paint.muted(`  - ${t(`cli.uninstall.plan.action.${key}`)}`));
+    }
+  }
+
   const detected = supports.filter((support) => support.detected);
   console.log(
     t("cli.uninstall.plan.detected", {
@@ -1074,10 +1088,6 @@ function assertExistingDirectory(target: string): void {
 
 function isInteractiveUninstall(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
-}
-
-function yesNoLabel(value: boolean): string {
-  return value ? t("cli.shared.yes") : t("cli.shared.no");
 }
 
 function writeStderr(message: string): void {

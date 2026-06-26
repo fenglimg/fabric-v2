@@ -1146,8 +1146,14 @@ export const zhCNMessages: Messages = {
   // C3: 镜像 install 的阶段提示 (install 用 "Fabric install 将按 N 个阶段执行")。
   "cli.uninstall.plan.phase-banner": "Fabric uninstall 将按 {total} 个阶段执行",
   "cli.uninstall.plan.target": "目标：{target}",
-  "cli.uninstall.plan.actions":
-    "计划：bootstrap={bootstrap} mcp={mcp} scaffold={scaffold} unbind-store={store}",
+  // flat-design-system Wave5 (TASK-004 G3): 计划预览用人话动作句，按启用的阶段逐条列，
+  // 不再输出 `key=是/否` 黑话行。
+  "cli.uninstall.plan.will-remove": "将移除：",
+  "cli.uninstall.plan.will-keep": "将保留：",
+  "cli.uninstall.plan.action.bootstrap": "客户端技能与 hook 脚本",
+  "cli.uninstall.plan.action.mcp": "MCP 服务注册",
+  "cli.uninstall.plan.action.scaffold": "项目脚手架文件",
+  "cli.uninstall.plan.action.store": "团队 store 绑定（本项目）",
   "cli.uninstall.plan.detected": "检测到的客户端：{clients}",
   "cli.uninstall.plan.preserves": "保留项：",
   "cli.uninstall.plan.preserves.stores": "全局知识 stores，项目卸载永不删除",
@@ -1168,6 +1174,10 @@ export const zhCNMessages: Messages = {
   "cli.uninstall.stages.uptodate": "无可移除（{count} 项已不存在）",
   "cli.uninstall.stages.summary": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.stages.removed-count": "已移除 {count} 项",
+  // flat-design-system Wave5 (TASK-006 G3): 总结卡明细行的人话结果词，与 install 的
+  // `已安装 {count} 项` / `已最新` 对称。
+  "cli.uninstall.stage.cleaned-count": "已清理 {count} 项",
+  "cli.uninstall.stage.already-clean": "已是干净",
   "cli.uninstall.summary.title": "卸载摘要",
   "cli.uninstall.summary.body": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.healthcheck.title": "✓ Fabric 已不存在 · 无可移除",

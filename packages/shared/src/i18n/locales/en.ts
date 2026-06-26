@@ -1177,8 +1177,14 @@ export const enMessages: Messages = {
   // C3: mirror install's phase banner ("Fabric install 将按 N 个阶段执行").
   "cli.uninstall.plan.phase-banner": "Fabric uninstall runs in {total} phases",
   "cli.uninstall.plan.target": "Target: {target}",
-  "cli.uninstall.plan.actions":
-    "Plan: bootstrap={bootstrap} mcp={mcp} scaffold={scaffold} unbind-store={store}",
+  // flat-design-system Wave5 (TASK-004 G3): the plan preview speaks human action
+  // sentences, one per ENABLED stage, instead of the `key=yes/no` jargon line.
+  "cli.uninstall.plan.will-remove": "Will remove:",
+  "cli.uninstall.plan.will-keep": "Will keep:",
+  "cli.uninstall.plan.action.bootstrap": "client skills & hook scripts",
+  "cli.uninstall.plan.action.mcp": "MCP server registration",
+  "cli.uninstall.plan.action.scaffold": "project scaffold files",
+  "cli.uninstall.plan.action.store": "team store binding (this project)",
   "cli.uninstall.plan.detected": "Detected clients: {clients}",
   "cli.uninstall.plan.preserves": "Preserves:",
   "cli.uninstall.plan.preserves.stores": "global knowledge stores, never deleted by project uninstall",
@@ -1199,6 +1205,10 @@ export const enMessages: Messages = {
   "cli.uninstall.stages.uptodate": "nothing to remove ({count} already absent)",
   "cli.uninstall.stages.summary": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.stages.removed-count": "{count} removed",
+  // flat-design-system Wave5 (TASK-006 G3): human result words for the summary
+  // card detail rows, symmetric with install's `{count} installed` / `up to date`.
+  "cli.uninstall.stage.cleaned-count": "{count} cleaned",
+  "cli.uninstall.stage.already-clean": "already clean",
   "cli.uninstall.summary.title": "Uninstall summary",
   "cli.uninstall.summary.body": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.healthcheck.title": "✓ Fabric already absent · nothing to remove",
