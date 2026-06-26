@@ -59,3 +59,7 @@ packages/.fabric/
 .codex/
 packages/cli/.claude/
 packages/cli/.codex/
+
+# embedding model cache (downloaded on demand; never in VCS)
+local_cache/
+**/local_cache/

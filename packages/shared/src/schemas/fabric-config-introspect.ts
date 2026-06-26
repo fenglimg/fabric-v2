@@ -282,4 +282,8 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // config-loader.ts so the panel never shows a default that contradicts behavior.
   makeEnumField("nudge_mode", "D_behavior", nudgeModeSchema.options, "normal"),
   makeBooleanField("embed_enabled", true),
+  // P1 recall-engine-refactor (follow-up): the content-channel fusion strategy,
+  // panel-editable so it sits next to embed_enabled (the two go together — rrf
+  // only pays off when embeddings are on). 'auto' is the safe adaptive default.
+  makeEnumField("fusion", "D_behavior", ["additive", "rrf", "auto"], "auto"),
 ];

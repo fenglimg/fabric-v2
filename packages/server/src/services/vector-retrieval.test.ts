@@ -245,4 +245,20 @@ describe("buildEmbedInitOptions (v2.1 ③)", () => {
     process.env.FABRIC_EMBED_CACHE_DIR = "/tmp/fabric-embed-cache";
     expect(buildEmbedInitOptions("fast-bge-small-zh-v1.5").cacheDir).toBe("/tmp/fabric-embed-cache");
   });
+
+  it("defaults cacheDir to a stable ~/.fabric/cache/embed (not cwd-relative) when unset", () => {
+    // Follow-up: the model cache must NOT be fastembed's cwd-relative ./local_cache
+    // (re-downloaded per cwd; once committed into the repo). With no operator
+    // override it resolves under the FABRIC_HOME-aware global root, so every server
+    // / CLI invocation reuses one download.
+    delete process.env.FABRIC_EMBED_CACHE_DIR;
+    const prevHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = "/tmp/fabric-home-probe";
+    try {
+      expect(buildEmbedInitOptions().cacheDir).toBe("/tmp/fabric-home-probe/.fabric/cache/embed");
+    } finally {
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+    }
+  });
 });

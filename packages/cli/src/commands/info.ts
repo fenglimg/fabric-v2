@@ -1,6 +1,17 @@
+import { createRequire } from "node:module";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
 import { defineCommand } from "citty";
 
 import { FabricError } from "@fenglimg/fabric-shared/errors";
+import {
+  readEmbedConfig,
+  readFusion,
+  loadEmbedder,
+  defaultEmbedCacheDir,
+  OPTIONAL_EMBED_PACKAGE,
+} from "@fenglimg/fabric-server";
 
 import { getProjectTranslator } from "../i18n.js";
 import { warnUnknownFlags } from "../lib/unknown-flags.js";
@@ -45,6 +56,35 @@ const scopeCommand = defineCommand({
   },
 });
 
+// P1 recall-engine-refactor (follow-up): `fabric info recall` — the single place
+// to see the recall engine's actual state (which fusion strategy is in effect +
+// whether the vector channel can fire). `--warm` actively loads the embedder,
+// downloading the model on first run.
+const recallCommand = defineCommand({
+  meta: {
+    name: "recall",
+    description: "Show recall-engine status (fusion strategy + embedding state); --warm downloads the model",
+  },
+  args: {
+    warm: {
+      type: "boolean",
+      description: "Load the embedder now (downloads the model to ~/.fabric/cache/embed on first run)",
+    },
+    json: {
+      type: "boolean",
+      description: "Emit machine-readable JSON instead of text",
+    },
+  },
+  async run({ args }: { args: { warm?: boolean; json?: boolean } }) {
+    warnUnknownFlags(["warm", "json"]);
+    if (args.warm === true) {
+      await runRecallWarm(args.json);
+      return;
+    }
+    runRecallStatus(args.json);
+  },
+});
+
 export default defineCommand({
   meta: {
     name: "info",
@@ -63,6 +103,7 @@ export default defineCommand({
   },
   subCommands: {
     scope: scopeCommand,
+    recall: recallCommand,
   },
   run({ args }: { args: { global?: boolean; json?: boolean } }) {
     warnUnknownFlags(["global", "g", "json"]);
@@ -119,6 +160,144 @@ function runStatus(json?: boolean) {
   console.log(`required:       ${status.required.length > 0 ? status.required.join(", ") : "(none)"}`);
   console.log(`default write:  ${status.default_write_store ?? status.active_write_store ?? "(none — personal scope only)"}`);
   console.log(`write routes:   ${status.write_routes.length}`);
+}
+
+// ---------------------------------------------------------------------------
+// `fabric info recall` — recall-engine status.
+// ---------------------------------------------------------------------------
+
+export interface RecallEngineStatus {
+  /** Configured fusion (raw): additive | rrf | auto (default). */
+  fusion_configured: "additive" | "rrf" | "auto";
+  /** What `auto` resolves to given the probes below (or the forced mode). */
+  fusion_effective: "additive" | "rrf";
+  /** Why fusion_effective came out the way it did. */
+  fusion_reason: string;
+  embed_enabled: boolean;
+  embed_model: string;
+  /** Is the optional `fastembed` package resolvable (a proxy for "installed")? */
+  fastembed_resolvable: boolean;
+  /** Stable model cache dir (~/.fabric/cache/embed unless FABRIC_EMBED_CACHE_DIR). */
+  model_cache_dir: string;
+  /** Does that cache already hold the configured model's files? */
+  model_cached: boolean;
+  /** True when the vector channel can actually fire (enabled + pkg + model). */
+  vector_ready: boolean;
+}
+
+function isFastembedResolvable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve(OPTIONAL_EMBED_PACKAGE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isModelCached(cacheDir: string, model: string): boolean {
+  try {
+    const modelDir = join(cacheDir, model);
+    return existsSync(modelDir) && readdirSync(modelDir).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function gatherRecallStatus(projectRoot: string): RecallEngineStatus {
+  const fusionConfigured = readFusion(projectRoot);
+  const embed = readEmbedConfig(projectRoot);
+  const cacheDir = defaultEmbedCacheDir();
+  const fastembedResolvable = isFastembedResolvable();
+  const modelCached = isModelCached(cacheDir, embed.model);
+  // vector_ready predicts whether the vector channel will actually score: enabled
+  // + package present + model already on disk. (A cold model still downloads on
+  // first recall, but until then `auto` plays it safe with additive.)
+  const vectorReady = embed.enabled && fastembedResolvable && modelCached;
+
+  let fusionEffective: "additive" | "rrf";
+  let fusionReason: string;
+  if (fusionConfigured === "additive") {
+    fusionEffective = "additive";
+    fusionReason = "forced additive (config)";
+  } else if (fusionConfigured === "rrf") {
+    fusionEffective = "rrf";
+    fusionReason = vectorReady
+      ? "forced rrf (config); vector channel ready"
+      : "forced rrf (config) — WARNING: vector channel not ready, rrf is single-channel and worse than additive";
+  } else {
+    fusionEffective = vectorReady ? "rrf" : "additive";
+    fusionReason = vectorReady
+      ? "auto → rrf (vector channel ready)"
+      : "auto → additive (vector channel not ready: " +
+        [
+          embed.enabled ? null : "embed_enabled=false",
+          fastembedResolvable ? null : "fastembed not resolvable",
+          modelCached ? null : "model not cached",
+        ]
+          .filter(Boolean)
+          .join(", ") +
+        ")";
+  }
+
+  return {
+    fusion_configured: fusionConfigured,
+    fusion_effective: fusionEffective,
+    fusion_reason: fusionReason,
+    embed_enabled: embed.enabled,
+    embed_model: embed.model,
+    fastembed_resolvable: fastembedResolvable,
+    model_cache_dir: cacheDir,
+    model_cached: modelCached,
+    vector_ready: vectorReady,
+  };
+}
+
+function runRecallStatus(json?: boolean) {
+  const status = gatherRecallStatus(process.cwd());
+  if (json === true) {
+    console.log(JSON.stringify(status, null, 2));
+    return;
+  }
+  console.log(`fusion (config):   ${status.fusion_configured}`);
+  console.log(`fusion (in use):   ${status.fusion_effective}  — ${status.fusion_reason}`);
+  console.log(`embed_enabled:     ${status.embed_enabled}`);
+  console.log(`embed_model:       ${status.embed_model}`);
+  console.log(`fastembed package: ${status.fastembed_resolvable ? "resolvable" : "NOT resolvable (optional dep not installed)"}`);
+  console.log(`model cache dir:   ${status.model_cache_dir}`);
+  console.log(`model cached:      ${status.model_cached ? "yes" : "no (downloads on first recall, or run `fabric info recall --warm`)"}`);
+  console.log(`vector channel:    ${status.vector_ready ? "READY" : "not ready (recall falls back to BM25-only / additive)"}`);
+}
+
+async function runRecallWarm(json?: boolean) {
+  const projectRoot = process.cwd();
+  const embed = readEmbedConfig(projectRoot);
+  const cacheDir = defaultEmbedCacheDir();
+  // Actively load the embedder — this triggers the model download on a cold cache.
+  const embedder = await loadEmbedder(embed.model);
+  let dim: number | null = null;
+  let ok = embedder !== null;
+  if (embedder !== null) {
+    try {
+      const vecs = await embedder.embed(["fabric recall warm probe"]);
+      dim = vecs[0]?.length ?? null;
+    } catch {
+      ok = false;
+    }
+  }
+  const result = { warmed: ok, embed_model: embed.model, model_cache_dir: cacheDir, vector_dim: dim };
+  if (json === true) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (ok) {
+    console.log(`✓ embedder warm: model '${embed.model}' loaded (vector dim ${dim ?? "?"}), cached at ${cacheDir}`);
+  } else {
+    console.log(
+      `✗ embedder unavailable — the optional 'fastembed' package is not resolvable or the model failed to load.\n` +
+        `  Recall falls back to BM25-only / additive. Install fastembed where the server resolves modules, then retry.`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 function runScopeExplain(scope: string) {

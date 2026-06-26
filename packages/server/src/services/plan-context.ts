@@ -1000,10 +1000,18 @@ export async function buildScoringContext(
     }
   }
 
-  // P1 recall-engine-refactor (TASK-003): content-channel fusion. Default
-  // 'additive'; under 'rrf' + a query, precompute the two CONTENT-channel ordinal
-  // rank maps (zero-match channels excluded; stable_id order for determinism).
-  scoringContext.fusion = readFusion(projectRoot);
+  // P1 recall-engine-refactor (TASK-003 + auto follow-up): resolve the configured
+  // fusion to a concrete mode. 'auto' (default) → 'rrf' ONLY when the vector
+  // channel actually scored (embeddings installed + model warm), else 'additive':
+  // single-channel rrf (no vectors) discards BM25 magnitude for nothing and is
+  // strictly worse than additive (real-store shadow). Explicit 'additive'/'rrf'
+  // force the mode. The downstream RRF block + scoreDescriptionItem only ever see
+  // the resolved 'additive'|'rrf'.
+  const configuredFusion = readFusion(projectRoot);
+  const vectorActive =
+    scoringContext.vectorScores !== undefined && scoringContext.vectorScores.size > 0;
+  scoringContext.fusion =
+    configuredFusion === "auto" ? (vectorActive ? "rrf" : "additive") : configuredFusion;
   if (scoringContext.fusion === "rrf" && scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
     const rankIds = rawItems
       .map((item) => item.stable_id)

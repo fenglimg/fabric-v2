@@ -136,7 +136,10 @@ export const enMessages: Messages = {
     "Preset for human-visible nudges (silent / minimal / normal / verbose). Governs only the human channel — never the knowledge injected to the AI.",
   "cli.config.fields.embed_enabled.label": "Vector semantic search",
   "cli.config.fields.embed_enabled.description":
-    "Enable vector semantic recall (true / false). Note: turning this on also needs `fabric install --enable-embed` for the host-side setup (fastembed + model cache); flipping it here alone does not enable it.",
+    "Enable vector semantic recall (true / false). Note: true is just intent — it only takes effect when the running server can resolve the fastembed package AND the model is downloaded (auto-fetched to ~/.fabric/cache/embed on first recall). Check actual state with `fabric info recall`.",
+  "cli.config.fields.fusion.label": "Recall fusion strategy",
+  "cli.config.fields.fusion.description":
+    "How the signals combine into one score: additive = weighted sum (BM25-led, small vector weight) / rrf = Reciprocal Rank Fusion (BM25 and vector on equal footing, so semantics actually count) / auto = adaptive (default: rrf when the vector channel is scoring, else additive — avoids degenerate single-channel rrf being worse).",
 
   "cli.doctor.description":
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).\n" +

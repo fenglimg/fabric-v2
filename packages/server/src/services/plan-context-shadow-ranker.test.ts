@@ -111,7 +111,7 @@ function mountStore(): void {
  *  mode. The relevance floor is disabled (ratio 0) and top_k lifted so the dual-
  *  run compares the FULL re-ordering, not the drop/truncate behavior (which is
  *  identical across modes by construction and tested elsewhere). */
-async function createProject(fusion: "additive" | "rrf"): Promise<string> {
+async function createProject(fusion: "additive" | "rrf" | "auto"): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-shadow-ranker-proj-"));
   tempDirs.push(projectRoot);
   await mkdir(join(projectRoot, ".fabric"), { recursive: true });
@@ -136,7 +136,7 @@ async function createProject(fusion: "additive" | "rrf"): Promise<string> {
  *  modes — only the fusion knob differs — so any ordering delta is attributable
  *  to the fusion path alone. */
 async function rankUnder(
-  fusion: "additive" | "rrf",
+  fusion: "additive" | "rrf" | "auto",
   input: Parameters<typeof planContext>[1],
 ): Promise<string[]> {
   await seedCorpus();
@@ -317,5 +317,20 @@ describe("plan-context shadow ranker — additive vs rrf dual-run (TASK-003 CI g
     expect(strongContent).toBeGreaterThanOrEqual(0);
     expect(weakContentSameFile).toBeGreaterThanOrEqual(0);
     expect(strongContent).toBeLessThan(weakContentSameFile);
+  });
+
+  it("fusion=auto with NO vector channel resolves to additive (safe fallback)", async () => {
+    // The adaptive default: 'auto' only takes the rrf path when the vector channel
+    // is actually scoring. The global test baseline forces the embedder unavailable
+    // (no vectors), so 'auto' MUST resolve to 'additive' — single-channel rrf would
+    // be strictly worse. Identical ordering to an explicit 'additive' run proves it.
+    const query = {
+      paths: ["packages/server/src/target.ts"],
+      target_paths: ["packages/server/src/target.ts"],
+      intent: "zephyr quokka nimbus retrieval",
+    };
+    const auto = await rankUnder("auto", query);
+    const additive = await rankUnder("additive", query);
+    expect(auto).toEqual(additive);
   });
 });
