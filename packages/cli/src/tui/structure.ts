@@ -4,8 +4,6 @@
 // (only sectionBar/scopeBadge live shared in theme.ts). Differentiation comes
 // from STRUCTURE; color is the 7-token accent layer only.
 
-import { ANSI, PALETTE } from "@fenglimg/fabric-shared/theme";
-
 import { paint, isColorEnabled, displayWidth, padEnd } from "../colors.js";
 
 export interface TreeItem {
@@ -73,17 +71,10 @@ export function grid(rows: string[][], opts: GridOpts = {}): string {
   return lines.join("\n");
 }
 
-/**
- * 平铺风命令级大标题(B-横线,spec §0.4):一行 accent-bold 标题 + 一条 dim 细横线
- * (`──────`,40 宽)。NO_COLOR / 非 TTY 降级为裸标题 + `-`×40 的 ASCII 细线。
- * 取代输出区的 `▌` 实心块;复用 shared accent token,不引新色值。
- */
-export function headerRule(title: string): string {
-  const on = isColorEnabled();
-  const head = on ? `${ANSI.bold}${PALETTE.accent}${title}${ANSI.reset}` : title;
-  const rule = paint.muted((on ? "─" : "-").repeat(40));
-  return `${head}\n${rule}`;
-}
+// 平铺风命令级大标题(B-横线,spec §0.4)现住 shared theme(KT-DEC-0039:CLI 与
+// .cjs hook 共用一份 renderer,避免 per-surface 副本漂移)。CLI 侧 re-export 保持
+// `./structure.js` 的既有 import 入口不变;hook 侧由 lib/theme.cjs 镜像取用。
+export { headerRule } from "@fenglimg/fabric-shared/theme";
 
 /**
  * 平铺风内部分组标题(C-圆点,spec §0.4):accent 点 `● <label>`。
