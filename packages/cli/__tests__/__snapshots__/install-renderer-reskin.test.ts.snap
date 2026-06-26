@@ -19,12 +19,6 @@ exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the g
   something failed"
 `;
 
-exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders a summary with failures (mockup #2, count + status line) 1`] = `
-"  ✓ 5 succeeded    ○ 1 skipped    ✗ 1 failed
-  ✗ Store: clone failed
-  1 step failed"
-`;
-
 exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders install steps as ASCII tree branches (mockup #2) 1`] = `
 "  +- [ok] Preflight (1/7)
   +- [ok] Environment (2/7)
@@ -33,9 +27,4 @@ exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > r
   +- [ok] MCP (5/7)
   +- [ok] Validate (6/7)
   \`- [ok] Guidance (7/7)"
-`;
-
-exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders the summary grid block (mockup #2) 1`] = `
-"  ✓ 7 succeeded    ○ 0 skipped    ✗ 0 failed
-  All steps completed successfully"
 `;

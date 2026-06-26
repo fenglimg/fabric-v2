@@ -913,6 +913,16 @@ export const zhCNMessages: Messages = {
   "cli.install.pipeline.title": "Fabric 安装",
   "cli.install.pipeline.complete": "Fabric 安装完成",
   "cli.install.pipeline.running": "将按 {count} 个阶段执行",
+  // TASK-002 (G1):总结卡收尾 + 计数词。原先在 ConsoleOutputRenderer 中硬编码英文
+  // (Done! / succeeded / skipped / failed / "All steps completed successfully"),
+  // 全部收进 t() + 双语表,locale-parity.test.ts 守护 en + zh-CN 每个 key 齐备。
+  "cli.summary.done": "完成!",
+  "cli.summary.all-ok": "全部步骤已完成",
+  "cli.summary.n-failed": "{count} 个步骤失败",
+  "cli.summary.n-of-total": "{done}/{total} 步已完成",
+  "cli.summary.count.succeeded": "成功",
+  "cli.summary.count.skipped": "跳过",
+  "cli.summary.count.failed": "失败",
   // TASK-004: 首装走 onboarding 定调(欢迎语 + 一次性设置说明);重装保持简洁的
   // "将按 N 阶段执行"。{count} = 阶段总数。
   "cli.install.pipeline.intro.firstRun":
@@ -929,6 +939,9 @@ export const zhCNMessages: Messages = {
   "cli.install.pipeline.label.guidance": "后续指引",
   "cli.install.pipeline.desc.store": "绑定当前项目的 read/write store，刷新 resolved-bindings snapshot。",
   "cli.install.next-step": "{label} {message}",
+  // TASK-002 (G6): 收口总结卡的单一黄金动作锚点。能力明细表收进 --verbose,
+  // 这一行才是诚实的「下一步做什么」。{action} = 具体下一条命令。
+  "cli.install.next-step.anchor": "下一步 → {action}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

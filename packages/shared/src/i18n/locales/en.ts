@@ -932,6 +932,17 @@ export const enMessages: Messages = {
   "cli.install.pipeline.title": "Fabric Install",
   "cli.install.pipeline.complete": "Fabric Install Complete",
   "cli.install.pipeline.running": "Running {count} stages...",
+  // TASK-002 (G1): summary-card completion + count words. Formerly hardcoded
+  // English in ConsoleOutputRenderer (Done! / succeeded / skipped / failed /
+  // "All steps completed successfully"); routed through t() + dual-locale tables
+  // so locale-parity.test.ts guards both en + zh-CN carry every key.
+  "cli.summary.done": "Done!",
+  "cli.summary.all-ok": "All steps completed successfully",
+  "cli.summary.n-failed": "{count} step(s) failed",
+  "cli.summary.n-of-total": "{done}/{total} steps completed",
+  "cli.summary.count.succeeded": "succeeded",
+  "cli.summary.count.skipped": "skipped",
+  "cli.summary.count.failed": "failed",
   // TASK-004: a first-ever install gets an onboarding-tone intro; a re-install
   // keeps the terse "Running N stages" line. {count} = total stages.
   "cli.install.pipeline.intro.firstRun":
@@ -949,6 +960,10 @@ export const enMessages: Messages = {
   "cli.install.pipeline.desc.store":
     "Bind the current project's read/write store; refresh the resolved-bindings snapshot.",
   "cli.install.next-step": "{label} {message}",
+  // TASK-002 (G6): a single golden-action anchor that closes the summary card.
+  // The verbose capability table is gated behind --verbose; this one line is the
+  // honest "what to do next" footer. {action} = the concrete next command.
+  "cli.install.next-step.anchor": "Next → {action}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

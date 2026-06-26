@@ -1,4 +1,5 @@
 import { paint, symbol, sectionBar, isColorEnabled } from "@fenglimg/fabric-shared/theme";
+import { t } from "../i18n.js";
 import { tree, grid, headerRule } from "./structure.js";
 import type {
   OutputRenderer,
@@ -103,10 +104,12 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   }
 
   renderSummaryCard(summary: SummaryInfo): void {
-    // Mockup #2: `▌ Summary` section bar + a grid of ✓/○/× counts + summary line.
+    // TASK-002 (G6): the summary card title now uses the B-横线 headerRule
+    // primitive (TASK-001) instead of the shared `▌` sectionBar — spec §0.4
+    // makes the command-level heading a dim-rule underline, no solid block.
     // The provided title is kept as-is so callers that pass a custom heading are
-    // honoured (wording preserved); the bar replaces the old bold-accent line.
-    this.write(sectionBar(summary.title, this.colorOn));
+    // honoured (wording preserved). headerRule reads live env / its own ASCII gate.
+    this.write(headerRule(summary.title));
     this.write(buildSummaryBlock(summary, this.colorOn));
   }
 
@@ -117,7 +120,7 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   }
 
   renderComplete(): void {
-    this.renderStatus("Done!", "success");
+    this.renderStatus(t("cli.summary.done"), "success");
   }
 
   async cleanup(): Promise<void> {
@@ -212,10 +215,11 @@ export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): strin
   const lines: string[] = [];
 
   // Counts as a single grid row (always show all three so the grid is stable).
+  // TASK-002 (G1): the count words flow through t() (no hardcoded English).
   const countCells = [
-    `${paint("success", "✓", colorOn)} ${successCount} succeeded`,
-    `${paint("warn", "○", colorOn)} ${skippedCount} skipped`,
-    `${paint("error", "✗", colorOn)} ${errorCount} failed`,
+    `${paint("success", "✓", colorOn)} ${successCount} ${t("cli.summary.count.succeeded")}`,
+    `${paint("warn", "○", colorOn)} ${skippedCount} ${t("cli.summary.count.skipped")}`,
+    `${paint("error", "✗", colorOn)} ${errorCount} ${t("cli.summary.count.failed")}`,
   ];
   lines.push(`  ${grid([countCells], { gap: 4 })}`);
 
@@ -225,12 +229,14 @@ export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): strin
     lines.push(`  ${marker ? `${marker} ` : ""}${label} ${detail.value}`);
   }
 
+  // TASK-002 (G1): the status line is localized via t() — all-ok / n-failed /
+  // n-of-total. {count}/{done}/{total} are interpolated by the translator.
   const summaryLine =
     totalCount === successCount
-      ? "All steps completed successfully"
+      ? t("cli.summary.all-ok")
       : errorCount > 0
-        ? `${errorCount} step${errorCount > 1 ? "s" : ""} failed`
-        : `${successCount}/${totalCount} steps completed`;
+        ? t("cli.summary.n-failed", { count: String(errorCount) })
+        : t("cli.summary.n-of-total", { done: String(successCount), total: String(totalCount) });
   lines.push(`  ${paint("muted", summaryLine, colorOn)}`);
 
   return lines.join("\n");

@@ -10,6 +10,7 @@ import {
   buildSummaryBlock,
   buildErrorBlock,
 } from "../src/tui/ConsoleOutputRenderer.js";
+import { t } from "../src/i18n.js";
 import type { StepInfo, SummaryInfo, ErrorInfo } from "../src/tui/types.js";
 
 beforeEach(() => {
@@ -49,9 +50,11 @@ describe("ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR)", 
       errorCount: 0,
     };
     const out = buildSummaryBlock(summary, false);
-    expect(out).toContain("7 succeeded");
-    expect(out).toContain("All steps completed successfully");
-    expect(out).toMatchSnapshot();
+    // TASK-002 (G1): the count words + status line are localized via t(); assert
+    // against the active-locale t() values, NOT hardcoded English (the renderer
+    // honors the machine-wide locale, so a literal "succeeded" would be flaky).
+    expect(out).toContain(`7 ${t("cli.summary.count.succeeded")}`);
+    expect(out).toContain(t("cli.summary.all-ok"));
   });
 
   it("renders a summary with failures (mockup #2, count + status line)", () => {
@@ -63,8 +66,8 @@ describe("ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR)", 
       details: [{ label: "Store", value: "clone failed", status: "error" }],
     };
     const out = buildSummaryBlock(summary, false);
-    expect(out).toContain("1 step failed");
-    expect(out).toMatchSnapshot();
+    // TASK-002 (G1): n-failed status line localized via t() ({count} interpolated).
+    expect(out).toContain(t("cli.summary.n-failed", { count: "1" }));
   });
 });
 
