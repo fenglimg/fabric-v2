@@ -27,6 +27,11 @@
 //     data is sent — only the model is pulled — but this is not a hard air-gap.
 //     Operators needing strict offline must pre-populate FABRIC_EMBED_CACHE_DIR.
 
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+import { resolveGlobalRoot } from "@fenglimg/fabric-shared";
+
 // A minimal embedder contract — `embed` maps texts to dense vectors in input
 // order. The concrete fastembed adapter implements this; tests inject fakes.
 export interface Embedder {
@@ -40,7 +45,7 @@ let embedderLoad: Promise<Embedder | null> | undefined;
 // The optional package name, held in a variable so `import()` is NOT statically
 // resolved by the bundler/tsc. TASK-004: fastembed is now an OPTIONAL dependency
 // (default install attempts it; a platform that can't build it still starts).
-const OPTIONAL_EMBED_PACKAGE = "fastembed";
+export const OPTIONAL_EMBED_PACKAGE = "fastembed";
 
 // Test seam: the module loader behind the optional import, injectable so a test
 // can force the "package absent / load throws" path DETERMINISTICALLY. Required
@@ -97,12 +102,22 @@ export function __setMissingEmbedderHintForTesting(sink: (() => void) | undefine
 // "fast-bge-small-zh-v1.5"); when omitted, fastembed falls back to ITS default
 // (English bge-small) — the pre-③ behavior, preserved for callers that pass no
 // model. `maxLength` + operator-controlled `cacheDir` are unchanged.
+// Stable default model cache: ~/.fabric/cache/embed (FABRIC_HOME-aware). Replaces
+// fastembed's cwd-relative ./local_cache default, which re-downloaded the ~90MB
+// model per working directory and (via commit 35e91e1) once got committed into
+// the repo. A single home-rooted cache means the model downloads ONCE and every
+// MCP server / CLI invocation reuses it regardless of cwd. An explicit
+// FABRIC_EMBED_CACHE_DIR still wins (strict-offline / custom prewarm).
+export function defaultEmbedCacheDir(): string {
+  return join(resolveGlobalRoot(), "cache", "embed");
+}
+
 export function buildEmbedInitOptions(
   modelName?: string,
-): { maxLength: number; cacheDir: string | undefined; model?: string } {
+): { maxLength: number; cacheDir: string; model?: string } {
   return {
     maxLength: 512,
-    cacheDir: process.env.FABRIC_EMBED_CACHE_DIR,
+    cacheDir: process.env.FABRIC_EMBED_CACHE_DIR ?? defaultEmbedCacheDir(),
     ...(typeof modelName === "string" && modelName.length > 0 ? { model: modelName } : {}),
   };
 }
@@ -131,10 +146,13 @@ export async function loadEmbedder(modelName?: string): Promise<Embedder | null>
           hintMissingEmbedderOnce();
           return null;
         }
-        // CPU execution; model cache dir is operator-controlled (pre-warm for
-        // strict offline — see the HONEST CAVEAT in the header comment). v2.1 ③:
-        // model pinned via buildEmbedInitOptions (Chinese default, not English).
-        const model = await mod.FlagEmbedding.init(buildEmbedInitOptions(modelName));
+        // CPU execution; model cache dir defaults to ~/.fabric/cache/embed (stable
+        // across cwd) unless FABRIC_EMBED_CACHE_DIR overrides. v2.1 ③: model pinned
+        // via buildEmbedInitOptions (Chinese default, not English). Ensure the cache
+        // dir exists so fastembed's first-run download lands somewhere predictable.
+        const initOpts = buildEmbedInitOptions(modelName);
+        mkdirSync(initOpts.cacheDir, { recursive: true });
+        const model = await mod.FlagEmbedding.init(initOpts);
         return {
           async embed(texts: string[]): Promise<number[][]> {
             const out: number[][] = [];

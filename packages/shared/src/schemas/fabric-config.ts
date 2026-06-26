@@ -518,15 +518,18 @@ export const fabricConfigSchema = z.object({
     ])
     .optional()
     .default("fast-bge-small-zh-v1.5"),
-  // P1 recall-engine-refactor (TASK-003): content-channel fusion strategy.
-  // 'additive' (DEFAULT) = the historical weighted-sum path (BM25_WEIGHT·bm25 +
-  // vectorWeight·vector + structural). 'rrf' = Reciprocal Rank Fusion over the
-  // two CONTENT channels (bm25_rank, vector_rank) plus the unchanged structural
-  // boost. RRF is gated behind this flag and ships OFF — flipping the default to
-  // 'rrf' is a separate human decision gated on a one-off shadow run against the
-  // developer's real bound team store. no-query ranking is byte-identical under
-  // both values (the content channels contribute nothing without query terms).
-  fusion: z.enum(["additive", "rrf"]).optional().default("additive"),
+  // P1 recall-engine-refactor (TASK-003 + follow-up): content-channel fusion
+  // strategy. 'additive' = the weighted-sum path (BM25_WEIGHT·bm25 + vectorWeight·
+  // vector + structural); the vector term is structurally minor (cosine·30 vs an
+  // unbounded BM25), so additive is effectively BM25-led. 'rrf' = Reciprocal Rank
+  // Fusion over the two CONTENT channels (bm25_rank, vector_rank, equal footing)
+  // + a re-scaled structural tiebreaker — lets semantic recall actually matter.
+  // 'auto' (DEFAULT) = adaptive: use 'rrf' WHEN the vector channel is actually
+  // producing scores (embeddings installed + model warm), else fall back to
+  // 'additive'. This is the safe default — real-store shadow showed single-channel
+  // rrf (no vectors) is strictly worse than additive, so auto never lets that
+  // happen. no-query ranking is byte-identical under every value.
+  fusion: z.enum(["additive", "rrf", "auto"]).optional().default("auto"),
 });
 
 // W2 dual-slot (TASK-002 / R6): the LOAD-tolerant variant of fabricConfigSchema.

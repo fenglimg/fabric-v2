@@ -263,20 +263,20 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
 // readFabricConfig targets. Returns the configured value when it is a valid
 // [0,1] number, else undefined (caller falls back to the lint default).
 // P1 recall-engine-refactor (TASK-003): content-channel fusion strategy.
-// 'additive' (DEFAULT) preserves the historical weighted-sum ranking; 'rrf'
-// switches the two CONTENT channels (bm25/vector) to Reciprocal Rank Fusion
-// while leaving the structural boost (recency/locality/salience) on its
-// original additive constants. Best-effort and hot-path safe — any read/parse
-// failure OR any value other than the exact string 'rrf' returns the default
-// 'additive', so a corrupt config never silently flips live ranking.
-export const FUSION_DEFAULT: "additive" | "rrf" = "additive";
+// 'auto' (DEFAULT) is adaptive — planContext resolves it to 'rrf' when the vector
+// channel is actually scoring, else 'additive' (see resolveFusion at the recall
+// site). 'additive' / 'rrf' force a mode. Best-effort and hot-path safe — any
+// read/parse failure OR an unrecognized value returns 'auto', so a corrupt config
+// gets the safe adaptive behavior, never a silently-forced degenerate ranking.
+export const FUSION_DEFAULT: "additive" | "rrf" | "auto" = "auto";
 
-export function readFusion(projectRoot: string): "additive" | "rrf" {
+export function readFusion(projectRoot: string): "additive" | "rrf" | "auto" {
   try {
     const raw = (readFabricConfig(projectRoot) as { fusion?: unknown }).fusion;
-    return raw === "rrf" ? "rrf" : "additive";
+    if (raw === "rrf" || raw === "additive") return raw;
+    return "auto";
   } catch {
-    return "additive";
+    return "auto";
   }
 }
 
