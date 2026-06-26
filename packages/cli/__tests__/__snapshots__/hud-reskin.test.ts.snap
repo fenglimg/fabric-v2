@@ -1,7 +1,8 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`knowledge-hint-broad.cjs renderAiSink — W3-B reskin (NO_COLOR) > renders the section-bar title + counts + scope-badge groups (en) 1`] = `
-"# Fabric Knowledge · 2 active · 2 reference
+"Fabric Knowledge · 2 active · 2 reference
+----------------------------------------
   ALWAYS-ACTIVE RULES (unconditional · act on the line; body on demand):
   [team] [guideline] team:KT-GLD-0001 · 改源码前先读 bootstrap
   [project] [model] project:KP-MOD-0002 · scope 是三维度独立
@@ -13,7 +14,8 @@ Scope: broad only (always relevant) here; narrow (file-specific) surfaces via th
 `;
 
 exports[`knowledge-hint-broad.cjs renderAiSink — W3-B reskin (NO_COLOR) > renders the section-bar title + counts + scope-badge groups (zh-CN) 1`] = `
-"# Fabric Knowledge · 2 常驻 · 2 参考
+"Fabric Knowledge · 2 常驻 · 2 参考
+----------------------------------------
   ALWAYS-ACTIVE RULES (无条件适用 · 照此行遵循,正文按需取):
   [team] [guideline] team:KT-GLD-0001 · 改源码前先读 bootstrap
   [project] [model] project:KP-MOD-0002 · scope 是三维度独立

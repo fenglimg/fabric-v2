@@ -60,11 +60,22 @@ export class GuidanceStage implements Stage {
         await this.promptSemanticSearch(context.target);
       }
 
-      // Print next steps
+      // TASK-002 (G6): collapse the diverging 3-step footer into a SINGLE
+      // golden-action anchor. The verbose multi-line onboarding list (and the
+      // surfaces.md pointer) only render under --verbose, where the user asked
+      // for the detail; by default the install closes on one "下一步 → …" line.
       console.log("");
-      console.log(translate("cli.install.next-steps"));
-      console.log("");
-      console.log(paint.muted(translate("cli.install.guidance.more")));
+      if (context.args.verbose === true) {
+        console.log(translate("cli.install.next-steps"));
+        console.log("");
+        console.log(paint.muted(translate("cli.install.guidance.more")));
+      } else {
+        console.log(
+          translate("cli.install.next-step.anchor", {
+            action: translate("cli.install.next-step.message"),
+          }),
+        );
+      }
 
       // Print restart banner
       console.log("");

@@ -14,8 +14,7 @@ import {
 import { backfillUnboundProject } from "../install/backfill-unbound-project.js";
 import { migrateRootConfig } from "../install/migrate-root-config.js";
 import { paint, symbol } from "../colors.js";
-import { sectionBar } from "@fenglimg/fabric-shared/theme";
-import { tree } from "../tui/structure.js";
+import { groupDot, headerRule } from "../tui/structure.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
@@ -407,23 +406,29 @@ function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
   writeStdout(block);
 }
 
-// W3-B F-003 reskin — pure string composers for the doctor human surface. Each
-// returns the rendered block (no stdout side-effect) so the new look is
-// snapshot-pinnable (doctor-reskin.test.ts, NO_COLOR=1). The writeStdout
-// wrappers above call them; the JSON output path (args.json) never touches
-// these. Structure (sectionBar header + tree rows + status badge) is the
-// differentiator per mockups.md#1; colour stays the 7-token accent layer.
+// flat-design-system Wave5 (TASK-005) reskin — pure string composers for the
+// doctor human surface. Each returns the rendered block (no stdout side-effect)
+// so the new look is snapshot-pinnable (doctor-reskin.test.ts, NO_COLOR=1). The
+// writeStdout wrappers above call them; the JSON output path (args.json) never
+// touches these. Structure is now the flat language: B-横线 (headerRule) command
+// header + C-圆点 (groupDot) section headers + plain two-space-indented rows —
+// NO `tree()` branch glyphs, NO sectionBar `▌` block. Status badges stay the
+// existing symbol() ✓/!/x. Colour stays the 7-token accent layer.
 
-// Header: `▌ fabric doctor · <target>` accent bar + a trailing status badge.
-// Replaces the flat `<status> fabric doctor <target>` line.
+// Header: `fabric doctor · <target>` B-横线 (accent-bold title + dim rule) plus a
+// trailing health badge on the title line. Replaces the old sectionBar `▌` bar.
 export function renderDoctorHeader(report: DoctorReport): string {
-  return `${sectionBar(`fabric doctor · ${report.summary.target}`)} ${renderStatus(report.status)}`;
+  const rule = headerRule(`fabric doctor · ${report.summary.target}`);
+  const [title, ...rest] = rule.split("\n");
+  // Append the health badge to the title line so the rule stays clean below it.
+  return [`${title} ${renderStatus(report.status)}`, ...rest].join("\n");
 }
 
-// Store health: `▌ Store Health` section bar + a tree() of diagnostic rows. Each
-// row keeps the original `<severity-badge> [<ref>] <message>` text verbatim so
-// the diagnostic wording/semantics (and the existing string assertions) are
-// preserved — only the branch glyph + section header are new.
+// Store health: `● Store Health` C-圆点 group header + plain two-space-indented
+// diagnostic rows. Each row keeps the original `<severity-badge> [<ref>]
+// <message>` text verbatim so the diagnostic wording/semantics (and the existing
+// string assertions) are preserved — only the section header + flat layout are
+// new (no tree branches).
 export function renderDoctorStoreHealth(diagnostics: StoreDiagnostic[]): string {
   if (diagnostics.length === 0) {
     return "";
@@ -436,23 +441,23 @@ export function renderDoctorStoreHealth(diagnostics: StoreDiagnostic[]): string 
           ? symbol.warn
           : "[info]";
     const ref = diagnostic.ref === undefined ? "" : ` [${diagnostic.ref}]`;
-    return { text: `${mark}${ref} ${diagnostic.message}` };
+    return `  ${mark}${ref} ${diagnostic.message}`;
   });
-  return `${sectionBar("Store Health")}\n${tree(rows)}`;
+  return `${groupDot(t("doctor.group.store-health"))}\n${rows.join("\n")}`;
 }
 
-// Checks: `▌ Checks` section bar + a tree() of the actionable per-check rows.
-// G-QUIET still applies — only warn/error rows show by default; --verbose adds
-// the passing rows. Returns "" when there is nothing to show (quiet + all OK),
-// so the header is suppressed rather than dangling over an empty tree.
+// Checks: `● Checks` C-圆点 group header + plain two-space-indented per-check
+// rows. G-QUIET still applies — only warn/error rows show by default; --verbose
+// adds the passing rows. Returns "" when there is nothing to show (quiet + all
+// OK), so the header is suppressed rather than dangling over an empty group.
 export function renderDoctorChecks(report: DoctorReport, verbose: boolean): string {
   const rows = report.checks
     .filter((check) => verbose || check.status !== "ok")
-    .map((check) => ({ text: `${renderStatus(check.status)} ${check.name}: ${check.message}` }));
+    .map((check) => `  ${renderStatus(check.status)} ${check.name}: ${check.message}`);
   if (rows.length === 0) {
     return "";
   }
-  return `${sectionBar("Checks")}\n${tree(rows)}`;
+  return `${groupDot(t("doctor.group.checks"))}\n${rows.join("\n")}`;
 }
 
 // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's `payload_limits` reached the JSON
@@ -483,11 +488,11 @@ function renderFixKnowledgeMutations(
     return;
   }
   writeStdout("");
-  writeStdout(dt("doctor.section.fix-knowledge-mutations"));
+  writeStdout(groupDot(dt("doctor.section.fix-knowledge-mutations")));
   for (const mutation of fixKnowledgeReport.mutations) {
     const marker = mutation.applied ? symbol.ok : symbol.error;
     const errSuffix = mutation.applied || mutation.error === undefined ? "" : ` (${mutation.error})`;
-    writeStdout(`${marker} ${mutation.kind}: ${mutation.path} [${mutation.detail}]${errSuffix}`);
+    writeStdout(`  ${marker} ${mutation.kind}: ${mutation.path} [${mutation.detail}]${errSuffix}`);
   }
 }
 
@@ -501,16 +506,16 @@ function writeIssueSection(
   }
 
   writeStdout("");
-  writeStdout(title);
+  writeStdout(groupDot(title));
   for (const issue of issues) {
-    writeStdout(`- ${issue.code}: ${issue.message}`);
+    writeStdout(`  - ${issue.code}: ${issue.message}`);
     // rc.35 TASK-12 (P0-11): fold maintainer-audience actionHints unless
     // --verbose. Print a one-line breadcrumb so users know the hint exists.
     if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
       if (issue.audience === "maintainer" && !options.verbose) {
-        writeStdout(`  → ${options.dt("doctor.maintainer-hint-folded")}`);
+        writeStdout(`    → ${options.dt("doctor.maintainer-hint-folded")}`);
       } else {
-        writeStdout(`  → ${issue.actionHint}`);
+        writeStdout(`    → ${issue.actionHint}`);
       }
     }
   }

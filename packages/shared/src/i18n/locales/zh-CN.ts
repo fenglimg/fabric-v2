@@ -30,6 +30,12 @@ export const zhCNMessages: Messages = {
   "cli.shared.none": "无",
   "cli.shared.loading": "加载中",
   "cli.shared.refresh": "刷新",
+
+  // flat-design-system Wave4 (TASK-004): clack 控件（select/multiselect/confirm/text）
+  // 落定后打印的平铺无沟槽 ✓/x 回执行。控件保持原生（C-006），回执是独立的一行。
+  "cli.prompt.receipt.selected": "已选",
+  "cli.prompt.receipt.set": "已设置",
+  "cli.prompt.receipt.cancelled": "已取消",
   "cli.shared.target-invalid": "目标必须是已存在的目录：{target}",
   "cli.shared.target-invalid.action-hint":
     "请选择一个已存在的项目目录，或先创建该目录后再重新运行命令。",
@@ -73,6 +79,9 @@ export const zhCNMessages: Messages = {
   // 由 packages/cli/src/commands/config.ts（菜单循环 + 字段编辑）以及
   // getPanelFields() 的 label_i18n_key 引用消费。
   "cli.config.intro": "Fabric 配置",
+  // flat-design-system Wave5 (TASK-005): clack 编辑菜单前那块平铺键值面板的
+  // B-横线标题。
+  "cli.config.panel.title": "当前配置",
   "cli.config.outro": "配置已保存。",
   "cli.config.outro-no-changes": "未做任何修改。",
   "cli.config.cancel": "已取消。",
@@ -147,6 +156,10 @@ export const zhCNMessages: Messages = {
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
+  // flat-design-system Wave5 (TASK-005): 重排后的 doctor C-圆点分组标题
+  // (`● 存储健康` / `● 检查项`),取代原硬编码 sectionBar 字面量。
+  "doctor.group.store-health": "存储健康",
+  "doctor.group.checks": "检查项",
   // v2.0.0-rc.29 REVIEW (codex LOW-2): F2 的 payload 阈值之前只出现在 JSON envelope，
   // 人类输出看不到，导致改了 mcpPayloadLimits 之后没法用 `fabric doctor` 快速确认是否生效。
   "doctor.section.payload-limits": "MCP payload 阈值：",
@@ -913,6 +926,16 @@ export const zhCNMessages: Messages = {
   "cli.install.pipeline.title": "Fabric 安装",
   "cli.install.pipeline.complete": "Fabric 安装完成",
   "cli.install.pipeline.running": "将按 {count} 个阶段执行",
+  // TASK-002 (G1):总结卡收尾 + 计数词。原先在 ConsoleOutputRenderer 中硬编码英文
+  // (Done! / succeeded / skipped / failed / "All steps completed successfully"),
+  // 全部收进 t() + 双语表,locale-parity.test.ts 守护 en + zh-CN 每个 key 齐备。
+  "cli.summary.done": "完成!",
+  "cli.summary.all-ok": "全部步骤已完成",
+  "cli.summary.n-failed": "{count} 个步骤失败",
+  "cli.summary.n-of-total": "{done}/{total} 步已完成",
+  "cli.summary.count.succeeded": "成功",
+  "cli.summary.count.skipped": "跳过",
+  "cli.summary.count.failed": "失败",
   // TASK-004: 首装走 onboarding 定调(欢迎语 + 一次性设置说明);重装保持简洁的
   // "将按 N 阶段执行"。{count} = 阶段总数。
   "cli.install.pipeline.intro.firstRun":
@@ -920,6 +943,11 @@ export const zhCNMessages: Messages = {
   // TASK-004: 重装且全程幂等(无任何 install)时折叠成的单张体检卡片标题。
   // {count} = 阶段总数。明细走 --verbose。
   "cli.install.healthcheck.title": "✓ Fabric 已是最新 · {count} 阶段就绪 · 无改动",
+  // TASK-003 (G2 root a):每阶段总结明细的状态词改按 r.changed 判定(不再用
+  // installed.length)—— 无改动的重装走"已最新",不再误报"N 项已安装"。
+  // installed-count 仅在该阶段确有改动时使用。
+  "cli.install.stage.uptodate": "已最新",
+  "cli.install.stage.installed-count": "{count} 项已安装",
   "cli.install.pipeline.label.preflight": "全局与项目预检",
   "cli.install.pipeline.label.env": "项目环境初始化",
   "cli.install.pipeline.label.store": "知识库拓扑",
@@ -929,6 +957,9 @@ export const zhCNMessages: Messages = {
   "cli.install.pipeline.label.guidance": "后续指引",
   "cli.install.pipeline.desc.store": "绑定当前项目的 read/write store，刷新 resolved-bindings snapshot。",
   "cli.install.next-step": "{label} {message}",
+  // TASK-002 (G6): 收口总结卡的单一黄金动作锚点。能力明细表收进 --verbose,
+  // 这一行才是诚实的「下一步做什么」。{action} = 具体下一条命令。
+  "cli.install.next-step.anchor": "下一步 → {action}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
@@ -956,6 +987,10 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.stage.bootstrap": "是否安装 bootstrap 模板？[{defaultValue}]",
   "cli.install.wizard.stage.mcp": "是否配置 MCP 客户端？[{defaultValue}]",
   "cli.install.wizard.stage.hooks": "是否安装 git hooks？[{defaultValue}]",
+  // flat-design-system Wave4 (TASK-004): post-group ✓ 回执用的短阶段标签。
+  "cli.install.wizard.stage.bootstrap.short": "bootstrap 模板",
+  "cli.install.wizard.stage.mcp.short": "MCP 客户端",
+  "cli.install.wizard.stage.hooks.short": "git hooks",
   "cli.install.wizard.mcp-install": "MCP 服务端安装范围（global/local）[{defaultValue}]",
   "cli.install.wizard.execute.confirm": "现在执行该安装计划？[Y/n]",
   "cli.install.wizard.outro": "安装计划已确认，开始执行 Fabric install...",
@@ -1111,8 +1146,14 @@ export const zhCNMessages: Messages = {
   // C3: 镜像 install 的阶段提示 (install 用 "Fabric install 将按 N 个阶段执行")。
   "cli.uninstall.plan.phase-banner": "Fabric uninstall 将按 {total} 个阶段执行",
   "cli.uninstall.plan.target": "目标：{target}",
-  "cli.uninstall.plan.actions":
-    "计划：bootstrap={bootstrap} mcp={mcp} scaffold={scaffold} unbind-store={store}",
+  // flat-design-system Wave5 (TASK-004 G3): 计划预览用人话动作句，按启用的阶段逐条列，
+  // 不再输出 `key=是/否` 黑话行。
+  "cli.uninstall.plan.will-remove": "将移除：",
+  "cli.uninstall.plan.will-keep": "将保留：",
+  "cli.uninstall.plan.action.bootstrap": "客户端技能与 hook 脚本",
+  "cli.uninstall.plan.action.mcp": "MCP 服务注册",
+  "cli.uninstall.plan.action.scaffold": "项目脚手架文件",
+  "cli.uninstall.plan.action.store": "团队 store 绑定（本项目）",
   "cli.uninstall.plan.detected": "检测到的客户端：{clients}",
   "cli.uninstall.plan.preserves": "保留项：",
   "cli.uninstall.plan.preserves.stores": "全局知识 stores，项目卸载永不删除",
@@ -1133,6 +1174,10 @@ export const zhCNMessages: Messages = {
   "cli.uninstall.stages.uptodate": "无可移除（{count} 项已不存在）",
   "cli.uninstall.stages.summary": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.stages.removed-count": "已移除 {count} 项",
+  // flat-design-system Wave5 (TASK-006 G3): 总结卡明细行的人话结果词，与 install 的
+  // `已安装 {count} 项` / `已最新` 对称。
+  "cli.uninstall.stage.cleaned-count": "已清理 {count} 项",
+  "cli.uninstall.stage.already-clean": "已是干净",
   "cli.uninstall.summary.title": "卸载摘要",
   "cli.uninstall.summary.body": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.healthcheck.title": "✓ Fabric 已不存在 · 无可移除",

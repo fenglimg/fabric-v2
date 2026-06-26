@@ -5,6 +5,7 @@ import type { DetectedClientSupport } from "../config/resolver.js";
 import { t } from "../i18n.js";
 import type { InitOptions, InitStageName } from "../commands/install.js";
 import { printInitPlanSummary } from "./install-summary.js";
+import { promptReceipt } from "./theme-clack.js";
 
 export type McpInstallMode = "global" | "local";
 
@@ -129,6 +130,20 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
         return null;
       }
 
+      // flat-design-system Wave4 (TASK-004): print the flat ✓ receipt of the chosen
+      // stages AFTER the clack `group` has fully resolved — printing mid-group would
+      // interleave with clack's group rendering. The group's controls stay native
+      // (C-006); this is a separate gutter-free line.
+      const enabledStageLabels = [
+        groupedSelection.bootstrap ? t("cli.install.wizard.stage.bootstrap.short") : null,
+        groupedSelection.mcp ? t("cli.install.wizard.stage.mcp.short") : null,
+        groupedSelection.hooks ? t("cli.install.wizard.stage.hooks.short") : null,
+      ].filter((label): label is string => label !== null);
+      promptReceipt(
+        "selected",
+        enabledStageLabels.length > 0 ? enabledStageLabels.join(", ") : t("cli.shared.none"),
+      );
+
       const previewOptions: InitOptions = {
         ...context.options,
         skipBootstrap: !groupedSelection.bootstrap,
@@ -143,6 +158,8 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
         initialValue: true,
       });
       if (isCancel(confirmed) || !confirmed) {
+        // flat-design-system Wave4 (TASK-004): No / cancel → flat red x receipt.
+        promptReceipt("cancelled");
         emitInitWizardCancellation();
         return null;
       }

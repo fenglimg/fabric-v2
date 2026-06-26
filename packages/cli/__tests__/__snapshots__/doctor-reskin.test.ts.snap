@@ -1,23 +1,26 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`doctor reskin render helpers (NO_COLOR) > renders store health as a section-bar + tree 1`] = `
-"# Store Health
-  +- [error] [team] required store is missing
-  +- [warn] global config is missing
-  \`- [info] [personal] store is local-only"
+exports[`doctor reskin render helpers (NO_COLOR) > renders store health as a groupDot + plain rows 1`] = `
+"* Store Health
+  [error] [team] required store is missing
+  [warn] global config is missing
+  [info] [personal] store is local-only"
+`;
+
+exports[`doctor reskin render helpers (NO_COLOR) > renders the B-横线 header + status badge 1`] = `
+"fabric doctor · /repo [warn]
+----------------------------------------"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the checks section quiet (warn/error only) 1`] = `
-"# Checks
-  +- [warn] Events ledger health: metrics stalled
-  \`- [error] Lock file: lock is stale"
+"* Checks
+  [warn] Events ledger health: metrics stalled
+  [error] Lock file: lock is stale"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the checks section verbose (includes passing rows) 1`] = `
-"# Checks
-  +- [ok] Bootstrap anchor: anchor present
-  +- [warn] Events ledger health: metrics stalled
-  \`- [error] Lock file: lock is stale"
+"* Checks
+  [ok] Bootstrap anchor: anchor present
+  [warn] Events ledger health: metrics stalled
+  [error] Lock file: lock is stale"
 `;
-
-exports[`doctor reskin render helpers (NO_COLOR) > renders the section-bar header + status badge 1`] = `"# fabric doctor · /repo [warn]"`;

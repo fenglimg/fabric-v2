@@ -1,26 +1,22 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the error block without hint/stack (non-verbose, mockup #4) 1`] = `
-"# [err] Error
+exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the gutter-free error block with hint + stack (spec §0.4) 1`] = `
+"[err] InstallError
+----------------------------------------
 
-  | something failed"
+  Store clone failed: remote unreachable (ECONNREFUSED)
+
+  💡 check the URL or run with --debug
+  ↳ Error: boom
+  ↳ at clone (store.ts:42)
+  ↳ at install (install.ts:88)"
 `;
 
-exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the error left-bar block with hint + stack (mockup #4) 1`] = `
-"# [err] InstallError
+exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the gutter-free error block without hint/stack (non-verbose, spec §0.4) 1`] = `
+"[err] Error
+----------------------------------------
 
-  | Store clone failed: remote unreachable (ECONNREFUSED)
-  |
-  | 💡 check the URL or run with --debug
-  | ↳ Error: boom
-  | ↳ at clone (store.ts:42)
-  | ↳ at install (install.ts:88)"
-`;
-
-exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders a summary with failures (mockup #2, count + status line) 1`] = `
-"  ✓ 5 succeeded    ○ 1 skipped    ✗ 1 failed
-  ✗ Store: clone failed
-  1 step failed"
+  something failed"
 `;
 
 exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders install steps as ASCII tree branches (mockup #2) 1`] = `
@@ -31,9 +27,4 @@ exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > r
   +- [ok] MCP (5/7)
   +- [ok] Validate (6/7)
   \`- [ok] Guidance (7/7)"
-`;
-
-exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders the summary grid block (mockup #2) 1`] = `
-"  ✓ 7 succeeded    ○ 0 skipped    ✗ 0 failed
-  All steps completed successfully"
 `;

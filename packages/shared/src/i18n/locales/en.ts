@@ -30,6 +30,13 @@ export const enMessages: Messages = {
   "cli.shared.none": "none",
   "cli.shared.loading": "loading",
   "cli.shared.refresh": "Refresh",
+
+  // flat-design-system Wave4 (TASK-004): gutter-free ✓/x receipt printed after a
+  // clack control (select/multiselect/confirm/text) resolves. The clack control
+  // stays native (C-006); the receipt is a separate flat line.
+  "cli.prompt.receipt.selected": "Selected",
+  "cli.prompt.receipt.set": "Set",
+  "cli.prompt.receipt.cancelled": "Cancelled",
   "cli.shared.target-invalid": "Target must be an existing directory: {target}",
   "cli.shared.target-invalid.action-hint":
     "Choose an existing project directory, or create it before running the command again.",
@@ -79,6 +86,9 @@ export const enMessages: Messages = {
   // Keys consumed by packages/cli/src/commands/config.ts (menu loop +
   // per-field prompts) and by getPanelFields() (label_i18n_key references).
   "cli.config.intro": "Fabric Configuration",
+  // flat-design-system Wave5 (TASK-005): B-横线 title above the flat key/value
+  // panel printed before the clack edit menu.
+  "cli.config.panel.title": "Current configuration",
   "cli.config.outro": "Configuration saved.",
   "cli.config.outro-no-changes": "No changes made.",
   "cli.config.cancel": "Cancelled.",
@@ -153,6 +163,11 @@ export const enMessages: Messages = {
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  // flat-design-system Wave5 (TASK-005): C-圆点 group headers for the reskinned
+  // doctor surface (`● Store Health` / `● Checks`), replacing the old hardcoded
+  // sectionBar literals so the wording is localized in both locales.
+  "doctor.group.store-health": "Store Health",
+  "doctor.group.checks": "Checks",
   // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's payload-limit defaults reach the JSON
   // envelope but never surfaced in the human renderer, so operators tuning
   // `mcpPayloadLimits` had no fast `fabric doctor` confirmation that their config
@@ -932,6 +947,17 @@ export const enMessages: Messages = {
   "cli.install.pipeline.title": "Fabric Install",
   "cli.install.pipeline.complete": "Fabric Install Complete",
   "cli.install.pipeline.running": "Running {count} stages...",
+  // TASK-002 (G1): summary-card completion + count words. Formerly hardcoded
+  // English in ConsoleOutputRenderer (Done! / succeeded / skipped / failed /
+  // "All steps completed successfully"); routed through t() + dual-locale tables
+  // so locale-parity.test.ts guards both en + zh-CN carry every key.
+  "cli.summary.done": "Done!",
+  "cli.summary.all-ok": "All steps completed successfully",
+  "cli.summary.n-failed": "{count} step(s) failed",
+  "cli.summary.n-of-total": "{done}/{total} steps completed",
+  "cli.summary.count.succeeded": "succeeded",
+  "cli.summary.count.skipped": "skipped",
+  "cli.summary.count.failed": "failed",
   // TASK-004: a first-ever install gets an onboarding-tone intro; a re-install
   // keeps the terse "Running N stages" line. {count} = total stages.
   "cli.install.pipeline.intro.firstRun":
@@ -939,6 +965,12 @@ export const enMessages: Messages = {
   // TASK-004: the single collapsed health-check card title for a fully-idempotent
   // re-install. {count} = total stages. Detail is behind --verbose.
   "cli.install.healthcheck.title": "✓ Fabric is up to date · {count} stages ready · no changes",
+  // TASK-003 (G2 root a): the per-stage summary-detail status word now branches on
+  // r.changed (not installed.length) — a no-change re-ensure says "up to date"
+  // instead of misreporting "N installed". installed-count is used only when the
+  // stage actually changed something.
+  "cli.install.stage.uptodate": "up to date",
+  "cli.install.stage.installed-count": "{count} installed",
   "cli.install.pipeline.label.preflight": "Preflight check",
   "cli.install.pipeline.label.env": "Environment setup",
   "cli.install.pipeline.label.store": "Store configuration",
@@ -949,6 +981,10 @@ export const enMessages: Messages = {
   "cli.install.pipeline.desc.store":
     "Bind the current project's read/write store; refresh the resolved-bindings snapshot.",
   "cli.install.next-step": "{label} {message}",
+  // TASK-002 (G6): a single golden-action anchor that closes the summary card.
+  // The verbose capability table is gated behind --verbose; this one line is the
+  // honest "what to do next" footer. {action} = the concrete next command.
+  "cli.install.next-step.anchor": "Next → {action}",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
@@ -976,6 +1012,10 @@ export const enMessages: Messages = {
   "cli.install.wizard.stage.bootstrap": "Install bootstrap templates? [{defaultValue}]",
   "cli.install.wizard.stage.mcp": "Configure MCP clients? [{defaultValue}]",
   "cli.install.wizard.stage.hooks": "Install git hooks? [{defaultValue}]",
+  // flat-design-system Wave4 (TASK-004): short stage labels for the post-group ✓ receipt.
+  "cli.install.wizard.stage.bootstrap.short": "bootstrap templates",
+  "cli.install.wizard.stage.mcp.short": "MCP clients",
+  "cli.install.wizard.stage.hooks.short": "git hooks",
   "cli.install.wizard.mcp-install": "MCP server install scope (global/local) [{defaultValue}]",
   "cli.install.wizard.execute.confirm": "Execute this install plan now? [Y/n]",
   "cli.install.wizard.outro": "Install plan accepted. Running Fabric install...",
@@ -1137,8 +1177,14 @@ export const enMessages: Messages = {
   // C3: mirror install's phase banner ("Fabric install 将按 N 个阶段执行").
   "cli.uninstall.plan.phase-banner": "Fabric uninstall runs in {total} phases",
   "cli.uninstall.plan.target": "Target: {target}",
-  "cli.uninstall.plan.actions":
-    "Plan: bootstrap={bootstrap} mcp={mcp} scaffold={scaffold} unbind-store={store}",
+  // flat-design-system Wave5 (TASK-004 G3): the plan preview speaks human action
+  // sentences, one per ENABLED stage, instead of the `key=yes/no` jargon line.
+  "cli.uninstall.plan.will-remove": "Will remove:",
+  "cli.uninstall.plan.will-keep": "Will keep:",
+  "cli.uninstall.plan.action.bootstrap": "client skills & hook scripts",
+  "cli.uninstall.plan.action.mcp": "MCP server registration",
+  "cli.uninstall.plan.action.scaffold": "project scaffold files",
+  "cli.uninstall.plan.action.store": "team store binding (this project)",
   "cli.uninstall.plan.detected": "Detected clients: {clients}",
   "cli.uninstall.plan.preserves": "Preserves:",
   "cli.uninstall.plan.preserves.stores": "global knowledge stores, never deleted by project uninstall",
@@ -1159,6 +1205,10 @@ export const enMessages: Messages = {
   "cli.uninstall.stages.uptodate": "nothing to remove ({count} already absent)",
   "cli.uninstall.stages.summary": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.stages.removed-count": "{count} removed",
+  // flat-design-system Wave5 (TASK-006 G3): human result words for the summary
+  // card detail rows, symmetric with install's `{count} installed` / `up to date`.
+  "cli.uninstall.stage.cleaned-count": "{count} cleaned",
+  "cli.uninstall.stage.already-clean": "already clean",
   "cli.uninstall.summary.title": "Uninstall summary",
   "cli.uninstall.summary.body": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.healthcheck.title": "✓ Fabric already absent · nothing to remove",

@@ -70,3 +70,17 @@ export function grid(rows: string[][], opts: GridOpts = {}): string {
   }
   return lines.join("\n");
 }
+
+// 平铺风命令级大标题(B-横线,spec §0.4)现住 shared theme(KT-DEC-0039:CLI 与
+// .cjs hook 共用一份 renderer,避免 per-surface 副本漂移)。CLI 侧 re-export 保持
+// `./structure.js` 的既有 import 入口不变;hook 侧由 lib/theme.cjs 镜像取用。
+export { headerRule } from "@fenglimg/fabric-shared/theme";
+
+/**
+ * 平铺风内部分组标题(C-圆点,spec §0.4):accent 点 `● <label>`。
+ * NO_COLOR / 非 TTY 降级为 ASCII `* <label>`。
+ */
+export function groupDot(label: string): string {
+  const dot = isColorEnabled() ? paint.accent("●") : "*";
+  return `${dot} ${label}`;
+}

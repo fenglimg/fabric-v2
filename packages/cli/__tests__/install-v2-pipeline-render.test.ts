@@ -129,6 +129,30 @@ describe("install-v2 pipeline — first-install vs re-install collapse (TASK-004
     expect(cardTitle).toBe(t("cli.install.pipeline.complete"));
   });
 
+  it("TASK-003 (G2 root a): the summary detail reads 'up to date' for a ran-but-unchanged stage, not 'N installed'", async () => {
+    const renderer = stubRenderer();
+    // A run that does NOT collapse (one stage changed=true) so the standard summary
+    // card with detail rows is rendered. The OTHER stage ran with installed[] listing
+    // already-present artifacts but changed=false — its detail must read the uptodate
+    // word (the allIdempotent truth source), NEVER "N installed".
+    const changedStage: Stage = { name: "hooks", async execute() { return stageRan("hooks", ["a-hook"], [], undefined, true); } };
+    const unchangedStage: Stage = { name: "validate", async execute() { return stageRan("validate", ["present-1", "present-2", "present-3"], [], undefined, false); } };
+
+    const result = await new InstallPipeline()
+      .addStage(unchangedStage)
+      .addStage(changedStage)
+      .execute(rendererContext(renderer, { state: { firstInstall: false } }));
+
+    expect(result.success).toBe(true);
+    const details = renderer.renderSummaryCard.mock.calls[0][0].details as Array<{ value: string }>;
+    const values = details.map((d) => d.value);
+    // The unchanged ran-stage shows the uptodate word, not its installed.length.
+    expect(values).toContain(t("cli.install.stage.uptodate"));
+    expect(values).not.toContain("3 installed");
+    // The genuinely-changed stage still reports its installed count.
+    expect(values).toContain(t("cli.install.stage.installed-count", { count: "1" }));
+  });
+
   it("first install uses the onboarding intro string and never collapses", async () => {
     const renderer = stubRenderer();
     // Even with all-idempotent stages, a first install must stream normally.
@@ -171,11 +195,14 @@ describe("install-v2 pipeline — first-install vs re-install collapse (TASK-004
     expect(renderer.renderStep).not.toHaveBeenCalled();
   });
 
-  it("Bug-B: a stage flushing the render buffer mid-run abandons the collapse even when all-idempotent", async () => {
+  it("TASK-003 (G2 root b): a fully-idempotent re-install STILL collapses even when a mid-run prompt flushed the buffer", async () => {
     const renderer = stubRenderer();
-    // A stage that flushes the buffer (simulating a flush-before-prompt) before
-    // returning a no-change result. Even though every stage is changed=false, the
-    // flush marks the buffer flushed → end-pass collapse is abandoned.
+    // A stage that flushes the buffer (simulating a flush-before-prompt — the store
+    // stage flushes so slot status is visible ahead of a clack select) before
+    // returning a no-change result. Every stage is changed=false, so the run is
+    // fully idempotent — the collapse must FIRE regardless of buffer.flushed (the
+    // flush is driven by a legitimate prompt, not by a material change). This
+    // reverses the former Bug-B behaviour where any flush abandoned collapse.
     const flushing: Stage = {
       name: "store",
       async execute(ctx) {
@@ -191,10 +218,12 @@ describe("install-v2 pipeline — first-install vs re-install collapse (TASK-004
       .execute(rendererContext(renderer, { state: { firstInstall: false } }));
 
     expect(result.success).toBe(true);
-    // NOT the health-check card — the standard summary card (flush abandoned collapse).
+    // Exactly one card — the health-check card — even though the buffer was flushed.
     expect(renderer.renderSummaryCard).toHaveBeenCalledTimes(1);
     const cardTitle = String(renderer.renderSummaryCard.mock.calls[0][0].title);
-    expect(cardTitle).toBe(t("cli.install.pipeline.complete"));
+    expect(cardTitle).toBe(t("cli.install.healthcheck.title", { count: "2" }));
+    // No '... installed' detail rows on the health card (G2 misreport fix).
+    expect(renderer.renderSummaryCard.mock.calls[0][0].details ?? []).toEqual([]);
   });
 
   it("flushTo replays buffered calls in order, then passes subsequent calls through live", async () => {
@@ -233,10 +262,16 @@ describe("install-v2 pipeline — first-install vs re-install collapse (TASK-004
     expect(idx2).toBeGreaterThan(idx1);
     expect(idx3).toBeGreaterThan(idx2);
     // No duplication of the buffered lines (flush replays once, then passthrough).
+    // TASK-003: this also proves the collapse-after-flush path does NOT double-emit
+    // — the all-idempotent collapse branch early-returns before flushBuffer, so the
+    // already-flushed (passthrough) buffer is never replayed a second time.
     expect(infoLines.filter((l) => l === "buffered-1")).toHaveLength(1);
     expect(infoLines.filter((l) => l === "buffered-2")).toHaveLength(1);
-    // Flushed mid-run → end-pass collapse abandoned (standard summary card).
+    expect(infoLines.filter((l) => l === "post-flush-3")).toHaveLength(1);
+    // TASK-003 (G2 root b): all stages changed=false ⇒ collapses to the health card
+    // even though the buffer was flushed mid-run; exactly one card, no duplicate.
+    expect(renderer.renderSummaryCard).toHaveBeenCalledTimes(1);
     const cardTitle = String(renderer.renderSummaryCard.mock.calls[0][0].title);
-    expect(cardTitle).toBe(t("cli.install.pipeline.complete"));
+    expect(cardTitle).toBe(t("cli.install.healthcheck.title", { count: "2" }));
   });
 });

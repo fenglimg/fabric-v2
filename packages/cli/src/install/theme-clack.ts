@@ -11,18 +11,15 @@
 // builders are exported so the NO_COLOR snapshot test can pin output without
 // spying on stdout.
 
-import { sectionBar } from "@fenglimg/fabric-shared/theme";
-
-import { isColorEnabled, paint, symbol } from "../colors.js";
+import { paint, symbol } from "../colors.js";
+import { t } from "../i18n.js";
+import { headerRule } from "../tui/structure.js";
 
 // ── pure string builders ───────────────────────────────────────────────────
 
-/** Intro: accent section bar + a muted rule line beneath it. */
+/** Intro: 平铺风 B-横线 命令级大标题(标题 + 一条 dim 细横线,spec §0.4). */
 export function buildIntro(title: string): string {
-  const bar = sectionBar(title);
-  const ruleChar = isColorEnabled() ? "─" : "-";
-  const rule = paint.muted(ruleChar.repeat(40));
-  return `${bar}\n${rule}`;
+  return headerRule(title);
 }
 
 /** Outro: a single success-painted closing line. */
@@ -54,23 +51,55 @@ export const buildLog = {
 } as const;
 
 /**
- * Note: an optional section-bar title followed by a left-bar grouped block —
- * each body line prefixed with a painted `│ ` (truecolor) / `| ` (none).
+ * Note(spec §0.2 去竖墙):可选的 B-横线标题 + 纯两空格缩进的正文块 —
+ * 不再带逐行 `│`/`| ` 竖墙,靠缩进 + 留白分层。
  */
 export function buildNote(body: string, title?: string): string {
-  const on = isColorEnabled();
-  const barPrefix = on ? paint.muted("│ ") : "| ";
   const block = body
     .split("\n")
-    .map((line) => `${barPrefix}${line}`)
+    .map((line) => `  ${line}`)
     .join("\n");
-  return title ? `${sectionBar(title)}\n${block}` : block;
+  return title ? `${headerRule(title)}\n${block}` : block;
+}
+
+// ── prompt receipt (flat-design-system Wave4 / TASK-004) ─────────────────────
+//
+// C-006 SCOPE LOCK still holds: this does NOT wrap or restyle the @clack PROMPT
+// controls (select / multiselect / confirm / text). It only prints a SEPARATE,
+// flat (gutter-free, no `│`) acknowledgement line AFTER a control has resolved,
+// so the transient clack `│` question block gives way to a留白 ✓/x receipt —
+// the "提问有沟槽 / 输出无沟槽" rhythm from spec §0.2–0.3.
+
+export type PromptReceiptKind = "selected" | "set" | "cancelled";
+
+/**
+ * Build a gutter-free receipt line for a resolved prompt:
+ *   selected/set → `✓ <已选|已设置> · <value>`  (success-painted symbol + value)
+ *   cancelled     → `x <已取消>`                 (error-painted symbol + label)
+ * No `│` gutter — the line stands in the flat output zone, not the clack block.
+ */
+export function buildPromptReceipt(kind: PromptReceiptKind, value?: string): string {
+  if (kind === "cancelled") {
+    return `${symbol.error} ${paint.error(t("cli.prompt.receipt.cancelled"))}`;
+  }
+  const label = t(kind === "selected" ? "cli.prompt.receipt.selected" : "cli.prompt.receipt.set");
+  const head = `${symbol.ok} ${paint.success(label)}`;
+  return value === undefined || value.length === 0 ? head : `${head} · ${value}`;
 }
 
 // ── thin stdout wrappers ────────────────────────────────────────────────────
 
 function writeLine(value: string): void {
   process.stdout.write(`${value}\n`);
+}
+
+/**
+ * Print the flat ✓/x receipt for a just-resolved clack prompt. Call this AFTER
+ * the control (and, inside `install-wizard`, AFTER the enclosing clack `group`)
+ * has fully resolved — printing mid-group interleaves with clack's group render.
+ */
+export function promptReceipt(kind: PromptReceiptKind, value?: string): void {
+  writeLine(buildPromptReceipt(kind, value));
 }
 
 /** Themed @clack `intro` replacement. */

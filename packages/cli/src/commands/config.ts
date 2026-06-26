@@ -17,6 +17,8 @@ import { resolveClients } from "../config/resolver.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
+import { promptReceipt } from "../install/theme-clack.js";
+import { headerRule } from "../tui/structure.js";
 import {
   loadGlobalConfig,
   resolveGlobalRoot,
@@ -341,6 +343,12 @@ export const configCmd = defineCommand({
       }
       const fields = getPanelFields();
 
+      // flat-design-system Wave5 (TASK-005): a gutter-free key/value snapshot of
+      // the current config under a B-横线 (headerRule) title, printed each loop so
+      // the user sees live state before the clack select drives an edit. Pure
+      // output — NO `│` gutter; the clack control keeps its own native gutter.
+      writeConfigPanel(fields, current);
+
       const fieldChoice = await select<string>({
         message: t("cli.config.menu.field-select"),
         options: [
@@ -405,6 +413,9 @@ export const configCmd = defineCommand({
             value: field.format_for_display(newValue),
           }),
         );
+        // flat-design-system Wave4 (TASK-004): a flat, gutter-free ✓ receipt after
+        // the select/text control closes — the clack control stays native (C-006).
+        promptReceipt("set", field.format_for_display(newValue));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         log.error(t("cli.config.write.failure", { message }));
@@ -487,6 +498,25 @@ async function promptFieldValue(
     return SKIPPED;
   }
   return finalResult.value as number;
+}
+
+// flat-design-system Wave5 (TASK-005): render the current config as a flat,
+// gutter-free key/value panel under a B-横线 (headerRule) title. Each row is a
+// plain two-space-indented `<key> (<label>): <value>` line — NO `│` gutter (the
+// clack select that follows keeps its own native gutter; this is pure output).
+function writeConfigPanel(fields: readonly PanelFieldMeta[], current: PanelConfig): void {
+  const lines: string[] = [headerRule(t("cli.config.panel.title"))];
+  for (const field of fields) {
+    const key = field.key as string;
+    const rawValue = current[key];
+    const display = field.format_for_display(rawValue);
+    const isDefault = rawValue === undefined || rawValue === null;
+    const valueLabel = isDefault
+      ? `${display} ${t("cli.config.value.default-marker")}`
+      : display;
+    lines.push(`  ${key} (${t(field.label_i18n_key)}): ${valueLabel}`);
+  }
+  console.log(lines.join("\n"));
 }
 
 function formatFieldMenuLabel(field: PanelFieldMeta, current: PanelConfig): string {

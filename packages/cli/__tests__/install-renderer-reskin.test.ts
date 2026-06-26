@@ -10,6 +10,7 @@ import {
   buildSummaryBlock,
   buildErrorBlock,
 } from "../src/tui/ConsoleOutputRenderer.js";
+import { t } from "../src/i18n.js";
 import type { StepInfo, SummaryInfo, ErrorInfo } from "../src/tui/types.js";
 
 beforeEach(() => {
@@ -49,9 +50,11 @@ describe("ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR)", 
       errorCount: 0,
     };
     const out = buildSummaryBlock(summary, false);
-    expect(out).toContain("7 succeeded");
-    expect(out).toContain("All steps completed successfully");
-    expect(out).toMatchSnapshot();
+    // TASK-002 (G1): the count words + status line are localized via t(); assert
+    // against the active-locale t() values, NOT hardcoded English (the renderer
+    // honors the machine-wide locale, so a literal "succeeded" would be flaky).
+    expect(out).toContain(`7 ${t("cli.summary.count.succeeded")}`);
+    expect(out).toContain(t("cli.summary.all-ok"));
   });
 
   it("renders a summary with failures (mockup #2, count + status line)", () => {
@@ -63,13 +66,13 @@ describe("ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR)", 
       details: [{ label: "Store", value: "clone failed", status: "error" }],
     };
     const out = buildSummaryBlock(summary, false);
-    expect(out).toContain("1 step failed");
-    expect(out).toMatchSnapshot();
+    // TASK-002 (G1): n-failed status line localized via t() ({count} interpolated).
+    expect(out).toContain(t("cli.summary.n-failed", { count: "1" }));
   });
 });
 
 describe("ConsoleOutputRenderer reskin — error block (NO_COLOR)", () => {
-  it("renders the error left-bar block with hint + stack (mockup #4)", () => {
+  it("renders the gutter-free error block with hint + stack (spec §0.4)", () => {
     const info: ErrorInfo = {
       title: "InstallError",
       message: "Store clone failed: remote unreachable",
@@ -78,22 +81,24 @@ describe("ConsoleOutputRenderer reskin — error block (NO_COLOR)", () => {
       stack: "Error: boom\n    at clone (store.ts:42)\n    at install (install.ts:88)",
     };
     const out = buildErrorBlock(info, true, false);
-    // ASCII fallback: `# ` section bar prefix + `| ` left-bar, no truecolor glyphs.
-    expect(out).toContain("# [err] InstallError");
-    expect(out).toContain("| ");
+    // spec §0.4: B-横线 `[err]` header + plain-indented body, NO `│`/`| ` wall, no `▌`.
+    expect(out).toContain("[err] InstallError");
+    expect(out).not.toContain("| ");
     expect(out).not.toContain("▌");
     expect(out).not.toContain("│");
     expect(out).toContain("💡 check the URL");
     expect(out).toMatchSnapshot();
   });
 
-  it("renders the error block without hint/stack (non-verbose, mockup #4)", () => {
+  it("renders the gutter-free error block without hint/stack (non-verbose, spec §0.4)", () => {
     const info: ErrorInfo = {
       title: "Error",
       message: "something failed",
     };
     const out = buildErrorBlock(info, false, false);
-    expect(out).toContain("# [err] Error");
+    expect(out).toContain("[err] Error");
+    expect(out).not.toContain("│");
+    expect(out).not.toContain("| ");
     expect(out).not.toContain("💡");
     expect(out).toMatchSnapshot();
   });

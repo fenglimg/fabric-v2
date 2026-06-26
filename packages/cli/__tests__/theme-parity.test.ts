@@ -54,6 +54,14 @@ describe("theme TS ↔ cjs byte parity (ux-w2-5)", () => {
     }
   });
 
+  it("headerRule() is byte-identical on and off (flat header, shared CLI+hook)", () => {
+    for (const on of [true, false]) {
+      expect(themeCjs.headerRule("Store Health", on), String(on)).toBe(
+        themeTs.headerRule("Store Health", on),
+      );
+    }
+  });
+
   it("scopeBadge() is byte-identical for every scope on and off (W3-B)", () => {
     for (const scope of ["team", "project", "personal"] as const) {
       for (const on of [true, false]) {

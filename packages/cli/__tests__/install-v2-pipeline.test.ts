@@ -115,7 +115,9 @@ describe("install-v2 pipeline UX", () => {
 
     expect(result.disposition).toBe("ran");
     const semanticIndex = lines.findIndex((line) => line.includes("Semantic search enabled"));
-    const nextStepsIndex = lines.findIndex((line) => line.includes("Next steps"));
+    // TASK-002 (G6): the diverging multi-line "Next steps" list is now --verbose-
+    // gated; the default footer is the single golden-action anchor "Next → …".
+    const nextStepsIndex = lines.findIndex((line) => line.includes("Next →"));
     expect(semanticIndex).toBeGreaterThanOrEqual(0);
     expect(nextStepsIndex).toBeGreaterThanOrEqual(0);
     expect(semanticIndex).toBeLessThan(nextStepsIndex);

@@ -76,6 +76,18 @@ export function sectionBar(title: string, colorOn = isColorEnabled()): string {
   return colorOn ? `${ANSI.bold}${PALETTE.accent}▌ ${title}${ANSI.reset}` : `# ${title}`;
 }
 
+// Flat command-level header (B-横线, spec §0.4): one accent-bold title line + a
+// dim 40-wide rule (`──────`). NO_COLOR / non-TTY → bare title + `-`×40. This is
+// the flat replacement for the `▌` sectionBar block, shared across BOTH the CLI
+// output layer (re-exported by tui/structure.ts) and the .cjs hook surface so
+// the two render an identical header (KT-DEC-0039: shared renderer over
+// per-surface copies). Mirrored byte-identically in lib/theme.cjs (theme-parity).
+export function headerRule(title: string, colorOn = isColorEnabled()): string {
+  const head = colorOn ? `${ANSI.bold}${PALETTE.accent}${title}${ANSI.reset}` : title;
+  const rule = paint("muted", (colorOn ? "─" : "-").repeat(40), colorOn);
+  return `${head}\n${rule}`;
+}
+
 // Scope badge: knowledge-layer label painted by role token — team→drift,
 // project→ai, personal→human (truecolor) / plain `[scope]` (none).
 const SCOPE_BADGE_TOKEN = { team: "drift", project: "ai", personal: "human" } as const;

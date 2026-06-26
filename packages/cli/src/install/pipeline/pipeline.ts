@@ -240,9 +240,15 @@ export class InstallPipeline {
               current: stepNum,
               total: totalStages,
               status: "success",
-              detail: result.installed.length > 0
-                ? `${result.installed.length} installed, ${result.skipped.length} skipped`
-                : undefined,
+              // TASK-003 (G2 root a): the per-step detail also keys off result.changed
+              // (the allIdempotent truth source) — a no-change re-ensure shows
+              // "up to date", not "N installed", even though installed[] lists
+              // already-present artifacts for display.
+              detail: result.changed === true && result.installed.length > 0
+                ? t("cli.install.stage.installed-count", { count: String(result.installed.length) })
+                : result.changed !== true
+                  ? t("cli.install.stage.uptodate")
+                  : undefined,
             });
           } else if (result.disposition === "skipped") {
             renderer.renderStep({
@@ -313,7 +319,18 @@ export class InstallPipeline {
     // idempotent (skipped, or ran with nothing installed). Any install at all, or
     // a first install (no buffer), falls through to the normal per-phase replay +
     // summary card.
-    if (buffer !== undefined && !buffer.flushed && this.allIdempotent(context)) {
+    if (buffer !== undefined && this.allIdempotent(context)) {
+      // TASK-003 (G2 root b): a fully-idempotent re-install collapses to the single
+      // health-check card EVEN when the buffer was flushed mid-run by a clack prompt
+      // (the store stage flushes the buffer so slot status is visible ahead of an
+      // interactive select). The flush is driven by a legitimate prompt, not by a
+      // material change — `allIdempotent` (keyed off r.changed) remains the truth.
+      //
+      // No double-emit: this branch early-returns BEFORE flushBuffer, so a
+      // flushed-and-passthrough buffer is never replayed a second time, and the
+      // standard buildSummary "N installed" card below is skipped in favour of the
+      // single health card. Any per-phase lines the prompt already streamed live
+      // stay (the user saw them); we simply do not append a misleading summary.
       context.renderer = liveRenderer;
       if (liveRenderer) {
         liveRenderer.renderSummaryCard(this.buildHealthCheckSummary(context, totalStages));
@@ -399,8 +416,15 @@ export class InstallPipeline {
 
     const details: SummaryDetailRow[] = results.map((r) => ({
       label: stageLabel(r.name),
+      // TASK-003 (G2 root a): the ran-stage status word branches on r.changed — the
+      // same truth source allIdempotent uses. A no-change re-ensure (changed!==true)
+      // reads "up to date" instead of misreporting "N installed" (several stages list
+      // already-present artifacts in installed[] for display). installed-count is
+      // shown only when the stage actually changed something.
       value: r.disposition === "ran"
-        ? `${r.installed.length} installed`
+        ? (r.changed === true && r.installed.length > 0
+            ? t("cli.install.stage.installed-count", { count: String(r.installed.length) })
+            : t("cli.install.stage.uptodate"))
         : r.disposition === "skipped"
           ? "skipped"
           : `${r.errors.length} error(s)`,

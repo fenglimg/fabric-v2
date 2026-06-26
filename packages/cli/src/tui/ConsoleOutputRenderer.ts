@@ -1,5 +1,6 @@
-import { paint, symbol, sectionBar, isColorEnabled } from "@fenglimg/fabric-shared/theme";
-import { tree, grid } from "./structure.js";
+import { paint, symbol, isColorEnabled } from "@fenglimg/fabric-shared/theme";
+import { t } from "../i18n.js";
+import { tree, grid, headerRule } from "./structure.js";
 import type {
   OutputRenderer,
   OutputRendererConfig,
@@ -14,21 +15,29 @@ import type {
  *
  * Pure string composition over the shared theme palette
  * (packages/shared/src/theme.ts) plus the W3-B structural primitives
- * (sectionBar from theme.ts; tree/grid from ./structure.ts). The OutputRenderer
- * interface (the seam consumed by install/pipeline/pipeline.ts) is unchanged;
- * only what the render* methods EMIT changes — flat coloured lines become
- * section-bar headers + tree-branch steps + a grid summary + a left-bar error
- * block (mockups #2 + #4, .workflow/scratch/20260623-brainstorm-w3b-visual-language).
+ * (sectionBar from theme.ts; tree/grid/headerRule from ./structure.ts). The
+ * OutputRenderer interface (the seam consumed by install/pipeline/pipeline.ts) is
+ * unchanged; only what the render* methods EMIT changes — flat coloured lines
+ * become section-bar / B-横线 headers + tree-branch steps + a grid summary + a
+ * gutter-free (no `│` wall, spec §0.4) plain-indented error block.
  *
- * Visual structure is now carried by the primitives; colour stays the 7-token
- * accent layer. The ASCII fallback (NO_COLOR / non-TTY) degrades each primitive
- * deterministically — `▌`→`# `, `├─`/`└─`→`+-`/`` `- ``, painted `│ `→`| ` — so
- * log scrapers and snapshots stay stable.
+ * Visual structure is carried by the primitives; colour stays the accent layer.
+ * The ASCII fallback (NO_COLOR / non-TTY) degrades each primitive deterministically
+ * — `├─`/`└─`→`+-`/`` `- ``, the B-横线 rule `─`→`-` — so log scrapers and
+ * snapshots stay stable.
  */
 export class ConsoleOutputRenderer implements OutputRenderer {
   private config: OutputRendererConfig;
   private colorOn: boolean;
   private currentStep: StepInfo | null = null;
+  /**
+   * TASK-003 (G5): true once a "running" placeholder line for the current step has
+   * been written to a TTY and is still on screen — so the next terminal status for
+   * the same step can overwrite it in place (`\x1b[1A\x1b[2K`) instead of stacking a
+   * second line. Reset whenever the terminal line is emitted (or on a non-TTY path,
+   * where the running placeholder is never written at all).
+   */
+  private runningLineOnScreen = false;
 
   constructor(config: OutputRendererConfig = {}) {
     this.config = {
@@ -72,11 +81,37 @@ export class ConsoleOutputRenderer implements OutputRenderer {
 
   renderStep(step: StepInfo): void {
     this.currentStep = step;
-    // Mockup #2: each step is a tree branch with a status badge + (current/total).
-    // renderStep is called per-step (streaming), so emit one branch line per call
-    // (`└─` when current===total, `├─` otherwise) rather than buffering — the
-    // streaming contract of the OutputRenderer seam is preserved.
-    this.write(buildStepLine(step, this.colorOn));
+    // TASK-003 (G5): a step used to emit a "running" placeholder line AND a later
+    // "success/skipped/error" line, both persisting — a stacked double line. Now the
+    // two collapse into ONE line:
+    //   • TTY + color: the running placeholder is written, then the terminal status
+    //     overwrites it in place via `\x1b[1A\x1b[2K` (cursor up + clear line).
+    //   • non-TTY (logs/pipes): the running placeholder is SUPPRESSED entirely so
+    //     scrapers see only the final terminal line — and the cursor escapes (which
+    //     would corrupt a log) are never written (strictly gated behind isTTY).
+    const isTTY = this.colorOn && process.stdout.isTTY === true;
+    const isRunning = step.status === "running";
+
+    if (isRunning) {
+      // Non-TTY: never write the placeholder — wait for the terminal status.
+      if (!isTTY) {
+        return;
+      }
+      this.write(buildStepLine(step, this.colorOn));
+      this.runningLineOnScreen = true;
+      return;
+    }
+
+    // Terminal status (success / skipped / error / pending). On a TTY where a
+    // running placeholder is still on screen, overwrite it in place; otherwise just
+    // print the line. The escape is emitted on the same console.log as the new line
+    // so the redraw is atomic.
+    if (isTTY && this.runningLineOnScreen) {
+      this.write(`\x1b[1A\x1b[2K${buildStepLine(step, this.colorOn)}`);
+    } else {
+      this.write(buildStepLine(step, this.colorOn));
+    }
+    this.runningLineOnScreen = false;
 
     if (step.detail) {
       this.renderStatus(step.detail, step.status === "error" ? "error" : "info");
@@ -89,8 +124,8 @@ export class ConsoleOutputRenderer implements OutputRenderer {
 
   renderError(error: ErrorInfo | Error): void {
     const info = error instanceof Error ? toErrorInfo(error) : error;
-    // Mockup #4: a `▌ [err] <Title>` badge header (sectionBar carries the bar),
-    // then a left-bar (`│ ` / `| `) grouped block of message / 💡 hint / stack.
+    // spec §0.4: a B-横线 `[err] <Title>` header, then a plain-indented (no `│`)
+    // grouped block of message / 💡 hint / ↳ stack.
     this.write(buildErrorBlock(info, Boolean(this.config.verbose), this.colorOn));
   }
 
@@ -103,26 +138,32 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   }
 
   renderSummaryCard(summary: SummaryInfo): void {
-    // Mockup #2: `▌ Summary` section bar + a grid of ✓/○/× counts + summary line.
+    // TASK-002 (G6): the summary card title now uses the B-横线 headerRule
+    // primitive (TASK-001) instead of the shared `▌` sectionBar — spec §0.4
+    // makes the command-level heading a dim-rule underline, no solid block.
     // The provided title is kept as-is so callers that pass a custom heading are
-    // honoured (wording preserved); the bar replaces the old bold-accent line.
-    this.write(sectionBar(summary.title, this.colorOn));
+    // honoured (wording preserved). headerRule reads live env / its own ASCII gate.
+    this.write(headerRule(summary.title));
     this.write(buildSummaryBlock(summary, this.colorOn));
   }
 
   renderSection(title: string): void {
-    // SectionHeader equivalent: a section bar header (▌ / `# `), blank line above.
+    // SectionHeader: B-横线 header (headerRule, TASK-001) instead of the shared
+    // `▌` sectionBar — spec §0.4 (delete the heavy block from CLI output). Blank
+    // line above. The shared sectionBar stays for the .cjs hook / SessionStart
+    // surface; CLI output uses the flat primitive.
     this.write("");
-    this.write(sectionBar(title, this.colorOn));
+    this.write(headerRule(title));
   }
 
   renderComplete(): void {
-    this.renderStatus("Done!", "success");
+    this.renderStatus(t("cli.summary.done"), "success");
   }
 
   async cleanup(): Promise<void> {
     // No Ink instances to unmount; nothing to flush for synchronous console output.
     this.currentStep = null;
+    this.runningLineOnScreen = false;
   }
 }
 
@@ -212,10 +253,11 @@ export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): strin
   const lines: string[] = [];
 
   // Counts as a single grid row (always show all three so the grid is stable).
+  // TASK-002 (G1): the count words flow through t() (no hardcoded English).
   const countCells = [
-    `${paint("success", "✓", colorOn)} ${successCount} succeeded`,
-    `${paint("warn", "○", colorOn)} ${skippedCount} skipped`,
-    `${paint("error", "✗", colorOn)} ${errorCount} failed`,
+    `${paint("success", "✓", colorOn)} ${successCount} ${t("cli.summary.count.succeeded")}`,
+    `${paint("warn", "○", colorOn)} ${skippedCount} ${t("cli.summary.count.skipped")}`,
+    `${paint("error", "✗", colorOn)} ${errorCount} ${t("cli.summary.count.failed")}`,
   ];
   lines.push(`  ${grid([countCells], { gap: 4 })}`);
 
@@ -225,27 +267,24 @@ export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): strin
     lines.push(`  ${marker ? `${marker} ` : ""}${label} ${detail.value}`);
   }
 
+  // TASK-002 (G1): the status line is localized via t() — all-ok / n-failed /
+  // n-of-total. {count}/{done}/{total} are interpolated by the translator.
   const summaryLine =
     totalCount === successCount
-      ? "All steps completed successfully"
+      ? t("cli.summary.all-ok")
       : errorCount > 0
-        ? `${errorCount} step${errorCount > 1 ? "s" : ""} failed`
-        : `${successCount}/${totalCount} steps completed`;
+        ? t("cli.summary.n-failed", { count: String(errorCount) })
+        : t("cli.summary.n-of-total", { done: String(successCount), total: String(totalCount) });
   lines.push(`  ${paint("muted", summaryLine, colorOn)}`);
 
   return lines.join("\n");
 }
 
-/** Left-bar glyph — painted `│ ` (truecolor) / `| ` (ASCII), mockup #4. */
-function leftBar(colorOn: boolean): string {
-  return colorOn ? paint("accent", "│", colorOn) + " " : "| ";
-}
-
 /**
- * Mockup #4: error rendered as a `▌ [err] <Title>` badge header + a left-bar
- * grouped block. Each of message / blank / 💡 hint / ↳ stack-frame is prefixed
- * with the painted (`│ `) / ASCII (`| `) bar. Code, hint and stack are optional;
- * stack only renders when verbose.
+ * spec §0.4: error rendered as a B-横线 `[err] <Title>` header + a plain-indented
+ * grouped block. message / blank / 💡 hint / ↳ stack-frame are two-space indented
+ * with NO `│` wall. Code, hint and stack are optional; stack only renders when
+ * verbose. headerRule reads live env, which under NO_COLOR agrees with colorOn=false.
  */
 export function buildErrorBlock(info: ErrorInfo, verbose: boolean, colorOn: boolean): string {
   const title = info.title || "Error";
@@ -253,21 +292,20 @@ export function buildErrorBlock(info: ErrorInfo, verbose: boolean, colorOn: bool
   const hint = info.hint;
   const stack = info.stack;
 
-  const header = sectionBar(`[err] ${title}`, colorOn);
-  const bar = leftBar(colorOn);
+  const header = headerRule(`[err] ${title}`);
   const lines: string[] = [header, ""];
 
   const message = code ? `${info.message} ${paint("muted", `(${code})`, colorOn)}` : info.message;
-  lines.push(`  ${bar}${paint("error", message, colorOn)}`);
+  lines.push(`  ${paint("error", message, colorOn)}`);
 
   if (hint) {
-    lines.push(`  ${bar.trimEnd()}`);
-    lines.push(`  ${bar}${paint("muted", `💡 ${hint}`, colorOn)}`);
+    lines.push("");
+    lines.push(`  ${paint("muted", `💡 ${hint}`, colorOn)}`);
   }
 
   if (verbose && stack) {
     for (const frame of stack.split("\n").slice(0, 5)) {
-      lines.push(`  ${bar}${paint("muted", `↳ ${frame.trim()}`, colorOn)}`);
+      lines.push(`  ${paint("muted", `↳ ${frame.trim()}`, colorOn)}`);
     }
   }
 

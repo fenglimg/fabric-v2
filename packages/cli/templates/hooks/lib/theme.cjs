@@ -52,6 +52,15 @@ function sectionBar(title, colorOn) {
   return on ? `${ANSI.bold}${PALETTE.accent}▌ ${title}${ANSI.reset}` : `# ${title}`;
 }
 
+// Flat command-level header (B-横线) — byte-mirror of theme.ts headerRule. The
+// shared flat replacement for sectionBar across CLI output + .cjs hook surface.
+function headerRule(title, colorOn) {
+  const on = colorOn === undefined ? isColorEnabled() : colorOn;
+  const head = on ? `${ANSI.bold}${PALETTE.accent}${title}${ANSI.reset}` : title;
+  const rule = paint("muted", (on ? "─" : "-").repeat(40), on);
+  return `${head}\n${rule}`;
+}
+
 const SCOPE_BADGE_TOKEN = { team: "drift", project: "ai", personal: "human" };
 function scopeBadge(scope, colorOn) {
   const on = colorOn === undefined ? isColorEnabled() : colorOn;
@@ -59,4 +68,4 @@ function scopeBadge(scope, colorOn) {
   return on ? paint(SCOPE_BADGE_TOKEN[scope], text, true) : text;
 }
 
-module.exports = { ANSI, PALETTE, isColorEnabled, paint, symbol, SYMBOL_ASCII, sectionBar, scopeBadge };
+module.exports = { ANSI, PALETTE, isColorEnabled, paint, symbol, SYMBOL_ASCII, sectionBar, headerRule, scopeBadge };

@@ -19,7 +19,16 @@ describe("cli colors", () => {
   it("exports the expected semantic paint keys", async () => {
     const { paint } = await import("../src/colors.ts");
 
-    expect(Object.keys(paint)).toEqual(["success", "warn", "error", "drift", "ai", "human", "muted"]);
+    expect(Object.keys(paint)).toEqual([
+      "success",
+      "warn",
+      "error",
+      "drift",
+      "ai",
+      "human",
+      "accent",
+      "muted",
+    ]);
   });
 
   it("disables ANSI color when NO_COLOR=1", async () => {

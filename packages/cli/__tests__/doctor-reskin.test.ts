@@ -8,11 +8,12 @@ import {
 } from "../src/commands/doctor.js";
 import type { StoreDiagnostic } from "../src/store/doctor-checks.js";
 
-// W3-B F-003 (C-008) — pin the reskinned doctor human surface (section-bar
-// header + tree rows + status badges per mockups.md#1) under NO_COLOR so the
-// new ASCII structure can never silently regress. NO_COLOR keeps the snapshot
-// escape-free and stable for log scrapers; the colour layer is exercised by the
-// theme parity tests, not here.
+// flat-design-system Wave5 (TASK-005) — pin the reskinned doctor human surface
+// (B-横线 headerRule command header + C-圆点 groupDot section headers + plain
+// two-space-indented rows; NO tree branches) under NO_COLOR so the new ASCII
+// structure can never silently regress. NO_COLOR keeps the snapshot escape-free
+// and stable for log scrapers; the colour layer is exercised by the theme parity
+// tests, not here.
 
 const fixtureReport: DoctorReport = {
   status: "warn",
@@ -41,11 +42,11 @@ describe("doctor reskin render helpers (NO_COLOR)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("renders the section-bar header + status badge", () => {
+  it("renders the B-横线 header + status badge", () => {
     expect(renderDoctorHeader(fixtureReport)).toMatchSnapshot();
   });
 
-  it("renders store health as a section-bar + tree", () => {
+  it("renders store health as a groupDot + plain rows", () => {
     expect(renderDoctorStoreHealth(fixtureDiagnostics)).toMatchSnapshot();
   });
 

@@ -50,7 +50,7 @@ const { join } = require("node:path");
 // NEVER reach for the CLI-only ESM/TS structure layer (the tree / grid primitives
 // under packages/cli/src/tui) — it is unrequireable from a .cjs runtime; the HUD
 // deliberately uses plain two-space indent instead of the complex tree() primitive.
-const { sectionBar, scopeBadge } = require("./lib/theme.cjs");
+const { headerRule, scopeBadge } = require("./lib/theme.cjs");
 
 // W1-01 (ISS-012): the SessionStart broad hook appends a hook_surface_emitted
 // event to the shared events.jsonl. ux-w2-9: route through the single guarded
@@ -974,7 +974,7 @@ function renderAiSink(opts) {
   // sectionBar degrades to `# <title>` when color is off (NO_COLOR / non-TTY),
   // byte-locked to the TS source by theme-parity.
   lines.push(
-    sectionBar(
+    headerRule(
       zh
         ? `Fabric Knowledge · ${bodies.length} 常驻 · ${referenceEntries.length} 参考`
         : `Fabric Knowledge · ${bodies.length} active · ${referenceEntries.length} reference`,
