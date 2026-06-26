@@ -53,6 +53,15 @@ export {
   runDoctorConflictLint,
   type ConflictLintReport,
 } from "./services/doctor-conflict.js";
+// P1 recall-engine-refactor (follow-up): recall-engine status surface used by
+// `fabric info recall` — fusion + embed config readers and the lazy embedder
+// probe/warm + its stable cache dir.
+export { readEmbedConfig, readFusion } from "./config-loader.js";
+export {
+  loadEmbedder,
+  defaultEmbedCacheDir,
+  OPTIONAL_EMBED_PACKAGE,
+} from "./services/vector-retrieval.js";
 export {
   findConflictCandidates,
   lintConflicts,

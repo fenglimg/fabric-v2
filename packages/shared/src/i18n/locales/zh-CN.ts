@@ -130,7 +130,10 @@ export const zhCNMessages: Messages = {
     "人类可见 nudge 的总档位（silent 静默 / minimal 精简 / normal 正常 / verbose 详尽）；仅控人类提示通道，不影响注入给 AI 的知识。",
   "cli.config.fields.embed_enabled.label": "向量语义检索",
   "cli.config.fields.embed_enabled.description":
-    "是否启用向量语义检索（true / false）。注意：开启还需 `fabric install --enable-embed` 完成主机侧安装（fastembed + 模型缓存），仅在此置 true 不会自动生效。",
+    "是否启用向量语义检索（true / false）。注意：true 只是意图开关——真正生效还需运行中的 server 能解析到 fastembed 包、且模型已下载（首次召回时自动下到 ~/.fabric/cache/embed）。用 `fabric info recall` 查实际状态。",
+  "cli.config.fields.fusion.label": "召回融合策略",
+  "cli.config.fields.fusion.description":
+    "多信号合成总分的算法：additive 加权求和（BM25 主导，向量权重小）/ rrf 倒数排名融合（BM25 与向量平起平坐，语义才真正生效）/ auto 自适应（默认：向量在出分时用 rrf，否则回落 additive——避免无向量时 rrf 退化反而更差）。",
 
   "cli.doctor.description":
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）。\n" +
