@@ -41,6 +41,15 @@ beforeEach(async () => {
   tempDirs.push(fakeHome);
   process.env.FABRIC_HOME = fakeHome;
   contextCache.invalidate("file_watch");
+  // TASK-004: embed_enabled now defaults TRUE, so a ranking test running on a
+  // machine where the optional fastembed package + model ARE present would load a
+  // real embedder and let vector scores perturb the deterministic text-only
+  // ranking these tests assert. Force the embedder UNAVAILABLE as the hermetic
+  // baseline; the few tests that exercise embeddings inject their own fake AFTER
+  // this hook. Keeps ranking assertions environment-independent (CI without the
+  // model vs a dev box with it cached).
+  const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+  __resetEmbedderForTesting(null);
 });
 
 afterEach(async () => {
@@ -49,6 +58,9 @@ afterEach(async () => {
   } else {
     process.env.FABRIC_HOME = originalFabricHome;
   }
+  // Restore the real lazy-load probe so no embedder state leaks across files.
+  const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+  __resetEmbedderForTesting(undefined);
   await Promise.all(tempDirs.splice(0).map(async (path) => {
     await rm(path, { recursive: true, force: true });
   }));
@@ -1186,7 +1198,13 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
     __resetEmbedderForTesting(fakeEmbedder); // available, but config keeps it OFF
     try {
       const projectRoot = await seedTwoOpaqueEntries();
-      // No embed_enabled → vector path never runs → alphabetic stable_id order.
+      // TASK-004: embed defaults ON, so the OFF path now requires an EXPLICIT
+      // embed_enabled:false. With vectors off → vector path never runs →
+      // alphabetic stable_id order.
+      await writeFile(
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], embed_enabled: false }, null, 2)}\n`,
+      );
       const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
       expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9301", "team:KT-DEC-9302"]);
     } finally {
@@ -1332,6 +1350,38 @@ describe("planContext BM25 model cache (ISS-024)", () => {
     const p2 = await seedQueryableProject("beta-distinct-content", PERSONAL_STORE);
     await planContext(p2, { paths: ["src/x.ts"], intent: "zephyr" });
     expect(__bm25CacheStats().builds).toBe(2);
+  });
+
+  // P1 recall-engine-refactor (TASK-002): cold-process disk-cache hit. The first
+  // call builds + serializes the model to `.fabric/cache/bm25/<revision>.json`.
+  // Clearing ONLY the in-memory tier (__resetBm25Cache) simulates a fresh hook
+  // process whose memory cache is empty but whose disk cache survives — the
+  // second call over the SAME revision must rehydrate from disk and NOT call
+  // buildBm25Model again (build counter stays 1).
+  it("a cold process hits the disk cache and skips rebuild (same revision)", async () => {
+    __resetBm25Cache();
+    const projectRoot = await seedQueryableProject("disk-cache", TEAM_STORE);
+
+    const r1 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr retrieval" });
+    expect(__bm25CacheStats().builds).toBe(1);
+
+    // The disk snapshot is now written. Drop only the memory tier (cold process).
+    __resetBm25Cache();
+    expect(__bm25CacheStats().builds).toBe(0);
+
+    const r2 = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr retrieval" });
+    // Disk hit → rehydrate, no rebuild.
+    expect(__bm25CacheStats().builds).toBe(0);
+    // Ranking is unchanged across the disk round-trip (same corpus, same query).
+    expect(r2.candidates.map((c) => c.stable_id)).toEqual(r1.candidates.map((c) => c.stable_id));
+  });
+
+  it("a cold process with no disk snapshot rebuilds (honest miss)", async () => {
+    __resetBm25Cache();
+    const projectRoot = await seedQueryableProject("no-disk", TEAM_STORE);
+    // First-ever call for this revision: memory miss + disk miss → build.
+    await planContext(projectRoot, { paths: ["src/x.ts"], intent: "zephyr" });
+    expect(__bm25CacheStats().builds).toBe(1);
   });
 });
 

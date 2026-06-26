@@ -11,6 +11,8 @@
 // the file path to Read for the full entry — no server-side body packaging,
 // budget slicing, or two-step selection_token ceremony.
 
+import type { RecallScoreBreakdown } from "@fenglimg/fabric-shared";
+
 import { planContext, type PlanContextInput, type PlanContextResult } from "./plan-context.js";
 import { buildCrossStoreBodyIndex } from "./cross-store-recall.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
@@ -53,6 +55,13 @@ export type RecallEntry = {
   read_path?: string;
   store?: { alias: string };
   body_in_context?: boolean;
+  // P1 recall-observability: the fused relevance score the entry scored during
+  // the plan-context sort (read from PlanContextResult.candidate_scores, which the
+  // sort dropped before this wave), plus a numbers-only signal decomposition.
+  // Observability infrastructure for later fusion waves — additive/optional, never
+  // carries body text (lean read_path contract).
+  score?: number;
+  score_breakdown?: RecallScoreBreakdown;
 };
 
 // W1 (KT-DEC-0026) + ux-w2-4: the lean recall envelope. Inherits the plan
@@ -63,7 +72,14 @@ export type RecallEntry = {
 // there is no fab_get_knowledge_sections fetch to feed it (KT-DEC-0002).
 export type RecallResult = Omit<
   PlanContextResult,
-  "selection_token" | "payload_trimmed" | "payload_over_budget" | "entries" | "candidates"
+  | "selection_token"
+  | "payload_trimmed"
+  | "payload_over_budget"
+  | "entries"
+  | "candidates"
+  // P1: candidate_scores is folded into each entry's score/score_breakdown — recall
+  // does not re-surface the raw Map.
+  | "candidate_scores"
 > & {
   entries: RecallEntry[];
   // v2.2 MC1-recall-pack: standing behavioral directive (cite-before-edit),
@@ -80,8 +96,15 @@ const RECALL_DIRECTIVE =
 
 export async function recall(projectRoot: string, input: RecallInput): Promise<RecallResult> {
   const planResult = await planContext(projectRoot, input);
-  const { selection_token: _token, payload_trimmed: _pt, payload_over_budget: _pob, ...planRest } =
-    planResult;
+  // P1: pull candidate_scores out of the rest-spread — recall folds it into each
+  // entry's score/score_breakdown, it must not re-surface as a raw Map.
+  const {
+    selection_token: _token,
+    payload_trimmed: _pt,
+    payload_over_budget: _pob,
+    candidate_scores: candidateScores,
+    ...planRest
+  } = planResult;
 
   // Build the id → on-disk file index from the read-set store walk. This reuses
   // the cached walk planContext already performed (no extra disk read). Best-effort:
@@ -160,6 +183,11 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   const pathByStableId = new Map(paths.map((p) => [p.stable_id, p]));
   const entries: RecallEntry[] = planRest.candidates.map((c, index) => {
     const readPath = pathByStableId.get(c.stable_id);
+    // P1 recall-observability: look up the fused score + numbers-only breakdown
+    // plan-context captured for this candidate. Absent for scoreless candidates
+    // (broad no-query probe, related-appended neighbours that ranked outside the
+    // scored cut) — then the fields are omitted, keeping the steady wire shape.
+    const scored = candidateScores?.get(c.stable_id);
     return {
       stable_id: c.stable_id,
       rank: index + 1,
@@ -167,6 +195,7 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
       ...(readPath ? { read_path: readPath.path } : {}),
       ...(readPath?.store ? { store: readPath.store } : {}),
       ...(isAlwaysActive(c) ? { body_in_context: true as const } : {}),
+      ...(scored ? { score: scored.score, score_breakdown: scored.score_breakdown } : {}),
     };
   });
 

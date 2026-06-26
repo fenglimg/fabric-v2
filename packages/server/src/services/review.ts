@@ -13,8 +13,16 @@ import type {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
+import type { RuleDescription, RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
+
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { hasUnresolvedDismissal } from "./promotion-gate.js";
+import {
+  buildScoringContext,
+  rankDescriptionItems,
+  type ScoringContext,
+} from "./plan-context.js";
+import { computeReadSetRevision } from "./cross-store-recall.js";
 import { allocateStoreKnowledgeId, isPersonalScope } from "@fenglimg/fabric-shared";
 import {
   resolveStoreCanonicalBase,
@@ -165,8 +173,10 @@ export async function reviewKnowledge(
  * from `reviewKnowledge`. list browses the store-backed pending backlog;
  * search ranges over BOTH pending and canonical knowledge. Neither mutates
  * state — the fab_pending tool is registered readOnlyHint:true / idempotentHint:true.
- * The underlying listPending / searchEntries helpers are unchanged (verbatim
- * relocation), so behavior is identical to the prior fab_review list/search.
+ * P1 recall-engine-refactor (TASK-005): search now routes through `triageSearch`,
+ * which gates on the substring query then RANKS the matches via the shared
+ * rankDescriptionItems('triage') — NO top_k, NO floor, so pending review never
+ * silently drops a match. The old substring-only search machine is gone.
  */
 export async function reviewPending(
   projectRoot: string,
@@ -181,7 +191,7 @@ export async function reviewPending(
     case "search":
       return {
         action: "search",
-        items: await searchEntries(projectRoot, input.query, input.filters),
+        items: await triageSearch(projectRoot, input.query, input.filters),
       };
     default: {
       const exhaustive: never = input;
@@ -1373,18 +1383,77 @@ async function listIndexedSearchEntries(
   return indexed;
 }
 
-async function searchEntries(
+// P1 recall-engine-refactor (TASK-005): the substring relevance GATE for triage
+// search. A reviewer searching "auth" wants the auth entries, not the whole
+// corpus — so query-matching is what defines a "match" / "candidate". The
+// UNIFIED ranker (rankDescriptionItems triage mode) then ORDERS the matches and
+// — crucially — applies NO top_k and NO floor, so pending review never silently
+// drops a match (守 KT-DEC-0019 no-server-filter). Mirrors the prior search
+// haystack: title || summary || tags || filename (+ body when include_body).
+function matchesTriageQuery(
+  indexed: IndexedSearchEntry,
+  lowerQuery: string,
+  includeBody: boolean,
+): boolean {
+  const haystacks = [
+    indexed.fm.title ?? "",
+    indexed.fm.summary ?? "",
+    ...(indexed.fm.tags ?? []),
+    indexed.name,
+    includeBody ? indexed.body : "",
+  ].map((s) => s.toLowerCase());
+  return haystacks.some((h) => h.includes(lowerQuery));
+}
+
+// P1 recall-engine-refactor (TASK-005): pending/canonical → ranker item adapter.
+// A pending DRAFT carries fewer frontmatter fields than a recall candidate, so
+// every field the ranker reads degrades gracefully (never crash, never
+// fabricate): maturity ?? 'draft', relevance_paths ?? [], summary ?? title ??
+// filename, and a MISSING created_at adds no recency boost (the scorer already
+// no-ops on an absent/unparseable created_at — we simply pass it through rather
+// than inventing a date). The `stable_id` key is the absolute path (unique per
+// entry; pending drafts have no real id yet) so the ranker can de-dupe and the
+// caller can map ranked items back to their SearchItem.
+function pendingEntryToRankerItem(indexed: IndexedSearchEntry): RuleDescriptionIndexItem {
+  const { fm, name } = indexed;
+  const slug = name.replace(/\.md$/u, "");
+  const summary = fm.summary ?? fm.title ?? slug;
+  const description: RuleDescription = {
+    summary,
+    intent_clues: [],
+    tech_stack: [],
+    impact: [],
+    must_read_if: fm.title ?? summary,
+    ...(fm.id !== undefined ? { id: fm.id } : {}),
+    ...(fm.type !== undefined ? { knowledge_type: fm.type } : {}),
+    maturity: fm.maturity ?? "draft",
+    knowledge_layer: indexed.layer,
+    ...(fm.semantic_scope !== undefined ? { semantic_scope: fm.semantic_scope } : {}),
+    ...(fm.created_at !== undefined ? { created_at: fm.created_at } : {}),
+    tags: fm.tags ?? [],
+    relevance_scope: fm.relevance_scope ?? "broad",
+    relevance_paths: fm.relevance_paths ?? [],
+  };
+  return { stable_id: indexed.absolutePath, description };
+}
+
+// P1 recall-engine-refactor (TASK-005): fab_pending search runs through the
+// UNIFIED triage ranker. The old substring-only `.includes()`
+// machine is GONE — query-matching is now just the relevance GATE, and the
+// shared rankDescriptionItems('triage') orders the matches with no top_k/floor.
+async function triageSearch(
   projectRoot: string,
   query: string,
   filters: ListFilters | undefined,
 ): Promise<SearchItem[]> {
   const lowerQuery = query.toLowerCase();
-  const items: SearchItem[] = [];
+  const includeBody = filters?.include_body === true;
 
-  // v2.2 全砍 Stage 2 (B2 cutover): search scans pending + canonical INSIDE the
-  // resolved write-target stores (team + personal) — no dual-root. Each layer is
-  // resolved defensively so an un-onboarded layer is skipped rather than
-  // crashing the read. Store entries are reported by absolute path.
+  // v2.2 全砍 Stage 2 (B2 cutover): search scans pending + canonical (+ rejected
+  // when opted in) INSIDE the resolved write-target stores (team + personal) — no
+  // dual-root. Each layer is resolved defensively so an un-onboarded layer is
+  // skipped rather than crashing the read. Store entries are reported by
+  // absolute path.
   const sources: SearchSource[] = [];
   for (const layer of ["team", "personal"] as const) {
     const isPersonal = layer === "personal";
@@ -1411,10 +1480,17 @@ async function searchEntries(
 
   const typesToScan = filters?.type !== undefined ? [filters.type] : PLURAL_TYPES;
 
+  // ------ corpus prep: walk sources, apply the layer/maturity/tags/created_after
+  // + lifecycle filters (migrated verbatim from the prior search), then the
+  // substring query GATE. Each surviving entry is adapted into a ranker item,
+  // keyed by absolute path so the ranked output maps back to its SearchItem. ------
+  const matchedByKey = new Map<string, { indexed: IndexedSearchEntry; source: SearchSource; type: PluralType }>();
+  const rankerItems: RuleDescriptionIndexItem[] = [];
+
   for (const source of sources) {
     for (const type of typesToScan) {
       for (const indexed of await listIndexedSearchEntries(source, type)) {
-        const { absolutePath, fm, layer, maturity, name } = indexed;
+        const { fm, layer, maturity } = indexed;
 
         // Filter: layer
         if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
@@ -1446,58 +1522,79 @@ async function searchEntries(
           continue;
         }
 
-        // Query match: title || summary || tags || filename. v2.0.0-rc.27
-        // TASK-006 (audit §2.23): when filters.include_body=true, extend
-        // the haystack to body text so reviewers can search for payload
-        // strings hidden under `## Evidence`.
-        const bodyForSearch = filters?.include_body === true ? indexed.body : "";
-        const haystacks = [
-          fm.title ?? "",
-          fm.summary ?? "",
-          ...(fm.tags ?? []),
-          name,
-          bodyForSearch,
-        ].map((s) => s.toLowerCase());
-        const matches = haystacks.some((h) => h.includes(lowerQuery));
-        if (!matches) continue;
+        // Substring relevance GATE (the "match" definition). Triage ranking
+        // below adds NO further cut, so a gated match is never silently dropped.
+        if (!matchesTriageQuery(indexed, lowerQuery, includeBody)) continue;
 
-        // v2.2 全砍: store entries (all entries now) report by absolute path —
-        // they live in a store repo outside both the project + personal roots.
-        const reportedPath = source.isStore
-          ? absolutePath
-          : source.isPersonal
-            ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
-            : relative(projectRoot, absolutePath);
-
-        // v2.0.0-rc.29 TASK-007 (BUG-M4): emit the new search-item shape.
-        // `area` is the authoritative pending-vs-canonical discriminator;
-        // `path` replaces the misleading `pending_path` field (which made
-        // sense for list-only but lied about canonical search hits). Personal
-        // hits add `path_absolute` (mirrors list's `pending_path_absolute`).
-        items.push({
-          area: source.isPending ? "pending" : "canonical",
-          path: reportedPath,
-          ...(source.isPersonal ? { path_absolute: absolutePath } : {}),
-          type,
-          layer,
-          maturity,
-          // Only pending entries carry an origin tag (canonical hits live
-          // outside the dual-pending-root convention).
-          ...(source.isPending ? { origin: source.isPersonal ? ("personal" as const) : ("team" as const) } : {}),
-          ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
-          ...(fm.title !== undefined ? { title: fm.title } : {}),
-          ...(fm.summary !== undefined ? { summary: fm.summary } : {}),
-          ...(fm.status !== undefined ? { status: fm.status } : {}),
-          ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
-          // v2.0.0-rc.27 TASK-006 (audit §2.23): body emission when opted in.
-          ...(filters?.include_body === true ? { body: bodyForSearch } : {}),
-          // Canonical hits always have an id; pending hits typically don't
-          // yet — surface the frontmatter id when present so consumers can
-          // dedupe across runs.
-          ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
-        });
+        const item = pendingEntryToRankerItem(indexed);
+        matchedByKey.set(item.stable_id, { indexed, source, type });
+        rankerItems.push(item);
       }
     }
+  }
+
+  if (rankerItems.length === 0) {
+    return [];
+  }
+
+  // ------ rank the matches through the UNIFIED ranker in 'triage' mode (NO
+  // top_k, NO floor — completeness for the reviewer). The scoring context is
+  // built by the SAME helper fab_recall uses, so triage and recall rank over
+  // identical BM25/vector/scope/fusion signals. The corpus fingerprint keys the
+  // on-disk BM25 cache (mirrors plan-context's read-set revision key). ------
+  let revision: string;
+  try {
+    revision = await computeReadSetRevision(projectRoot);
+  } catch {
+    revision = "triage-search";
+  }
+  const scoringContext: ScoringContext = await buildScoringContext(projectRoot, revision, rankerItems, {
+    queryText: query,
+    targetPaths: [],
+  });
+  const ranked = rankDescriptionItems(rankerItems, scoringContext, "triage");
+
+  // ------ map ranked items back to SearchItems (ranked order preserved). ------
+  const items: SearchItem[] = [];
+  for (const { item } of ranked) {
+    const match = matchedByKey.get(item.stable_id);
+    if (match === undefined) continue; // defensive — every ranked item was matched
+    const { indexed, source, type } = match;
+    const { absolutePath, fm, layer, maturity } = indexed;
+
+    // v2.2 全砍: store entries (all entries now) report by absolute path —
+    // they live in a store repo outside both the project + personal roots.
+    const reportedPath = source.isStore
+      ? absolutePath
+      : source.isPersonal
+        ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
+        : relative(projectRoot, absolutePath);
+
+    // v2.0.0-rc.29 TASK-007 (BUG-M4): emit the new search-item shape.
+    // `area` is the authoritative pending-vs-canonical discriminator;
+    // `path` replaces the misleading `pending_path` field. Personal hits add
+    // `path_absolute` (mirrors list's `pending_path_absolute`).
+    items.push({
+      area: source.isPending ? "pending" : "canonical",
+      path: reportedPath,
+      ...(source.isPersonal ? { path_absolute: absolutePath } : {}),
+      type,
+      layer,
+      maturity,
+      // Only pending entries carry an origin tag (canonical hits live
+      // outside the dual-pending-root convention).
+      ...(source.isPending ? { origin: source.isPersonal ? ("personal" as const) : ("team" as const) } : {}),
+      ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
+      ...(fm.title !== undefined ? { title: fm.title } : {}),
+      ...(fm.summary !== undefined ? { summary: fm.summary } : {}),
+      ...(fm.status !== undefined ? { status: fm.status } : {}),
+      ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
+      // v2.0.0-rc.27 TASK-006 (audit §2.23): body emission when opted in.
+      ...(includeBody ? { body: indexed.body } : {}),
+      // Canonical hits always have an id; pending hits typically don't yet —
+      // surface the frontmatter id when present so consumers can dedupe.
+      ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
+    });
   }
 
   return items;

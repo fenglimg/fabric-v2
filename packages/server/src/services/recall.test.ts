@@ -167,6 +167,34 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(consumed.events).toEqual([]);
   });
 
+  // P1 recall-engine-refactor (TASK-002) — lean read_path contract (KT-GLD-0005 /
+  // KT-DEC-0019): the default entry carries the discovery INDEX (description +
+  // score) + a read_path, but NOT the entry's markdown BODY. The body ("# Auth
+  // body") is reached on demand via read_path, never packaged into the payload —
+  // hard-cutting the description itself is explicitly rejected by KT-DEC-0019
+  // ("硬砍丢描述会背叛 no-server-filter 哲学并漏可发现性"), so this asserts the
+  // body is absent while the description index + read_path stay present.
+  it("default payload omits the entry body, keeps the description index + read_path (lean)", async () => {
+    const projectRoot = await seedTwoEntryProject();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "auth ui",
+    });
+
+    const authEntry = result.entries.find((e) => e.stable_id === "team:KT-DEC-0001");
+    expect(authEntry).toBeDefined();
+    // read_path is present and points at the on-disk store file (body on demand).
+    expect(authEntry?.read_path).toMatch(/KT-DEC-0001\.md$/);
+    // The discovery index survives (summary is the headline the LLM selects on).
+    expect(authEntry?.description.summary).toBe("Auth decision");
+
+    // The markdown BODY text never enters the payload, anywhere in the envelope.
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("# Auth body");
+    expect(serialized).not.toContain("# UI body");
+  });
+
   it("scopes the read-path index when `ids` provided, intersecting surfaced candidates; descriptions stay full", async () => {
     const projectRoot = await seedTwoEntryProject();
 
@@ -398,5 +426,45 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const parsed = recallOutputSchema.parse(result);
     const parsedById = new Map(parsed.entries.map((e) => [e.stable_id, e]));
     expect(parsedById.get("team:KT-MOD-0001")?.body_in_context).toBe(true);
+  });
+
+  // P1 recall-observability: the fused score (computed internally during the
+  // plan-context sort) is now EXPOSED on each entry, with an optional numbers-only
+  // breakdown. Mirrors the body_in_context wire-strip precedent above: the field
+  // must be DECLARED in recallOutputSchema or zod .strip() drops it at the MCP
+  // boundary (KT-PIT-0005) — so we round-trip through the schema and assert it
+  // survives. Lean read_path contract (KT-DEC-0019 / KT-GLD-0005): the breakdown
+  // is numbers-only and never carries body text.
+  it("exposes a numeric score + numbers-only score_breakdown per entry, surviving schema round-trip", async () => {
+    const projectRoot = await seedTwoEntryProject();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      // A query is required for BM25 to contribute; matches both seeded entries.
+      intent: "auth ui",
+    });
+
+    expect(result.entries.length).toBeGreaterThan(0);
+    // Every surfaced entry carries a numeric score.
+    for (const entry of result.entries) {
+      expect(typeof entry.score).toBe("number");
+      expect(entry.score_breakdown).toBeDefined();
+      // breakdown.final reconciles to the threaded score (same computation).
+      expect(entry.score_breakdown?.final).toBe(entry.score);
+      // numbers-only: every breakdown value is a number, never body text.
+      for (const value of Object.values(entry.score_breakdown ?? {})) {
+        expect(typeof value).toBe("number");
+      }
+    }
+    // entries[0] is the top-ranked entry and carries a numeric score.
+    expect(typeof result.entries[0].score).toBe("number");
+
+    // wire-strip lock (KT-PIT-0005): score / score_breakdown must survive the
+    // recallOutputSchema round-trip — else zod .strip() drops them over the wire
+    // while this direct-call test would still pass.
+    const parsed = recallOutputSchema.parse(result);
+    expect(typeof parsed.entries[0].score).toBe("number");
+    expect(parsed.entries[0].score).toBe(result.entries[0].score);
+    expect(parsed.entries[0].score_breakdown).toEqual(result.entries[0].score_breakdown);
   });
 });

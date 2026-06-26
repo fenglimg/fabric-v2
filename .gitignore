@@ -7,6 +7,7 @@ coverage/
 *.js.map
 .DS_Store
 .fabric/.cache/
+.fabric/cache/
 .fabric/events.jsonl
 .fabric/events.archive/
 .fabric/events.jsonl.corrupted.*

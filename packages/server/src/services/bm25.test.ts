@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBm25Model, buildQueryTerms, type Bm25Field } from "./bm25.js";
+import {
+  buildBm25Model,
+  buildQueryTerms,
+  serializeBm25Model,
+  rehydrateBm25Model,
+  type Bm25Field,
+} from "./bm25.js";
 
 // Single-field helper: puts all text in `body` (boost 1, b 0.75) so these
 // classic BM25 invariants are exercised without field-boost interference.
@@ -80,5 +86,79 @@ describe("buildBm25Model (BM25F)", () => {
     ]);
     const q = buildQueryTerms("auth");
     expect(m.scoreDoc("inTitle", q)).toBeGreaterThan(m.scoreDoc("inBody", q));
+  });
+});
+
+// P1 recall-engine-refactor (TASK-002): serialize/rehydrate round-trip. A model
+// rehydrated from its JSON snapshot must score IDENTICALLY to the freshly-built
+// one, so a cold hook can load the disk snapshot and skip the rebuild without any
+// numeric drift. The snapshot is JSON-stringified on the way to disk, so the test
+// round-trips through JSON to mirror the real path.
+describe("serializeBm25Model / rehydrateBm25Model round-trip (TASK-002)", () => {
+  // A multi-field, multi-doc corpus so df / avg-length / per-field tf all carry
+  // real values that must survive the round-trip (not a degenerate single doc).
+  function buildCorpus() {
+    return buildBm25Model([
+      {
+        id: "a",
+        fields: {
+          title: buildQueryTerms("BM25 retrieval relevance"),
+          summary: buildQueryTerms("when scoring candidates by content"),
+          tags: buildQueryTerms("bm25 retrieval typescript"),
+          body: buildQueryTerms("content relevance over the candidate corpus"),
+        },
+      },
+      {
+        id: "b",
+        fields: {
+          title: buildQueryTerms("lifecycle governance skill"),
+          summary: buildQueryTerms("unrelated process documentation"),
+          tags: buildQueryTerms("lifecycle"),
+          body: buildQueryTerms("governance prose with no overlap"),
+        },
+      },
+      {
+        id: "zh",
+        fields: {
+          title: buildQueryTerms("检索治理里程碑"),
+          summary: [],
+          tags: buildQueryTerms("检索"),
+          body: buildQueryTerms("检索治理实现内容"),
+        },
+      },
+    ]);
+  }
+
+  it("rehydrated scoreDoc equals the original for the same id/queryTerms", () => {
+    const original = buildCorpus();
+    const rehydrated = rehydrateBm25Model(
+      JSON.parse(JSON.stringify(serializeBm25Model(original))),
+    );
+
+    const queries = [
+      buildQueryTerms("relevance scoring"),
+      buildQueryTerms("retrieval"),
+      buildQueryTerms("lifecycle governance"),
+      buildQueryTerms("检索治理"),
+      buildQueryTerms("nonexistent term"),
+      [], // empty query
+    ];
+    for (const id of ["a", "b", "zh", "missing"]) {
+      for (const q of queries) {
+        expect(rehydrated.scoreDoc(id, q)).toBe(original.scoreDoc(id, q));
+      }
+    }
+  });
+
+  it("preserves a non-zero score through the round-trip (not all-zero degenerate)", () => {
+    const original = buildCorpus();
+    const q = buildQueryTerms("relevance retrieval");
+    // Guard: the round-trip equality test above is only meaningful if there is a
+    // real non-zero score to preserve.
+    expect(original.scoreDoc("a", q)).toBeGreaterThan(0);
+    const rehydrated = rehydrateBm25Model(
+      JSON.parse(JSON.stringify(serializeBm25Model(original))),
+    );
+    expect(rehydrated.scoreDoc("a", q)).toBe(original.scoreDoc("a", q));
   });
 });

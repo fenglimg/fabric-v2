@@ -45,6 +45,9 @@
     "minimatch": "^10.0.1",
     "zod": "^3.25.0"
   },
+  "optionalDependencies": {
+    "fastembed": "^2.0.0"
+  },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "tsup": "^8.5.0",

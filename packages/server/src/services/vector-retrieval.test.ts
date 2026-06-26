@@ -7,13 +7,26 @@ import {
   loadEmbedder,
   __resetEmbedderForTesting,
   __resetVectorCache,
+  __setMissingEmbedderHintForTesting,
+  __setEmbedderModuleLoaderForTesting,
   type Embedder,
 } from "./vector-retrieval.js";
+
+// Simulate the optional package being absent: the dynamic import REJECTS the way
+// Node's loader does for an unresolved module. Used by the degradation tests so
+// they exercise the catch/fallback path DETERMINISTICALLY — fastembed is now an
+// optionalDependency CI installs, so physical absence can no longer be assumed.
+const rejectAsMissing = (): Promise<unknown> =>
+  Promise.reject(new Error("Cannot find module 'fastembed'"));
 
 afterEach(() => {
   // Restore the real lazy-load probe + clear the doc-embedding cache between tests.
   __resetEmbedderForTesting(undefined);
   __resetVectorCache();
+  // Restore the real stderr hint sink + reset the one-shot latch.
+  __setMissingEmbedderHintForTesting(undefined);
+  // Restore the real dynamic import behind loadEmbedder.
+  __setEmbedderModuleLoaderForTesting(undefined);
 });
 
 describe("cosineSimilarity", () => {
@@ -43,10 +56,31 @@ describe("cosineSimilarity", () => {
     expect(Number.isFinite(cosineSimilarity([1e308, 1e308], [1e308, 1e308]))).toBe(true);
   });
 
-  it("clamps the result into [-1, 1]", () => {
-    const sim = cosineSimilarity([1, 2, 3], [2, 4, 6]); // parallel → 1
-    expect(sim).toBeLessThanOrEqual(1);
-    expect(sim).toBeGreaterThanOrEqual(-1);
+  // TASK-004: the contract is [0, 1]. A raw negative/opposite cosine is clamped
+  // to 0 — a negative semantic similarity is meaningless for recall and must
+  // never subtract from the fused score.
+  it("clamps the result into [0, 1] (lower bound 0)", () => {
+    const parallel = cosineSimilarity([1, 2, 3], [2, 4, 6]); // raw +1
+    expect(parallel).toBeLessThanOrEqual(1);
+    expect(parallel).toBeGreaterThanOrEqual(0);
+  });
+
+  it("clamps an opposite-direction pair (raw cosine -1) to 0", () => {
+    // Anti-parallel vectors → raw cosine = -1 → clamped to 0 (was -1 pre-TASK-004).
+    expect(cosineSimilarity([1, 2, 3], [-1, -2, -3])).toBe(0);
+    // A partially-opposed pair is still non-negative.
+    expect(cosineSimilarity([1, 0], [-1, 0])).toBe(0);
+  });
+
+  it("never returns a negative value across mixed-sign inputs", () => {
+    const cases: Array<[number[], number[]]> = [
+      [[1, 0], [-1, 0]],
+      [[3, -4], [-3, 4]],
+      [[1, 1, 1], [-1, -1, 0]],
+    ];
+    for (const [a, b] of cases) {
+      expect(cosineSimilarity(a, b)).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 
@@ -142,18 +176,44 @@ describe("buildVectorScores fallback contract", () => {
 });
 
 describe("loadEmbedder", () => {
-  it("returns null when the optional fastembed package is not installed (CI default)", async () => {
-    // fastembed is NOT a declared dependency — CI never has it, so the lazy
-    // load must degrade to null rather than throw.
+  it("returns null when the optional fastembed package cannot be loaded", async () => {
+    // fastembed is an optionalDependency: CI installs it, so absence is simulated
+    // by forcing the dynamic import to reject. The lazy load must degrade to null
+    // rather than throw.
+    __setEmbedderModuleLoaderForTesting(rejectAsMissing);
     __resetEmbedderForTesting(undefined);
     const embedder = await loadEmbedder();
     expect(embedder).toBeNull();
   });
 
-  it("still degrades to null when given an explicit model and the package is absent", async () => {
+  it("still degrades to null when given an explicit model and the package fails to load", async () => {
+    __setEmbedderModuleLoaderForTesting(rejectAsMissing);
     __resetEmbedderForTesting(undefined);
     const embedder = await loadEmbedder("fast-bge-small-zh-v1.5");
     expect(embedder).toBeNull();
+  });
+
+  // TASK-004: vectors are on by default, so a missing optional embedder must
+  // (a) NOT throw, (b) take the text-only fallback (null), and (c) emit the
+  // missing-embedder hint EXACTLY ONCE — not on every recall.
+  it("emits a one-time hint and degrades (no throw) when fastembed fails to load", async () => {
+    let hintCount = 0;
+    __setMissingEmbedderHintForTesting(() => {
+      hintCount += 1;
+    });
+    // Force the import to reject so the catch/degrade path runs deterministically.
+    __setEmbedderModuleLoaderForTesting(rejectAsMissing);
+
+    // First probe: import rejects → catch → null + hint fires.
+    __resetEmbedderForTesting(undefined);
+    await expect(loadEmbedder()).resolves.toBeNull();
+    expect(hintCount).toBe(1);
+
+    // Re-probe (reset the cached load, NOT the hint latch): still null, but the
+    // hint does NOT fire a second time — it is one-shot per process.
+    __resetEmbedderForTesting(undefined);
+    await expect(loadEmbedder("fast-bge-small-zh-v1.5")).resolves.toBeNull();
+    expect(hintCount).toBe(1);
   });
 });
 
