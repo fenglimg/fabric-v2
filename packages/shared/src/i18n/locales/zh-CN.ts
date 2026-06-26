@@ -930,6 +930,11 @@ export const zhCNMessages: Messages = {
   // TASK-004: 重装且全程幂等(无任何 install)时折叠成的单张体检卡片标题。
   // {count} = 阶段总数。明细走 --verbose。
   "cli.install.healthcheck.title": "✓ Fabric 已是最新 · {count} 阶段就绪 · 无改动",
+  // TASK-003 (G2 root a):每阶段总结明细的状态词改按 r.changed 判定(不再用
+  // installed.length)—— 无改动的重装走"已最新",不再误报"N 项已安装"。
+  // installed-count 仅在该阶段确有改动时使用。
+  "cli.install.stage.uptodate": "已最新",
+  "cli.install.stage.installed-count": "{count} 项已安装",
   "cli.install.pipeline.label.preflight": "全局与项目预检",
   "cli.install.pipeline.label.env": "项目环境初始化",
   "cli.install.pipeline.label.store": "知识库拓扑",

@@ -30,6 +30,14 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   private config: OutputRendererConfig;
   private colorOn: boolean;
   private currentStep: StepInfo | null = null;
+  /**
+   * TASK-003 (G5): true once a "running" placeholder line for the current step has
+   * been written to a TTY and is still on screen — so the next terminal status for
+   * the same step can overwrite it in place (`\x1b[1A\x1b[2K`) instead of stacking a
+   * second line. Reset whenever the terminal line is emitted (or on a non-TTY path,
+   * where the running placeholder is never written at all).
+   */
+  private runningLineOnScreen = false;
 
   constructor(config: OutputRendererConfig = {}) {
     this.config = {
@@ -73,11 +81,37 @@ export class ConsoleOutputRenderer implements OutputRenderer {
 
   renderStep(step: StepInfo): void {
     this.currentStep = step;
-    // Mockup #2: each step is a tree branch with a status badge + (current/total).
-    // renderStep is called per-step (streaming), so emit one branch line per call
-    // (`└─` when current===total, `├─` otherwise) rather than buffering — the
-    // streaming contract of the OutputRenderer seam is preserved.
-    this.write(buildStepLine(step, this.colorOn));
+    // TASK-003 (G5): a step used to emit a "running" placeholder line AND a later
+    // "success/skipped/error" line, both persisting — a stacked double line. Now the
+    // two collapse into ONE line:
+    //   • TTY + color: the running placeholder is written, then the terminal status
+    //     overwrites it in place via `\x1b[1A\x1b[2K` (cursor up + clear line).
+    //   • non-TTY (logs/pipes): the running placeholder is SUPPRESSED entirely so
+    //     scrapers see only the final terminal line — and the cursor escapes (which
+    //     would corrupt a log) are never written (strictly gated behind isTTY).
+    const isTTY = this.colorOn && process.stdout.isTTY === true;
+    const isRunning = step.status === "running";
+
+    if (isRunning) {
+      // Non-TTY: never write the placeholder — wait for the terminal status.
+      if (!isTTY) {
+        return;
+      }
+      this.write(buildStepLine(step, this.colorOn));
+      this.runningLineOnScreen = true;
+      return;
+    }
+
+    // Terminal status (success / skipped / error / pending). On a TTY where a
+    // running placeholder is still on screen, overwrite it in place; otherwise just
+    // print the line. The escape is emitted on the same console.log as the new line
+    // so the redraw is atomic.
+    if (isTTY && this.runningLineOnScreen) {
+      this.write(`\x1b[1A\x1b[2K${buildStepLine(step, this.colorOn)}`);
+    } else {
+      this.write(buildStepLine(step, this.colorOn));
+    }
+    this.runningLineOnScreen = false;
 
     if (step.detail) {
       this.renderStatus(step.detail, step.status === "error" ? "error" : "info");
@@ -126,6 +160,7 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   async cleanup(): Promise<void> {
     // No Ink instances to unmount; nothing to flush for synchronous console output.
     this.currentStep = null;
+    this.runningLineOnScreen = false;
   }
 }
 

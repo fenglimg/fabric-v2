@@ -950,6 +950,12 @@ export const enMessages: Messages = {
   // TASK-004: the single collapsed health-check card title for a fully-idempotent
   // re-install. {count} = total stages. Detail is behind --verbose.
   "cli.install.healthcheck.title": "✓ Fabric is up to date · {count} stages ready · no changes",
+  // TASK-003 (G2 root a): the per-stage summary-detail status word now branches on
+  // r.changed (not installed.length) — a no-change re-ensure says "up to date"
+  // instead of misreporting "N installed". installed-count is used only when the
+  // stage actually changed something.
+  "cli.install.stage.uptodate": "up to date",
+  "cli.install.stage.installed-count": "{count} installed",
   "cli.install.pipeline.label.preflight": "Preflight check",
   "cli.install.pipeline.label.env": "Environment setup",
   "cli.install.pipeline.label.store": "Store configuration",
