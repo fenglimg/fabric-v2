@@ -1,4 +1,4 @@
-import { paint, symbol, sectionBar, isColorEnabled } from "@fenglimg/fabric-shared/theme";
+import { paint, symbol, isColorEnabled } from "@fenglimg/fabric-shared/theme";
 import { t } from "../i18n.js";
 import { tree, grid, headerRule } from "./structure.js";
 import type {
@@ -148,9 +148,12 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   }
 
   renderSection(title: string): void {
-    // SectionHeader equivalent: a section bar header (▌ / `# `), blank line above.
+    // SectionHeader: B-横线 header (headerRule, TASK-001) instead of the shared
+    // `▌` sectionBar — spec §0.4 (delete the heavy block from CLI output). Blank
+    // line above. The shared sectionBar stays for the .cjs hook / SessionStart
+    // surface; CLI output uses the flat primitive.
     this.write("");
-    this.write(sectionBar(title, this.colorOn));
+    this.write(headerRule(title));
   }
 
   renderComplete(): void {

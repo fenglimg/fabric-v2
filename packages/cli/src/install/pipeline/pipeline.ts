@@ -422,7 +422,7 @@ export class InstallPipeline {
       // already-present artifacts in installed[] for display). installed-count is
       // shown only when the stage actually changed something.
       value: r.disposition === "ran"
-        ? (r.changed === true
+        ? (r.changed === true && r.installed.length > 0
             ? t("cli.install.stage.installed-count", { count: String(r.installed.length) })
             : t("cli.install.stage.uptodate"))
         : r.disposition === "skipped"
