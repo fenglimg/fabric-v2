@@ -1388,6 +1388,81 @@ describe("reviewKnowledge", () => {
   });
 
   // -------------------------------------------------------------------------
+  // P1 recall-engine-refactor (TASK-005): triage mode applies NO top_k and NO
+  // floor — pending review must never silently drop a match. This is the
+  // load-bearing semantic difference vs fab_recall (top_k + ratio-to-top floor).
+  // Both assertions seed a corpus where the recall-mode cut WOULD drop matches,
+  // then prove triage returns ALL of them.
+  // -------------------------------------------------------------------------
+
+  it("triage_search_applies_no_top_k_returns_all_matches", async () => {
+    const projectRoot = await createTempProject();
+    // Pin the RECALL top_k knob to 1: if triage (wrongly) honored it, at most one
+    // entry would survive. Triage must IGNORE it and return all matches.
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify(
+        { required_stores: [{ id: "team" }], active_write_store: "team", plan_context_top_k: 1 },
+        null,
+        2,
+      )}\n`,
+    );
+    // Three entries that all pass the substring gate ("ranktopic" in the slug).
+    await seedPendingFile(projectRoot, "decisions", "ranktopic-alpha", { tags: ["x"] });
+    await seedPendingFile(projectRoot, "decisions", "ranktopic-beta", { tags: ["y"] });
+    await seedPendingFile(projectRoot, "decisions", "ranktopic-gamma", { tags: ["z"] });
+
+    const result = await reviewPending(projectRoot, {
+      action: "search",
+      query: "ranktopic",
+      filters: undefined,
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    // All three survive — triage drops nothing despite plan_context_top_k=1.
+    expect(result.items).toHaveLength(3);
+    const slugs = result.items.map((i) => i.path).sort();
+    expect(slugs.some((p) => p.includes("ranktopic-alpha"))).toBe(true);
+    expect(slugs.some((p) => p.includes("ranktopic-beta"))).toBe(true);
+    expect(slugs.some((p) => p.includes("ranktopic-gamma"))).toBe(true);
+  });
+
+  it("triage_search_applies_no_relevance_floor_keeps_weakly_ranked_matches", async () => {
+    const projectRoot = await createTempProject();
+    // Pin the recall ratio-to-top floor aggressively (0.9): under RECALL semantics
+    // any match scoring < 0.9 × top would be cut. Triage must ignore the floor.
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify(
+        { required_stores: [{ id: "team" }], active_write_store: "team", recall_relevance_ratio: 0.9 },
+        null,
+        2,
+      )}\n`,
+    );
+    // "strong" has the query term ("embedding") in its summary → high BM25 score.
+    // "weak" matches the substring GATE only via filename ("embedding-weak") with a
+    // DISJOINT summary → BM25 score 0, far below 0.9 × top. Recall would drop it;
+    // triage must keep it.
+    await seedPendingFile(projectRoot, "decisions", "embedding-strong", {
+      summary: "vector embedding semantic retrieval scoring tokenization",
+    });
+    await seedPendingFile(projectRoot, "decisions", "embedding-weak", {
+      summary: "git lifecycle archive cadence deprecation nudge",
+    });
+
+    const result = await reviewPending(projectRoot, {
+      action: "search",
+      query: "embedding",
+      filters: undefined,
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    // BOTH survive — the weak (BM25-0) match is not floored out.
+    expect(result.items).toHaveLength(2);
+    const paths = result.items.map((i) => i.path);
+    expect(paths.some((p) => p.includes("embedding-strong"))).toBe(true);
+    expect(paths.some((p) => p.includes("embedding-weak"))).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
   // TASK-009: Critical path-traversal sandboxing (Gemini review fix)
   // -------------------------------------------------------------------------
 

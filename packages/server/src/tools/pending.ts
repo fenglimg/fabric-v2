@@ -27,8 +27,12 @@ import { reviewPending } from "../services/review.js";
 // callers can safely invoke the read path. The handler re-parses via the
 // discriminatedUnion FabPendingInputSchema (the SDK-facing inputSchema is the
 // flattened FabPendingInputShape; see api-contracts.ts for the SDK 1.29.0
-// rationale) and delegates to the relocated reviewPending service — verbatim
-// list/search logic, ZERO behavior change vs the prior fab_review list/search.
+// rationale) and delegates to the reviewPending service.
+//
+// P1 recall-engine-refactor (TASK-005): the `search` action now flows through the
+// UNIFIED ranker — reviewPending → triageSearch → rankDescriptionItems('triage').
+// fab_pending triage and fab_recall share ONE improved ranker; triage applies NO
+// top_k / NO floor so pending review never silently drops a match.
 export function registerPending(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
     "fab_pending",
