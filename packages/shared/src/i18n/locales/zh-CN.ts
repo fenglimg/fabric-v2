@@ -30,6 +30,12 @@ export const zhCNMessages: Messages = {
   "cli.shared.none": "无",
   "cli.shared.loading": "加载中",
   "cli.shared.refresh": "刷新",
+
+  // flat-design-system Wave4 (TASK-004): clack 控件（select/multiselect/confirm/text）
+  // 落定后打印的平铺无沟槽 ✓/x 回执行。控件保持原生（C-006），回执是独立的一行。
+  "cli.prompt.receipt.selected": "已选",
+  "cli.prompt.receipt.set": "已设置",
+  "cli.prompt.receipt.cancelled": "已取消",
   "cli.shared.target-invalid": "目标必须是已存在的目录：{target}",
   "cli.shared.target-invalid.action-hint":
     "请选择一个已存在的项目目录，或先创建该目录后再重新运行命令。",
@@ -974,6 +980,10 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.stage.bootstrap": "是否安装 bootstrap 模板？[{defaultValue}]",
   "cli.install.wizard.stage.mcp": "是否配置 MCP 客户端？[{defaultValue}]",
   "cli.install.wizard.stage.hooks": "是否安装 git hooks？[{defaultValue}]",
+  // flat-design-system Wave4 (TASK-004): post-group ✓ 回执用的短阶段标签。
+  "cli.install.wizard.stage.bootstrap.short": "bootstrap 模板",
+  "cli.install.wizard.stage.mcp.short": "MCP 客户端",
+  "cli.install.wizard.stage.hooks.short": "git hooks",
   "cli.install.wizard.mcp-install": "MCP 服务端安装范围（global/local）[{defaultValue}]",
   "cli.install.wizard.execute.confirm": "现在执行该安装计划？[Y/n]",
   "cli.install.wizard.outro": "安装计划已确认，开始执行 Fabric install...",

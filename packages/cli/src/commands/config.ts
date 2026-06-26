@@ -17,6 +17,7 @@ import { resolveClients } from "../config/resolver.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
+import { promptReceipt } from "../install/theme-clack.js";
 import {
   loadGlobalConfig,
   resolveGlobalRoot,
@@ -405,6 +406,9 @@ export const configCmd = defineCommand({
             value: field.format_for_display(newValue),
           }),
         );
+        // flat-design-system Wave4 (TASK-004): a flat, gutter-free ✓ receipt after
+        // the select/text control closes — the clack control stays native (C-006).
+        promptReceipt("set", field.format_for_display(newValue));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         log.error(t("cli.config.write.failure", { message }));

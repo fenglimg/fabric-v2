@@ -30,6 +30,13 @@ export const enMessages: Messages = {
   "cli.shared.none": "none",
   "cli.shared.loading": "loading",
   "cli.shared.refresh": "Refresh",
+
+  // flat-design-system Wave4 (TASK-004): gutter-free ✓/x receipt printed after a
+  // clack control (select/multiselect/confirm/text) resolves. The clack control
+  // stays native (C-006); the receipt is a separate flat line.
+  "cli.prompt.receipt.selected": "Selected",
+  "cli.prompt.receipt.set": "Set",
+  "cli.prompt.receipt.cancelled": "Cancelled",
   "cli.shared.target-invalid": "Target must be an existing directory: {target}",
   "cli.shared.target-invalid.action-hint":
     "Choose an existing project directory, or create it before running the command again.",
@@ -997,6 +1004,10 @@ export const enMessages: Messages = {
   "cli.install.wizard.stage.bootstrap": "Install bootstrap templates? [{defaultValue}]",
   "cli.install.wizard.stage.mcp": "Configure MCP clients? [{defaultValue}]",
   "cli.install.wizard.stage.hooks": "Install git hooks? [{defaultValue}]",
+  // flat-design-system Wave4 (TASK-004): short stage labels for the post-group ✓ receipt.
+  "cli.install.wizard.stage.bootstrap.short": "bootstrap templates",
+  "cli.install.wizard.stage.mcp.short": "MCP clients",
+  "cli.install.wizard.stage.hooks.short": "git hooks",
   "cli.install.wizard.mcp-install": "MCP server install scope (global/local) [{defaultValue}]",
   "cli.install.wizard.execute.confirm": "Execute this install plan now? [Y/n]",
   "cli.install.wizard.outro": "Install plan accepted. Running Fabric install...",

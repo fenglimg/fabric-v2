@@ -14,6 +14,7 @@ import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { detectClientSupports, resolveClients, type DetectedClientSupport } from "../config/resolver.js";
 import type { ClientConfigWriter, RemoveResult } from "../config/writer.js";
 import { t } from "../i18n.js";
+import { promptReceipt } from "../install/theme-clack.js";
 import {
   uninstallBootstrapStage,
   type UninstallOptions as BootstrapUninstallOptions,
@@ -746,6 +747,13 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
       }
 
       const selected = new Set(picked as Array<Exclude<UninstallStageName, "validate">>);
+      // flat-design-system Wave4 (TASK-004): flat ✓ receipt of the chosen stages —
+      // the multiselect control stays native (C-006).
+      const selectedLabels = [...selected].map((key) => t(`cli.uninstall.wizard.select.${key}.label`));
+      promptReceipt(
+        "selected",
+        selectedLabels.length > 0 ? selectedLabels.join(", ") : t("cli.shared.none"),
+      );
       const selection: UninstallWizardSelection = {
         bootstrap: selected.has("bootstrap"),
         mcp: selected.has("mcp"),
@@ -769,6 +777,8 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
         initialValue: true,
       });
       if (isCancel(confirmed) || !confirmed) {
+        // flat-design-system Wave4 (TASK-004): No / cancel → flat red x receipt.
+        promptReceipt("cancelled");
         emitUninstallWizardCancellation();
         return null;
       }
@@ -794,10 +804,12 @@ async function confirmDestructive(plan: UninstallExecutionPlan): Promise<boolean
     message: t("cli.uninstall.confirm.proceed", { target: plan.target }),
     initialValue: false,
   });
-  if (isCancel(answer)) {
+  if (isCancel(answer) || answer !== true) {
+    // flat-design-system Wave4 (TASK-004): No / cancel → flat red x receipt.
+    promptReceipt("cancelled");
     return false;
   }
-  return answer === true;
+  return true;
 }
 
 // -----------------------------------------------------------------------

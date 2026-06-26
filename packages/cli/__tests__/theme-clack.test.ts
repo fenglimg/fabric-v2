@@ -5,6 +5,7 @@ import {
   buildLog,
   buildNote,
   buildOutro,
+  buildPromptReceipt,
 } from "../src/install/theme-clack.js";
 
 // F-002 / C-006: the @clack CONTEXT wrap (intro/outro/log/note) must render
@@ -50,5 +51,25 @@ describe("theme-clack context wrap (NO_COLOR)", () => {
     expect(untitled).not.toContain("│");
     expect(untitled).not.toContain("| ");
     expect({ titled, untitled }).toMatchSnapshot();
+  });
+
+  // TASK-004 / spec §2 control回执: a flat (gutter-free) ✓/x line printed AFTER a
+  // clack control resolves. The control stays native (C-006); the receipt is its
+  // own line in the flat output zone.
+  it("buildPromptReceipt renders a gutter-free ✓ line for set/selected and an x line for cancelled", () => {
+    const set = buildPromptReceipt("set", "zh-CN");
+    const selected = buildPromptReceipt("selected", "bootstrap templates, MCP clients");
+    const cancelled = buildPromptReceipt("cancelled");
+    const setNoValue = buildPromptReceipt("set");
+
+    // spec §0.2–0.3: receipts carry NO `│` gutter — they live in the flat zone.
+    for (const line of [set, selected, cancelled, setNoValue]) {
+      expect(line).not.toContain("│");
+    }
+    // set/selected use the ok glyph + ` · <value>`; cancelled uses the error glyph.
+    expect(set).toContain("·");
+    expect(set).toContain("zh-CN");
+    expect(setNoValue).not.toContain("·");
+    expect({ set, selected, cancelled, setNoValue }).toMatchSnapshot();
   });
 });

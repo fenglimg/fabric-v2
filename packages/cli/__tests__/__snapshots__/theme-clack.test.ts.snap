@@ -25,3 +25,12 @@ exports[`theme-clack context wrap (NO_COLOR) > buildNote renders a gutter-free i
 `;
 
 exports[`theme-clack context wrap (NO_COLOR) > buildOutro renders a closing line 1`] = `"Done"`;
+
+exports[`theme-clack context wrap (NO_COLOR) > buildPromptReceipt renders a gutter-free ✓ line for set/selected and an x line for cancelled 1`] = `
+{
+  "cancelled": "[error] Cancelled",
+  "selected": "[ok] Selected · bootstrap templates, MCP clients",
+  "set": "[ok] Set · zh-CN",
+  "setNoValue": "[ok] Set",
+}
+`;
