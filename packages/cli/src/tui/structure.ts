@@ -77,10 +77,12 @@ export function grid(rows: string[][], opts: GridOpts = {}): string {
 export { headerRule } from "@fenglimg/fabric-shared/theme";
 
 /**
- * 平铺风内部分组标题(C-圆点,spec §0.4):accent 点 `● <label>`。
+ * 平铺风内部分组标题(C-圆点,spec §0.4):muted 点 `● <label>`。
+ * 点本身是结构标记、非状态,故走 dim —— 颜色留给行内的状态符号(success-green ✓
+ * / warn-amber ○ / error-red ✗)扛信息;一行行重复的圆点若上品牌色会变成一条噪声竖墙。
  * NO_COLOR / 非 TTY 降级为 ASCII `* <label>`。
  */
 export function groupDot(label: string): string {
-  const dot = isColorEnabled() ? paint.accent("●") : "*";
+  const dot = isColorEnabled() ? paint.muted("●") : "*";
   return `${dot} ${label}`;
 }

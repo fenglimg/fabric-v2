@@ -57,38 +57,36 @@ export class GuidanceStage implements Stage {
       if (context.args["enable-embed"]) {
         this.enableSemanticSearchAndReport(context.target, context.args["embed-model"]);
       } else if (context.wizardEnabled) {
-        await this.promptSemanticSearch(context.target);
+        await this.promptSemanticSearch(context.target, context.args.verbose === true);
       }
 
-      // TASK-002 (G6): collapse the diverging 3-step footer into a SINGLE
-      // golden-action anchor. The verbose multi-line onboarding list (and the
-      // surfaces.md pointer) only render under --verbose, where the user asked
-      // for the detail; by default the install closes on one "下一步 → …" line.
+      // flat-design (G6): collapse the diverging footer — semantic-status line +
+      // 下一步 + restart banner + capability line — into ONE golden-action anchor.
+      // The genuinely-next action after a successful install is restarting the
+      // client so its MCP server loads; that is the anchor. The --reapply hint,
+      // full onboarding list, surfaces.md pointer, restart detail and per-client
+      // capability table all move under --verbose, where the detail was asked for.
       console.log("");
+      const finalSupports = detectClientSupports(context.target);
       if (context.args.verbose === true) {
         console.log(translate("cli.install.next-steps"));
         console.log("");
         console.log(paint.muted(translate("cli.install.guidance.more")));
+        console.log("");
+        console.log(translate("cli.install.restart-banner"));
+        this.printCapabilitySummary(finalSupports, context);
       } else {
         console.log(
           translate("cli.install.next-step.anchor", {
-            action: translate("cli.install.next-step.message"),
+            action: translate("cli.install.next-step.restart"),
           }),
         );
+        // Still surface the "no supported client detected" edge case in the terse
+        // footer — it means the install cannot actually reach an AI client.
+        if (finalSupports.filter((s) => s.detected).length === 0) {
+          console.log(translate("cli.install.capabilities.none"));
+        }
       }
-
-      // Print restart banner
-      console.log("");
-      console.log(translate("cli.install.restart-banner"));
-
-      // grill-6fixes (D1): the old "Fabric 语言偏好：{value}" hint was removed.
-      // Language is the single machine-wide tone picked once by the install
-      // language selector; surfacing a per-install "preference" line here was
-      // the source of the wizard-vs-fixated mismatch users hit.
-
-      // Print capability summary
-      const finalSupports = detectClientSupports(context.target);
-      this.printCapabilitySummary(finalSupports, context);
 
       return stageRan("guidance", [], []);
     } catch (error) {
@@ -111,23 +109,27 @@ export class GuidanceStage implements Stage {
     }
   }
 
-  private async promptSemanticSearch(projectRoot: string): Promise<void> {
+  private async promptSemanticSearch(projectRoot: string, verbose: boolean): Promise<void> {
     // grill C-17: detect already-enabled BEFORE prompting. The old flow asked a
     // Yes/No unconditionally, then — after "yes" — discovered it was already on
-    // and reported "nothing changed" (the anticlimax). Now: already on → just
-    // report status, no confirm. The disabled-case confirm below is byte-identical
-    // (C-07 red-line: do not change clack logic when disabled).
+    // and reported "nothing changed" (the anticlimax). Now: already on → silent,
+    // no confirm. The disabled-case confirm below is byte-identical (C-07 red-line:
+    // do not change clack logic when disabled).
     const current = isSemanticSearchEnabled(projectRoot);
     if (current.enabled) {
-      console.log("");
-      console.log(
-        paint.muted(
-          t("cli.install.semantic.already-enabled", {
-            model: current.model ?? DEFAULT_EMBED_MODEL_PIN,
-            path: join(projectRoot, ".fabric", "fabric-config.json"),
-          }),
-        ),
-      );
+      // flat-design: an already-on status line is non-actionable footer noise;
+      // surface it only under --verbose.
+      if (verbose) {
+        console.log("");
+        console.log(
+          paint.muted(
+            t("cli.install.semantic.already-enabled", {
+              model: current.model ?? DEFAULT_EMBED_MODEL_PIN,
+              path: join(projectRoot, ".fabric", "fabric-config.json"),
+            }),
+          ),
+        );
+      }
       return;
     }
     const enable = await confirm({

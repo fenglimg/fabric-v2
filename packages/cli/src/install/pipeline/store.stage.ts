@@ -512,15 +512,36 @@ export class StoreStage implements Stage {
     const CREATE = "__create__";
     const SKIP = "skip";
     const boundCandidate = candidates.find((c) => c.bound);
+    // flat-design store menu (user redesign): the currently-bound team is NOT a
+    // separate "保持当前" row that duplicates a "跳过" row — the two are MERGED. The
+    // SKIP row carries the keep-current semantics, its copy adapting to state:
+    //   bound   → "保持当前: <alias> · 不改动" (skip == leave this team store as-is)
+    //   unbound → "跳过 · 仅用 personal store" (skip == personal-only default)
+    // Only the OTHER mounted-but-unbound team stores list as switchable "切到已挂载"
+    // rows. (KT-MOD-0001: rows show real aliases, the SLOT is named by category;
+    // KT-GLD-0002: bind:/skip routing keys stay English, only labels translate.)
+    const switchable = candidates.filter((c) => !c.bound);
+    const skipOption =
+      boundCandidate !== undefined
+        ? {
+            value: SKIP,
+            label: t("cli.install.store.slot.team.keep-label", { alias: boundCandidate.alias }),
+            hint: t("cli.install.store.slot.team.keep-hint"),
+          }
+        : {
+            value: SKIP,
+            label: t("cli.install.store.skip-label"),
+            hint: t("cli.install.store.onboard.skip-hint"),
+          };
     const choice = await select({
       message: t("cli.install.store.slot.team.prompt"),
-      initialValue: boundCandidate !== undefined ? `bind:${boundCandidate.alias}` : SKIP,
+      // Keep-current / personal-only is the safe default whether or not a team is
+      // bound — never silently re-bind on a bare Enter.
+      initialValue: SKIP,
       options: [
-        ...candidates.map((store) => ({
+        ...switchable.map((store) => ({
           value: `bind:${store.alias}`,
-          label: store.bound
-            ? t("cli.install.store.slot.team.bound-label", { alias: store.alias })
-            : t("cli.install.store.slot.team.switch-label", { alias: store.alias }),
+          label: t("cli.install.store.slot.team.switch-label", { alias: store.alias }),
           hint: store.remote ?? t("cli.install.store.local-store"),
         })),
         {
@@ -533,27 +554,24 @@ export class StoreStage implements Stage {
           label: t("cli.install.store.onboard.create-label"),
           hint: t("cli.install.store.onboard.create-hint"),
         },
-        {
-          value: SKIP,
-          label: t("cli.install.store.skip-label"),
-          hint: t("cli.install.store.onboard.skip-hint"),
-        },
+        skipOption,
       ],
     });
     if (isCancel(choice) || choice === SKIP || typeof choice !== "string") {
-      const unbound = candidates.filter((c) => !c.bound);
-      if (unbound.length > 0) {
-        this.warnUnboundStores(unbound);
+      // SKIP while a team is bound = a deliberate keep-current no-op → no unbound
+      // nag. With nothing bound, surface any mounted-but-unbound team stores.
+      if (boundCandidate === undefined) {
+        const unbound = candidates.filter((c) => !c.bound);
+        if (unbound.length > 0) {
+          this.warnUnboundStores(unbound);
+        }
       }
       return null;
     }
 
     if (choice.startsWith("bind:")) {
+      // The bound store is never a switchable row, so this is always a real switch.
       const alias = choice.slice("bind:".length);
-      // Picking the already-bound store is a no-op — the slot stays as-is.
-      if (boundCandidate !== undefined && alias === boundCandidate.alias) {
-        return null;
-      }
       const bound = await this.bindStoreToProject(context.target, alias, globalRoot, {
         interactive: true,
       });

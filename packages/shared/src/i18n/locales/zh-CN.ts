@@ -916,6 +916,10 @@ export const zhCNMessages: Messages = {
   "cli.install.mcp.none": "无需配置 MCP 客户端",
   "cli.install.scan.finding.framework": "检测到: {framework} 项目",
   "cli.install.scan.finding.scale": "规模: {files} 文件 · {entries} 个入口",
+  // flat-design: 扫描结果合成一行人话(框架 + 规模);版本为 unknown 时隐去,
+  // 没识别出框架时退到 plain。
+  "cli.install.scan.summary.framework": "检测到 {framework} 项目 · {files} 文件 · {entries} 入口",
+  "cli.install.scan.summary.plain": "扫描完成 · {files} 文件 · {entries} 入口",
   "cli.install.rollback.feedback": "已回滚 {count} 项改动,项目保持原状。",
   "cli.install.stages.skipped": "已跳过",
   "cli.install.stages.completed": "已完成",
@@ -948,11 +952,12 @@ export const zhCNMessages: Messages = {
   // installed-count 仅在该阶段确有改动时使用。
   "cli.install.stage.uptodate": "已最新",
   "cli.install.stage.installed-count": "{count} 项已安装",
-  "cli.install.pipeline.label.preflight": "全局与项目预检",
-  "cli.install.pipeline.label.env": "项目环境初始化",
-  "cli.install.pipeline.label.store": "知识库拓扑",
-  "cli.install.pipeline.label.hooks": "Hook 与 skill 安装",
-  "cli.install.pipeline.label.mcp": "MCP 服务配置",
+  // flat-design: 阶段标签收短,让 `● 名称  ✓` 列对齐、读着清爽(原全称偏长)。
+  "cli.install.pipeline.label.preflight": "环境预检",
+  "cli.install.pipeline.label.env": "环境初始化",
+  "cli.install.pipeline.label.store": "知识库",
+  "cli.install.pipeline.label.hooks": "Hook 与 skill",
+  "cli.install.pipeline.label.mcp": "MCP 服务",
   "cli.install.pipeline.label.validate": "安装校验",
   "cli.install.pipeline.label.guidance": "后续指引",
   "cli.install.pipeline.desc.store": "绑定当前项目的 read/write store，刷新 resolved-bindings snapshot。",
@@ -960,6 +965,9 @@ export const zhCNMessages: Messages = {
   // TASK-002 (G6): 收口总结卡的单一黄金动作锚点。能力明细表收进 --verbose,
   // 这一行才是诚实的「下一步做什么」。{action} = 具体下一条命令。
   "cli.install.next-step.anchor": "下一步 → {action}",
+  // flat-design (G6): 装完最该做的事是重启客户端让 MCP 生效 —— 这才是默认锚点动作;
+  // --reapply 维护提示退到 --verbose。
+  "cli.install.next-step.restart": "重启已开的 Claude Code / Codex 会话以加载 Fabric(新会话自动生效)。",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
@@ -1049,9 +1057,13 @@ export const zhCNMessages: Messages = {
   "cli.install.store.slot.personal.switched": "已将本机活动 personal store 切到 '{alias}'",
   "cli.install.store.slot.team.status": "团队库(team 类): '{alias}' ✓",
   "cli.install.store.slot.team.empty": "团队库(team 类): 尚未绑定",
-  "cli.install.store.slot.team.prompt": "为本项目挑选团队库(team 类) —— 选一个,或加入已有/新建/跳过:",
+  "cli.install.store.slot.team.prompt": "为本项目选择团队知识库(team 类):",
   "cli.install.store.slot.team.bound-label": "保持当前: {alias}",
   "cli.install.store.slot.team.switch-label": "切到已挂载: {alias}",
+  // flat-design store menu:「保持当前」与「跳过」语义合并 —— 已绑定时 SKIP 行显示
+  // 为 keep-label(保持当前 · 不改动),未绑定时为「跳过 · 仅用 personal store」。
+  "cli.install.store.slot.team.keep-label": "保持当前: {alias} · 不改动",
+  "cli.install.store.slot.team.keep-hint": "继续用这个团队库,本次不改动绑定",
   "cli.install.store.skip-label": "跳过",
   "cli.install.store.bind-mounted.skip-hint": "暂不绑定已挂载的 store",
   "cli.install.store.project-coordinate": "在 store '{store}' 中的项目坐标 (project coordinate):",

@@ -1,6 +1,7 @@
 import { paint, symbol, isColorEnabled } from "@fenglimg/fabric-shared/theme";
 import { t } from "../i18n.js";
-import { tree, grid, headerRule } from "./structure.js";
+import { displayWidth } from "../colors.js";
+import { grid, headerRule } from "./structure.js";
 import type {
   OutputRenderer,
   OutputRendererConfig,
@@ -112,10 +113,8 @@ export class ConsoleOutputRenderer implements OutputRenderer {
       this.write(buildStepLine(step, this.colorOn));
     }
     this.runningLineOnScreen = false;
-
-    if (step.detail) {
-      this.renderStatus(step.detail, step.status === "error" ? "error" : "info");
-    }
+    // flat-design (spec §0.4): the detail is now folded INLINE into buildStepLine
+    // (`● name   ✓ detail`), no longer a separate `ℹ detail` row below the step.
   }
 
   renderSuccess(message: string): void {
@@ -189,41 +188,49 @@ export function toErrorInfo(error: Error | ErrorInfo): ErrorInfo {
  * live env, which under NO_COLOR agrees with `colorOn=false`.
  */
 
-/** Step badge by status — mockup #2 `[ok]` / role-painted glyph (ASCII-stable core). */
-function stepBadge(status: StepInfo["status"], colorOn: boolean): string {
+/** Flat-design name column: stage names left-pad to this display width so the
+ * status glyphs line up into a clean column (CJK-aware via displayWidth). */
+const STEP_NAME_COL = 16;
+
+/**
+ * Flat-design status glyph for a step line. The glyph carries the COLOUR (status
+ * semantics live here: success-green ✓ / warn-amber ○ / error-red ✗), so the
+ * leading `●` can stay a neutral dim structural marker (spec §0.4 / §0.5). Under
+ * NO_COLOR each degrades to the bare glyph — mirrors the summary detailMarker.
+ */
+function statusGlyph(status: StepInfo["status"], colorOn: boolean): string {
   switch (status) {
     case "success":
-      return symbol("ok", colorOn);
+      return paint("success", "✓", colorOn);
     case "error":
-      return symbol("error", colorOn);
+      return paint("error", "✗", colorOn);
     case "skipped":
-      return symbol("warn", colorOn);
-    case "running":
-      return paint("ai", "[..]", colorOn);
+      return paint("warn", "○", colorOn);
     case "pending":
     default:
-      return paint("muted", "[--]", colorOn);
+      return paint("muted", "·", colorOn);
   }
 }
 
 /**
- * Mockup #2: one step as a tree branch — `├─ [ok] Preflight (1/7)` (`└─` on the
- * final step). renderStep is streaming, so each call emits a single branch row;
- * the last branch glyph is inferred from current===total.
+ * Flat-design step line (spec §0.4): `● <name>   ✓ <detail>` — a dim `●` group
+ * marker, the padded stage name, the status glyph, and the detail INLINE (muted).
+ * Replaces the former tree-branch `├─ [ok] ✓ name (1/7)` row: no branch glyphs,
+ * no `(n/total)` counter (the total lives in the closing summary card), and the
+ * detail folded onto the same line instead of a separate `ℹ` row. A `running`
+ * step is just the dim dot + name — a TTY placeholder overwritten in place once
+ * the stage settles.
  */
 export function buildStepLine(step: StepInfo, colorOn: boolean): string {
-  const badge = stepBadge(step.status, colorOn);
-  const counter = paint("muted", `(${step.current}/${step.total})`, colorOn);
-  const name = step.name || (step.status === "running" ? "Loading..." : "");
-  const last = step.total > 0 && step.current >= step.total;
-  // tree() infers branch glyph from list position; a single-row list is always
-  // "last" (└─), so to render `├─` for non-final steps we feed a 2-row list and
-  // keep the first row. This reuses the primitive's glyph + ASCII gating verbatim.
-  const text = `${badge} ${name} ${counter}`.replace(/\s+$/u, "");
-  if (last) {
-    return tree([{ text }]);
+  const dot = paint("muted", "●", colorOn);
+  const name = step.name || "";
+  if (step.status === "running") {
+    return `${dot} ${name}`;
   }
-  return tree([{ text }, { text: "" }]).split("\n")[0];
+  const gap = Math.max(2, STEP_NAME_COL - displayWidth(name));
+  const glyph = statusGlyph(step.status, colorOn);
+  const detail = step.detail ? ` ${paint("muted", step.detail, colorOn)}` : "";
+  return `${dot} ${name}${" ".repeat(gap)}${glyph}${detail}`;
 }
 
 /** Detail-row marker (SummaryCard DetailStatus; null status → no marker). */

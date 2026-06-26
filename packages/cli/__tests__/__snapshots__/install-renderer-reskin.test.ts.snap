@@ -19,12 +19,12 @@ exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the g
   something failed"
 `;
 
-exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders install steps as ASCII tree branches (mockup #2) 1`] = `
-"  +- [ok] Preflight (1/7)
-  +- [ok] Environment (2/7)
-  +- [ok] Store (3/7)
-  +- [warn] Hooks (4/7)
-  +- [ok] MCP (5/7)
-  +- [ok] Validate (6/7)
-  \`- [ok] Guidance (7/7)"
+exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders install steps as flat C-圆点 lines (spec §0.4) 1`] = `
+"● Preflight       ✓
+● Environment     ✓
+● Store           ✓
+● Hooks           ○
+● MCP             ✓
+● Validate        ✓
+● Guidance        ✓"
 `;

@@ -50,7 +50,7 @@ function rendererContext(
 }
 
 describe("install-v2 pipeline — renderer path (TASK-001)", () => {
-  it("renders exactly one header per phase via renderSection (no stage-level second header)", async () => {
+  it("renders ONE command-title section, no per-stage header — stages via renderStep (flat-design §0.4)", async () => {
     const renderer = stubRenderer();
     const fakePreflight: Stage = { name: "preflight", async execute() { return stageRan("preflight"); } };
     const fakeHooks: Stage = { name: "hooks", async execute() { return stageRan("hooks"); } };
@@ -61,11 +61,16 @@ describe("install-v2 pipeline — renderer path (TASK-001)", () => {
       .execute(rendererContext(renderer));
 
     expect(result.success).toBe(true);
-    // 1 intro section + 1 section header per stage = 3 renderSection calls total.
-    // The key invariant: one header per phase, owned solely by the pipeline.
+    // flat-design: exactly ONE renderSection (the command-level B-横线 title). A
+    // stage NEVER owns a section header any more — it surfaces as a flat
+    // renderStep line instead, so no section title mentions a stage name.
+    expect(renderer.renderSection).toHaveBeenCalledTimes(1);
     const sectionTitles = renderer.renderSection.mock.calls.map((c) => String(c[0]));
-    const stageHeaders = sectionTitles.filter((t) => /preflight|hooks/i.test(t));
-    expect(stageHeaders).toHaveLength(2);
+    expect(sectionTitles.some((s) => /preflight|hooks/i.test(s))).toBe(false);
+    // The stages still surface — through renderStep, carrying their labels.
+    const stepNames = renderer.renderStep.mock.calls.map((c) => String((c[0] as { name?: string }).name ?? ""));
+    expect(stepNames.some((n) => /preflight/i.test(n))).toBe(true);
+    expect(stepNames.some((n) => /hooks/i.test(n))).toBe(true);
   });
 
   it("renders the error box on a failed stage (renderer path, C-18)", async () => {

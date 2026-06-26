@@ -162,16 +162,6 @@ type McpRemovalDetail = {
 // (`fabric-config.json`) is handled by the optional store stage — never deleted.
 const FABRIC_STATE_FILES = ["agents.meta.json", "events.jsonl", "forensic.json"] as const;
 
-// W4: stage visual anchors, mirroring install's STAGE_ICONS (pipeline.ts). The
-// StageName stays an English routing key; only the displayed label is localized.
-const UNINSTALL_STAGE_ICONS: Record<UninstallStageName, string> = {
-  bootstrap: "🧹",
-  mcp: "🔌",
-  store: "🔗",
-  scaffold: "🗑️",
-  validate: "✅",
-};
-
 // Canonical execution order — the reverse of the install-v2 pipeline.
 const UNINSTALL_STAGE_ORDER: readonly UninstallStageName[] = [
   "bootstrap",
@@ -828,7 +818,8 @@ function renderStageHeader(
 ): void {
   const label = stageLabel(name);
   if (renderer) {
-    renderer.renderSection(`${UNINSTALL_STAGE_ICONS[name]} ${label}`);
+    // flat-design (spec §0.4): no per-stage B-横线 / emoji header — a light
+    // C-圆点 step line under the single command title carries the stage.
     renderer.renderStep({ name: label, current: stepNum, total, status: "running" });
   } else {
     console.log(`[${stepNum}/${total}] ${label}`);
@@ -843,8 +834,8 @@ function renderStageSkipped(
 ): void {
   const label = stageLabel(name);
   if (renderer) {
-    renderer.renderSection(`${UNINSTALL_STAGE_ICONS[name]} ${label}`);
-    renderer.renderStep({ name: label, current: stepNum, total, status: "skipped" });
+    // flat-design: skipped stage = one dim C-圆点 line with an inline `○ 已跳过`.
+    renderer.renderStep({ name: label, current: stepNum, total, status: "skipped", detail: t("cli.shared.skipped") });
   } else {
     console.log(paint.muted(`[${stepNum}/${total}] ${label} (${t("cli.shared.skipped")})`));
   }

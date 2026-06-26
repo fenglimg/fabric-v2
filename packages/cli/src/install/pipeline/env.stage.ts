@@ -61,7 +61,7 @@ export class EnvStage implements Stage {
       // cost) — it just used to be written to forensic.json and never shown, so
       // the whole scan read as a content-free "scan complete".
       if (process.stdout.isTTY === true) {
-        this.renderScanFindings(scaffold.forensicReport);
+        this.renderScanFindings(context, scaffold.forensicReport);
       }
 
       // Detect and store language preference
@@ -85,20 +85,27 @@ export class EnvStage implements Stage {
    * forensic report. Hard-capped at 4 lines so the payoff never re-creates an
    * information wall (R3).
    */
-  private renderScanFindings(report: ForensicReport): void {
-    const lines: string[] = [];
+  private renderScanFindings(context: InstallContext, report: ForensicReport): void {
     const kind = report.framework?.kind;
-    if (kind && kind !== "unknown" && kind !== "none") {
-      const version = report.framework.version ? ` ${report.framework.version}` : "";
-      lines.push(t("cli.install.scan.finding.framework", { framework: `${kind}${version}` }));
+    const files = String(report.topology?.total_files ?? 0);
+    const entries = String(report.entry_points?.length ?? 0);
+    const known = Boolean(kind) && kind !== "unknown" && kind !== "none";
+    // flat-design: ONE human line, not a two-line framework/scale stack — and
+    // routed through the renderer (not a raw console.log) so it stays in the
+    // buffered/ordered stream instead of jumping ABOVE the styled command title.
+    // The framework VERSION is suppressed when it resolved to "unknown" (it read
+    // as a wart — "cocos-creator unknown 项目").
+    let line: string;
+    if (known) {
+      const v = report.framework.version;
+      const version = v && v !== "unknown" ? ` ${v}` : "";
+      line = t("cli.install.scan.summary.framework", { framework: `${kind}${version}`, files, entries });
+    } else {
+      line = t("cli.install.scan.summary.plain", { files, entries });
     }
-    lines.push(
-      t("cli.install.scan.finding.scale", {
-        files: String(report.topology?.total_files ?? 0),
-        entries: String(report.entry_points?.length ?? 0),
-      }),
-    );
-    for (const line of lines.slice(0, 4)) {
+    if (context.renderer) {
+      context.renderer.renderInfo(line);
+    } else {
       console.log(`  ${line}`);
     }
   }
@@ -121,14 +128,15 @@ export class EnvStage implements Stage {
       : "created";
 
     // Build forensic report
+    // flat-design: a single transient "scanning…" progress note on stderr for
+    // the (potentially slow) forensic walk; the "scan complete" line is dropped —
+    // the one-line scan summary rendered by renderScanFindings IS the completion
+    // signal, and a separate "完成" line just doubled the noise.
     const showScanProgress = process.stderr.isTTY === true;
     if (showScanProgress) {
       process.stderr.write(`${t("cli.install.scanning")}\n`);
     }
     const forensicReport = await buildForensicReport(target);
-    if (showScanProgress) {
-      process.stderr.write(`${t("cli.install.scan-complete")}\n`);
-    }
 
     return {
       fabricDir,

@@ -937,6 +937,11 @@ export const enMessages: Messages = {
   "cli.install.mcp.none": "no MCP clients to configure",
   "cli.install.scan.finding.framework": "Detected: {framework} project",
   "cli.install.scan.finding.scale": "Scale: {files} files · {entries} entry points",
+  // flat-design: scan result folded into ONE human line (framework + scale); the
+  // version is suppressed when it resolved to "unknown"; falls back to plain when
+  // no framework was detected.
+  "cli.install.scan.summary.framework": "Detected {framework} project · {files} files · {entries} entry points",
+  "cli.install.scan.summary.plain": "Scan complete · {files} files · {entries} entry points",
   "cli.install.rollback.feedback": "Rolled back {count} change(s); project left unchanged.",
   "cli.install.stages.skipped": "skipped",
   "cli.install.stages.completed": "completed",
@@ -985,6 +990,10 @@ export const enMessages: Messages = {
   // The verbose capability table is gated behind --verbose; this one line is the
   // honest "what to do next" footer. {action} = the concrete next command.
   "cli.install.next-step.anchor": "Next → {action}",
+  // flat-design (G6): the real next action after install is restarting the client
+  // so its MCP server loads — that is the default anchor; the --reapply maintenance
+  // hint moves to --verbose.
+  "cli.install.next-step.restart": "restart any open Claude Code / Codex session to load Fabric (new sessions pick it up automatically).",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
@@ -1076,9 +1085,13 @@ export const enMessages: Messages = {
   "cli.install.store.slot.personal.switched": "active personal store switched to '{alias}'",
   "cli.install.store.slot.team.status": "Team store (team-class): '{alias}' ✓",
   "cli.install.store.slot.team.empty": "Team store (team-class): none bound yet",
-  "cli.install.store.slot.team.prompt": "Team store (team-class) for this project — pick one, or join/create/skip:",
+  "cli.install.store.slot.team.prompt": "Choose the team knowledge store (team-class) for this project:",
   "cli.install.store.slot.team.bound-label": "keep current: {alias}",
   "cli.install.store.slot.team.switch-label": "switch to mounted: {alias}",
+  // flat-design store menu: "keep current" and "skip" are merged — when a team is
+  // bound the SKIP row renders as keep-label (no change), otherwise as plain skip.
+  "cli.install.store.slot.team.keep-label": "keep current: {alias} · no change",
+  "cli.install.store.slot.team.keep-hint": "stay on this team store; leave the binding unchanged",
   "cli.install.store.skip-label": "skip",
   "cli.install.store.bind-mounted.skip-hint": "leave mounted stores unbound for now",
   "cli.install.store.project-coordinate": "Project coordinate in store '{store}':",

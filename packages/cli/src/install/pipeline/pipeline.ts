@@ -23,17 +23,6 @@ const STAGE_DESCRIPTION_KEYS: Partial<Record<StageName, string>> = {
   store: "cli.install.pipeline.desc.store",
 };
 
-/** Stage icons for visual anchors (locale-independent) */
-const STAGE_ICONS: Record<StageName, string> = {
-  preflight: "🔍",
-  env: "🏗️",
-  store: "📦",
-  hooks: "🪝",
-  mcp: "🔌",
-  validate: "✅",
-  guidance: "📖",
-};
-
 // ---------------------------------------------------------------------------
 // Recording Renderer (TASK-004)
 // ---------------------------------------------------------------------------
@@ -207,10 +196,10 @@ export class InstallPipeline {
       const stepNum = i + 1;
       const stageName = stage.name;
 
-      // EPIC-005: Visual anchor — section header with icon
-      if (renderer) {
-        renderer.renderSection(`${STAGE_ICONS[stageName]} ${stageLabel(stageName)}`);
-      } else {
+      // flat-design (spec §0.4): no per-stage B-横线 / emoji header — each stage
+      // is a light C-圆点 step line under the SINGLE command title. The non-TTY
+      // path keeps a plain numbered line so log scrapers / snapshots stay stable.
+      if (!renderer) {
         console.log(`[${stepNum}/${totalStages}] ${stageLabel(stageName)}`);
         const descriptionKey = STAGE_DESCRIPTION_KEYS[stageName];
         if (descriptionKey !== undefined) {
@@ -218,8 +207,10 @@ export class InstallPipeline {
         }
       }
 
-      // EPIC-008: Progress feedback — step counter + spinner
-      if (renderer) {
+      // EPIC-008: running placeholder (TTY, overwritten in place once the stage
+      // settles). The guidance stage is pure closing output (it prints its own
+      // "下一步 →" footer), NOT an installable step — so it renders no step line.
+      if (renderer && stageName !== "guidance") {
         renderer.renderStep({
           name: stageLabel(stageName),
           current: stepNum,
@@ -232,8 +223,10 @@ export class InstallPipeline {
         const result = await stage.execute(context);
         context.stageResults.push(result);
 
-        // EPIC-005/008: Update step status based on result
-        if (renderer) {
+        // EPIC-005/008: Update step status based on result. Guidance renders no
+        // step line (pure closing output) — its disposition still flows into the
+        // summary card counts/details below.
+        if (renderer && stageName !== "guidance") {
           if (result.disposition === "ran") {
             renderer.renderStep({
               name: stageLabel(stageName),

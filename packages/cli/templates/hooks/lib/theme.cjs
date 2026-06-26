@@ -56,7 +56,7 @@ function sectionBar(title, colorOn) {
 // shared flat replacement for sectionBar across CLI output + .cjs hook surface.
 function headerRule(title, colorOn) {
   const on = colorOn === undefined ? isColorEnabled() : colorOn;
-  const head = on ? `${ANSI.bold}${PALETTE.accent}${title}${ANSI.reset}` : title;
+  const head = on ? `${ANSI.bold}${PALETTE.human}${title}${ANSI.reset}` : title;
   const rule = paint("muted", (on ? "─" : "-").repeat(40), on);
   return `${head}\n${rule}`;
 }

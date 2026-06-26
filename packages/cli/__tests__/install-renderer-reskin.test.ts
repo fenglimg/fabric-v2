@@ -32,13 +32,19 @@ const STEPS: StepInfo[] = [
 ];
 
 describe("ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR)", () => {
-  it("renders install steps as ASCII tree branches (mockup #2)", () => {
+  it("renders install steps as flat C-圆点 lines (spec §0.4)", () => {
     const out = STEPS.map((s) => buildStepLine(s, false)).join("\n");
-    // ASCII fallback: +- for non-final, `- for the final step, no box glyphs.
-    expect(out).toContain("+- ");
-    expect(out).toContain("`- ");
+    // flat-design: `● <name>   <glyph>` — dim dot + padded name + status glyph.
+    // NO tree branches, NO box glyphs, NO `(n/total)` counter (the total lives in
+    // the closing summary card).
+    expect(out).toContain("● Preflight");
+    expect(out).toContain("✓"); // success glyph
+    expect(out).toContain("○"); // skipped glyph (Hooks)
+    expect(out).not.toContain("+- ");
+    expect(out).not.toContain("`- ");
     expect(out).not.toContain("├─");
     expect(out).not.toContain("└─");
+    expect(out).not.toContain("(1/7)");
     expect(out).toMatchSnapshot();
   });
 
