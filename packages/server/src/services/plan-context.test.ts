@@ -41,6 +41,15 @@ beforeEach(async () => {
   tempDirs.push(fakeHome);
   process.env.FABRIC_HOME = fakeHome;
   contextCache.invalidate("file_watch");
+  // TASK-004: embed_enabled now defaults TRUE, so a ranking test running on a
+  // machine where the optional fastembed package + model ARE present would load a
+  // real embedder and let vector scores perturb the deterministic text-only
+  // ranking these tests assert. Force the embedder UNAVAILABLE as the hermetic
+  // baseline; the few tests that exercise embeddings inject their own fake AFTER
+  // this hook. Keeps ranking assertions environment-independent (CI without the
+  // model vs a dev box with it cached).
+  const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+  __resetEmbedderForTesting(null);
 });
 
 afterEach(async () => {
@@ -49,6 +58,9 @@ afterEach(async () => {
   } else {
     process.env.FABRIC_HOME = originalFabricHome;
   }
+  // Restore the real lazy-load probe so no embedder state leaks across files.
+  const { __resetEmbedderForTesting } = await import("./vector-retrieval.js");
+  __resetEmbedderForTesting(undefined);
   await Promise.all(tempDirs.splice(0).map(async (path) => {
     await rm(path, { recursive: true, force: true });
   }));

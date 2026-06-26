@@ -42,6 +42,20 @@ let embedderLoad: Promise<Embedder | null> | undefined;
 // (default install attempts it; a platform that can't build it still starts).
 const OPTIONAL_EMBED_PACKAGE = "fastembed";
 
+// Test seam: the module loader behind the optional import, injectable so a test
+// can force the "package absent / load throws" path DETERMINISTICALLY. Required
+// now that fastembed is an optionalDependency CI actually installs — a test can no
+// longer create the absent-package condition by relying on physical absence.
+// Passing undefined restores the real dynamic import. Not part of the runtime
+// contract.
+let embedderModuleLoader: (name: string) => Promise<unknown> = (name) => import(name);
+
+export function __setEmbedderModuleLoaderForTesting(
+  loader: ((name: string) => Promise<unknown>) | undefined,
+): void {
+  embedderModuleLoader = loader ?? ((name) => import(name));
+}
+
 // TASK-004: emit the missing-embedder hint AT MOST ONCE per process. Vectors are
 // on by default now, so a fresh install without a built fastembed would otherwise
 // degrade silently every recall. We surface ONE stderr line, then stay quiet — a
@@ -111,7 +125,7 @@ export async function loadEmbedder(modelName?: string): Promise<Embedder | null>
         // Variable specifier → not statically resolved. `fastembed` is an
         // optional, operator-installed package; absent in the default install.
         const moduleName: string = OPTIONAL_EMBED_PACKAGE;
-        const mod = (await import(moduleName)) as unknown as FastembedModule;
+        const mod = (await embedderModuleLoader(moduleName)) as unknown as FastembedModule;
         if (mod?.FlagEmbedding?.init === undefined) {
           // Loaded but not the embedder we expect → degrade + one-time hint.
           hintMissingEmbedderOnce();

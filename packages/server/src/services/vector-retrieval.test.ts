@@ -8,8 +8,16 @@ import {
   __resetEmbedderForTesting,
   __resetVectorCache,
   __setMissingEmbedderHintForTesting,
+  __setEmbedderModuleLoaderForTesting,
   type Embedder,
 } from "./vector-retrieval.js";
+
+// Simulate the optional package being absent: the dynamic import REJECTS the way
+// Node's loader does for an unresolved module. Used by the degradation tests so
+// they exercise the catch/fallback path DETERMINISTICALLY — fastembed is now an
+// optionalDependency CI installs, so physical absence can no longer be assumed.
+const rejectAsMissing = (): Promise<unknown> =>
+  Promise.reject(new Error("Cannot find module 'fastembed'"));
 
 afterEach(() => {
   // Restore the real lazy-load probe + clear the doc-embedding cache between tests.
@@ -17,6 +25,8 @@ afterEach(() => {
   __resetVectorCache();
   // Restore the real stderr hint sink + reset the one-shot latch.
   __setMissingEmbedderHintForTesting(undefined);
+  // Restore the real dynamic import behind loadEmbedder.
+  __setEmbedderModuleLoaderForTesting(undefined);
 });
 
 describe("cosineSimilarity", () => {
@@ -166,15 +176,18 @@ describe("buildVectorScores fallback contract", () => {
 });
 
 describe("loadEmbedder", () => {
-  it("returns null when the optional fastembed package is not installed (CI default)", async () => {
-    // fastembed is NOT a declared dependency — CI never has it, so the lazy
-    // load must degrade to null rather than throw.
+  it("returns null when the optional fastembed package cannot be loaded", async () => {
+    // fastembed is an optionalDependency: CI installs it, so absence is simulated
+    // by forcing the dynamic import to reject. The lazy load must degrade to null
+    // rather than throw.
+    __setEmbedderModuleLoaderForTesting(rejectAsMissing);
     __resetEmbedderForTesting(undefined);
     const embedder = await loadEmbedder();
     expect(embedder).toBeNull();
   });
 
-  it("still degrades to null when given an explicit model and the package is absent", async () => {
+  it("still degrades to null when given an explicit model and the package fails to load", async () => {
+    __setEmbedderModuleLoaderForTesting(rejectAsMissing);
     __resetEmbedderForTesting(undefined);
     const embedder = await loadEmbedder("fast-bge-small-zh-v1.5");
     expect(embedder).toBeNull();
@@ -183,13 +196,15 @@ describe("loadEmbedder", () => {
   // TASK-004: vectors are on by default, so a missing optional embedder must
   // (a) NOT throw, (b) take the text-only fallback (null), and (c) emit the
   // missing-embedder hint EXACTLY ONCE — not on every recall.
-  it("emits a one-time hint and degrades (no throw) when fastembed is absent", async () => {
+  it("emits a one-time hint and degrades (no throw) when fastembed fails to load", async () => {
     let hintCount = 0;
     __setMissingEmbedderHintForTesting(() => {
       hintCount += 1;
     });
+    // Force the import to reject so the catch/degrade path runs deterministically.
+    __setEmbedderModuleLoaderForTesting(rejectAsMissing);
 
-    // First probe: package genuinely absent → catch → null + hint fires.
+    // First probe: import rejects → catch → null + hint fires.
     __resetEmbedderForTesting(undefined);
     await expect(loadEmbedder()).resolves.toBeNull();
     expect(hintCount).toBe(1);
