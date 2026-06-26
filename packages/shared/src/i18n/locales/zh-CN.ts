@@ -79,6 +79,9 @@ export const zhCNMessages: Messages = {
   // 由 packages/cli/src/commands/config.ts（菜单循环 + 字段编辑）以及
   // getPanelFields() 的 label_i18n_key 引用消费。
   "cli.config.intro": "Fabric 配置",
+  // flat-design-system Wave5 (TASK-005): clack 编辑菜单前那块平铺键值面板的
+  // B-横线标题。
+  "cli.config.panel.title": "当前配置",
   "cli.config.outro": "配置已保存。",
   "cli.config.outro-no-changes": "未做任何修改。",
   "cli.config.cancel": "已取消。",
@@ -153,6 +156,10 @@ export const zhCNMessages: Messages = {
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
+  // flat-design-system Wave5 (TASK-005): 重排后的 doctor C-圆点分组标题
+  // (`● 存储健康` / `● 检查项`),取代原硬编码 sectionBar 字面量。
+  "doctor.group.store-health": "存储健康",
+  "doctor.group.checks": "检查项",
   // v2.0.0-rc.29 REVIEW (codex LOW-2): F2 的 payload 阈值之前只出现在 JSON envelope，
   // 人类输出看不到，导致改了 mcpPayloadLimits 之后没法用 `fabric doctor` 快速确认是否生效。
   "doctor.section.payload-limits": "MCP payload 阈值：",

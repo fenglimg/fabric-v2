@@ -86,6 +86,9 @@ export const enMessages: Messages = {
   // Keys consumed by packages/cli/src/commands/config.ts (menu loop +
   // per-field prompts) and by getPanelFields() (label_i18n_key references).
   "cli.config.intro": "Fabric Configuration",
+  // flat-design-system Wave5 (TASK-005): B-横线 title above the flat key/value
+  // panel printed before the clack edit menu.
+  "cli.config.panel.title": "Current configuration",
   "cli.config.outro": "Configuration saved.",
   "cli.config.outro-no-changes": "No changes made.",
   "cli.config.cancel": "Cancelled.",
@@ -160,6 +163,11 @@ export const enMessages: Messages = {
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  // flat-design-system Wave5 (TASK-005): C-圆点 group headers for the reskinned
+  // doctor surface (`● Store Health` / `● Checks`), replacing the old hardcoded
+  // sectionBar literals so the wording is localized in both locales.
+  "doctor.group.store-health": "Store Health",
+  "doctor.group.checks": "Checks",
   // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's payload-limit defaults reach the JSON
   // envelope but never surfaced in the human renderer, so operators tuning
   // `mcpPayloadLimits` had no fast `fabric doctor` confirmation that their config
