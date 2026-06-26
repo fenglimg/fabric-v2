@@ -5,18 +5,21 @@
 // the top_k.
 //
 // Hard constraints (status.json boundary):
-//   - `--no-embed` is the DEFAULT: vectors are off unless `embed_enabled` is set.
+//   - TASK-004 (P1 recall-engine-refactor): vectors are now ON BY DEFAULT
+//     (embed_enabled defaults true; off only when set explicitly to false). The
+//     prior `--no-embed`-default baseline is retired.
 //   - text-only FALLBACK is complete: when disabled, OR the optional embedder
 //     package is not installed, OR embedding throws, ranking degrades to the
 //     pure BM25 + recency + locality + salience path with ZERO behavior change.
-//   - the install footprint does NOT grow: `fastembed` is NOT a declared
-//     dependency. It is lazy-loaded at runtime via a variable specifier (so it
-//     is not statically resolved / bundled — verified: esbuild keeps the
-//     `await import(moduleName)` un-resolved). The operator opts in by
-//     installing it WHERE THE SERVER RESOLVES MODULES — for the default GLOBAL
-//     MCP install that is a global `npm i -g fastembed`, NOT the project root
-//     (W2-REVIEW codex HIGH-3: a bare specifier resolves by the server module's
-//     location, not the project cwd). Absent → null → fallback.
+//   - the install footprint stays degrade-safe: TASK-004 moves `fastembed` into
+//     `optionalDependencies` — the default install ATTEMPTS to build it, but a
+//     platform that cannot build the native addon still starts (npm tolerates an
+//     optional-dependency build failure). It is lazy-loaded at runtime via a
+//     variable specifier (so it is not statically resolved / bundled — verified:
+//     esbuild keeps the `await import(moduleName)` un-resolved). For a GLOBAL MCP
+//     install that resolves modules from the server's own location (W2-REVIEW
+//     codex HIGH-3: a bare specifier resolves by the server module's location,
+//     not the project cwd). Absent → null → fallback + a ONE-TIME stderr hint.
 //   - the embedder runs on CPU. Model resolution uses `cacheDir` (the operator
 //     pre-warms it). HONEST CAVEAT (W2-REVIEW codex BLOCK-1 / gemini MED-1):
 //     fastembed does NOT expose a strict offline flag here, so a FIRST run with
@@ -35,9 +38,44 @@ export interface Embedder {
 let embedderLoad: Promise<Embedder | null> | undefined;
 
 // The optional package name, held in a variable so `import()` is NOT statically
-// resolved by the bundler/tsc — fastembed is intentionally absent from
-// package.json. Operators enabling vectors run `npm i fastembed` themselves.
+// resolved by the bundler/tsc. TASK-004: fastembed is now an OPTIONAL dependency
+// (default install attempts it; a platform that can't build it still starts).
 const OPTIONAL_EMBED_PACKAGE = "fastembed";
+
+// TASK-004: emit the missing-embedder hint AT MOST ONCE per process. Vectors are
+// on by default now, so a fresh install without a built fastembed would otherwise
+// degrade silently every recall. We surface ONE stderr line, then stay quiet — a
+// per-call warning would spam the MCP stderr channel on every recall.
+const MISSING_EMBEDDER_HINT =
+  "[fabric] vector semantic recall is enabled but the optional 'fastembed' " +
+  "package is unavailable — falling back to text-only ranking. Install it where " +
+  "the server resolves modules (e.g. `npm i -g fastembed`) to enable embeddings, " +
+  "or set embed_enabled:false to silence this.\n";
+
+const defaultMissingEmbedderHint = (): void => {
+  process.stderr.write(MISSING_EMBEDDER_HINT);
+};
+
+let missingEmbedderHinted = false;
+
+// Test seam: the hint sink + its one-shot latch are injectable so a test can
+// assert the hint fires EXACTLY ONCE without scraping the real stderr stream.
+let emitMissingEmbedderHint: () => void = defaultMissingEmbedderHint;
+
+function hintMissingEmbedderOnce(): void {
+  if (missingEmbedderHinted) {
+    return;
+  }
+  missingEmbedderHinted = true;
+  emitMissingEmbedderHint();
+}
+
+// Test seam: override the hint sink and reset the one-shot latch. Passing
+// undefined restores the real stderr sink. Not part of the runtime contract.
+export function __setMissingEmbedderHintForTesting(sink: (() => void) | undefined): void {
+  missingEmbedderHinted = false;
+  emitMissingEmbedderHint = sink ?? defaultMissingEmbedderHint;
+}
 
 // v2.1 ③ vector-chinese-model (P3): build the fastembed init options. Pure +
 // exported so the model-threading is unit-testable without the optional package
@@ -75,6 +113,8 @@ export async function loadEmbedder(modelName?: string): Promise<Embedder | null>
         const moduleName: string = OPTIONAL_EMBED_PACKAGE;
         const mod = (await import(moduleName)) as unknown as FastembedModule;
         if (mod?.FlagEmbedding?.init === undefined) {
+          // Loaded but not the embedder we expect → degrade + one-time hint.
+          hintMissingEmbedderOnce();
           return null;
         }
         // CPU execution; model cache dir is operator-controlled (pre-warm for
@@ -94,6 +134,9 @@ export async function loadEmbedder(modelName?: string): Promise<Embedder | null>
         };
       } catch {
         // Package absent / init failure / runtime error → text-only fallback.
+        // TASK-004: surface a ONE-TIME hint (vectors are on by default now, so a
+        // missing optional embedder must not degrade silently).
+        hintMissingEmbedderOnce();
         return null;
       }
     })();
@@ -121,8 +164,14 @@ interface FastembedModule {
  * Cosine similarity of two equal-length dense vectors. Returns 0 for a zero
  * vector, a length mismatch, OR any non-finite element / result — so a corrupt
  * embedding (NaN / Infinity) can never poison the additive score or the sort
- * comparator (W2-REVIEW codex HIGH-2 / MED-5). The result is clamped to [-1, 1]
- * to absorb floating-point overshoot.
+ * comparator (W2-REVIEW codex HIGH-2 / MED-5).
+ *
+ * TASK-004 (P1 recall-engine-refactor): the result is clamped to [0, 1]. A
+ * negative cosine means the query and doc point in OPPOSITE semantic directions
+ * — for recall that is just "unrelated", indistinguishable from 0, and letting a
+ * negative value flow into the additive/RRF fusion would subtract score from an
+ * otherwise-ranked candidate. The lower bound is therefore 0 (was -1); the upper
+ * bound still absorbs floating-point overshoot above 1. Contract: [0, 1].
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length === 0 || a.length !== b.length) {
@@ -148,7 +197,9 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   if (!Number.isFinite(sim)) {
     return 0;
   }
-  return Math.max(-1, Math.min(1, sim));
+  // TASK-004: clamp to [0, 1] — lower bound 0 (a negative/opposite cosine is
+  // treated as "unrelated", never a negative fusion contribution).
+  return Math.max(0, Math.min(1, sim));
 }
 
 export interface VectorScoreItem {

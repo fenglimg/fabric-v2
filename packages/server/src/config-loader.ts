@@ -86,10 +86,17 @@ export function readSelectionTokenTtlMs(projectRoot: string): number | undefined
  * corrupt field stays isolated.
  */
 /**
- * v2.2 C2-vector (W2-T7): resolve the optional embedding settings. `enabled`
- * defaults to false (`--no-embed` baseline); `weight` defaults to 30. Best-effort
- * and hot-path safe — any read/parse failure returns the safe text-only default
- * (enabled:false) so plan_context never crashes on a corrupt config.
+ * v2.2 C2-vector (W2-T7): resolve the optional embedding settings. `weight`
+ * defaults to 30. Best-effort and hot-path safe — any read/parse failure returns
+ * the safe text-only default (enabled:false) so plan_context never crashes on a
+ * corrupt config.
+ *
+ * P1 recall-engine-refactor (TASK-004): `enabled` now DEFAULTS TRUE — CJK
+ * semantic recall is on out of the box. It is OFF only when the config sets
+ * `embed_enabled` explicitly to `false`. The optional `fastembed` package is
+ * degrade-safe: when absent, loadEmbedder returns null and ranking falls back to
+ * the pure text path (one-time hint, no crash), so default-on never blocks an
+ * install that can't build the embedder.
  */
 // v2.1 ③ vector-chinese-model (P3): supported fastembed@2.x EmbeddingModel enum
 // VALUES (the strings init() consumes). Mirrors the schema enum in
@@ -110,7 +117,9 @@ const SUPPORTED_EMBED_MODELS = new Set<string>([
 export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight: number; model: string } {
   try {
     const config = readFabricConfig(projectRoot);
-    const enabled = config.embed_enabled === true;
+    // TASK-004: default TRUE — enabled unless the operator explicitly opts out
+    // with embed_enabled:false. (Was `=== true`, i.e. default-OFF.)
+    const enabled = config.embed_enabled !== false;
     const rawWeight = config.embed_weight;
     // Cap at 49 (< BM25_WEIGHT 50) — enforces the supplement-not-override
     // invariant; out-of-range / non-integer / non-finite all fall to 30.

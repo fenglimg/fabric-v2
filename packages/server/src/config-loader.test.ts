@@ -135,13 +135,20 @@ describe("config-loader — readEmbedConfig (C2 / W2-T7)", () => {
     writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(obj));
   }
 
-  it("defaults to disabled + weight 30 + Chinese model with no config", () => {
-    expect(readEmbedConfig(tempDir)).toEqual({ enabled: false, weight: 30, model: "fast-bge-small-zh-v1.5" });
+  // TASK-004: enabled now DEFAULTS TRUE — CJK semantic recall is on out of the
+  // box (off only when embed_enabled is explicitly false).
+  it("defaults to ENABLED + weight 30 + Chinese model with no config", () => {
+    expect(readEmbedConfig(tempDir)).toEqual({ enabled: true, weight: 30, model: "fast-bge-small-zh-v1.5" });
   });
 
   it("honors embed_enabled + an in-range weight", () => {
     writeConfig({ embed_enabled: true, embed_weight: 40 });
     expect(readEmbedConfig(tempDir)).toEqual({ enabled: true, weight: 40, model: "fast-bge-small-zh-v1.5" });
+  });
+
+  it("disables only when embed_enabled is explicitly false (TASK-004 opt-out)", () => {
+    writeConfig({ embed_enabled: false, embed_weight: 40 });
+    expect(readEmbedConfig(tempDir)).toEqual({ enabled: false, weight: 40, model: "fast-bge-small-zh-v1.5" });
   });
 
   // v2.1 ③ vector-chinese-model (P3): embed_model selection.

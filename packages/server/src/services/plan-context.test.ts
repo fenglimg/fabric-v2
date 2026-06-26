@@ -1186,7 +1186,13 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
     __resetEmbedderForTesting(fakeEmbedder); // available, but config keeps it OFF
     try {
       const projectRoot = await seedTwoOpaqueEntries();
-      // No embed_enabled → vector path never runs → alphabetic stable_id order.
+      // TASK-004: embed defaults ON, so the OFF path now requires an EXPLICIT
+      // embed_enabled:false. With vectors off → vector path never runs →
+      // alphabetic stable_id order.
+      await writeFile(
+        join(projectRoot, ".fabric", "fabric-config.json"),
+        `${JSON.stringify({ required_stores: [{ id: "team" }], embed_enabled: false }, null, 2)}\n`,
+      );
       const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
       expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9301", "team:KT-DEC-9302"]);
     } finally {
