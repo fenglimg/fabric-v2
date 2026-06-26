@@ -29,8 +29,11 @@ function zhProject(): string {
 }
 
 function isolateHome(): void {
-  // No global Fabric config under an empty HOME → whoami()/scopeExplain() take
-  // their null branch, which is exactly the localized line we assert.
+  // No global Fabric config under an empty home → whoami()/scopeExplain() take
+  // their null branch, which is exactly the localized line we assert. Isolate
+  // via FABRIC_HOME (not by deleting it): resolveGlobalRoot() is fail-closed
+  // under the test runner and throws when FABRIC_HOME is unset, so we point it
+  // at the empty temp home — `<home>/.fabric` does not exist ⇒ same null branch.
   const home = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
   dirs.push(home);
   process.env.HOME = home;
@@ -39,7 +42,7 @@ function isolateHome(): void {
   // the projectRoot-aware translator resolves via the env fallback, so we drive
   // the expected zh-CN rendering through FAB_LANG.
   process.env.FAB_LANG = "zh-CN";
-  delete process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = home;
 }
 
 afterEach(() => {
