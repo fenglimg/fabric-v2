@@ -148,6 +148,39 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     }
   });
 
+  // rc.2 uninstall-symmetry: the cross-skill shared policy lib (skills/lib/
+  // *.md, installed by installSharedSkillLib) had no removal counterpart —
+  // dogfood left an orphaned shared-policy.md + empty skills/lib/ on every
+  // client. Symmetric inverse must sweep the lib files AND the empty dir.
+  it("removes the shared skill lib (skills/lib/*.md) and its empty dir", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-skill-lib");
+    tempRoots.push(target);
+
+    await runInit(target);
+
+    // Pre-condition: shared-policy.md shipped to every client's skills/lib/.
+    for (const clientDir of [".claude", ".codex"]) {
+      expect(
+        existsSync(join(target, clientDir, "skills/lib/shared-policy.md")),
+        `${clientDir} shared-policy.md should exist after init`,
+      ).toBe(true);
+    }
+
+    await runUninstall(target);
+
+    // Lib files + the now-empty lib/ dir cascade-removed by removeSharedSkillLib.
+    for (const clientDir of [".claude", ".codex"]) {
+      expect(
+        existsSync(join(target, clientDir, "skills/lib/shared-policy.md")),
+        `${clientDir} shared-policy.md should be removed`,
+      ).toBe(false);
+      expect(
+        existsSync(join(target, clientDir, "skills/lib")),
+        `${clientDir} empty skills/lib dir should be removed`,
+      ).toBe(false);
+    }
+  });
+
   // W2-01 (F3): cite-policy-evict.cjs was installed (rc.34 TASK-06) across all
   // clients but the uninstall path never removed the script OR pruned the
   // config entry. Round-trip must leave zero cite-policy-evict residue.

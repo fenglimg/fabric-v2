@@ -12,6 +12,7 @@ import {
   HOOK_LIB_DESTINATIONS,
   HOOK_SCRIPT_DESTINATIONS,
   SKILL_DESTINATIONS,
+  SKILL_LIB_DESTINATIONS,
 } from "./skills-and-hooks.js";
 import { fabricAgentsSnapshotPath } from "./write-bootstrap-snapshot.js";
 
@@ -388,6 +389,52 @@ export async function removeHookLibs(
   return results;
 }
 
+/**
+ * Inverse of `installSharedSkillLib`. For each client's `<client>/skills/lib/`
+ * directory in {@link SKILL_LIB_DESTINATIONS}, deletes every `.md` file present
+ * (best-effort — an absent directory yields a single skipped row), then attempts
+ * to rmdir the now-empty `lib/` directory.
+ *
+ * The `.md` glob mirrors {@link removeHookLibs}' `.cjs` glob: future non-`.md`
+ * files in `<client>/skills/lib/` are preserved per the same conservatism.
+ *
+ * rc.2 uninstall-symmetry: `installSharedSkillLib` (rc.37 NEW-13) shipped the
+ * cross-skill shared policy without a removal counterpart, leaving an orphaned
+ * `shared-policy.md` + empty `skills/lib/` after `fabric uninstall` — surfaced
+ * by dogfood. Added in lock-step so uninstall returns the workspace to a clean
+ * state, same class as the rc.16 hook-lib symmetry fix.
+ */
+export async function removeSharedSkillLib(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  const results: UninstallStepResult[] = [];
+  for (const dirRel of SKILL_LIB_DESTINATIONS) {
+    const dirAbs = join(projectRoot, dirRel);
+    if (!existsSync(dirAbs)) {
+      results.push({ step: "skill-lib", path: dirAbs, status: "skipped", message: "absent" });
+      continue;
+    }
+    let entries: string[];
+    try {
+      entries = await readdir(dirAbs);
+    } catch (error: unknown) {
+      results.push({
+        step: "skill-lib",
+        path: dirAbs,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      results.push(await rmIfExists("skill-lib", join(dirAbs, entry)));
+    }
+    results.push(await rmDirIfEmpty("skill-lib-dir", dirAbs));
+  }
+  return results;
+}
+
 // -----------------------------------------------------------------------
 // Hook-config un-merge
 // -----------------------------------------------------------------------
@@ -665,6 +712,12 @@ export async function uninstallBootstrapStage(
   );
   await runAndCollect(results, "hook-post-tooluse-script", projectRoot, () =>
     removePostTooluseMutationHook(projectRoot),
+  );
+
+  // 4b. Shared skill lib (skills/lib/*.md). Like hook libs, it ships AFTER the
+  // skills in install, so it is swept BEFORE them here. rc.2 uninstall-symmetry.
+  await runAndCollect(results, "skill-lib", projectRoot, () =>
+    removeSharedSkillLib(projectRoot),
   );
 
   // 5. Skill files (reverse of install order: connect → audit → store → sync → import → review → archive)

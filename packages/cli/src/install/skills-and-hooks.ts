@@ -286,6 +286,17 @@ export const HOOK_LIB_DESTINATIONS = [
 ] as const;
 
 /**
+ * Project-root-relative `skills/lib/` directories that {@link installSharedSkillLib}
+ * ships the cross-skill shared policy (`templates/skills/lib/*.md`) into. Source
+ * of truth shared with `fabric uninstall`'s `removeSharedSkillLib` so the two
+ * stay in lock-step (KT-PIT-0004: hand-mirrored client paths silently drift).
+ */
+export const SKILL_LIB_DESTINATIONS = [
+  ".claude/skills/lib",
+  ".codex/skills/lib",
+] as const;
+
+/**
  * Project-root-relative paths of each client's hook-config JSON file that
  * `fabric install` merges fabric entries into. Source of truth shared with
  * `fabric uninstall` (which must locate and prune those entries).
@@ -675,7 +686,6 @@ export async function installSharedSkillLib(
   } catch {
     return [{ step: "skill-lib", path: libTemplateDir, status: "skipped", message: "no-lib-files" }];
   }
-  const clientPrefixes = [".claude", ".codex"] as const;
   const results: InstallStepResult[] = [];
   for (const libFile of libFiles) {
     let source: string;
@@ -690,8 +700,8 @@ export async function installSharedSkillLib(
       });
       continue;
     }
-    for (const prefix of clientPrefixes) {
-      const target = join(projectRoot, prefix, "skills", "lib", libFile);
+    for (const dirRel of SKILL_LIB_DESTINATIONS) {
+      const target = join(projectRoot, dirRel, libFile);
       results.push(await copyTextIdempotent("skill-lib", source, target));
     }
   }
