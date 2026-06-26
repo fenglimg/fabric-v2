@@ -18,8 +18,32 @@ import { globalConfigSchema, type GlobalConfig } from "../schemas/store.js";
 // `store/global-config-io.ts` now re-exports these symbols for backward compat.
 // ---------------------------------------------------------------------------
 
+// Vitest sets VITEST in the main process and VITEST_WORKER_ID in each test
+// worker (the pool the suite actually runs in). Either present ⇒ test runtime.
+function isTestRuntime(): boolean {
+  return process.env.VITEST !== undefined || process.env.VITEST_WORKER_ID !== undefined;
+}
+
 export function resolveGlobalRoot(): string {
-  return join(process.env.FABRIC_HOME ?? homedir(), ".fabric");
+  const fabricHome = process.env.FABRIC_HOME;
+  if (fabricHome !== undefined && fabricHome !== "") {
+    return join(fabricHome, ".fabric");
+  }
+  // Fail-closed under the test runner. A unit test that forgot to repoint
+  // FABRIC_HOME to an isolated temp home would otherwise SILENTLY resolve to the
+  // developer's REAL ~/.fabric and read/write the live store registry. That is
+  // not hypothetical: a test fixture's `uid:"test-uid"` + seeded KT-DEC-* entries
+  // once leaked into a real ~/.fabric, deregistering the user's real stores so
+  // `fabric install` stopped offering them. Throwing converts that silent
+  // corruption into a loud, local failure the leaking test owns.
+  if (isTestRuntime()) {
+    throw new Error(
+      "resolveGlobalRoot(): FABRIC_HOME must be set under the test runner — refusing to " +
+        "fall back to the real home dir (~/.fabric). Repoint process.env.FABRIC_HOME to an " +
+        "isolated temp dir in beforeEach (see plan-context.test.ts for the pattern).",
+    );
+  }
+  return join(homedir(), ".fabric");
 }
 
 export function globalConfigPath(globalRoot: string = resolveGlobalRoot()): string {
