@@ -1283,6 +1283,22 @@ const RRF_K = 10;
 // constant (not a magic literal) so calibration is a one-line change.
 const RRF_NORMALIZATION = 2000;
 
+// P1 recall-engine-refactor (follow-up — RRF structural re-scale). RRF compresses
+// the content channel into a narrow band (~RRF_NORMALIZATION/(k+rank): ≈182 at
+// rank 1 down to ≈59 at rank 24 on a ~70-entry corpus), whereas the structural
+// constants (LOCALITY_SAME_FILE 100 / RECENCY_BOOST 25 / SALIENCE 15/8) were
+// calibrated against the WIDE additive content scale (BM25×50 → hundreds–thousands).
+// Added verbatim under RRF they overpower content: a real-store shadow showed a
+// rank-24 content match riding same-file locality (+100) above a rank-3 match, and
+// the top match's lead collapsing from 7× (additive) to 1.1× (RRF). Scaling the
+// whole structural group by ~0.2 restores its ADDITIVE ROLE under RRF — same-file
+// locality (→20) is worth ~1–2 content ranks near the top (breaks near-ties, never
+// promotes a far-back match), and a zero-content structural-only entry (→≤20) stays
+// below every content hit (≥59). Uniform scale preserves the locality>recency>salience
+// ordering. The additive path is untouched (scale 1). Tunable; validated against the
+// real team store before any fusion=rrf default flip.
+const RRF_STRUCTURAL_SCALE = 0.2;
+
 function salienceScore(item: RuleDescriptionIndexItem): number {
   switch (item.description?.maturity) {
     case "proven":
@@ -1335,42 +1351,53 @@ function contentScore(item: RuleDescriptionIndexItem, context: ScoringContext): 
   return content;
 }
 
-function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  // P1 recall-engine-refactor (TASK-003): content channels (additive OR RRF) +
-  // structural boost. structuralBoost is IDENTICAL across both fusion modes.
-  let score = contentScore(item, context);
-
-  // v2.2 C3-salience (W2-T1): maturity tie-breaker, applied AFTER (i.e. weighted
-  // below) BM25. See SALIENCE_* calibration — it only separates entries that are
-  // otherwise equally relevant, never overriding content.
-  score += salienceScore(item);
-
-  // W2-3: recency boost — read description.created_at, compare with now.
+// W2-3: recency boost — fresh within RECENCY_WINDOW_MS earns RECENCY_BOOST, else 0.
+// Shared by the ranking score AND the breakdown so the two never drift.
+function recencyBoost(item: RuleDescriptionIndexItem, context: ScoringContext): number {
   const createdAtRaw = item.description?.created_at;
   if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
     const createdMs = Date.parse(createdAtRaw);
     if (Number.isFinite(createdMs) && context.nowMs - createdMs < RECENCY_WINDOW_MS) {
-      score += RECENCY_BOOST;
+      return RECENCY_BOOST;
     }
   }
+  return 0;
+}
 
-  // W2-4: path-locality scoring — max over (relevance_path, target_path).
-  if (context.targetPaths.length > 0) {
-    const relevancePaths = item.description?.relevance_paths ?? [];
-    let best = 0;
-    // ISS-010: stop as soon as the top tier is reached — LOCALITY_SAME_FILE can
-    // never be beaten, so exhausting the rest of the cartesian product is waste.
-    outer: for (const rp of relevancePaths) {
-      for (const tp of context.targetPaths) {
-        const tier = localityTier(rp, tp);
-        if (tier > best) best = tier;
-        if (best === LOCALITY_SAME_FILE) break outer;
-      }
+// W2-4: path-locality boost — max tier over (relevance_path × target_path). Shared
+// by the ranking score AND the breakdown. ISS-010: stop at the top tier early.
+function localityBoost(item: RuleDescriptionIndexItem, context: ScoringContext): number {
+  if (context.targetPaths.length === 0) return 0;
+  const relevancePaths = item.description?.relevance_paths ?? [];
+  let best = 0;
+  outer: for (const rp of relevancePaths) {
+    for (const tp of context.targetPaths) {
+      const tier = localityTier(rp, tp);
+      if (tier > best) best = tier;
+      if (best === LOCALITY_SAME_FILE) break outer;
     }
-    score += best;
   }
+  return best;
+}
 
-  return score;
+// fusion-mode structural scale: RRF_STRUCTURAL_SCALE under RRF (compresses the
+// additive-calibrated structural group to a tiebreaker fraction of the narrow RRF
+// content band), 1 on the additive default (constants unchanged). Gated on a query
+// for the same reason RRF content is — the no-query probe stays full-weight additive.
+function structuralScaleFor(context: ScoringContext): number {
+  return context.fusion === "rrf" && context.queryTerms.length > 0 ? RRF_STRUCTURAL_SCALE : 1;
+}
+
+function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
+  // P1 recall-engine-refactor (TASK-003 + RRF re-scale follow-up): content channels
+  // (additive OR RRF) + a structural boost. The structural group (salience maturity
+  // tie-breaker + recency + path-locality) only separates entries of comparable
+  // content relevance, never overriding content. Under RRF the group is scaled to a
+  // tiebreaker fraction (structuralScaleFor) so the rank-compressed content channel
+  // still leads; under additive the scale is 1 (original calibration).
+  const content = contentScore(item, context);
+  const structural = salienceScore(item) + recencyBoost(item, context) + localityBoost(item, context);
+  return content + structuralScaleFor(context) * structural;
 }
 
 // P1 recall-observability: numbers-only decomposition of scoreDescriptionItem's
@@ -1411,30 +1438,14 @@ function scoreBreakdownForItem(
         ? (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0)
         : 0;
   }
-  const salience = salienceScore(item);
-
-  let recency = 0;
-  const createdAtRaw = item.description?.created_at;
-  if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
-    const createdMs = Date.parse(createdAtRaw);
-    if (Number.isFinite(createdMs) && context.nowMs - createdMs < RECENCY_WINDOW_MS) {
-      recency = RECENCY_BOOST;
-    }
-  }
-
-  let locality = 0;
-  if (context.targetPaths.length > 0) {
-    const relevancePaths = item.description?.relevance_paths ?? [];
-    let best = 0;
-    outer: for (const rp of relevancePaths) {
-      for (const tp of context.targetPaths) {
-        const tier = localityTier(rp, tp);
-        if (tier > best) best = tier;
-        if (best === LOCALITY_SAME_FILE) break outer;
-      }
-    }
-    locality = best;
-  }
+  // Structural group mirrors scoreDescriptionItem EXACTLY: the same shared helpers,
+  // the same fusion-mode scale — so the displayed salience/recency/locality are the
+  // ACTUAL (scaled) contributions and `final` stays === the ranking score. Under RRF
+  // these are the scaled tiebreaker values; under additive they are the raw constants.
+  const scale = structuralScaleFor(context);
+  const salience = salienceScore(item) * scale;
+  const recency = recencyBoost(item, context) * scale;
+  const locality = localityBoost(item, context) * scale;
 
   const final = bm25 + vector + salience + recency + locality;
   return {

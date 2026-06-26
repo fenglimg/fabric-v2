@@ -189,6 +189,19 @@ async function seedCorpus(): Promise<void> {
     relevance_scope: "broad",
     relevance_paths: ["packages/server/src/target.ts"],
   });
+  // C1 (RRF re-scale regression): a WEAK content hit (single rare term → low BM25
+  // rank) that ALSO has PERFECT same-file locality. Pre-re-scale, RRF compressed the
+  // content channel so the unscaled +100 locality rode this weak match ABOVE the
+  // strong rank-1 content entry (KT-DEC-0001) — the precision regression the real-
+  // store shadow surfaced. With RRF_STRUCTURAL_SCALE the locality (→20) is only a
+  // tiebreaker, so strong content still leads. Asserted in the dedicated test below.
+  await writeStoreEntry("decisions", {
+    id: "KT-DEC-0005",
+    summary: "retrieval",
+    maturity: "draft",
+    relevance_scope: "broad",
+    relevance_paths: ["packages/server/src/target.ts"],
+  });
 }
 
 // --- Dual-run helper -------------------------------------------------------
@@ -219,7 +232,7 @@ describe("plan-context shadow ranker — additive vs rrf dual-run (TASK-003 CI g
 
     expect(reorderedIds(additive, rrf)).toEqual([]);
     // Defensive: the no-query corpus surfaces every seeded entry (floor off).
-    expect(additive).toHaveLength(4);
+    expect(additive).toHaveLength(5);
   });
 
   it("query-mode diff ⊆ explicit allowlist (RRF reorders only the expected entries)", async () => {
@@ -236,33 +249,28 @@ describe("plan-context shadow ranker — additive vs rrf dual-run (TASK-003 CI g
     console.log("ADDITIVE", additive, "\nRRF", rrf);
 
     // Under RRF the two content channels fuse by ORDINAL, so the raw BM25 magnitude
-    // gap collapses: all three content hits (ranks 1-3 → normalized ~182/167/154)
-    // clear the 140 structural ceiling, and KT-DEC-0002's same-package locality (+25)
-    // lifts it above the rank-1 KT-DEC-0001. KT-DEC-0004 (zero content, excluded from
-    // the RRF ranker) legitimately SINKS to last: under additive its 140 structural
-    // outranked the weakest content hit (0003), but RRF normalization makes every
-    // content hit lead — the L-4 "content beats structural-only" property applied to
-    // the whole content set. Whether the WEAKEST content hit should beat a perfect-
-    // locality proven entry is the calibration question the task DEFERS to the one-off
-    // real-store shadow run (RRF_NORMALIZATION is the single knob); the default stays
-    // 'additive' so live ranking is unaffected. All four entries thus participate in
-    // the bounded, fully-explained reorder.
+    // gap collapses and the content hits land in a narrow band; the structural group
+    // is scaled to a tiebreaker (RRF_STRUCTURAL_SCALE) so it nudges near-ties without
+    // overriding content. KT-DEC-0004 (zero content, excluded from the RRF ranker)
+    // SINKS to last: under additive its 140 structural outranked the weakest content
+    // hit, but RRF makes every content hit lead. The reorder set is bounded to the
+    // seeded entries — no unexpected entry sneaks in.
     const ALLOWLIST = new Set([
       "team:KT-DEC-0001",
       "team:KT-DEC-0002",
       "team:KT-DEC-0003",
       "team:KT-DEC-0004",
+      "team:KT-DEC-0005",
     ]);
 
     const diff = reorderedIds(additive, rrf);
     for (const id of diff) {
       expect(ALLOWLIST.has(id)).toBe(true);
     }
-    // The real protective invariant (replaces the earlier false 'anchor never moves'
-    // assumption): under RRF the zero-content structural-only anchor is ranked LAST —
-    // every content hit clears the 140 ceiling. Under additive it sat AHEAD of the
-    // weakest content hit, which is precisely WHY the reorder happens (magnitude vs
-    // ordinal fusion).
+    // The protective invariant: under RRF the zero-content structural-only anchor is
+    // ranked LAST — every content hit clears the scaled structural tiebreaker. Under
+    // additive it sat AHEAD of the weakest content hit (its full 140 structural), which
+    // is precisely WHY the reorder happens (magnitude vs ordinal fusion).
     expect(rrf[rrf.length - 1]).toBe("team:KT-DEC-0004");
     expect(additive.indexOf("team:KT-DEC-0004")).toBeLessThan(
       additive.indexOf("team:KT-DEC-0003"),
@@ -286,5 +294,28 @@ describe("plan-context shadow ranker — additive vs rrf dual-run (TASK-003 CI g
     expect(contentHit).toBeGreaterThanOrEqual(0);
     expect(structuralOnly).toBeGreaterThanOrEqual(0);
     expect(contentHit).toBeLessThan(structuralOnly);
+  });
+
+  it("RRF re-scale: a STRONG content hit beats a WEAK-content hit riding same-file locality", async () => {
+    // The precision regression the real-store shadow surfaced + RRF_STRUCTURAL_SCALE
+    // fixes. KT-DEC-0001 = strong content (rank-1), NO locality. KT-DEC-0005 = weak
+    // content (single term, low rank) WITH perfect same-file locality (+100 raw).
+    // Pre-re-scale RRF compressed content into a narrow band so the unscaled +100
+    // locality rode the weak match ABOVE the strong one (a non-match-ish entry
+    // jumping the queue purely on file co-location). With the structural group scaled
+    // to a tiebreaker, strong content leads and same-file locality only nudges
+    // near-ties — so the strong content hit MUST rank above the weak-content+locality
+    // one. This guards RRF_STRUCTURAL_SCALE against regression.
+    const rrf = await rankUnder("rrf", {
+      paths: ["packages/server/src/target.ts"],
+      target_paths: ["packages/server/src/target.ts"],
+      intent: "zephyr quokka nimbus retrieval",
+    });
+
+    const strongContent = rrf.indexOf("team:KT-DEC-0001"); // rank-1 content, no locality
+    const weakContentSameFile = rrf.indexOf("team:KT-DEC-0005"); // weak content + same-file
+    expect(strongContent).toBeGreaterThanOrEqual(0);
+    expect(weakContentSameFile).toBeGreaterThanOrEqual(0);
+    expect(strongContent).toBeLessThan(weakContentSameFile);
   });
 });
