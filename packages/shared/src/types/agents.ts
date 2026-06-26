@@ -71,9 +71,13 @@ export interface RecallScore {
 
 // P1 recall-observability: numbers-only signal decomposition. `final` is the
 // fused score (sum of the weighted components below). bm25/vector are the
-// WEIGHTED contributions actually added during scoring (0 when the signal is
-// absent — no query / no embedder). bm25_rank / vector_rank are reserved for a
-// later RRF wave and unset today (declared so the wire schema never strips them).
+// content-channel contributions actually added during scoring (0 when the signal
+// is absent — no query / no embedder). Under the ADDITIVE fusion mode these are
+// the weighted raw scores (BM25_WEIGHT·bm25, vectorWeight·vector); under RRF
+// (TASK-003) they are the normalized RRF channel terms (RRF_NORMALIZATION/(k+rank))
+// and bm25_rank / vector_rank carry the 1-indexed ordinal rank the channel
+// contributed (absent when the candidate was excluded from that channel — score
+// <= 0). Declared so the wire schema never strips them.
 export interface RecallScoreBreakdown {
   final: number;
   bm25?: number;

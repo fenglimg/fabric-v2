@@ -253,6 +253,24 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
 // hook-facing config file) — NOT the root `fabric.config.json` that
 // readFabricConfig targets. Returns the configured value when it is a valid
 // [0,1] number, else undefined (caller falls back to the lint default).
+// P1 recall-engine-refactor (TASK-003): content-channel fusion strategy.
+// 'additive' (DEFAULT) preserves the historical weighted-sum ranking; 'rrf'
+// switches the two CONTENT channels (bm25/vector) to Reciprocal Rank Fusion
+// while leaving the structural boost (recency/locality/salience) on its
+// original additive constants. Best-effort and hot-path safe — any read/parse
+// failure OR any value other than the exact string 'rrf' returns the default
+// 'additive', so a corrupt config never silently flips live ranking.
+export const FUSION_DEFAULT: "additive" | "rrf" = "additive";
+
+export function readFusion(projectRoot: string): "additive" | "rrf" {
+  try {
+    const raw = (readFabricConfig(projectRoot) as { fusion?: unknown }).fusion;
+    return raw === "rrf" ? "rrf" : "additive";
+  } catch {
+    return "additive";
+  }
+}
+
 export function readConflictLintThreshold(projectRoot: string): number | undefined {
   try {
     const cfgPath = join(projectRoot, ".fabric", "fabric-config.json");

@@ -14,7 +14,7 @@ import {
   type PayloadGuardOptions,
 } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readEmbedConfig, readDefaultLayerFilter } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readEmbedConfig, readDefaultLayerFilter, readFusion } from "../config-loader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
@@ -26,6 +26,8 @@ import { join } from "node:path";
 import {
   buildBm25Model,
   buildQueryTerms,
+  rankDocuments,
+  rankByScore,
   serializeBm25Model,
   rehydrateBm25Model,
   type Bm25Field,
@@ -59,6 +61,17 @@ type ScoringContext = {
   // tie-break). Used as the tie-break under EQUAL relevance score so a more
   // specific scope outranks a broader one without overriding BM25 relevance.
   scopeRank?: Map<string, number>;
+  // P1 recall-engine-refactor (TASK-003): content-channel fusion strategy.
+  // 'additive' (DEFAULT) = historical weighted-sum path; 'rrf' = Reciprocal Rank
+  // Fusion over the two CONTENT channels. Absent → 'additive'.
+  fusion?: "additive" | "rrf";
+  // P1 recall-engine-refactor (TASK-003): 1-indexed ordinal ranks of the two
+  // content channels, precomputed ONCE over the candidate corpus (RRF needs the
+  // global ordinal, not the per-item raw score). Present ONLY on the rrf path
+  // with query terms; a stable_id is ABSENT from a map when its channel score is
+  // <= 0 (zero-match exclusion). Undefined → additive path / no-query.
+  bm25Ranks?: Map<string, number>;
+  vectorRanks?: Map<string, number>;
 };
 
 export type PlanContextInput = {
@@ -440,6 +453,30 @@ export async function planContext(
     if (vectorScores !== null) {
       scoringContext.vectorScores = vectorScores;
       scoringContext.vectorWeight = embedConfig.weight;
+    }
+  }
+
+  // P1 recall-engine-refactor (TASK-003): content-channel fusion strategy. Read
+  // ONCE here (best-effort, defaults 'additive'). When 'rrf' AND a query exists,
+  // precompute the two CONTENT-channel ordinal rank maps over the candidate
+  // corpus — RRF needs the GLOBAL ordinal, not the per-item raw score, so it
+  // cannot be derived inside scoreDescriptionItem. Candidates whose channel score
+  // is <= 0 are OMITTED from the rank map (zero-match exclusion: a doc with no
+  // term overlap / no embedding must not earn a positive tail-rank that would let
+  // it fuse over a structural-only entry). The corpus is walked in stable_id
+  // order so the rank tie-break is deterministic. structural signals NEVER enter
+  // these maps — RRF fuses ONLY bm25 and vector. On the additive default this
+  // whole block is skipped, so live ranking is byte-identical to pre-TASK-003.
+  scoringContext.fusion = readFusion(projectRoot);
+  if (scoringContext.fusion === "rrf" && scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
+    const rankIds = rawItems
+      .map((item) => item.stable_id)
+      .sort((a, b) => compareStableIds(a, b));
+    if (scoringContext.bm25 !== undefined) {
+      scoringContext.bm25Ranks = rankDocuments(scoringContext.bm25, rankIds, scoringContext.queryTerms);
+    }
+    if (scoringContext.vectorScores !== undefined) {
+      scoringContext.vectorRanks = rankByScore(rankIds, scoringContext.vectorScores);
     }
   }
 
@@ -1177,6 +1214,31 @@ const SALIENCE_PROVEN = 15;
 const SALIENCE_VERIFIED = 8;
 const SALIENCE_DRAFT = 0;
 
+// P1 recall-engine-refactor (TASK-003): Reciprocal Rank Fusion of the two
+// CONTENT channels. RRF(d) = Σ 1/(k + rank_c(d)) over channels c ∈ {bm25,
+// vector} for which d has a positive score (a zero-match channel contributes
+// nothing — d is simply absent from that channel's rank map). The rank-only
+// fuse discards each channel's uncalibrated absolute magnitude, so a strong
+// BM25 hit and a strong vector hit combine on equal footing.
+//
+// k=10 is the conventional RRF smoothing constant (Cormack et al. 2009 used 60
+// over web-scale runs; a small KB corpus of tens of entries wants a smaller k so
+// the head-vs-tail gap stays expressive — k=10 keeps rank-1 (1/11≈0.091) clearly
+// ahead of rank-5 (1/15≈0.067) without a long flat tail). Starting point per the
+// task; the exact value is a tuning concern for the one-off real-store shadow run.
+const RRF_K = 10;
+
+// P1 recall-engine-refactor (TASK-003): normalization multiplier that lifts the
+// raw RRF sum (< 1) onto the structural-boost scale so a content hit can clear
+// the top structural tier (same-file 100 + proven 15 + recency 25 = 140). Sized
+// for the WORST case (the common BM25-only deployment, no embedder): a SINGLE
+// rank-1 content channel ≈ 1/(10+1) ≈ 0.0909, so 2000 → ≈182 > 140 — a content
+// hit still beats a structural-only entry even with only one channel firing. A
+// dual rank-1 (bm25 + vector) ≈ 2/11 → ≈364, comfortably ahead. This is the
+// SINGLE tunable knob the task defers to the real-store shadow run; it is a named
+// constant (not a magic literal) so calibration is a one-line change.
+const RRF_NORMALIZATION = 2000;
+
 function salienceScore(item: RuleDescriptionIndexItem): number {
   switch (item.description?.maturity) {
     case "proven":
@@ -1189,24 +1251,50 @@ function salienceScore(item: RuleDescriptionIndexItem): number {
   }
 }
 
-function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  let score = 0;
+// P1 recall-engine-refactor (TASK-003): the CONTENT contribution to the fused
+// score, isolated so the additive vs RRF choice lives in ONE place and the
+// structural boost (salience/recency/locality) is shared verbatim by both. RRF
+// fuses ONLY the two content channels (bm25_rank, vector_rank); structural
+// signals NEVER enter RRF. A candidate absent from a channel's rank map (its
+// channel score was <= 0 — zero-match exclusion) contributes 0 from that channel.
+function contentScore(item: RuleDescriptionIndexItem, context: ScoringContext): number {
+  const hasQuery = context.queryTerms.length > 0;
 
-  // v2.2 A-INFRA-1 (W1-T2-BM25): content relevance — the lead signal. 0 when no
-  // query terms / no BM25 model (broad probe), preserving recency+locality-only
-  // ranking for the backward-compatible path.
-  if (context.bm25 !== undefined && context.queryTerms.length > 0) {
-    score += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
+  // RRF path: ONLY when fusion === 'rrf' AND query terms exist. The no-query
+  // probe NEVER takes this branch — it falls through to the additive path where
+  // the content channels naturally contribute 0, keeping no-query ranking
+  // byte-identical to the historical behavior.
+  if (context.fusion === "rrf" && hasQuery) {
+    let rrf = 0;
+    const bm25Rank = context.bm25Ranks?.get(item.stable_id);
+    if (bm25Rank !== undefined) rrf += 1 / (RRF_K + bm25Rank);
+    const vectorRank = context.vectorRanks?.get(item.stable_id);
+    if (vectorRank !== undefined) rrf += 1 / (RRF_K + vectorRank);
+    return RRF_NORMALIZATION * rrf;
   }
 
+  // Additive path (DEFAULT). v2.2 A-INFRA-1 (W1-T2-BM25): content relevance — the
+  // lead signal. 0 when no query terms / no BM25 model (broad probe), preserving
+  // recency+locality-only ranking for the backward-compatible path.
+  let content = 0;
+  if (context.bm25 !== undefined && hasQuery) {
+    content += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
+  }
   // v2.2 C2-vector (W2-T7): semantic recall SUPPLEMENT, layered after BM25. 0
   // when embeddings are disabled / the optional embedder is absent / no query
   // (vectorScores undefined) — the text-only fallback. The weight is kept below
   // BM25_WEIGHT so vectors rescue semantic matches into the top_k without
   // overriding lexical relevance.
   if (context.vectorScores !== undefined) {
-    score += (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0);
+    content += (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0);
   }
+  return content;
+}
+
+function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
+  // P1 recall-engine-refactor (TASK-003): content channels (additive OR RRF) +
+  // structural boost. structuralBoost is IDENTICAL across both fusion modes.
+  let score = contentScore(item, context);
 
   // v2.2 C3-salience (W2-T1): maturity tie-breaker, applied AFTER (i.e. weighted
   // below) BM25. See SALIENCE_* calibration — it only separates entries that are
@@ -1245,21 +1333,40 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
 // fused score into its weighted signal contributions. Mirrors scoreDescriptionItem
 // EXACTLY component-for-component so `final` === scoreDescriptionItem(item, ctx)
 // — pure observability, NOT a second scoring path that could drift from ranking.
-// bm25/vector are the WEIGHTED contributions actually summed in (0 when the
-// signal is absent). bm25_rank/vector_rank are reserved for a later RRF wave and
-// left unset today.
+// bm25/vector are the content-channel contributions actually summed in (0 when
+// the signal is absent). P1 recall-engine-refactor (TASK-003): under RRF fusion
+// these become the normalized RRF channel terms and bm25_rank/vector_rank carry
+// the ordinal each channel contributed.
 function scoreBreakdownForItem(
   item: RuleDescriptionIndexItem,
   context: ScoringContext,
 ): RecallScoreBreakdown {
-  const bm25 =
-    context.bm25 !== undefined && context.queryTerms.length > 0
-      ? BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms)
-      : 0;
-  const vector =
-    context.vectorScores !== undefined
-      ? (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0)
-      : 0;
+  const hasQuery = context.queryTerms.length > 0;
+  const rrfMode = context.fusion === "rrf" && hasQuery;
+
+  // P1 recall-engine-refactor (TASK-003): the content channels mirror
+  // scoreDescriptionItem's contentScore EXACTLY so `final` stays === the ranking
+  // score. Under RRF, bm25/vector are the NORMALIZED RRF terms and *_rank carry
+  // the ordinal; under additive they are the weighted raw scores (rank unset).
+  let bm25 = 0;
+  let vector = 0;
+  let bm25Rank: number | undefined;
+  let vectorRank: number | undefined;
+  if (rrfMode) {
+    bm25Rank = context.bm25Ranks?.get(item.stable_id);
+    if (bm25Rank !== undefined) bm25 = RRF_NORMALIZATION * (1 / (RRF_K + bm25Rank));
+    vectorRank = context.vectorRanks?.get(item.stable_id);
+    if (vectorRank !== undefined) vector = RRF_NORMALIZATION * (1 / (RRF_K + vectorRank));
+  } else {
+    bm25 =
+      context.bm25 !== undefined && hasQuery
+        ? BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms)
+        : 0;
+    vector =
+      context.vectorScores !== undefined
+        ? (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0)
+        : 0;
+  }
   const salience = salienceScore(item);
 
   let recency = 0;
@@ -1289,7 +1396,9 @@ function scoreBreakdownForItem(
   return {
     final,
     ...(bm25 !== 0 ? { bm25 } : {}),
+    ...(bm25Rank !== undefined ? { bm25_rank: bm25Rank } : {}),
     ...(vector !== 0 ? { vector } : {}),
+    ...(vectorRank !== undefined ? { vector_rank: vectorRank } : {}),
     salience,
     recency,
     locality,

@@ -271,3 +271,66 @@ export function rehydrateBm25Model(serialized: SerializedBm25Model): Bm25Model {
 export function buildQueryTerms(text: string): string[] {
   return tokenize(text);
 }
+
+/**
+ * P1 recall-engine-refactor (TASK-003): expose the BM25 ORDINAL RANK of each
+ * document so Reciprocal Rank Fusion can consume it. `scoreDoc` already yields a
+ * raw, query-relative magnitude; RRF needs the ordinal position instead.
+ *
+ * Returns a `Map<id, rank>` where rank is 1-indexed (1 = highest BM25 score),
+ * ordered score-DESC with the supplied `ids` order as the deterministic
+ * tie-break (callers pass ids in a stable order, e.g. stable_id-sorted). Only
+ * documents with a STRICTLY POSITIVE score are ranked — a zero-match document
+ * (no query-term overlap) is OMITTED from the map, so the RRF caller can exclude
+ * it from the ranker rather than handing it a positive tail-rank that would let
+ * a non-match earn a fusion score. Empty query terms → empty map (no ranking).
+ */
+export function rankDocuments(
+  model: Bm25Model,
+  ids: readonly string[],
+  queryTerms: string[],
+): Map<string, number> {
+  if (queryTerms.length === 0) {
+    return new Map();
+  }
+  const scored: { id: string; score: number; order: number }[] = [];
+  ids.forEach((id, order) => {
+    const score = model.scoreDoc(id, queryTerms);
+    if (score > 0) {
+      scored.push({ id, score, order });
+    }
+  });
+  scored.sort((a, b) => (a.score !== b.score ? b.score - a.score : a.order - b.order));
+  const ranks = new Map<string, number>();
+  scored.forEach((entry, index) => {
+    ranks.set(entry.id, index + 1);
+  });
+  return ranks;
+}
+
+/**
+ * P1 recall-engine-refactor (TASK-003): the generic rank companion for the
+ * vector channel (and any pre-scored signal). Same contract as `rankDocuments`
+ * but driven by an already-computed `id → raw score` map: 1-indexed rank,
+ * score-DESC, `ids` order as tie-break, STRICTLY-POSITIVE-only (a 0/absent
+ * cosine is omitted so a zero-match doc never earns a positive tail-rank). RRF
+ * fuses ONLY these two content ranks; structural signals never enter here.
+ */
+export function rankByScore(
+  ids: readonly string[],
+  scores: Map<string, number>,
+): Map<string, number> {
+  const scored: { id: string; score: number; order: number }[] = [];
+  ids.forEach((id, order) => {
+    const score = scores.get(id) ?? 0;
+    if (score > 0) {
+      scored.push({ id, score, order });
+    }
+  });
+  scored.sort((a, b) => (a.score !== b.score ? b.score - a.score : a.order - b.order));
+  const ranks = new Map<string, number>();
+  scored.forEach((entry, index) => {
+    ranks.set(entry.id, index + 1);
+  });
+  return ranks;
+}
