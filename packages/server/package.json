@@ -1,6 +1,6 @@
 {
   "name": "@fenglimg/fabric-server",
-  "version": "2.3.0-rc.2",
+  "version": "2.3.0-rc.3",
   "description": "Fabric MCP knowledge server — stdio transport for Claude Code / Codex CLI, manages .fabric/ knowledge base + agents.meta.json + event ledger.",
   "license": "MIT",
   "author": "wangzhichao <fenglimg90@gmail.com>",
