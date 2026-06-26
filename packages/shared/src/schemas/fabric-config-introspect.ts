@@ -277,7 +277,9 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // nudge_mode — the master switch for the human-visible nudge experience
   // (the most user-facing runtime knob, previously JSON-only). embed_enabled —
   // vector semantic recall, panel-editable now that config lives in `.fabric`
-  // (A1); enabling also needs the host-side `fabric install --enable-embed`.
+  // (A1). TASK-004: default ON (fastembed is an optionalDependency, degrade-safe
+  // when absent) — this introspection default mirrors the runtime read in
+  // config-loader.ts so the panel never shows a default that contradicts behavior.
   makeEnumField("nudge_mode", "D_behavior", nudgeModeSchema.options, "normal"),
-  makeBooleanField("embed_enabled", false),
+  makeBooleanField("embed_enabled", true),
 ];

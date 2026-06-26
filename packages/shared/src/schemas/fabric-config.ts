@@ -483,10 +483,13 @@ export const fabricConfigSchema = z.object({
   // sole retrieval knob (plan_context_top_k above); payload limits pass through
   // explicit `mcpPayloadLimits`, else the fixed PAYLOAD_LIMIT_DEFAULT_* guardrail.
   // v2.2 C2-vector (W2-T7): OPTIONAL dense-embedding semantic retrieval, layered
-  // as a recall supplement after BM25. Default OFF (`--no-embed` is the baseline);
-  // requires the operator to install the optional `fastembed` package — absent →
-  // text-only fallback. Never grows the default install footprint.
-  embed_enabled: z.boolean().optional().default(false),
+  // as a recall supplement after BM25. P1 recall-engine-refactor (TASK-004):
+  // Default ON — `fastembed` is now an optionalDependency (auto-installed; absent →
+  // degrade-safe text-only fallback), so CJK semantic recall is on out of the box.
+  // OFF only when set explicitly to false. This default mirrors the runtime read in
+  // config-loader.ts (`embed_enabled !== false`); keep the two in sync so config
+  // introspection never reports a default that contradicts runtime behavior.
+  embed_enabled: z.boolean().optional().default(true),
   // Weight applied to the 0..1 cosine similarity before it joins the additive
   // score. Capped at 49 — strictly BELOW BM25_WEIGHT (50) — so a perfect vector
   // match (weight × 1) can never outscore a single strong BM25 term match. This
