@@ -1,5 +1,5 @@
 import { paint, symbol, sectionBar, isColorEnabled } from "@fenglimg/fabric-shared/theme";
-import { tree, grid } from "./structure.js";
+import { tree, grid, headerRule } from "./structure.js";
 import type {
   OutputRenderer,
   OutputRendererConfig,
@@ -14,16 +14,16 @@ import type {
  *
  * Pure string composition over the shared theme palette
  * (packages/shared/src/theme.ts) plus the W3-B structural primitives
- * (sectionBar from theme.ts; tree/grid from ./structure.ts). The OutputRenderer
- * interface (the seam consumed by install/pipeline/pipeline.ts) is unchanged;
- * only what the render* methods EMIT changes — flat coloured lines become
- * section-bar headers + tree-branch steps + a grid summary + a left-bar error
- * block (mockups #2 + #4, .workflow/scratch/20260623-brainstorm-w3b-visual-language).
+ * (sectionBar from theme.ts; tree/grid/headerRule from ./structure.ts). The
+ * OutputRenderer interface (the seam consumed by install/pipeline/pipeline.ts) is
+ * unchanged; only what the render* methods EMIT changes — flat coloured lines
+ * become section-bar / B-横线 headers + tree-branch steps + a grid summary + a
+ * gutter-free (no `│` wall, spec §0.4) plain-indented error block.
  *
- * Visual structure is now carried by the primitives; colour stays the 7-token
- * accent layer. The ASCII fallback (NO_COLOR / non-TTY) degrades each primitive
- * deterministically — `▌`→`# `, `├─`/`└─`→`+-`/`` `- ``, painted `│ `→`| ` — so
- * log scrapers and snapshots stay stable.
+ * Visual structure is carried by the primitives; colour stays the accent layer.
+ * The ASCII fallback (NO_COLOR / non-TTY) degrades each primitive deterministically
+ * — `├─`/`└─`→`+-`/`` `- ``, the B-横线 rule `─`→`-` — so log scrapers and
+ * snapshots stay stable.
  */
 export class ConsoleOutputRenderer implements OutputRenderer {
   private config: OutputRendererConfig;
@@ -89,8 +89,8 @@ export class ConsoleOutputRenderer implements OutputRenderer {
 
   renderError(error: ErrorInfo | Error): void {
     const info = error instanceof Error ? toErrorInfo(error) : error;
-    // Mockup #4: a `▌ [err] <Title>` badge header (sectionBar carries the bar),
-    // then a left-bar (`│ ` / `| `) grouped block of message / 💡 hint / stack.
+    // spec §0.4: a B-横线 `[err] <Title>` header, then a plain-indented (no `│`)
+    // grouped block of message / 💡 hint / ↳ stack.
     this.write(buildErrorBlock(info, Boolean(this.config.verbose), this.colorOn));
   }
 
@@ -236,16 +236,11 @@ export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): strin
   return lines.join("\n");
 }
 
-/** Left-bar glyph — painted `│ ` (truecolor) / `| ` (ASCII), mockup #4. */
-function leftBar(colorOn: boolean): string {
-  return colorOn ? paint("accent", "│", colorOn) + " " : "| ";
-}
-
 /**
- * Mockup #4: error rendered as a `▌ [err] <Title>` badge header + a left-bar
- * grouped block. Each of message / blank / 💡 hint / ↳ stack-frame is prefixed
- * with the painted (`│ `) / ASCII (`| `) bar. Code, hint and stack are optional;
- * stack only renders when verbose.
+ * spec §0.4: error rendered as a B-横线 `[err] <Title>` header + a plain-indented
+ * grouped block. message / blank / 💡 hint / ↳ stack-frame are two-space indented
+ * with NO `│` wall. Code, hint and stack are optional; stack only renders when
+ * verbose. headerRule reads live env, which under NO_COLOR agrees with colorOn=false.
  */
 export function buildErrorBlock(info: ErrorInfo, verbose: boolean, colorOn: boolean): string {
   const title = info.title || "Error";
@@ -253,21 +248,20 @@ export function buildErrorBlock(info: ErrorInfo, verbose: boolean, colorOn: bool
   const hint = info.hint;
   const stack = info.stack;
 
-  const header = sectionBar(`[err] ${title}`, colorOn);
-  const bar = leftBar(colorOn);
+  const header = headerRule(`[err] ${title}`);
   const lines: string[] = [header, ""];
 
   const message = code ? `${info.message} ${paint("muted", `(${code})`, colorOn)}` : info.message;
-  lines.push(`  ${bar}${paint("error", message, colorOn)}`);
+  lines.push(`  ${paint("error", message, colorOn)}`);
 
   if (hint) {
-    lines.push(`  ${bar.trimEnd()}`);
-    lines.push(`  ${bar}${paint("muted", `💡 ${hint}`, colorOn)}`);
+    lines.push("");
+    lines.push(`  ${paint("muted", `💡 ${hint}`, colorOn)}`);
   }
 
   if (verbose && stack) {
     for (const frame of stack.split("\n").slice(0, 5)) {
-      lines.push(`  ${bar}${paint("muted", `↳ ${frame.trim()}`, colorOn)}`);
+      lines.push(`  ${paint("muted", `↳ ${frame.trim()}`, colorOn)}`);
     }
   }
 

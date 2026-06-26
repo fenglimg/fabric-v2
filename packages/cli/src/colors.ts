@@ -32,6 +32,7 @@ export const paint = {
   drift: tokenPainter("drift"),
   ai: tokenPainter("ai"),
   human: tokenPainter("human"),
+  accent: tokenPainter("accent"),
   muted: tokenPainter("muted"),
 } as const;
 

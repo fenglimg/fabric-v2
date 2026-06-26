@@ -11,18 +11,14 @@
 // builders are exported so the NO_COLOR snapshot test can pin output without
 // spying on stdout.
 
-import { sectionBar } from "@fenglimg/fabric-shared/theme";
-
-import { isColorEnabled, paint, symbol } from "../colors.js";
+import { paint, symbol } from "../colors.js";
+import { headerRule } from "../tui/structure.js";
 
 // ── pure string builders ───────────────────────────────────────────────────
 
-/** Intro: accent section bar + a muted rule line beneath it. */
+/** Intro: 平铺风 B-横线 命令级大标题(标题 + 一条 dim 细横线,spec §0.4). */
 export function buildIntro(title: string): string {
-  const bar = sectionBar(title);
-  const ruleChar = isColorEnabled() ? "─" : "-";
-  const rule = paint.muted(ruleChar.repeat(40));
-  return `${bar}\n${rule}`;
+  return headerRule(title);
 }
 
 /** Outro: a single success-painted closing line. */
@@ -54,17 +50,15 @@ export const buildLog = {
 } as const;
 
 /**
- * Note: an optional section-bar title followed by a left-bar grouped block —
- * each body line prefixed with a painted `│ ` (truecolor) / `| ` (none).
+ * Note(spec §0.2 去竖墙):可选的 B-横线标题 + 纯两空格缩进的正文块 —
+ * 不再带逐行 `│`/`| ` 竖墙,靠缩进 + 留白分层。
  */
 export function buildNote(body: string, title?: string): string {
-  const on = isColorEnabled();
-  const barPrefix = on ? paint.muted("│ ") : "| ";
   const block = body
     .split("\n")
-    .map((line) => `${barPrefix}${line}`)
+    .map((line) => `  ${line}`)
     .join("\n");
-  return title ? `${sectionBar(title)}\n${block}` : block;
+  return title ? `${headerRule(title)}\n${block}` : block;
 }
 
 // ── thin stdout wrappers ────────────────────────────────────────────────────

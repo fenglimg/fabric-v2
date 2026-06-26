@@ -69,7 +69,7 @@ describe("ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR)", 
 });
 
 describe("ConsoleOutputRenderer reskin — error block (NO_COLOR)", () => {
-  it("renders the error left-bar block with hint + stack (mockup #4)", () => {
+  it("renders the gutter-free error block with hint + stack (spec §0.4)", () => {
     const info: ErrorInfo = {
       title: "InstallError",
       message: "Store clone failed: remote unreachable",
@@ -78,22 +78,24 @@ describe("ConsoleOutputRenderer reskin — error block (NO_COLOR)", () => {
       stack: "Error: boom\n    at clone (store.ts:42)\n    at install (install.ts:88)",
     };
     const out = buildErrorBlock(info, true, false);
-    // ASCII fallback: `# ` section bar prefix + `| ` left-bar, no truecolor glyphs.
-    expect(out).toContain("# [err] InstallError");
-    expect(out).toContain("| ");
+    // spec §0.4: B-横线 `[err]` header + plain-indented body, NO `│`/`| ` wall, no `▌`.
+    expect(out).toContain("[err] InstallError");
+    expect(out).not.toContain("| ");
     expect(out).not.toContain("▌");
     expect(out).not.toContain("│");
     expect(out).toContain("💡 check the URL");
     expect(out).toMatchSnapshot();
   });
 
-  it("renders the error block without hint/stack (non-verbose, mockup #4)", () => {
+  it("renders the gutter-free error block without hint/stack (non-verbose, spec §0.4)", () => {
     const info: ErrorInfo = {
       title: "Error",
       message: "something failed",
     };
     const out = buildErrorBlock(info, false, false);
-    expect(out).toContain("# [err] Error");
+    expect(out).toContain("[err] Error");
+    expect(out).not.toContain("│");
+    expect(out).not.toContain("| ");
     expect(out).not.toContain("💡");
     expect(out).toMatchSnapshot();
   });

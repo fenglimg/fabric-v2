@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`theme-clack context wrap (NO_COLOR) > buildIntro renders section bar + rule 1`] = `
-"# Fabric install
+exports[`theme-clack context wrap (NO_COLOR) > buildIntro renders a B-横线 header (title + rule) 1`] = `
+"Fabric install
 ----------------------------------------"
 `;
 
@@ -14,12 +14,13 @@ exports[`theme-clack context wrap (NO_COLOR) > buildLog renders all four levels 
 }
 `;
 
-exports[`theme-clack context wrap (NO_COLOR) > buildNote renders a left-bar block with optional title 1`] = `
+exports[`theme-clack context wrap (NO_COLOR) > buildNote renders a gutter-free indented block with optional title 1`] = `
 {
-  "titled": "# Overview
-| line one
-| line two",
-  "untitled": "| solo line",
+  "titled": "Overview
+----------------------------------------
+  line one
+  line two",
+  "untitled": "  solo line",
 }
 `;
 

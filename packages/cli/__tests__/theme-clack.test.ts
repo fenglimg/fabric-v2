@@ -20,8 +20,12 @@ describe("theme-clack context wrap (NO_COLOR)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("buildIntro renders section bar + rule", () => {
-    expect(buildIntro("Fabric install")).toMatchSnapshot();
+  it("buildIntro renders a B-横线 header (title + rule)", () => {
+    const out = buildIntro("Fabric install");
+    // spec §0.4: title line + a dim rule; NO `▌` solid block under NO_COLOR.
+    expect(out).not.toContain("▌");
+    expect(out).toContain("----------------------------------------");
+    expect(out).toMatchSnapshot();
   });
 
   it("buildOutro renders a closing line", () => {
@@ -37,10 +41,14 @@ describe("theme-clack context wrap (NO_COLOR)", () => {
     }).toMatchSnapshot();
   });
 
-  it("buildNote renders a left-bar block with optional title", () => {
-    expect({
-      titled: buildNote("line one\nline two", "Overview"),
-      untitled: buildNote("solo line"),
-    }).toMatchSnapshot();
+  it("buildNote renders a gutter-free indented block with optional title", () => {
+    const titled = buildNote("line one\nline two", "Overview");
+    const untitled = buildNote("solo line");
+    // spec §0.2: no per-line `│`/`| ` wall — plain two-space indent only.
+    expect(titled).not.toContain("│");
+    expect(titled).not.toContain("| ");
+    expect(untitled).not.toContain("│");
+    expect(untitled).not.toContain("| ");
+    expect({ titled, untitled }).toMatchSnapshot();
   });
 });
