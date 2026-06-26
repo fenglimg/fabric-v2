@@ -1,0 +1,55 @@
+{
+  "summary": "Implement the LOCKED Fabric CLI 'flat / airy' visual language across install / uninstall / doctor / config and the shared clack-context layer. Removes the output-side `│` left wall (clack-only gutter), replaces the heavy `▌` sectionBar in CLI OUTPUT with a NEW CLI-local B-横线 (title + dim `──────` rule) header + C-圆点 (`● group`) sub-group primitive, routes the remaining hardcoded English (G1) through t(), fixes the reinstall misreport + collapse bypass (G2), collapses the per-stage double-line into a single in-place spinner (G5), adds flat clack回执 lines after prompts, lands a single '下一步 →' footer anchor (G6), and de-jargons the uninstall summary (G3). 6 tasks across 5 waves matching the spec's landing order.",
+  "approach": "Wave 1 lands the global visual base in the CLI tui layer (new header primitive in structure.ts + flatten note/log/error/intro/outro — no `│` wall in OUTPUT). Wave 2 fixes G1 i18n leaks in ConsoleOutputRenderer + reshapes the summary card to the B-横线 title + human per-stage status + single '下一步 →' anchor (G6). Wave 3 fixes the pipeline G2 logic (detail keyed off r.changed, collapse survives a prompt-flushed buffer) + G5 single-line spinner. Wave 4 adds flat clack回执 lines. Wave 5 re-lays-out doctor (B-横线 + health badge + C-圆点 groups, drop tree), config display/edit, and the uninstall summary + de-jargon. The new header primitive is CLI-OUTPUT-only and is NOT the shared sectionBar — sectionBar / PALETTE / symbol stay byte-mirrored to lib/theme.cjs and parity-locked, so touching them would blast the SessionStart hook surface and break theme-parity.test.ts.",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"],
+  "task_count": 6,
+  "complexity": "high",
+  "estimated_time": "5h",
+  "recommended_execution": "Agent",
+  "waves": [
+    { "wave": 1, "tasks": ["TASK-001"] },
+    { "wave": 2, "tasks": ["TASK-002"] },
+    { "wave": 3, "tasks": ["TASK-003"] },
+    { "wave": 4, "tasks": ["TASK-004"] },
+    { "wave": 5, "tasks": ["TASK-005", "TASK-006"] }
+  ],
+  "data_flow": {
+    "diagram": null,
+    "stages": [
+      "structure.ts header primitive (headerRule B-横线 + groupDot C-圆点) — new CLI-local tokens",
+      "theme-clack.ts buildNote/buildLog/buildIntro/buildOutro flatten (drop output-side `│` wall)",
+      "ConsoleOutputRenderer.ts renderComplete/renderSummaryCard/buildSummaryBlock → t() + B-横线 + single footer anchor",
+      "pipeline.ts buildSummary detail keyed off r.changed; collapse gate survives buffer.flushed; renderStep single-line spinner",
+      "doctor.ts / config.ts / uninstall.ts adopt B-横线 + C-圆点 groups; uninstall de-jargon"
+    ]
+  },
+  "design_decisions": [
+    "FOUNDATIONAL: the new B-横线 / C-圆点 header primitive is CLI-OUTPUT-LOCAL (lives in packages/cli/src/tui/structure.ts alongside tree/grid), NOT the shared theme.ts sectionBar. sectionBar/PALETTE/symbol are byte-mirrored to lib/theme.cjs and guarded by theme-parity.test.ts AND consumed by the SessionStart hook surface — introducing a NEW primitive avoids parity/hook blast radius while letting CLI output drop the heavy `▌` block.",
+    "Reuse the existing 7-token Fabric PALETTE verbatim (accent / muted / success / warn / error / ai / human) — NO new colors (parity-tested). Header rule = muted `──────`; dot = accent `●`; status symbols stay the existing ✓/!/x from theme.ts symbol().",
+    "Keep @clack prompt controls (select/multiselect/confirm/text) native and unwrapped (C-006). The `│` gutter is allowed ONLY in clack prompt lines; ALL Fabric self-drawn OUTPUT (note/log/summary/error/doctor/config display) is gutter-free.",
+    "i18n locales are TS object tables (packages/shared/src/i18n/locales/en.ts + zh-CN.ts) guarded by locale-parity.test.ts (key-for-key parity). Every new/changed user-facing string MUST be added to BOTH tables or the parity test fails — this is the deterministic i18n gate.",
+    "G2 has two independent root causes that must BOTH be fixed: (a) buildSummary's detail row uses r.installed.length for the status word while allIdempotent correctly keys off r.changed — fix the detail to say up-to-date when r.changed!==true; (b) a mid-pipeline clack prompt flushes the buffer (buffer.flushed=true) which bypasses the collapse gate — make collapse fire on all-idempotent even when the buffer was flushed.",
+    "G5 spinner is TTY-only: redraw in place with `\\x1b[1A\\x1b[2K` (cursor up 1 + clear line) so 'running' is overwritten by the final status; non-TTY (CI/pipe) prints ONLY the final line (no running placeholder)."
+  ],
+  "shared_context": {
+    "patterns": [
+      "pure string builders + thin void writers (theme-clack.ts buildIntro/buildNote pattern; ConsoleOutputRenderer buildStepLine/buildSummaryBlock)",
+      "CLI-local structural primitives in tui/structure.ts (tree/grid) consuming colors.ts paint, with ASCII NO_COLOR fallback",
+      "every render* builder takes explicit colorOn and degrades deterministically for the NO_COLOR/non-TTY snapshot tests"
+    ],
+    "conventions": [
+      "ESM imports with .js extension; strict TypeScript",
+      "all user-facing strings via t() from ../i18n.js; ASCII no-color fallback (# title / [ok]/[warn]/[error])",
+      "semantic PALETTE tokens by ROLE never by color name"
+    ],
+    "dependencies": ["@clack/prompts", "@fenglimg/fabric-shared", "string-width", "citty"]
+  },
+  "_metadata": {
+    "timestamp": "2026-06-26T00:00:00Z",
+    "source": "workflow-planner",
+    "planning_mode": "full",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "git_commit": null
+  }
+}

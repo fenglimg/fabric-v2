@@ -1,0 +1,100 @@
+{
+  "id": "TASK-005",
+  "title": "Wave5 doctor + config 重排:B-横线标题 + 健康徽章 + C-圆点分组(废树形线)+ config 留白键值展示/编辑流平铺",
+  "description": "Re-lay-out the doctor human report and the config display/edit flow to the flat language. doctor.ts: renderDoctorHeader → B-横线 (headerRule) + a health badge; renderDoctorStoreHealth + renderDoctorChecks drop the `tree()` branch lines in favor of C-圆点 groups (`● Store Health` / `● Checks`) with plain-indented rows. config.ts: the key/value display becomes留白 plain rows (no gutter), the clack select/text edit flow stays native (回执 from TASK-004). Reuse the new CLI-local headerRule/groupDot — do NOT touch shared sectionBar.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "doctor.ts: renderDoctorHeader returns `${headerRule('fabric doctor · ' + target)} ${renderStatus(status)}` (B-横线 + health badge) instead of sectionBar. renderDoctorStoreHealth + renderDoctorChecks: replace `${sectionBar('Store Health')}\\n${tree(rows)}` with `${groupDot(t(...))}` header + rows rendered as plain `  <badge><ref> <message>` lines (no `├─`/`└─`). renderFixKnowledgeMutations / writeIssueSection section headers move to groupDot. config.ts: the display function renders each field as a gutter-free `  <label>: <value>` row under a headerRule title; the select/text edit path is unchanged (native clack). Keep all status badges as the existing symbol() ✓/!/x.",
+  "status": "completed",
+  "completed_at": "2026-06-26T16:00:00.000Z",
+  "actual_duration": null,
+  "scope": "packages/cli/src/commands",
+  "focus_paths": ["packages/cli/src/commands/doctor.ts", "packages/cli/src/commands/config.ts"],
+  "read_first": [
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/commands/config.ts",
+    "packages/cli/src/tui/structure.ts",
+    "packages/shared/src/theme.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    "packages/shared/src/i18n/locales/zh-CN.ts"
+  ],
+  "depends_on": ["TASK-001"],
+  "wave": 5,
+  "parallel_group": "wave5",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "doctor.ts renderDoctorHeader uses headerRule (grep 'headerRule' in doctor.ts), NOT sectionBar, and appends a status/health badge",
+      "doctor.ts renderDoctorStoreHealth + renderDoctorChecks no longer call tree() for the section body (grep 'tree(' in doctor.ts returns no match in those two functions) and use groupDot for the section header",
+      "config.ts display renders gutter-free key/value rows (grep config.ts contains NO `│` literal in the display path) under a headerRule title",
+      "Any new section-label strings are defined in BOTH en.ts and zh-CN.ts (grep the new keys in both files); existing 'Store Health'/'Checks' wording preserved or localized in both locales",
+      "[UI-observable] running `fabric doctor` shows a B-横线 header with a health badge and `● Store Health` / `● Checks` groups with plain-indented rows (no `├─`/`└─` tree branches)",
+      "[UI-observable] running `fabric config` shows a flat key/value panel (no `│` gutter) before the clack edit prompt",
+      "pnpm --filter @fenglimg/fabric-shared test exits 0 (locale parity) && pnpm --filter @fenglimg/fabric-cli test exits 0 (doctor-reskin.test.ts / config tests updated) && pnpm -r exec tsc --noEmit exits 0"
+    ],
+    "verification": "Inspect doctor.ts render* funcs for headerRule/groupDot and absence of tree(); update doctor-reskin.test.ts (NO_COLOR snapshot) to the new flat output; run shared+cli tests + tsc; eyeball `fabric doctor` + `fabric config`.",
+    "definition_of_done": "The doctor report and config display render in the flat B-横线 + C-圆点 language with no tree branches and no output-side `│`, while the config edit flow stays native clack with the TASK-004 receipt."
+  },
+  "files": [
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "action": "modify",
+      "target": "renderDoctorHeader, renderDoctorStoreHealth, renderDoctorChecks, renderFixKnowledgeMutations, writeIssueSection",
+      "change": "Header → headerRule + health badge. Section bodies → groupDot header + plain-indented rows; drop tree(). Status badges stay symbol() ✓/!/x."
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "modify",
+      "target": "config display function",
+      "change": "Render key/value rows gutter-free under a headerRule title; leave the clack select/text edit native (receipt from TASK-004)."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "enMessages",
+      "change": "Add any new doctor/config section-label keys (e.g. cli.doctor.group.store-health, cli.doctor.group.checks) if the existing literals are not already keyed."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "zhCNMessages",
+      "change": "Add the SAME new keys with zh-CN values."
+    }
+  ],
+  "implementation": [
+    "Refactor doctor.ts render* to headerRule + groupDot, dropping tree() in the two section bodies; add a health badge to the header.",
+    "Refactor config.ts display to gutter-free key/value rows under a headerRule title.",
+    "Add/route any new section labels through both locale tables.",
+    "Update doctor-reskin.test.ts + config snapshot/unit tests to the new flat output.",
+    "Run shared + cli tests + tsc."
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-shared test", "pnpm --filter @fenglimg/fabric-cli test", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/cli/**/doctor-reskin*.test.ts", "packages/cli/src/commands/*config*.test.ts"],
+    "integration": [],
+    "success_metrics": ["doctor uses B-横线 + C-圆点, no tree branches", "config panel gutter-free", "tests green"]
+  },
+  "reference": {
+    "pattern": "doctor.ts existing render* pure composers (renderDoctorHeader/Checks/StoreHealth) — swap sectionBar→headerRule, tree→groupDot+plain rows",
+    "files": ["packages/cli/src/commands/doctor.ts", "packages/cli/src/tui/structure.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Reuse the Wave-1 headerRule/groupDot primitives; preserve the diagnostic row wording so existing string assertions / JSON output stay intact — only structure changes.",
+    "decision_factors": ["spec §2 doctor = B-横线 + 健康徽章 + C-圆点; 废树形线", "JSON output path must stay untouched"],
+    "tradeoffs": null
+  },
+  "risks": ["doctor-reskin.test.ts pins the old tree/sectionBar output — must be regenerated, not skipped; the JSON (args.json) path must NOT be touched."],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["doctor", "config"],
+    "affected_components": ["commands/doctor", "commands/config"],
+    "affected_requirements": ["spec §2 doctor re-layout", "spec §2 config flatten"],
+    "adr_ids": []
+  },
+  "meta": { "estimated_time": "55m", "risk": "medium", "autonomous": true, "checkpoint": false }
+}

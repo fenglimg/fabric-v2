@@ -1,0 +1,22 @@
+{
+  "$schema": "session-archive/1.0",
+  "session_id": "ANL-001",
+  "session_type": "analyze",
+  "session_path": "scratch/20260625-analyze-P1-recall-engine-refactor",
+  "lifecycle": { "status": "sealed", "sealed_at": "2026-06-25", "archived_at": null, "linked_milestone": "M-recall-align-20260625" },
+  "content_refs": [
+    { "type": "discussion", "path": "discussion.md" },
+    { "type": "exploration-codebase", "path": "exploration-codebase.json" },
+    { "type": "perspectives", "path": "perspectives.json" },
+    { "type": "analysis", "path": "analysis.md" },
+    { "type": "conclusions", "path": "conclusions.json" },
+    { "type": "context", "path": "context.md" },
+    { "type": "context-package", "path": "context-package.json" }
+  ],
+  "extraction": {
+    "harvested": false,
+    "reason": "no-signal",
+    "note": "实现方案决策经 context-package.json#constraints[] 承载,下游 maestro-plan 消费;实现落地前不抽进 spec/knowhow。"
+  },
+  "pruned": null
+}

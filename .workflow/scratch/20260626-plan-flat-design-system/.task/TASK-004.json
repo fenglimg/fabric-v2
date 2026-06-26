@@ -1,0 +1,111 @@
+{
+  "id": "TASK-004",
+  "title": "Wave4 控件回执:select/multiselect/confirm/text 后打平铺无沟槽 `✓ 已选/已设置 · X` 行 + 收紧提问文案",
+  "description": "Add a flat (gutter-free) 回执 line after each clack prompt resolves, WITHOUT wrapping or replacing the clack controls (C-006). After select/multiselect → `✓ 已选 · <label(s)>`; after confirm Yes → `✓ <action>`, No → `x <action 取消>` (朱红); after text → `✓ 已设置 · <value>`. Tighten the prompt message/option copy where it leaks jargon. The receipt line uses the existing theme symbol (✓/x) + paint, printed gutter-free (no `│`).",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "Add a small helper (e.g. in install/theme-clack.ts or a new tui/prompt-receipt.ts) `promptReceipt(kind, value)` returning a gutter-free line: select/multiselect/text → `${symbol.ok} ${t('cli.prompt.receipt.selected'|'cli.prompt.receipt.set')} · ${value}`; confirm-no → `${symbol.error} ${paint.error(t('cli.prompt.receipt.cancelled'))}`. Call it at each prompt call site that currently leaves a bare clack block: the install wizard (install-wizard.ts), uninstall wizard multiselect/confirm (uninstall.ts createDefaultUninstallWizardAdapter + confirmDestructive), and config edit (config.ts select/text ~line 367,467). Add the receipt i18n keys to both locales. Do NOT import or restyle the clack control itself.",
+  "status": "completed",
+  "completed_at": "2026-06-26",
+  "actual_duration": null,
+  "scope": "packages/cli/src/install, packages/cli/src/commands, packages/shared/src/i18n",
+  "focus_paths": ["packages/cli/src/install/install-wizard.ts", "packages/cli/src/commands/uninstall.ts", "packages/cli/src/commands/config.ts"],
+  "read_first": [
+    "packages/cli/src/install/install-wizard.ts",
+    "packages/cli/src/commands/uninstall.ts",
+    "packages/cli/src/commands/config.ts",
+    "packages/cli/src/install/theme-clack.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    "packages/shared/src/i18n/locales/zh-CN.ts",
+    "packages/shared/src/theme.ts"
+  ],
+  "depends_on": ["TASK-001"],
+  "wave": 4,
+  "parallel_group": null,
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "A promptReceipt helper exists and is gutter-free (grep the helper; it contains NO `│` literal and uses symbol.ok / symbol.error from the theme)",
+      "en.ts AND zh-CN.ts both define 'cli.prompt.receipt.selected', 'cli.prompt.receipt.set', 'cli.prompt.receipt.cancelled' (grep each in both files)",
+      "The clack controls remain native — grep confirms NO new wrapper around select/multiselect/confirm/text (theme-clack.ts still wraps CONTEXT only; C-006 comment intact)",
+      "[UI-observable] selecting an option in `fabric config` prints a flat `✓ 已设置 · <value>` line (no `│` gutter) after the clack control closes",
+      "[UI-observable] cancelling a confirm prints a flat red `x <…取消>` line, not a bare clack outro",
+      "pnpm --filter @fenglimg/fabric-shared test exits 0 (locale parity) && pnpm --filter @fenglimg/fabric-cli test exits 0 && pnpm -r exec tsc --noEmit exits 0"
+    ],
+    "verification": "grep the receipt keys in both locales; run config/uninstall wizard tests; eyeball a `fabric config` edit to see the gutter-free ✓ receipt.",
+    "definition_of_done": "Every interactive prompt leaves a single flat ✓/x receipt line after it closes, clack controls stay native and unwrapped, and the receipt copy is localized in both locales."
+  },
+  "files": [
+    {
+      "path": "packages/cli/src/install/theme-clack.ts",
+      "action": "modify",
+      "target": "new promptReceipt helper (or new tui/prompt-receipt.ts)",
+      "change": "Add promptReceipt(kind:'selected'|'set'|'cancelled', value?) → gutter-free `${symbol.ok|symbol.error} ${t(...)} · ${value}` line. CONTEXT-only scope preserved; PROMPT controls not wrapped."
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "modify",
+      "target": "select/text edit flow (~line 367, 467)",
+      "change": "After a successful select/text edit, print promptReceipt('set', value)."
+    },
+    {
+      "path": "packages/cli/src/commands/uninstall.ts",
+      "action": "modify",
+      "target": "createDefaultUninstallWizardAdapter, confirmDestructive",
+      "change": "After the multiselect resolves print promptReceipt('selected', labels); on confirm Yes/No print the ✓/x receipt."
+    },
+    {
+      "path": "packages/cli/src/install/install-wizard.ts",
+      "action": "modify",
+      "target": "wizard prompt call sites",
+      "change": "Print promptReceipt after each resolved prompt."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "enMessages",
+      "change": "Add cli.prompt.receipt.selected='Selected', cli.prompt.receipt.set='Set', cli.prompt.receipt.cancelled='Cancelled'."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "zhCNMessages",
+      "change": "Add the SAME keys: 已选 / 已设置 / 已取消."
+    }
+  ],
+  "implementation": [
+    "Add the promptReceipt helper + receipt i18n keys to both locales.",
+    "Wire promptReceipt into config edit, uninstall wizard + confirmDestructive, install wizard call sites.",
+    "Leave all clack control calls native (do not wrap).",
+    "Run shared + cli tests + tsc."
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-shared test", "pnpm --filter @fenglimg/fabric-cli test", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/cli/src/commands/*config*.test.ts", "packages/cli/src/commands/*uninstall*.test.ts"],
+    "integration": [],
+    "success_metrics": ["flat ✓/x receipt after every prompt", "clack controls unmodified", "locale parity green"]
+  },
+  "reference": {
+    "pattern": "theme-clack.ts CONTEXT-only wrapping + symbol.ok/symbol.error from theme; uninstall.ts already prints summaries after the wizard",
+    "files": ["packages/cli/src/install/theme-clack.ts", "packages/cli/src/commands/uninstall.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "A single gutter-free receipt helper called at each prompt site keeps clack native (C-006) while giving the flat ✓ acknowledgement the spec mandates.",
+    "decision_factors": ["C-006 forbids wrapping prompt controls", "spec §2 wants a留白 ✓ 回执 after each control"],
+    "tradeoffs": null
+  },
+  "risks": ["Calling promptReceipt on a cancelled prompt must use the cancel branch (x), not the success branch."],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["install", "uninstall", "config"],
+    "affected_components": ["install/theme-clack", "commands/config", "commands/uninstall"],
+    "affected_requirements": ["spec §2 control回执", "C-006 clack lock"],
+    "adr_ids": []
+  },
+  "meta": { "estimated_time": "50m", "risk": "low", "autonomous": true, "checkpoint": false }
+}

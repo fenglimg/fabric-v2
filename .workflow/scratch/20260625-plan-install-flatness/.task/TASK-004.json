@@ -1,0 +1,69 @@
+{
+  "id": "TASK-004",
+  "status": "completed",
+  "title": "首装 vs 重装 定调 + 重装智能折叠体检卡片",
+  "description": "Detect globalConfig===null (first-run onboarding tone + '首次设置中' context on extra prompts) vs re-run. When re-run AND all stages idempotent (no installs), collapse output to a single health-check card (✓ Fabric 已是最新 · N 阶段就绪 · 无改动), details behind --verbose. First-install never collapses; any change -> normal per-phase output. Uses the unified renderer + buildSummary end-pass aggregation from TASK-001.",
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "Detect first-install vs re-install: in packages/cli/src/install/pipeline/store.stage.ts the first-run signal is globalConfig===null (line ~70). Expose this as context.state.firstInstall (set early, e.g. in install-v2.ts createInstallContext or preflight/env) so all stages can read it. First-install: pipeline intro uses an onboarding-tone string t('cli.install.pipeline.intro.firstRun'); extra prompts (language/personal in store.stage.ts:65-83) get a '首次设置中' context label via t('cli.install.store.firstRunContext'). Re-install: in packages/cli/src/install/pipeline/pipeline.ts at the end of execute(), reuse buildSummary's aggregated dispositions to detect all-idempotent (every stage disposition === 'skipped' OR (ran with installed.length===0)); when firstInstall===false AND all-idempotent AND no errors, suppress the per-phase streaming summary and render a single health-check card via renderer.renderSummaryCard with t('cli.install.healthcheck.title') = '✓ Fabric 已是最新 · N 阶段就绪 · 无改动'; full per-phase detail only when context.args.verbose (add --verbose arg in install-v2.ts args if absent). Any stage with installed.length>0 -> normal per-phase output (no collapse). All copy via t() en+zh-CN. ALSO (C-006): in packages/cli/src/install/pipeline/guidance.stage.ts demote printCapabilitySummary (the 4×6 ASCII capability table, lines 156-237) behind context.args.verbose on the normal (non-collapsed, incl first-install) path — by default print a single summary line t('cli.install.capabilities.summaryLine', {count}) and let the summary card lead the closing impression; full table only when --verbose. (TASK-004 owns the --verbose arg, so the table-demotion lives here to keep --verbose logic in one task.) NOTE: extend InstallState in packages/cli/src/install/pipeline/types.ts with a firstInstall?: boolean field.",
+  "scope": "packages/cli/src/commands/install-v2.ts, packages/cli/src/install/pipeline/pipeline.ts, packages/cli/src/install/pipeline/store.stage.ts, packages/cli/src/install/pipeline/types.ts, packages/cli/src/install/pipeline/guidance.stage.ts",
+  "read_first": [
+    "packages/cli/src/install/pipeline/pipeline.ts",
+    "packages/cli/src/install/pipeline/store.stage.ts",
+    "packages/cli/src/commands/install-v2.ts",
+    "packages/cli/src/install/pipeline/types.ts",
+    "packages/cli/src/tui/types.ts",
+    ".workflow/scratch/20260625-grill-install-flatness/context-package.json"
+  ],
+  "depends_on": ["TASK-001"],
+  "wave": 2,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "grep -nE 'firstInstall|globalConfig === null|globalConfig===null' packages/cli/src/install/pipeline/store.stage.ts shows first-run detection wired to a context.state.firstInstall flag",
+      "grep -nE 'firstRun|firstRunContext' packages/shared/src/i18n/locales/zh-CN.ts returns >=1 match (onboarding tone + 首次设置中 context strings exist)",
+      "grep -nE 'healthcheck|已是最新|无改动' packages/shared/src/i18n/locales/zh-CN.ts returns >=1 match for the health-check card string",
+      "grep -nE 'verbose' packages/cli/src/commands/install-v2.ts shows a --verbose arg gating full detail on collapse",
+      "grep -nE 'verbose|summaryLine' packages/cli/src/install/pipeline/guidance.stage.ts shows printCapabilitySummary full table gated behind --verbose with a default single summary line (C-006 capability-table demotion)",
+      "grep -nE 'firstInstall' packages/cli/src/install/pipeline/types.ts shows InstallState extended with a firstInstall flag",
+      "[runtime] a test with firstInstall=false and all stage dispositions skipped/ran-with-zero-installed asserts a single health-check card is rendered (renderSummaryCard called once, per-phase streaming suppressed)",
+      "[runtime] a test with firstInstall=false and one stage installed.length>0 asserts NO collapse (normal per-phase output) and a test with firstInstall=true asserts onboarding intro string is used and never collapses"
+    ],
+    "verification": "cd packages/cli && pnpm exec tsc --noEmit && pnpm test -- pipeline && pnpm test -- store.stage",
+    "definition_of_done": "首装走 onboarding 定调且额外提问带'首次设置中'语境;重装且全幂等无 install 时折叠为单张体检卡片,明细走 --verbose;首装或任一改动均不折叠走正常逐 phase。"
+  },
+  "files": [
+    {"path": "packages/cli/src/commands/install-v2.ts", "action": "modify", "target": "createInstallContext + args", "change": "Add --verbose arg; set context.state.firstInstall if detectable at entry"},
+    {"path": "packages/cli/src/install/pipeline/pipeline.ts", "action": "modify", "target": "execute() end + buildSummary (201-228)", "change": "Detect all-idempotent re-install; render single health-check card; full detail behind --verbose"},
+    {"path": "packages/cli/src/install/pipeline/store.stage.ts", "action": "modify", "target": "globalConfig===null detection (~line 70), language/personal prompts (65-83)", "change": "Set firstInstall flag; add 首次设置中 context on first-run prompts. COORDINATION: land AFTER TASK-002's store.stage.ts rewrite (rebase onto it)"},
+    {"path": "packages/cli/src/install/pipeline/types.ts", "action": "modify", "target": "InstallState interface (~line 117)", "change": "Add firstInstall?: boolean field"},
+    {"path": "packages/cli/src/install/pipeline/guidance.stage.ts", "action": "modify", "target": "printCapabilitySummary (lines 156-237)", "change": "Demote 4×6 capability table behind --verbose; default single summary line + summary card leads (C-006)"}
+  ],
+  "implementation": [
+    "Read store.stage.ts to confirm globalConfig===null first-run signal; set context.state.firstInstall early",
+    "Add onboarding intro + 首次设置中 context strings (en+zh-CN) and use them for first-install",
+    "Add --verbose arg in install-v2.ts; thread context.args.verbose",
+    "In pipeline.execute() end-pass, reuse buildSummary aggregation to detect all-idempotent re-install; render single health-check card when firstInstall===false && all-idempotent && no errors",
+    "Suppress per-phase streaming output on collapse unless --verbose; any installed.length>0 -> normal output",
+    "Write tests: collapse case, no-collapse-on-change case, first-install onboarding case; run tsc + pipeline + store tests"
+  ],
+  "reference": {
+    "pattern": "Reuse buildSummary disposition aggregation (pipeline.ts:201-228) for the end-pass collapse decision",
+    "files": ["packages/cli/src/install/pipeline/pipeline.ts"]
+  },
+  "rationale": {
+    "chosen_approach": "Smart collapse (grill choice): all-idempotent re-install collapses to a reassurance card; first-install gets full onboarding; detail via --verbose.",
+    "decision_factors": ["full-skipped re-install painting 7×installed=0 IS the original flatness complaint", "buildSummary already aggregates disposition so all-idempotent is computable at end-pass"],
+    "tradeoffs": "Collapse decision is end-pass (after streaming) — streaming phase stays minimal/silent, card prints at end (R13)."
+  },
+  "risks": [
+    {"risk": "R13: smart collapse needs all-idempotent judgment but output is streamed per-phase, so collapse must be end-pass", "mitigation": "reuse buildSummary end-pass aggregation; keep streaming minimal/silent then print health-check card if all-idempotent, or pre-scan dispositions"}
+  ],
+  "meta": {
+    "estimated_time": "2h",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

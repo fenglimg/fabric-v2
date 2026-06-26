@@ -1,0 +1,53 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-w3-remaining",
+    "session_path": "scratch/20260624-grill-w3-remaining",
+    "generated_at": "2026-06-24"
+  },
+  "requirements": [
+    { "id": "R-001", "title": "W3-C skill 终态拓扑", "description": "skill 8→2 real leaf(archive/review)+ 2 thin shim(store/sync 路由 CLI)+ 0 router;import/audit/connect 折 mode", "priority": "must", "ref": "grill-report.md#Branch-2" },
+    { "id": "R-002", "title": "W3-I 重定义为 HUD 渐进披露重写", "description": "SessionStart HUD summary 截断 + REFERENCE 分组计数 + 删死文件;6→5 已由 W2-6 完成", "priority": "must", "ref": "grill-report.md#Branch-1" },
+    { "id": "R-003", "title": "新增 W3-J config schema 瘦身", "description": "config schema 43→~18 + nudge_mode 唯一可见总表盘;lenient parser 零迁移", "priority": "must", "ref": "grill-report.md#Branch-1" },
+    { "id": "R-004", "title": "W3-H 拆为 why-not-surfaced 诊断", "description": "本轮只做 doctor why-not-surfaced 诊断 + scope 三因决策表;砍 relevance 轴 defer", "priority": "should", "ref": "grill-report.md#Branch-5" }
+  ],
+  "constraints": [
+    { "id": "C-001", "area": "skill", "constraint": "store/sync 破坏性操作的 confirm-before-mutate 门 MUST 放 CLI 本身,确定性来自 CLI 设计不依赖 skill 厚度", "rationale": "AI 走偏风险源于选错子命令/flag,息在 CLI;薄 shim 化消除 NS-04 指的 4 套漂移 i18n + ~11 触发词维护税", "status": "locked", "ref": "grill-report.md#Q2.1" },
+    { "id": "C-002", "area": "migration", "constraint": "每个删/改名命令的 W3 PR MUST 先迁调用点→验证 JSON/行为一致→再删旧名→登记 retired-registry,retired-reference lint 当 CI 闸", "rationale": "scope-explain/plan-context-hint/onboard-coverage 均活契约,census 差点误删;别裸删从人肉变结构保证", "status": "locked", "ref": "grill-report.md#Q3.1" },
+    { "id": "C-003", "area": "build", "constraint": "W3-G MUST 独立 PR;bundle 出的 cjs 与现手写字节一致 + 运行时零外部 TS 依赖,byte-identical 测试守", "rationale": "hook 自包含约束;1336 行平行 cjs 是 rc.21/24/29 类复发根", "status": "locked", "ref": "grill-report.md#Q4.1" },
+    { "id": "C-004", "area": "process", "constraint": "W3 启动前 MUST 先钉死 shared 间歇 flaky 测试", "rationale": "带病 CI 信号污染每个 W3 PR 红绿判断", "status": "locked", "ref": "grill-report.md#Q3.2" },
+    { "id": "C-005", "area": "sequencing", "constraint": "PR 顺序 SHOULD = C/D/E 并行 → F 收口;G/H/I/J 独立插空", "rationale": "F 是 C/D/E 合项;其余互不依赖", "status": "locked", "ref": "grill-report.md#Q4.2" },
+    { "id": "C-006", "area": "rollout", "constraint": "一次落终态,router 直接删,不分步'观察一版'", "rationale": "零用户/clean-slate 无验证成本摊销;回滚靠 git revert", "status": "locked", "ref": "grill-report.md#Q5.2" },
+    { "id": "C-007", "area": "skill", "constraint": "connect→review relate mode 默认不主动 propose;import→archive source、audit→review retire 均经既有写路径落盘不引入新写面", "rationale": "运行时 include_related 已够;零新写路径", "status": "locked", "ref": "grill-report.md#Q2.2" }
+  ],
+  "domain": {
+    "problem_statement": "把剩余 W3 七项大重设计(census 时所写)的设计拷问到对齐当前代码现实(W0–W3b 已改变代码),消解内部冲突,重排为可执行 9 项 backlog + 各项验收门 RFC 2119。",
+    "terminology": [
+      { "term": "real leaf skill", "definition": "有独立 LLM 工作流 + 完整 gate 的 skill(archive/review)", "code_ref": "templates/skills/fabric-archive,fabric-review", "status": "locked" },
+      { "term": "thin shim", "definition": "skill 仅做意图路由→CLI,安全由 CLI confirm 门提供(store/sync)", "code_ref": "templates/skills/fabric-store,fabric-sync", "status": "locked" },
+      { "term": "migrate-before-delete", "definition": "先迁调用点验证再删旧名,retired lint CI 拦", "code_ref": "W2-2 retired-reference lint", "status": "locked" },
+      { "term": "progressive disclosure", "definition": "HUD 开局给截断索引+分组计数,正文按需取", "code_ref": "knowledge-hint-broad.cjs", "status": "locked" },
+      { "term": "PreToolUse orchestrator", "definition": "单 PreToolUse hook 合并 narrow+cite,W3-I 6→5 已落实证", "code_ref": "templates/hooks/knowledge-pretooluse.cjs", "status": "locked" }
+    ],
+    "audience": "Fabric 维护者(非工程背景项目主 + AI 执行者)",
+    "industry": "AI 知识层 / 开发者工具"
+  },
+  "non_goals": [
+    { "title": "砍 relevance 轴(broad/narrow 移出用户可见模型)", "rationale": "P2 高÷高,动归档/注入整条管道;why-not-surfaced 诊断已兜底困惑", "ref": "grill-report.md#Q5.1" },
+    { "title": "skill 4→2 的'下版再评'", "rationale": "已被 2-real-leaf+2-shim 终态取代,moot", "ref": "grill-report.md#Q2.1" }
+  ],
+  "insights": [
+    { "area": "scope-drift", "summary": "proposals 写于 census 时,W2-6 已把 hook 合并成单 PreToolUse orchestrator,W3-I'6→5'结构主体已完成 —— grill 必须对齐当前真源而非旧态", "evidence": "templates/hooks/knowledge-pretooluse.cjs 已是唯一 PreToolUse 注册点", "ref": "grill-report.md#Discovery" },
+    { "area": "conflict-resolution", "summary": "F1(4 leaf)vs NS-04(2 leaf)冲突由'护栏归位'消解:不是数量之争,而是 store/sync 的 skill 层从厚变薄、安全从 skill 迁到 CLI", "evidence": "用户真实意图=破坏性 store 操作安全,非 LLM 判断", "ref": "grill-report.md#Q2.1" },
+    { "area": "orphaned-work", "summary": "W2-3 part2 被 defer 到不存在的'W3 config 重设计',成无主孤儿;立为 W3-J", "evidence": "W2-3 status DONE_WITH_CONCERNS", "ref": "grill-report.md#Q1.2" }
+  ],
+  "open_questions": [
+    { "area": "command-naming", "question": "W3-F 内 3 内部 RPC 是 rename 成 __ 前缀(NS-01,触发 spawn/skill 契约迁移)还是保持当前 hidden-by-allowlist(零迁移)?", "options": ["rename __ 前缀走 migrate-before-delete", "保持 hidden,靠 retired lint 防误读"], "ref": "grill-report.md#OQ-1" }
+  ],
+  "references": [
+    { "type": "grill-report", "path": "grill-report.md" },
+    { "type": "terminology", "path": "terminology.md" },
+    { "type": "upstream", "path": "../../.maestro/20260623-fabric-ux-census/proposals/north-star" }
+  ]
+}

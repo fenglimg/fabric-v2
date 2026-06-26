@@ -1,0 +1,115 @@
+{
+  "id": "TASK-001",
+  "title": "K2: split read-only fab_pending out of fab_review",
+  "description": "Extract the two READ actions (list + search) of fab_review into a NEW read-only MCP tool fab_pending (readOnlyHint:true, idempotentHint:true). fab_review keeps ONLY the 6 write actions (approve/reject/modify/modify-content/modify-layer/defer). Pure relocation — the new tool reuses the EXISTING list/search input filters + output item shapes verbatim, ZERO behavior change. Atomic cross-end migration: every skill SKILL.md / ref / shared-policy / test that calls fab_review with action list|search MUST move to fab_pending in the SAME PR, and list/search MUST be removed from the FabReview* unions + FabReviewInputShape enum. Constraints C-001 (do NOT touch modify-content/modify-layer separation), C-002 (read tool honest readOnlyHint:true), C-006/C-007 (atomic migration + rebuild shared).",
+  "type": "feature",
+  "priority": "high",
+  "effort": "large",
+  "action": "1) packages/shared/src/schemas/api-contracts.ts: lift the `list` + `search` discriminatedUnion branches out of FabReviewInputSchema (~line 957) into a NEW `FabPendingInputSchema = z.discriminatedUnion('action', [<list branch>, <search branch>])`; lift the matching `list`+`search` branches out of FabReviewOutputSchema (~line 1147) into `FabPendingOutputSchema`; add a flattened `FabPendingInputShape` (ZodRawShape, action enum = ['list','search']) mirroring the FabReviewInputShape pattern (the MCP SDK 1.29.0 crashes on a discriminatedUnion inputSchema); add `fabPendingAnnotations = { readOnlyHint: true, idempotentHint: true, ... }` mirroring the recall annotations at line 248. REMOVE 'list' and 'search' from FabReviewInputSchema, FabReviewOutputSchema, and the FabReviewInputShape action enum (~line 1023 — leaves ['approve','reject','modify','modify-content','modify-layer','defer']). Keep the _fabReviewFiltersSchema / _fabReviewListItemSchema helpers shared (referenced by both). Do NOT alter the 6 write branches. 2) packages/server/src/tools/review.ts: move the list/search handler code into a NEW registerPending in packages/server/src/tools/pending.ts that re-parses via FabPendingInputSchema.parse and registers `fab_pending` with FabPendingInputShape + fabPendingAnnotations; review.ts registerReview drops list/search handling and re-parses the 6-write FabReviewInputSchema. 3) packages/server/src/index.ts: add `registerPending(server, tracker);` next to the existing 4 registrations (registerReview is at line 242). 4) Migrate every caller (see files[]).",
+  "scope": "packages/shared/src/schemas + packages/server/src/tools + packages/cli/templates/skills",
+  "focus_paths": ["packages/shared/src/schemas/", "packages/server/src/tools/", "packages/cli/templates/skills/"],
+  "read_first": [
+    "packages/shared/src/schemas/api-contracts.ts",
+    "packages/server/src/tools/review.ts",
+    "packages/server/src/tools/review.test.ts",
+    "packages/server/src/index.ts",
+    "packages/server/src/index.test.ts",
+    "packages/cli/templates/skills/fabric-review/SKILL.md",
+    "packages/cli/templates/skills/fabric-review/ref/per-mode-flows.md",
+    "packages/cli/templates/skills/fabric-review/ref/semantic-check.md",
+    "packages/cli/templates/skills/fabric-review/ref/worked-examples.md",
+    "packages/cli/templates/skills/fabric-archive/SKILL.md",
+    "packages/cli/templates/skills/fabric-archive/ref/source-dedup.md",
+    "packages/cli/templates/skills/fabric-archive/ref/source-worked-examples.md",
+    "packages/cli/templates/skills/fabric-archive/ref/source-state-recovery.md",
+    "packages/cli/templates/skills/lib/shared-policy.md",
+    ".fabric/AGENTS.md"
+  ],
+  "depends_on": [],
+  "parallel_group": null,
+  "convergence": {
+    "criteria": [
+      "RED FIRST: a new packages/server/src/tools/pending.test.ts asserts `fab_pending` handles action=list and action=search and is registered with annotations readOnlyHint:true,idempotentHint:true — written BEFORE the impl so it fails to resolve registerPending.",
+      "node/Grep zero-residual: `grep -n 'fab_pending' packages/server/src/index.ts` shows registerPending registered alongside the existing 4 tools.",
+      "FabReviewInputSchema and FabReviewOutputSchema discriminatedUnions no longer contain a z.literal('list') or z.literal('search') branch; FabReviewInputShape action enum is exactly ['approve','reject','modify','modify-content','modify-layer','defer'] (assert via a unit test mirroring the existing Shape-vs-union drift test in review.test.ts).",
+      "FabPendingInputSchema / FabPendingInputShape / FabPendingOutputSchema / fabPendingAnnotations all exist in api-contracts.ts and carry exactly the list+search variants.",
+      "C-001 preserved: modify-content and modify-layer remain distinct write branches in FabReviewInputSchema (assert both literals still present).",
+      "Cross-end migration zero-residual (Grep tool / node fs, NOT bash ugrep): in packages/cli/templates/skills/** every `fab_review action=\"list\"` and `fab_review action=\"search\"` (and `fab_review search`) is replaced by `fab_pending action=\"list\"`/`fab_pending action=\"search\"`; node census of /fab_review\\s+(action\\s*=\\s*\"?(list|search)|search)/ over packages/cli/templates/skills returns ZERO.",
+      "lib/shared-policy.md lists fab_pending alongside fab_review (read tool added to the policy tool list).",
+      "fabric-review/SKILL.md allowed-tools / fabric-archive/SKILL.md allowed-tools include fab_pending where they previously relied on fab_review list/search.",
+      "list/search handler tests previously in review.test.ts are moved to pending.test.ts; review.test.ts no longer references action:'list'/'search' handlers (node grep returns ZERO list/search action assertions in review.test.ts).",
+      "`pnpm --filter @fenglimg/fabric-shared build` succeeds (run BEFORE server tests — schema changed).",
+      "`pnpm -r exec tsc --noEmit` returns 0.",
+      "fabric-server vitest green (pending.test.ts + review.test.ts + index.test.ts) AND fabric-cli vitest green (skill/template lint incl. retired-reference lint sees no stale fab_review list/search)."
+    ],
+    "verification": "cd packages/shared && pnpm --filter @fenglimg/fabric-shared build; cd ../.. && pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-server test; pnpm --filter @fenglimg/fabric-cli test; node -e 'const cp=require(\"child_process\");const fs=require(\"fs\");const files=cp.execSync(\"git ls-files packages/cli/templates/skills\",{encoding:\"utf8\"}).split(\"\\n\").filter(Boolean);let n=0;for(const f of files){const t=fs.readFileSync(f,\"utf8\");const m=t.match(/fab_review[^\\n]{0,40}(action[^\\n]{0,8}(list|search)|\\bsearch\\b)/g);if(m){n+=m.length;console.log(f,m.length);}}console.log(\"STALE fab_review list/search:\",n);'",
+    "definition_of_done": "AI agents and the Fabric skills call a read-only fab_pending tool for browsing/searching pending knowledge (honestly tagged readOnlyHint:true), while fab_review is now write-only. No skill, ref, policy, or test still routes list/search through fab_review, and the shared schema, server, and CLI test suites are all green."
+  },
+  "files": [
+    {"path": "packages/shared/src/schemas/api-contracts.ts", "action": "modify", "target": "FabReviewInputSchema(~957) / FabReviewInputShape(~1021) / FabReviewOutputSchema(~1147) / fabReviewAnnotations(1255)", "change": "Lift list+search branches into new FabPendingInputSchema/FabPendingInputShape/FabPendingOutputSchema + fabPendingAnnotations(readOnlyHint:true,idempotentHint:true); remove list/search from FabReview* unions and the Shape action enum; keep _fabReviewFiltersSchema/_fabReviewListItemSchema shared."},
+    {"path": "packages/server/src/tools/pending.ts", "action": "create", "target": "registerPending", "change": "New registerPending(server,tracker): registers fab_pending with FabPendingInputShape + fabPendingAnnotations; handler re-parses via FabPendingInputSchema.parse and runs the relocated list/search logic verbatim."},
+    {"path": "packages/server/src/tools/review.ts", "action": "modify", "target": "registerReview", "change": "Remove list/search handling; re-parse the 6-write FabReviewInputSchema only."},
+    {"path": "packages/server/src/index.ts", "action": "modify", "target": "register block (lines 239-242)", "change": "Add registerPending(server, tracker) alongside the existing 4 registrations; import registerPending."},
+    {"path": "packages/server/src/tools/pending.test.ts", "action": "create", "target": "fab_pending tests", "change": "RED-first: assert list+search via fab_pending, registered with readOnlyHint:true,idempotentHint:true; relocate the list/search handler tests from review.test.ts."},
+    {"path": "packages/server/src/tools/review.test.ts", "action": "modify", "target": "list/search handler tests + Shape-vs-union drift test", "change": "Delete list/search handler tests (moved to pending.test.ts); update the FabReviewInputShape drift test to expect the 6-write enum only."},
+    {"path": "packages/server/src/index.test.ts", "action": "modify", "target": "tool registration assertions", "change": "Assert fab_pending is registered; update any fab_review action-list assertion."},
+    {"path": "packages/cli/templates/skills/fabric-review/SKILL.md", "action": "modify", "target": "list/search call sites (lines 62,78,96,97,98) + allowed-tools", "change": "Route list/search to fab_pending; add fab_pending to allowed-tools."},
+    {"path": "packages/cli/templates/skills/fabric-review/ref/per-mode-flows.md", "action": "modify", "target": "list/search call sites (9,11,77,87,137)", "change": "fab_review list/search → fab_pending."},
+    {"path": "packages/cli/templates/skills/fabric-review/ref/semantic-check.md", "action": "modify", "target": "search call site (13)", "change": "fab_review search → fab_pending search."},
+    {"path": "packages/cli/templates/skills/fabric-review/ref/worked-examples.md", "action": "modify", "target": "list/search call sites (15,16,39,63)", "change": "fab_review list/search → fab_pending."},
+    {"path": "packages/cli/templates/skills/fabric-archive/SKILL.md", "action": "modify", "target": "search call sites (47,115) + allowed-tools", "change": "Dedupe-vs-canonical search → fab_pending search; add fab_pending to allowed-tools."},
+    {"path": "packages/cli/templates/skills/fabric-archive/ref/source-dedup.md", "action": "modify", "target": "action:'search' (13)", "change": "→ fab_pending search."},
+    {"path": "packages/cli/templates/skills/fabric-archive/ref/source-worked-examples.md", "action": "modify", "target": "action:'search' (77)", "change": "→ fab_pending search."},
+    {"path": "packages/cli/templates/skills/fabric-archive/ref/source-state-recovery.md", "action": "modify", "target": "fab_review search (49)", "change": "→ fab_pending search."},
+    {"path": "packages/cli/templates/skills/lib/shared-policy.md", "action": "modify", "target": "tool list mentioning fab_review", "change": "Add fab_pending (read) to the policy tool listing alongside fab_review (write)."},
+    {"path": ".fabric/AGENTS.md", "action": "modify", "target": "Skills section referencing fab_review actions / fab_review search", "change": "Note fab_pending for read (list/search) where the bootstrap text routes list/search through fab_review."}
+  ],
+  "implementation": [
+    "RED: write packages/server/src/tools/pending.test.ts asserting fab_pending list+search behavior + readOnlyHint:true; run server tests → fails (no registerPending).",
+    "Edit api-contracts.ts: create FabPendingInputSchema/FabPendingInputShape/FabPendingOutputSchema + fabPendingAnnotations from the lifted list+search branches; remove list/search from FabReview* unions + Shape enum; keep shared filter/item helpers.",
+    "`pnpm --filter @fenglimg/fabric-shared build` (rebuild dist BEFORE server tests).",
+    "Create packages/server/src/tools/pending.ts (registerPending); strip list/search from review.ts; add registerPending to index.ts.",
+    "Move list/search handler tests from review.test.ts → pending.test.ts; update the Shape-vs-union drift test for the 6-write enum.",
+    "GREEN: server vitest green; `pnpm -r exec tsc --noEmit` 0.",
+    "Migrate every skill SKILL.md / ref / shared-policy.md / .fabric/AGENTS.md list/search call site to fab_pending; run the node zero-residual census (must be 0).",
+    "fabric-cli vitest green (retired-reference lint passes); commit on a feature branch; open PR (PR #1 of 2)."
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-shared build",
+      "pnpm --filter @fenglimg/fabric-server test",
+      "pnpm --filter @fenglimg/fabric-cli test",
+      "pnpm -r exec tsc --noEmit"
+    ],
+    "unit": ["packages/server/src/tools/pending.test.ts", "packages/server/src/tools/review.test.ts", "packages/server/src/index.test.ts"],
+    "integration": [],
+    "success_metrics": ["pending.test.ts list+search green with readOnlyHint:true", "no stale fab_review list/search in skills (node census=0)", "tsc 0", "shared build ok", "server+cli vitest green"]
+  },
+  "reference": {
+    "pattern": "Follow the existing FabReviewInputShape (flattened ZodRawShape) + discriminatedUnion Schema pairing and the recall annotations literal (api-contracts.ts:248 readOnlyHint:true,idempotentHint:true).",
+    "files": ["packages/shared/src/schemas/api-contracts.ts", "packages/server/src/tools/review.ts", "packages/server/src/tools/recall.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Pure relocation reusing existing filter/item schemas keeps behavior identical (C-002 honest read/write split) while a separate PR isolates this high cross-end-contract risk for clean rollback.",
+    "decision_factors": ["C-001 keep modify split", "C-002 readOnlyHint honesty", "C-006/C-007 atomic migration + rebuild shared"],
+    "tradeoffs": "New tool adds one more registration surface, but the honest readOnlyHint:true tag lets hosts/AI call the read path safely — the whole point of the split."
+  },
+  "risks": [
+    "CROSS-END WIRE MIGRATION: stale fab_review list/search refs in skill SKILL.md/ref/shared-policy will silently break AI callers — use node/Grep zero-residual census, NOT bash ugrep (false negatives on alternation).",
+    "SHARED SCHEMA: forgetting `pnpm --filter @fenglimg/fabric-shared build` after editing api-contracts.ts → runtime invalid_union_discriminator. Rebuild BEFORE server tests.",
+    "MCP SDK 1.29.0 crashes on discriminatedUnion inputSchema → fab_pending MUST ship the flattened FabPendingInputShape, not the union, as its registerTool inputSchema.",
+    "retired-reference lint (C-006) will flag any un-migrated caller — keep it as the safety net but do not rely on it to find them all."
+  ],
+  "meta": {
+    "status": "completed",
+    "estimated_time": "2.5h",
+    "risk": "high",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 1,
+    "execution_group": null,
+    "executor": "agent",
+    "recommended_pr": "PR 1 of 2 (independent of TASK-002)"
+  }
+}

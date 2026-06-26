@@ -19,6 +19,22 @@
       "roadmap_ref": null,
       "created_at": "2026-06-23T10:56:15.460Z",
       "completed_at": "2026-06-23T11:15:40.720Z"
+    },
+    {
+      "id": "M-recall-align-20260625",
+      "type": "planned",
+      "name": "召回质量与一致性对齐",
+      "version": "v2.4",
+      "status": "active",
+      "phases": [
+        1
+      ],
+      "phase_slugs": {
+        "1": "recall-engine-refactor"
+      },
+      "roadmap_ref": "roadmap.md",
+      "source_artifact": "GRL-20260625-knowledge-recall-align",
+      "created_at": "2026-06-25"
     }
   ],
   "_milestone_schema": "{ id, name, type: 'standard'|'adhoc', status, phases[], phase_slugs{}, roadmap_ref, created_at }",
@@ -179,6 +195,129 @@
       "harvested": false,
       "created_at": "2026-06-23T12:26:27.294Z",
       "completed_at": "2026-06-23T12:26:27.294Z"
+    },
+    {
+      "id": "GRL-20260625-knowledge-recall-align",
+      "type": "grill",
+      "scope": "standalone",
+      "path": "scratch/20260625-grill-knowledge-recall",
+      "status": "completed",
+      "context_package": "scratch/20260625-grill-knowledge-recall/context-package.json",
+      "created_at": "2026-06-25",
+      "metadata": {
+        "topic": "知识召回路径对比与优化(Fabric vs maestro-flow)",
+        "depth": "standard",
+        "branches_completed": 7,
+        "decisions_locked": 14,
+        "decisions_open": 2,
+        "terms_defined": 16
+      }
+    },
+    {
+      "id": "ANL-001",
+      "type": "analyze",
+      "scope": "phase",
+      "milestone": "M-recall-align-20260625",
+      "phase": 1,
+      "path": "scratch/20260625-analyze-P1-recall-engine-refactor",
+      "status": "completed",
+      "context_package": "scratch/20260625-analyze-P1-recall-engine-refactor/context-package.json",
+      "harvested": false,
+      "created_at": "2026-06-25",
+      "completed_at": "2026-06-25",
+      "metadata": {
+        "recommendation": "CONDITIONAL_GO",
+        "confidence": 87.5,
+        "decisions_locked": 10,
+        "decisions_free": 3,
+        "decisions_deferred": 4
+      }
+    },
+    {
+      "id": "PLN-001-recall",
+      "type": "plan",
+      "scope": "phase",
+      "milestone": "M-recall-align-20260625",
+      "phase": 1,
+      "path": "scratch/20260625-plan-P1-recall-engine-refactor",
+      "status": "completed",
+      "depends_on": [
+        "ANL-001"
+      ],
+      "harvested": false,
+      "created_at": "2026-06-25",
+      "completed_at": "2026-06-25",
+      "metadata": {
+        "task_count": 5,
+        "waves": 5,
+        "complexity": "large",
+        "confidence": 88,
+        "checker": "APPROVED+fixes"
+      }
+    },
+    {
+      "id": "EXC-001-recall",
+      "type": "execute",
+      "scope": "phase",
+      "milestone": "M-recall-align-20260625",
+      "phase": 1,
+      "path": "scratch/20260625-plan-P1-recall-engine-refactor",
+      "status": "completed",
+      "depends_on": [
+        "PLN-001-recall"
+      ],
+      "harvested": false,
+      "created_at": "2026-06-26",
+      "completed_at": "2026-06-26",
+      "metadata": {
+        "tasks_completed": "5/5",
+        "waves": "W1-W5 serial, dependency-ordered",
+        "commits": "682359c W1 score透出 | 5843a5f W2 瘦item+BM25磁盘缓存 | 04f04df W3 RRF content-only+fusion flag(默认additive) | 5b2e41d W4 CJK默认开+fastembed optionalDeps+cosine[0,1] | f9570a5 W5 统一ranker+删searchEntries",
+        "branch": "worktree-recall-engine-refactor (git worktree isolation)",
+        "verification": "server suite 808 passed (69 files); pnpm -r exec tsc --noEmit exit 0; shared rebuilt",
+        "checkpoints": "W3 翻fusion默认additive→rrf前需对真实team store跑一次性人工shadow run(校准RRF_NORMALIZATION) — 详见 TASK-003-summary.md",
+        "deviations": "W2 不砍description(守KT-DEC-0019,只延迟body) | W3 零匹配排除在建榜层(rankDocuments score>0)非inline guard + 修正上一执行器被额度截断遗留的shadow allowlist错误假设 | W4 shared schema embed_enabled.default未改(运行时层主导,热路径绕过parse) | W5 searchEntries→triageSearch(substring作gate, ranker作ordering)"
+      }
+    },
+    {
+      "id": "PLN-003",
+      "type": "plan",
+      "milestone": "M-recall-align-20260625",
+      "phase": null,
+      "scope": "standalone",
+      "path": "scratch/20260626-plan-flat-design-system",
+      "status": "completed",
+      "context_package": null,
+      "depends_on": [],
+      "harvested": false,
+      "created_at": "2026-06-26T07:30:00.000Z",
+      "completed_at": "2026-06-26T07:30:00.000Z",
+      "metadata": {
+        "topic": "Fabric CLI 平铺风设计系统落地",
+        "task_count": 6,
+        "waves": 5,
+        "checker": "APPROVED round1",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "EXC-003",
+      "type": "execute",
+      "milestone": "M-recall-align-20260625",
+      "phase": null,
+      "scope": "standalone",
+      "path": "scratch/20260626-plan-flat-design-system",
+      "status": "completed",
+      "depends_on": "PLN-003",
+      "harvested": false,
+      "created_at": "2026-06-26T08:30:00.000Z",
+      "completed_at": "2026-06-26T08:30:00.000Z",
+      "metadata": {
+        "tasks_completed": 6,
+        "tasks_total": 6,
+        "branch": "feat/cli-flat-design-system",
+        "gates": "tsc0 + shared635 + cli1203 all green"
+      }
     }
   ],
   "last_updated": "2026-06-23T12:26:27.294Z",

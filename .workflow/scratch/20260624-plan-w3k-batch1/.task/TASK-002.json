@@ -1,0 +1,91 @@
+{
+  "id": "TASK-002",
+  "title": "K5: action_hint with legal example on scope-regex validation failure",
+  "description": "When the `audience` field (fab_propose) fails SCOPE_COORDINATE_PATTERN (/^[a-z0-9_-]+(:[a-z0-9_-]+)*$/u) validation, the tool currently bare re-throws a generic zod message with no example of a legal value. Upgrade the error reply to carry a structured `action_hint` that includes a concrete legal example string (e.g. `project:fabric-v2`). REUSE the existing payload-warning.ts action_hint vocabulary (StructuredToolWarning.action_hint) — do NOT create a parallel error-hint system.",
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In extract-knowledge.ts (fab_propose handler, around the `FabExtractKnowledgeInputSchema.parse(input)` at line 49), catch the ZodError, detect when an issue path includes `audience` with `code === 'invalid_string'`/regex failure, and rethrow/return a structured error carrying `action_hint` reusing the StructuredToolWarning shape from payload-warning.ts. The action_hint MUST contain a legal example, exact string: `audience must be a scope coordinate like \"project:fabric-v2\", \"team\", or \"personal\" (lowercase, segments joined by ':')`. Apply the SAME zod regex hint via a shared `describe`/refinement message at the schema level (api-contracts.ts:701-704 audience field) so the example is the single source of truth: change `.regex(SCOPE_COORDINATE_PATTERN)` to `.regex(SCOPE_COORDINATE_PATTERN, { message: 'audience must be a scope coordinate like \"project:fabric-v2\", \"team\", or \"personal\"' })`. Then surface that message into the structured action_hint in the handler. Do NOT invent new warning codes — use the existing StructuredToolWarning {code, file, message, action_hint} shape; code can be a stable literal like `scope_coordinate_invalid`.",
+  "scope": "packages/server/src/tools/ + packages/shared/src/schemas/api-contracts.ts",
+  "focus_paths": ["packages/server/src/tools/", "packages/shared/src/schemas/"],
+  "read_first": [
+    "packages/server/src/tools/extract-knowledge.ts",
+    "packages/server/src/tools/payload-warning.ts",
+    "packages/shared/src/schemas/api-contracts.ts",
+    "packages/shared/src/schemas/scope.ts",
+    "packages/server/src/tools/extract-knowledge.test.ts",
+    "packages/server/src/tools/payload-warning.test.ts"
+  ],
+  "depends_on": [],
+  "parallel_group": null,
+  "convergence": {
+    "criteria": [
+      "RED first: a test in extract-knowledge.test.ts calls fab_propose with an illegal audience (e.g. `Project:Bad Caps`) and asserts the error/response carries an `action_hint` string containing `project:fabric-v2`; it fails before the impl change.",
+      "grep-verifiable: `grep -n 'project:fabric-v2' packages/shared/src/schemas/api-contracts.ts` matches (the regex message carries the legal example).",
+      "grep-verifiable: `grep -n 'action_hint' packages/server/src/tools/extract-knowledge.ts` matches (handler surfaces a structured action_hint on validation failure).",
+      "grep-verifiable: `grep -n 'SCOPE_COORDINATE_PATTERN, {' packages/shared/src/schemas/api-contracts.ts` matches (regex now carries a custom message, not the generic zod default).",
+      "Reuse check: the action_hint uses the StructuredToolWarning shape from payload-warning.ts — `grep -n 'StructuredToolWarning\\|action_hint' packages/server/src/tools/extract-knowledge.ts` shows the existing helper/type imported, not a new parallel interface.",
+      "Schema-edit gate: `pnpm --filter @fenglimg/fabric-shared build` was run (dist rebuilt) BEFORE server vitest, because api-contracts.ts changed.",
+      "`pnpm -r exec tsc --noEmit` exits 0.",
+      "`pnpm --filter @fenglimg/fabric-server exec vitest run` is green."
+    ],
+    "verification": "cd /Users/wepie/Desktop/personal-projects/pcf && pnpm --filter @fenglimg/fabric-shared build && grep -n 'project:fabric-v2' packages/shared/src/schemas/api-contracts.ts && grep -n 'action_hint' packages/server/src/tools/extract-knowledge.ts && pnpm -r exec tsc --noEmit && pnpm --filter @fenglimg/fabric-server exec vitest run",
+    "definition_of_done": "A caller who passes an illegal audience scope coordinate gets back a structured error whose action_hint shows a legal example (project:fabric-v2), so the agent can self-correct without guessing the regex."
+  },
+  "files": [
+    {"path": "packages/shared/src/schemas/api-contracts.ts", "action": "modify", "target": "audience field regex at line ~703", "change": "Add custom message to `.regex(SCOPE_COORDINATE_PATTERN, { message: '...project:fabric-v2...' })` so the legal example is the single source of truth."},
+    {"path": "packages/server/src/tools/extract-knowledge.ts", "action": "modify", "target": "FabExtractKnowledgeInputSchema.parse catch (around line 49)", "change": "Catch ZodError, detect audience regex failure, return/throw a structured error carrying action_hint (StructuredToolWarning shape) with the legal example."},
+    {"path": "packages/server/src/tools/extract-knowledge.test.ts", "action": "modify", "target": "validation-error test", "change": "Add RED test: illegal audience -> error carries action_hint containing project:fabric-v2."}
+  ],
+  "implementation": [
+    "RED: add test in extract-knowledge.test.ts calling fab_propose with audience='Project:Bad Caps' (uppercase + space = regex fail); assert the thrown/returned error exposes action_hint containing 'project:fabric-v2'. Confirm it fails.",
+    "GREEN schema: in api-contracts.ts:703 change `.regex(SCOPE_COORDINATE_PATTERN)` to `.regex(SCOPE_COORDINATE_PATTERN, { message: 'audience must be a scope coordinate like \"project:fabric-v2\", \"team\", or \"personal\"' })`.",
+    "Schema-edit gate: run `pnpm --filter @fenglimg/fabric-shared build` to rebuild dist (else runtime invalid_union_discriminator).",
+    "GREEN handler: wrap `FabExtractKnowledgeInputSchema.parse(input)` in try/catch; on ZodError with an issue at path including 'audience', build a structured error using the StructuredToolWarning shape (import type from payload-warning.ts) with code='scope_coordinate_invalid', message=zod issue message, action_hint=the legal-example string; throw/return it.",
+    "REFACTOR: ensure the example string is sourced from the schema message (no second copy drifting); confirm no new warning interface was introduced.",
+    "Run tsc --noEmit (0) and fabric-server vitest (green)."
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-shared build",
+      "pnpm --filter @fenglimg/fabric-server exec vitest run",
+      "pnpm -r exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/server/src/tools/extract-knowledge.test.ts",
+      "packages/server/src/tools/payload-warning.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "RED test failed before impl, green after",
+      "action_hint contains project:fabric-v2",
+      "reuses StructuredToolWarning shape, no parallel system",
+      "shared dist rebuilt before server tests",
+      "tsc --noEmit 0, vitest green"
+    ]
+  },
+  "reference": {
+    "pattern": "payload-warning.ts StructuredToolWarning {code,file,message,action_hint} — reuse for the error envelope",
+    "files": ["packages/server/src/tools/payload-warning.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Single source of truth for the legal example at the zod regex message, surfaced through the existing StructuredToolWarning shape, to avoid a parallel error-hint vocabulary.",
+    "decision_factors": ["C-004 mandate to include a legal example", "reuse-not-invent constraint"],
+    "tradeoffs": "Touching api-contracts.ts forces the shared-build gate; acceptable since K5 must improve the schema-level message."
+  },
+  "risks": [
+    "Forgetting `pnpm --filter @fenglimg/fabric-shared build` after the schema edit -> server tests hit stale dist / invalid_union_discriminator.",
+    "fab_propose currently re-parses via FabExtractKnowledgeInputSchema.parse (line 49) AND registerTool validates against FabExtractKnowledgeInputShape — ensure the action_hint fires on the regex failure regardless of which layer rejects it."
+  ],
+  "meta": {
+    "status": "pending",
+    "estimated_time": "50m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 1,
+    "execution_group": null,
+    "executor": "agent"
+  }
+}

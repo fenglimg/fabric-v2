@@ -1,0 +1,79 @@
+{
+  "id": "TASK-004",
+  "title": "CJK 语义默认开 + fastembed optionalDependencies",
+  "description": "CJK 语义检索默认开启：embed_enabled 默认 true。把 fastembed 移入 package.json optionalDependencies，缺包时 server 仍能启动并文本降级 + 一次性提示。修正 vector cosine clamp 下界为 >0（连同更正过期注释）。model 已默认 fast-bge-small-zh-v1.5 无需改。",
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "packages/server/package.json：把 fastembed 加入 optionalDependencies。packages/server/src/config-loader.ts ~L113 把 `config.embed_enabled === true` 改为默认 true（未显式配置即开）。packages/server/src/services/vector-retrieval.ts L151 cosine clamp 从 Math.max(-1, ...) 收紧为 clamp >0（语义相似度负值无意义，下界 0），并更正 ~L120/L124/L151 过期注释。缺 fastembed 时启动不崩、走文本降级路径并打一次性提示。",
+  "scope": "packages/server",
+  "focus_paths": ["packages/server/"],
+  "read_first": [
+    "packages/server/package.json",
+    "packages/server/src/config-loader.ts",
+    "packages/server/src/services/vector-retrieval.ts",
+    "packages/server/src/services/vector-retrieval.test.ts"
+  ],
+  "depends_on": ["TASK-003"],
+  "parallel_group": null,
+  "convergence": {
+    "criteria": [
+      "grep -n 'fastembed' packages/server/package.json 命中且位于 optionalDependencies 块（grep -n 'optionalDependencies' 同文件命中）",
+      "grep -n 'embed_enabled' packages/server/src/config-loader.ts 命中默认 true 逻辑（不再是 === true 的默认关）",
+      "grep -n 'Math.max(0,\\|>= 0\\|clamp' packages/server/src/services/vector-retrieval.ts 命中 cosine 下界 0（不再是 Math.max(-1,...)）",
+      "vector-retrieval.test.ts 新增/更新用例：cosineSimilarity 返回值 >= 0（负值被 clamp 到 0）",
+      "更新既有 clamp 测试 packages/server/src/services/vector-retrieval.test.ts:~46（现 'clamps … into [-1,1]' 用例断言 >= -1）：改为断言 cosine >= 0，并重命名以反映 [0,1] 契约",
+      "新增用例验证：缺 fastembed（mock import 失败）时不抛出致命错误，走文本降级且仅提示一次",
+      "pnpm --filter @fenglimg/fabric-server test -- vector-retrieval.test.ts 全绿",
+      "pnpm -r exec tsc --noEmit 无 error"
+    ],
+    "verification": "cd packages/server && pnpm test -- vector-retrieval.test.ts && cd ../.. && pnpm -r exec tsc --noEmit",
+    "definition_of_done": "默认安装即开启 CJK 语义检索；fastembed 缺失不阻塞 server 启动而是优雅文本降级；cosine 相似度下界为 0 杜绝负值进融合通道。"
+  },
+  "files": [
+    {"path": "packages/server/package.json", "action": "modify", "target": "optionalDependencies", "change": "新增 fastembed 到 optionalDependencies"},
+    {"path": "packages/server/src/config-loader.ts", "action": "modify", "target": "embed_enabled (~L113)", "change": "默认 true（未配置即开）"},
+    {"path": "packages/server/src/services/vector-retrieval.ts", "action": "modify", "target": "cosineSimilarity clamp (L151) + 注释 (~L120/L124)", "change": "下界收紧为 0；更正过期注释"},
+    {"path": "packages/server/src/services/vector-retrieval.test.ts", "action": "modify", "target": "clamp (:~46) + 降级用例", "change": "更新既有 ':~46 clamps into [-1,1]' 用例为断言 cosine>=0 并重命名为 [0,1] 契约；断言缺 fastembed 优雅降级一次性提示"}
+  ],
+  "implementation": [
+    "读 vector-retrieval.ts L120-151 理解现 clamp [-1,1] 与注释",
+    "package.json 把 fastembed 移入 optionalDependencies",
+    "config-loader embed_enabled 改默认 true",
+    "cosineSimilarity clamp 下界改 0，更正注释",
+    "更新既有 stale clamp 测试 vector-retrieval.test.ts:~46（'clamps … into [-1,1]' 断言 >= -1）为断言 cosine >= 0 并重命名为 [0,1] 契约；先确认无既有 fixture 依赖负 cosine 值再提交（[-1,1]→[0,1] 无条件上线，非 flag 门控）",
+    "确认缺包降级路径（try/catch import）+ 一次性提示",
+    "补 vector-retrieval.test.ts 用例并跑测试"
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-server test -- vector-retrieval.test.ts", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/server/src/services/vector-retrieval.test.ts"],
+    "integration": [],
+    "success_metrics": ["cosine>=0 断言通过", "缺 fastembed 降级不崩", "embed 默认开", "全测试绿"]
+  },
+  "reference": {
+    "pattern": "optionalDependencies + try/catch 动态 import 的优雅降级",
+    "files": ["packages/server/src/services/vector-retrieval.ts", "packages/server/src/config-loader.ts"],
+    "examples": "DEFAULT_EMBED_MODEL = 'fast-bge-small-zh-v1.5' (config-loader.ts:99) 已就绪"
+  },
+  "rationale": {
+    "chosen_approach": "依赖 TASK-003 的 RRF 先正确处理 vector channel 再默认开启语义，避免 vector 信号未被融合就放量；optionalDependencies 是降级安装的标准做法",
+    "decision_factors": ["RRF 须先 handle vector channel", "缺包不阻塞启动", "CJK 默认体验"],
+    "tradeoffs": "默认开启增加首次模型下载成本，由缺包文本降级 + 一次性提示缓和"
+  },
+  "risks": [
+    {"risk": "缺 fastembed 导致 server 启动崩溃", "mitigation": "try/catch 动态 import + 文本降级 + 一次性提示，测试覆盖缺包场景", "severity": "medium"},
+    {"risk": "默认开启在无网/CI 环境拖慢启动", "mitigation": "embed 失败即降级文本路径，不阻塞", "severity": "low"},
+    {"risk": "cosine [-1,1]→[0,1] 下界变更无条件上线（非 flag 门控），若有既有 fixture 依赖负 cosine 值会静默回归", "mitigation": "提交前 grep/确认无既有 fixture 或调用方依赖负 cosine 值；同步更新 :~46 stale clamp 测试", "severity": "medium"}
+  ],
+  "meta": {
+    "status": "completed",
+    "estimated_time": "1h",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 4,
+    "execution_group": null,
+    "executor": "agent"
+  }
+}

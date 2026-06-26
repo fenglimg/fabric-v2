@@ -1,0 +1,77 @@
+{
+  "id": "TASK-001",
+  "title": "Renderer 合一 + 去双标题 + 非交互失败也渲 error box",
+  "description": "Collapse the pipeline.ts if(renderer)/else fork so STATIC visuals (icons, per-stage badges, summary card, error box) ALWAYS render on the interactive path. Rework shouldUseInstallRenderer to kill the --yes/--dry-run-only gate (F1 root cause inversion). Remove stages' own formatStageHeader (hooks/mcp) so each phase has ONE pipeline-level header, and fix the 'git hooks' mislabel. Animated spinner only when no pending clack prompt (practically --yes). Add tests covering 4 states: interactive / --yes / --dry-run / non-TTY. This is the structural backbone all other waves render through.",
+  "type": "feature",
+  "priority": "high",
+  "effort": "large",
+  "action": "In packages/cli/src/commands/install-v2.ts rewrite shouldUseInstallRenderer(args, terminalInteractive): return false when !terminalInteractive; otherwise return true (renderer present for ALL interactive installs, not just args.yes || args['dry-run']). In createInstallContext keep interactive = terminalInteractive && !args.yes. Add a renderer capability flag so the renderer animates spinner only when no clack prompt is pending (animate when args.yes === true; static-only otherwise). In install-v2.ts failure block (currently lines 132-139) route result.error through renderer.renderError() (the renderer now always exists on interactive path) instead of bare console.error(paint.error(...)); keep console.error only for the genuine non-TTY (renderer===undefined) path. In packages/cli/src/install/pipeline/pipeline.ts execute(): remove the else branches at lines 81-99 (console.log header + description) so the pipeline ALWAYS renders the single icon header via renderer.renderSection(`${STAGE_ICONS[name]} ${stageLabel(name)}`) — guard only the animated renderStep spinner behind the animate flag; static success/skip/error badges always render. Delete the stage-level second headers in hooks.stage.ts and mcp.stage.ts (the formatStageHeader '下一步 正在…' calls). Fix the hooks stage label: change t('cli.install.pipeline.label.hooks') copy from 'git hooks' phrasing to 'Hook 与 skill 安装' / 'Hooks & skills' (AI-client hook + skill + bootstrap, NOT git hooks) in BOTH locales.",
+  "scope": "packages/cli/src/commands/install-v2.ts, packages/cli/src/install/pipeline/pipeline.ts, packages/cli/src/install/pipeline/hooks.stage.ts, packages/cli/src/install/pipeline/mcp.stage.ts",
+  "read_first": [
+    "packages/cli/src/commands/install-v2.ts",
+    "packages/cli/src/install/pipeline/pipeline.ts",
+    "packages/cli/src/install/pipeline/hooks.stage.ts",
+    "packages/cli/src/install/pipeline/mcp.stage.ts",
+    "packages/cli/src/tui/index.ts",
+    "packages/cli/src/tui/ConsoleOutputRenderer.ts",
+    "packages/cli/src/tui/types.ts",
+    ".workflow/scratch/20260625-grill-install-flatness/context-package.json"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "executor": "agent",
+  "status": "completed",
+  "completed_at": "2026-06-25",
+  "completion_note": "Committed on feat/install-flatness-w1-renderer-unify (33a8b2c). DEVIATIONS from plan: (1) shouldUseInstallRenderer simplified to `return terminalInteractive` (kills --yes/--dry-run gate). (2) pipeline.ts else branch KEPT — it is the legit non-TTY plain path guarded by install-v2-pipeline.test.ts ':renders numbered stage anchors'; removing it would break that test. The grill C-01 'no third path' is satisfied: interactive→renderer, non-TTY→plain (2 paths, F1 bug fixed). (3) C-18 error box needed NO install-v2.ts change — pipeline.ts:153-159 already renders renderError when renderer present, which interactive now always has. (4) Tests landed as updated install-v2-pipeline.test.ts gate + new install-v2-pipeline-render.test.ts (NOT install-v2-render-gate.test.ts — the gate test already lived in install-v2-pipeline.test.ts; avoided duplication). (5) hooks/mcp formatStageHeader methods deleted; cli.install.stages.hooks key now orphaned in live code, text fixed to drop 'git hooks'. Full suite 117/1151 green, repo-wide tsc clean.",
+  "convergence": {
+    "criteria": [
+      "grep -n 'shouldUseInstallRenderer' packages/cli/src/commands/install-v2.ts shows the function body NO LONGER contains 'args.yes' or 'dry-run' as the return gate (only the !terminalInteractive early-return remains)",
+      "grep -c 'console.log' packages/cli/src/install/pipeline/pipeline.ts returns 0 inside execute() (the else-branch bare console.log header/description at former lines 82/94/97 are removed)",
+      "grep -n 'formatStageHeader' packages/cli/src/install/pipeline/hooks.stage.ts and mcp.stage.ts returns 0 matches (stage-level second headers deleted)",
+      "grep -niE 'git hook' packages/shared/src/i18n/locales/en.ts packages/shared/src/i18n/locales/zh-CN.ts returns 0 matches for the hooks stage label key",
+      "[runtime] running the install pipeline with renderer===undefined-trigger removed: a 4-state test asserts shouldUseInstallRenderer returns true for {interactive:true, yes:false}, true for {interactive:true, yes:true}, true for {interactive:true, dry-run:true}, false for {interactive:false}",
+      "[runtime] new test file asserts pipeline.execute() with a stub renderer calls renderSection exactly once per stage (single header) and calls renderError on a failed stage even when args.yes is false (interactive path)"
+    ],
+    "verification": "cd packages/cli && pnpm exec tsc --noEmit && pnpm test -- install-v2-render-gate && pnpm test -- install-v2-pipeline-render",
+    "definition_of_done": "真人交互安装时静态视觉(图标/阶段徽章/summary 卡片/error box)常驻;每个 phase 只有一个标题且文案与实装内容一致;失败时即便非 --yes 也渲染 error box;四态行为有测试守护。"
+  },
+  "files": [
+    {"path": "packages/cli/src/commands/install-v2.ts", "action": "modify", "target": "shouldUseInstallRenderer + failure block (lines 132-139)", "change": "Rework gate to always-on for interactive; route failure through renderer.renderError"},
+    {"path": "packages/cli/src/install/pipeline/pipeline.ts", "action": "modify", "target": "execute() if(renderer)/else fork (lines 78-190)", "change": "Remove else branches; static visuals always render; guard only spinner animation behind animate flag"},
+    {"path": "packages/cli/src/install/pipeline/hooks.stage.ts", "action": "modify", "target": "formatStageHeader call (~line 109/163)", "change": "Delete stage-level second header"},
+    {"path": "packages/cli/src/install/pipeline/mcp.stage.ts", "action": "modify", "target": "formatStageHeader call (~line 44/87)", "change": "Delete stage-level second header"},
+    {"path": "packages/cli/__tests__/install-v2-render-gate.test.ts", "action": "create", "target": "4-state renderer gate test", "change": "Assert interactive/yes/dry-run/non-TTY behavior. MUST live under packages/cli/__tests__/ — vitest.config.ts:25 only globs __tests__/**/*.test.ts (CRIT-1)"},
+    {"path": "packages/cli/__tests__/install-v2-pipeline-render.test.ts", "action": "create", "target": "single-header + error-box test", "change": "Stub renderer; assert one renderSection per stage and renderError on failure in interactive path. MUST live under packages/cli/__tests__/ (vitest glob)"}
+  ],
+  "implementation": [
+    "Read install-v2.ts, pipeline.ts, hooks.stage.ts, mcp.stage.ts, tui/index.ts, tui/types.ts and locate the i18n locale files for the hooks label key",
+    "Rewrite shouldUseInstallRenderer: keep `if (!terminalInteractive) return false;` then `return true;`",
+    "Add an animate capability to createInstallRenderer/context (animate = args.yes === true) so spinner only animates without pending prompts",
+    "In pipeline.execute() delete the console.log else branches; always call renderer.renderSection for the header; gate only renderStep spinner animation behind the animate flag",
+    "In install-v2.ts failure block, when renderer exists call renderer.renderError(result.error); keep console.error only for renderer===undefined",
+    "Delete formatStageHeader calls in hooks.stage.ts and mcp.stage.ts",
+    "Update the hooks stage label copy in en + zh-CN locale files to 'Hook 与 skill 安装' / 'Hooks & skills' (not git hooks)",
+    "Write the 4-state test and the single-header/error-box test with a stub OutputRenderer",
+    "Run tsc --noEmit + the two new test suites"
+  ],
+  "reference": {
+    "pattern": "Reuse existing stageLabel(t) + STAGE_ICONS render path already present in pipeline.ts; collapse else, keep if-branch as the single path",
+    "files": ["packages/cli/src/install/pipeline/pipeline.ts", "packages/cli/src/tui/ConsoleOutputRenderer.ts"]
+  },
+  "rationale": {
+    "chosen_approach": "Path unification (grill option A): the static renderer capabilities (renderSummaryCard/renderSection/renderStep badges) already exist — the bug is the else branch not calling them and the gate being inverted. Fix is wiring, not new capability.",
+    "decision_factors": ["F1 root cause is the inverted gate + dual-path drift", "static visuals do not conflict with clack prompts (print-and-go, no redraw)", "0 existing tests guard shouldUseInstallRenderer"],
+    "tradeoffs": "Spinner does not animate during interactive installs (clack prompts share TTY); accepted per C-01 — static badges carry the richness."
+  },
+  "risks": [
+    {"risk": "R1: static render and clack prompt share TTY and fight for line position", "mitigation": "static elements are print-and-go (no redraw); clack runs after; verify store/semantic prompts have no overdraw conflict"},
+    {"risk": "R5: removing old --yes/--dry-run branch changes existing --yes/--dry-run behavior", "mitigation": "4-state regression test ensures --yes still gets full animated TUI and non-TTY still falls back to plain"},
+    {"risk": "R10: deleting stage second header risks losing info if F1 header not coordinated", "mitigation": "pipeline header retains icon+label; stage emits only the result line"}
+  ],
+  "meta": {
+    "estimated_time": "3h",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

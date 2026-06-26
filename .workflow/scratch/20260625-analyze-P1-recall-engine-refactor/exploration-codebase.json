@@ -1,0 +1,43 @@
+{
+  "schema": "exploration-codebase/1.0",
+  "phase": 1,
+  "topic": "召回引擎重构与统一 (RRF fusion + score exposure + thin item + relevance-first truncation + CJK embeddings + fab_pending unify)",
+  "source": "cli-explore-agent (3-layer)",
+  "relevant_files": [
+    { "path": "packages/server/src/services/plan-context.ts", "role": "modify_target", "waves": ["W1","W2","W3"], "note": "ranking core: scoreDescriptionItem fusion, sort, top_k, ratio-floor, payload trim, BM25 cache" },
+    { "path": "packages/server/src/services/recall.ts", "role": "modify_target", "waves": ["W1"], "note": "entries[] map L161-171 — score dropped here" },
+    { "path": "packages/server/src/services/bm25.ts", "role": "modify_target", "waves": ["W2","W3"], "note": "BM25F model; scoreDoc returns uncalibrated score W3 normalizes" },
+    { "path": "packages/server/src/services/vector-retrieval.ts", "role": "modify_target", "waves": ["W3","W4"], "note": "loadEmbedder, buildVectorScores, cosine" },
+    { "path": "packages/server/src/services/cross-store-recall.ts", "role": "dependency", "waves": ["W2","W5"], "note": "buildCrossStoreRawItems (canonical only!), computeReadSetRevision (cache key)" },
+    { "path": "packages/server/src/services/review.ts", "role": "modify_target", "waves": ["W5"], "note": "searchEntries L1376-1504 substring path to delete; listPending stays" },
+    { "path": "packages/server/src/tools/recall.ts", "role": "integration_point", "waves": ["W1"], "note": "MCP surface + payload guard" },
+    { "path": "packages/server/src/tools/pending.ts", "role": "integration_point", "waves": ["W5"], "note": "fab_pending → reviewPending" },
+    { "path": "packages/shared/src/schemas/api-contracts.ts", "role": "type_definition", "waves": ["W1","W5"], "note": "recallOutputSchema L514, _recallEntrySchema L497 (add score); _fabReviewSearchItemSchema L1181 (preserve)" },
+    { "path": "packages/server/src/config-loader.ts", "role": "config", "waves": ["W2","W4"], "note": "readPlanContextTopK(24), readRecallRelevanceRatio(0.25), readEmbedConfig (embed_enabled===true), DEFAULT_EMBED_MODEL=fast-bge-small-zh-v1.5" }
+  ],
+  "code_anchors": [
+    { "id": "A-fusion-W3", "file": "plan-context.ts:1094-1144", "what": "scoreDescriptionItem additive sum: score = BM25_WEIGHT(50)*bm25 + vectorWeight(30)*cosine + salience(15/8/0) + recency(+25) + locality(+100/50/25)", "why": "heterogeneous uncalibrated scales — W3 RRF/normalize replaces L1101+L1110; BM25 raw ~2-4 unbounded, cosine [-1,1], structural signals fixed ints" },
+    { "id": "A-scoredrop-W1", "file": "plan-context.ts:460-466", "what": "survivingScored.map(e => e.item) at L466 drops score; recall.ts:161-171 entry map has no score field", "why": "W1 must thread entry.score past L466 into _recallEntrySchema + recall map" },
+    { "id": "A-truncation-W2", "file": "plan-context.ts:444-466 + 543-588", "what": "order: top_k cap(L445) → ratio-floor(L462, hasQuery-gated) → related(L490) → trimToPayloadBudget(L576)", "why": "top_k+ratio ALREADY relevance-ordered (post-sort). OPEN: does trimToPayloadBudget trim TAIL (relevance-correct) or arbitrarily? In mcp-payload-guard. VERIFY — may downgrade W2 pain severity" },
+    { "id": "A-bm25cache-W2", "file": "plan-context.ts:804-824", "what": "bm25ModelCache module-level in-memory single-slot, key=computeReadSetRevision sha256", "why": "Bm25Model is a CLOSURE — not serializable. Disk persist requires extracting internal stats (perDoc/documentFrequency/avgFieldLength bm25.ts:82-125) + rehydrate scoreDoc. MAIN W2 cost" },
+    { "id": "A-searchentries-W5", "file": "review.ts:1454-1498", "what": "substring haystack.some(h => h.includes(lowerQuery)) over title/summary/tags/filename/body; emits SearchItem", "why": "W5 replaces substring with planContext scoring; must preserve SearchItem shape + filters + lifecycle visibility" },
+    { "id": "A-embedflag-W4", "file": "config-loader.ts:113 + 99", "what": "enabled = config.embed_enabled === true; DEFAULT_EMBED_MODEL=fast-bge-small-zh-v1.5", "why": "model already CJK. REAL blocker: fastembed is optional non-declared dep (vector-retrieval.ts:40), lazy-loaded, returns null→text fallback if absent. W4 = address package availability, NOT just flip flag" }
+  ],
+  "key_insights": [
+    "W2 reframed: truncation is already relevance-ordered (post-sort). Real question = trimToPayloadBudget tail-trim vs arbitrary. If tail-trim, the 'byte-trim误杀相关' grill claim is overstated — the pain reduces to 'thin item so byte闸少触发' + score visibility.",
+    "W2 disk-cache true cost = Bm25Model closure not serializable → extract+rehydrate internal stats.",
+    "W4 true blocker = optional fastembed package availability, not the config flag (model already CJK default).",
+    "W5 gap: planContext reads canonical only (buildCrossStoreRawItems); pending search through it needs (a) teach engine to walk pending corpus, (b) re-apply isVisibleByLifecycle + layer/maturity/tags/created_after filters, (c) handle pending drafts lacking maturity/relevance_paths/created_at → degrade to BM25-text.",
+    "W3 has NO numeric-scale tests; behavior locked INDIRECTLY via ordering asserts in plan-context.test.ts (1433 lines) + plan-context-scope-rank.test.ts. RRF correctness = re-validate orderings + ADD RRF-specific unit tests."
+  ],
+  "test_surface": [
+    { "file": "packages/server/src/services/plan-context.test.ts", "lines": 1433, "locks": "fusion ordering, top_k, ratio floor, payload trim, dropped[], scope tie-break, related", "w3_risk": "HIGH" },
+    { "file": "packages/server/src/services/plan-context-scope-rank.test.ts", "lines": 130, "locks": "scope tie-break under equal relevance", "w3_risk": "HIGH" },
+    { "file": "packages/server/src/services/bm25.test.ts", "lines": 84, "locks": "scoreDoc/IDF/BM25F", "w3_risk": "Medium" },
+    { "file": "packages/server/src/services/recall.test.ts", "lines": 402, "locks": "entries[] shape/rank/read_path", "w3_risk": "Medium (W1 add score backward-compat)" },
+    { "file": "packages/server/src/services/vector-retrieval.test.ts", "lines": 188, "locks": "loadEmbedder fallback, cosine", "w3_risk": "Medium (W4)" },
+    { "file": "packages/server/src/services/review.test.ts", "lines": 1991, "locks": "searchEntries filters/lifecycle/match", "w3_risk": "HIGH (W5)" },
+    { "file": "packages/server/src/tools/pending.test.ts", "lines": 280, "locks": "fab_pending search/list dispatch", "w3_risk": "HIGH (W5)" },
+    { "file": "packages/shared/test/store/recall-perf.test.ts", "lines": null, "locks": "recall perf/cache", "w3_risk": "Medium (W2 oracle)" }
+  ]
+}

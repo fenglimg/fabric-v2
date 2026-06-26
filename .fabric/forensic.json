@@ -1,8 +1,8 @@
 {
   "version": "1.0",
-  "generated_at": "2026-06-20T07:18:53.485Z",
-  "generated_by": "fabric-cli@2.2.0-rc.11",
-  "target": "C:\\Project\\fabric-v2",
+  "generated_at": "2026-06-26T06:39:53.589Z",
+  "generated_by": "fabric-cli@2.3.0-rc.2",
+  "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
   "framework": {
     "kind": "unknown",
@@ -13,112 +13,36 @@
     ]
   },
   "topology": {
-    "total_files": 18363,
+    "total_files": 2405,
     "by_ext": {
-      ".cjs": 1024,
-      ".csv": 697,
-      ".db": 2,
-      ".gz": 42,
-      ".html": 34,
-      ".json": 5985,
-      ".jsonl": 117,
-      ".log": 88,
-      ".md": 5321,
-      ".mdc": 14,
-      ".meta": 30,
-      ".mjs": 146,
-      ".ndjson": 94,
-      ".onnx": 8,
-      ".py": 24,
-      ".pyc": 40,
-      ".sh": 32,
-      ".snap": 68,
-      ".svg": 16,
-      ".ts": 4111,
-      ".tsx": 100,
-      ".txt": 268,
-      ".yaml": 21,
-      ".yml": 26,
-      "[none]": 55
+      ".bin": 1,
+      ".cjs": 61,
+      ".csv": 105,
+      ".db": 1,
+      ".gz": 5,
+      ".html": 4,
+      ".json": 894,
+      ".jsonl": 25,
+      ".log": 11,
+      ".md": 684,
+      ".meta": 3,
+      ".mjs": 25,
+      ".ndjson": 22,
+      ".py": 3,
+      ".pyc": 5,
+      ".sh": 4,
+      ".snap": 10,
+      ".svg": 2,
+      ".ts": 489,
+      ".txt": 34,
+      ".yaml": 2,
+      ".yml": 4,
+      "[none]": 11
     },
     "key_dirs": [
       ".claude/skills/ui-ux-pro-max/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/.claude/skills/ui-ux-pro-max/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/server-http-experimental/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/server/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/shared/src",
-      ".claude/worktrees/v2.2.0-rc.5-cli-ux/scripts",
       ".workflow/.scratchpad/rc34-werewolf-eval/scripts",
       ".workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/ai-client-parity-fixes/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/ai-client-parity-fixes/packages/cli/src",
-      ".worktrees/ai-client-parity-fixes/packages/server-http-experimental/src",
-      ".worktrees/ai-client-parity-fixes/packages/server/src",
-      ".worktrees/ai-client-parity-fixes/packages/shared/src",
-      ".worktrees/ai-client-parity-fixes/scripts",
-      ".worktrees/config-unify/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/config-unify/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/config-unify/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/config-unify/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/config-unify/packages/cli/src",
-      ".worktrees/config-unify/packages/server/src",
-      ".worktrees/config-unify/packages/shared/src",
-      ".worktrees/config-unify/scripts",
-      ".worktrees/fabric-entry-skill/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/fabric-entry-skill/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/fabric-entry-skill/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/fabric-entry-skill/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/fabric-entry-skill/packages/cli/src",
-      ".worktrees/fabric-entry-skill/packages/server-http-experimental/src",
-      ".worktrees/fabric-entry-skill/packages/server/src",
-      ".worktrees/fabric-entry-skill/packages/shared/src",
-      ".worktrees/fabric-entry-skill/scripts",
-      ".worktrees/interaction-ux/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/interaction-ux/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/interaction-ux/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/interaction-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/interaction-ux/packages/cli/src",
-      ".worktrees/interaction-ux/packages/server-http-experimental/src",
-      ".worktrees/interaction-ux/packages/server/src",
-      ".worktrees/interaction-ux/packages/shared/src",
-      ".worktrees/interaction-ux/scripts",
-      ".worktrees/issue-sweep/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/issue-sweep/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/issue-sweep/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/issue-sweep/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/issue-sweep/packages/cli/src",
-      ".worktrees/issue-sweep/packages/server-http-experimental/src",
-      ".worktrees/issue-sweep/packages/server/src",
-      ".worktrees/issue-sweep/packages/shared/src",
-      ".worktrees/issue-sweep/scripts",
-      ".worktrees/m-global-store-topology/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-global-store-topology/packages/cli/src",
-      ".worktrees/m-global-store-topology/packages/server-http-experimental/src",
-      ".worktrees/m-global-store-topology/packages/server/src",
-      ".worktrees/m-global-store-topology/packages/shared/src",
-      ".worktrees/m-global-store-topology/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-install-uninstall-lifecycle/packages/cli/src",
-      ".worktrees/m-install-uninstall-lifecycle/packages/server-http-experimental/src",
-      ".worktrees/m-install-uninstall-lifecycle/packages/server/src",
-      ".worktrees/m-install-uninstall-lifecycle/packages/shared/src",
-      ".worktrees/m-install-uninstall-lifecycle/scripts",
-      ".worktrees/m-store-reliability-hardening/.claude/skills/ui-ux-pro-max/scripts",
-      ".worktrees/m-store-reliability-hardening/.workflow/.scratchpad/rc34-werewolf-eval/scripts",
-      ".worktrees/m-store-reliability-hardening/.workflow/.scratchpad/rc36-werewolf-eval/scripts",
-      ".worktrees/m-store-reliability-hardening/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
-      ".worktrees/m-store-reliability-hardening/packages/cli/src",
-      ".worktrees/m-store-reliability-hardening/packages/server-http-experimental/src",
-      ".worktrees/m-store-reliability-hardening/packages/server/src",
-      ".worktrees/m-store-reliability-hardening/packages/shared/src",
-      ".worktrees/m-store-reliability-hardening/scripts",
       "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts",
       "packages/cli/src",
       "packages/server-http-experimental/src",
@@ -126,13 +50,13 @@
       "packages/shared/src",
       "scripts"
     ],
-    "max_depth": 11
+    "max_depth": 8
   },
   "entry_points": [
     {
       "path": "scripts/lint-protected-tokens.ts",
       "reason": "top-level script",
-      "size_bytes": 7878
+      "size_bytes": 7591
     }
   ],
   "code_samples": [
@@ -213,25 +137,25 @@
       "confidence": "LOW",
       "evidence": [
         {
-          "file": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta",
+          "file": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta sidecar present"
+          "snippet": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Game.ts.meta sidecar present"
         },
         {
-          "file": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta",
+          "file": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta sidecar present"
+          "snippet": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Network.ts.meta sidecar present"
         },
         {
-          "file": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta",
+          "file": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta",
           "line": "1",
-          "snippet": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta sidecar present"
+          "snippet": "packages/cli/__tests__/fixtures/cocos-stub/assets/scripts/Player.ts.meta sidecar present"
         }
       ],
       "coverage": {
-        "ratio": 0.007,
-        "total": 4211,
-        "matched": 30,
+        "ratio": 0.006,
+        "total": 489,
+        "matched": 3,
         "co_occurring_patterns": [
           "meta-sidecar"
         ]
@@ -272,42 +196,42 @@
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/package.json",
+      "path": "packages/cli/__tests__/fixtures/cocos-stub/package.json",
       "family": "config",
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/fixtures/cocos-stub/package.json",
+      "path": "packages/cli/__tests__/fixtures/cocos-stub/project.config.json",
       "family": "config",
       "rationale": "Bootstrap or compiler configuration file used to infer framework and project boundaries."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
+      "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/__snapshots__/client-configs.test.ts.snap",
+      "path": "packages/cli/__tests__/__snapshots__/client-configs.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "path": "packages/cli/__tests__/__snapshots__/doctor-reskin.test.ts.snap",
       "family": "test",
       "rationale": "Existing test coverage surface that captures behavior expectations."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/knip.config.ts",
+      "path": "knip.config.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/src/colors.ts",
+      "path": "packages/cli/src/colors.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     },
     {
-      "path": ".claude/worktrees/v2.2.0-rc.5-cli-ux/packages/cli/src/commands/config.ts",
+      "path": "packages/cli/src/commands/audit.ts",
       "family": "domain",
       "rationale": "Representative domain file outside entry/config/test hotspots."
     }
@@ -318,10 +242,10 @@
   },
   "readme": {
     "quality": "ok",
-    "line_count": 328,
+    "line_count": 330,
     "has_contributing": true
   },
   "recommendations_for_skill": [
-    "No framework marker detected — confirm the tech stack and main entry with the user first."
+    "未检测到明确框架,建议先让用户确认技术栈和主要入口。"
   ]
 }

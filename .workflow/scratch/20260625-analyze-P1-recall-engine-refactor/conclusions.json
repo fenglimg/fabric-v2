@@ -1,0 +1,43 @@
+{
+  "schema": "conclusions/1.0",
+  "session_id": "ANL-recall-engine-refactor-2026-06-25",
+  "subject": "Phase 1 召回引擎重构与统一",
+  "scope": "phase",
+  "milestone": "M-recall-align-20260625",
+  "phase": 1,
+  "recommendation": "CONDITIONAL_GO",
+  "confidence": 87.5,
+  "key_conclusions": [
+    { "title": "RRF 仅融合 content 通道", "detail": "finalScore = RRF(bm25,vector) + structuralBoost(maturity/recency/locality 原常量);结构信号不进 RRF", "confidence": "high", "evidence": "plan-context.ts:1094-1144 + delegate + test:1089/1203 不变量" },
+    { "title": "no-query 走旧 additive 路径", "detail": "queryTerms.length===0 不碰新 fusion,行为不变", "confidence": "high", "evidence": "plan-context.ts:391/452 query-gated" },
+    { "title": "W5 抽纯 ranker 非复用 planContext", "detail": "rankDescriptionItems(items,ctx,mode):recall=top_k+floor,triage=全匹配无floor", "confidence": "high", "evidence": "review.ts:1376 triage 语义 + plan-context.ts:352 corpus 不含 pending" },
+    { "title": "W2 截断重排降级", "detail": "trimToPayloadBudget 尾裁(mcp-payload-guard.ts:99)已相关度正确;W2 保留瘦item+磁盘缓存", "confidence": "high", "evidence": "kept.slice(0,-1) + 候选相关度降序" },
+    { "title": "W4 fastembed optionalDependencies", "detail": "默认尝试装(开箱即用)+ 装不上 server 仍成功 + 文本降级", "confidence": "high", "evidence": "maestro package.json:58 硬声明 + embedding.ts:242 动态import;Fabric vector-retrieval.ts:40" }
+  ],
+  "recommendations": [
+    { "id": "REC-1", "action": "W1: entries[] 加 optional score + score_breakdown,更新 recallOutputSchema + round-trip 测试", "priority": "high", "rationale": "可观测性基线,score 内部已算只是被 drop", "steps": ["plan-context.ts:466 thread score past survivingScored.map", "recall.ts:161-171 entry map 加 score/breakdown", "api-contracts.ts:497/514 加 optional 字段", "recall.test.ts round-trip 断言"], "review_status": "accepted" },
+    { "id": "REC-2", "action": "W2: 瘦 item 默认 + BM25 model 磁盘缓存(抽内部 stats key=revision hash)", "priority": "high", "rationale": "瘦 item 减字节压力;磁盘缓存榨 hook 冷启动;截断重排不需要(已尾裁)", "steps": ["recall.ts 默认返回瘦字段", "plan-context.ts:807 getOrBuildBm25Model 加磁盘 load/save", "序列化 bm25.ts:82-125 内部 stats + rehydrate scoreDoc"], "review_status": "accepted" },
+    { "id": "REC-3", "action": "W3: RRF 仅融合 content + flag 门控(fusion:additive|rrf 默认 additive)+ shadow-ranker 测试(真实 team KB)跑绿翻默认", "priority": "high", "rationale": "唯一 High 风险,flag 零风险回滚;真实语料强 oracle", "steps": ["scoreDescriptionItem 拆 contentScore(RRF)+structuralBoost", "zero-match(bm25Raw/vectorRaw<=0)排除 ranker", "content scale > 100+15+25", "no-query 旧路径不变", "shadow-ranker dual-run 测试 no-query diff=空/query diff allowlist", "config fusion 旋钮默认 additive"], "review_status": "accepted" },
+    { "id": "REC-4", "action": "W4: fastembed 进 optionalDependencies + 翻 embed_enabled 默认开 + 缺包文本降级提示", "priority": "medium", "rationale": "CJK 语义一等目标;optionalDependencies 兼顾开箱即用与跨平台稳", "steps": ["package.json optionalDependencies 加 fastembed", "config-loader.ts:113 embed_enabled 默认 true", "vector cosine clamp >0 + 修注释 vector-retrieval.ts:120/151", "缺包一次性 hint"], "review_status": "accepted" },
+    { "id": "REC-5", "action": "W5: 抽 rankDescriptionItems 纯 ranker,fab_pending search triage mode 接入,删 searchEntries 子串", "priority": "medium", "rationale": "消除双 search drift;triage 完整性靠 no-floor mode 保", "steps": ["抽 rankDescriptionItems(items,ctx,mode)", "扩 corpus 走 pending+canonical+rejected", "pending adapter 默认 draft/[]/filename/no-recency", "重套 isVisibleByLifecycle + layer/maturity/tags/created_after 过滤", "triage mode 全匹配无 top_k/floor", "删 review.ts:1376 searchEntries", "review.test.ts/pending.test.ts 经新路径跑绿"], "review_status": "accepted" }
+  ],
+  "implementation_scope": [
+    { "objective": "暴露召回 score + 信号分解", "rationale": "可观测性基线", "priority": "high", "target_files": ["packages/server/src/services/plan-context.ts", "packages/server/src/services/recall.ts", "packages/shared/src/schemas/api-contracts.ts"], "acceptance_criteria": ["fab_recall entries[] 每条含 score(数字)", "score_breakdown optional 含 bm25/vector/salience/recency/locality", "recallOutputSchema round-trip 不 strip", "recall.test.ts 绿"] },
+    { "objective": "瘦 item + BM25 磁盘缓存榨冷启动", "rationale": "减字节压力 + hook 冷启动", "priority": "high", "target_files": ["packages/server/src/services/recall.ts", "packages/server/src/services/plan-context.ts", "packages/server/src/services/bm25.ts"], "acceptance_criteria": ["默认返回瘦字段,胖 description 留 read_path", "冷 hook 命中磁盘缓存跳过 BM25 重建", "recall-perf 测试可见冷启动下降"] },
+    { "objective": "RRF content-only 融合 + flag 门控", "rationale": "量纲对齐排序;High 风险需安全上线", "priority": "high", "target_files": ["packages/server/src/services/plan-context.ts", "packages/server/src/services/bm25.ts", "packages/server/src/config-loader.ts"], "acceptance_criteria": ["finalScore=RRF(content)+structuralBoost", "config fusion:additive|rrf 默认 additive", "no-query 路径 before/after diff=空(shadow-ranker)", "zero-match 不获正分", "content scale 压过 locality 非命中(test:1203 绿)", "shadow 测试用真实 team KB"] },
+    { "objective": "CJK 语义召回默认开 + fastembed optionalDependencies", "rationale": "中文知识库一等目标", "priority": "medium", "target_files": ["packages/server/package.json", "packages/server/src/config-loader.ts", "packages/server/src/services/vector-retrieval.ts"], "acceptance_criteria": ["fastembed 在 optionalDependencies", "embed_enabled 默认 true", "缺 fastembed server 仍启动 + 文本降级 + 一次性提示", "vector cosine clamp >0"] },
+    { "objective": "fab_pending 统一接入纯 ranker + 删 searchEntries", "rationale": "消双 search drift,triage 保完整", "priority": "medium", "target_files": ["packages/server/src/services/review.ts", "packages/server/src/services/plan-context.ts", "packages/server/src/tools/pending.ts"], "acceptance_criteria": ["rankDescriptionItems 纯 ranker 带 mode", "triage mode 全匹配无 floor(不漏)", "pending 缺字段降级不崩", "searchEntries 删除", "review.test.ts/pending.test.ts 经新路径绿"] }
+  ],
+  "decision_trail": [
+    "目标=选择性对齐 maestro 知识检索半套(上游 grill)",
+    "RRF content-only(双源收敛,否决 naive RRF-all/z-score)",
+    "W2 截断重排降级(校验尾裁已正确,推翻 grill 误杀判断)",
+    "W3 flag 门控真实语料验证后翻默认(用户)",
+    "W4 optionalDependencies 综合默认装+跨平台稳(用户倾向+maestro 证据)",
+    "W5 纯 ranker triage mode 保完整性(双源收敛 D14)"
+  ],
+  "open_questions": [
+    { "area": "filtering", "question": "RRF 的 k 值与 content scale 系数具体校准", "options": ["k=10 起步", "用真实 team KB shadow 测试反推"] },
+    { "area": "cache", "question": "BM25 磁盘缓存失效粒度", "options": ["整体 revision hash 失效(先)", "后续增量"] }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "TASK-002",
+  "title": "瘦 item 默认 + BM25 model 磁盘缓存",
+  "description": "默认返回瘦字段（id, summary, score, 单行 snippet），胖 description 留 read_path 不进 payload，保 lean。同时给 getOrBuildBm25Model 加磁盘 load/save：冷 hook 命中磁盘缓存即跳过 BM25 重建，缓存 key=computeReadSetRevision；bm25.ts 抽出可序列化内部统计（perDoc / documentFrequency / avgFieldLength）并支持 rehydrate 出可用的 scoreDoc。",
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "packages/server/src/services/recall.ts：默认 entry 只含 id+summary+score+单行 snippet，胖 description 字段不进 payload（保留 read_path）。packages/server/src/services/bm25.ts L82-125 buildBm25Model 内部 perDoc/documentFrequency/avgFieldLength 抽为可序列化结构，新增 serializeBm25Model + rehydrateBm25Model（rehydrate 后 scoreDoc(id,queryTerms) 与新建模型同结果）。packages/server/src/services/plan-context.ts getOrBuildBm25Model(~L807) 加磁盘 load/save：以 computeReadSetRevision(来自 cross-store-recall.ts:450) 为 key，命中即 rehydrate 跳过重建，未命中构建后 serialize 落盘。",
+  "scope": "packages/server/src/services",
+  "focus_paths": ["packages/server/src/services/"],
+  "read_first": [
+    "packages/server/src/services/recall.ts",
+    "packages/server/src/services/plan-context.ts",
+    "packages/server/src/services/bm25.ts",
+    "packages/server/src/services/cross-store-recall.ts",
+    "packages/server/src/services/bm25.test.ts"
+  ],
+  "depends_on": ["TASK-001"],
+  "parallel_group": null,
+  "convergence": {
+    "criteria": [
+      "grep -n 'serializeBm25Model\\|rehydrateBm25Model' packages/server/src/services/bm25.ts 命中两个导出",
+      "grep -n 'computeReadSetRevision' packages/server/src/services/plan-context.ts 命中（作为缓存 key 使用）",
+      "bm25.test.ts 新增用例：rehydrateBm25Model(serializeBm25Model(m)).scoreDoc(id,q) === m.scoreDoc(id,q)（同 id/queryTerms 数值相等）",
+      "recall 默认 payload 中胖 description 不出现：测试断言 entry 不含 description 全文、仍含 read_path",
+      "plan-context.test.ts 或新增 perf 用例验证：相同 computeReadSetRevision 第二次调用命中磁盘缓存（buildBm25Model 不被再次调用 / spy 验证）",
+      "pnpm --filter @fenglimg/fabric-server test -- bm25.test.ts recall.test.ts 全绿",
+      "pnpm -r exec tsc --noEmit 无 error"
+    ],
+    "verification": "cd packages/server && pnpm test -- bm25.test.ts recall.test.ts plan-context.test.ts && cd ../.. && pnpm -r exec tsc --noEmit",
+    "definition_of_done": "fab_recall 默认只回瘦字段保 lean，胖正文按需经 read_path 取；BM25 模型可序列化落盘，冷启动命中缓存跳过重建，召回 perf 提升可观测。"
+  },
+  "files": [
+    {"path": "packages/server/src/services/recall.ts", "action": "modify", "target": "default thin fields", "change": "默认 entry 限 id+summary+score+单行 snippet，胖 description 留 read_path"},
+    {"path": "packages/server/src/services/bm25.ts", "action": "modify", "target": "buildBm25Model 内部统计 (L82-125)", "change": "抽 perDoc/documentFrequency/avgFieldLength 为可序列化结构 + serialize/rehydrate 导出"},
+    {"path": "packages/server/src/services/plan-context.ts", "action": "modify", "target": "getOrBuildBm25Model (~L807)", "change": "加磁盘 load/save，key=computeReadSetRevision，命中跳过重建"},
+    {"path": "packages/server/src/services/bm25.test.ts", "action": "modify", "target": "serialize round-trip 用例", "change": "断言 rehydrate 后 scoreDoc 与原模型一致"}
+  ],
+  "implementation": [
+    "读 bm25.ts L82-125 理解 perDoc/documentFrequency/avgFieldLength 结构与 scoreDoc 闭包依赖",
+    "抽内部统计为 plain 可序列化对象，实现 serializeBm25Model / rehydrateBm25Model",
+    "在 getOrBuildBm25Model 接 computeReadSetRevision 作为 key，加 load/save 磁盘路径",
+    "recall.ts 默认裁瘦字段，保留 read_path",
+    "补 bm25.test.ts round-trip 与 plan-context 缓存命中用例并跑测试"
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-server test -- bm25.test.ts recall.test.ts plan-context.test.ts", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/server/src/services/bm25.test.ts", "packages/server/src/services/recall.test.ts"],
+    "integration": ["packages/server/src/services/plan-context.test.ts"],
+    "success_metrics": ["serialize round-trip scoreDoc 数值一致", "缓存命中跳过重建", "瘦字段断言通过", "全测试绿"]
+  },
+  "reference": {
+    "pattern": "沿用 getOrBuildBm25Model 既有 revision-keyed 内存缓存模式，扩展为磁盘层",
+    "files": ["packages/server/src/services/cross-store-recall.ts"],
+    "examples": "computeReadSetRevision (cross-store-recall.ts:450) 作为稳定缓存 key"
+  },
+  "rationale": {
+    "chosen_approach": "复用既有 revision-keyed 缓存设计扩磁盘层成本低；瘦字段 + read_path 已是项目 lean 契约，仅需收紧默认 payload",
+    "decision_factors": ["冷启动 perf", "lean read_path 契约", "computeReadSetRevision 已是稳定 key 来源"],
+    "tradeoffs": "磁盘缓存引入失效/陈旧风险，由 revision key 绑定读集版本规避"
+  },
+  "risks": [
+    {"risk": "rehydrate 出的 scoreDoc 与原模型数值漂移", "mitigation": "round-trip 测试断言同 id/queryTerms 数值相等", "severity": "medium"},
+    {"risk": "磁盘缓存陈旧返回过期模型", "mitigation": "key 绑定 computeReadSetRevision，读集变即 miss 重建", "severity": "medium"}
+  ],
+  "meta": {
+    "status": "completed",
+    "estimated_time": "1.5h",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 2,
+    "execution_group": null,
+    "executor": "agent"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "id": "TASK-006",
+  "title": "Wave5 G3 uninstall:套 B-横线总结卡 + 人话化(bootstrap=是 → 人话;裸计数 removed=N/skipped=N → 结果词)",
+  "description": "Fix G3 in uninstall.ts. The plan preview leaks jargon `bootstrap=是` (yesNoLabel over raw stage keys) and the summary leaks raw counts `removed=129 skipped=16`. De-jargon: the plan summary describes each stage as a human action sentence (not `key=是/否`); the summary card uses the B-横线 title (TASK-001 headerRule, already routed via the shared renderer) and human result words ('已清理 N 项' / '已是干净' / '已跳过') instead of raw `removed=/skipped=/errors=` counts. Reuse the install summary card shape so install ↔ uninstall stay symmetric.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "uninstall.ts printUninstallPlanSummary (~line 1002): replace the `cli.uninstall.plan.actions` line built from yesNoLabel(...) per stage with a per-stage human action list — one localized sentence per ENABLED stage (e.g. '将清理 Skills 与 hook 脚本') and a muted '将保留' note for skipped, instead of `bootstrap=是 mcp=是 …`. renderUninstallSummary / buildUninstallSummaryCard (~line 947): the per-stage detail `value` switches from `cli.uninstall.stages.summary` raw counts to result words via t() — ran→'已清理 {count} 项' (cli.uninstall.stage.cleaned-count), nothing-removed→'已是干净' (cli.uninstall.stage.already-clean), skipped→t('cli.shared.skipped'). The summary card already flows through createInstallRenderer → renderSummaryCard (B-横线 from TASK-002). Add the new human-copy keys to both locales; the StageName routing keys stay English.",
+  "status": "completed",
+  "completed_at": "2026-06-26",
+  "actual_duration": null,
+  "scope": "packages/cli/src/commands, packages/shared/src/i18n",
+  "focus_paths": ["packages/cli/src/commands/uninstall.ts", "packages/shared/src/i18n/locales/"],
+  "read_first": [
+    "packages/cli/src/commands/uninstall.ts",
+    "packages/cli/src/tui/ConsoleOutputRenderer.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    "packages/shared/src/i18n/locales/zh-CN.ts",
+    "packages/shared/src/theme.ts"
+  ],
+  "depends_on": ["TASK-002"],
+  "wave": 5,
+  "parallel_group": "wave5",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "uninstall.ts printUninstallPlanSummary no longer renders `bootstrap=…`-style key=value via yesNoLabel for the stage actions (grep the plan-actions path — the `cli.uninstall.plan.actions` key with bootstrap/mcp/scaffold/store interpolation is replaced by per-stage human sentences)",
+      "buildUninstallSummaryCard detail values use result-word keys, not raw `removed=/skipped=/errors=` counts (grep buildUninstallSummaryCard — the ran-stage value uses cli.uninstall.stage.cleaned-count / already-clean, not cli.uninstall.stages.summary)",
+      "en.ts AND zh-CN.ts both define 'cli.uninstall.stage.cleaned-count' and 'cli.uninstall.stage.already-clean' (grep each in both files)",
+      "the uninstall summary card title flows through the shared renderer's B-横线 (renderSummaryCard → headerRule); no `│` gutter in the uninstall summary output",
+      "[UI-observable] running `fabric uninstall --dry-run` shows human action sentences (e.g. '将清理 Skills 与 hook 脚本'), NOT 'bootstrap=是 mcp=是 scaffold=是 store=否'",
+      "[UI-observable] running `fabric uninstall` shows a summary card with result words ('已清理 N 项' / '已是干净'), NOT 'removed=129 skipped=16'",
+      "pnpm --filter @fenglimg/fabric-shared test exits 0 (locale parity) && pnpm --filter @fenglimg/fabric-cli test exits 0 (uninstall tests updated) && pnpm -r exec tsc --noEmit exits 0"
+    ],
+    "verification": "grep the new keys in both locales; run uninstall command tests; eyeball `fabric uninstall --dry-run` and a real uninstall to confirm no jargon / raw counts.",
+    "definition_of_done": "The uninstall plan preview and summary speak in human result words (no `key=是/否` jargon, no raw `removed=/skipped=` counts), render through the shared B-横线 summary card, and stay symmetric with the install summary."
+  },
+  "files": [
+    {
+      "path": "packages/cli/src/commands/uninstall.ts",
+      "action": "modify",
+      "target": "printUninstallPlanSummary, renderStageResult, buildUninstallSummaryCard",
+      "change": "Plan preview: per-stage human action sentences instead of yesNoLabel key=value. Summary card detail: result words (cleaned-count / already-clean / skipped) instead of raw count interpolation. Title flows through renderSummaryCard B-横线."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "enMessages",
+      "change": "Add cli.uninstall.stage.cleaned-count='{count} cleaned', cli.uninstall.stage.already-clean='already clean', and per-stage plan-action sentence keys (cli.uninstall.plan.action.bootstrap/mcp/scaffold/store)."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "zhCNMessages",
+      "change": "Add the SAME keys: 已清理 {count} 项 / 已是干净 / 将清理 Skills 与 hook 脚本 等人话句子."
+    }
+  ],
+  "implementation": [
+    "Add the human-copy + result-word keys to both locale tables.",
+    "Rewrite printUninstallPlanSummary stage-actions block to per-stage human sentences (enabled = action sentence, skipped = muted 将保留).",
+    "Rewrite buildUninstallSummaryCard detail values + renderStageResult detail to result words via t().",
+    "Update uninstall command tests to the new copy, then run shared + cli tests + tsc."
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-shared test", "pnpm --filter @fenglimg/fabric-cli test", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/cli/src/commands/*uninstall*.test.ts"],
+    "integration": [],
+    "success_metrics": ["no bootstrap=是 jargon", "no raw removed=/skipped= counts", "symmetric B-横线 card", "locale parity green"]
+  },
+  "reference": {
+    "pattern": "install summary card via createInstallRenderer.renderSummaryCard (now B-横线 from TASK-002); uninstall already shares that renderer — only the detail copy changes",
+    "files": ["packages/cli/src/commands/uninstall.ts", "packages/cli/src/tui/ConsoleOutputRenderer.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Reuse the shared renderer card (already symmetric) and only swap the leaked jargon/counts for localized human result words, keeping install ↔ uninstall parity.",
+    "decision_factors": ["G3 root cause: uninstall reuses the renderer but speaks machine counts/keys", "spec wants 与 install 对齐"],
+    "tradeoffs": null
+  },
+  "risks": ["StageName routing keys (bootstrap/mcp/...) must stay English — only the DISPLAY copy changes; do not rename the keys."],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["uninstall"],
+    "affected_components": ["commands/uninstall"],
+    "affected_requirements": ["G3 uninstall jargon + raw counts"],
+    "adr_ids": []
+  },
+  "meta": { "estimated_time": "50m", "risk": "low", "autonomous": true, "checkpoint": false }
+}

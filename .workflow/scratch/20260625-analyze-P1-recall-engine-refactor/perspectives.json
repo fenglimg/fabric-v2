@@ -1,0 +1,28 @@
+{
+  "schema": "perspectives/1.0",
+  "phase": 1,
+  "perspectives": [
+    { "name": "architectural", "source": "cli-explore-agent", "focus": "改造面代码锚点 + 测试surface" },
+    { "name": "technical", "source": "codex delegate cdx-anlP1-recall", "focus": "实现方案 + 风险 + Go/No-Go", "confidence": 78 }
+  ],
+  "synthesis": {
+    "convergent": [
+      "RRF 只融合 content 通道(BM25+vector),结构信号(maturity/recency/locality)保持原常量加法:finalScore = RRF_content + structuralBoost。两源一致。",
+      "no-query broad-probe (queryTerms.length===0) 必须走旧 additive 原路径,行为不变。两源一致。",
+      "W5 不复用整个 planContext();抽纯 ranker rankDescriptionItems(items,ctx,mode):recall=top_k+floor,triage=全匹配无floor。坐实 grill D14。",
+      "W1 透出 score 必须改 recallOutputSchema(Zod strip 未声明字段,body_in_context 有先例),加 optional score + score_breakdown,向后兼容。",
+      "z-score No-Go(小语料零方差+负值与floor不稳);min-max fallback;RRF 首选。"
+    ],
+    "delegate_unique": [
+      "zero-match 陷阱:RRF 给零命中文档尾名次正分 → 破 floor + triage 噪声。只让 bm25Raw>0/vectorRaw>0 进 ranker。",
+      "content scale 必须 > LOCALITY_SAME_FILE(100)+SALIENCE_PROVEN(15)+RECENCY_BOOST(25),保住'内容压过完美locality非命中'不变量(test:1203)。",
+      "vector cosine 注释写 0..1 实际可能 [-1,1](vector-retrieval.ts:120/151/160)— ranker 只接受 >0 或显式 clamp。",
+      "shadow-ranker 测试:同 fixture 同跑 old additive + new RRF,top-k diff;no-query diff 必须空,query diff 进显式 allowlist。",
+      "pending adapter 默认:maturity??draft(已存在 review.ts:1359),created_at 缺→无recency,relevance_paths??[],summary??title??filename。"
+    ],
+    "orchestrator_correction": [
+      "W2 降级:trimToPayloadBudget 用 kept.slice(0,-1) 按尾裁(mcp-payload-guard.ts:99),候选相关度降序→尾=最低相关。故截断端到端已相关度正确(top_k→ratio-floor→尾裁)。grill D11'先相关度后字节'基本已是现状。W2 真价值=瘦item(D10)减字节压力 + 磁盘缓存(D9)榨冷启动;'重排截断次序'近乎no-op,降级。"
+    ],
+    "verdict": "Conditional Go on RRF (78/100). 条件:RRF 仅融合 BM25/vector;no-query 走旧路径;triage 用纯ranker非完整planContext;先补 snapshot/dual-ranker 测试;zero/negative signal 不进ranker;content scale 主导。"
+  }
+}

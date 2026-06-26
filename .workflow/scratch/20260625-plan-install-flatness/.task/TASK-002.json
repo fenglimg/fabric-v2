@@ -1,0 +1,118 @@
+{
+  "id": "TASK-002",
+  "status": "completed",
+  "title": "Store 双槽模型 (1 personal + 1 team) + required_stores max-1 校验/迁移",
+  "description": "FIRST add max-1 team validation/migration on required_stores (R6: array currently allows multi-bind; regularize to max-1 non-personal store, migrating configs with >1 by prompting the user to pick the primary team). Then rebuild the store phase as a two-slot status panel: personal slot (status + 切换/新建/跳过, usually auto) + team slot (single-select listing ALL team-type candidates including mounted-but-unbound + 加入已有/新建/跳过). Personal status is ALWAYS visible; the phase MUST NOT silently skip when already configured. Explicit install order: language -> personal slot -> team slot, personal step always present.",
+  "type": "feature",
+  "priority": "high",
+  "effort": "large",
+  "action": "In packages/shared/src/schemas/fabric-config.ts (line ~119 `required_stores: z.array(...)`) add a refinement that at most 1 entry is a non-personal (team-type) store; export a migrateRequiredStores(config) helper. In packages/cli/src/install/pipeline/store.stage.ts: (1) at the top of the store phase, if required_stores contains >1 non-personal store, prompt (single-select) the user to choose the primary team store and drop the rest (migration). (2) Remove the silent full-phase skip at store.stage.ts:124 (`hasWriteStore && unboundStores.length===0 -> return`); replace with always-render a two-slot status panel. (3) Make ensurePersonalStore (store.stage.ts:519) surface the personal slot status explicitly instead of silent ensure; delete the 'personal store is implicit and never listed' behavior (comment ~line 268). (4) Extend store-ops.ts:572 unboundAvailableStores into a per-slot candidate lister: a team-slot lister returning ALL team-type stores (currently-bound highlighted + mounted-unbound + new) for single-select, with unified actions 加入已有/新建/跳过. (5) Team-slot UI copy MUST use '团队库(team 类)' wording and show real store aliases — MUST NOT imply the store must be named 'team' (KT-MOD-0001). All new copy via t() en+zh-CN. Render slot status through the unified renderer from TASK-001.",
+  "scope": "packages/shared/src/schemas/fabric-config.ts, packages/cli/src/install/pipeline/store.stage.ts, packages/cli/src/store/store-ops.ts",
+  "read_first": [
+    "packages/cli/src/install/pipeline/store.stage.ts",
+    "packages/cli/src/store/store-ops.ts",
+    "packages/shared/src/schemas/fabric-config.ts",
+    "packages/cli/src/install/pipeline/pipeline.ts",
+    "packages/cli/src/tui/types.ts",
+    ".workflow/scratch/20260625-grill-install-flatness/context-package.json",
+    ".workflow/scratch/20260625-grill-install-flatness/grill-report.md"
+  ],
+  "depends_on": [
+    "TASK-001"
+  ],
+  "wave": 2,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "grep -n 'required_stores' packages/shared/src/schemas/fabric-config.ts shows a .refine/.superRefine enforcing at most 1 non-personal store",
+      "grep -n 'never listed' packages/cli/src/install/pipeline/store.stage.ts returns 0 matches (the implicit-never-listed personal comment/behavior removed)",
+      "grep -n 'unboundStores.length === 0' packages/cli/src/install/pipeline/store.stage.ts returns 0 matches inside the early-return skip (silent full-phase skip removed)",
+      "grep -nE '团队库\\(team 类\\)|团队库' packages/shared/src/i18n/locales/zh-CN.ts returns >=1 match AND no new copy hardcodes the literal alias 'team' as a required name",
+      "[runtime] a test feeds a config with required_stores containing 2 non-personal stores and asserts migrateRequiredStores reduces it to exactly 1",
+      "[runtime] a store-phase test with an already-configured project asserts the personal slot status line is rendered (renderer.renderInfo/renderStep called) rather than the phase returning early with no output"
+    ],
+    "verification": "pnpm --filter @fenglimg/fabric-shared build && cd packages/cli && pnpm exec tsc --noEmit && pnpm test -- store.stage && cd /Users/wepie/Desktop/personal-projects/pcf && pnpm test:store-only-e2e",
+    "definition_of_done": "一个 project 最多绑 1 个 team store(schema 校验 + 迁移已生效);store phase 永远先亮个人库槽 + 团队库槽双槽状态,team 槽单选列全候选(含已挂载未绑),动作统一加入已有/新建/跳过;personal 状态永不隐身;已配好不再整段静默跳过。"
+  },
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "action": "modify",
+      "target": "required_stores schema (line ~119)",
+      "change": "Add max-1 non-personal refinement + export migrateRequiredStores helper"
+    },
+    {
+      "path": "packages/cli/src/install/pipeline/store.stage.ts",
+      "action": "modify",
+      "target": "promptStoreSetup (271), silent skip (124), ensurePersonalStore (519), never-listed comment (268)",
+      "change": "Two-slot panel; migration prompt; explicit personal slot; remove silent skip"
+    },
+    {
+      "path": "packages/cli/src/store/store-ops.ts",
+      "action": "modify",
+      "target": "unboundAvailableStores (line 572)",
+      "change": "Add per-slot team-type candidate lister incl mounted-unbound"
+    }
+  ],
+  "implementation": [
+    "Add the max-1 non-personal refinement + migrateRequiredStores helper to fabric-config.ts, then `pnpm --filter @fenglimg/fabric-shared build`",
+    "In store.stage.ts, add a migration step at phase start: if >1 non-personal store, single-select the primary and drop the rest",
+    "Remove the silent full-phase early-return at store.stage.ts:124; always render the two-slot panel",
+    "Surface personal slot status explicitly (delete never-listed behavior); render via the TASK-001 unified renderer",
+    "Extend store-ops.ts unboundAvailableStores into a team-slot candidate lister (bound-highlighted + mounted-unbound + new)",
+    "Add en+zh-CN t() keys for slot labels/actions; use '团队库(team 类)' wording, show real aliases",
+    "Write migration test + already-configured-renders-personal-slot test; run shared build + tsc + store tests + store-only-e2e"
+  ],
+  "reference": {
+    "pattern": "Single-flow skippable step semantics from KT-DEC-0017 preserved; two-slot is still one install flow with skippable steps",
+    "files": [
+      "packages/cli/src/install/pipeline/store.stage.ts",
+      "packages/cli/src/store/store-ops.ts"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Product-owner intent: 1 personal + 1 team dual-slot. Regularizing required_stores array to max-1 eliminates the multi-store raw state the author themselves could not parse.",
+    "decision_factors": [
+      "author cannot parse the current bind/unbound phase",
+      "required_stores array already de-facto holds 1 in real config",
+      "silent skip is the same 'goes mute when it should speak' disease as F1"
+    ],
+    "tradeoffs": "Locking to single team store sacrifices multi-read (reading several shared stores); user confirmed intent — revisit via a separate 'extra read sources' sub-feature later (R7)."
+  },
+  "risks": [
+    {
+      "risk": "R6: required_stores array currently allows multi-bind; locking to 1-team needs validation and existing >1 configs will break",
+      "mitigation": "implement schema/runtime validation + migration FIRST; >1 prompts user to pick primary; author's own config = 1 so live risk low"
+    },
+    {
+      "risk": "R8: 'team slot' naming collides with alias 'team' (KT-MOD-0001 naming axis clash)",
+      "mitigation": "UI copy uses '团队库(team 类)'; candidates show real aliases; never imply the store must be named team"
+    },
+    {
+      "risk": "R9: dual-slot rebuild touches the just-merged promptStoreSetup single-flow (KT-DEC-0017)",
+      "mitigation": "dual-slot stays a single install flow with skippable steps; keep single-flow semantics"
+    },
+    {
+      "risk": "COORDINATION: TASK-004 (wave 2) also edits store.stage.ts (firstInstall flag at ~line 70 + first-run prompt context at 65-83). This task owns the structural rewrite (124/267/271/519); TASK-004 only adds the firstInstall flag read + prompt-context labels. Land TASK-002 first within wave 2, then TASK-004 rebases onto the rewritten store.stage.ts.",
+      "mitigation": "serialize TASK-002 before TASK-004 for store.stage.ts edits"
+    }
+  ],
+  "meta": {
+    "estimated_time": "3h",
+    "risk": "high",
+    "autonomous": false,
+    "checkpoint": true
+  },
+  "implementation_blueprint": {
+    "confirmed": "用户确认 max-1 team 正确 + personal 本机全局(纯 UI 改非架构,R7 多读开放项关闭)",
+    "changes": [
+      "1. max-1 语义: packages/cli/src/store/store-ops.ts bindRequiredStore — 改为绑非个人 store 时替换任何已有非个人条目(保持 ≤1 team);当前按 id dedupe/append,绑第2个 team 会得 [team,wespy] 违反 max-1。加单测。",
+      "2. migrate 安全网: 若 required_stores 已有 >1 非个人, 保留 active_write_store 对应那个(或首个), 其余移除。clean-slate 下实为 no-op(用户配置=1)。可放 store.stage 或 store-ops。",
+      "3. store.stage.ts 双槽重建: (a) 删 :124 silent skip(hasWriteStore&&unbound===0→return), 改为永远渲染双槽状态; (b) personal 槽: 永远打状态行 ✓ personal 本机全局(:519 ensurePersonalStore 之外加显式状态展示, 删 :268 never-listed); (c) team 槽: 单选列 ALL team 候选 = boundStoreAliases(当前高亮) ∪ unboundAvailableStores(可绑) + 加入已有/新建/跳过; 选当前=no-op, 选他者=replace 绑定。",
+      "4. UI 文案: team 槽用 团队库(team 类) 不暗示必叫 team(KT-MOD-0001); personal 槽标 本机全局 不暗示项目绑定。t() en+zh。",
+      "5. 测试改写(~6-10): install-v2-pipeline.test.ts 的 binds-a-selected-mounted-store / mints-project-id / prompts-join-new / language-first 等断言当前 promptStoreSetup 单选 bind:team 行为 → 适配双槽; 加 max-1 replace 测试 + already-configured-renders-personal-slot 测试。其余 store 相关测试(store-ops/install-url-bind/backfill-unbound等)跑一遍确认不破。",
+      "6. 验证: pnpm --filter @fenglimg/fabric-shared build(若动 schema)+ tsc + pnpm test -- store.stage + pnpm test:store-only-e2e + 全套。"
+    ],
+    "risk": "high — 动 store 绑定核心 + 多测试; checkpoint:true; 建议单独专注一轮"
+  }
+}

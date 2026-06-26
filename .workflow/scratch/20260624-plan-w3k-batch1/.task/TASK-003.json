@@ -1,0 +1,103 @@
+{
+  "id": "TASK-003",
+  "title": "K6: upgrade recall omitted_candidate_count -> structured dropped[]{id,reason}",
+  "description": "fab_recall currently signals truncated candidates with a bare `omitted_candidate_count: number` (recallOutputSchema, api-contracts.ts:508; produced in plan-context.ts and consumed in recall.ts service line 210 to build next_steps). Upgrade it to a structured `dropped: { id: string, reason: <enum> }[]` form, reusing fab_archive_scan's existing `dropped[]{session_id, reason: z.enum([...])}` template (api-contracts.ts:572-577) as the shape. All tools converge on ONE controlled reason vocabulary — do NOT let recall invent a private enum. reject / idempotent-skip paths should also emit structured reasons where they drop candidates. Migrate every consumer/doc reference to omitted_candidate_count in the same PR (migrate-before-delete).",
+  "type": "feature",
+  "priority": "high",
+  "effort": "high",
+  "action": "(1) Schema: in api-contracts.ts add to recallOutputSchema a `dropped: z.array(z.object({ id: z.string(), reason: <SharedDropReasonEnum> }))` and REMOVE `omitted_candidate_count` (line 508). Define a shared reason enum ONCE — extend/reuse the existing archive-scan enum source so both tools draw from one vocabulary; for recall the controlled values are `z.enum(['retrieval_budget','rejected','idempotent_skip'])` (retrieval_budget replaces the old omitted-by-top_k count; rejected/idempotent_skip cover the other drop paths). Co-locate this enum near the archive-scan dropped[] definition (api-contracts.ts:572-577) so future tools import the same union. (2) Producer: in plan-context.ts (line ~540, ~582) and recall service (recall.ts:210, buildNextSteps) replace the `omitted_candidate_count` number with a `dropped[]` array carrying {id, reason:'retrieval_budget'} for each budget-omitted candidate; preserve the next_steps hint text but derive count from dropped.length. (3) MCP description: index.ts:223 references `omitted_candidate_count > 0` — rewrite to reference `dropped[]`. (4) Migrate-before-delete: grep `omitted_candidate_count` across packages/cli, packages/server (incl. plan-context.test.ts:404/720/834/847/883/907/936, recall.test.ts:300-316), and docs (.fabric/AGENTS.md and the MCP server-instructions string that says `omitted_candidate_count > 0`); update every live reference to dropped[]. NOTE: plan-context.ts is the actual producer — recall is a consumer; decide whether plan-context keeps an internal count and recall maps to dropped[], OR plan-context emits dropped[] end-to-end. Prefer plan-context emitting dropped[]{id,reason} end-to-end so the wire shape is consistent.",
+  "scope": "packages/server/src/services/ + packages/server/src/tools/recall.ts + packages/shared/src/schemas/api-contracts.ts",
+  "focus_paths": ["packages/server/src/services/", "packages/server/src/tools/", "packages/shared/src/schemas/"],
+  "read_first": [
+    "packages/server/src/tools/recall.ts",
+    "packages/server/src/services/recall.ts",
+    "packages/server/src/services/plan-context.ts",
+    "packages/shared/src/schemas/api-contracts.ts",
+    "packages/server/src/tools/archive-scan.ts",
+    "packages/server/src/services/recall.test.ts",
+    "packages/server/src/services/plan-context.test.ts",
+    "packages/server/src/index.ts",
+    ".fabric/AGENTS.md"
+  ],
+  "depends_on": ["TASK-001"],
+  "parallel_group": null,
+  "convergence": {
+    "criteria": [
+      "RED first: extend recall.test.ts (the existing test at line ~300 'surfaces omitted_candidate_count...') to assert `result.dropped` is an array of `{id, reason}` with reason==='retrieval_budget' and length 1 (replacing `expect(result.omitted_candidate_count).toBe(1)`); it fails before the impl change.",
+      "grep-verifiable: `grep -n 'dropped' packages/shared/src/schemas/api-contracts.ts` shows recallOutputSchema now contains a `dropped` array (in addition to the archive-scan one).",
+      "grep-verifiable: `grep -rn 'omitted_candidate_count' packages/shared/src packages/server/src` returns ZERO matches (fully migrated — schema, producer, consumer, tests, index.ts description string all updated).",
+      "grep-verifiable: `grep -rn 'omitted_candidate_count' .fabric/AGENTS.md` returns ZERO matches (doc migrated) — and the MCP server-instructions string that read `omitted_candidate_count > 0` now references dropped[].",
+      "Reuse check: recall's dropped[] reason is a z.enum drawn from a SINGLE shared vocabulary co-located with archive-scan's enum — `grep -n 'retrieval_budget\\|idempotent_skip' packages/shared/src/schemas/api-contracts.ts` matches and the enum is defined once, not duplicated per tool.",
+      "Schema-edit gate: `pnpm --filter @fenglimg/fabric-shared build` run BEFORE server vitest (api-contracts.ts changed).",
+      "`pnpm -r exec tsc --noEmit` exits 0.",
+      "`pnpm --filter @fenglimg/fabric-server exec vitest run` is green (incl. updated plan-context.test.ts and recall.test.ts)."
+    ],
+    "verification": "cd /Users/wepie/Desktop/personal-projects/pcf && pnpm --filter @fenglimg/fabric-shared build && grep -rn 'omitted_candidate_count' packages/shared/src packages/server/src .fabric/AGENTS.md; echo 'expect zero above'; pnpm -r exec tsc --noEmit && pnpm --filter @fenglimg/fabric-server exec vitest run",
+    "definition_of_done": "fab_recall reports truncated/dropped candidates as a structured dropped[]{id,reason} list drawn from one shared reason vocabulary (matching fab_archive_scan), the bare omitted_candidate_count is gone everywhere (schema, producer, consumer, tests, MCP description, AGENTS.md), and all gates are green."
+  },
+  "files": [
+    {"path": "packages/shared/src/schemas/api-contracts.ts", "action": "modify", "target": "recallOutputSchema line ~505-508 + a shared reason enum near line ~572-577", "change": "Remove omitted_candidate_count; add `dropped: z.array(z.object({id: z.string(), reason: <shared enum>}))`; define the recall reason enum z.enum(['retrieval_budget','rejected','idempotent_skip']) co-located with archive-scan's dropped[] as the single vocabulary source."},
+    {"path": "packages/server/src/services/plan-context.ts", "action": "modify", "target": "lines ~161, ~540, ~582 (omitted_candidate_count producer)", "change": "Emit dropped[]{id, reason:'retrieval_budget'} end-to-end instead of an omitted count; update the PlanContextResult type at line 161."},
+    {"path": "packages/server/src/services/recall.ts", "action": "modify", "target": "buildNextSteps line ~210", "change": "Derive next_steps hint from dropped.length (reason==='retrieval_budget') instead of omitted_candidate_count; forward dropped[] onto the recall result."},
+    {"path": "packages/server/src/index.ts", "action": "modify", "target": "MCP description line ~223", "change": "Rewrite `omitted_candidate_count > 0` guidance to reference dropped[]."},
+    {"path": "packages/server/src/services/recall.test.ts", "action": "modify", "target": "test at line ~300", "change": "Assert result.dropped is [{id, reason:'retrieval_budget'}] instead of omitted_candidate_count===1."},
+    {"path": "packages/server/src/services/plan-context.test.ts", "action": "modify", "target": "lines 404/720/834/847/883/907/936", "change": "Update omitted_candidate_count assertions to the dropped[] shape (toHaveProperty/not.toHaveProperty adjusted to dropped)."},
+    {"path": ".fabric/AGENTS.md", "action": "modify", "target": "omitted_candidate_count references", "change": "Migrate doc text to dropped[]; also update the MCP server-instructions string referencing omitted_candidate_count > 0."}
+  ],
+  "implementation": [
+    "RED: edit recall.test.ts:300 test to expect result.dropped === [{id: <stable_id>, reason:'retrieval_budget'}] and length 1; confirm it fails.",
+    "GREEN schema: in api-contracts.ts remove recallOutputSchema.omitted_candidate_count (line 508); add `dropped: z.array(z.object({id: z.string(), reason: recallDropReason}))`; define `const recallDropReason = z.enum(['retrieval_budget','rejected','idempotent_skip'])` co-located with archive-scan's dropped[] (line ~572) and document it as the shared drop-reason vocabulary.",
+    "Schema-edit gate: `pnpm --filter @fenglimg/fabric-shared build` (rebuild dist).",
+    "GREEN producer: in plan-context.ts replace the `omitted_candidate_count` count (lines 161/540/582) with a dropped[]{id, reason:'retrieval_budget'} array end-to-end; carry it through to the recall service.",
+    "GREEN consumer: in recall.ts buildNextSteps (line 210) compute `const omitted = result.dropped?.filter(d => d.reason==='retrieval_budget').length ?? 0` and keep the existing next_steps hint wording; ensure dropped[] is on the returned recall result.",
+    "Migrate: rewrite index.ts:223 description; update plan-context.test.ts assertions (404/720/834/847/883/907/936); migrate .fabric/AGENTS.md + the MCP server-instructions `omitted_candidate_count > 0` line to dropped[].",
+    "Verify zero residual `omitted_candidate_count` in packages/shared/src + packages/server/src + .fabric/AGENTS.md.",
+    "Run tsc --noEmit (0) and fabric-server vitest (green)."
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-shared build",
+      "pnpm --filter @fenglimg/fabric-server exec vitest run",
+      "pnpm -r exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/server/src/services/recall.test.ts",
+      "packages/server/src/services/plan-context.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "RED test failed before impl, green after",
+      "recallOutputSchema has dropped[], omitted_candidate_count fully removed",
+      "single shared reason vocabulary (not a private enum)",
+      "zero residual omitted_candidate_count in src + AGENTS.md",
+      "shared dist rebuilt before server tests",
+      "tsc --noEmit 0, vitest green"
+    ]
+  },
+  "reference": {
+    "pattern": "fab_archive_scan dropped[]{session_id, reason: z.enum([...])} (api-contracts.ts:572-577) is the verbatim template",
+    "files": ["packages/server/src/tools/archive-scan.ts", "packages/shared/src/schemas/api-contracts.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Reuse archive-scan's dropped[] shape and a single shared reason enum so all tools converge on one controlled drop-reason vocabulary; emit dropped[] end-to-end from plan-context (the real producer) to keep the wire shape consistent.",
+    "decision_factors": ["C-005 reuse-archive-scan-template mandate", "migrate-before-delete on a wire-shape change"],
+    "tradeoffs": "plan-context.ts is the structural producer (not recall) — the change ripples through plan-context + its tests; depends_on TASK-001 because both edit recall.ts and must not collide."
+  },
+  "risks": [
+    "Missing a consumer of omitted_candidate_count (CLI/skills/docs) -> silent stale reference; the zero-residual grep across packages/shared/src + packages/server/src + .fabric/AGENTS.md is the round-trip oracle.",
+    "Bash grep can give false negatives on this repo (ugrep) — use the Grep tool or `node`-based search for the correctness-critical zero-residual check, not raw Bash grep alternation.",
+    "Forgetting shared build after schema edit -> invalid_union_discriminator at server test runtime.",
+    "plan-context.ts being the actual producer (not recall.ts) means the count lives upstream — do not only patch recall and leave plan-context emitting the old field."
+  ],
+  "meta": {
+    "status": "pending",
+    "estimated_time": "55m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 1,
+    "execution_group": null,
+    "executor": "agent"
+  }
+}

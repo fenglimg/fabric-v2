@@ -1,0 +1,102 @@
+{
+  "id": "TASK-002",
+  "title": "Wave2 G1+G6:收尾文案全过 t()(Done!/succeeded/skipped/failed/All steps...)+ 总结卡 B-横线标题 + 单一「下一步 →」锚点",
+  "description": "Fix G1 (English leaks in the summary card) and G6 (diverging footer). Move every hardcoded English string in ConsoleOutputRenderer.ts through t() with both en + zh-CN keys: `Done!` (renderComplete), the count words `succeeded`/`skipped`/`failed` and `All steps completed successfully` / `N step(s) failed` / `N/N steps completed` (buildSummaryBlock). Reshape renderSummaryCard to use the new B-横线 headerRule (TASK-001) instead of sectionBar, and replace the multi-line guidance footer with a SINGLE '下一步 →' golden-action anchor (the verbose capability table only under --verbose).",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "Add i18n keys to BOTH packages/shared/src/i18n/locales/en.ts and zh-CN.ts: `cli.summary.done` (en 'Done!' / zh '完成!'), `cli.summary.count.succeeded`/`.skipped`/`.failed`, `cli.summary.all-ok` ('All steps completed successfully' / '全部步骤已完成'), `cli.summary.n-failed` ('{count} step(s) failed'), `cli.summary.n-of-total` ('{done}/{total} steps completed'). renderComplete() → this.renderStatus(t('cli.summary.done'),'success'). buildSummaryBlock: replace the three literal count cells and the summaryLine ternary with t() calls. renderSummaryCard: replace sectionBar(summary.title) with headerRule(summary.title) from tui/structure.ts. Guidance footer: collapse install guidance.stage's multi-line `cli.install.next-steps` into a single anchor line keyed `cli.install.next-step.anchor` ('下一步 → {action}') printed once; gate the capability list behind --verbose.",
+  "status": "completed",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/cli/src/tui, packages/cli/src/install/pipeline, packages/shared/src/i18n",
+  "focus_paths": ["packages/cli/src/tui/ConsoleOutputRenderer.ts", "packages/cli/src/install/pipeline/guidance.stage.ts", "packages/shared/src/i18n/locales/"],
+  "read_first": [
+    "packages/cli/src/tui/ConsoleOutputRenderer.ts",
+    "packages/cli/src/install/pipeline/guidance.stage.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    "packages/shared/src/i18n/locales/zh-CN.ts",
+    "packages/shared/src/theme.ts",
+    "packages/cli/src/tui/structure.ts"
+  ],
+  "depends_on": ["TASK-001"],
+  "wave": 2,
+  "parallel_group": null,
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "ConsoleOutputRenderer.ts does NOT contain the literal 'All steps completed successfully' (grep -F returns no match)",
+      "ConsoleOutputRenderer.ts does NOT contain the literal 'Done!' (grep -F returns no match)",
+      "ConsoleOutputRenderer.ts buildSummaryBlock does NOT contain the literals ' succeeded', ' skipped', ' failed' as English words (the count cells are t() calls)",
+      "en.ts AND zh-CN.ts both define 'cli.summary.done', 'cli.summary.all-ok', 'cli.summary.count.succeeded', 'cli.summary.count.skipped', 'cli.summary.count.failed' (grep each key in both files)",
+      "renderSummaryCard uses headerRule (grep 'headerRule' in ConsoleOutputRenderer.ts), not sectionBar, for the summary title",
+      "install guidance prints a single '下一步'/'Next →' anchor key (en.ts + zh-CN.ts define 'cli.install.next-step.anchor'); the multi-line list is --verbose-gated",
+      "[UI-observable] running `fabric install` under zh-CN locale shows a Chinese summary card (no stray 'succeeded'/'Done!') ending in one '下一步 →' line",
+      "pnpm --filter @fenglimg/fabric-shared test exits 0 (locale-parity.test.ts passes — keys present in both locales)",
+      "pnpm -r exec tsc --noEmit exits 0 && pnpm --filter @fenglimg/fabric-cli test exits 0"
+    ],
+    "verification": "grep -F 'All steps completed successfully' packages/cli/src/tui/ConsoleOutputRenderer.ts (expect empty); grep the new keys in both locale files; pnpm --filter @fenglimg/fabric-shared test (locale parity) && cli test.",
+    "definition_of_done": "The install/uninstall summary card and completion line are fully localized (no hardcoded English), the card title uses the B-横线 primitive, and the footer is a single '下一步 →' anchor with the capability list behind --verbose."
+  },
+  "files": [
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "enMessages",
+      "change": "Add cli.summary.done='Done!', cli.summary.all-ok='All steps completed successfully', cli.summary.n-failed='{count} step(s) failed', cli.summary.n-of-total='{done}/{total} steps completed', cli.summary.count.succeeded/.skipped/.failed='succeeded'/'skipped'/'failed', cli.install.next-step.anchor='Next → {action}'."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "zhCNMessages",
+      "change": "Add the SAME keys with zh-CN values (完成! / 全部步骤已完成 / {count} 个步骤失败 / {done}/{total} 步已完成 / 成功·跳过·失败 / 下一步 → {action})."
+    },
+    {
+      "path": "packages/cli/src/tui/ConsoleOutputRenderer.ts",
+      "action": "modify",
+      "target": "renderComplete, buildSummaryBlock, renderSummaryCard",
+      "change": "renderComplete uses t('cli.summary.done'); buildSummaryBlock count cells + summaryLine use the new t() keys; renderSummaryCard uses headerRule(summary.title). Import t from ../i18n.js."
+    },
+    {
+      "path": "packages/cli/src/install/pipeline/guidance.stage.ts",
+      "action": "modify",
+      "target": "guidance output",
+      "change": "Print a single cli.install.next-step.anchor line; gate the existing multi-line cli.install.next-steps list behind a --verbose check."
+    }
+  ],
+  "implementation": [
+    "Add the six+ keys to en.ts and zh-CN.ts (keep the tables sorted/grouped consistently).",
+    "Refactor renderComplete + buildSummaryBlock + renderSummaryCard in ConsoleOutputRenderer to t() + headerRule.",
+    "Refactor guidance.stage.ts to one anchor line + --verbose capability list.",
+    "Update affected snapshot tests (summary card now Chinese-or-English by locale; assert via t() keys not literals).",
+    "Run shared (locale-parity) + cli tests + tsc."
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-shared test", "pnpm --filter @fenglimg/fabric-cli test", "pnpm -r exec tsc --noEmit"],
+    "unit": ["packages/shared/src/i18n/locale-parity.test.ts", "packages/cli/src/tui/*.test.ts"],
+    "integration": [],
+    "success_metrics": ["locale parity green", "no English literals in summary path", "single footer anchor"]
+  },
+  "reference": {
+    "pattern": "existing t() usage in pipeline.ts buildSummary (title uses t('cli.install.pipeline.complete')); locale tables in en.ts/zh-CN.ts",
+    "files": ["packages/cli/src/install/pipeline/pipeline.ts", "packages/shared/src/i18n/locales/en.ts"],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Route every leaked string through the existing t() + dual-locale tables; locale-parity.test.ts is the deterministic gate that both locales carry the key.",
+    "decision_factors": ["G1 root cause is hardcoded English in ConsoleOutputRenderer", "G6 needs one anchor not a发散 list"],
+    "tradeoffs": null
+  },
+  "risks": ["Forgetting a key in one locale → locale-parity.test.ts fails (intended gate)."],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["install", "uninstall"],
+    "affected_components": ["tui/ConsoleOutputRenderer", "install/pipeline/guidance"],
+    "affected_requirements": ["G1 i18n leak", "G6 single footer anchor"],
+    "adr_ids": []
+  },
+  "meta": { "estimated_time": "55m", "risk": "low", "autonomous": true, "checkpoint": false }
+}

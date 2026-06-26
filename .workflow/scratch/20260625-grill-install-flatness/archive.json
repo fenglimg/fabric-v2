@@ -1,0 +1,31 @@
+{
+  "$schema": "session-archive/1.0",
+  "session_id": "GRL-20260625-install-flatness",
+  "session_type": "grill",
+  "session_path": "scratch/20260625-grill-install-flatness",
+  "lifecycle": {
+    "status": "sealed",
+    "sealed_at": "2026-06-25",
+    "archived_at": null,
+    "linked_milestone": null
+  },
+  "content_refs": [
+    {
+      "type": "grill-report",
+      "path": "grill-report.md"
+    },
+    {
+      "type": "terminology",
+      "path": "terminology.md"
+    },
+    {
+      "type": "context-package",
+      "path": "context-package.json"
+    }
+  ],
+  "extraction": {
+    "harvested": false,
+    "reason": "Fabric 产品设计决策, 留待经 fabric-archive 入 Fabric 团队库; 不灌 maestro spec/knowhow(系统分离)"
+  },
+  "pruned": null
+}

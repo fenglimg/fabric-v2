@@ -1,0 +1,61 @@
+{
+  "id": "TASK-006",
+  "title": "语义搜索预检 + 回滚出声",
+  "description": "Semantic: detect embed_enabled BEFORE prompting; if already on, skip the confirm and just report status (kills the ask->yes->'unchanged' anticlimax). Rollback: pipeline.rollback emits user-visible feedback (回滚项 + 项目最终状态) without leaking internal stack/paths.",
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "In packages/cli/src/install/pipeline/guidance.stage.ts promptSemanticSearch (the unconditional confirm at lines 101-105, alreadyEnabled discovered at 111-116): probe current embed_enabled state BEFORE the confirm; if already enabled, do NOT call confirm — print a single status line t('cli.install.semantic.alreadyEnabled', {model}) = '已启用 embed_model=…'; only when NOT enabled run the existing confirm (default stays false). Do NOT change the confirm logic when disabled (red-line C-07). In packages/cli/src/install/pipeline/pipeline.ts rollback (lines 233-254, currently all catch{} swallowing): after executing rollback actions, emit user-visible feedback via renderer/console: count of rolled-back items + final project state, via t('cli.install.rollback.feedback', {count}) = '已回滚 N 项改动,项目保持原状' — MUST NOT print internal stack traces or filesystem paths (R15). Track rolled-back count from context.rollbackStack length (and stage rollback successes). All new copy via t() en+zh-CN.",
+  "scope": "packages/cli/src/install/pipeline/guidance.stage.ts, packages/cli/src/install/pipeline/pipeline.ts",
+  "read_first": [
+    "packages/cli/src/install/pipeline/guidance.stage.ts",
+    "packages/cli/src/install/pipeline/pipeline.ts",
+    "packages/cli/src/tui/types.ts",
+    ".workflow/scratch/20260625-grill-install-flatness/context-package.json"
+  ],
+  "depends_on": [],
+  "wave": 3,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "grep -nE 'alreadyEnabled' packages/cli/src/install/pipeline/guidance.stage.ts shows the embed state (via enableSemanticSearch().alreadyEnabled — the idempotent check, NOT a literal embed_enabled which lives in semantic-search.ts) is checked BEFORE the confirm and the confirm is skipped when already enabled",
+      "grep -nE 'semantic.alreadyEnabled|已启用 embed' packages/shared/src/i18n/locales/zh-CN.ts returns >=1 match (status-only message exists)",
+      "grep -nE 'rollback.feedback|已回滚' packages/shared/src/i18n/locales/zh-CN.ts returns >=1 match (rollback feedback string exists)",
+      "grep -nA3 'catch' packages/cli/src/install/pipeline/pipeline.ts rollback() shows feedback is emitted after rollback (no longer a fully silent swallow) AND the feedback string contains no path/stack interpolation",
+      "[runtime] a test asserts that when embed_enabled is already true, promptSemanticSearch does NOT invoke confirm and emits the status line",
+      "[runtime] a test asserts rollback() emits a user-visible feedback line with the rolled-back item count and that the emitted string contains no filesystem path or stack-trace substring"
+    ],
+    "verification": "cd packages/cli && pnpm exec tsc --noEmit && pnpm test -- guidance.stage && pnpm test -- pipeline",
+    "definition_of_done": "已启用语义搜索时不再弹 confirm 只报状态;失败回滚有用户可见反馈(回滚项数+项目最终状态)且不泄堆栈/路径。"
+  },
+  "files": [
+    {"path": "packages/cli/src/install/pipeline/guidance.stage.ts", "action": "modify", "target": "promptSemanticSearch confirm (101-105) + alreadyEnabled (111-116)", "change": "Probe embed_enabled first; skip confirm + report status when already on"},
+    {"path": "packages/cli/src/install/pipeline/pipeline.ts", "action": "modify", "target": "rollback() (lines 233-254)", "change": "Emit user-visible feedback (count + final state) without leaking stack/paths"}
+  ],
+  "implementation": [
+    "In guidance.stage.ts, read embed_enabled state before the confirm; branch: enabled -> status line only; disabled -> existing confirm unchanged",
+    "Add en+zh-CN keys for the alreadyEnabled status line",
+    "In pipeline.ts rollback(), count rolled-back items and emit t() feedback after the loop; ensure no path/stack interpolation",
+    "Add en+zh-CN keys for the rollback feedback line",
+    "Write tests: already-enabled skips confirm; rollback emits count-only feedback with no path/stack; run tsc + guidance + pipeline suites"
+  ],
+  "reference": {
+    "pattern": "Reuse the unified renderer feedback path from TASK-001 for rollback messaging; keep clack confirm logic untouched when disabled (C-07)",
+    "files": ["packages/cli/src/install/pipeline/pipeline.ts", "packages/cli/src/install/pipeline/guidance.stage.ts"]
+  },
+  "rationale": {
+    "chosen_approach": "Semantic precheck removes the ask->yes->'unchanged' anticlimax; audible rollback turns a silent swallow into reassurance — both without touching clack confirm logic for the disabled case (C-07).",
+    "decision_factors": ["guidance.stage.ts:101-105 confirms unconditionally then reports 'unchanged'", "pipeline.rollback catch{} swallows all output"],
+    "tradeoffs": "Rollback feedback is deliberately coarse (count + 'project unchanged') to avoid alarming the user with internals (R15)."
+  },
+  "risks": [
+    {"risk": "R15: rollback feedback over-exposes internals and alarms the user", "mitigation": "copy-level: only '已回滚 N 项改动,项目保持原状' — no paths/stack"},
+    {"risk": "probing embed state before confirm could drift into changing clack confirm logic (C-07 red-line)", "mitigation": "only add an early status-only branch when enabled; leave the disabled-case confirm call byte-identical"}
+  ],
+  "meta": {
+    "estimated_time": "1.5h",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}
