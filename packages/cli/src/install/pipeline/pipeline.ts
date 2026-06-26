@@ -329,6 +329,7 @@ export class InstallPipeline {
         liveRenderer.renderSummaryCard(this.buildHealthCheckSummary(context, totalStages));
         liveRenderer.renderComplete();
       }
+      this.printGuidanceFooter(context);
       return { success: true, context };
     }
 
@@ -341,10 +342,27 @@ export class InstallPipeline {
       liveRenderer.renderComplete();
     }
 
+    this.printGuidanceFooter(context);
+
     return {
       success: true,
       context,
     };
+  }
+
+  /**
+   * flat-design (G6): print the guidance stage's stashed footer — the single
+   * "下一步 →" golden-action anchor — AFTER the summary card + completion line, so it
+   * is the LAST thing on screen (the guidance stage runs mid-pipeline, before the
+   * summary, so it stashes rather than prints). Works on both the renderer and the
+   * plain non-TTY paths; a no-op when guidance did not run (e.g. planOnly).
+   */
+  private printGuidanceFooter(context: InstallContext): void {
+    const footer = context.state.guidanceFooter;
+    if (footer === undefined) return;
+    for (const line of footer) {
+      console.log(line);
+    }
   }
 
   /**

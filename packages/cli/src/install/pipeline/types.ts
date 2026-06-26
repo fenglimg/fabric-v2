@@ -153,6 +153,19 @@ export interface InstallState {
   clientSupports?: DetectedClientSupport[];
   /** Fabric language preference */
   fabricLanguage?: string;
+  /**
+   * flat-design: the project forensic scan, built in the PREFLIGHT stage (stage 1)
+   * so the one-line scan summary renders directly under the command title — before
+   * the stage list — instead of mid-column from the env stage. The env stage reuses
+   * this instead of re-walking the project (avoids a second 30k-file scan).
+   */
+  forensicReport?: ScaffoldResult["forensicReport"];
+  /**
+   * flat-design (G6): the guidance stage stashes its closing footer line(s) here
+   * instead of printing them in-stage; the pipeline prints them AFTER the summary
+   * card + completion line, so the single "下一步 →" anchor is the very last line.
+   */
+  guidanceFooter?: string[];
 }
 
 /**

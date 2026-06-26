@@ -108,19 +108,20 @@ describe("install-v2 pipeline UX", () => {
       lines.push(value === undefined ? "" : String(value));
     });
 
-    const stage = new GuidanceStage();
-    const result = await stage.execute(baseContext(target, {
+    const context = baseContext(target, {
       args: { "enable-embed": true, "embed-model": "test-embed-model" },
-    }));
+    });
+    const result = await new GuidanceStage().execute(context);
 
     expect(result.disposition).toBe("ran");
-    const semanticIndex = lines.findIndex((line) => line.includes("Semantic search enabled"));
-    // TASK-002 (G6): the diverging multi-line "Next steps" list is now --verbose-
-    // gated; the default footer is the single golden-action anchor "Next → …".
-    const nextStepsIndex = lines.findIndex((line) => line.includes("Next →"));
-    expect(semanticIndex).toBeGreaterThanOrEqual(0);
-    expect(nextStepsIndex).toBeGreaterThanOrEqual(0);
-    expect(semanticIndex).toBeLessThan(nextStepsIndex);
+    // The semantic-search report still prints inline (during the stage)…
+    expect(lines.some((line) => line.includes("Semantic search enabled"))).toBe(true);
+    // …but the golden "Next →" anchor is now STASHED, printed by the pipeline AFTER
+    // the summary card (flat-design G6: the footer is the last line on screen), so
+    // the stage no longer prints it inline.
+    const footer = context.state.guidanceFooter ?? [];
+    expect(footer.some((line) => line.includes("Next →"))).toBe(true);
+    expect(lines.some((line) => line.includes("Next →"))).toBe(false);
   });
 
   it("env stage reads the language from the global config (grill-6fixes D1)", async () => {
@@ -149,14 +150,17 @@ describe("install-v2 pipeline UX", () => {
       lines.push(value === undefined ? "" : String(value));
     });
 
-    const stage = new GuidanceStage();
-    const result = await stage.execute(baseContext(target, {
+    const context = baseContext(target, {
       state: { fabricLanguage: "zh-CN" },
       translate: createTranslator("zh-CN"),
-    }));
+    });
+    const result = await new GuidanceStage().execute(context);
 
     expect(result.disposition).toBe("ran");
-    expect(lines.some((line) => line.includes("下一步"))).toBe(true);
+    // flat-design: the footer is stashed (the pipeline prints it after the summary);
+    // assert it was rendered through the PROJECT translator (zh-CN → "下一步").
+    const footer = context.state.guidanceFooter ?? [];
+    expect(footer.some((line) => line.includes("下一步"))).toBe(true);
     // grill-6fixes (D1): the "Fabric 语言偏好：{value}" hint line was removed.
   });
 

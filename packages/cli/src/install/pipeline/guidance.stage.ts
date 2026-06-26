@@ -66,27 +66,34 @@ export class GuidanceStage implements Stage {
       // client so its MCP server loads; that is the anchor. The --reapply hint,
       // full onboarding list, surfaces.md pointer, restart detail and per-client
       // capability table all move under --verbose, where the detail was asked for.
-      console.log("");
       const finalSupports = detectClientSupports(context.target);
+      // flat-design (G6): the golden "下一步 →" footer must be the LAST thing the
+      // user sees — AFTER the summary card + completion line. So the guidance stage
+      // no longer prints it inline (it runs mid-pipeline, before the summary);
+      // instead it STASHES the footer lines, and the pipeline prints them at the
+      // very end. The verbose per-client capability TABLE is reference detail (not
+      // the call-to-action) and stays printed in-stage.
+      const footer: string[] = [""];
       if (context.args.verbose === true) {
-        console.log(translate("cli.install.next-steps"));
-        console.log("");
-        console.log(paint.muted(translate("cli.install.guidance.more")));
-        console.log("");
-        console.log(translate("cli.install.restart-banner"));
+        footer.push(translate("cli.install.next-steps"));
+        footer.push("");
+        footer.push(paint.muted(translate("cli.install.guidance.more")));
+        footer.push("");
+        footer.push(translate("cli.install.restart-banner"));
         this.printCapabilitySummary(finalSupports, context);
       } else {
-        console.log(
+        footer.push(
           translate("cli.install.next-step.anchor", {
             action: translate("cli.install.next-step.restart"),
           }),
         );
-        // Still surface the "no supported client detected" edge case in the terse
-        // footer — it means the install cannot actually reach an AI client.
+        // Still surface the "no supported client detected" edge case — it means the
+        // install cannot actually reach an AI client.
         if (finalSupports.filter((s) => s.detected).length === 0) {
-          console.log(translate("cli.install.capabilities.none"));
+          footer.push(translate("cli.install.capabilities.none"));
         }
       }
+      context.state.guidanceFooter = footer;
 
       return stageRan("guidance", [], []);
     } catch (error) {

@@ -43,8 +43,9 @@ export class EnvStage implements Stage {
       const clientSupports = detectClientSupports(target);
       context.state.clientSupports = clientSupports;
 
-      // Build scaffold plan
-      const scaffold = await this.buildScaffoldPlan(target, context.options);
+      // Build scaffold plan (reusing the forensic report the preflight stage
+      // already built, when present — avoids a second project walk).
+      const scaffold = await this.buildScaffoldPlan(target, context.options, context.state.forensicReport);
       context.state.scaffold = scaffold;
 
       if (context.options.planOnly === true) {
@@ -56,13 +57,9 @@ export class EnvStage implements Stage {
       // Execute scaffold (create directories and files)
       const { scaffold: created, materialChange } = await this.executeScaffold(scaffold, target);
 
-      // grill F2/C-03: surface up to 4 high-signal scan findings as the
-      // "it-gets-me" payoff. The forensic report is already built (no extra scan
-      // cost) — it just used to be written to forensic.json and never shown, so
-      // the whole scan read as a content-free "scan complete".
-      if (process.stdout.isTTY === true) {
-        this.renderScanFindings(context, scaffold.forensicReport);
-      }
+      // flat-design: the scan summary is now rendered by the PREFLIGHT stage (so it
+      // sits under the command title, not mid-column here). The forensic report it
+      // built is reused below via context.state.forensicReport — no second walk.
 
       // Detect and store language preference
       const fabricLanguage = this.readFabricLanguagePreference(target);
@@ -85,34 +82,10 @@ export class EnvStage implements Stage {
    * forensic report. Hard-capped at 4 lines so the payoff never re-creates an
    * information wall (R3).
    */
-  private renderScanFindings(context: InstallContext, report: ForensicReport): void {
-    const kind = report.framework?.kind;
-    const files = String(report.topology?.total_files ?? 0);
-    const entries = String(report.entry_points?.length ?? 0);
-    const known = Boolean(kind) && kind !== "unknown" && kind !== "none";
-    // flat-design: ONE human line, not a two-line framework/scale stack — and
-    // routed through the renderer (not a raw console.log) so it stays in the
-    // buffered/ordered stream instead of jumping ABOVE the styled command title.
-    // The framework VERSION is suppressed when it resolved to "unknown" (it read
-    // as a wart — "cocos-creator unknown 项目").
-    let line: string;
-    if (known) {
-      const v = report.framework.version;
-      const version = v && v !== "unknown" ? ` ${v}` : "";
-      line = t("cli.install.scan.summary.framework", { framework: `${kind}${version}`, files, entries });
-    } else {
-      line = t("cli.install.scan.summary.plain", { files, entries });
-    }
-    if (context.renderer) {
-      context.renderer.renderInfo(line);
-    } else {
-      console.log(`  ${line}`);
-    }
-  }
-
   private async buildScaffoldPlan(
     target: string,
     _options: InstallContext["options"],
+    prebuiltReport?: ForensicReport,
   ): Promise<ScaffoldResult> {
     const fabricDir = join(target, ".fabric");
     const agentsMdPath = join(target, "AGENTS.md");
@@ -128,15 +101,11 @@ export class EnvStage implements Stage {
       : "created";
 
     // Build forensic report
-    // flat-design: a single transient "scanning…" progress note on stderr for
-    // the (potentially slow) forensic walk; the "scan complete" line is dropped —
-    // the one-line scan summary rendered by renderScanFindings IS the completion
-    // signal, and a separate "完成" line just doubled the noise.
-    const showScanProgress = process.stderr.isTTY === true;
-    if (showScanProgress) {
-      process.stderr.write(`${t("cli.install.scanning")}\n`);
-    }
-    const forensicReport = await buildForensicReport(target);
+    // flat-design: reuse the forensic report the preflight stage already built +
+    // rendered (the scan summary now lives under the command title). Only fall back
+    // to building here (silently) when there is no prebuilt report — e.g. a direct
+    // unit-test call to the env stage that never ran preflight.
+    const forensicReport = prebuiltReport ?? (await buildForensicReport(target));
 
     return {
       fabricDir,
