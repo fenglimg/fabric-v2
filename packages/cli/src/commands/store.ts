@@ -15,6 +15,7 @@ import {
 } from "../store/store-rescope.js";
 import {
   assertStoreMountable,
+  resolveStoreDir,
   storeAdd,
   storeBind,
   storeCreate,
@@ -27,8 +28,8 @@ import {
   storeSetWriteRoute,
   storeSwitchPersonal,
   storeSwitchWrite,
-  resolveStoreDir,
 } from "../store/store-ops.js";
+import { linkWorkspaceToStore, unlinkWorkspaceFromStore, listLinkedWorkspaces } from "./store-link.js";
 import {
   STORE_LAYOUT,
   loadGlobalConfig,
@@ -563,6 +564,83 @@ const migrateCommand = defineCommand({
     scope: rescopeCommand,
     promote: promoteCommand,
     backfill: backfillScopeCommand,
+  },
+});
+
+// BORROW-010: workspace linking — `fabric store link <alias> [workspace]`.
+// Links a workspace directory to a store for discoverability.
+const linkCommand = defineCommand({
+  meta: {
+    name: "link",
+    description: "Link a workspace directory to a store for discoverability",
+  },
+  args: {
+    store: {
+      type: "positional",
+      description: "Store alias (e.g. 'team')",
+      required: true,
+    },
+    workspace: {
+      type: "positional",
+      description: "Workspace directory path (default: current dir)",
+      required: false,
+    },
+    unlink: {
+      type: "boolean",
+      alias: "u",
+      description: "Remove the link instead of creating it",
+      required: false,
+    },
+    list: {
+      type: "boolean",
+      alias: "l",
+      description: "List linked workspaces for the store",
+      required: false,
+    },
+  },
+  async run(context) {
+    const t = getProjectTranslator();
+    const args = context.args;
+
+    if (args.list) {
+      const workspaces = listLinkedWorkspaces(args.store);
+      if (workspaces.length === 0) {
+        console.log(t("store.link.list.empty", { alias: args.store }));
+      } else {
+        console.log(t("store.link.list.header", { alias: args.store }));
+        for (const ws of workspaces) {
+          console.log(`  ${ws}`);
+        }
+      }
+      return;
+    }
+
+    const workspacePath = args.workspace ?? process.cwd();
+
+    if (args.unlink) {
+      unlinkWorkspaceFromStore(args.store, workspacePath);
+      console.log(t("store.link.unlinked", {
+        store: args.store,
+        workspace: workspacePath,
+      }));
+      return;
+    }
+
+    try {
+      const info = linkWorkspaceToStore(args.store, workspacePath);
+      console.log(t("store.link.created", {
+        store: info.storeAlias,
+        uuid: info.storeUuid,
+        workspace: info.workspacePath,
+      }));
+    } catch (error) {
+      console.error(t("store.link.failed", {
+        store: args.store,
+        workspace: workspacePath,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      process.exit(1);
+    }
   },
 });
 

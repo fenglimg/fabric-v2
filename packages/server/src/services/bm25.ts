@@ -264,6 +264,158 @@ export function rehydrateBm25Model(serialized: SerializedBm25Model): Bm25Model {
 }
 
 /**
+ * BORROW-015: synonym pairs for query expansion. When a query term matches
+ * a key in this map, the synonym set is added to the expanded query terms
+ * so recall catches morphologically-different-but-semantically-equivalent
+ * expressions. Each pair is bidirectional: "refactor" → also search "restructure".
+ *
+ * Borrowed and adapted from maestro-flow's synonym dictionary
+ * (knowhow/KNW-synonym-dict.md). Covers the most common KB-recall scenarios.
+ */
+const SYNONYM_PAIRS: Record<string, string[]> = {
+  // Code / engineering actions
+  refactor: ["restructure", "rewrite", "redesign", "reorganize", "clean", "rework"],
+  optimize: ["improve", "speed-up", "tune", "accelerate", "perf", "performance"],
+  debug: ["fix", "troubleshoot", "diagnose", "investigate", "resolve", "correct"],
+  migrate: ["port", "move", "transfer", "upgrade", "transition", "convert"],
+  "set up": ["init", "initialize", "configure", "bootstrap", "install", "onboard"],
+  implement: ["add", "build", "create", "develop", "write", "introduce", "introduce"],
+
+  // Architecture / design
+  architecture: ["design", "structure", "layout", "organization", "pattern", "system"],
+  "data model": ["schema", "entity", "type", "structure", "contract", "shape"],
+
+  // Quality / correctness
+  test: ["verify", "validate", "assert", "check", "spec", "coverage"],
+  lint: ["check", "validate", "audit", "inspect", "analyze"],
+
+  // Communication / impact
+  documentation: ["docs", "readme", "guide", "spec", "explanation", "reference"],
+  decision: ["adr", "rationale", "why", "motivation", "reason", "trade-off"],
+
+  // Change management
+  release: ["deploy", "ship", "publish", "cut", "version", "tag"],
+  rollback: ["revert", "undo", "back-out", "backout", "restore"],
+
+  // Containers / infra
+  container: ["docker", "image", "oci", "cri-o"],
+  deploy: ["release", "rollout", "ship", "publish", "promote"],
+
+  // Project / process
+  on_boarding: ["getting-started", "quickstart", "newcomer", "new-hire", "first-time"],
+  best_practice: ["convention", "guideline", "standard", "rule", "recommendation"],
+
+  // Tech stacks
+  api: ["endpoint", "route", "service", "interface", "rpc", "rest"],
+  typescript: ["ts", "types", "type-safe"],
+  react: ["jsx", "tsx", "component", "ui"],
+  node: ["nodejs", "runtime", "backend", "server"],
+  database: ["db", "sql", "nosql", "storage", "persistence"],
+};
+
+/**
+ * BORROW-015: stemming patterns for basic English morphological expansion.
+ * A `suffix: [alternatives]` pair — when the query term matches a base form,
+ * the stemmed variants are added as additional query terms. Covers the most
+ * common verb/noun patterns in KB recall queries.
+ *
+ * Example: "configure" → adds "configures", "configured", "configuring"
+ */
+const STEMMING_PATTERNS: Array<{ suffix: string; alternatives: string[] }> = [
+  { suffix: "e", alternatives: ["es", "ed", "ing", "ation"] },
+  { suffix: "y", alternatives: ["ies", "ied", "ying"] },
+  // Catch-all for non-verb / already-stemmed query terms: no-op by default.
+];
+
+/**
+ * BORROW-015: IDF weighting for query terms.
+ *
+ * Approximate inverse document frequency for common English words.
+ * The weight is a multiplier on the term's contribution to scoring:
+ * - weight 1.0 (default): normal signal
+ * - weight 0.5: somewhat common, reduce impact
+ * - weight 0.25: very common stop-word, minimal signal
+ * - weight 0.8: common but domain-meaningful term
+ *
+ * These are heuristics tuned for the KB corpus size (~tens to low hundreds
+ * of entries). In a larger corpus a proper IDF from BM25 field statistics
+ * would dominate; here we approximate so rare technical terms (e.g.
+ * "premultiplyAlpha") get more weight than common verbs ("fix", "add").
+ */
+const DEFAULT_IDF_WEIGHT = 1.0;
+const COMMON_TERMS = new Set([
+  "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+  "of", "with", "by", "from", "as", "is", "it", "at", "be", "do", "has",
+  "have", "was", "are", "been", "this", "that", "these", "those",
+  "will", "can", "may", "would", "could", "should", "does",
+  "not", "no", "if", "so", "up", "out", "all", "each", "every",
+  "both", "some", "any", "such", "only", "own", "same", "too",
+  "very", "just", "about", "over", "than", "then", "also",
+]);
+
+function idfWeight(term: string): number {
+  return COMMON_TERMS.has(term) ? 0.3 : DEFAULT_IDF_WEIGHT;
+}
+
+/**
+ * Expand query terms with synonyms + stemming alternatives + IDF weights.
+ *
+ * Each input term:
+ *   1. Gets its direct match from SYNONYM_PAIRS (both directions — the
+ *      map is indexed by both forms).
+ *   2. Has its base form checked against STEMMING_PATTERNS.
+ *   3. All (original + expanded) terms get a numeric IDF weight.
+ *
+ * Returns a `Map<term, weight>` so the BM25 scorer can incorporate per-term
+ * weighting into the per-field sum.
+ */
+export function expandQueryTerms(text: string): Map<string, number> {
+  const baseTerms = tokenize(text);
+  const weighted = new Map<string, number>();
+
+  for (const term of baseTerms) {
+    const lower = term.toLowerCase();
+    const aliases = new Set<string>();
+
+    // Synonym expansion (bidirectional).
+    const syns = SYNONYM_PAIRS[lower];
+    if (syns !== undefined) {
+      for (const s of syns) aliases.add(s);
+    }
+
+    // Check if any synonym pair's VALUE maps back to this term
+    // (bidirectional coverage without duplicating the map).
+    for (const [key, values] of Object.entries(SYNONYM_PAIRS)) {
+      if (values.includes(lower)) {
+        aliases.add(key);
+      }
+    }
+
+    // Stemming expansion.
+    for (const { suffix, alternatives } of STEMMING_PATTERNS) {
+      if (lower.endsWith(suffix) && lower.length > suffix.length) {
+        const stem = lower.slice(0, -suffix.length);
+        for (const alt of alternatives) {
+          aliases.add(stem + alt);
+        }
+      }
+    }
+
+    // Assign weights — the original term keeps its native weight;
+    // expanded terms get half the original weight (decay).
+    const originalWeight = idfWeight(lower);
+    weighted.set(term, originalWeight);
+    for (const alias of aliases) {
+      if (!weighted.has(alias)) {
+        weighted.set(alias, originalWeight * 0.5);
+      }
+    }
+  }
+
+  return weighted;
+}
+
+/**
  * Tokenize free-form query text (intent + tech + entities, already joined)
  * into BM25F query terms using the same CJK-aware tokenizer as the documents,
  * so zh/en queries match zh/en documents on equal footing.

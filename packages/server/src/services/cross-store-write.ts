@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -14,6 +16,7 @@ import {
   PersonalScopeLeakError,
   StoreWriteTargetUnresolvedError,
 } from "@fenglimg/fabric-shared/errors";
+import { withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 
 // ---------------------------------------------------------------------------
 // v2.1 global-refactor (W1-T2) — cross-store write-side wiring.
@@ -159,4 +162,73 @@ export function resolveWriteScopeMeta(
   }
 
   return { semantic_scope, visibility_store: target.alias };
+}
+
+// ---------------------------------------------------------------------------
+// BORROW-011: per-file lock + sha256 pre-write validation for safe CRUD writes.
+//
+// Each knowledge file write is serialized through a per-file lock
+// (`<filePath>.write.lock`) using the same `withFileLock` primitive as
+// store-counters.ts and event-ledger.ts. Before the caller's write lands,
+// the current on-disk content is sha256-hashed and compared against an
+// optional `expectedHash` — when the hash mismatches (a concurrent writer
+// landed first), the write is refused with a concurrency conflict error
+// rather than silently overwriting. This is optimistic concurrency: the
+// caller reads, edits, then writes with the hash it read; a mismatch means
+// another writer beat it to the file.
+// ---------------------------------------------------------------------------
+
+/** Result of a locked file write. */
+export interface LockedWriteResult {
+  /** True when the write landed. */
+  committed: boolean;
+  /** The sha256 of the content that was written (committed=true) or the
+   *  content that beat us to the file (committed=false). */
+  hash: string;
+}
+
+/**
+ * Write `content` to `filePath` under a per-file advisory lock, with an
+ * optional optimistic-concurrency pre-write hash check.
+ *
+ * - When `expectedHash` is undefined the write always lands (the lock still
+ *   serializes concurrent callers).
+ * - When `expectedHash` is supplied, the current on-disk content is hashed
+ *   BEFORE the write; a mismatch returns `{ committed: false, hash: <actual> }`
+ *   without touching the file.
+ * - The lock file is `<filePath>.write.lock` (same pattern as
+ *   `store-counters.ts` uses `<countersPath>.lock`).
+ */
+export async function lockedWriteFile(
+  filePath: string,
+  content: string,
+  expectedHash?: string,
+): Promise<LockedWriteResult> {
+  const lockPath = `${filePath}.write.lock`;
+  return withFileLock(lockPath, async () => {
+    // Pre-write hash gate (optimistic concurrency).
+    if (expectedHash !== undefined) {
+      let current: string;
+      try {
+        current = await readFile(filePath, "utf8");
+      } catch {
+        // File doesn't exist yet — no conflict possible.
+        current = "";
+      }
+      const actualHash = sha256(current);
+      if (actualHash !== expectedHash) {
+        return { committed: false, hash: actualHash };
+      }
+    }
+
+    // Write + return the new hash.
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(filePath, content, "utf8");
+    return { committed: true, hash: sha256(content) };
+  });
+}
+
+/** Hash a string with sha256, prefixed like _shared.ts:sha256(). */
+function sha256(content: string): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
