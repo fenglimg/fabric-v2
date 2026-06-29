@@ -15,6 +15,7 @@
 
 const narrow = require("./knowledge-hint-narrow.cjs");
 const cite = require("./cite-policy-evict.cjs");
+const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 function readStdinPayload() {
   try {
@@ -107,5 +108,7 @@ async function main(env, stdio) {
 module.exports = { main, mergeEnvelopes, parseEnvelope };
 
 if (require.main === module) {
-  main();
+  // Inject the resolved project root so the narrow + cite sub-hooks write
+  // their .fabric ledgers to the repo root, not the session's subdirectory.
+  main({ cwd: resolveProjectRoot(process.cwd()) });
 }

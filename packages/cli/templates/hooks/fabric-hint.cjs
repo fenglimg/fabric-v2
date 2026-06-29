@@ -11,6 +11,7 @@ const { dirname, join } = require("node:path");
 // primitive (it is not a schema-governed event ledger).
 const { appendLockedLine } = require("./lib/injection-log.cjs");
 const { appendEvent } = require("./lib/event-writer.cjs");
+const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 // v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
 // on failure — see contract in lib/session-digest-writer.cjs).
@@ -2671,6 +2672,6 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main({ cwd: process.cwd(), now: new Date() }, { stdout: process.stdout });
+  main({ cwd: resolveProjectRoot(process.cwd()), now: new Date() }, { stdout: process.stdout });
   process.exit(0);
 }
