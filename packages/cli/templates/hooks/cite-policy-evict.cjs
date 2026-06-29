@@ -60,6 +60,7 @@ const { isAbsolute, join, relative } = require("node:path");
 // Codex stderr). The installer copies every lib/*.cjs alongside the hook.
 const { readConfigNumber } = require("./lib/config-cache.cjs");
 const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
+const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 const EVENTS_LEDGER_REL = join(".fabric", "events.jsonl");
 
@@ -479,5 +480,5 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main();
+  main({ cwd: resolveProjectRoot(process.cwd()) });
 }
