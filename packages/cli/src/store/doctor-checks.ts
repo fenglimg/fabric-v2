@@ -25,7 +25,18 @@ export type StoreDiagnosticCode =
   | "active_personal_invalid"
   // 语义 A (multi-personal): ≥2 personal stores mounted but no active pointer —
   // the resolver falls back to the first, but the user should pick (info nudge).
-  | "active_personal_unset";
+  | "active_personal_unset"
+  // Re-wired borrowed knowledge-health checks (see knowledge-doctor-checks.ts).
+  // BORROW-007: a `related` edge points at an id absent from the corpus (warn).
+  | "related_graph_broken_link"
+  // BORROW-007: most-referenced entries by `related` in-degree (info heatmap).
+  | "related_graph_hub"
+  // BORROW-019: a read-set store's on-disk directory is missing/corrupt (warn).
+  | "store_unreachable"
+  // BORROW-005: per-entry consumption heatmap (info, always when data present).
+  | "knowledge_consumption_heatmap"
+  // BORROW-005: entries never consumed in the window (warn, GATED on data maturity).
+  | "knowledge_consumption_zero";
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;

@@ -111,9 +111,36 @@ export {
 export {
   buildAlwaysActiveBodies,
   buildKnowledgeCensus,
+  collectStoreCanonicalEntries,
   type AlwaysActiveBody,
   type KnowledgeCensus,
+  type StoreCanonicalEntry,
 } from "./services/cross-store-recall.js";
+// Re-wired borrowed knowledge-health inspections (PR #33 / a940430 reintroduce).
+// Pure inspection logic surfaced into the doctor registry by the CLI adapter
+// (packages/cli/src/store/knowledge-doctor-checks.ts).
+export {
+  buildRelatedGraph,
+  inspectRelatedGraph,
+  type RelatedBrokenLink,
+  type RelatedGraphInspection,
+  type RelatedGraphNode,
+  type RelatedHubEntry,
+} from "./services/doctor-related-graph.js";
+export {
+  clearPrecheckCache,
+  evaluateStoreDir,
+  precheckStoreReachability,
+  type PrecheckResult,
+  type StoreReachability,
+} from "./services/store-precheck.js";
+export {
+  aggregateConsumption,
+  inspectConsumption,
+  type ConsumptionEntry,
+  type ConsumptionInspection,
+  type ConsumptionLintConfig,
+} from "./services/doctor-consumption-lint.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {
   planContext,

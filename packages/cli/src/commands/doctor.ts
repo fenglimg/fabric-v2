@@ -18,6 +18,7 @@ import { groupDot, headerRule } from "../tui/structure.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
+import { knowledgeDoctorChecks } from "../store/knowledge-doctor-checks.js";
 import { fixActivePersonalPointer, syncStoreAliasLinks } from "../store/store-ops.js";
 import { buildDebugBundle } from "@fenglimg/fabric-shared";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
@@ -184,7 +185,7 @@ export const doctorCommand = defineCommand({
       }
       const bundle = buildDebugBundle({
         config,
-        diagnostics: collectStoreDiagnostics(resolution.target),
+        diagnostics: await collectStoreDiagnostics(resolution.target),
       });
       writeStdout(JSON.stringify(bundle, null, 2));
       return;
@@ -260,7 +261,7 @@ export const doctorCommand = defineCommand({
     }
 
     // v2.1.0-rc.1 P3 (S10): multi-store health surfaced alongside the report.
-    const storeDiagnostics = collectStoreDiagnostics(resolution.target);
+    const storeDiagnostics = await collectStoreDiagnostics(resolution.target);
 
     if (args.json === true) {
       writeStdout(
@@ -389,12 +390,23 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: 
 // best-effort — a store-check failure must never change doctor's exit semantics
 // or block (KT-DEC-0007). Surfaces no_global_config / missing_required_store /
 // local_only_store under the main report.
-function collectStoreDiagnostics(projectRoot: string): StoreDiagnostic[] {
+async function collectStoreDiagnostics(projectRoot: string): Promise<StoreDiagnostic[]> {
+  const diagnostics: StoreDiagnostic[] = [];
+  // Synchronous config/mount health (S10/S51/R5#5).
   try {
-    return storeDoctorChecks(projectRoot);
+    diagnostics.push(...storeDoctorChecks(projectRoot));
   } catch {
-    return [];
+    // Best-effort — a store-check failure never changes doctor's exit semantics.
   }
+  // PR #33 re-wire: async knowledge-health advisories (related graph / store
+  // reachability / consumption heatmap). Isolated so a failure here cannot
+  // suppress the synchronous diagnostics above.
+  try {
+    diagnostics.push(...(await knowledgeDoctorChecks(projectRoot)));
+  } catch {
+    // Best-effort.
+  }
+  return diagnostics;
 }
 
 function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
