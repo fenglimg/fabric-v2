@@ -38,6 +38,16 @@ async function customShowUsage<T extends ArgsDef = ArgsDef>(
     return;
   }
 
+  // `store --help` lists only `list` (the user-facing read-only op); the other
+  // create/bind/migrate/… operations carry meta.hidden because they are a
+  // skill/CI/recovery API, not a daily-use surface. Append a folding note so a
+  // human who lands here isn't left wondering where store setup went — without
+  // it the bare `list`-only listing looks like store can't do anything else.
+  if (cmdMeta?.name === "store" && parent !== undefined) {
+    console.log(await renderUsage(cmd, parent) + "\n" + t("cli.store.help.folded-note") + "\n");
+    return;
+  }
+
   console.log(await renderUsage(cmd, parent) + "\n");
 }
 

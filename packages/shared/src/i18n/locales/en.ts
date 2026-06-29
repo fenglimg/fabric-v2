@@ -1499,6 +1499,11 @@ export const enMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder warm: model '{model}' loaded (vector dim {dim}), cached at {dir}",
   "cli.info.recall.warm.fail":
     "embedder unavailable — the optional 'fastembed' package is not resolvable or the model failed to load.\n  Recall falls back to keyword mode (BM25 / additive). Install fastembed where the server resolves modules, then retry.",
+  "cli.store.list.description": "List mounted knowledge stores",
+  // Footer note appended to `fabric store --help` — explains where the advanced
+  // (meta.hidden) operations went so the list-only listing isn't a dead end.
+  "cli.store.help.folded-note":
+    "Advanced operations (create / bind / switch-write / migrate, etc.) are folded — they're driven by fabric install and the fabric-store skill. Run `fabric store <command> --help` directly when you need one.",
   "cli.store.list.title": "Mounted stores",
   "cli.store.project.list.title": "Projects in store '{store}'",
   "cli.store.project.list.empty": "(no registered projects)",

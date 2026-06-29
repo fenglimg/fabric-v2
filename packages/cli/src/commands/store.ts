@@ -115,7 +115,7 @@ function errLine(msg: string): string {
 }
 
 const listCommand = defineCommand({
-  meta: { name: "list", description: "List mounted knowledge stores" },
+  meta: { name: "list", description: t("cli.store.list.description") },
   run() {
     const t = getProjectTranslator();
     const stores = storeList();

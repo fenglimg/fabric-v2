@@ -1466,6 +1466,11 @@ export const zhCNMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder 已预热:模型 '{model}' 已加载(向量维度 {dim}),缓存于 {dir}",
   "cli.info.recall.warm.fail":
     "embedder 不可用 —— 可选的 'fastembed' 包无法解析,或模型加载失败。\n  召回回退到关键词模式(BM25 / additive)。请在 server 能解析模块的位置安装 fastembed 后重试。",
+  "cli.store.list.description": "列出挂载的 store",
+  // 追加在 `fabric store --help` 末尾的说明 —— 交代进阶(meta.hidden)操作去哪了,
+  // 否则只剩 list 一行会让用户以为 store 没别的能力。
+  "cli.store.help.folded-note":
+    "进阶操作(create / bind / switch-write / migrate 等)已折叠 —— 由 fabric install 与 fabric-store skill 驱动;需要时直接 `fabric store <命令> --help` 查看。",
   "cli.store.list.title": "已挂载知识库",
   "cli.store.project.list.title": "store '{store}' 中的项目",
   "cli.store.project.list.empty": "(无已注册项目)",
