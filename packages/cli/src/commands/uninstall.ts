@@ -31,7 +31,7 @@ import { HOOK_SCRIPT_DESTINATIONS, SKILL_DESTINATIONS } from "../install/skills-
 // (NOT the install-coupled `InstallPipeline` class) — rollback/firstInstall
 // collapse are meaningless for a best-effort teardown.
 import { createInstallRenderer } from "../tui/index.js";
-import type { ErrorInfo, OutputRenderer, SummaryDetailRow, SummaryInfo } from "../tui/types.js";
+import type { ErrorInfo, OutputRenderer, SummaryInfo } from "../tui/types.js";
 
 /**
  * `fabric uninstall` — symmetric inverse of `fabric install`.
@@ -921,7 +921,7 @@ function renderUninstallSummary(
         errorCount: 0,
       });
     } else {
-      renderer.renderSummaryCard(buildUninstallSummaryCard(result, removed, skipped, errors));
+      renderer.renderSummaryCard(buildUninstallSummaryCard(removed, skipped, errors));
     }
     renderer.renderComplete();
   } else {
@@ -946,44 +946,17 @@ function renderUninstallSummary(
   }
 }
 
-function buildUninstallSummaryCard(
-  result: UninstallExecutionResult,
-  removed: number,
-  skipped: number,
-  errors: number,
-): SummaryInfo {
-  const details: SummaryDetailRow[] = result.stageResults.map((stage) => {
-    const stageRemoved = stage.steps.filter((s) => s.status === "removed").length;
-    const stageErrors = stage.steps.filter((s) => s.status === "error").length;
-    // flat-design-system Wave5 (TASK-006 G3): human result words, not raw
-    // `removed=/skipped=/errors=` counts. Symmetric with install's detail rows
-    // (`{count} installed` / `up to date`): a ran stage that cleaned something
-    // → "{count} cleaned"; a ran stage that found nothing → "already clean".
-    return {
-      label: stageLabel(stage.name),
-      value:
-        stage.disposition === "skipped"
-          ? t("cli.shared.skipped")
-          : stageErrors > 0
-            ? t("cli.uninstall.stages.completed-with-errors")
-            : stageRemoved > 0
-              ? t("cli.uninstall.stage.cleaned-count", { count: String(stageRemoved) })
-              : t("cli.uninstall.stage.already-clean"),
-      status:
-        stage.disposition === "skipped"
-          ? "skipped"
-          : stage.disposition === "failed"
-            ? "error"
-            : "success",
-    };
-  });
-
+function buildUninstallSummaryCard(removed: number, skipped: number, errors: number): SummaryInfo {
+  // flat-design Wave5: the summary is the AGGREGATE roll-up only — the ✓/○/✗
+  // count grid + the status line. Per-stage detail rows are intentionally
+  // omitted: the live progress section above already enumerated every stage with
+  // identical wording, so restating each one here is pure duplication. The
+  // summary's job is the total, not a second copy of the play-by-play.
   return {
     title: t("cli.uninstall.summary.title"),
     successCount: removed,
     skippedCount: skipped,
     errorCount: errors,
-    details,
   };
 }
 

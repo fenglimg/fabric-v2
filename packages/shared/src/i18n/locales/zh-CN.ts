@@ -936,7 +936,7 @@ export const zhCNMessages: Messages = {
   "cli.summary.done": "完成!",
   "cli.summary.all-ok": "全部步骤已完成",
   "cli.summary.n-failed": "{count} 个步骤失败",
-  "cli.summary.n-of-total": "{done}/{total} 步已完成",
+  "cli.summary.all-resolved": "全部已处理 · {done} 执行 / {skipped} 跳过",
   "cli.summary.count.succeeded": "成功",
   "cli.summary.count.skipped": "跳过",
   "cli.summary.count.failed": "失败",
@@ -1189,7 +1189,6 @@ export const zhCNMessages: Messages = {
   // flat-design-system Wave5 (TASK-006 G3): 总结卡明细行的人话结果词，与 install 的
   // `已安装 {count} 项` / `已最新` 对称。
   "cli.uninstall.stage.cleaned-count": "已清理 {count} 项",
-  "cli.uninstall.stage.already-clean": "已是干净",
   "cli.uninstall.summary.title": "卸载摘要",
   "cli.uninstall.summary.body": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.healthcheck.title": "✓ Fabric 已不存在 · 无可移除",

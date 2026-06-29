@@ -256,7 +256,6 @@ function detailMarker(status: SummaryDetailRow["status"] | undefined, colorOn: b
  */
 export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): string {
   const { successCount, skippedCount = 0, errorCount = 0, details = [] } = summary;
-  const totalCount = successCount + skippedCount + errorCount;
   const lines: string[] = [];
 
   // Counts as a single grid row (always show all three so the grid is stable).
@@ -275,13 +274,18 @@ export function buildSummaryBlock(summary: SummaryInfo, colorOn: boolean): strin
   }
 
   // TASK-002 (G1): the status line is localized via t() — all-ok / n-failed /
-  // n-of-total. {count}/{done}/{total} are interpolated by the translator.
+  // all-resolved. Counts are interpolated by the translator.
+  // Terminal-state framing: success AND skipped are both resolved outcomes (a
+  // skipped step is done, not pending), so a `done/total` fraction wrongly reads
+  // as "incomplete" whenever the only gap is skips. Three real states: any
+  // failure → n-failed; clean but some skips → all-resolved (with breakdown);
+  // everything succeeded → all-ok.
   const summaryLine =
-    totalCount === successCount
-      ? t("cli.summary.all-ok")
-      : errorCount > 0
-        ? t("cli.summary.n-failed", { count: String(errorCount) })
-        : t("cli.summary.n-of-total", { done: String(successCount), total: String(totalCount) });
+    errorCount > 0
+      ? t("cli.summary.n-failed", { count: String(errorCount) })
+      : skippedCount > 0
+        ? t("cli.summary.all-resolved", { done: String(successCount), skipped: String(skippedCount) })
+        : t("cli.summary.all-ok");
   lines.push(`  ${paint("muted", summaryLine, colorOn)}`);
 
   return lines.join("\n");

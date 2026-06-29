@@ -959,7 +959,7 @@ export const enMessages: Messages = {
   "cli.summary.done": "Done!",
   "cli.summary.all-ok": "All steps completed successfully",
   "cli.summary.n-failed": "{count} step(s) failed",
-  "cli.summary.n-of-total": "{done}/{total} steps completed",
+  "cli.summary.all-resolved": "all resolved · {done} done / {skipped} skipped",
   "cli.summary.count.succeeded": "succeeded",
   "cli.summary.count.skipped": "skipped",
   "cli.summary.count.failed": "failed",
@@ -1221,7 +1221,6 @@ export const enMessages: Messages = {
   // flat-design-system Wave5 (TASK-006 G3): human result words for the summary
   // card detail rows, symmetric with install's `{count} installed` / `up to date`.
   "cli.uninstall.stage.cleaned-count": "{count} cleaned",
-  "cli.uninstall.stage.already-clean": "already clean",
   "cli.uninstall.summary.title": "Uninstall summary",
   "cli.uninstall.summary.body": "removed={removed} skipped={skipped} errors={errors}",
   "cli.uninstall.healthcheck.title": "✓ Fabric already absent · nothing to remove",
