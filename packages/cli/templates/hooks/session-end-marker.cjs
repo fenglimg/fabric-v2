@@ -33,6 +33,7 @@ const { join } = require("node:path");
 // interleave a partial line. Drop-on-contention, best-effort — same primitive
 // the narrow/broad hooks use.
 const { appendLockedLine } = require("./lib/injection-log.cjs");
+const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 const FABRIC_DIR_REL = ".fabric";
 const EVENTS_LEDGER_FILE = "events.jsonl";
@@ -135,6 +136,6 @@ if (require.main === module) {
   } catch {
     // No stdin — proceed with empty payload (degrades to a no-op append).
   }
-  main({ cwd: process.cwd(), now: new Date(), stdin: stdinRaw });
+  main({ cwd: resolveProjectRoot(process.cwd()), now: new Date(), stdin: stdinRaw });
   process.exit(0);
 }

@@ -82,6 +82,7 @@ const { dirname, join } = require("node:path");
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
 const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.cjs");
+const { resolveProjectRoot } = require("./lib/project-root.cjs");
 // W1-01 (ISS-011): the PreToolUse hook is the highest-frequency, most
 // concurrency-exposed write surface in Fabric. Multi-window edits spawn
 // concurrent hook processes that all append to the SAME non-session-scoped
@@ -864,7 +865,7 @@ function narrowResultCacheFileName(sessionId) {
 // Order-independent key for a path-set (sorted + NUL-joined so [a,b] and [b,a]
 // hit the same cache slot).
 function pathSetKey(paths) {
-  return [...paths].sort().join(" ");
+  return [...paths].sort().join("\u0000");
 }
 
 // Returns the cached cliPayload for `paths` iff the cache's meta token matches
@@ -1115,7 +1116,7 @@ function applyNarrowDedupWindow(state, narrow, targetPaths, windowTurns, current
   // Build a (path, entry_id) → at_turn lookup. Most recent wins on duplicates.
   const lookup = new Map();
   for (const rec of liveState.recent) {
-    const key = `${rec.path} ${rec.entry_id}`;
+    const key = `${rec.path}\u0000${rec.entry_id}`;
     const existing = lookup.get(key);
     if (existing === undefined || rec.at_turn > existing) {
       lookup.set(key, rec.at_turn);
@@ -1134,7 +1135,7 @@ function applyNarrowDedupWindow(state, narrow, targetPaths, windowTurns, current
     // Entry is suppressed only if every targetPath has a recent record.
     let allRecent = true;
     for (const path of targetPaths) {
-      const key = `${path} ${entryId}`;
+      const key = `${path}\u0000${entryId}`;
       const lastTurn = lookup.get(key);
       if (lastTurn === undefined || lastTurn < cutoff) {
         allRecent = false;
@@ -1670,7 +1671,7 @@ if (require.main === module) {
     // No stdin — proceed with empty payload (E4 still runs).
   }
   main(
-    { cwd: process.cwd(), now: new Date(), stdin: stdinRaw },
+    { cwd: resolveProjectRoot(process.cwd()), now: new Date(), stdin: stdinRaw },
     { stderr: process.stderr },
   ).finally(() => process.exit(0));
 }

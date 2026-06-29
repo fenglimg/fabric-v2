@@ -57,6 +57,7 @@ const { headerRule, scopeBadge } = require("./lib/theme.cjs");
 // event-writer (envelope stamp + event_type guard + advisory-lock append) so
 // the row always satisfies the event-ledger schema the doctor reads.
 const { appendEvent } = require("./lib/event-writer.cjs");
+const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
@@ -1389,6 +1390,6 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main({ cwd: process.cwd() }, { stderr: process.stderr });
+  main({ cwd: resolveProjectRoot(process.cwd()) }, { stderr: process.stderr });
   process.exit(0);
 }
