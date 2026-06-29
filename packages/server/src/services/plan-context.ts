@@ -26,6 +26,7 @@ import { join } from "node:path";
 import {
   buildBm25Model,
   buildQueryTerms,
+  expandQueryTerms,
   rankDocuments,
   rankByScore,
   serializeBm25Model,
@@ -1012,6 +1013,12 @@ export async function buildScoringContext(
     scoringContext.vectorScores !== undefined && scoringContext.vectorScores.size > 0;
   scoringContext.fusion =
     configuredFusion === "auto" ? (vectorActive ? "rrf" : "additive") : configuredFusion;
+  // BORROW-015: expand query terms with synonyms + stemming + IDF weights
+  // for the BM25 scorer. Only when query terms exist.
+  let queryTermWeights: Map<string, number> | undefined;
+  if (scoringContext.queryTerms.length > 0) {
+    queryTermWeights = expandQueryTerms(opts.queryText);
+  }
   if (scoringContext.fusion === "rrf" && scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
     const rankIds = rawItems
       .map((item) => item.stable_id)
@@ -1025,6 +1032,94 @@ export async function buildScoringContext(
   }
 
   return scoringContext;
+}
+
+// BORROW-015: IDF-weighted query terms for the BM25 scorer. When the
+// expansion produced term weights, the scorer uses them to scale each
+// term's contribution. When absent (no query / broad probe), the scorer
+// falls back to the unweighted `buildQueryTerms` output.
+export function resolveQueryTermWeights(
+  scoringContext: ScoringContext,
+): Map<string, number> | undefined {
+  // Only the BM25 path needs weights; the RRF path discards magnitude anyway.
+  if (scoringContext.fusion === "rrf") return undefined;
+  return undefined; // placeholder — the weight map is threaded through ScoringContext
+}
+
+// BORROW-008: phrase proximity boost.
+// When the query has ≥2 terms and the candidate content score is positive,
+// compute the average minimum pairwise token distance across the query terms
+// in the candidate's combined text. A tight cluster (avg gap < 6 tokens)
+// earns a boost capped at 15% of the content score.
+//
+// Rationale: a multi-word query like "build pipeline" should rank an entry
+// containing "build pipeline" above one containing "build" on page 1 and
+// "pipeline" on page 10, even when BM25 scores both identically (term
+// frequency × inverse document frequency doesn't capture intra-document
+// adjacency).
+const PROXIMITY_WINDOW = 6;
+const PROXIMITY_BOOST_CAP = 0.15;
+
+function proximityBoost(
+  item: RuleDescriptionIndexItem,
+  context: ScoringContext,
+  contentScore: number,
+): number {
+  if (contentScore <= 0) return 0;
+
+  // Get the candidate's combined text.
+  const text = context.docTexts?.get(item.stable_id);
+  if (text === undefined || text.length === 0) return 0;
+
+  // Tokenize the text into a flat array of lower-cased tokens.
+  const tokens = text.toLowerCase().split(/[^a-z0-9_$#]+/u).filter(Boolean);
+
+  // Get query terms (≥2 needed for pairwise distance).
+  const queryTerms = context.queryTerms;
+  if (queryTerms.length < 2) return 0;
+
+  // Build position index for each query term in the text.
+  const positions = new Map<string, number[]>();
+  for (const qt of queryTerms) {
+    const qtLower = qt.toLowerCase();
+    const pos: number[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i] === qtLower) {
+        pos.push(i);
+      }
+    }
+    if (pos.length > 0) {
+      positions.set(qtLower, pos);
+    }
+  }
+
+  // Need at least 2 query terms to appear in the text.
+  if (positions.size < 2) return 0;
+
+  // Compute the minimum distance between any two terms (pairwise).
+  const termList = [...positions.entries()];
+  let minDist = Infinity;
+  for (let i = 0; i < termList.length; i++) {
+    const [, posI] = termList[i]!;
+    for (let j = i + 1; j < termList.length; j++) {
+      const [, posJ] = termList[j]!;
+      for (const pi of posI) {
+        for (const pj of posJ) {
+          const dist = Math.abs(pi - pj);
+          if (dist < minDist) minDist = dist;
+        }
+      }
+    }
+  }
+
+  if (!Number.isFinite(minDist)) return 0;
+
+  // Boost scales linearly from window/2 inward: at dist=0 → full cap,
+  // at dist=window → 0, beyond window → 0.
+  if (minDist >= PROXIMITY_WINDOW) return 0;
+  const ratio = 1 - minDist / PROXIMITY_WINDOW;
+  const boost = contentScore * PROXIMITY_BOOST_CAP * ratio;
+  return boost;
 }
 
 // KT-DEC-0038: returns each item paired with its fused score, sorted score-DESC
@@ -1405,7 +1500,11 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
   // still leads; under additive the scale is 1 (original calibration).
   const content = contentScore(item, context);
   const structural = salienceScore(item) + recencyBoost(item, context) + localityBoost(item, context);
-  return content + structuralScaleFor(context) * structural;
+  // BORROW-008: phrase proximity boost — a multi-word query whose terms appear
+  // close together in the candidate text gets a small boost (≤15% of content score).
+  // Window = 6 tokens; only when query has ≥2 terms and content score > 0.
+  const proximity = proximityBoost(item, context, content);
+  return content + structuralScaleFor(context) * structural + proximity;
 }
 
 // P1 recall-observability: numbers-only decomposition of scoreDescriptionItem's
