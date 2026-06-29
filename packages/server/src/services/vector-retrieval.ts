@@ -28,6 +28,7 @@
 //     Operators needing strict offline must pre-populate FABRIC_EMBED_CACHE_DIR.
 
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { resolveGlobalRoot } from "@fenglimg/fabric-shared";
@@ -46,6 +47,28 @@ let embedderLoad: Promise<Embedder | null> | undefined;
 // resolved by the bundler/tsc. TASK-004: fastembed is now an OPTIONAL dependency
 // (default install attempts it; a platform that can't build it still starts).
 export const OPTIONAL_EMBED_PACKAGE = "fastembed";
+
+/**
+ * Is the optional embedder package resolvable FROM THE SERVER'S module location —
+ * i.e. from exactly where `loadEmbedder`'s dynamic `import()` will look for it?
+ *
+ * This is the honest "is fastembed installed?" probe. The naive alternative — a
+ * `createRequire(import.meta.url)` check run inside the CLI package — answers from
+ * the WRONG base: in a pnpm / non-hoisted layout (or a dev-linked global install)
+ * fastembed lives under the SERVER's `node_modules` (it is the server's
+ * optionalDependency), so the CLI cannot resolve it even though the server — the
+ * only code that actually imports it — can. That mismatch made `fabric info
+ * --recall` report "not installed" on a perfectly working setup. Callers that
+ * surface embedder availability MUST use this server-anchored probe.
+ */
+export function isEmbedderResolvable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve(OPTIONAL_EMBED_PACKAGE);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Test seam: the module loader behind the optional import, injectable so a test
 // can force the "package absent / load throws" path DETERMINISTICALLY. Required

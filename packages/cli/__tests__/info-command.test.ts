@@ -72,9 +72,14 @@ describe("info recall — recall-engine status (gatherRecallStatus)", () => {
     for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
   });
 
-  it("registers a real `recall` subcommand", () => {
+  it("exposes recall as a `--recall` flag, not a subcommand", () => {
+    // UX-flat: `recall` was demoted from a citty subCommand to a `--recall` flag
+    // on `info` to keep the subcommand surface lean (only `scope` remains).
     const sub = infoCommand.subCommands as Record<string, unknown> | undefined;
-    expect(sub?.recall).toBeDefined();
+    expect(sub?.recall).toBeUndefined();
+    const args = infoCommand.args as Record<string, unknown> | undefined;
+    expect(args?.recall).toBeDefined();
+    expect(args?.warm).toBeDefined();
   });
 
   it("forced fusion=additive resolves to additive", () => {
@@ -105,5 +110,77 @@ describe("info recall — recall-engine status (gatherRecallStatus)", () => {
     // With no model on disk the vector channel can't be ready → auto stays additive.
     expect(s.vector_ready).toBe(false);
     expect(s.fusion_effective).toBe("additive");
+  });
+});
+
+// flat-design (spec §0.4): `fabric info` upgraded from bare console.log to flat
+// primitives — a B-横线 command title + an aligned label/value grid + status
+// glyphs. These tests pin the NO_COLOR degradation (no raw ANSI; ASCII `----`
+// rule) and the parent-run guard that stops the citty-0.2.2 fall-through from
+// double-printing the status after a subcommand.
+describe("info command — flat-design rendering", () => {
+  let prevHome: string | undefined;
+  let prevNoColor: string | undefined;
+  const roots: string[] = [];
+
+  beforeEach(() => {
+    prevHome = process.env.FABRIC_HOME;
+    prevNoColor = process.env.NO_COLOR;
+    const home = mkdtempSync(join(tmpdir(), "fabric-info-flat-home-"));
+    roots.push(home);
+    process.env.FABRIC_HOME = home; // fresh home → model never cached → ○ glyph
+    process.env.NO_COLOR = "1";
+  });
+
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = prevHome;
+    if (prevNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = prevNoColor;
+    for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
+  });
+
+  function captureLog(fn: () => void): string {
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
+      lines.push(a.map(String).join(" "));
+    });
+    fn();
+    return lines.join("\n");
+  }
+
+  it("`info --recall` (NO_COLOR) emits a flat block — no ANSI, ASCII rule, status glyph", () => {
+    // The recall-status (non-warm) path is synchronous, so the logs are captured
+    // before the async parent `run` promise settles.
+    const out = captureLog(() => {
+      void infoCommand.run?.({ args: { recall: true, json: false } } as never);
+    });
+    // No raw ANSI escape sequences survive under NO_COLOR.
+    // eslint-disable-next-line no-control-regex
+    expect(out).not.toMatch(/\x1b\[/);
+    // headerRule degrades to an ASCII `----…` underline.
+    expect(out).toMatch(/-{8,}/);
+    // The vector channel is not ready in a fresh home → amber ○ glyph rendered.
+    expect(out).toContain("○");
+  });
+
+  it("parent `run` stays silent when the `scope` subcommand was invoked (citty 0.2.2 fall-through guard)", () => {
+    // `info scope <c>` routes to the subcommand; the parent run must NOT also
+    // print the project status (the pre-fix double-print, which also corrupted
+    // `info scope --json`).
+    const silentScope = captureLog(() => {
+      void infoCommand.run?.({ args: { _: ["scope"] } } as never);
+    });
+    expect(silentScope).toBe("");
+  });
+
+  it("parent `run` DOES render the grouped status when no subcommand / flag is present", () => {
+    const out = captureLog(() => {
+      void infoCommand.run?.({ args: {} } as never);
+    });
+    expect(out.length).toBeGreaterThan(0);
+    // The two-group layout (machine / project) + recall footer is present.
+    expect(out).toMatch(/-{8,}/); // headerRule degrades to ASCII rule
+    expect(out).toContain("*"); // groupDot `●` degrades to `*` under NO_COLOR
   });
 });
