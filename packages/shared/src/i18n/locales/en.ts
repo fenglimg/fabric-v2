@@ -2,21 +2,7 @@ import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
   "cli.main.description":
-    "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically, so it stops re-learning them every session.\n" +
-    "\n" +
-    "Three-step mental model:\n" +
-    "  Install (装) - fabric install   one-shot project setup\n" +
-    "  Configure (配) - fabric config  interactive configuration panel\n" +
-    "  Maintain (跑) - fabric doctor   run target-state diagnostics\n" +
-    "                 fabric sync      sync mounted knowledge stores\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric install                  install Fabric in the current project\n" +
-    "  fabric config                   open the interactive configuration panel\n" +
-    "  fabric doctor --fix             repair derived Fabric state\n" +
-    "  fabric doctor --fix-knowledge   repair knowledge entry state\n" +
-    "  fabric sync                     pull/rebase and push mounted stores\n" +
-    "  fabric uninstall --dry-run      preview uninstall without removing files",
+    "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically. First time? Run: fabric install",
   "cli.shared.created": "Created",
   "cli.shared.skipped": "Skipped",
   "cli.shared.next": "Next",
@@ -45,15 +31,26 @@ export const enMessages: Messages = {
   "cli.shared.invalid-port": "Invalid port: {value}",
   "cli.shared.error": "Error",
 
-  // EPIC-011 / W3-F: Grouped help display i18n keys (Knowledge/Project/Maintain).
-  "cli.help.group.knowledge.store": "Manage knowledge stores (see: fabric store --help)",
-  "cli.help.group.knowledge.sync": "Sync team knowledge with remote stores",
-  "cli.help.group.project.install": "Initialize Fabric in this repository",
-  "cli.help.group.project.config": "Configure Fabric settings",
-  "cli.help.group.project.info": "Show project status",
-  "cli.help.group.project.inspect": "Show what SessionStart injects this session",
-  "cli.help.group.maintain.doctor": "Check Fabric health and repair issues",
-  "cli.help.group.maintain.audit": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
+  // Top-level command summaries (one concise line each — citty renders these in
+  // the root `fabric --help` COMMANDS table AND as the header of each command's
+  // own `--help`, so they MUST stay single-line; verbose example blocks were
+  // removed when the bespoke grouped help retired in favour of citty's renderer).
+  "cli.store.description": "Manage mounted knowledge stores (setup via fabric install)",
+  "cli.sync.description": "Sync mounted knowledge stores (pull --rebase + push)",
+  "cli.info.description": "Show Fabric identity, project status & recall health",
+  "cli.inspect.description": "Show what Fabric injects at SessionStart",
+  "cli.audit.description": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
+
+  // `fabric info --help` — flag + scope-subcommand descriptions.
+  "cli.info.args.global.description": "Show global identity (whoami) instead of project status",
+  "cli.info.args.recall.description": "Show recall-engine detail (fusion strategy + embedding state)",
+  "cli.info.args.warm.description":
+    "With --recall: load the embedder now (downloads the model to ~/.fabric/cache/embed on first run)",
+  "cli.info.args.json.description": "Emit machine-readable JSON instead of text",
+  "cli.info.scope.description":
+    "(advanced/skill) Resolve a scope coordinate's read-set + write target as JSON",
+  "cli.info.scope.args.coord.description": "Scope coordinate (e.g. team, project:x, personal)",
+  "cli.info.scope.args.json.description": "Emit machine-readable JSON (scope always emits JSON)",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI
@@ -62,11 +59,7 @@ export const enMessages: Messages = {
   // if no external consumers surface.
 
   "cli.config.description":
-    "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric config                   open the interactive panel\n" +
-    "  fabric config --target /path    edit configuration for a specific project",
+    "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, MCP client wiring, etc.)",
   "cli.config.args.target.description": "Target project directory (defaults to cwd).",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
@@ -152,13 +145,7 @@ export const enMessages: Messages = {
     "How the signals combine into one score: additive = weighted sum (BM25-led, small vector weight) / rrf = Reciprocal Rank Fusion (BM25 and vector on equal footing, so semantics actually count) / auto = adaptive (default: rrf when the vector channel is scoring, else additive — avoids degenerate single-channel rrf being worse).",
 
   "cli.doctor.description":
-    "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric doctor                   read-only diagnostics report\n" +
-    "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
-    "  fabric doctor --fix-knowledge   apply lint mutations (counter / archive / cache)\n" +
-    "  fabric doctor --json            machine-readable output",
+    "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
@@ -865,12 +852,7 @@ export const enMessages: Messages = {
   "doctor.history.empty": "No doctor or archive activity within the --since={sinceLabel} window (mode={mode}).",
 
   "cli.install.description":
-    "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric install                  interactive install in the current project\n" +
-    "  fabric install --yes            accept defaults, skip the TTY wizard\n" +
-    "  fabric install --dry-run        preview the install plan without writing files",
+    "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks)",
   "cli.install.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.install.args.debug.description": "Print target resolution details to stderr.",
@@ -1170,12 +1152,7 @@ export const enMessages: Messages = {
   "cli.install.diff.state.user-modified": "user-modified",
 
   "cli.uninstall.description":
-    "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric uninstall                interactive uninstall in the current project\n" +
-    "  fabric uninstall --yes          accept defaults, skip the TTY wizard\n" +
-    "  fabric uninstall --dry-run      preview the uninstall plan without removing files",
+    "Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
   "cli.uninstall.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.uninstall.args.debug.description": "Print target resolution details to stderr.",
@@ -1522,6 +1499,18 @@ export const enMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder warm: model '{model}' loaded (vector dim {dim}), cached at {dir}",
   "cli.info.recall.warm.fail":
     "embedder unavailable — the optional 'fastembed' package is not resolvable or the model failed to load.\n  Recall falls back to keyword mode (BM25 / additive). Install fastembed where the server resolves modules, then retry.",
+  "cli.store.list.title": "Mounted stores",
+  "cli.store.project.list.title": "Projects in store '{store}'",
+  "cli.store.project.list.empty": "(no registered projects)",
+  "cli.store.project.created": "registered project '{id}' in store '{store}'",
+  "cli.store.migrate.title": "Knowledge scope migration",
+  "cli.store.backfill.noop": "scope backfill: nothing to do ({count} already consistent)",
+  "cli.store.backfill.summary": "scope backfill: {changed} updated, {unchanged} unchanged",
+  "cli.store.backfill.scope-note":
+    "{count} entries defaulted to semantic_scope: team. Demote project-specific ones with `fabric store migrate scope <store> --to project:<id> --id <id>`.",
+  "cli.store.rescope.noop": "re-scope: nothing to do ({count} already at '{scope}')",
+  "cli.store.rescope.summary": "re-scope → {scope}: {changed} updated, {unchanged} unchanged",
+  "cli.store.rescope.refused": "{count} entries refused",
   "cli.store.none-mounted": "(no stores mounted)",
   "cli.store.mounted": "mounted '{alias}' ({count} store(s) total)",
   "cli.store.created": "created store '{alias}' ({uuid}) at {dir}",

@@ -13,7 +13,7 @@ import {
 } from "@fenglimg/fabric-server";
 
 import { paint, displayWidth } from "../colors.js";
-import { getProjectTranslator } from "../i18n.js";
+import { getProjectTranslator, t } from "../i18n.js";
 import { warnUnknownFlags } from "../lib/unknown-flags.js";
 import { whoami, projectStatus } from "../store/info-ops.js";
 import { scopeExplain } from "../store/scope-explain.js";
@@ -43,18 +43,18 @@ const scopeCommand = defineCommand({
     // De-emphasized: this is an advanced / skill-facing JSON resolver, not a
     // daily-use surface. Skills call `fabric info scope <coord> --json` to learn
     // a scope's read-set + write target before archiving knowledge.
-    description: "(advanced/skill) Resolve a scope coordinate's read-set + write target as JSON",
+    description: t("cli.info.scope.description"),
   },
   args: {
     coord: {
       type: "positional",
       required: true,
-      description: "Scope coordinate (e.g. team, project:x, personal)",
+      description: t("cli.info.scope.args.coord.description"),
     },
     // Accepted for symmetry with other commands; scope output is always JSON.
     json: {
       type: "boolean",
-      description: "Emit machine-readable JSON (scope always emits JSON)",
+      description: t("cli.info.scope.args.json.description"),
     },
   },
   run({ args }: { args: { coord: string } }) {
@@ -66,25 +66,25 @@ const scopeCommand = defineCommand({
 export default defineCommand({
   meta: {
     name: "info",
-    description: "Unified information command for Fabric identity, project status, and recall health",
+    description: t("cli.info.description"),
   },
   args: {
     global: {
       type: "boolean",
-      description: "Show global identity (whoami) instead of project status",
+      description: t("cli.info.args.global.description"),
       alias: "g",
     },
     recall: {
       type: "boolean",
-      description: "Show recall-engine detail (fusion strategy + embedding state)",
+      description: t("cli.info.args.recall.description"),
     },
     warm: {
       type: "boolean",
-      description: "With --recall: load the embedder now (downloads the model to ~/.fabric/cache/embed on first run)",
+      description: t("cli.info.args.warm.description"),
     },
     json: {
       type: "boolean",
-      description: "Emit machine-readable JSON instead of text",
+      description: t("cli.info.args.json.description"),
     },
   },
   subCommands: {

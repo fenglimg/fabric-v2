@@ -742,7 +742,7 @@ export const retiredCommand = defineCommand({
 export const auditCommand = defineCommand({
   meta: {
     name: "audit",
-    description: "Knowledge & telemetry audits (cite / conflicts / history / descriptions / metrics / retired)",
+    description: t("cli.audit.description"),
   },
   subCommands: {
     cite: citeCommand,

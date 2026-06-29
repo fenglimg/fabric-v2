@@ -2,21 +2,7 @@ import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
   "cli.main.description":
-    "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。\n" +
-    "\n" +
-    "三步心智模型：\n" +
-    "  装 (install) - fabric install   一键完成项目初始化\n" +
-    "  配 (config)  - fabric config    打开交互式配置面板\n" +
-    "  维护 (run)  - fabric doctor     运行目标态诊断\n" +
-    "                fabric sync       同步已挂载的知识 store\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric install                  在当前项目中安装 Fabric\n" +
-    "  fabric config                   打开交互式配置面板\n" +
-    "  fabric doctor --fix             修复 Fabric 派生状态\n" +
-    "  fabric doctor --fix-knowledge   修复知识条目状态\n" +
-    "  fabric sync                     pull/rebase 并 push 已挂载 store\n" +
-    "  fabric uninstall --dry-run      预览卸载，不删除文件",
+    "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。首次使用?运行: fabric install",
   "cli.shared.created": "已创建",
   "cli.shared.skipped": "已跳过",
   "cli.shared.next": "下一步",
@@ -44,23 +30,28 @@ export const zhCNMessages: Messages = {
   "cli.shared.invalid-port": "无效端口：{value}",
   "cli.shared.error": "错误",
 
-  // EPIC-011 / W3-F: 分组帮助显示 i18n 键 (Knowledge/Project/Maintain)
-  "cli.help.group.knowledge.store": "管理知识 store (详见: fabric store --help)",
-  "cli.help.group.knowledge.sync": "与远程 store 同步团队知识",
-  "cli.help.group.project.install": "在当前仓库初始化 Fabric",
-  "cli.help.group.project.config": "配置 Fabric 设置",
-  "cli.help.group.project.info": "显示项目状态",
-  "cli.help.group.project.inspect": "显示本会话 SessionStart 注入了什么",
-  "cli.help.group.maintain.doctor": "检查 Fabric 健康状态并修复问题",
-  "cli.help.group.maintain.audit": "知识与遥测审计 (cite/conflicts/history/metrics)",
+  // 顶层命令摘要(每条一句精简单行 —— citty 在根 `fabric --help` 的 COMMANDS
+  // 表与各命令自身 `--help` 头部都用它,必须保持单行;退掉自建分组帮助、改走
+  // citty 渲染器后,原先的多行示例块已移除)
+  "cli.store.description": "管理已挂载的知识 store(建库走 fabric install)",
+  "cli.sync.description": "同步已挂载的知识 store(pull --rebase + push)",
+  "cli.info.description": "显示 Fabric 身份、项目状态与召回健康",
+  "cli.inspect.description": "显示 Fabric 在 SessionStart 注入了什么",
+  "cli.audit.description": "知识与遥测审计 (cite/conflicts/history/metrics)",
 
+  // `fabric info --help` —— flag 与 scope 子命令描述。
+  "cli.info.args.global.description": "显示全局身份(whoami)而非项目状态",
+  "cli.info.args.recall.description": "显示召回引擎详情(融合策略 + 向量嵌入状态)",
+  "cli.info.args.warm.description":
+    "配合 --recall:立即加载 embedder(首次会把模型下载到 ~/.fabric/cache/embed)",
+  "cli.info.args.json.description": "输出机器可读的 JSON 而非文本",
+  "cli.info.scope.description":
+    "(进阶/skill)把一个 scope 坐标解析成 read-set + 写入目标的 JSON",
+  "cli.info.scope.args.coord.description": "Scope 坐标(如 team、project:x、personal)",
+  "cli.info.scope.args.json.description": "输出机器可读的 JSON(scope 始终输出 JSON)",
 
   "cli.config.description":
-    "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric config                   打开交互式面板\n" +
-    "  fabric config --target /path    编辑指定项目的配置",
+    "打开 Fabric 交互式配置面板（语言、知识层、审计模式、MCP 客户端配置等）",
   "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
@@ -145,13 +136,7 @@ export const zhCNMessages: Messages = {
     "多信号合成总分的算法：additive 加权求和（BM25 主导，向量权重小）/ rrf 倒数排名融合（BM25 与向量平起平坐，语义才真正生效）/ auto 自适应（默认：向量在出分时用 rrf，否则回落 additive——避免无向量时 rrf 退化反而更差）。",
 
   "cli.doctor.description":
-    "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric doctor                   只读诊断报告\n" +
-    "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
-    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（计数器 / 归档 / 缓存）\n" +
-    "  fabric doctor --json            机器可读输出",
+    "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
@@ -845,12 +830,7 @@ export const zhCNMessages: Messages = {
   "doctor.history.empty": "--since={sinceLabel} 窗口内无 doctor 或 archive 活动 (mode={mode})。",
 
   "cli.install.description":
-    "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric install                  在当前项目中以交互模式安装\n" +
-    "  fabric install --yes            接受默认值，跳过 TTY 向导\n" +
-    "  fabric install --dry-run        仅预览安装计划，不写入文件",
+    "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）",
   "cli.install.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.install.args.debug.description": "将目标解析细节输出到 stderr。",
@@ -1140,12 +1120,7 @@ export const zhCNMessages: Messages = {
   "cli.install.diff.state.user-modified": "用户修改",
 
   "cli.uninstall.description":
-    "从目标项目中卸载 Fabric。项目卸载永远不会删除 ~/.fabric/stores/ 下的全局知识 store。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric uninstall                在当前项目中以交互模式卸载\n" +
-    "  fabric uninstall --yes          接受默认值，跳过 TTY 向导\n" +
-    "  fabric uninstall --dry-run      仅预览卸载计划，不删除文件",
+    "从目标项目中卸载 Fabric（~/.fabric/stores/ 下的全局 store 永不删除）",
   "cli.uninstall.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.uninstall.args.debug.description": "将目标解析细节输出到 stderr。",
@@ -1491,6 +1466,18 @@ export const zhCNMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder 已预热:模型 '{model}' 已加载(向量维度 {dim}),缓存于 {dir}",
   "cli.info.recall.warm.fail":
     "embedder 不可用 —— 可选的 'fastembed' 包无法解析,或模型加载失败。\n  召回回退到关键词模式(BM25 / additive)。请在 server 能解析模块的位置安装 fastembed 后重试。",
+  "cli.store.list.title": "已挂载知识库",
+  "cli.store.project.list.title": "store '{store}' 中的项目",
+  "cli.store.project.list.empty": "(无已注册项目)",
+  "cli.store.project.created": "已在 store '{store}' 注册项目 '{id}'",
+  "cli.store.migrate.title": "知识坐标迁移",
+  "cli.store.backfill.noop": "scope 回填:无需改动({count} 条已一致)",
+  "cli.store.backfill.summary": "scope 回填:{changed} 条已更新,{unchanged} 条未变",
+  "cli.store.backfill.scope-note":
+    "{count} 条默认设为 semantic_scope: team。用 `fabric store migrate scope <store> --to project:<id> --id <id>` 把项目专属的降级。",
+  "cli.store.rescope.noop": "重定 scope:无需改动({count} 条已是 '{scope}')",
+  "cli.store.rescope.summary": "重定 scope → {scope}:{changed} 条已更新,{unchanged} 条未变",
+  "cli.store.rescope.refused": "{count} 条被拒绝",
   "cli.store.none-mounted": "(未挂载任何 store)",
   "cli.store.mounted": "已挂载 '{alias}' (共 {count} 个 store)",
   "cli.store.created": "已创建 store '{alias}' ({uuid}) 于 {dir}",

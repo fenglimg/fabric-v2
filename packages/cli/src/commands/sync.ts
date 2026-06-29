@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { getProjectTranslator } from "../i18n.js";
+import { getProjectTranslator, t } from "../i18n.js";
 import { paint } from "../colors.js";
 import { runAbortSync, runContinueSync, runStartSync, type RunSyncResult } from "../sync/run-sync.js";
 
@@ -25,7 +25,7 @@ function report(result: RunSyncResult, projectRoot: string): void {
 }
 
 export const syncCommand = defineCommand({
-  meta: { name: "sync", description: "Pull --rebase + push every mounted store; resume conflicts" },
+  meta: { name: "sync", description: t("cli.sync.description") },
   args: {
     continue: { type: "boolean", description: "Resume after resolving a rebase conflict" },
     abort: { type: "boolean", description: "Abort the conflicted store's rebase" },

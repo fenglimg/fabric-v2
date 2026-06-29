@@ -8,7 +8,6 @@ import { defineCommand, renderUsage, runCommand, runMain } from "citty";
 import { allCommands } from "./commands/index.js";
 import { renderDoctorFilteredHelp } from "./commands/doctor.js";
 import { renderTopLevelError, renderUnexpectedError } from "./lib/error-render.js";
-import { customShowUsageGrouped } from "./lib/grouped-help.js";
 import { t } from "./i18n.js";
 
 declare const __CLI_VERSION__: string;
@@ -22,39 +21,45 @@ export const main = defineCommand({
   subCommands: allCommands,
 });
 
-// EPIC-009 + EPIC-011: Custom showUsage that:
-// 1. Renders grouped help for root command (EPIC-011)
-// 2. Filters doctor command's hidden flags (EPIC-009)
+// EPIC-009: Custom showUsage that filters doctor's advanced flags. Every other
+// command — root included — renders through citty's standard renderUsage, so the
+// root `fabric --help`, the subcommand-group helps (`fabric store --help`), and
+// the leaf helps all share ONE renderer (no grouped/citty divergence). Command
+// copy is i18n'd via each command's `meta.description` + arg descriptions.
 async function customShowUsage<T extends ArgsDef = ArgsDef>(
   cmd: CommandDef<T>,
   parent?: CommandDef<T>,
 ): Promise<void> {
   const cmdMeta = await (typeof cmd.meta === "function" ? cmd.meta() : cmd.meta);
 
-  // EPIC-009: doctor subcommand gets filtered help
+  // EPIC-009: doctor subcommand gets filtered help (hides advanced/internal flags).
   if (cmdMeta?.name === "doctor" && parent !== undefined) {
     renderDoctorFilteredHelp();
     return;
   }
 
-  // EPIC-011: root command gets grouped help
-  if (cmdMeta?.name === "fabric" && parent === undefined) {
-    await customShowUsageGrouped(cmd, parent, __CLI_VERSION__);
-    return;
-  }
-
-  // Default: use citty's standard renderUsage for other subcommands
   console.log(await renderUsage(cmd, parent) + "\n");
 }
 
 export async function run(): Promise<void> {
   const rawArgs = process.argv.slice(2);
 
+  // A bare `fabric` (no args) is a command-group with no default action, so it
+  // must render the root help instead of citty's "No command specified." error
+  // (+ non-zero exit). Render the root usage directly and return cleanly (exit 0):
+  // this is byte-identical to `fabric --help` (whose customShowUsage root branch
+  // also falls through to renderUsage(main, undefined)), but without runMain's
+  // process.exit(0) — a bare invocation asking for help is success, not an error.
+  if (rawArgs.length === 0) {
+    console.log((await renderUsage(main)) + "\n");
+    return;
+  }
+
   // Delegate --help / --version to citty's runMain verbatim — it owns the
   // subcommand-usage resolution + version print + clean exit. Gating matches
   // citty's own builtin-flag detection (the root command declares no args that
   // could shadow -h/-v).
-  // EPIC-009: inject customShowUsage to filter doctor's hidden flags.
+  // EPIC-009: customShowUsage still filters doctor's advanced flags.
   const wantsHelp = rawArgs.some((arg) => arg === "--help" || arg === "-h");
   const wantsVersion = rawArgs.length === 1 && (rawArgs[0] === "--version" || rawArgs[0] === "-v");
   if (wantsHelp || wantsVersion) {

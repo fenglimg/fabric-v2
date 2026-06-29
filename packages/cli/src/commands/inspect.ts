@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineCommand } from "citty";
 
 import { runPlanContextHint, type PlanContextHintOutput } from "./plan-context-hint.js";
+import { t } from "../i18n.js";
 
 // ---------------------------------------------------------------------------
 // Block 5 (Option X) / W3-F — `fabric inspect [--render human|ai] [--explain]`
@@ -143,7 +144,7 @@ export async function runInspect(opts: RunInspectOptions): Promise<string> {
 export const inspectCommand = defineCommand({
   meta: {
     name: "inspect",
-    description: "Show what Fabric injects at SessionStart (the knowledge spine). --explain for per-entry provenance.",
+    description: t("cli.inspect.description"),
   },
   args: {
     render: {
