@@ -134,12 +134,14 @@ describe("install-v2 pipeline — first-install vs re-install collapse (TASK-004
     expect(cardTitle).toBe(t("cli.install.pipeline.complete"));
   });
 
-  it("TASK-003 (G2 root a): the summary detail reads 'up to date' for a ran-but-unchanged stage, not 'N installed'", async () => {
+  it("TASK-003 (G2 root a): the ● stage line reads 'up to date' for a ran-but-unchanged stage, not 'N installed'", async () => {
     const renderer = stubRenderer();
-    // A run that does NOT collapse (one stage changed=true) so the standard summary
-    // card with detail rows is rendered. The OTHER stage ran with installed[] listing
-    // already-present artifacts but changed=false — its detail must read the uptodate
-    // word (the allIdempotent truth source), NEVER "N installed".
+    // A run that does NOT collapse (one stage changed=true) so the per-phase `●`
+    // lines stream. The OTHER stage ran with installed[] listing already-present
+    // artifacts but changed=false — its inline detail must read the uptodate word
+    // (the allIdempotent truth source), NEVER "N installed". flat-design moved this
+    // detail OFF the summary card (which is now an aggregate-only roll-up) and ONTO
+    // the `● <stage> ✓ <detail>` line, so we assert on the renderStep detail.
     const changedStage: Stage = { name: "hooks", async execute() { return stageRan("hooks", ["a-hook"], [], undefined, true); } };
     const unchangedStage: Stage = { name: "validate", async execute() { return stageRan("validate", ["present-1", "present-2", "present-3"], [], undefined, false); } };
 
@@ -149,13 +151,17 @@ describe("install-v2 pipeline — first-install vs re-install collapse (TASK-004
       .execute(rendererContext(renderer, { state: { firstInstall: false } }));
 
     expect(result.success).toBe(true);
-    const details = renderer.renderSummaryCard.mock.calls[0][0].details as Array<{ value: string }>;
-    const values = details.map((d) => d.value);
+    const stepDetails = renderer.renderStep.mock.calls
+      .map((c) => c[0] as { status: string; detail?: string })
+      .filter((s) => s.status === "success")
+      .map((s) => s.detail);
     // The unchanged ran-stage shows the uptodate word, not its installed.length.
-    expect(values).toContain(t("cli.install.stage.uptodate"));
-    expect(values).not.toContain("3 installed");
+    expect(stepDetails).toContain(t("cli.install.stage.uptodate"));
+    expect(stepDetails).not.toContain("3 installed");
     // The genuinely-changed stage still reports its installed count.
-    expect(values).toContain(t("cli.install.stage.installed-count", { count: "1" }));
+    expect(stepDetails).toContain(t("cli.install.stage.installed-count", { count: "1" }));
+    // And the summary card is now an aggregate-only roll-up — no per-stage rows.
+    expect(renderer.renderSummaryCard.mock.calls[0][0].details ?? []).toEqual([]);
   });
 
   it("first install uses the onboarding intro string and never collapses", async () => {

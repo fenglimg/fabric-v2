@@ -117,11 +117,19 @@ export class HooksStage implements Stage {
           payload: { installResults },
         };
       }
-      console.log(this.formatHooksOutcome(installResults, installed.length, skipped.length, context.args.debug === true));
+      // flat-design: fold the skill/hook breakdown into the `● Hook 与 skill` line's
+      // detail, ONLY when something was actually written (an idempotent re-run reads
+      // the generic "已最新"). Replaces the former separate "已完成 已装 …" line that
+      // double-reported the stage outside the flat column.
+      const skills = installResults.filter((r) => r.step.includes("skill") && r.status === "written").length;
+      const hookCount = installResults.filter((r) => r.step.includes("hook") && r.status === "written").length;
+      const detail = installed.length > 0
+        ? t("cli.install.hooks.installed", { skills: String(skills), hooks: String(hookCount) })
+        : undefined;
 
       // TASK-004/Bug-A: the hooks stage already distinguishes "无需改动" (everything
       // skipped) from real writes — changed iff something was actually written.
-      return stageRan("hooks", installed, skipped, undefined, installed.length > 0);
+      return { ...stageRan("hooks", installed, skipped, undefined, installed.length > 0), detail };
     } catch (error) {
       return stageFailedFromError("hooks", error);
     }
@@ -159,29 +167,6 @@ export class HooksStage implements Stage {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-  }
-
-  /**
-   * grill C-14: "result + key items" instead of an opaque `installed=0 skipped=135`.
-   * Surfaces the skill category (the header says "skill" but the old output never
-   * mentioned it) and applies the 已最新 rule when nothing changed. Raw path
-   * counts move behind --debug.
-   */
-  private formatHooksOutcome(
-    results: InstallStepResult[],
-    installedCount: number,
-    skippedCount: number,
-    debug: boolean,
-  ): string {
-    const ok = paint.success(t("cli.install.stages.completed"));
-    const skills = results.filter((r) => r.step.includes("skill") && r.status === "written").length;
-    const hooks = results.filter((r) => r.step.includes("hook") && r.status === "written").length;
-    const body =
-      installedCount === 0
-        ? t("cli.install.hooks.uptodate", { count: String(skippedCount) })
-        : t("cli.install.hooks.installed", { skills: String(skills), hooks: String(hooks) });
-    const raw = debug ? ` ${paint.muted(`(installed=${installedCount} skipped=${skippedCount})`)}` : "";
-    return `${ok} ${body}${raw}`;
   }
 
   private formatStageResult(

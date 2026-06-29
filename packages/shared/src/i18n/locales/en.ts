@@ -1083,7 +1083,7 @@ export const enMessages: Messages = {
   "cli.install.store.slot.personal.multi-new-hint": "a fresh empty personal store, set as active",
   "cli.install.store.slot.personal.new-alias": "alias for the new personal store:",
   "cli.install.store.slot.personal.switched": "active personal store switched to '{alias}'",
-  "cli.install.store.slot.team.status": "Team store (team-class): '{alias}' ✓",
+  "cli.install.store.slot.team.status": "Team store (team-class): '{alias}'{source} ✓",
   "cli.install.store.slot.team.empty": "Team store (team-class): none bound yet",
   "cli.install.store.slot.team.prompt": "Choose the team knowledge store (team-class) for this project:",
   "cli.install.store.slot.team.bound-label": "keep current: {alias}",
@@ -1091,7 +1091,7 @@ export const enMessages: Messages = {
   // flat-design store menu: "keep current" and "skip" are merged — when a team is
   // bound the SKIP row renders as keep-label (no change), otherwise as plain skip.
   "cli.install.store.slot.team.keep-label": "keep current: {alias} · no change",
-  "cli.install.store.slot.team.keep-hint": "stay on this team store; leave the binding unchanged",
+  "cli.install.store.slot.team.keep-hint": "{source}stay on this team store; leave the binding unchanged",
   "cli.install.store.skip-label": "skip",
   "cli.install.store.bind-mounted.skip-hint": "leave mounted stores unbound for now",
   "cli.install.store.project-coordinate": "Project coordinate in store '{store}':",

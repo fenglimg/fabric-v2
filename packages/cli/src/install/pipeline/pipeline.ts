@@ -1,7 +1,7 @@
 import { t } from "../../i18n.js";
 
 import type { Stage, InstallContext, StageResult, PipelineResult, StageName } from "./types.js";
-import type { StepInfo, SummaryInfo, SummaryDetailRow, ErrorInfo, OutputRenderer } from "../../tui/types.js";
+import type { StepInfo, SummaryInfo, ErrorInfo, OutputRenderer } from "../../tui/types.js";
 
 // ---------------------------------------------------------------------------
 // Stage visual anchors (EPIC-005)
@@ -233,15 +233,18 @@ export class InstallPipeline {
               current: stepNum,
               total: totalStages,
               status: "success",
-              // TASK-003 (G2 root a): the per-step detail also keys off result.changed
-              // (the allIdempotent truth source) — a no-change re-ensure shows
-              // "up to date", not "N installed", even though installed[] lists
-              // already-present artifacts for display.
-              detail: result.changed === true && result.installed.length > 0
-                ? t("cli.install.stage.installed-count", { count: String(result.installed.length) })
-                : result.changed !== true
-                  ? t("cli.install.stage.uptodate")
-                  : undefined,
+              // flat-design: a stage may fold a rich human detail INLINE (mcp →
+              // client names, hooks → skill/hook breakdown) — prefer it. Otherwise
+              // TASK-003 (G2 root a): the generic per-step detail keys off
+              // result.changed (the allIdempotent truth source) — a no-change
+              // re-ensure shows "up to date", not "N installed", even though
+              // installed[] lists already-present artifacts for display.
+              detail: result.detail
+                ?? (result.changed === true && result.installed.length > 0
+                  ? t("cli.install.stage.installed-count", { count: String(result.installed.length) })
+                  : result.changed !== true
+                    ? t("cli.install.stage.uptodate")
+                    : undefined),
             });
           } else if (result.disposition === "skipped") {
             renderer.renderStep({
@@ -425,33 +428,15 @@ export class InstallPipeline {
     const skippedCount = results.filter((r) => r.disposition === "skipped").length;
     const errorCount = results.filter((r) => r.disposition === "failed").length;
 
-    const details: SummaryDetailRow[] = results.map((r) => ({
-      label: stageLabel(r.name),
-      // TASK-003 (G2 root a): the ran-stage status word branches on r.changed — the
-      // same truth source allIdempotent uses. A no-change re-ensure (changed!==true)
-      // reads "up to date" instead of misreporting "N installed" (several stages list
-      // already-present artifacts in installed[] for display). installed-count is
-      // shown only when the stage actually changed something.
-      value: r.disposition === "ran"
-        ? (r.changed === true && r.installed.length > 0
-            ? t("cli.install.stage.installed-count", { count: String(r.installed.length) })
-            : t("cli.install.stage.uptodate"))
-        : r.disposition === "skipped"
-          ? "skipped"
-          : `${r.errors.length} error(s)`,
-      status: r.disposition === "ran"
-        ? "success"
-        : r.disposition === "skipped"
-          ? "skipped"
-          : "error",
-    }));
-
+    // flat-design (symmetric with uninstall): the summary is the AGGREGATE roll-up
+    // only — the ✓/○/✗ count grid + status line. Per-stage detail rows are
+    // omitted: the live `● <stage> ✓ <detail>` lines above already enumerated each
+    // stage, so restating them here is pure duplication.
     return {
       title: t("cli.install.pipeline.complete"),
       successCount,
       skippedCount,
       errorCount,
-      details,
     };
   }
 

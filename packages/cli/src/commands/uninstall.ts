@@ -31,6 +31,7 @@ import { HOOK_SCRIPT_DESTINATIONS, SKILL_DESTINATIONS } from "../install/skills-
 // (NOT the install-coupled `InstallPipeline` class) — rollback/firstInstall
 // collapse are meaningless for a best-effort teardown.
 import { createInstallRenderer } from "../tui/index.js";
+import { headerRule } from "../tui/structure.js";
 import type { ErrorInfo, OutputRenderer, SummaryInfo } from "../tui/types.js";
 
 /**
@@ -981,7 +982,13 @@ function printUninstallPlanSummary(
   options: UninstallOptions,
   supports: DetectedClientSupport[],
 ): void {
-  console.log(t("cli.uninstall.plan.title"));
+  // flat-design: frame the plan title with the same B-横线 headerRule the
+  // execution section (`Fabric 卸载`) and summary card (`卸载摘要`) use, so the
+  // pre-confirm preview sits INSIDE the design system instead of reading as a
+  // bare console line floating outside it. Blank line above for breathing room,
+  // mirroring renderSection.
+  console.log("");
+  console.log(headerRule(t("cli.uninstall.plan.title")));
   console.log(t("cli.uninstall.plan.target", { target }));
 
   // flat-design-system Wave5 (TASK-006 G3): per-stage human action sentences

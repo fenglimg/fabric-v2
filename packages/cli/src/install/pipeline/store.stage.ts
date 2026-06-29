@@ -465,7 +465,13 @@ export class StoreStage implements Stage {
     const line =
       bound === undefined
         ? t("cli.install.store.slot.team.empty")
-        : t("cli.install.store.slot.team.status", { alias: bound.alias });
+        : t("cli.install.store.slot.team.status", {
+            alias: bound.alias,
+            // Disambiguating ` · <source>` suffix (the param carries its own
+            // separator so the key stays single — empty when the store has no
+            // label / remote / mount name to show).
+            source: bound.source ? ` · ${bound.source}` : "",
+          });
     this.emitInfo(context, line);
   }
 
@@ -526,7 +532,11 @@ export class StoreStage implements Stage {
         ? {
             value: SKIP,
             label: t("cli.install.store.slot.team.keep-label", { alias: boundCandidate.alias }),
-            hint: t("cli.install.store.slot.team.keep-hint"),
+            // The hint carries the store identity (`<source> · …`) so an alias that
+            // collides with the category word still says WHICH store stays bound.
+            hint: t("cli.install.store.slot.team.keep-hint", {
+              source: boundCandidate.source ? `${boundCandidate.source} · ` : "",
+            }),
           }
         : {
             value: SKIP,

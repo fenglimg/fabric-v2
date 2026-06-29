@@ -31,14 +31,6 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   private config: OutputRendererConfig;
   private colorOn: boolean;
   private currentStep: StepInfo | null = null;
-  /**
-   * TASK-003 (G5): true once a "running" placeholder line for the current step has
-   * been written to a TTY and is still on screen — so the next terminal status for
-   * the same step can overwrite it in place (`\x1b[1A\x1b[2K`) instead of stacking a
-   * second line. Reset whenever the terminal line is emitted (or on a non-TTY path,
-   * where the running placeholder is never written at all).
-   */
-  private runningLineOnScreen = false;
 
   constructor(config: OutputRendererConfig = {}) {
     this.config = {
@@ -82,39 +74,21 @@ export class ConsoleOutputRenderer implements OutputRenderer {
 
   renderStep(step: StepInfo): void {
     this.currentStep = step;
-    // TASK-003 (G5): a step used to emit a "running" placeholder line AND a later
-    // "success/skipped/error" line, both persisting — a stacked double line. Now the
-    // two collapse into ONE line:
-    //   • TTY + color: the running placeholder is written, then the terminal status
-    //     overwrites it in place via `\x1b[1A\x1b[2K` (cursor up + clear line).
-    //   • non-TTY (logs/pipes): the running placeholder is SUPPRESSED entirely so
-    //     scrapers see only the final terminal line — and the cursor escapes (which
-    //     would corrupt a log) are never written (strictly gated behind isTTY).
-    const isTTY = this.colorOn && process.stdout.isTTY === true;
-    const isRunning = step.status === "running";
-
-    if (isRunning) {
-      // Non-TTY: never write the placeholder — wait for the terminal status.
-      if (!isTTY) {
-        return;
-      }
-      this.write(buildStepLine(step, this.colorOn));
-      this.runningLineOnScreen = true;
+    // flat-design: each stage renders EXACTLY ONCE — on its terminal status
+    // (success / skipped / error), with the detail folded inline into the line
+    // (`● name   ✓ detail`). The earlier design wrote a dim "running" placeholder
+    // first and tried to overwrite it in place via `\x1b[1A\x1b[2K`, but that
+    // cursor-up assumes the placeholder is the line DIRECTLY above. Any
+    // interstitial output a stage prints (store-slot info lines, clack prompts)
+    // pushes the placeholder up, so the overwrite clears the wrong line and the
+    // placeholder survives as a doubled `● name` row. A static placeholder (no
+    // spinner) buys no real progress feedback, so we drop it: the "running" call
+    // is a no-op and the settled line is printed once — robust regardless of any
+    // interstitial output, on TTY and non-TTY alike.
+    if (step.status === "running") {
       return;
     }
-
-    // Terminal status (success / skipped / error / pending). On a TTY where a
-    // running placeholder is still on screen, overwrite it in place; otherwise just
-    // print the line. The escape is emitted on the same console.log as the new line
-    // so the redraw is atomic.
-    if (isTTY && this.runningLineOnScreen) {
-      this.write(`\x1b[1A\x1b[2K${buildStepLine(step, this.colorOn)}`);
-    } else {
-      this.write(buildStepLine(step, this.colorOn));
-    }
-    this.runningLineOnScreen = false;
-    // flat-design (spec §0.4): the detail is now folded INLINE into buildStepLine
-    // (`● name   ✓ detail`), no longer a separate `ℹ detail` row below the step.
+    this.write(buildStepLine(step, this.colorOn));
   }
 
   renderSuccess(message: string): void {
@@ -142,6 +116,10 @@ export class ConsoleOutputRenderer implements OutputRenderer {
     // makes the command-level heading a dim-rule underline, no solid block.
     // The provided title is kept as-is so callers that pass a custom heading are
     // honoured (wording preserved). headerRule reads live env / its own ASCII gate.
+    // Blank line above — same breathing room as renderSection — so the summary
+    // title ("Fabric 安装完成" / "卸载摘要") is not cramped flush against the last
+    // stage line above it.
+    this.write("");
     this.write(headerRule(summary.title));
     this.write(buildSummaryBlock(summary, this.colorOn));
   }
@@ -162,7 +140,6 @@ export class ConsoleOutputRenderer implements OutputRenderer {
   async cleanup(): Promise<void> {
     // No Ink instances to unmount; nothing to flush for synchronous console output.
     this.currentStep = null;
-    this.runningLineOnScreen = false;
   }
 }
 

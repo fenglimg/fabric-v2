@@ -1055,7 +1055,7 @@ export const zhCNMessages: Messages = {
   "cli.install.store.slot.personal.multi-new-hint": "全新空 personal store,并设为 active",
   "cli.install.store.slot.personal.new-alias": "新 personal store 的别名:",
   "cli.install.store.slot.personal.switched": "已将本机活动 personal store 切到 '{alias}'",
-  "cli.install.store.slot.team.status": "团队库(team 类): '{alias}' ✓",
+  "cli.install.store.slot.team.status": "团队库(team 类): '{alias}'{source} ✓",
   "cli.install.store.slot.team.empty": "团队库(team 类): 尚未绑定",
   "cli.install.store.slot.team.prompt": "为本项目选择团队知识库(team 类):",
   "cli.install.store.slot.team.bound-label": "保持当前: {alias}",
@@ -1063,7 +1063,7 @@ export const zhCNMessages: Messages = {
   // flat-design store menu:「保持当前」与「跳过」语义合并 —— 已绑定时 SKIP 行显示
   // 为 keep-label(保持当前 · 不改动),未绑定时为「跳过 · 仅用 personal store」。
   "cli.install.store.slot.team.keep-label": "保持当前: {alias} · 不改动",
-  "cli.install.store.slot.team.keep-hint": "继续用这个团队库,本次不改动绑定",
+  "cli.install.store.slot.team.keep-hint": "{source}继续用这个团队库,本次不改动绑定",
   "cli.install.store.skip-label": "跳过",
   "cli.install.store.bind-mounted.skip-hint": "暂不绑定已挂载的 store",
   "cli.install.store.project-coordinate": "在 store '{store}' 中的项目坐标 (project coordinate):",

@@ -93,6 +93,16 @@ export type StageResult = {
    * is changed=false.
    */
   changed?: boolean;
+  /**
+   * flat-design: an optional rich human detail folded INLINE into the stage's
+   * `● <name> ✓ <detail>` line (e.g. mcp → the configured client names, hooks →
+   * the skill/hook breakdown). When absent, the pipeline falls back to the generic
+   * installed-count / "up to date" wording. Carries NO status glyph or "已完成"
+   * prefix — the `●` line's own ✓ is the completion marker. Replaces the former
+   * separate `console.log("已完成 …")` narration line that double-reported each
+   * stage outside the flat column.
+   */
+  detail?: string;
 };
 
 /**

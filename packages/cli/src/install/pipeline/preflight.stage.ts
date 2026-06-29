@@ -144,14 +144,13 @@ export class PreflightStage implements Stage {
   /**
    * flat-design: build the project forensic scan (stage 1), stash it on
    * context.state for the env stage to reuse, and render the one-line scan summary
-   * under the command title. A transient "scanning…" note goes to stderr (TTY only)
-   * for the potentially-slow walk; the summary line routes through the renderer.
+   * under the command title. The scan RESULT (framework + scale) is reported inside
+   * the framed output via {@link renderScanSummary} — we no longer emit a separate
+   * transient "scanning…" note to stderr: it sat ABOVE the "Fabric 安装" frame as an
+   * orphan line and read as noise, while the framed summary already communicates the
+   * scan happened.
    */
   private async scanAndReport(context: InstallContext, target: string): Promise<void> {
-    const showProgress = process.stderr.isTTY === true;
-    if (showProgress) {
-      process.stderr.write(`${t("cli.install.scanning")}\n`);
-    }
     const report = await buildForensicReport(target);
     context.state.forensicReport = report;
     if (process.stdout.isTTY === true) {

@@ -672,6 +672,32 @@ export interface TeamStoreCandidate {
   alias: string;
   remote?: string;
   bound: boolean;
+  // A human disambiguator for the store BEHIND the alias — surfaced in the slot
+  // status / keep-current option so an alias that collides with the category word
+  // (e.g. a store literally aliased `team`) still tells the user WHICH physical
+  // store it is. A SHORT identity (label / remote repo basename / mount dir), and
+  // ONLY present when it actually adds information — i.e. it differs from the
+  // alias. A descriptive alias (already == the repo name) carries no suffix, so we
+  // never tack a redundant full git URL onto an already-clear name.
+  source?: string;
+}
+
+/**
+ * A short, human disambiguator for the store behind an alias: the user-facing
+ * label if set, else the git remote reduced to its repo basename
+ * (`…/wespy-team-cocos-knowledge-base.git` → `wespy-team-cocos-knowledge-base`),
+ * else the on-disk mount dir. Returns undefined when there is nothing to show OR
+ * when the result merely repeats the alias (no new information).
+ */
+function shortTeamStoreSource(
+  alias: string,
+  store: { display_name?: string; remote?: string; mount_name?: string },
+): string | undefined {
+  const repoBasename = store.remote
+    ? store.remote.replace(/\.git$/i, "").split(/[/:]/).filter(Boolean).pop()
+    : undefined;
+  const raw = store.display_name ?? repoBasename ?? store.mount_name;
+  return raw && raw !== alias ? raw : undefined;
 }
 
 // W2 dual-slot (TASK-002): the team-slot candidate lister — EVERY mounted
@@ -693,11 +719,15 @@ export function teamStoreCandidates(
   const declared = new Set((project?.required_stores ?? []).map((r) => r.id));
   const candidates = global.stores
     .filter((s) => s.personal !== true)
-    .map((s) => ({
-      alias: s.alias,
-      ...(s.remote === undefined ? {} : { remote: s.remote }),
-      bound: declared.has(s.alias) || declared.has(s.store_uuid),
-    }));
+    .map((s) => {
+      const source = shortTeamStoreSource(s.alias, s);
+      return {
+        alias: s.alias,
+        ...(s.remote === undefined ? {} : { remote: s.remote }),
+        bound: declared.has(s.alias) || declared.has(s.store_uuid),
+        ...(source === undefined ? {} : { source }),
+      };
+    });
   return candidates.sort((a, b) => Number(b.bound) - Number(a.bound));
 }
 
