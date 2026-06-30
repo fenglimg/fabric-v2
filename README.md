@@ -4,195 +4,193 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 
+**English** | [简体中文](./README.zh-CN.md)
+
 > **New here?** Start with [`docs/USER-QUICKSTART.md`](./docs/USER-QUICKSTART.md) (5 min) — mental model, the 4-step flow, and first-30-min troubleshooting.
 
 > Fabric — cross-client knowledge sustainment for AI coding agents.
 
-AI coding agents work without persistent project context. Each session re-learns
-the codebase from scratch and re-argues the same architecture decisions. The
-things you actually want them to remember — why we picked Postgres over Mongo,
-the auth bug that bit us last quarter, the deploy step that breaks in CI — live
-scattered across Slack threads, PR comments, and `AGENTS.md` forks that drift
-between `CLAUDE.md` and Codex configs. Fabric is one
-MCP-first knowledge layer every supported client reads and writes through, with
-a hook-driven reminder layer so the knowledge actually fires when it matters.
+## From AGENTS.md to a knowledge loop
+
+AI coding agents are strong, but they don't *remember*. Every new session
+re-learns the codebase from scratch and re-argues the same decisions. The things
+you actually want them to keep — why we picked Postgres over Mongo, the auth bug
+that bit us last quarter, the deploy step that breaks in CI — end up scattered
+across Slack threads, PR comments, and `AGENTS.md` files that drift between
+`CLAUDE.md` and Codex configs.
+
+`AGENTS.md` is a great starting point: it tells an agent *what to read*. But it
+doesn't solve *how knowledge is captured, reviewed, governed, and reused* over
+time. A rule file is static, drifts across clients, and has no lifecycle — is a
+note a one-off, or a proven rule? Is it stale? Should it be promoted, demoted,
+or archived?
+
+Fabric is the layer that closes that loop. It is **one MCP-first knowledge layer
+every supported client reads and writes through**, plus a hook-driven reminder
+layer so the knowledge actually fires when it matters — without polluting agent
+context.
 
 ```text
-                ┌─────────────────────────────┐
-                │  fabric-knowledge-server    │
-                │  (MCP, 4 tools, stdio only) │
-                └──────────────┬──────────────┘
-                               │
-        ┌──────────────────────┴──────────────────────┐
-        ▼                                             ▼
-  Claude Code                                     Codex CLI
-        │                                             │
-        └──────────────────────┬──────────────────────┘
-                               ▼
-                  ┌────────────────────────┐
-                  │  ~/.fabric/stores/     │
-                  │  ├── <store>/knowledge │
-                  │  │   ├── decisions/    │
-                  │  │   ├── pitfalls/     │
-                  │  │   ├── guidelines/   │
-                  │  │   ├── models/       │
-                  │  │   ├── processes/    │
-                  │  │   └── pending/      │
-                  │  └── events/metrics    │
-                  │  <repo>/.fabric anchors│
-                  │  policy + config only  │
-                  └────────────────────────┘
+                ┌───────────────────────────────┐
+                │   fabric-knowledge-server     │
+                │   (MCP · 5 tools · stdio)     │
+                └───────────────┬───────────────┘
+        ┌───────────────────────┴───────────────────────┐
+        ▼                                                ▼
+   Claude Code                                       Codex CLI
+        │     CLI  ·  Hooks  ·  Skills  ·  MCP           │
+        └───────────────────────┬───────────────────────┘
+                                 ▼
+              ┌──────────────────────────────────────┐
+              │  ~/.fabric/stores/<store>/            │
+              │    knowledge/{decisions, pitfalls,    │
+              │      guidelines, models, processes}   │
+              │    + pending/   + events / metrics    │
+              │  mounted globally, bound per repo     │
+              │  <repo>/.fabric = policy + config     │
+              └──────────────────────────────────────┘
 ```
 
-## Why Fabric
+## What you borrow, what you skip
 
-AI agents forget. Static rule files (`AGENTS.md`,
-`CLAUDE.md`) stop the bleeding for one client but drift across clients within a
-week. Generic doc engines index everything and surface nothing. Fabric is
-narrowly scoped to the one job that matters: keeping a small, typed,
-maturity-graded knowledge base alive across sessions and across clients,
-without polluting agent context.
+Fabric shares genes with the Tencent AI-team methodology writeup that helped name
+this problem space, and keeps the parts that compound:
 
-### 8 truly differentiated features
+- **Typed knowledge** — five types: `decisions`, `pitfalls`, `guidelines`,
+  `models`, `processes` (plural dirs, enforced by a schema enum).
+- **Maturity** — exactly three tiers: `draft` → `verified` → `proven`.
+- **Lifecycle** — entries are proposed, reviewed, promoted, demoted, archived.
+- **On-demand consumption** — the agent pulls an index first, reads a body only
+  when relevant.
 
-1. **Cross-client MCP-first surface.** One server (`fabric-knowledge-server`),
-   four tools (`fab_recall`, `fab_propose`, `fab_archive_scan`,
-   `fab_review`), two clients reading and writing
-   through the same protocol via stdio. Knowledge stops being a per-client artifact.
+And it deliberately drops the heavy shell around that core: no mandatory
+16-stage workflow, no IDE lock-in. The thesis: *knowledge sustainment, not
+knowledge capture, is the moat.*
 
-2. **Harness-agnostic by design.** No 16-stage workflow state machine, no
-   IDE-vendor lock-in. Fabric integrates via the surfaces every modern agent
-   harness already exposes — MCP tools, Stop hooks, SessionStart hooks,
-   PreToolUse hooks, Skill templates — so it works under Claude Code
-   and Codex CLI without per-harness adapters.
+## One substrate, four surfaces
 
-3. **Single-step lean recall.** `fab_recall(paths)` returns candidate
-   DESCRIPTIONS plus native READ PATHS in one call — no body delivery over MCP,
-   no multi-step fetch round-trip. The agent reads a body on demand via a
-   native Read of the returned file path, so recall stays cheap and context
-   only grows with what the agent actually opens.
+Fabric is one **knowledge substrate** (where knowledge lives + who/when it
+surfaces) exposed through **four surfaces**: CLI (for humans/scripts), MCP (for
+the agent at runtime), Hooks (to remind at the right moment), and Skills (to let
+the AI make judgment calls).
 
-4. **Async-review primitive.** `fab_propose` writes to `pending/`;
-   nothing reaches canonical knowledge without `fab_review`. Promotion,
-   rejection, deferral, and modification are all auditable actions, not
-   side-effects of session end. Knowledge proposals can sit overnight without
-   blocking the session that produced them.
+### Substrate: mountable stores + a 3-axis scope
 
-5. **Path-decoupled stable_id + layer-flip audit.** Entries have stable
-   identifiers independent of file path, so renames and moves don't break
-   citations. `fab_review.modify` detects narrow-team-to-personal layer flips
-   and auto-degrades scope to broad (personal knowledge crosses projects,
-   paths don't generalize), emitting `knowledge_scope_degraded` to the event
-   ledger.
+The biggest evolution from early versions. Knowledge no longer lives in a fixed
+`.fabric/` + `~/.fabric/` dual root — it lives in **stores**:
 
-6. **Narrow vs broad scope with `relevance_paths` filtering.** Frontmatter
-   `relevance_scope: narrow|broad` plus `relevance_paths: string[]` lets each
-   entry declare where it applies. `fab_recall` returns broad entries
-   unconditionally and narrow entries whose globs match the current path.
-   Three lint checks (`narrow_no_paths` #23, `relevance_paths_dangling` #24,
-   `relevance_paths_drift` #25) keep the bindings honest as the code moves.
+- A store carries an intrinsic, immutable UUID in its own git tree, so its
+  identity survives remote/alias changes. Stores are **mounted** into
+  `~/.fabric/fabric-global.json` and **bound per repo** via `fabric store bind`.
+  Not bound → not read.
+- Because a store can carry a git remote (`fabric store create/bind --remote`)
+  and `fabric sync` rebases + pushes it, **a team store is shared across repos
+  out of the box** — the original "team-knowledge.git" idea, already shipped.
+- A repo's local `.fabric/knowledge/` is no longer a runtime source; it is only
+  one-time import input. The mounted store is the source of truth.
 
-7. **Cross-client hook reminder layer.** A single `fabric-hint.cjs` Stop hook
-   ships with parity configs for Claude Code and Codex CLI. It emits
-   structured JSON with three signals — `archive` (24h since last
-   `knowledge_proposed`), `review` (pending queue depth), `underseed`
-   (`nodes<10 AND time_since_init>=24h`) — and a `recommended_skill` field so
-   the agent knows which Skill to run next without polluting the user's
-   transcript.
+Whether an entry surfaces to the agent is decided by **three orthogonal axes**:
 
-8. **Doctor as unified lifecycle engine.** `fabric doctor` runs 48 lint checks
-   in one pass: orphan demotion (now driven by `last_consumed_at` derived
-   from `knowledge_consumed` events, not last-referenced heuristics), stale
-   archive, overdue pending with `--fix-knowledge` auto-archive, stable-id
-   duplicates, layer-mismatch corruption, index drift, relevance-aware lints
-   #23-#25, underseed lint #22. One command, one report, one place to fix
-   knowledge health.
-
-### Filesystem-edit fallback
-
-Every Fabric mutation has a plain-text path. `pending/` and the canonical
-`knowledge/<type>/` trees are markdown with frontmatter. Reviewing means
-editing files. Archiving means `git mv` into `.archive/`. The MCP tools and
-Skills are conveniences; nothing is locked inside an opaque database. If the
-server is offline, you can still curate the knowledge base with `$EDITOR`.
-
-### What Fabric deliberately is NOT
-
-1. **Not a 5-layer storage taxonomy.** The Tencent-article-style 5-layer model
-   (system / project / module / file / function) was rejected as non-moat.
-   Fabric stays two-layer — team (`<repo>/.fabric/`) and personal
-   (`~/.fabric/`) — because the layer-mismatch corruption surface that adds
-   real value lives at the team/personal boundary, not at depth.
-
-2. **Not an independent team-knowledge.git.** Sharing knowledge across
-   repositories via a separate Git remote is a v2.1 concern. Today, team
-   knowledge ships in-repo with the code it documents, reviewed via the same
-   PR flow you already trust.
-
-3. **Not a 16-stage workflow injection.** Fabric is harness-agnostic. The
-   article's per-workflow-phase injection model assumes you own the agent
-   harness. Fabric instead binds to events every harness already emits
-   (`SessionStart`, `Stop`, `PreToolUse`) and lets the harness keep its own
-   workflow model.
-
-4. **Not remote control / cross-device handoff.** Knowledge sync across
-   machines is an IDE infrastructure problem (settings sync, cloud profiles).
-   Fabric stays a local-first toolchain and lets the IDE vendor handle the
-   transport.
-
-### MCP vs CLI — adapters, not redundancy
-
-`planContext()` is the engine. It computes the candidate set, applies the
-`relevance_paths` filter, and builds the candidate description index. Two
-adapters expose it to different callers:
-
-- **MCP** (`fab_recall` on `fabric-knowledge-server`) — for the agent.
-  Pull-mode call during a session: mid-session topic switches, post-compaction
-  re-grounding, cross-file reasoning that the path-aware hook can't predict.
-  Returns candidate descriptions + native read paths; bodies are read on
-  demand via a native Read.
-- **CLI** (`fabric plan-context-hint --paths <p> | --all`) — for hook
-  scripts. Hooks run in client subprocesses without `node_modules`, can't
-  speak MCP, and need a stable JSON contract on stdout. The CLI subcommand
-  imports `planContext()` directly and emits versioned JSON
-  (`{version:1, revision_hash, target_paths, narrow:[...], broad_count}`).
-
-Both call the same function. Neither is a fallback for the other.
-
-### Position vs the Tencent AI-team article
-
-Fabric shares genes with the methodology writeup from the Tencent AI team that
-helped name this problem space: five typed knowledge entries, three maturity
-tiers (`draft` / `verified` / `proven`), lint-driven decay discipline, and the
-core thesis that *knowledge sustainment, not knowledge capture, is the moat*.
-
-Where Fabric diverges:
-
-| Axis | Tencent article | Fabric |
+| Axis | Values | Decides |
 |---|---|---|
-| Harness coupling | 16-stage workflow injection | Harness-agnostic via hooks + MCP |
-| Storage depth | 5-layer (system / project / module / file / function) | 2-layer (team + personal) |
-| Surface | Workflow phases inject context | MCP-first, hook reminders, Skill writes |
-| Team sharing | Implicit per-environment | In-repo today; team-knowledge.git in v2.1 |
-| Path binding | Implicit via layer | Explicit `relevance_paths` + 3 lints |
+| `semantic_scope` (audience) | `team` / `project:<id>` / `personal` | who sees it (personal stays in a personal store — a schema-enforced privacy line) |
+| `relevance_scope` (timing) | `broad` / `narrow` | always-on vs surfaced only when you edit a matching path (derived from `relevance_paths`) |
+| `store` (physical) | a mounted store | whether it is read at all |
 
-Genes are shared. The architecture is original to this project.
+When something doesn't show up, `fabric audit why-not-surfaced <id>` diagnoses
+which axis blocked it.
 
-## Three surfaces
+### CLI — deterministic, no LLM in the loop
 
-Fabric splits cleanly across three entry points; pick by who's in the loop:
+```bash
+fabric install                 # scan project, install hooks/skills/client config
+fabric store bind <id>         # declare which knowledge store this repo uses
+fabric store switch-write <a>  # set the default write target (per scope)
+fabric sync                    # git sync mounted stores (pull --rebase + push)
+fabric doctor [--fix]          # health check (+ deterministic repair)
+fabric audit cite|conflicts|retired|why-not-surfaced|metrics
+fabric info [--global|--recall]  # identity / project / recall-engine status
+fabric inspect                 # show exactly what SessionStart injected
+fabric uninstall               # symmetric removal (mounted stores untouched)
+```
 
-- **CLI** — terminal, no AI in loop: `fabric install`, `fabric doctor`,
-  `fabric store`, `fabric sync`, `fabric info`, `fabric metrics`,
-  `fabric plan-context-hint`.
-- **Skill** — AI is in the conversation and needs to judge content:
-  `/fabric-archive`, `/fabric-review`, `/fabric-import`.
-- **MCP** — primitives the above use internally: `fab_recall`,
-  `fab_propose`, `fab_archive_scan`, `fab_pending`, `fab_review`.
+`store` / `sync` are new with the multi-store architecture; the old `serve` was
+quarantined to an experimental package; `whoami` / `status` / `scope-explain`
+folded into `info`; the audit flags split out of `doctor` into `audit`.
 
-→ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and
-[`docs/RUNTIME-CONTRACTS.md`](./docs/RUNTIME-CONTRACTS.md) for the current
-surface boundary and code-backed contract entry points.
+### MCP — the agent's runtime protocol (5 tools)
+
+```text
+fab_recall         # agent-direct: recall relevant knowledge before editing
+fab_propose        # propose a pending entry
+fab_archive_scan   # scan session history for archive-worthy candidates
+fab_pending        # read-only browse / search of pending + canonical
+fab_review         # write: approve / reject / modify / defer
+```
+
+**Lean recall.** `fab_recall(paths)` returns candidate *descriptions + native
+read paths* in one call — it does not ship bodies over MCP. The agent reads a
+body on demand from the path. Eager bodies are a permanent per-recall context
+tax; a needed body is one cheap `Read` away. This is the same shape as Claude
+Code's own Memory (`MEMORY.md` index + read-on-demand files) — the code even
+calls the return a "Memory-style shape".
+
+**Hybrid retrieval.** Ranking fuses two signals: BM25 lexical (with CJK
+tokenization) plus an optional dense-vector semantic pass (cosine over a small
+CPU embedding model, Chinese default `fast-bge-small-zh`). Vectors are **on by
+default but degrade gracefully** — `fastembed` is an *optional* dependency; if
+it can't build, is disabled, or throws, recall falls back to pure
+BM25 + recency + locality + salience with no behavior change.
+
+### Hooks — remind at the right moment (Claude Code + Codex CLI)
+
+- `knowledge-hint-broad.cjs` — SessionStart: list broad knowledge + scope census.
+- `knowledge-pretooluse.cjs` — PreToolUse (Edit/Write/MultiEdit): narrow,
+  path-relevant hints + edit-count side ledger.
+- `cite-policy-evict.cjs` — PreToolUse: soft nudge if you edit without a recall.
+- `post-tooluse-mutation.cjs` — PostToolUse: record `file_mutated` and
+  `knowledge_body_read` (closing the surfaced → cited → edited funnel).
+- `fabric-hint.cjs` — Stop: nudge archive / review / cold-start backfill.
+- `session-end-marker.cjs` — SessionEnd: a session-end breadcrumb.
+
+Hooks only remind and keep books — they never block, and the judgment is left to
+the AI that just lived through the context.
+
+### Skills — let the AI make judgment calls (4)
+
+- `fabric-archive` — extract worth-keeping knowledge from sessions into
+  `pending` via `fab_propose`. Its *source mode* cold-starts an old project by
+  mining `git log` + docs (absorbed the former `fabric-import`).
+- `fabric-review` — review pending/canonical knowledge via `fab_review`
+  (approve/reject/modify/defer), plus `retire` (deprecate stale/orphaned entries,
+  "demote & rescue before delete") and `relate` (add `related` edges on request).
+- `fabric-store` / `fabric-sync` — thin routers from natural-language intent to
+  the `fabric store` / `fabric sync` CLI; the CLI does the work and guards the
+  rails.
+
+Knowledge files stay plain Markdown with frontmatter (`semantic_scope`,
+`relevance`, `maturity`) under each store — git-managed, diffable, never locked
+in an opaque database.
+
+## Design principles
+
+These few principles explain most of "why Fabric doesn't do X":
+
+- **store-only** — knowledge lives only in mounted stores; no project-local
+  runtime fallback, so there is one source of truth.
+- **body-on-demand** — recall returns descriptions + paths; bodies are read on
+  demand (lean recall).
+- **never-block** — every Fabric action is advisory; nudges, not gates.
+- **minimal-install** — no mandatory heavy infra (no vector DB, no SQLite, no
+  graph DB; vector similarity is in-process cosine + an LRU cache). The only
+  embedder (`fastembed`) is an *optional* dependency with a full text fallback.
+- **dual-sink injection** — knowledge flows through SessionStart + PreToolUse,
+  with separate channels for the AI and for the human.
+- **clean-slate** — no legacy carried forward (the experimental HTTP server is
+  quarantined to its own package).
+- **honesty iron law** — under-report rather than over-report; no auto edge
+  building, no auto maturity promotion, no usage-based ranking.
+- **agent-native** — built for agents, not a human web UI.
 
 ## Quick Start
 
@@ -201,129 +199,122 @@ surface boundary and code-backed contract entry points.
 pnpm dlx @fenglimg/fabric-cli install
 ```
 
-`install` prepares the project for Fabric: it writes the managed bootstrap,
-configures client MCP stdio entries, installs hook and Skill templates, and
-guides store binding. Knowledge entries live in mounted stores under
-`~/.fabric/stores/`; new entries are proposed through Fabric Skills and reviewed
-before promotion.
-
 ```bash
-fabric install                    # install hooks + Skills + bootstrap + MCP client config
-fabric doctor                     # run 48 lints, report only (--fix applies auto-fixable)
-fabric metrics                    # text dashboard from .fabric/metrics.jsonl (rc.37 NEW-34)
-fabric uninstall                  # remove Fabric-managed artifacts (mounted stores are never touched)
+npm install -g @fenglimg/fabric-cli        # stable
+npm install -g @fenglimg/fabric-cli@next   # preview
+
+fabric install                 # hooks + Skills + bootstrap + MCP client config
+fabric store bind <id>         # bind the knowledge store this repo uses
+fabric doctor                  # health check (--fix applies auto-fixable)
+fabric uninstall               # remove managed artifacts (stores untouched)
 ```
 
-A healthy install reports zero fixable findings from `fabric doctor`. The MCP
-server runs over **stdio transport only** — `fabric install` writes each
-client's MCP config so the client spawns `node packages/server/dist/index.js`
-on session start; there is no separate `fabric serve` process to run. The
-v1.8-era HTTP server was quarantined to `packages/server-http-experimental/`
-in v2.0.0-rc.37.
+The MCP server runs over **stdio only** — `fabric install` writes each client's
+MCP config so the client spawns the server on session start; there is no
+separate `fabric serve` to run. **Restart the client after `fabric install`**:
+running sessions won't pick up the new MCP config until restart; new sessions
+autoload it.
 
-**Restart the client after `fabric install`** — already-running Claude Code /
-Codex CLI sessions won't pick up the new MCP config until restart;
-new sessions autoload it.
-
-Supported clients (v2.0):
+Supported clients:
 
 - **Claude Code** — managed bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
-- **Codex CLI** — managed `AGENTS.md` bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
+- **Codex CLI** — managed `AGENTS.md` bootstrap + the same hooks + Skill templates + MCP stdio
 
-## How It Works
+## What Fabric deliberately is NOT
 
-Fabric exposes four MCP tools and eight Skill templates: the `fabric` router plus
-`fabric-archive`, `fabric-review`, `fabric-import`, `fabric-store`,
-`fabric-sync`, `fabric-connect`, and `fabric-audit`.
+- **Not a 5-layer storage taxonomy.** The system/project/module/file/function
+  depth model was rejected. Fabric scopes knowledge by three orthogonal axes
+  (audience / timing / store), not by nesting depth.
+- **Not a 16-stage workflow injection.** Fabric is harness-agnostic. It binds to
+  events every harness already emits (`SessionStart`, `Stop`, `PreToolUse`,
+  `PostToolUse`) and lets the harness keep its own workflow model.
+- **Not a permissioned team platform — yet.** Git-backed cross-repo store
+  sharing already works; a role model (admin / contributor / reader) and deeper
+  org-level federation are deliberately left for later.
+- **Not a heavy retrieval stack.** No vector database, no always-on embedding
+  infra; the vector pass is optional and degrades to lexical search.
 
-**MCP tools** (called by clients, served by `fabric-knowledge-server`):
+## Position vs the Tencent AI-team article
 
-- `fab_recall` — the single-step recall path. Given target paths and optional
-  intent, returns candidate DESCRIPTIONS filtered by `relevance_paths` plus a
-  native READ PATH for each entry. It does not deliver bodies over MCP; the
-  agent reads a body on demand via a native Read of the returned file path.
-- `fab_propose` — propose new pending entries from the current
-  session. Entries land under the active write store's
-  `knowledge/pending/<type>/` tree. Nothing reaches canonical knowledge without
-  review.
-- `fab_archive_scan` — scan recent work/session history for archive-worthy
-  candidates before a Skill decides what to persist.
-- `fab_pending` — read-only list / search of pending and canonical entries
-  (browse the backlog, dedupe against canonical). Honest `readOnlyHint:true`.
-- `fab_review` — write-only approve, reject, modify, modify-content,
-  modify-layer, defer of pending and canonical entries. `modify` works on both
-  layers and detects narrow-team to personal flips, auto-degrading scope to broad.
+Genes shared; architecture original.
 
-**Skills** (LLM-side prose templates installed into each client):
+| Axis | Tencent article | Fabric |
+|---|---|---|
+| Harness coupling | 16-stage workflow injection | Harness-agnostic via hooks + MCP |
+| Storage | 5-layer depth taxonomy | Mountable multi-store + 3-axis scope |
+| Surface | Workflow phases inject context | MCP-first, hook reminders, Skill writes |
+| Retrieval | — | BM25 + optional vector (default-on, degrade-safe) |
+| Team sharing | Implicit per-environment | Git-backed shared stores today; role model later |
 
-- `fabric-archive` — triggered by Stop-hook signal. Phase 0.5 viability gate
-  checks for archive-worthy signals before proposing. Phase 1.5 scope
-  decision (narrow vs broad). Generates `relevance_paths` from
-  `tool_use ∈ {Edit, Write, MultiEdit}` paths via public-prefix
-  generalization (depth ≤ 2, minGroupSize = 2, glob blacklist).
-- `fabric-review` — curates the pending queue. Mode is inferred from context;
-  only genuine choices go through `AskUserQuestion`.
-- `fabric-import` — cold-start enrichment. Mines `git log` and existing docs
-  into proposed entries (default `relevance_scope: broad`, narrowing deferred
-  to review). Resumable via `.fabric/.import-state.json`.
+## How it works (lifecycle)
 
-**Hooks** install per client but point at shared Node scripts copied into each
-client's hook directory. `fabric-hint.cjs` owns Stop-time backlog nudges;
-SessionStart, PreToolUse, PostToolUse, and SessionEnd use their own shared
-scripts so both clients see the same lifecycle.
+```text
+fabric install + store bind
+  ↓
+AI develops normally
+  ↓
+SessionStart / PreToolUse hooks surface knowledge
+  ↓
+agent calls fab_recall → descriptions + read paths; Reads a body on demand
+  ↓
+Stop hook detects archive / review signals
+  ↓
+fabric-archive → fab_propose writes to the active store's pending/
+  ↓
+fabric-review → approve assigns a stable id, promotes to canonical
+  ↓
+fabric doctor / fabric audit keep the base healthy
+  ↓
+next task reuses it automatically
+```
 
-**Lifecycle** — `fabric doctor` runs 48 checks in one pass: orphan demotion
-driven by `last_consumed_at` (from `knowledge_consumed` events), stale archive,
-overdue pending (auto-archive with `--fix-knowledge`), stable-id duplicates,
-layer-mismatch corruption, index drift, narrow/broad bindings (#23-#25),
-underseed (#22). Mutations emit events to `.fabric/events.jsonl`; default mode
-is report-only.
+`fabric doctor` runs the knowledge-health lints in one pass (orphan demotion,
+stale archive, overdue pending, stable-id duplicates, layer/scope mismatch,
+index drift, relevance bindings, underseed). Maturity promotion and demotion are
+**detection-only** — they surface candidates; the actual change goes through
+`fabric-review` (human in the loop). Default mode is report-only.
 
 ## Documentation
 
-- [Quickstart](./docs/USER-QUICKSTART.md) — 5 minute user onboarding.
-- [Architecture](./docs/ARCHITECTURE.md) — current package / surface / install
-  pipeline map.
-- [Runtime Contracts](./docs/RUNTIME-CONTRACTS.md) — CLI, MCP, schema and
-  config contract entry points.
-- [Testing](./docs/TESTING.md) — test strategy, drift gates and test seed role.
+- [Quickstart](./docs/USER-QUICKSTART.md) — 5-minute user onboarding.
+- [Architecture](./docs/ARCHITECTURE.md) — package / surface / install pipeline map.
+- [Runtime Contracts](./docs/RUNTIME-CONTRACTS.md) — CLI, MCP, schema, config entry points.
+- [Testing](./docs/TESTING.md) — test strategy, drift gates, test seed role.
+- [Upgrade](./docs/UPGRADE.md) — supported upgrade notes.
 - [Changelog](./CHANGELOG.md) — release history.
 
-## Project Layout
+## Project layout
 
-This is a pnpm monorepo:
+A pnpm monorepo:
 
 - `packages/cli` — the `fabric` CLI (`install`, `store`, `sync`, `info`,
-  `doctor`, `uninstall`, `config`, `metrics`).
-- `packages/server` — the MCP server `fabric-knowledge-server` (4 tools, stdio)
-  plus the lifecycle service (review, doctor, lint, event ledger, metrics).
+  `doctor`, `audit`, `config`, `inspect`, `uninstall`).
+- `packages/server` — the MCP server `fabric-knowledge-server` (5 tools, stdio)
+  plus the lifecycle service (recall, review, doctor, lint, event ledger, metrics).
 - `packages/shared` — schemas (event ledger, api contracts, knowledge
-  frontmatter) shared between CLI and server.
-- `packages/server-http-experimental` — the v1.8-era HTTP/REST/SSE server +
-  Dashboard package, quarantined v2.0.0-rc.37. Not built / not tested; restoration
-  recipe in its README.
-- `packages/cli/templates/skills/` — the Fabric Skill templates
-  (`fabric-archive`, `fabric-review`, `fabric-import`) shipped to clients on
-  `fabric install`.
-- `packages/cli/templates/hooks/` — `fabric-hint.cjs` + `knowledge-hint-broad.cjs`
-  + `knowledge-hint-narrow.cjs` + `cite-policy-evict.cjs` plus per-client hook
-  configs (`claude-code.json`, `codex-hooks.json`).
+  frontmatter, store + scope) shared between CLI and server.
+- `packages/server-http-experimental` — the v1.8-era HTTP/REST/SSE + Dashboard
+  package, quarantined in v2.0.0-rc.37. Not built / not tested.
+- `packages/cli/templates/skills/` — the Fabric Skill templates (`fabric-archive`,
+  `fabric-review`, `fabric-store`, `fabric-sync`) shipped on `fabric install`.
+- `packages/cli/templates/hooks/` — the shared hook scripts + per-client configs
+  (`claude-code.json`, `codex-hooks.json`).
 
 Contributors: clone, `pnpm install`, `pnpm -r build`, `pnpm -r test`.
 
 ## Status
 
-**v2.2.0-rc.5** — active development line. See [docs/UPGRADE.md](./docs/UPGRADE.md)
-for supported upgrade notes and [CHANGELOG.md](./CHANGELOG.md) for release history.
+**v2.3.0-rc.3** — active development line. See [docs/UPGRADE.md](./docs/UPGRADE.md)
+for upgrade notes and [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 Repository: https://github.com/fenglimg/fabric
 
 ## Acknowledgments
 
-The early Fabric design borrowed the cross-client `AGENTS.md` framing from
-Andrej Karpathy's gist on agent rule files. The v2.0 knowledge-sustainment
-direction is informed by methodology writeups from the Anthropic, Letta, and
-Tencent AI Team communities — credit to those teams for naming the lifecycle
-problem clearly. The specific shape of Fabric (4 MCP tools, 5 typed knowledge
-entries, 3-tier maturity, dual-root layout, `relevance_paths` filtering,
-hook reminder layer, lint-driven decay) is original to this project.
+The early Fabric design borrowed the cross-client `AGENTS.md` framing for agent
+rule files. The knowledge-sustainment direction is informed by methodology
+writeups from the Anthropic, Letta, and Tencent AI Team communities — credit to
+those teams for naming the lifecycle problem clearly. The specific shape of
+Fabric (5 MCP tools, 5 typed knowledge entries, 3-tier maturity, mountable
+multi-store + 3-axis scope, lean recall, hybrid retrieval, hook reminder layer,
+lint-driven decay) is original to this project.

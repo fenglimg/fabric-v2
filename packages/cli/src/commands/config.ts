@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cancel, intro, isCancel, log, outro, select, text } from "@clack/prompts";
+import { cancel, isCancel, log, select, text } from "@clack/prompts";
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import {
   getPanelFields,
@@ -13,12 +13,12 @@ import {
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 
+import { paint } from "../colors.js";
+import { headerRule } from "../tui/structure.js";
 import { resolveClients } from "../config/resolver.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
-import { promptReceipt } from "../install/theme-clack.js";
-import { headerRule } from "../tui/structure.js";
 import {
   loadGlobalConfig,
   resolveGlobalRoot,
@@ -160,12 +160,13 @@ function ensureUninitGate(workspaceRoot: string): string | null {
 }
 
 function validateSlotArg(slot: string | undefined): string | null {
+  const slots = ONBOARD_SLOT_NAMES.join(", ");
   if (slot === undefined || slot.length === 0) {
-    console.error(`Missing required <slot> argument. Valid slots: ${ONBOARD_SLOT_NAMES.join(", ")}.`);
+    console.error(`${paint.error("✗")} ${t("cli.config.slot.errors.missing", { slots })}`);
     return null;
   }
   if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) {
-    console.error(`Unknown slot "${slot}". Valid slots: ${ONBOARD_SLOT_NAMES.join(", ")}.`);
+    console.error(`${paint.error("✗")} ${t("cli.config.slot.errors.unknown", { slot, slots })}`);
     return null;
   }
   return slot;
@@ -204,16 +205,16 @@ const dismissSlotCmd = defineCommand({
     try {
       const { config, optedOut } = await readOnboardSlotsList(configPath);
       if (optedOut.includes(slot)) {
-        console.log(`Slot "${slot}" already opted out; no-op.`);
+        console.log(paint.muted(t("cli.config.slot.dismiss.already", { slot })));
         return;
       }
       const next = [...optedOut, slot];
       const merged = { ...config, onboard_slots_opted_out: next };
       await atomicWriteJson(configPath, merged);
-      console.log(`Dismissed onboard slot "${slot}". Run \`fabric config onboard-reset ${slot}\` to re-open.`);
+      console.log(`${paint.success("✓")} ${t("cli.config.slot.dismiss.done", { slot })}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`dismiss-slot failed: ${message}`);
+      console.error(`${paint.error("✗")} ${t("cli.config.slot.dismiss.failed", { message })}`);
       process.exitCode = 1;
     }
   },
@@ -252,16 +253,16 @@ const onboardResetCmd = defineCommand({
     try {
       const { config, optedOut } = await readOnboardSlotsList(configPath);
       if (!optedOut.includes(slot)) {
-        console.log(`Slot "${slot}" not opted out; no-op.`);
+        console.log(paint.muted(t("cli.config.slot.reset.not-opted", { slot })));
         return;
       }
       const next = optedOut.filter((s) => s !== slot);
       const merged = { ...config, onboard_slots_opted_out: next };
       await atomicWriteJson(configPath, merged);
-      console.log(`Reset onboard slot "${slot}"; it will appear in \`fabric onboard-coverage\` as missing again.`);
+      console.log(`${paint.success("✓")} ${t("cli.config.slot.reset.done", { slot })}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`onboard-reset failed: ${message}`);
+      console.error(`${paint.error("✗")} ${t("cli.config.slot.reset.failed", { message })}`);
       process.exitCode = 1;
     }
   },
@@ -327,12 +328,26 @@ export const configCmd = defineCommand({
       return;
     }
 
-    intro(t("cli.config.intro"));
-
-    // Menu loop. Re-read the config each iteration so concurrent edits (e.g.
-    // a parallel terminal manually editing the JSON) don't get stomped.
-    let edited = false;
+    // Interactive stable panel (用户裁决 2026-06-29): clack's `select` is a one-shot
+    // prompt, so looping it re-printed the whole 16-item menu every pass and the
+    // transcript kept growing downward (`◇` collapsed lines + receipt stacking up —
+    // the "一直往上滚" weirdness the user flagged). Instead we CLEAR the screen each
+    // pass and re-render a FIXED panel in place: B-横线 title + a persistent "已改"
+    // line + the menu (values refreshed live). The per-edit ✓ receipt is dropped —
+    // it would only flash before the next clear; the durable confirmation is now the
+    // "已改" header line plus the menu's own `当前: <new value>`.
+    const editedKeys: string[] = [];
+    // Remember the last-touched field so the menu re-opens with the cursor on it
+    // (not bouncing back to the top) — you usually tweak the same few knobs in a row.
+    let lastFieldKey: string | undefined;
+    // An action error (write failure / uninit) is carried to the NEXT render so it
+    // survives the clear (it would otherwise vanish instantly); shown once, then cleared.
+    let pendingError: string | null = null;
     while (true) {
+      clearScreen();
+      writePanelHeader(editedKeys, pendingError);
+      pendingError = null;
+
       const current = await readPanelConfig(configPath);
       // grill-6fixes (D1): overlay the global language onto the in-memory panel
       // config so the language entry's menu label reflects the machine-wide
@@ -343,12 +358,6 @@ export const configCmd = defineCommand({
       }
       const fields = getPanelFields();
 
-      // flat-design-system Wave5 (TASK-005): a gutter-free key/value snapshot of
-      // the current config under a B-横线 (headerRule) title, printed each loop so
-      // the user sees live state before the clack select drives an edit. Pure
-      // output — NO `│` gutter; the clack control keeps its own native gutter.
-      writeConfigPanel(fields, current);
-
       const fieldChoice = await select<string>({
         message: t("cli.config.menu.field-select"),
         options: [
@@ -358,6 +367,7 @@ export const configCmd = defineCommand({
           })),
           { value: EXIT_CHOICE, label: t("cli.config.menu.exit") },
         ],
+        initialValue: lastFieldKey,
       });
 
       if (isCancel(fieldChoice)) {
@@ -366,16 +376,26 @@ export const configCmd = defineCommand({
       }
 
       if (fieldChoice === EXIT_CHOICE) {
-        outro(edited ? t("cli.config.outro") : t("cli.config.outro-no-changes"));
+        // Final frame: clear once more, re-print the title + a single flat closing
+        // line (saved / no-changes). No clack `outro` block — flat output only.
+        clearScreen();
+        writePanelHeader(editedKeys, null);
+        console.log(
+          editedKeys.length > 0
+            ? paint.success(t("cli.config.outro"))
+            : paint.muted(t("cli.config.outro-no-changes")),
+        );
         return;
       }
 
       const field = fields.find((f) => (f.key as string) === fieldChoice);
       if (!field) {
         // Defensive: select() should only emit values we provided.
-        log.warn(t("cli.config.errors.unknown-field"));
+        pendingError = t("cli.config.errors.unknown-field");
         continue;
       }
+      // Park the cursor here on the next menu pass (return-to-last-edited).
+      lastFieldKey = fieldChoice;
 
       const newValue = await promptFieldValue(field, current);
       if (newValue === CANCELLED) {
@@ -394,7 +414,7 @@ export const configCmd = defineCommand({
           const globalRoot = resolveGlobalRoot();
           const globalConfig = loadGlobalConfig(globalRoot);
           if (globalConfig === null) {
-            log.error(t("cli.config.errors.uninit-workspace.message"));
+            pendingError = t("cli.config.errors.uninit-workspace.message");
             continue;
           }
           saveGlobalConfig(
@@ -406,19 +426,13 @@ export const configCmd = defineCommand({
           const merged: PanelConfig = { ...refreshed, [field.key as string]: newValue };
           await atomicWriteJson(configPath, merged);
         }
-        edited = true;
-        log.success(
-          t("cli.config.write.success", {
-            key: field.key as string,
-            value: field.format_for_display(newValue),
-          }),
-        );
-        // flat-design-system Wave4 (TASK-004): a flat, gutter-free ✓ receipt after
-        // the select/text control closes — the clack control stays native (C-006).
-        promptReceipt("set", field.format_for_display(newValue));
+        // Record the edit for the persistent "已改" header line (de-duped, order-preserving).
+        if (!editedKeys.includes(field.key as string)) {
+          editedKeys.push(field.key as string);
+        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        log.error(t("cli.config.write.failure", { message }));
+        pendingError = t("cli.config.write.failure", { message });
       }
     }
   },
@@ -500,25 +514,6 @@ async function promptFieldValue(
   return finalResult.value as number;
 }
 
-// flat-design-system Wave5 (TASK-005): render the current config as a flat,
-// gutter-free key/value panel under a B-横线 (headerRule) title. Each row is a
-// plain two-space-indented `<key> (<label>): <value>` line — NO `│` gutter (the
-// clack select that follows keeps its own native gutter; this is pure output).
-function writeConfigPanel(fields: readonly PanelFieldMeta[], current: PanelConfig): void {
-  const lines: string[] = [headerRule(t("cli.config.panel.title"))];
-  for (const field of fields) {
-    const key = field.key as string;
-    const rawValue = current[key];
-    const display = field.format_for_display(rawValue);
-    const isDefault = rawValue === undefined || rawValue === null;
-    const valueLabel = isDefault
-      ? `${display} ${t("cli.config.value.default-marker")}`
-      : display;
-    lines.push(`  ${key} (${t(field.label_i18n_key)}): ${valueLabel}`);
-  }
-  console.log(lines.join("\n"));
-}
-
 function formatFieldMenuLabel(field: PanelFieldMeta, current: PanelConfig): string {
   const key = field.key as string;
   const rawValue = current[key];
@@ -528,7 +523,10 @@ function formatFieldMenuLabel(field: PanelFieldMeta, current: PanelConfig): stri
   const valueLabel = isDefault
     ? `${display} ${t("cli.config.value.default-marker")}`
     : display;
-  return `[${field.group}] ${key} (${labelText}) — ${t("cli.config.value.current", { value: valueLabel })}`;
+  // flat-design: drop the raw `[A_locale]`/`[B_hint_threshold]` group prefix —
+  // machine-name noise repeated down the left column. Fields are still ordered by
+  // group so same-category knobs cluster; the field label self-describes.
+  return `${key} (${labelText}) — ${t("cli.config.value.current", { value: valueLabel })}`;
 }
 
 async function readPanelConfig(configPath: string): Promise<PanelConfig> {
@@ -542,6 +540,35 @@ async function readPanelConfig(configPath: string): Promise<PanelConfig> {
 
 function isInteractiveConfig(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+}
+
+// Clear viewport + scrollback + home the cursor so the panel re-renders IN PLACE
+// each loop instead of the transcript growing downward. `\x1b[3J` drops the
+// scrollback so old menus can't be scrolled back to — the stable-panel feel the
+// user picked over the accumulating one-shot-prompt transcript.
+function clearScreen(): void {
+  process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+}
+
+// The fixed panel header re-printed every render: B-横线 title, an optional one-shot
+// error line (carried across the clear), and the persistent "已改" line listing the
+// keys touched this session (the durable save confirmation now that the per-edit
+// receipt is gone).
+function writePanelHeader(editedKeys: string[], pendingError: string | null): void {
+  console.log(headerRule(t("cli.config.intro")));
+  if (pendingError !== null) {
+    console.log(`${paint.error("✗")} ${pendingError}`);
+  }
+  if (editedKeys.length > 0) {
+    console.log(
+      paint.muted(
+        t("cli.config.panel.edited", {
+          count: String(editedKeys.length),
+          keys: editedKeys.join(", "),
+        }),
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

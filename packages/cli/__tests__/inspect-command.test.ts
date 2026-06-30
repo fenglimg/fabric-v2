@@ -115,6 +115,33 @@ describe("fabric inspect — shared renderer, byte-identical to hook injection",
     expect(out.length).toBeGreaterThan(plain.length);
   });
 
+  it("--explain overlay renders flat-design primitives (NO_COLOR structure)", async () => {
+    const prev = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    try {
+      const cwd = tmpProject();
+      const payload = cannedPayload();
+      const out = await runInspect({ render: "ai", explain: true, target: cwd, payload });
+      // headerRule section title + ASCII rule (NO_COLOR → `-`×40).
+      expect(out).toContain("explain · provenance (not injected)");
+      expect(out).toContain("-".repeat(40));
+      // ● section groups degrade to ASCII `*`.
+      expect(out).toContain("* always-active · body injected");
+      expect(out).toContain("* reference · read on demand");
+      expect(out).toContain("* census");
+      // Flat status glyphs: ✓ = body injected, ℹ = read on demand.
+      expect(out).toContain("✓ [guideline] KT-GLD-0001");
+      expect(out).toContain("ℹ [decision] KT-DEC-0001");
+      // must_read_if folds under its entry; census scope tally + total.
+      expect(out).toContain("must_read_if: designing a scope boundary");
+      expect(out).toContain("[team]2 [project]0 [personal]0");
+      expect(out).toContain("total 2");
+    } finally {
+      if (prev === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = prev;
+    }
+  });
+
   it("empty payload → empty render (no crash)", async () => {
     const cwd = tmpProject();
     const emptyPayload = {

@@ -426,8 +426,9 @@ describe("audit cite --layer (W3-D; was doctor --cite-coverage)", () => {
     }
 
     const blob = stdout.lines.join("\n");
-    // rc.20 section MUST still render.
-    expect(blob).toContain(t("doctor.section.cite-coverage"));
+    // rc.20 section MUST still render. flat-design: the section title is now a
+    // B-横线 headerRule with the trailing colon stripped ("Cite coverage:" → header).
+    expect(blob).toContain(t("doctor.section.cite-coverage").replace(/[:：]\s*$/u, ""));
     // Contract block MUST NOT render (zero counts + awaiting_marker).
     expect(blob).not.toContain(t("cite-coverage.contract.header"));
   });

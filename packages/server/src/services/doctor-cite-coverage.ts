@@ -267,6 +267,22 @@ export type CiteCoverageReport = {
     // edits). Additive — legacy first-line-`KB:` metrics are unchanged.
     recall_backed_edits?: number;
     recall_coverage_rate?: number | null;
+    // recall→edit correlation is strictly SESSION-SCOPED (an edit is recall-backed
+    // only when an in-SAME-session knowledge_context_planned overlaps its path —
+    // intentionally session-scoped to avoid cross-window 张冠李戴). When recalls
+    // happened in-window but NONE share a session with any edit, recall_coverage
+    // reads 0 not because recall discipline is poor but because the recall CALLER
+    // tagged its fab_recall with a non-client session_id. These counts let the
+    // surface self-diagnose that mismatch instead of showing a bare confusing 0%.
+    //   recalls_in_window         = # in-session knowledge_context_planned in window
+    //   recall_sessions           = distinct recall session_ids
+    //   recall_sessions_correlated = recall sessions that are ALSO an edit session
+    // Mismatch suspected ⇔ recalls_in_window>0 ∧ recall_sessions_correlated===0.
+    recall_diagnostics?: {
+      recalls_in_window: number;
+      recall_sessions: number;
+      recall_sessions_correlated: number;
+    };
     // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): exposed_and_mutated is a
     // WEAK auxiliary signal — strictly SEPARATE from cite_compliance_rate. It MUST
     // NOT be merged into compliance (the honesty 铁律): it estimates how many
@@ -1253,6 +1269,24 @@ export async function runDoctorCiteCoverage(
     }
   }
 
+  // recall→edit session-mismatch diagnostics: count in-window recalls, their
+  // distinct sessions, and how many of those sessions also produced an edit. When
+  // recalls happened but none share an edit session, recall_coverage's 0 is a
+  // session_id-mismatch artifact (recall caller passed a non-client session_id),
+  // not a recall-discipline gap — the surface uses this to self-diagnose.
+  const editSessionIds = new Set<string>();
+  for (const edit of editEvents) {
+    if (typeof edit.session_id === "string" && edit.session_id.length > 0) {
+      editSessionIds.add(edit.session_id);
+    }
+  }
+  let recallsInWindow = 0;
+  for (const list of plannedBySession.values()) recallsInWindow += list.length;
+  let recallSessionsCorrelated = 0;
+  for (const sid of plannedBySession.keys()) {
+    if (editSessionIds.has(sid)) recallSessionsCorrelated += 1;
+  }
+
   // v2.0.0-rc.38 UX-8 (C): cite-policy COMPLIANCE rate. Compliant = every valid
   // cite line: qualifying id-cites + ALL `KB: none [reason]` sentinels (the
   // policy permits the none sentinel as compliant). Non-compliant = turns where
@@ -1383,6 +1417,11 @@ export async function runDoctorCiteCoverage(
     uncorrelatable_edits: uncorrelatableEdits,
     recall_backed_edits: recallBackedEdits,
     recall_coverage_rate: recallCoverageRate,
+    recall_diagnostics: {
+      recalls_in_window: recallsInWindow,
+      recall_sessions: plannedBySession.size,
+      recall_sessions_correlated: recallSessionsCorrelated,
+    },
     exposed_and_mutated: {
       count: exposedAndMutated.count,
       ...(exposedAndMutated.ids.length > 0 ? { ids: exposedAndMutated.ids } : {}),

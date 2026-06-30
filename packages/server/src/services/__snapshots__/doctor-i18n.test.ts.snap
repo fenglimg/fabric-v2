@@ -7,7 +7,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "repo root 下已存在 Bootstrap ancho",
-    "name": "Bootstrap anchor",
+    "name": "Bootstrap 锚点",
     "status": "ok",
   },
   {
@@ -15,7 +15,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": ".fabric/AGENTS.md 不存在，已交由 boot",
-    "name": "Bootstrap snapshot drift",
+    "name": "Bootstrap 快照漂移",
     "status": "ok",
   },
   {
@@ -23,7 +23,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "Three-end managed blocks 与 exp",
-    "name": "Managed block drift",
+    "name": "Managed block 漂移",
     "status": "ok",
   },
   {
@@ -31,7 +31,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": ".fabric/forensic.json 对 vite 有",
-    "name": "Scan evidence",
+    "name": "扫描证据",
     "status": "ok",
   },
   {
@@ -39,7 +39,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": ".fabric/events.jsonl 已存在，可写，且可",
-    "name": "Event ledger",
+    "name": "事件账本",
     "status": "ok",
   },
   {
@@ -47,7 +47,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "events.jsonl 没有 partial traili",
-    "name": "Event ledger partial write",
+    "name": "事件账本半截写入",
     "status": "ok",
   },
   {
@@ -55,7 +55,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": ".fabric/events.jsonl 大小、新鲜度、me",
-    "name": "Events ledger 健康 (rc.37 Plan B 5 hard gate)",
+    "name": "事件账本健康",
     "status": "ok",
   },
   {
@@ -63,7 +63,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "events.jsonl 所有行都能解析为当前 schema",
-    "name": "Event ledger schema 兼容性",
+    "name": "事件账本 schema 兼容性",
     "status": "ok",
   },
   {
@@ -79,7 +79,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "所有 .claude/skills/<slug>/SKILL",
-    "name": "Skill token budget",
+    "name": "Skill token 预算",
     "status": "ok",
   },
   {
@@ -87,7 +87,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "所有 SKILL.md description 字段结构良好",
-    "name": "Skill description quality",
+    "name": "Skill description 质量",
     "status": "ok",
   },
   {
@@ -111,7 +111,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "canonical knowledge entries 中 ",
-    "name": "Knowledge draft backlog",
+    "name": "知识 draft 积压",
     "status": "ok",
   },
   {
@@ -119,7 +119,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "canonical knowledge entries 中 ",
-    "name": "Knowledge tags coverage",
+    "name": "知识 tags 覆盖率",
     "status": "ok",
   },
   {
@@ -127,7 +127,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "近 30 天内 knowledge_drift_detect",
-    "name": "Knowledge drift unconsumed",
+    "name": "知识漂移未消化",
     "status": "ok",
   },
   {
@@ -135,7 +135,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "read-set 内每个 store 的 counters.",
-    "name": "Store counter drift",
+    "name": "Store 计数器漂移",
     "status": "ok",
   },
   {
@@ -143,7 +143,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "~/.fabric/stores 下没有未登记的孤儿 sto",
-    "name": "Store orphan",
+    "name": "Store 孤儿",
     "status": "ok",
   },
   {
@@ -151,7 +151,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": "knowledge_underseeded",
     "kind": "info",
     "message_prefix_30_chars": "知识库仅有 0 个 canonical entries（< ",
-    "name": "Knowledge underseeded",
+    "name": "知识种子不足",
     "status": "ok",
   },
   {
@@ -159,7 +159,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": ".fabric/.cache/ 下没有超过 7 天的 ses",
-    "name": "Knowledge session-hints stale",
+    "name": "知识 session-hints 陈旧",
     "status": "ok",
   },
   {
@@ -167,7 +167,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "Hook sidecar cache 路径 .fabric/",
-    "name": "Hook cache writable",
+    "name": "Hook 缓存可写",
     "status": "ok",
   },
   {
@@ -175,7 +175,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "未发现 .fabric/.serve.lock。",
-    "name": "Serve lock",
+    "name": "Serve 锁",
     "status": "ok",
   },
   {
@@ -191,7 +191,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": "onboard_coverage_incomplete",
     "kind": "info",
     "message_prefix_30_chars": "尚未覆盖的 onboard slots：[tech-stac",
-    "name": "Onboard coverage",
+    "name": "Onboard 覆盖率",
     "status": "ok",
   },
   {
@@ -199,7 +199,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "项目未启用 Claude Code（无 .claude/ 目",
-    "name": "Claude Code hooks wired",
+    "name": "Claude Code hooks 注入",
     "status": "ok",
   },
   {
@@ -239,7 +239,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "read-set 内所有 store 条目 scope 元数",
-    "name": "Store scope lint",
+    "name": "Store scope 检查",
     "status": "ok",
   },
   {
@@ -247,7 +247,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "mounted store knowledge 中未发现已声",
-    "name": "Stable ID collision",
+    "name": "Stable ID 冲突",
     "status": "ok",
   },
   {
@@ -255,7 +255,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "所有 canonical knowledge files 都",
-    "name": "Knowledge layer mismatch",
+    "name": "知识 layer 不匹配",
     "status": "ok",
   },
   {
@@ -263,7 +263,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "所有 relevance_paths globs 都能在 w",
-    "name": "Knowledge relevance_paths dangling",
+    "name": "知识 relevance_paths 悬空",
     "status": "ok",
   },
   {
@@ -271,7 +271,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "已跳过(git history unavailable;无法",
-    "name": "Knowledge relevance_paths drift",
+    "name": "知识 relevance_paths 漂移",
     "status": "ok",
   },
   {
@@ -279,7 +279,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "每条 narrow scope canonical entr",
-    "name": "Knowledge narrow scope 缺路径",
+    "name": "知识 narrow scope 缺路径",
     "status": "ok",
   },
   {
@@ -287,7 +287,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "没有 store 的 broad scope 条目数达到漂移",
-    "name": "Knowledge broad 索引漂移",
+    "name": "知识 broad 索引漂移",
     "status": "ok",
   },
   {
@@ -295,7 +295,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "没有 canonical knowledge entries",
-    "name": "Knowledge orphan demote",
+    "name": "知识孤儿降级",
     "status": "ok",
   },
   {
@@ -303,7 +303,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "没有 draft knowledge entries 超过额",
-    "name": "Knowledge stale archive",
+    "name": "知识陈旧归档",
     "status": "ok",
   },
   {
@@ -311,7 +311,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "没有 verified knowledge entries ",
-    "name": "Knowledge promotion candidate",
+    "name": "知识晋升候选",
     "status": "ok",
   },
   {
@@ -319,7 +319,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "没有 broad-scope knowledge entri",
-    "name": "Knowledge broad review recheck",
+    "name": "知识 broad review 复查",
     "status": "ok",
   },
   {
@@ -327,7 +327,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "已绑写入 store 带有 project 坐标(proje",
-    "name": "Project-scope binding",
+    "name": "Project-scope 绑定",
     "status": "ok",
   },
   {
@@ -335,7 +335,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": null,
     "kind": null,
     "message_prefix_30_chars": "knowledge_proposed=0 ≥ knowled",
-    "name": "Promote ledger invariant",
+    "name": "晋升账本不变量",
     "status": "ok",
   },
   {
@@ -343,7 +343,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "code": "preexisting_root_claude_md",
     "kind": "info",
     "message_prefix_30_chars": "project root 检测到 AGENTS.md。这些 ",
-    "name": "Preexisting root markdown",
+    "name": "预存根目录 markdown",
     "status": "ok",
   },
 ]

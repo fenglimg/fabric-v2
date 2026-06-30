@@ -17,7 +17,8 @@ import {
   type WhyNotSurfacedResult,
 } from "@fenglimg/fabric-server";
 
-import { paint, symbol } from "../colors.js";
+import { paint } from "../colors.js";
+import { grid, groupDot, headerRule } from "../tui/structure.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import metricsCommand from "./metrics.js";
@@ -38,6 +39,25 @@ function writeStdout(message: string): void {
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
+}
+
+// flat-design (W3-D reskin, mirrors doctor.ts): the audit surfaces drop markdown
+// `###`/`####` sub-heads, `| md tables |` and the `[ok]`/`[warn]`/`[error]`
+// bracket glyphs in favour of the shared flat primitives — B-横线 command title
+// (headerRule), C-圆点 section heads (groupDot), aligned grid() tables, and the
+// flat ✓/○/✗/ℹ status glyphs (paint.*). Colour stays the status layer only.
+
+/** Command-level B-横线 title, trailing colon stripped (headers like "Cite coverage:"). */
+function auditHeader(title: string): string {
+  return headerRule(title.replace(/[:：]\s*$/u, ""));
+}
+
+/** Two-space indent a multi-line block (e.g. a grid table) into the body column. */
+function indentBlock(block: string): string {
+  return block
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -125,15 +145,17 @@ function renderCiteCoverageReport(
   }
 
   const lines: string[] = [];
-  lines.push(dt("doctor.section.cite-coverage"));
+  lines.push(auditHeader(dt("doctor.section.cite-coverage")));
   lines.push(
-    dt("doctor.cite.header", {
-      since: new Date(report.since_ts).toISOString(),
-      marker: new Date(report.marker_ts).toISOString(),
-    }),
+    `  ${paint.muted(
+      dt("doctor.cite.header", {
+        since: new Date(report.since_ts).toISOString(),
+        marker: new Date(report.marker_ts).toISOString(),
+      }),
+    )}`,
   );
   if (report.marker_emitted_now) {
-    lines.push(dt("doctor.cite.warning.justActivated"));
+    lines.push(`  ${paint.warn("○")} ${dt("doctor.cite.warning.justActivated")}`);
   }
   lines.push("");
   lines.push(`  ${dt("doctor.cite.metric.editsTouched")}: ${report.metrics.edits_touched}`);
@@ -151,6 +173,25 @@ function renderCiteCoverageReport(
     ? dt("doctor.cite.metric.recallCoverageNA")
     : `${(recallRate * 100).toFixed(1)}% (${report.metrics.recall_backed_edits ?? 0}/${report.metrics.edits_touched})`;
   lines.push(`  ${dt("doctor.cite.metric.recallCoverage")}: ${recallStr}`);
+  // Self-diagnose a 0% recall coverage instead of leaving a bare confusing number.
+  // Two distinct causes, told apart by recall_diagnostics:
+  //   • mismatch — recalls happened in-window but none shared a session with an
+  //     edit (recall caller passed a non-client session_id; correlation is
+  //     session-scoped to avoid cross-window 张冠李戴).
+  //   • none — no in-session recall preceded the edits at all (recall discipline,
+  //     or recalls logged with an empty session_id).
+  const rd = report.metrics.recall_diagnostics;
+  if (report.metrics.recall_coverage_rate === 0 && report.metrics.edits_touched > 0) {
+    const mismatch =
+      rd !== undefined && rd.recalls_in_window > 0 && rd.recall_sessions_correlated === 0;
+    const hint = mismatch
+      ? dt("cli.audit.cite.recall-mismatch-hint", {
+          recalls: String(rd!.recalls_in_window),
+          sessions: String(rd!.recall_sessions),
+        })
+      : dt("cli.audit.cite.recall-none-hint");
+    lines.push(`  ${paint.ai("ℹ")} ${hint}`);
+  }
   const uncorrelatable = report.metrics.uncorrelatable_edits ?? 0;
   if (uncorrelatable > 0) {
     lines.push(`  ${dt("doctor.cite.metric.uncorrelatableEdits")}: ${uncorrelatable}`);
@@ -187,7 +228,7 @@ function renderCiteCoverageReport(
 
   if (report.per_client !== undefined && Object.keys(report.per_client).length > 1) {
     lines.push("");
-    lines.push(`### ${dt("doctor.cite.section.perClient")}`);
+    lines.push(groupDot(dt("doctor.cite.section.perClient")));
     for (const [client, metrics] of Object.entries(report.per_client)) {
       const summary = Object.entries(metrics)
         .map(([k, v]) => `${k}=${v}`)
@@ -201,7 +242,7 @@ function renderCiteCoverageReport(
     Object.keys(report.dismissed_reason_histogram).length > 0
   ) {
     lines.push("");
-    lines.push(`### ${dt("doctor.cite.section.dismissedReasons")}`);
+    lines.push(groupDot(dt("doctor.cite.section.dismissedReasons")));
     for (const [reason, count] of Object.entries(report.dismissed_reason_histogram)) {
       const label = dt(`doctor.cite.dismissed.${reason}`);
       lines.push(`  ${label}: ${count}`);
@@ -213,7 +254,7 @@ function renderCiteCoverageReport(
     Object.keys(report.none_reason_histogram).length > 0
   ) {
     lines.push("");
-    lines.push(`### ${dt("doctor.cite.section.noneReasons")}`);
+    lines.push(groupDot(dt("doctor.cite.section.noneReasons")));
     for (const [reason, count] of Object.entries(report.none_reason_histogram)) {
       const label = dt(`doctor.cite.none.${reason}`);
       lines.push(`  ${label}: ${count}`);
@@ -252,7 +293,7 @@ function appendContractSection(
   }
 
   lines.push("");
-  lines.push(`### ${dt("cite-coverage.contract.header")}`);
+  lines.push(groupDot(dt("cite-coverage.contract.header")));
 
   if (status === "skipped:bootstrap_drift") {
     lines.push(`  ${dt("cite-coverage.contract.status.skipped_bootstrap_drift")}`);
@@ -296,7 +337,7 @@ function appendContractSection(
     );
     if (teamKeys.length > 0 || personalKeys.length > 0) {
       lines.push("");
-      lines.push(`#### ${dt("cite-coverage.layer.team")} × ${dt("cite-coverage.layer.personal")}`);
+      lines.push(groupDot(`${dt("cite-coverage.layer.team")} × ${dt("cite-coverage.layer.personal")}`));
       for (const key of teamKeys) {
         const label = dt(`cite-coverage.contract.type.${key}`);
         lines.push(`  ${dt("cite-coverage.layer.team")} — ${label}: ${perLayerType.team[key]}`);
@@ -312,7 +353,7 @@ function appendContractSection(
 
   if (metrics !== undefined && Object.keys(metrics.skip_count).length > 0) {
     lines.push("");
-    lines.push(`#### ${dt("cite-coverage.contract.skip_count")}`);
+    lines.push(groupDot(dt("cite-coverage.contract.skip_count")));
     for (const [reason, count] of Object.entries(metrics.skip_count)) {
       const label = dt(`cite-coverage.skip.${reason}`);
       lines.push(`  ${label}: ${count}`);
@@ -322,7 +363,7 @@ function appendContractSection(
   if (metrics !== undefined && metrics.cite_id_unresolved > 0) {
     lines.push("");
     lines.push(
-      `${symbol.warn} ${dt("cite-coverage.contract.cite_id_unresolved")}: ${metrics.cite_id_unresolved}`,
+      `  ${paint.warn("○")} ${dt("cite-coverage.contract.cite_id_unresolved")}: ${metrics.cite_id_unresolved}`,
     );
   }
 }
@@ -337,10 +378,10 @@ function renderConflictLintReport(
   dt: AuditTranslator,
 ): void {
   const lines: string[] = [];
-  lines.push(dt("doctor.conflict.header"));
+  lines.push(auditHeader(dt("doctor.conflict.header")));
   lines.push("");
   if (report.candidate_count === 0) {
-    lines.push(`  ${symbol.ok} ${dt("doctor.conflict.none")}`);
+    lines.push(`  ${paint.success("✓")} ${dt("doctor.conflict.none")}`);
     writeStdout(lines.join("\n"));
     return;
   }
@@ -352,11 +393,11 @@ function renderConflictLintReport(
     })}`,
   );
   if (deepRequested && !report.deep) {
-    lines.push(`  ${symbol.warn} ${dt("doctor.conflict.deep_no_judge")}`);
+    lines.push(`  ${paint.warn("○")} ${dt("doctor.conflict.deep_no_judge")}`);
   }
   lines.push("");
   for (const pair of report.pairs) {
-    const sym = pair.verdict === "conflict" ? symbol.error : symbol.warn;
+    const sym = pair.verdict === "conflict" ? paint.error("✗") : paint.warn("○");
     const verdictLabel = dt(`doctor.conflict.verdict.${pair.verdict}`);
     const pct = `${(pair.similarity * 100).toFixed(0)}%`;
     let line = `  ${sym} [${pair.a} ↔ ${pair.b}] (${pair.knowledge_type}/${pair.layer}) ${pct} — ${verdictLabel}`;
@@ -378,26 +419,28 @@ function renderEnrichDescriptionsReport(
   report: EnrichDescriptionsReport,
   dt: AuditTranslator,
 ): void {
-  const header = `${symbol.ok} ${paint.ai("fabric audit descriptions")} mode=${report.mode}${
-    report.dryRun ? " (dry-run)" : ""
-  } scanned=${report.scanned} modified=${report.modified} skipped=${report.skipped}`;
-  writeStdout(header);
+  writeStdout(auditHeader("fabric audit descriptions"));
+  writeStdout(
+    `  ${paint.muted(
+      `mode=${report.mode}${report.dryRun ? " (dry-run)" : ""} · scanned=${report.scanned} · modified=${report.modified} · skipped=${report.skipped}`,
+    )}`,
+  );
   if (report.candidates.length === 0) {
-    writeStdout(dt("doctor.enrich.allComplete"));
+    writeStdout(`  ${paint.success("✓")} ${dt("doctor.enrich.allComplete")}`);
     return;
   }
   writeStdout("");
   for (const candidate of report.candidates) {
     if (candidate.error !== undefined) {
-      writeStdout(`${symbol.error} ${candidate.path} — ${candidate.error}`);
+      writeStdout(`  ${paint.error("✗")} ${candidate.path} — ${candidate.error}`);
       continue;
     }
     const missing = candidate.missing.join(", ");
     if (candidate.modified) {
       const added = candidate.added_fields.join(", ");
-      writeStdout(`${symbol.ok} ${candidate.path} — missing: ${missing} → added: ${added}`);
+      writeStdout(`  ${paint.success("✓")} ${candidate.path} — missing: ${missing} → added: ${added}`);
     } else {
-      writeStdout(`${symbol.warn} ${candidate.path} — missing: ${missing}`);
+      writeStdout(`  ${paint.warn("○")} ${candidate.path} — missing: ${missing}`);
     }
   }
 }
@@ -418,27 +461,35 @@ function renderArchiveHistoryReport(
 
   const lines: string[] = [];
   lines.push(
-    dt("doctor.archive-history.header", {
-      sinceLabel,
-      count: String(report.total),
-      plural: report.total === 1 ? "" : "s",
-    }),
+    auditHeader(
+      dt("doctor.archive-history.header", {
+        sinceLabel,
+        count: String(report.total),
+        plural: report.total === 1 ? "" : "s",
+      }),
+    ),
   );
   lines.push("");
-  lines.push(
-    `| ${dt("doctor.archive-history.table.session")} | ${dt(
-      "doctor.archive-history.table.lastAttempt",
-    )} | ${dt("doctor.archive-history.table.outcome")} | ${dt(
-      "doctor.archive-history.table.candidates",
-    )} | ${dt("doctor.archive-history.table.coveredGap")} |`,
-  );
-  lines.push("| ------- | ---------------- | -------- | ---------- | ----------- |");
+  const rows: string[][] = [
+    [
+      dt("doctor.archive-history.table.session"),
+      dt("doctor.archive-history.table.lastAttempt"),
+      dt("doctor.archive-history.table.outcome"),
+      dt("doctor.archive-history.table.candidates"),
+      dt("doctor.archive-history.table.coveredGap"),
+    ],
+  ];
   for (const entry of report.entries) {
     const lastAttempt = formatTimestampForTable(entry.last_attempted_at);
-    lines.push(
-      `| ${entry.session_id_short} | ${lastAttempt} | ${entry.outcome} | ${entry.candidates_proposed} | ${entry.age_since_covered_hours}h |`,
-    );
+    rows.push([
+      entry.session_id_short,
+      lastAttempt,
+      entry.outcome,
+      String(entry.candidates_proposed),
+      `${entry.age_since_covered_hours}h`,
+    ]);
   }
+  lines.push(indentBlock(grid(rows, { rule: true })));
   writeStdout(lines.join("\n"));
 }
 
@@ -454,30 +505,34 @@ function renderHistoryAllReport(
   }
   const lines: string[] = [];
   lines.push(
-    dt("doctor.history.header", {
-      sinceLabel,
-      mode,
-      days: String(report.rows.length),
-    }),
+    auditHeader(
+      dt("doctor.history.header", {
+        sinceLabel,
+        mode,
+        days: String(report.rows.length),
+      }),
+    ),
   );
   lines.push("");
-  if (mode === "fix") {
-    lines.push("| date       | lint | fix | issues | mutations |");
-    lines.push("| ---------- | ---- | --- | ------ | --------- |");
-    for (const row of report.rows) {
-      lines.push(
-        `| ${row.date} | ${row.doctor_runs_lint} | ${row.doctor_runs_fix} | ${row.doctor_total_issues} | ${row.doctor_total_mutations} |`,
-      );
-    }
-  } else {
-    lines.push("| date       | lint | fix | issues | mutations | archive | proposed |");
-    lines.push("| ---------- | ---- | --- | ------ | --------- | ------- | -------- |");
-    for (const row of report.rows) {
-      lines.push(
-        `| ${row.date} | ${row.doctor_runs_lint} | ${row.doctor_runs_fix} | ${row.doctor_total_issues} | ${row.doctor_total_mutations} | ${row.archive_attempts} | ${row.archive_proposed} |`,
-      );
-    }
+  const rows: string[][] =
+    mode === "fix"
+      ? [["date", "lint", "fix", "issues", "mutations"]]
+      : [["date", "lint", "fix", "issues", "mutations", "archive", "proposed"]];
+  for (const row of report.rows) {
+    const base = [
+      row.date,
+      String(row.doctor_runs_lint),
+      String(row.doctor_runs_fix),
+      String(row.doctor_total_issues),
+      String(row.doctor_total_mutations),
+    ];
+    rows.push(
+      mode === "fix"
+        ? base
+        : [...base, String(row.archive_attempts), String(row.archive_proposed)],
+    );
   }
+  lines.push(indentBlock(grid(rows, { rule: true })));
   writeStdout(lines.join("\n"));
 }
 
@@ -495,23 +550,28 @@ function formatTimestampForTable(iso: string): string {
 // retired-reference lint that previously only ran inside the doctor check suite)
 // ---------------------------------------------------------------------------
 
-function renderRetiredReport(inspection: RetiredReferenceInspection): void {
+function renderRetiredReport(inspection: RetiredReferenceInspection, dt: AuditTranslator): void {
   if (inspection.status === "skipped") {
-    writeStdout(`${symbol.warn} retired-reference scan skipped — no agent-consumed surfaces found.`);
+    writeStdout(`${paint.warn("○")} ${dt("cli.audit.retired.skipped")}`);
     return;
   }
   if (inspection.hits.length === 0) {
     writeStdout(
-      `${symbol.ok} no retired references — scanned ${inspection.scannedFiles} agent surface(s).`,
+      `${paint.success("✓")} ${dt("cli.audit.retired.clean", { count: String(inspection.scannedFiles) })}`,
     );
     return;
   }
   writeStdout(
-    `${symbol.error} ${inspection.hits.length} retired reference(s) across ${inspection.scannedFiles} scanned file(s):`,
+    auditHeader(
+      dt("cli.audit.retired.found", {
+        hits: String(inspection.hits.length),
+        files: String(inspection.scannedFiles),
+      }),
+    ),
   );
   for (const hit of inspection.hits) {
-    const fix = hit.replacement === null ? "(removed)" : `→ ${hit.replacement}`;
-    writeStdout(`  ${hit.path}:${hit.line}  ${hit.token}  ${fix}`);
+    const fix = hit.replacement === null ? dt("cli.audit.retired.removed") : `→ ${hit.replacement}`;
+    writeStdout(`  ${paint.error("✗")} ${hit.path}:${hit.line}  ${hit.token}  ${paint.muted(fix)}`);
   }
 }
 
@@ -521,37 +581,36 @@ function renderRetiredReport(inspection: RetiredReferenceInspection): void {
 // cause across the three scope axes (store binding · semantic_scope · timing).
 // ---------------------------------------------------------------------------
 
-function renderWhyNotSurfaced(r: WhyNotSurfacedResult): void {
+function renderWhyNotSurfaced(r: WhyNotSurfacedResult, dt: AuditTranslator): void {
   const id = r.localId;
+  // storeAlias / semanticScope / activeProject are `string | null` on the union;
+  // each is guaranteed present for the verdict that reads it, so `?? ""` is a safe
+  // type-narrowing default that never renders.
+  const store = r.storeAlias ?? "";
+  const scope = r.semanticScope ?? "";
+  const project = r.activeProject ?? "";
+  const hint = (text: string): string => `  ${paint.muted(`→ ${text}`)}`;
   switch (r.verdict) {
     case "not_found":
-      writeStdout(
-        `${symbol.error} '${id}' not found in any mounted store. Check the id (try \`fabric store list\`).`,
-      );
+      writeStdout(`${paint.error("✗")} ${dt("cli.audit.why.not-found", { id })}`);
       return;
     case "store_unbound":
-      writeStdout(
-        `${symbol.error} '${id}' lives in store '${r.storeAlias}', which is NOT bound to this project.`,
-      );
-      writeStdout(`  → bind it: fabric store bind ${r.storeAlias}`);
+      writeStdout(`${paint.error("✗")} ${dt("cli.audit.why.store-unbound", { id, store })}`);
+      writeStdout(hint(dt("cli.audit.why.store-unbound.hint", { store })));
       return;
     case "project_mismatch":
       writeStdout(
-        `${symbol.error} '${id}' is scoped to '${r.semanticScope}', but this repo is bound to 'project:${r.activeProject}'.`,
+        `${paint.error("✗")} ${dt("cli.audit.why.project-mismatch", { id, scope, project })}`,
       );
-      writeStdout(`  → it surfaces only in repos bound to '${r.semanticScope}' (semantic_scope axis).`);
+      writeStdout(hint(dt("cli.audit.why.project-mismatch.hint", { scope })));
       return;
     case "narrow_timing":
-      writeStdout(
-        `${symbol.warn} '${id}' is relevance_scope=narrow — it surfaces via the PreToolUse hint when you EDIT a matching file, not at SessionStart.`,
-      );
-      writeStdout(`  → broad entries are the always-on spine; narrow ones are edit-time only (timing axis).`);
+      writeStdout(`${paint.warn("○")} ${dt("cli.audit.why.narrow-timing", { id })}`);
+      writeStdout(hint(dt("cli.audit.why.narrow-timing.hint")));
       return;
     case "should_surface":
-      writeStdout(
-        `${symbol.ok} '${id}' should be surfacing — store '${r.storeAlias}' bound, scope matches, relevance_scope=broad.`,
-      );
-      writeStdout(`  → if it isn't, the SessionStart snapshot may be stale: start a fresh session or re-run \`fabric install\`.`);
+      writeStdout(`${paint.success("✓")} ${dt("cli.audit.why.should-surface", { id, store })}`);
+      writeStdout(hint(dt("cli.audit.why.should-surface.hint")));
       return;
   }
 }
@@ -568,11 +627,12 @@ const whyNotSurfacedCommand = defineCommand({
   },
   async run({ args }) {
     const resolution = resolveDevMode(args.target as string | undefined, process.cwd());
+    const dt = getDoctorTranslator(resolution.target);
     const result = await explainWhyNotSurfaced(resolution.target, String(args.id));
     if (args.json === true) {
       writeStdout(JSON.stringify(result, null, 2));
     } else {
-      renderWhyNotSurfaced(result);
+      renderWhyNotSurfaced(result, dt);
     }
     if (result.verdict === "not_found") {
       process.exitCode = 1;
@@ -727,11 +787,12 @@ export const retiredCommand = defineCommand({
   },
   async run({ args }) {
     const resolution = resolveDevMode(args.target as string | undefined, process.cwd());
+    const dt = getDoctorTranslator(resolution.target);
     const inspection = await inspectRetiredReferences(resolution.target);
     if (args.json === true) {
       writeStdout(JSON.stringify(inspection, null, 2));
     } else {
-      renderRetiredReport(inspection);
+      renderRetiredReport(inspection, dt);
     }
     if (inspection.status === "warn") {
       process.exitCode = 1;
@@ -739,10 +800,50 @@ export const retiredCommand = defineCommand({
   },
 });
 
+// ---------------------------------------------------------------------------
+// Custom filtered help (mirrors doctor's renderDoctorFilteredHelp). citty's
+// default group usage lists subcommands with their English meta.description; this
+// renders an i18n'd, flat-painted SUBCOMMANDS block instead (metrics stays hidden,
+// matching its `meta.hidden`). Wired via index.ts#customShowUsage. The
+// USAGE/SUBCOMMANDS/EXAMPLES labels stay English to match citty's renderUsage in
+// the other commands' --help — the flat-design through-line is the localized COPY.
+// ---------------------------------------------------------------------------
+export function renderAuditFilteredHelp(): void {
+  const subs: Array<[string, string]> = [
+    ["cite", t("cli.audit.help.sub.cite")],
+    ["conflicts", t("cli.audit.help.sub.conflicts")],
+    ["history", t("cli.audit.help.sub.history")],
+    ["descriptions", t("cli.audit.help.sub.descriptions")],
+    ["retired", t("cli.audit.help.sub.retired")],
+    ["why-not-surfaced", t("cli.audit.help.sub.why")],
+  ];
+  const width = Math.max(...subs.map(([name]) => name.length));
+
+  const lines: string[] = [];
+  lines.push(`${paint.ai("fabric audit")} — ${t("cli.audit.help.tagline")}`);
+  lines.push("");
+  lines.push(paint.human("USAGE"));
+  lines.push("  fabric audit <subcommand> [OPTIONS]");
+  lines.push("");
+  lines.push(paint.human("SUBCOMMANDS"));
+  lines.push("");
+  for (const [name, desc] of subs) {
+    lines.push(`  ${paint.ai(name.padEnd(width))}  ${desc}`);
+  }
+  lines.push("");
+  lines.push(paint.human("EXAMPLES"));
+  lines.push(`  ${paint.ai("fabric audit cite")}       # ${t("cli.audit.help.example.cite")}`);
+  lines.push(`  ${paint.ai("fabric audit conflicts")}  # ${t("cli.audit.help.example.conflicts")}`);
+  lines.push("");
+  lines.push(paint.human(t("cli.audit.help.footer")));
+
+  writeStdout(lines.join("\n"));
+}
+
 export const auditCommand = defineCommand({
   meta: {
     name: "audit",
-    description: "Knowledge & telemetry audits (cite / conflicts / history / descriptions / metrics / retired)",
+    description: t("cli.audit.description"),
   },
   subCommands: {
     cite: citeCommand,

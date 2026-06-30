@@ -150,19 +150,24 @@ describe("rc.16 TASK-007: fabric config panel — uninit gate", () => {
 });
 
 describe("rc.16 TASK-007: fabric config panel — exit path", () => {
-  it("EXIT_CHOICE from top menu writes nothing and calls outro-no-changes", async () => {
+  it("EXIT_CHOICE from top menu writes nothing (no edit, no save)", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);
     const beforeJson = readConfig(dir);
 
-    selectMock.mockResolvedValueOnce("__exit__");
-
-    await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
-
-    expect(introMock).toHaveBeenCalledTimes(1);
-    expect(outroMock).toHaveBeenCalledTimes(1);
-    expect(readConfig(dir)).toEqual(beforeJson);
-    expect(logSuccessMock).not.toHaveBeenCalled();
+    // flat-design (用户裁决): the panel clears the screen each pass and prints a flat
+    // header/summary via console.log — it no longer calls clack `intro`/`outro`.
+    // Suppress the clear/render escapes; assert the EXIT semantics by state.
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      selectMock.mockResolvedValueOnce("__exit__");
+      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+      // Exiting without editing leaves the config byte-identical and never saves.
+      expect(readConfig(dir)).toEqual(beforeJson);
+      expect(logSuccessMock).not.toHaveBeenCalled();
+    } finally {
+      stdoutSpy.mockRestore();
+    }
   });
 });
 
@@ -186,6 +191,10 @@ describe("rc.16 TASK-007: fabric config panel — Group A enum field roundtrip",
       "utf8",
     );
 
+    // flat-design (用户裁决): the panel clears + re-renders each pass; a save no
+    // longer prints a clack `log.success` line. Suppress the render escapes and
+    // assert the edit by state (global config + no .tmp + no log.success).
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     try {
       // Sequence: top menu picks fabric_language → field-prompt picks 'en' →
       // top menu picks __exit__.
@@ -203,8 +212,10 @@ describe("rc.16 TASK-007: fabric config panel — Group A enum field roundtrip",
       // Atomic write contract: no .tmp leftovers anywhere under .fabric/
       const fabricFiles = readdirSync(join(dir, ".fabric"));
       expect(fabricFiles.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
-      expect(logSuccessMock).toHaveBeenCalled();
+      // The save goes through the flat panel, never the clack log.success path.
+      expect(logSuccessMock).not.toHaveBeenCalled();
     } finally {
+      stdoutSpy.mockRestore();
       if (savedFabricHome === undefined) {
         delete process.env.FABRIC_HOME;
       } else {
@@ -219,20 +230,32 @@ describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", 
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);
 
-    selectMock
-      .mockResolvedValueOnce("archive_hint_hours")
-      .mockResolvedValueOnce("__exit__");
-    textMock.mockResolvedValueOnce("48");
+    // Suppress the panel's clear/render escapes (stable-panel redraw each pass).
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      selectMock
+        .mockResolvedValueOnce("archive_hint_hours")
+        .mockResolvedValueOnce("__exit__");
+      textMock.mockResolvedValueOnce("48");
 
-    await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
 
-    const after = readConfig(dir);
-    expect(after.archive_hint_hours).toBe(48);
-    expect(typeof after.archive_hint_hours).toBe("number");
+      const after = readConfig(dir);
+      expect(after.archive_hint_hours).toBe(48);
+      expect(typeof after.archive_hint_hours).toBe("number");
 
-    // No .tmp leftover
-    const fabricFiles = readdirSync(join(dir, ".fabric"));
-    expect(fabricFiles.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
+      // No .tmp leftover
+      const fabricFiles = readdirSync(join(dir, ".fabric"));
+      expect(fabricFiles.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
+
+      // Return-to-last-edited: the first menu pass has no initialValue (cursor at
+      // top); after editing archive_hint_hours, the menu re-opens with the cursor
+      // parked on that field (initialValue), not bounced back to the top.
+      expect(selectMock.mock.calls[0][0].initialValue).toBeUndefined();
+      expect(selectMock.mock.calls[1][0].initialValue).toBe("archive_hint_hours");
+    } finally {
+      stdoutSpy.mockRestore();
+    }
   });
 });
 
@@ -274,5 +297,64 @@ describe("rc.16 TASK-007: installMcpClients export contract (TASK-006 guard)", (
   it("config.ts still exports installMcpClients as a function (install.ts re-import contract)", async () => {
     const mod = await import("../src/commands/config.js");
     expect(typeof mod.installMcpClients).toBe("function");
+  });
+});
+
+// flat-design (查漏补缺): the hidden `dismiss-slot` / `onboard-reset` subcommands
+// previously printed bare hardcoded-English status lines. They now route every
+// string through t() and prefix a flat status glyph (✓ done / ✗ failed / muted
+// no-op). NO_COLOR keeps the glyph as the bare ✓/✗ char so the assertions are
+// stable. The slot used (`tech-stack-decision`) is a member of ONBOARD_SLOT_NAMES.
+describe("flat-design: config slot subcommands (i18n + flat glyph)", () => {
+  const SLOT = "tech-stack-decision";
+
+  async function subCmd(name: "dismiss-slot" | "onboard-reset") {
+    const configCmd = await loadConfigCmd();
+    const sub = configCmd.subCommands?.[name];
+    if (sub === undefined) throw new Error(`subcommand ${name} not found`);
+    return sub;
+  }
+
+  let savedNoColor: string | undefined;
+  beforeEach(() => {
+    savedNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+  });
+  afterEach(() => {
+    if (savedNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = savedNoColor;
+  });
+
+  it("dismiss-slot prints a ✓ receipt and onboard-reset reverses it", async () => {
+    const dir = makeWorkspace(true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const dismiss = await subCmd("dismiss-slot");
+    await dismiss.run!({ args: { slot: SLOT, target: dir }, rawArgs: [], cmd: dismiss, data: undefined });
+    let out = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(out).toContain("✓");
+    expect(out).toContain(SLOT);
+    // Config file recorded the opt-out.
+    expect(readConfig(dir).onboard_slots_opted_out).toEqual([SLOT]);
+
+    logSpy.mockClear();
+    const reset = await subCmd("onboard-reset");
+    await reset.run!({ args: { slot: SLOT, target: dir }, rawArgs: [], cmd: reset, data: undefined });
+    out = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(out).toContain("✓");
+    expect(readConfig(dir).onboard_slots_opted_out).toEqual([]);
+  });
+
+  it("dismiss-slot rejects an unknown slot with a ✗ stderr line and exit 1", async () => {
+    const dir = makeWorkspace(true);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const dismiss = await subCmd("dismiss-slot");
+    await dismiss.run!({ args: { slot: "not-a-slot", target: dir }, rawArgs: [], cmd: dismiss, data: undefined });
+
+    const err = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(err).toContain("✗");
+    expect(err).toContain("not-a-slot");
+    expect(process.exitCode).toBe(1);
   });
 });

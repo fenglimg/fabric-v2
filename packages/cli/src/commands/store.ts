@@ -3,7 +3,9 @@ import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
 import { join } from "node:path";
 
-import { getProjectTranslator } from "../i18n.js";
+import { paint, symbol } from "../colors.js";
+import { getProjectTranslator, t } from "../i18n.js";
+import { grid, groupDot, headerRule } from "../tui/structure.js";
 
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { backfillKnowledgeDir } from "../store/scope-backfill.js";
@@ -102,42 +104,57 @@ async function runGatedMigrate<R extends { changes: readonly unknown[] }>(opts: 
   opts.print(await opts.run(false));
 }
 
+// flat-design: a store mutation's confirmation/error is a single status line —
+// a leading ✓ (green) / ✗ (red) glyph + the localized message, the same
+// status-message language install/uninstall use. Keeps colour on status only.
+function okLine(msg: string): string {
+  return `${symbol.ok} ${msg}`;
+}
+function errLine(msg: string): string {
+  return `${symbol.error} ${paint.error(msg)}`;
+}
+
 const listCommand = defineCommand({
-  meta: { name: "list", description: "List mounted knowledge stores" },
+  meta: { name: "list", description: t("cli.store.list.description") },
   run() {
     const t = getProjectTranslator();
     const stores = storeList();
+    // flat-design (spec §0.4): a command-level B-横线 title over `● <name>` rows.
+    // KT-PIT-0027: lead with the DESCRIPTIVE mount/git-repo name (a bare alias
+    // like "team" can't tell two team-class stores apart); the short alias — the
+    // thing you actually type in commands — sits in the second column. The status
+    // glyph encodes remote-backing (✓ has a remote → sync can push / it's backed
+    // up; ○ local-only → no remote, a real caveat), so colour carries status, not
+    // decoration. The full uuid is machine detail — dropped here, available via
+    // `store explain <alias>`.
+    console.log("");
+    console.log(headerRule(t("cli.store.list.title")));
     if (stores.length === 0) {
-      console.log(t("cli.store.none-mounted"));
+      console.log(`  ${paint.muted(t("cli.store.none-mounted"))}`);
       return;
     }
     const localOnly = t("cli.shared.local-only");
-    // F14 (W2-T4): the local-only label reflects the store repo's TRUE git
-    // remote, not the config metadata. A store whose config records a remote
-    // but whose repo has no `origin` (created before the F-SYNC-REMOTE fix, or
-    // a personal store) is honestly shown as local-only.
-    // W3-E: padEnd columns replace the bare `\t` join, which misaligns whenever
-    // alias / mount-name / uuid widths differ. The trailing remote column stays
-    // ragged-right (no pointless trailing pad).
-    const rows = stores.map((store) => ({
-      alias: store.alias,
-      name: store.mount_name ?? store.store_uuid,
-      uuid: store.store_uuid,
-      remote: storeGitRemote(store.alias) ?? localOnly,
-    }));
-    const aliasW = Math.max(...rows.map((r) => r.alias.length));
-    const nameW = Math.max(...rows.map((r) => r.name.length));
-    const uuidW = Math.max(...rows.map((r) => r.uuid.length));
-    for (const r of rows) {
-      console.log(
-        `${r.alias.padEnd(aliasW)}  ${r.name.padEnd(nameW)}  ${r.uuid.padEnd(uuidW)}  ${r.remote}`,
-      );
-    }
+    // F14 (W2-T4): local-only reflects the store repo's TRUE git remote, not the
+    // config metadata — a store whose config records a remote but whose repo has
+    // no `origin` (personal store, or pre-F-SYNC-REMOTE) is honestly local-only.
+    const rows = stores.map((store) => {
+      const remote = storeGitRemote(store.alias);
+      const name = store.mount_name ?? store.store_uuid;
+      const glyph = remote ? paint.success("✓") : paint.warn("○");
+      return [groupDot(name), store.alias, `${glyph} ${paint.muted(remote ?? localOnly)}`];
+    });
+    console.log(
+      grid(rows, { gap: 3 })
+        .split("\n")
+        .map((line) => `  ${line}`.replace(/[ \t]+$/, ""))
+        .join("\n"),
+    );
   },
 });
 
 const mountCommand = defineCommand({
-  meta: { name: "mount", description: "Mount a knowledge store into the global registry" },
+  // hidden: skill/CI/recovery-facing — kept callable, omitted from `store --help`.
+  meta: { name: "mount", description: "Mount a knowledge store into the global registry", hidden: true },
   args: {
     uuid: { type: "string", required: true, description: "Intrinsic store UUID" },
     alias: { type: "string", required: true, description: "Local alias for this store" },
@@ -164,16 +181,18 @@ const mountCommand = defineCommand({
     const next = storeAdd(store);
     const t = getProjectTranslator();
     console.log(
-      t("cli.store.mounted", {
-        alias: args.alias,
-        count: String(next.stores.length),
-      }),
+      okLine(
+        t("cli.store.mounted", {
+          alias: args.alias,
+          count: String(next.stores.length),
+        }),
+      ),
     );
   },
 });
 
 const createCommand = defineCommand({
-  meta: { name: "create", description: "Create a brand-new local knowledge store and mount it" },
+  meta: { name: "create", description: "Create a brand-new local knowledge store and mount it", hidden: true },
   args: {
     alias: { type: "string", required: true, description: "Local alias for the new store" },
     "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
@@ -191,14 +210,17 @@ const createCommand = defineCommand({
     });
     const t = getProjectTranslator();
     console.log(
-      t("cli.store.created", { alias: args.alias, uuid: result.store_uuid, dir: result.storeDir }) +
-        (args.remote === undefined ? `\n${t("cli.store.created-local-hint")}` : ""),
+      okLine(t("cli.store.created", { alias: args.alias, uuid: result.store_uuid, dir: result.storeDir })),
     );
+    if (args.remote === undefined) {
+      // Rich detail folds onto a muted continuation line, not a wall-of-text suffix.
+      console.log(`  ${paint.muted(t("cli.store.created-local-hint"))}`);
+    }
   },
 });
 
 const removeCommand = defineCommand({
-  meta: { name: "remove", description: "Detach a store from the registry (does NOT delete it)" },
+  meta: { name: "remove", description: "Detach a store from the registry (does NOT delete it)", hidden: true },
   args: {
     alias: { type: "positional", required: true, description: "Alias to detach" },
   },
@@ -207,17 +229,15 @@ const removeCommand = defineCommand({
     const t = getProjectTranslator();
     if (detached === null) {
       process.exitCode = 1;
+      console.log(errLine(t("cli.store.no-alias", { alias: args.alias })));
+      return;
     }
-    console.log(
-      detached === null
-        ? t("cli.store.no-alias", { alias: args.alias })
-        : t("cli.store.detached", { alias: args.alias }),
-    );
+    console.log(okLine(t("cli.store.detached", { alias: args.alias })));
   },
 });
 
 const explainCommand = defineCommand({
-  meta: { name: "explain", description: "Explain how a store alias resolves" },
+  meta: { name: "explain", description: "Explain how a store alias resolves", hidden: true },
   args: {
     alias: { type: "positional", required: true, description: "Alias to explain" },
   },
@@ -225,17 +245,16 @@ const explainCommand = defineCommand({
     const explanation = storeExplain(args.alias);
     if (explanation === null) {
       process.exitCode = 1;
+      console.log(errLine(getProjectTranslator()("cli.store.no-alias", { alias: args.alias })));
+      return;
     }
-    console.log(
-      explanation === null
-        ? getProjectTranslator()("cli.store.no-alias", { alias: args.alias })
-        : JSON.stringify(explanation, null, 2),
-    );
+    // explain is a machine-readable resolver dump — stays raw JSON.
+    console.log(JSON.stringify(explanation, null, 2));
   },
 });
 
 const bindCommand = defineCommand({
-  meta: { name: "bind", description: "Declare a required store on this project's config" },
+  meta: { name: "bind", description: "Declare a required store on this project's config", hidden: true },
   args: {
     id: { type: "positional", required: true, description: "Store alias/UUID to require" },
     remote: { type: "string", description: "Suggested remote for clone onboarding" },
@@ -254,10 +273,12 @@ const bindCommand = defineCommand({
       args.project === undefined ? {} : { project: args.project },
     );
     console.log(
-      getProjectTranslator(projectRoot)("cli.store.bound", {
-        id: args.id,
-        count: String(next.required_stores?.length ?? 0),
-      }),
+      okLine(
+        getProjectTranslator(projectRoot)("cli.store.bound", {
+          id: args.id,
+          count: String(next.required_stores?.length ?? 0),
+        }),
+      ),
     );
     // Regenerate the resolved-bindings snapshot so P4 hooks read a consistent
     // read-set/write-target without re-resolving (P3→P4 chain, done_when).
@@ -274,6 +295,7 @@ const switchWriteCommand = defineCommand({
   meta: {
     name: "switch-write",
     description: "Set the default write store, or route one semantic scope with --scope",
+    hidden: true,
   },
   args: {
     alias: { type: "positional", required: true, description: "Alias of the store to write to" },
@@ -288,16 +310,18 @@ const switchWriteCommand = defineCommand({
       storeSetWriteRoute(projectRoot, args.scope, args.alias);
       regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
       console.log(
-        getProjectTranslator(projectRoot)("cli.store.routed", {
-          scope: args.scope,
-          alias: args.alias,
-        }),
+        okLine(
+          getProjectTranslator(projectRoot)("cli.store.routed", {
+            scope: args.scope,
+            alias: args.alias,
+          }),
+        ),
       );
       return;
     }
     storeSwitchWrite(projectRoot, args.alias);
     regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
-    console.log(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias }));
+    console.log(okLine(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias })));
   },
 });
 
@@ -310,13 +334,14 @@ const switchPersonalCommand = defineCommand({
   meta: {
     name: "switch-personal",
     description: "Set the active personal store for this machine (among mounted personal stores)",
+    hidden: true,
   },
   args: {
     alias: { type: "positional", required: true, description: "Alias/UUID of the personal store" },
   },
   run({ args }) {
     storeSwitchPersonal(args.alias);
-    console.log(getProjectTranslator()("cli.store.switch-personal", { alias: args.alias }));
+    console.log(okLine(getProjectTranslator()("cli.store.switch-personal", { alias: args.alias })));
   },
 });
 
@@ -329,14 +354,21 @@ const projectListCommand = defineCommand({
     store: { type: "positional", required: true, description: "Store alias/UUID" },
   },
   async run({ args }) {
+    const t = getProjectTranslator();
     const projects = await storeProjectList(args.store);
+    console.log("");
+    console.log(headerRule(t("cli.store.project.list.title", { store: args.store })));
     if (projects.length === 0) {
-      console.log(`store '${args.store}' has no registered projects.`);
+      console.log(`  ${paint.muted(t("cli.store.project.list.empty"))}`);
       return;
     }
-    for (const p of projects) {
-      console.log(`${p.id}${p.name === undefined ? "" : `\t${p.name}`}`);
-    }
+    const rows = projects.map((p) => [groupDot(p.id), p.name === undefined ? "" : paint.muted(p.name)]);
+    console.log(
+      grid(rows, { gap: 3 })
+        .split("\n")
+        .map((line) => `  ${line}`.replace(/[ \t]+$/, ""))
+        .join("\n"),
+    );
   },
 });
 
@@ -351,12 +383,14 @@ const projectCreateCommand = defineCommand({
     const project = await storeProjectCreate(args.store, args.id, new Date().toISOString(), {
       ...(args.name === undefined ? {} : { name: args.name }),
     });
-    console.log(`registered project '${project.id}' in store '${args.store}'.`);
+    console.log(
+      okLine(getProjectTranslator()("cli.store.project.created", { id: project.id, store: args.store })),
+    );
   },
 });
 
 const projectCommand = defineCommand({
-  meta: { name: "project", description: "Manage the projects a store serves" },
+  meta: { name: "project", description: "Manage the projects a store serves", hidden: true },
   subCommands: {
     list: projectListCommand,
     create: projectCreateCommand,
@@ -401,19 +435,23 @@ const backfillScopeCommand = defineCommand({
       knowledgeDir = join(storeDir, STORE_LAYOUT.knowledgeDir);
       visibilityStore = selectedStore;
     }
+    const t = getProjectTranslator();
     const printReport = (
       report: ReturnType<typeof backfillKnowledgeDir>,
       preview: boolean,
     ): void => {
+      const prefix = preview ? "[dry-run] " : "";
+      console.log("");
+      console.log(headerRule(t("cli.store.migrate.title")));
       if (report.changes.length === 0) {
-        console.log(`scope backfill: nothing to do (${report.unchanged} already consistent).`);
+        console.log(`  ${paint.muted(t("cli.store.backfill.noop", { count: String(report.unchanged) }))}`);
         return;
       }
       console.log(
-        `${preview ? "[dry-run] " : ""}scope backfill: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
+        `  ${prefix}${t("cli.store.backfill.summary", { changed: String(report.changes.length), unchanged: String(report.unchanged) })}`,
       );
       for (const c of report.changes) {
-        console.log(`  ${c.id ?? "(no id)"}  [${c.changed.join(", ")}]`);
+        console.log(`  ${groupDot(c.id ?? "(no id)")}  ${paint.muted(`[${c.changed.join(", ")}]`)}`);
       }
       // Guardrail: backfill defaults every team-layer entry to `semantic_scope:
       // team` — over-broad. Project-specific entries (incl. components reused
@@ -421,7 +459,7 @@ const backfillScopeCommand = defineCommand({
       const scopeAssigned = report.changes.filter((c) => c.changed.includes("semantic_scope")).length;
       if (scopeAssigned > 0) {
         console.error(
-          `${preview ? "[dry-run] " : ""}note: ${scopeAssigned} entr${scopeAssigned === 1 ? "y" : "ies"} defaulted to semantic_scope: team. Demote project-specific ones with \`fabric store migrate scope <store> --to project:<id> --id <id>\`.`,
+          `  ${symbol.warn} ${paint.warn(`${prefix}${t("cli.store.backfill.scope-note", { count: String(scopeAssigned) })}`)}`,
         );
       }
     };
@@ -464,21 +502,27 @@ function resolveStoreDirAndVisibility(
 }
 
 function printRescopeReport(report: RescopeReport): void {
+  // flat-design (light, spec §0.4): a B-横线 migration title + `● <id>` change
+  // rows; the `[dry-run]` marker stays inline. Cold power-user tool, so structure
+  // over chrome. Refusals stay on stderr with a ✗ glyph.
+  const t = getProjectTranslator();
   const prefix = report.dryRun ? "[dry-run] " : "";
+  console.log("");
+  console.log(headerRule(t("cli.store.migrate.title")));
   if (report.changes.length === 0 && report.refusals.length === 0) {
-    console.log(`re-scope: nothing to do (${report.unchanged} already at '${report.toScope}').`);
+    console.log(`  ${paint.muted(t("cli.store.rescope.noop", { count: String(report.unchanged), scope: report.toScope }))}`);
   } else if (report.changes.length > 0) {
     console.log(
-      `${prefix}re-scope → ${report.toScope}: ${report.changes.length} entr${report.changes.length === 1 ? "y" : "ies"} updated, ${report.unchanged} unchanged.`,
+      `  ${prefix}${t("cli.store.rescope.summary", { scope: report.toScope, changed: String(report.changes.length), unchanged: String(report.unchanged) })}`,
     );
     for (const c of report.changes) {
-      console.log(`  ${c.id ?? "(no id)"}  ${c.fromScope ?? "(none)"} → ${c.toScope}`);
+      console.log(`  ${groupDot(c.id ?? "(no id)")}  ${paint.muted(`${c.fromScope ?? "(none)"} → ${c.toScope}`)}`);
     }
   }
   if (report.refusals.length > 0) {
-    console.error(`${report.refusals.length} entr${report.refusals.length === 1 ? "y" : "ies"} refused:`);
+    console.error(`  ${symbol.error} ${paint.error(t("cli.store.rescope.refused", { count: String(report.refusals.length) }))}`);
     for (const r of report.refusals) {
-      console.error(`  ${r.id ?? "(no id)"}: ${r.reason}`);
+      console.error(`  ${groupDot(r.id ?? "(no id)")}  ${paint.error(r.reason)}`);
     }
     process.exitCode = 1;
   }
@@ -559,7 +603,7 @@ const promoteCommand = defineCommand({
 // semantic_scope/visibility) — distinct from the config-only write-routing of
 // `switch-write`. Grouping keeps the migrate surface semantically pure.
 const migrateCommand = defineCommand({
-  meta: { name: "migrate", description: "Rewrite knowledge entries' scope coordinates in a store" },
+  meta: { name: "migrate", description: "Rewrite knowledge entries' scope coordinates in a store", hidden: true },
   subCommands: {
     scope: rescopeCommand,
     promote: promoteCommand,
@@ -645,7 +689,7 @@ const linkCommand = defineCommand({
 });
 
 export default defineCommand({
-  meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
+  meta: { name: "store", description: t("cli.store.description") },
   // W3-E: subCommands ordered by value axis — registry (which stores exist) →
   // project wiring (where this repo reads/writes) → knowledge migration →
   // store-internal project registry.

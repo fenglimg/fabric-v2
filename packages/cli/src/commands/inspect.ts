@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { defineCommand } from "citty";
 
 import { runPlanContextHint, type PlanContextHintOutput } from "./plan-context-hint.js";
+import { paint } from "../colors.js";
+import { t } from "../i18n.js";
+import { groupDot, headerRule } from "../tui/structure.js";
 
 // ---------------------------------------------------------------------------
 // Block 5 (Option X) / W3-F — `fabric inspect [--render human|ai] [--explain]`
@@ -77,32 +80,38 @@ export interface RunInspectOptions {
 // bytes — a diagnostic listing of WHAT was surfaced and WHY.
 function renderExplain(sinks: SessionStartSinks): string {
   const payload = sinks.resolvedPayload;
-  const lines: string[] = ["", "— explain (provenance; not injected) —"];
+  // Flat-design overlay: command-level headerRule + ● section groups + flat
+  // status-glyph lines. ✓ = always-active (body injected), ℹ = reference
+  // (title-only, read on demand) — the glyph encodes injection state, not decor.
+  const lines: string[] = ["", headerRule(t("cli.inspect.explain.title"))];
+
   const bodies = Array.isArray(payload?.always_bodies) ? payload!.always_bodies : [];
   if (bodies.length > 0) {
-    lines.push("always-active (body injected):");
+    lines.push("", groupDot(t("cli.inspect.explain.always")));
     for (const b of bodies) {
-      lines.push(`  [${b.type}] ${b.id} (${b.layer}) · ${b.summary}`);
+      lines.push(`  ${paint.success("✓")} [${b.type}] ${b.id}  ${b.summary}  ${paint.muted(b.layer)}`);
     }
   }
+
   const entries = Array.isArray(payload?.entries) ? payload!.entries : [];
   if (entries.length > 0) {
-    lines.push("reference / candidates:");
+    lines.push("", groupDot(t("cli.inspect.explain.reference")));
     for (const e of entries) {
       const provenance = typeof e.related_to === "string" ? ` ←related-to:${e.related_to}` : "";
-      lines.push(
-        `  [${e.type}] ${e.id} (${e.maturity || "?"}, ${e.relevance_scope})${provenance} · ${e.summary}`,
-      );
+      const meta = paint.muted(`${e.maturity || "?"} · ${e.relevance_scope}${provenance}`);
+      lines.push(`  ${paint.ai("ℹ")} [${e.type}] ${e.id}  ${e.summary}  ${meta}`);
       if (typeof e.must_read_if === "string" && e.must_read_if.length > 0) {
-        lines.push(`    must_read_if: ${e.must_read_if}`);
+        lines.push(`    ${paint.muted(`must_read_if: ${e.must_read_if}`)}`);
       }
     }
   }
+
   const census = payload?.census;
   if (census) {
     const layer = census.by_layer ?? { team: 0, personal: 0, project: 0 };
+    lines.push("", groupDot(t("cli.inspect.explain.census")));
     lines.push(
-      `census: total ${census.total} · [team]${layer.team ?? 0} [project]${layer.project ?? 0} [personal]${layer.personal ?? 0}`,
+      `  [team]${layer.team ?? 0} [project]${layer.project ?? 0} [personal]${layer.personal ?? 0}  ${paint.muted(t("cli.inspect.explain.census-total", { total: String(census.total) }))}`,
     );
   }
   return lines.join("\n");
@@ -143,21 +152,21 @@ export async function runInspect(opts: RunInspectOptions): Promise<string> {
 export const inspectCommand = defineCommand({
   meta: {
     name: "inspect",
-    description: "Show what Fabric injects at SessionStart (the knowledge spine). --explain for per-entry provenance.",
+    description: t("cli.inspect.description"),
   },
   args: {
     render: {
       type: "string",
-      description: "Which sink to show: 'human' (systemMessage) or 'ai' (additionalContext). Default: both.",
+      description: t("cli.inspect.arg.render"),
     },
     explain: {
       type: "boolean",
-      description: "Append a per-entry provenance section (id · type · maturity · scope · why-surfaced).",
+      description: t("cli.inspect.arg.explain"),
       default: false,
     },
     target: {
       type: "string",
-      description: "Override the project root (defaults to cwd / dev-mode resolution).",
+      description: t("cli.inspect.arg.target"),
     },
   },
   async run({ args }: { args: { render?: string; explain?: boolean; target?: string } }) {
@@ -167,7 +176,7 @@ export const inspectCommand = defineCommand({
       if (out.length > 0) process.stdout.write(`${out}\n`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`inspect failed: ${message}\n`);
+      process.stderr.write(`${paint.error("✗")} ${t("cli.inspect.error", { message })}\n`);
       process.exitCode = 1;
     }
   },

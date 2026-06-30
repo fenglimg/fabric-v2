@@ -13,7 +13,7 @@ import {
 
 import { backfillUnboundProject } from "../install/backfill-unbound-project.js";
 import { migrateRootConfig } from "../install/migrate-root-config.js";
-import { paint, symbol } from "../colors.js";
+import { paint } from "../colors.js";
 import { groupDot, headerRule } from "../tui/structure.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
@@ -316,7 +316,7 @@ export const doctorCommand = defineCommand({
         writeStdout(dt("cli.doctor.fix-dry-run-banner"));
       }
       renderHumanReport(report, dt, args.verbose === true);
-      renderStoreDiagnostics(storeDiagnostics);
+      renderStoreDiagnostics(storeDiagnostics, args.verbose === true);
     }
 
     // v2.0.0-rc.7 T10: emit doctor_run event so Signal D in fabric-hint can
@@ -360,30 +360,88 @@ export const doctorCommand = defineCommand({
 
 export default doctorCommand;
 
+// flat-design (激进精简, 用户裁决): doctor now has TWO surfaces.
+//   default  → renderActionableDigest: the npm-installed END USER only. One
+//              `● 待处理` group of the issues they can act on (each `! <name>` +
+//              `→ <fix>`), then a one-line tally. Nothing else.
+//   --verbose → the CONTRIBUTOR surface: full per-check enumeration, every
+//              fixable/manual/warning (incl. maintainer-audience), payload limits.
+// The old TL;DR top-3 header is deleted: once the default is already trimmed to
+// actionable-only, a separate "top 3" block just re-printed the same lines a
+// fourth time (the doubled-render the user flagged). KT-GLD-0008: aggregate, do
+// not re-read.
 function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
   writeStdout(renderDoctorHeader(report));
-  // v2.0.0-rc.37 NEW-25: TL;DR top-3 critical surface. Doctor's full check
-  // list runs 48 long now; without a header summary the user has to scroll
-  // through every OK row to find the actionable issues. Pick top-3 from
-  // (fixable_errors ∪ manual_errors ∪ warnings) in that severity order and
-  // print them as a one-line each header BEFORE the per-check enumeration.
-  // Empty TL;DR (everything OK) just emits a single green line.
-  renderTldrHeader(report, dt, verbose);
-  // doctor-decruft W3 (G-QUIET): default output prints only actionable checks
-  // (status warn/error); the full per-check enumeration — including every
-  // passing/info row — is gated behind --verbose. The TL;DR header above
-  // already surfaces the top issues, and the fixable/manual/warning sections
-  // below list every actionable issue in full, so the default surface stays
-  // signal-only instead of scrolling ~30 OK rows.
-  const checksBlock = renderDoctorChecks(report, verbose);
+  if (!verbose) {
+    renderActionableDigest(report, dt);
+    return;
+  }
+  const checksBlock = renderDoctorChecks(report, true);
   if (checksBlock.length > 0) {
     writeStdout(checksBlock);
   }
-  const opts = { verbose, dt };
-  writeIssueSection(dt("doctor.section.fixable"), report.fixable_errors, opts);
-  writeIssueSection(dt("doctor.section.manual"), report.manual_errors, opts);
-  writeIssueSection(dt("doctor.section.warnings"), report.warnings, opts);
-  renderPayloadLimits(report, dt);
+}
+
+// The default end-user digest: actionable issues only, maintainer-audience
+// findings folded out ENTIRELY (not just their actionHint — an end user can't
+// edit `packages/...`). Severity order fixable→manual→warn. A clean run (no
+// user-facing issue) collapses to a single green line, with a muted pointer to
+// --verbose when contributor-only findings were hidden.
+// Default-digest hints stay ONE scannable line: take the first sentence (the
+// gist + its command) and hard-cap its width. The full remediation — paths,
+// config knobs like `broad_index_backstop` — lives in --verbose; the end user
+// just needs to know which command to run.
+const SHORT_HINT_CAP = 42;
+function shortHint(hint: string): string {
+  const firstSentence = (hint.split("。")[0] ?? hint).trim();
+  const chars = Array.from(firstSentence);
+  if (chars.length <= SHORT_HINT_CAP) {
+    return firstSentence;
+  }
+  // Cut on a word boundary so we never slice mid-word (the ugly `告警 s…`):
+  // scan back from the cap to the nearest natural break (space / CJK or ASCII
+  // comma / slash / backtick / close-paren), falling back to a hard cut if none
+  // is within reach.
+  let cut = SHORT_HINT_CAP - 1;
+  for (let i = SHORT_HINT_CAP - 1; i >= 28; i--) {
+    if (/[\s，、,/`)）]/.test(chars[i] ?? "")) {
+      cut = i;
+      break;
+    }
+  }
+  return `${chars.slice(0, cut).join("").trimEnd()}…`;
+}
+
+function renderActionableDigest(report: DoctorReport, dt: DoctorTranslator): void {
+  const ranked: Array<{ issue: DoctorIssue; mark: string }> = [
+    ...report.fixable_errors.map((issue) => ({ issue, mark: paint.error("✗") })),
+    ...report.manual_errors.map((issue) => ({ issue, mark: paint.error("✗") })),
+    ...report.warnings.map((issue) => ({ issue, mark: paint.warn("○") })),
+  ];
+  const userFacing = ranked.filter((r) => r.issue.audience !== "maintainer");
+  const hiddenMaintainer = ranked.length - userFacing.length;
+  const okCount = report.checks.filter((c) => c.status === "ok").length;
+
+  if (userFacing.length === 0) {
+    writeStdout(`${paint.success("✓")} ${dt("doctor.digest.clean", { count: String(report.checks.length) })}`);
+    if (hiddenMaintainer > 0) {
+      writeStdout(`  ${paint.muted(dt("doctor.digest.more-verbose", { count: String(hiddenMaintainer) }))}`);
+    }
+    return;
+  }
+
+  writeStdout("");
+  writeStdout(groupDot(dt("doctor.digest.todo", { count: String(userFacing.length) })));
+  for (const { issue, mark } of userFacing) {
+    writeStdout(`  ${mark} ${issue.name}`);
+    if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
+      writeStdout(`    ${paint.muted(`→ ${shortHint(issue.actionHint)}`)}`);
+    }
+  }
+  writeStdout("");
+  writeStdout(
+    paint.muted(dt("doctor.digest.summary", { todo: String(userFacing.length), ok: String(okCount) })),
+  );
 }
 
 // v2.1.0-rc.1 P3 (S10/S51/R5#5): multi-store health checks. Read-only and
@@ -409,8 +467,13 @@ async function collectStoreDiagnostics(projectRoot: string): Promise<StoreDiagno
   return diagnostics;
 }
 
-function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
-  const block = renderDoctorStoreHealth(diagnostics);
+// flat-design (激进精简): the default surface hides info-severity store
+// advisories (related-graph hubs, consumption heatmap, local-only / unbound
+// notices) — contributor telemetry, not end-user action items. warn/error store
+// PROBLEMS always show. --verbose restores the full set.
+function renderStoreDiagnostics(diagnostics: StoreDiagnostic[], verbose: boolean): void {
+  const shown = verbose ? diagnostics : diagnostics.filter((d) => d.severity !== "info");
+  const block = renderDoctorStoreHealth(shown);
   if (block.length === 0) {
     return;
   }
@@ -448,10 +511,10 @@ export function renderDoctorStoreHealth(diagnostics: StoreDiagnostic[]): string 
   const rows = diagnostics.map((diagnostic) => {
     const mark =
       diagnostic.severity === "error"
-        ? symbol.error
+        ? paint.error("✗")
         : diagnostic.severity === "warn"
-          ? symbol.warn
-          : "[info]";
+          ? paint.warn("○")
+          : paint.ai("ℹ");
     const ref = diagnostic.ref === undefined ? "" : ` [${diagnostic.ref}]`;
     return `  ${mark}${ref} ${diagnostic.message}`;
   });
@@ -463,33 +526,38 @@ export function renderDoctorStoreHealth(diagnostics: StoreDiagnostic[]): string 
 // adds the passing rows. Returns "" when there is nothing to show (quiet + all
 // OK), so the header is suppressed rather than dangling over an empty group.
 export function renderDoctorChecks(report: DoctorReport, verbose: boolean): string {
-  const rows = report.checks
-    .filter((check) => verbose || check.status !== "ok")
-    .map((check) => `  ${renderStatus(check.status)} ${check.name}: ${check.message}`);
+  const rows: string[] = [];
+  for (const check of report.checks) {
+    if (!verbose && check.status === "ok") {
+      continue;
+    }
+    rows.push(`  ${renderStatus(check.status)} ${check.name}: ${check.message}`);
+    // verbose 去复读: the actionHint that used to live in a SEPARATE
+    // fixable/manual/warnings section now folds onto its own check row, so each
+    // problem appears exactly once (no check-list ⊕ issue-list double-print the
+    // user flagged). KT-GLD-0008: aggregate, never re-read.
+    if (verbose && check.status !== "ok" && check.actionHint !== undefined && check.actionHint.length > 0) {
+      rows.push(`    ${paint.muted(`→ ${check.actionHint}`)}`);
+    }
+  }
+  // MCP payload thresholds: a one-line config FYI, not a pass/fail check. It used
+  // to be a stray bare-text section (no groupDot, no glyph) that read as visually
+  // detached; fold it into the checks group as an ℹ row so the whole verbose
+  // surface is one consistent glyph list.
+  const limits = report.summary.payload_limits;
+  if (verbose && limits !== undefined) {
+    rows.push(
+      `  ${paint.ai("ℹ")} ${t("doctor.section.payload-limits")}${t("doctor.payload-limits.line", {
+        warnKb: String(Math.round(limits.warn_bytes / 1024)),
+        hardKb: String(Math.round(limits.hard_bytes / 1024)),
+        source: limits.source,
+      })}`,
+    );
+  }
   if (rows.length === 0) {
     return "";
   }
   return `${groupDot(t("doctor.group.checks"))}\n${rows.join("\n")}`;
-}
-
-// v2.0.0-rc.29 REVIEW (codex LOW-2): F2's `payload_limits` reached the JSON
-// envelope but not the human renderer. Print one line so an operator who edits
-// `mcpPayloadLimits` in `fabric.config.json` can confirm via `fabric doctor` that
-// the override took effect (source=config vs source=default).
-function renderPayloadLimits(report: DoctorReport, dt: DoctorTranslator): void {
-  const limits = report.summary.payload_limits;
-  if (limits === undefined) {
-    return;
-  }
-  writeStdout("");
-  writeStdout(dt("doctor.section.payload-limits"));
-  writeStdout(
-    `- ${dt("doctor.payload-limits.line", {
-      warnKb: String(Math.round(limits.warn_bytes / 1024)),
-      hardKb: String(Math.round(limits.hard_bytes / 1024)),
-      source: limits.source,
-    })}`,
-  );
 }
 
 function renderFixKnowledgeMutations(
@@ -502,101 +570,24 @@ function renderFixKnowledgeMutations(
   writeStdout("");
   writeStdout(groupDot(dt("doctor.section.fix-knowledge-mutations")));
   for (const mutation of fixKnowledgeReport.mutations) {
-    const marker = mutation.applied ? symbol.ok : symbol.error;
+    const marker = mutation.applied ? paint.success("✓") : paint.error("✗");
     const errSuffix = mutation.applied || mutation.error === undefined ? "" : ` (${mutation.error})`;
     writeStdout(`  ${marker} ${mutation.kind}: ${mutation.path} [${mutation.detail}]${errSuffix}`);
   }
 }
 
-function writeIssueSection(
-  title: string,
-  issues: DoctorIssue[],
-  options: { verbose: boolean; dt: DoctorTranslator },
-): void {
-  if (issues.length === 0) {
-    return;
-  }
-
-  writeStdout("");
-  writeStdout(groupDot(title));
-  for (const issue of issues) {
-    writeStdout(`  - ${issue.code}: ${issue.message}`);
-    // rc.35 TASK-12 (P0-11): fold maintainer-audience actionHints unless
-    // --verbose. Print a one-line breadcrumb so users know the hint exists.
-    if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
-      if (issue.audience === "maintainer" && !options.verbose) {
-        writeStdout(`    → ${options.dt("doctor.maintainer-hint-folded")}`);
-      } else {
-        writeStdout(`    → ${issue.actionHint}`);
-      }
-    }
-  }
-}
-
-// v2.0.0-rc.37 NEW-25: doctor TL;DR top-3 critical issues header. Surfaces
-// the highest-severity 3 findings at the top of the human-readable output so
-// users see the actionable signal without scrolling past 48 OK checks. Severity
-// order: fixable_errors > manual_errors > warnings. When the report is all
-// green, emits a single OK line instead of an empty header.
-// ISS-038: the TL;DR carries each finding's actionHint (folded for
-// maintainer-audience hints unless --verbose), mirroring the full issue list —
-// a user who reads only the TL;DR now sees how to fix, not just what is wrong.
-// Exported for direct rendering tests.
-export function renderTldrHeader(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
-  const ranked: Array<{
-    severity: "fixable" | "manual" | "warn";
-    code: string;
-    message: string;
-    actionHint?: string;
-    audience?: "user" | "maintainer";
-  }> = [];
-  for (const issue of report.fixable_errors) {
-    ranked.push({ severity: "fixable", code: issue.code, message: issue.message, actionHint: issue.actionHint, audience: issue.audience });
-  }
-  for (const issue of report.manual_errors) {
-    ranked.push({ severity: "manual", code: issue.code, message: issue.message, actionHint: issue.actionHint, audience: issue.audience });
-  }
-  for (const issue of report.warnings) {
-    ranked.push({ severity: "warn", code: issue.code, message: issue.message, actionHint: issue.actionHint, audience: issue.audience });
-  }
-  if (ranked.length === 0) {
-    writeStdout(`${symbol.ok} TL;DR: all 48 checks green — nothing to fix.`);
-    return;
-  }
-  const top3 = ranked.slice(0, 3);
-  writeStdout(
-    `TL;DR (top ${top3.length} of ${ranked.length}, severity order: fixable→manual→warn):`,
-  );
-  for (const item of top3) {
-    const marker =
-      item.severity === "fixable"
-        ? symbol.error
-        : item.severity === "manual"
-          ? symbol.error
-          : symbol.warn;
-    // Truncate verbose check messages so the TL;DR stays single-line-ish.
-    const truncated = item.message.length > 140 ? `${item.message.slice(0, 137)}...` : item.message;
-    writeStdout(`  ${marker} ${item.code}: ${truncated}`);
-    // Mirror writeIssueSection's actionHint surface (same arrow, same fold rule)
-    // so the TL;DR is self-sufficient for the user who reads no further.
-    if (item.actionHint !== undefined && item.actionHint.length > 0) {
-      writeStdout(
-        item.audience === "maintainer" && !verbose
-          ? `    → ${dt("doctor.maintainer-hint-folded")}`
-          : `    → ${item.actionHint}`,
-      );
-    }
-  }
-}
-
+// flat-design status glyph — the SAME ✓ / ○ / ✗ vocabulary as info / store /
+// sync and the install renderer (paint.success/warn/error). Replaces doctor's
+// legacy `[ok]`/`[warn]`/`[error]` bracket labels, which read as machine-log
+// noise and were the one place doctor diverged from every other command's look.
 function renderStatus(status: "ok" | "warn" | "error"): string {
   if (status === "ok") {
-    return symbol.ok;
+    return paint.success("✓");
   }
   if (status === "warn") {
-    return symbol.warn;
+    return paint.warn("○");
   }
-  return symbol.error;
+  return paint.error("✗");
 }
 
 function writeStdout(message: string): void {
@@ -671,7 +662,7 @@ function computeFixKnowledgePlan(report: DoctorReport): FixKnowledgePlan {
     previewLines.push(`    • ${where} — ${item.message}`);
   }
   if (flattened.length > PLAN_PREVIEW_LIMIT) {
-    previewLines.push(`    • ... and ${flattened.length - PLAN_PREVIEW_LIMIT} more`);
+    previewLines.push(`    • ${t("doctor.fix-plan.more", { count: String(flattened.length - PLAN_PREVIEW_LIMIT) })}`);
   }
 
   return { totalCount, perCodeLines, previewLines };
@@ -679,13 +670,13 @@ function computeFixKnowledgePlan(report: DoctorReport): FixKnowledgePlan {
 
 function renderFixKnowledgePlan(plan: FixKnowledgePlan): void {
   writeStdout("");
-  writeStdout(`${paint.warn("fix-knowledge mutation plan")} (${plan.totalCount} total)`);
+  writeStdout(paint.warn(t("doctor.fix-plan.header", { count: String(plan.totalCount) })));
   for (const line of plan.perCodeLines) {
     writeStdout(line);
   }
   if (plan.previewLines.length > 0) {
     writeStdout("");
-    writeStdout("  preview:");
+    writeStdout(`  ${t("doctor.fix-plan.preview")}`);
     for (const line of plan.previewLines) {
       writeStdout(line);
     }
@@ -732,8 +723,10 @@ async function resolveFixKnowledgeConsent(options: {
 export function renderDoctorFilteredHelp(): void {
   const lines: string[] = [];
 
-  // Header
-  lines.push(paint.ai("fabric doctor") + " — Diagnose and fix Fabric workspace issues");
+  // Header — tagline i18n'd; USAGE/OPTIONS/EXAMPLES labels stay English to match
+  // citty's renderUsage in the other commands' --help (the flat-design through-line
+  // is the localized COPY, not the citty-standard section labels).
+  lines.push(paint.ai("fabric doctor") + ` — ${t("doctor.help.tagline")}`);
   lines.push("");
 
   // Usage
@@ -746,10 +739,10 @@ export function renderDoctorFilteredHelp(): void {
   lines.push("");
 
   const exposedOptions: Array<[string, string]> = [
-    ["--target <path>", "Override project root (defaults to cwd)"],
-    ["--fix", "Auto-fix issues (derived-state + knowledge frontmatter/git mv)"],
-    ["--json", "Output as JSON for programmatic consumption"],
-    ["--verbose", "Show maintainer-audience action hints"],
+    ["--target <path>", t("doctor.help.flag.target")],
+    ["--fix", t("doctor.help.flag.fix")],
+    ["--json", t("doctor.help.flag.json")],
+    ["--verbose", t("doctor.help.flag.verbose")],
   ];
 
   for (const [flag, desc] of exposedOptions) {
@@ -758,10 +751,10 @@ export function renderDoctorFilteredHelp(): void {
 
   lines.push("");
   lines.push(`${paint.human("EXAMPLES")}`);
-  lines.push(`  ${paint.ai("fabric doctor")}        # Run diagnostics`);
-  lines.push(`  ${paint.ai("fabric doctor --fix")}  # Fix derived-state + knowledge issues`);
+  lines.push(`  ${paint.ai("fabric doctor")}        # ${t("doctor.help.example.run")}`);
+  lines.push(`  ${paint.ai("fabric doctor --fix")}  # ${t("doctor.help.example.fix")}`);
   lines.push("");
-  lines.push(paint.human("Run `fabric doctor` to see a full diagnostic report. Audits → `fabric audit`."));
+  lines.push(paint.human(t("doctor.help.footer")));
 
   writeStdout(lines.join("\n"));
 }

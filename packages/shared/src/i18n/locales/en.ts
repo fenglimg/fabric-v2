@@ -2,21 +2,7 @@ import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
   "cli.main.description":
-    "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically, so it stops re-learning them every session.\n" +
-    "\n" +
-    "Three-step mental model:\n" +
-    "  Install (装) - fabric install   one-shot project setup\n" +
-    "  Configure (配) - fabric config  interactive configuration panel\n" +
-    "  Maintain (跑) - fabric doctor   run target-state diagnostics\n" +
-    "                 fabric sync      sync mounted knowledge stores\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric install                  install Fabric in the current project\n" +
-    "  fabric config                   open the interactive configuration panel\n" +
-    "  fabric doctor --fix             repair derived Fabric state\n" +
-    "  fabric doctor --fix-knowledge   repair knowledge entry state\n" +
-    "  fabric sync                     pull/rebase and push mounted stores\n" +
-    "  fabric uninstall --dry-run      preview uninstall without removing files",
+    "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically. First time? Run: fabric install",
   "cli.shared.created": "Created",
   "cli.shared.skipped": "Skipped",
   "cli.shared.next": "Next",
@@ -45,15 +31,71 @@ export const enMessages: Messages = {
   "cli.shared.invalid-port": "Invalid port: {value}",
   "cli.shared.error": "Error",
 
-  // EPIC-011 / W3-F: Grouped help display i18n keys (Knowledge/Project/Maintain).
-  "cli.help.group.knowledge.store": "Manage knowledge stores (see: fabric store --help)",
-  "cli.help.group.knowledge.sync": "Sync team knowledge with remote stores",
-  "cli.help.group.project.install": "Initialize Fabric in this repository",
-  "cli.help.group.project.config": "Configure Fabric settings",
-  "cli.help.group.project.info": "Show project status",
-  "cli.help.group.project.inspect": "Show what SessionStart injects this session",
-  "cli.help.group.maintain.doctor": "Check Fabric health and repair issues",
-  "cli.help.group.maintain.audit": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
+  // Top-level command summaries (one concise line each — citty renders these in
+  // the root `fabric --help` COMMANDS table AND as the header of each command's
+  // own `--help`, so they MUST stay single-line; verbose example blocks were
+  // removed when the bespoke grouped help retired in favour of citty's renderer).
+  "cli.store.description": "Manage mounted knowledge stores (setup via fabric install)",
+  "cli.sync.description": "Sync mounted knowledge stores (pull --rebase + push)",
+  "cli.info.description": "Show Fabric identity, project status & recall health",
+  "cli.inspect.description": "Show what Fabric injects at SessionStart",
+  // `fabric inspect` arg descriptions + --explain provenance overlay + error.
+  "cli.inspect.arg.render": "Which sink to show: 'human' (systemMessage) or 'ai' (additionalContext). Default: both.",
+  "cli.inspect.arg.explain": "Append a per-entry provenance section (id · type · maturity · scope · why-surfaced).",
+  "cli.inspect.arg.target": "Override the project root (defaults to cwd / dev-mode resolution).",
+  "cli.inspect.explain.title": "explain · provenance (not injected)",
+  "cli.inspect.explain.always": "always-active · body injected",
+  "cli.inspect.explain.reference": "reference · read on demand",
+  "cli.inspect.explain.census": "census",
+  "cli.inspect.explain.census-total": "total {total}",
+  "cli.inspect.error": "inspect failed: {message}",
+  "cli.audit.description": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
+
+  // `fabric audit cite` — 0%-recall-coverage self-diagnosis hints.
+  "cli.audit.cite.recall-mismatch-hint":
+    "recall coverage is 0 despite {recalls} recall(s) across {sessions} session(s) — none shared a session with an edit. The recall caller is likely passing a non-client session_id (correlation is session-scoped). See AGENTS.md: pass the real client session_id to fab_recall.",
+  "cli.audit.cite.recall-none-hint":
+    "recall coverage is 0 — no in-session fab_recall preceded these edits. Recall before editing, and pass the real client session_id (correlation is session-scoped). See AGENTS.md.",
+
+  // `fabric audit --help` — filtered help (i18n'd subcommand listing).
+  "cli.audit.help.tagline": "Knowledge & telemetry audit surfaces (read-only)",
+  "cli.audit.help.sub.cite": "Cite-policy adherence report",
+  "cli.audit.help.sub.conflicts": "Knowledge-conflict lint",
+  "cli.audit.help.sub.history": "Maintenance history rollup (archive | fix | all)",
+  "cli.audit.help.sub.descriptions": "Back-fill description-grade frontmatter fields",
+  "cli.audit.help.sub.retired": "Scan agent surfaces for retired tool/field references",
+  "cli.audit.help.sub.why": "Diagnose why a knowledge entry isn't surfacing",
+  "cli.audit.help.example.cite": "cite-coverage over the last 7 days",
+  "cli.audit.help.example.conflicts": "scan for conflicting / duplicate entries",
+  "cli.audit.help.footer": "Run `fabric audit <subcommand> --help` for per-command flags.",
+
+  // `fabric audit retired` — flat renderer copy.
+  "cli.audit.retired.skipped": "Retired-reference scan skipped — no agent-consumed surfaces found.",
+  "cli.audit.retired.clean": "No retired references — scanned {count} agent surface(s).",
+  "cli.audit.retired.found": "{hits} retired reference(s) across {files} scanned file(s)",
+  "cli.audit.retired.removed": "(removed)",
+
+  // `fabric audit why-not-surfaced <id>` — three-axis diagnosis (store / scope / timing).
+  "cli.audit.why.not-found": "'{id}' not found in any mounted store. Check the id (try `fabric store list`).",
+  "cli.audit.why.store-unbound": "'{id}' lives in store '{store}', which is NOT bound to this project.",
+  "cli.audit.why.store-unbound.hint": "bind it: fabric store bind {store}",
+  "cli.audit.why.project-mismatch": "'{id}' is scoped to '{scope}', but this repo is bound to 'project:{project}'.",
+  "cli.audit.why.project-mismatch.hint": "it surfaces only in repos bound to '{scope}' (semantic_scope axis).",
+  "cli.audit.why.narrow-timing": "'{id}' is relevance_scope=narrow — it surfaces via the PreToolUse hint when you EDIT a matching file, not at SessionStart.",
+  "cli.audit.why.narrow-timing.hint": "broad entries are the always-on spine; narrow ones are edit-time only (timing axis).",
+  "cli.audit.why.should-surface": "'{id}' should be surfacing — store '{store}' bound, scope matches, relevance_scope=broad.",
+  "cli.audit.why.should-surface.hint": "if it isn't, the SessionStart snapshot may be stale: start a fresh session or re-run `fabric install`.",
+
+  // `fabric info --help` — flag + scope-subcommand descriptions.
+  "cli.info.args.global.description": "Show global identity (whoami) instead of project status",
+  "cli.info.args.recall.description": "Show recall-engine detail (fusion strategy + embedding state)",
+  "cli.info.args.warm.description":
+    "With --recall: load the embedder now (downloads the model to ~/.fabric/cache/embed on first run)",
+  "cli.info.args.json.description": "Emit machine-readable JSON instead of text",
+  "cli.info.scope.description":
+    "(advanced/skill) Resolve a scope coordinate's read-set + write target as JSON",
+  "cli.info.scope.args.coord.description": "Scope coordinate (e.g. team, project:x, personal)",
+  "cli.info.scope.args.json.description": "Emit machine-readable JSON (scope always emits JSON)",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI
@@ -62,11 +104,7 @@ export const enMessages: Messages = {
   // if no external consumers surface.
 
   "cli.config.description":
-    "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric config                   open the interactive panel\n" +
-    "  fabric config --target /path    edit configuration for a specific project",
+    "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, MCP client wiring, etc.)",
   "cli.config.args.target.description": "Target project directory (defaults to cwd).",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
@@ -100,8 +138,17 @@ export const enMessages: Messages = {
   "cli.config.value.default-marker": "(default)",
   "cli.config.prompt.select": "Choose a new value for {key} (current: {current}):",
   "cli.config.prompt.text": "Enter a new value for {key} (current: {current}):",
-  "cli.config.write.success": "Saved {key} = {value}",
+  "cli.config.write.success": "{key} = {value}",
+  "cli.config.panel.edited": "Edited this session ({count}): {keys}",
   "cli.config.write.failure": "Failed to write fabric-config.json: {message}",
+  "cli.config.slot.errors.missing": "Missing required <slot> argument. Valid slots: {slots}.",
+  "cli.config.slot.errors.unknown": "Unknown slot \"{slot}\". Valid slots: {slots}.",
+  "cli.config.slot.dismiss.already": "Slot \"{slot}\" already opted out; no-op.",
+  "cli.config.slot.dismiss.done": "Dismissed onboard slot \"{slot}\". Run `fabric config onboard-reset {slot}` to re-open.",
+  "cli.config.slot.dismiss.failed": "dismiss-slot failed: {message}",
+  "cli.config.slot.reset.not-opted": "Slot \"{slot}\" not opted out; no-op.",
+  "cli.config.slot.reset.done": "Reset onboard slot \"{slot}\"; it will appear in `fabric onboard-coverage` as missing again.",
+  "cli.config.slot.reset.failed": "onboard-reset failed: {message}",
   "cli.config.errors.uninit-workspace.message":
     "Workspace not initialized. Run `fabric install` first.",
   "cli.config.errors.invalid-int": "Must be a positive integer.",
@@ -152,17 +199,47 @@ export const enMessages: Messages = {
     "How the signals combine into one score: additive = weighted sum (BM25-led, small vector weight) / rrf = Reciprocal Rank Fusion (BM25 and vector on equal footing, so semantics actually count) / auto = adaptive (default: rrf when the vector channel is scoring, else additive — avoids degenerate single-channel rrf being worse).",
 
   "cli.doctor.description":
-    "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric doctor                   read-only diagnostics report\n" +
-    "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
-    "  fabric doctor --fix-knowledge   apply lint mutations (counter / archive / cache)\n" +
-    "  fabric doctor --json            machine-readable output",
+    "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  // flat-design follow-up: the remaining doctor UI-shell strings (TL;DR header,
+  // --fix mutation plan, filtered --help) move off hardcoded English into i18n so
+  // the whole `fabric doctor` surface honours the machine locale. USAGE/OPTIONS/
+  // EXAMPLES labels stay English to match citty's own renderUsage in the other
+  // commands' --help.
+  "doctor.digest.todo": "To fix ({count})",
+  "doctor.digest.clean": "all {count} checks passed — nothing to fix",
+  "doctor.digest.summary": "{todo} to fix · {ok} passed · contributor diagnostics → --verbose",
+  "doctor.digest.more-verbose": "{count} contributor finding(s) hidden — see --verbose",
+  // store diagnostics (multi-store health, the `● 存储健康` group) — i18n parity
+  // with doctor.check.*; messages carry store alias / counts via interpolation.
+  "doctor.store.no-global-config": "no global Fabric config — run `fabric install --global <url>`",
+  "doctor.store.missing-required": "required store '{id}' is not mounted; run `fabric store mount`",
+  "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project; run `fabric store bind {alias}` to read its knowledge here (then `fabric store switch-write {alias}` to write team knowledge into it)",
+  "doctor.store.alias-drift": "by-alias readability link(s) out of sync for {refs}; run `fabric doctor --fix` to repair ~/.fabric/stores/by-alias/",
+  "doctor.store.local-only": "store '{alias}' is local-only; add a git remote to back it up",
+  "doctor.store.executable": "store '{alias}' contains executable/script files ({files}) — stores are data-only; Fabric never runs them (S65)",
+  "doctor.store.active-personal-invalid": "active personal store '{store}' is not a mounted personal store; run `fabric store switch-personal <alias>` or `fabric doctor --fix`",
+  "doctor.store.active-personal-unset": "{count} personal stores are mounted but none is active; run `fabric store switch-personal <alias>` to pick one (or `fabric doctor --fix` to default to the first)",
+  "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
+  "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
+  "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
+  "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
+  "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
+  "doctor.store.overflow-more": ", …(+{count} more)",
+  "doctor.fix-plan.header": "fix-knowledge mutation plan ({count} total)",
+  "doctor.fix-plan.preview": "preview:",
+  "doctor.fix-plan.more": "... and {count} more",
+  "doctor.help.tagline": "Diagnose and fix Fabric workspace issues",
+  "doctor.help.flag.target": "Override project root (defaults to cwd)",
+  "doctor.help.flag.fix": "Auto-fix issues (derived-state + knowledge frontmatter/git mv)",
+  "doctor.help.flag.json": "Output as JSON for programmatic consumption",
+  "doctor.help.flag.verbose": "Show maintainer-audience action hints",
+  "doctor.help.example.run": "Run diagnostics",
+  "doctor.help.example.fix": "Fix derived-state + knowledge issues",
+  "doctor.help.footer": "Run `fabric doctor` to see a full diagnostic report. Audits → `fabric audit`.",
   // flat-design-system Wave5 (TASK-005): C-圆点 group headers for the reskinned
   // doctor surface (`● Store Health` / `● Checks`), replacing the old hardcoded
   // sectionBar literals so the wording is localized in both locales.
@@ -865,12 +942,7 @@ export const enMessages: Messages = {
   "doctor.history.empty": "No doctor or archive activity within the --since={sinceLabel} window (mode={mode}).",
 
   "cli.install.description":
-    "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric install                  interactive install in the current project\n" +
-    "  fabric install --yes            accept defaults, skip the TTY wizard\n" +
-    "  fabric install --dry-run        preview the install plan without writing files",
+    "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks)",
   "cli.install.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.install.args.debug.description": "Print target resolution details to stderr.",
@@ -880,6 +952,10 @@ export const enMessages: Messages = {
     "Opt in to vector semantic search (sets embed_enabled + embed_model; prints fastembed install steps)",
   "cli.install.args.embed-model.description":
     "With --enable-embed: override the pinned embed model (default fast-bge-small-zh-v1.5)",
+  "cli.install.args.global.description":
+    "Set up global Fabric (~/.fabric: uid + personal store + config)",
+  "cli.install.args.url.description":
+    "Clone + mount a shared store remote. In a project install: also binds it to this project and sets it as the write target. With --global: mounts it machine-wide only.",
   // TASK-004: --verbose expands the per-phase detail a collapsed re-install would
   // fold, and prints the full per-client capability table.
   "cli.install.args.verbose.description":
@@ -1170,12 +1246,7 @@ export const enMessages: Messages = {
   "cli.install.diff.state.user-modified": "user-modified",
 
   "cli.uninstall.description":
-    "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric uninstall                interactive uninstall in the current project\n" +
-    "  fabric uninstall --yes          accept defaults, skip the TTY wizard\n" +
-    "  fabric uninstall --dry-run      preview the uninstall plan without removing files",
+    "Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
   "cli.uninstall.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.uninstall.args.debug.description": "Print target resolution details to stderr.",
@@ -1482,6 +1553,63 @@ export const enMessages: Messages = {
   "cli.whoami.stores-none": "stores: (none mounted)",
   "cli.whoami.stores-label": "stores:",
   "cli.shared.local-only": "(local-only)",
+  // `fabric info` (flat-design) — identity / status / recall titles + field labels.
+  "cli.info.field.uid": "uid",
+  "cli.info.identity.title": "Fabric Identity",
+  "cli.info.status.title": "Project Status",
+  "cli.info.status.group.machine": "This machine",
+  "cli.info.status.group.project": "Current project",
+  "cli.info.status.field.project": "project",
+  "cli.info.status.field.mounted": "mounted stores",
+  "cli.info.status.field.bound": "bound stores",
+  "cli.info.status.value.unset": "(unset)",
+  "cli.info.status.value.not-project": "(not a Fabric project)",
+  "cli.info.status.value.no-global": "(no global config)",
+  "cli.info.recall.title": "Recall Engine",
+  "cli.info.recall.summary.on": "semantic search on — details: fabric info --recall",
+  "cli.info.recall.summary.off": "keyword mode · semantic search off — details: fabric info --recall",
+  "cli.info.recall.mode.additive": "additive (keyword mode)",
+  "cli.info.recall.mode.rrf": "rrf (keyword + semantic)",
+  "cli.info.recall.reason.forced-additive": "fixed to keyword mode (additive) by config",
+  "cli.info.recall.reason.auto-additive": "vector channel not ready — auto-falls back to keyword mode",
+  "cli.info.recall.reason.auto-rrf": "vector channel ready — blending keyword + semantic (rrf)",
+  "cli.info.recall.reason.rrf-ready": "fixed to rrf by config; vector channel ready",
+  "cli.info.recall.reason.rrf-warn":
+    "fixed to rrf by config, but the vector channel is not ready — single-channel rrf is worse than keyword mode",
+  "cli.info.recall.install-hint": "install it to enable semantic search: npm i -g fastembed",
+  "cli.info.recall.field.fusion-config": "fusion (config)",
+  "cli.info.recall.field.fusion-effective": "fusion (in use)",
+  "cli.info.recall.field.embed-enabled": "embed enabled",
+  "cli.info.recall.field.embed-model": "embed model",
+  "cli.info.recall.field.fastembed": "fastembed pkg",
+  "cli.info.recall.field.cache-dir": "model cache",
+  "cli.info.recall.field.model-cached": "model cached",
+  "cli.info.recall.field.vector": "vector channel",
+  "cli.info.recall.fastembed.yes": "resolvable",
+  "cli.info.recall.fastembed.no": "not installed (optional dep)",
+  "cli.info.recall.cached.no": "not cached — downloads on first recall (or `fabric info --recall --warm`)",
+  "cli.info.recall.vector.ready": "READY",
+  "cli.info.recall.vector.not-ready": "not ready — recall falls back to keyword mode (BM25 / additive)",
+  "cli.info.recall.warm.ok": "embedder warm: model '{model}' loaded (vector dim {dim}), cached at {dir}",
+  "cli.info.recall.warm.fail":
+    "embedder unavailable — the optional 'fastembed' package is not resolvable or the model failed to load.\n  Recall falls back to keyword mode (BM25 / additive). Install fastembed where the server resolves modules, then retry.",
+  "cli.store.list.description": "List mounted knowledge stores",
+  // Footer note appended to `fabric store --help` — explains where the advanced
+  // (meta.hidden) operations went so the list-only listing isn't a dead end.
+  "cli.store.help.folded-note":
+    "Advanced operations (create / bind / switch-write / migrate, etc.) are folded — they're driven by fabric install and the fabric-store skill. Run `fabric store <command> --help` directly when you need one.",
+  "cli.store.list.title": "Mounted stores",
+  "cli.store.project.list.title": "Projects in store '{store}'",
+  "cli.store.project.list.empty": "(no registered projects)",
+  "cli.store.project.created": "registered project '{id}' in store '{store}'",
+  "cli.store.migrate.title": "Knowledge scope migration",
+  "cli.store.backfill.noop": "scope backfill: nothing to do ({count} already consistent)",
+  "cli.store.backfill.summary": "scope backfill: {changed} updated, {unchanged} unchanged",
+  "cli.store.backfill.scope-note":
+    "{count} entries defaulted to semantic_scope: team. Demote project-specific ones with `fabric store migrate scope <store> --to project:<id> --id <id>`.",
+  "cli.store.rescope.noop": "re-scope: nothing to do ({count} already at '{scope}')",
+  "cli.store.rescope.summary": "re-scope → {scope}: {changed} updated, {unchanged} unchanged",
+  "cli.store.rescope.refused": "{count} entries refused",
   "cli.store.none-mounted": "(no stores mounted)",
   "cli.store.mounted": "mounted '{alias}' ({count} store(s) total)",
   "cli.store.created": "created store '{alias}' ({uuid}) at {dir}",
@@ -1496,12 +1624,30 @@ export const enMessages: Messages = {
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
+  // flat-design (spec §0.4): `fabric sync` command-level title + per-store rows +
+  // aggregate summary. State labels are shared between the per-store rows and the
+  // summary count cells.
+  "cli.sync.args.continue.description": "Resume after resolving a rebase conflict",
+  "cli.sync.args.abort.description": "Abort the conflicted store's rebase",
+  "cli.sync.title": "Sync stores",
+  "cli.sync.summary.title": "Sync summary",
+  "cli.sync.none": "no remote-backed stores to sync",
+  "cli.sync.all-synced": "all stores synced",
+  "cli.sync.state.synced": "synced",
+  "cli.sync.state.offline": "offline",
+  "cli.sync.state.conflict": "conflict",
+  "cli.sync.state.aborted": "aborted",
+  "cli.sync.state.pending": "pending",
   "cli.metrics.invalid-since": '--since: invalid duration "{raw}" (expected e.g. 24h, 7d, 30m)',
   "cli.metrics.window": "Fabric metrics — window: {window}",
   "cli.metrics.window-all-time": "all-time",
   "cli.metrics.rows-range": "  rows: {count} ({start} → {end})",
   "cli.metrics.rows": "  rows: {count}",
   "cli.metrics.no-activity": "  (no counter activity in window — server may be idle or just started)",
+  "cli.metrics.col.counter": "counter",
+  "cli.metrics.col.total": "total",
+  "cli.metrics.col.entry": "entry",
+  "cli.metrics.section.perEntry": "Top per-entry consumed (knowledge_consumed:<id>)",
 
   // W3-09 (ISS-035): forensic project scan progress (stderr, TTY-only).
   "cli.install.scanning": "scanning project for client/framework signals…",

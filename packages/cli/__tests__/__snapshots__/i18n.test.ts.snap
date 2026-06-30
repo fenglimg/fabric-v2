@@ -3,11 +3,7 @@
 exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
 {
   "config": {
-    "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).
-
-Examples:
-  fabric config                   open the interactive panel
-  fabric config --target /path    edit configuration for a specific project",
+    "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, MCP client wiring, etc.)",
     "errors": [
       "Workspace not initialized. Run \`fabric install\` first.",
     ],
@@ -15,12 +11,7 @@ Examples:
     "stdout": [],
   },
   "install": {
-    "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).
-
-Examples:
-  fabric install                  interactive install in the current project
-  fabric install --yes            accept defaults, skip the TTY wizard
-  fabric install --dry-run        preview the install plan without writing files",
+    "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks)",
     "errors": [],
     "stderr": [
       "Using globally-installed @fenglimg/fabric-server",
@@ -57,18 +48,8 @@ Examples:
   },
   "locale": "en",
   "uninstall": {
-    "description": "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.
-
-Examples:
-  fabric uninstall                interactive uninstall in the current project
-  fabric uninstall --yes          accept defaults, skip the TTY wizard
-  fabric uninstall --dry-run      preview the uninstall plan without removing files",
-    "usage": "fabric uninstall - Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.
-
-Examples:
-  fabric uninstall                interactive uninstall in the current project
-  fabric uninstall --yes          accept defaults, skip the TTY wizard
-  fabric uninstall --dry-run      preview the uninstall plan without removing files",
+    "description": "Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
+    "usage": "fabric uninstall - Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
   },
 }
 `;
@@ -76,11 +57,7 @@ Examples:
 exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] = `
 {
   "config": {
-    "description": "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。
-
-示例：
-  fabric config                   打开交互式面板
-  fabric config --target /path    编辑指定项目的配置",
+    "description": "打开 Fabric 交互式配置面板（语言、知识层、审计模式、MCP 客户端配置等）",
     "errors": [
       "工作区尚未初始化。请先运行 \`fabric install\`。",
     ],
@@ -88,12 +65,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     "stdout": [],
   },
   "install": {
-    "description": "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。
-
-示例：
-  fabric install                  在当前项目中以交互模式安装
-  fabric install --yes            接受默认值，跳过 TTY 向导
-  fabric install --dry-run        仅预览安装计划，不写入文件",
+    "description": "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）",
     "errors": [],
     "stderr": [
       "使用全局安装的 @fenglimg/fabric-server",
@@ -130,18 +102,8 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
   },
   "locale": "zh-CN",
   "uninstall": {
-    "description": "从目标项目中卸载 Fabric。项目卸载永远不会删除 ~/.fabric/stores/ 下的全局知识 store。
-
-示例：
-  fabric uninstall                在当前项目中以交互模式卸载
-  fabric uninstall --yes          接受默认值，跳过 TTY 向导
-  fabric uninstall --dry-run      仅预览卸载计划，不删除文件",
-    "usage": "fabric uninstall - 从目标项目中卸载 Fabric。项目卸载永远不会删除 ~/.fabric/stores/ 下的全局知识 store。
-
-示例：
-  fabric uninstall                在当前项目中以交互模式卸载
-  fabric uninstall --yes          接受默认值，跳过 TTY 向导
-  fabric uninstall --dry-run      仅预览卸载计划，不删除文件",
+    "description": "从目标项目中卸载 Fabric（~/.fabric/stores/ 下的全局 store 永不删除）",
+    "usage": "fabric uninstall - 从目标项目中卸载 Fabric（~/.fabric/stores/ 下的全局 store 永不删除）",
   },
 }
 `;

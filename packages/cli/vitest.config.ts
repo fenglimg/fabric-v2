@@ -6,6 +6,9 @@ import { defineConfig } from "vitest/config";
 const packageRoot = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
+  // Mirror tsup.config.ts's build-time define so tests that import src/index.ts
+  // (the CLI entrypoint) resolve __CLI_VERSION__ instead of throwing ReferenceError.
+  define: { __CLI_VERSION__: JSON.stringify("0.0.0-test") },
   resolve: {
     alias: {
       "@fenglimg/fabric-server": resolve(packageRoot, "../server/src/index.ts"),

@@ -61,6 +61,7 @@ export {
   loadEmbedder,
   defaultEmbedCacheDir,
   OPTIONAL_EMBED_PACKAGE,
+  isEmbedderResolvable,
 } from "./services/vector-retrieval.js";
 export {
   findConflictCandidates,

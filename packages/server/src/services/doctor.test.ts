@@ -2475,6 +2475,8 @@ describe("runDoctorCiteCoverage", () => {
       // v2.1 ⑤ cite-redesign (P5): recall-based口径 — 0 edits → 0 backed, null rate.
       recall_backed_edits: 0,
       recall_coverage_rate: null,
+      // session-mismatch self-diagnosis counts — all zero on an empty ledger.
+      recall_diagnostics: { recalls_in_window: 0, recall_sessions: 0, recall_sessions_correlated: 0 },
       // v2.2.0-rc.1 W1-T3 (cite 诚实拆分): WEAK exposed_and_mutated signal —
       // always emitted (count 0 here, no narrow surface events). `ids` omitted
       // when empty.
@@ -5162,6 +5164,14 @@ describe("runDoctorCiteCoverage recall-based口径 (v2.1 ⑤)", () => {
     ]);
     const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
     expect(report.metrics.recall_backed_edits).toBe(0);
+    // recall_diagnostics self-diagnoses the session_id mismatch: a recall happened
+    // in-window (under "OTHER") but no recall session is also an edit session, so
+    // coverage's 0 is a mismatch artifact, not a recall-discipline gap.
+    expect(report.metrics.recall_diagnostics).toEqual({
+      recalls_in_window: 1,
+      recall_sessions: 1,
+      recall_sessions_correlated: 0,
+    });
   });
 
   it("recall AFTER the edit does not back it (ordering)", async () => {

@@ -2,21 +2,7 @@ import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
   "cli.main.description":
-    "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。\n" +
-    "\n" +
-    "三步心智模型：\n" +
-    "  装 (install) - fabric install   一键完成项目初始化\n" +
-    "  配 (config)  - fabric config    打开交互式配置面板\n" +
-    "  维护 (run)  - fabric doctor     运行目标态诊断\n" +
-    "                fabric sync       同步已挂载的知识 store\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric install                  在当前项目中安装 Fabric\n" +
-    "  fabric config                   打开交互式配置面板\n" +
-    "  fabric doctor --fix             修复 Fabric 派生状态\n" +
-    "  fabric doctor --fix-knowledge   修复知识条目状态\n" +
-    "  fabric sync                     pull/rebase 并 push 已挂载 store\n" +
-    "  fabric uninstall --dry-run      预览卸载，不删除文件",
+    "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。首次使用?运行: fabric install",
   "cli.shared.created": "已创建",
   "cli.shared.skipped": "已跳过",
   "cli.shared.next": "下一步",
@@ -44,23 +30,73 @@ export const zhCNMessages: Messages = {
   "cli.shared.invalid-port": "无效端口：{value}",
   "cli.shared.error": "错误",
 
-  // EPIC-011 / W3-F: 分组帮助显示 i18n 键 (Knowledge/Project/Maintain)
-  "cli.help.group.knowledge.store": "管理知识 store (详见: fabric store --help)",
-  "cli.help.group.knowledge.sync": "与远程 store 同步团队知识",
-  "cli.help.group.project.install": "在当前仓库初始化 Fabric",
-  "cli.help.group.project.config": "配置 Fabric 设置",
-  "cli.help.group.project.info": "显示项目状态",
-  "cli.help.group.project.inspect": "显示本会话 SessionStart 注入了什么",
-  "cli.help.group.maintain.doctor": "检查 Fabric 健康状态并修复问题",
-  "cli.help.group.maintain.audit": "知识与遥测审计 (cite/conflicts/history/metrics)",
+  // 顶层命令摘要(每条一句精简单行 —— citty 在根 `fabric --help` 的 COMMANDS
+  // 表与各命令自身 `--help` 头部都用它,必须保持单行;退掉自建分组帮助、改走
+  // citty 渲染器后,原先的多行示例块已移除)
+  "cli.store.description": "管理已挂载的知识 store(建库走 fabric install)",
+  "cli.sync.description": "同步已挂载的知识 store(pull --rebase + push)",
+  "cli.info.description": "显示 Fabric 身份、项目状态与召回健康",
+  "cli.inspect.description": "显示 Fabric 在 SessionStart 注入了什么",
+  // `fabric inspect` 参数说明 + --explain 溯源覆盖层 + 错误。
+  "cli.inspect.arg.render": "显示哪个 sink:'human'(systemMessage)或 'ai'(additionalContext)。默认两个都显示。",
+  "cli.inspect.arg.explain": "追加逐条来源溯源段(id · type · maturity · scope · 浮现原因)。",
+  "cli.inspect.arg.target": "覆盖项目根目录(默认取 cwd / dev 模式解析)。",
+  "cli.inspect.explain.title": "explain · 来源溯源(非注入内容)",
+  "cli.inspect.explain.always": "常驻生效 · 正文已注入",
+  "cli.inspect.explain.reference": "参考候选 · 按需阅读",
+  "cli.inspect.explain.census": "全集普查",
+  "cli.inspect.explain.census-total": "总计 {total}",
+  "cli.inspect.error": "inspect 失败:{message}",
+  "cli.audit.description": "知识与遥测审计 (cite/conflicts/history/metrics)",
 
+  // `fabric audit cite` — recall 覆盖率为 0 的自诊断提示。
+  "cli.audit.cite.recall-mismatch-hint":
+    "recall 覆盖率为 0,但本窗口有 {recalls} 次 recall(分布在 {sessions} 个会话)—— 没有一个与编辑共享会话。多半是 fab_recall 调用方传了非客户端 session_id(关联按会话隔离)。见 AGENTS.md:fab_recall 必须传入真实客户端 session_id。",
+  "cli.audit.cite.recall-none-hint":
+    "recall 覆盖率为 0 —— 这些编辑前没有同会话的 fab_recall。改前先 recall,且传入真实客户端 session_id(关联按会话隔离)。见 AGENTS.md。",
+
+  // `fabric audit --help` — 过滤式帮助(i18n 子命令清单)。
+  "cli.audit.help.tagline": "知识与遥测审计面(只读)",
+  "cli.audit.help.sub.cite": "Cite 政策遵循度报告",
+  "cli.audit.help.sub.conflicts": "知识冲突体检",
+  "cli.audit.help.sub.history": "维护历史汇总(archive | fix | all)",
+  "cli.audit.help.sub.descriptions": "回填描述级 frontmatter 字段",
+  "cli.audit.help.sub.retired": "扫描 agent 面中的废弃工具/字段引用",
+  "cli.audit.help.sub.why": "诊断某条知识为何没浮现",
+  "cli.audit.help.example.cite": "近 7 天的 cite 覆盖率",
+  "cli.audit.help.example.conflicts": "扫描矛盾 / 重复条目",
+  "cli.audit.help.footer": "运行 `fabric audit <subcommand> --help` 查看各子命令参数。",
+
+  // `fabric audit retired` — 平铺渲染文案。
+  "cli.audit.retired.skipped": "已跳过 retired 引用扫描 —— 未发现 agent 消费面。",
+  "cli.audit.retired.clean": "无 retired 引用 —— 已扫描 {count} 个 agent 面。",
+  "cli.audit.retired.found": "在 {files} 个文件中发现 {hits} 处 retired 引用",
+  "cli.audit.retired.removed": "（已移除）",
+
+  // `fabric audit why-not-surfaced <id>` — 三轴诊断(store / scope / timing)。
+  "cli.audit.why.not-found": "未在任何已挂载 store 中找到 '{id}'。请核对 id(可试 `fabric store list`)。",
+  "cli.audit.why.store-unbound": "'{id}' 位于 store '{store}',但该 store 未绑定到本项目。",
+  "cli.audit.why.store-unbound.hint": "绑定它:fabric store bind {store}",
+  "cli.audit.why.project-mismatch": "'{id}' 的 scope 是 '{scope}',但本仓库绑定的是 'project:{project}'。",
+  "cli.audit.why.project-mismatch.hint": "它只在绑定了 '{scope}' 的仓库中浮现(semantic_scope 轴)。",
+  "cli.audit.why.narrow-timing": "'{id}' 是 relevance_scope=narrow —— 仅在你编辑匹配文件时由 PreToolUse 提示浮现,不在 SessionStart。",
+  "cli.audit.why.narrow-timing.hint": "broad 条目是常驻脊柱;narrow 仅在编辑时浮现(timing 轴)。",
+  "cli.audit.why.should-surface": "'{id}' 应当正在浮现 —— store '{store}' 已绑定、scope 匹配、relevance_scope=broad。",
+  "cli.audit.why.should-surface.hint": "若仍没浮现,可能是 SessionStart 快照过期:开个新会话或重跑 `fabric install`。",
+
+  // `fabric info --help` —— flag 与 scope 子命令描述。
+  "cli.info.args.global.description": "显示全局身份(whoami)而非项目状态",
+  "cli.info.args.recall.description": "显示召回引擎详情(融合策略 + 向量嵌入状态)",
+  "cli.info.args.warm.description":
+    "配合 --recall:立即加载 embedder(首次会把模型下载到 ~/.fabric/cache/embed)",
+  "cli.info.args.json.description": "输出机器可读的 JSON 而非文本",
+  "cli.info.scope.description":
+    "(进阶/skill)把一个 scope 坐标解析成 read-set + 写入目标的 JSON",
+  "cli.info.scope.args.coord.description": "Scope 坐标(如 team、project:x、personal)",
+  "cli.info.scope.args.json.description": "输出机器可读的 JSON(scope 始终输出 JSON)",
 
   "cli.config.description":
-    "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric config                   打开交互式面板\n" +
-    "  fabric config --target /path    编辑指定项目的配置",
+    "打开 Fabric 交互式配置面板（语言、知识层、审计模式、MCP 客户端配置等）",
   "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
@@ -93,8 +129,17 @@ export const zhCNMessages: Messages = {
   "cli.config.value.default-marker": "（默认）",
   "cli.config.prompt.select": "为 {key} 选择新值（当前：{current}）：",
   "cli.config.prompt.text": "为 {key} 输入新值（当前：{current}）：",
-  "cli.config.write.success": "已保存 {key} = {value}",
+  "cli.config.write.success": "{key} = {value}",
+  "cli.config.panel.edited": "本次已改（{count} 项）：{keys}",
   "cli.config.write.failure": "写入 fabric-config.json 失败：{message}",
+  "cli.config.slot.errors.missing": "缺少必填的 <slot> 参数。可用槽位：{slots}。",
+  "cli.config.slot.errors.unknown": "未知槽位 \"{slot}\"。可用槽位：{slots}。",
+  "cli.config.slot.dismiss.already": "槽位 \"{slot}\" 已忽略，无需操作。",
+  "cli.config.slot.dismiss.done": "已忽略 onboard 槽位 \"{slot}\"。运行 `fabric config onboard-reset {slot}` 可重新开启。",
+  "cli.config.slot.dismiss.failed": "dismiss-slot 失败：{message}",
+  "cli.config.slot.reset.not-opted": "槽位 \"{slot}\" 未被忽略，无需操作。",
+  "cli.config.slot.reset.done": "已重置 onboard 槽位 \"{slot}\"；它将在 `fabric onboard-coverage` 中重新显示为缺失。",
+  "cli.config.slot.reset.failed": "onboard-reset 失败：{message}",
   "cli.config.errors.uninit-workspace.message":
     "工作区尚未初始化。请先运行 `fabric install`。",
   "cli.config.errors.invalid-int": "必须是正整数。",
@@ -145,17 +190,45 @@ export const zhCNMessages: Messages = {
     "多信号合成总分的算法：additive 加权求和（BM25 主导，向量权重小）/ rrf 倒数排名融合（BM25 与向量平起平坐，语义才真正生效）/ auto 自适应（默认：向量在出分时用 rrf，否则回落 additive——避免无向量时 rrf 退化反而更差）。",
 
   "cli.doctor.description":
-    "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric doctor                   只读诊断报告\n" +
-    "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
-    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（计数器 / 归档 / 缓存）\n" +
-    "  fabric doctor --json            机器可读输出",
+    "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
+  // flat-design follow-up: doctor 剩余的 UI-shell 文案(TL;DR 头、--fix 变更计划、
+  // 过滤版 --help)从硬编码英文搬进 i18n,让整个 `fabric doctor` 输出跟随机器语言。
+  // USAGE/OPTIONS/EXAMPLES 标签保持英文,与其它命令 --help 的 citty renderUsage 对齐。
+  "doctor.digest.todo": "待处理 ({count})",
+  "doctor.digest.clean": "全部 {count} 项检查通过 —— 无需处理",
+  "doctor.digest.summary": "{todo} 项待处理 · {ok} 项通过 · 贡献者诊断见 --verbose",
+  "doctor.digest.more-verbose": "另有 {count} 项贡献者诊断 —— 见 --verbose",
+  // store 诊断(多 store 健康,即 `● 存储健康` 分组)—— 与 doctor.check.* 对齐 i18n;
+  // 文案通过插值带上 store alias / 计数。
+  "doctor.store.no-global-config": "无全局 Fabric 配置 —— 运行 `fabric install --global <url>`",
+  "doctor.store.missing-required": "必需 store '{id}' 未挂载;运行 `fabric store mount`",
+  "doctor.store.unbound": "store '{alias}' 已挂载但未绑定到本项目;运行 `fabric store bind {alias}` 即可在此读取它的知识(再用 `fabric store switch-write {alias}` 把团队知识写入它)",
+  "doctor.store.alias-drift": "by-alias 可读性软链与注册表不同步:{refs};运行 `fabric doctor --fix` 修复 ~/.fabric/stores/by-alias/",
+  "doctor.store.local-only": "store '{alias}' 仅本地;加一个 git remote 以备份",
+  "doctor.store.executable": "store '{alias}' 含可执行/脚本文件({files})—— store 仅存数据;Fabric 从不运行它们 (S65)",
+  "doctor.store.active-personal-invalid": "活动 personal store '{store}' 不是已挂载的 personal store;运行 `fabric store switch-personal <alias>` 或 `fabric doctor --fix`",
+  "doctor.store.active-personal-unset": "已挂载 {count} 个 personal store 但无活动指针;运行 `fabric store switch-personal <alias>` 选一个(或 `fabric doctor --fix` 默认取第一个)",
+  "doctor.store.related-broken": "{count} 条 `related` 链接指向语料中不存在的 id:{samples}{overflow} —— 通过 `fab_review` (modify) 修复 related 边,或编辑条目 frontmatter",
+  "doctor.store.related-hub": "related 图谱枢纽(前 {shown} / 共 {total} 个被引用):{top}",
+  "doctor.store.unreachable": "store '{alias}' 在 read-set 中但磁盘上不可达({reason});运行 `fabric store mount` / 重新 clone,再跑 `fabric doctor`",
+  "doctor.store.consumption-heatmap": "消费热区(近 {days}d,{consumed}/{total} 条被读,跨 {windows} 个窗口):{top}",
+  "doctor.store.consumption-zero": "{count} 条在近 {days}d 内从未被消费:{sample}{overflow} —— 通过 `fab_review` 考虑淘汰(消费量只是信号之一,非陈旧的证据)",
+  "doctor.store.overflow-more": ", …(+{count} 条)",
+  "doctor.fix-plan.header": "fix-knowledge 变更计划(共 {count} 项)",
+  "doctor.fix-plan.preview": "预览:",
+  "doctor.fix-plan.more": "... 还有 {count} 项",
+  "doctor.help.tagline": "诊断并修复 Fabric 工作区问题",
+  "doctor.help.flag.target": "覆盖项目根目录(默认当前目录)",
+  "doctor.help.flag.fix": "自动修复(派生状态 + 知识 frontmatter/git mv)",
+  "doctor.help.flag.json": "以 JSON 输出供程序消费",
+  "doctor.help.flag.verbose": "显示面向维护者的操作提示",
+  "doctor.help.example.run": "运行诊断",
+  "doctor.help.example.fix": "修复派生状态 + 知识问题",
+  "doctor.help.footer": "运行 `fabric doctor` 查看完整诊断报告。审计 → `fabric audit`。",
   // flat-design-system Wave5 (TASK-005): 重排后的 doctor C-圆点分组标题
   // (`● 存储健康` / `● 检查项`),取代原硬编码 sectionBar 字面量。
   "doctor.group.store-health": "存储健康",
@@ -168,30 +241,30 @@ export const zhCNMessages: Messages = {
   "doctor.section.cite-coverage": "Cite 覆盖率:",
   "doctor.cite.header": "起始 {since} (政策激活时间 {marker})",
   "doctor.cite.warning.justActivated": "本次首次激活 Cite policy,暂无历史数据。",
-  "doctor.cite.metric.editsTouched": "Edit 触达数",
-  "doctor.cite.metric.qualifyingCites": "合格 cite",
-  "doctor.cite.metric.recalledUnverified": "applied 但未验证",
+  "doctor.cite.metric.editsTouched": "编辑触达数",
+  "doctor.cite.metric.qualifyingCites": "合格 cite 数",
+  "doctor.cite.metric.recalledUnverified": "已标注 applied 但未验证",
   "doctor.cite.metric.expectedButMissed": "应查没查",
   "doctor.cite.metric.totalTurns": "总回合数",
-  "doctor.cite.metric.complianceRate": "cite 合规率 (含 KB:none[reason])",
-  "doctor.cite.metric.complianceNA": "N/A (无应 cite 回合)",
-  "doctor.cite.metric.uncorrelatableEdits": "无法关联的 edit (缺 session_id — hook 过期? 请跑 `fabric install`)",
-  "doctor.cite.metric.recallCoverage": "recall 覆盖率 (改前有相关 fab_recall 的 edit 占比)",
-  "doctor.cite.metric.recallCoverageNA": "N/A (无可关联 edit)",
+  "doctor.cite.metric.complianceRate": "cite 合规率（含 KB:none[reason]）",
+  "doctor.cite.metric.complianceNA": "N/A（无应 cite 回合）",
+  "doctor.cite.metric.uncorrelatableEdits": "无法关联的编辑（缺 session_id —— hook 过期?请跑 `fabric install`）",
+  "doctor.cite.metric.recallCoverage": "recall 覆盖率（改前有相关 fab_recall 的编辑占比）",
+  "doctor.cite.metric.recallCoverageNA": "N/A（无可关联编辑）",
   // v2.2.0-rc.1 W1-T3 (cite 诚实拆分): 弱辅助信号, 与真遵循率分列展示。括注必须
   // 明确「不计入真遵循度」(诚实铁律)。
   "doctor.cite.metric.exposedAndMutated":
-    "曝光且路径变更 (弱辅助信号 — 不计入真遵循度)",
+    "曝光且路径变更（弱辅助信号 —— 不计入真遵循度）",
   // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse mutation funnel +
   // SessionEnd 边界。均为可观测性 marker, 不计入真遵循度。
   "doctor.cite.metric.mutationsObserved":
-    "mutation 观测数 (PostToolUse file_mutated — 权威信号, 不计入真遵循度)",
+    "mutation 观测数（PostToolUse file_mutated —— 权威信号,不计入真遵循度）",
   "doctor.cite.metric.mutationPool":
-    "mutation 归因池 (经 source_event_id 的 low-confidence 归因)",
+    "mutation 归因池（经 source_event_id 的低置信归因）",
   "doctor.cite.metric.sessionsClosed":
-    "已闭合 session 数 (SessionEnd marker — funnel 边界)",
+    "已闭合会话数（SessionEnd marker —— funnel 边界）",
   "doctor.cite.metric.byStore":
-    "按 store 拆分的合规 cite 数 (诊断拆分 — 不计入真遵循度; 'local' = 本项目)",
+    "按 store 拆分的合规 cite 数（诊断拆分 —— 不计入真遵循度;'local' = 本项目）",
   "doctor.cite.section.perClient": "按客户端拆分",
   "doctor.cite.section.dismissedReasons": "驳回原因分布",
   "doctor.cite.dismissed.scope-mismatch": "范围不符",
@@ -304,7 +377,7 @@ export const zhCNMessages: Messages = {
   "doctor.enrich.allComplete":
     "所有正式知识条目均已包含 intent_clues / tech_stack / impact / must_read_if。",
   // rc.26 TASK-02a: doctor foundation-batch check messages.
-  "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
+  "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap 快照漂移",
   "doctor.check.bootstrap_snapshot_drift.message.drift":
     ".fabric/AGENTS.md 内容与 BOOTSTRAP_CANONICAL 逐字节不一致。",
   "doctor.check.bootstrap_snapshot_drift.remediation.drift":
@@ -313,7 +386,7 @@ export const zhCNMessages: Messages = {
     ".fabric/AGENTS.md 与 BOOTSTRAP_CANONICAL 逐字节一致。",
   "doctor.check.bootstrap_snapshot_drift.ok.missing_delegated":
     ".fabric/AGENTS.md 不存在，已交由 bootstrap_anchor_missing 报告。",
-  "doctor.check.managed_block_drift.name": "Managed block drift",
+  "doctor.check.managed_block_drift.name": "Managed block 漂移",
   "doctor.check.managed_block_drift.message.singular":
     "{count} 个 three-end managed block 与期望内容（snapshot + 可选 project-rules concat）不一致：{list}。",
   "doctor.check.managed_block_drift.message.plural":
@@ -324,14 +397,14 @@ export const zhCNMessages: Messages = {
     "Three-end managed blocks 与 expectedBody 逐字节一致。",
   "doctor.check.managed_block_drift.ok.no_managed_block":
     "未检测到 three-end managed blocks；可能尚未传播，或仍处于 legacy-marker 状态。",
-  "doctor.check.bootstrap_anchor.name": "Bootstrap anchor",
+  "doctor.check.bootstrap_anchor.name": "Bootstrap 锚点",
   "doctor.check.bootstrap_anchor.message.missing":
     "repo root 下 AGENTS.md 与 CLAUDE.md 都不存在。Fabric 需要在项目根目录存在 bootstrap anchor 文件。",
   "doctor.check.bootstrap_anchor.remediation.missing":
     "运行 `fabric install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
   "doctor.check.bootstrap_anchor.ok": "repo root 下已存在 Bootstrap anchor：{present}。",
   // v2.0.0-rc.33 W3-2 (T6 #5): 文案显式引用 message 内已列出的 detail (file 名), 让用户直接 rm 而非自己去 grep 找。baseline pipeline 已 rc.23 移除, 没有 auto-fix。
-  "doctor.check.forensic.name": "Scan evidence",
+  "doctor.check.forensic.name": "扫描证据",
   "doctor.check.forensic.message.missing.singular":
     "{error} 实时扫描检测到 {frameworkKind}，共有 {count} 个入口点。",
   "doctor.check.forensic.message.missing.plural":
@@ -340,7 +413,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json 无效。",
   "doctor.check.forensic.remediation": "运行 `fabric install` 重新生成 .fabric/forensic.json。",
   "doctor.check.forensic.ok": ".fabric/forensic.json 对 {frameworkKind} 有效。",
-  "doctor.check.agents_meta.name": "Agents metadata",
+  "doctor.check.agents_meta.name": "Agents 元数据",
   "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json 缺失。",
   "doctor.check.agents_meta.remediation.missing":
     "store-backed knowledge 下无需处理；项目本地 agents.meta 重建路径已退休。",
@@ -360,7 +433,7 @@ export const zhCNMessages: Messages = {
     "不再执行项目本地 reconcile；mounted stores 会被直接读取。",
   "doctor.check.agents_meta.ok":
     "检测到 legacy agents.meta revision {revision}；store-backed knowledge 不依赖它。",
-  "doctor.check.rule_content_refs.name": "Rule content refs",
+  "doctor.check.rule_content_refs.name": "Rule 内容引用",
   "doctor.check.rule_content_refs.message.unavailable":
     "agents.meta.json 有效前，无法检查 content_ref entries。",
   "doctor.check.rule_content_refs.remediation.unavailable":
@@ -380,7 +453,7 @@ export const zhCNMessages: Messages = {
     "项目本地 content_ref reconcile 已退休；请绑定并读取 mounted stores。",
   "doctor.check.rule_content_refs.ok":
     "所有 legacy content_ref entries 都能解析；store-backed knowledge 从 mounted stores 读取。",
-  "doctor.check.knowledge_test_index.name": "Knowledge-test index",
+  "doctor.check.knowledge_test_index.name": "知识测试索引",
   "doctor.check.knowledge_test_index.remediation.missing":
     "运行 `fabric doctor --fix` 重建 .fabric/.cache/knowledge-test.index.json。",
   "doctor.check.knowledge_test_index.remediation.invalid":
@@ -397,7 +470,7 @@ export const zhCNMessages: Messages = {
     "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
   "doctor.check.knowledge_test_index.ok.link_plural.orphan_plural":
     "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
-  "doctor.check.event_ledger.name": "Event ledger",
+  "doctor.check.event_ledger.name": "事件账本",
   "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl 缺失。",
   "doctor.check.event_ledger.remediation.missing":
     "运行 `fabric doctor --fix` 创建 .fabric/events.jsonl。",
@@ -413,7 +486,7 @@ export const zhCNMessages: Messages = {
     ".fabric/events.jsonl 已存在，可写，且可解析。",
   // v2.0.0-rc.37 Wave B (B5): 复合 hard-gate 检查 events.jsonl/metrics.jsonl 健康
   // (G7 size / G8 metric_leak / G9 metrics_stale / G10 rotation_overdue)。
-  "doctor.check.events_jsonl_health.name": "Events ledger 健康 (rc.37 Plan B 5 hard gate)",
+  "doctor.check.events_jsonl_health.name": "事件账本健康",
   "doctor.check.events_jsonl_health.ok":
     ".fabric/events.jsonl 大小、新鲜度、metric 隔离全部正常。",
   "doctor.check.events_jsonl_health.message.size":
@@ -426,7 +499,7 @@ export const zhCNMessages: Messages = {
     ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
   "doctor.check.events_jsonl_health.remediation":
     "运行 `fabric doctor --fix` —— 它会触发 rotation 并 flush metrics.jsonl(rc.2 F16: 无需重启 server 即可清出 idle 期未刷的 metric counter)。若告警仍持续, 再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中, 检查最近代码改动是否绕过 bumpCounter API 直接 appendEventLedgerEvent 写了 4 个 metric-managed event_type 之一。",
-  "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
+  "doctor.check.event_ledger_partial_write.name": "事件账本半截写入",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "无需执行 partial-write 检查（ledger 缺失或不可写）。",
   "doctor.check.event_ledger_partial_write.message":
@@ -436,7 +509,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl 没有 partial trailing write。",
   // v2.0.0-rc.27 TASK-010 (audit §2.24): schema-compat 向前兼容警告类别。
-  "doctor.check.event_ledger_schema_compat.name": "Event ledger schema 兼容性",
+  "doctor.check.event_ledger_schema_compat.name": "事件账本 schema 兼容性",
   "doctor.check.event_ledger_schema_compat.ok.skipped":
     "无需做 schema 兼容性检查（events.jsonl 不存在或不可写）。",
   "doctor.check.event_ledger_schema_compat.ok.clean":
@@ -465,7 +538,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.retired_reference.remediation":
     "把命中文本改为替代 token (或删除), 再跑 `fabric install` 重同步 dogfood 镜像。",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
-  "doctor.check.skill_token_budget.name": "Skill token budget",
+  "doctor.check.skill_token_budget.name": "Skill token 预算",
   "doctor.check.skill_token_budget.ok":
     "所有 .claude/skills/<slug>/SKILL.md 在 token budget 内 (warn 5K / error 10K)。",
   "doctor.check.skill_token_budget.message.singular":
@@ -475,7 +548,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.skill_token_budget.remediation":
     "将超标 SKILL.md 中的详细 phase / worked-examples / decision 表移到 `templates/skills/<slug>/ref/*.md`,SKILL.md 热路径只留 trigger gate + 关键 phase 概要;参考 W1 progressive disclosure 拆分模式。重新跑 `fabric install` 同步两端。",
   // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description 结构 lint。代理 trigger-recall (真 LLM 测要 live model, W1 已用 gemini 跑过);本 lint 抓回归: description 缺失 / 超 60 token / 缺中文 trigger / 缺英文 trigger。
-  "doctor.check.skill_description.name": "Skill description quality",
+  "doctor.check.skill_description.name": "Skill description 质量",
   "doctor.check.skill_description.ok":
     "所有 SKILL.md description 字段结构良好 (非空 / <60 token / 中英双语 trigger)。",
   "doctor.check.skill_description.message.singular":
@@ -495,7 +568,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.cite_goodhart.remediation":
     "审阅触发的 pattern: G1 仪式化 → 同一 [applied] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% applied 用 skip: 是绕过 contract, review skip reason 真实性; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fabric doctor --cite-coverage --since=7d`。",
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint。rc.32 baseline 92% entry 卡在 draft, 揭示 promote 断流。> 50% draft 触发 warning (workspace 必须 >= 10 entries 才计算比率, 避免小语料噪音)。
-  "doctor.check.draft_backlog.name": "Knowledge draft backlog",
+  "doctor.check.draft_backlog.name": "知识 draft 积压",
   "doctor.check.draft_backlog.ok":
     "canonical knowledge entries 中 draft 占比正常 (< 50%, 或 workspace 太小不评)。",
   "doctor.check.draft_backlog.message":
@@ -504,7 +577,7 @@ export const zhCNMessages: Messages = {
     "调 `/fabric-review` 批量审 draft entries: approve 升 verified/proven, reject 丢, modify 修。draft 长期堆积通常意味着 archive skill 产 draft 太快或 review skill 没跟上。",
   // rc.37 NEW-38: knowledge auto-promote (info surface; --fix 执行).
   // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
-  "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
+  "doctor.check.knowledge_tags_empty.name": "知识 tags 覆盖率",
   "doctor.check.knowledge_tags_empty.ok":
     "canonical knowledge entries 中 empty tags 占比正常 (≤ 50%, 或 workspace 太小不评)。",
   "doctor.check.knowledge_tags_empty.message":
@@ -512,14 +585,14 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_tags_empty.remediation":
     "下一轮 archive/import 时,在 frontmatter `tags:` 写 2-4 个 kebab-case 主题词;批量补旧 entry tag 用 `/fabric-review` modify 流。",
   // rc.36 TASK-09 (P1-NEW1): drift_detected 未消化告警。
-  "doctor.check.drift_unconsumed.name": "Knowledge drift unconsumed",
+  "doctor.check.drift_unconsumed.name": "知识漂移未消化",
   "doctor.check.drift_unconsumed.ok":
     "近 30 天内 knowledge_drift_detected 事件已被对应 knowledge_demoted 消化,或事件数太少不评。",
   "doctor.check.drift_unconsumed.message":
     "近 30 天内 knowledge_drift_detected 事件 {driftCount} 次,knowledge_demoted 事件 {demoteCount} 次。drift > demote 至少 5 → 部分 drift 没被消化,KB 会缓慢失活。",
   "doctor.check.drift_unconsumed.remediation":
     "调 `/fabric-review` 审 drift 标记的条目 — 通过 store 写侧 review 流程降级或归档它们。(doctor 的 orphan_demote / stale_archive lint 只上报衰减,不自愈 store 知识。)",
-  "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
+  "doctor.check.meta_manually_diverged.name": "Meta 手动偏离",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",
   "doctor.check.meta_manually_diverged.message.extra.singular":
@@ -536,7 +609,7 @@ export const zhCNMessages: Messages = {
     "项目本地 agents.meta reconcile 已退休；mounted stores 是 source of truth。",
   "doctor.check.meta_manually_diverged.ok.consistent":
     "agents.meta.json 与磁盘上的 rule files 一致。",
-  "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
+  "doctor.check.knowledge_dir_unindexed.name": "知识目录未索引",
   "doctor.check.knowledge_dir_unindexed.message.singular":
     "检测到 {count} 个 legacy local knowledge .md file 未索引。请移入 mounted store；非 store knowledge root 已退休。",
   "doctor.check.knowledge_dir_unindexed.message.plural":
@@ -546,7 +619,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_dir_unindexed.ok":
     "无需执行 legacy local knowledge 索引动作。",
   // v2.0.0-rc.33 W3-2 (T6 #27): 走 fabric-review modify 流程让 canonical id allocator 重新分配, 而非让用户自己选 id (易撞 counter, 难手算)。
-  "doctor.check.counter_desync.name": "Knowledge counter desync",
+  "doctor.check.counter_desync.name": "知识计数器失同步",
   "doctor.check.counter_desync.message.singular":
     "{count} 个 knowledge counter 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fabric doctor --fix` bump counters。",
   "doctor.check.counter_desync.message.plural":
@@ -555,7 +628,7 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 将 agents.meta.json counters 提升到观测到的最大 counter 值。",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope 与观测到的 stable_ids 一致。",
-  "doctor.check.store_counter_drift.name": "Store counter drift",
+  "doctor.check.store_counter_drift.name": "Store 计数器漂移",
   "doctor.check.store_counter_drift.message.singular":
     "{count} 个 store counter 低于磁盘上的最大 stable_id（{detail}）。该 store 下一次铸号会复用已存在的 id。运行 `fabric doctor --fix` 将 store counters.json 提升到磁盘最大值。",
   "doctor.check.store_counter_drift.message.plural":
@@ -564,7 +637,7 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 将每个 store 的 counters.json 提升（floor）到磁盘上观测到的最大 stable_id（floor 只升不降——KT-DEC-0004 单调不变量）。",
   "doctor.check.store_counter_drift.ok":
     "read-set 内每个 store 的 counters.json 都已 floor 到磁盘最大 stable_id。",
-  "doctor.check.store_orphan.name": "Store orphan",
+  "doctor.check.store_orphan.name": "Store 孤儿",
   "doctor.check.store_orphan.message.singular":
     "{count} 个 store 在磁盘上存在但未登记到全局 registry（{detail}），recall / bind 都看不到它。运行 `fabric doctor --fix` 把它收编（重新登记，绝不删除磁盘文件）。",
   "doctor.check.store_orphan.message.plural":
@@ -573,7 +646,7 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 把这些孤儿 store 收编进 registry(按 store_uuid 重新登记、alias 撞库自动消歧;rescue-before-delete——只登记不删盘)。",
   "doctor.check.store_orphan.ok":
     "~/.fabric/stores 下没有未登记的孤儿 store。",
-  "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
+  "doctor.check.preexisting_root_files.name": "预存根目录 markdown",
   "doctor.check.preexisting_root_files.ok": "project root 未检测到 CLAUDE.md 或 AGENTS.md。",
   "doctor.check.preexisting_root_files.message":
     "project root 检测到 {files}。这些 root files 不会被 Fabric MCP 自动加载。",
@@ -581,7 +654,7 @@ export const zhCNMessages: Messages = {
     "如果希望这些 knowledge 内容在 MCP 响应中可用，请将其移动到 mounted store 的 `knowledge/{type}/` tree。",
   // v2.0.0-rc.33 W3-2 (T6 #34): 同 stable_id_collision — 走 fabric-review modify 让 allocator 分配新 id, 不让用户手算。
   // v2.0.0-rc.33 W3-2 (T6 #35): 加 skill 入口 (`/fabric-review modify <id>`) 让用户知道怎么 invoke。
-  "doctor.check.index_drift.name": "Knowledge index drift",
+  "doctor.check.index_drift.name": "知识索引漂移",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope 对每个 (layer, type) pair 都大于或等于现有 canonical counter 最大值。",
   "doctor.check.index_drift.message.singular":
@@ -590,7 +663,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
     "运行 `fabric doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
-  "doctor.check.underseeded.name": "Knowledge underseeded",
+  "doctor.check.underseeded.name": "知识种子不足",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
   "doctor.check.underseeded.message.singular":
@@ -599,7 +672,7 @@ export const zhCNMessages: Messages = {
     "知识库仅有 {count} 个 canonical entries（< {threshold} threshold）。plan_context 检索面低于可用下限。",
   "doctor.check.underseeded.remediation":
     "运行 fabric-archive skill 的 source mode（`/fabric-archive`）从 git history 与现有文档回填 knowledge。",
-  "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
+  "doctor.check.session_hints_stale.name": "知识 session-hints 陈旧",
   "doctor.check.session_hints_stale.ok":
     ".fabric/.cache/ 下没有超过 {days} 天的 session-hints cache files。",
   "doctor.check.session_hints_stale.message.singular":
@@ -608,14 +681,14 @@ export const zhCNMessages: Messages = {
     ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
   "doctor.check.session_hints_stale.remediation":
     "运行 `fabric doctor --fix-knowledge` 删除过期的 session-hints cache files。",
-  "doctor.check.hook_cache_writable.name": "Hook cache writable",
+  "doctor.check.hook_cache_writable.name": "Hook 缓存可写",
   "doctor.check.hook_cache_writable.ok":
     "Hook sidecar cache 路径 {path} 可写入探针文件。",
   "doctor.check.hook_cache_writable.message":
     "Hook sidecar cache 路径 {path} 不可写；hook state updates 会静默失败。错误：{error}。",
   "doctor.check.hook_cache_writable.remediation":
     "恢复 {path} 写权限，移除占用该路径的阻塞文件，或修复文件系统状态后重新运行 `fabric install`。",
-  "doctor.check.stale_serve_lock.name": "Serve lock",
+  "doctor.check.stale_serve_lock.name": "Serve 锁",
   "doctor.check.stale_serve_lock.ok.no_lock": "未发现 .fabric/.serve.lock。",
   "doctor.check.stale_serve_lock.ok.live_pid":
     ".fabric/.serve.lock 由 live PID {pid} 持有。",
@@ -628,7 +701,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_serve_lock.remediation.dead_pid":
     "运行 `fabric doctor --fix` 移除过期的 .fabric/.serve.lock。",
   // rc.31 BUG-M3/NEW-4: hooks_wired observability.
-  "doctor.check.hooks_wired.name": "Claude Code hooks wired",
+  "doctor.check.hooks_wired.name": "Claude Code hooks 注入",
   "doctor.check.hooks_wired.ok.skipped": "项目未启用 Claude Code（无 .claude/ 目录）；跳过 hooks_wired 检查。",
   "doctor.check.hooks_wired.ok.wired":
     ".claude/settings.json 已注入 Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow 三个 fabric hook。",
@@ -660,7 +733,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.hooks_content_drift.remediation":
     "运行 `fabric install` 把所有 client 的 hook 副本恢复到 canonical 模板。若你确实需要 client-specific hook 行为，建议改 lib/ 共享脚本或 templates/hooks/configs/ 配置而非直接编辑安装后的 .cjs。",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
-  "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
+  "doctor.check.promote_ledger_invariant.name": "晋升账本不变量",
   "doctor.check.promote_ledger_invariant.ok":
     "knowledge_proposed={proposed} ≥ knowledge_promote_started={started} ≥ knowledge_promoted={promoted}，ledger 不变量持有。",
   "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
@@ -692,7 +765,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_summary_opaque.remediation":
     "调 fabric-review skill 重写不透明 summary 为一句人类可读的概要。rc.35 hint renderer fallback (TASK-06) 也会从 entry 的 `## Summary` 段自动合成临时 summary。",
   // v2.2 W4 (G-GUARD / A6): store scope lint。
-  "doctor.check.store_scope_lint.name": "Store scope lint",
+  "doctor.check.store_scope_lint.name": "Store scope 检查",
   "doctor.check.store_scope_lint.ok":
     "read-set 内所有 store 条目 scope 元数据齐备(semantic_scope + visibility_store,无 personal 泄漏,无 dangling project)。",
   "doctor.check.store_scope_lint.message":
@@ -700,7 +773,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.store_scope_lint.remediation":
     "调 `fabric store migrate backfill` 补缺失的 semantic_scope/visibility_store;`fabric store migrate scope` 修 dangling 的 project: 坐标;把 personal-scope 条目移出 shared store(personal 知识只存个人 store,R5#3)。",
   // v2.2 Goal B (G-INTEGRITY): store stable_id collision + layer mismatch lints。
-  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.name": "Stable ID 冲突",
   "doctor.check.stable_id_collision.message.singular":
     "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中:{files}。请编辑其中一个 knowledge file,改用唯一 stable_id。",
   "doctor.check.stable_id_collision.message.plural":
@@ -709,7 +782,7 @@ export const zhCNMessages: Messages = {
     "调 `/fabric-review modify <message 中列出的 colliding id 之一>`, 让 canonical id allocator 自动重分配 id (会同步更新 frontmatter + counters + 历史 cross-ref)。严禁手工编辑 id frontmatter — 会撞 counter。",
   "doctor.check.stable_id_collision.ok":
     "mounted store knowledge 中未发现已声明的 stable_id collisions。",
-  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.name": "知识 layer 不匹配",
   "doctor.check.layer_mismatch.ok":
     "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
   "doctor.check.layer_mismatch.message.singular":
@@ -719,7 +792,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.layer_mismatch.remediation":
     "将文件移动到正确的 write-target store,或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
   // v2.2 Goal B (G-RELEVANCE): store relevance_paths hygiene (dangling + drift)。
-  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.name": "知识 relevance_paths 悬空",
   "doctor.check.relevance_paths_dangling.ok":
     "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",
   "doctor.check.relevance_paths_dangling.message.singular":
@@ -728,7 +801,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 relevance_paths globs 在当前 workspace 中解析到 0 个文件。首个:{detail}。",
   "doctor.check.relevance_paths_dangling.remediation":
     "更新 entry 的 relevance_paths,移除不再匹配任何文件的 globs,或使用 `fab_review.modify` 重写 anchor set。",
-  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.name": "知识 relevance_paths 漂移",
   "doctor.check.relevance_paths_drift.ok.skipped":
     "已跳过(git history unavailable;无法评估 {windowDays}d drift window)。",
   "doctor.check.relevance_paths_drift.ok.fresh":
@@ -740,7 +813,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.relevance_paths_drift.remediation":
     "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
   // W4-3 (KT-MOD-0001): narrow scope 但 relevance_paths 为空。
-  "doctor.check.narrow_no_paths.name": "Knowledge narrow scope 缺路径",
+  "doctor.check.narrow_no_paths.name": "知识 narrow scope 缺路径",
   "doctor.check.narrow_no_paths.ok":
     "每条 narrow scope canonical entry 都至少带一个 relevance_path。",
   "doctor.check.narrow_no_paths.message.singular":
@@ -750,7 +823,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.narrow_no_paths.remediation":
     "用 `fab_review.modify` 补 relevance_paths glob 锚定该 entry,或若本意是常驻则把 relevance_scope 改为 `broad`。",
   // W4-2 (KT-DEC-0028): 单 store broad 索引接近 backstop。
-  "doctor.check.broad_index_drift.name": "Knowledge broad 索引漂移",
+  "doctor.check.broad_index_drift.name": "知识 broad 索引漂移",
   "doctor.check.broad_index_drift.ok":
     "没有 store 的 broad scope 条目数达到漂移阈值({threshold},backstop {backstop} 的 80%)。",
   "doctor.check.broad_index_drift.message.singular":
@@ -760,7 +833,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.broad_index_drift.remediation":
     "跑 `fabric-review` skill 的 retire 子流程在告警 store 内 prune/降级陈旧 broad 条目,或若语料确实大则在 .fabric/fabric-config.json 调高 `broad_index_backstop`。",
   // v2.2 Goal B (G-AGE): knowledge decay lints (orphan_demote + stale_archive)。
-  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.name": "知识孤儿降级",
   "doctor.check.orphan_demote.ok":
     "没有 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold。",
   "doctor.check.orphan_demote.message.singular":
@@ -769,7 +842,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold(proven={provenDays}d / verified={verifiedDays}d / draft={draftDays}d)。首个:{detail}。",
   "doctor.check.orphan_demote.remediation":
     "通过 `/fabric-review modify <id>` 将该 entry 降级一个 maturity tier,或重新使用它以记录新活动。(改写 store 知识是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露衰减。)",
-  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.name": "知识陈旧归档",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
   "doctor.check.stale_archive.message.singular":
@@ -779,7 +852,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.remediation":
     "通过 `/fabric-review reject <id>` 归档该 stale draft,或若仍相关则复活它。(移动 store 文件是 store 写侧流程的职责 — 这个读侧 lint 只负责暴露陈旧。)",
   // v2.2 C1: knowledge promotion lint (promotion_candidate, info kind)。
-  "doctor.check.promotion_candidate.name": "Knowledge promotion candidate",
+  "doctor.check.promotion_candidate.name": "知识晋升候选",
   "doctor.check.promotion_candidate.ok":
     "没有 verified knowledge entries 达到 proven 晋升的 related 入度门槛。",
   "doctor.check.promotion_candidate.message.singular":
@@ -789,7 +862,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.promotion_candidate.remediation":
     "通过 `/fabric-review` 复核这些 entry,确认 0 dismiss、cold-eval 自足、属地基级后 `modify <id>` 升到 proven。(晋升判定是 store 写侧 review 的职责 — 这个读侧 lint 只 surface 结构中心的候选。)",
   // v2.2 C1: broad review-recheck lint (broad_review_recheck, info kind)。
-  "doctor.check.broad_review_recheck.name": "Knowledge broad review recheck",
+  "doctor.check.broad_review_recheck.name": "知识 broad review 复查",
   "doctor.check.broad_review_recheck.ok":
     "没有 broad-scope knowledge entries 超期未做 review 再确认。",
   "doctor.check.broad_review_recheck.message.singular":
@@ -799,7 +872,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.broad_review_recheck.remediation":
     "通过 `/fabric-review` 再确认每条(approve/modify 会盖一个新的 review 时间戳),或若不再成立则降级/驳回。这是非阻塞提示,绝不自动降级 — broad 知识在 reviewer 动手前持续 surface。",
   // project-scope binding 回填 lint (unbound_project)。
-  "doctor.check.unbound_project.name": "Project-scope binding",
+  "doctor.check.unbound_project.name": "Project-scope 绑定",
   "doctor.check.unbound_project.ok":
     "已绑写入 store 带有 project 坐标(project_id + active_project),project-scope 的 recall/写入路由正常。",
   "doctor.check.unbound_project.message":
@@ -815,7 +888,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 SKILL.md frontmatter values 包含未加引号的 ': '，strict YAML parsers 会拒绝（Claude Code tolerates it；Codex CLI drops the skill at load）。首个：{detail}。",
   "doctor.check.skill_md_yaml_invalid.remediation":
     "使用双引号包裹该 value（`description: \"…\"`），或将内部的 `key: value` token 改写为 `key=value`。",
-  "doctor.check.onboard_coverage.name": "Onboard coverage",
+  "doctor.check.onboard_coverage.name": "Onboard 覆盖率",
   "doctor.check.onboard_coverage.ok.complete":
     "Onboard coverage：{filledCount}/{total} ✓（opted-out：{optedOutCount}）。",
   "doctor.check.onboard_coverage.message.incomplete":
@@ -845,12 +918,7 @@ export const zhCNMessages: Messages = {
   "doctor.history.empty": "--since={sinceLabel} 窗口内无 doctor 或 archive 活动 (mode={mode})。",
 
   "cli.install.description":
-    "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric install                  在当前项目中以交互模式安装\n" +
-    "  fabric install --yes            接受默认值，跳过 TTY 向导\n" +
-    "  fabric install --dry-run        仅预览安装计划，不写入文件",
+    "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）",
   "cli.install.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.install.args.debug.description": "将目标解析细节输出到 stderr。",
@@ -860,6 +928,10 @@ export const zhCNMessages: Messages = {
     "启用向量语义搜索 (设 embed_enabled + embed_model;打印 fastembed 安装步骤)",
   "cli.install.args.embed-model.description":
     "配合 --enable-embed:覆盖固定的 embed 模型 (默认 fast-bge-small-zh-v1.5)",
+  "cli.install.args.global.description":
+    "配置全局 Fabric (~/.fabric:uid + personal store + 配置)",
+  "cli.install.args.url.description":
+    "克隆并挂载一个共享 store 远程库。项目安装时:同时绑定到本项目并设为写入目标。配合 --global:仅挂载到本机。",
   // TASK-004: --verbose 展开重装折叠的逐 phase 明细 + 完整客户端能力表。
   "cli.install.args.verbose.description":
     "展开完整明细:重装幂等时不折叠为体检卡片,并打印逐客户端能力表",
@@ -1140,12 +1212,7 @@ export const zhCNMessages: Messages = {
   "cli.install.diff.state.user-modified": "用户修改",
 
   "cli.uninstall.description":
-    "从目标项目中卸载 Fabric。项目卸载永远不会删除 ~/.fabric/stores/ 下的全局知识 store。\n" +
-    "\n" +
-    "示例：\n" +
-    "  fabric uninstall                在当前项目中以交互模式卸载\n" +
-    "  fabric uninstall --yes          接受默认值，跳过 TTY 向导\n" +
-    "  fabric uninstall --dry-run      仅预览卸载计划，不删除文件",
+    "从目标项目中卸载 Fabric（~/.fabric/stores/ 下的全局 store 永不删除）",
   "cli.uninstall.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.uninstall.args.debug.description": "将目标解析细节输出到 stderr。",
@@ -1452,6 +1519,62 @@ export const zhCNMessages: Messages = {
   "cli.whoami.stores-none": "stores: (未挂载任何 store)",
   "cli.whoami.stores-label": "stores:",
   "cli.shared.local-only": "(仅本地)",
+  // `fabric info`(平铺风)—— 身份 / 项目状态 / 召回引擎 标题与字段标签。
+  "cli.info.field.uid": "uid",
+  "cli.info.identity.title": "Fabric 身份",
+  "cli.info.status.title": "项目状态",
+  "cli.info.status.group.machine": "本机",
+  "cli.info.status.group.project": "当前项目",
+  "cli.info.status.field.project": "项目",
+  "cli.info.status.field.mounted": "已挂载库",
+  "cli.info.status.field.bound": "绑定库",
+  "cli.info.status.value.unset": "(未设置)",
+  "cli.info.status.value.not-project": "(非 Fabric 项目)",
+  "cli.info.status.value.no-global": "(无全局配置)",
+  "cli.info.recall.title": "召回引擎",
+  "cli.info.recall.summary.on": "语义搜索已开 —— 详情 fabric info --recall",
+  "cli.info.recall.summary.off": "关键词模式 · 语义搜索未开 —— 详情 fabric info --recall",
+  "cli.info.recall.mode.additive": "additive(关键词模式)",
+  "cli.info.recall.mode.rrf": "rrf(关键词+语义)",
+  "cli.info.recall.reason.forced-additive": "配置固定为关键词模式(additive)",
+  "cli.info.recall.reason.auto-additive": "向量通道未就绪,自动回退到关键词模式",
+  "cli.info.recall.reason.auto-rrf": "向量通道就绪,使用关键词+语义融合(rrf)",
+  "cli.info.recall.reason.rrf-ready": "配置固定为 rrf,向量通道就绪",
+  "cli.info.recall.reason.rrf-warn": "配置固定为 rrf,但向量通道未就绪 —— 单通道 rrf 反而比关键词模式差",
+  "cli.info.recall.install-hint": "装它开启语义搜索:npm i -g fastembed",
+  "cli.info.recall.field.fusion-config": "融合策略(配置)",
+  "cli.info.recall.field.fusion-effective": "融合策略(实际)",
+  "cli.info.recall.field.embed-enabled": "embed 开启",
+  "cli.info.recall.field.embed-model": "embed 模型",
+  "cli.info.recall.field.fastembed": "fastembed 包",
+  "cli.info.recall.field.cache-dir": "模型缓存",
+  "cli.info.recall.field.model-cached": "模型已缓存",
+  "cli.info.recall.field.vector": "向量通道",
+  "cli.info.recall.fastembed.yes": "可解析",
+  "cli.info.recall.fastembed.no": "未安装(可选依赖)",
+  "cli.info.recall.cached.no": "未缓存 —— 首次召回时下载(或运行 `fabric info --recall --warm`)",
+  "cli.info.recall.vector.ready": "就绪",
+  "cli.info.recall.vector.not-ready": "未就绪 —— 召回回退到关键词模式(BM25 / additive)",
+  "cli.info.recall.warm.ok": "embedder 已预热:模型 '{model}' 已加载(向量维度 {dim}),缓存于 {dir}",
+  "cli.info.recall.warm.fail":
+    "embedder 不可用 —— 可选的 'fastembed' 包无法解析,或模型加载失败。\n  召回回退到关键词模式(BM25 / additive)。请在 server 能解析模块的位置安装 fastembed 后重试。",
+  "cli.store.list.description": "列出挂载的 store",
+  // 追加在 `fabric store --help` 末尾的说明 —— 交代进阶(meta.hidden)操作去哪了,
+  // 否则只剩 list 一行会让用户以为 store 没别的能力。
+  "cli.store.help.folded-note":
+    "进阶操作(create / bind / switch-write / migrate 等)已折叠 —— 由 fabric install 与 fabric-store skill 驱动;需要时直接 `fabric store <命令> --help` 查看。",
+  "cli.store.list.title": "已挂载知识库",
+  "cli.store.project.list.title": "store '{store}' 中的项目",
+  "cli.store.project.list.empty": "(无已注册项目)",
+  "cli.store.project.created": "已在 store '{store}' 注册项目 '{id}'",
+  "cli.store.migrate.title": "知识坐标迁移",
+  "cli.store.backfill.noop": "scope 回填:无需改动({count} 条已一致)",
+  "cli.store.backfill.summary": "scope 回填:{changed} 条已更新,{unchanged} 条未变",
+  "cli.store.backfill.scope-note":
+    "{count} 条默认设为 semantic_scope: team。用 `fabric store migrate scope <store> --to project:<id> --id <id>` 把项目专属的降级。",
+  "cli.store.rescope.noop": "重定 scope:无需改动({count} 条已是 '{scope}')",
+  "cli.store.rescope.summary": "重定 scope → {scope}:{changed} 条已更新,{unchanged} 条未变",
+  "cli.store.rescope.refused": "{count} 条被拒绝",
   "cli.store.none-mounted": "(未挂载任何 store)",
   "cli.store.mounted": "已挂载 '{alias}' (共 {count} 个 store)",
   "cli.store.created": "已创建 store '{alias}' ({uuid}) 于 {dir}",
@@ -1466,12 +1589,29 @@ export const zhCNMessages: Messages = {
   "cli.sync.deferred": "{count} 个 store 离线 —— push 已延后; 联网后重新运行 `fabric sync`",
   "cli.sync.paused":
     "sync 因冲突暂停 —— 解决后运行 `fabric sync --continue` (或 `--abort`)",
+  // flat-design (spec §0.4):`fabric sync` 命令级标题 + 每个 store 单行 + 聚合摘要。
+  // state 文案在 store 行与摘要计数格之间共用。
+  "cli.sync.args.continue.description": "解决 rebase 冲突后继续同步",
+  "cli.sync.args.abort.description": "中止发生冲突的 store 的 rebase",
+  "cli.sync.title": "同步知识库",
+  "cli.sync.summary.title": "同步摘要",
+  "cli.sync.none": "没有可同步的远程 store",
+  "cli.sync.all-synced": "全部 store 已同步",
+  "cli.sync.state.synced": "已同步",
+  "cli.sync.state.offline": "离线",
+  "cli.sync.state.conflict": "冲突",
+  "cli.sync.state.aborted": "已中止",
+  "cli.sync.state.pending": "待处理",
   "cli.metrics.invalid-since": '--since: 无效的时长 "{raw}" (示例: 24h、7d、30m)',
   "cli.metrics.window": "Fabric 指标 —— 时间窗: {window}",
   "cli.metrics.window-all-time": "全部时间",
   "cli.metrics.rows-range": "  行数: {count} ({start} → {end})",
   "cli.metrics.rows": "  行数: {count}",
   "cli.metrics.no-activity": "  (时间窗内无计数活动 —— server 可能空闲或刚启动)",
+  "cli.metrics.col.counter": "计数器",
+  "cli.metrics.col.total": "总计",
+  "cli.metrics.col.entry": "条目",
+  "cli.metrics.section.perEntry": "按条目消费排行 (knowledge_consumed:<id>)",
 
   // W3-09 (ISS-035): forensic 项目扫描进度 (stderr, 仅 TTY)。
   "cli.install.scanning": "正在扫描项目的客户端/框架特征…",

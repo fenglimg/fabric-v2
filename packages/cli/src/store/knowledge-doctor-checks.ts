@@ -4,6 +4,7 @@ import {
   precheckStoreReachability,
 } from "@fenglimg/fabric-server";
 
+import { getProjectTranslator } from "../i18n.js";
 import type { StoreDiagnostic } from "./doctor-checks.js";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,7 @@ async function appendRelatedGraphDiagnostics(
   projectRoot: string,
   out: StoreDiagnostic[],
 ): Promise<void> {
+  const t = getProjectTranslator(projectRoot);
   let inspection;
   try {
     inspection = await inspectRelatedGraph(projectRoot);
@@ -63,10 +65,11 @@ async function appendRelatedGraphDiagnostics(
     out.push({
       code: "related_graph_broken_link",
       severity: "warn",
-      message:
-        `${inspection.brokenLinks.length} broken \`related\` link(s) point at ids absent from the corpus: ${samples}` +
-        `${overflow > 0 ? `, …(+${overflow} more)` : ""}` +
-        ` — fix the related edges via \`fab_review\` (modify) or edit the entry frontmatter`,
+      message: t("doctor.store.related-broken", {
+        count: String(inspection.brokenLinks.length),
+        samples,
+        overflow: overflow > 0 ? t("doctor.store.overflow-more", { count: String(overflow) }) : "",
+      }),
     });
   }
 
@@ -78,7 +81,11 @@ async function appendRelatedGraphDiagnostics(
     out.push({
       code: "related_graph_hub",
       severity: "info",
-      message: `related graph hubs (top ${Math.min(HUB_LIMIT, inspection.hubEntries.length)} of ${inspection.hubEntries.length} referenced): ${top}`,
+      message: t("doctor.store.related-hub", {
+        shown: String(Math.min(HUB_LIMIT, inspection.hubEntries.length)),
+        total: String(inspection.hubEntries.length),
+        top,
+      }),
     });
   }
 }
@@ -88,6 +95,7 @@ async function appendStoreReachabilityDiagnostics(
   projectRoot: string,
   out: StoreDiagnostic[],
 ): Promise<void> {
+  const t = getProjectTranslator(projectRoot);
   let result;
   try {
     result = await precheckStoreReachability(projectRoot);
@@ -100,7 +108,7 @@ async function appendStoreReachabilityDiagnostics(
       code: "store_unreachable",
       severity: "warn",
       ref: store.alias,
-      message: `store '${store.alias}' is in the read-set but unreachable on disk (${store.reason ?? "unknown"}); run \`fabric store mount\` / re-clone it, then \`fabric doctor\``,
+      message: t("doctor.store.unreachable", { alias: store.alias, reason: store.reason ?? "unknown" }),
     });
   }
 }
@@ -110,6 +118,7 @@ async function appendConsumptionDiagnostics(
   projectRoot: string,
   out: StoreDiagnostic[],
 ): Promise<void> {
+  const t = getProjectTranslator(projectRoot);
   let inspection;
   try {
     inspection = await inspectConsumption(projectRoot);
@@ -126,7 +135,13 @@ async function appendConsumptionDiagnostics(
     out.push({
       code: "knowledge_consumption_heatmap",
       severity: "info",
-      message: `top consumed (last ${inspection.windowDays}d, ${inspection.consumedEntries}/${inspection.totalEntries} entries read across ${inspection.consumedWindows} window(s)): ${top}`,
+      message: t("doctor.store.consumption-heatmap", {
+        days: String(inspection.windowDays),
+        consumed: String(inspection.consumedEntries),
+        total: String(inspection.totalEntries),
+        windows: String(inspection.consumedWindows),
+        top,
+      }),
     });
   }
 
@@ -139,10 +154,12 @@ async function appendConsumptionDiagnostics(
     out.push({
       code: "knowledge_consumption_zero",
       severity: "warn",
-      message:
-        `${inspection.zeroConsumed.length} entries never consumed in the last ${inspection.windowDays}d: ${sample}` +
-        `${overflow > 0 ? `, …(+${overflow} more)` : ""}` +
-        ` — review for retirement via \`fab_review\` (consumption is one signal, not proof of rot)`,
+      message: t("doctor.store.consumption-zero", {
+        count: String(inspection.zeroConsumed.length),
+        days: String(inspection.windowDays),
+        sample,
+        overflow: overflow > 0 ? t("doctor.store.overflow-more", { count: String(overflow) }) : "",
+      }),
     });
   }
 }

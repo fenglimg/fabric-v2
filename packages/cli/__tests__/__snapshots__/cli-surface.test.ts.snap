@@ -16,11 +16,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'config' s
       "type": "string",
     },
   ],
-  "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).
-
-Examples:
-  fabric config                   open the interactive panel
-  fabric config --target /path    edit configuration for a specific project",
+  "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, MCP client wiring, etc.)",
   "name": "config",
 }
 `;
@@ -104,13 +100,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
       "type": "boolean",
     },
   ],
-  "description": "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).
-
-Examples:
-  fabric doctor                   read-only diagnostics report
-  fabric doctor --fix             repair derived state (meta + indexes)
-  fabric doctor --fix-knowledge   apply lint mutations (counter / archive / cache)
-  fabric doctor --json            machine-readable output",
+  "description": "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",
   "name": "doctor",
 }
 `;
@@ -194,12 +184,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' 
       "type": "boolean",
     },
   ],
-  "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).
-
-Examples:
-  fabric install                  interactive install in the current project
-  fabric install --yes            accept defaults, skip the TTY wizard
-  fabric install --dry-run        preview the install plan without writing files",
+  "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks)",
   "name": "install",
 }
 `;
@@ -265,12 +250,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall
       "type": "boolean",
     },
   ],
-  "description": "Uninstall Fabric from the target project. Global knowledge stores under ~/.fabric/stores/ are never deleted by project uninstall.
-
-Examples:
-  fabric uninstall                interactive uninstall in the current project
-  fabric uninstall --yes          accept defaults, skip the TTY wizard
-  fabric uninstall --dry-run      preview the uninstall plan without removing files",
+  "description": "Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
   "name": "uninstall",
 }
 `;
