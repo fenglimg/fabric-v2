@@ -8,7 +8,7 @@
  * retired dispatch + argument validation.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalExitCode = process.exitCode;
 
@@ -227,7 +227,78 @@ describe("fabric audit (W3-D group)", () => {
       }
 
       expect(process.exitCode).toBe(originalExitCode);
-      expect(stdout.lines.join("\n")).toContain("no retired references");
+      // flat-design: the clean message is now i18n'd + flat-glyphed
+      // ("✓ No retired references — scanned N agent surface(s).").
+      expect(stdout.lines.join("\n")).toContain("No retired references");
     });
+  });
+});
+
+// flat-design (W3-D reskin): structural guards that the markdown artifacts the
+// reskin removed — `###`/`####` sub-heads, `| md table |` rows, `[ok]`/`[warn]`
+// bracket glyphs — never creep back. NO_COLOR so glyphs degrade to bare chars and
+// the headerRule/grid rules degrade to ASCII `-`.
+describe("fabric audit — flat-design structure (NO_COLOR)", () => {
+  const savedNoColor = process.env.NO_COLOR;
+  beforeEach(() => {
+    process.env.NO_COLOR = "1";
+  });
+  afterEach(() => {
+    if (savedNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = savedNoColor;
+  });
+
+  it("conflicts: B-横线 header + flat ✗/○ glyphs, no ### / [ok] / [warn]", async () => {
+    const report = {
+      candidate_count: 2,
+      conflict_count: 1,
+      threshold: 0.82,
+      deep: false,
+      pairs: [
+        { a: "KT-A", b: "KT-B", knowledge_type: "decisions", layer: "team", similarity: 0.9, verdict: "conflict", rationale: "overlap" },
+        { a: "KT-C", b: "KT-D", knowledge_type: "pitfalls", layer: "team", similarity: 0.85, verdict: "near_duplicate", rationale: "" },
+      ],
+    };
+    mockServer({ runDoctorConflictLint: vi.fn().mockResolvedValue(report) });
+    const { conflictsCommand } = await import("../../src/commands/audit.ts");
+    const stdout = captureStdout();
+    try {
+      await conflictsCommand.run?.({ args: { target: "/tmp/itg-audit", json: false, deep: false } } as never);
+    } finally {
+      stdout.restore();
+    }
+    const blob = stdout.lines.join("\n");
+    expect(blob).not.toMatch(/^#{3,4}\s/m); // no markdown ### / #### sub-heads
+    expect(blob).not.toContain("[ok]");
+    expect(blob).not.toContain("[warn]");
+    expect(blob).toContain("----"); // headerRule dim rule (ASCII fallback)
+    expect(blob).toContain("✗"); // conflict glyph
+    expect(blob).toContain("○"); // near-duplicate glyph
+  });
+
+  it("history all: aligned grid table, no markdown pipe rows", async () => {
+    const rows = [
+      {
+        date: "2026-06-29",
+        doctor_runs_lint: 3,
+        doctor_runs_fix: 1,
+        doctor_total_issues: 5,
+        doctor_total_mutations: 2,
+        archive_attempts: 0,
+        archive_proposed: 0,
+      },
+    ];
+    mockServer({ runDoctorHistoryAll: vi.fn().mockResolvedValue({ rows }) });
+    const { historyCommand } = await import("../../src/commands/audit.ts");
+    const stdout = captureStdout();
+    try {
+      await historyCommand.run?.({ args: { target: "/tmp/itg-audit", since: "7d", json: false } } as never);
+    } finally {
+      stdout.restore();
+    }
+    const blob = stdout.lines.join("\n");
+    expect(blob).not.toMatch(/^\s*\|.*\|\s*$/m); // no `| ... |` markdown table rows
+    expect(blob).toContain("----"); // headerRule + grid rule (ASCII fallback)
+    expect(blob).toContain("2026-06-29"); // data row still rendered
   });
 });

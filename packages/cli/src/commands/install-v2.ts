@@ -52,13 +52,12 @@ export const installCommand = defineCommand({
     },
     global: {
       type: "boolean",
-      description: "Set up global Fabric (~/.fabric: uid + personal store + config)",
+      description: t("cli.install.args.global.description"),
       default: false,
     },
     url: {
       type: "string",
-      description:
-        "Clone + mount a shared store remote. In a project install: also binds it to this project and sets it as the write target. With --global: mounts it machine-wide only.",
+      description: t("cli.install.args.url.description"),
     },
     "enable-embed": {
       type: "boolean",

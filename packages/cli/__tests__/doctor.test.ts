@@ -78,7 +78,7 @@ describe("doctor command", () => {
     );
   });
 
-  it("renders store diagnostic error, warn, and info severities distinctly", async () => {
+  it("default folds info-severity store advisories; --verbose restores them", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
@@ -94,20 +94,34 @@ describe("doctor command", () => {
     }));
 
     const { doctorCommand } = await import("../src/commands/doctor.ts");
-    const stdout = captureStdout();
 
+    // Default surface: error + warn store problems show; info-severity advisories
+    // (telemetry / local-only notices) are folded out for the end user.
+    const def = captureStdout();
     try {
       await doctorCommand.run?.({
         args: { target: "/tmp/fabric-target", json: false, strict: false, fix: false },
       } as never);
     } finally {
-      stdout.restore();
+      def.restore();
     }
+    const defOut = def.lines.join("\n");
+    // Assert on message/ref text (not the status glyph) so the check is robust to
+    // colour ANSI around the ✗ / ○ / ℹ glyphs.
+    expect(defOut).toContain("[team] required store is missing");
+    expect(defOut).toContain("global config is missing");
+    expect(defOut).not.toContain("store is local-only");
 
-    const out = stdout.lines.join("\n");
-    expect(out).toContain("[error] [team] required store is missing");
-    expect(out).toContain("[warn] global config is missing");
-    expect(out).toContain("[info] [personal] store is local-only");
+    // --verbose restores the info-severity advisory.
+    const loud = captureStdout();
+    try {
+      await doctorCommand.run?.({
+        args: { target: "/tmp/fabric-target", json: false, strict: false, fix: false, verbose: true },
+      } as never);
+    } finally {
+      loud.restore();
+    }
+    expect(loud.lines.join("\n")).toContain("[personal] store is local-only");
   });
 
   // doctor-decruft W3 (G-QUIET): default human output prints only actionable
@@ -159,9 +173,11 @@ describe("doctor command", () => {
       quiet.restore();
     }
     const quietOut = quiet.lines.join("\n");
-    expect(quietOut).not.toContain("[ok] Bootstrap anchor");
-    expect(quietOut).not.toContain("[ok] Knowledge draft backlog");
-    expect(quietOut).toContain("[warn] Events ledger health");
+    // Default is now the actionable digest: passing checks are gone (they live
+    // behind --verbose), but the warning still surfaces by name (`○ <name>`).
+    expect(quietOut).not.toContain("Bootstrap anchor");
+    expect(quietOut).not.toContain("Knowledge draft backlog");
+    expect(quietOut).toContain("Events ledger health");
 
     // --verbose: full per-check enumeration including the passing rows.
     const loud = captureStdout();
@@ -173,9 +189,58 @@ describe("doctor command", () => {
       loud.restore();
     }
     const loudOut = loud.lines.join("\n");
-    expect(loudOut).toContain("[ok] Bootstrap anchor");
-    expect(loudOut).toContain("[ok] Knowledge draft backlog");
-    expect(loudOut).toContain("[warn] Events ledger health");
+    // --verbose: full per-check enumeration including the passing rows.
+    expect(loudOut).toContain("Bootstrap anchor");
+    expect(loudOut).toContain("Knowledge draft backlog");
+    expect(loudOut).toContain("Events ledger health");
+  });
+
+  // 激进精简 (user-chosen): the default surface is an actionable digest for the
+  // end user — user-facing issues listed as `! <name>` + `→ <fix>`, maintainer-
+  // audience findings folded out ENTIRELY (their hint can't be acted on without
+  // the source tree), and a one-line tally pointing to --verbose.
+  it("default digest lists user-facing issues and folds maintainer findings", async () => {
+    const report = {
+      status: "warn" as const,
+      checks: [
+        { name: "Anchor", status: "ok" as const, message: "ok" },
+        { name: "Ledger", status: "ok" as const, message: "ok" },
+        { name: "Hooks", status: "warn" as const, message: "incomplete" },
+      ],
+      fixable_errors: [] as Array<{ code: string; name: string; message: string; audience?: string }>,
+      manual_errors: [] as Array<{ code: string; name: string; message: string; audience?: string }>,
+      warnings: [
+        { code: "hooks_wired_incomplete", name: "Hooks wired", message: "settings missing a hook", actionHint: "run `fabric install`", audience: "user" },
+        { code: "skill_token_budget", name: "Skill token budget", message: "over budget", actionHint: "edit packages/cli/templates/skills/x", audience: "maintainer" },
+      ],
+      infos: [],
+      summary: { target: "/tmp/fabric-target", framework: { kind: "vite" }, targetFiles: {} },
+    };
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
+      runDoctorReport: vi.fn().mockResolvedValue(report),
+      runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
+    }));
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+    const stdout = captureStdout();
+    try {
+      await doctorCommand.run?.({
+        args: { target: "/tmp/fabric-target", json: false, strict: false, fix: false },
+      } as never);
+    } finally {
+      stdout.restore();
+    }
+    const out = stdout.lines.join("\n");
+    // User-facing warning + its fix are shown.
+    expect(out).toContain("Hooks wired");
+    expect(out).toContain("fabric install");
+    // Maintainer finding folded out entirely (name AND its source-tree hint).
+    expect(out).not.toContain("Skill token budget");
+    expect(out).not.toContain("packages/cli/templates");
+    // The `todo (1)` group header is present (one user-facing issue).
+    expect(out).toContain(t("doctor.digest.todo", { count: "1" }));
   });
 
   it("--debug-bundle emits a redacted bundle (S40, no plaintext secrets)", async () => {
@@ -244,7 +309,9 @@ describe("doctor command", () => {
       stdout.restore();
     }
 
-    expect(stdout.lines.some((line) => line.includes(t("doctor.section.warnings")))).toBe(true);
+    // The warning surfaces in the default digest by its name (no "Warnings:"
+    // section header — that's the --verbose contributor surface now).
+    expect(stdout.lines.some((line) => line.includes("Rule identity"))).toBe(true);
     expect(process.exitCode).toBe(1);
   });
 

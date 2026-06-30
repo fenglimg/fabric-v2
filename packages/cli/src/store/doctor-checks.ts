@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { findStoreExecutableViolations, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 
+import { getProjectTranslator } from "../i18n.js";
 import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
 import { detectAliasLinkDrift, missingRequiredStores, unboundAvailableStores } from "./store-ops.js";
 
@@ -50,13 +51,14 @@ export function storeDoctorChecks(
   globalRoot: string = resolveGlobalRoot(),
 ): StoreDiagnostic[] {
   const diagnostics: StoreDiagnostic[] = [];
+  const t = getProjectTranslator(projectRoot);
 
   const global = loadGlobalConfig(globalRoot);
   if (global === null) {
     diagnostics.push({
       code: "no_global_config",
       severity: "warn",
-      message: "no global Fabric config — run `fabric install --global <url>`",
+      message: t("doctor.store.no-global-config"),
     });
     return diagnostics;
   }
@@ -66,7 +68,7 @@ export function storeDoctorChecks(
       code: "missing_required_store",
       severity: "warn",
       ref: missing.id,
-      message: `required store '${missing.id}' is not mounted; run \`fabric store mount\``,
+      message: t("doctor.store.missing-required", { id: missing.id }),
     });
   }
 
@@ -78,7 +80,7 @@ export function storeDoctorChecks(
       code: "unbound_available_store",
       severity: "info",
       ref: store.alias,
-      message: `store '${store.alias}' is mounted but not bound to this project; run \`fabric store bind ${store.alias}\` to read its knowledge here (then \`fabric store switch-write ${store.alias}\` to write team knowledge into it)`,
+      message: t("doctor.store.unbound", { alias: store.alias }),
     });
   }
 
@@ -90,7 +92,7 @@ export function storeDoctorChecks(
       code: "store_alias_link_drift",
       severity: "info",
       ref: aliasDrift.join(", "),
-      message: `by-alias readability link(s) out of sync for ${aliasDrift.join(", ")}; run \`fabric doctor --fix\` to repair ~/.fabric/stores/by-alias/`,
+      message: t("doctor.store.alias-drift", { refs: aliasDrift.join(", ") }),
     });
   }
 
@@ -100,7 +102,7 @@ export function storeDoctorChecks(
         code: "local_only_store",
         severity: "info",
         ref: store.alias,
-        message: `store '${store.alias}' is local-only; add a git remote to back it up`,
+        message: t("doctor.store.local-only", { alias: store.alias }),
       });
     }
     // S65 RCE defense: a mounted store must be data-only. Flag any executable /
@@ -111,7 +113,10 @@ export function storeDoctorChecks(
         code: "executable_in_store",
         severity: "warn",
         ref: store.alias,
-        message: `store '${store.alias}' contains executable/script files (${violations.slice(0, 3).join(", ")}${violations.length > 3 ? ", …" : ""}) — stores are data-only; Fabric never runs them (S65)`,
+        message: t("doctor.store.executable", {
+          alias: store.alias,
+          files: `${violations.slice(0, 3).join(", ")}${violations.length > 3 ? ", …" : ""}`,
+        }),
       });
     }
   }
@@ -133,13 +138,13 @@ export function storeDoctorChecks(
       code: "active_personal_invalid",
       severity: "error",
       ref: activePersonal,
-      message: `active personal store '${activePersonal}' is not a mounted personal store; run \`fabric store switch-personal <alias>\` or \`fabric doctor --fix\``,
+      message: t("doctor.store.active-personal-invalid", { store: activePersonal }),
     });
   } else if (activePersonal === undefined && personals.length >= 2) {
     diagnostics.push({
       code: "active_personal_unset",
       severity: "info",
-      message: `${personals.length} personal stores are mounted but none is active; run \`fabric store switch-personal <alias>\` to pick one (or \`fabric doctor --fix\` to default to the first)`,
+      message: t("doctor.store.active-personal-unset", { count: String(personals.length) }),
     });
   }
 

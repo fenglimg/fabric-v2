@@ -15,7 +15,9 @@ import { defineCommand } from "citty";
 import { readMetrics, type MetricsRow } from "@fenglimg/fabric-server";
 import type { Translator } from "@fenglimg/fabric-shared";
 
+import { paint } from "../colors.js";
 import { getProjectTranslator } from "../i18n.js";
+import { grid, groupDot, headerRule } from "../tui/structure.js";
 
 interface MetricsArgs {
   json?: boolean;
@@ -84,42 +86,52 @@ function formatDuration(ms: number): string {
   return `${Math.round(ms / 1000)}s`;
 }
 
+// Two-space indent a multi-line block (grid table) into the body column.
+function indentBlock(block: string): string {
+  return block
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+}
+
 function renderText(agg: Aggregated, t: Translator): string {
+  // flat-design (W3-D reskin, mirrors audit/doctor): B-横线 title (headerRule) +
+  // aligned grid() tables + a C-圆点 (groupDot) section head — no hand-padded
+  // ASCII dash-rule tables, no hardcoded English column heads.
   const lines: string[] = [];
   const windowDisplay =
     agg.windowDescription === "all-time" ? t("cli.metrics.window-all-time") : agg.windowDescription;
-  lines.push(t("cli.metrics.window", { window: windowDisplay }));
-  if (agg.rangeStart && agg.rangeEnd) {
-    lines.push(
-      t("cli.metrics.rows-range", {
-        count: String(agg.rowCount),
-        start: agg.rangeStart,
-        end: agg.rangeEnd,
-      }),
-    );
-  } else {
-    lines.push(t("cli.metrics.rows", { count: String(agg.rowCount) }));
-  }
+  lines.push(headerRule(t("cli.metrics.window", { window: windowDisplay })));
+  const rowsLine =
+    agg.rangeStart && agg.rangeEnd
+      ? t("cli.metrics.rows-range", {
+          count: String(agg.rowCount),
+          start: agg.rangeStart,
+          end: agg.rangeEnd,
+        })
+      : t("cli.metrics.rows", { count: String(agg.rowCount) });
+  lines.push(paint.muted(rowsLine));
   lines.push("");
   if (Object.keys(agg.totals).length === 0) {
-    lines.push(t("cli.metrics.no-activity"));
+    lines.push(paint.muted(t("cli.metrics.no-activity")));
     return lines.join("\n");
   }
-  lines.push("  counter                              total");
-  lines.push("  ------------------------------------ ----------");
+  const counterRows: string[][] = [[t("cli.metrics.col.counter"), t("cli.metrics.col.total")]];
   const sorted = Object.entries(agg.totals).sort((a, b) => b[1] - a[1]);
   for (const [name, count] of sorted) {
-    lines.push(`  ${name.padEnd(36)} ${String(count).padStart(10)}`);
+    counterRows.push([name, String(count)]);
   }
+  lines.push(indentBlock(grid(counterRows, { rule: true })));
   // Top per-entry consumed leaderboard (helps spot hot KB entries / Goodhart).
   const perEntrySorted = Object.entries(agg.perEntryConsumed).sort((a, b) => b[1] - a[1]).slice(0, 10);
   if (perEntrySorted.length > 0) {
     lines.push("");
-    lines.push("  Top per-entry consumed (knowledge_consumed:<id>)");
-    lines.push("  ------------------------------------ ----------");
+    lines.push(groupDot(t("cli.metrics.section.perEntry")));
+    const peRows: string[][] = [[t("cli.metrics.col.entry"), t("cli.metrics.col.total")]];
     for (const [id, count] of perEntrySorted) {
-      lines.push(`  ${id.padEnd(36)} ${String(count).padStart(10)}`);
+      peRows.push([id, String(count)]);
     }
+    lines.push(indentBlock(grid(peRows, { rule: true })));
   }
   return lines.join("\n");
 }

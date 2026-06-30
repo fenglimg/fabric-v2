@@ -39,7 +39,52 @@ export const enMessages: Messages = {
   "cli.sync.description": "Sync mounted knowledge stores (pull --rebase + push)",
   "cli.info.description": "Show Fabric identity, project status & recall health",
   "cli.inspect.description": "Show what Fabric injects at SessionStart",
+  // `fabric inspect` arg descriptions + --explain provenance overlay + error.
+  "cli.inspect.arg.render": "Which sink to show: 'human' (systemMessage) or 'ai' (additionalContext). Default: both.",
+  "cli.inspect.arg.explain": "Append a per-entry provenance section (id · type · maturity · scope · why-surfaced).",
+  "cli.inspect.arg.target": "Override the project root (defaults to cwd / dev-mode resolution).",
+  "cli.inspect.explain.title": "explain · provenance (not injected)",
+  "cli.inspect.explain.always": "always-active · body injected",
+  "cli.inspect.explain.reference": "reference · read on demand",
+  "cli.inspect.explain.census": "census",
+  "cli.inspect.explain.census-total": "total {total}",
+  "cli.inspect.error": "inspect failed: {message}",
   "cli.audit.description": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
+
+  // `fabric audit cite` — 0%-recall-coverage self-diagnosis hints.
+  "cli.audit.cite.recall-mismatch-hint":
+    "recall coverage is 0 despite {recalls} recall(s) across {sessions} session(s) — none shared a session with an edit. The recall caller is likely passing a non-client session_id (correlation is session-scoped). See AGENTS.md: pass the real client session_id to fab_recall.",
+  "cli.audit.cite.recall-none-hint":
+    "recall coverage is 0 — no in-session fab_recall preceded these edits. Recall before editing, and pass the real client session_id (correlation is session-scoped). See AGENTS.md.",
+
+  // `fabric audit --help` — filtered help (i18n'd subcommand listing).
+  "cli.audit.help.tagline": "Knowledge & telemetry audit surfaces (read-only)",
+  "cli.audit.help.sub.cite": "Cite-policy adherence report",
+  "cli.audit.help.sub.conflicts": "Knowledge-conflict lint",
+  "cli.audit.help.sub.history": "Maintenance history rollup (archive | fix | all)",
+  "cli.audit.help.sub.descriptions": "Back-fill description-grade frontmatter fields",
+  "cli.audit.help.sub.retired": "Scan agent surfaces for retired tool/field references",
+  "cli.audit.help.sub.why": "Diagnose why a knowledge entry isn't surfacing",
+  "cli.audit.help.example.cite": "cite-coverage over the last 7 days",
+  "cli.audit.help.example.conflicts": "scan for conflicting / duplicate entries",
+  "cli.audit.help.footer": "Run `fabric audit <subcommand> --help` for per-command flags.",
+
+  // `fabric audit retired` — flat renderer copy.
+  "cli.audit.retired.skipped": "Retired-reference scan skipped — no agent-consumed surfaces found.",
+  "cli.audit.retired.clean": "No retired references — scanned {count} agent surface(s).",
+  "cli.audit.retired.found": "{hits} retired reference(s) across {files} scanned file(s)",
+  "cli.audit.retired.removed": "(removed)",
+
+  // `fabric audit why-not-surfaced <id>` — three-axis diagnosis (store / scope / timing).
+  "cli.audit.why.not-found": "'{id}' not found in any mounted store. Check the id (try `fabric store list`).",
+  "cli.audit.why.store-unbound": "'{id}' lives in store '{store}', which is NOT bound to this project.",
+  "cli.audit.why.store-unbound.hint": "bind it: fabric store bind {store}",
+  "cli.audit.why.project-mismatch": "'{id}' is scoped to '{scope}', but this repo is bound to 'project:{project}'.",
+  "cli.audit.why.project-mismatch.hint": "it surfaces only in repos bound to '{scope}' (semantic_scope axis).",
+  "cli.audit.why.narrow-timing": "'{id}' is relevance_scope=narrow — it surfaces via the PreToolUse hint when you EDIT a matching file, not at SessionStart.",
+  "cli.audit.why.narrow-timing.hint": "broad entries are the always-on spine; narrow ones are edit-time only (timing axis).",
+  "cli.audit.why.should-surface": "'{id}' should be surfacing — store '{store}' bound, scope matches, relevance_scope=broad.",
+  "cli.audit.why.should-surface.hint": "if it isn't, the SessionStart snapshot may be stale: start a fresh session or re-run `fabric install`.",
 
   // `fabric info --help` — flag + scope-subcommand descriptions.
   "cli.info.args.global.description": "Show global identity (whoami) instead of project status",
@@ -93,8 +138,17 @@ export const enMessages: Messages = {
   "cli.config.value.default-marker": "(default)",
   "cli.config.prompt.select": "Choose a new value for {key} (current: {current}):",
   "cli.config.prompt.text": "Enter a new value for {key} (current: {current}):",
-  "cli.config.write.success": "Saved {key} = {value}",
+  "cli.config.write.success": "{key} = {value}",
+  "cli.config.panel.edited": "Edited this session ({count}): {keys}",
   "cli.config.write.failure": "Failed to write fabric-config.json: {message}",
+  "cli.config.slot.errors.missing": "Missing required <slot> argument. Valid slots: {slots}.",
+  "cli.config.slot.errors.unknown": "Unknown slot \"{slot}\". Valid slots: {slots}.",
+  "cli.config.slot.dismiss.already": "Slot \"{slot}\" already opted out; no-op.",
+  "cli.config.slot.dismiss.done": "Dismissed onboard slot \"{slot}\". Run `fabric config onboard-reset {slot}` to re-open.",
+  "cli.config.slot.dismiss.failed": "dismiss-slot failed: {message}",
+  "cli.config.slot.reset.not-opted": "Slot \"{slot}\" not opted out; no-op.",
+  "cli.config.slot.reset.done": "Reset onboard slot \"{slot}\"; it will appear in `fabric onboard-coverage` as missing again.",
+  "cli.config.slot.reset.failed": "onboard-reset failed: {message}",
   "cli.config.errors.uninit-workspace.message":
     "Workspace not initialized. Run `fabric install` first.",
   "cli.config.errors.invalid-int": "Must be a positive integer.",
@@ -150,6 +204,42 @@ export const enMessages: Messages = {
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  // flat-design follow-up: the remaining doctor UI-shell strings (TL;DR header,
+  // --fix mutation plan, filtered --help) move off hardcoded English into i18n so
+  // the whole `fabric doctor` surface honours the machine locale. USAGE/OPTIONS/
+  // EXAMPLES labels stay English to match citty's own renderUsage in the other
+  // commands' --help.
+  "doctor.digest.todo": "To fix ({count})",
+  "doctor.digest.clean": "all {count} checks passed — nothing to fix",
+  "doctor.digest.summary": "{todo} to fix · {ok} passed · contributor diagnostics → --verbose",
+  "doctor.digest.more-verbose": "{count} contributor finding(s) hidden — see --verbose",
+  // store diagnostics (multi-store health, the `● 存储健康` group) — i18n parity
+  // with doctor.check.*; messages carry store alias / counts via interpolation.
+  "doctor.store.no-global-config": "no global Fabric config — run `fabric install --global <url>`",
+  "doctor.store.missing-required": "required store '{id}' is not mounted; run `fabric store mount`",
+  "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project; run `fabric store bind {alias}` to read its knowledge here (then `fabric store switch-write {alias}` to write team knowledge into it)",
+  "doctor.store.alias-drift": "by-alias readability link(s) out of sync for {refs}; run `fabric doctor --fix` to repair ~/.fabric/stores/by-alias/",
+  "doctor.store.local-only": "store '{alias}' is local-only; add a git remote to back it up",
+  "doctor.store.executable": "store '{alias}' contains executable/script files ({files}) — stores are data-only; Fabric never runs them (S65)",
+  "doctor.store.active-personal-invalid": "active personal store '{store}' is not a mounted personal store; run `fabric store switch-personal <alias>` or `fabric doctor --fix`",
+  "doctor.store.active-personal-unset": "{count} personal stores are mounted but none is active; run `fabric store switch-personal <alias>` to pick one (or `fabric doctor --fix` to default to the first)",
+  "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
+  "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
+  "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
+  "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
+  "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
+  "doctor.store.overflow-more": ", …(+{count} more)",
+  "doctor.fix-plan.header": "fix-knowledge mutation plan ({count} total)",
+  "doctor.fix-plan.preview": "preview:",
+  "doctor.fix-plan.more": "... and {count} more",
+  "doctor.help.tagline": "Diagnose and fix Fabric workspace issues",
+  "doctor.help.flag.target": "Override project root (defaults to cwd)",
+  "doctor.help.flag.fix": "Auto-fix issues (derived-state + knowledge frontmatter/git mv)",
+  "doctor.help.flag.json": "Output as JSON for programmatic consumption",
+  "doctor.help.flag.verbose": "Show maintainer-audience action hints",
+  "doctor.help.example.run": "Run diagnostics",
+  "doctor.help.example.fix": "Fix derived-state + knowledge issues",
+  "doctor.help.footer": "Run `fabric doctor` to see a full diagnostic report. Audits → `fabric audit`.",
   // flat-design-system Wave5 (TASK-005): C-圆点 group headers for the reskinned
   // doctor surface (`● Store Health` / `● Checks`), replacing the old hardcoded
   // sectionBar literals so the wording is localized in both locales.
@@ -862,6 +952,10 @@ export const enMessages: Messages = {
     "Opt in to vector semantic search (sets embed_enabled + embed_model; prints fastembed install steps)",
   "cli.install.args.embed-model.description":
     "With --enable-embed: override the pinned embed model (default fast-bge-small-zh-v1.5)",
+  "cli.install.args.global.description":
+    "Set up global Fabric (~/.fabric: uid + personal store + config)",
+  "cli.install.args.url.description":
+    "Clone + mount a shared store remote. In a project install: also binds it to this project and sets it as the write target. With --global: mounts it machine-wide only.",
   // TASK-004: --verbose expands the per-phase detail a collapsed re-install would
   // fold, and prints the full per-client capability table.
   "cli.install.args.verbose.description":
@@ -1530,12 +1624,30 @@ export const enMessages: Messages = {
   "cli.sync.deferred": "{count} store(s) offline — push deferred; re-run `fabric sync` when online",
   "cli.sync.paused":
     "sync paused on a conflict — resolve it, then run `fabric sync --continue` (or `--abort`)",
+  // flat-design (spec §0.4): `fabric sync` command-level title + per-store rows +
+  // aggregate summary. State labels are shared between the per-store rows and the
+  // summary count cells.
+  "cli.sync.args.continue.description": "Resume after resolving a rebase conflict",
+  "cli.sync.args.abort.description": "Abort the conflicted store's rebase",
+  "cli.sync.title": "Sync stores",
+  "cli.sync.summary.title": "Sync summary",
+  "cli.sync.none": "no remote-backed stores to sync",
+  "cli.sync.all-synced": "all stores synced",
+  "cli.sync.state.synced": "synced",
+  "cli.sync.state.offline": "offline",
+  "cli.sync.state.conflict": "conflict",
+  "cli.sync.state.aborted": "aborted",
+  "cli.sync.state.pending": "pending",
   "cli.metrics.invalid-since": '--since: invalid duration "{raw}" (expected e.g. 24h, 7d, 30m)',
   "cli.metrics.window": "Fabric metrics — window: {window}",
   "cli.metrics.window-all-time": "all-time",
   "cli.metrics.rows-range": "  rows: {count} ({start} → {end})",
   "cli.metrics.rows": "  rows: {count}",
   "cli.metrics.no-activity": "  (no counter activity in window — server may be idle or just started)",
+  "cli.metrics.col.counter": "counter",
+  "cli.metrics.col.total": "total",
+  "cli.metrics.col.entry": "entry",
+  "cli.metrics.section.perEntry": "Top per-entry consumed (knowledge_consumed:<id>)",
 
   // W3-09 (ISS-035): forensic project scan progress (stderr, TTY-only).
   "cli.install.scanning": "scanning project for client/framework signals…",

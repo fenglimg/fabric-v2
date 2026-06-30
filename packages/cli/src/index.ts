@@ -6,6 +6,7 @@ import type { ArgsDef, CommandDef } from "citty";
 import { defineCommand, renderUsage, runCommand, runMain } from "citty";
 
 import { allCommands } from "./commands/index.js";
+import { renderAuditFilteredHelp } from "./commands/audit.js";
 import { renderDoctorFilteredHelp } from "./commands/doctor.js";
 import { renderTopLevelError, renderUnexpectedError } from "./lib/error-render.js";
 import { t } from "./i18n.js";
@@ -35,6 +36,14 @@ async function customShowUsage<T extends ArgsDef = ArgsDef>(
   // EPIC-009: doctor subcommand gets filtered help (hides advanced/internal flags).
   if (cmdMeta?.name === "doctor" && parent !== undefined) {
     renderDoctorFilteredHelp();
+    return;
+  }
+
+  // `audit --help` gets an i18n'd, flat-painted SUBCOMMANDS listing (metrics stays
+  // hidden) instead of citty's English meta.description dump. Per-subcommand help
+  // (`audit cite --help`) still falls through to citty's renderUsage below.
+  if (cmdMeta?.name === "audit" && parent !== undefined) {
+    renderAuditFilteredHelp();
     return;
   }
 
@@ -98,7 +107,7 @@ export async function run(): Promise<void> {
       (err instanceof Error && err.name === "CLIError") ||
       (typeof code === "string" && (code.startsWith("E_") || code.startsWith("EARG") || code === "EUSAGE"));
     if (isCittyUsageError) {
-      await runMain(main, { rawArgs });
+      await runMain(main, { rawArgs, showUsage: customShowUsage });
       return;
     }
     // W3-I ③: a genuinely-unexpected failure. Render a single themed error line

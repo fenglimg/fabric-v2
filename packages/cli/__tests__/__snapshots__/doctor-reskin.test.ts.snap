@@ -2,25 +2,25 @@
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders store health as a groupDot + plain rows 1`] = `
 "* Store Health
-  [error] [team] required store is missing
-  [warn] global config is missing
-  [info] [personal] store is local-only"
+  ✗ [team] required store is missing
+  ○ global config is missing
+  ℹ [personal] store is local-only"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the B-横线 header + status badge 1`] = `
-"fabric doctor · /repo [warn]
+"fabric doctor · /repo ○
 ----------------------------------------"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the checks section quiet (warn/error only) 1`] = `
 "* Checks
-  [warn] Events ledger health: metrics stalled
-  [error] Lock file: lock is stale"
+  ○ Events ledger health: metrics stalled
+  ✗ Lock file: lock is stale"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the checks section verbose (includes passing rows) 1`] = `
 "* Checks
-  [ok] Bootstrap anchor: anchor present
-  [warn] Events ledger health: metrics stalled
-  [error] Lock file: lock is stale"
+  ✓ Bootstrap anchor: anchor present
+  ○ Events ledger health: metrics stalled
+  ✗ Lock file: lock is stale"
 `;

@@ -133,9 +133,13 @@ describe("I1: doctor exit codes", () => {
   });
 });
 
-// T2 — i18n section headers come from t() not hardcoded strings
-describe("T2: doctor section header i18n", () => {
-  it("renders fixable section title from translation key", async () => {
+// T2 — i18n section headers come from t() not hardcoded strings. flat-design
+// (doctor reskin): the default surface is the actionable digest, so the i18n
+// header to assert is the `To fix (N)` digest group title — the retired
+// `doctor.section.fixable`/`warnings` sub-section titles no longer render. The
+// actionable issue is still surfaced by name under that group.
+describe("T2: doctor digest header i18n", () => {
+  it("renders the digest todo header (i18n) for a fixable error", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("error")),
@@ -151,11 +155,12 @@ describe("T2: doctor section header i18n", () => {
       stdout.restore();
     }
 
-    const expectedFixableTitle = t("doctor.section.fixable");
-    expect(stdout.lines.some((l) => l.includes(expectedFixableTitle))).toBe(true);
+    const blob = stdout.lines.join("\n");
+    expect(blob).toContain(t("doctor.digest.todo", { count: "1" }));
+    expect(blob).toContain("Agents metadata"); // fixable issue surfaced by name
   });
 
-  it("renders warnings section title from translation key", async () => {
+  it("renders the digest todo header (i18n) for a warning", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("warn")),
@@ -171,7 +176,8 @@ describe("T2: doctor section header i18n", () => {
       stdout.restore();
     }
 
-    const expectedWarningsTitle = t("doctor.section.warnings");
-    expect(stdout.lines.some((l) => l.includes(expectedWarningsTitle))).toBe(true);
+    const blob = stdout.lines.join("\n");
+    expect(blob).toContain(t("doctor.digest.todo", { count: "1" }));
+    expect(blob).toContain("Knowledge drift"); // warning surfaced by name
   });
 });
