@@ -1,10 +1,14 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 import {
   STORE_KNOWLEDGE_TYPE_DIRS,
+  STORE_LAYOUT,
+  STORE_PROJECT_ID_PATTERN,
   isPersonalScope,
   parseKnowledgeId,
+  scopeRoot,
 } from "@fenglimg/fabric-shared";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +51,12 @@ export interface BackfillOptions {
   // entries always get "personal" regardless (R5#3).
   visibilityStore: string;
   dryRun?: boolean;
+  // v2.1 W2/TASK-005 phase-2 gate. In phase-2, path is the SOLE source of truth
+  // for scope, so backfill STOPS authoring `semantic_scope` frontmatter (the
+  // reader derives it from the projects/<id>/ path segment, C-104). Left off
+  // (phase-1 default) the field is still fallback-written so the reversibility
+  // path — drop this flag, restore frontmatter — stays intact.
+  phase2?: boolean;
 }
 
 // Exported for reuse by the W4/A7 re-scope/promote tool (store-rescope.ts) — the
@@ -78,6 +88,7 @@ export function setKey(block: string, key: string, value: string, anchorKey: str
 export function backfillEntryContent(
   content: string,
   visibilityStore: string,
+  phase2 = false,
 ): { content: string; change: BackfillChange } | null {
   const match = FRONTMATTER_RE.exec(content);
   if (match === null) {
@@ -103,7 +114,13 @@ export function backfillEntryContent(
     newBlock = setKey(newBlock, "layer", layer, "maturity");
     changed.push("layer");
   }
-  if (readKey(block, "semantic_scope") !== semanticScope) {
+  // Phase-2 stops authoring semantic_scope — the projects/<id>/ path segment is
+  // now the source of truth (C-104), so re-emitting the frontmatter coordinate
+  // would only re-introduce the drift the reroot removes. Phase-1 still
+  // fallback-writes it (reversibility: drop `phase2`, restore the field). DA-03:
+  // visibility_store is authored in BOTH phases — it is store provenance, not a
+  // path-derived scope, so path can never carry it.
+  if (!phase2 && readKey(block, "semantic_scope") !== semanticScope) {
     newBlock = setKey(newBlock, "semantic_scope", semanticScope, "layer");
     changed.push("semantic_scope");
   }
@@ -138,7 +155,11 @@ export function backfillKnowledgeDir(
     }
     for (const name of readdirSync(dir).filter((n) => n.endsWith(".md")).sort()) {
       const file = join(dir, name);
-      const result = backfillEntryContent(readFileSync(file, "utf8"), options.visibilityStore);
+      const result = backfillEntryContent(
+        readFileSync(file, "utf8"),
+        options.visibilityStore,
+        options.phase2 === true,
+      );
       if (result === null) {
         report.skipped.push(file);
         continue;
@@ -155,4 +176,131 @@ export function backfillKnowledgeDir(
     }
   }
   return report;
+}
+
+// ---------------------------------------------------------------------------
+// v2.1 W2/TASK-005 phase-2 — project-entry MIGRATION into the projects/ subtree.
+//
+// Pre-reroot, a project-specific entry lived FLAT at knowledge/<type>/*.md and
+// declared its home via authored `semantic_scope: project:<id>` frontmatter.
+// TASK-003 made knowledge/projects/<id>/<type>/ the SOLE structural home (path =
+// source of truth, C-104). This migration relocates each existing flat entry
+// whose authored scope is `project:<id>` into that subtree via `git mv` — NOT
+// rm+create — so `git log --follow` / `git blame` recover the original commit
+// (C-007 blame preservation). An untracked/non-git entry falls back to fs rename
+// and records `gitMv:false` so the report surfaces which entries lost provenance.
+//
+// The scan walks ONLY the flat root type dirs (never projects/), so an entry
+// already under projects/<id>/ is invisible to the walk ⇒ a second run reports
+// zero moves (idempotent on both dry-run and real paths, TS-08). `dryRun`
+// computes the planned moves WITHOUT touching disk; a real run performs exactly
+// the same set (planned === actual, TS-06).
+// ---------------------------------------------------------------------------
+
+export interface MigrationMove {
+  id: string | null;
+  project: string;
+  fromPath: string; // absolute
+  toPath: string; // absolute
+  // false when the move fell back to fs rename (untracked / non-git) — git blame
+  // provenance was NOT preserved for this entry.
+  gitMv: boolean;
+}
+
+export interface MigrationSkip {
+  file: string; // absolute
+  reason: "no-frontmatter" | "non-project-scope";
+}
+
+export interface MigrationReport {
+  dryRun: boolean;
+  // Per-entry change records (same shape the CLI surface renders): one per move.
+  changes: MigrationMove[];
+  // Alias of `changes` for the {dryRun, changes[], moves[], skipped[]} contract —
+  // moves is the canonical name, changes mirrors it for report symmetry.
+  moves: MigrationMove[];
+  skipped: MigrationSkip[];
+}
+
+// The authored project coordinate lives in `semantic_scope: project:<id>` (the
+// phase-1 frontmatter the reroot replaces with path structure). Returns the bare
+// <id> when the entry declares a well-formed project scope, else undefined.
+function readProjectId(block: string): string | undefined {
+  const scope = readKey(block, "semantic_scope");
+  if (scope === undefined || scopeRoot(scope) !== "project") {
+    return undefined;
+  }
+  const id = scope.slice("project:".length);
+  return STORE_PROJECT_ID_PATTERN.test(id) ? id : undefined;
+}
+
+// Move one entry from `fromPath` to `toPath`, preferring `git mv` (preserves
+// blame) with an fs-rename fallback for untracked / non-git entries. Returns
+// whether git mv succeeded. Creates the destination parent as needed. The caller
+// guarantees this is never invoked in dryRun.
+function moveEntry(storeDir: string, fromPath: string, toPath: string): boolean {
+  mkdirSync(dirname(toPath), { recursive: true });
+  const relFrom = relative(storeDir, fromPath);
+  const relTo = relative(storeDir, toPath);
+  try {
+    // -k skips (rather than errors) if the target already exists; we never call
+    // moveEntry for a same-path no-op, so a collision is a genuine caller bug we
+    // want surfaced via the fallback rather than a hard throw mid-migration.
+    execFileSync("git", ["mv", relFrom, relTo], {
+      cwd: storeDir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    // Untracked file or non-git store: fs rename preserves the bytes but loses
+    // git rename detection. gitMv:false flags the provenance gap for the report.
+    renameSync(fromPath, toPath);
+    return false;
+  }
+}
+
+// Migrate every flat project-scoped entry under `storeDir` into
+// knowledge/projects/<id>/<type>/. `storeDir` is the store's git repo root; the
+// knowledge tree lives at <storeDir>/knowledge. dryRun computes the planned
+// moves without touching disk.
+export function migrateProjectEntries(
+  storeDir: string,
+  options: { dryRun?: boolean } = {},
+): MigrationReport {
+  const dryRun = options.dryRun === true;
+  const moves: MigrationMove[] = [];
+  const skipped: MigrationSkip[] = [];
+  const knowledgeDir = join(storeDir, STORE_LAYOUT.knowledgeDir);
+
+  for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+    const dir = join(knowledgeDir, type);
+    if (!existsSync(dir)) {
+      continue;
+    }
+    for (const name of readdirSync(dir).filter((n) => n.endsWith(".md")).sort()) {
+      const fromPath = join(dir, name);
+      const match = FRONTMATTER_RE.exec(readFileSync(fromPath, "utf8"));
+      if (match === null) {
+        skipped.push({ file: fromPath, reason: "no-frontmatter" });
+        continue;
+      }
+      const block = match[1] ?? "";
+      const project = readProjectId(block);
+      if (project === undefined) {
+        skipped.push({ file: fromPath, reason: "non-project-scope" });
+        continue;
+      }
+      const toPath = join(knowledgeDir, "projects", project, type, name);
+      const move: MigrationMove = {
+        id: readKey(block, "id") ?? null,
+        project,
+        fromPath,
+        toPath,
+        gitMv: dryRun ? true : moveEntry(storeDir, fromPath, toPath),
+      };
+      moves.push(move);
+    }
+  }
+
+  return { dryRun, changes: moves, moves, skipped };
 }

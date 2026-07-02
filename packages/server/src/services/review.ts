@@ -1160,23 +1160,34 @@ async function modifyLayerFlip(
     { id: newStableId },
   );
 
-  await atomicWriteText(toAbs, rewritten);
-
-  // Remove the source. team→? uses git rm when the source lives in the
-  // project tree; personal→? uses fs.unlink (outside git tree).
+  // C-007 (W2/TASK-005): a layer-flip RELOCATES the entry (source→toAbs), so use
+  // `git mv` — NOT rm+create — to carry the source's history forward (`git blame`
+  // / `git log --follow` recover the original commit at toAbs). git mv moves the
+  // file first, THEN we rewrite the frontmatter in place, so the move is a pure
+  // rename git can detect. team→? source lives in the project tree; personal→?
+  // (outside the git tree) uses an fs write + unlink as before.
+  let moved = false;
   if (target.isInProjectTree) {
     const relSource = relative(projectRoot, target.absPath);
+    const relDest = relative(projectRoot, toAbs);
     try {
-      execFileSync("git", ["rm", "--quiet", "-f", relSource], {
+      execFileSync("git", ["mv", "-f", relSource, relDest], {
         cwd: projectRoot,
         stdio: ["ignore", "pipe", "pipe"],
       });
+      moved = true;
     } catch {
-      if (existsSync(target.absPath)) {
-        await unlink(target.absPath);
-      }
+      // Untracked source / non-git repo (eg. tests without `git init`): fall back
+      // to write-dest + unlink-source. git rename detection (blame) is lost here,
+      // same trade-off as the pre-TASK-005 rm+create path.
+      moved = false;
     }
-  } else if (existsSync(target.absPath)) {
+  }
+  // Whether git mv relocated the file or not, the destination gets the rewritten
+  // frontmatter (git mv moved the OLD bytes; this stamps the new id/layer in
+  // place). When git mv did NOT run, the source still exists and must be removed.
+  await atomicWriteText(toAbs, rewritten);
+  if (!moved && existsSync(target.absPath) && target.absPath !== toAbs) {
     await unlink(target.absPath);
   }
 
