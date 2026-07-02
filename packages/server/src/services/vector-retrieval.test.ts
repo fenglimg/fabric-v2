@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -260,5 +264,182 @@ describe("buildEmbedInitOptions (v2.1 ③)", () => {
       if (prevHome === undefined) delete process.env.FABRIC_HOME;
       else process.env.FABRIC_HOME = prevHome;
     }
+  });
+});
+
+// TASK-004 (P1 recall-engine-refactor): version-keyed doc-vector DISK cache. The
+// in-memory Map is tier 1 (per-process); this tier 2 lets a COLD process (a fresh
+// hook invocation) rehydrate the corpus embeddings from disk instead of
+// re-embedding on CPU. The suite drives buildVectorScores with a COUNTING fake
+// embedder + a temp projectRoot so it asserts real read/write/invalidate behavior
+// without the optional fastembed package or a model download.
+describe("buildVectorScores disk cache (TASK-004)", () => {
+  let root: string;
+  // Deterministic fixed-width (3-dim) embedder that records every batch it embeds,
+  // so the test can prove which texts got re-embedded vs served from cache.
+  function countingEmbedder(): { embedder: Embedder; batches: string[][] } {
+    const batches: string[][] = [];
+    const embedder: Embedder = {
+      async embed(texts: string[]): Promise<number[][]> {
+        batches.push(texts);
+        return texts.map((t) => [t.length, (t.match(/a/g) ?? []).length, (t.match(/b/g) ?? []).length]);
+      },
+    };
+    return { embedder, batches };
+  }
+  const items = [
+    { stable_id: "d1", text: "alpha bravo" },
+    { stable_id: "d2", text: "charlie delta" },
+    { stable_id: "d3", text: "echo foxtrot" },
+  ];
+  const cacheFiles = (): string[] => {
+    try {
+      return readdirSync(join(root, ".fabric", "cache", "vectors"));
+    } catch {
+      return [];
+    }
+  };
+
+  afterEach(() => {
+    __resetVectorCache();
+    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("writes a versioned snapshot on first embed (four required keys)", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+    __resetVectorCache();
+    const { embedder } = countingEmbedder();
+    const scores = await buildVectorScores(embedder, "query", items, {
+      projectRoot: root,
+      corpusRevision: "rev-abc",
+      embeddingModel: "fast-bge-small-zh-v1.5",
+    });
+    expect(scores).not.toBeNull();
+
+    const files = cacheFiles();
+    expect(files).toEqual(["rev-abc.json"]); // revision-named file
+    const payload = JSON.parse(readFileSync(join(root, ".fabric", "cache", "vectors", files[0]), "utf8"));
+    expect(payload.version).toBe(1);
+    expect(payload.embedding_model).toBe("fast-bge-small-zh-v1.5");
+    expect(payload.dimension).toBe(3);
+    expect(payload.corpus_revision).toBe("rev-abc");
+    // The snapshot holds every doc's vector, keyed by doc text.
+    expect(payload.vectors).toHaveLength(3);
+  });
+
+  it("cold-process hit rehydrates from disk — only the query is re-embedded", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+    const ctx = { projectRoot: root, corpusRevision: "rev-cold", embeddingModel: "m1" };
+
+    // Warm run: builds the snapshot (embeds query + 3 docs), writes it to disk.
+    __resetVectorCache();
+    const warm = countingEmbedder();
+    await buildVectorScores(warm.embedder, "q1", items, ctx);
+    expect(warm.batches[0]).toHaveLength(4); // q1 + 3 docs
+
+    // Simulate a COLD process: clear the in-memory Map so only disk can serve docs.
+    __resetVectorCache();
+    const cold = countingEmbedder();
+    const scores = await buildVectorScores(cold.embedder, "q2", items, ctx);
+    expect(scores).not.toBeNull();
+    // The docs were rehydrated from disk → the cold run embeds ONLY the new query.
+    expect(cold.batches).toHaveLength(1);
+    expect(cold.batches[0]).toEqual(["q2"]);
+
+    // Equivalence: the disk-rehydrated run scores identically to a full fresh embed.
+    __resetVectorCache();
+    const fresh = countingEmbedder();
+    const freshScores = await buildVectorScores(fresh.embedder, "q2", items);
+    for (const item of items) {
+      expect(scores?.get(item.stable_id)).toBeCloseTo(freshScores?.get(item.stable_id) ?? NaN, 10);
+    }
+  });
+
+  it("misses when the embedding model changed (never mixes vector spaces)", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+
+    __resetVectorCache();
+    const first = countingEmbedder();
+    await buildVectorScores(first.embedder, "q", items, {
+      projectRoot: root,
+      corpusRevision: "rev-model",
+      embeddingModel: "model-A",
+    });
+
+    // Same revision + corpus, DIFFERENT model → the model-A snapshot must NOT be
+    // reused. A cold process on model-B re-embeds the docs (model mismatch → miss).
+    __resetVectorCache();
+    const second = countingEmbedder();
+    await buildVectorScores(second.embedder, "q", items, {
+      projectRoot: root,
+      corpusRevision: "rev-model",
+      embeddingModel: "model-B",
+    });
+    expect(second.batches[0]).toHaveLength(4); // q + 3 docs re-embedded (no reuse)
+  });
+
+  it("misses when the persisted dimension disagrees (never reads wrong-width vectors)", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+
+    // Warm a snapshot with a 3-dim embedder.
+    __resetVectorCache();
+    const warm = countingEmbedder();
+    await buildVectorScores(warm.embedder, "q", items, {
+      projectRoot: root,
+      corpusRevision: "rev-dim",
+      embeddingModel: "m",
+    });
+
+    // A cold process whose embedder now produces 4-dim vectors: the 3-dim disk
+    // snapshot would be a WIDTH MISMATCH. loadVectorCacheFromDisk rejects the whole
+    // file (dimension guard), so every doc is re-embedded at the new width rather
+    // than seeding cosineSimilarity with mismatched-width vectors (which it zeroes).
+    __resetVectorCache();
+    const batches: string[][] = [];
+    const wide: Embedder = {
+      async embed(texts: string[]): Promise<number[][]> {
+        batches.push(texts);
+        return texts.map((t) => [t.length, 0, 0, 1]); // 4-dim
+      },
+    };
+    const scores = await buildVectorScores(wide, "q", items, {
+      projectRoot: root,
+      corpusRevision: "rev-dim",
+      embeddingModel: "m",
+    });
+    expect(scores).not.toBeNull();
+    // The stale 3-dim docs load from disk, but the query-anchored dimension guard
+    // detects the width mismatch against the fresh 4-dim query, evicts them, and
+    // re-embeds in a SECOND batch (rather than scoring cosine 0 against them).
+    expect(batches[0]).toEqual(["q"]); // batch 1: query only (docs served from disk)
+    expect(batches[1]).toHaveLength(3); // batch 2: the 3 evicted stale-width docs
+    // The rewritten snapshot now records the new dimension.
+    const payload = JSON.parse(
+      readFileSync(join(root, ".fabric", "cache", "vectors", "rev-dim.json"), "utf8"),
+    );
+    expect(payload.dimension).toBe(4);
+  });
+
+  it("NEVER touches the disk cache when the embedder is unavailable (degrade-safe)", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+    __resetVectorCache();
+    const scores = await buildVectorScores(null, "query", items, {
+      projectRoot: root,
+      corpusRevision: "rev-null",
+      embeddingModel: "m",
+    });
+    // Same early-return contract as pre-TASK-004: null, and ZERO disk artifacts.
+    expect(scores).toBeNull();
+    expect(cacheFiles()).toEqual([]);
+  });
+
+  it("skips the disk tier entirely when no cache context is passed (backward compatible)", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+    __resetVectorCache();
+    const { embedder } = countingEmbedder();
+    // No 4th arg → the in-memory-only path; nothing is persisted under root.
+    const scores = await buildVectorScores(embedder, "query", items);
+    expect(scores).not.toBeNull();
+    expect(cacheFiles()).toEqual([]);
   });
 });

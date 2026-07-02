@@ -28,6 +28,7 @@
 //     Operators needing strict offline must pre-populate FABRIC_EMBED_CACHE_DIR.
 
 import { mkdirSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
@@ -296,15 +297,151 @@ function cacheDocVector(text: string, vector: number[]): void {
   }
 }
 
+// TASK-004 (P1 recall-engine-refactor): version-of-record for the on-disk
+// doc-vector snapshot layout. Bump on ANY serialization-shape change so a stale
+// snapshot from an older layout is rejected as a miss (never rehydrated into a
+// broken shape). Mirrors the SerializedBm25Model.version === 1 gate.
+const VECTOR_CACHE_VERSION = 1;
+
+// TASK-004: on-disk doc-embedding cache, tier 2 behind the in-memory Map (tier 1).
+// docVectorCache alone re-embeds the WHOLE corpus on every COLD process (a fresh
+// hook invocation starts with an empty Map). Doc embeddings are a pure function
+// of (doc text, embedding model), so a snapshot keyed on the read-set revision
+// lets a cold process rehydrate instead of re-embedding the corpus on CPU — the
+// cold-start perf win, mirroring the BM25 disk cache (plan-context.ts).
+//
+// The payload pins THREE invalidation axes beyond the filename revision:
+//   - embedding_model: a model swap produces incomparable vectors of a DIFFERENT
+//     space — must not mix. Model changes need a server restart (loadEmbedder is
+//     per-process, first-model-wins), but a persisted snapshot outlives the
+//     process, so the model is pinned in the payload, not just the process.
+//   - dimension: a hard guard against reading vectors of the WRONG width into
+//     cosineSimilarity (a length mismatch there silently scores 0 — a stale
+//     snapshot at the wrong dimension would poison recall invisibly).
+//   - corpus_revision: bound in the filename AND re-checked in the body, so a
+//     revision↔filename mismatch (e.g. a truncated/renamed file) is also a miss.
+// Any mismatch on ANY axis → miss → re-embed + write-through (overwrite). Stored
+// under `.fabric/cache/vectors/`, alongside the BM25 cache's `.fabric/cache/bm25/`.
+const VECTOR_CACHE_DIR = ".fabric/cache/vectors";
+
+// Context threaded from the caller so the disk tier can key/validate the snapshot.
+// OPTIONAL on buildVectorScores: when absent, the disk tier is skipped entirely
+// and behavior is byte-identical to the pre-TASK-004 in-memory-only path
+// (backward compatible for callers/tests that pass no cache context).
+export interface VectorCacheContext {
+  projectRoot: string;
+  corpusRevision: string;
+  embeddingModel: string;
+}
+
+// The serialized snapshot. `vectors` maps doc TEXT → vector (same key as the
+// in-memory docVectorCache) so rehydration seeds tier 1 directly.
+interface SerializedVectorCache {
+  version: number;
+  embedding_model: string;
+  dimension: number;
+  corpus_revision: string;
+  vectors: Array<[string, number[]]>;
+}
+
+function vectorCachePath(projectRoot: string, revision: string): string {
+  // The revision is a sha256 hex string (computeReadSetRevision), optionally
+  // `sha256:`-prefixed — safe as a filename once the colon is normalized. Mirrors
+  // bm25CachePath's normalization so the two caches key filenames identically.
+  const safe = revision.replace(/[^A-Za-z0-9_-]/g, "_");
+  return join(projectRoot, VECTOR_CACHE_DIR, `${safe}.json`);
+}
+
+/**
+ * Load the persisted doc-vector snapshot for this (revision, model). Returns null
+ * — a miss — on a missing file, parse error, version/model/dimension/revision
+ * mismatch, or an empty snapshot. The cache is a perf accelerator, never
+ * load-bearing: any bad read just falls through to re-embedding.
+ */
+async function loadVectorCacheFromDisk(
+  ctx: VectorCacheContext,
+): Promise<Map<string, number[]> | null> {
+  try {
+    const raw = await readFile(vectorCachePath(ctx.projectRoot, ctx.corpusRevision), "utf8");
+    const parsed = JSON.parse(raw) as SerializedVectorCache;
+    // Reject a snapshot from a different layout / model / corpus. The dimension
+    // is validated per-vector below (against the snapshot's own declared width),
+    // so a corrupt row cannot smuggle a wrong-width vector into the tier-1 Map.
+    if (parsed.version !== VECTOR_CACHE_VERSION) return null;
+    if (parsed.embedding_model !== ctx.embeddingModel) return null;
+    if (parsed.corpus_revision !== ctx.corpusRevision) return null;
+    if (!Array.isArray(parsed.vectors) || parsed.vectors.length === 0) return null;
+    const dimension = parsed.dimension;
+    if (!Number.isInteger(dimension) || dimension <= 0) return null;
+    const out = new Map<string, number[]>();
+    for (const entry of parsed.vectors) {
+      if (!Array.isArray(entry) || entry.length !== 2) return null;
+      const [text, vector] = entry;
+      if (typeof text !== "string" || !Array.isArray(vector)) return null;
+      // Hard dimension guard: a row whose width disagrees with the declared
+      // dimension is a corrupt/mismatched snapshot — reject the WHOLE file rather
+      // than seeding a wrong-width vector that cosineSimilarity silently zeroes.
+      if (vector.length !== dimension) return null;
+      out.set(text, vector);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist the current doc-vector snapshot for this (revision, model). Best-effort:
+ * a write failure (read-only FS, concurrent writer) must never block ranking —
+ * the in-memory Map still serves this process. Mirrors saveBm25ModelToDisk.
+ */
+async function saveVectorCacheToDisk(
+  ctx: VectorCacheContext,
+  vectors: Array<[string, number[]]>,
+  dimension: number,
+): Promise<void> {
+  try {
+    const payload: SerializedVectorCache = {
+      version: VECTOR_CACHE_VERSION,
+      embedding_model: ctx.embeddingModel,
+      dimension,
+      corpus_revision: ctx.corpusRevision,
+      vectors,
+    };
+    const path = vectorCachePath(ctx.projectRoot, ctx.corpusRevision);
+    await mkdir(join(ctx.projectRoot, VECTOR_CACHE_DIR), { recursive: true });
+    await writeFile(path, JSON.stringify(payload), "utf8");
+  } catch {
+    // Best-effort: never let a persistence failure surface into recall.
+  }
+}
+
 export async function buildVectorScores(
   embedder: Embedder | null,
   queryText: string,
   items: VectorScoreItem[],
+  cache?: VectorCacheContext,
 ): Promise<Map<string, number> | null> {
+  // Degrade-safe hard gate (unchanged): with no embedder / empty query / no
+  // items we return null WITHOUT ever touching the disk cache, so the text-only
+  // fallback path behaves byte-identically to pre-TASK-004.
   if (embedder === null || queryText.trim().length === 0 || items.length === 0) {
     return null;
   }
   try {
+    // Tier 2 (disk): on a COLD process, rehydrate the persisted snapshot into the
+    // in-memory Map BEFORE computing misses, so the miss loop finds the docs
+    // cached and only the (varying) query is embedded. Skipped entirely when the
+    // caller passes no cache context (backward compatible).
+    if (cache !== undefined) {
+      const fromDisk = await loadVectorCacheFromDisk(cache);
+      if (fromDisk !== null) {
+        for (const [text, vector] of fromDisk) {
+          cacheDocVector(text, vector);
+        }
+      }
+    }
+
     // Embed the query (always) plus only the docs whose text is not yet cached.
     const missTexts: string[] = [];
     for (const item of items) {
@@ -321,6 +458,35 @@ export async function buildVectorScores(
     for (let m = 0; m < missTexts.length; m += 1) {
       cacheDocVector(missTexts[m], embedded[m + 1]);
     }
+
+    // Query-anchored dimension guard (TASK-004 red line). `queryVec` was produced
+    // by the CURRENT embedder, so its width is the authoritative dimension. A
+    // freshly-embedded miss always matches it (same batch, same embedder); a
+    // WIDTH MISMATCH can therefore only be a stale CACHED vector — from an L2 disk
+    // snapshot (or a lingering L1 entry) written by a different-dimension model.
+    // cosineSimilarity would silently score such a pair 0, poisoning recall — so
+    // we evict the mismatched entries and re-embed them at the correct width
+    // rather than scoring against them. Belt-and-suspenders behind the disk
+    // loader's own dimension check (which cannot know the current width pre-embed).
+    const staleTexts: string[] = [];
+    for (const item of items) {
+      const cached = docVectorCache.get(item.text);
+      if (cached !== undefined && cached.length !== queryVec.length) {
+        docVectorCache.delete(item.text);
+        staleTexts.push(item.text);
+      }
+    }
+    if (staleTexts.length > 0) {
+      const reEmbedded = await embedder.embed(staleTexts);
+      if (reEmbedded.length !== staleTexts.length) {
+        return null;
+      }
+      for (let s = 0; s < staleTexts.length; s += 1) {
+        cacheDocVector(staleTexts[s], reEmbedded[s]);
+      }
+    }
+    const embeddedNewDoc = missTexts.length > 0 || staleTexts.length > 0;
+
     const scores = new Map<string, number>();
     for (const item of items) {
       const docVec = docVectorCache.get(item.text);
@@ -331,6 +497,32 @@ export async function buildVectorScores(
       }
       scores.set(item.stable_id, cosineSimilarity(queryVec, docVec));
     }
+
+    // Tier 2 write-through: persist THIS corpus's doc vectors keyed by revision.
+    // Only when we actually embedded new docs (a full disk hit has nothing new to
+    // write) and the vectors carry a consistent, positive dimension. The snapshot
+    // is the current call's corpus — a content change moves the revision → a new
+    // filename → the old snapshot is simply left in place (harmless; a churning
+    // corpus is naturally bounded by revision turnover, and stale files never
+    // load because their filename revision no longer matches).
+    if (cache !== undefined && embeddedNewDoc) {
+      const snapshot: Array<[string, number[]]> = [];
+      for (const item of items) {
+        const vec = docVectorCache.get(item.text);
+        if (vec !== undefined) {
+          snapshot.push([item.text, vec]);
+        }
+      }
+      const dimension = snapshot.length > 0 ? snapshot[0][1].length : 0;
+      // Guard: only persist a uniform, positive-width snapshot. A ragged corpus
+      // (mixed widths — should never happen for one model) is not written rather
+      // than persisting a payload that would fail its own dimension check on load.
+      const uniform = dimension > 0 && snapshot.every(([, v]) => v.length === dimension);
+      if (uniform) {
+        await saveVectorCacheToDisk(cache, snapshot, dimension);
+      }
+    }
+
     return scores;
   } catch {
     return null;

@@ -292,6 +292,10 @@ export const planContextHintNarrowEntrySchema = z.object({
   // SessionStart REFERENCE rendering (decision/pitfall/process → title + hook).
   // Optional — omitted when the frontmatter declares none.
   must_read_if: z.string().optional(),
+  // TASK-003 (impact-map MVP): the entry's impact list, forwarded so the narrow
+  // PreToolUse hint can surface the consequences of ignoring this knowledge when
+  // editing a matching relevance path. Optional — omitted when none declared.
+  impact: z.array(z.string()).optional(),
 });
 
 export const planContextHintOutputSchema = z.object({

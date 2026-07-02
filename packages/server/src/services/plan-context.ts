@@ -987,6 +987,11 @@ export async function buildScoringContext(
   const embedConfig = readEmbedConfig(projectRoot);
   if (embedConfig.enabled && opts.queryText.trim().length > 0 && rawItems.length > 0) {
     const embedder = await loadEmbedder(embedConfig.model);
+    // TASK-004: version-keyed doc-vector disk cache. Key on the read-set revision
+    // (same content fingerprint as the BM25 cache) + the resolved embedding model,
+    // so a cold process rehydrates instead of re-embedding the corpus, and a model
+    // swap / corpus change naturally misses. embedConfig.model is always a concrete
+    // resolved value (readEmbedConfig falls back to DEFAULT_EMBED_MODEL).
     const vectorScores = await buildVectorScores(
       embedder,
       opts.queryText,
@@ -994,6 +999,7 @@ export async function buildScoringContext(
         stable_id: item.stable_id,
         text: docTexts.get(item.stable_id) ?? documentTextForItem(item.description),
       })),
+      { projectRoot, corpusRevision: revision, embeddingModel: embedConfig.model },
     );
     if (vectorScores !== null) {
       scoringContext.vectorScores = vectorScores;

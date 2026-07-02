@@ -1185,7 +1185,16 @@ function formatEntryLine(entry, maxLen) {
     typeof entry.related_to === "string" && entry.related_to.length > 0
       ? ` (related-to-${entry.related_to})`
       : "";
-  return `  [${id}] (${type}/${maturity})${tail}${provenance}`;
+  const head = `  [${id}] (${type}/${maturity})${tail}${provenance}`;
+  // TASK-003 (impact-map MVP): when the entry declares a non-empty impact list,
+  // append a ⚠️ consequence line right after the entry (rendered as a separate
+  // stderr line — the caller joins the returned string on "\n"). Omitted for
+  // entries with no/empty impact so the existing narrow-hint format is unchanged.
+  const impact =
+    Array.isArray(entry.impact) && entry.impact.length > 0
+      ? `\n      ⚠️ 后果: ${entry.impact.filter((s) => typeof s === "string" && s.length > 0).join(" | ")}`
+      : "";
+  return `${head}${impact}`;
 }
 
 function readSummaryMaxLen(projectRoot) {
