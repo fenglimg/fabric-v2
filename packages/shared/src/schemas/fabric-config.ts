@@ -359,13 +359,38 @@ export const fabricConfigSchema = z.object({
   // banner silently truncates. Default 50; range 20..500 (read inline by
   // knowledge-hint-broad.cjs#readBroadIndexBackstop with the same bounds).
   broad_index_backstop: z.number().int().min(20).max(500).optional().default(50),
-  // v2.0.0-rc.37 NEW-16: durable per-signal dismiss for the fabric-hint Stop
-  // hook nudges. Any signal type listed here is suppressed at emit time across
+  // v2.0.0-rc.37 NEW-16: durable per-signal dismiss for the fabric-hint hook
+  // nudges. Any signal type listed here is suppressed at emit time across
   // all sessions (the session-scoped sibling lives in a .fabric/.cache sidecar
   // written on request). Mirrors the cite_evict_interval=0 opt-out convention —
   // a knob for an existing surface, not a new feature. Unknown types ignored.
+  //
+  // TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): the enum now spans
+  // ALL nudge surfaces, not just the fabric-hint Stop signals:
+  //   - Stop (fabric-hint):        archive / review / import / maintenance
+  //   - SessionStart (broad):      review / import / maintenance now surface as
+  //                                the SessionStart summary line (see
+  //                                buildSessionStartSinks H4 ladder) — the same
+  //                                dismiss key silences them there too.
+  //   - PreToolUse (per-edit):     "narrow" (knowledge-hint-narrow) and
+  //                                "cite-evict" (cite-before-edit nudge).
+  // C-004 semantics are enforced at the trigger sites, NOT here: "narrow"
+  // defaults ON (impact-bearing) and "cite-evict" defaults OFF-able; listing
+  // either key here is the durable opt-out. Adding enum values is backward
+  // compatible — legacy configs that omit the new keys parse unchanged, and
+  // unknown on-disk values are dropped by the lenient root parser.
   hint_dismiss_signals: z
-    .array(z.enum(["archive", "review", "import", "maintenance"]))
+    .array(
+      z.enum([
+        "archive",
+        "review",
+        "import",
+        "maintenance",
+        // per-edit (PreToolUse) nudge surfaces — TASK-005
+        "narrow",
+        "cite-evict",
+      ]),
+    )
     .optional(),
   // v2.1 ADJ-NEWN-4: user-override escape hatches for the two strong behavioral
   // policies (cite-before-edit + self-archive). The strong policies can make an

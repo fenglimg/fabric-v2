@@ -957,6 +957,20 @@ function readNarrowCooldownHours(projectRoot) {
   return DEFAULT_HINT_NARROW_COOLDOWN_HOURS;
 }
 
+// TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): the narrow per-edit
+// hint is now individually silenceable via the unified
+// `hint_dismiss_signals` enum — listing "narrow" suppresses this PreToolUse
+// nudge across ALL sessions, exactly as an "archive"/"review" entry silences
+// the Stop / SessionStart surfaces. Default OFF (empty list) keeps narrow ON
+// (impact-bearing, C-004). Any read/parse failure → not dismissed (never-block).
+function readNarrowDismissed(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object" && Array.isArray(parsed.hint_dismiss_signals)) {
+    return parsed.hint_dismiss_signals.includes("narrow");
+  }
+  return false;
+}
+
 function readReminderToContext(projectRoot) {
   const parsed = _readNarrowConfigValue(projectRoot);
   if (parsed && typeof parsed === "object") {
@@ -1185,7 +1199,16 @@ function formatEntryLine(entry, maxLen) {
     typeof entry.related_to === "string" && entry.related_to.length > 0
       ? ` (related-to-${entry.related_to})`
       : "";
-  return `  [${id}] (${type}/${maturity})${tail}${provenance}`;
+  const head = `  [${id}] (${type}/${maturity})${tail}${provenance}`;
+  // TASK-003 (impact-map MVP): when the entry declares a non-empty impact list,
+  // append a ⚠️ consequence line right after the entry (rendered as a separate
+  // stderr line — the caller joins the returned string on "\n"). Omitted for
+  // entries with no/empty impact so the existing narrow-hint format is unchanged.
+  const impact =
+    Array.isArray(entry.impact) && entry.impact.length > 0
+      ? `\n      ⚠️ 后果: ${entry.impact.filter((s) => typeof s === "string" && s.length > 0).join(" | ")}`
+      : "";
+  return `${head}${impact}`;
 }
 
 function readSummaryMaxLen(projectRoot) {
@@ -1314,6 +1337,13 @@ async function main(env, stdio) {
     if (payload === null || payload === undefined) return;
     if (!toolName || !EDIT_TOOL_NAMES.has(toolName)) return;
     if (paths.length === 0) return;
+
+    // TASK-005 (grill G5 / C-004): durable per-signal opt-out. When "narrow" is
+    // listed in fabric-config.json#hint_dismiss_signals, this per-edit hint is
+    // silenced across all sessions — treated exactly like a cooldown hit
+    // (silent return AFTER the unconditional edit-counter side-effect above, so
+    // telemetry still measures the edit cadence). Test seam env.skipDismiss.
+    if (!(env && env.skipDismiss === true) && readNarrowDismissed(cwd)) return;
 
     // v2.0.0-rc.33 W2-5 (P1-8): cooldown gate. When configured > 0, suppress
     // the hint for that many hours after a successful emit. Counted as
@@ -1625,6 +1655,8 @@ module.exports = {
   readNarrowTopK,
   readNarrowDedupWindowTurns,
   readNarrowCooldownHours,
+  // TASK-005 (grill G5 / C-004): "narrow" dismiss reader — exported for tests.
+  readNarrowDismissed,
   readReminderToContext,
   readNarrowLastEmit,
   writeNarrowLastEmit,

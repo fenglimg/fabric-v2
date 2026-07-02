@@ -37,7 +37,7 @@ interface FieldConfig {
 
 // Adapted from maestro-flow wiki search.ts FIELD_CONFIGS. The fabric mapping
 // (set in plan-context.documentFieldsForItem): title←summary (the headline the
-// LLM reads first), tags←tags+tech_stack+entities (keyword signals), summary←
+// LLM reads first), tags←tags+tech_stack (keyword signals), summary←
 // must_read_if+intent_clues (the "when to use" trigger), body←impact.
 const FIELD_CONFIGS: Record<Bm25Field, FieldConfig> = {
   title: { boost: 3, b: 0.3 },

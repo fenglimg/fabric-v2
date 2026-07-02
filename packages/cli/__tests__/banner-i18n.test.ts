@@ -70,6 +70,10 @@ const FIXTURE_PARAMS: Record<string, Record<string, unknown>> = {
   archivePartsEdits: { count: 21, threshold: 20 },
   archiveActivity: { activity: "src/app.ts, src/util.ts" },
   archiveCta: {},
+  // TASK-005 (grill G5 / C-003): single-line archive nudge — the Stop archive
+  // signal is downgraded from the multi-line archiveLine1/Activity/Cta banner
+  // to this one terse line carrying the edit-count fragment + /fabric-archive CTA.
+  archiveSingle: { parts: "21/20 edits" },
   // crack 2: archive backlog (cross-session safety net) banners.
   backlogLine1: { count: 3 },
   backlogCta: {},
@@ -107,11 +111,12 @@ describe("banner-i18n: STRINGS table coverage envelope", () => {
     expect(fixtureKeys).toEqual(stringsKeys);
   });
 
-  it("exposes exactly 19 banner keys (crack 2 added backlogLine1 + backlogCta)", () => {
+  it("exposes exactly 20 banner keys (TASK-005 added archiveSingle)", () => {
     // rc.27 TASK-005 added archivePartsHours + archivePartsEdits (audit §2.17);
     // observability grill added statusLine + statusTier (15 → 17); crack 2
-    // added backlogLine1 + backlogCta (17 → 19).
-    expect(Object.keys(lib.STRINGS)).toHaveLength(19);
+    // added backlogLine1 + backlogCta (17 → 19); grill G5 TASK-005 added the
+    // single-line archive nudge archiveSingle (19 → 20).
+    expect(Object.keys(lib.STRINGS)).toHaveLength(20);
   });
 });
 
@@ -175,6 +180,14 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["/fabric-archive"],
     zhCNContract: ["是否调"],
     enHints: ["Run"],
+  },
+  // TASK-005 (grill G5 / C-003): single-line archive nudge. Carries the 📋
+  // Fabric prefix, the caller-opaque `parts` fragment verbatim, and the
+  // /fabric-archive CTA — all protected across every variant.
+  archiveSingle: {
+    protectedTokens: ["📋 Fabric:", "21/20 edits", "/fabric-archive"],
+    zhCNContract: ["距上次归档", "是否调"],
+    enHints: ["since last archive", "run"],
   },
   backlogLine1: {
     protectedTokens: ["📋 Fabric:", "3 "], // numeric "${count} " survives

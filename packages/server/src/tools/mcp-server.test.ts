@@ -24,7 +24,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { contextCache } from "../cache.js";
-import { planContext } from "../services/plan-context.js";
+import { planContext, layerFromStableId } from "../services/plan-context.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -63,19 +63,24 @@ describe("mcp-server integration (multi-store read model)", () => {
 
     // v2.0.0-rc.38 UX-3: type/maturity/layer mirrors collapsed into description.*.
     // Candidate ids are store-qualified post-cutover.
+    // W4/Track1 (D1): `knowledge_layer` deleted — layer is derived from the
+    // stable_id prefix (KP-→personal, else team; KT-DEC-0004), no longer a field.
     expect(indexById.get("team:KT-DEC-0001")?.description).toMatchObject({
       knowledge_type: "decisions",
       maturity: "verified",
-      knowledge_layer: "team",
     });
+    expect(indexById.get("team:KT-DEC-0001")?.description).not.toHaveProperty("knowledge_layer");
     expect(indexById.get("personal:KP-GLD-0001")?.description).toMatchObject({
       knowledge_type: "guidelines",
       maturity: "draft",
-      knowledge_layer: "personal",
     });
+    expect(indexById.get("personal:KP-GLD-0001")?.description).not.toHaveProperty("knowledge_layer");
 
-    // Sanity: both layers present in the merged index.
-    const layers = new Set(result.candidates.map((item) => item.description.knowledge_layer));
+    // Sanity: both layers present in the merged index — derived from the id
+    // prefix now that the field is gone (team:KT-* → team, personal:KP-* → personal).
+    const layers = new Set(
+      result.candidates.map((item) => layerFromStableId(item.stable_id)),
+    );
     expect(layers).toEqual(new Set(["team", "personal"]));
   });
 

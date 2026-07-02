@@ -1208,12 +1208,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                 "created_at": {
                   "type": "string",
                 },
-                "entities": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
                 "id": {
                   "type": "string",
                 },
@@ -1229,13 +1223,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   },
                   "type": "array",
                 },
-                "knowledge_layer": {
-                  "enum": [
-                    "personal",
-                    "team",
-                  ],
-                  "type": "string",
-                },
                 "knowledge_type": {
                   "enum": [
                     "models",
@@ -1244,9 +1231,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                     "pitfalls",
                     "processes",
                   ],
-                  "type": "string",
-                },
-                "layer_reason": {
                   "type": "string",
                 },
                 "maturity": {

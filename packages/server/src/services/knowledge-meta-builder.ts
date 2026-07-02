@@ -15,7 +15,6 @@ import {
   deriveAgentsMetaStableId,
   isKnowledgeStableId,
   KnowledgeTypeSchema,
-  LayerSchema,
   MaturitySchema,
   parseKnowledgeId,
   StableIdSchema,
@@ -217,8 +216,7 @@ export function extractRuleDescription(source: string): RuleDescription | undefi
     id: knowledge?.id,
     knowledge_type: knowledge?.knowledge_type,
     maturity: knowledge?.maturity,
-    knowledge_layer: knowledge?.knowledge_layer,
-    layer_reason: knowledge?.layer_reason,
+    // W4/Track1 (D1): no `knowledge_layer` — layer derives from the id prefix.
     created_at: knowledge?.created_at,
     tags: knowledge?.tags,
     // v2.0-rc.5 (C1): default-safe values when there is no frontmatter at all;
@@ -246,12 +244,10 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     tech_stack: extractInlineArray(frontmatter, "tech_stack"),
     impact: extractInlineArray(frontmatter, "impact"),
     must_read_if: extractScalar(frontmatter, "must_read_if") ?? summary,
-    entities: extractInlineArray(frontmatter, "entities"),
     id: knowledge.id,
     knowledge_type: knowledge.knowledge_type,
     maturity: knowledge.maturity,
-    knowledge_layer: knowledge.knowledge_layer,
-    layer_reason: knowledge.layer_reason,
+    // W4/Track1 (D1): no `knowledge_layer` — layer derives from the id prefix.
     created_at: knowledge.created_at,
     tags: knowledge.tags,
     relevance_scope: knowledge.relevance_scope,
@@ -273,8 +269,10 @@ type KnowledgeFrontmatterFields = {
   id?: string;
   knowledge_type?: KnowledgeType;
   maturity?: Maturity;
-  knowledge_layer?: KnowledgeLayer;
-  layer_reason?: string;
+  // W4/Track1 (D1): no `knowledge_layer` — the entry's layer is a pure function
+  // of its id prefix (KP-→personal, else team; KT-DEC-0004). The frontmatter
+  // `layer:` field is validated separately by doctor's knowledge_layer_mismatch
+  // lint (id vs store location); the meta builder no longer parses it.
   created_at?: string;
   // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic
   // tech-stack keywords and editable by user.
@@ -344,8 +342,6 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
   const rawId = extractScalar(frontmatter, "id");
   const rawType = extractScalar(frontmatter, "type");
   const rawMaturity = extractScalar(frontmatter, "maturity");
-  const rawLayer = extractScalar(frontmatter, "layer");
-  const rawLayerReason = extractScalar(frontmatter, "layer_reason");
   const rawCreatedAt = extractScalar(frontmatter, "created_at");
 
   let id: string | undefined;
@@ -392,16 +388,6 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     }
   }
 
-  let knowledge_layer: KnowledgeLayer | undefined;
-  if (rawLayer !== undefined) {
-    const parsed = LayerSchema.safeParse(rawLayer);
-    if (parsed.success) {
-      knowledge_layer = parsed.data;
-    } else {
-      process.stderr.write(`[fabric] frontmatter: unknown layer ${JSON.stringify(rawLayer)}; skipping\n`);
-    }
-  }
-
   let created_at: string | undefined;
   if (rawCreatedAt !== undefined) {
     if (!Number.isNaN(Date.parse(rawCreatedAt))) {
@@ -411,19 +397,11 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     }
   }
 
-  // Cross-validation: id encodes layer (KP→personal, KT→team).
-  // If both are present and disagree, drop both fields so consumers see a
-  // clean "missing" state instead of inconsistent metadata.
-  if (id !== undefined && knowledge_layer !== undefined) {
-    const decoded = parseKnowledgeId(id);
-    if (decoded !== null && decoded.layer !== knowledge_layer) {
-      process.stderr.write(
-        `[fabric] frontmatter: id ${id} encodes layer ${decoded.layer} but layer field says ${knowledge_layer}; dropping both\n`,
-      );
-      id = undefined;
-      knowledge_layer = undefined;
-    }
-  }
+  // W4/Track1 (D1): the old id-vs-`layer` cross-validation is gone with the
+  // `knowledge_layer` field — the id prefix IS the single source of truth for
+  // layer (KT-DEC-0004), so there is nothing to disagree with here. The residual
+  // integrity check (a KP-*/KT-* id sitting in the wrong physical store) is owned
+  // by doctor's knowledge_layer_mismatch lint (id vs store location).
 
   // v2/rc.2: tags — flat flow-style YAML inline array e.g. `tags: [ts, react]`
   const tags = extractInlineArray(frontmatter, "tags");
@@ -449,19 +427,18 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
   const rawRelated = extractInlineArray(frontmatter, "related");
 
   // lifecycle-refactor W3-A1 (§4 privacy iron law): strip KT→KP topology edges
-  // before they ever reach agents.meta.json. The source layer is the entry's
-  // own layer — declared `knowledge_layer` wins, else decoded from the id
-  // prefix (KT→team / KP→personal). After the cross-validation above id and
-  // knowledge_layer agree, so either resolves the same source layer.
+  // before they ever reach agents.meta.json. The source layer is the entry's own
+  // layer — W4/Track1 (D1) derives it purely from the id prefix (KT→team /
+  // KP→personal; KT-DEC-0004), the single source of truth. The redundant
+  // `knowledge_layer` field is gone, so there is no field to prefer over the id.
   //
-  // FAIL-SAFE default: when an entry declares NEITHER `layer` NOR a layer-
-  // encoding `id`, we treat the source as `team`. The iron law protects the
-  // project's physical ledger, and this default can only ever strip MORE
-  // potential leaks, never manufacture one: a genuinely personal entry always
-  // carries a KP-* id (id late-bound at approve), so its source resolves to
-  // personal and its KP→KP / KP→KT edges pass through untouched. An unlabeled
-  // entry carrying a `related: [KP-*]` edge is exactly the leak shape we must
-  // refuse by default.
+  // FAIL-SAFE default: when an entry declares NO layer-encoding `id`, we treat
+  // the source as `team`. The iron law protects the project's physical ledger,
+  // and this default can only ever strip MORE potential leaks, never manufacture
+  // one: a genuinely personal entry always carries a KP-* id (id late-bound at
+  // approve), so its source resolves to personal and its KP→KP / KP→KT edges pass
+  // through untouched. An unlabeled entry carrying a `related: [KP-*]` edge is
+  // exactly the leak shape we must refuse by default.
   //
   // A target KP-* id on a team-sourced entry is a leak (see
   // isForbiddenCrossLayerEdge): it is dropped from the persisted edge set and a
@@ -469,8 +446,7 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
   // existing frontmatter warning convention in this parser). KT→KT / KP→KT /
   // KP→KP pass through.
   const sourceLayer: KnowledgeLayer =
-    knowledge_layer ??
-    (id !== undefined ? parseKnowledgeId(id)?.layer ?? "team" : "team");
+    id !== undefined ? parseKnowledgeId(id)?.layer ?? "team" : "team";
   const related = rawRelated.filter((targetId) => {
     if (isForbiddenCrossLayerEdge(sourceLayer, targetId)) {
       process.stderr.write(
@@ -487,8 +463,6 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     id,
     knowledge_type,
     maturity,
-    knowledge_layer,
-    layer_reason: rawLayerReason,
     created_at,
     tags: tags.length > 0 ? tags : undefined,
     relevance_scope,

@@ -95,6 +95,28 @@ function readNudgeEnabled(cwd) {
 }
 
 /**
+ * TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): unified per-signal
+ * opt-out. Returns true when "cite-evict" is listed in
+ * `.fabric/fabric-config.json#hint_dismiss_signals` — the same enum that
+ * silences the Stop (archive) and SessionStart (review/import/maintenance)
+ * surfaces. This is a SECOND opt-out lever alongside the pre-existing
+ * `cite_recall_nudge:false` boolean (both silence this hook); listing the key
+ * here keeps a single durable dismiss surface across all nudges. Any
+ * read/parse failure → not dismissed (never-block).
+ */
+function readCiteEvictDismissed(cwd) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.hint_dismiss_signals)) {
+      return parsed.hint_dismiss_signals.includes("cite-evict");
+    }
+  } catch {
+    // never-block
+  }
+  return false;
+}
+
+/**
  * Read `.fabric/fabric-config.json#cite_recall_window_minutes`. Default 30,
  * floor 0 (0 = unbounded). Reuses the shared defensive numeric reader.
  */
@@ -405,6 +427,14 @@ async function main(env, stdio) {
       return; // feature off — silent
     }
 
+    // TASK-005 (grill G5 / C-004): durable per-signal opt-out via the unified
+    // hint_dismiss_signals enum. "cite-evict" here silences this nudge exactly
+    // like cite_recall_nudge:false, but through the same enum that dismisses
+    // every other Fabric nudge surface.
+    if (readCiteEvictDismissed(cwd)) {
+      return; // dismissed via hint_dismiss_signals — silent
+    }
+
     const payload = env && env.payload !== undefined ? env.payload : await readStdinJson();
 
     const toolName = extractToolName(payload);
@@ -467,6 +497,8 @@ module.exports = {
   extractPaths,
   resolveSessionId,
   readNudgeEnabled,
+  // TASK-005 (grill G5 / C-004): "cite-evict" dismiss reader — exported for tests.
+  readCiteEvictDismissed,
   readWindowMinutes,
   readIgnoreGlobs,
   globToRegExp,

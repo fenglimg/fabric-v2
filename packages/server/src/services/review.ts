@@ -1427,7 +1427,8 @@ function pendingEntryToRankerItem(indexed: IndexedSearchEntry): RuleDescriptionI
     ...(fm.id !== undefined ? { id: fm.id } : {}),
     ...(fm.type !== undefined ? { knowledge_type: fm.type } : {}),
     maturity: fm.maturity ?? "draft",
-    knowledge_layer: indexed.layer,
+    // W4/Track1 (D1): no `knowledge_layer` field — layer is derived from the
+    // stable_id prefix (KT-DEC-0004), never carried on the description.
     ...(fm.semantic_scope !== undefined ? { semantic_scope: fm.semantic_scope } : {}),
     ...(fm.created_at !== undefined ? { created_at: fm.created_at } : {}),
     tags: fm.tags ?? [],

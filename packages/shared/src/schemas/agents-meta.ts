@@ -45,7 +45,6 @@ export const ruleDescriptionSchema = z
     tech_stack: z.array(z.string()),
     impact: z.array(z.string()),
     must_read_if: z.string(),
-    entities: z.array(z.string()).optional(),
     // v2.0 knowledge entry fields (TASK-002 schemas). All optional for backward compat.
     id: z.string().optional(),
     // rc.31 NEW-1: forward-compat for legacy on-disk agents.meta.json carrying
@@ -63,8 +62,8 @@ export const ruleDescriptionSchema = z
       )
       .optional(),
     maturity: z.enum(["draft", "verified", "proven"]).optional(),
-    knowledge_layer: z.enum(["personal", "team"]).optional(),
-    layer_reason: z.string().optional(),
+    // W4/Track1: `knowledge_layer` removed — an entry's layer is derived from its
+    // stable_id prefix (KP-→personal, else team; KT-DEC-0004), never a field.
     created_at: z.string().optional(),
     // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic tech stack and editable by user. Used by rc.3 review skill for tag-filter search.
     tags: z.array(z.string()).default([]).optional(),

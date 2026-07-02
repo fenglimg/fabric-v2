@@ -61,6 +61,11 @@ export interface PlanContextHintEntry {
   // (situational reference, read on demand) rather than injecting their body.
   // Omitted when the frontmatter declares none.
   must_read_if?: string;
+  // TASK-003 (impact-map MVP): the entry's impact list (consequences of ignoring
+  // the knowledge). Forwarded so the narrow PreToolUse hint can surface it as a
+  // ⚠️ consequence line when editing a matching relevance path. Omitted when the
+  // frontmatter declares none / an empty list.
+  impact?: string[];
   // v2.0.0-rc.27 TASK-002 (audit §2.5/§2.7): relevance_scope per-entry so the
   // PreToolUse narrow hook can filter out broad-scoped entries. rc.26 emitted
   // the union of narrow+broad without this discriminator, and the hook
@@ -237,6 +242,12 @@ export async function runPlanContextHint(opts: {
       // SessionStart REFERENCE rendering. Omitted when absent/empty.
       ...(typeof item.description.must_read_if === "string" && item.description.must_read_if.length > 0
         ? { must_read_if: item.description.must_read_if }
+        : {}),
+      // TASK-003 (impact-map MVP): forward the impact list for the narrow hint's
+      // ⚠️ consequence rendering. Omitted when absent/empty so the wire shape and
+      // downstream rendering stay unchanged for entries with no declared impact.
+      ...(Array.isArray(item.description.impact) && item.description.impact.length > 0
+        ? { impact: item.description.impact }
         : {}),
       // Only set when this entry was pulled in via a graph edge — its presence
       // is the honest signal, never synthesized for ordinarily-ranked entries.
