@@ -48,8 +48,9 @@ interface CrossStoreEntry {
   alias: string;
   layer: "team" | "personal";
   // v2.1 global-refactor (W2/A3): the entry's scope coordinate (resolution axis,
-  // schemas/scope.ts). Read from frontmatter `semantic_scope`; falls back to the
-  // store-derived layer for not-yet-migrated entries (A5 backfills these).
+  // schemas/scope.ts). Phase-1 (W1/TASK-002): DERIVED from structural facts —
+  // path project id + store layer (readSemanticScope) — with authored
+  // `semantic_scope` frontmatter kept only as fallback when structure is absent.
   semanticScope: string;
   source: string; // raw markdown (read once during the walk)
 }
@@ -97,11 +98,32 @@ export function __readSetWalkCacheStatsForTests(): { walks: number; entries: num
   };
 }
 
-// Read the `semantic_scope` frontmatter line, falling back to the layer-derived
-// coordinate when absent (pre-migration entries). Line-regex (not full YAML) to
-// match the write-side emit shape + the other frontmatter scanners in this repo.
+// Line-regex (not full YAML) matching the write-side emit shape + the other
+// frontmatter scanners in this repo. Retained as the phase-1 FALLBACK only —
+// path-derived structure (project + layer) is now the primary scope source.
 const SEMANTIC_SCOPE_LINE = /^semantic_scope:\s*"?([^"\n]+?)"?\s*$/mu;
-function readSemanticScope(source: string, layer: "team" | "personal"): string {
+
+// Derive an entry's scope coordinate from STRUCTURAL facts (path project + store
+// layer) as the PRIMARY source (C-104 single point), with the authored
+// `semantic_scope` frontmatter kept ONLY as a phase-1 fallback when structure is
+// absent (removed in phase-2). Precedence:
+//   1. personal store → 'personal' — short-circuit BEFORE reading `project`, so a
+//      personal entry mis-nested under a projects/-like path can never leak as
+//      `project:<id>` (C-105: privacy is store-derived, never scope-inferred).
+//   2. shared store with a path-derived project id → `project:<id>` (path wins
+//      over any conflicting authored frontmatter — path is the source of truth).
+//   3. otherwise → authored `semantic_scope` frontmatter, then 'team'.
+function readSemanticScope(
+  source: string,
+  layer: "team" | "personal",
+  project: string | undefined,
+): string {
+  if (layer === "personal") {
+    return "personal";
+  }
+  if (typeof project === "string" && project.length > 0) {
+    return `project:${project}`;
+  }
   const match = SEMANTIC_SCOPE_LINE.exec(source);
   return match?.[1] ?? layer;
 }
@@ -204,7 +226,7 @@ async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<Cro
       type: ref.type,
       alias: ref.alias,
       layer,
-      semanticScope: readSemanticScope(source, layer),
+      semanticScope: readSemanticScope(source, layer, ref.project),
       source,
     };
   }));
