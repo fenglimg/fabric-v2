@@ -14,6 +14,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
+import { resolveStoreCanonicalBase } from "./cross-store-write.js";
 
 // v2.1 global-refactor (W1-T2): proves the cross-store write-side wiring — when
 // the project selects an active write store, fab_propose routes the
@@ -306,5 +307,94 @@ describe("cross-store write (W1-T2)", () => {
     // No global config at all → no write-target store → store-only hard-fail.
     await expect(extractKnowledge(projectRoot, goodInput)).rejects.toThrow(/store-only/u);
     expect(existsSync(join(projectRoot, ".fabric", "knowledge", "pending", "decisions"))).toBe(false);
+  });
+});
+
+// W1/TASK-003 (project-folder reroot): resolveStoreCanonicalBase is the single
+// point that owns the canonical store-root→knowledge-base path math. A team
+// promote bound to a project lands in knowledge/projects/<id>/; personal and
+// unbound-team promotes stay FLAT at knowledge/ (C-106 + backward-compat). The
+// project id is C-107 guarded so a hostile/typo id falls back to flat.
+describe("resolveStoreCanonicalBase project segment (W1/TASK-003)", () => {
+  function teamStoreKnowledgeDir(): string {
+    return join(
+      resolveGlobalRoot(),
+      storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID }),
+      STORE_LAYOUT.knowledgeDir,
+    );
+  }
+
+  function personalStoreKnowledgeDir(): string {
+    return join(
+      resolveGlobalRoot(),
+      storeRelativePathForMount({ store_uuid: PERSONAL_STORE_UUID, personal: true }),
+      STORE_LAYOUT.knowledgeDir,
+    );
+  }
+
+  async function bindProject(active_project?: string): Promise<string> {
+    const projectRoot = await createProject();
+    mountTeamStore();
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify(
+        {
+          required_stores: [{ id: "team" }],
+          active_write_store: "team",
+          ...(active_project === undefined ? {} : { active_project }),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return projectRoot;
+  }
+
+  it("team write with active_project=alpha lands under projects/alpha (C-104 single-point inject)", async () => {
+    const projectRoot = await bindProject("alpha");
+    const project = "alpha";
+    const targetAbs = join(
+      resolveStoreCanonicalBase("team", projectRoot, project),
+      "decisions",
+      "KT-DEC-0001--slug.md",
+    );
+    expect(targetAbs).toBe(
+      join(teamStoreKnowledgeDir(), "projects", "alpha", "decisions", "KT-DEC-0001--slug.md"),
+    );
+    expect(targetAbs).toContain(join("projects", "alpha"));
+  });
+
+  it("personal write stays flat — no projects/ segment (C-106)", async () => {
+    const projectRoot = await bindProject("alpha");
+    // Personal layer NEVER injects a project segment even when a project param
+    // is (defensively) supplied.
+    const targetAbs = join(
+      resolveStoreCanonicalBase("personal", projectRoot, "alpha"),
+      "decisions",
+      "KP-DEC-0001--slug.md",
+    );
+    expect(targetAbs).toBe(
+      join(personalStoreKnowledgeDir(), "decisions", "KP-DEC-0001--slug.md"),
+    );
+    expect(targetAbs).not.toContain(`${"projects"}/`);
+  });
+
+  it("team write with no active_project stays flat (backward-compat)", async () => {
+    const projectRoot = await bindProject(undefined);
+    const targetAbs = join(
+      resolveStoreCanonicalBase("team", projectRoot, undefined),
+      "decisions",
+      "KT-DEC-0002--slug.md",
+    );
+    expect(targetAbs).toBe(join(teamStoreKnowledgeDir(), "decisions", "KT-DEC-0002--slug.md"));
+    expect(targetAbs).not.toContain("projects");
+  });
+
+  it("falls back to flat for a C-107-invalid project id (hostile/typo)", async () => {
+    const projectRoot = await bindProject("alpha");
+    for (const bad of ["Bad/Slash", "projects", "decisions", "UPPER", ""]) {
+      const base = resolveStoreCanonicalBase("team", projectRoot, bad);
+      expect(base).toBe(teamStoreKnowledgeDir());
+    }
   });
 });

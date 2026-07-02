@@ -23,7 +23,7 @@ import {
   type ScoringContext,
 } from "./plan-context.js";
 import { computeReadSetRevision } from "./cross-store-recall.js";
-import { allocateStoreKnowledgeId, isPersonalScope } from "@fenglimg/fabric-shared";
+import { allocateStoreKnowledgeId, isPersonalScope, loadProjectConfig } from "@fenglimg/fabric-shared";
 import {
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
@@ -679,7 +679,19 @@ async function approveOne(
     // round-trip stays inside the store. resolveStoreCanonicalBase throws an
     // actionable StoreWriteTargetUnresolvedError when no target resolves — no
     // dual-root fallback.
-    targetAbs = join(resolveStoreCanonicalBase(layer, projectRoot), pluralType, newFilename);
+    // W1/TASK-003 (project-folder reroot): a team-layer promote bound to a
+    // project lands in knowledge/projects/<id>/<type>/. Derive the project from
+    // the SAME source defaultWriteScope uses (active_project) and only for team
+    // layer — personal stays flat (C-106). The call-site stays a THIN consumer:
+    // it appends only pluralType + newFilename; the projects/<id> path-shape math
+    // lives entirely inside resolveStoreCanonicalBase (C-104, C-107 guard).
+    const promoteProject =
+      layer === "team" ? loadProjectConfig(projectRoot)?.active_project : undefined;
+    targetAbs = join(
+      resolveStoreCanonicalBase(layer, projectRoot, promoteProject),
+      pluralType,
+      newFilename,
+    );
     await ensureParentDirectory(targetAbs);
 
     // Inject id, drop x-fabric-idempotency-key (no longer meaningful post-promote).

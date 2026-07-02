@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  STORE_KNOWLEDGE_TYPE_DIRS,
   STORE_LAYOUT,
   STORE_PENDING_DIR,
+  STORE_PROJECT_ID_PATTERN,
   buildStoreResolveInput,
   createStoreResolver,
   isPersonalLeakIntoSharedStore,
@@ -102,12 +104,56 @@ export function resolveStorePendingBase(
   return join(resolveWriteTargetStoreDir(layer, projectRoot, semanticScope), STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR);
 }
 
+// The projects/ subdir name for the project-partitioned canonical layout
+// (knowledge/projects/<id>/<type>/*.md). Mirrors the local const the read-side
+// scanner (shared store/core.ts) uses — the two sides own separate concerns
+// (write-landing vs read-scan) so each keeps its own literal rather than sharing
+// a barrel export.
+const STORE_PROJECTS_DIR = "projects";
+
+// C-107 project-id guard for the write-side project segment: a landing project
+// id must be a single [a-z0-9_-] segment that is neither the literal "projects"
+// nor one of the reserved type dir names, so a hostile/typo `active_project`
+// never mints a stray or colliding folder. Invalid → caller falls back to flat.
+// Symmetric to the read-side collision guard in shared store/core.ts.
+function isValidWriteProjectSegment(project: string): boolean {
+  if (project.length === 0) {
+    return false;
+  }
+  if (project === STORE_PROJECTS_DIR) {
+    return false;
+  }
+  if ((STORE_KNOWLEDGE_TYPE_DIRS as readonly string[]).includes(project)) {
+    return false;
+  }
+  return STORE_PROJECT_ID_PATTERN.test(project);
+}
+
 // Store-rooted canonical knowledge base (the per-type subdir is appended by the
 // caller) — where review approve promotes a pending entry. Throws when no
 // write-target store resolves (B2 cutover — no dual-root fallback). Keeps the
 // extract→approve→recall round-trip entirely inside the store.
-export function resolveStoreCanonicalBase(layer: "team" | "personal", projectRoot: string): string {
-  return join(resolveWriteTargetStoreDir(layer, projectRoot), STORE_LAYOUT.knowledgeDir);
+//
+// W1/TASK-003 (project-folder reroot): a team-layer write bound to a project
+// lands in the project-partitioned subtree knowledge/projects/<id>/<type>/ —
+// the single point that owns store-root→knowledge-base path math (symmetric to
+// resolveStorePendingBase). The project segment is injected ONLY for the team
+// layer with a valid `active_project` (C-107 guarded); personal writes and
+// unbound team writes stay FLAT at knowledge/<type>/ (C-106 personal-flat +
+// backward-compat). Intentional asymmetry: resolveStorePendingBase stays flat —
+// pending is pre-promote scratch and only this canonical promote injects the
+// project segment (KT-DEC parallels defaultWriteScope keeping scope-string vs
+// path-shape separate).
+export function resolveStoreCanonicalBase(
+  layer: "team" | "personal",
+  projectRoot: string,
+  project?: string,
+): string {
+  const base = join(resolveWriteTargetStoreDir(layer, projectRoot), STORE_LAYOUT.knowledgeDir);
+  if (layer === "team" && project !== undefined && isValidWriteProjectSegment(project)) {
+    return join(base, STORE_PROJECTS_DIR, project);
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------------------
