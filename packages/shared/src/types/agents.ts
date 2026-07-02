@@ -8,7 +8,6 @@ export interface RuleDescription {
   tech_stack: string[];
   impact: string[];
   must_read_if: string;
-  entities?: string[];
   // v2.0 knowledge entry fields (TASK-002 schemas). All optional for backward compat.
   id?: string;
   knowledge_type?: "models" | "decisions" | "guidelines" | "pitfalls" | "processes";
@@ -20,7 +19,6 @@ export interface RuleDescription {
   // Optional — only cross-store recall items populate it; project co-location
   // entries fall back to their knowledge_layer at rank time.
   semantic_scope?: string;
-  layer_reason?: string;
   created_at?: string;
   // v2/rc.2: flat flow-style YAML array; auto-filled by init-scan from forensic tech-stack.
   tags?: string[];

@@ -47,14 +47,12 @@ const _ruleDescriptionSchema = z.object({
   tech_stack: z.array(z.string()),
   impact: z.array(z.string()),
   must_read_if: z.string(),
-  entities: z.array(z.string()).optional(),
   // v2.0: optional knowledge-entry fields. Absent for v1.x rules; present for
   // entries that declare frontmatter `id/type/maturity/layer`.
   id: z.string().optional(),
   knowledge_type: _knowledgeTypeEnum.optional(),
   maturity: _maturityEnum.optional(),
   knowledge_layer: _layerEnum.optional(),
-  layer_reason: z.string().optional(),
   created_at: z.string().optional(),
   // v2.0.0-rc.38 UX-3 (D-MCP fold ③): these three were previously carried ONLY
   // as top-level mirrors on the index item. With the mirrors removed,
@@ -1656,7 +1654,6 @@ export const KnowledgeEntryFrontmatterSchema = z.object({
   type: KnowledgeTypeSchema, // one of 5 types
   maturity: MaturitySchema, // draft | verified | proven
   layer: LayerSchema, // personal | team
-  layer_reason: z.string().optional(), // why this layer (for ambiguous cases)
   created_at: z.string(), // ISO 8601 timestamp
   // Note: 'tags' and other fields can be added later but core schema is these 6
 });

@@ -1229,7 +1229,6 @@ function documentTextForItem(description: RuleDescription): string {
     ...description.intent_clues,
     ...description.tech_stack,
     ...description.impact,
-    ...(description.entities ?? []),
     ...(description.tags ?? []),
   ].join(" ");
 }
@@ -1237,7 +1236,7 @@ function documentTextForItem(description: RuleDescription): string {
 // C1-W6 (BM25F): map a candidate's selection-signal fields onto the four BM25F
 // slots so the field a query term hits is weighted (see bm25.ts FIELD_CONFIGS):
 //   title   ← summary           — the headline; the first thing the LLM reads.
-//   tags    ← tags + tech_stack + entities — keyword-like, length-insensitive.
+//   tags    ← tags + tech_stack — keyword-like, length-insensitive.
 //   summary ← must_read_if + intent_clues  — the "when to use" trigger signal.
 //   body    ← impact            — the descriptive consequence prose.
 // Tokenized here once per corpus build (cached via getOrBuildBm25Model). The
@@ -1245,9 +1244,7 @@ function documentTextForItem(description: RuleDescription): string {
 function documentFieldsForItem(description: RuleDescription): Record<Bm25Field, string[]> {
   return {
     title: tokenize(description.summary),
-    tags: tokenize(
-      [...(description.tags ?? []), ...description.tech_stack, ...(description.entities ?? [])].join(" "),
-    ),
+    tags: tokenize([...(description.tags ?? []), ...description.tech_stack].join(" ")),
     summary: tokenize([description.must_read_if, ...description.intent_clues].join(" ")),
     body: tokenize(description.impact.join(" ")),
   };

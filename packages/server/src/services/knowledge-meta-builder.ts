@@ -218,7 +218,6 @@ export function extractRuleDescription(source: string): RuleDescription | undefi
     knowledge_type: knowledge?.knowledge_type,
     maturity: knowledge?.maturity,
     knowledge_layer: knowledge?.knowledge_layer,
-    layer_reason: knowledge?.layer_reason,
     created_at: knowledge?.created_at,
     tags: knowledge?.tags,
     // v2.0-rc.5 (C1): default-safe values when there is no frontmatter at all;
@@ -246,12 +245,10 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     tech_stack: extractInlineArray(frontmatter, "tech_stack"),
     impact: extractInlineArray(frontmatter, "impact"),
     must_read_if: extractScalar(frontmatter, "must_read_if") ?? summary,
-    entities: extractInlineArray(frontmatter, "entities"),
     id: knowledge.id,
     knowledge_type: knowledge.knowledge_type,
     maturity: knowledge.maturity,
     knowledge_layer: knowledge.knowledge_layer,
-    layer_reason: knowledge.layer_reason,
     created_at: knowledge.created_at,
     tags: knowledge.tags,
     relevance_scope: knowledge.relevance_scope,
@@ -274,7 +271,6 @@ type KnowledgeFrontmatterFields = {
   knowledge_type?: KnowledgeType;
   maturity?: Maturity;
   knowledge_layer?: KnowledgeLayer;
-  layer_reason?: string;
   created_at?: string;
   // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic
   // tech-stack keywords and editable by user.
@@ -345,7 +341,6 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
   const rawType = extractScalar(frontmatter, "type");
   const rawMaturity = extractScalar(frontmatter, "maturity");
   const rawLayer = extractScalar(frontmatter, "layer");
-  const rawLayerReason = extractScalar(frontmatter, "layer_reason");
   const rawCreatedAt = extractScalar(frontmatter, "created_at");
 
   let id: string | undefined;
@@ -488,7 +483,6 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     knowledge_type,
     maturity,
     knowledge_layer,
-    layer_reason: rawLayerReason,
     created_at,
     tags: tags.length > 0 ? tags : undefined,
     relevance_scope,
