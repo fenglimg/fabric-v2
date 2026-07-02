@@ -40,6 +40,13 @@ function writeEntry(store: MountedStoreDir, type: string, name: string, body: st
   writeFileSync(file, body, "utf8");
 }
 
+// Write a project-partitioned entry under knowledge/projects/<id>/<type>/.
+function writeProjectEntry(store: MountedStoreDir, project: string, type: string, name: string, body: string): void {
+  const dir = join(store.dir, STORE_LAYOUT.knowledgeDir, "projects", project, type);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, name), body, "utf8");
+}
+
 describe("P1 store core — init", () => {
   it("scaffolds an empty default store recognized by the disk reader", async () => {
     const home = createIsolatedHome();
@@ -93,6 +100,68 @@ describe("P1 store core — cross-store read isolation", () => {
     expect(byStore.get(PLATFORM_UUID)?.alias).toBe("platform");
     // Single-store read sees only its own entry.
     await expect(listStoreKnowledge(team)).resolves.toHaveLength(1);
+  });
+});
+
+describe("W1 store core — project-aware two-pass scan", () => {
+  it("a store with no knowledge/projects/ dir yields root-only refs (project===undefined)", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    writeEntry(team, "decisions", "KT-DEC-0001.md", "# team decision\n");
+    writeEntry(team, "pitfalls", "KT-PIT-0001.md", "# team pitfall\n");
+
+    const refs = await listStoreKnowledge(team);
+    expect(refs).toHaveLength(2);
+    // root-only equivalence — every ref is team-general (no project tag).
+    expect(refs.every((r) => r.project === undefined)).toBe(true);
+    const byType = new Map(refs.map((r) => [r.type, r]));
+    expect(byType.get("decisions")?.file.endsWith("decisions/KT-DEC-0001.md")).toBe(true);
+    expect(byType.get("pitfalls")?.file.endsWith("pitfalls/KT-PIT-0001.md")).toBe(true);
+  });
+
+  it("knowledge/projects/alpha/decisions/x.md yields a ref {type:'decisions', project:'alpha'}", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    // Root team-general entry stays untagged; project entry carries project id.
+    writeEntry(team, "decisions", "KT-DEC-0001.md", "# team-general\n");
+    writeProjectEntry(team, "alpha", "decisions", "x.md", "# alpha decision\n");
+
+    const refs = await listStoreKnowledge(team);
+    expect(refs).toHaveLength(2);
+    const alpha = refs.find((r) => r.project === "alpha");
+    expect(alpha).toMatchObject({ type: "decisions", project: "alpha" });
+    expect(alpha?.file.endsWith("projects/alpha/decisions/x.md")).toBe(true);
+    // The root entry remains team-general.
+    expect(refs.filter((r) => r.project === undefined)).toHaveLength(1);
+  });
+
+  it("a projects/ subdir colliding with a type name (projects/models/) is skipped by the C-107 guard", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    // "models" collides with a reserved type dir name → must NOT become a project id.
+    writeProjectEntry(team, "models", "decisions", "trap.md", "# collision trap\n");
+    // "projects" (the literal dir name) is likewise excluded.
+    writeProjectEntry(team, "projects", "decisions", "trap2.md", "# nested trap\n");
+    // A well-formed sibling id still surfaces, proving the guard is selective.
+    writeProjectEntry(team, "beta", "decisions", "ok.md", "# beta decision\n");
+
+    const refs = await listStoreKnowledge(team);
+    const projects = refs.filter((r) => r.project !== undefined).map((r) => r.project);
+    expect(projects).toEqual(["beta"]);
+    expect(projects).not.toContain("models");
+    expect(projects).not.toContain("projects");
+  });
+
+  it("iterates project ids in sorted order for determinism", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    writeProjectEntry(team, "gamma", "decisions", "g.md", "# g\n");
+    writeProjectEntry(team, "alpha", "decisions", "a.md", "# a\n");
+    writeProjectEntry(team, "beta", "decisions", "b.md", "# b\n");
+
+    const refs = await listStoreKnowledge(team);
+    const projectOrder = refs.filter((r) => r.project !== undefined).map((r) => r.project);
+    expect(projectOrder).toEqual(["alpha", "beta", "gamma"]);
   });
 });
 
