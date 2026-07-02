@@ -668,6 +668,18 @@ export const enMessages: Messages = {
     "Run `fabric doctor --fix` to adopt the orphan store(s) into the registry (re-register by store_uuid, alias auto-disambiguated on clash; rescue-before-delete — registers, never deletes on disk).",
   "doctor.check.store_orphan.ok":
     "No unregistered orphan stores under ~/.fabric/stores.",
+  // W2 (F-003): project-registry drift — projects.json ↔ projects/ folder tree.
+  "doctor.check.project_registry_drift.name": "Project registry drift",
+  "doctor.check.project_registry_drift.ok":
+    "Every knowledge/projects/<id>/ folder is registered in projects.json and no registered folder is empty.",
+  "doctor.check.project_registry_drift.message.unregistered":
+    "{total} project registry drift issue(s): {breakdown}. e.g. projects/{projectId}/ in store '{storeAlias}' holds knowledge but is not registered in projects.json (unrouted). Run `fabric doctor --fix` to register it (rescue-before-delete — never deletes the folder).",
+  "doctor.check.project_registry_drift.message.orphan":
+    "{total} project registry drift issue(s): {breakdown}. e.g. projects/{projectId}/ in store '{storeAlias}' exists on disk but is not registered in projects.json. Run `fabric doctor --fix` to register it (rescue — never deletes the folder).",
+  "doctor.check.project_registry_drift.message.empty":
+    "{total} project registry drift issue(s): {breakdown}. e.g. registered project '{projectId}' in store '{storeAlias}' has an empty projects/{projectId}/ folder (zero entries). Run `fabric doctor --fix` to prune the empty folder.",
+  "doctor.check.project_registry_drift.remediation":
+    "Run `fabric doctor --fix` to reconcile: orphan / unregistered-write folders are rescue-registered into projects.json (never deleted, even when non-empty); only genuinely-empty registered folders are pruned. A ghost registration (registered id with no folder) is legal (lazy creation) and needs no action.",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
   "doctor.check.preexisting_root_files.ok": "No CLAUDE.md or AGENTS.md detected at project root.",
   "doctor.check.preexisting_root_files.message":

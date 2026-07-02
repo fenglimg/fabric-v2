@@ -94,6 +94,11 @@ import {
   inspectStoreOrphans,
 } from "./doctor-store-orphan.js";
 import {
+  createProjectRegistryDriftCheck,
+  fixProjectRegistryDrift,
+  inspectProjectRegistryDrift,
+} from "./doctor-project-registry-drift.js";
+import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
   readEventLedger,
@@ -702,6 +707,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (orphans). Global-scoped (reads ~/.fabric/stores, not the project); never
   // throws. `--fix` adopts them (re-register, never delete).
   const storeOrphans = inspectStoreOrphans();
+  // W2 (F-003): project-registry drift — reconcile the store's committed
+  // projects.json against the on-disk knowledge/projects/<id>/ folder tree
+  // (orphan-folder / unregistered-write / empty-folder; ghost-registration
+  // emits nothing per DA-05). Read-only store walk; never throws.
+  const projectRegistryDrift = await inspectProjectRegistryDrift(projectRoot);
   // v2.2 Goal B (G-INTEGRITY): store-aware stable_id collision + layer mismatch.
   // Single walk of the read-set store canonical corpus; never throws (degrades
   // to no-findings when no store is mounted).
@@ -860,6 +870,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // (warning). `--fix` adopts it (rescue-before-delete — re-register, never
     // an on-disk delete).
     createStoreOrphanCheck(t, storeOrphans),
+    // W2 (F-003): project-registry drift over projects.json ↔ projects/ folder
+    // tree. unregistered-write (data unrouted) → manual_error; orphan-folder →
+    // warning; empty-folder → info; ghost-registration emits nothing (DA-05).
+    // `--fix` rescue-registers orphans/unregistered (addStoreProject — never a
+    // non-empty delete) and prunes only genuinely-empty registered folders.
+    createProjectRegistryDriftCheck(t, projectRegistryDrift),
     // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
     // does not bump report status. Recommends running the fabric-import skill
     // to backfill knowledge when the corpus is below the threshold floor.
@@ -1079,6 +1095,28 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     const adopted = fixStoreOrphans();
     if (adopted.length > 0) {
       fixed.push(findIssue(before.warnings, "store_orphan"));
+    }
+  }
+
+  // W2 (F-003): project-registry drift. `project_registry_drift` surfaces as a
+  // manual_error (unregistered-write), warning (orphan-folder) or info
+  // (empty-folder) depending on the most-severe finding, so scan all three
+  // buckets. `--fix` rescue-registers orphan/unregistered folders (addStoreProject
+  // — NEVER deletes a non-empty folder) and prunes ONLY genuinely-empty
+  // registered folders. Re-inspects fresh on-disk state internally.
+  const registryDriftFound =
+    before.manual_errors.some((issue) => issue.code === "project_registry_drift") ||
+    before.warnings.some((issue) => issue.code === "project_registry_drift") ||
+    before.infos.some((issue) => issue.code === "project_registry_drift");
+  if (registryDriftFound) {
+    const result = await fixProjectRegistryDrift(projectRoot);
+    if (result.registered.length > 0 || result.pruned.length > 0) {
+      fixed.push(
+        findIssue(
+          [...before.manual_errors, ...before.warnings, ...before.infos],
+          "project_registry_drift",
+        ),
+      );
     }
   }
 
