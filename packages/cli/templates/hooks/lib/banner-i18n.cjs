@@ -166,6 +166,18 @@ const STRINGS = {
     "zh-CN-hybrid": () => "   是否调 /fabric-archive 检查值得归档的决策/踩坑/复用?",
   },
 
+  // TASK-005 (grill G5 / C-003): the archive nudge stays on Stop (趁热归档) but
+  // is downgraded to ONE terse line — the multi-line archiveLine1/Activity/Cta
+  // banner became per-Stop noise once the other three signals moved to
+  // SessionStart. Keeps the `parts` fragment (edit count / threshold substrings)
+  // AND the protected `/fabric-archive` CTA token inline so the single line is
+  // still actionable and the substring test contracts hold. params: { parts }
+  archiveSingle: {
+    "zh-CN": (p) => `📋 Fabric: 距上次归档 ${p.parts} — 是否调 /fabric-archive?`,
+    en: (p) => `📋 Fabric: ${p.parts} since last archive — run /fabric-archive?`,
+    "zh-CN-hybrid": (p) => `📋 Fabric: 距上次归档 ${p.parts} — 是否调 /fabric-archive?`,
+  },
+
   // ---- Archive backlog (cross-session safety net, crack 2) ------------------
   // Replaces the old global-24h archive timer: counts DEAD sessions (session
   // ended / idle) carrying unarchived high-value work. Substring "${count}" is

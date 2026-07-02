@@ -2264,6 +2264,12 @@ function emitSoftSignal(out, result, cwd, highValue) {
 // High-value (knowledge-loss) signals surface at lower nudge_mode volumes.
 const HIGH_VALUE_SIGNALS = new Set(["archive", "archive_backlog"]);
 
+// TASK-005 (grill G5 / C-003): the ONLY signals allowed to emit a nudge on the
+// Stop hook. C-003 LOCKS the archive family here (趁热归档 value dies if moved to
+// SessionStart). review / import / maintenance moved to the SessionStart summary
+// line (knowledge-hint-broad.cjs) and are silent on Stop.
+const STOP_EMIT_SIGNALS = new Set(["archive", "archive_backlog"]);
+
 /**
  * Main entry — invoked both as a CLI (require.main === module) and in-process by tests.
  *
@@ -2468,6 +2474,35 @@ function main(env, stdio) {
       }
     }
 
+    // TASK-005 (grill G5 / C-003 + C-004): four-signal split. Only the archive
+    // family (archive / archive_backlog) stays on Stop — its value is 趁热归档,
+    // so C-003 LOCKS it here and forbids moving it to SessionStart. The other
+    // three signals (review / import / maintenance) are NON-immediate backlog
+    // reminders; per-Stop repetition was the dominant noise source, so they are
+    // now surfaced ONCE at SessionStart as a summary line (see
+    // knowledge-hint-broad.cjs buildSessionStartSinks). On Stop they are
+    // treated exactly like "no actionable signal": we fall through to the
+    // session-activity breadcrumb path below rather than emitting a nudge.
+    // decide()/evaluateMaintenanceSignal() keep returning the full B/C/D
+    // objects (their pure contracts + unit tests are unchanged); this is the
+    // sole Stop-emission allowlist.
+    if (result !== null && !STOP_EMIT_SIGNALS.has(result.signal)) {
+      result = null;
+    }
+
+    // TASK-005 (grill G5 / C-003): downgrade the archive nudge to a SINGLE terse
+    // line. The multi-line archiveLine1/Activity/Cta banner was per-Stop noise;
+    // collapse to one `archiveSingle` line that still carries the edit-count
+    // fragment + the `/fabric-archive` CTA token. archive_backlog is already a
+    // two-liner and stays as-is (cross-session sweeps are rarer / higher-value).
+    if (result !== null && result.signal === "archive") {
+      const parts = renderBanner("archivePartsEdits", variant, {
+        count: editCounterStats.editsSinceArchive,
+        threshold: editCounterStats.threshold,
+      });
+      result.reason = renderBanner("archiveSingle", variant, { parts });
+    }
+
     if (result === null) {
       // Observability grill (a): no actionable signal — instead of returning
       // silently (which made Fabric feel inert in the background), surface a
@@ -2531,15 +2566,11 @@ function main(env, stdio) {
       }
     }
 
-    // v2.0.0-rc.7 T10: Signal D uses its own cooldown sidecar (day-based,
-    // see MAINTENANCE_HINT_LAST_EMIT_FILE). The A/B/C shared cooldown cache
-    // uses hours, so we branch here to avoid mixing semantics.
-    if (result.signal === "maintenance") {
-      emitSignalFiredEvent(cwd, sessionId, result);
-      emitSoftSignal(out, result, cwd, HIGH_VALUE_SIGNALS.has(result.signal));
-      writeMaintenanceLastEmit(cwd, nowMs, resolveHookSessionId(stdinPayload));
-      return;
-    }
+    // TASK-005 (grill G5 / C-003): the maintenance (Signal D) Stop-emit branch
+    // — with its day-based MAINTENANCE_HINT_LAST_EMIT_FILE cooldown — is retired.
+    // Maintenance moved to the SessionStart summary line, so it can no longer
+    // reach here (STOP_EMIT_SIGNALS nulls it above). Only the archive family
+    // flows through, and it uses the hour-based shared cooldown cache below.
 
     // Cooldown throttle: once a signal fires, stay silent for
     // archive_hint_cooldown_hours (default 12h) regardless of state drift.

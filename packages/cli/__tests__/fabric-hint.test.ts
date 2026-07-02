@@ -1196,9 +1196,14 @@ describe("fabric-hint.cjs — main (review signal integration)", () => {
     }
   });
 
-  it("emits the SOFT review dual-sink envelope (no decision:block) when pending count >= 10 and no archive trigger", () => {
-    // ux-w0-3 (KT-DEC-0007): review is now a soft nudge (additionalContext, human
-    // gated by nudge_mode), never decision:block.
+  it("does NOT emit the review nudge on Stop — B/C/D moved to SessionStart (TASK-005 / C-003)", () => {
+    // TASK-005 (grill G5 / C-003): review (Signal B) no longer emits on the Stop
+    // hook. Only the archive family stays on Stop (STOP_EMIT_SIGNALS allowlist);
+    // review/import/maintenance surface once at SessionStart (see
+    // knowledge-hint-broad buildSessionStartSinks). decide() still RETURNS the
+    // review signal (its pure contract is unchanged, asserted separately below),
+    // but main() nulls it and falls through to the silent breadcrumb path — so a
+    // pure-review trigger with no session activity produces NO emit.
     const prevClient = process.env.FABRIC_HINT_CLIENT;
     process.env.FABRIC_HINT_CLIENT = "cc";
     try {
@@ -1210,10 +1215,10 @@ describe("fabric-hint.cjs — main (review signal integration)", () => {
       const stdout = { write: (chunk: string) => writes.push(chunk) };
       hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-      expect(writes).toHaveLength(1);
-      const env = JSON.parse(writes[0] as string);
-      expect(env.decision).toBeUndefined(); // NOT a block contract
-      expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-review/); // AI sink
+      // No review nudge on Stop. Either fully silent, or (if a session-activity
+      // breadcrumb path fires) the emit must NOT carry the review CTA.
+      const reviewEmits = writes.filter((w) => /fabric-review/.test(w));
+      expect(reviewEmits).toHaveLength(0);
     } finally {
       if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
       else process.env.FABRIC_HINT_CLIENT = prevClient;
@@ -1467,8 +1472,11 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
   // walk. Workspace is bound via fabric-config.json project_id.
   const PROJECT_ID = "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3";
 
-  it("emits the SOFT import dual-sink envelope (no decision:block) on underseeded corpus", () => {
-    // ux-w0-3 (KT-DEC-0007): import is now a soft nudge, never decision:block.
+  it("does NOT emit the import nudge on Stop — moved to SessionStart (TASK-005 / C-003)", () => {
+    // TASK-005 (grill G5 / C-003): import (Signal C) no longer emits on Stop.
+    // decide() still returns the import signal (pure contract unchanged), but
+    // main() nulls it via STOP_EMIT_SIGNALS and stays silent — the import nudge
+    // now surfaces once at SessionStart (knowledge-hint-broad summary line).
     const prevClient = process.env.FABRIC_HINT_CLIENT;
     process.env.FABRIC_HINT_CLIENT = "cc";
     try {
@@ -1488,11 +1496,10 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
         const stdout = { write: (chunk: string) => writes.push(chunk) };
         hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-        expect(writes).toHaveLength(1);
-        const env = JSON.parse(writes[0] as string);
-        expect(env.decision).toBeUndefined(); // NOT a block contract
-        expect(env.hookSpecificOutput.additionalContext).toMatch(/fabric-archive/); // AI sink
-        expect(env.hookSpecificOutput.additionalContext).toMatch(/3\/10/);
+        // No import nudge on Stop. If a session-activity breadcrumb fires it must
+        // not carry the import CTA / underseed fraction.
+        const importEmits = writes.filter((w) => /fabric-archive|3\/10/.test(w));
+        expect(importEmits).toHaveLength(0);
       });
     } finally {
       if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
@@ -1528,7 +1535,11 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
     });
   });
 
-  it("honours custom underseed_node_threshold from fabric-config.json", () => {
+  it("honours custom underseed_node_threshold via decide() — but import stays silent on Stop (TASK-005)", () => {
+    // TASK-005 (grill G5 / C-003): the underseed_node_threshold override still
+    // drives decide()'s import decision (asserted directly on decide() below),
+    // but main() no longer emits import on Stop. This test now asserts BOTH:
+    // decide() honours the config threshold, AND main() stays silent on Stop.
     withIsolatedFabricHome((home) => {
       writeProjectConfig(tempRoot, PROJECT_ID);
       // merge the threshold override into the bound fabric-config.json
@@ -1547,16 +1558,23 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
         `${JSON.stringify(initEvent)}\n`,
         "utf8",
       );
-      // 2 canonical entries: < threshold(3) so import fires.
+      // 2 canonical entries: < threshold(3) so decide() returns import.
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
 
+      // decide() pure contract: the custom threshold is honoured.
+      const decideResult = hook.decide([initEvent], FIXED_NOW, undefined, {
+        nodeCount: 2,
+        threshold: 3,
+      });
+      expect(decideResult?.signal).toBe("import");
+
+      // main() Stop-emit contract: import is NOT emitted on Stop.
       const writes: string[] = [];
       const stdout = { write: (chunk: string) => writes.push(chunk) };
       hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-      expect(writes).toHaveLength(1);
-      const payload = JSON.parse(writes[0] as string) as { signal: string };
-      expect(payload.signal).toBe("import");
+      const importEmits = writes.filter((w) => /"signal":"import"|fabric-archive/.test(w));
+      expect(importEmits).toHaveLength(0);
     });
   });
 });
@@ -1856,10 +1874,14 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
     writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: count });
   }
 
-  it("emits Signal D when no doctor_run ever AND canonical >= 5", () => {
+  it("does NOT emit Signal D on Stop — maintenance moved to SessionStart (TASK-005 / C-003)", () => {
+    // TASK-005 (grill G5 / C-003): maintenance (Signal D) no longer emits on the
+    // Stop hook. The day-based cooldown sidecar branch is retired — the signal
+    // is nulled by STOP_EMIT_SIGNALS and surfaces once at SessionStart
+    // (knowledge-hint-broad summary line). evaluateMaintenanceSignal() still
+    // returns the maintenance object (pure contract unchanged, asserted in its
+    // own describe block); main() on Stop stays silent AND writes NO sidecar.
     withIsolatedFabricHome((home) => {
-      // Bind WITHOUT forcing fabric_language so the reason renders in the
-      // default locale (this test asserts the localized reason string).
       mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
       writeFileSync(
         join(tempRoot, ".fabric", "fabric-config.json"),
@@ -1874,18 +1896,12 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
       const stdout = { write: (chunk: string) => writes.push(chunk) };
       hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-      expect(writes).toHaveLength(1);
-      const payload = JSON.parse(writes[0] as string) as {
-        signal: string;
-        recommended_skill: unknown;
-        reason: string;
-      };
-      expect(payload.signal).toBe("maintenance");
-      expect(payload.recommended_skill).toBeNull();
-      expect(payload.reason).toMatch(/从未运行 lint 检查/);
-      // Cooldown sidecar written.
+      // No maintenance nudge on Stop.
+      const maintenanceEmits = writes.filter((w) => /"signal":"maintenance"/.test(w));
+      expect(maintenanceEmits).toHaveLength(0);
+      // The retired day-based cooldown sidecar is no longer written from Stop.
       const sidecar = join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit");
-      expect(existsSync(sidecar)).toBe(true);
+      expect(existsSync(sidecar)).toBe(false);
     });
   });
 
@@ -1959,12 +1975,15 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
     });
   });
 
-  it("emits Signal D AFTER A/B/C are silent (precedence: maintenance is last)", () => {
+  it("Signal D stays silent on Stop even when A/B/C are silent (TASK-005 / C-003)", () => {
     // Build a workspace where:
     //   - knowledge_proposed fired 5h ago (Signal A silent)
     //   - 0 pending entries (Signal B silent)
     //   - init_scan_completed 2d ago, 50 canonical entries (Signal C silent)
-    //   - No doctor_run event (Signal D fires)
+    //   - No doctor_run event (pre-TASK-005 Signal D would fire on Stop)
+    // TASK-005 (grill G5 / C-003): with A/B/C silent and only maintenance
+    // eligible, main() now emits NOTHING on Stop — maintenance moved to the
+    // SessionStart summary line.
     withIsolatedFabricHome((home) => {
       bindCanonical(home, 50);
       const proposedTs = NOW_MS - 5 * HOUR_MS;
@@ -1983,15 +2002,19 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
       const stdout = { write: (chunk: string) => writes.push(chunk) };
       hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
 
-      expect(writes).toHaveLength(1);
-      const payload = JSON.parse(writes[0] as string) as { signal: string };
-      expect(payload.signal).toBe("maintenance");
+      const maintenanceEmits = writes.filter((w) => /"signal":"maintenance"/.test(w));
+      expect(maintenanceEmits).toHaveLength(0);
     });
   });
 
-  it("honours fabric-config.json maintenance_hint_days override", () => {
+  it("maintenance_hint_days override drives the signal but Stop stays silent (TASK-005 / C-003)", () => {
+    // Doctor ran 10d ago; default 14d → silent. Override 7d → the maintenance
+    // signal is eligible. Pre-TASK-005 this emitted on Stop; now it is silent on
+    // Stop (moved to SessionStart, which mirrors the same maintenance_hint_days
+    // threshold in knowledge-hint-broad). This test asserts Stop-silence; the
+    // SessionStart summary consumption of the override is covered in
+    // knowledge-hint-broad.test.ts.
     withIsolatedFabricHome((home) => {
-      // Doctor ran 10d ago; default 14d → silent. Override 7d → fires.
       writeProjectConfig(tempRoot, PROJECT_ID);
       writeFileSync(
         join(tempRoot, ".fabric", "fabric-config.json"),
@@ -2013,9 +2036,8 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
       const writes: string[] = [];
       const stdout = { write: (chunk: string) => writes.push(chunk) };
       hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-      expect(writes).toHaveLength(1);
-      const payload = JSON.parse(writes[0] as string) as { signal: string };
-      expect(payload.signal).toBe("maintenance");
+      const maintenanceEmits = writes.filter((w) => /"signal":"maintenance"/.test(w));
+      expect(maintenanceEmits).toHaveLength(0);
     });
   });
 });
@@ -2224,7 +2246,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(result?.reason).toMatch(/3\/10/);
   });
 
-  it("main() injects activity overview end-to-end into Signal A banner (soft dual-sink)", () => {
+  it("main() emits the single-line Signal A archive nudge (TASK-005 downgrade, soft dual-sink)", () => {
     const prevClient = process.env.FABRIC_HINT_CLIENT;
     const prevProjDir = process.env.CLAUDE_PROJECT_DIR;
     process.env.FABRIC_HINT_CLIENT = "cc";
@@ -2273,10 +2295,10 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       // always-on AI/observation sink, so assert the banner content there.
       const reason = JSON.parse(writes[0] as string).hookSpecificOutput.additionalContext as string;
       expect(reason).toMatch(/📋 Fabric:/);
-      expect(reason).toMatch(/最近活动集中在:/);
-      // 2-level dir bucketing: packages/server/* collapses to "packages/server/".
-      expect(reason).toMatch(/packages\/server\/ \(20 edits\)/);
-      expect(reason).toMatch(/packages\/cli\/ \(8 edits\)/);
+      // TASK-005 (grill G5 / C-003): archive is now a SINGLE line — the multi-line
+      // activity overview ("最近活动集中在") was dropped as per-Stop noise. The
+      // single line still carries the edit-count fragment + the /fabric-archive CTA.
+      expect(reason).not.toMatch(/最近活动集中在:/);
       expect(reason).toMatch(/是否调 \/fabric-archive/);
       // 28 session file_mutated events since the anchor drive the count.
       expect(reason).toMatch(/28 次编辑/);
@@ -2340,15 +2362,19 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     }
   }
 
-  it("test_signal_b_baseline_fires_when_import_state_missing_and_pending_overflow", () => {
+  it("test_signal_b_baseline_ungated_when_import_state_missing_and_pending_overflow", () => {
+    // TASK-005 (grill G5 / C-003): review (Signal B) no longer emits on Stop, so
+    // the isImportInFlight() gate — the actual variable under test — is asserted
+    // directly. Missing .import-state.json → false (B NOT gated). Stop stays
+    // silent regardless (review moved to SessionStart).
     seedTenPending(tempRoot);
-    // No .import-state.json planted at all.
+    // No .import-state.json planted at all → gate returns false.
+    expect(hook.isImportInFlight(tempRoot, FIXED_NOW)).toBe(false);
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("review");
+    const reviewEmits = writes.filter((w) => /"signal":"review"/.test(w));
+    expect(reviewEmits).toHaveLength(0);
   });
 
   it("test_signal_b_silenced_when_import_state_phase_in_progress_and_checkpoint_fresh", () => {
@@ -2370,7 +2396,9 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(writes).toEqual([]);
   });
 
-  it("test_signal_b_fires_when_import_state_phase_complete", () => {
+  it("test_signal_b_ungated_when_import_state_phase_complete", () => {
+    // TASK-005: gate asserted directly (phase==="complete" → false, B not gated);
+    // Stop stays silent (review moved to SessionStart).
     seedTenPending(tempRoot);
     writeFileSync(
       join(tempRoot, ".fabric", ".import-state.json"),
@@ -2381,17 +2409,18 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       }),
       "utf8",
     );
+    expect(hook.isImportInFlight(tempRoot, FIXED_NOW)).toBe(false);
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("review");
+    const reviewEmits = writes.filter((w) => /"signal":"review"/.test(w));
+    expect(reviewEmits).toHaveLength(0);
   });
 
-  it("test_signal_b_fires_when_import_state_checkpoint_older_than_24h", () => {
+  it("test_signal_b_ungated_when_import_state_checkpoint_older_than_24h", () => {
+    // TASK-005: gate asserted directly. Phase mid-run BUT checkpoint >24h ago →
+    // treated as stale → false (B not gated). Stop stays silent.
     seedTenPending(tempRoot);
-    // Phase mid-run BUT checkpoint >24h ago → treated as stale, B fires.
     writeFileSync(
       join(tempRoot, ".fabric", ".import-state.json"),
       JSON.stringify({
@@ -2401,30 +2430,30 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       }),
       "utf8",
     );
+    expect(hook.isImportInFlight(tempRoot, FIXED_NOW)).toBe(false);
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("review");
+    const reviewEmits = writes.filter((w) => /"signal":"review"/.test(w));
+    expect(reviewEmits).toHaveLength(0);
   });
 
-  it("test_signal_b_fires_when_import_state_json_malformed_never_block", () => {
+  it("test_signal_b_ungated_when_import_state_json_malformed_never_block", () => {
+    // TASK-005: gate asserted directly. Malformed JSON → helper returns false →
+    // B is NOT gated (never-block invariant: corruption must not permanently
+    // silence the review eligibility). Stop stays silent regardless.
     seedTenPending(tempRoot);
-    // Malformed JSON → helper returns false → B is NOT gated → B fires.
-    // This is the never-block invariant: corruption must not permanently
-    // silence Signal B.
     writeFileSync(
       join(tempRoot, ".fabric", ".import-state.json"),
       "{not-valid-json{{{",
       "utf8",
     );
+    expect(hook.isImportInFlight(tempRoot, FIXED_NOW)).toBe(false);
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("review");
+    const reviewEmits = writes.filter((w) => /"signal":"review"/.test(w));
+    expect(reviewEmits).toHaveLength(0);
   });
 
   it("test_signal_a_c_d_behaviour_unchanged_with_import_in_flight", () => {

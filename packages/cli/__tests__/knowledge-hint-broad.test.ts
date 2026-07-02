@@ -1058,10 +1058,23 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     }
   });
 
+  // TASK-005: fixed clock + a fresh doctor_run so the maintenance summary
+  // segment stays quiet — these tests isolate the import segment behavior.
+  const FIXED_NOW_MS = Date.UTC(2026, 6, 1, 0, 0, 0);
+
+  function seedFreshDoctorRun(): void {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify({ kind: "fabric-event", event_type: "doctor_run", ts: FIXED_NOW_MS - 24 * 60 * 60 * 1000 })}\n`,
+      "utf8",
+    );
+  }
+
   function captureStderr(env: { payload?: Payload | null; census?: unknown }): string[] {
     const writes: string[] = [];
     const stderr = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, ...env }, { stderr });
+    hook.main({ cwd: tempRoot, now: FIXED_NOW_MS, ...env }, { stderr });
     return writes;
   }
 
@@ -1101,9 +1114,10 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     );
   }
 
-  it("census total=3 < 10 + no import-state → emits import banner alongside the HUD", () => {
+  it("census total=3 < 10 + no import-state → import segment in the backlog summary (TASK-005)", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
+      seedFreshDoctorRun(); // isolate: maintenance quiet
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3 });
 
       const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
@@ -1112,16 +1126,20 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
         census: censusWithTotal(3),
       });
       const stderr = writes.join("");
-      expect(stderr).toMatch(/📋 Fabric:/);
+      // TASK-005: import now surfaces as a segment of the SessionStart backlog
+      // summary line (fabric-archive `source` mode) — not a standalone banner.
+      expect(stderr).toMatch(/Fabric backlog:/);
+      expect(stderr).toMatch(/sparse KB/);
       expect(stderr).toMatch(/\/fabric-archive/);
-      // The scope-primary HUD is present alongside the import nudge.
+      // The scope-primary HUD is present alongside the import segment.
       expect(stderr).toMatch(/▸ \[fabric\]/);
     });
   });
 
-  it("P0 no-contradiction: census total=15 >= 10 → NEVER emits import banner (single live count source, H3)", () => {
+  it("P0 no-contradiction: census total=15 >= 10 → NO import segment (single live count source, H3)", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
+      seedFreshDoctorRun(); // isolate: maintenance quiet
       // Even with a STALE snapshot canonical_count of 2, the live census total of
       // 15 governs — killing the "15 entries but nudge says sparse" contradiction.
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 2 });
@@ -1132,8 +1150,10 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
         census: censusWithTotal(15),
       });
       const stderr = writes.join("");
-      expect(stderr).not.toMatch(/📋 Fabric:/);
-      expect(stderr).not.toMatch(/\/fabric-archive/);
+      // No live backlog signal (import suppressed, review/maintenance quiet) →
+      // no backlog summary line at all.
+      expect(stderr).not.toMatch(/Fabric backlog:/);
+      expect(stderr).not.toMatch(/sparse KB/);
     });
   });
 
@@ -1625,12 +1645,15 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Goal H2/H4 — scope-primary HUD tree + single-line action ladder.
+// Goal H2/H4 — scope-primary HUD tree + backlog summary line.
 // The human sink is a status HUD: a header (total + semantic_scope breakdown),
 // a broad spine (resident + reference tiers), and a narrow remainder line.
-// The action area shows AT MOST ONE line (import > review > silent).
+// TASK-005 (grill G5 / C-003): the action area is a SINGLE backlog summary line
+// that reports whichever of review / import / maintenance are live (these three
+// signals moved OFF the per-Stop fabric-hint nudge; only archive stays on Stop).
+// Steady state (no live backlog) stays fully silent.
 // ---------------------------------------------------------------------------
-describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)", () => {
+describe("knowledge-hint-broad.cjs — scope-primary HUD + backlog summary (H2/H4)", () => {
   let tempRoot: string;
   const savedClient = process.env.FABRIC_HINT_CLIENT;
   const savedProjDir = process.env.CLAUDE_PROJECT_DIR;
@@ -1663,10 +1686,29 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)
     );
   }
 
-  function capture(env: { payload?: Payload | null; census?: unknown }): string {
+  // TASK-005: fixed clock so the maintenance staleness segment is deterministic.
+  const FIXED_NOW_MS = Date.UTC(2026, 6, 1, 0, 0, 0);
+
+  function capture(env: { payload?: Payload | null; census?: unknown; now?: number }): string {
     const writes: string[] = [];
-    hook.main({ cwd: tempRoot, ...env }, { stderr: { write: (c: string) => writes.push(c) } });
+    hook.main(
+      { cwd: tempRoot, now: FIXED_NOW_MS, ...env },
+      { stderr: { write: (c: string) => writes.push(c) } },
+    );
     return writes.join("");
+  }
+
+  // TASK-005: seed a doctor_run event `ageDaysAgo` days before FIXED_NOW so the
+  // maintenance summary segment can be driven fresh (recent → silent) or stale.
+  function seedDoctorRun(ageDaysAgo: number): void {
+    const dir = join(tempRoot, ".fabric");
+    mkdirSync(dir, { recursive: true });
+    const ts = FIXED_NOW_MS - ageDaysAgo * 24 * 60 * 60 * 1000;
+    writeFileSync(
+      join(dir, "events.jsonl"),
+      `${JSON.stringify({ kind: "fabric-event", event_type: "doctor_run", ts })}\n`,
+      "utf8",
+    );
   }
 
   // A coherent census whose broad spine sums to `broadTotal` and adds a narrow tail.
@@ -1705,47 +1747,95 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + action ladder (H2/H4)
     });
   });
 
-  it("action ladder: review rung fires when pending > threshold and import is suppressed", () => {
+  it("backlog summary: review segment fires when pending > threshold (TASK-005)", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
+      seedDoctorRun(1); // lint ran yesterday → maintenance quiet
       // 12 pending (> REVIEW_PENDING_THRESHOLD 10); canonical irrelevant to the gate.
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 12 });
       const stderr = capture({
         payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
         census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 10 → import suppressed
       });
+      expect(stderr).toMatch(/Fabric backlog:/);
+      expect(stderr).toMatch(/review 12 pending/);
       expect(stderr).toMatch(/\/fabric-review/);
-      expect(stderr).toMatch(/12 pending/);
-      expect(stderr).not.toMatch(/\/fabric-archive/);
+      // import + archive segments are NOT live here.
+      expect(stderr).not.toMatch(/sparse KB/);
     });
   });
 
-  it("action ladder is single-line: import wins over review when BOTH would fire", () => {
+  it("backlog summary: import AND review segments BOTH render when both live (TASK-005)", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
+      seedDoctorRun(1); // lint ran yesterday → maintenance quiet
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 1, pending_count: 12 });
       const stderr = capture({
         payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
-        census: census({ decisions: 3 }, 0, { team: 3 }), // total 3 < 10 → import fires, takes priority
+        census: census({ decisions: 3 }, 0, { team: 3 }), // total 3 < 10 → import fires
       });
-      expect(stderr).toMatch(/\/fabric-archive/);
-      expect(stderr).not.toMatch(/\/fabric-review/);
+      // The split summary shows BOTH segments (no more single-rung priority).
+      expect(stderr).toMatch(/import \(sparse KB\)/);
+      expect(stderr).toMatch(/review 12 pending/);
     });
   });
 
-  it("action ladder is steady-state SILENT: seeded KB + low pending → no import, no review", () => {
+  it("backlog summary: maintenance segment fires when lint is stale (TASK-005)", () => {
     withIsolatedFabricHome((home) => {
       plantBound();
+      seedDoctorRun(30); // lint 30d ago (> default 14) → stale
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 3 });
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 5 → maintenance eligible
+      });
+      expect(stderr).toMatch(/maintenance/);
+      expect(stderr).toMatch(/since lint/);
+      // review not live (pending 3 <= 10); import not live (total 20 >= 10).
+      expect(stderr).not.toMatch(/review \d+ pending/);
+      expect(stderr).not.toMatch(/sparse KB/);
+    });
+  });
+
+  it("backlog summary is steady-state SILENT: seeded KB + low pending + fresh lint (TASK-005)", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      seedDoctorRun(1); // lint ran yesterday → maintenance quiet
       writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 3 });
       const stderr = capture({
         payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
         census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 10, pending 3 <= 10
       });
-      expect(stderr).not.toMatch(/\/fabric-archive/);
+      expect(stderr).not.toMatch(/Fabric backlog:/);
       expect(stderr).not.toMatch(/\/fabric-review/);
       // The HUD and the inspector pointer still render in steady state.
       expect(stderr).toMatch(/▸ \[fabric\]/);
       expect(stderr).toMatch(/fabric inspect/);
+    });
+  });
+
+  it("backlog summary: hint_dismiss_signals silences segments per C-004 (TASK-005)", () => {
+    withIsolatedFabricHome((home) => {
+      // dismiss all three summary signals durably.
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({
+          project_id: PROJECT_ID,
+          fabric_language: "en",
+          hint_dismiss_signals: ["review", "import", "maintenance"],
+        }),
+        "utf8",
+      );
+      // no doctor_run → maintenance WOULD fire, plus pending 12 > 10 → review WOULD fire.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 3, pending_count: 12 });
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 3 }, 0, { team: 3 }), // total 3 < 10 → import WOULD fire
+      });
+      // All three dismissed → no backlog line at all.
+      expect(stderr).not.toMatch(/Fabric backlog:/);
+      expect(stderr).toMatch(/▸ \[fabric\]/); // HUD still renders
     });
   });
 

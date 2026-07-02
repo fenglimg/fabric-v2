@@ -120,6 +120,28 @@ function readWorkspaceBindingId(cwd) {
   }
 }
 
+// TASK-005 (grill G5 / C-004): read the durable `hint_dismiss_signals` opt-out
+// list from `.fabric/fabric-config.json`. The same enum silences a signal on
+// EVERY surface — so a `"review"` / `"import"` / `"maintenance"` entry here
+// suppresses that segment of the SessionStart summary line, exactly as it
+// suppresses the corresponding Stop nudge (before the split) and the per-edit
+// nudges. Returns a Set (empty on any read/parse error — never-block).
+function readDismissedSummarySignals(cwd) {
+  const dismissed = new Set();
+  try {
+    const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.hint_dismiss_signals)) {
+      for (const s of parsed.hint_dismiss_signals) {
+        if (typeof s === "string") dismissed.add(s);
+      }
+    }
+  } catch {
+    // never-block
+  }
+  return dismissed;
+}
+
 function readSnapshotCanonicalCount(projectRoot) {
   // No reader / not bound → degrade to an empty corpus (0), the documented
   // store-only behavior (KT-DEC-0007). Only the "snapshot EXISTS but predates
@@ -203,6 +225,48 @@ const DEFAULT_HINT_BROAD_INDEX_BACKSTOP = 50;
 // so the two cooldowns don't interfere.
 const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 0;
 const MS_PER_HOUR = 60 * 60 * 1000;
+const MS_PER_DAY = 24 * MS_PER_HOUR;
+
+// TASK-005 (grill G5): the maintenance signal (formerly fabric-hint Signal D)
+// moved off Stop onto the SessionStart summary line. Mirror the fabric-hint
+// thresholds so the two surfaces agree: nag when doctor/lint has not run in
+// `maintenance_hint_days` (default 14) AND the corpus is non-trivial
+// (canonical >= min). Cooldown lives at the Stop cadence; SessionStart fires at
+// most once per boot so it needs no extra cooldown here.
+const DEFAULT_MAINTENANCE_HINT_DAYS = 14;
+const MAINTENANCE_HINT_MIN_CANONICAL = 5;
+const EVENT_LEDGER_FILE_NAME = "events.jsonl";
+const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
+
+// TASK-005: minimal, self-contained doctor_run staleness probe for the
+// SessionStart maintenance summary. Mechanically scans .fabric/events.jsonl
+// tail-first for the newest doctor_run ts; returns its age in days, or null
+// when the ledger is missing/empty or no doctor_run has ever fired (the caller
+// treats null as "never run → stale"). NEVER throws (SessionStart never-block).
+function readLastDoctorRunAgeDays(cwd, nowMs) {
+  try {
+    const p = join(cwd, FABRIC_DIR_REL, EVENT_LEDGER_FILE_NAME);
+    if (!existsSync(p)) return null;
+    const raw = readFileSync(p, "utf8");
+    const lines = raw.split(/\r?\n/);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const line = lines[i].trim();
+      if (line.length === 0) continue;
+      let ev;
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (ev && ev.event_type === EVENT_TYPE_DOCTOR_RUN && typeof ev.ts === "number") {
+        return (nowMs - ev.ts) / MS_PER_DAY;
+      }
+    }
+  } catch {
+    // never-block
+  }
+  return null;
+}
 // v2.0.0-rc.37 NEW-19: state-store resolves this basename under .fabric/.cache/.
 const HINT_BROAD_LAST_EMIT_FILE_NAME = "knowledge-hint-broad-last-emit";
 
@@ -1147,15 +1211,32 @@ function buildSessionStartSinks(cwd, payload, env) {
     if (storeLabel) humanLines.push(storeLabel);
   }
 
-  // H4 action ladder (KT-DEC-0007: nudge, never a gate). AT MOST ONE line, the
-  // highest-priority rung wins, and steady state is fully silent:
-  //   1. import  — KB is sparse (recommendImport, off the live census total)
-  //   2. review  — pending backlog exceeds REVIEW_PENDING_THRESHOLD (live count)
-  //   3. (silent)
+  // H4 backlog summary (KT-DEC-0007: nudge, never a gate). TASK-005 (grill G5 /
+  // C-003): the three NON-immediate signals — review / import / maintenance —
+  // moved OFF the per-Stop fabric-hint nudge (only archive stays there, C-003)
+  // ONTO a SINGLE SessionStart summary line here. It fires at most once per boot
+  // (SessionStart cadence), so it replaces the per-turn Stop repetition that was
+  // the dominant nudge noise. Steady state (no backlog) stays fully silent — the
+  // segments only render when their live thresholds trip. C-004: each segment is
+  // individually dismissable via `hint_dismiss_signals` (import/review/maintenance).
   if (humanLines.length > 0 && fabricLanguageForEmit !== null) {
-    if (recommendImport) {
-      humanLines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
-    } else if (snapshot !== null && bindingsSnapshotReader !== null) {
+    const zh = fabricLanguageForEmit === "zh-CN" || fabricLanguageForEmit === "zh-CN-hybrid";
+    const dismissed = readDismissedSummarySignals(cwd);
+    const nowMs =
+      env && env.now !== undefined
+        ? env.now instanceof Date
+          ? env.now.getTime()
+          : Number(env.now) || Date.now()
+        : Date.now();
+    const segments = [];
+
+    // import — KB is sparse (recommendImport, off the live census total).
+    if (recommendImport && !dismissed.has("import")) {
+      segments.push(zh ? "import 待补(KB 稀疏)" : "import (sparse KB)");
+    }
+
+    // review — pending backlog exceeds REVIEW_PENDING_THRESHOLD (live count).
+    if (!dismissed.has("review") && snapshot !== null && bindingsSnapshotReader !== null) {
       let pendingCount = 0;
       try {
         const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
@@ -1164,12 +1245,39 @@ function buildSessionStartSinks(cwd, payload, env) {
         pendingCount = 0;
       }
       if (pendingCount > REVIEW_PENDING_THRESHOLD) {
-        humanLines.push(
-          fabricLanguageForEmit === "zh-CN"
-            ? `  📋 Fabric: ${pendingCount} 条 pending 待审,是否调 /fabric-review?`
-            : `  📋 Fabric: ${pendingCount} pending entries — run /fabric-review?`,
+        segments.push(
+          zh ? `review ${pendingCount} 条 pending 待审` : `review ${pendingCount} pending`,
         );
       }
+    }
+
+    // maintenance — doctor/lint not run in maintenance_hint_days AND corpus
+    // non-trivial. `censusTotal` is the live canonical count computed above.
+    if (!dismissed.has("maintenance")) {
+      const canonicalTotal = typeof censusTotal === "number" ? censusTotal : 0;
+      if (canonicalTotal >= MAINTENANCE_HINT_MIN_CANONICAL) {
+        const ageDays = readLastDoctorRunAgeDays(cwd, nowMs);
+        const staleDays = readConfigNumber(cwd, "maintenance_hint_days", DEFAULT_MAINTENANCE_HINT_DAYS, {
+          min: 1,
+        });
+        if (ageDays === null) {
+          segments.push(zh ? "maintenance 从未跑 lint" : "maintenance (lint never run)");
+        } else if (ageDays >= staleDays) {
+          segments.push(
+            zh
+              ? `maintenance 已 ${ageDays.toFixed(0)} 天未 lint`
+              : `maintenance (${ageDays.toFixed(0)}d since lint)`,
+          );
+        }
+      }
+    }
+
+    if (segments.length > 0) {
+      humanLines.push(
+        zh
+          ? `  📋 Fabric backlog: ${segments.join(" · ")} — 需要时调 /fabric-review · /fabric-archive source · fabric doctor`
+          : `  📋 Fabric backlog: ${segments.join(" · ")} — run /fabric-review · /fabric-archive source · fabric doctor as needed`,
+      );
     }
   }
 
@@ -1364,6 +1472,9 @@ module.exports = {
   readUnderseedThreshold,
   isImportTouched,
   shouldRecommendImport,
+  // TASK-005 (grill G5): SessionStart backlog-summary helpers (exported for tests).
+  readLastDoctorRunAgeDays,
+  readDismissedSummarySignals,
   // W2-1 (KT-DEC-0028) + rc.33 W2-5 / W2-6 helpers.
   readBroadIndexBackstop,
   readBroadCooldownHours,
