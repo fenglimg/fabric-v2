@@ -37,6 +37,21 @@ import {
 } from "./bm25.js";
 import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
 
+// W4/Track1 (D1): a candidate's knowledge layer is a pure function of its
+// stable_id prefix — the single source of truth (KT-DEC-0004:
+// `K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN`). The redundant `description.knowledge_layer`
+// field was deleted; every layer decision reads the id instead. Candidate ids
+// are store-qualified (`<alias>:<localId>`), so the personal marker `KP-` may sit
+// after the alias colon — match at start OR right after a colon (mirrors the
+// SessionStart hint hook's `/(^|:)KP-/` derivation). Anything that is not a KP-
+// id resolves to `team`, the safe default for the privacy layer filter (a
+// genuinely personal entry always carries a KP-* id, late-bound at approve).
+export function layerFromStableId(qualifiedId: string): "personal" | "team" {
+  const colon = qualifiedId.lastIndexOf(":");
+  const localId = colon === -1 ? qualifiedId : qualifiedId.slice(colon + 1);
+  return localId.startsWith("KP-") ? "personal" : "team";
+}
+
 // v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
 // and the sort comparator. `queryTerms` are the CJK-tokenized caller intent;
 // `bm25` is the model built over the candidate corpus (only present when the
@@ -95,7 +110,7 @@ export type PlanContextInput = {
   // F54 (ISS-20260531-090): restrict the candidate corpus to one knowledge
   // layer. "both" (or omitted) → no filtering, falling back to
   // fabric.config.json#default_layer_filter. Personal/team layer per candidate
-  // comes from its content_ref-inferred `knowledge_layer`.
+  // is derived from its stable_id prefix (W4/Track1: KP-→personal, else team).
   layer_filter?: "team" | "personal" | "both";
   // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when true,
   // append the one-hop `related` graph neighbours of the top_k-surfaced set that
@@ -391,15 +406,18 @@ export async function planContext(
 
   // F54 (ISS-20260531-090): honor the declared `layer_filter`. The per-call
   // value wins; otherwise fabric.config.json#default_layer_filter; "all"/"both"
-  // mean no filtering. Each candidate's layer is the content_ref-inferred
-  // `knowledge_layer` backfilled by buildRawDescriptionItems. Previously this
-  // parameter (and the config default) was declared in the schema but silently
-  // discarded — every layer leaked into every recall regardless of the filter.
+  // mean no filtering. PRIVACY LOAD-BEARING: this is the filter that stops
+  // personal (KP-*) knowledge from leaking into team recall. W4/Track1 (D1): a
+  // candidate's layer is now derived from its stable_id prefix (KP-→personal,
+  // else team) — the single source of truth (KT-DEC-0004) — instead of the
+  // deleted `description.knowledge_layer` field. Deriving from the id is strictly
+  // safer: a KP-* entry is excluded from `team` recall regardless of which
+  // physical store it sits in.
   const effectiveLayerFilter = input.layer_filter ?? readDefaultLayerFilter(projectRoot);
   const rawItems =
     effectiveLayerFilter === "both"
       ? allRawItems
-      : allRawItems.filter((item) => item.description.knowledge_layer === effectiveLayerFilter);
+      : allRawItems.filter((item) => layerFromStableId(item.stable_id) === effectiveLayerFilter);
 
   // P1 recall-engine-refactor (TASK-005): the BM25/vector/scope/fusion scoring
   // context is built by the SAME shared helper fab_pending triage uses, so the
@@ -744,9 +762,9 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 // vs suppressed empty shells (summary === stable_id, no selection signal). This
 // preserves the quality gate the retired buildRawDescriptionItems(meta) applied
 // to project-meta nodes, now over store-qualified candidates. buildCrossStoreRawItems
-// already drops entries with NO frontmatter description and backfills knowledge_layer
-// from the store-derived layer, so the only remaining gate here is empty-shell
-// suppression (which still feeds the empty_shell_suppressed preflight warning).
+// already drops entries with NO frontmatter description, so the only remaining
+// gate here is empty-shell suppression (which still feeds the
+// empty_shell_suppressed preflight warning).
 function partitionEmptyShells(items: RuleDescriptionIndexItem[]): {
   rawItems: RuleDescriptionIndexItem[];
   suppressedStableIds: string[];
@@ -885,9 +903,9 @@ export function compareStableIds(a: string, b: string): number {
 // a stable_id → rank map. Used ONLY as the tie-break under equal relevance —
 // BM25/locality stays the primary key, so a more specific scope wins only when
 // content relevance is tied. Each candidate's semantic_scope comes from its
-// frontmatter (cross-store items) or falls back to its knowledge_layer; the
-// store axis is keyed off the read-set store order so the active write store
-// breaks ties first (S53).
+// frontmatter (cross-store items) or falls back to its id-prefix-derived layer
+// (W4/Track1: KP-→personal, else team; KT-DEC-0004); the store axis is keyed off
+// the read-set store order so the active write store breaks ties first (S53).
 function buildScopeRankMap(
   items: RuleDescriptionIndexItem[],
   projectRoot: string,
@@ -909,7 +927,7 @@ function buildScopeRankMap(
     const alias = colon === -1 ? "" : it.stable_id.slice(0, colon);
     const localId = colon === -1 ? it.stable_id : it.stable_id.slice(colon + 1);
     const semanticScope =
-      it.description.semantic_scope ?? it.description.knowledge_layer ?? "team";
+      it.description.semantic_scope ?? layerFromStableId(it.stable_id);
     return {
       global_ref: it.stable_id,
       store_uuid: aliasToUuid.get(alias) ?? alias,

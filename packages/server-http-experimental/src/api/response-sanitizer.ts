@@ -3,7 +3,8 @@ import { redactSecrets } from "@fenglimg/fabric-shared";
 const PERSONAL_ID_PATTERN = /\bKP-[A-Z]+-\d{4}\b/u;
 const PERSONAL_PATH_PATTERN = /(?:^|[/\\])(?:personal|\.fabric[/\\]stores[/\\][^/\\]*personal[^/\\]*)(?:[/\\]|$)/iu;
 const PERSONAL_SCOPE_KEYS = new Set([
-  "knowledge_layer",
+  // W4/Track1 (D1): `knowledge_layer` removed — that field no longer exists; a
+  // candidate's layer is derived from its stable_id prefix (KT-DEC-0004).
   "layer",
   "origin",
   "scope",

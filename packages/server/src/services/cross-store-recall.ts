@@ -233,7 +233,9 @@ export async function buildCrossStoreRawItems(
       stable_id: entry.qualifiedId,
       description: {
         ...baseDescription,
-        knowledge_layer: entry.layer,
+        // W4/Track1 (D1): no `knowledge_layer` backfill — a candidate's layer is
+        // derived from its stable_id prefix (layerFromStableId in plan-context),
+        // the single source of truth (KT-DEC-0004).
         semantic_scope: entry.semanticScope,
       },
     });

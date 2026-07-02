@@ -69,7 +69,6 @@ describe("sanitizeHttpKnowledgePayload", () => {
           },
           "KP-GLD-0001--personal.md": {
             file: "KP-GLD-0001--personal.md",
-            knowledge_layer: "personal",
           },
         },
       },

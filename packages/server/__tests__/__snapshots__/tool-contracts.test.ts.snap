@@ -1223,13 +1223,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   },
                   "type": "array",
                 },
-                "knowledge_layer": {
-                  "enum": [
-                    "personal",
-                    "team",
-                  ],
-                  "type": "string",
-                },
                 "knowledge_type": {
                   "enum": [
                     "models",

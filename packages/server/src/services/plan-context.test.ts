@@ -12,7 +12,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
-import { planContext, readSelectionToken, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
+import { planContext, layerFromStableId, readSelectionToken, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 
 // v2.2 W5 R1/R7 (读侧退役): planContext no longer reads the project's
@@ -304,20 +304,24 @@ describe("planContext", () => {
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     const indexById = new Map(result.candidates.map((item) => [item.stable_id, item] as const));
 
-    // v2.0.0-rc.38 UX-3: type/maturity/layer live only on description.*.
+    // v2.0.0-rc.38 UX-3: type/maturity live only on description.*.
+    // W4/Track1 (D1): `knowledge_layer` deleted — layer is derived from the
+    // stable_id prefix (layerFromStableId), never carried as a description field.
     expect(indexById.get("team:KT-DEC-0001")?.description).toMatchObject({
       knowledge_type: "decisions",
       maturity: "verified",
-      knowledge_layer: "team",
     });
+    expect(indexById.get("team:KT-DEC-0001")?.description).not.toHaveProperty("knowledge_layer");
     expect(indexById.get("team:KT-DEC-0001")).not.toHaveProperty("type");
     expect(indexById.get("team:KT-DEC-0001")).not.toHaveProperty("layer");
+    expect(layerFromStableId("team:KT-DEC-0001")).toBe("team");
 
     expect(indexById.get("personal:KP-GLD-0001")?.description).toMatchObject({
       knowledge_type: "guidelines",
       maturity: "draft",
-      knowledge_layer: "personal",
     });
+    expect(indexById.get("personal:KP-GLD-0001")?.description).not.toHaveProperty("knowledge_layer");
+    expect(layerFromStableId("personal:KP-GLD-0001")).toBe("personal");
   });
 
   // F54 (ISS-20260531-090): layer_filter narrows the candidate corpus by layer.
@@ -363,6 +367,59 @@ describe("planContext", () => {
     const ids = result.candidates.map((c) => c.stable_id);
     expect(ids).toContain("team:KT-DEC-0001");
     expect(ids).toContain("personal:KP-GLD-0001");
+  });
+
+  // W4/Track1 (D1) — PRIVACY REGRESSION (强制新增测试). The layer filter is the
+  // load-bearing guard that stops personal (KP-*) knowledge from leaking into
+  // team recall. After deleting the redundant `knowledge_layer` field, layer is
+  // derived from the stable_id prefix — the single source of truth (KT-DEC-0004).
+  // This test proves the derivation, and proves it is STRONGER than the old
+  // store-membership check: a KP-* entry is excluded from `team` recall even when
+  // it physically sits in the TEAM store (id prefix wins over store location), and
+  // symmetrically included under `personal`. A KT-* entry is the mirror case.
+  it("layer_filter derives layer from the id prefix, not store membership (privacy)", async () => {
+    const projectRoot = await createTeamProject();
+    // KT-* team entry AND a KP-* personal entry, BOTH seeded into the TEAM store
+    // (personal:false forces the team-store physical layout). Under the old
+    // store-membership filter both would count as "team"; under id-prefix
+    // derivation the KP-* entry resolves to personal.
+    await writeStoreEntry(
+      TEAM_STORE,
+      "decisions",
+      { id: "KT-DEC-0001", summary: "Team JWT decision", maturity: "draft", layer: "team" },
+      false,
+    );
+    await writeStoreEntry(
+      TEAM_STORE,
+      "guidelines",
+      { id: "KP-GLD-0001", type: "guideline", summary: "Personal coding style", maturity: "draft", layer: "personal" },
+      false,
+    );
+    mountStores();
+
+    // The helper itself: KP-* → personal, KT-* → team, store-qualified or bare.
+    expect(layerFromStableId("team:KP-GLD-0001")).toBe("personal");
+    expect(layerFromStableId("team:KT-DEC-0001")).toBe("team");
+    expect(layerFromStableId("KP-GLD-0001")).toBe("personal");
+    expect(layerFromStableId("KT-DEC-0001")).toBe("team");
+
+    // team filter EXCLUDES the KP-* entry even though it lives in the team store.
+    const teamResult = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      layer_filter: "team",
+    });
+    const teamIds = teamResult.candidates.map((c) => c.stable_id);
+    expect(teamIds).toContain("team:KT-DEC-0001");
+    expect(teamIds).not.toContain("team:KP-GLD-0001");
+
+    // personal filter is the symmetric mirror: only the KP-* entry surfaces.
+    const personalResult = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      layer_filter: "personal",
+    });
+    const personalIds = personalResult.candidates.map((c) => c.stable_id);
+    expect(personalIds).toContain("team:KP-GLD-0001");
+    expect(personalIds).not.toContain("team:KT-DEC-0001");
   });
 
   // ---------------------------------------------------------------------------

@@ -12,12 +12,14 @@ export interface RuleDescription {
   id?: string;
   knowledge_type?: "models" | "decisions" | "guidelines" | "pitfalls" | "processes";
   maturity?: "draft" | "verified" | "proven";
-  knowledge_layer?: "personal" | "team";
   // v2.1 global-refactor (W2/A4): the entry's scope coordinate (schemas/scope.ts).
   // Carries `project:<id>` / `team` / `personal` into the resolveCandidates
   // double-axis ranking (scope-specificity tie-break under equal relevance).
-  // Optional — only cross-store recall items populate it; project co-location
-  // entries fall back to their knowledge_layer at rank time.
+  // Optional — only cross-store recall items populate it; entries without it fall
+  // back to their id-prefix-derived layer (KP-→personal, else team) at rank time.
+  // W4/Track1: the redundant `knowledge_layer` field was deleted — an entry's
+  // layer is a pure function of its stable_id prefix (KT-DEC-0004), so no field
+  // is needed to carry it.
   semantic_scope?: string;
   created_at?: string;
   // v2/rc.2: flat flow-style YAML array; auto-filled by init-scan from forensic tech-stack.
@@ -41,10 +43,9 @@ export interface RuleDescription {
 // selectable — write-only since rc.5 A3) and every top-level mirror of a
 // `description.*` field (type/maturity/layer/layer_reason/relevance_scope/
 // relevance_paths/tags). All knowledge surface the LLM needs for selection
-// lives in `description`; the mirrors were ~7 redundant keys per entry. The
-// inferred knowledge layer (from content_ref) is now backfilled into
-// `description.knowledge_layer` at build time so the layer signal survives
-// without the top-level copy.
+// lives in `description`; the mirrors were ~7 redundant keys per entry. W4/Track1
+// further dropped the backfilled `description.knowledge_layer`: layer is derived
+// on demand from the stable_id prefix (KT-DEC-0004), so it never needed a field.
 export interface RuleDescriptionIndexItem {
   stable_id: string;
   description: RuleDescription;

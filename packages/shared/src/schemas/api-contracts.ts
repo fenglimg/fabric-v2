@@ -39,7 +39,6 @@ export const structuredWarningSchema = z.object({
 // frontmatter the existing corpus already uses.
 const _knowledgeTypeEnum = z.enum(["models", "decisions", "guidelines", "pitfalls", "processes"]);
 const _maturityEnum = z.enum(["draft", "verified", "proven"]);
-const _layerEnum = z.enum(["personal", "team"]);
 
 const _ruleDescriptionSchema = z.object({
   summary: z.string(),
@@ -48,11 +47,12 @@ const _ruleDescriptionSchema = z.object({
   impact: z.array(z.string()),
   must_read_if: z.string(),
   // v2.0: optional knowledge-entry fields. Absent for v1.x rules; present for
-  // entries that declare frontmatter `id/type/maturity/layer`.
+  // entries that declare frontmatter `id/type/maturity`. W4/Track1: the redundant
+  // `knowledge_layer` field was removed — a candidate's layer is derived from its
+  // stable_id prefix (KP-→personal, else team; KT-DEC-0004).
   id: z.string().optional(),
   knowledge_type: _knowledgeTypeEnum.optional(),
   maturity: _maturityEnum.optional(),
-  knowledge_layer: _layerEnum.optional(),
   created_at: z.string().optional(),
   // v2.0.0-rc.38 UX-3 (D-MCP fold ③): these three were previously carried ONLY
   // as top-level mirrors on the index item. With the mirrors removed,
@@ -74,9 +74,9 @@ const _ruleDescriptionSchema = z.object({
 // top-level mirror of a `description.*` field (type/maturity/layer/
 // layer_reason/relevance_scope/relevance_paths/tags) were removed — they were
 // ~7 redundant keys per entry and read by no production consumer (the hint
-// CLI already falls back to `description.*`). The inferred knowledge layer is
-// backfilled into `description.knowledge_layer` server-side so the layer
-// signal survives.
+// CLI already falls back to `description.*`). W4/Track1: the knowledge layer is
+// no longer carried as a field at all — it is derived on demand from the
+// stable_id prefix (KP-→personal, else team; KT-DEC-0004).
 const _descriptionIndexItemSchema = z.object({
   stable_id: z.string(),
   description: _ruleDescriptionSchema,
@@ -382,8 +382,8 @@ export const knowledgeSectionsOutputSchema = z.object({
   diagnostics: z.array(
     // v2.0.0-rc.23 TASK-013 (F8b): `missing_section` was removed alongside the
     // A-set enum. `missing_knowledge_metadata` stays as the warn-level signal
-    // for un-migrated v1.x entries (no knowledge_type AND no knowledge_layer
-    // in frontmatter). Does NOT block selection.
+    // for un-migrated v1.x entries (no knowledge_type in frontmatter). Does NOT
+    // block selection.
     z.object({
       code: z.enum(["missing_knowledge_metadata", "unresolved_selected_id"]),
       severity: z.literal("warn"),

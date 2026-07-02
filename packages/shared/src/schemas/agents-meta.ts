@@ -62,7 +62,8 @@ export const ruleDescriptionSchema = z
       )
       .optional(),
     maturity: z.enum(["draft", "verified", "proven"]).optional(),
-    knowledge_layer: z.enum(["personal", "team"]).optional(),
+    // W4/Track1: `knowledge_layer` removed — an entry's layer is derived from its
+    // stable_id prefix (KP-→personal, else team; KT-DEC-0004), never a field.
     created_at: z.string().optional(),
     // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic tech stack and editable by user. Used by rc.3 review skill for tag-filter search.
     tags: z.array(z.string()).default([]).optional(),
