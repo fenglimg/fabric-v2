@@ -1,6 +1,6 @@
 ---
 name: release-rc
-description: Use this skill to cut a new Fabric v2 release candidate (v2.0.0-rc.N). Drives the full sequence — version bump across root + workspaces, version-sync verification, `fab -v` check, typecheck/lint/test gates, commit, tag, push, and CI watch — to prevent the fix-forward cascades (rc.7, rc.12→rc.13) and version-desync bug (root rc.18 vs packages rc.19) that have happened before. Invoke only when the user explicitly asks to release / cut / tag / publish a new rc.
+description: Use this skill to cut a new Fabric v2 release candidate (v2.x.0-rc.N — the minor is derived from the latest tag, never pinned to 2.0.0). Drives the full sequence — version bump across root + workspaces, version-sync verification, `fab -v` check, typecheck/lint/test gates, commit, tag, push, and CI watch — to prevent the fix-forward cascades (rc.7, rc.12→rc.13) and version-desync bug (root rc.18 vs packages rc.19) that have happened before. Invoke only when the user explicitly asks to release / cut / tag / publish a new rc.
 allowed-tools: Read, Glob, Grep, Bash, Edit
 ---
 
@@ -24,23 +24,28 @@ If any fail, surface the failure and stop — do NOT try to "fix" it (commit/sta
 ## Phase 1 — Determine next rc
 
 ```bash
-# Last tag
-git tag --sort=-creatordate | grep '^v2\.0\.0-rc\.' | head -1
+# Last rc tag on the v2 line — match ANY minor (2.0 / 2.1 / 2.3 / …), newest first.
+LAST_TAG=$(git tag --sort=-creatordate | grep -E '^v2\.[0-9]+\.0-rc\.' | head -1)
+# Next rc = SAME minor line, trailing rc number + 1. Derive it — never assume 2.0.0.
+BASE="${LAST_TAG%-rc.*}"          # e.g. v2.3.0
+LAST_N="${LAST_TAG##*-rc.}"       # e.g. 4
+NEXT_TAG="${BASE}-rc.$((LAST_N + 1))"
+echo "Last tag: $LAST_TAG  ->  Proposed next: $NEXT_TAG"
 # Current versions (root + every workspace package)
 node -e "console.log(require('./package.json').version)"
 for f in packages/*/package.json; do node -e "const p=require('./$f'); console.log('$f', p.version)"; done
 ```
 
-Report to the user:
+Report to the user (use the derived `$LAST_TAG` / `$NEXT_TAG` values — do NOT hardcode the minor):
 
-- Last tag: `v2.0.0-rc.X`
+- Last tag: `$LAST_TAG` (e.g. `v2.3.0-rc.4`)
 - Root version: `…`
 - Each workspace version: `…`
-- **Proposed next: `v2.0.0-rc.<X+1>` (theme: ?)**
+- **Proposed next: `$NEXT_TAG` (= last tag's rc number + 1, same minor line) — theme: ?**
 
 Ask the user for:
-- Confirmation of the next rc number (default = last tag + 1).
-- A short theme word for the bump commit subject (matches the existing `chore(rcN): bump to v2.0.0-rc.N — <theme>` pattern, e.g. "Protocol v2", "Polish", "bootstrap consolidation").
+- Confirmation of the next rc number (default = last tag's rc number + 1, same minor).
+- A short theme word for the bump commit subject (matches the existing `chore(rcN): bump to v<MAJOR.MINOR>.0-rc.N — <theme>` pattern, e.g. "Protocol v2", "Polish", "bootstrap consolidation").
 
 Do NOT proceed until the user confirms both.
 
@@ -49,7 +54,9 @@ Do NOT proceed until the user confirms both.
 Bump root + every workspace package to the same version in one batch.
 
 ```bash
-NEW_VERSION="2.0.0-rc.<N>"
+# Use the version the user just confirmed in Phase 1 (the next tag minus its leading `v`).
+# Derive it — NEVER hardcode 2.0.0. e.g. next tag v2.3.0-rc.5  ->  NEW_VERSION="2.3.0-rc.5"
+NEW_VERSION="${NEXT_TAG#v}"   # reuses $NEXT_TAG from Phase 1; or set the confirmed value explicitly
 # Root
 npm pkg set version="$NEW_VERSION"
 # Workspaces
@@ -81,26 +88,28 @@ pnpm lint                        # = knip --strict, this is the rc.12 failure cl
 pnpm test                        # full workspace tests
 ```
 
-Then **runtime version check** (catches the `fab -v` showing 2.0.0 instead of rc.N bug):
+Then **runtime version check** (catches the `fab -v` reporting a stale version instead of the just-bumped rc):
 
 ```bash
 pnpm -C packages/cli build       # or whatever produces the CLI binary
-node packages/cli/dist/<entry>.js -v   # confirm output matches NEW_VERSION
+node packages/cli/dist/<entry>.js -v   # confirm output exactly equals $NEW_VERSION
 # (If a global `fab` is linked, also run: fab -v)
 ```
 
-If `fab -v` output does not exactly equal `$NEW_VERSION`, abort. Investigate where the version is read from — historically this was a stale embedded string.
+The check is simply: `fab -v` output **must exactly equal `$NEW_VERSION`** (the version you bumped in Phase 2). If it does not, abort. Investigate where the version is read from — historically this was a stale embedded string.
 
 ## Phase 4 — Commit, tag, push
 
 Only after every gate above is green:
 
 ```bash
+# $NEW_VERSION / $NEXT_TAG carry over from Phase 1–2 (e.g. 2.3.0-rc.5 / v2.3.0-rc.5). Never hardcode 2.0.0.
+RC_N="${NEW_VERSION##*-rc.}"      # the rc number, e.g. 5
 git add package.json packages/*/package.json pnpm-lock.yaml
-git commit -m "chore(rc<N>): bump to v2.0.0-rc.<N> — <theme>"
-git tag "v2.0.0-rc.<N>"
+git commit -m "chore(rc${RC_N}): bump to ${NEXT_TAG} — <theme>"
+git tag "${NEXT_TAG}"
 git push origin <branch>
-git push origin "v2.0.0-rc.<N>"
+git push origin "${NEXT_TAG}"
 ```
 
 Show the user the resulting commit + tag and pause for them to confirm before pushing if they prefer — when in doubt, prefer asking.
@@ -126,7 +135,7 @@ gh run watch --exit-status
 | `knip` failure | unused export / stale entry not in `knip.json` | `pnpm lint` locally, inspect knip ignores |
 | `tsc` failure | stale import after rename refactor | check files changed since last green rc |
 | `coverage` failure | deleted/moved fixture, missing test for new code path | inspect `scripts/rc*-coverage-gate.mjs` output |
-| `fab -v` desync | version string embedded at build time, not read from `package.json` | grep for the previous rc string in `packages/cli/src` |
+| `fab -v` desync | version string embedded at build time, not read from `package.json` | grep `packages/cli/src` for the previous rc string (derive it from the last tag — never a hardcoded version) |
 
 ## Things this skill must NEVER do
 
