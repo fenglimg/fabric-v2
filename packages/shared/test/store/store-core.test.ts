@@ -115,8 +115,10 @@ describe("W1 store core — project-aware two-pass scan", () => {
     // root-only equivalence — every ref is team-general (no project tag).
     expect(refs.every((r) => r.project === undefined)).toBe(true);
     const byType = new Map(refs.map((r) => [r.type, r]));
-    expect(byType.get("decisions")?.file.endsWith("decisions/KT-DEC-0001.md")).toBe(true);
-    expect(byType.get("pitfalls")?.file.endsWith("pitfalls/KT-PIT-0001.md")).toBe(true);
+    // join() the expected suffix so the separator matches production's join()
+    // output on every platform (POSIX "/" vs Windows "\").
+    expect(byType.get("decisions")?.file.endsWith(join("decisions", "KT-DEC-0001.md"))).toBe(true);
+    expect(byType.get("pitfalls")?.file.endsWith(join("pitfalls", "KT-PIT-0001.md"))).toBe(true);
   });
 
   it("knowledge/projects/alpha/decisions/x.md yields a ref {type:'decisions', project:'alpha'}", async () => {
@@ -130,7 +132,7 @@ describe("W1 store core — project-aware two-pass scan", () => {
     expect(refs).toHaveLength(2);
     const alpha = refs.find((r) => r.project === "alpha");
     expect(alpha).toMatchObject({ type: "decisions", project: "alpha" });
-    expect(alpha?.file.endsWith("projects/alpha/decisions/x.md")).toBe(true);
+    expect(alpha?.file.endsWith(join("projects", "alpha", "decisions", "x.md"))).toBe(true);
     // The root entry remains team-general.
     expect(refs.filter((r) => r.project === undefined)).toHaveLength(1);
   });
