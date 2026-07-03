@@ -202,7 +202,10 @@ async function main() {
     // hardcoding stores/team — the mounted team store physically lives at
     // stores/team/team here (group=team, mount_name=team).
     const storeRoot = join(fabricHome, ".fabric", shared.storeRelativePathForMount(team));
-    const canonicalDir = join(storeRoot, shared.STORE_LAYOUT.knowledgeDir, "decisions");
+    // W1/TASK-003 (project-folder reroot): a team-layer write bound to a project
+    // (semantic_scope project:fabric-v2 here) lands in the project-partitioned
+    // subtree knowledge/projects/<id>/<type>/, NOT flat knowledge/<type>/.
+    const canonicalDir = join(storeRoot, shared.STORE_LAYOUT.knowledgeDir, "projects", "fabric-v2", "decisions");
     const canonicalFiles = listMarkdown(canonicalDir);
     assert(canonicalFiles.length === 1, "canonical decision was not written to the team store");
     const canonicalBody = readFileSync(join(canonicalDir, canonicalFiles[0]), "utf8");

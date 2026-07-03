@@ -182,6 +182,8 @@ describe("runDoctorReport", () => {
       "Store counter drift",
       // store-onboarding grill (Q5): on-disk store invisible to the registry.
       "Store orphan",
+      // W2 (F-003): project-registry drift over projects.json ↔ projects/ tree.
+      "Project registry drift",
       "Knowledge underseeded",
       "Knowledge session-hints stale",
       "Hook cache writable",
@@ -272,7 +274,8 @@ describe("runDoctorReport", () => {
     // v2.2 C1: +1 broad_review_recheck (broad's review-clock lint, info kind) → 43.
     // ux-w2-2: +1 retired_reference (stale-pointer lint) → 44.
     // W3-C: -1 router_chain_ref (fabric/ router retired, 0-router skill set) → 43.
-    expect(report.checks).toHaveLength(43);
+    // W2 (F-003): +1 project_registry_drift (projects.json ↔ projects/ tree) → 44.
+    expect(report.checks).toHaveLength(44);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

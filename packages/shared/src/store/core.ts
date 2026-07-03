@@ -7,12 +7,19 @@ import { readStoreIdentityAsync } from "../resolver/store-disk-reader.js";
 import {
   STORE_KNOWLEDGE_TYPE_DIRS,
   STORE_LAYOUT,
+  STORE_PROJECT_ID_PATTERN,
   type StoreIdentity,
   storeIdentitySchema,
   type StoreProject,
   storeProjectSchema,
   storeProjectsFileSchema,
 } from "../schemas/store.js";
+
+// The projects/ subdir holds the project-partitioned mirror of the root type
+// layout: knowledge/projects/<id>/<type>/*.md. Named beside the type dirs, so a
+// subdir whose name collides with a type dir (or is literally "projects") is
+// skipped by the scanner's id guard (C-107).
+const STORE_PROJECTS_DIR = "projects";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P1 — Multi-store storage + git core.
@@ -110,6 +117,12 @@ export interface StoreKnowledgeRef {
   alias: string;
   type: string; // one of the 5 canonical dirs (or "pending")
   file: string; // absolute path
+  // The structural project id this entry belongs to, derived from the
+  // knowledge/projects/<id>/ path segment. Absent ⇒ team-general (root type
+  // dirs). This is the raw path-derived id ONLY — the `project:<id>` scope
+  // coordinate is assembled elsewhere (scope derivation is not the scanner's
+  // job, C-104).
+  project?: string;
 }
 
 async function listMarkdown(dir: string): Promise<string[]> {
@@ -134,13 +147,46 @@ export interface MountedStoreDir {
 }
 
 // Knowledge entries in one store, each tagged with the store's provenance.
+//
+// Explicit two-pass (NOT recursive) scan over the isomorphic layout:
+//   pass-1  knowledge/<type>/*.md          → team-general refs (project undefined)
+//   pass-2  knowledge/projects/<id>/<type>/*.md → project-tagged refs
+// A store with no projects/ dir is byte-identical to pass-1 alone (root-only
+// equivalence, C-103) — the ENOENT early-return keeps that path untouched.
 export async function listStoreKnowledge(store: MountedStoreDir): Promise<StoreKnowledgeRef[]> {
+  const knowledgeDir = join(store.dir, STORE_LAYOUT.knowledgeDir);
   const refs: StoreKnowledgeRef[] = [];
+
+  // pass-1 — root type dirs (team-general; no project tag).
   for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
-    for (const file of await listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, type))) {
+    for (const file of await listMarkdown(join(knowledgeDir, type))) {
       refs.push({ store_uuid: store.store_uuid, alias: store.alias, type, file });
     }
   }
+
+  // pass-2 — project-partitioned dirs. Absent projects/ ⇒ root-only (C-103).
+  let projectEntries: string[];
+  try {
+    projectEntries = await readdir(join(knowledgeDir, STORE_PROJECTS_DIR));
+  } catch {
+    return refs;
+  }
+  // C-107 collision guard: a project id is a single [a-z0-9_-] segment that is
+  // neither the literal "projects" nor one of the reserved type dir names, so
+  // an accidental/mis-nested dir under projects/ is silently skipped (mirrors
+  // listMarkdown's degrade-to-[] discipline, never errors). sort() = determinism.
+  const reserved = new Set<string>([STORE_PROJECTS_DIR, ...STORE_KNOWLEDGE_TYPE_DIRS]);
+  const projectIds = projectEntries
+    .filter((id) => STORE_PROJECT_ID_PATTERN.test(id) && !reserved.has(id))
+    .sort();
+  for (const project of projectIds) {
+    for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+      for (const file of await listMarkdown(join(knowledgeDir, STORE_PROJECTS_DIR, project, type))) {
+        refs.push({ store_uuid: store.store_uuid, alias: store.alias, type, file, project });
+      }
+    }
+  }
+
   return refs;
 }
 

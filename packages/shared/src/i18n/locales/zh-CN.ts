@@ -646,6 +646,18 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 把这些孤儿 store 收编进 registry(按 store_uuid 重新登记、alias 撞库自动消歧;rescue-before-delete——只登记不删盘)。",
   "doctor.check.store_orphan.ok":
     "~/.fabric/stores 下没有未登记的孤儿 store。",
+  // W2 (F-003): 项目注册表漂移 —— projects.json ↔ projects/ 文件夹树。
+  "doctor.check.project_registry_drift.name": "项目注册表漂移",
+  "doctor.check.project_registry_drift.ok":
+    "每个 knowledge/projects/<id>/ 文件夹都已在 projects.json 注册,且没有已注册文件夹为空。",
+  "doctor.check.project_registry_drift.message.unregistered":
+    "{total} 处项目注册表漂移:{breakdown}。例如 store '{storeAlias}' 的 projects/{projectId}/ 有知识条目但未在 projects.json 注册(写入未路由)。运行 `fabric doctor --fix` 补登记(rescue-before-delete——从不删文件夹)。",
+  "doctor.check.project_registry_drift.message.orphan":
+    "{total} 处项目注册表漂移:{breakdown}。例如 store '{storeAlias}' 的 projects/{projectId}/ 磁盘存在但未在 projects.json 注册。运行 `fabric doctor --fix` 补登记(rescue——从不删文件夹)。",
+  "doctor.check.project_registry_drift.message.empty":
+    "{total} 处项目注册表漂移:{breakdown}。例如 store '{storeAlias}' 已注册项目 '{projectId}' 的 projects/{projectId}/ 文件夹为空(零条目)。运行 `fabric doctor --fix` 清理空文件夹。",
+  "doctor.check.project_registry_drift.remediation":
+    "运行 `fabric doctor --fix` 对账:orphan / 未注册写入的文件夹会被 rescue-register 进 projects.json(即使非空也从不删除);仅真正为空的已注册文件夹才被清理。ghost 注册(已注册 id 但无文件夹)是合法的(lazy 创建),无需处理。",
   "doctor.check.preexisting_root_files.name": "预存根目录 markdown",
   "doctor.check.preexisting_root_files.ok": "project root 未检测到 CLAUDE.md 或 AGENTS.md。",
   "doctor.check.preexisting_root_files.message":
@@ -1575,6 +1587,10 @@ export const zhCNMessages: Messages = {
   "cli.store.rescope.noop": "重定 scope:无需改动({count} 条已是 '{scope}')",
   "cli.store.rescope.summary": "重定 scope → {scope}:{changed} 条已更新,{unchanged} 条未变",
   "cli.store.rescope.refused": "{count} 条被拒绝",
+  "cli.store.reroot.noop": "reroot:无需迁移({skipped} 条保持平铺)",
+  "cli.store.reroot.summary": "reroot:{moved} 条项目条目已迁入 knowledge/projects/<id>/",
+  "cli.store.reroot.provenance-gap":
+    "{count} 条经 fs rename 迁移(未跟踪 / 非 git)—— 这些条目的 git blame 历史未保留",
   "cli.store.none-mounted": "(未挂载任何 store)",
   "cli.store.mounted": "已挂载 '{alias}' (共 {count} 个 store)",
   "cli.store.created": "已创建 store '{alias}' ({uuid}) 于 {dir}",

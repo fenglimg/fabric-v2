@@ -658,6 +658,49 @@ describe("reviewKnowledge", () => {
     expect(existsSync(newTeamAbs)).toBe(true);
   });
 
+  it("modify_layer_flip_personal_to_team_lands_in_projects_subtree_when_bound (W1/TASK-003 parity)", async () => {
+    const projectRoot = await createTempProject();
+    // Bind an active_project so a team-layer destination lands in the
+    // project-partitioned subtree — mirroring the approve-promote path.
+    writeFileSync(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team", active_project: "demo-app" }, null, 2)}\n`,
+    );
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "bound-tip", {
+      layer: "personal",
+    });
+
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    const personalAbs = storeKnowledgeDir("personal", "guidelines", `${priorId}--bound-tip.md`);
+    expect(existsSync(personalAbs)).toBe(true);
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: personalAbs,
+      changes: { layer: "team" },
+    });
+    if (result.action !== "modify") throw new Error("unreachable");
+    expect(existsSync(personalAbs)).toBe(false);
+
+    // The flipped-to-team entry lands under knowledge/projects/demo-app/, NOT
+    // flat — identical to a promote with the same active_project (C-104).
+    const projectSubtreeAbs = storeKnowledgeDir(
+      "team",
+      "projects",
+      "demo-app",
+      "guidelines",
+      `${result.new_stable_id}--bound-tip.md`,
+    );
+    expect(existsSync(projectSubtreeAbs)).toBe(true);
+    const flatAbs = storeKnowledgeDir("team", "guidelines", `${result.new_stable_id}--bound-tip.md`);
+    expect(existsSync(flatAbs)).toBe(false);
+  });
+
   it("modify_layer_flip_emits_layer_changed_with_from_to", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "pitfalls", "watch-out");
