@@ -1622,6 +1622,10 @@ export const enMessages: Messages = {
   "cli.store.rescope.noop": "re-scope: nothing to do ({count} already at '{scope}')",
   "cli.store.rescope.summary": "re-scope → {scope}: {changed} updated, {unchanged} unchanged",
   "cli.store.rescope.refused": "{count} entries refused",
+  "cli.store.reroot.noop": "reroot: nothing to relocate ({skipped} entries stay flat)",
+  "cli.store.reroot.summary": "reroot: {moved} project entries relocated into knowledge/projects/<id>/",
+  "cli.store.reroot.provenance-gap":
+    "{count} moved via fs rename (untracked / non-git) — git blame history was NOT preserved for these",
   "cli.store.none-mounted": "(no stores mounted)",
   "cli.store.mounted": "mounted '{alias}' ({count} store(s) total)",
   "cli.store.created": "created store '{alias}' ({uuid}) at {dir}",

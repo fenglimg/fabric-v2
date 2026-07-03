@@ -82,13 +82,28 @@ describe("fabric store command surface", () => {
     expect(listMeta?.hidden ?? false).toBe(false);
   });
 
-  it("`migrate` is the knowledge-scope migration group, NOT the retired dual-root migrator", () => {
+  it("`migrate` is the knowledge migration group, NOT the retired dual-root migrator", () => {
     // The store-only cutover removed the old dual-root `store migrate`. W3-E
-    // reuses the word for knowledge-coordinate rewrites — assert it carries
-    // exactly the three scope-rewrite ops, so the dead meaning cannot creep back.
+    // reuses the word for knowledge-coordinate rewrites (scope/promote/backfill);
+    // W2/TASK-005 adds `reroot` (folder-layout relocation). Assert it carries
+    // exactly these ops, so the dead dual-root meaning cannot creep back.
     const migrateSubs = Object.keys(storeCommand.subCommands?.migrate?.subCommands ?? {});
 
-    expect(migrateSubs).toEqual(["scope", "promote", "backfill"]);
+    expect(migrateSubs).toEqual(["scope", "promote", "backfill", "reroot"]);
+  });
+
+  it("`migrate reroot` sets a failing exit code when the store is not mounted", async () => {
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((value?: unknown) => {
+      errors.push(value === undefined ? "" : String(value));
+    });
+
+    await storeCommand.subCommands?.migrate?.subCommands?.reroot?.run?.({
+      args: { store: "ghost", "dry-run": true },
+    } as never);
+
+    expect(process.exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("no mounted store 'ghost'");
   });
 
   it("sets a failing exit code when removing a missing alias", async () => {

@@ -8,7 +8,11 @@ import { getProjectTranslator, t } from "../i18n.js";
 import { grid, groupDot, headerRule } from "../tui/structure.js";
 
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
-import { backfillKnowledgeDir } from "../store/scope-backfill.js";
+import {
+  backfillKnowledgeDir,
+  migrateProjectEntries,
+  type MigrationReport,
+} from "../store/scope-backfill.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
 import {
   promoteProjectToTeam,
@@ -597,17 +601,79 @@ const promoteCommand = defineCommand({
   },
 });
 
+// W2/TASK-005 — project-folder reroot MIGRATION. Unlike the coordinate rewrites
+// above (scope/promote/backfill rewrite frontmatter), reroot RELOCATES flat
+// project-scoped entries (knowledge/<type>/*.md declaring `semantic_scope:
+// project:<id>`) into the project-partitioned subtree knowledge/projects/<id>/
+// <type>/ via `git mv` (blame-preserving); an untracked entry falls back to fs
+// rename and surfaces a gitMv:false provenance gap. Idempotent: entries already
+// under projects/ are invisible to the flat scan ⇒ a second run moves nothing.
+function printMigrationReport(report: MigrationReport): void {
+  const t = getProjectTranslator();
+  const prefix = report.dryRun ? "[dry-run] " : "";
+  console.log("");
+  console.log(headerRule(t("cli.store.migrate.title")));
+  if (report.moves.length === 0) {
+    console.log(`  ${paint.muted(t("cli.store.reroot.noop", { skipped: String(report.skipped.length) }))}`);
+    return;
+  }
+  console.log(`  ${prefix}${t("cli.store.reroot.summary", { moved: String(report.moves.length) })}`);
+  for (const m of report.moves) {
+    // The essential detail is which project subtree the entry lands in.
+    console.log(`  ${groupDot(m.id ?? "(no id)")}  ${paint.muted(`→ projects/${m.project}/`)}`);
+  }
+  // Surface provenance gaps: fs-rename fallbacks that lost git blame history.
+  const provenanceGaps = report.moves.filter((m) => !m.gitMv).length;
+  if (provenanceGaps > 0) {
+    console.error(
+      `  ${symbol.warn} ${paint.warn(`${prefix}${t("cli.store.reroot.provenance-gap", { count: String(provenanceGaps) })}`)}`,
+    );
+  }
+}
+
+const rerootCommand = defineCommand({
+  meta: {
+    name: "reroot",
+    description: "Relocate flat project-scoped entries into knowledge/projects/<id>/ (git mv, blame-preserving)",
+  },
+  args: {
+    store: { type: "positional", required: true, description: "Target store alias or uuid" },
+    "dry-run": { type: "boolean", description: "Preview planned moves without touching disk" },
+    yes: { type: "boolean", description: "Skip the confirm-before-mutate prompt (CI / non-interactive)" },
+  },
+  async run({ args }) {
+    // migrateProjectEntries operates on the store's git repo ROOT (it derives the
+    // knowledge tree + runs `git mv` relative to it), not the knowledge dir.
+    const storeDir = resolveStoreDir(args.store);
+    if (storeDir === null) {
+      console.error(`no mounted store '${args.store}'`);
+      process.exitCode = 1;
+      return;
+    }
+    await runGatedMigrate({
+      label: "migrate reroot",
+      dryRun: args["dry-run"] === true,
+      yes: args.yes === true,
+      run: (dryRun) => migrateProjectEntries(storeDir, { dryRun }),
+      print: printMigrationReport,
+    });
+  },
+});
+
 // W3-E: knowledge-coordinate migration ops grouped under `store migrate <sub>`.
-// All three REWRITE on-disk knowledge entries' scope coordinates (scope = the
-// old `re-scope`, promote = project→team absorption, backfill = fill missing
-// semantic_scope/visibility) — distinct from the config-only write-routing of
-// `switch-write`. Grouping keeps the migrate surface semantically pure.
+// scope/promote/backfill REWRITE on-disk knowledge entries' scope coordinates
+// (scope = the old `re-scope`, promote = project→team absorption, backfill =
+// fill missing semantic_scope/visibility); reroot RELOCATES flat project entries
+// into the knowledge/projects/<id>/ subtree (path becomes the scope source of
+// truth). All are on-disk knowledge migrations — distinct from the config-only
+// write-routing of `switch-write`. Grouping keeps the migrate surface pure.
 const migrateCommand = defineCommand({
-  meta: { name: "migrate", description: "Rewrite knowledge entries' scope coordinates in a store", hidden: true },
+  meta: { name: "migrate", description: "Migrate on-disk knowledge entries (scope coordinates / folder layout) in a store", hidden: true },
   subCommands: {
     scope: rescopeCommand,
     promote: promoteCommand,
     backfill: backfillScopeCommand,
+    reroot: rerootCommand,
   },
 });
 

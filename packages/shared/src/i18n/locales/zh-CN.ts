@@ -1587,6 +1587,10 @@ export const zhCNMessages: Messages = {
   "cli.store.rescope.noop": "重定 scope:无需改动({count} 条已是 '{scope}')",
   "cli.store.rescope.summary": "重定 scope → {scope}:{changed} 条已更新,{unchanged} 条未变",
   "cli.store.rescope.refused": "{count} 条被拒绝",
+  "cli.store.reroot.noop": "reroot:无需迁移({skipped} 条保持平铺)",
+  "cli.store.reroot.summary": "reroot:{moved} 条项目条目已迁入 knowledge/projects/<id>/",
+  "cli.store.reroot.provenance-gap":
+    "{count} 条经 fs rename 迁移(未跟踪 / 非 git)—— 这些条目的 git blame 历史未保留",
   "cli.store.none-mounted": "(未挂载任何 store)",
   "cli.store.mounted": "已挂载 '{alias}' (共 {count} 个 store)",
   "cli.store.created": "已创建 store '{alias}' ({uuid}) 于 {dir}",

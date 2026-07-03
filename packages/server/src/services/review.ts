@@ -1126,8 +1126,16 @@ async function modifyLayerFlip(
   // v2.2 全砍 Stage 2 (B2 cutover): the layer-flip destination is the NEW layer's
   // write-target store canonical dir (no dual-root). resolveStoreCanonicalBase
   // throws an actionable error when no target store resolves.
+  // W1/TASK-003 parity: mirror the approve-promote path — a team-layer flip bound
+  // to an active_project lands in knowledge/projects/<id>/<type>/ too, so a
+  // flipped-to-team entry and a promoted team entry sharing that active_project
+  // land at the SAME path (C-104 path=source-of-truth). personal flips pass no
+  // project ⇒ stay flat (C-106 personal-flat); resolveStoreCanonicalBase only
+  // injects the segment for team + a C-107-valid project.
+  const flipProject =
+    toLayer === "team" ? loadProjectConfig(projectRoot)?.active_project : undefined;
   const toAbs = join(
-    resolveStoreCanonicalBase(toLayer, projectRoot),
+    resolveStoreCanonicalBase(toLayer, projectRoot, flipProject),
     pluralType,
     `${newStableId}--${slug}.md`,
   );
