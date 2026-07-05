@@ -771,6 +771,32 @@ function mergeUnique(existing, incoming) {
 // -----------------------------------------------------------------------------
 
 /**
+ * Normalize hook-supplied file paths to the project-root-relative,
+ * forward-slashed form `plan-context-hint` requires.
+ *
+ * Claude Code / Codex pass `tool_input.file_path` as an ABSOLUTE path, but
+ * `plan-context-hint` (planContext) REJECTS absolute paths and exits non-zero —
+ * a failure the best-effort spawn swallows, which silently zeroed EVERY narrow
+ * hint (the entire narrow-scoped KB tier never surfaced in real sessions).
+ * Mirrors the appendEditCounter / appendEditIntentToLedger normalization.
+ * `cwd` is the git-anchored project root (KT-DEC-0050). Paths that escape the
+ * project tree (relative starts with "..") are dropped. Returns a
+ * possibly-empty array; the caller treats empty as "nothing to hint".
+ */
+function toProjectRelativePaths(cwd, paths) {
+  if (!Array.isArray(paths)) return [];
+  const { isAbsolute: pathIsAbsolute, relative: pathRelative } = require("node:path");
+  return paths
+    .filter((p) => typeof p === "string" && p.length > 0)
+    .map((p) => {
+      const rel = pathIsAbsolute(p) ? pathRelative(cwd, p) : p;
+      return rel.startsWith("..") ? null : rel;
+    })
+    .filter((p) => typeof p === "string" && p.length > 0)
+    .map((p) => p.split(/[\\/]/).join("/"));
+}
+
+/**
  * Spawn `fabric plan-context-hint --paths p1,p2,...` and return parsed JSON.
  * Returns null on any failure (ENOENT, non-zero exit, malformed JSON,
  * timeout). Never throws.
@@ -780,7 +806,13 @@ function mergeUnique(existing, incoming) {
  */
 function invokePlanContextHint(cwd, paths) {
   if (!Array.isArray(paths) || paths.length === 0) return null;
-  const pathsArg = paths.join(",");
+  // Normalize ABSOLUTE hook paths → project-relative BEFORE the CLI sees them;
+  // planContext rejects absolute paths and the swallowed failure would silently
+  // zero every narrow hint. See toProjectRelativePaths for the full rationale
+  // (KT-DEC-0050). Empty after normalization → nothing in-tree to hint.
+  const relPaths = toProjectRelativePaths(cwd, paths);
+  if (relPaths.length === 0) return null;
+  const pathsArg = relPaths.join(",");
   const candidates = ["fabric", "fab"];
   // rc.31 NEW-6: see knowledge-hint-broad.cjs for rationale — surface plan-
   // context-hint failures on stderr so degraded KB chain is observable.
@@ -823,6 +855,31 @@ function invokePlanContextHint(cwd, paths) {
     process.stderr.write(
       `[fabric-hint] plan-context-hint (${lastFailure.bin}) failed: ${lastFailure.reason.replace(/\n/g, " ")}\n`,
     );
+    // P1 observability: a REAL CLI failure (non-ENOENT) previously left NO
+    // structured trace — only this ephemeral stderr line — so a systemic
+    // narrow-chain outage (e.g. the absolute-path rejection that silently
+    // zeroed narrow surfacing for a month) was invisible to doctor/metrics.
+    // Emit a best-effort `narrow_hint_failed` event so the degradation is
+    // countable in events.jsonl. ENOENT (fabric not on PATH) leaves lastFailure
+    // null and is deliberately NOT recorded — that is the benign "not installed"
+    // path, not a failure. Never throws / never blocks the edit (KT-DEC-0007).
+    try {
+      const fabricDir = join(cwd, FABRIC_DIR_REL);
+      if (existsSync(fabricDir)) {
+        const failEvent = {
+          kind: "fabric-event",
+          id: `event:${randomUUID()}`,
+          ts: Date.now(),
+          schema_version: 1,
+          event_type: "narrow_hint_failed",
+          hook_name: "knowledge-hint-narrow",
+          reason: String(lastFailure.reason).slice(0, 240),
+        };
+        appendLockedLine(join(fabricDir, EVENTS_LEDGER_FILE), JSON.stringify(failEvent) + "\n");
+      }
+    } catch {
+      // best-effort telemetry — never block the edit
+    }
   }
   return null;
 }
@@ -1633,6 +1690,7 @@ module.exports = {
   extractPaths,
   appendEditCounter,
   appendHintSilenceCounter,
+  toProjectRelativePaths,
   invokePlanContextHint,
   renderSummary,
   truncateSummary,
