@@ -86,6 +86,11 @@ export interface RecallScoreBreakdown {
   salience: number;
   recency: number;
   locality: number;
+  // BORROW-008 phrase-proximity boost. Added UNSCALED in scoreDescriptionItem
+  // (outside structuralScaleFor), keyed off the same content total. It MUST be a
+  // summed component here or `final` silently desyncs from the ranking score for
+  // every multi-term-query candidate (the omission this field closes).
+  proximity: number;
 }
 
 export interface AgentsMetaNode {
