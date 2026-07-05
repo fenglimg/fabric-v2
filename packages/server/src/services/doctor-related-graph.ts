@@ -272,3 +272,32 @@ export async function inspectRelatedGraph(
     })),
   );
 }
+
+/** Cap on how many suggested edges the advisory surfaces (highest-confidence first). */
+const SUGGESTED_EDGES_TOP_N = 20;
+
+/**
+ * Walk the store canonical corpus and PROPOSE the top-N missing related edges via the
+ * pure suggestRelatedEdges heuristic. Never throws — collectStoreCanonicalEntries
+ * degrades to [] when no store is in the read-set. READ-ONLY: it computes suggestions
+ * and writes nothing; edge creation stays on the fabric-review modify path.
+ */
+export async function inspectSuggestedRelatedEdges(
+  projectRoot: string,
+): Promise<SuggestedRelatedEdge[]> {
+  let entries;
+  try {
+    entries = await collectStoreCanonicalEntries(projectRoot);
+  } catch {
+    return [];
+  }
+  const nodes: RelatedGraphNodeRich[] = entries.map((entry) => ({
+    qualifiedId: entry.qualifiedId,
+    summary: entry.description.summary ?? "",
+    intentClues: entry.description.intent_clues ?? [],
+    tags: entry.description.tags ?? [],
+    relevancePaths: entry.description.relevance_paths ?? [],
+    related: entry.description.related ?? [],
+  }));
+  return suggestRelatedEdges(nodes).slice(0, SUGGESTED_EDGES_TOP_N);
+}

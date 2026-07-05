@@ -214,6 +214,7 @@ export const zhCNMessages: Messages = {
   "doctor.store.active-personal-unset": "已挂载 {count} 个 personal store 但无活动指针;运行 `fabric store switch-personal <alias>` 选一个(或 `fabric doctor --fix` 默认取第一个)",
   "doctor.store.related-broken": "{count} 条 `related` 链接指向语料中不存在的 id:{samples}{overflow} —— 通过 `fab_review` (modify) 修复 related 边,或编辑条目 frontmatter",
   "doctor.store.related-hub": "related 图谱枢纽(前 {shown} / 共 {total} 个被引用):{top}",
+  "doctor.store.related-suggested": "{count} 条高置信度 `related` 边在相似条目间缺失:{samples}{overflow} —— 合适的通过 `fab_review` (modify) 补上(仅建议,不自动应用)",
   "doctor.store.unreachable": "store '{alias}' 在 read-set 中但磁盘上不可达({reason});运行 `fabric store mount` / 重新 clone,再跑 `fabric doctor`",
   "doctor.store.consumption-heatmap": "消费热区(近 {days}d,{consumed}/{total} 条被读,跨 {windows} 个窗口):{top}",
   "doctor.store.consumption-zero": "{count} 条在近 {days}d 内从未被消费:{sample}{overflow} —— 通过 `fab_review` 考虑淘汰(消费量只是信号之一,非陈旧的证据)",

@@ -8,8 +8,8 @@
   "priority": "medium",
   "effort": "medium",
   "action": "In packages/server/src/services/doctor-related-graph.ts add `export async function inspectSuggestedRelatedEdges(projectRoot: string): Promise<SuggestedRelatedEdge[]>` that calls collectStoreCanonicalEntries(projectRoot) and maps each StoreCanonicalEntry to RelatedGraphNodeRich { qualifiedId, summary: e.description.summary, intentClues: e.description.intent_clues ?? [], tags: e.description.tags ?? [], relevancePaths: e.description.relevance_paths ?? [], related: e.description.related ?? [] } (RuleDescription has NO `keywords` field — use intent_clues) then returns suggestRelatedEdges(nodes) (cap to a bounded top-N, e.g. 20). Re-export inspectSuggestedRelatedEdges + SuggestedRelatedEdge from the server barrel packages/server/src/index.ts (alongside the existing inspectRelatedGraph re-export at :125-130). In packages/cli/src/store/knowledge-doctor-checks.ts add `appendSuggestedRelatedDiagnostics(projectRoot, out)` (sibling to appendRelatedGraphDiagnostics:44) that try/catches inspectSuggestedRelatedEdges, and when suggestions exist pushes a single StoreDiagnostic { code: 'related_graph_suggested_edges', severity: 'info', message: t('doctor.store.related-suggested', {...}) }. Register the new `doctor.store.related-suggested` translator key in the i18n catalog (same catalog carrying doctor.store.related-broken / related-hub). Call appendSuggestedRelatedDiagnostics from knowledgeDoctorChecks(). Run `pnpm -r exec tsc --noEmit`.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-07-05T08:50:13.020Z",
   "actual_duration": null,
   "scope": "packages/server/src/services/doctor-related-graph.ts + packages/cli/src/store/knowledge-doctor-checks.ts",
   "focus_paths": [
@@ -25,7 +25,9 @@
     "packages/shared/src/i18n/locales/zh-CN.ts",
     "packages/server/src/services/review.ts"
   ],
-  "depends_on": ["TASK-003"],
+  "depends_on": [
+    "TASK-003"
+  ],
   "wave": 2,
   "parallel_group": "F2",
   "execution_group": null,
@@ -88,10 +90,22 @@
     "Run `pnpm --filter @fenglimg/fabric-shared build` then `pnpm -r exec tsc --noEmit`."
   ],
   "test": {
-    "commands": ["pnpm --filter @fenglimg/fabric-shared build", "pnpm -r exec tsc --noEmit", "pnpm --filter @fenglimg/fabric-cli test -- knowledge-doctor"],
-    "unit": ["packages/cli/__tests__/doctor-checks.test.ts"],
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-shared build",
+      "pnpm -r exec tsc --noEmit",
+      "pnpm --filter @fenglimg/fabric-cli test -- knowledge-doctor"
+    ],
+    "unit": [
+      "packages/cli/__tests__/doctor-checks.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["advisory info line printed for high-overlap unlinked pair", "doctor.store.related-suggested resolves (not a raw key) in both locales", "no hot-path reference to suggestRelatedEdges (census clean)", "doctor exit code unchanged", "tsc --noEmit exits 0"]
+    "success_metrics": [
+      "advisory info line printed for high-overlap unlinked pair",
+      "doctor.store.related-suggested resolves (not a raw key) in both locales",
+      "no hot-path reference to suggestRelatedEdges (census clean)",
+      "doctor exit code unchanged",
+      "tsc --noEmit exits 0"
+    ]
   },
   "reference": {
     "pattern": "Sibling read-only advisory arm (appendRelatedGraphDiagnostics) — server-side pure inspection + CLI diagnostic emit, never a gate, no auto-fix; write path stays the fabric-review modify related-write (review.ts:1882)",
@@ -120,8 +134,15 @@
   ],
   "code_skeleton": null,
   "doc_context": {
-    "affected_features": ["related auto edge-suggestion"],
-    "affected_components": ["doctor-related-graph", "knowledge-doctor-checks advisory surface", "fabric-server barrel exports (src/index.ts)", "i18n locales (en + zh-CN)"],
+    "affected_features": [
+      "related auto edge-suggestion"
+    ],
+    "affected_components": [
+      "doctor-related-graph",
+      "knowledge-doctor-checks advisory surface",
+      "fabric-server barrel exports (src/index.ts)",
+      "i18n locales (en + zh-CN)"
+    ],
     "affected_requirements": [],
     "adr_ids": []
   },
