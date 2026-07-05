@@ -312,6 +312,51 @@ describe("knowledge-hint-narrow.cjs — extractPaths", () => {
 });
 
 // ---------------------------------------------------------------------------
+// toProjectRelativePaths — P0 absolute-path fix (narrow tier was silently dark)
+//
+// Real Claude Code / Codex PreToolUse payloads carry an ABSOLUTE file_path, but
+// plan-context-hint rejects absolute paths ("absolute paths are not allowed")
+// and the swallowed failure zeroed EVERY narrow hint. This normalization is the
+// fix. It lives in its own pure export precisely because the `cliResult` test
+// seam bypasses invokePlanContextHint's `--paths` construction, so the absolute-
+// path defect escaped CI for a month — these tests exercise that exact gap.
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-narrow.cjs — toProjectRelativePaths (P0 absolute-path fix)", () => {
+  const root = "/home/dev/pcf";
+
+  it("relativizes an absolute in-tree path to project-relative form", () => {
+    expect(
+      hook.toProjectRelativePaths(root, [
+        `${root}/packages/server/src/services/plan-context.ts`,
+      ]),
+    ).toEqual(["packages/server/src/services/plan-context.ts"]);
+  });
+
+  it("passes an already-relative in-tree path through unchanged", () => {
+    expect(
+      hook.toProjectRelativePaths(root, ["packages/server/src/services/plan-context.ts"]),
+    ).toEqual(["packages/server/src/services/plan-context.ts"]);
+  });
+
+  it("drops paths that escape the project tree (absolute out-of-tree + '..')", () => {
+    expect(hook.toProjectRelativePaths(root, ["/etc/passwd", "../sibling/x.ts"])).toEqual([]);
+  });
+
+  it("mixes absolute + relative, keeping only in-tree paths", () => {
+    expect(
+      hook.toProjectRelativePaths(root, [`${root}/a.ts`, "b/c.ts", "/outside/d.ts"]),
+    ).toEqual(["a.ts", "b/c.ts"]);
+  });
+
+  it("returns [] for non-array / empty / malformed input", () => {
+    expect(hook.toProjectRelativePaths(root, null)).toEqual([]);
+    expect(hook.toProjectRelativePaths(root, [])).toEqual([]);
+    expect(hook.toProjectRelativePaths(root, ["", 42 as unknown as string])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // appendEditCounter / E4 sidecar
 // ---------------------------------------------------------------------------
 
