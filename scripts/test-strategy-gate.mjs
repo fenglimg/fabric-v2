@@ -103,7 +103,6 @@ for (const scriptName of [
   "test:coverage",
   "test:strategy",
   "test:store-only-e2e",
-  "rc6:gate",
   "lint",
   "typecheck",
 ]) {

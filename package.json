@@ -12,8 +12,6 @@
     "test:coverage": "pnpm -r --if-present test:coverage",
     "test:strategy": "node scripts/test-strategy-gate.mjs",
     "test:store-only-e2e": "node scripts/store-only-e2e.mjs",
-    "rc5:gate": "node scripts/rc5-coverage-gate.mjs",
-    "rc6:gate": "node scripts/rc6-coverage-gate.mjs",
     "lint": "knip --strict",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "prepare": "lefthook install"

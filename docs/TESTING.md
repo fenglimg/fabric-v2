@@ -29,7 +29,6 @@
 - `pnpm lint`
 - `pnpm test:strategy`
 - `pnpm test:store-only-e2e`
-- `pnpm rc6:gate`
 
 包级脚本见各 `package.json`。
 
@@ -72,7 +71,7 @@
 | Store-only workflow | mounted store create/bind/write/review/recall round trip | built-artifact E2E | `pnpm -r build && pnpm test:store-only-e2e` |
 | Agent-in-the-loop behavior | skill/hook/MCP 是否改变 agent 行为、cite/self-archive 遵循、fallback/skip/retry | trace dataset + deterministic scorer + LLM-judge | 先补可观测事件；再按 `e2e-methodology-FINAL.md` 的 J-EXP-META 执行 |
 | Security/control | prompt injection、KB 投毒、cross-store 泄漏、MCP 越权、unbounded consumption | red-team matrix + privacy/budget tests | package test + targeted red-team/eval harness |
-| Release drift gate | release-candidate scoped structural contract | rc gate script + package tests | `pnpm rc6:gate` |
+| Release drift gate | release-candidate 结构契约 | `release-rc` skill + package tests | 走 `release-rc` skill（per-rc `rcN:gate` 脚本已退役）|
 | Cross-platform path risk | path handling、tmpdir、shebang、CLI smoke | Windows smoke in CI | GitHub Actions `windows-smoke` |
 | Documentation/runtime contract | docs command names、runtime contract wording、strategy drift | grep or strategy gate | `pnpm test:strategy` |
 
