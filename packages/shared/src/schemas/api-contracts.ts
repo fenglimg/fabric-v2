@@ -530,6 +530,9 @@ const _recallEntrySchema = z.object({
       salience: z.number(),
       recency: z.number(),
       locality: z.number(),
+      // BORROW-008 proximity boost — MUST be declared or zod .strip() drops it at
+      // the MCP boundary (KT-PIT-0005), desyncing wire `final` from its components.
+      proximity: z.number(),
     })
     .optional(),
 });

@@ -1574,8 +1574,15 @@ function scoreBreakdownForItem(
   const salience = salienceScore(item) * scale;
   const recency = recencyBoost(item, context) * scale;
   const locality = localityBoost(item, context) * scale;
+  // BORROW-008 parity fix: scoreDescriptionItem adds proximityBoost UNSCALED
+  // (outside structuralScaleFor), keyed off `content` (=== bm25 + vector, the
+  // RRF/additive content total). This breakdown historically OMITTED it, so
+  // `final` was score − proximity for every multi-term-query candidate, breaking
+  // the "final === scoreDescriptionItem by construction" invariant the comments
+  // above assert. Mirror it here — same helper, same content arg, unscaled.
+  const proximity = proximityBoost(item, context, bm25 + vector);
 
-  const final = bm25 + vector + salience + recency + locality;
+  const final = bm25 + vector + salience + recency + locality + proximity;
   return {
     final,
     ...(bm25 !== 0 ? { bm25 } : {}),
@@ -1585,6 +1592,7 @@ function scoreBreakdownForItem(
     salience,
     recency,
     locality,
+    proximity,
   };
 }
 

@@ -167,6 +167,55 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(consumed.events).toEqual([]);
   });
 
+  // BORROW-008 proximity regression guard. scoreBreakdownForItem historically
+  // OMITTED the proximityBoost component from `final`, so `final` = score −
+  // proximity for every multi-term-query candidate whose text has the query terms
+  // close together — silently violating the "final === scoreDescriptionItem by
+  // construction" invariant. The pre-existing invariant test uses a SYMMETRIC
+  // "auth ui" fixture where neither entry holds BOTH terms, so proximity is
+  // trivially 0 and could never catch the omission. This seeds an entry whose
+  // summary holds an ADJACENT query bigram so proximityBoost actually fires (>0),
+  // then asserts final still reconciles to score AND the field survives the wire.
+  it("sums score_breakdown.proximity into final when a query bigram is adjacent", async () => {
+    const projectRoot = await createTempProject();
+    await writeStoreEntry("decisions", "KT-DEC-0009", [
+      "---",
+      "id: KT-DEC-0009",
+      "type: decision",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [recall proximity boost]",
+      "tech_stack: [TypeScript]",
+      "summary: Recall proximity boost ranking",
+      "---",
+      "# Proximity body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      // Two query terms ADJACENT in the seeded summary → proximityBoost > 0.
+      intent: "recall proximity",
+      session_id: "session-recall-proximity",
+    });
+
+    const entry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-0009"));
+    expect(entry).toBeDefined();
+    // The component actually fired — proves this test exercises proximity, unlike
+    // the symmetric fixture where it is a trivial 0.
+    expect(entry?.score_breakdown?.proximity).toBeGreaterThan(0);
+    // The omission this fix closes: final MUST include proximity → equals score.
+    expect(entry?.score_breakdown?.final).toBe(entry?.score);
+
+    // KT-PIT-0005 wire-strip lock now covers the new field: proximity survives the
+    // recallOutputSchema round-trip (zod .strip() would otherwise drop it).
+    const parsed = recallOutputSchema.parse(result);
+    const parsedEntry = parsed.entries.find((e) => e.stable_id.endsWith("KT-DEC-0009"));
+    expect(parsedEntry?.score_breakdown?.proximity).toBe(entry?.score_breakdown?.proximity);
+  });
+
   // P1 recall-engine-refactor (TASK-002) — lean read_path contract (KT-GLD-0005 /
   // KT-DEC-0019): the default entry carries the discovery INDEX (description +
   // score) + a read_path, but NOT the entry's markdown BODY. The body ("# Auth
