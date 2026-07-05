@@ -1,0 +1,103 @@
+{
+  "id": "TASK-002",
+  "title": "wire credibility multiplier into recall scoring (plan-context.ts:1528 + mirror :1585)",
+  "description": "Add a credibilityFactor(item, context) helper and multiply the fused recall score by it at the single insertion point plan-context.ts:1528, then mirror it EXACTLY in scoreBreakdownForItem (:1585) so score_breakdown.credibility is emitted and final === score. The factor is a content-age exponential decay off created_at, per-type half-life (from readCredibilityHalfLives), clamped up by the per-maturity floor (from readCredibilityFloors). Orthogonal to recencyBoost (additive 7-day bump) — composes safely.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In packages/server/src/services/plan-context.ts add `function credibilityFactor(item: RuleDescriptionIndexItem, context: ScoringContext): number` — parse item.description.created_at, compute ageDays = (context.nowMs - createdMs)/86400000, look up halfLife by item.description.knowledge_type (via context-resolved readCredibilityHalfLives), factor = 2^(-ageDays/halfLife), then floor = readCredibilityFloors[maturity], return Math.max(floor, Math.min(1, factor)); missing/unparseable created_at → return 1 (no penalty). At :1528 change `return content + structuralScaleFor(context)*structural + proximity;` to `return (content + structuralScaleFor(context)*structural + proximity) * credibilityFactor(item, context);`. At :1585 change `const final = bm25 + vector + salience + recency + locality + proximity;` to multiply the same subtotal by credibilityFactor and add `credibility` to the returned RecallScoreBreakdown. Thread the half-life/floor maps onto ScoringContext (resolved once at the planContext entry, not per-item disk reads). Run `pnpm -r exec tsc --noEmit`.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/server/src/services/plan-context.ts",
+  "focus_paths": ["packages/server/src/services/plan-context.ts"],
+  "read_first": [
+    "packages/server/src/services/plan-context.ts",
+    "packages/server/src/config-loader.ts",
+    "packages/shared/src/schemas/api-contracts.ts",
+    "packages/shared/src/types/agents.ts",
+    "packages/server/src/services/recall.test.ts"
+  ],
+  "depends_on": ["TASK-001"],
+  "wave": 2,
+  "parallel_group": "F1",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/server/src/services/plan-context.ts contains 'function credibilityFactor'",
+      "plan-context.ts:1528-area return is wrapped so the fused score is multiplied by credibilityFactor(item, context) (the return line contains '* credibilityFactor')",
+      "scoreBreakdownForItem (:1585-area) multiplies the same subtotal by the SAME credibilityFactor and the returned RecallScoreBreakdown object contains a `credibility` key",
+      "credibilityFactor returns 1 when created_at is missing or unparseable (no-penalty fallback, grep-visible early return)",
+      "credibilityFactor is clamped: result never below the per-maturity floor and never above 1 (Math.max(floor, Math.min(1, factor)) visible)",
+      "the `final === score` parity assertion in packages/server/src/services/recall.test.ts (:210 + :528, `expect(entry.score_breakdown.final).toBe(entry.score)`) passes for entries carrying a credibility factor — add a fixture: a content-stale entry whose score_breakdown.final still equals its score after the multiplier is applied to BOTH paths",
+      "a recall.test.ts fixture asserts that, all else equal, a content-stale entry ranks strictly below a fresh entry (older created_at → lower score)",
+      "readCredibilityHalfLives/readCredibilityFloors are read ONCE per planContext call and threaded via ScoringContext, not re-read per candidate (no readFabricConfig inside credibilityFactor)",
+      "`pnpm -r exec tsc --noEmit` exits 0"
+    ],
+    "verification": "node -e \"const s=require('fs').readFileSync('packages/server/src/services/plan-context.ts','utf8'); const okMul=(s.match(/\\* credibilityFactor/g)||[]).length>=2; const okKey=/credibility[,:]/.test(s); process.exit(okMul&&okKey?0:1)\"; pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-server test -- recall",
+    "definition_of_done": "Recall ranking down-weights content-stale entries by a per-type/per-maturity-floored age factor, the wire score_breakdown reports the credibility component, and final still equals the ranking score by construction."
+  },
+  "files": [
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "action": "modify",
+      "target": "credibilityFactor + scoreDescriptionItem (:1528) + scoreBreakdownForItem (:1585) + ScoringContext",
+      "change": "Add credibilityFactor helper (created_at age → 2^(-age/halfLife), floored by maturity, clamped [floor,1], default 1 on missing date). Multiply the fused return at :1528. Mirror in the breakdown final at :1585 and emit `credibility`. Add halfLives/floors maps to ScoringContext, resolved once at planContext entry."
+    }
+  ],
+  "implementation": [
+    "Read scoreDescriptionItem (:1515), scoreBreakdownForItem (:1539), salienceScore (:1426), recencyBoost (:1480) and the ScoringContext type to confirm nowMs, description.created_at, knowledge_type, maturity are all reachable. Note scoreDescriptionItem/scoreBreakdownForItem are module-private — the parity guard is exercised end-to-end via recall.test.ts, not a direct unit call.",
+    "Add credibilityFactor(item, context): parse created_at (Date.parse); if not finite → return 1. Compute ageDays. Look up halfLife = context.credibilityHalfLives[knowledge_type] (fallback to a per-type default if type unset). factor = Math.pow(2, -ageDays/halfLife). floor = context.credibilityFloors[maturity ?? 'draft']. return Math.max(floor, Math.min(1, factor)).",
+    "Thread credibilityHalfLives + credibilityFloors onto ScoringContext; resolve them ONCE at the planContext entry via readCredibilityHalfLives/readCredibilityFloors (never inside the per-item helper).",
+    "At :1528 wrap the additive return in parentheses and multiply by credibilityFactor(item, context).",
+    "At :1585 compute the same subtotal, multiply by credibilityFactor(item, context) to get final, and add `credibility: credibilityFactor(item, context)` (compute once, reuse) to the returned object.",
+    "Update the RecallScoreBreakdown construction so the breakdown mirrors scoreDescriptionItem component-for-component (final = subtotal * factor).",
+    "Add a fixture to packages/server/src/services/recall.test.ts (the `final===score` parity guard lives here at :210 + :528, since scoreDescriptionItem/scoreBreakdownForItem are module-private and cannot be called directly): assert a content-stale entry's score_breakdown.final still equals its score, and that it ranks below an otherwise-identical fresh entry.",
+    "Run `pnpm -r exec tsc --noEmit` and `pnpm --filter @fenglimg/fabric-server test -- recall`."
+  ],
+  "test": {
+    "commands": ["pnpm -r exec tsc --noEmit", "pnpm --filter @fenglimg/fabric-server test -- recall"],
+    "unit": ["packages/server/src/services/recall.test.ts"],
+    "integration": [],
+    "success_metrics": ["recall.test.ts final===score parity holds for a credibility-carrying entry (:210/:528 assertions)", "content-stale entry scores strictly below an otherwise-identical fresh entry", "tsc --noEmit exits 0"]
+  },
+  "reference": {
+    "pattern": "maestro-flow scoring.ts:270 `score *= credibilityFactor`; existing final===score mirror discipline between scoreDescriptionItem and scoreBreakdownForItem",
+    "files": [
+      "packages/server/src/services/plan-context.ts:1528",
+      "packages/server/src/services/plan-context.ts:1585",
+      "packages/server/src/services/plan-context.ts:1480"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Single insertion point (multiply the already-computed fused return) keeps the additive calibration untouched and localizes the change; mirroring in the breakdown preserves the by-construction final===score invariant. created_at is the only persisted age signal available (content_hash deferred).",
+    "decision_factors": [
+      "multiplicative factor is orthogonal to the additive recencyBoost, so no double-penalty",
+      "per-maturity floor softens the 'content leads' invariant without ever zeroing a literal match",
+      "resolving config once per call keeps the per-candidate hot path allocation-free"
+    ],
+    "tradeoffs": "created_at reflects authoring time, not last content edit — an entry edited in place keeps its old created_at and decays as if unedited. Accepted for v1; the content_changed_at clock is the deferred fix."
+  },
+  "risks": [
+    "Mirror drift: editing :1528 but not :1585 (or vice versa) breaks final===score — the recall.test.ts :210/:528 parity assertion is the guard.",
+    "Applying credibilityFactor to a zero-content structural-only entry: multiplying near-zero by a floor stays small, ordering preserved — verify the structural-only case via recall.test.ts.",
+    "credibility?: number must already exist on the RecallScoreBreakdown interface (agents.ts) — landed by TASK-001; emitting it before TASK-001 completes fails tsc."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["credibility content-age decay multiplier"],
+    "affected_components": ["plan-context recall scoring", "ScoringContext"],
+    "affected_requirements": [],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "50m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

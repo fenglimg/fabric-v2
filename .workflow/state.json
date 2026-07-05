@@ -318,9 +318,32 @@
         "branch": "feat/cli-flat-design-system",
         "gates": "tsc0 + shared635 + cli1203 all green"
       }
+    },
+    {
+      "id": "PLN-004",
+      "type": "plan",
+      "milestone": "M-adhoc-20260623-185615",
+      "phase": null,
+      "scope": "standalone",
+      "path": "scratch/20260705-plan-fabric-kb-lifecycle",
+      "status": "completed",
+      "context_package": null,
+      "depends_on": [],
+      "harvested": false,
+      "created_at": "2026-07-05T08:22:35.020Z",
+      "completed_at": "2026-07-05T08:22:35.020Z",
+      "metadata": {
+        "topic": "Fabric KB 生命周期增强 (credibility 衰减乘子 + related 自动建边)",
+        "task_count": 4,
+        "waves": 2,
+        "checker": "NEEDS_REVISION→PASS round1 (3 critical + 3 warning fixed)",
+        "confidence": "high (~0.89)",
+        "feature_branch": "feat/fabric-kb-lifecycle",
+        "upstream": "本会话 Fabric dogfood 遥测分析 + maestro-flow 知识系统调研"
+      }
     }
   ],
-  "last_updated": "2026-06-23T12:26:27.294Z",
+  "last_updated": "2026-07-05T08:22:35.020Z",
   "accumulated_context": {
     "key_decisions": [],
     "blockers": [],

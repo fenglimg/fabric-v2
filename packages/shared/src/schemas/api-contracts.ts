@@ -539,6 +539,10 @@ const _recallEntrySchema = z.object({
       // BORROW-008 proximity boost — MUST be declared or zod .strip() drops it at
       // the MCP boundary (KT-PIT-0005), desyncing wire `final` from its components.
       proximity: z.number(),
+      // PLN-004 F1 credibility content-age decay MULTIPLIER factor — optional
+      // (only present once the multiplier is wired). MUST be declared or zod
+      // .strip() drops it at the MCP boundary (KT-PIT-0005).
+      credibility: z.number().optional(),
     })
     .optional(),
 });

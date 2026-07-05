@@ -1,0 +1,134 @@
+{
+  "id": "TASK-004",
+  "title": "surface suggestRelatedEdges as a non-gate doctor advisory routed to fabric-review modify",
+  "description": "Wire the pure suggestRelatedEdges into the read-set corpus and surface the top suggestions as a READ-ONLY doctor advisory (no gate, no auto-fix), whose remediation copy points the operator at the fabric-review modify related-write path (review.ts:1882). Add an inspectSuggestedRelatedEdges(projectRoot) that maps collectStoreCanonicalEntries → RelatedGraphNodeRich → suggestRelatedEdges, and an appendSuggestedRelatedDiagnostics arm in knowledge-doctor-checks.ts sibling to the existing broken-link/hub advisory. NO edges are written on any hot path.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "In packages/server/src/services/doctor-related-graph.ts add `export async function inspectSuggestedRelatedEdges(projectRoot: string): Promise<SuggestedRelatedEdge[]>` that calls collectStoreCanonicalEntries(projectRoot) and maps each StoreCanonicalEntry to RelatedGraphNodeRich { qualifiedId, summary: e.description.summary, intentClues: e.description.intent_clues ?? [], tags: e.description.tags ?? [], relevancePaths: e.description.relevance_paths ?? [], related: e.description.related ?? [] } (RuleDescription has NO `keywords` field — use intent_clues) then returns suggestRelatedEdges(nodes) (cap to a bounded top-N, e.g. 20). Re-export inspectSuggestedRelatedEdges + SuggestedRelatedEdge from the server barrel packages/server/src/index.ts (alongside the existing inspectRelatedGraph re-export at :125-130). In packages/cli/src/store/knowledge-doctor-checks.ts add `appendSuggestedRelatedDiagnostics(projectRoot, out)` (sibling to appendRelatedGraphDiagnostics:44) that try/catches inspectSuggestedRelatedEdges, and when suggestions exist pushes a single StoreDiagnostic { code: 'related_graph_suggested_edges', severity: 'info', message: t('doctor.store.related-suggested', {...}) }. Register the new `doctor.store.related-suggested` translator key in the i18n catalog (same catalog carrying doctor.store.related-broken / related-hub). Call appendSuggestedRelatedDiagnostics from knowledgeDoctorChecks(). Run `pnpm -r exec tsc --noEmit`.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/server/src/services/doctor-related-graph.ts + packages/cli/src/store/knowledge-doctor-checks.ts",
+  "focus_paths": [
+    "packages/server/src/services/doctor-related-graph.ts",
+    "packages/cli/src/store/knowledge-doctor-checks.ts"
+  ],
+  "read_first": [
+    "packages/cli/src/store/knowledge-doctor-checks.ts",
+    "packages/server/src/services/doctor-related-graph.ts",
+    "packages/server/src/services/cross-store-recall.ts",
+    "packages/server/src/index.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    "packages/shared/src/i18n/locales/zh-CN.ts",
+    "packages/server/src/services/review.ts"
+  ],
+  "depends_on": ["TASK-003"],
+  "wave": 2,
+  "parallel_group": "F2",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/server/src/services/doctor-related-graph.ts contains 'export async function inspectSuggestedRelatedEdges' and the map uses 'intent_clues' (NOT 'keywords' — grep of the map body for '.keywords' returns nothing)",
+      "inspectSuggestedRelatedEdges (and SuggestedRelatedEdge) is re-exported from packages/server/src/index.ts (the barrel at :125-130 where inspectRelatedGraph is re-exported), importable as '@fenglimg/fabric-server'",
+      "packages/cli/src/store/knowledge-doctor-checks.ts contains 'appendSuggestedRelatedDiagnostics' AND 'related_graph_suggested_edges' AND that arm is invoked from knowledgeDoctorChecks()",
+      "the new translator key 'doctor.store.related-suggested' is registered in BOTH packages/shared/src/i18n/locales/en.ts AND packages/shared/src/i18n/locales/zh-CN.ts (alongside related-broken/related-hub), and fabric-shared dist is rebuilt so the CLI resolves it",
+      "the new diagnostic severity is 'info' and there is NO auto-fix arm — the message text references fabric-review modify (remediation points at the human-gated related write path, NOT a doctor --fix mutation) [advisory-not-gate: KT-DEC-0007 / KT-PIT-0016]",
+      "no code in the recall or archive hot path calls suggestRelatedEdges or writes `related` (writes remain only via review.ts:1882 patch.related) — verified by a node includes full-suffix census showing suggestRelatedEdges is referenced ONLY from doctor-related-graph.ts and knowledge-doctor-checks.ts (not recall.ts / plan-context.ts / extract-knowledge.ts)",
+      "inspectSuggestedRelatedEdges degrades to [] on empty read-set (try/catch, mirrors inspectRelatedGraph), and the advisory arm never changes doctor's exit code",
+      "[advisory-observable] running the doctor store-health path on a corpus with a high-overlap unlinked pair prints a 'related_graph_suggested_edges' info line naming the pair + provenance",
+      "`pnpm -r exec tsc --noEmit` exits 0"
+    ],
+    "verification": "node -e \"const s=require('fs').readFileSync('packages/cli/src/store/knowledge-doctor-checks.ts','utf8'); process.exit(s.includes('appendSuggestedRelatedDiagnostics')&&s.includes('related_graph_suggested_edges')?0:1)\"; node -e \"const en=require('fs').readFileSync('packages/shared/src/i18n/locales/en.ts','utf8'),zh=require('fs').readFileSync('packages/shared/src/i18n/locales/zh-CN.ts','utf8'); process.exit(en.includes('doctor.store.related-suggested')&&zh.includes('doctor.store.related-suggested')?0:1)\"; node -e \"const g=require('fs').readFileSync('packages/server/src/services/recall.ts','utf8')+require('fs').readFileSync('packages/server/src/services/plan-context.ts','utf8'); process.exit(g.includes('suggestRelatedEdges')?1:0)\"; pnpm --filter @fenglimg/fabric-shared build; pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-cli test -- knowledge-doctor",
+    "definition_of_done": "Operators running doctor see an advisory list of high-confidence missing related edges with a reason and a pointer to apply them via fabric-review; no edges are written automatically and no hot path is touched."
+  },
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor-related-graph.ts",
+      "action": "modify",
+      "target": "inspectSuggestedRelatedEdges",
+      "change": "Async wrapper: collectStoreCanonicalEntries → map to RelatedGraphNodeRich (summary, intentClues from description.intent_clues, tags, relevancePaths from relevance_paths, related — NO keywords field exists) → suggestRelatedEdges, bounded top-N (20). Never throws (mirrors inspectRelatedGraph:139)."
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "modify",
+      "target": "barrel re-export (:125-130)",
+      "change": "Add inspectSuggestedRelatedEdges + SuggestedRelatedEdge to the existing `from './services/doctor-related-graph.js'` re-export block so the CLI can import them from @fenglimg/fabric-server (matches inspectRelatedGraph). NOTE: barrel is src/index.ts, NOT src/services/index.ts."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "doctor.store.* catalog",
+      "change": "Add key 'doctor.store.related-suggested' with an English message (params: count, samples, overflow) whose remediation names `fab_review` (modify), mirroring the related-broken style."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "doctor.store.* catalog",
+      "change": "Add the same 'doctor.store.related-suggested' key with a zh-CN message (mirrors related-broken :215), so the locale sets stay parallel."
+    },
+    {
+      "path": "packages/cli/src/store/knowledge-doctor-checks.ts",
+      "action": "modify",
+      "target": "appendSuggestedRelatedDiagnostics + knowledgeDoctorChecks",
+      "change": "New sibling arm to appendRelatedGraphDiagnostics (:44): try/catch inspectSuggestedRelatedEdges, push one info StoreDiagnostic code 'related_graph_suggested_edges' with message t('doctor.store.related-suggested', {...}) listing SAMPLE_LIMIT samples 'src → tgt (conf, provenance)'. Invoke from knowledgeDoctorChecks()."
+    }
+  ],
+  "implementation": [
+    "Add inspectSuggestedRelatedEdges in doctor-related-graph.ts: await collectStoreCanonicalEntries(projectRoot); map each entry to RelatedGraphNodeRich reading description.summary, description.intent_clues (→ intentClues), description.tags, description.relevance_paths (→ relevancePaths), description.related with safe defaults — NOT keywords (RuleDescription has no such field); call suggestRelatedEdges; slice top-N (20). Wrap so it never throws (return [] on failure).",
+    "In packages/server/src/index.ts add inspectSuggestedRelatedEdges + SuggestedRelatedEdge to the existing `from './services/doctor-related-graph.js'` re-export block at :125-130 (the barrel is src/index.ts, NOT src/services/index.ts).",
+    "In packages/shared/src/i18n/locales/en.ts and zh-CN.ts add the 'doctor.store.related-suggested' key (params count/samples/overflow) next to related-broken/related-hub; remediation names `fab_review` (modify). Then `pnpm --filter @fenglimg/fabric-shared build` so the CLI's translator resolves the key.",
+    "In knowledge-doctor-checks.ts add appendSuggestedRelatedDiagnostics(projectRoot, out): try inspectSuggestedRelatedEdges; if empty return; build samples 'source → target (conf=0.xx, [provenance])' up to SAMPLE_LIMIT with overflow copy; push { code:'related_graph_suggested_edges', severity:'info', message: t('doctor.store.related-suggested', {...}) } — use the translator, not an inline string, matching appendRelatedGraphDiagnostics.",
+    "Call appendSuggestedRelatedDiagnostics(projectRoot, diagnostics) inside knowledgeDoctorChecks() next to appendRelatedGraphDiagnostics.",
+    "Run a node includes full-suffix census (include .ts/.cjs/.mjs/scripts/.github/workflows) to CONFIRM suggestRelatedEdges is referenced only from doctor-related-graph.ts + knowledge-doctor-checks.ts and nowhere in recall/archive/hot paths.",
+    "Add a knowledge-doctor test asserting the advisory appears for a high-overlap unlinked pair and is severity 'info'.",
+    "Run `pnpm --filter @fenglimg/fabric-shared build` then `pnpm -r exec tsc --noEmit`."
+  ],
+  "test": {
+    "commands": ["pnpm --filter @fenglimg/fabric-shared build", "pnpm -r exec tsc --noEmit", "pnpm --filter @fenglimg/fabric-cli test -- knowledge-doctor"],
+    "unit": ["packages/cli/__tests__/doctor-checks.test.ts"],
+    "integration": [],
+    "success_metrics": ["advisory info line printed for high-overlap unlinked pair", "doctor.store.related-suggested resolves (not a raw key) in both locales", "no hot-path reference to suggestRelatedEdges (census clean)", "doctor exit code unchanged", "tsc --noEmit exits 0"]
+  },
+  "reference": {
+    "pattern": "Sibling read-only advisory arm (appendRelatedGraphDiagnostics) — server-side pure inspection + CLI diagnostic emit, never a gate, no auto-fix; write path stays the fabric-review modify related-write (review.ts:1882)",
+    "files": [
+      "packages/cli/src/store/knowledge-doctor-checks.ts:44",
+      "packages/server/src/services/doctor-related-graph.ts:139",
+      "packages/server/src/index.ts:125",
+      "packages/shared/src/i18n/locales/en.ts",
+      "packages/shared/src/i18n/locales/zh-CN.ts:215",
+      "packages/server/src/services/review.ts:1882"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Route suggestions through the doctor advisory → fabric-review modify path so edge creation stays human-gated and sparse; this keeps the recall/archive hot paths pure and honors fabric-connect's sparse-over-dense principle. Mirrors the existing broken-link/hub advisory exactly, minimizing surface area.",
+    "decision_factors": [
+      "silent hot-path edge writes would pollute the pure-read path and bypass review (explicitly rejected in plan design decisions)",
+      "the sibling advisory already establishes the non-gate/no-auto-fix contract to copy"
+    ],
+    "tradeoffs": "Suggestions require a manual fabric-review modify to become real edges (no one-click apply); accepted to preserve the human gate. A future wave could add a guided apply through fab_review."
+  },
+  "risks": [
+    "Accidentally importing suggestRelatedEdges into a hot-path module — guarded by the census criterion.",
+    "Barrel is packages/server/src/index.ts (:125-130), NOT src/services/index.ts — re-exporting from the wrong file leaves the CLI import unresolved; covered by the export criterion + tsc gate.",
+    "New translator key must land in BOTH locale files AND fabric-shared dist be rebuilt, or the CLI renders a raw key / missing string — covered by the locale-key criterion + shared build step."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["related auto edge-suggestion"],
+    "affected_components": ["doctor-related-graph", "knowledge-doctor-checks advisory surface", "fabric-server barrel exports (src/index.ts)", "i18n locales (en + zh-CN)"],
+    "affected_requirements": [],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "45m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

@@ -451,6 +451,27 @@ export const fabricConfigSchema = z.object({
   orphan_demote_proven_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_verified_days: z.number().int().min(1).max(3650).optional(),
   orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
+  // PLN-004 F1 (credibility content-age decay): per-knowledge-type half-lives
+  // (days) for the recall-scoring credibility MULTIPLIER. Orthogonal to the
+  // orphan_demote usage-inactivity ladder above (that is last-activity age; this
+  // is content age off created_at) and to recencyBoost (a 7-day additive
+  // freshness bump). Team-curated knowledge decays slower than transient work, so
+  // defaults run longer than upstream: decisions 180 / guidelines 150 / models
+  // 150 / pitfalls 120 / processes 120 (applied in config-loader). Each optional;
+  // absent → the loader default. Range 1..3650 mirrors orphan_demote.
+  credibility_half_life_decisions_days: z.number().int().min(1).max(3650).optional(),
+  credibility_half_life_guidelines_days: z.number().int().min(1).max(3650).optional(),
+  credibility_half_life_models_days: z.number().int().min(1).max(3650).optional(),
+  credibility_half_life_pitfalls_days: z.number().int().min(1).max(3650).optional(),
+  credibility_half_life_processes_days: z.number().int().min(1).max(3650).optional(),
+  // PLN-004 F1: per-maturity floor the credibility multiplier never decays below
+  // (a stale-but-endorsed entry keeps a minimum weight). Higher maturity → higher
+  // floor: draft 0.4 / verified 0.55 / proven 0.7 (config-loader defaults). Range
+  // [0,1]. This is the softened form of the "content leads structural" invariant —
+  // credibility may sink a stale match but never zero it.
+  credibility_floor_draft: z.number().min(0).max(1).optional(),
+  credibility_floor_verified: z.number().min(0).max(1).optional(),
+  credibility_floor_proven: z.number().min(0).max(1).optional(),
   // v2.2 C1 (processes/maturity-promotion-rubric-v1): days a `broad` entry may
   // go without a fab-review re-confirmation before doctor surfaces a RECHECK
   // nudge. `broad` is EXEMPT from usage-age decay (it is SessionStart-pushed,

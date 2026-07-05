@@ -257,6 +257,92 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
   }
 }
 
+// PLN-004 F1 (credibility content-age decay): per-knowledge-type half-lives (days)
+// driving the recall-scoring credibility multiplier. Clones the
+// readOrphanDemoteThresholdDays best-effort per-key validated pattern but returns a
+// FULL record (default-filled) so the multiplier never has to handle undefined.
+// Defaults run longer than upstream because team-curated knowledge ages slower.
+export function readCredibilityHalfLives(
+  projectRoot: string,
+): Record<"decisions" | "guidelines" | "models" | "pitfalls" | "processes", number> {
+  const defaults: Record<"decisions" | "guidelines" | "models" | "pitfalls" | "processes", number> = {
+    decisions: 180,
+    guidelines: 150,
+    models: 150,
+    pitfalls: 120,
+    processes: 120,
+  };
+  try {
+    const cfg = readFabricConfig(projectRoot) as Partial<
+      Record<
+        | "credibility_half_life_decisions_days"
+        | "credibility_half_life_guidelines_days"
+        | "credibility_half_life_models_days"
+        | "credibility_half_life_pitfalls_days"
+        | "credibility_half_life_processes_days",
+        unknown
+      >
+    >;
+    const validate = (v: unknown): number | undefined => {
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 1 || v > 3650 || !Number.isInteger(v)) {
+        return undefined;
+      }
+      return v;
+    };
+    const out = { ...defaults };
+    const dec = validate(cfg.credibility_half_life_decisions_days);
+    if (dec !== undefined) out.decisions = dec;
+    const gui = validate(cfg.credibility_half_life_guidelines_days);
+    if (gui !== undefined) out.guidelines = gui;
+    const mod = validate(cfg.credibility_half_life_models_days);
+    if (mod !== undefined) out.models = mod;
+    const pit = validate(cfg.credibility_half_life_pitfalls_days);
+    if (pit !== undefined) out.pitfalls = pit;
+    const pro = validate(cfg.credibility_half_life_processes_days);
+    if (pro !== undefined) out.processes = pro;
+    return out;
+  } catch {
+    return { ...defaults };
+  }
+}
+
+// PLN-004 F1: per-maturity floor the credibility multiplier never decays below.
+// Full record (default-filled), same best-effort validation shape. Higher maturity
+// → higher floor so endorsed-but-stale knowledge retains a minimum weight.
+export function readCredibilityFloors(
+  projectRoot: string,
+): Record<"draft" | "verified" | "proven", number> {
+  const defaults: Record<"draft" | "verified" | "proven", number> = {
+    draft: 0.4,
+    verified: 0.55,
+    proven: 0.7,
+  };
+  try {
+    const cfg = readFabricConfig(projectRoot) as Partial<
+      Record<
+        "credibility_floor_draft" | "credibility_floor_verified" | "credibility_floor_proven",
+        unknown
+      >
+    >;
+    const validate = (v: unknown): number | undefined => {
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
+        return undefined;
+      }
+      return v;
+    };
+    const out = { ...defaults };
+    const draft = validate(cfg.credibility_floor_draft);
+    if (draft !== undefined) out.draft = draft;
+    const verified = validate(cfg.credibility_floor_verified);
+    if (verified !== undefined) out.verified = verified;
+    const proven = validate(cfg.credibility_floor_proven);
+    if (proven !== undefined) out.proven = proven;
+    return out;
+  } catch {
+    return { ...defaults };
+  }
+}
+
 // v2.1 ④ conflict-detection (P4): bm25 similarity floor for the knowledge-
 // conflict lint. Reads `.fabric/fabric-config.json` (the schema-described,
 // hook-facing config file) — NOT the root `fabric.config.json` that

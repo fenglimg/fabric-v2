@@ -1,0 +1,104 @@
+{
+  "id": "TASK-003",
+  "title": "suggestRelatedEdges pure function (token Jaccard + tag overlap + shared paths, confidence >= 0.6)",
+  "description": "Add a pure, I/O-free `suggestRelatedEdges(nodes)` beside buildRelatedGraph in doctor-related-graph.ts that PROPOSES related edges the corpus is missing. Judgment uses existing RuleDescription fields (agents.ts:5-39 — note there is NO `keywords` field): tokenize() (CJK-friendly) over summary + intent_clues for Jaccard, tag-set intersection (`tags?` — a SEPARATE overlap signal, not folded into the token set), and shared relevance_paths. Only pairs scoring confidence >= 0.6 are proposed; each carries a provenance marker naming which signal(s) fired. No writes, no advisory wiring here — that is TASK-004.",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "In packages/server/src/services/doctor-related-graph.ts add an exported interface `SuggestedRelatedEdge { source: string; target: string; confidence: number; provenance: string[] }` and an exported pure `function suggestRelatedEdges(nodes: RelatedGraphNodeRich[]): SuggestedRelatedEdge[]`. Extend the node input to carry the fields needed (a new `RelatedGraphNodeRich` with qualifiedId, summary, intentClues[] (from RuleDescription.intent_clues — RuleDescription has NO `keywords` field, agents.ts:5-39), tags[], relevancePaths[], existing related[]). For every unordered pair not already connected via existing `related`, compute: jaccard = |A∩B|/|A∪B| over tokenize(summary+' '+intentClues.join(' ')) term sets; tagOverlap = |tagsA∩tagsB|>0 (tags kept as an INDEPENDENT signal, not merged into the token set); pathOverlap = |pathsA∩pathsB|>0. confidence = weighted combine (jaccard dominant, +bonus for tag/path overlap), clamp [0,1]. Push {source,target,confidence,provenance} only when confidence >= 0.6, provenance lists 'token-jaccard'/'tag-overlap'/'shared-path' for each firing signal. Deterministic ordering (confidence desc, then source,target). Import tokenize from @fenglimg/fabric-shared.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/server/src/services/doctor-related-graph.ts",
+  "focus_paths": ["packages/server/src/services/doctor-related-graph.ts"],
+  "read_first": [
+    "packages/server/src/services/doctor-related-graph.ts",
+    "packages/shared/src/types/agents.ts",
+    "packages/server/src/services/cross-store-recall.ts",
+    "packages/shared/src/text-tokenize.ts"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "F2",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/server/src/services/doctor-related-graph.ts contains 'export function suggestRelatedEdges' and 'export interface SuggestedRelatedEdge'",
+      "suggestRelatedEdges imports tokenize from '@fenglimg/fabric-shared' (uses the CJK-aware tokenizer, not an ad-hoc split)",
+      "the token source is summary + intent_clues; RelatedGraphNodeRich uses `intentClues` and the file contains NO reference to a `keywords` description field (RuleDescription has none — guard against the tsc failure): grep of doctor-related-graph.ts for '.keywords' returns nothing",
+      "tags are used as an INDEPENDENT tag-overlap signal (not concatenated into the tokenize() input)",
+      "the function is PURE — no import of collectStoreCanonicalEntries / fs / disk inside suggestRelatedEdges (grep shows no fs or collectStore call in the function body)",
+      "a pair already connected via existing `related` is NEVER re-proposed (self-and-existing-edge exclusion, unit-tested)",
+      "only pairs with confidence >= 0.6 are returned; every returned edge has a non-empty provenance[] naming the firing signal(s)",
+      "returned edges are deterministically ordered (confidence desc, then source, then target) — same input yields same output",
+      "a unit test with hand-built fixtures asserts: high-token-overlap pair proposed, unrelated pair not proposed, existing-edge pair excluded",
+      "`pnpm -r exec tsc --noEmit` exits 0"
+    ],
+    "verification": "node -e \"const s=require('fs').readFileSync('packages/server/src/services/doctor-related-graph.ts','utf8'); process.exit(s.includes('export function suggestRelatedEdges')&&s.includes('SuggestedRelatedEdge')&&!/suggestRelatedEdges[\\s\\S]*?collectStoreCanonicalEntries/.test(s.slice(s.indexOf('function suggestRelatedEdges'), s.indexOf('function suggestRelatedEdges')+2000))?0:1)\"; pnpm -r exec tsc --noEmit; pnpm --filter @fenglimg/fabric-server test -- doctor-related-graph",
+    "definition_of_done": "Given a set of KB nodes, the system can compute which missing related edges are worth proposing (with a confidence and a why), as a deterministic pure function ready to be surfaced as an advisory."
+  },
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor-related-graph.ts",
+      "action": "modify",
+      "target": "SuggestedRelatedEdge + RelatedGraphNodeRich + suggestRelatedEdges (beside buildRelatedGraph:70)",
+      "change": "Add the interface + rich node type + pure suggestRelatedEdges. Pairwise Jaccard over tokenize(summary+intent_clues) + tag intersection (independent signal) + shared relevance_paths; confidence >= 0.6 gate; provenance per firing signal; deterministic order. tokenize imported from @fenglimg/fabric-shared. RelatedGraphNodeRich uses intentClues[] (RuleDescription.intent_clues) — NOT keywords (no such field)."
+    }
+  ],
+  "implementation": [
+    "Read RuleDescription (agents.ts:5-39) to confirm the real text fields — summary (required), intent_clues[], tech_stack[], impact[], must_read_if, tags?[] — there is NO `keywords` field, so the token source is summary + intent_clues.",
+    "Read buildRelatedGraph (:70) and RelatedGraphNode (:49) to match the module's pure-function style; read StoreCanonicalEntry (cross-store-recall.ts:491) to see which description fields (summary, intent_clues, tags, relevance_paths, related) are available for TASK-004 to map in.",
+    "Read tokenize (text-tokenize.ts:64) to confirm the term-array contract (duplicates included → dedupe to a Set for Jaccard).",
+    "Define SuggestedRelatedEdge { source, target, confidence, provenance } and RelatedGraphNodeRich { qualifiedId, summary, intentClues, tags, relevancePaths, related }.",
+    "Build a Set of existing edges (both directions) from each node's related[] so connected pairs are skipped.",
+    "For each unordered pair: compute token Sets via tokenize(summary+' '+intentClues.join(' ')), Jaccard = intersection/union; tagOverlap (tags intersect — independent of the token set) and pathOverlap booleans; confidence = jaccard plus small additive bonuses for tag/path overlap, clamped to [0,1].",
+    "Collect provenance: push 'token-jaccard' when jaccard>0 contributes, 'tag-overlap' when tags intersect, 'shared-path' when paths intersect.",
+    "Filter confidence >= 0.6; sort confidence desc then source then target; return.",
+    "Add a unit test (doctor-related-graph test) with fixtures covering proposed / not-proposed / already-connected cases.",
+    "Run `pnpm -r exec tsc --noEmit`."
+  ],
+  "test": {
+    "commands": ["pnpm -r exec tsc --noEmit", "pnpm --filter @fenglimg/fabric-server test -- doctor-related-graph"],
+    "unit": ["packages/server/src/services/doctor-related-graph.test.ts"],
+    "integration": [],
+    "success_metrics": ["high-overlap pair proposed with provenance", "unrelated pair excluded", "existing-edge pair excluded", "deterministic output", "tsc --noEmit exits 0"]
+  },
+  "reference": {
+    "pattern": "Pure factory-free graph helper beside buildRelatedGraph, unit-testable with hand-built fixtures; CJK-aware tokenize for text overlap",
+    "files": [
+      "packages/server/src/services/doctor-related-graph.ts:70",
+      "packages/shared/src/types/agents.ts:5",
+      "packages/server/src/services/cross-store-recall.ts:491",
+      "packages/shared/src/text-tokenize.ts:64"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "A pure function mirrors the existing buildRelatedGraph design (I/O separated from logic), so the edge-suggestion heuristic is unit-testable and free of read-set coupling. Reusing tokenize keeps CJK behavior consistent with recall.",
+    "decision_factors": [
+      "purity enables fixture-based tests without a store",
+      "reusing tokenize/tag/path primitives avoids a new similarity stack",
+      "confidence + provenance give the human reviewer an auditable why"
+    ],
+    "tradeoffs": "Jaccard over summary+intent_clues is a lexical proxy for relatedness (no embeddings); acceptable because the output is advisory and human-gated, and the 0.6 floor keeps proposals sparse."
+  },
+  "risks": [
+    "O(n^2) over the corpus — bounded because it runs only in doctor (not hot path); if corpus is large, the caller in TASK-004 can cap candidates. Note this for TASK-004."
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": ["related auto edge-suggestion"],
+    "affected_components": ["doctor-related-graph"],
+    "affected_requirements": [],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "45m",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

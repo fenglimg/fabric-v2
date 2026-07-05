@@ -91,6 +91,10 @@ export interface RecallScoreBreakdown {
   // summed component here or `final` silently desyncs from the ranking score for
   // every multi-term-query candidate (the omission this field closes).
   proximity: number;
+  // PLN-004 F1 credibility content-age decay MULTIPLIER factor emitted by
+  // scoreBreakdownForItem. Optional/additive — TASK-002 sets it once the
+  // multiplier is wired; a candidate scored before the wiring omits it.
+  credibility?: number;
 }
 
 export interface AgentsMetaNode {
