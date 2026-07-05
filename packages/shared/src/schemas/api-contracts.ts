@@ -43,8 +43,14 @@ const _maturityEnum = z.enum(["draft", "verified", "proven"]);
 const _ruleDescriptionSchema = z.object({
   summary: z.string(),
   intent_clues: z.array(z.string()),
-  tech_stack: z.array(z.string()),
-  impact: z.array(z.string()),
+  // wire-slim (payload): fab_recall projects a LEAN description (summary +
+  // must_read_if + intent_clues + knowledge_type — the selection signal), leaving
+  // tech_stack/impact to be Read on demand via read_path (KT-DEC-0026 lean
+  // contract at the field level). So they are optional on the wire. plan-context
+  // still returns them in full — zod keeps optional-present values, only ABSENT is
+  // now allowed, so no plan-context consumer regresses.
+  tech_stack: z.array(z.string()).optional(),
+  impact: z.array(z.string()).optional(),
   must_read_if: z.string(),
   // v2.0: optional knowledge-entry fields. Absent for v1.x rules; present for
   // entries that declare frontmatter `id/type/maturity`. W4/Track1: the redundant

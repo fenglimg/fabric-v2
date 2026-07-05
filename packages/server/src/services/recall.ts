@@ -46,12 +46,28 @@ export type RecallPath = {
   store?: { alias: string };
 };
 
+// wire-slim (payload): the MCP recall entry carries ONLY the fields the agent
+// needs to SELECT which bodies to Read — summary (headline) + must_read_if
+// (trigger) + intent_clues (when-to-fire) + knowledge_type (category). The
+// verbose/engine-only fields (tech_stack, impact, tags, relevance_paths, related,
+// created_at, maturity, semantic_scope, relevance_scope, id) are reachable on
+// demand via read_path — KT-DEC-0026's lean contract applied at the description
+// FIELD level. Internal consumers (related graph, doctor lints, ranking) read
+// planResult.candidates / the raw store, never this projected wire shape, so the
+// slim is wire-only. Isolated as its own type here to avoid rippling RuleDescription.
+type FullRuleDescription = PlanContextResult["candidates"][number]["description"];
+export type RecallEntryDescription = Pick<
+  FullRuleDescription,
+  "summary" | "must_read_if" | "intent_clues"
+> &
+  Partial<Pick<FullRuleDescription, "knowledge_type">>;
+
 // ux-w2-4: one unified entry folds the former candidates[] (description) ×
 // paths[] (read path) join into a single self-contained item.
 export type RecallEntry = {
   stable_id: string;
   rank: number;
-  description: PlanContextResult["candidates"][number]["description"];
+  description: RecallEntryDescription;
   read_path?: string;
   store?: { alias: string };
   body_in_context?: boolean;
@@ -191,7 +207,7 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     return {
       stable_id: c.stable_id,
       rank: index + 1,
-      description: c.description,
+      description: slimDescription(c.description),
       ...(readPath ? { read_path: readPath.path } : {}),
       ...(readPath?.store ? { store: readPath.store } : {}),
       ...(isAlwaysActive(c) ? { body_in_context: true as const } : {}),
@@ -221,6 +237,19 @@ const ALWAYS_ACTIVE_TYPES = new Set(["models", "guidelines"]);
 function isAlwaysActive(candidate: { description: { relevance_scope?: string; knowledge_type?: string } }): boolean {
   const { relevance_scope, knowledge_type } = candidate.description;
   return (relevance_scope ?? "broad") !== "narrow" && ALWAYS_ACTIVE_TYPES.has(knowledge_type ?? "");
+}
+
+// wire-slim projection (payload): keep ONLY the selection-signal fields, leaving
+// the rest to on-demand Read via read_path (KT-DEC-0026). intent_clues is ALWAYS
+// emitted (even empty) — it is a required schema field and the primary when-to-fire
+// signal; knowledge_type is optional so it is emitted only when present.
+function slimDescription(d: FullRuleDescription): RecallEntryDescription {
+  return {
+    summary: d.summary,
+    must_read_if: d.must_read_if,
+    intent_clues: d.intent_clues,
+    ...(d.knowledge_type !== undefined ? { knowledge_type: d.knowledge_type } : {}),
+  };
 }
 
 // W1 (KT-DEC-0026): discovery-layer next-step hints. No body-tier hint anymore

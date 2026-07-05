@@ -216,6 +216,32 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(parsedEntry?.score_breakdown?.proximity).toBe(entry?.score_breakdown?.proximity);
   });
 
+  // wire-slim (payload) guard: recall projects a LEAN description (selection signal
+  // only). The seed's KT-DEC-0001 carries tech_stack — so `not.toHaveProperty` is a
+  // red-before/green-after check that the verbose fields left the wire. The agent
+  // Reads read_path for the full frontmatter when it actually needs those.
+  it("wire-slim: entry.description keeps selection signal, drops verbose fields on the wire", async () => {
+    const projectRoot = await seedTwoEntryProject();
+    const result = await recall(projectRoot, { paths: ["src/index.ts"], intent: "auth ui" });
+
+    expect(result.entries.length).toBeGreaterThan(0);
+    for (const entry of result.entries) {
+      const desc = entry.description as Record<string, unknown>;
+      // KEEP — the fields the agent selects on.
+      expect(desc).toHaveProperty("summary");
+      expect(desc).toHaveProperty("must_read_if");
+      expect(desc).toHaveProperty("intent_clues");
+      // DROPPED — reachable on demand via read_path, never on the wire.
+      for (const gone of ["tech_stack", "impact", "relevance_paths", "tags", "related", "created_at", "maturity"]) {
+        expect(desc).not.toHaveProperty(gone);
+      }
+    }
+
+    // The lean shape survives the recallOutputSchema round-trip (optional-absent OK).
+    const parsed = recallOutputSchema.parse(result);
+    expect((parsed.entries[0].description as Record<string, unknown>)).not.toHaveProperty("tech_stack");
+  });
+
   // P1 recall-engine-refactor (TASK-002) — lean read_path contract (KT-GLD-0005 /
   // KT-DEC-0019): the default entry carries the discovery INDEX (description +
   // score) + a read_path, but NOT the entry's markdown BODY. The body ("# Auth
