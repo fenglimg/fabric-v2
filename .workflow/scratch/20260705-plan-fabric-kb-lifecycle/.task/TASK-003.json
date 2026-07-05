@@ -8,11 +8,13 @@
   "priority": "medium",
   "effort": "medium",
   "action": "In packages/server/src/services/doctor-related-graph.ts add an exported interface `SuggestedRelatedEdge { source: string; target: string; confidence: number; provenance: string[] }` and an exported pure `function suggestRelatedEdges(nodes: RelatedGraphNodeRich[]): SuggestedRelatedEdge[]`. Extend the node input to carry the fields needed (a new `RelatedGraphNodeRich` with qualifiedId, summary, intentClues[] (from RuleDescription.intent_clues — RuleDescription has NO `keywords` field, agents.ts:5-39), tags[], relevancePaths[], existing related[]). For every unordered pair not already connected via existing `related`, compute: jaccard = |A∩B|/|A∪B| over tokenize(summary+' '+intentClues.join(' ')) term sets; tagOverlap = |tagsA∩tagsB|>0 (tags kept as an INDEPENDENT signal, not merged into the token set); pathOverlap = |pathsA∩pathsB|>0. confidence = weighted combine (jaccard dominant, +bonus for tag/path overlap), clamp [0,1]. Push {source,target,confidence,provenance} only when confidence >= 0.6, provenance lists 'token-jaccard'/'tag-overlap'/'shared-path' for each firing signal. Deterministic ordering (confidence desc, then source,target). Import tokenize from @fenglimg/fabric-shared.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-07-05T08:43:02.791Z",
   "actual_duration": null,
   "scope": "packages/server/src/services/doctor-related-graph.ts",
-  "focus_paths": ["packages/server/src/services/doctor-related-graph.ts"],
+  "focus_paths": [
+    "packages/server/src/services/doctor-related-graph.ts"
+  ],
   "read_first": [
     "packages/server/src/services/doctor-related-graph.ts",
     "packages/shared/src/types/agents.ts",
@@ -61,10 +63,21 @@
     "Run `pnpm -r exec tsc --noEmit`."
   ],
   "test": {
-    "commands": ["pnpm -r exec tsc --noEmit", "pnpm --filter @fenglimg/fabric-server test -- doctor-related-graph"],
-    "unit": ["packages/server/src/services/doctor-related-graph.test.ts"],
+    "commands": [
+      "pnpm -r exec tsc --noEmit",
+      "pnpm --filter @fenglimg/fabric-server test -- doctor-related-graph"
+    ],
+    "unit": [
+      "packages/server/src/services/doctor-related-graph.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["high-overlap pair proposed with provenance", "unrelated pair excluded", "existing-edge pair excluded", "deterministic output", "tsc --noEmit exits 0"]
+    "success_metrics": [
+      "high-overlap pair proposed with provenance",
+      "unrelated pair excluded",
+      "existing-edge pair excluded",
+      "deterministic output",
+      "tsc --noEmit exits 0"
+    ]
   },
   "reference": {
     "pattern": "Pure factory-free graph helper beside buildRelatedGraph, unit-testable with hand-built fixtures; CJK-aware tokenize for text overlap",
@@ -90,8 +103,12 @@
   ],
   "code_skeleton": null,
   "doc_context": {
-    "affected_features": ["related auto edge-suggestion"],
-    "affected_components": ["doctor-related-graph"],
+    "affected_features": [
+      "related auto edge-suggestion"
+    ],
+    "affected_components": [
+      "doctor-related-graph"
+    ],
     "affected_requirements": [],
     "adr_ids": []
   },
