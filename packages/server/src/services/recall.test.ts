@@ -216,6 +216,62 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(parsedEntry?.score_breakdown?.proximity).toBe(entry?.score_breakdown?.proximity);
   });
 
+  // PLN-004 F1 credibility content-age decay: an older entry ranks below an
+  // otherwise-identical fresher one, and the final===score parity survives the
+  // multiplier being applied to BOTH the ranking score and its breakdown.
+  it("down-weights a content-stale entry below an identical fresh entry, preserving final===score", async () => {
+    const projectRoot = await createTempProject();
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    // Both >7d old (no recencyBoost confound) and <238d old (a decisions/draft entry
+    // only hits the 0.4 floor past ~238d), so the credibility factor is strictly
+    // monotonic in age. Computed relative to Date.now() so the test is run-time-stable.
+    const freshDate = new Date(now - 14 * DAY).toISOString();
+    const staleDate = new Date(now - 70 * DAY).toISOString();
+    const entryLines = (id: string, createdAt: string): string[] => [
+      "---",
+      `id: ${id}`,
+      "type: decision",
+      "layer: team",
+      "maturity: draft",
+      `created_at: ${createdAt}`,
+      "intent_clues: [caching]",
+      "summary: Caching layer decision",
+      "---",
+      "# Caching body",
+      "",
+    ];
+    await writeStoreEntry("decisions", "KT-DEC-9001", entryLines("KT-DEC-9001", staleDate));
+    await writeStoreEntry("decisions", "KT-DEC-9002", entryLines("KT-DEC-9002", freshDate));
+    mountStores();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "caching",
+      session_id: "session-credibility-age",
+    });
+
+    const stale = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-9001"));
+    const fresh = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-9002"));
+    expect(stale).toBeDefined();
+    expect(fresh).toBeDefined();
+
+    // Identical content/structural → the credibility multiplier is the ONLY
+    // differentiator, so the fresher entry ranks strictly higher and its factor is
+    // strictly larger (and still < 1, i.e. it actually decayed).
+    const staleScore = stale?.score ?? 0;
+    const freshScore = fresh?.score ?? 0;
+    const staleCred = stale?.score_breakdown?.credibility ?? 1;
+    const freshCred = fresh?.score_breakdown?.credibility ?? 1;
+    expect(freshScore).toBeGreaterThan(staleScore);
+    expect(freshCred).toBeGreaterThan(staleCred);
+    expect(freshCred).toBeLessThan(1);
+    // KT-PIT-0036 class invariant: final still equals the ranking score after the
+    // multiplier is mirrored into the breakdown.
+    expect(stale?.score_breakdown?.final).toBe(stale?.score);
+    expect(fresh?.score_breakdown?.final).toBe(fresh?.score);
+  });
+
   // wire-slim (payload) guard: recall projects a LEAN description (selection signal
   // only). The seed's KT-DEC-0001 carries tech_stack — so `not.toHaveProperty` is a
   // red-before/green-after check that the verbose fields left the wire. The agent

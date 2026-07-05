@@ -8,11 +8,13 @@
   "priority": "high",
   "effort": "medium",
   "action": "In packages/server/src/services/plan-context.ts add `function credibilityFactor(item: RuleDescriptionIndexItem, context: ScoringContext): number` — parse item.description.created_at, compute ageDays = (context.nowMs - createdMs)/86400000, look up halfLife by item.description.knowledge_type (via context-resolved readCredibilityHalfLives), factor = 2^(-ageDays/halfLife), then floor = readCredibilityFloors[maturity], return Math.max(floor, Math.min(1, factor)); missing/unparseable created_at → return 1 (no penalty). At :1528 change `return content + structuralScaleFor(context)*structural + proximity;` to `return (content + structuralScaleFor(context)*structural + proximity) * credibilityFactor(item, context);`. At :1585 change `const final = bm25 + vector + salience + recency + locality + proximity;` to multiply the same subtotal by credibilityFactor and add `credibility` to the returned RecallScoreBreakdown. Thread the half-life/floor maps onto ScoringContext (resolved once at the planContext entry, not per-item disk reads). Run `pnpm -r exec tsc --noEmit`.",
-  "status": "pending",
-  "completed_at": null,
+  "status": "completed",
+  "completed_at": "2026-07-05T08:38:44.677Z",
   "actual_duration": null,
   "scope": "packages/server/src/services/plan-context.ts",
-  "focus_paths": ["packages/server/src/services/plan-context.ts"],
+  "focus_paths": [
+    "packages/server/src/services/plan-context.ts"
+  ],
   "read_first": [
     "packages/server/src/services/plan-context.ts",
     "packages/server/src/config-loader.ts",
@@ -20,7 +22,9 @@
     "packages/shared/src/types/agents.ts",
     "packages/server/src/services/recall.test.ts"
   ],
-  "depends_on": ["TASK-001"],
+  "depends_on": [
+    "TASK-001"
+  ],
   "wave": 2,
   "parallel_group": "F1",
   "execution_group": null,
@@ -59,10 +63,19 @@
     "Run `pnpm -r exec tsc --noEmit` and `pnpm --filter @fenglimg/fabric-server test -- recall`."
   ],
   "test": {
-    "commands": ["pnpm -r exec tsc --noEmit", "pnpm --filter @fenglimg/fabric-server test -- recall"],
-    "unit": ["packages/server/src/services/recall.test.ts"],
+    "commands": [
+      "pnpm -r exec tsc --noEmit",
+      "pnpm --filter @fenglimg/fabric-server test -- recall"
+    ],
+    "unit": [
+      "packages/server/src/services/recall.test.ts"
+    ],
     "integration": [],
-    "success_metrics": ["recall.test.ts final===score parity holds for a credibility-carrying entry (:210/:528 assertions)", "content-stale entry scores strictly below an otherwise-identical fresh entry", "tsc --noEmit exits 0"]
+    "success_metrics": [
+      "recall.test.ts final===score parity holds for a credibility-carrying entry (:210/:528 assertions)",
+      "content-stale entry scores strictly below an otherwise-identical fresh entry",
+      "tsc --noEmit exits 0"
+    ]
   },
   "reference": {
     "pattern": "maestro-flow scoring.ts:270 `score *= credibilityFactor`; existing final===score mirror discipline between scoreDescriptionItem and scoreBreakdownForItem",
@@ -89,8 +102,13 @@
   ],
   "code_skeleton": null,
   "doc_context": {
-    "affected_features": ["credibility content-age decay multiplier"],
-    "affected_components": ["plan-context recall scoring", "ScoringContext"],
+    "affected_features": [
+      "credibility content-age decay multiplier"
+    ],
+    "affected_components": [
+      "plan-context recall scoring",
+      "ScoringContext"
+    ],
     "affected_requirements": [],
     "adr_ids": []
   },

@@ -14,7 +14,7 @@ import {
   type PayloadGuardOptions,
 } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readEmbedConfig, readDefaultLayerFilter, readFusion } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readEmbedConfig, readDefaultLayerFilter, readFusion, readCredibilityHalfLives, readCredibilityFloors } from "../config-loader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
@@ -88,6 +88,13 @@ export type ScoringContext = {
   // <= 0 (zero-match exclusion). Undefined → additive path / no-query.
   bm25Ranks?: Map<string, number>;
   vectorRanks?: Map<string, number>;
+  // PLN-004 F1 credibility content-age decay: per-knowledge-type half-lives (days)
+  // and per-maturity floors, resolved ONCE per planContext call (buildScoringContext)
+  // and threaded here so credibilityFactor stays allocation-free on the per-candidate
+  // hot path. Optional: the single production construction site sets them; a bespoke
+  // test ScoringContext that omits them makes the factor a 1.0 no-op.
+  credibilityHalfLives?: Record<"decisions" | "guidelines" | "models" | "pitfalls" | "processes", number>;
+  credibilityFloors?: Record<"draft" | "verified" | "proven", number>;
 };
 
 export type PlanContextInput = {
@@ -980,6 +987,10 @@ export async function buildScoringContext(
     nowMs: Date.now(),
     targetPaths: opts.targetPaths,
     queryTerms: buildQueryTerms(opts.queryText),
+    // PLN-004 F1: resolve the credibility half-lives + floors ONCE here (never per
+    // candidate) so credibilityFactor is a pure lookup on the ranking hot path.
+    credibilityHalfLives: readCredibilityHalfLives(projectRoot),
+    credibilityFloors: readCredibilityFloors(projectRoot),
   };
 
   // ISS-007: flatten each candidate's selection text ONCE here, then reuse the
@@ -1512,6 +1523,35 @@ function structuralScaleFor(context: ScoringContext): number {
   return context.fusion === "rrf" && context.queryTerms.length > 0 ? RRF_STRUCTURAL_SCALE : 1;
 }
 
+// PLN-004 F1: content-age credibility MULTIPLIER. Exponential decay off created_at
+// with a per-knowledge-type half-life, clamped UP by a per-maturity floor so a
+// stale-but-endorsed entry keeps a minimum weight and a literal match is never
+// zeroed. ORTHOGONAL to recencyBoost (a 7-day ADDITIVE freshness bump on the same
+// created_at) and to the orphan_demote usage-inactivity ladder (last-activity age):
+// this is a continuous full-age-axis MULTIPLICATIVE content-age decay, so composing
+// it with those never double-penalizes. Missing/unparseable created_at → 1 (no
+// penalty). created_at is the available age driver — content_hash-driven
+// content_changed_at is deferred (no persistence layer). The half-life/floor maps are
+// resolved once in buildScoringContext; absent only in bespoke test contexts, where
+// the factor is a 1.0 no-op.
+function credibilityFactor(item: RuleDescriptionIndexItem, context: ScoringContext): number {
+  const halfLives = context.credibilityHalfLives;
+  const floors = context.credibilityFloors;
+  if (halfLives === undefined || floors === undefined) return 1;
+  const createdAtRaw = item.description?.created_at;
+  if (typeof createdAtRaw !== "string" || createdAtRaw.length === 0) return 1;
+  const createdMs = Date.parse(createdAtRaw);
+  if (!Number.isFinite(createdMs)) return 1;
+  const ageDays = (context.nowMs - createdMs) / (24 * 60 * 60 * 1000);
+  if (ageDays <= 0) return 1;
+  const type = item.description?.knowledge_type;
+  const halfLife = type !== undefined ? halfLives[type] : halfLives.decisions;
+  const factor = Math.pow(2, -ageDays / halfLife);
+  const maturity = item.description?.maturity;
+  const floor = maturity !== undefined ? floors[maturity] : floors.draft;
+  return Math.max(floor, Math.min(1, factor));
+}
+
 function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
   // P1 recall-engine-refactor (TASK-003 + RRF re-scale follow-up): content channels
   // (additive OR RRF) + a structural boost. The structural group (salience maturity
@@ -1525,7 +1565,12 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
   // close together in the candidate text gets a small boost (≤15% of content score).
   // Window = 6 tokens; only when query has ≥2 terms and content score > 0.
   const proximity = proximityBoost(item, context, content);
-  return content + structuralScaleFor(context) * structural + proximity;
+  // PLN-004 F1: multiply the fused additive score by the content-age credibility
+  // factor (mirrors maestro-flow scoring.ts `score *= credibilityFactor`). Applied to
+  // the WHOLE fused return so a stale entry sinks even on a literal match, floored per
+  // maturity so it is never zeroed. MUST be mirrored EXACTLY in scoreBreakdownForItem
+  // or `final` desyncs from this ranking score (KT-PIT-0036 class invariant).
+  return (content + structuralScaleFor(context) * structural + proximity) * credibilityFactor(item, context);
 }
 
 // P1 recall-observability: numbers-only decomposition of scoreDescriptionItem's
@@ -1582,7 +1627,13 @@ function scoreBreakdownForItem(
   // above assert. Mirror it here — same helper, same content arg, unscaled.
   const proximity = proximityBoost(item, context, bm25 + vector);
 
-  const final = bm25 + vector + salience + recency + locality + proximity;
+  // PLN-004 F1: mirror scoreDescriptionItem's credibility multiplier EXACTLY — the
+  // same helper multiplies the same subtotal, so `final` stays === the ranking score
+  // (the final===score invariant, guarded by recall.test.ts :210/:528). `credibility`
+  // is the multiplier itself (a distinct factor, NOT an additive component): the
+  // additive components sum to the subtotal, and subtotal * credibility === final.
+  const credibility = credibilityFactor(item, context);
+  const final = (bm25 + vector + salience + recency + locality + proximity) * credibility;
   return {
     final,
     ...(bm25 !== 0 ? { bm25 } : {}),
@@ -1593,6 +1644,7 @@ function scoreBreakdownForItem(
     recency,
     locality,
     proximity,
+    credibility,
   };
 }
 
