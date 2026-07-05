@@ -36,7 +36,7 @@ This document defines the manual release path for Fabric. The workflow is intent
    Create and push an annotated tag in the `v<version>` format from the exact commit you want to release. The tag push is the trigger for `.github/workflows/release.yml`; no manual publish dispatch is required.
 
    ```bash
-   VERSION=1.5.2
+   VERSION=2.3.0
    git tag -a "v${VERSION}" -m "Fabric v${VERSION}"
    git push origin "v${VERSION}"
    ```

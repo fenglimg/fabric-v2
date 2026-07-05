@@ -4,36 +4,22 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 
-**English** | [简体中文](./README.zh-CN.md)
+> **第一次来?** 先看 [`docs/USER-QUICKSTART.md`](./docs/USER-QUICKSTART.md)(5 分钟）——心智模型、四步循环、上手前 30 分钟的排错。
 
-> **New here?** Start with [`docs/USER-QUICKSTART.md`](./docs/USER-QUICKSTART.md) (5 min) — mental model, the 4-step flow, and first-30-min troubleshooting.
+> Fabric —— 面向 AI Coding Agent 的跨客户端知识 sustainment 层。
 
-> Fabric — cross-client knowledge sustainment for AI coding agents.
+## 从 AGENTS.md 到一个知识闭环
 
-## From AGENTS.md to a knowledge loop
+AI Coding Agent 很强，但它不会“记住”。每开一次新会话，它都要重新理解一遍代码库，重新争论一遍同样的决策。那些你真正希望它记住的东西——为什么选 Postgres 不选 Mongo、上季度坑过我们的认证 bug、CI 里会挂的那个部署步骤——散落在 Slack、PR 评论，以及在 `CLAUDE.md` 和 Codex 配置之间各自漂移的 `AGENTS.md` 里。
 
-AI coding agents are strong, but they don't *remember*. Every new session
-re-learns the codebase from scratch and re-argues the same decisions. The things
-you actually want them to keep — why we picked Postgres over Mongo, the auth bug
-that bit us last quarter, the deploy step that breaks in CI — end up scattered
-across Slack threads, PR comments, and `AGENTS.md` files that drift between
-`CLAUDE.md` and Codex configs.
+`AGENTS.md` 是一个很好的起点：它告诉 Agent **该读什么**。但它没有解决**知识如何被持续沉淀、审核、治理和复用**。规则文件是静态的，会在不同客户端之间分叉，而且没有生命周期——一条记录是一次性的，还是已被反复验证的稳定规则？它过期了吗？该提升、降级，还是归档？
 
-`AGENTS.md` is a great starting point: it tells an agent *what to read*. But it
-doesn't solve *how knowledge is captured, reviewed, governed, and reused* over
-time. A rule file is static, drifts across clients, and has no lifecycle — is a
-note a one-off, or a proven rule? Is it stale? Should it be promoted, demoted,
-or archived?
-
-Fabric is the layer that closes that loop. It is **one MCP-first knowledge layer
-every supported client reads and writes through**, plus a hook-driven reminder
-layer so the knowledge actually fires when it matters — without polluting agent
-context.
+Fabric 就是补上这段闭环的那一层。它是**一个 MCP-first 的知识层，所有受支持的客户端都通过它读写**，外加一个 hook 驱动的提醒层，让知识在该出现的时候真的出现——而不污染 Agent 的上下文。
 
 ```text
                 ┌───────────────────────────────┐
                 │   fabric-knowledge-server     │
-                │   (MCP · 5 tools · stdio)     │
+                │   (MCP · 5 个工具 · stdio)    │
                 └───────────────┬───────────────┘
         ┌───────────────────────┴───────────────────────┐
         ▼                                                ▼
@@ -46,275 +32,201 @@ context.
               │    knowledge/{decisions, pitfalls,    │
               │      guidelines, models, processes}   │
               │    + pending/   + events / metrics    │
-              │  mounted globally, bound per repo     │
-              │  <repo>/.fabric = policy + config     │
+              │  全局挂载、按 repo 绑定               │
+              │  <repo>/.fabric = 仅策略 + 配置       │
               └──────────────────────────────────────┘
 ```
 
-## What you borrow, what you skip
+## 借什么，舍什么
 
-Fabric shares genes with the Tencent AI-team methodology writeup that helped name
-this problem space, and keeps the parts that compound:
+Fabric 与腾讯 AI 团队那篇方法论文章同源（那篇文章帮忙命名了这个问题域），保留了能产生复利的内核：
 
-- **Typed knowledge** — five types: `decisions`, `pitfalls`, `guidelines`,
-  `models`, `processes` (plural dirs, enforced by a schema enum).
-- **Maturity** — exactly three tiers: `draft` → `verified` → `proven`.
-- **Lifecycle** — entries are proposed, reviewed, promoted, demoted, archived.
-- **On-demand consumption** — the agent pulls an index first, reads a body only
-  when relevant.
+- **知识类型化** —— 五类：`decisions`、`pitfalls`、`guidelines`、`models`、`processes`（复数目录，schema 枚举强约束）。
+- **成熟度** —— 只有三档：`draft` → `verified` → `proven`。
+- **生命周期** —— 知识要经历提议、审核、提升、降级、归档。
+- **按需消费** —— Agent 先拿索引，相关时才读正文。
 
-And it deliberately drops the heavy shell around that core: no mandatory
-16-stage workflow, no IDE lock-in. The thesis: *knowledge sustainment, not
-knowledge capture, is the moat.*
+同时刻意剔除了那套重型外壳：不强制 16 阶段工作流，不绑定 IDE。核心论点是：**工作流不是目的，知识 sustainment 才是目的。**
 
-## One substrate, four surfaces
+## 一个底座，四个面
 
-Fabric is one **knowledge substrate** (where knowledge lives + who/when it
-surfaces) exposed through **four surfaces**: CLI (for humans/scripts), MCP (for
-the agent at runtime), Hooks (to remind at the right moment), and Skills (to let
-the AI make judgment calls).
+Fabric 是一个**知识底座**（知识存在哪 + 对谁、何时浮现），通过**四个面**暴露出来：CLI（给人和脚本）、MCP（给运行时的 Agent）、Hooks（在关键时机提醒）、Skills（让 AI 做判断）。
 
-### Substrate: mountable stores + a 3-axis scope
+### 底座：可挂载的多 store + 三轴 scope
 
-The biggest evolution from early versions. Knowledge no longer lives in a fixed
-`.fabric/` + `~/.fabric/` dual root — it lives in **stores**:
+这是相对早期版本最大的一次演进。知识不再放在固定的 `.fabric/` + `~/.fabric/` 双根里，而是放在 **store** 里：
 
-- A store carries an intrinsic, immutable UUID in its own git tree, so its
-  identity survives remote/alias changes. Stores are **mounted** into
-  `~/.fabric/fabric-global.json` and **bound per repo** via `fabric store bind`.
-  Not bound → not read.
-- Because a store can carry a git remote (`fabric store create/bind --remote`)
-  and `fabric sync` rebases + pushes it, **a team store is shared across repos
-  out of the box** — the original "team-knowledge.git" idea, already shipped.
-- A repo's local `.fabric/knowledge/` is no longer a runtime source; it is only
-  one-time import input. The mounted store is the source of truth.
+- 每个 store 在自己的 git 树根持有一个内生、不可变的 UUID，所以换远程地址、换别名身份都不变。store 被**挂载**进 `~/.fabric/fabric-global.json`，再由具体仓库用 `fabric store bind` **按 repo 绑定**。没绑定就不会被读到。
+- 因为 store 可以关联 git remote（`fabric store create/bind --remote`），再用 `fabric sync` 做 rebase + push，**一个团队 store 天然就能跨多个 repo 共享**——这正是早期设想里的 “team-knowledge.git”，已经落地。
+- 项目本地的 `.fabric/knowledge/` 不再是运行时知识源，它只是一次性导入的输入。运行时真正读写的是挂载的 store。
 
-Whether an entry surfaces to the agent is decided by **three orthogonal axes**:
+一条知识会不会浮现给 AI，由**三个互相正交的轴**决定：
 
-| Axis | Values | Decides |
+| 轴 | 取值 | 决定 |
 |---|---|---|
-| `semantic_scope` (audience) | `team` / `project:<id>` / `personal` | who sees it (personal stays in a personal store — a schema-enforced privacy line) |
-| `relevance_scope` (timing) | `broad` / `narrow` | always-on vs surfaced only when you edit a matching path (derived from `relevance_paths`) |
-| `store` (physical) | a mounted store | whether it is read at all |
+| `semantic_scope`（受众） | `team` / `project:<id>` / `personal` | 谁能看到（个人知识必须待在 personal store——schema 强制的隐私红线） |
+| `relevance_scope`（时机） | `broad` / `narrow` | 常驻 vs 仅在你编辑匹配路径时浮现（由 `relevance_paths` 推导） |
+| `store`（物理库） | 某个挂载的 store | 到底读不读得到 |
 
-When something doesn't show up, `fabric audit why-not-surfaced <id>` diagnoses
-which axis blocked it.
+当某条知识没出现时，`fabric audit why-not-surfaced <id>` 会逐轴诊断是哪一轴挡住了。
 
-### CLI — deterministic, no LLM in the loop
+### CLI —— 确定性，无 LLM 介入
 
 ```bash
-fabric install                 # scan project, install hooks/skills/client config
-fabric store bind <id>         # declare which knowledge store this repo uses
-fabric store switch-write <a>  # set the default write target (per scope)
-fabric sync                    # git sync mounted stores (pull --rebase + push)
-fabric doctor [--fix]          # health check (+ deterministic repair)
+fabric install                 # 扫描项目，安装 hooks/skills/客户端配置
+fabric store bind <id>         # 声明本 repo 要用哪个知识 store
+fabric store switch-write <a>  # 设置默认写入目标（按 scope）
+fabric sync                    # git 同步挂载的 store（pull --rebase + push）
+fabric doctor [--fix]          # 健康检查（+ 确定性修复）
 fabric audit cite|conflicts|retired|why-not-surfaced|metrics
-fabric info [--global|--recall]  # identity / project / recall-engine status
-fabric inspect                 # show exactly what SessionStart injected
-fabric uninstall               # symmetric removal (mounted stores untouched)
+fabric info [--global|--recall]  # 身份 / 项目 / 召回引擎状态
+fabric inspect                 # 显示本次 SessionStart 实际注入了什么
+fabric uninstall               # 对称卸载（不动挂载的 store）
 ```
 
-`store` / `sync` are new with the multi-store architecture; the old `serve` was
-quarantined to an experimental package; `whoami` / `status` / `scope-explain`
-folded into `info`; the audit flags split out of `doctor` into `audit`.
+`store` / `sync` 是随多 store 架构新增的；旧的 `serve` 已隔离到实验包；`whoami` / `status` / `scope-explain` 并进了 `info`；审计相关 flag 从 `doctor` 拆成了 `audit`。
 
-### MCP — the agent's runtime protocol (5 tools)
+### MCP —— Agent 的运行时协议（5 个工具）
 
 ```text
-fab_recall         # agent-direct: recall relevant knowledge before editing
-fab_propose        # propose a pending entry
-fab_archive_scan   # scan session history for archive-worthy candidates
-fab_pending        # read-only browse / search of pending + canonical
-fab_review         # write: approve / reject / modify / defer
+fab_recall         # AI 直接调用：改文件前先召回相关知识
+fab_propose        # 提议一条 pending 知识
+fab_archive_scan   # 扫描会话历史，找可归档候选
+fab_pending        # 只读浏览 / 搜索 pending + canonical
+fab_review         # 写：approve / reject / modify / defer
 ```
 
-**Lean recall.** `fab_recall(paths)` returns candidate *descriptions + native
-read paths* in one call — it does not ship bodies over MCP. The agent reads a
-body on demand from the path. Eager bodies are a permanent per-recall context
-tax; a needed body is one cheap `Read` away. This is the same shape as Claude
-Code's own Memory (`MEMORY.md` index + read-on-demand files) — the code even
-calls the return a "Memory-style shape".
+**Lean recall（精简召回）。** `fab_recall(paths)` 一次调用返回候选的*描述 + 磁盘读取路径*，不通过 MCP 灌正文。需要正文时，Agent 自己对路径做一次原生 `Read`。eager 灌正文是一笔恒久的上下文税；真要看正文，一次 `Read` 很便宜。这和 Claude Code 自己的 Memory（`MEMORY.md` 索引 + 按需读取记忆文件）是同一个形状——代码里直接把它的返回结构注释为 “Memory-style shape”。
 
-**Hybrid retrieval.** Ranking fuses two signals: BM25 lexical (with CJK
-tokenization) plus an optional dense-vector semantic pass (cosine over a small
-CPU embedding model, Chinese default `fast-bge-small-zh`). Vectors are **on by
-default but degrade gracefully** — `fastembed` is an *optional* dependency; if
-it can't build, is disabled, or throws, recall falls back to pure
-BM25 + recency + locality + salience with no behavior change.
+**混合检索（hybrid retrieval）。** 排序融合两路信号：BM25 词法（带中文分词）+ 一路可选的向量语义（CPU 上的小型 embedding 模型算余弦，中文默认 `fast-bge-small-zh`）。向量**默认开启，但优雅降级**——`fastembed` 是*可选*依赖，构建不了、被关掉、或运行出错时，召回会退回纯 BM25 + 时近 + 路径相关 + 重要度，行为不变。
 
-### Hooks — remind at the right moment (Claude Code + Codex CLI)
+### Hooks —— 在关键时机提醒（Claude Code + Codex CLI）
 
-- `knowledge-hint-broad.cjs` — SessionStart: list broad knowledge + scope census.
-- `knowledge-pretooluse.cjs` — PreToolUse (Edit/Write/MultiEdit): narrow,
-  path-relevant hints + edit-count side ledger.
-- `cite-policy-evict.cjs` — PreToolUse: soft nudge if you edit without a recall.
-- `post-tooluse-mutation.cjs` — PostToolUse: record `file_mutated` and
-  `knowledge_body_read` (closing the surfaced → cited → edited funnel).
-- `fabric-hint.cjs` — Stop: nudge archive / review / cold-start backfill.
-- `session-end-marker.cjs` — SessionEnd: a session-end breadcrumb.
+- `knowledge-hint-broad.cjs` —— SessionStart：列出 broad 知识 + scope 普查。
+- `knowledge-pretooluse.cjs` —— PreToolUse（Edit/Write/MultiEdit）：路径相关的 narrow 提示 + 编辑计数侧记。
+- `cite-policy-evict.cjs` —— PreToolUse：改文件前没相关 recall 就给一条软提醒。
+- `post-tooluse-mutation.cjs` —— PostToolUse：记录 `file_mutated` 和 `knowledge_body_read`（闭合“浮现 → 引用 → 编辑”漏斗）。
+- `fabric-hint.cjs` —— Stop：提醒归档 / 审核 / 冷启动回灌。
+- `session-end-marker.cjs` —— SessionEnd：写一条会话结束标记。
 
-Hooks only remind and keep books — they never block, and the judgment is left to
-the AI that just lived through the context.
+hook 只负责提醒和记账——它从不阻塞，判断交给刚经历过上下文的 AI。
 
-### Skills — let the AI make judgment calls (4)
+### Skills —— 让 AI 做判断（4 个）
 
-- `fabric-archive` — extract worth-keeping knowledge from sessions into
-  `pending` via `fab_propose`. Its *source mode* cold-starts an old project by
-  mining `git log` + docs (absorbed the former `fabric-import`).
-- `fabric-review` — review pending/canonical knowledge via `fab_review`
-  (approve/reject/modify/defer), plus `retire` (deprecate stale/orphaned entries,
-  "demote & rescue before delete") and `relate` (add `related` edges on request).
-- `fabric-store` / `fabric-sync` — thin routers from natural-language intent to
-  the `fabric store` / `fabric sync` CLI; the CLI does the work and guards the
-  rails.
+- `fabric-archive` —— 从会话里提取值得保留的知识，经 `fab_propose` 写入 `pending`。它的 *source mode* 能从 `git log` + docs 冷启动老项目（吸收了原来的 `fabric-import`）。
+- `fabric-review` —— 经 `fab_review` 审核 pending/canonical（approve/reject/modify/defer），外加 `retire`（语义淘汰陈旧/孤儿条目，守“先降级、先抢救，不硬删”）和 `relate`（按需补 `related` 边）。
+- `fabric-store` / `fabric-sync` —— 两个薄路由层，把自然语言意图路由到 `fabric store` / `fabric sync` CLI；干活和把守安全门的是 CLI。
 
-Knowledge files stay plain Markdown with frontmatter (`semantic_scope`,
-`relevance`, `maturity`) under each store — git-managed, diffable, never locked
-in an opaque database.
+知识文件始终是带 frontmatter（`semantic_scope`、`relevance`、`maturity`）的纯 Markdown，存在各个 store 下——可用 Git 管理、可 diff，绝不锁进黑盒数据库。
 
-## Design principles
+## 设计原则
 
-These few principles explain most of "why Fabric doesn't do X":
+下面几条原则解释了大半“Fabric 为什么不做某件事”：
 
-- **store-only** — knowledge lives only in mounted stores; no project-local
-  runtime fallback, so there is one source of truth.
-- **body-on-demand** — recall returns descriptions + paths; bodies are read on
-  demand (lean recall).
-- **never-block** — every Fabric action is advisory; nudges, not gates.
-- **minimal-install** — no mandatory heavy infra (no vector DB, no SQLite, no
-  graph DB; vector similarity is in-process cosine + an LRU cache). The only
-  embedder (`fastembed`) is an *optional* dependency with a full text fallback.
-- **dual-sink injection** — knowledge flows through SessionStart + PreToolUse,
-  with separate channels for the AI and for the human.
-- **clean-slate** — no legacy carried forward (the experimental HTTP server is
-  quarantined to its own package).
-- **honesty iron law** — under-report rather than over-report; no auto edge
-  building, no auto maturity promotion, no usage-based ranking.
-- **agent-native** — built for agents, not a human web UI.
+- **store-only** —— 知识只存在于挂载的 store，没有项目内运行时回退，真源唯一。
+- **body-on-demand** —— 召回只给描述 + 路径，正文按需读（lean recall）。
+- **never-block** —— 所有 Fabric 动作都是建议性的；是 nudge，不是 gate。
+- **minimal-install** —— 不背必装重型基础设施（无向量库、无 SQLite、无图库；向量相似度是进程内余弦 + LRU 缓存）。唯一的 embedder（`fastembed`）是*可选*依赖，带完整文本降级。
+- **dual-sink injection** —— 知识经 SessionStart + PreToolUse 注入，给 AI 和给人是两条独立通道。
+- **clean-slate** —— 不背 legacy（实验性 HTTP server 已隔离到独立包）。
+- **honesty iron law** —— 宁可少报不虚报；不自动建边、不自动升级 maturity、不用 usage 排序。
+- **agent-native** —— 为 Agent 设计，不是给人看的 Web UI。
 
-## Quick Start
+## 快速开始
 
 ```bash
-# In your project repo:
+# 在你的项目仓库里：
 pnpm dlx @fenglimg/fabric-cli install
 ```
 
 ```bash
-npm install -g @fenglimg/fabric-cli        # stable
-npm install -g @fenglimg/fabric-cli@next   # preview
+npm install -g @fenglimg/fabric-cli        # 正式版
+npm install -g @fenglimg/fabric-cli@next   # 体验版
 
-fabric install                 # hooks + Skills + bootstrap + MCP client config
-fabric store bind <id>         # bind the knowledge store this repo uses
-fabric doctor                  # health check (--fix applies auto-fixable)
-fabric uninstall               # remove managed artifacts (stores untouched)
+fabric install                 # hooks + Skills + bootstrap + MCP 客户端配置
+fabric store bind <id>         # 绑定本 repo 要用的知识 store
+fabric doctor                  # 健康检查（--fix 修可自动修复项）
+fabric uninstall               # 移除受管产物（不动挂载的 store）
 ```
 
-The MCP server runs over **stdio only** — `fabric install` writes each client's
-MCP config so the client spawns the server on session start; there is no
-separate `fabric serve` to run. **Restart the client after `fabric install`**:
-running sessions won't pick up the new MCP config until restart; new sessions
-autoload it.
+MCP server **只走 stdio** —— `fabric install` 会写好每个客户端的 MCP 配置，客户端在会话开始时自行拉起 server，**不需要单独跑 `fabric serve`**。**`fabric install` 后请重启客户端**：正在运行的会话要重启才会读到新的 MCP 配置；新会话会自动加载。
 
-Supported clients:
+受支持的客户端：
 
-- **Claude Code** — managed bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill templates + MCP stdio
-- **Codex CLI** — managed `AGENTS.md` bootstrap + the same hooks + Skill templates + MCP stdio
+- **Claude Code** —— 受管 bootstrap + SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd hooks + Skill 模板 + MCP stdio
+- **Codex CLI** —— 受管 `AGENTS.md` bootstrap + 同样的 hooks + Skill 模板 + MCP stdio
 
-## What Fabric deliberately is NOT
+## Fabric 刻意不做什么
 
-- **Not a 5-layer storage taxonomy.** The system/project/module/file/function
-  depth model was rejected. Fabric scopes knowledge by three orthogonal axes
-  (audience / timing / store), not by nesting depth.
-- **Not a 16-stage workflow injection.** Fabric is harness-agnostic. It binds to
-  events every harness already emits (`SessionStart`, `Stop`, `PreToolUse`,
-  `PostToolUse`) and lets the harness keep its own workflow model.
-- **Not a permissioned team platform — yet.** Git-backed cross-repo store
-  sharing already works; a role model (admin / contributor / reader) and deeper
-  org-level federation are deliberately left for later.
-- **Not a heavy retrieval stack.** No vector database, no always-on embedding
-  infra; the vector pass is optional and degrades to lexical search.
+- **不是 5 层存储分类法。** system/project/module/file/function 的深度模型被否决了。Fabric 按三个正交轴（受众 / 时机 / store）划分知识，而不是按嵌套深度。
+- **不是 16 阶段工作流注入。** Fabric 是 harness-agnostic 的，它绑定到每个 harness 都已经发出的事件（`SessionStart` / `Stop` / `PreToolUse` / `PostToolUse`），让 harness 保留自己的工作流模型。
+- **暂时不是带权限的团队平台。** 跨 repo 的 git store 共享已经能用；角色模型（admin / contributor / reader）和更深的组织级 federation 刻意留到后面。
+- **不是重型检索栈。** 没有向量数据库、没有常驻 embedding 基础设施；向量这一路是可选的，能降级到词法检索。
 
-## Position vs the Tencent AI-team article
+## 与腾讯 AI 团队那篇文章的定位
 
-Genes shared; architecture original.
+同源，但架构原创。
 
-| Axis | Tencent article | Fabric |
+| 维度 | 腾讯文章 | Fabric |
 |---|---|---|
-| Harness coupling | 16-stage workflow injection | Harness-agnostic via hooks + MCP |
-| Storage | 5-layer depth taxonomy | Mountable multi-store + 3-axis scope |
-| Surface | Workflow phases inject context | MCP-first, hook reminders, Skill writes |
-| Retrieval | — | BM25 + optional vector (default-on, degrade-safe) |
-| Team sharing | Implicit per-environment | Git-backed shared stores today; role model later |
+| 与 harness 耦合 | 16 阶段工作流注入 | 经 hooks + MCP，harness-agnostic |
+| 存储 | 5 层深度分类 | 可挂载多 store + 三轴 scope |
+| 入口 | 工作流阶段注入上下文 | MCP-first、hook 提醒、Skill 写入 |
+| 检索 | —— | BM25 + 可选向量（默认开、可降级） |
+| 团队共享 | 隐式按环境 | 今天就有 git-backed 共享 store；角色模型后续 |
 
-## How it works (lifecycle)
+## 它是怎么运转的（生命周期）
 
 ```text
 fabric install + store bind
   ↓
-AI develops normally
+AI 正常开发
   ↓
-SessionStart / PreToolUse hooks surface knowledge
+SessionStart / PreToolUse hook 浮现知识
   ↓
-agent calls fab_recall → descriptions + read paths; Reads a body on demand
+Agent 调 fab_recall → 描述 + 读取路径；按需 Read 正文
   ↓
-Stop hook detects archive / review signals
+Stop hook 检测 archive / review 信号
   ↓
-fabric-archive → fab_propose writes to the active store's pending/
+fabric-archive → fab_propose 写入当前 store 的 pending/
   ↓
-fabric-review → approve assigns a stable id, promotes to canonical
+fabric-review → approve 分配稳定 ID，晋升为正式知识
   ↓
-fabric doctor / fabric audit keep the base healthy
+fabric doctor / fabric audit 持续保持健康
   ↓
-next task reuses it automatically
+下次任务自动复用
 ```
 
-`fabric doctor` runs the knowledge-health lints in one pass (orphan demotion,
-stale archive, overdue pending, stable-id duplicates, layer/scope mismatch,
-index drift, relevance bindings, underseed). Maturity promotion and demotion are
-**detection-only** — they surface candidates; the actual change goes through
-`fabric-review` (human in the loop). Default mode is report-only.
+`fabric doctor` 一趟跑完知识健康 lint（孤儿降级、陈旧归档、超期 pending、stable-id 重复、layer/scope 不一致、index 漂移、relevance 绑定、节点过少）。maturity 的升级与降级都是 **detection-only**——只提候选；真正改动走 `fabric-review`（人在回路）。默认只报告、不改。
 
-## Documentation
+## 文档
 
-- [Quickstart](./docs/USER-QUICKSTART.md) — 5-minute user onboarding.
-- [Architecture](./docs/ARCHITECTURE.md) — package / surface / install pipeline map.
-- [Runtime Contracts](./docs/RUNTIME-CONTRACTS.md) — CLI, MCP, schema, config entry points.
-- [Testing](./docs/TESTING.md) — test strategy, drift gates, test seed role.
-- [Upgrade](./docs/UPGRADE.md) — supported upgrade notes.
-- [Changelog](./CHANGELOG.md) — release history.
+- [快速开始](./docs/USER-QUICKSTART.md) —— 5 分钟上手。
+- [架构](./docs/ARCHITECTURE.md) —— 包 / 入口 / 安装流水线全景。
+- [运行时契约](./docs/RUNTIME-CONTRACTS.md) —— CLI、MCP、schema、配置入口。
+- [测试](./docs/TESTING.md) —— 测试策略、漂移闸、test seed 角色。
+- [升级](./docs/UPGRADE.md) —— 受支持的升级说明。
+- [Changelog](./CHANGELOG.md) —— 版本历史。
 
-## Project layout
+## 项目结构
 
-A pnpm monorepo:
+一个 pnpm monorepo：
 
-- `packages/cli` — the `fabric` CLI (`install`, `store`, `sync`, `info`,
-  `doctor`, `audit`, `config`, `inspect`, `uninstall`).
-- `packages/server` — the MCP server `fabric-knowledge-server` (5 tools, stdio)
-  plus the lifecycle service (recall, review, doctor, lint, event ledger, metrics).
-- `packages/shared` — schemas (event ledger, api contracts, knowledge
-  frontmatter, store + scope) shared between CLI and server.
-- `packages/server-http-experimental` — the v1.8-era HTTP/REST/SSE + Dashboard
-  package, quarantined in v2.0.0-rc.37. Not built / not tested.
-- `packages/cli/templates/skills/` — the Fabric Skill templates (`fabric-archive`,
-  `fabric-review`, `fabric-store`, `fabric-sync`) shipped on `fabric install`.
-- `packages/cli/templates/hooks/` — the shared hook scripts + per-client configs
-  (`claude-code.json`, `codex-hooks.json`).
+- `packages/cli` —— `fabric` CLI（`install`、`store`、`sync`、`info`、`doctor`、`audit`、`config`、`inspect`、`uninstall`）。
+- `packages/server` —— MCP server `fabric-knowledge-server`（5 个工具，stdio）+ 生命周期服务（recall、review、doctor、lint、事件账本、metrics）。
+- `packages/shared` —— CLI 与 server 共享的 schema（事件账本、api 契约、知识 frontmatter、store + scope）。
+- `packages/server-http-experimental` —— v1.8 时代的 HTTP/REST/SSE + Dashboard 包，已于 v2.0.0-rc.37 隔离。不构建 / 不测试。
+- `packages/cli/templates/skills/` —— `fabric install` 时分发的 Skill 模板（`fabric-archive`、`fabric-review`、`fabric-store`、`fabric-sync`）。
+- `packages/cli/templates/hooks/` —— 共享 hook 脚本 + 各客户端配置（`claude-code.json`、`codex-hooks.json`）。
 
-Contributors: clone, `pnpm install`, `pnpm -r build`, `pnpm -r test`.
+贡献者：clone、`pnpm install`、`pnpm -r build`、`pnpm -r test`。
 
-## Status
+## 状态
 
-**v2.3.0-rc.3** — active development line. See [docs/UPGRADE.md](./docs/UPGRADE.md)
-for upgrade notes and [CHANGELOG.md](./CHANGELOG.md) for release history.
+**v2.3.0-rc.5** —— 活跃开发线。升级说明见 [docs/UPGRADE.md](./docs/UPGRADE.md)，版本历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
-Repository: https://github.com/fenglimg/fabric
+仓库：https://github.com/fenglimg/fabric
 
-## Acknowledgments
+## 致谢
 
-The early Fabric design borrowed the cross-client `AGENTS.md` framing for agent
-rule files. The knowledge-sustainment direction is informed by methodology
-writeups from the Anthropic, Letta, and Tencent AI Team communities — credit to
-those teams for naming the lifecycle problem clearly. The specific shape of
-Fabric (5 MCP tools, 5 typed knowledge entries, 3-tier maturity, mountable
-multi-store + 3-axis scope, lean recall, hybrid retrieval, hook reminder layer,
-lint-driven decay) is original to this project.
+Fabric 早期设计借鉴了 Agent 规则文件的跨客户端 `AGENTS.md` 框架。知识 sustainment 方向受到 Anthropic、Letta、腾讯 AI 团队等社区方法论文章的启发——感谢这些团队把生命周期问题讲清楚。Fabric 的具体形态（5 个 MCP 工具、5 类知识、三档成熟度、可挂载多 store + 三轴 scope、lean recall、混合检索、hook 提醒层、lint 驱动衰减）是本项目原创。
