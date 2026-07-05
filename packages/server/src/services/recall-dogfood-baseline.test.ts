@@ -212,4 +212,92 @@ describe.runIf(process.env.DOGFOOD_BASELINE === "1")("recall dogfood RED baselin
     },
     240_000,
   );
+
+  // Payload field-byte breakdown over RICH-intent multi-path queries — the regime
+  // that produced the user's original ~41KB recall (the per-entry self-queries
+  // above surface too few entries to reproduce it). Buckets each surfaced entry's
+  // bytes into: KEEP (summary + must_read_if — the load-bearing selection signal),
+  // SLIM_RICH (intent_clues/impact/tech_stack/tags — candidates to move on-demand),
+  // SLIM_META (relevance_paths/related/etc — engine-side, agent doesn't need), the
+  // score_breakdown, and the envelope. Quantifies exactly what wire-slim (b) buys.
+  it(
+    "payload field-byte breakdown over rich-intent queries (wire-slim target)",
+    async () => {
+      process.env.FABRIC_HOME = homedir();
+      const QUERIES = [
+        {
+          label: "recall-fix",
+          paths: ["packages/server/src/services/plan-context.ts", "packages/server/src/services/recall.ts"],
+          intent: "修复 recall 排序 payload score_breakdown proximity 截断 top_k",
+        },
+        {
+          label: "narrow-hook",
+          paths: [
+            "packages/cli/templates/hooks/knowledge-hint-narrow.cjs",
+            "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+          ],
+          intent: "narrow PreToolUse hook relativize 绝对路径 计数 project root 静默失败",
+        },
+        {
+          label: "doctor-lint",
+          paths: ["packages/server/src/services/doctor.ts"],
+          intent: "doctor lint content-ref dual-root 误报 store 读侧 orphan stale",
+        },
+      ];
+      const KEEP = new Set(["summary", "must_read_if"]);
+      const SLIM_RICH = new Set(["intent_clues", "impact", "tech_stack", "tags"]);
+      const SLIM_META = new Set([
+        "relevance_paths",
+        "related",
+        "semantic_scope",
+        "created_at",
+        "maturity",
+        "knowledge_type",
+        "relevance_scope",
+        "id",
+      ]);
+      const jbytes = (v: unknown): number => Buffer.byteLength(JSON.stringify(v ?? null), "utf8");
+
+      const rows: unknown[] = [];
+      for (const q of QUERIES) {
+        const res = await recall(REPO_ROOT, {
+          paths: q.paths,
+          target_paths: q.paths,
+          intent: q.intent,
+          session_id: "dogfood-payload",
+        });
+        const entries = res.entries ?? [];
+        const g = { keep: 0, slim_rich: 0, slim_meta: 0, desc_other: 0, score_breakdown: 0, envelope: 0 };
+        for (const e of entries) {
+          const desc = (e.description ?? {}) as Record<string, unknown>;
+          for (const [k, v] of Object.entries(desc)) {
+            const b = jbytes(v) + k.length + 4;
+            if (KEEP.has(k)) g.keep += b;
+            else if (SLIM_RICH.has(k)) g.slim_rich += b;
+            else if (SLIM_META.has(k)) g.slim_meta += b;
+            else g.desc_other += b;
+          }
+          g.score_breakdown += jbytes(e.score_breakdown);
+          g.envelope += jbytes({ s: e.stable_id, r: e.rank, p: e.read_path, st: e.store });
+        }
+        const slimmable = g.slim_rich + g.slim_meta;
+        rows.push({
+          label: q.label,
+          entries: entries.length,
+          total_bytes: jbytes(res),
+          keep: g.keep,
+          slim_rich: g.slim_rich,
+          slim_meta: g.slim_meta,
+          slimmable_total: slimmable,
+          score_breakdown: g.score_breakdown,
+          desc_other: g.desc_other,
+          envelope: g.envelope,
+        });
+      }
+
+      // eslint-disable-next-line no-console
+      console.log("\n===== PAYLOAD FIELD-BYTE BREAKDOWN (rich intent) =====\n" + JSON.stringify(rows, null, 2) + "\n=====\n");
+    },
+    120_000,
+  );
 });

@@ -1282,8 +1282,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
               "required": [
                 "summary",
                 "intent_clues",
-                "tech_stack",
-                "impact",
                 "must_read_if",
               ],
               "type": "object",
