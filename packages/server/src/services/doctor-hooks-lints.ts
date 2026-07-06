@@ -129,7 +129,13 @@ export async function inspectHooksWired(projectRoot: string): Promise<HooksWired
   const required: Array<{ event: string; hookFile: string }> = [
     { event: "Stop", hookFile: "fabric-hint.cjs" },
     { event: "SessionStart", hookFile: "knowledge-hint-broad.cjs" },
-    { event: "PreToolUse", hookFile: "knowledge-hint-narrow.cjs" },
+    // ux-w2-6 (rc.9): PreToolUse is the SINGLE merged orchestrator
+    // knowledge-pretooluse.cjs which internally requires knowledge-hint-narrow.cjs
+    // (and cite-policy-evict.cjs) so a single edit produces ONE additionalContext
+    // envelope instead of two. The stale reference to narrow.cjs here was the
+    // rc.30 BUG-M3 false-negative source — narrow.cjs still exists on disk as a
+    // lib but is NOT registered as a PreToolUse hook.
+    { event: "PreToolUse", hookFile: "knowledge-pretooluse.cjs" },
   ];
   const missing: string[] = [];
   const hooksSection = isRecord(parsed) ? parsed.hooks : undefined;
