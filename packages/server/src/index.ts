@@ -123,14 +123,10 @@ export {
 export {
   buildRelatedGraph,
   inspectRelatedGraph,
-  inspectSuggestedRelatedEdges,
-  suggestRelatedEdges,
   type RelatedBrokenLink,
   type RelatedGraphInspection,
   type RelatedGraphNode,
-  type RelatedGraphNodeRich,
   type RelatedHubEntry,
-  type SuggestedRelatedEdge,
 } from "./services/doctor-related-graph.js";
 export {
   clearPrecheckCache,

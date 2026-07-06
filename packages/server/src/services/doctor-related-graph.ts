@@ -20,8 +20,6 @@
 // translator or the doctor report shape.
 // ---------------------------------------------------------------------------
 
-import { tokenize } from "@fenglimg/fabric-shared";
-
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 
 // ---------------------------------------------------------------------------
@@ -125,130 +123,15 @@ function extractBareStableId(qualifiedId: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// PLN-004 F2: related edge SUGGESTION (advisory, human-gated)
-//
-// The corpus `related` edges are authored manually (fabric-connect / review) and
-// are census-empty on most entries, so the include_related recall path and the
-// broken-link / hub inspection above have little to work with. suggestRelatedEdges
-// PROPOSES edges the corpus is MISSING, from lexical + metadata overlap, so a human
-// can apply the high-confidence ones via fabric-review. It NEVER writes — TASK-004
-// surfaces it as a NON-GATE doctor advisory (writes stay on the review path). Pure
-// (no I/O), like buildRelatedGraph, so it is fixture-testable without a store.
-// ---------------------------------------------------------------------------
-
-/** A richer node carrying the text/metadata signals the suggestion heuristic reads. */
-export interface RelatedGraphNodeRich {
-  /** Store-qualified id (`<alias>:<stableId>`). */
-  qualifiedId: string;
-  summary: string;
-  /** RuleDescription.intent_clues (NOT `keywords` — RuleDescription has no such field). */
-  intentClues: string[];
-  tags: string[];
-  relevancePaths: string[];
-  /** Existing declared `related` edges — a pair already connected here is never re-proposed. */
-  related: string[];
-}
-
-/** A proposed related edge: an ordered id pair, a confidence, and the signals that fired. */
-export interface SuggestedRelatedEdge {
-  source: string;
-  target: string;
-  confidence: number;
-  provenance: string[];
-}
-
-const SUGGEST_CONFIDENCE_THRESHOLD = 0.6;
-const TAG_OVERLAP_BONUS = 0.15;
-const PATH_OVERLAP_BONUS = 0.15;
-
-/**
- * Propose related edges the corpus is missing. For every unordered pair NOT already
- * connected via existing `related`, score:
- *   - token Jaccard over tokenize(summary + intent_clues) — the DOMINANT signal
- *   - tag-set intersection — an INDEPENDENT boolean bonus (never folded into tokens)
- *   - shared relevance_paths — an INDEPENDENT boolean bonus
- * confidence = jaccard + bonuses, clamped [0,1]. Only pairs >= 0.6 are returned, each
- * with a non-empty provenance[] naming the firing signals. Pure + deterministic
- * (same input → same output; sorted confidence desc, then source, then target).
- */
-export function suggestRelatedEdges(nodes: RelatedGraphNodeRich[]): SuggestedRelatedEdge[] {
-  const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
-
-  // Precompute each node's signal sets ONCE (O(n)), reused across the O(n^2) pairs.
-  const prepared = nodes.map((node) => ({
-    qualifiedId: node.qualifiedId,
-    bareId: extractBareStableId(node.qualifiedId) ?? node.qualifiedId,
-    tokens: new Set(tokenize(`${node.summary} ${node.intentClues.join(" ")}`)),
-    tags: new Set(node.tags),
-    paths: new Set(node.relevancePaths),
-  }));
-
-  // Existing edges as unordered bare-id pair keys so an already-connected pair (either
-  // direction, bare or store-qualified reference) is skipped.
-  const existing = new Set<string>();
-  for (const node of nodes) {
-    const aBare = extractBareStableId(node.qualifiedId) ?? node.qualifiedId;
-    for (const rel of node.related) {
-      existing.add(pairKey(aBare, extractBareStableId(rel) ?? rel));
-    }
-  }
-
-  const out: SuggestedRelatedEdge[] = [];
-  for (let i = 0; i < prepared.length; i++) {
-    for (let j = i + 1; j < prepared.length; j++) {
-      const a = prepared[i];
-      const b = prepared[j];
-      if (a.bareId === b.bareId) continue;
-      if (existing.has(pairKey(a.bareId, b.bareId))) continue;
-
-      let intersection = 0;
-      for (const t of a.tokens) if (b.tokens.has(t)) intersection++;
-      const union = a.tokens.size + b.tokens.size - intersection;
-      const jaccard = union === 0 ? 0 : intersection / union;
-
-      let tagOverlap = false;
-      for (const t of a.tags)
-        if (b.tags.has(t)) {
-          tagOverlap = true;
-          break;
-        }
-      let pathOverlap = false;
-      for (const p of a.paths)
-        if (b.paths.has(p)) {
-          pathOverlap = true;
-          break;
-        }
-
-      let confidence = jaccard;
-      if (tagOverlap) confidence += TAG_OVERLAP_BONUS;
-      if (pathOverlap) confidence += PATH_OVERLAP_BONUS;
-      confidence = Math.min(1, confidence);
-      if (confidence < SUGGEST_CONFIDENCE_THRESHOLD) continue;
-
-      const provenance: string[] = [];
-      if (jaccard > 0) provenance.push("token-jaccard");
-      if (tagOverlap) provenance.push("tag-overlap");
-      if (pathOverlap) provenance.push("shared-path");
-
-      const [source, target] =
-        a.qualifiedId < b.qualifiedId
-          ? [a.qualifiedId, b.qualifiedId]
-          : [b.qualifiedId, a.qualifiedId];
-      out.push({ source, target, confidence, provenance });
-    }
-  }
-
-  out.sort(
-    (x, y) =>
-      y.confidence - x.confidence ||
-      x.source.localeCompare(y.source) ||
-      x.target.localeCompare(y.target),
-  );
-  return out;
-}
-
-// ---------------------------------------------------------------------------
 // Inspection (read-set walk + pure graph build)
+//
+// PLN-004 F2 note (rc.8 retired): a nearest-lexical "suggestRelatedEdges" heuristic
+// once lived here and surfaced through doctor as an advisory. It was retired because
+// token-Jaccard is字面-bound and cannot see the five semantic关联 types the
+// fabric-connect skill actually authors edges for (互补 / 规避 / 取代 / 同域 / 引用链).
+// A字面 filter above the AI skill's候选池 introduced a lexical bias and reduced the
+// skill's semantic reach. Edge PROPOSAL now lives entirely in the fabric-connect
+// skill (AI-driven, on-demand). This module stays state-diagnostic only.
 // ---------------------------------------------------------------------------
 
 /**
@@ -273,31 +156,3 @@ export async function inspectRelatedGraph(
   );
 }
 
-/** Cap on how many suggested edges the advisory surfaces (highest-confidence first). */
-const SUGGESTED_EDGES_TOP_N = 20;
-
-/**
- * Walk the store canonical corpus and PROPOSE the top-N missing related edges via the
- * pure suggestRelatedEdges heuristic. Never throws — collectStoreCanonicalEntries
- * degrades to [] when no store is in the read-set. READ-ONLY: it computes suggestions
- * and writes nothing; edge creation stays on the fabric-review modify path.
- */
-export async function inspectSuggestedRelatedEdges(
-  projectRoot: string,
-): Promise<SuggestedRelatedEdge[]> {
-  let entries;
-  try {
-    entries = await collectStoreCanonicalEntries(projectRoot);
-  } catch {
-    return [];
-  }
-  const nodes: RelatedGraphNodeRich[] = entries.map((entry) => ({
-    qualifiedId: entry.qualifiedId,
-    summary: entry.description.summary ?? "",
-    intentClues: entry.description.intent_clues ?? [],
-    tags: entry.description.tags ?? [],
-    relevancePaths: entry.description.relevance_paths ?? [],
-    related: entry.description.related ?? [],
-  }));
-  return suggestRelatedEdges(nodes).slice(0, SUGGESTED_EDGES_TOP_N);
-}

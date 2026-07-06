@@ -1,7 +1,6 @@
 import {
   inspectConsumption,
   inspectRelatedGraph,
-  inspectSuggestedRelatedEdges,
   precheckStoreReachability,
 } from "@fenglimg/fabric-server";
 
@@ -35,7 +34,6 @@ export async function knowledgeDoctorChecks(projectRoot: string): Promise<StoreD
   const diagnostics: StoreDiagnostic[] = [];
 
   await appendRelatedGraphDiagnostics(projectRoot, diagnostics);
-  await appendSuggestedRelatedDiagnostics(projectRoot, diagnostics);
   await appendStoreReachabilityDiagnostics(projectRoot, diagnostics);
   await appendConsumptionDiagnostics(projectRoot, diagnostics);
 
@@ -90,39 +88,6 @@ async function appendRelatedGraphDiagnostics(
       }),
     });
   }
-}
-
-// PLN-004 F2 — suggested related edges (info advisory). NEVER a gate, NO auto-fix
-// (KT-DEC-0007 / KT-PIT-0016): remediation points at `fab_review` (modify), the
-// human-gated related write path — no `doctor --fix` mutation, no hot-path edge write.
-async function appendSuggestedRelatedDiagnostics(
-  projectRoot: string,
-  out: StoreDiagnostic[],
-): Promise<void> {
-  const t = getProjectTranslator(projectRoot);
-  let suggestions;
-  try {
-    suggestions = await inspectSuggestedRelatedEdges(projectRoot);
-  } catch {
-    return;
-  }
-  if (suggestions.length === 0) {
-    return;
-  }
-  const samples = suggestions
-    .slice(0, SAMPLE_LIMIT)
-    .map((s) => `${s.source} → ${s.target} (${s.confidence.toFixed(2)}, ${s.provenance.join("/")})`)
-    .join(", ");
-  const overflow = suggestions.length - SAMPLE_LIMIT;
-  out.push({
-    code: "related_graph_suggested_edges",
-    severity: "info",
-    message: t("doctor.store.related-suggested", {
-      count: String(suggestions.length),
-      samples,
-      overflow: overflow > 0 ? t("doctor.store.overflow-more", { count: String(overflow) }) : "",
-    }),
-  });
 }
 
 // BORROW-019 — read-set store reachability (warn per unreachable store).

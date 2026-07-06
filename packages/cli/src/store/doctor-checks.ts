@@ -32,9 +32,6 @@ export type StoreDiagnosticCode =
   | "related_graph_broken_link"
   // BORROW-007: most-referenced entries by `related` in-degree (info heatmap).
   | "related_graph_hub"
-  // PLN-004 F2: high-confidence missing `related` edges proposed (info advisory,
-  // human-gated via fab_review modify — never auto-applied).
-  | "related_graph_suggested_edges"
   // BORROW-019: a read-set store's on-disk directory is missing/corrupt (warn).
   | "store_unreachable"
   // BORROW-005: per-entry consumption heatmap (info, always when data present).
