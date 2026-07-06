@@ -272,6 +272,74 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(fresh?.score_breakdown?.final).toBe(fresh?.score);
   });
 
+  // v2.2 glossary aliases (C-001/C-002 / R1): an alias term merged into an entry's
+  // BM25 body (plan-context documentFieldsForItem summary MID-weight slot + flat
+  // vector body) lifts a long-tail entry into recall results when the query uses
+  // the ALIAS — proving aliases are not a no-op field. But it must NOT out-rank a
+  // control entry carrying the SAME term directly in its content (summary → title
+  // HIGH-weight slot, boost 3 > summary boost 1.5): aliases land in the mid-weight
+  // slot so long-tail entries surface WITHOUT overtaking direct content hits
+  // ("content 领先"). Distinctive nonsense terms (florble/quaxil) avoid any
+  // synonym/stemming bridge that would let "quaxil" match "florble" directly.
+  it("recalls a long-tail entry via its alias term, but not above a direct content hit", async () => {
+    const projectRoot = await createTempProject();
+    // Alias entry: "florble" is its only real content term; "quaxil" appears ONLY
+    // as an alias. Without the aliases→BM25 wiring a "quaxil" query never matches
+    // it. Kept short so its summary-slot length penalty (b=0.75) stays modest.
+    await writeStoreEntry("decisions", "KT-DEC-7001", [
+      "---",
+      "id: KT-DEC-7001",
+      "type: decision",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [florble]",
+      "aliases: [quaxil]",
+      "summary: Florble",
+      "---",
+      "# Florble body",
+      "",
+    ]);
+    // Control entry: carries "quaxil" DIRECTLY in its summary → the title
+    // HIGH-weight slot. Same created_at + no relevance_paths → credibility /
+    // recency / locality are identical to the alias entry, so the ONLY score
+    // differentiator is which BM25F slot the term lands in.
+    await writeStoreEntry("decisions", "KT-DEC-7002", [
+      "---",
+      "id: KT-DEC-7002",
+      "type: decision",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [florble]",
+      "summary: Quaxil",
+      "---",
+      "# Quaxil body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "quaxil",
+      session_id: "session-recall-alias",
+    });
+
+    const aliasEntry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-7001"));
+    const directEntry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-7002"));
+
+    // (1) The alias term lifted the long-tail entry into recall results with a real
+    // score — proves aliases feed the BM25 body rather than being an inert field.
+    expect(aliasEntry).toBeDefined();
+    expect(aliasEntry?.score ?? 0).toBeGreaterThan(0);
+
+    // (2) The direct content hit out-ranks the alias hit: aliases (summary slot,
+    // boost 1.5) must NOT overtake direct content (title slot, boost 3). `<=`
+    // matches the plan's convergence contract; in practice it is strictly less.
+    expect(directEntry).toBeDefined();
+    expect(aliasEntry?.score ?? 0).toBeLessThanOrEqual(directEntry?.score ?? 0);
+  });
+
   // wire-slim (payload) guard: recall projects a LEAN description (selection signal
   // only). The seed's KT-DEC-0001 carries tech_stack — so `not.toHaveProperty` is a
   // red-before/green-after check that the verbose fields left the wire. The agent
