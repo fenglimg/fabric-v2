@@ -438,6 +438,37 @@ describe("reviewKnowledge", () => {
     expect(updated).toMatch(/^related: \[KT-DEC-0019, KT-GLD-0005\]$/mu);
   });
 
+  // rc.9 discovery-signal scalar patches (must_read_if / intent_clues / impact):
+  // regression for the SAME zod .strip() recurrence pattern as `related` above
+  // (KT-PIT-0005 / KT-PIT-0018). Before rc.9 the changes schema lacked these
+  // three fields so modify silently dropped them — leaving direct Edit as the
+  // only path to fix a bad-shape must_read_if / missing intent_clues, which
+  // bypassed the skill audit trail. This test proves all three now land.
+  it("modify writes must_read_if + intent_clues + impact into frontmatter (rc.9)", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "discovery-signals", {
+      tags: ["initial"],
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-content",
+      pending_path: pendingPath,
+      changes: {
+        must_read_if: "改 X 或 Y 时",
+        intent_clues: ["设计 X 时", "评估 Y 时"],
+        impact: ["漏 X → 静默失败", "错 Y → 回归"],
+      },
+    });
+    expect(result.action).toBe("modify");
+
+    const updated = await readFile(pendingPath, "utf8");
+    // Scalar string — Chinese chars + arrows are YAML bareword-safe, not quoted.
+    expect(updated).toMatch(/^must_read_if: 改 X 或 Y 时$/mu);
+    // Flow-array shape mirroring tags/related.
+    expect(updated).toMatch(/^intent_clues: \[设计 X 时, 评估 Y 时\]$/mu);
+    expect(updated).toMatch(/^impact: \[漏 X → 静默失败, 错 Y → 回归\]$/mu);
+  });
+
   it("v2.2 modify re-scopes semantic_scope (team → project:<id>) in place, store untouched", async () => {
     const projectRoot = await createTempProject();
     const pendingPath = await seedPendingFile(projectRoot, "decisions", "rescope-me", {

@@ -901,6 +901,15 @@ type ModifyChanges = {
   // like tags. Previously dropped by zod .strip() in the changes schema before
   // it ever reached here (the only related-write path was non-functional).
   related?: string[];
+  // rc.9 (2026-07-06): discovery-signal scalar patches. Same recurrence pattern
+  // as `related` above (KT-PIT-0005 / KT-PIT-0018): pre-rc.9 the zod .strip()
+  // silently dropped these three, so the only path to fix a bad-shape
+  // must_read_if / missing intent_clues was direct Edit — bypassing the skill
+  // audit trail. REPLACE semantics; must_read_if is a scalar string; the other
+  // two are flow-arrays mirroring tags/related.
+  must_read_if?: string;
+  intent_clues?: string[];
+  impact?: string[];
 };
 
 // v2.0.0-rc.27 TASK-001: superset of ModifyChanges used internally by
@@ -1880,6 +1889,11 @@ function rewriteFrontmatterMerge(
   if (patch.semantic_scope !== undefined) updates.semantic_scope = `semantic_scope: ${patch.semantic_scope}`;
   // v2.2 graph edges: `related` flow-array, same emit shape as tags/relevance_paths.
   if (patch.related !== undefined) updates.related = `related: ${flowArray(patch.related)}`;
+  // rc.9: discovery-signal scalar patches — must_read_if quoted scalar (mirror
+  // summary); intent_clues + impact flow-arrays (mirror related/tags).
+  if (patch.must_read_if !== undefined) updates.must_read_if = `must_read_if: ${quoteIfNeeded(patch.must_read_if)}`;
+  if (patch.intent_clues !== undefined) updates.intent_clues = `intent_clues: ${flowArray(patch.intent_clues)}`;
+  if (patch.impact !== undefined) updates.impact = `impact: ${flowArray(patch.impact)}`;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
   // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
   // datetimes correctly (no colon in the date portion would need quoting,
@@ -1926,6 +1940,9 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.relevance_scope !== undefined) lines.push(`relevance_scope: ${patch.relevance_scope}`);
   if (patch.relevance_paths !== undefined) lines.push(`relevance_paths: ${flowArray(patch.relevance_paths)}`);
   if (patch.related !== undefined) lines.push(`related: ${flowArray(patch.related)}`);
+  if (patch.must_read_if !== undefined) lines.push(`must_read_if: ${quoteIfNeeded(patch.must_read_if)}`);
+  if (patch.intent_clues !== undefined) lines.push(`intent_clues: ${flowArray(patch.intent_clues)}`);
+  if (patch.impact !== undefined) lines.push(`impact: ${flowArray(patch.impact)}`);
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
   if (patch.last_review_confirmed_at !== undefined) lines.push(`last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`);

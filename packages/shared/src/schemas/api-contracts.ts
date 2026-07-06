@@ -1025,6 +1025,18 @@ const _fabReviewModifyChangesSchema = z.object({
   // path silently dropped `related` via zod .strip() (KT-PIT-0005 recurrence),
   // leaving the only programmatic related-write path non-functional.
   related: z.array(z.string()).optional(),
+  // rc.9 (2026-07-06): discovery-signal scalar patches — must_read_if triggers
+  // Reference-type entry surfacing; intent_clues drives the AI's "should I Read
+  // the body?" judgment; impact enumerates consequence prose surfaced in the
+  // BM25F body slot. Before rc.9 these three fields were undeclared here, so
+  // fab_review modify silently .strip()'d them (KT-PIT-0005 recurrence) and the
+  // only path to fix a bad-shape must_read_if / missing intent_clues was direct
+  // Edit — bypassing the skill audit trail. All three are REPLACE semantics
+  // (mirror tags/related). must_read_if is a scalar string; intent_clues +
+  // impact are flow-arrays.
+  must_read_if: z.string().optional(),
+  intent_clues: z.array(z.string()).optional(),
+  impact: z.array(z.string()).optional(),
 });
 
 export const FabReviewInputSchema = z.discriminatedUnion("action", [

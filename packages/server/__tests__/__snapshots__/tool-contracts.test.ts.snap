@@ -600,6 +600,18 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "changes": {
             "additionalProperties": false,
             "properties": {
+              "impact": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "intent_clues": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
               "layer": {
                 "enum": [
                   "team",
@@ -613,6 +625,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                   "verified",
                   "proven",
                 ],
+                "type": "string",
+              },
+              "must_read_if": {
                 "type": "string",
               },
               "related": {
@@ -697,6 +712,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "changes": {
             "additionalProperties": false,
             "properties": {
+              "impact": {
+                "$ref": "#/anyOf/2/properties/changes/properties/impact",
+              },
+              "intent_clues": {
+                "$ref": "#/anyOf/2/properties/changes/properties/intent_clues",
+              },
               "layer": {
                 "enum": [
                   "team",
@@ -706,6 +727,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
               },
               "maturity": {
                 "$ref": "#/anyOf/2/properties/changes/properties/maturity",
+              },
+              "must_read_if": {
+                "$ref": "#/anyOf/2/properties/changes/properties/must_read_if",
               },
               "related": {
                 "$ref": "#/anyOf/2/properties/changes/properties/related",
