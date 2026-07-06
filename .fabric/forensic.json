@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-06-26T06:39:53.589Z",
-  "generated_by": "fabric-cli@2.3.0-rc.2",
+  "generated_at": "2026-07-06T04:53:45.451Z",
+  "generated_by": "fabric-cli@2.3.0-rc.8",
   "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
   "framework": {
@@ -13,28 +13,30 @@
     ]
   },
   "topology": {
-    "total_files": 2405,
+    "total_files": 2614,
     "by_ext": {
       ".bin": 1,
-      ".cjs": 61,
+      ".cjs": 103,
       ".csv": 105,
       ".db": 1,
       ".gz": 5,
       ".html": 4,
-      ".json": 894,
+      ".json": 943,
       ".jsonl": 25,
       ".log": 11,
-      ".md": 684,
+      ".md": 791,
       ".meta": 3,
-      ".mjs": 25,
+      ".mjs": 21,
       ".ndjson": 22,
+      ".onnx": 1,
+      ".patch": 1,
       ".py": 3,
       ".pyc": 5,
       ".sh": 4,
       ".snap": 10,
       ".svg": 2,
-      ".ts": 489,
-      ".txt": 34,
+      ".ts": 501,
+      ".txt": 35,
       ".yaml": 2,
       ".yml": 4,
       "[none]": 11
@@ -154,7 +156,7 @@
       ],
       "coverage": {
         "ratio": 0.006,
-        "total": 489,
+        "total": 501,
         "matched": 3,
         "co_occurring_patterns": [
           "meta-sidecar"
@@ -242,8 +244,8 @@
   },
   "readme": {
     "quality": "ok",
-    "line_count": 330,
-    "has_contributing": true
+    "line_count": 233,
+    "has_contributing": false
   },
   "recommendations_for_skill": [
     "未检测到明确框架,建议先让用户确认技术栈和主要入口。"

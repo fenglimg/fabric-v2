@@ -24,6 +24,7 @@
   "maintenance_hint_days": 14,
   "maintenance_hint_cooldown_days": 7,
   "review_stale_pending_days": 14,
+  "broad_index_backstop": 100,
   "nudge_mode": "normal",
   "cite_recall_nudge": true,
   "onboard_slots_opted_out": [],
