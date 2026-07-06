@@ -73,6 +73,11 @@ const _ruleDescriptionSchema = z.object({
   // validation and they never reach the client (MC1 include_related / fabric-
   // connect would see nothing). Mirrors the agents-meta ruleDescriptionSchema.
   related: z.array(z.string()).optional(),
+  // v2.2 glossary aliases FIELD (C-001): mirrors agents.ts RuleDescription.
+  // MUST be declared here or zod .strip() drops aliases on output validation
+  // before plan-context feeds them into the BM25 body — long-tail alias terms
+  // would never reach the lexical/vector index (KT-PIT-0018 zod-strip lesson).
+  aliases: z.array(z.string()).optional(),
 });
 
 // v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to { stable_id, description }.

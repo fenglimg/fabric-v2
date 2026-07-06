@@ -227,6 +227,8 @@ export function extractRuleDescription(source: string): RuleDescription | undefi
     relevance_paths: knowledge?.relevance_paths ?? [],
     // v2.2 H2-related (W1-T7): graph edges, undefined when absent.
     related: knowledge?.related,
+    // v2.2 glossary aliases FIELD (C-002): synonym terms, undefined when absent.
+    aliases: knowledge?.aliases,
   };
 }
 
@@ -254,6 +256,8 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     relevance_paths: knowledge.relevance_paths,
     // v2.2 H2-related (W1-T7): graph edges parsed from frontmatter.
     related: knowledge.related,
+    // v2.2 glossary aliases FIELD (C-002): synonym terms for the BM25 body.
+    aliases: knowledge.aliases,
   };
 }
 
@@ -289,6 +293,10 @@ type KnowledgeFrontmatterFields = {
   // Parsed from a flow-style inline array `related: [KT-DEC-0001, ...]`. Absent
   // or empty → undefined (mirrors tags), so the field is purely additive.
   related?: string[];
+  // v2.2 glossary aliases FIELD (C-002): synonym terms merged into the BM25
+  // body. Parsed from a flow-style inline array `aliases: [k8s, ...]`. Absent
+  // or empty → undefined (mirrors tags/related), purely additive.
+  aliases?: string[];
 };
 
 // lifecycle-refactor W3-A1 (§4 privacy iron law): KT→KP topology leak guard.
@@ -459,6 +467,12 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     return true;
   });
 
+  // v2.2 glossary aliases FIELD (C-002): flow-style inline array of synonym
+  // terms merged into the BM25 body (plan-context summary mid-weight slot + flat
+  // vector body). Reuses extractInlineArray like tags; absent/empty → undefined
+  // (purely additive, no cross-layer/topology semantics unlike `related`).
+  const aliases = extractInlineArray(frontmatter, "aliases");
+
   return {
     id,
     knowledge_type,
@@ -468,6 +482,7 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     relevance_scope,
     relevance_paths,
     related: related.length > 0 ? related : undefined,
+    aliases: aliases.length > 0 ? aliases : undefined,
   };
 }
 

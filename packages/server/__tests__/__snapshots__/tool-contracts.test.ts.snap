@@ -1205,6 +1205,12 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
             "description": {
               "additionalProperties": false,
               "properties": {
+                "aliases": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
                 "created_at": {
                   "type": "string",
                 },

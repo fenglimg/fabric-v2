@@ -36,6 +36,12 @@ export interface RuleDescription {
   // (SK2); consumed by fab_recall include_related packaging (MC1). Optional —
   // pre-v2.2 entries simply lack it.
   related?: string[];
+  // v2.2 glossary aliases FIELD (C-001): domain-glossary synonym terms merged
+  // into the BM25 body (plan-context documentTextForItem flat body +
+  // documentFieldsForItem summary mid-weight slot) so long-tail alias queries
+  // lift an entry into recall top_k (F1 telemetry driver). Optional — pre-
+  // glossary entries lack it and degrade to `?? []` (zero regression).
+  aliases?: string[];
 }
 
 // v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to the two load-bearing fields.
