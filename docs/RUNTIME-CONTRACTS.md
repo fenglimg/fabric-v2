@@ -68,6 +68,30 @@ Preferred retrieval flow:
 1. 用 `fab_recall(paths)` 一次拿到候选描述和每条 entry 的 native read path。
 2. 需要某条正文时，对返回的 read path 做一次 native Read 按需读取;`fab_recall` 不通过 MCP 投递正文。
 
+## Fabric Skill Contract
+
+Agent-facing skills are runtime surfaces. Their contract is validated in two
+places:
+
+- canonical template source: `scripts/lint-protected-tokens.ts`
+- installed client state: `fabric doctor` via `skill_contract_integrity`
+
+Contract rules:
+
+- `fabric-archive` and `fabric-review` must keep DISPLAY / WRITE hard-rule
+  sections and their MCP-only mutation paths (`mcp__fabric__fab_propose` and
+  `mcp__fabric__fab_review`).
+- `fabric-review` must preserve the activation/actionability language:
+  `reached-but-inert`, `changes next action`, `must_read_if`,
+  `intent_clues`, and `impact`.
+- `fabric-store` and `fabric-sync` remain thin CLI shims. Safety gates live in
+  the CLI, not in a thick skill workflow.
+- Every `templates/skills/<slug>/ref/*.md` file must be reachable from the
+  corresponding `SKILL.md`, or the file must be removed. Background-only
+  references still need an explicit entry point that says when to load them.
+
+The drift matrix and verification commands live in `docs/TESTING.md`.
+
 ## Knowledge Entry Contract
 
 知识类型仍是 5 类：

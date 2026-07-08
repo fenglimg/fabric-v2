@@ -547,16 +547,25 @@ export const zhCNMessages: Messages = {
     "{count} 个 SKILL.md 超出 token budget: {list}。建议把详细内容下沉到 ref/ progressive disclosure。",
   "doctor.check.skill_token_budget.remediation":
     "将超标 SKILL.md 中的详细 phase / worked-examples / decision 表移到 `templates/skills/<slug>/ref/*.md`,SKILL.md 热路径只留 trigger gate + 关键 phase 概要;参考 W1 progressive disclosure 拆分模式。重新跑 `fabric install` 同步两端。",
-  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description 结构 lint。代理 trigger-recall (真 LLM 测要 live model, W1 已用 gemini 跑过);本 lint 抓回归: description 缺失 / 超 60 token / 缺中文 trigger / 缺英文 trigger。
+  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description 结构 lint。代理 trigger-recall (真 LLM 测要 live model, W1 已用 gemini 跑过);本 lint 抓回归: description 缺失 / 超 60 token / 缺中文 trigger / 缺英文 trigger / 缺 anti-trigger 边界。
   "doctor.check.skill_description.name": "Skill description 质量",
   "doctor.check.skill_description.ok":
-    "所有 SKILL.md description 字段结构良好 (非空 / <60 token / 中英双语 trigger)。",
+    "所有 SKILL.md description 字段结构良好 (非空 / <60 token / 中英双语 trigger / 明确 anti-trigger 边界)。",
   "doctor.check.skill_description.message.singular":
     "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
   "doctor.check.skill_description.message.plural":
     "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
   "doctor.check.skill_description.remediation":
-    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语。参考 W1 description rewrite 风格。重新跑 `fabric install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
+    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语; (5) 明确 anti-trigger,如 `NOT PR review` / `NOT code review` / `不是...`。参考 W1 description rewrite 风格。重新跑 `fabric install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
+  "doctor.check.skill_contract.name": "Skill contract 完整性",
+  "doctor.check.skill_contract.ok":
+    "Fabric SKILL.md contract 完整: hard-rule anchors、MCP-only write path、thin shim 与 ref 入口均存在。",
+  "doctor.check.skill_contract.message.singular":
+    "{count} 个 Fabric skill contract 问题: {list}。",
+  "doctor.check.skill_contract.message.plural":
+    "{count} 个 Fabric skill contract 问题: {list}。",
+  "doctor.check.skill_contract.remediation":
+    "在 `packages/cli/templates/skills/<slug>/SKILL.md` 与对应 `ref/*.md` 中恢复缺失的 contract 文本,再跑 `fabric install` 同步 `.claude/skills` 与 `.codex/skills`。archive/review 必须保留 DISPLAY/WRITE hard rules 与 MCP-only mutation path;store/sync 必须保持 thin CLI shim。",
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart 模式检测。扫 7d 内 assistant_turn_observed 事件, 3 个 anti-pattern (G1 仪式化 / G2 抄底引用 / G5 placeholder cite)。warning 级 (启发式有 false-positive, 不阻断)。
   "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
   "doctor.check.cite_goodhart.ok":

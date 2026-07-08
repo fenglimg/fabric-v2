@@ -569,16 +569,25 @@ export const enMessages: Messages = {
     "{count} SKILL.md files exceed the token budget: {list}. Sink detail into ref/ for progressive disclosure.",
   "doctor.check.skill_token_budget.remediation":
     "Move detailed phase / worked-examples / decision tables out of the SKILL.md hot path into `templates/skills/<slug>/ref/*.md`. Keep SKILL.md focused on trigger-gate + key-phase summaries; see W1 progressive disclosure split. Re-run `fabric install` to sync both client subtrees.",
-  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint. Proxy for trigger-recall (a live-LLM recall test requires a model — W1 ran gemini for that). This lint catches regression: missing description / >60 tokens / no Chinese trigger / no English trigger.
+  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint. Proxy for trigger-recall (a live-LLM recall test requires a model — W1 ran gemini for that). This lint catches regression: missing description / >60 tokens / no Chinese trigger / no English trigger / no anti-trigger boundary.
   "doctor.check.skill_description.name": "Skill description quality",
   "doctor.check.skill_description.ok":
-    "All SKILL.md description fields are well-structured (non-empty, <60 tokens, bilingual triggers).",
+    "All SKILL.md description fields are well-structured (non-empty, <60 tokens, bilingual triggers, explicit anti-trigger boundary).",
   "doctor.check.skill_description.message.singular":
     "{count} SKILL.md description structural issue: {list}. The description field is the host's primary auto-invoke matching signal.",
   "doctor.check.skill_description.message.plural":
     "{count} SKILL.md description structural issues: {list}. The description field is the host's primary auto-invoke matching signal.",
   "doctor.check.skill_description.remediation":
-    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase. See W1 description rewrite style. Re-run `fabric install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
+    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase; (5) an explicit anti-trigger such as `NOT PR review` / `NOT code review` / `不是...`. See W1 description rewrite style. Re-run `fabric install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
+  "doctor.check.skill_contract.name": "Skill contract integrity",
+  "doctor.check.skill_contract.ok":
+    "Fabric SKILL.md contracts are intact: hard-rule anchors, MCP-only write paths, thin shims, and ref entry points are present.",
+  "doctor.check.skill_contract.message.singular":
+    "{count} Fabric skill contract issue: {list}.",
+  "doctor.check.skill_contract.message.plural":
+    "{count} Fabric skill contract issues: {list}.",
+  "doctor.check.skill_contract.remediation":
+    "Restore the missing contract text in `packages/cli/templates/skills/<slug>/SKILL.md` and referenced `ref/*.md` files, then run `fabric install` to resync `.claude/skills` and `.codex/skills`. Archive/review must keep DISPLAY/WRITE hard rules and MCP-only mutation paths; store/sync must remain thin CLI shims.",
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Scans 7d of assistant_turn_observed events for 3 anti-patterns (G1 ritual / G2 dismissal abuse / G5 placeholder cite). Warning severity — heuristics can false-positive; advisory only.
   "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
   "doctor.check.cite_goodhart.ok":

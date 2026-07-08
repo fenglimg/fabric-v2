@@ -105,7 +105,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 > Boundary B (locked): "extraction / classification / layer / slug / mode / **semantic dedup** → Skill (LLM); file write / frontmatter / idempotency / counter / layer-flip / atomic promote → MCP (deterministic)"
 
-Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `topic`): for each pending entry, `fab_pending action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface one of three flags as informational:
+Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `topic`): for each pending entry, `fab_pending action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface semantic flags and activation/actionability flags as informational:
 
 - `⚠ Possible duplicate of <stable_id> (overlap: high)` — same essential claim
 - `⚠ Contradicts <stable_id> (overlap: high)` — opposing claims, same scope
@@ -117,7 +117,7 @@ Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run d
 - `medium` — substantial conceptual overlap but the new entry adds a distinct facet (different path scope, added caveat). Recommend modify-to-harmonize.
 - `low` — adjacent topic, not a real overlap. Do NOT raise a flag at `low` — it is below the surfacing threshold (suppresses noise).
 
-Only `medium`+ flags are surfaced. User decides: still-approve (flag informational), modify-to-harmonize, or reject-as-duplicate (reason MUST cite existing stable_id).
+Only `medium`+ semantic overlap flags are surfaced. User decides: still-approve (flag informational), modify-to-harmonize, or reject-as-duplicate (reason MUST cite existing stable_id). Activation/actionability flags (`reached-but-inert`, weak `must_read_if`, generic `intent_clues`, empty `impact`) recommend `modify-content` before approval.
 
 DO NOT AskUserQuestion "is this a duplicate?" — LLM already judged. User only chooses approve/reject/modify.
 
@@ -131,6 +131,25 @@ Guideline/model entries surface in the SessionStart **ALWAYS-ACTIVE** sink as a 
 - Build the batch with `summary-cold-eval.ts#buildColdEvalBatch` (rubric = `COLD_EVAL_RUBRIC`, candidates = the guideline/model summaries) and hand it to an **offline** judge via `maestro delegate` (zero-context, batched — NOT on the hot path). The judge returns `ColdEvalVerdict[]`.
 - For each `self_sufficient=false` verdict: surface `⚠ Summary not act-on-able (cold-eval); suggested: <suggested_summary>` and route to `modify-content` (summary rewrite, stable_id preserved) — do NOT approve as-is. `self_sufficient=true` → no action.
 - This is a nudge, not a hard block (KT-DEC-0007): the user may still approve over a failed verdict, but the flag must be shown.
+
+## Activation Gate (all knowledge types)
+
+Apply this before approve / modify recommendations for **guideline**, **model**, **process**, **decision**, and **pitfall** entries. A useful entry is not merely stored; when reached by SessionStart, `fab_recall`, or a body `Read`, it **changes next action**. A `reached-but-inert` entry is readable but does not tell the next agent what to do differently.
+
+Flag as `⚠ reached-but-inert` when an entry only names a topic, directory, prior discussion, or abstract principle without at least one operational trigger + action:
+
+- guideline/model: summary must state the operative rule or mental model in the body-less INDEX line; body can elaborate, but the line itself must change behavior.
+- process: must name the trigger condition, ordered action path, and evidence/output that proves completion.
+- decision: must state the chosen option, rejected alternative or tradeoff, and the next action it changes; pure history is inert.
+- pitfall: must state the failure mode, detection cue, and prevention/fix action; "we hit a bug in X" is inert without the avoid/fix step.
+
+Actionability fields are part of the same gate:
+
+- `must_read_if` must name a concrete trigger condition; generic values like "when working on this project" or "read if relevant" are weak.
+- `intent_clues` must include at least one positive clue and, when helpful, one negative clue (`NOT ...`) that changes retrieval/routing.
+- `impact` must describe what goes wrong or improves if the entry is applied; empty or tautological impact is `reached-but-inert`.
+
+Route `reached-but-inert` to `modify-content` (rewrite summary/body) or reject if the candidate has no reusable action after rewrite. Do NOT approve storage-only knowledge just because it is true.
 
 ## Narrowing Imported Entries & Modify Sub-Flow
 

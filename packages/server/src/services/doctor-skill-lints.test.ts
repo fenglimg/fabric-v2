@@ -1,0 +1,172 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { inspectSkillContract, inspectSkillDescription } from "./doctor-skill-lints.js";
+
+function seedSkill(root: string, slug: string, description: string): void {
+  const skillDir = join(root, ".claude", "skills", slug);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(
+    join(skillDir, "SKILL.md"),
+    `---\nname: ${slug}\ndescription: ${description}\n---\n# ${slug}\n`,
+    "utf8",
+  );
+}
+
+function seedInstalledSkill(root: string, client: ".claude" | ".codex", slug: string, body: string): void {
+  const skillDir = join(root, client, "skills", slug);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), body, "utf8");
+}
+
+describe("inspectSkillDescription", () => {
+  it("accepts a bilingual description with an explicit anti-trigger boundary", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-desc-ok-"));
+    seedSkill(
+      root,
+      "fabric-archive",
+      "归档 session knowledge (NOT code review). Triggers 归档/archive insights.",
+    );
+
+    await expect(inspectSkillDescription(root)).resolves.toEqual({
+      status: "ok",
+      issues: [],
+    });
+  });
+
+  it("warns when a description has triggers but no anti-trigger boundary", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-desc-anti-trigger-"));
+    seedSkill(
+      root,
+      "fabric-review",
+      "审核 pending knowledge and review backlog. Triggers 审核/review pending.",
+    );
+
+    const result = await inspectSkillDescription(root);
+
+    expect(result.status).toBe("warn");
+    expect(result.issues).toContainEqual({
+      slug: "fabric-review",
+      problem: "missing_anti_trigger",
+      detail: "no explicit non-trigger phrase such as NOT/不是/不要",
+    });
+  });
+});
+
+describe("inspectSkillContract", () => {
+  it("accepts intact archive/review contracts and thin store/sync shims", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-contract-ok-"));
+    seedInstalledSkill(
+      root,
+      ".claude",
+      "fabric-archive",
+      [
+        "allowed-tools: mcp__fabric__fab_propose",
+        "## Hard Rules",
+        "### DISPLAY Rules",
+        "### WRITE Rules",
+        "the only legal write path is `mcp__fabric__fab_propose`",
+        "Drop reached-but-inert candidates.",
+      ].join("\n"),
+    );
+    seedInstalledSkill(
+      root,
+      ".claude",
+      "fabric-review",
+      [
+        "allowed-tools: mcp__fabric__fab_review",
+        "## Hard Rules",
+        "### DISPLAY Rules",
+        "### WRITE Rules",
+        "the only legal mutation path is `mcp__fabric__fab_review`",
+        "Flag reached-but-inert entries that do not changes next action.",
+        "Check `must_read_if`, `intent_clues`, and `impact`.",
+      ].join("\n"),
+    );
+    seedInstalledSkill(root, ".claude", "fabric-store", "thin shim\nCLI\n本 skill 只指路\nNEVER direct edit");
+    seedInstalledSkill(root, ".claude", "fabric-sync", "thin shim\nCLI\n本 skill 只路由\nNEVER direct edit");
+
+    await expect(inspectSkillContract(root)).resolves.toEqual({
+      status: "ok",
+      issues: [],
+    });
+  });
+
+  it("warns when archive loses the MCP-only write path token", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-contract-mcp-"));
+    seedInstalledSkill(
+      root,
+      ".claude",
+      "fabric-archive",
+      [
+        "## Hard Rules",
+        "### DISPLAY Rules",
+        "### WRITE Rules",
+        "the only legal write path is delegated elsewhere",
+        "Drop reached-but-inert candidates.",
+      ].join("\n"),
+    );
+
+    const result = await inspectSkillContract(root);
+
+    expect(result.status).toBe("warn");
+    expect(result.issues).toContainEqual({
+      slug: "fabric-archive",
+      client: ".claude",
+      problem: "missing_contract_token",
+      detail: "mcp__fabric__fab_propose",
+    });
+  });
+
+  it("warns when a ref file is not reachable from SKILL.md", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-contract-ref-"));
+    const skillDir = join(root, ".claude", "skills", "fabric-review");
+    mkdirSync(join(skillDir, "ref"), { recursive: true });
+    writeFileSync(join(skillDir, "ref", "semantic-check.md"), "# Semantic Check\n", "utf8");
+    seedInstalledSkill(
+      root,
+      ".claude",
+      "fabric-review",
+      [
+        "mcp__fabric__fab_review",
+        "## Hard Rules",
+        "### DISPLAY Rules",
+        "### WRITE Rules",
+        "only legal mutation path",
+        "reached-but-inert",
+        "changes next action",
+        "must_read_if",
+        "intent_clues",
+        "impact",
+      ].join("\n"),
+    );
+
+    const result = await inspectSkillContract(root);
+
+    expect(result.status).toBe("warn");
+    expect(result.issues).toContainEqual({
+      slug: "fabric-review",
+      client: ".claude",
+      problem: "missing_ref_entry",
+      detail: "semantic-check.md",
+    });
+  });
+
+  it("warns when store/sync stop being thin CLI shims", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-contract-thin-"));
+    seedInstalledSkill(root, ".codex", "fabric-store", "CLI\n本 skill 只指路\nNEVER direct edit");
+
+    const result = await inspectSkillContract(root);
+
+    expect(result.status).toBe("warn");
+    expect(result.issues).toContainEqual({
+      slug: "fabric-store",
+      client: ".codex",
+      problem: "missing_thin_shim_token",
+      detail: "thin shim",
+    });
+  });
+});

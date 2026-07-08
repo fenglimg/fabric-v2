@@ -19,7 +19,21 @@ export type SkillTokenBudgetInspection = {
 
 export type SkillDescriptionLintInspection = {
   status: "ok" | "warn";
-  issues: Array<{ slug: string; problem: "missing" | "too_long" | "no_cjk" | "no_ascii"; detail: string }>;
+  issues: Array<{
+    slug: string;
+    problem: "missing" | "too_long" | "no_cjk" | "no_ascii" | "missing_anti_trigger";
+    detail: string;
+  }>;
+};
+
+export type SkillContractInspection = {
+  status: "ok" | "warn";
+  issues: Array<{
+    slug: string;
+    client: ".claude" | ".codex";
+    problem: "missing_contract_token" | "missing_ref_entry" | "missing_thin_shim_token";
+    detail: string;
+  }>;
 };
 
 type SkillMdYamlInvalidCandidate = {
@@ -37,10 +51,36 @@ type SkillMdYamlInvalidInspection = {
 // fabric-import folded into fabric-archive `source` mode; store/sync are
 // single-file shims (no ref/) so they stay out of the ref-mirror lint set.
 const FABRIC_SKILL_SLUGS = ["fabric-archive", "fabric-review"] as const;
+const FABRIC_CONTRACT_SKILL_SLUGS = ["fabric-archive", "fabric-review", "fabric-store", "fabric-sync"] as const;
 
 const SKILL_MD_FRONTMATTER_ROOTS = [".claude/skills", ".codex/skills"] as const;
 const SKILL_FRONTMATTER_KEY_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*):[ \t]+(.+?)[ \t]*$/u;
 const SKILL_QUOTED_VALUE_LEADS = new Set(['"', "'", "[", "{", ">", "|"]);
+
+const SKILL_CONTRACT_TOKENS: Record<(typeof FABRIC_CONTRACT_SKILL_SLUGS)[number], string[]> = {
+  "fabric-archive": [
+    "## Hard Rules",
+    "### DISPLAY Rules",
+    "### WRITE Rules",
+    "mcp__fabric__fab_propose",
+    "only legal write path",
+    "reached-but-inert",
+  ],
+  "fabric-review": [
+    "## Hard Rules",
+    "### DISPLAY Rules",
+    "### WRITE Rules",
+    "mcp__fabric__fab_review",
+    "only legal mutation path",
+    "reached-but-inert",
+    "changes next action",
+    "must_read_if",
+    "intent_clues",
+    "impact",
+  ],
+  "fabric-store": ["thin shim", "CLI", "本 skill 只", "NEVER"],
+  "fabric-sync": ["thin shim", "CLI", "本 skill 只", "NEVER"],
+};
 
 function okCheck(name: string, message: string): DoctorCheck {
   return { name, status: "ok", message };
@@ -143,6 +183,7 @@ export async function inspectSkillDescription(projectRoot: string): Promise<Skil
   const issues: SkillDescriptionLintInspection["issues"] = [];
   const CJK_PATTERN = /[\u3400-\u4dbf\u4e00-\u9fff]/u;
   const ASCII_PATTERN = /[a-zA-Z]{2,}/u;
+  const ANTI_TRIGGER_PATTERN = /\bNOT\b|ONLY when|do not|不要|不是|非/u;
 
   for (const slug of FABRIC_SKILL_SLUGS) {
     const skillMdPath = join(projectRoot, ".claude", "skills", slug, "SKILL.md");
@@ -173,6 +214,64 @@ export async function inspectSkillDescription(projectRoot: string): Promise<Skil
     }
     if (!ASCII_PATTERN.test(description)) {
       issues.push({ slug, problem: "no_ascii", detail: "no English trigger phrase" });
+    }
+    if (!ANTI_TRIGGER_PATTERN.test(description)) {
+      issues.push({
+        slug,
+        problem: "missing_anti_trigger",
+        detail: "no explicit non-trigger phrase such as NOT/不是/不要",
+      });
+    }
+  }
+
+  return { status: issues.length === 0 ? "ok" : "warn", issues };
+}
+
+export async function inspectSkillContract(projectRoot: string): Promise<SkillContractInspection> {
+  const issues: SkillContractInspection["issues"] = [];
+
+  for (const rootRel of SKILL_MD_FRONTMATTER_ROOTS) {
+    const client = rootRel.startsWith(".claude") ? ".claude" : ".codex";
+    for (const slug of FABRIC_CONTRACT_SKILL_SLUGS) {
+      const skillDir = join(projectRoot, rootRel, slug);
+      const skillMdPath = join(skillDir, "SKILL.md");
+      let body: string;
+      try {
+        body = await readFile(skillMdPath, "utf8");
+      } catch {
+        continue;
+      }
+
+      for (const token of SKILL_CONTRACT_TOKENS[slug]) {
+        if (body.includes(token)) continue;
+        issues.push({
+          slug,
+          client,
+          problem: slug === "fabric-store" || slug === "fabric-sync"
+            ? "missing_thin_shim_token"
+            : "missing_contract_token",
+          detail: token,
+        });
+      }
+
+      const refDir = join(skillDir, "ref");
+      let refFiles: string[] | null;
+      try {
+        refFiles = (await readdir(refDir)).filter((name) => name.endsWith(".md"));
+      } catch {
+        refFiles = null;
+      }
+      if (refFiles === null) continue;
+
+      for (const fname of refFiles) {
+        if (body.includes(fname) || body.includes(`ref/${fname}`)) continue;
+        issues.push({
+          slug,
+          client,
+          problem: "missing_ref_entry",
+          detail: fname,
+        });
+      }
     }
   }
 
@@ -302,6 +401,28 @@ export function createSkillDescriptionCheck(t: Translator, inspection: SkillDesc
       list,
     }),
     t("doctor.check.skill_description.remediation"),
+    "maintainer",
+  );
+}
+
+export function createSkillContractCheck(t: Translator, inspection: SkillContractInspection): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(t("doctor.check.skill_contract.name"), t("doctor.check.skill_contract.ok"));
+  }
+  const list = inspection.issues
+    .map((issue) => `${issue.client}/${issue.slug}: ${issue.problem} (${issue.detail})`)
+    .join("; ");
+  const count = inspection.issues.length;
+  return issueCheck(
+    t("doctor.check.skill_contract.name"),
+    "warn",
+    "warning",
+    "skill_contract_integrity",
+    t(`doctor.check.skill_contract.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      list,
+    }),
+    t("doctor.check.skill_contract.remediation"),
     "maintainer",
   );
 }
