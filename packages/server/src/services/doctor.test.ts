@@ -161,11 +161,12 @@ describe("runDoctorReport", () => {
       "Events ledger health (rc.37 Plan B 5 hard gate)",
       "Event ledger schema compat",
       "Skill ref mirror parity",
-      // v2.0.0-rc.33 W3-6 / W3-7 / W3-3: SKILL.md token budget + description
-      // structural lint + cite-policy Goodhart detection. All three are
+      // v2.0.0-rc.33 W3-6 / W3-7 + skill contract: SKILL.md token budget,
+      // description structural lint, and contract integrity. All are
       // observability checks (no mutation), inserted adjacent to skill_ref_mirror.
       "Skill token budget",
       "Skill description quality",
+      "Skill contract integrity",
       // ux-w2-2: registry-driven retired-reference (stale-pointer) lint.
       "Retired reference",
       "Cite-policy Goodhart",
@@ -275,7 +276,8 @@ describe("runDoctorReport", () => {
     // ux-w2-2: +1 retired_reference (stale-pointer lint) → 44.
     // W3-C: -1 router_chain_ref (fabric/ router retired, 0-router skill set) → 43.
     // W2 (F-003): +1 project_registry_drift (projects.json ↔ projects/ tree) → 44.
-    expect(report.checks).toHaveLength(44);
+    // skill-architecture absorption: +1 skill_contract_integrity → 45.
+    expect(report.checks).toHaveLength(45);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

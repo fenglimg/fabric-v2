@@ -46,6 +46,11 @@ const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER"];
 // layer enums + server event names that templates reference verbatim.
 const SKILL_MCP_TOKENS: Record<string, string[]> = {
   "fabric-archive": [
+    "## Hard Rules",
+    "### DISPLAY Rules",
+    "### WRITE Rules",
+    "mcp__fabric__fab_propose",
+    "only legal write path",
     "fab_propose",
     "relevance_scope",
     "relevance_paths",
@@ -57,6 +62,7 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
     "session_context",
     "source_sessions",
     "knowledge_scope_degraded",
+    "reached-but-inert",
   ],
   "fabric-import": [
     "fab_propose",
@@ -67,6 +73,11 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
     "source_sessions",
   ],
   "fabric-review": [
+    "## Hard Rules",
+    "### DISPLAY Rules",
+    "### WRITE Rules",
+    "mcp__fabric__fab_review",
+    "only legal mutation path",
     "fab_review",
     "pending_path",
     "relevance_scope",
@@ -76,7 +87,14 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
     "proposed_reason",
     "session_context",
     "knowledge_scope_degraded",
+    "reached-but-inert",
+    "changes next action",
+    "must_read_if",
+    "intent_clues",
+    "impact",
   ],
+  "fabric-store": ["thin shim", "CLI", "本 skill 只", "NEVER"],
+  "fabric-sync": ["thin shim", "CLI", "本 skill 只", "NEVER"],
 };
 
 // PROTECTED_TOKENS registry MUST include these — they form the canonical
@@ -187,6 +205,41 @@ export function validateSkillFile(filePath: string, source: string): Violation[]
   return violations;
 }
 
+export function validateSkillRefReachability(
+  filePath: string,
+  source: string,
+  refFileNames: readonly string[],
+): Violation[] {
+  const violations: Violation[] = [];
+
+  for (const refFileName of refFileNames) {
+    if (source.includes(refFileName) || source.includes(`ref/${refFileName}`)) continue;
+    violations.push({
+      filePath,
+      message: `ref file ${refFileName} is not reachable from SKILL.md`,
+    });
+  }
+
+  return violations;
+}
+
+async function listSkillRefFiles(skillFilePath: string): Promise<string[]> {
+  const refDir = path.join(path.dirname(skillFilePath), "ref");
+  let entries: Awaited<ReturnType<typeof readdir>>;
+  try {
+    entries = await readdir(refDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function validateProtectedTokenRegistry(tokens: string[]): Violation[] {
   const violations: Violation[] = [];
 
@@ -231,6 +284,7 @@ export async function main(): Promise<void> {
   for (const filePath of skillFiles) {
     const source = await readFile(filePath, "utf8");
     violations.push(...validateSkillFile(filePath, source));
+    violations.push(...validateSkillRefReachability(filePath, source, await listSkillRefFiles(filePath)));
   }
 
   const totalChecked = bootstrapFiles.length + skillFiles.length;

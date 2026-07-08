@@ -115,10 +115,12 @@ import {
   type EventsJsonlGatesReport,
 } from "./events-jsonl-gates.js";
 import {
+  createSkillContractCheck,
   createSkillDescriptionCheck,
   createSkillMdYamlInvalidCheck,
   createSkillRefMirrorCheck,
   createSkillTokenBudgetCheck,
+  inspectSkillContract,
   inspectSkillDescription,
   inspectSkillMdYamlInvalid,
   inspectSkillRefMirror,
@@ -647,6 +649,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     skillRefMirror,
     skillTokenBudget,
     skillDescription,
+    skillContract,
     retiredReferences,
   ] = await Promise.all([
     inspectForensic(projectRoot),
@@ -668,6 +671,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectSkillRefMirror(projectRoot),
     inspectSkillTokenBudget(projectRoot),
     inspectSkillDescription(projectRoot),
+    inspectSkillContract(projectRoot),
     // ux-w2-2: registry-driven stale-pointer scan over the agent-consumed
     // surface (bootstrap + SKILL.md + installed hooks).
     inspectRetiredReferences(projectRoot),
@@ -855,6 +859,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillRefMirrorCheck(t, skillRefMirror),
     createSkillTokenBudgetCheck(t, skillTokenBudget),
     createSkillDescriptionCheck(t, skillDescription),
+    createSkillContractCheck(t, skillContract),
     // ux-w2-2: retired-reference (stale-pointer) lint — registry-driven.
     createRetiredReferenceCheck(t, retiredReferences),
     createCiteGoodhartCheck(t, citeGoodhart),

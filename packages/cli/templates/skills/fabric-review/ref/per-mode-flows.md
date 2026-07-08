@@ -8,7 +8,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
 1. Call `fab_pending` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
-3. Before presenting, perform **Semantic Check** (see `ref/semantic-check.md`) by issuing one or more `fab_pending action="search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries.
+3. Before presenting, perform **Semantic Check + Activation Check** (see `ref/semantic-check.md`) by issuing one or more `fab_pending action="search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries, then judge whether the pending entry changes next action.
 4. For each pending item, render a per-item block. v2.0.0-rc.7 T6: render `proposed_reason` (frontmatter) + `## Why proposed` line (body, 1-line enum explanation) + first line of `## Session context` so future-self has full context without re-reading the transcript. UX i18n Policy class 1 — roll-up templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`, `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
 
    **en variant** (`fabric_language === "en"`):
@@ -18,9 +18,13 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    Title: Single .cjs hook across clients
    Summary: stdout JSON shape is identical across the three clients; one script suffices.
    Maturity: draft   Tags: [hook, cli]
+   must_read_if: editing Stop-hook JSON output across clients
+   intent_clues: [hook parity, client stdout JSON, NOT UI copy]
+   impact: avoids split client hooks drifting silently
    Proposed reason: decision-confirmation — ≥2 alternatives weighed; rationale stated.
    Session context: Session goal: ship Stop-hook for v2 release.
    ⚠ Possible duplicate of KT-D-0007 (LLM subjective dup/subsumption judgement; thresholds intentionally not quantified)
+   ⚠ reached-but-inert if summary/triage fields do not change next action
    ```
 
    **zh-CN variant** (`fabric_language === "zh-CN"`):
@@ -30,9 +34,13 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    标题: 单 .cjs hook 跨客户端
    摘要: 三客户端 stdout JSON 格式一致，单脚本即可。
    成熟度: draft   Tags: [hook, cli]
+   must_read_if: editing Stop-hook JSON output across clients
+   intent_clues: [hook parity, client stdout JSON, NOT UI copy]
+   impact: avoids split client hooks drifting silently
    Proposed reason: decision-confirmation — ≥2 候选方案经权衡后确认选型。
    Session context: Session goal: ship Stop-hook for v2 release.
    ⚠ 可能重复 KT-D-0007 (LLM 主观判断 dup/subsumption；具体阈值不可量化)
+   ⚠ reached-but-inert: 摘要 / triage 字段若不能改变下一步动作,先走 modify-content
    ```
 
    The Skill MUST read `proposed_reason` from the pending file's frontmatter (parse the YAML block, key `proposed_reason`) and the `## Why proposed` line / first non-blank line of `## Session context` from the body. If either is missing on a pre-rc.7 pending entry, render the legacy fallback (UX i18n Policy class 1):
@@ -41,6 +49,8 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    - zh-CN: `Proposed reason: <历史条目，未记录 reason>` 与 `Session context: <未记录>`
 
    …so the reviewer can still proceed.
+
+   If `must_read_if`, `intent_clues`, or `impact` are missing on an old pending entry, render them as `<not recorded>` and consider that an activation warning, not a parser failure.
 
 5. Surface a per-item AskUserQuestion. UX i18n Policy class 5 — `header` + `question` translated; `options[]` array remain English routing keys:
 

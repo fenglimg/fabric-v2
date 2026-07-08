@@ -108,6 +108,8 @@ Graceful degradation: missing digest cache → single-session fallback. Missing 
 
 Gather raw evidence: tail `.fabric/events.jsonl` since last `knowledge_proposed`; enumerate `recent_paths` (workspace files touched by Read/Edit/Write); distill `user_messages_summary` (≤500 char prose, NOT verbatim transcript); build candidate list. Hard budget: `archive_max_candidates_per_batch` per batch (default 8); drop weaker overage.
 
+**Activation floor.** A candidate is worth proposing only when it can change a future agent's next action after SessionStart or `fab_recall`. Drop storage-only observations that merely say a discussion happened, a file exists, or a topic is important without an operational trigger/action. The review-side name for this failure is `reached-but-inert`; avoid creating those pending entries here.
+
 ### Phase 2.5 — Viability Gate (Anti-Archive Guard)
 
 Coarse viability check. **PASS**: user_explicit_invoke OR ≥1 archive signal hit. rc.37 NEW-4 folds the legacy 8 signals into **3 categories**: (1) **User-driven knowledge expression** (normative language `always`/`never`/`以后`/`记一下`/`永远不要`, OR decision-with-rationale, OR dismissal-with-reason); (2) **Reflective discovery** (wrong-turn-and-revert, OR long diagnostic loop, OR a named reusable pattern); (3) **Concrete artifact change** (new dependency diff, OR a formalized multi-step procedure).
@@ -202,3 +204,4 @@ MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-e
 - **Worked examples** (3 end-to-end fab_propose calls: decision/team, pitfall/team, guideline/personal): `Read ref/worked-examples.md`
 - **E5 Scheduled Daily Recap** (only when entry_point=E5_cron — OS cron, `/loop`, or scheduled trigger): `Read ref/e5-cron-recap.md`
 - **Dry-run Scope** (authoritative catalogue of all writes suspended by `--dry-run`): `Read ref/dry-run-scope.md`
+- **RC history** (background-only migration notes; load only when auditing legacy release behaviour or why an old rc archive path differs): `Read ref/rc-history.md`

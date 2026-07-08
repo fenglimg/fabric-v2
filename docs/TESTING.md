@@ -123,6 +123,22 @@ Fabric 端到端策略以 `e2e-methodology-FINAL.md` 为准：
 - bootstrap managed block：shared template 与 install / doctor 测试
 - strategy drift：`scripts/test-strategy-gate.mjs`
 
+### Skill / Doctor Drift Matrix
+
+这些检查回答的是“agent-facing contract 是否仍会被正确触发、读取和执行”，不是普通代码覆盖率。
+
+| Fabric check | 回答的问题 | 是否 hard gate | 主要验证入口 |
+| --- | --- | --- | --- |
+| skill token budget | `SKILL.md` 热路径是否过大、是否应该把细节下沉到 `ref/` | warning/error（doctor 里 error 会提升报告状态） | `packages/server/src/services/doctor-skill-lints.test.ts` |
+| skill description lint | `description` 是否仍是 trigger 而非 summary，且有中英 trigger + anti-trigger 边界 | warning | `packages/server/src/services/doctor-skill-lints.test.ts` |
+| skill contract integrity | archive/review 的 DISPLAY/WRITE hard rules、MCP-only mutation path、store/sync thin shim、`ref/*.md` 入口是否仍存在 | warning | `packages/server/src/services/doctor-skill-lints.test.ts` + `fabric doctor` |
+| protected-token lint | canonical templates 是否保留 MCP tool names、scope/layer enum、hard-rule keywords、`reached-but-inert` / `changes next action` 等行为锚点 | CI hard gate | `node --experimental-strip-types scripts/lint-protected-tokens.ts` |
+| skill ref mirror | `.claude/skills` 与 `.codex/skills` 的 `ref/` 是否字节一致，避免某端手改漂移 | warning | `packages/server/src/services/doctor.test.ts` |
+| skill md yaml invalid | `SKILL.md` frontmatter 是否含 strict YAML parser 会拒绝的未引用 `: ` | warning | `packages/server/src/services/doctor-skill-lints.ts` + doctor i18n 测试 |
+| bootstrap drift | managed block / L1 snapshot 是否被手改或 install 未同步 | fixable / warning | bootstrap canonical tests + `fabric doctor --fix` |
+| store route check | write/read scope 是否能解析到合法 store，避免写入无路由 | hard/manual error | store scope / project registry doctor tests |
+| personal leak check | personal 知识是否泄漏到 shared/team store 或跨层错误引用 | hard/manual error | store stable-id/layer integrity tests |
+
 注意：当前 CLI surface snapshot 仍只覆盖一部分命令定义。完整 command registry 的事实源是 `packages/cli/src/commands/index.ts`；不要在文档中声称测试已经覆盖所有 top-level commands，除非先扩展测试。
 
 ## Gate Map
