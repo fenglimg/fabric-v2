@@ -137,8 +137,9 @@ describe("G5 doctor metrics.jsonl append", () => {
   });
 
   it("write failure does NOT change doctor exit code (never-throw)", async () => {
-    // Point target at a directory whose .fabric/ we make un-writable so the
-    // append fails. Doctor MUST still complete normally.
+    // F-004: spyOn appendFileSync throw — deterministic across CI (chmod 0o500
+    // was a no-op on root/uid=0 runners, hiding the silent-degrade path).
+    // ENOSPC / EROFS / EACCES all surface here uniformly.
     const target = makeTargetRoot();
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
@@ -154,15 +155,19 @@ describe("G5 doctor metrics.jsonl append", () => {
       renderBacklogAgeLine: () => "  backlog: 0 high-value",
     }));
 
-    // Chmod the fabric dir readonly. On some CIs this is a no-op — the test
-    // primarily locks the INTENT: even when count=0 the append still happens
-    // AND any thrown error is swallowed.
-    const { chmodSync } = await import("node:fs");
-    try {
-      chmodSync(join(target, ".fabric"), 0o500);
-    } catch {
-      // ignore; not all filesystems honor chmod
-    }
+    // doctor.ts imports { appendFileSync } from "node:fs" at top level. The
+    // ESM namespace is frozen (Cannot redefine property: appendFileSync), so
+    // vi.spyOn fails on node:fs — we use vi.doMock to replace appendFileSync
+    // before the dynamic import of doctor.ts.
+    vi.doMock("node:fs", async (importOriginal) => {
+      const orig = await importOriginal<typeof import("node:fs")>();
+      return {
+        ...orig,
+        appendFileSync: () => {
+          throw new Error("ENOSPC simulated");
+        },
+      };
+    });
 
     const { doctorCommand } = await import("../src/commands/doctor.ts");
     const stdout = captureStdout();
@@ -172,14 +177,14 @@ describe("G5 doctor metrics.jsonl append", () => {
       } as never);
     } finally {
       stdout.restore();
-      try {
-        chmodSync(join(target, ".fabric"), 0o755);
-      } catch {
-        // ignore
-      }
+      vi.doUnmock("node:fs");
     }
 
+    // Doctor must complete normally despite the simulated ENOSPC.
     expect(process.exitCode).toBe(originalExitCode);
+    // Because the spy threw, the silent degrade branch swallowed the error
+    // and metrics.jsonl was NEVER written.
+    expect(existsSync(join(target, ".fabric", "metrics.jsonl"))).toBe(false);
   });
 });
 
