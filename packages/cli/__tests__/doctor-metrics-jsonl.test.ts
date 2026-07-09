@@ -13,8 +13,9 @@
  *   - Append-only jsonl: one JSON record per line (writer terminates each
  *     record with a newline).
  *   - Record shape frozen: `{ts:ISO8601, kind:'backlog', count:number,
- *     median_age_days:number}`. New fields may be added; existing fields MUST
- *     stay backward-compatible for 4-week analyses to remain comparable.
+ *     median_age_days:number, oldest_days:number|null}`. New fields may be
+ *     added; existing fields MUST stay backward-compatible for 4-week
+ *     analyses to remain comparable.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -90,6 +91,7 @@ describe("G5 doctor metrics.jsonl append", () => {
       kind: "backlog",
       count: 2,
       median_age_days: 2,
+      oldest_days: 3,
     });
     expect(typeof record.ts).toBe("string");
     // ISO 8601 shape: `YYYY-MM-DDTHH:MM:SS.sssZ`

@@ -72,7 +72,7 @@ carry a lint severity, or block CI. It is safe to grep in scripts.
 Every doctor run also appends one line to `.fabric/metrics.jsonl`:
 
 ```json
-{"ts":"2026-07-09T16:00:00.000Z","kind":"backlog","count":2,"median_age_days":2}
+{"ts":"2026-07-09T16:00:00.000Z","kind":"backlog","count":2,"median_age_days":2,"oldest_days":3}
 ```
 
 Use this 4-week time series to judge whether silent-default is losing you

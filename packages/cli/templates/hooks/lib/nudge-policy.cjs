@@ -90,7 +90,8 @@ function readNudgeMode(projectRoot) {
   } catch {
     // fall through
   }
-  // Layer 4: hard default (silent per G1/G2 alignment).
+  // Layer 4: hard default (DEFAULT_NUDGE_MODE = "normal" per G2 boundary caveat —
+  // see JSDoc at DEFAULT_NUDGE_MODE for why not "silent").
   return DEFAULT_NUDGE_MODE;
 }
 
