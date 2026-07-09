@@ -16,24 +16,16 @@ import type {
   ArchiveScanInput,
   ArchiveScanOutput,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
+// G3 (GRL-STOPHOOK-AIONLY-20260709): shared high-value predicate SST. Hook has
+// a byte-parity .cjs twin at packages/cli/templates/hooks/lib/
+// high-value-predicate.cjs; round-trip parity locked by
+// packages/server/src/services/high-value-sst.test.ts. Fixes crack-2 26→1
+// virtual-alarm drift where hook and this file each ran independent copies.
+import { isHighValueArchiveCandidate } from "@fenglimg/fabric-shared";
 import { readEventLedger } from "./event-ledger.js";
 
 // rc.25 TASK-05 constants (verbatim from ref/phase-1-cross-session.md).
 const ANTI_LOOP_HOURS = 12;
-const HIGH_VALUE_EVENT_TYPES = new Set([
-  "knowledge_context_planned",
-  "edit_paths_recorded",
-  "edit_intent_checked", // the real high-freq edit signal (rc.37 NEW-14/B3)
-]);
-const NORMATIVE_KEYWORDS = [
-  "以后",
-  "always",
-  "never",
-  "from now on",
-  "下次",
-  "记一下",
-  "永远不要",
-];
 // Window for the cross-session pending dedupe scan (matches the digest window
 // horizon — 30 days is generous; the ledger rotation tick trims older events).
 const PROPOSED_KEYS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -129,7 +121,9 @@ export async function collectArchiveScan(
       continue;
     }
     if (typeof attempt.covered_through_ts === "number") {
-      if (hasHighValueSignal(events, sid, attempt.covered_through_ts)) {
+      // G3 SST: was local hasHighValueSignal(events, sid, wm) — now shared
+      // isHighValueArchiveCandidate(events, sid, wm) with identical semantics.
+      if (isHighValueArchiveCandidate(events, sid, attempt.covered_through_ts)) {
         kept.push(sid); // (d) new substantive activity → keep
       } else {
         dropped.push({ session_id: sid, reason: "no_new_signal" }); // (d)
@@ -160,31 +154,7 @@ export async function collectArchiveScan(
   };
 }
 
-// (d) high-value signal probe: any HIGH_VALUE_EVENT_TYPES for this session past
-// the watermark, OR a NORMATIVE_KEYWORDS hit in the latest assistant_turn_observed.
-function hasHighValueSignal(
-  events: LedgerEvent[],
-  sessionId: string,
-  watermarkTs: number,
-): boolean {
-  let latestTurn: LedgerEvent | null = null;
-  for (const e of events) {
-    if (e.session_id !== sessionId) continue;
-    if (typeof e.ts !== "number" || e.ts <= watermarkTs) continue;
-    if (typeof e.event_type === "string" && HIGH_VALUE_EVENT_TYPES.has(e.event_type)) {
-      return true;
-    }
-    if (e.event_type === "assistant_turn_observed") {
-      if (!latestTurn || (typeof latestTurn.ts === "number" && e.ts > latestTurn.ts)) {
-        latestTurn = e;
-      }
-    }
-  }
-  if (latestTurn) {
-    const haystack = JSON.stringify(latestTurn).toLowerCase();
-    for (const kw of NORMATIVE_KEYWORDS) {
-      if (haystack.includes(kw.toLowerCase())) return true;
-    }
-  }
-  return false;
-}
+// G3 (GRL-STOPHOOK-AIONLY-20260709): local hasHighValueSignal removed —
+// replaced by isHighValueArchiveCandidate imported from @fenglimg/fabric-shared
+// (single source of truth). Hook has a byte-parity .cjs twin. Round-trip
+// parity verified by packages/server/src/services/high-value-sst.test.ts.

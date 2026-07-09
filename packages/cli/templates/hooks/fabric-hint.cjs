@@ -224,63 +224,24 @@ const METRICS_LEDGER_FILE = "metrics.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
 
-// v2.2 dual-sink (Goal A / D6): deterministic high-value probe for the archive
-// nudge value-gate. Mirrors packages/server/src/services/archive-scan.ts
-// (hasHighValueSignal) — the hook replicates the SAME deterministic ledger probe
-// rather than running the semantic archive-scan, staying within the Hook⊥MCP
-// boundary (the hook reads events.jsonl mechanically; it never judges relevance).
-// Keep these two literal sets in sync with archive-scan.ts.
-const ARCHIVE_HIGH_VALUE_EVENT_TYPES = new Set([
-  "knowledge_context_planned",
-  "edit_paths_recorded",
-  "edit_intent_checked",
-]);
-const ARCHIVE_NORMATIVE_KEYWORDS = [
-  "以后",
-  "always",
-  "never",
-  "from now on",
-  "下次",
-  "记一下",
-  "永远不要",
-];
+// G3 (ralph-v2-20260709 / GRL-STOPHOOK-AIONLY-20260709): archive high-value
+// predicate now sourced from the shared SST twin. The .cjs mirror at
+// lib/high-value-predicate.cjs is byte-parity with
+// packages/shared/src/high-value-predicate.ts (the canonical); server MCP
+// (archive-scan.ts) imports the TS canon. Round-trip parity locked by
+// packages/server/src/services/high-value-sst.test.ts. This eliminates the
+// crack-2 26→1 virtual-alarm drift (two independent implementations).
+//
+// hasHighValueArchiveSignal is kept as a thin wrapper to preserve the two
+// existing call sites' legacy arg order (events, watermarkTs, sessionId). The
+// underlying SST uses (events, sessionId, watermarkTs). Session scope is
+// REQUIRED in the SST — the workspace-wide branch (undefined sid) is removed
+// because both remaining call sites always pass sid; the removal is what
+// nails down the 3.8% purity fix.
+const { isHighValueArchiveCandidate } = require("./lib/high-value-predicate.cjs");
 
-// v2.2 dual-sink (Goal A / D6): does the ledger carry a high-value archive signal
-// since the watermark (last knowledge_proposed)? True iff any HIGH_VALUE event
-// fired past the watermark, OR the latest assistant_turn carries a normative
-// keyword. Deterministic — no semantic judgement. Used to VALUE-GATE the archive
-// nudge so the check cadence (edits/hours) is decoupled from the nudge cadence
-// (D6): a workspace that crossed the edit threshold but produced no high-value
-// signal stays quiet. watermarkTs null (never archived) → treat all events as
-// past-watermark (a never-archived repo with any edit signal is worth nudging).
-// crack 1: optional `sessionId` scopes the probe to ONE session's events so a
-// neighbour window's high-value work (past the same global watermark) cannot
-// keep THIS session's archive nudge alive (or, in the backlog scan, attribute a
-// neighbour's signal to a dead session). Omitted → workspace-wide (legacy).
 function hasHighValueArchiveSignal(events, watermarkTs, sessionId) {
-  if (!Array.isArray(events)) return false;
-  const wm = typeof watermarkTs === "number" ? watermarkTs : 0;
-  const scoped = typeof sessionId === "string" && sessionId.length > 0;
-  let latestTurn = null;
-  for (const e of events) {
-    if (!e || typeof e.ts !== "number" || e.ts <= wm) continue;
-    if (scoped && e.session_id !== sessionId) continue;
-    if (typeof e.event_type === "string" && ARCHIVE_HIGH_VALUE_EVENT_TYPES.has(e.event_type)) {
-      return true;
-    }
-    if (e.event_type === "assistant_turn_observed") {
-      if (latestTurn === null || (typeof latestTurn.ts === "number" && e.ts > latestTurn.ts)) {
-        latestTurn = e;
-      }
-    }
-  }
-  if (latestTurn !== null) {
-    const haystack = JSON.stringify(latestTurn).toLowerCase();
-    for (const kw of ARCHIVE_NORMATIVE_KEYWORDS) {
-      if (haystack.includes(kw.toLowerCase())) return true;
-    }
-  }
-  return false;
+  return isHighValueArchiveCandidate(events, sessionId, watermarkTs);
 }
 // v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
 const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
