@@ -3,6 +3,8 @@ import { defineCommand } from "citty";
 
 import {
   appendEventLedgerEvent,
+  checkBacklogAge,
+  renderBacklogAgeLine,
   runDoctorApplyLint as runDoctorFixKnowledge,
   runDoctorFix,
   runDoctorReport,
@@ -317,6 +319,17 @@ export const doctorCommand = defineCommand({
       }
       renderHumanReport(report, dt, args.verbose === true);
       renderStoreDiagnostics(storeDiagnostics, args.verbose === true);
+      // G4 (GRL-STOPHOOK-AIONLY-20260709): backlog-age observability line.
+      // Pure metric — no color/severity/lint routing; never changes exit code.
+      // Never-throw: an events.jsonl read failure MUST NOT break doctor's
+      // human surface. Wrapped in try/catch here as an additional safety net
+      // even though the service itself has an internal try/catch.
+      try {
+        const backlog = await checkBacklogAge(resolution.target);
+        writeStdout(renderBacklogAgeLine(backlog));
+      } catch {
+        // silent degrade — omit the line
+      }
     }
 
     // v2.0.0-rc.7 T10: emit doctor_run event so Signal D in fabric-hint can

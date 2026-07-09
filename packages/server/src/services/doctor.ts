@@ -155,8 +155,8 @@ export {
   inspectGlobalCliVersion,
 } from "./doctor-global-cli.js";
 export type { GlobalCliInspection } from "./doctor-global-cli.js";
-export { computeDoctorHealth } from "./doctor-health.js";
-export type { DoctorHealth } from "./doctor-health.js";
+export { computeDoctorHealth, checkBacklogAge, renderBacklogAgeLine } from "./doctor-health.js";
+export type { DoctorHealth, BacklogAgeMetric } from "./doctor-health.js";
 export {
   createKnowledgeSummaryOpaqueCheck,
   inspectKnowledgeSummaryOpaque,
