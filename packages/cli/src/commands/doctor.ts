@@ -1,3 +1,6 @@
+import { appendFileSync } from "node:fs";
+import { join as joinPath } from "node:path";
+
 import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
 
@@ -329,19 +332,22 @@ export const doctorCommand = defineCommand({
         writeStdout(renderBacklogAgeLine(backlog));
         // G5 (GRL-STOPHOOK-AIONLY-20260709): time-series persistence for the
         // 4-week rollback baseline (C-011). Append a single line
-        // {ts, kind:'backlog', count, median_age_days} to
+        // {ts, kind:'backlog', count, median_age_days, oldest_days} to
         // .fabric/metrics.jsonl. Best-effort — a write failure MUST NOT alter
         // doctor's exit semantics (the outer try/catch here catches EACCES /
         // ENOSPC / EROFS uniformly; the append is not observable to the user
         // by design — noise-free).
+        //
+        // TODO(Tier-2, 4 周 baseline 后评估): 若 metrics.jsonl 超过 N 行或 M MB,
+        // 引入 rotation → metrics.YYYY-MM.jsonl。config knob: metrics_max_lines
+        // (默认软警告,不硬截断)。当前 append-only 是有意的最小实现。
         try {
-          const { appendFileSync } = await import("node:fs");
-          const { join: joinPath } = await import("node:path");
           const record = {
             ts: new Date().toISOString(),
             kind: "backlog" as const,
             count: backlog.count,
             median_age_days: backlog.median_age_days,
+            oldest_days: backlog.oldest_days,
           };
           appendFileSync(
             joinPath(resolution.target, ".fabric", "metrics.jsonl"),

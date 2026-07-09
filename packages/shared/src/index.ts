@@ -42,11 +42,9 @@ export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
 // G3 (GRL-STOPHOOK-AIONLY-20260709): archive high-value predicate canonical
 // SST — server imports this; hook has a byte-parity .cjs twin at
 // packages/cli/templates/hooks/lib/high-value-predicate.cjs.
-export {
-  isHighValueArchiveCandidate,
-  HIGH_VALUE_ARCHIVE_EVENT_TYPES,
-  NORMATIVE_KEYWORDS,
-} from "./high-value-predicate.js";
+// Only the predicate is public API; the underlying event-type set and
+// keyword list remain internal (avoid semver commitment on SST details).
+export { isHighValueArchiveCandidate } from "./high-value-predicate.js";
 // v2.2 A-INFRA-2 (W1-T1-CJK): CJK-aware tokenizer for BM25 content scoring.
 export { tokenize } from "./text-tokenize.js";
 export type {
