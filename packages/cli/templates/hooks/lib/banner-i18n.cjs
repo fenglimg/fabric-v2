@@ -293,11 +293,11 @@ const STRINGS = {
   // nudge_mode. Protected token: nudge_mode + the config path verbatim.
   statusTier: {
     "zh-CN": (p) =>
-      `   音量 ${p.mode}:verbose=每步可见 / silent=静音(.fabric/fabric-config.json nudge_mode)`,
+      `   音量 ${p.mode}:silent=静音默认 / verbose=每步可见(.fabric/fabric-config.json nudge_mode)`,
     en: (p) =>
-      `   volume ${p.mode}: verbose=show every step / silent=mute (.fabric/fabric-config.json nudge_mode)`,
+      `   volume ${p.mode}: silent=mute default / verbose=show every step (.fabric/fabric-config.json nudge_mode)`,
     "zh-CN-hybrid": (p) =>
-      `   音量 ${p.mode}:verbose=每步可见 / silent=静音(.fabric/fabric-config.json nudge_mode)`,
+      `   音量 ${p.mode}:silent=静音默认 / verbose=每步可见(.fabric/fabric-config.json nudge_mode)`,
   },
 
   // ---- Broad hook: import recommendation ------------------------------------

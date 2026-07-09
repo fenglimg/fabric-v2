@@ -50,7 +50,11 @@ export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string)
     // ux-w1-9: nudge_mode is the master switch for the human-visible nudge
     // experience (silent | minimal | normal | verbose). Scaffolded up-front so
     // the one volume dial is discoverable in the shipped config.
-    nudge_mode: "normal",
+    // G1 (GRL-STOPHOOK-AIONLY-20260709): 新装用户默认 silent —— AI-only 可见,
+    // human sink 静音。老用户 config 不动(scaffold idempotent,不覆写现有)。
+    // 想恢复可见改此字段为 'normal' / 'verbose',或设 env FABRIC_NUDGE_MODE。
+    // 观测入口:fabric doctor 看 backlog 行 + .fabric/metrics.jsonl 4 周对比。
+    nudge_mode: "silent",
     archive_hint_hours: 24,
     archive_hint_cooldown_hours: 12,
     review_hint_pending_count: 10,
