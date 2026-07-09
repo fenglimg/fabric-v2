@@ -5,6 +5,10 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- feat(config): nudge_mode 新装默认 silent (AI-only channel)；老用户零迁移；恢复可见 3 路径（project / global / env FABRIC_NUDGE_MODE）+ `fabric doctor` backlog 行 + `.fabric/metrics.jsonl` 4 周 baseline。详见 `docs/RELEASE-NOTES.md`（GRL-STOPHOOK-AIONLY-20260709）。
+
 ## Store-only Errata - 2026-06-09
 
 Store-backed knowledge is the current contract: canonical and pending entries
