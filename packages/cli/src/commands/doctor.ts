@@ -327,6 +327,29 @@ export const doctorCommand = defineCommand({
       try {
         const backlog = await checkBacklogAge(resolution.target);
         writeStdout(renderBacklogAgeLine(backlog));
+        // G5 (GRL-STOPHOOK-AIONLY-20260709): time-series persistence for the
+        // 4-week rollback baseline (C-011). Append a single line
+        // {ts, kind:'backlog', count, median_age_days} to
+        // .fabric/metrics.jsonl. Best-effort — a write failure MUST NOT alter
+        // doctor's exit semantics (the outer try/catch here catches EACCES /
+        // ENOSPC / EROFS uniformly; the append is not observable to the user
+        // by design — noise-free).
+        try {
+          const { appendFileSync } = await import("node:fs");
+          const { join: joinPath } = await import("node:path");
+          const record = {
+            ts: new Date().toISOString(),
+            kind: "backlog" as const,
+            count: backlog.count,
+            median_age_days: backlog.median_age_days,
+          };
+          appendFileSync(
+            joinPath(resolution.target, ".fabric", "metrics.jsonl"),
+            JSON.stringify(record) + "\n",
+          );
+        } catch {
+          // silent degrade — metrics history is opt-in observability
+        }
       } catch {
         // silent degrade — omit the line
       }
