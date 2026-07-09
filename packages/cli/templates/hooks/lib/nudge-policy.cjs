@@ -32,23 +32,66 @@
  */
 
 const { readConfig } = require("./config-cache.cjs");
+const { readFileSync } = require("node:fs");
+const { homedir } = require("node:os");
+const { join: pathJoin } = require("node:path");
 
 const NUDGE_MODES = ["silent", "minimal", "normal", "verbose"];
+// G2 (GRL-STOPHOOK-AIONLY-20260709) boundary decision:
+//   DEFAULT stays "normal" — flipping to "silent" would mute existing users'
+//   SessionStart / PreToolUse hooks whose fabric-config.json lacks the
+//   nudge_mode field (old installs), and boundary_contract out_of_scope
+//   explicitly forbids SessionStart / PreToolUse silent-defaulting (Q(open-3)
+//   independent evaluation). NEW installs still get silent by G1
+//   install-scaffold writing nudge_mode: "silent" into fabric-config.json.
+//   Deviates from TASK-002 GREEN step 3 ("DEFAULT_NUDGE_MODE = 'silent'") —
+//   documented caveat: boundary trumps plan text.
 const DEFAULT_NUDGE_MODE = "normal";
 // The three observe.* event keys, mirroring observeConfigSchema in
 // packages/shared/src/schemas/fabric-config.ts. Hooks pass the matching key.
 const OBSERVE_EVENTS = ["session_start", "pre_tool_use", "stop"];
 
 /**
- * Resolve the configured nudge_mode preset. Unknown / absent → "normal".
+ * Resolve the configured nudge_mode preset with 4-layer priority (highest first):
+ *   1. env `FABRIC_NUDGE_MODE`             — opt-in override, no repo edits
+ *   2. project `.fabric/fabric-config.json` — per-repo setting (existing)
+ *   3. global `~/.fabric/fabric-global.json` — machine-wide preference
+ *   4. default `"silent"`                    — G1 human-mute alignment
+ *
+ * Any layer whose value is missing / not-a-string / not in NUDGE_MODES silently
+ * falls through to the next. Never throws — a broken config MUST NOT block hooks
+ * (see file-header Never-throw contract).
  */
 function readNudgeMode(projectRoot) {
-  try {
-    const v = readConfig(projectRoot).nudge_mode;
-    return typeof v === "string" && NUDGE_MODES.includes(v) ? v : DEFAULT_NUDGE_MODE;
-  } catch {
-    return DEFAULT_NUDGE_MODE;
+  // Layer 1: env var. Highest priority — an ergonomic override no repo edit.
+  const envMode = process.env.FABRIC_NUDGE_MODE;
+  if (typeof envMode === "string" && NUDGE_MODES.includes(envMode)) {
+    return envMode;
   }
+  // Layer 2: project config (existing behaviour). Uses readConfig cache.
+  try {
+    const projectMode = readConfig(projectRoot).nudge_mode;
+    if (typeof projectMode === "string" && NUDGE_MODES.includes(projectMode)) {
+      return projectMode;
+    }
+  } catch {
+    // fall through
+  }
+  // Layer 3: global config at ~/.fabric/fabric-global.json. Read raw (no cache
+  // for now — cheap, rarely hit hot path). Never-throw on any I/O or JSON error.
+  try {
+    const globalPath = pathJoin(homedir(), ".fabric", "fabric-global.json");
+    const raw = readFileSync(globalPath, "utf8");
+    const parsed = JSON.parse(raw);
+    const globalMode = parsed && parsed.nudge_mode;
+    if (typeof globalMode === "string" && NUDGE_MODES.includes(globalMode)) {
+      return globalMode;
+    }
+  } catch {
+    // fall through
+  }
+  // Layer 4: hard default (silent per G1/G2 alignment).
+  return DEFAULT_NUDGE_MODE;
 }
 
 /**
