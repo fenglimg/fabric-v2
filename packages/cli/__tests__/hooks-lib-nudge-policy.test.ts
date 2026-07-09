@@ -36,8 +36,16 @@ const nudgePolicy = require("../templates/hooks/lib/nudge-policy.cjs") as {
 };
 
 let tempDirs: string[] = [];
+// G2 (GRL-STOPHOOK-AIONLY-20260709): env + global layer added. Isolate real
+// user's HOME / FABRIC_NUDGE_MODE so tests are hermetic.
+let originalHome: string | undefined;
+let originalFabricNudgeMode: string | undefined;
 
 afterEach(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  if (originalFabricNudgeMode === undefined) delete process.env.FABRIC_NUDGE_MODE;
+  else process.env.FABRIC_NUDGE_MODE = originalFabricNudgeMode;
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -46,6 +54,14 @@ afterEach(() => {
 
 beforeEach(() => {
   configCache.clearConfigCache();
+  originalHome = process.env.HOME;
+  originalFabricNudgeMode = process.env.FABRIC_NUDGE_MODE;
+  // Point HOME at an empty tmpdir so the new Layer 3 (global config) doesn't
+  // leak the real user's ~/.fabric/fabric-global.json into these tests.
+  const fakeHome = mkdtempSync(join(tmpdir(), "fabric-nudge-home-"));
+  tempDirs.push(fakeHome);
+  process.env.HOME = fakeHome;
+  delete process.env.FABRIC_NUDGE_MODE;
 });
 
 function makeRoot(config?: Record<string, unknown>): string {
@@ -64,6 +80,9 @@ function makeRoot(config?: Record<string, unknown>): string {
 
 describe("nudge-policy — readNudgeMode", () => {
   it("defaults to normal when config is absent / empty / unknown", () => {
+    // G2 boundary: DEFAULT stays "normal" (not "silent") so old installs
+    // without nudge_mode field keep visible SS/PT hooks. New installs get
+    // silent via G1 scaffold. See DEFAULT_NUDGE_MODE JSDoc in nudge-policy.cjs.
     expect(nudgePolicy.readNudgeMode(makeRoot())).toBe("normal");
     expect(nudgePolicy.readNudgeMode(makeRoot({}))).toBe("normal");
     expect(nudgePolicy.readNudgeMode(makeRoot({ nudge_mode: "loud" }))).toBe("normal");
