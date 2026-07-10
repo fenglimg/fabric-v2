@@ -1,0 +1,30 @@
+# Project Knowledge
+
+This project uses [Fabric](https://github.com/fenglimg/fabric) for cross-client AI knowledge management.
+
+Knowledge entries live in `.fabric/knowledge/` (team) and `~/.fabric/knowledge/` (personal).
+Run `fabric doctor` to verify state.
+
+See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, and processes.
+
+
+
+
+> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).
+
+> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).
+
+> Use the fabric-import Skill for cold-start enrichment from git history and docs (see .claude/skills/fabric-import/SKILL.md).
+
+<!-- fabric:bootstrap:begin -->
+# Fabric Bootstrap
+
+本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 `fabric install` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 `fabric install`。
+
+## For Developers
+
+这个文件是 **AI 客户端的策略与规约配置**,不是 dev onboarding。你不需要读 Self-archive / Cite / Phase 0.4 等细节。
+作为 dev 你只需要:在每个 repo 跑一次 `fabric install`,出问题跑 `fabric doctor`,在 `.fabric/knowledge/<type>/` 下写 markdown。
+完整 5 分钟版 quickstart 见 `docs/USER-QUICKSTART.md`。**严禁手动编辑 `.fabric/agents.meta.json`** — 派生状态由 engine 重建。
+
+## 行为规则

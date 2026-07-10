@@ -1,0 +1,1 @@
+.claude/settings.json:            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs"

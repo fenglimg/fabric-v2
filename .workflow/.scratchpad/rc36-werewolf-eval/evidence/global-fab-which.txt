@@ -1,0 +1,1 @@
+/Users/wepie/.nvm/versions/node/v22.19.0/bin/fab

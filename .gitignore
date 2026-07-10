@@ -46,12 +46,14 @@ packages/.fabric/
 .workflow/embedding-index.bin
 .workflow/search-cache.json
 .workflow/explore/
-# vector embedding store (zvec — RocksDB-style LOCK/WAL/manifest binary state),
-# search-daemon PID/port sidecar, and local .scratchpad analysis inputs. All
-# per-machine transient state minted by local dogfood runs; never in VCS.
+# vector embedding store (zvec — RocksDB-style LOCK/WAL/manifest binary state)
+# and the search-daemon PID/port sidecar. Per-machine transient runtime state
+# minted by local dogfood runs; never in VCS. NOTE: .workflow/.scratchpad/ is
+# intentionally NOT ignored — it holds tracked methodology/evidence docs the
+# test-strategy gate requires (e.g. e2e-methodology-FINAL.md); never blanket-
+# ignore it, and never `git add -A` transient prompts into it.
 .workflow/embedding.zvec/
 .workflow/search-daemon.json
-.workflow/.scratchpad/
 
 # Local milestone/worktree checkouts. The tracked registry lives in
 # .workflow/worktrees.json; do not vendor nested repositories into main.
