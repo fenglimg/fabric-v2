@@ -87,6 +87,14 @@ import {
   createWriteRouteUnboundCheck,
   detectWriteRouteUnbound,
 } from "./doctor-write-route-lint.js";
+// v2.3.0-rc.11: stray_fabric_dir_detected — walker + rescue-rename fix arm for
+// residue `.fabric/` dirs left by pre-rc.10 hooks / pre-rc.11 server-side
+// resolveProjectRoot when a subprocess cwd landed in a subdirectory.
+import {
+  createStrayFabricDirCheck,
+  detectStrayFabricDirs,
+  fixStrayFabricDirs,
+} from "./doctor-stray-fabric-dir.js";
 import {
   createStoreCounterCheck,
   fixStoreCounters,
@@ -171,6 +179,7 @@ export { detectUnboundProject } from "./doctor-unbound-project.js";
 export type { UnboundProjectViolation } from "./doctor-unbound-project.js";
 export { detectWriteRouteUnbound } from "./doctor-write-route-lint.js";
 export type { WriteRouteViolation } from "./doctor-write-route-lint.js";
+export { detectStrayFabricDirs, fixStrayFabricDirs } from "./doctor-stray-fabric-dir.js";
 export { createStoreCounterCheck } from "./doctor-store-counters.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
@@ -970,6 +979,14 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // config-level check, no resolver, aligned with KT-DEC-0048 read-tolerant
     // doctrine.
     createWriteRouteUnboundCheck(t, detectWriteRouteUnbound(projectRoot)),
+    // rc.11 stray_fabric_dir_detected — walks the project tree for any
+    // `.fabric/` directory other than `<projectRoot>/.fabric`. Historical
+    // residue from the pre-rc.10 hook / pre-rc.11 server-side resolveProjectRoot
+    // fault mode where a subprocess whose cwd was a subdirectory of the repo
+    // created a stray `<subdir>/.fabric/` (scattering events.jsonl / metrics.jsonl
+    // / .cache). Adjacent to write_route_target_unbound — both catch config /
+    // filesystem cross-references that drifted through migrations.
+    createStrayFabricDirCheck(t, detectStrayFabricDirs(projectRoot), projectRoot),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null
@@ -1114,6 +1131,21 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     const adopted = fixStoreOrphans();
     if (adopted.length > 0) {
       fixed.push(findIssue(before.warnings, "store_orphan"));
+    }
+  }
+
+  // rc.11 stray_fabric_dir_detected — rename residue `.fabric/` dirs left by
+  // pre-rc.10 hooks / pre-rc.11 server-side resolveProjectRoot. Rescue-before-
+  // delete (KT-PIT-0016): each stray becomes `<path>.stale-<timestamp>` for
+  // ops review, never rm. Only claim `fixed` when at least one rename lands
+  // — a walker re-run drops any that meanwhile disappeared (idempotent).
+  if (before.warnings.some((issue) => issue.code === "stray_fabric_dir_detected")) {
+    const strays = detectStrayFabricDirs(projectRoot);
+    if (strays.length > 0) {
+      const results = await fixStrayFabricDirs(strays);
+      if (results.some((r) => r.ok)) {
+        fixed.push(findIssue(before.warnings, "stray_fabric_dir_detected"));
+      }
     }
   }
 

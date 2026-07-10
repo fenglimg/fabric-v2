@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { agentsMetaSchema, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { IOFabricError } from "@fenglimg/fabric-shared/errors";
@@ -42,8 +43,51 @@ function getAgentsMetaPath(projectRoot: string): string {
   return join(projectRoot, ".fabric", "agents.meta.json");
 }
 
-export function resolveProjectRoot(): string {
-  return process.env.FABRIC_PROJECT_ROOT ?? process.cwd();
+// v2.3.0-rc.11: root-cause fix for the stray-`.fabric/` fault mode that Cascade
+// triggers when the server subprocess is launched from a subdirectory of the
+// project (e.g. `fabric …` invoked from `scripts/asset-dedup/out/`). The old
+// implementation returned `process.cwd()` unchanged, so downstream writers
+// (plan-context bm25, vector-retrieval, event-ledger, metrics) then created a
+// brand-new `<cwd>/.fabric/` inside the subdirectory rather than writing to the
+// authoritative repo root.
+//
+// The hook side already got a matching git-anchor resolver in rc.10
+// (`packages/cli/templates/hooks/lib/project-root.cjs`, KT-DEC-0050). This is
+// the server-side twin — same resolution order, plus the server-only
+// FABRIC_PROJECT_ROOT explicit override kept at the top.
+//
+// Resolution order (first match wins):
+//   1. FABRIC_PROJECT_ROOT — explicit operator override (server-only knob).
+//   2. CLAUDE_PROJECT_DIR — the same env Claude Code injects into hooks.
+//   3. Walk up from `startCwd` (default `process.cwd()`) to the nearest
+//      ancestor holding a `.git/` marker. `.git` is the authoritative repo
+//      anchor and — crucially — IMMUNE to the stray `.fabric/` subdirectories
+//      this resolver exists to prevent (a stray `.fabric/` in a subdir must
+//      NOT capture the walk).
+//   4. No `.git` in the chain (non-git Fabric project): fall back to the
+//      nearest pre-existing `.fabric/` anchor seen during the same climb.
+//   5. Fall back to `startCwd` unchanged (fresh repo with no marker yet).
+//
+// `startCwd` is optional to keep call sites unchanged; tests pass a tmpdir.
+export function resolveProjectRoot(startCwd?: string): string {
+  const envOverride = process.env.FABRIC_PROJECT_ROOT;
+  if (typeof envOverride === "string" && envOverride.length > 0) return envOverride;
+  const claudeRoot = process.env.CLAUDE_PROJECT_DIR;
+  if (typeof claudeRoot === "string" && claudeRoot.length > 0) return claudeRoot;
+
+  const start = typeof startCwd === "string" && startCwd.length > 0 ? startCwd : process.cwd();
+  let dir = start;
+  let firstFabric: string | null = null;
+  // Bounded climb — a real repo is a handful of hops; the cap guards against
+  // symlink / mount loops.
+  for (let i = 0; i < 64; i++) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    if (firstFabric === null && existsSync(join(dir, ".fabric"))) firstFabric = dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return firstFabric ?? start;
 }
 
 export async function readAgentsMeta(projectRoot: string): Promise<AgentsMeta> {

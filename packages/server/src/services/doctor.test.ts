@@ -247,6 +247,10 @@ describe("runDoctorReport", () => {
       // against required_stores. Adjacent to Project-scope binding — both are
       // static config-level cross-references catching stale bindings.
       "Write route target",
+      // rc.11 stray_fabric_dir_detected — walker for `.fabric/` dirs left by
+      // the pre-rc.10 hook / pre-rc.11 server-side resolveProjectRoot fault
+      // mode (subprocess cwd landed in a subdir → stray `<subdir>/.fabric/`).
+      "Stray .fabric directories",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
@@ -282,7 +286,9 @@ describe("runDoctorReport", () => {
     // W2 (F-003): +1 project_registry_drift (projects.json ↔ projects/ tree) → 44.
     // skill-architecture absorption: +1 skill_contract_integrity → 45.
     // rc.10: +1 write_route_target_unbound (write_routes[*].store ↔ required_stores) → 46.
-    expect(report.checks).toHaveLength(46);
+    // rc.11: +1 stray_fabric_dir_detected (walker for `.fabric/` dirs left by pre-rc.10
+    // hooks / pre-rc.11 server-side resolveProjectRoot) → 47.
+    expect(report.checks).toHaveLength(47);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

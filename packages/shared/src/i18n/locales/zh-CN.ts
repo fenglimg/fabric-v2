@@ -908,6 +908,15 @@ export const zhCNMessages: Messages = {
     "{count} 条 write_route 指向未绑定的 store({routes});fab_propose 在这些 scope 上会报 \"no write-target store resolved\"。",
   "doctor.check.write_route_target_unbound.remediation":
     "二选一:① `fabric store bind <store>` 把目标 store 加进 required_stores(单 team 槽 = 需替换掉当前的),或 ② 编辑 `.fabric/fabric-config.json` 删掉这条 write_route。",
+  // stray_fabric_dir_detected — rc.11 root-cause fix: server-side resolveProjectRoot 之前用 cwd,
+  // 从子目录起的子进程会把 .fabric/ 建在错误的路径。此 lint 扫描项目树,找出 <root>/.fabric 之外的所有 .fabric/。
+  "doctor.check.stray_fabric_dir_detected.name": "游离 .fabric 目录",
+  "doctor.check.stray_fabric_dir_detected.ok":
+    "项目下未发现游离 .fabric 目录,唯一权威根 .fabric 就是 <projectRoot>/.fabric。",
+  "doctor.check.stray_fabric_dir_detected.message":
+    "发现 {count} 个游离 .fabric 目录({dirs}),它们是子进程在子目录被误认作 project root 的历史遗留(rc.10 之前的 hook / rc.11 之前的 server 侧),会导致 events.jsonl / metrics.jsonl / .cache 散落。",
+  "doctor.check.stray_fabric_dir_detected.remediation":
+    "跑 `fabric doctor --fix` 会把每个游离 dir 改名为 `.fabric.stale-<timestamp>`(rescue-before-delete,不硬删)。改名后可人工核对是否需要合并 events 再删。同时升级本机 fabric-cli 至 rc.11+ 让 server 侧 git-anchor 生效。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

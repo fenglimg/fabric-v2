@@ -930,6 +930,16 @@ export const enMessages: Messages = {
     "{count} write_route(s) point at an unbound store ({routes}); fab_propose on those scopes will report \"no write-target store resolved\".",
   "doctor.check.write_route_target_unbound.remediation":
     "Either ① `fabric store bind <store>` to add the target to required_stores (under the single team slot rule this replaces the current one), or ② edit `.fabric/fabric-config.json` to remove the stale write_route.",
+  // stray_fabric_dir_detected — rc.11 root-cause fix: server-side resolveProjectRoot used cwd,
+  // so a subprocess launched from a subdirectory created .fabric/ in the wrong place. This
+  // lint walks the project tree and reports every .fabric/ other than <root>/.fabric.
+  "doctor.check.stray_fabric_dir_detected.name": "Stray .fabric directories",
+  "doctor.check.stray_fabric_dir_detected.ok":
+    "No stray .fabric directories under the project root — the only authoritative anchor is <projectRoot>/.fabric.",
+  "doctor.check.stray_fabric_dir_detected.message":
+    "Found {count} stray .fabric director(ies) ({dirs}) left by subprocesses that mistook a subdirectory for the project root (pre-rc.10 hooks / pre-rc.11 server-side). These scatter events.jsonl / metrics.jsonl / .cache across the source tree.",
+  "doctor.check.stray_fabric_dir_detected.remediation":
+    "Run `fabric doctor --fix` to rename each stray dir to `.fabric.stale-<timestamp>` (rescue-before-delete — never a hard delete). Review the renamed dirs before merging events. Also upgrade global fabric-cli to rc.11+ so the server-side git-anchor resolver is active.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",
