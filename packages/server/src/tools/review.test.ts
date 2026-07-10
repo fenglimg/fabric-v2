@@ -234,19 +234,20 @@ describe("registerReview", () => {
   // -------------------------------------------------------------------------
 
   it("test_fab_review_input_shape_exposes_action_enum_and_optional_fields", () => {
-    // (a) action is a required ZodEnum exposing exactly the 6 WRITE literals.
+    // (a) action is a required ZodEnum exposing exactly the 7 WRITE literals.
     // W3-K K2: the two READ actions (list / search) moved to the read-only
-    // fab_pending tool, so fab_review is now write-only.
+    // fab_pending tool, so fab_review is now write-only. W3-C: `retire` added as
+    // the deprecate-over-delete landing surface.
     const actionSchema = FabReviewInputShape.action;
     expect(actionSchema).toBeInstanceOf(z.ZodEnum);
     expect(actionSchema.options.sort()).toEqual(
-      ["approve", "defer", "modify", "modify-content", "modify-layer", "reject"],
+      ["approve", "defer", "modify", "modify-content", "modify-layer", "reject", "retire"],
     );
 
     // (b) Every other declared field is optional (so the SDK-flattened shape
     // never rejects valid per-action inputs at the top level). W3-K K2: the
     // read-only `filters` / `query` fields left with list/search.
-    const optionalFields = ["pending_paths", "pending_path", "reason", "changes", "until"];
+    const optionalFields = ["pending_paths", "pending_path", "reason", "changes", "until", "superseded_by"];
     for (const field of optionalFields) {
       const sub = (FabReviewInputShape as Record<string, z.ZodTypeAny>)[field];
       expect(sub, `field=${field}`).toBeDefined();
@@ -388,5 +389,19 @@ describe("registerReview", () => {
     });
     expect(FlatOutput.safeParse(modifyOut.structuredContent).success).toBe(true);
     expect(FabReviewOutputSchema.safeParse(modifyOut.structuredContent).success).toBe(true);
+
+    // 5. retire (against the same canonical entry) — validates the W3-C output
+    // wiring end-to-end through the tool handler.
+    const retireOut = await t.handler({
+      action: "retire",
+      pending_paths: [canonicalRel],
+      superseded_by: "KT-DEC-9999",
+    });
+    expect(FlatOutput.safeParse(retireOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(retireOut.structuredContent).success).toBe(true);
+    expect(retireOut.structuredContent).toMatchObject({
+      action: "retire",
+      retired: [{ path: canonicalRel, superseded_by: "KT-DEC-9999" }],
+    });
   });
 });

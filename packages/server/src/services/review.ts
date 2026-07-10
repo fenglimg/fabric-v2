@@ -99,6 +99,13 @@ type ParsedFrontmatter = {
   // and read by the doctor broad review-recheck lint to nudge stale broad
   // knowledge — broad is exempt from usage-age decay, so this is its only clock.
   last_review_confirmed_at?: string;
+  // retire (W3-C): semantic-deprecation markers authored by the retire write
+  // path. `deprecated: true` gates the entry OUT of recall candidates + broad
+  // SessionStart indexes (cross-store-recall filters on it) WITHOUT deleting the
+  // file (deprecate-over-delete). `superseded_by` records the stable_id of the
+  // replacing entry when one exists, so the supersession chain stays recoverable.
+  deprecated?: boolean;
+  superseded_by?: string;
 };
 
 /**
@@ -156,6 +163,19 @@ export async function reviewKnowledge(
           projectRoot,
           input.pending_paths,
           input.until,
+          input.reason,
+        ),
+      };
+    // retire (W3-C): mark canonical entries deprecated in place. Same in-place
+    // frontmatter-merge path as modify (resolveModifyTarget + rewriteFrontmatterMerge),
+    // batched over pending_paths like reject/defer. Never deletes a file.
+    case "retire":
+      return {
+        action: "retire",
+        retired: await retireAll(
+          projectRoot,
+          input.pending_paths,
+          input.superseded_by,
           input.reason,
         ),
       };
@@ -923,6 +943,10 @@ type FrontmatterScalarPatch = ModifyChanges & {
   // — never part of the public modify `changes` surface; authored automatically
   // by approve/modify, never by a caller.
   last_review_confirmed_at?: string;
+  // retire (W3-C): deprecation markers. Internal-only (like status/deferred_until)
+  // — authored exclusively by the retire write path, never a public modify field.
+  deprecated?: boolean;
+  superseded_by?: string;
 };
 
 async function modifyEntry(
@@ -1698,6 +1722,99 @@ async function deferAll(
 }
 
 // ---------------------------------------------------------------------------
+// retire action (W3-C: fabric-review retire-mode landing surface)
+//
+// Semantically deprecates one or more CANONICAL knowledge entries: writes
+// `deprecated: true` (+ `superseded_by: <id>` when the caller names a replacing
+// entry) into the entry's frontmatter via the SAME in-place merge path modify
+// uses (resolveModifyTarget → rewriteFrontmatterMerge → atomicWriteText). The
+// file is NEVER deleted (red line: deprecate-over-delete) — the body + stable_id
+// survive so the "当时为什么这么决策" rationale stays inspectable, while
+// cross-store-recall filters the deprecated entry OUT of recall candidates and
+// broad SessionStart indexes.
+//
+// Batched over pending_paths like reject/defer (best-effort per entry — an
+// unresolvable path is skipped, mirroring approveOne's return-null contract, so
+// it simply does not appear in the returned `retired[]`). The retire is recorded
+// as a `knowledge_modified` ledger event (changed_fields=[deprecated,...]) with a
+// `retire:` reason prefix — retire IS a frontmatter modification, so no new
+// event_type is minted (keeps the ledger discriminated-union census stable).
+// ---------------------------------------------------------------------------
+
+type RetiredEntry = { path: string; stable_id?: string; superseded_by?: string };
+
+async function retireAll(
+  projectRoot: string,
+  pendingPaths: string[],
+  supersededBy: string | undefined,
+  reason: string | undefined,
+): Promise<RetiredEntry[]> {
+  const retired: RetiredEntry[] = [];
+  for (const pendingPath of pendingPaths) {
+    const result = await retireOne(projectRoot, pendingPath, supersededBy, reason);
+    if (result !== null) {
+      retired.push(result);
+    }
+  }
+  return retired;
+}
+
+async function retireOne(
+  projectRoot: string,
+  pendingPath: string,
+  supersededBy: string | undefined,
+  reason: string | undefined,
+): Promise<RetiredEntry | null> {
+  // Same target resolution as modify — accepts canonical (and, defensively,
+  // pending) store entries; returns null on traversal / not-found (skipped).
+  const target = resolveModifyTarget(projectRoot, pendingPath);
+  if (target === null) {
+    return null;
+  }
+
+  const content = await readFile(target.absPath, "utf8");
+  const fm = parseFrontmatter(content);
+
+  // In-place merge writes ONLY the deprecation markers; every other frontmatter
+  // key (id / type / summary / body …) is preserved verbatim by
+  // rewriteFrontmatterMerge — deprecate-over-delete.
+  const patch: FrontmatterScalarPatch = {
+    deprecated: true,
+    ...(supersededBy !== undefined ? { superseded_by: supersededBy } : {}),
+  };
+  const merged = rewriteFrontmatterMerge(content, patch);
+  await atomicWriteText(target.absPath, merged);
+
+  const changedFields = supersededBy !== undefined
+    ? ["deprecated", "superseded_by"]
+    : ["deprecated"];
+  const before: Record<string, unknown> = { deprecated: fm.deprecated ?? null };
+  const after: Record<string, unknown> = { deprecated: true };
+  if (supersededBy !== undefined) {
+    before.superseded_by = fm.superseded_by ?? null;
+    after.superseded_by = supersededBy;
+  }
+
+  await emitEventBestEffort(projectRoot, {
+    event_type: "knowledge_modified",
+    ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
+    timestamp: new Date().toISOString(),
+    path: pendingPath,
+    changed_fields: changedFields,
+    before,
+    after,
+    reason:
+      reason !== undefined ? `retire:${pendingPath}: ${reason}` : `retire:${pendingPath}`,
+  });
+
+  return {
+    path: pendingPath,
+    ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
+    ...(supersededBy !== undefined ? { superseded_by: supersededBy } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // frontmatter helpers (hand-rolled regex parser, mirrors knowledge-meta-builder.ts
 // pattern — flat scalars + flow arrays only, no nested objects)
 // ---------------------------------------------------------------------------
@@ -1791,6 +1908,18 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
         // v2.2 C1: ISO-8601 review-confirmation stamp (approve/modify). Parsed
         // for round-trip read; the doctor recheck lint reads it from raw body.
         out.last_review_confirmed_at = stripQuotes(value);
+        break;
+      case "deprecated":
+        // retire (W3-C): strict boolean allow-list — only literal true/false are
+        // recognized (mirrors the relevance_scope/status allow-list pattern).
+        // Absent or unknown → field stays undefined → entry treated as live.
+        if (value === "true" || value === "false") {
+          out.deprecated = value === "true";
+        }
+        break;
+      case "superseded_by":
+        // retire (W3-C): stable_id of the replacing entry (bare or store-qualified).
+        out.superseded_by = stripQuotes(value);
         break;
       default:
         break;
@@ -1902,6 +2031,11 @@ function rewriteFrontmatterMerge(
   if (patch.deferred_until !== undefined) updates.deferred_until = `deferred_until: ${quoteIfNeeded(patch.deferred_until)}`;
   // v2.2 C1: review-confirmation stamp (approve/modify).
   if (patch.last_review_confirmed_at !== undefined) updates.last_review_confirmed_at = `last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`;
+  // retire (W3-C): deprecation markers. `deprecated` is a bare YAML boolean;
+  // `superseded_by` is a stable_id (may be store-qualified `alias:id`, so the
+  // colon forces quoteIfNeeded to quote it).
+  if (patch.deprecated !== undefined) updates.deprecated = `deprecated: ${patch.deprecated}`;
+  if (patch.superseded_by !== undefined) updates.superseded_by = `superseded_by: ${quoteIfNeeded(patch.superseded_by)}`;
 
   const lines = block.split(/\r?\n/u);
   const seen = new Set<string>();
@@ -1946,6 +2080,9 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
   if (patch.last_review_confirmed_at !== undefined) lines.push(`last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`);
+  // retire (W3-C): deprecation markers (see rewriteFrontmatterMerge for shape).
+  if (patch.deprecated !== undefined) lines.push(`deprecated: ${patch.deprecated}`);
+  if (patch.superseded_by !== undefined) lines.push(`superseded_by: ${quoteIfNeeded(patch.superseded_by)}`);
 }
 
 // F55 (ISS-20260531-055): flow-array emit must escape EACH element, not

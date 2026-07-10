@@ -23,6 +23,13 @@ import {
   reviewKnowledge,
   reviewPending,
 } from "./review.js";
+// retire (W3-C): the exclusion tests assert a retired entry drops out of the
+// cross-store recall candidates + broad SessionStart always-active index.
+import {
+  __resetReadSetWalkCacheForTests,
+  buildAlwaysActiveBodies,
+  buildCrossStoreRawItems,
+} from "./cross-store-recall.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -2136,5 +2143,160 @@ describe("review C1 — verified→proven 0-dismiss gate", () => {
     expect(result.action).toBe("modify");
     const content = await readFile(path, "utf8");
     expect(content).toMatch(/^maturity: proven$/mu);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// retire action (W3-C): deprecate-over-delete + recall/broad exclusion
+//
+// Mirrors the modify tests' seed→approve→canonical→assert-frontmatter flow, then
+// adds two integration cases proving a retired entry stops surfacing (recall
+// candidates + broad always-active index) while its file survives on disk.
+// ---------------------------------------------------------------------------
+
+describe("reviewKnowledge retire (W3-C)", () => {
+  // Seed a pending entry, approve it into the team canonical store, and return
+  // the canonical absolute path + allocated stable_id + pre-retire content.
+  async function approveCanonical(
+    projectRoot: string,
+    type: "decisions" | "guidelines",
+    slug: string,
+  ): Promise<{ canonicalPath: string; stableId: string; before: string }> {
+    const pendingPath = await seedPendingFile(projectRoot, type, slug, {
+      summary: `Rationale for ${slug} that must survive retirement.`,
+      tags: ["keep-me"],
+    });
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const stableId = approve.approved[0]!.stable_id;
+    const canonicalPath = storeKnowledgeDir("team", type, `${stableId}--${slug}.md`);
+    const before = await readFile(canonicalPath, "utf8");
+    return { canonicalPath, stableId, before };
+  }
+
+  // Everything after the closing `---` of the frontmatter block — used to prove
+  // the body is byte-identical across a retire (rewriteFrontmatterMerge only
+  // touches the frontmatter block).
+  function bodyOf(content: string): string {
+    const match = /^(?:﻿)?---\r?\n[\s\S]*?\r?\n---/u.exec(content);
+    return match === null ? content : content.slice(match.index + match[0].length);
+  }
+
+  it("retire marks a canonical entry deprecated, preserving id + body (deprecate-over-delete)", async () => {
+    const projectRoot = await createTempProject();
+    const { canonicalPath, stableId, before } = await approveCanonical(
+      projectRoot,
+      "decisions",
+      "retire-me",
+    );
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "retire",
+      pending_paths: [canonicalPath],
+    });
+    expect(result.action).toBe("retire");
+    if (result.action !== "retire") throw new Error("unreachable");
+    expect(result.retired).toEqual([{ path: canonicalPath, stable_id: stableId }]);
+
+    // deprecate-over-delete: the file survives on disk.
+    expect(existsSync(canonicalPath)).toBe(true);
+    const after = await readFile(canonicalPath, "utf8");
+    // `deprecated: true` written; no superseded_by (none supplied).
+    expect(after).toMatch(/^deprecated: true$/mu);
+    expect(after).not.toMatch(/^superseded_by:/mu);
+    // stable_id preserved verbatim.
+    expect(after).toMatch(new RegExp(`^id: ${stableId}$`, "mu"));
+    // body is byte-identical — only the frontmatter block changed.
+    expect(bodyOf(after)).toBe(bodyOf(before));
+    expect(after).toContain("Rationale for retire-me that must survive retirement.");
+  });
+
+  it("retire records superseded_by + emits a knowledge_modified event with a retire: reason", async () => {
+    const projectRoot = await createTempProject();
+    const { canonicalPath, stableId } = await approveCanonical(
+      projectRoot,
+      "decisions",
+      "superseded-me",
+    );
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "retire",
+      pending_paths: [canonicalPath],
+      superseded_by: "KT-DEC-9999",
+      reason: "replaced by the v2 decision",
+    });
+    if (result.action !== "retire") throw new Error("unreachable");
+    expect(result.retired).toEqual([
+      { path: canonicalPath, stable_id: stableId, superseded_by: "KT-DEC-9999" },
+    ]);
+
+    const after = await readFile(canonicalPath, "utf8");
+    expect(after).toMatch(/^deprecated: true$/mu);
+    expect(after).toMatch(/^superseded_by: KT-DEC-9999$/mu);
+
+    // Retire is recorded as a knowledge_modified event (no new event_type minted)
+    // with a `retire:` reason prefix + changed_fields naming both markers.
+    const modified = await readEventLedger(projectRoot, { event_type: "knowledge_modified" });
+    const retireEvent = modified.events.find((e) =>
+      ((e as { reason?: string }).reason ?? "").startsWith("retire:"),
+    ) as { changed_fields?: string[]; stable_id?: string; reason?: string } | undefined;
+    expect(retireEvent).toBeDefined();
+    expect(retireEvent?.changed_fields).toEqual(["deprecated", "superseded_by"]);
+    expect(retireEvent?.stable_id).toBe(stableId);
+    expect(retireEvent?.reason).toContain("replaced by the v2 decision");
+  });
+
+  it("retired entries drop out of cross-store recall candidates", async () => {
+    const projectRoot = await createTempProject();
+    const { canonicalPath, stableId } = await approveCanonical(
+      projectRoot,
+      "decisions",
+      "recall-drop",
+    );
+    const qualifiedId = `team:${stableId}`;
+
+    // Before retire: the approved entry is a live recall candidate.
+    __resetReadSetWalkCacheForTests();
+    const beforeIds = (await buildCrossStoreRawItems(projectRoot)).map((i) => i.stable_id);
+    expect(beforeIds).toContain(qualifiedId);
+
+    await reviewKnowledge(projectRoot, {
+      action: "retire",
+      pending_paths: [canonicalPath],
+    });
+
+    // After retire: excluded from recall candidates, but the file is still there.
+    __resetReadSetWalkCacheForTests();
+    const afterIds = (await buildCrossStoreRawItems(projectRoot)).map((i) => i.stable_id);
+    expect(afterIds).not.toContain(qualifiedId);
+    expect(existsSync(canonicalPath)).toBe(true);
+  });
+
+  it("retired broad guidelines drop out of the always-active SessionStart index", async () => {
+    const projectRoot = await createTempProject();
+    const { canonicalPath, stableId } = await approveCanonical(
+      projectRoot,
+      "guidelines",
+      "always-active-drop",
+    );
+    const qualifiedId = `team:${stableId}`;
+
+    // Before retire: a broad guideline is an always-active body.
+    __resetReadSetWalkCacheForTests();
+    const beforeIds = (await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id);
+    expect(beforeIds).toContain(qualifiedId);
+
+    await reviewKnowledge(projectRoot, {
+      action: "retire",
+      pending_paths: [canonicalPath],
+    });
+
+    // After retire: excluded from the broad SessionStart index.
+    __resetReadSetWalkCacheForTests();
+    const afterIds = (await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id);
+    expect(afterIds).not.toContain(qualifiedId);
   });
 });
