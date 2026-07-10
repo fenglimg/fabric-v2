@@ -62,8 +62,8 @@ export type RecallPath = {
 
 // wire-slim (payload): the MCP recall entry carries ONLY the fields the agent
 // needs to SELECT which bodies to Read — summary (headline) + must_read_if
-// (trigger) + intent_clues (when-to-fire) + knowledge_type (category). The
-// verbose/engine-only fields (tech_stack, impact, tags, relevance_paths, related,
+// (trigger) + impact (consequence) + knowledge_type (category). The
+// verbose/engine-only fields (intent_clues, tech_stack, tags, relevance_paths, related,
 // created_at, maturity, semantic_scope, relevance_scope, id) are reachable on
 // demand via read_path — KT-DEC-0026's lean contract applied at the description
 // FIELD level. Internal consumers (related graph, doctor lints, ranking) read

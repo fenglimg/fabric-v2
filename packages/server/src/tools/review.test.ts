@@ -355,10 +355,20 @@ describe("registerReview", () => {
     // pending.test.ts) — this exercises only the 6 WRITE actions.
     const FlatOutput = z.object(FabReviewOutputShape);
 
+    // Extract structured warning codes from a handler result.
+    const warnCodes = (out: { structuredContent: unknown }): string[] =>
+      ((out.structuredContent as { warnings?: Array<{ code?: string }> }).warnings ?? [])
+        .map((w) => w.code)
+        .filter((c): c is string => typeof c === "string");
+
     // 1. defer
     const deferOut = await t.handler({ action: "defer", pending_paths: [b], reason: "later" });
     expect(FlatOutput.safeParse(deferOut.structuredContent).success).toBe(true);
     expect(FabReviewOutputSchema.safeParse(deferOut.structuredContent).success).toBe(true);
+    // #44×#43 control: this fixture is unsealed (no project_id/active_project),
+    // so the project-scope warning fires on a write action that can land a new
+    // entry — proving the mechanism is active for the retire-skip assertion below.
+    expect(warnCodes(deferOut)).toContain("project_scope_unsealed");
 
     // 2. reject
     const rejectOut = await t.handler({ action: "reject", pending_paths: [b], reason: "stale" });
@@ -403,5 +413,9 @@ describe("registerReview", () => {
       action: "retire",
       retired: [{ path: canonicalRel, superseded_by: "KT-DEC-9999" }],
     });
+    // retire is an in-place deprecate — the unsealed-project scope warning must
+    // NOT attach (false-positive: retire never lands a new entry flat), even
+    // though the identical fixture triggers it for `defer` above.
+    expect(warnCodes(retireOut)).not.toContain("project_scope_unsealed");
   });
 });

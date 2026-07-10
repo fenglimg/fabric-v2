@@ -66,9 +66,14 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
 
         // project-scope guard: fail-loud the unsealed-project drift at write
         // time (parity with fab_propose). Advisory, never blocking.
-        const scopeWarn = unsealedProjectScopeWarning(projectRoot);
-        if (scopeWarn) {
-          response.warnings = [...(response.warnings ?? []), scopeWarn];
+        // `retire` is an in-place deprecate of an EXISTING canonical entry — no
+        // new entry is promoted/landed, so the flat-landing drift this warning
+        // describes cannot occur; skip it to avoid a false-positive on retire.
+        if (narrowed.action !== "retire") {
+          const scopeWarn = unsealedProjectScopeWarning(projectRoot);
+          if (scopeWarn) {
+            response.warnings = [...(response.warnings ?? []), scopeWarn];
+          }
         }
 
         const payloadLimits = readPayloadLimits(projectRoot);

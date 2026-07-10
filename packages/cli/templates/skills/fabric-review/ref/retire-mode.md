@@ -10,7 +10,7 @@
 
 ## 两条红线(NON-NEGOTIABLE)
 
-1. **deprecate-over-delete**:陈旧 ≠ 该删。一条「当时为什么这么决策」的 decision/pitfall 即使方案已换,其 rationale 仍是知识。退役 = 降 maturity(proven→verified→draft)/ 标 `deprecated` + 记 `superseded-by`(保留正文),而非 `rm`。删除只用于「从未成立 / 纯噪声 / 重复」的条目。
+1. **deprecate-over-delete**:陈旧 ≠ 该删。一条「当时为什么这么决策」的 decision/pitfall 即使方案已换,其 rationale 仍是知识。退役 = 降 maturity(proven→verified→draft)/ 标 `deprecated` + 记 `superseded_by`(保留正文),而非 `rm`。删除只用于「从未成立 / 纯噪声 / 重复」的条目。
 2. **rescue-before-delete**:任何 *打算删* 的条目,删前必做抢救检查 —— 它是否携带别处没有的独特 rationale / 反例 / 边界?有则先 merge 进取代它的条目(或在新条目加 `related` 边指回),再删空壳。抢救检查没做过,不许删。
 
 ## 意图 → 动作映射
@@ -19,7 +19,7 @@
 |---|---|
 | 体检 / 健康度 | `fabric doctor`(读 lint + health rollup);零阻断,只报告 |
 | 找孤儿 / 陈旧条目 | `fabric doctor`(消费 orphan / stale / orphan-demote 信号) |
-| 退役一条陈旧条目 | **不删** → 降 maturity 或标 deprecated + `superseded-by`;经 `fab_review` 落盘 |
+| 退役一条陈旧条目 | **不删** → 降 maturity 或标 deprecated + `superseded_by`;经 `fab_review` 落盘 |
 | 删一条「从未成立 / 重复」条目 | 先跑 rescue 检查(独特 rationale?有则 merge/加 related);确认空壳后才删 |
 | 被取代但有价值 | rescue:把独特 rationale merge 进取代条目,新条目加 `related` 边指回,再退役旧条目 |
 
@@ -27,7 +27,7 @@
 
 1. `fabric doctor` 取 KB health + orphan/stale 候选清单(引擎给信号,不自算)。
 2. 对每个候选判 **三态**:still-valid(留) / superseded(退役,走 deprecate) / never-valid(删,走 rescue 检查)。
-3. superseded → deprecate:降 maturity 或标 deprecated + `superseded-by`,保留正文 rationale。
+3. superseded → deprecate:降 maturity 或标 deprecated + `superseded_by`,保留正文 rationale。
 4. never-valid → rescue-before-delete:独特知识?有则 merge + `related`,无则删空壳。
 5. 处置经 `fab_review` 写路径落盘(本子流程给决策,fab_review 做写入),保持单一写路径。
 
@@ -43,5 +43,5 @@
 
 - 本子流程**只读 + 给处置建议**;实际写入(降级 / 标记 / 删)经 `fab_review` 写路径,不自行改 store `knowledge/`。
 - NEVER 绕过 rescue 检查直接删;删前 MUST 先跑抢救。删是最后手段,默认 deprecate。
-- store counters 派生态严禁手改;退役改的是 markdown frontmatter(maturity / deprecated / superseded-by),再 `fabric doctor --fix` reconcile。
+- store counters 派生态严禁手改;退役改的是 markdown frontmatter(maturity / deprecated / superseded_by),再 `fabric doctor --fix` reconcile。
 - health / orphan / stale 一律取自 `fabric doctor` JSON 输出,不在 skill 内重算(单一真源)。

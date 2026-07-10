@@ -12,13 +12,13 @@
 |---|---|
 | 互补 | decision「用 JWT」 ↔ pitfall「JWT 过期未刷新踩坑」 |
 | 规避 | pitfall「sprite 黑边」 ↔ guideline「premultiplyAlpha 正确设置」 |
-| 取代 | 旧 decision ↔ 取代它的新 decision(配合 deprecated/superseded-by) |
+| 取代 | 旧 decision ↔ 取代它的新 decision(配合 deprecated/superseded_by) |
 | 同域 | 同一子系统 / 共 relevance_paths 的条目 |
 | 引用链 | A 的 rationale 依赖 B 的结论 |
 
 ## 流程
 
-1. **拿候选池**:`fab_recall(paths=[...])` 拿相关条目 + 现有 `related`(读 description.related 看已连状态)。小库(<200 条 canonical)可扫全 index;大库按用户给的范围/paths 收窄。
+1. **拿候选池**:`fab_recall(paths=[...])` 拿相关条目 + 每条 `read_path`。现有 `related` 边**不在 recall wire 上**(lean wire 只回 summary/must_read_if/impact/knowledge_type — KT-GLD-0005),要看已连状态须对候选的 `read_path` 做原生 Read、从 frontmatter 读 `related`。小库(<200 条 canonical)可扫全 index;大库按用户给的范围/paths 收窄。
 2. **AI 语义判断**(不是字面):对候选两两/成簇按上表五种类型判**隐藏语义关联**。判据基点是**读 summary + rationale 后的语义理解**,不是词面重叠 —— 「权限↔访问控制」「pitfall↔绕过它的 guideline」这类语义对靠 tokenize/Jaccard 抓不到。
 3. **稀疏优于稠密**:一次触发**最多提议 5-10 条**高置信边(用户一次审 20 条会疲劳,信噪比比覆盖率重要)。低置信「话题相邻」不连,宁缺毋滥。
 4. **输出结构**:每条提议 = `(源 id, 目标 id, 关联类型, 一句语义理由)`;按需提议反向边。理由必须点出**语义因果**(哪条决策为什么该带出哪条 pitfall),不是「共享标签 X」。
