@@ -166,6 +166,36 @@ describe("registerReview", () => {
     expect(result.content[0]!.text).not.toBe(JSON.stringify(result.structuredContent));
   });
 
+  it("invokes modify-content-batch end-to-end and returns modified[] structured content", async () => {
+    // v2.3: exercises the full MCP round-trip for the batch path — the ONLY
+    // place FabReviewOutputShape.modified is runtime-validated by the SDK
+    // (there is no output-shape drift test, unlike the input side).
+    const projectRoot = await makeProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const p1 = await seedPendingFile(projectRoot, "decisions", "tool-batch-a");
+    const p2 = await seedPendingFile(projectRoot, "pitfalls", "tool-batch-b");
+
+    const { server, tool } = captureRegistration();
+    registerReview(server);
+    const t = tool();
+
+    const result = await t.handler({
+      action: "modify-content-batch",
+      items: [
+        { pending_path: p1, changes: { tags: ["x"] } },
+        { pending_path: p2, changes: { summary: "batched" } },
+      ],
+    });
+    const sc = result.structuredContent as {
+      action: string;
+      modified: Array<{ pending_path: string; ok: boolean }>;
+    };
+    expect(sc.action).toBe("modify-content-batch");
+    expect(sc.modified).toHaveLength(2);
+    expect(sc.modified.every((m) => m.ok)).toBe(true);
+    expect(result.content[0]!.text).toContain("Fabric review: modify-content-batch");
+  });
+
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
     const projectRoot = await makeProject();
     process.env.FABRIC_PROJECT_ROOT = projectRoot;
@@ -234,19 +264,28 @@ describe("registerReview", () => {
   // -------------------------------------------------------------------------
 
   it("test_fab_review_input_shape_exposes_action_enum_and_optional_fields", () => {
-    // (a) action is a required ZodEnum exposing exactly the 6 WRITE literals.
-    // W3-K K2: the two READ actions (list / search) moved to the read-only
-    // fab_pending tool, so fab_review is now write-only.
+    // (a) action is a required ZodEnum exposing exactly the 7 WRITE literals
+    // (v2.3 added modify-content-batch). W3-K K2: the two READ actions (list /
+    // search) moved to the read-only fab_pending tool, so fab_review is now
+    // write-only.
     const actionSchema = FabReviewInputShape.action;
     expect(actionSchema).toBeInstanceOf(z.ZodEnum);
     expect(actionSchema.options.sort()).toEqual(
-      ["approve", "defer", "modify", "modify-content", "modify-layer", "reject"],
+      [
+        "approve",
+        "defer",
+        "modify",
+        "modify-content",
+        "modify-content-batch",
+        "modify-layer",
+        "reject",
+      ],
     );
 
     // (b) Every other declared field is optional (so the SDK-flattened shape
     // never rejects valid per-action inputs at the top level). W3-K K2: the
     // read-only `filters` / `query` fields left with list/search.
-    const optionalFields = ["pending_paths", "pending_path", "reason", "changes", "until"];
+    const optionalFields = ["pending_paths", "pending_path", "reason", "changes", "items", "until"];
     for (const field of optionalFields) {
       const sub = (FabReviewInputShape as Record<string, z.ZodTypeAny>)[field];
       expect(sub, `field=${field}`).toBeDefined();

@@ -32,6 +32,7 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
         "reject → pending_paths[≥1] + reason; " +
         "modify / modify-content → pending_path + changes; " +
         "modify-layer → pending_path + changes.layer(team|personal); " +
+        "modify-content-batch → items[{pending_path, changes}][≥1] (batch content edits; per-item partial-failure reported in modified[]); " +
         "search → query; " +
         "defer → pending_paths[≥1] (until/reason optional). " +
         "approve allocates a stable_id and promotes to the canonical store knowledge path. Skill-side tool — invoked by fabric-review.",

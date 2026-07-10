@@ -73,11 +73,13 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 6. Route the user's choice:
    - `approve` → accumulate pending_path into a batch; flush via single `fab_review action="approve"` with `pending_paths=[…]` after the loop ends.
    - `reject` → ask the user for a one-line reason via free-text follow-up; call `fab_review action="reject"` with `pending_paths=[path]` and `reason`.
-   - `modify` → see `ref/modify-flow.md`.
+   - `modify` → decide the change with the user (see `ref/modify-flow.md`), then route by kind:
+     - **content edit** (title/summary/tags/maturity/relevance_*/related/must_read_if/intent_clues/impact/semantic_scope — NO layer flip) → accumulate `{pending_path, changes}` into a content-modify batch and flush via a single `fab_review action="modify-content-batch"` with `items=[…]` after the loop ends. Mirrors approve's accumulate-flush; collapses N per-item modify round-trips (each paying a first-reconcile gate wait) into one call — the maintain loop's dominant cost.
+     - **layer flip** (`changes.layer` differs) → interactive + rare; call `fab_review action="modify-layer"` immediately per-item (NEVER batched — each needs the team/personal AskUserQuestion confirm; see `ref/modify-flow.md`).
    - `defer` → call `fab_review action="defer"` with `pending_paths=[path]`; optional `until` ISO datetime if the user supplies one ("defer 2 weeks" → compute and set).
    - `skip` → no MCP call; move to next item.
 
-7. After the loop, display a roll-up: counts by action, list of newly-allocated `stable_id`s (from approve output), and tail of `.fabric/events.jsonl` showing the appended events. See `ref/output-contract.md` for the bilingual rollup template.
+7. After the loop, flush any accumulated batches (approve `pending_paths[]`, content-modify `items[]`) with their single calls, then display a roll-up: counts by action, list of newly-allocated `stable_id`s (from approve output), any per-item failures from the content-modify batch's `modified[]` (each `{pending_path, ok, error?}` — surface every `ok:false` row so a failed item is not silently lost), and tail of `.fabric/events.jsonl` showing the appended events. See `ref/output-contract.md` for the bilingual rollup template.
 
 ---
 
