@@ -618,6 +618,102 @@ describe("reviewKnowledge", () => {
   });
 
   // -------------------------------------------------------------------------
+  // v2.3 modify-content-batch: array-native flush for the maintain loop
+  // -------------------------------------------------------------------------
+
+  it("modify-content-batch applies independent edits to every item", async () => {
+    const projectRoot = await createTempProject();
+    const p1 = await seedPendingFile(projectRoot, "decisions", "batch-a", { tags: ["a0"] });
+    const p2 = await seedPendingFile(projectRoot, "pitfalls", "batch-b", { tags: ["b0"] });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-content-batch",
+      items: [
+        { pending_path: p1, changes: { summary: "batchA", tags: ["a1"] } },
+        { pending_path: p2, changes: { must_read_if: "改 B 时", tags: ["b1"] } },
+      ],
+    });
+    expect(result.action).toBe("modify-content-batch");
+    if (result.action !== "modify-content-batch") throw new Error("unreachable");
+    expect(result.modified).toHaveLength(2);
+    expect(result.modified.every((m) => m.ok)).toBe(true);
+    // Order preserved — modified[i] corresponds to items[i].
+    expect(result.modified.map((m) => m.pending_path)).toEqual([p1, p2]);
+
+    const a = await readFile(p1, "utf8");
+    expect(a).toMatch(/^tags: \[a1\]$/mu);
+    expect(a).toMatch(/^summary: batchA$/mu);
+    const b = await readFile(p2, "utf8");
+    expect(b).toMatch(/^tags: \[b1\]$/mu);
+    expect(b).toMatch(/^must_read_if: 改 B 时$/mu);
+  });
+
+  it("modify-content-batch isolates a per-item failure (partial success)", async () => {
+    const projectRoot = await createTempProject();
+    const good = await seedPendingFile(projectRoot, "decisions", "batch-good", { tags: ["g0"] });
+    // Sibling path in the same (sandbox-valid) store dir that does not exist.
+    const missing = good.replace("batch-good", "batch-missing");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-content-batch",
+      items: [
+        { pending_path: good, changes: { tags: ["g1"] } },
+        { pending_path: missing, changes: { tags: ["x"] } },
+      ],
+    });
+    if (result.action !== "modify-content-batch") throw new Error("unreachable");
+    expect(result.modified).toHaveLength(2);
+    const byPath = Object.fromEntries(result.modified.map((m) => [m.pending_path, m]));
+    expect(byPath[good].ok).toBe(true);
+    expect(byPath[missing].ok).toBe(false);
+    expect(byPath[missing].error).toMatch(/not found/u);
+
+    // The good item was still applied despite the sibling's failure.
+    const g = await readFile(good, "utf8");
+    expect(g).toMatch(/^tags: \[g1\]$/mu);
+  });
+
+  // KT-PIT-0018 batch guard: modify silently .strip()'d `related` before the
+  // schema declared it; the batch path shares modifyEntry so it must land too.
+  it("modify-content-batch writes related[] per item (KT-PIT-0018 guard)", async () => {
+    const projectRoot = await createTempProject();
+    const p = await seedPendingFile(projectRoot, "decisions", "batch-related", { tags: ["r0"] });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-content-batch",
+      items: [{ pending_path: p, changes: { related: ["KT-DEC-0019", "KT-GLD-0005"] } }],
+    });
+    if (result.action !== "modify-content-batch") throw new Error("unreachable");
+    expect(result.modified[0].ok).toBe(true);
+
+    const updated = await readFile(p, "utf8");
+    expect(updated).toMatch(/^related: \[KT-DEC-0019, KT-GLD-0005\]$/mu);
+  });
+
+  it("modify-content-batch strips layer per item (content-only, never flips)", async () => {
+    const projectRoot = await createTempProject();
+    const p = await seedPendingFile(projectRoot, "decisions", "batch-nolayer", {
+      tags: ["n0"],
+      layer: "team",
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-content-batch",
+      items: [{ pending_path: p, changes: { tags: ["n1"], layer: "personal" } }],
+    });
+    if (result.action !== "modify-content-batch") throw new Error("unreachable");
+    expect(result.modified[0].ok).toBe(true);
+
+    const updated = await readFile(p, "utf8");
+    expect(updated).toMatch(/^tags: \[n1\]$/mu);
+    expect(updated).toMatch(/^layer: team$/mu); // layer flip suppressed
+    const layerEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_layer_changed",
+    });
+    expect(layerEvents.events).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
   // TASK-002: modify action — layer flip
   // -------------------------------------------------------------------------
 

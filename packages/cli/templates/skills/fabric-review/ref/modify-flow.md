@@ -9,6 +9,7 @@ The modify family is the only action group that mutates frontmatter or stable_id
 - `action="modify-content"` — scalar edits (title/summary/tags/maturity/relevance_*); stable_id PRESERVED; the server STRIPS any `changes.layer` so this path can never flip layer. Emits `knowledge_slug_renamed` only when slug derives from title.
 - `action="modify-layer"` — the dedicated layer-flip path; `changes.layer` is REQUIRED. The ONLY legal stable_id mutation in the system (see Layer-Flip Rules below).
 - `action="modify"` (legacy alias) — still accepted; routes to content-edit OR layer-flip by whether `changes.layer` is present. New call sites should use the explicit pair.
+- `action="modify-content-batch"` (v2.3) — the array-native flush path. In maintain / pending review, DON'T call modify-content once per entry: accumulate each content edit as `{pending_path, changes}` and flush the whole set via ONE `fab_review action="modify-content-batch"` with `items=[…]` (mirrors approve's accumulate-flush — see per-mode-flows.md step 6). Each item is applied content-only (layer stripped); per-item failures come back in `modified[]` as `{pending_path, ok, error?}` without aborting siblings. Layer flips are NEVER batched — they stay on the interactive per-item `modify-layer` path.
 
 Server semantics (identical regardless of which action selected the path):
 

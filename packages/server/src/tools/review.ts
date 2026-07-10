@@ -33,6 +33,7 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
         "reject → pending_paths[≥1] + reason; " +
         "modify / modify-content → pending_path + changes; " +
         "modify-layer → pending_path + changes.layer(team|personal); " +
+        "modify-content-batch → items[{pending_path, changes}][≥1] (batch content edits; per-item partial-failure reported in modified[]); " +
         "search → query; " +
         "defer → pending_paths[≥1] (until/reason optional); " +
         "retire → pending_paths[≥1] (superseded_by/reason optional; marks canonical entries deprecated in place — deprecate-over-delete — so they stop surfacing in recall/broad indexes). " +

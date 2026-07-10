@@ -1102,6 +1102,24 @@ export const FabReviewInputSchema = z.discriminatedUnion("action", [
       layer: z.enum(["team", "personal"]),
     }),
   }),
+  // v2.3 batch content-modify: array-native flush for the fabric-review maintain
+  // loop. Each item is an INDEPENDENT content edit — unlike approve/reject/defer
+  // (which share one reason/until over pending_paths[]), modify needs its OWN
+  // changes per entry, so the shape is items[] not paths[]. Layer is stripped
+  // per item (content-only; layer-flips stay on the single interactive
+  // modify-layer path). Per-item failure is isolated: a bad item reports
+  // {ok:false, error} in modified[] without aborting its siblings.
+  z.object({
+    action: z.literal("modify-content-batch"),
+    items: z
+      .array(
+        z.object({
+          pending_path: z.string().min(1),
+          changes: _fabReviewModifyChangesSchema,
+        }),
+      )
+      .min(1),
+  }),
   z.object({
     action: z.literal("defer"),
     pending_paths: z.array(z.string()).min(1),
@@ -1192,9 +1210,18 @@ export const FabPendingInputShape = {
 // branches is caught by a unit test in packages/server/src/tools/review.test.ts.
 export const FabReviewInputShape = {
   action: z
-    .enum(["approve", "reject", "modify", "modify-content", "modify-layer", "defer", "retire"])
+    .enum([
+      "approve",
+      "reject",
+      "modify",
+      "modify-content",
+      "modify-layer",
+      "modify-content-batch",
+      "defer",
+      "retire",
+    ])
     .describe(
-      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias; retire marks canonical entries deprecated (deprecate-over-delete) so they stop surfacing. (list/search moved to the read-only fab_pending tool.)",
+      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias; modify-content-batch flushes an array of independent content edits (items[]) in one call; retire marks canonical entries deprecated (deprecate-over-delete) so they stop surfacing. (list/search moved to the read-only fab_pending tool.)",
     ),
   pending_paths: z
     .array(z.string())
@@ -1219,6 +1246,18 @@ export const FabReviewInputShape = {
   changes: _fabReviewModifyChangesSchema.optional().describe(
     "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*/semantic_scope/related). Required when action=modify. semantic_scope re-scopes the entry's resolution coordinate in place (e.g. team → project:<id>) without moving stores; personal-root coordinates are rejected (use modify-layer).",
   ),
+  items: z
+    .array(
+      z.object({
+        pending_path: z.string().min(1),
+        changes: _fabReviewModifyChangesSchema,
+      }),
+    )
+    .min(1)
+    .optional()
+    .describe(
+      "Batch of independent content edits — required (non-empty) when action=modify-content-batch. Each item {pending_path, changes} is applied content-only (layer stripped); per-item failures surface in modified[] without aborting siblings.",
+    ),
   until: z
     .string()
     .datetime()
@@ -1331,6 +1370,21 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
     new_stable_id: z.string().optional(),
     warnings: z.array(structuredWarningSchema).optional(),
   }),
+  // v2.3 batch content-modify result: per-item {pending_path, ok, error?}. No
+  // prior/new_stable_id — content edits strip layer, so no id reallocation can
+  // occur. ok=false items carry the failure message; siblings still applied
+  // (partial failure is reported per-item, never thrown for the whole batch).
+  z.object({
+    action: z.literal("modify-content-batch"),
+    modified: z.array(
+      z.object({
+        pending_path: z.string(),
+        ok: z.boolean(),
+        error: z.string().optional(),
+      }),
+    ),
+    warnings: z.array(structuredWarningSchema).optional(),
+  }),
   z.object({
     action: z.literal("defer"),
     deferred: z.array(z.string()),
@@ -1403,7 +1457,7 @@ export const FabPendingOutputShape = {
 // (and may be at runtime by callers) for full per-action precision.
 export const FabReviewOutputShape = {
   action: z
-    .enum(["approve", "reject", "modify", "defer", "retire"])
+    .enum(["approve", "reject", "modify", "modify-content-batch", "defer", "retire"])
     .describe(
       "Echoes the input action; clients can switch on it for per-variant fields below. (list/search results moved to the read-only fab_pending tool.)",
     ),
@@ -1436,6 +1490,18 @@ export const FabReviewOutputShape = {
     .optional()
     .describe(
       "New stable id after reallocation. Present when action=modify AND a layer-flip reallocated the id.",
+    ),
+  modified: z
+    .array(
+      z.object({
+        pending_path: z.string(),
+        ok: z.boolean(),
+        error: z.string().optional(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Per-item results for action=modify-content-batch: {pending_path, ok, error?}. ok=false items carry the error; siblings still applied.",
     ),
   deferred: z
     .array(z.string())

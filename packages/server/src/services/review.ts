@@ -156,6 +156,14 @@ export async function reviewKnowledge(
     case "modify-layer":
       // changes.layer is REQUIRED by the modify-layer input schema.
       return await modifyEntry(projectRoot, input.pending_path, input.changes);
+    // v2.3 batch content-modify: the array-native flush path for the
+    // fabric-review maintain loop. Collapses N per-item modify round-trips
+    // (each paying a first-reconcile gate wait) into one call.
+    case "modify-content-batch":
+      return {
+        action: "modify-content-batch",
+        modified: await modifyContentBatch(projectRoot, input.items),
+      };
     case "defer":
       return {
         action: "defer",
@@ -1029,6 +1037,38 @@ async function modifyEntry(
     action: "modify",
     pending_path: pendingPath,
   };
+}
+
+// v2.3 batch content-modify: the array-native flush path for the fabric-review
+// maintain loop (parity with approveAll/rejectAll/deferAll — the *All helpers
+// that already loop internally). Each item is applied as a content-only edit
+// (layer stripped, mirroring the modify-content dispatch case), caught
+// per-item so one bad entry reports {ok:false, error} without aborting the
+// batch. The first-reconcile gate + payload guard run ONCE for the whole batch
+// in the tool wrapper — collapsing N gate-waits to 1 is the latency this path
+// exists to reclaim. A verified→proven item still hard-fails inside modifyEntry
+// (the 0-dismiss gate), surfacing as ok:false rather than laundering the entry.
+async function modifyContentBatch(
+  projectRoot: string,
+  items: ReadonlyArray<{ pending_path: string; changes: ModifyChanges }>,
+): Promise<Array<{ pending_path: string; ok: boolean; error?: string }>> {
+  const results: Array<{ pending_path: string; ok: boolean; error?: string }> = [];
+  for (const item of items) {
+    // Strip any layer field so a batch item can never flip layer (parity with
+    // the modify-content dispatch case; layer-flips stay on modify-layer).
+    const { layer: _droppedLayer, ...contentChanges } = item.changes;
+    try {
+      await modifyEntry(projectRoot, item.pending_path, contentChanges);
+      results.push({ pending_path: item.pending_path, ok: true });
+    } catch (error) {
+      results.push({
+        pending_path: item.pending_path,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return results;
 }
 
 type ResolvedTarget = {
