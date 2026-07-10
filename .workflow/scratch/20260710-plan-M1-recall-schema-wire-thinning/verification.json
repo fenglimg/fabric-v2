@@ -9,11 +9,11 @@
     ]
   },
   "payload_bytes_before_original_sample": 29517,
-  "payload_bytes_after_seeded": 13155,
-  "payload_bytes_after_seeded_opt_in": 18587,
+  "payload_bytes_after_seeded": 14211,
+  "payload_bytes_after_seeded_opt_in": 18363,
   "target_bytes": 17000,
   "warning_threshold_bytes": 16384,
-  "reduction_pct": 55,
+  "reduction_pct": 52,
   "meets_target": true,
   "entries": 24,
   "dropped_ids_count": 0,
@@ -30,5 +30,5 @@
     "store_alias_flat": true,
     "intent_clues_absent_on_entries": true
   },
-  "recorded_at": "2026-07-10T07:23:28.877Z"
+  "recorded_at": "2026-07-10T07:41:32.686Z"
 }

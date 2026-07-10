@@ -523,6 +523,24 @@ export const recallInputSchema = z.object({
     ),
 });
 
+// TASK-004 + Codex review F6: recall uses its OWN slim description schema
+// (was: shared _ruleDescriptionSchema). Sharing let intent_clues / tech_stack /
+// related / relevance_paths etc. remain schema-legal on the recall wire even
+// after slimDescription() stopped emitting them — a KT-PIT-0018 zod .strip()
+// footgun waiting to trip. This dedicated schema locks the projected contract.
+// Fields correspond 1:1 to slimDescription() output (services/recall.ts) — keep
+// them in sync when adding/removing wire-facing description fields.
+const _recallEntryDescriptionSchema = z.object({
+  summary: z.string(),
+  // TASK-002: omitted when identical to summary (~40% dedup).
+  must_read_if: z.string().optional(),
+  // Semantic-preservation (PLN-002 F1 restored): knowledge-hint-narrow.cjs
+  // consumes this for the "⚠️ 后果" narrow-hint line.
+  impact: z.array(z.string()).optional(),
+  // Semantic-preservation (PLN-002): cite-contract-reminder.cjs consumes it.
+  knowledge_type: _knowledgeTypeEnum.optional(),
+});
+
 // ux-w2-4: the unified recall entry. Folds the former dual `candidates[]`
 // (descriptions) × `paths[]` (read paths) — which the consumer had to JOIN on
 // stable_id — into ONE self-contained item: description + where-to-Read +
@@ -532,8 +550,9 @@ export const recallInputSchema = z.object({
 // `store: {alias}` flattened to `store_alias` (no extensibility signal was needed).
 const _recallEntrySchema = z.object({
   stable_id: z.string(),
-  // The DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
-  description: _ruleDescriptionSchema,
+  // The projected DESCRIPTION (recall-specific slim contract, not the shared
+  // frontmatter shape). Codex review F6: dedicated schema locks the wire contract.
+  description: _recallEntryDescriptionSchema,
   // on-disk knowledge file to Read for the full body. Omitted when the entry has
   // no resolvable file (description-only discovery) or was scoped out by `ids`.
   read_path: z.string().optional(),

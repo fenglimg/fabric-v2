@@ -469,10 +469,9 @@ export async function planContext(
   // numeric count is retained as a monotone size-proxy for the serialize
   // measurement closure below (the real dropped[] must NOT grow inside it).
   const topKIds = new Set(topKCandidates.map((item) => item.stable_id));
-  const retrievalDropped = rankedCandidates
+  const retrievalDroppedInitial = rankedCandidates
     .filter((item) => !topKIds.has(item.stable_id))
     .map((item) => ({ id: item.stable_id, reason: "retrieval_budget" as const }));
-  const omittedCandidateCount = retrievalDropped.length;
 
   // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): when
   // include_related is on, follow the one-hop `related` graph edges of the
@@ -485,6 +484,7 @@ export async function planContext(
   // `relatedAppended` stays empty (no fake "related" output downstream).
   let candidates = topKCandidates;
   const relatedAppended: Record<string, string> = {};
+  const appendedIds = new Set<string>();
   if (input.include_related === true) {
     const inTopK = new Set(topKCandidates.flatMap((item) => relatedLookupKeys(item.stable_id)));
     const rankedById = new Map<string, RuleDescriptionIndexItem>();
@@ -496,7 +496,6 @@ export async function planContext(
       }
     }
     const appended: RuleDescriptionIndexItem[] = [];
-    const appendedIds = new Set<string>();
     for (const surfaced of topKCandidates) {
       for (const rel of surfaced.description.related ?? []) {
         if (inTopK.has(rel)) continue; // already surfaced — nothing to pull in
@@ -512,6 +511,14 @@ export async function planContext(
       candidates = [...topKCandidates, ...appended];
     }
   }
+
+  // Codex review F4: after related expansion, drop retrieval-dropped entries
+  // that got resurrected as related neighbours. A stable_id must belong to
+  // exactly ONE of {surfaced, retrieval-dropped, payload-dropped} — never two.
+  // Without this filter, `dropped_ids` would list ids that also appear in
+  // `entries[]`, breaking KT-DEC-0028 id-partition transparency.
+  const retrievalDropped = retrievalDroppedInitial.filter((d) => !appendedIds.has(d.id));
+  const omittedCandidateCount = retrievalDropped.length;
 
   const entries: PlanContextEntry[] = uniquePaths.map((path) => ({
     path,

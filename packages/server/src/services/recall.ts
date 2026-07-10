@@ -73,9 +73,12 @@ type FullRuleDescription = PlanContextResult["candidates"][number]["description"
 export type RecallEntryDescription = Pick<FullRuleDescription, "summary"> &
   // TASK-002: must_read_if is omitted on the wire when identical to `summary`.
   // TASK-005: intent_clues dropped from wire (0 hook consumers) — the .md body
-  // remains reachable via read_path. Selection uses summary + must_read_if
-  // (when distinct) + knowledge_type.
-  Partial<Pick<FullRuleDescription, "must_read_if" | "knowledge_type">>;
+  // remains reachable via read_path. `impact` KEPT per PLN-002 semantic-
+  // preservation decision (knowledge-hint-narrow.cjs:1265 consumes it for the
+  // "⚠️ 后果" narrow-hint line); `knowledge_type` KEPT per PLN-002 (cite-contract-
+  // reminder.cjs:89 consumes it). Selection = summary + must_read_if (when
+  // distinct) + impact + knowledge_type.
+  Partial<Pick<FullRuleDescription, "must_read_if" | "impact" | "knowledge_type">>;
 
 // ux-w2-4: one unified entry folds the former candidates[] (description) ×
 // paths[] (read path) join into a single self-contained item.
@@ -308,6 +311,7 @@ function slimDescription(d: FullRuleDescription): RecallEntryDescription {
   return {
     summary: d.summary,
     ...(d.must_read_if !== d.summary ? { must_read_if: d.must_read_if } : {}),
+    ...(Array.isArray(d.impact) && d.impact.length > 0 ? { impact: d.impact } : {}),
     ...(d.knowledge_type !== undefined ? { knowledge_type: d.knowledge_type } : {}),
   };
 }
