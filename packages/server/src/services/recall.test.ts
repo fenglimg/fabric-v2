@@ -13,6 +13,7 @@ import {
 import { recallOutputSchema } from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 import { recall, attachPathStore } from "./recall.js";
+import { planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
 import { contextCache } from "../cache.js";
 
@@ -139,8 +140,9 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
-    // Ranked best-first: every entry carries a 1-based rank.
-    expect(result.entries.map((e) => e.rank).sort()).toEqual([1, 2]);
+    // TASK-004: entries returned best-first (array index is the ranking signal;
+    // explicit `rank` field dropped from the wire — derivable + zero consumers).
+    expect(result.entries.length).toBe(2);
 
     // Each surfaced entry carries a read_path pointing at the on-disk store file.
     expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id).sort()).toEqual([
@@ -149,7 +151,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     ]);
     const authEntry = result.entries.find((e) => e.stable_id === "team:KT-DEC-0001");
     expect(authEntry?.read_path).toMatch(/KT-DEC-0001\.md$/);
-    expect(authEntry?.store).toEqual({ alias: "team" });
+    // TASK-004: store surface flattened { alias } → store_alias.
+    expect(authEntry?.store_alias).toBe("team");
 
     // No bodies / no two-step fields leak into the wire shape.
     expect(result).not.toHaveProperty("rules");
@@ -199,6 +202,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       // Two query terms ADJACENT in the seeded summary → proximityBoost > 0.
       intent: "recall proximity",
       session_id: "session-recall-proximity",
+      // TASK-006: opt in to score_breakdown to inspect the proximity signal.
+      include_score_breakdown: true,
     });
 
     const entry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-0009"));
@@ -206,8 +211,13 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     // The component actually fired — proves this test exercises proximity, unlike
     // the symmetric fixture where it is a trivial 0.
     expect(entry?.score_breakdown?.proximity).toBeGreaterThan(0);
-    // The omission this fix closes: final MUST include proximity → equals score.
-    expect(entry?.score_breakdown?.final).toBe(entry?.score);
+    // KT-PIT-0036 invariant (wire-side): breakdown.final is now the sole surfaced
+    // ranking signal (entry.score dropped in TASK-004). It must be > 0 when
+    // proximity fired — the wave-1 "final desynced from score" regression would
+    // manifest as final === 0 or final !== bm25+vector+salience+recency+locality
+    // +proximity(+credibility×content). Runtime invariant (scored.score === final)
+    // still enforced at the plan-context layer where the Map originates.
+    expect(entry?.score_breakdown?.final).toBeGreaterThan(0);
 
     // KT-PIT-0005 wire-strip lock now covers the new field: proximity survives the
     // recallOutputSchema round-trip (zod .strip() would otherwise drop it).
@@ -249,6 +259,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       paths: ["src/index.ts"],
       intent: "caching",
       session_id: "session-credibility-age",
+      // TASK-006: opt in to score_breakdown to inspect the credibility multiplier.
+      include_score_breakdown: true,
     });
 
     const stale = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-9001"));
@@ -259,17 +271,15 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     // Identical content/structural → the credibility multiplier is the ONLY
     // differentiator, so the fresher entry ranks strictly higher and its factor is
     // strictly larger (and still < 1, i.e. it actually decayed).
-    const staleScore = stale?.score ?? 0;
-    const freshScore = fresh?.score ?? 0;
+    // TASK-004: use score_breakdown.final as the ranking-signal proxy — the wire
+    // no longer exposes a separate entry.score field (final === score by invariant).
+    const staleFinal = stale?.score_breakdown?.final ?? 0;
+    const freshFinal = fresh?.score_breakdown?.final ?? 0;
     const staleCred = stale?.score_breakdown?.credibility ?? 1;
     const freshCred = fresh?.score_breakdown?.credibility ?? 1;
-    expect(freshScore).toBeGreaterThan(staleScore);
+    expect(freshFinal).toBeGreaterThan(staleFinal);
     expect(freshCred).toBeGreaterThan(staleCred);
     expect(freshCred).toBeLessThan(1);
-    // KT-PIT-0036 class invariant: final still equals the ranking score after the
-    // multiplier is mirrored into the breakdown.
-    expect(stale?.score_breakdown?.final).toBe(stale?.score);
-    expect(fresh?.score_breakdown?.final).toBe(fresh?.score);
   });
 
   // v2.2 glossary aliases (C-001/C-002 / R1): an alias term merged into an entry's
@@ -323,6 +333,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       paths: ["src/index.ts"],
       intent: "quaxil",
       session_id: "session-recall-alias",
+      // TASK-006: opt in to score_breakdown for the ranking comparison.
+      include_score_breakdown: true,
     });
 
     const aliasEntry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-7001"));
@@ -330,14 +342,18 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     // (1) The alias term lifted the long-tail entry into recall results with a real
     // score — proves aliases feed the BM25 body rather than being an inert field.
+    // TASK-004: entry.score dropped from wire; final in score_breakdown is the
+    // ranking-signal proxy (final === score by KT-PIT-0036 invariant).
     expect(aliasEntry).toBeDefined();
-    expect(aliasEntry?.score ?? 0).toBeGreaterThan(0);
+    expect(aliasEntry?.score_breakdown?.final ?? 0).toBeGreaterThan(0);
 
     // (2) The direct content hit out-ranks the alias hit: aliases (summary slot,
     // boost 1.5) must NOT overtake direct content (title slot, boost 3). `<=`
     // matches the plan's convergence contract; in practice it is strictly less.
     expect(directEntry).toBeDefined();
-    expect(aliasEntry?.score ?? 0).toBeLessThanOrEqual(directEntry?.score ?? 0);
+    expect(aliasEntry?.score_breakdown?.final ?? 0).toBeLessThanOrEqual(
+      directEntry?.score_breakdown?.final ?? 0,
+    );
   });
 
   // wire-slim (payload) guard: recall projects a LEAN description (selection signal
@@ -351,12 +367,20 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(result.entries.length).toBeGreaterThan(0);
     for (const entry of result.entries) {
       const desc = entry.description as Record<string, unknown>;
-      // KEEP — the fields the agent selects on.
+      // KEEP — the field the agent always selects on.
       expect(desc).toHaveProperty("summary");
-      expect(desc).toHaveProperty("must_read_if");
-      expect(desc).toHaveProperty("intent_clues");
+      // TASK-002: must_read_if is optional on the wire — when present, distinct
+      // from summary (dedup omits it when identical). Consumers fall back to
+      // summary when absent. Both branches are wire-legal.
+      if ("must_read_if" in desc) {
+        expect(desc.must_read_if).not.toEqual(desc.summary);
+      }
       // DROPPED — reachable on demand via read_path, never on the wire.
-      for (const gone of ["tech_stack", "impact", "relevance_paths", "tags", "related", "created_at", "maturity"]) {
+      // TASK-005: intent_clues joined the dropped-from-wire set (0 hook consumers).
+      // TASK-004 revised (Codex review F1): impact KEPT — knowledge-hint-narrow.cjs
+      // consumes it for the "⚠️ 后果" line. impact is emitted when non-empty; the
+      // seed does not set impact, so entries here have no impact field either way.
+      for (const gone of ["intent_clues", "tech_stack", "relevance_paths", "tags", "related", "created_at", "maturity"]) {
         expect(desc).not.toHaveProperty(gone);
       }
     }
@@ -364,6 +388,106 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     // The lean shape survives the recallOutputSchema round-trip (optional-absent OK).
     const parsed = recallOutputSchema.parse(result);
     expect((parsed.entries[0].description as Record<string, unknown>)).not.toHaveProperty("tech_stack");
+  });
+
+  // Codex review F1: `impact` was accidentally removed from the wire even
+  // though PLN-002 explicitly moved it from ON-READ back to KEEP (knowledge-
+  // hint-narrow.cjs:1265 consumes it). Seed one entry with impact declared in
+  // frontmatter and assert it survives the wire projection.
+  it("preserves description.impact on the wire when the KB entry declares it (PLN-002 semantic gate)", async () => {
+    const projectRoot = await createTempProject();
+    await writeStoreEntry("pitfalls", "KT-PIT-9001", [
+      "---",
+      "id: KT-PIT-9001",
+      "type: pitfall",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [impact-check]",
+      "impact: ['静默漂移 → 用户看到旧默认', 'schema-parse 消费者拿到错误值']",
+      "summary: schema/runtime 默认值不对齐",
+      "must_read_if: schema field defaults diverge from runtime behaviour",
+      "---",
+      "# body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "impact-check",
+    });
+
+    const desc = result.entries.find((e) => e.stable_id === "team:KT-PIT-9001")?.description as
+      | Record<string, unknown>
+      | undefined;
+    expect(desc).toBeDefined();
+    expect(desc?.impact).toEqual([
+      "静默漂移 → 用户看到旧默认",
+      "schema-parse 消费者拿到错误值",
+    ]);
+
+    // Round-trip through the (now-slim) recall schema — the dedicated schema
+    // must accept the field, not strip it.
+    const parsed = recallOutputSchema.parse(result);
+    const parsedDesc = parsed.entries.find((e) => e.stable_id === "team:KT-PIT-9001")
+      ?.description as Record<string, unknown> | undefined;
+    expect(parsedDesc?.impact).toEqual(desc?.impact);
+  });
+
+  // TASK-002 wire dedup: two branches — must_read_if omitted when ===summary,
+  // present when distinct. Seed both cases explicitly (frontmatter no-fallback
+  // vs frontmatter distinct-value) to prove each branch of the projection.
+  it("wire dedup: must_read_if omitted when identical to summary, present when distinct", async () => {
+    const projectRoot = await createTempProject();
+    // Case A: frontmatter has no must_read_if → knowledge-meta-builder falls back
+    // to summary → dedup applies → wire omits must_read_if.
+    await writeStoreEntry("decisions", "KT-DEC-0001", [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [dedup-a]",
+      "summary: Case A summary",
+      "---",
+      "# Case A body",
+      "",
+    ]);
+    // Case B: frontmatter declares a DIFFERENT must_read_if → wire keeps it.
+    await writeStoreEntry("guidelines", "KT-GLD-0001", [
+      "---",
+      "id: KT-GLD-0001",
+      "type: guideline",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [dedup-b]",
+      "summary: Case B summary",
+      "must_read_if: Read when case B trigger fires",
+      "---",
+      "# Case B body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "dedup-a dedup-b",
+    });
+
+    const byId = new Map(result.entries.map((e) => [e.stable_id, e.description as Record<string, unknown>]));
+    const caseA = byId.get("team:KT-DEC-0001");
+    const caseB = byId.get("team:KT-GLD-0001");
+
+    expect(caseA).toBeDefined();
+    expect(caseA).not.toHaveProperty("must_read_if");
+    expect(caseA?.summary).toBe("Case A summary");
+
+    expect(caseB).toBeDefined();
+    expect(caseB?.must_read_if).toBe("Read when case B trigger fires");
+    expect(caseB?.must_read_if).not.toEqual(caseB?.summary);
   });
 
   // P1 recall-engine-refactor (TASK-002) — lean read_path contract (KT-GLD-0005 /
@@ -413,13 +537,13 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     ]);
   });
 
-  it("always returns a cite directive in the packaging", async () => {
+  it("does not carry a per-response directive on the wire (TASK-001: bootstrap-injected)", async () => {
     const projectRoot = await seedTwoEntryProject();
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
-    // v2.2 C1 (W2): directive describes recall auto-accounting + dismissed-only,
-    // not the retired first-line cite contract.
-    expect(result.directive).toMatch(/auto-accounted as citations/i);
-    expect(result.directive).toMatch(/dismiss/i);
+    // TASK-001 envelope thinning: the cite policy is bootstrap-injected via
+    // AGENTS.md + SessionStart, not re-echoed on every recall response. Wire
+    // schema no longer declares `directive`; result type has no such field.
+    expect((result as Record<string, unknown>).directive).toBeUndefined();
   });
 
   // W1-3 (KT-DEC-0031): include_related surfaces the related neighbour's read
@@ -508,7 +632,9 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const withPath = result.entries.filter((e) => e.read_path);
     expect(withPath.length).toBeGreaterThan(0);
     for (const e of withPath) {
-      expect(e.store).toEqual({ alias: "team" });
+      // TASK-004: store surface flattened { alias } → store_alias on the wire.
+      // (Internal RecallPath.store retains the nested shape — see attachPathStore.)
+      expect(e.store_alias).toBe("team");
     }
   });
 
@@ -524,6 +650,43 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     });
   });
 
+  // Codex review F4: with include_related on, a neighbour that was originally
+  // retrieval-dropped gets pulled back into `candidates`. dropped_ids must NOT
+  // list it — an id must belong to exactly one of {surfaced, retrieval-dropped,
+  // payload-dropped}. Before the fix, the resurrected neighbour appeared in
+  // both entries[] and dropped_ids[] (KT-DEC-0028 id-partition transparency
+  // silently broken).
+  it("include_related: a resurrected retrieval-dropped neighbour is removed from dropped_ids", async () => {
+    const projectRoot = await seedRelatedProject();
+    // top_k=1 → only the top candidate survives the retrieval-budget cut, its
+    // related neighbour would otherwise be retrieval-dropped.
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: 1 }, null, 2)}\n`,
+    );
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      ids: ["team:KT-DEC-0001"],
+      include_related: true,
+    });
+
+    const surfacedIds = new Set(result.entries.map((e) => e.stable_id));
+    // Both should be surfaced: the top_k winner AND the resurrected neighbour.
+    expect(surfacedIds.has("team:KT-DEC-0001")).toBe(true);
+    expect(surfacedIds.has("team:KT-GLD-0001")).toBe(true);
+    // KT-DEC-0028 id partition: no id may appear both in entries[] and in
+    // dropped_ids[]. Before F4 the neighbour KT-GLD-0001 was in both.
+    for (const dropped of result.dropped_ids ?? []) {
+      expect(surfacedIds.has(dropped)).toBe(false);
+    }
+    // Also next_steps must NOT nudge include_related further — everything is
+    // already surfaced.
+    for (const step of result.next_steps ?? []) {
+      expect(step).not.toMatch(/include_related:true/);
+    }
+  });
+
   it("surfaces a structured dropped[]{id,reason} + a next_steps hint when the budget omits candidates", async () => {
     const projectRoot = await seedTwoEntryProject();
     // top_k=1 over two candidates → one omitted by the retrieval budget.
@@ -534,12 +697,12 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
-    // K6: omissions are reported as a structured dropped[]{id,reason} list with a
-    // controlled reason enum — here exactly one retrieval_budget drop (the
-    // lower-ranked candidate the top_k cap removed).
-    expect(result.dropped).toEqual([
-      { id: "team:KT-GLD-0001", reason: "retrieval_budget" },
-    ]);
+    // K6 + TASK-003 wire transform: dropped[{id,reason}] is hoisted to
+    // dropped_ids (KT-DEC-0028 id-transparency) + dropped_reasons count map.
+    // Here: one retrieval_budget drop (the lower-ranked candidate the top_k cap
+    // removed).
+    expect(result.dropped_ids).toEqual(["team:KT-GLD-0001"]);
+    expect(result.dropped_reasons).toEqual({ retrieval_budget: 1 });
     // Only the surviving candidate is surfaced (with a read_path).
     expect(result.entries.filter((e) => e.read_path)).toHaveLength(1);
     expect(result.next_steps ?? []).toEqual(
@@ -553,7 +716,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
     expect(result.entries).toEqual([]);
-    expect(result.directive).toMatch(/auto-accounted as citations/i);
+    // TASK-001: directive is no longer part of the wire; verify absence.
+    expect((result as Record<string, unknown>).directive).toBeUndefined();
 
     const fetched = await readEventLedger(projectRoot, { event_type: "knowledge_sections_fetched" });
     expect(fetched.events).toEqual([]);
@@ -627,43 +791,72 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(parsedById.get("team:KT-MOD-0001")?.body_in_context).toBe(true);
   });
 
-  // P1 recall-observability: the fused score (computed internally during the
-  // plan-context sort) is now EXPOSED on each entry, with an optional numbers-only
-  // breakdown. Mirrors the body_in_context wire-strip precedent above: the field
-  // must be DECLARED in recallOutputSchema or zod .strip() drops it at the MCP
-  // boundary (KT-PIT-0005) — so we round-trip through the schema and assert it
-  // survives. Lean read_path contract (KT-DEC-0019 / KT-GLD-0005): the breakdown
-  // is numbers-only and never carries body text.
-  it("exposes a numeric score + numbers-only score_breakdown per entry, surviving schema round-trip", async () => {
+  // TASK-006 opt-in: score_breakdown is omitted by default (steady-state wire
+  // thinning) and populated only when the caller sets include_score_breakdown.
+  // The KT-PIT-0036 final===score invariant is still enforced at the plan-context
+  // service layer (candidate_scores Map) regardless of this flag — so opting in
+  // is a pure observability surface, not a ranking-behavior toggle.
+  it("score_breakdown opt-in: omitted by default, populated (+schema round-trip) when include_score_breakdown=true", async () => {
     const projectRoot = await seedTwoEntryProject();
 
-    const result = await recall(projectRoot, {
+    // Default call (no flag) → breakdown omitted from every entry.
+    const defaultRes = await recall(projectRoot, {
       paths: ["src/index.ts"],
-      // A query is required for BM25 to contribute; matches both seeded entries.
       intent: "auth ui",
     });
+    expect(defaultRes.entries.length).toBeGreaterThan(0);
+    for (const entry of defaultRes.entries) {
+      expect(entry.score_breakdown).toBeUndefined();
+    }
 
-    expect(result.entries.length).toBeGreaterThan(0);
-    // Every surfaced entry carries a numeric score.
-    for (const entry of result.entries) {
-      expect(typeof entry.score).toBe("number");
+    // Opt-in call → breakdown surfaces, is numbers-only, and survives the
+    // recallOutputSchema round-trip (KT-PIT-0005 wire-strip lock).
+    const optInRes = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "auth ui",
+      include_score_breakdown: true,
+    });
+    expect(optInRes.entries.length).toBeGreaterThan(0);
+    for (const entry of optInRes.entries) {
       expect(entry.score_breakdown).toBeDefined();
-      // breakdown.final reconciles to the threaded score (same computation).
-      expect(entry.score_breakdown?.final).toBe(entry.score);
+      expect(typeof entry.score_breakdown?.final).toBe("number");
+      expect(entry.score_breakdown?.final).toBeGreaterThan(0);
       // numbers-only: every breakdown value is a number, never body text.
       for (const value of Object.values(entry.score_breakdown ?? {})) {
         expect(typeof value).toBe("number");
       }
     }
-    // entries[0] is the top-ranked entry and carries a numeric score.
-    expect(typeof result.entries[0].score).toBe("number");
+    const parsed = recallOutputSchema.parse(optInRes);
+    expect(parsed.entries[0].score_breakdown).toEqual(optInRes.entries[0].score_breakdown);
+  });
 
-    // wire-strip lock (KT-PIT-0005): score / score_breakdown must survive the
-    // recallOutputSchema round-trip — else zod .strip() drops them over the wire
-    // while this direct-call test would still pass.
-    const parsed = recallOutputSchema.parse(result);
-    expect(typeof parsed.entries[0].score).toBe("number");
-    expect(parsed.entries[0].score).toBe(result.entries[0].score);
-    expect(parsed.entries[0].score_breakdown).toEqual(result.entries[0].score_breakdown);
+  // KT-PIT-0036 invariant (post Codex review F3): entry.score is removed from
+  // the wire, but the runtime invariant final === score must still be enforced
+  // at the plan-context service layer where scoreDescriptionItem() and
+  // scoreBreakdownForItem() both write into candidate_scores. Test them directly
+  // via the internal Map — the wire opt-in surface is a projection, not the
+  // canonical enforcement site.
+  it("KT-PIT-0036 invariant: candidate_scores.score === score_breakdown.final at the service layer", async () => {
+    const projectRoot = await seedTwoEntryProject();
+    const result = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      // Query terms drive BM25 + proximity so the breakdown is non-trivial.
+      intent: "auth ui",
+    });
+
+    expect(result.candidate_scores).toBeDefined();
+    expect(result.candidate_scores?.size ?? 0).toBeGreaterThan(0);
+
+    // Assert final === score for every scored candidate — the KT-PIT-0036
+    // invariant that scoreDescriptionItem() (writes .score) and
+    // scoreBreakdownForItem() (writes .score_breakdown.final) MUST agree.
+    // A drift (e.g. one path missing proximity/credibility) shows up here
+    // immediately. This is the sole enforcement site now that entry.score has
+    // been dropped from the wire (Codex review F3).
+    for (const [id, scored] of result.candidate_scores?.entries() ?? []) {
+      expect(scored.score_breakdown.final).toBeCloseTo(scored.score, 10);
+      // Guard: id must be a real corpus stable_id.
+      expect(typeof id).toBe("string");
+    }
   });
 });

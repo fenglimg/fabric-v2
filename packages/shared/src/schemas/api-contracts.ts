@@ -42,16 +42,24 @@ const _maturityEnum = z.enum(["draft", "verified", "proven"]);
 
 const _ruleDescriptionSchema = z.object({
   summary: z.string(),
-  intent_clues: z.array(z.string()),
+  // TASK-005 wire thinning: intent_clues dropped from recall wire (0 hook
+  // consumers grep-verified). Selection signal is summary + must_read_if
+  // (when distinct) + knowledge_type; intent_clues is preserved in the on-disk
+  // .md frontmatter (KB source-of-truth) and reachable via read_path.
+  intent_clues: z.array(z.string()).optional(),
   // wire-slim (payload): fab_recall projects a LEAN description (summary +
-  // must_read_if + intent_clues + knowledge_type — the selection signal), leaving
-  // tech_stack/impact to be Read on demand via read_path (KT-DEC-0026 lean
+  // must_read_if + knowledge_type — the selection signal), leaving tech_stack/
+  // impact/intent_clues to be Read on demand via read_path (KT-DEC-0026 lean
   // contract at the field level). So they are optional on the wire. plan-context
-  // still returns them in full — zod keeps optional-present values, only ABSENT is
-  // now allowed, so no plan-context consumer regresses.
+  // still returns them in full — zod keeps optional-present values, only ABSENT
+  // is now allowed, so no plan-context consumer regresses.
   tech_stack: z.array(z.string()).optional(),
   impact: z.array(z.string()).optional(),
-  must_read_if: z.string(),
+  // TASK-002 wire dedup: omitted when identical to `summary` (~40% of KB entries
+  // — knowledge-meta-builder.ts:212/:248 `?? summary` fallback). Consumers may
+  // fall back to `summary` when absent. KB source-of-truth (the .md frontmatter)
+  // stays unchanged; this optionality is a WIRE-only projection.
+  must_read_if: z.string().optional(),
   // v2.0: optional knowledge-entry fields. Absent for v1.x rules; present for
   // entries that declare frontmatter `id/type/maturity`. W4/Track1: the redundant
   // `knowledge_layer` field was removed — a candidate's layer is derived from its
@@ -501,32 +509,58 @@ export const recallInputSchema = z.object({
     .describe(
       "When true, also surface the one-hop `related` graph neighbours (of the surfaced entries) that are present in the candidate set — their descriptions and read paths, NOT their bodies.",
     ),
+  // TASK-006 (KT-PIT-0036 observability opt-in): score_breakdown carries the
+  // numbers-only signal decomposition (bm25/vector/salience/recency/locality/
+  // proximity/credibility → final). Emitted per-entry ONLY when this flag is
+  // true — the debug/tuning surface. Steady-state recall omits it to stay lean
+  // (~4.8KB saved on a 24-entry sample). final===score invariant still enforced
+  // at the plan-context service layer (candidate_scores Map) regardless.
+  include_score_breakdown: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, populate `entry.score_breakdown` (numbers-only signal decomposition — bm25/vector/salience/recency/locality/proximity/credibility → final). Off by default for wire efficiency. Enable when debugging ranking or tuning scoring weights.",
+    ),
+});
+
+// TASK-004 + Codex review F6: recall uses its OWN slim description schema
+// (was: shared _ruleDescriptionSchema). Sharing let intent_clues / tech_stack /
+// related / relevance_paths etc. remain schema-legal on the recall wire even
+// after slimDescription() stopped emitting them — a KT-PIT-0018 zod .strip()
+// footgun waiting to trip. This dedicated schema locks the projected contract.
+// Fields correspond 1:1 to slimDescription() output (services/recall.ts) — keep
+// them in sync when adding/removing wire-facing description fields.
+const _recallEntryDescriptionSchema = z.object({
+  summary: z.string(),
+  // TASK-002: omitted when identical to summary (~40% dedup).
+  must_read_if: z.string().optional(),
+  // Semantic-preservation (PLN-002 F1 restored): knowledge-hint-narrow.cjs
+  // consumes this for the "⚠️ 后果" narrow-hint line.
+  impact: z.array(z.string()).optional(),
+  // Semantic-preservation (PLN-002): cite-contract-reminder.cjs consumes it.
+  knowledge_type: _knowledgeTypeEnum.optional(),
 });
 
 // ux-w2-4: the unified recall entry. Folds the former dual `candidates[]`
 // (descriptions) × `paths[]` (read paths) — which the consumer had to JOIN on
 // stable_id — into ONE self-contained item: description + where-to-Read +
-// relevance rank + body-already-in-context flag. No join, no second array.
+// body-already-in-context flag. No join, no second array.
+// TASK-004 wire thinning: `rank` (derivable from array index, 0 consumers) and
+// `score` (redundant with score_breakdown.final by KT-PIT-0036 invariant) removed.
+// `store: {alias}` flattened to `store_alias` (no extensibility signal was needed).
 const _recallEntrySchema = z.object({
   stable_id: z.string(),
-  // 1-based relevance rank (entries are returned best-first). The surfaced
-  // ranking signal — entries are already sorted, rank makes the order explicit.
-  rank: z.number().int().positive(),
-  // The DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
-  description: _ruleDescriptionSchema,
+  // The projected DESCRIPTION (recall-specific slim contract, not the shared
+  // frontmatter shape). Codex review F6: dedicated schema locks the wire contract.
+  description: _recallEntryDescriptionSchema,
   // on-disk knowledge file to Read for the full body. Omitted when the entry has
   // no resolvable file (description-only discovery) or was scoped out by `ids`.
   read_path: z.string().optional(),
   // originating store alias (omitted for unqualified / single-store entries).
-  store: z.object({ alias: z.string() }).optional(),
+  store_alias: z.string().optional(),
   // true when this entry's body is ALSO injected at SessionStart (broad
   // model/guideline "ALWAYS-ACTIVE") — skip the Read, it is already in context.
   body_in_context: z.boolean().optional(),
-  // P1 recall-observability: the fused relevance score this entry scored during
-  // the plan-context sort (was computed internally but dropped before this wave).
-  // Optional + additive — backward-compatible. MUST be declared here or zod
-  // .strip() silently drops it at the MCP boundary (KT-PIT-0005).
-  score: z.number().optional(),
   // P1 recall-observability: numbers-only decomposition of `score` into its
   // weighted signal contributions. NEVER carries body/description text — preserves
   // the lean read_path contract (KT-DEC-0019 / KT-GLD-0005). bm25_rank/vector_rank
@@ -553,27 +587,26 @@ const _recallEntrySchema = z.object({
 });
 
 export const recallOutputSchema = z.object({
+  // Retained: client hook cache key (packages/cli/.claude/hooks/knowledge-hint-narrow.cjs)
   revision_hash: z.string(),
-  stale: z.boolean(),
   // ux-w2-4: single unified entry list (was candidates[] + paths[] + per-path
   // requirement-profile entries[]). Each item carries description + read_path +
   // rank + body_in_context, so the agent never joins two arrays on stable_id.
   entries: z.array(_recallEntrySchema),
-  // v2.2 payload de-dup: single top-level echo of the caller's `intent`.
-  // Omitted when no intent.
-  intent: z.string().optional(),
   // K6 (W3-K): structured list of lower-ranked candidates dropped by the
-  // retrieval pipeline, each tagged with WHY (`retrieval_budget` = top_k cap +
-  // ratio-to-top floor; `payload_budget` = MCP payload-byte trim). Present (and
-  // non-empty) ONLY when truncation fired — keeps the steady-state wire shape
-  // unchanged while signalling which entries exist ("narrow your intent"), now
-  // with a controlled reason instead of a bare count. Reuses the archive-scan
-  // {key,reason} omission convention (_recallDropReasonSchema, keyed on id).
-  dropped: z
-    .array(z.object({ id: z.string(), reason: _recallDropReasonSchema }))
+  // retrieval pipeline. dropped_ids preserves per-id transparency (KT-DEC-0028);
+  // dropped_reasons hoists the reason to a top-level count map (68/68 same-reason
+  // observation from ANL-002). Present ONLY when truncation fired.
+  dropped_ids: z.array(z.string()).optional(),
+  dropped_reasons: z
+    .object({
+      retrieval_budget: z.number().int().nonnegative().optional(),
+      payload_budget: z.number().int().nonnegative().optional(),
+    })
     .optional(),
-  preflight_diagnostics: z.array(_preflightDiagnosticSchema),
+  preflight_diagnostics: z.array(_preflightDiagnosticSchema).optional(),
   warnings: z.array(structuredWarningSchema).optional(),
+  // Auto-heal banner pair (consumed by knowledge-hint-broad.cjs:711-729).
   auto_healed: z.boolean().optional(),
   previous_revision_hash: z.string().optional(),
   // v2.0.0-rc.37 NEW-24: parallel to planContextOutputSchema.redirects — stale
@@ -584,9 +617,6 @@ export const recallOutputSchema = z.object({
   // (appended id → surfaced source id). Present only when include_related
   // appended an in-corpus neighbour. Omitted on the steady-state path.
   related_appended: z.record(z.string()).optional(),
-  // v2.2 MC1-recall-pack: standing behavioral directive (cite-before-edit) +
-  // dynamic discovery hints, so the one-call recall is self-describing.
-  directive: z.string(),
   next_steps: z.array(z.string()).optional(),
 });
 

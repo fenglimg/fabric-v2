@@ -104,14 +104,15 @@ describe.runIf(process.env.DOGFOOD_BASELINE === "1")("recall dogfood RED baselin
           });
           const entries = res.entries ?? [];
           const idx = entries.findIndex((e) => e.stable_id === item.stable_id);
-          const rank = idx >= 0 ? (entries[idx]!.rank ?? idx + 1) : null;
+          // TASK-004: rank derived from array index (wire no longer carries it).
+          const rank = idx >= 0 ? idx + 1 : null;
+          // TASK-004: KT-PIT-0036 final===score invariant is now enforced at the
+          // plan-context service layer (scoreDescriptionItem / candidate_scores
+          // Map); wire only carries breakdown.final. This loop keeps the field-
+          // presence sanity check (breakdown emitted for every ranked entry).
           for (const e of entries) {
-            if (typeof e.score === "number" && e.score_breakdown && typeof e.score_breakdown.final === "number") {
+            if (e.score_breakdown && typeof e.score_breakdown.final === "number") {
               totalObs++;
-              if (Math.abs(e.score - e.score_breakdown.final) > 1e-6) {
-                mismatchObs++;
-                mismatchIds.add(e.stable_id);
-              }
             }
           }
           rows.push({
@@ -190,13 +191,14 @@ describe.runIf(process.env.DOGFOOD_BASELINE === "1")("recall dogfood RED baselin
         });
         const entries = res.entries ?? [];
         const claimSet = new Set(ids);
+        // TASK-004: rank derived from array index (wire dropped `rank` field).
         contestedSamples.push({
           path: p,
           claimants: ids.length,
-          top8: entries.slice(0, 8).map((e) => ({ id: e.stable_id, rank: e.rank, claims_path: claimSet.has(e.stable_id) })),
+          top8: entries.slice(0, 8).map((e, i) => ({ id: e.stable_id, rank: i + 1, claims_path: claimSet.has(e.stable_id) })),
           claimant_ranks: ids.map((id) => {
-            const e = entries.find((x) => x.stable_id === id);
-            return { id, rank: e ? e.rank : "MISS" };
+            const idx = entries.findIndex((x) => x.stable_id === id);
+            return { id, rank: idx >= 0 ? idx + 1 : "MISS" };
           }),
         });
       }
@@ -278,7 +280,8 @@ describe.runIf(process.env.DOGFOOD_BASELINE === "1")("recall dogfood RED baselin
             else g.desc_other += b;
           }
           g.score_breakdown += jbytes(e.score_breakdown);
-          g.envelope += jbytes({ s: e.stable_id, r: e.rank, p: e.read_path, st: e.store });
+          // TASK-004: rank derived from array index; store flattened to store_alias.
+          g.envelope += jbytes({ s: e.stable_id, p: e.read_path, sa: e.store_alias });
         }
         const slimmable = g.slim_rich + g.slim_meta;
         rows.push({

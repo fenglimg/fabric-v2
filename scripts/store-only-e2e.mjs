@@ -241,7 +241,7 @@ async function main() {
       "recall did not surface the approved store-qualified id in entries[]",
     );
     assert(
-      recalledEntry.store?.alias === "team",
+      recalledEntry.store_alias === "team",
       "recalled entry is not attributed to the team store",
     );
 
