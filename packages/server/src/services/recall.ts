@@ -13,7 +13,12 @@
 
 import type { RecallScoreBreakdown } from "@fenglimg/fabric-shared";
 
-import { planContext, type PlanContextInput, type PlanContextResult } from "./plan-context.js";
+import {
+  planContext,
+  type PlanContextInput,
+  type PlanContextResult,
+  type PreflightDiagnostic,
+} from "./plan-context.js";
 import { buildCrossStoreBodyIndex } from "./cross-store-recall.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 
@@ -56,11 +61,11 @@ export type RecallPath = {
 // planResult.candidates / the raw store, never this projected wire shape, so the
 // slim is wire-only. Isolated as its own type here to avoid rippling RuleDescription.
 type FullRuleDescription = PlanContextResult["candidates"][number]["description"];
-export type RecallEntryDescription = Pick<
-  FullRuleDescription,
-  "summary" | "must_read_if" | "intent_clues"
-> &
-  Partial<Pick<FullRuleDescription, "knowledge_type">>;
+export type RecallEntryDescription = Pick<FullRuleDescription, "summary" | "intent_clues"> &
+  // TASK-002: must_read_if is omitted on the wire when identical to `summary`
+  // (~40% dedup rate from knowledge-meta-builder.ts:212/:248 `?? summary`
+  // fallback). Consumers may fall back to `summary` when absent.
+  Partial<Pick<FullRuleDescription, "must_read_if" | "knowledge_type">>;
 
 // ux-w2-4: one unified entry folds the former candidates[] (description) ×
 // paths[] (read path) join into a single self-contained item.
@@ -96,19 +101,24 @@ export type RecallResult = Omit<
   // P1: candidate_scores is folded into each entry's score/score_breakdown — recall
   // does not re-surface the raw Map.
   | "candidate_scores"
+  // TASK-001 envelope thinning: 0-consumer wire fields (grep-verified against
+  // packages/cli/**/hooks — no consumer). Cite policy is bootstrap-injected
+  // via AGENTS.md + SessionStart, no per-response echo needed.
+  | "stale"
+  | "intent"
+  // TASK-003: transformed to dropped_ids + dropped_reasons below. Preserves
+  // KT-DEC-0028 id-transparency while hoisting the reason to a per-response
+  // count map (68/68 same-reason observed in ANL-002 sample).
+  | "dropped"
+  // TASK-003: emitted only when non-empty (was: always [] on steady state).
+  | "preflight_diagnostics"
 > & {
   entries: RecallEntry[];
-  // v2.2 MC1-recall-pack: standing behavioral directive (cite-before-edit),
-  // reinforced at the moment the agent has the read paths in hand.
-  directive: string;
   next_steps?: string[];
+  dropped_ids?: string[];
+  dropped_reasons?: { retrieval_budget?: number; payload_budget?: number };
+  preflight_diagnostics?: PreflightDiagnostic[];
 };
-
-// v2.2 C1 (W2): recall auto-accounting. The system records these recalled
-// entries as citations for edits whose paths overlap this recall — no
-// hand-written first line is required. The AI only speaks up to DISMISS one.
-const RECALL_DIRECTIVE =
-  "These entries are auto-accounted as citations for edits whose paths overlap this recall — no first-line cite needed. Speak up only to dismiss one you judge inapplicable: `dismissed: <id> (<reason>)`.";
 
 export async function recall(projectRoot: string, input: RecallInput): Promise<RecallResult> {
   const planResult = await planContext(projectRoot, input);
@@ -215,16 +225,46 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
     };
   });
 
-  // Drop the plan envelope's two list shapes — recall surfaces the merged
-  // `entries[]` instead (the per-path requirement-profile entries[] and the
-  // description candidates[] are both folded away).
-  const { entries: _reqProfiles, candidates: _candidates, ...planRestNoLists } = planRest;
+  // Drop the plan envelope's two list shapes (recall folds them into `entries[]`)
+  // + TASK-001 wire thinning: stale/intent explicit-strip (KT-PIT-0018 belt-and-
+  // suspenders — output-schema .strip() would also drop them, but explicit
+  // destructuring makes the "0 consumers, gone by design" intent visible in code).
+  const {
+    entries: _reqProfiles,
+    candidates: _candidates,
+    stale: _stale,
+    intent: _intent,
+    dropped: droppedList,
+    preflight_diagnostics: preflightList,
+    ...planRestNoLists
+  } = planRest;
+
+  // TASK-003 wire transform: dropped[{id, reason}] → dropped_ids (KT-DEC-0028
+  // id-transparency) + dropped_reasons count map (68/68 same-reason observed in
+  // ANL-002 sample; per-response reason counts stay descriptive if mixed).
+  const retrievalDroppedCount = (droppedList ?? []).filter(
+    (d) => d.reason === "retrieval_budget",
+  ).length;
+  const payloadDroppedCount = (droppedList ?? []).filter((d) => d.reason === "payload_budget")
+    .length;
+  const droppedIds = (droppedList ?? []).map((d) => d.id);
 
   return {
     ...planRestNoLists,
     entries,
-    directive: RECALL_DIRECTIVE,
     ...(nextSteps.length > 0 ? { next_steps: nextSteps } : {}),
+    ...(droppedIds.length > 0 ? { dropped_ids: droppedIds } : {}),
+    ...(retrievalDroppedCount > 0 || payloadDroppedCount > 0
+      ? {
+          dropped_reasons: {
+            ...(retrievalDroppedCount > 0 ? { retrieval_budget: retrievalDroppedCount } : {}),
+            ...(payloadDroppedCount > 0 ? { payload_budget: payloadDroppedCount } : {}),
+          },
+        }
+      : {}),
+    ...(preflightList !== undefined && preflightList.length > 0
+      ? { preflight_diagnostics: preflightList }
+      : {}),
   };
 }
 
@@ -243,11 +283,13 @@ function isAlwaysActive(candidate: { description: { relevance_scope?: string; kn
 // the rest to on-demand Read via read_path (KT-DEC-0026). intent_clues is ALWAYS
 // emitted (even empty) — it is a required schema field and the primary when-to-fire
 // signal; knowledge_type is optional so it is emitted only when present.
+// TASK-002: must_read_if is omitted when identical to summary (~40% dedup rate;
+// consumers fall back to summary when absent — no KB source-of-truth change).
 function slimDescription(d: FullRuleDescription): RecallEntryDescription {
   return {
     summary: d.summary,
-    must_read_if: d.must_read_if,
     intent_clues: d.intent_clues,
+    ...(d.must_read_if !== d.summary ? { must_read_if: d.must_read_if } : {}),
     ...(d.knowledge_type !== undefined ? { knowledge_type: d.knowledge_type } : {}),
   };
 }

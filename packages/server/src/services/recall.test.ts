@@ -351,10 +351,15 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(result.entries.length).toBeGreaterThan(0);
     for (const entry of result.entries) {
       const desc = entry.description as Record<string, unknown>;
-      // KEEP — the fields the agent selects on.
+      // KEEP — the fields the agent selects on (always emitted).
       expect(desc).toHaveProperty("summary");
-      expect(desc).toHaveProperty("must_read_if");
       expect(desc).toHaveProperty("intent_clues");
+      // TASK-002: must_read_if is optional on the wire — when present, distinct
+      // from summary (dedup omits it when identical). Consumers fall back to
+      // summary when absent. Both branches are wire-legal.
+      if ("must_read_if" in desc) {
+        expect(desc.must_read_if).not.toEqual(desc.summary);
+      }
       // DROPPED — reachable on demand via read_path, never on the wire.
       for (const gone of ["tech_stack", "impact", "relevance_paths", "tags", "related", "created_at", "maturity"]) {
         expect(desc).not.toHaveProperty(gone);
@@ -364,6 +369,61 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     // The lean shape survives the recallOutputSchema round-trip (optional-absent OK).
     const parsed = recallOutputSchema.parse(result);
     expect((parsed.entries[0].description as Record<string, unknown>)).not.toHaveProperty("tech_stack");
+  });
+
+  // TASK-002 wire dedup: two branches — must_read_if omitted when ===summary,
+  // present when distinct. Seed both cases explicitly (frontmatter no-fallback
+  // vs frontmatter distinct-value) to prove each branch of the projection.
+  it("wire dedup: must_read_if omitted when identical to summary, present when distinct", async () => {
+    const projectRoot = await createTempProject();
+    // Case A: frontmatter has no must_read_if → knowledge-meta-builder falls back
+    // to summary → dedup applies → wire omits must_read_if.
+    await writeStoreEntry("decisions", "KT-DEC-0001", [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [dedup-a]",
+      "summary: Case A summary",
+      "---",
+      "# Case A body",
+      "",
+    ]);
+    // Case B: frontmatter declares a DIFFERENT must_read_if → wire keeps it.
+    await writeStoreEntry("guidelines", "KT-GLD-0001", [
+      "---",
+      "id: KT-GLD-0001",
+      "type: guideline",
+      "layer: team",
+      "maturity: verified",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "intent_clues: [dedup-b]",
+      "summary: Case B summary",
+      "must_read_if: Read when case B trigger fires",
+      "---",
+      "# Case B body",
+      "",
+    ]);
+    mountStores();
+
+    const result = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "dedup-a dedup-b",
+    });
+
+    const byId = new Map(result.entries.map((e) => [e.stable_id, e.description as Record<string, unknown>]));
+    const caseA = byId.get("team:KT-DEC-0001");
+    const caseB = byId.get("team:KT-GLD-0001");
+
+    expect(caseA).toBeDefined();
+    expect(caseA).not.toHaveProperty("must_read_if");
+    expect(caseA?.summary).toBe("Case A summary");
+
+    expect(caseB).toBeDefined();
+    expect(caseB?.must_read_if).toBe("Read when case B trigger fires");
+    expect(caseB?.must_read_if).not.toEqual(caseB?.summary);
   });
 
   // P1 recall-engine-refactor (TASK-002) — lean read_path contract (KT-GLD-0005 /
@@ -413,13 +473,13 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     ]);
   });
 
-  it("always returns a cite directive in the packaging", async () => {
+  it("does not carry a per-response directive on the wire (TASK-001: bootstrap-injected)", async () => {
     const projectRoot = await seedTwoEntryProject();
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
-    // v2.2 C1 (W2): directive describes recall auto-accounting + dismissed-only,
-    // not the retired first-line cite contract.
-    expect(result.directive).toMatch(/auto-accounted as citations/i);
-    expect(result.directive).toMatch(/dismiss/i);
+    // TASK-001 envelope thinning: the cite policy is bootstrap-injected via
+    // AGENTS.md + SessionStart, not re-echoed on every recall response. Wire
+    // schema no longer declares `directive`; result type has no such field.
+    expect((result as Record<string, unknown>).directive).toBeUndefined();
   });
 
   // W1-3 (KT-DEC-0031): include_related surfaces the related neighbour's read
@@ -534,12 +594,12 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
-    // K6: omissions are reported as a structured dropped[]{id,reason} list with a
-    // controlled reason enum — here exactly one retrieval_budget drop (the
-    // lower-ranked candidate the top_k cap removed).
-    expect(result.dropped).toEqual([
-      { id: "team:KT-GLD-0001", reason: "retrieval_budget" },
-    ]);
+    // K6 + TASK-003 wire transform: dropped[{id,reason}] is hoisted to
+    // dropped_ids (KT-DEC-0028 id-transparency) + dropped_reasons count map.
+    // Here: one retrieval_budget drop (the lower-ranked candidate the top_k cap
+    // removed).
+    expect(result.dropped_ids).toEqual(["team:KT-GLD-0001"]);
+    expect(result.dropped_reasons).toEqual({ retrieval_budget: 1 });
     // Only the surviving candidate is surfaced (with a read_path).
     expect(result.entries.filter((e) => e.read_path)).toHaveLength(1);
     expect(result.next_steps ?? []).toEqual(
@@ -553,7 +613,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 
     expect(result.entries).toEqual([]);
-    expect(result.directive).toMatch(/auto-accounted as citations/i);
+    // TASK-001: directive is no longer part of the wire; verify absence.
+    expect((result as Record<string, unknown>).directive).toBeUndefined();
 
     const fetched = await readEventLedger(projectRoot, { event_type: "knowledge_sections_fetched" });
     expect(fetched.events).toEqual([]);

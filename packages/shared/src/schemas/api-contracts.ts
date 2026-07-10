@@ -51,7 +51,11 @@ const _ruleDescriptionSchema = z.object({
   // now allowed, so no plan-context consumer regresses.
   tech_stack: z.array(z.string()).optional(),
   impact: z.array(z.string()).optional(),
-  must_read_if: z.string(),
+  // TASK-002 wire dedup: omitted when identical to `summary` (~40% of KB entries
+  // — knowledge-meta-builder.ts:212/:248 `?? summary` fallback). Consumers may
+  // fall back to `summary` when absent. KB source-of-truth (the .md frontmatter)
+  // stays unchanged; this optionality is a WIRE-only projection.
+  must_read_if: z.string().optional(),
   // v2.0: optional knowledge-entry fields. Absent for v1.x rules; present for
   // entries that declare frontmatter `id/type/maturity`. W4/Track1: the redundant
   // `knowledge_layer` field was removed — a candidate's layer is derived from its
@@ -553,27 +557,26 @@ const _recallEntrySchema = z.object({
 });
 
 export const recallOutputSchema = z.object({
+  // Retained: client hook cache key (packages/cli/.claude/hooks/knowledge-hint-narrow.cjs)
   revision_hash: z.string(),
-  stale: z.boolean(),
   // ux-w2-4: single unified entry list (was candidates[] + paths[] + per-path
   // requirement-profile entries[]). Each item carries description + read_path +
   // rank + body_in_context, so the agent never joins two arrays on stable_id.
   entries: z.array(_recallEntrySchema),
-  // v2.2 payload de-dup: single top-level echo of the caller's `intent`.
-  // Omitted when no intent.
-  intent: z.string().optional(),
   // K6 (W3-K): structured list of lower-ranked candidates dropped by the
-  // retrieval pipeline, each tagged with WHY (`retrieval_budget` = top_k cap +
-  // ratio-to-top floor; `payload_budget` = MCP payload-byte trim). Present (and
-  // non-empty) ONLY when truncation fired — keeps the steady-state wire shape
-  // unchanged while signalling which entries exist ("narrow your intent"), now
-  // with a controlled reason instead of a bare count. Reuses the archive-scan
-  // {key,reason} omission convention (_recallDropReasonSchema, keyed on id).
-  dropped: z
-    .array(z.object({ id: z.string(), reason: _recallDropReasonSchema }))
+  // retrieval pipeline. dropped_ids preserves per-id transparency (KT-DEC-0028);
+  // dropped_reasons hoists the reason to a top-level count map (68/68 same-reason
+  // observation from ANL-002). Present ONLY when truncation fired.
+  dropped_ids: z.array(z.string()).optional(),
+  dropped_reasons: z
+    .object({
+      retrieval_budget: z.number().int().nonnegative().optional(),
+      payload_budget: z.number().int().nonnegative().optional(),
+    })
     .optional(),
-  preflight_diagnostics: z.array(_preflightDiagnosticSchema),
+  preflight_diagnostics: z.array(_preflightDiagnosticSchema).optional(),
   warnings: z.array(structuredWarningSchema).optional(),
+  // Auto-heal banner pair (consumed by knowledge-hint-broad.cjs:711-729).
   auto_healed: z.boolean().optional(),
   previous_revision_hash: z.string().optional(),
   // v2.0.0-rc.37 NEW-24: parallel to planContextOutputSchema.redirects — stale
@@ -584,9 +587,6 @@ export const recallOutputSchema = z.object({
   // (appended id → surfaced source id). Present only when include_related
   // appended an in-corpus neighbour. Omitted on the steady-state path.
   related_appended: z.record(z.string()).optional(),
-  // v2.2 MC1-recall-pack: standing behavioral directive (cite-before-edit) +
-  // dynamic discovery hints, so the one-call recall is self-describing.
-  directive: z.string(),
   next_steps: z.array(z.string()).optional(),
 });
 
