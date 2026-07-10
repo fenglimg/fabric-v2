@@ -243,6 +243,10 @@ describe("runDoctorReport", () => {
       // project-scope binding backfill lint — store bound but no project_id /
       // active_project. Adjacent to store scope lint (both scope invariants).
       "Project-scope binding",
+      // write_route_target_unbound — statically validates write_routes[*].store
+      // against required_stores. Adjacent to Project-scope binding — both are
+      // static config-level cross-references catching stale bindings.
+      "Write route target",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
@@ -277,7 +281,8 @@ describe("runDoctorReport", () => {
     // W3-C: -1 router_chain_ref (fabric/ router retired, 0-router skill set) → 43.
     // W2 (F-003): +1 project_registry_drift (projects.json ↔ projects/ tree) → 44.
     // skill-architecture absorption: +1 skill_contract_integrity → 45.
-    expect(report.checks).toHaveLength(45);
+    // rc.10: +1 write_route_target_unbound (write_routes[*].store ↔ required_stores) → 46.
+    expect(report.checks).toHaveLength(46);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

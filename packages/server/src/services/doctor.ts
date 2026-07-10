@@ -84,6 +84,10 @@ import {
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
+  createWriteRouteUnboundCheck,
+  detectWriteRouteUnbound,
+} from "./doctor-write-route-lint.js";
+import {
   createStoreCounterCheck,
   fixStoreCounters,
   inspectStoreCounters,
@@ -165,6 +169,8 @@ export type { KnowledgeSummaryOpaqueInspection } from "./doctor-summary-opaque.j
 export { createScopeLintCheck } from "./doctor-scope-lint.js";
 export { detectUnboundProject } from "./doctor-unbound-project.js";
 export type { UnboundProjectViolation } from "./doctor-unbound-project.js";
+export { detectWriteRouteUnbound } from "./doctor-write-route-lint.js";
+export type { WriteRouteViolation } from "./doctor-write-route-lint.js";
 export { createStoreCounterCheck } from "./doctor-store-counters.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
@@ -956,6 +962,14 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // fresh-install hole is sealed in store.stage.ts; this covers existing repos
     // (CLI `--fix` backfills via ensureStoreProjectBinding).
     createUnboundProjectCheck(t, detectUnboundProject(projectRoot)),
+    // write_route_target_unbound — every write_routes[i].store must resolve
+    // against required_stores. Catches "route survived migration to single
+    // team slot" (werewolf-minigame case): route says `team → cocos` but
+    // required_stores only holds `team`, so fab_propose(audience:"team")
+    // would report "no write-target store resolved" at runtime. Static
+    // config-level check, no resolver, aligned with KT-DEC-0048 read-tolerant
+    // doctrine.
+    createWriteRouteUnboundCheck(t, detectWriteRouteUnbound(projectRoot)),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null

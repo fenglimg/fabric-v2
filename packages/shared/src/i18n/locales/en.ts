@@ -922,6 +922,14 @@ export const enMessages: Messages = {
     "Store '{alias}' is bound as the write target but the project coordinate is incomplete (missing {missing}); project-scope recall/writes fall back to team scope.",
   "doctor.check.unbound_project.remediation":
     "Run `fabric doctor --fix` to backfill the project binding (mints project_id, registers the project in the store, sets active_project). Idempotent — a second run is a no-op.",
+  // write_route_target_unbound — static check that write_routes survived the single-team-slot migration.
+  "doctor.check.write_route_target_unbound.name": "Write route target",
+  "doctor.check.write_route_target_unbound.ok":
+    "Every write_routes[*].store is present in required_stores; the scope→store routing is statically consistent.",
+  "doctor.check.write_route_target_unbound.message":
+    "{count} write_route(s) point at an unbound store ({routes}); fab_propose on those scopes will report \"no write-target store resolved\".",
+  "doctor.check.write_route_target_unbound.remediation":
+    "Either ① `fabric store bind <store>` to add the target to required_stores (under the single team slot rule this replaces the current one), or ② edit `.fabric/fabric-config.json` to remove the stale write_route.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

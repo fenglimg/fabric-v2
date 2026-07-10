@@ -900,6 +900,14 @@ export const zhCNMessages: Messages = {
     "store '{alias}' 已绑为写入目标但 project 坐标不完整(缺 {missing});project-scope 的 recall/写入会 fallback 到 team scope。",
   "doctor.check.unbound_project.remediation":
     "调 `fabric doctor --fix` 回填 project 绑定(铸 project_id、把 project 注册进 store、设 active_project)。幂等 —— 二次跑为 no-op。",
+  // write_route_target_unbound — 单 team 槽迁移后 write_routes 悬空的静态检查。
+  "doctor.check.write_route_target_unbound.name": "写入路由目标",
+  "doctor.check.write_route_target_unbound.ok":
+    "所有 write_routes 的目标 store 都在 required_stores 内,scope→store 路由静态一致。",
+  "doctor.check.write_route_target_unbound.message":
+    "{count} 条 write_route 指向未绑定的 store({routes});fab_propose 在这些 scope 上会报 \"no write-target store resolved\"。",
+  "doctor.check.write_route_target_unbound.remediation":
+    "二选一:① `fabric store bind <store>` 把目标 store 加进 required_stores(单 team 槽 = 需替换掉当前的),或 ② 编辑 `.fabric/fabric-config.json` 删掉这条 write_route。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",
