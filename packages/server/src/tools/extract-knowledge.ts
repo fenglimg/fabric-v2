@@ -23,6 +23,7 @@ import {
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { extractKnowledge } from "../services/extract-knowledge.js";
+import { unsealedProjectScopeWarning } from "../services/write-scope-warning.js";
 
 export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -77,6 +78,14 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
         if (gateWarn) {
           response.warnings = [gateWarn];
+        }
+
+        // project-scope guard: fail-loud the unsealed-project drift at write
+        // time — a bound write store with no project coordinate silently lands
+        // team-layer entries flat instead of under projects/<id>/. Advisory.
+        const scopeWarn = unsealedProjectScopeWarning(projectRoot);
+        if (scopeWarn) {
+          response.warnings = [...(response.warnings ?? []), scopeWarn];
         }
 
         const payloadLimits = readPayloadLimits(projectRoot);

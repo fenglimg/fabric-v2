@@ -20,6 +20,7 @@ import {
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { reviewKnowledge } from "../services/review.js";
+import { unsealedProjectScopeWarning } from "../services/write-scope-warning.js";
 
 export function registerReview(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -61,6 +62,13 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
         if (gateWarn) {
           response.warnings = [gateWarn];
+        }
+
+        // project-scope guard: fail-loud the unsealed-project drift at write
+        // time (parity with fab_propose). Advisory, never blocking.
+        const scopeWarn = unsealedProjectScopeWarning(projectRoot);
+        if (scopeWarn) {
+          response.warnings = [...(response.warnings ?? []), scopeWarn];
         }
 
         const payloadLimits = readPayloadLimits(projectRoot);
