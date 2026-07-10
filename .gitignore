@@ -46,6 +46,12 @@ packages/.fabric/
 .workflow/embedding-index.bin
 .workflow/search-cache.json
 .workflow/explore/
+# vector embedding store (zvec — RocksDB-style LOCK/WAL/manifest binary state),
+# search-daemon PID/port sidecar, and local .scratchpad analysis inputs. All
+# per-machine transient state minted by local dogfood runs; never in VCS.
+.workflow/embedding.zvec/
+.workflow/search-daemon.json
+.workflow/.scratchpad/
 
 # Local milestone/worktree checkouts. The tracked registry lives in
 # .workflow/worktrees.json; do not vendor nested repositories into main.

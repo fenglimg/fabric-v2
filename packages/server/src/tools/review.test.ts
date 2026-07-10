@@ -194,6 +194,30 @@ describe("registerReview", () => {
     expect(sc.modified).toHaveLength(2);
     expect(sc.modified.every((m) => m.ok)).toBe(true);
     expect(result.content[0]!.text).toContain("Fabric review: modify-content-batch");
+    // codex-bm-review: the mock registerTool bypasses the SDK's
+    // validateToolOutput, so validate the batch output explicitly through BOTH
+    // the flat output shape and the strict output union here.
+    expect(z.object(FabReviewOutputShape).safeParse(result.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(result.structuredContent).success).toBe(true);
+
+    // Partial-failure isolation: a bad item reports {ok:false,error} without
+    // aborting its siblings, and the mixed result still validates against both.
+    const mixed = await t.handler({
+      action: "modify-content-batch",
+      items: [
+        { pending_path: p1, changes: { tags: ["y"] } },
+        { pending_path: join(projectRoot, "no-such-entry.md"), changes: { summary: "nope" } },
+      ],
+    });
+    const mixedSc = mixed.structuredContent as {
+      modified: Array<{ pending_path: string; ok: boolean; error?: string }>;
+    };
+    expect(mixedSc.modified).toHaveLength(2);
+    expect(mixedSc.modified[0]!.ok).toBe(true);
+    expect(mixedSc.modified[1]!.ok).toBe(false);
+    expect(mixedSc.modified[1]!.error).toBeTruthy();
+    expect(z.object(FabReviewOutputShape).safeParse(mixed.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(mixed.structuredContent).success).toBe(true);
   });
 
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
@@ -304,6 +328,14 @@ describe("registerReview", () => {
     for (const k of branchKeys) {
       expect(shapeKeys.has(k), `FabReviewInputShape missing branch field '${k}'`).toBe(true);
     }
+
+    // codex-bm-review: also assert the action LITERAL set matches between the
+    // union (authoritative) and the flat shape — a field-name superset alone
+    // misses an action that only reuses existing fields.
+    const unionActions = FabReviewInputSchema.options
+      .map((opt) => ((opt as z.AnyZodObject).shape.action as z.ZodLiteral<string>).value)
+      .sort();
+    expect([...(FabReviewInputShape.action.options as readonly string[])].sort()).toEqual(unionActions);
   });
 
   it("test_fab_review_register_tool_publishes_non_empty_properties", () => {
