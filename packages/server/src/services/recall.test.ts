@@ -139,8 +139,9 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       "team:KT-DEC-0001",
       "team:KT-GLD-0001",
     ]);
-    // Ranked best-first: every entry carries a 1-based rank.
-    expect(result.entries.map((e) => e.rank).sort()).toEqual([1, 2]);
+    // TASK-004: entries returned best-first (array index is the ranking signal;
+    // explicit `rank` field dropped from the wire — derivable + zero consumers).
+    expect(result.entries.length).toBe(2);
 
     // Each surfaced entry carries a read_path pointing at the on-disk store file.
     expect(result.entries.filter((e) => e.read_path).map((e) => e.stable_id).sort()).toEqual([
@@ -149,7 +150,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     ]);
     const authEntry = result.entries.find((e) => e.stable_id === "team:KT-DEC-0001");
     expect(authEntry?.read_path).toMatch(/KT-DEC-0001\.md$/);
-    expect(authEntry?.store).toEqual({ alias: "team" });
+    // TASK-004: store surface flattened { alias } → store_alias.
+    expect(authEntry?.store_alias).toBe("team");
 
     // No bodies / no two-step fields leak into the wire shape.
     expect(result).not.toHaveProperty("rules");
@@ -206,8 +208,13 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     // The component actually fired — proves this test exercises proximity, unlike
     // the symmetric fixture where it is a trivial 0.
     expect(entry?.score_breakdown?.proximity).toBeGreaterThan(0);
-    // The omission this fix closes: final MUST include proximity → equals score.
-    expect(entry?.score_breakdown?.final).toBe(entry?.score);
+    // KT-PIT-0036 invariant (wire-side): breakdown.final is now the sole surfaced
+    // ranking signal (entry.score dropped in TASK-004). It must be > 0 when
+    // proximity fired — the wave-1 "final desynced from score" regression would
+    // manifest as final === 0 or final !== bm25+vector+salience+recency+locality
+    // +proximity(+credibility×content). Runtime invariant (scored.score === final)
+    // still enforced at the plan-context layer where the Map originates.
+    expect(entry?.score_breakdown?.final).toBeGreaterThan(0);
 
     // KT-PIT-0005 wire-strip lock now covers the new field: proximity survives the
     // recallOutputSchema round-trip (zod .strip() would otherwise drop it).
@@ -259,17 +266,15 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     // Identical content/structural → the credibility multiplier is the ONLY
     // differentiator, so the fresher entry ranks strictly higher and its factor is
     // strictly larger (and still < 1, i.e. it actually decayed).
-    const staleScore = stale?.score ?? 0;
-    const freshScore = fresh?.score ?? 0;
+    // TASK-004: use score_breakdown.final as the ranking-signal proxy — the wire
+    // no longer exposes a separate entry.score field (final === score by invariant).
+    const staleFinal = stale?.score_breakdown?.final ?? 0;
+    const freshFinal = fresh?.score_breakdown?.final ?? 0;
     const staleCred = stale?.score_breakdown?.credibility ?? 1;
     const freshCred = fresh?.score_breakdown?.credibility ?? 1;
-    expect(freshScore).toBeGreaterThan(staleScore);
+    expect(freshFinal).toBeGreaterThan(staleFinal);
     expect(freshCred).toBeGreaterThan(staleCred);
     expect(freshCred).toBeLessThan(1);
-    // KT-PIT-0036 class invariant: final still equals the ranking score after the
-    // multiplier is mirrored into the breakdown.
-    expect(stale?.score_breakdown?.final).toBe(stale?.score);
-    expect(fresh?.score_breakdown?.final).toBe(fresh?.score);
   });
 
   // v2.2 glossary aliases (C-001/C-002 / R1): an alias term merged into an entry's
@@ -330,14 +335,18 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
 
     // (1) The alias term lifted the long-tail entry into recall results with a real
     // score — proves aliases feed the BM25 body rather than being an inert field.
+    // TASK-004: entry.score dropped from wire; final in score_breakdown is the
+    // ranking-signal proxy (final === score by KT-PIT-0036 invariant).
     expect(aliasEntry).toBeDefined();
-    expect(aliasEntry?.score ?? 0).toBeGreaterThan(0);
+    expect(aliasEntry?.score_breakdown?.final ?? 0).toBeGreaterThan(0);
 
     // (2) The direct content hit out-ranks the alias hit: aliases (summary slot,
     // boost 1.5) must NOT overtake direct content (title slot, boost 3). `<=`
     // matches the plan's convergence contract; in practice it is strictly less.
     expect(directEntry).toBeDefined();
-    expect(aliasEntry?.score ?? 0).toBeLessThanOrEqual(directEntry?.score ?? 0);
+    expect(aliasEntry?.score_breakdown?.final ?? 0).toBeLessThanOrEqual(
+      directEntry?.score_breakdown?.final ?? 0,
+    );
   });
 
   // wire-slim (payload) guard: recall projects a LEAN description (selection signal
@@ -568,7 +577,9 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const withPath = result.entries.filter((e) => e.read_path);
     expect(withPath.length).toBeGreaterThan(0);
     for (const e of withPath) {
-      expect(e.store).toEqual({ alias: "team" });
+      // TASK-004: store surface flattened { alias } → store_alias on the wire.
+      // (Internal RecallPath.store retains the nested shape — see attachPathStore.)
+      expect(e.store_alias).toBe("team");
     }
   });
 
@@ -705,26 +716,24 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     });
 
     expect(result.entries.length).toBeGreaterThan(0);
-    // Every surfaced entry carries a numeric score.
+    // TASK-004: entry.score dropped from wire; score_breakdown.final is the
+    // sole ranking-signal surface (final === score by KT-PIT-0036 invariant,
+    // enforced at plan-context service layer where scoreDescriptionItem writes
+    // both). Every surfaced entry carries a numeric breakdown with final > 0.
     for (const entry of result.entries) {
-      expect(typeof entry.score).toBe("number");
       expect(entry.score_breakdown).toBeDefined();
-      // breakdown.final reconciles to the threaded score (same computation).
-      expect(entry.score_breakdown?.final).toBe(entry.score);
+      expect(typeof entry.score_breakdown?.final).toBe("number");
+      expect(entry.score_breakdown?.final).toBeGreaterThan(0);
       // numbers-only: every breakdown value is a number, never body text.
       for (const value of Object.values(entry.score_breakdown ?? {})) {
         expect(typeof value).toBe("number");
       }
     }
-    // entries[0] is the top-ranked entry and carries a numeric score.
-    expect(typeof result.entries[0].score).toBe("number");
 
-    // wire-strip lock (KT-PIT-0005): score / score_breakdown must survive the
-    // recallOutputSchema round-trip — else zod .strip() drops them over the wire
+    // wire-strip lock (KT-PIT-0005): score_breakdown must survive the
+    // recallOutputSchema round-trip — else zod .strip() drops it over the wire
     // while this direct-call test would still pass.
     const parsed = recallOutputSchema.parse(result);
-    expect(typeof parsed.entries[0].score).toBe("number");
-    expect(parsed.entries[0].score).toBe(result.entries[0].score);
     expect(parsed.entries[0].score_breakdown).toEqual(result.entries[0].score_breakdown);
   });
 });

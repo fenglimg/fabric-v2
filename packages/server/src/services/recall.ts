@@ -69,19 +69,20 @@ export type RecallEntryDescription = Pick<FullRuleDescription, "summary" | "inte
 
 // ux-w2-4: one unified entry folds the former candidates[] (description) ×
 // paths[] (read path) join into a single self-contained item.
+// TASK-004 wire thinning: `rank` (derivable from array index — entries are already
+// returned best-first), `score` (redundant with score_breakdown.final by
+// KT-PIT-0036 invariant), and nested `store: {alias}` (no extensibility signal)
+// removed; store surface flattened to `store_alias`.
 export type RecallEntry = {
   stable_id: string;
-  rank: number;
   description: RecallEntryDescription;
   read_path?: string;
-  store?: { alias: string };
+  store_alias?: string;
   body_in_context?: boolean;
-  // P1 recall-observability: the fused relevance score the entry scored during
-  // the plan-context sort (read from PlanContextResult.candidate_scores, which the
-  // sort dropped before this wave), plus a numbers-only signal decomposition.
-  // Observability infrastructure for later fusion waves — additive/optional, never
-  // carries body text (lean read_path contract).
-  score?: number;
+  // P1 recall-observability: numbers-only decomposition of the plan-context
+  // sort score. Observability infrastructure — additive/optional, never carries
+  // body text (lean read_path contract). Consumers reconstruct the ranking
+  // signal from score_breakdown.final (KT-PIT-0036 final===score invariant).
   score_breakdown?: RecallScoreBreakdown;
 };
 
@@ -207,21 +208,24 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   // a resolvable on-disk file; body_in_context marks the SessionStart-injected
   // always-active bodies so the agent skips a redundant Read.
   const pathByStableId = new Map(paths.map((p) => [p.stable_id, p]));
-  const entries: RecallEntry[] = planRest.candidates.map((c, index) => {
+  const entries: RecallEntry[] = planRest.candidates.map((c) => {
     const readPath = pathByStableId.get(c.stable_id);
-    // P1 recall-observability: look up the fused score + numbers-only breakdown
-    // plan-context captured for this candidate. Absent for scoreless candidates
-    // (broad no-query probe, related-appended neighbours that ranked outside the
-    // scored cut) — then the fields are omitted, keeping the steady wire shape.
+    // P1 recall-observability: look up the numbers-only breakdown plan-context
+    // captured for this candidate. Absent for scoreless candidates (broad no-query
+    // probe, related-appended neighbours that ranked outside the scored cut) —
+    // then the field is omitted, keeping the steady wire shape.
     const scored = candidateScores?.get(c.stable_id);
     return {
       stable_id: c.stable_id,
-      rank: index + 1,
       description: slimDescription(c.description),
       ...(readPath ? { read_path: readPath.path } : {}),
-      ...(readPath?.store ? { store: readPath.store } : {}),
+      // TASK-004: flatten { alias } → alias string on the wire.
+      ...(readPath?.store ? { store_alias: readPath.store.alias } : {}),
       ...(isAlwaysActive(c) ? { body_in_context: true as const } : {}),
-      ...(scored ? { score: scored.score, score_breakdown: scored.score_breakdown } : {}),
+      // TASK-004: entry.score dropped (final===score invariant, KT-PIT-0036);
+      // consumers read score_breakdown.final. Wave 3 (TASK-006) will move
+      // score_breakdown behind include_score_breakdown opt-in.
+      ...(scored ? { score_breakdown: scored.score_breakdown } : {}),
     };
   });
 

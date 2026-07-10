@@ -510,27 +510,22 @@ export const recallInputSchema = z.object({
 // ux-w2-4: the unified recall entry. Folds the former dual `candidates[]`
 // (descriptions) × `paths[]` (read paths) — which the consumer had to JOIN on
 // stable_id — into ONE self-contained item: description + where-to-Read +
-// relevance rank + body-already-in-context flag. No join, no second array.
+// body-already-in-context flag. No join, no second array.
+// TASK-004 wire thinning: `rank` (derivable from array index, 0 consumers) and
+// `score` (redundant with score_breakdown.final by KT-PIT-0036 invariant) removed.
+// `store: {alias}` flattened to `store_alias` (no extensibility signal was needed).
 const _recallEntrySchema = z.object({
   stable_id: z.string(),
-  // 1-based relevance rank (entries are returned best-first). The surfaced
-  // ranking signal — entries are already sorted, rank makes the order explicit.
-  rank: z.number().int().positive(),
   // The DESCRIPTION (summary / intent_clues / must_read_if / related ...). No body.
   description: _ruleDescriptionSchema,
   // on-disk knowledge file to Read for the full body. Omitted when the entry has
   // no resolvable file (description-only discovery) or was scoped out by `ids`.
   read_path: z.string().optional(),
   // originating store alias (omitted for unqualified / single-store entries).
-  store: z.object({ alias: z.string() }).optional(),
+  store_alias: z.string().optional(),
   // true when this entry's body is ALSO injected at SessionStart (broad
   // model/guideline "ALWAYS-ACTIVE") — skip the Read, it is already in context.
   body_in_context: z.boolean().optional(),
-  // P1 recall-observability: the fused relevance score this entry scored during
-  // the plan-context sort (was computed internally but dropped before this wave).
-  // Optional + additive — backward-compatible. MUST be declared here or zod
-  // .strip() silently drops it at the MCP boundary (KT-PIT-0005).
-  score: z.number().optional(),
   // P1 recall-observability: numbers-only decomposition of `score` into its
   // weighted signal contributions. NEVER carries body/description text — preserves
   // the lean read_path contract (KT-DEC-0019 / KT-GLD-0005). bm25_rank/vector_rank
