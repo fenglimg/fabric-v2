@@ -798,6 +798,33 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         ],
         "type": "object",
       },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "retire",
+            "type": "string",
+          },
+          "pending_paths": {
+            "items": {
+              "type": "string",
+            },
+            "minItems": 1,
+            "type": "array",
+          },
+          "reason": {
+            "type": "string",
+          },
+          "superseded_by": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_paths",
+        ],
+        "type": "object",
+      },
     ],
   },
   "outputSchema": {
@@ -943,6 +970,47 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "required": [
           "action",
           "deferred",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "retire",
+            "type": "string",
+          },
+          "retired": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                },
+                "stable_id": {
+                  "type": "string",
+                },
+                "superseded_by": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "path",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "action",
+          "retired",
         ],
         "type": "object",
       },

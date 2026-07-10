@@ -33,7 +33,8 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
         "modify / modify-content → pending_path + changes; " +
         "modify-layer → pending_path + changes.layer(team|personal); " +
         "search → query; " +
-        "defer → pending_paths[≥1] (until/reason optional). " +
+        "defer → pending_paths[≥1] (until/reason optional); " +
+        "retire → pending_paths[≥1] (superseded_by/reason optional; marks canonical entries deprecated in place — deprecate-over-delete — so they stop surfacing in recall/broad indexes). " +
         "approve allocates a stable_id and promotes to the canonical store knowledge path. Skill-side tool — invoked by fabric-review.",
       // Flat ZodRawShape required by MCP SDK 1.29.0 registerTool. The
       // authoritative cross-field contract still lives in FabReviewInputSchema

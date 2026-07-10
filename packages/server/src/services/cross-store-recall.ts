@@ -52,6 +52,11 @@ interface CrossStoreEntry {
   // path project id + store layer (readSemanticScope) — with authored
   // `semantic_scope` frontmatter kept only as fallback when structure is absent.
   semanticScope: string;
+  // retire (W3-C): true when the entry's frontmatter carries `deprecated: true`.
+  // A deprecated entry stays ON DISK (deprecate-over-delete) but is filtered OUT
+  // of the surfacing builders (recall candidates + broad SessionStart indexes) by
+  // filterOutDeprecated. Parsed once here so every consumer sees the same signal.
+  deprecated: boolean;
   source: string; // raw markdown (read once during the walk)
 }
 
@@ -103,6 +108,12 @@ export function __readSetWalkCacheStatsForTests(): { walks: number; entries: num
 // path-derived structure (project + layer) is now the primary scope source.
 const SEMANTIC_SCOPE_LINE = /^semantic_scope:\s*"?([^"\n]+?)"?\s*$/mu;
 
+// retire (W3-C): matches the exact `deprecated: true` frontmatter line the review
+// write path emits (rewriteFrontmatterMerge → `deprecated: ${boolean}`). Mirrors
+// the SEMANTIC_SCOPE_LINE line-regex convention (whole-line anchor keeps a stray
+// body line from false-matching). `deprecated: false` / absent → not deprecated.
+const DEPRECATED_LINE = /^deprecated:\s*true\s*$/mu;
+
 // Derive an entry's scope coordinate from STRUCTURAL facts (path project + store
 // layer) as the PRIMARY source (C-104 single point), with the authored
 // `semantic_scope` frontmatter kept ONLY as a phase-1 fallback when structure is
@@ -145,6 +156,18 @@ function filterByActiveProject(
   return entries.filter(
     (e) => scopeRoot(e.semanticScope) !== "project" || e.semanticScope === current,
   );
+}
+
+// retire (W3-C): drop entries the review retire path marked `deprecated: true`.
+// Deprecate-over-delete keeps the file on disk (inspectable via fab_pending /
+// doctor / audit), but a retired entry must NOT proactively surface — so the
+// SURFACING builders (recall candidates + broad SessionStart indexes/census)
+// run their walk output through this filter. The audit/doctor collectors
+// (collectStoreCanonicalEntries / collectStoreKnowledgeSummaries) and the
+// revision hash (computeReadSetRevision) intentionally do NOT filter, so a
+// retired entry stays visible to tooling and its content still moves the hash.
+function filterOutDeprecated(entries: CrossStoreEntry[]): CrossStoreEntry[] {
+  return entries.filter((entry) => !entry.deprecated);
 }
 
 // The repo's active project coordinate segment (A2), or undefined when unbound.
@@ -227,6 +250,7 @@ async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<Cro
       alias: ref.alias,
       layer,
       semanticScope: readSemanticScope(source, layer, ref.project),
+      deprecated: DEPRECATED_LINE.test(source),
       source,
     };
   }));
@@ -246,7 +270,10 @@ export async function buildCrossStoreRawItems(
 ): Promise<RuleDescriptionIndexItem[]> {
   const items: RuleDescriptionIndexItem[] = [];
   const activeProject = activeProjectOf(projectRoot);
-  for (const entry of filterByActiveProject(await walkReadSetStores(projectRoot), activeProject)) {
+  // retire (W3-C): deprecated entries are excluded from recall candidates.
+  for (const entry of filterOutDeprecated(
+    filterByActiveProject(await walkReadSetStores(projectRoot), activeProject),
+  )) {
     const baseDescription = extractRuleDescription(entry.source);
     if (baseDescription === undefined) {
       continue; // no frontmatter description → no selection signal.
@@ -377,7 +404,10 @@ export async function buildKnowledgeCensus(projectRoot: string): Promise<Knowled
   };
   try {
     const activeProject = activeProjectOf(projectRoot);
-    const all = await walkReadSetStores(projectRoot);
+    // retire (W3-C): drop deprecated entries BEFORE the project split so they are
+    // absent from every census count and never inflate dropped_other_project
+    // (which should reflect only live, other-project drops).
+    const all = filterOutDeprecated(await walkReadSetStores(projectRoot));
     const kept = filterByActiveProject(all, activeProject);
     census.dropped_other_project = all.length - kept.length;
     for (const entry of kept) {
@@ -416,9 +446,9 @@ export async function buildAlwaysActiveBodies(
   const out: AlwaysActiveBody[] = [];
   try {
     const activeProject = activeProjectOf(projectRoot);
-    for (const entry of filterByActiveProject(
-      await walkReadSetStores(projectRoot),
-      activeProject,
+    // retire (W3-C): deprecated entries never enter the broad always-active index.
+    for (const entry of filterOutDeprecated(
+      filterByActiveProject(await walkReadSetStores(projectRoot), activeProject),
     )) {
       const desc = extractRuleDescription(entry.source);
       if (desc === undefined) continue;

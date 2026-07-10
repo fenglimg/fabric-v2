@@ -1078,6 +1078,24 @@ export const FabReviewInputSchema = z.discriminatedUnion("action", [
     until: z.string().datetime().optional(),
     reason: z.string().optional(),
   }),
+  // retire (W3-C: fabric-review retire-mode landing surface). Semantically
+  // deprecates one or more CANONICAL knowledge entries so they stop surfacing in
+  // recall candidates / broad SessionStart indexes — WITHOUT deleting the file
+  // (red line: deprecate-over-delete). The service writes `deprecated: true`
+  // (+ `superseded_by: <id>` when the entry is replaced) into the entry's
+  // frontmatter via the same in-place merge path modify uses; body + stable_id
+  // are preserved so the "当时为什么这么决策" rationale stays inspectable.
+  z.object({
+    action: z.literal("retire"),
+    // Canonical entry paths (store-absolute, from fab_pending list/search).
+    pending_paths: z.array(z.string()).min(1),
+    // Optional stable_id of the entry that supersedes these (bare `KT-DEC-0001`
+    // or store-qualified `alias:KT-DEC-0001`). Written as `superseded_by`
+    // frontmatter so the supersession chain is recoverable.
+    superseded_by: z.string().optional(),
+    // Optional human reason recorded on the knowledge_modified ledger event.
+    reason: z.string().optional(),
+  }),
 ]);
 export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
 
@@ -1144,16 +1162,16 @@ export const FabPendingInputShape = {
 // branches is caught by a unit test in packages/server/src/tools/review.test.ts.
 export const FabReviewInputShape = {
   action: z
-    .enum(["approve", "reject", "modify", "modify-content", "modify-layer", "defer"])
+    .enum(["approve", "reject", "modify", "modify-content", "modify-layer", "defer", "retire"])
     .describe(
-      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias. (list/search moved to the read-only fab_pending tool.)",
+      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias; retire marks canonical entries deprecated (deprecate-over-delete) so they stop surfacing. (list/search moved to the read-only fab_pending tool.)",
     ),
   pending_paths: z
     .array(z.string())
     .min(1)
     .optional()
     .describe(
-      "Workspace-relative pending entry paths. Required when action=approve|reject|defer (non-empty array).",
+      "Workspace-relative pending entry paths (or canonical entry paths for action=retire). Required when action=approve|reject|defer|retire (non-empty array).",
     ),
   pending_path: z
     .string()
@@ -1177,6 +1195,12 @@ export const FabReviewInputShape = {
     .optional()
     .describe(
       "ISO-8601 datetime upper bound for the deferral. Optional; used only when action=defer.",
+    ),
+  superseded_by: z
+    .string()
+    .optional()
+    .describe(
+      "Stable_id (bare or store-qualified) of the entry that supersedes the retired one, written as `superseded_by` frontmatter. Optional; used only when action=retire.",
     ),
 } as const;
 
@@ -1282,6 +1306,20 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
     deferred: z.array(z.string()),
     warnings: z.array(structuredWarningSchema).optional(),
   }),
+  z.object({
+    action: z.literal("retire"),
+    // Each retired canonical entry: its echoed path + (when the frontmatter
+    // carried one) its stable_id, plus the superseded_by id when supplied. The
+    // file is NOT deleted — only marked `deprecated: true` in place.
+    retired: z.array(
+      z.object({
+        path: z.string(),
+        stable_id: z.string().optional(),
+        superseded_by: z.string().optional(),
+      }),
+    ),
+    warnings: z.array(structuredWarningSchema).optional(),
+  }),
 ]);
 export type FabReviewOutput = z.infer<typeof FabReviewOutputSchema>;
 
@@ -1335,7 +1373,7 @@ export const FabPendingOutputShape = {
 // (and may be at runtime by callers) for full per-action precision.
 export const FabReviewOutputShape = {
   action: z
-    .enum(["approve", "reject", "modify", "defer"])
+    .enum(["approve", "reject", "modify", "defer", "retire"])
     .describe(
       "Echoes the input action; clients can switch on it for per-variant fields below. (list/search results moved to the read-only fab_pending tool.)",
     ),
@@ -1374,6 +1412,18 @@ export const FabReviewOutputShape = {
     .optional()
     .describe(
       "Pending paths that were deferred (files retained on disk). Present when action=defer.",
+    ),
+  retired: z
+    .array(
+      z.object({
+        path: z.string(),
+        stable_id: z.string().optional(),
+        superseded_by: z.string().optional(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Canonical entries marked deprecated in place (files retained — deprecate-over-delete). Present when action=retire.",
     ),
   // v2.0.0-rc.23 TASK-009 (d): optional warnings surface for the first-reconcile
   // gate (`meta_stale` / `reconcile_failed`). Absent on the steady-state path.
