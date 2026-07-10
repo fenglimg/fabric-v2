@@ -39,6 +39,15 @@ export type RecallInput = PlanContextInput & {
    * (W1-3 / KT-DEC-0031: surface the related id, do not fetch its body).
    */
   include_related?: boolean;
+  /**
+   * TASK-006 (KT-PIT-0036 observability opt-in): when true, populate
+   * `entry.score_breakdown` with the numbers-only signal decomposition
+   * (bm25/vector/salience/recency/locality/proximity/credibility → final).
+   * Off by default for wire efficiency. Enable when debugging ranking or tuning
+   * scoring weights. The final===score invariant is enforced at the plan-context
+   * service layer (candidate_scores Map) regardless of this flag.
+   */
+  include_score_breakdown?: boolean;
 };
 
 // W1 (KT-DEC-0026): one read path per surfaced candidate. `path` is the on-disk
@@ -61,10 +70,11 @@ export type RecallPath = {
 // planResult.candidates / the raw store, never this projected wire shape, so the
 // slim is wire-only. Isolated as its own type here to avoid rippling RuleDescription.
 type FullRuleDescription = PlanContextResult["candidates"][number]["description"];
-export type RecallEntryDescription = Pick<FullRuleDescription, "summary" | "intent_clues"> &
-  // TASK-002: must_read_if is omitted on the wire when identical to `summary`
-  // (~40% dedup rate from knowledge-meta-builder.ts:212/:248 `?? summary`
-  // fallback). Consumers may fall back to `summary` when absent.
+export type RecallEntryDescription = Pick<FullRuleDescription, "summary"> &
+  // TASK-002: must_read_if is omitted on the wire when identical to `summary`.
+  // TASK-005: intent_clues dropped from wire (0 hook consumers) — the .md body
+  // remains reachable via read_path. Selection uses summary + must_read_if
+  // (when distinct) + knowledge_type.
   Partial<Pick<FullRuleDescription, "must_read_if" | "knowledge_type">>;
 
 // ux-w2-4: one unified entry folds the former candidates[] (description) ×
@@ -223,9 +233,14 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
       ...(readPath?.store ? { store_alias: readPath.store.alias } : {}),
       ...(isAlwaysActive(c) ? { body_in_context: true as const } : {}),
       // TASK-004: entry.score dropped (final===score invariant, KT-PIT-0036);
-      // consumers read score_breakdown.final. Wave 3 (TASK-006) will move
-      // score_breakdown behind include_score_breakdown opt-in.
-      ...(scored ? { score_breakdown: scored.score_breakdown } : {}),
+      // consumers read score_breakdown.final when opt-in enabled.
+      // TASK-006: score_breakdown is now opt-in via include_score_breakdown —
+      // steady-state recall omits it (~4.8KB saved on a 24-entry sample). The
+      // plan-context service layer still writes candidate_scores unconditionally,
+      // so the debug surface is available on demand without perturbing ranking.
+      ...(scored && input.include_score_breakdown === true
+        ? { score_breakdown: scored.score_breakdown }
+        : {}),
     };
   });
 
@@ -284,15 +299,14 @@ function isAlwaysActive(candidate: { description: { relevance_scope?: string; kn
 }
 
 // wire-slim projection (payload): keep ONLY the selection-signal fields, leaving
-// the rest to on-demand Read via read_path (KT-DEC-0026). intent_clues is ALWAYS
-// emitted (even empty) — it is a required schema field and the primary when-to-fire
-// signal; knowledge_type is optional so it is emitted only when present.
-// TASK-002: must_read_if is omitted when identical to summary (~40% dedup rate;
+// the rest to on-demand Read via read_path (KT-DEC-0026).
+// TASK-002: must_read_if omitted when identical to summary (~40% dedup rate;
 // consumers fall back to summary when absent — no KB source-of-truth change).
+// TASK-005: intent_clues dropped from wire (0 hook consumers grep-verified).
+// The .md body remains reachable via read_path when needed.
 function slimDescription(d: FullRuleDescription): RecallEntryDescription {
   return {
     summary: d.summary,
-    intent_clues: d.intent_clues,
     ...(d.must_read_if !== d.summary ? { must_read_if: d.must_read_if } : {}),
     ...(d.knowledge_type !== undefined ? { knowledge_type: d.knowledge_type } : {}),
   };

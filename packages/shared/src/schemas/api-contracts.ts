@@ -42,13 +42,17 @@ const _maturityEnum = z.enum(["draft", "verified", "proven"]);
 
 const _ruleDescriptionSchema = z.object({
   summary: z.string(),
-  intent_clues: z.array(z.string()),
+  // TASK-005 wire thinning: intent_clues dropped from recall wire (0 hook
+  // consumers grep-verified). Selection signal is summary + must_read_if
+  // (when distinct) + knowledge_type; intent_clues is preserved in the on-disk
+  // .md frontmatter (KB source-of-truth) and reachable via read_path.
+  intent_clues: z.array(z.string()).optional(),
   // wire-slim (payload): fab_recall projects a LEAN description (summary +
-  // must_read_if + intent_clues + knowledge_type — the selection signal), leaving
-  // tech_stack/impact to be Read on demand via read_path (KT-DEC-0026 lean
+  // must_read_if + knowledge_type — the selection signal), leaving tech_stack/
+  // impact/intent_clues to be Read on demand via read_path (KT-DEC-0026 lean
   // contract at the field level). So they are optional on the wire. plan-context
-  // still returns them in full — zod keeps optional-present values, only ABSENT is
-  // now allowed, so no plan-context consumer regresses.
+  // still returns them in full — zod keeps optional-present values, only ABSENT
+  // is now allowed, so no plan-context consumer regresses.
   tech_stack: z.array(z.string()).optional(),
   impact: z.array(z.string()).optional(),
   // TASK-002 wire dedup: omitted when identical to `summary` (~40% of KB entries
@@ -504,6 +508,18 @@ export const recallInputSchema = z.object({
     .optional()
     .describe(
       "When true, also surface the one-hop `related` graph neighbours (of the surfaced entries) that are present in the candidate set — their descriptions and read paths, NOT their bodies.",
+    ),
+  // TASK-006 (KT-PIT-0036 observability opt-in): score_breakdown carries the
+  // numbers-only signal decomposition (bm25/vector/salience/recency/locality/
+  // proximity/credibility → final). Emitted per-entry ONLY when this flag is
+  // true — the debug/tuning surface. Steady-state recall omits it to stay lean
+  // (~4.8KB saved on a 24-entry sample). final===score invariant still enforced
+  // at the plan-context service layer (candidate_scores Map) regardless.
+  include_score_breakdown: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, populate `entry.score_breakdown` (numbers-only signal decomposition — bm25/vector/salience/recency/locality/proximity/credibility → final). Off by default for wire efficiency. Enable when debugging ranking or tuning scoring weights.",
     ),
 });
 

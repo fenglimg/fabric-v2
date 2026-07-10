@@ -201,6 +201,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       // Two query terms ADJACENT in the seeded summary → proximityBoost > 0.
       intent: "recall proximity",
       session_id: "session-recall-proximity",
+      // TASK-006: opt in to score_breakdown to inspect the proximity signal.
+      include_score_breakdown: true,
     });
 
     const entry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-0009"));
@@ -256,6 +258,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       paths: ["src/index.ts"],
       intent: "caching",
       session_id: "session-credibility-age",
+      // TASK-006: opt in to score_breakdown to inspect the credibility multiplier.
+      include_score_breakdown: true,
     });
 
     const stale = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-9001"));
@@ -328,6 +332,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       paths: ["src/index.ts"],
       intent: "quaxil",
       session_id: "session-recall-alias",
+      // TASK-006: opt in to score_breakdown for the ranking comparison.
+      include_score_breakdown: true,
     });
 
     const aliasEntry = result.entries.find((e) => e.stable_id.endsWith("KT-DEC-7001"));
@@ -360,9 +366,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(result.entries.length).toBeGreaterThan(0);
     for (const entry of result.entries) {
       const desc = entry.description as Record<string, unknown>;
-      // KEEP — the fields the agent selects on (always emitted).
+      // KEEP — the field the agent always selects on.
       expect(desc).toHaveProperty("summary");
-      expect(desc).toHaveProperty("intent_clues");
       // TASK-002: must_read_if is optional on the wire — when present, distinct
       // from summary (dedup omits it when identical). Consumers fall back to
       // summary when absent. Both branches are wire-legal.
@@ -370,7 +375,8 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
         expect(desc.must_read_if).not.toEqual(desc.summary);
       }
       // DROPPED — reachable on demand via read_path, never on the wire.
-      for (const gone of ["tech_stack", "impact", "relevance_paths", "tags", "related", "created_at", "maturity"]) {
+      // TASK-005: intent_clues joined the dropped-from-wire set (0 hook consumers).
+      for (const gone of ["intent_clues", "tech_stack", "impact", "relevance_paths", "tags", "related", "created_at", "maturity"]) {
         expect(desc).not.toHaveProperty(gone);
       }
     }
@@ -699,28 +705,33 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(parsedById.get("team:KT-MOD-0001")?.body_in_context).toBe(true);
   });
 
-  // P1 recall-observability: the fused score (computed internally during the
-  // plan-context sort) is now EXPOSED on each entry, with an optional numbers-only
-  // breakdown. Mirrors the body_in_context wire-strip precedent above: the field
-  // must be DECLARED in recallOutputSchema or zod .strip() drops it at the MCP
-  // boundary (KT-PIT-0005) — so we round-trip through the schema and assert it
-  // survives. Lean read_path contract (KT-DEC-0019 / KT-GLD-0005): the breakdown
-  // is numbers-only and never carries body text.
-  it("exposes a numeric score + numbers-only score_breakdown per entry, surviving schema round-trip", async () => {
+  // TASK-006 opt-in: score_breakdown is omitted by default (steady-state wire
+  // thinning) and populated only when the caller sets include_score_breakdown.
+  // The KT-PIT-0036 final===score invariant is still enforced at the plan-context
+  // service layer (candidate_scores Map) regardless of this flag — so opting in
+  // is a pure observability surface, not a ranking-behavior toggle.
+  it("score_breakdown opt-in: omitted by default, populated (+schema round-trip) when include_score_breakdown=true", async () => {
     const projectRoot = await seedTwoEntryProject();
 
-    const result = await recall(projectRoot, {
+    // Default call (no flag) → breakdown omitted from every entry.
+    const defaultRes = await recall(projectRoot, {
       paths: ["src/index.ts"],
-      // A query is required for BM25 to contribute; matches both seeded entries.
       intent: "auth ui",
     });
+    expect(defaultRes.entries.length).toBeGreaterThan(0);
+    for (const entry of defaultRes.entries) {
+      expect(entry.score_breakdown).toBeUndefined();
+    }
 
-    expect(result.entries.length).toBeGreaterThan(0);
-    // TASK-004: entry.score dropped from wire; score_breakdown.final is the
-    // sole ranking-signal surface (final === score by KT-PIT-0036 invariant,
-    // enforced at plan-context service layer where scoreDescriptionItem writes
-    // both). Every surfaced entry carries a numeric breakdown with final > 0.
-    for (const entry of result.entries) {
+    // Opt-in call → breakdown surfaces, is numbers-only, and survives the
+    // recallOutputSchema round-trip (KT-PIT-0005 wire-strip lock).
+    const optInRes = await recall(projectRoot, {
+      paths: ["src/index.ts"],
+      intent: "auth ui",
+      include_score_breakdown: true,
+    });
+    expect(optInRes.entries.length).toBeGreaterThan(0);
+    for (const entry of optInRes.entries) {
       expect(entry.score_breakdown).toBeDefined();
       expect(typeof entry.score_breakdown?.final).toBe("number");
       expect(entry.score_breakdown?.final).toBeGreaterThan(0);
@@ -729,11 +740,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
         expect(typeof value).toBe("number");
       }
     }
-
-    // wire-strip lock (KT-PIT-0005): score_breakdown must survive the
-    // recallOutputSchema round-trip — else zod .strip() drops it over the wire
-    // while this direct-call test would still pass.
-    const parsed = recallOutputSchema.parse(result);
-    expect(parsed.entries[0].score_breakdown).toEqual(result.entries[0].score_breakdown);
+    const parsed = recallOutputSchema.parse(optInRes);
+    expect(parsed.entries[0].score_breakdown).toEqual(optInRes.entries[0].score_breakdown);
   });
 });

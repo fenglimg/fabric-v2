@@ -45,6 +45,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
       layer_filter,
       ids,
       include_related,
+      include_score_breakdown,
     }) => {
       const requestId = randomUUID();
       // v2.1 GATE-INTERACT-T2 (#2 slice): time the round-trip so the MCP stdio
@@ -74,6 +75,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
           layer_filter,
           ids,
           include_related,
+          include_score_breakdown,
         };
         const result = await recall(projectRoot, input);
 
