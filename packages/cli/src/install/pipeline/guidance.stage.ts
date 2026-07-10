@@ -95,6 +95,24 @@ export class GuidanceStage implements Stage {
       }
       context.state.guidanceFooter = footer;
 
+      // rc.11 (this fix): unconditional resolved-bindings snapshot refresh as the
+      // pipeline's finalize step. The store stage only refreshes on real bind /
+      // create paths (via ensureStoreProjectBinding) — every other path (--yes
+      // non-interactive, settled team+no-unbound, promptTeamSlot SKIP, a manually
+      // removed snapshot) previously left `~/.fabric/state/bindings/*_resolved.json`
+      // stale, so a user hand-edit of fabric-config.json (required_stores /
+      // write_routes) never took effect and `rm` of the snapshot file was not
+      // healed by re-running install. regenerateBindingsSnapshot has an internal
+      // guard (no project_id / no resolveInput → null return), so it is a safe
+      // no-op on an unbound project. Placing it here — the last stage — means the
+      // config is stable and any bind path above has already run.
+      regenerateBindingsSnapshot(context.target, {
+        now: new Date().toISOString(),
+        ...(context.state.globalRoot === undefined
+          ? {}
+          : { globalRoot: context.state.globalRoot }),
+      });
+
       return stageRan("guidance", [], []);
     } catch (error) {
       return stageFailedFromError("guidance", error);
