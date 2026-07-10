@@ -245,8 +245,10 @@ describe("plan-context shadow ranker — additive vs rrf dual-run (TASK-003 CI g
     const additive = await rankUnder("additive", queryInput);
     const rrf = await rankUnder("rrf", queryInput);
 
-    // eslint-disable-next-line no-console
-    console.log("ADDITIVE", additive, "\nRRF", rrf);
+    // stdio-lint: server never writes to stdout — use stderr for test diagnostics.
+    process.stderr.write(
+      `ADDITIVE ${JSON.stringify(additive)}\nRRF ${JSON.stringify(rrf)}\n`,
+    );
 
     // Under RRF the two content channels fuse by ORDINAL, so the raw BM25 magnitude
     // gap collapses and the content hits land in a narrow band; the structural group

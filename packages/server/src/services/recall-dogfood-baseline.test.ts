@@ -201,8 +201,8 @@ describe.runIf(process.env.DOGFOOD_BASELINE === "1")("recall dogfood RED baselin
         });
       }
 
-      // eslint-disable-next-line no-console
-      console.log(
+      // stdio-lint: server never writes to stdout — use stderr for test diagnostics.
+      process.stderr.write(
         "\n===== RECALL DOGFOOD RED BASELINE =====\n" +
           JSON.stringify(scoreboard, null, 2) +
           "\n--- contested-path samples ---\n" +
@@ -295,8 +295,12 @@ describe.runIf(process.env.DOGFOOD_BASELINE === "1")("recall dogfood RED baselin
         });
       }
 
-      // eslint-disable-next-line no-console
-      console.log("\n===== PAYLOAD FIELD-BYTE BREAKDOWN (rich intent) =====\n" + JSON.stringify(rows, null, 2) + "\n=====\n");
+      // stdio-lint: server never writes to stdout — use stderr for test diagnostics.
+      process.stderr.write(
+        "\n===== PAYLOAD FIELD-BYTE BREAKDOWN (rich intent) =====\n" +
+          JSON.stringify(rows, null, 2) +
+          "\n=====\n",
+      );
     },
     120_000,
   );
