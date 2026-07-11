@@ -559,10 +559,10 @@ export const enMessages: Messages = {
     "{count} stale pointer(s) to retired tool/field names in agent-facing text: {sample}",
   "doctor.check.retired_reference.remediation":
     "Update the flagged text to the replacement token (or remove it), then re-run `fabric install` to resync the dogfood mirrors.",
-  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 5K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K; over 5K hurts progressive disclosure; over 10K is blocking (wasted model context + load latency).
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 8K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K, but the two watched skills (fabric-archive/review) are the richest core skills and legitimately run larger; warn sits at 8K (a 2K reaction buffer below the 10K install-abort hard cap) rather than 5K. Over 10K is blocking (wasted model context + load latency).
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
-    "All .claude/skills/<slug>/SKILL.md files are within token budget (warn 5K / error 10K).",
+    "All .claude/skills/<slug>/SKILL.md files are within token budget (warn 8K / error 10K).",
   "doctor.check.skill_token_budget.message.singular":
     "{count} SKILL.md exceeds the token budget: {list}. Sink detail into ref/ for progressive disclosure.",
   "doctor.check.skill_token_budget.message.plural":

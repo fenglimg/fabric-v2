@@ -537,10 +537,10 @@ export const zhCNMessages: Messages = {
     "agent 可见文本中有 {count} 处指向退役工具/字段名的 stale pointer: {sample}",
   "doctor.check.retired_reference.remediation":
     "把命中文本改为替代 token (或删除), 再跑 `fabric install` 重同步 dogfood 镜像。",
-  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 8K / error > 10K token (chars/3 估算)。Anthropic 推荐 SKILL.md 热路径 ~3K, 但被监控的两个 skill (fabric-archive/review) 是最丰富的核心 skill, 合理偏大;warn 定在 8K (距 10K 装机硬闸留 2K 反应缓冲) 而非 5K。超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
   "doctor.check.skill_token_budget.name": "Skill token 预算",
   "doctor.check.skill_token_budget.ok":
-    "所有 .claude/skills/<slug>/SKILL.md 在 token budget 内 (warn 5K / error 10K)。",
+    "所有 .claude/skills/<slug>/SKILL.md 在 token budget 内 (warn 8K / error 10K)。",
   "doctor.check.skill_token_budget.message.singular":
     "{count} 个 SKILL.md 超出 token budget: {list}。建议把详细内容下沉到 ref/ progressive disclosure。",
   "doctor.check.skill_token_budget.message.plural":
