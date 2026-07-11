@@ -1,6 +1,6 @@
 ---
 name: fabric-archive
-description: 归档对话洞察(default)+ 冷启动从 git log/docs 回灌(source mode)到 active write store 的 pending knowledge (NOT code review). Triggers 归档/记一下/always·never/wrong-turn-revert;source mode bootstrap fabric/import 历史/mine commit.
+description: 归档对话洞察 + 冷启动从 git/docs 回灌到 pending knowledge (NOT code review). Triggers 归档/记一下/always/never/wrong-turn-revert;source mode bootstrap fabric/mine commit.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_archive_scan, mcp__fabric__fab_propose, mcp__fabric__fab_pending, mcp__fabric__fab_review
 ---
 
@@ -165,6 +165,12 @@ Server returns `{ pending_path, idempotency_key }`. Display `pending_path` for t
 ### Phase 4.5 — Persist Archive Attempt
 
 MANDATORY closing step on EVERY invocation (Phase 4 success path + every early-exit). Append ONE `session_archive_attempted` line to `.fabric/events.jsonl` per `session_id` in run scope (single-line JSON ≤4KB POSIX atomicity). Outcome ∈ {`proposed` | `viability_failed` | `user_dismissed` | `skipped_no_signal`}. `covered_through_ts` = max ts of events examined. Best-effort write: failure → stderr log only, skill still exits successfully.
+
+**Emit schema — inline; do NOT reverse-engineer it from existing `.fabric/events.jsonl` records (historical lines may carry a WRONG `event` key from prior buggy runs — copying one propagates the bug).** One single-line JSON per `session_id`, exact shape:
+
+`{"kind":"fabric-event","id":"event:<uuid>","ts":<now_ms>,"schema_version":1,"session_id":"<sid>","event_type":"session_archive_attempted","outcome":"<enum>","covered_through_ts":<max ts examined>,"candidates_proposed":0,"knowledge_proposed_ids":[]}`
+
+The discriminator key is **`event_type`** (a `fabric-event` envelope), NEVER a bare `event`: the Stop-hook (`fabric-hint.cjs` filters `ev.event_type`) AND `archive-scan.ts` both read `event_type`, and the zod `sessionArchiveAttemptedEventSchema` drops any record missing it (KT-PIT-0005 `.strip()`). A wrong-key record is SILENTLY invisible → the session is never marked archived → the Stop-hook archive-backlog nudge floods forever. After emitting, VERIFY round-trip: the hook backlog count / `fab_archive_scan` in-scope set MUST drop for the sessions you just wrote.
 
 **Dry-run override**: SKIPS the `session_archive_attempted` emit entirely; read-side runs normally so user previews what WOULD have been written. See unified `## Dry-run Scope` pointer below.
 
