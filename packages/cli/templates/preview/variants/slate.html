@@ -1,0 +1,1769 @@
+<!doctype html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aurora×Terminal · Slate 知识预览</title>
+<meta name="variant-desc" content="Aurora 的极光色柔和皮肤融合 Terminal 的高密度清晰树形结构(Slate 版)" />
+<style>
+  /* --------------------------------------------------------
+   * Slate Theme variables (Aurora palette + Terminal layout)
+   * -------------------------------------------------------- */
+  :root {
+    /* Default dark theme values */
+    --bg: #090a0f;
+    --sidebar-bg: rgba(18, 19, 26, 0.7);
+    --surface: rgba(24, 26, 35, 0.85);
+    --surface-hover: rgba(34, 37, 50, 0.95);
+    --surface-active: rgba(44, 48, 65, 0.95);
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.15);
+    --border-focus: #60a5fa;
+    --text-main: #d1d5db;
+    --text-bright: #f9fafb;
+    --text-muted: #9ca3af;
+    --text-tertiary: #6b7280;
+    
+    --accent: #60a5fa;
+    --accent-light: rgba(96, 165, 250, 0.15);
+    --accent-hover: #3b82f6;
+    
+    /* Scope accent colors */
+    --color-team: #2dd4bf;
+    --color-team-bg: rgba(45, 212, 191, 0.08);
+    --color-team-border: rgba(45, 212, 191, 0.2);
+    
+    --color-project: #60a5fa;
+    --color-project-bg: rgba(96, 165, 250, 0.08);
+    --color-project-border: rgba(96, 165, 250, 0.2);
+    
+    --color-personal: #a78bfa;
+    --color-personal-bg: rgba(167, 139, 250, 0.08);
+    --color-personal-border: rgba(167, 139, 250, 0.2);
+    
+    --color-other: #94a3b8;
+    --color-other-bg: rgba(148, 163, 184, 0.08);
+    
+    /* Types */
+    --type-decision-color: #fb923c;
+    --type-decision-bg: rgba(251, 146, 60, 0.12);
+    --type-pitfall-color: #fb7185;
+    --type-pitfall-bg: rgba(251, 113, 133, 0.12);
+    --type-guideline-color: #38bdf8;
+    --type-guideline-bg: rgba(56, 189, 248, 0.12);
+    --type-model-color: #818cf8;
+    --type-model-bg: rgba(129, 140, 248, 0.12);
+    --type-process-color: #34d399;
+    --type-process-bg: rgba(52, 211, 153, 0.12);
+    
+    /* Maturities */
+    --color-draft: #94a3b8;
+    --color-verified: #34d399;
+    --color-proven: #fbbf24;
+    --color-proven-glow: rgba(251, 191, 36, 0.4);
+
+    --radius: 12px;
+    --radius-sm: 6px;
+    --radius-lg: 16px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    --shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    --glass-blur: blur(16px);
+    --glass-blur-webkit: blur(16px);
+  }
+
+  [data-theme="light"] {
+    --bg: #f5f6f8;
+    --sidebar-bg: rgba(235, 237, 240, 0.7);
+    --surface: rgba(255, 255, 255, 0.85);
+    --surface-hover: rgba(240, 242, 245, 0.95);
+    --surface-active: rgba(230, 233, 238, 0.95);
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.15);
+    --border-focus: #2563eb;
+    --text-main: #374151;
+    --text-bright: #111827;
+    --text-muted: #6b7280;
+    --text-tertiary: #9ca3af;
+    
+    --accent: #2563eb;
+    --accent-light: rgba(37, 99, 235, 0.08);
+    --accent-hover: #1d4ed8;
+    
+    /* Scopes */
+    --color-team: #0d9488;
+    --color-team-bg: rgba(13, 148, 136, 0.05);
+    --color-team-border: rgba(13, 148, 136, 0.15);
+    
+    --color-project: #2563eb;
+    --color-project-bg: rgba(37, 99, 235, 0.05);
+    --color-project-border: rgba(37, 99, 235, 0.15);
+    
+    --color-personal: #7c3aed;
+    --color-personal-bg: rgba(124, 58, 237, 0.05);
+    --color-personal-border: rgba(124, 58, 237, 0.15);
+    
+    --color-other: #6b7280;
+    --color-other-bg: rgba(107, 114, 128, 0.05);
+    
+    /* Types */
+    --type-decision-color: #ea580c;
+    --type-decision-bg: rgba(234, 88, 12, 0.08);
+    --type-pitfall-color: #e11d48;
+    --type-pitfall-bg: rgba(225, 29, 72, 0.08);
+    --type-guideline-color: #0284c7;
+    --type-guideline-bg: rgba(2, 132, 199, 0.08);
+    --type-model-color: #4f46e5;
+    --type-model-bg: rgba(79, 70, 229, 0.08);
+    --type-process-color: #059669;
+    --type-process-bg: rgba(5, 150, 105, 0.08);
+    
+    /* Maturities */
+    --color-draft: #6b7280;
+    --color-verified: #10b981;
+    --color-proven: #d97706;
+    --color-proven-glow: rgba(217, 119, 6, 0.2);
+    
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.03);
+  }
+
+  /* --------------------------------------------------------
+   * Reset & Base Styles
+   * -------------------------------------------------------- */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text-main);
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* --------------------------------------------------------
+   * Aurora Glowing Background Spots
+   * -------------------------------------------------------- */
+  .aurora-bg {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .aurora-circle {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0.06;
+    transition: opacity 0.5s ease, filter 0.5s ease;
+  }
+  [data-theme="dark"] .aurora-circle {
+    opacity: 0.12;
+    filter: blur(130px);
+  }
+  .aurora-1 { top: -10%; left: -10%; width: 45vw; height: 45vw; background: radial-gradient(circle, var(--color-team) 0%, transparent 70%); }
+  .aurora-2 { top: 30%; right: -15%; width: 40vw; height: 40vw; background: radial-gradient(circle, var(--color-project) 0%, transparent 70%); }
+  .aurora-3 { bottom: -10%; left: 20%; width: 35vw; height: 35vw; background: radial-gradient(circle, var(--color-personal) 0%, transparent 70%); }
+
+  /* --------------------------------------------------------
+   * IDE Layout Structure
+   * -------------------------------------------------------- */
+  .ide-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Top Bar */
+  .ide-header {
+    height: 40px;
+    background: var(--sidebar-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur-webkit);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    justify-content: space-between;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .ide-header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--color-team), var(--color-project), var(--color-personal));
+  }
+
+  .window-dots {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 120px;
+  }
+  .window-dots span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .window-dots .dot-red { background: #ff5f56; }
+  .window-dots .dot-yellow { background: #ffbd2e; }
+  .window-dots .dot-green { background: #27c93f; }
+  
+  .ide-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: flex-end;
+    width: 120px;
+  }
+  .theme-toggle {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 4px 10px;
+    font-size: 10px;
+    font-family: var(--mono);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .theme-toggle:hover {
+    background: var(--surface-hover);
+    color: var(--text-bright);
+    border-color: var(--border-strong);
+  }
+
+  /* Two Column Layout */
+  .ide-layout {
+    display: flex;
+    flex: 1;
+    height: calc(100vh - 40px - 26px);
+    overflow: hidden;
+  }
+
+  /* Left Sidebar: Tree Navigation */
+  .ide-sidebar {
+    width: 320px;
+    min-width: 280px;
+    max-width: 450px;
+    background: var(--sidebar-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur-webkit);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .sidebar-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Command/Search Input Bar */
+  .search-line {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    transition: all 0.2s ease;
+  }
+  .search-line:focus-within {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 2px var(--accent-light);
+  }
+  .prompt-symbol {
+    color: var(--accent);
+    margin-right: 8px;
+    font-weight: bold;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-bright);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    padding: 4px 0;
+  }
+  .search-input::placeholder {
+    color: var(--text-tertiary);
+  }
+  .search-kbd {
+    padding: 1px 4px;
+    font-size: 9px;
+    font-family: var(--mono);
+    color: var(--text-tertiary);
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-left: 6px;
+  }
+  
+  /* Quick Filters Bar */
+  .quick-filters {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .quick-filters::-webkit-scrollbar { display: none; }
+  
+  .filter-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .filter-btn:hover {
+    border-color: var(--border-strong);
+    color: var(--text-bright);
+    background: var(--surface-hover);
+  }
+  .filter-btn.active {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* Independent Scrollable Tree */
+  .sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  /* Sidebar Tree Rows */
+  .sidebar-tree {
+    display: flex;
+    flex-direction: column;
+  }
+  .tree-row {
+    display: flex;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 26px;
+    height: 26px;
+    cursor: pointer;
+    white-space: nowrap;
+    padding-right: 12px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .tree-row:hover {
+    background: var(--surface-hover);
+  }
+  .tree-row.active {
+    background: var(--accent-light);
+  }
+  
+  .tree-indent {
+    font-family: var(--mono);
+    color: var(--text-tertiary);
+    opacity: 0.55;
+    letter-spacing: -0.5px;
+    white-space: pre;
+    font-size: 12px;
+  }
+  .tree-toggle-icon {
+    font-family: var(--mono);
+    color: var(--text-muted);
+    margin-right: 6px;
+    width: 14px;
+    text-align: center;
+    display: inline-block;
+    font-size: 10px;
+  }
+
+  /* Scope row (Tier 1) */
+  .tree-row.scope {
+    font-weight: bold;
+    color: var(--text-bright);
+    position: relative;
+    border-left: 3px solid transparent;
+    padding-left: 9px;
+  }
+  .tree-row.scope .tree-label {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tree-row.scope .tree-badge {
+    margin-left: auto;
+    font-size: 9px;
+    background: var(--surface);
+    color: var(--text-muted);
+    padding: 1px 5px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  /* Type row (Tier 2) */
+  .tree-row.type {
+    padding-left: 12px;
+  }
+  .tree-row.type .tree-label {
+    font-weight: bold;
+    font-size: 10.5px;
+  }
+  .tree-row.type .tree-badge {
+    margin-left: auto;
+    font-size: 9px;
+    color: var(--text-tertiary);
+  }
+
+  /* Entry row (Tier 3) */
+  .tree-row.entry {
+    padding-left: 12px;
+  }
+  .tree-row.entry.active .tree-title {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .tree-iid {
+    font-family: var(--mono);
+    color: var(--text-muted);
+    margin-right: 8px;
+    width: 90px;
+    flex-shrink: 0;
+    font-size: 11px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+  .tree-title {
+    color: var(--text-main);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    font-family: var(--sans);
+    font-size: 12.5px;
+  }
+  .tree-row.entry:hover .tree-title {
+    color: var(--text-bright);
+  }
+  .tree-maturity-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-left: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Right Main Content Area */
+  .ide-main {
+    flex: 1;
+    background: rgba(9, 10, 15, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+  }
+  [data-theme="light"] .ide-main {
+    background: rgba(245, 246, 248, 0.4);
+  }
+  
+  .main-container {
+    padding: 32px 48px 80px;
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* --------------------------------------------------------
+   * Dashboard Welcome State
+   * -------------------------------------------------------- */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 36px 0;
+    text-align: center;
+  }
+  
+  .ascii-banner {
+    font-family: var(--mono);
+    background: linear-gradient(135deg, var(--accent), var(--color-personal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 20px rgba(96, 165, 250, 0.1);
+    white-space: pre;
+    font-size: 9.5px;
+    line-height: 1.25;
+    margin-bottom: 28px;
+    text-align: left;
+    user-select: none;
+  }
+  
+  .quick-tips {
+    font-family: var(--sans);
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 24px;
+    border-radius: var(--radius);
+    max-width: 580px;
+    width: 100%;
+    text-align: left;
+    color: var(--text-main);
+    box-shadow: var(--shadow);
+    margin-bottom: 28px;
+  }
+  .quick-tips strong {
+    color: var(--text-bright);
+    font-size: 14px;
+    display: block;
+    margin-bottom: 8px;
+    font-family: var(--mono);
+  }
+  .quick-tips ul {
+    padding-left: 18px;
+  }
+  .quick-tips li {
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .keyboard-shortcut {
+    background: var(--sidebar-bg);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-family: var(--mono);
+    margin: 0 2px;
+  }
+
+  /* Welcome Dashboard Statistics */
+  .welcome-dashboard {
+    width: 100%;
+    max-width: 580px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: left;
+    box-shadow: var(--shadow);
+  }
+  .dashboard-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--text-bright);
+    margin-bottom: 16px;
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat-section-title {
+    font-weight: bold;
+    color: var(--text-bright);
+    font-size: 10.5px;
+    margin: 12px 0 8px 0;
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+  }
+  .stat-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    font-family: var(--sans);
+    font-size: 12px;
+  }
+  .stat-label {
+    width: 110px;
+    color: var(--text-main);
+    font-weight: 500;
+  }
+  .stat-bar-container {
+    flex: 1;
+    height: 8px;
+    background: var(--sidebar-bg);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 12px;
+  }
+  .stat-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .stat-value {
+    width: 36px;
+    text-align: right;
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+
+  /* --------------------------------------------------------
+   * Article Details View (Aurora Cozy Reading Style)
+   * -------------------------------------------------------- */
+  .entry-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+  }
+  .entry-meta-path {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    letter-spacing: 0.3px;
+  }
+  .entry-meta-path span {
+    font-weight: 600;
+  }
+  .entry-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin: 0 0 20px 0;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+  }
+
+  /* Notion-like property panel grid */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border);
+    padding: 14px;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 12.5px;
+  }
+  .meta-item {
+    display: flex;
+    align-items: center;
+  }
+  .meta-key {
+    color: var(--text-tertiary);
+    width: 90px;
+    font-family: var(--mono);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .meta-val {
+    color: var(--text-main);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meta-val.clickable-badge {
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    transition: filter 0.15s ease;
+  }
+  .meta-val.clickable-badge:hover {
+    filter: brightness(1.15);
+  }
+  .meta-val.tags-list {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .tag-link {
+    color: var(--accent);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .tag-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Custom Markdown body styling */
+  .md-body {
+    line-height: 1.65;
+    color: var(--text-main);
+    font-size: 14.5px;
+  }
+  .md-body p {
+    margin-bottom: 16px;
+  }
+  .md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+    color: var(--text-bright);
+    font-weight: 600;
+    margin-top: 28px;
+    margin-bottom: 12px;
+    line-height: 1.35;
+  }
+  .md-body h1 { font-size: 20px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .md-body h2 { font-size: 17px; border-bottom: 1px dashed var(--border); padding-bottom: 4px; }
+  .md-body h3 { font-size: 15px; }
+  .md-body ul, .md-body ol {
+    margin-bottom: 16px;
+    padding-left: 20px;
+  }
+  .md-body li {
+    margin-bottom: 6px;
+  }
+  .md-body blockquote {
+    border-left: 4px solid var(--accent);
+    background: var(--sidebar-bg);
+    padding: 12px 16px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    margin: 16px 0;
+    color: var(--text-main);
+  }
+  .md-body code {
+    font-family: var(--mono);
+    background: var(--surface-hover);
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 4px;
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+  
+  /* Code blocks details */
+  .terminal-code-block {
+    background: #0f1015;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 20px 0;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  [data-theme="light"] .terminal-code-block {
+    background: #16171d;
+  }
+  .code-header {
+    background: #17181f;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    user-select: none;
+  }
+  .code-header .dots {
+    display: flex;
+    gap: 6px;
+  }
+  .code-header .dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .code-header .dots .dot-r { background: #ef4444; }
+  .code-header .dots .dot-y { background: #f59e0b; }
+  .code-header .dots .dot-g { background: #10b981; }
+  
+  .code-lang {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #6c7284;
+    font-weight: 600;
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #a0a5b5;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-family: var(--mono);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .copy-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: #ffffff;
+    border-color: rgba(255,255,255,0.3);
+  }
+  
+  .terminal-code-block pre {
+    margin: 0;
+    padding: 12px 0;
+    overflow-x: auto;
+  }
+  .terminal-code-block code {
+    font-family: var(--mono);
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    color: #abb2bf;
+    display: block;
+    font-size: 12px;
+    line-height: 1.65;
+  }
+  
+  .code-line {
+    display: flex;
+    padding: 0 16px;
+    transition: background 0.15s ease;
+  }
+  .code-line:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .line-num {
+    color: #4b5263;
+    width: 32px;
+    flex-shrink: 0;
+    text-align: right;
+    margin-right: 16px;
+    user-select: none;
+    font-size: 11px;
+  }
+  .line-content {
+    white-space: pre;
+    color: #e2e8f0;
+  }
+
+  /* --------------------------------------------------------
+   * Status Bar
+   * -------------------------------------------------------- */
+  .ide-statusbar {
+    height: 26px;
+    background: var(--sidebar-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur-webkit);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .status-left, .status-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .status-badge {
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: bold;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .status-path {
+    font-weight: 500;
+  }
+  .status-count {
+    color: var(--text-tertiary);
+  }
+  .status-sync {
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+
+  /* Custom Scrollbar for Tree and Main Area */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+  }
+  [data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.08);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.16);
+  }
+</style>
+</head>
+<body>
+  <!-- Background glow spots -->
+  <div class="aurora-bg">
+    <div class="aurora-circle aurora-1"></div>
+    <div class="aurora-circle aurora-2"></div>
+    <div class="aurora-circle aurora-3"></div>
+  </div>
+
+  <div class="ide-container">
+    <!-- Header Bar -->
+    <header class="ide-header">
+      <div class="window-dots">
+        <span class="dot-red"></span>
+        <span class="dot-yellow"></span>
+        <span class="dot-green"></span>
+      </div>
+      <div class="ide-title">Aurora × Terminal · Slate</div>
+      <div class="header-actions">
+        <button id="themebtn" class="theme-toggle">THEME: DARK</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="ide-layout">
+      <!-- Sidebar (Navigation tree) -->
+      <nav class="ide-sidebar">
+        <div class="sidebar-header">
+          <div class="search-line">
+            <span class="prompt-symbol">&gt;</span>
+            <input type="text" id="search" class="search-input" placeholder="输入命令过滤库... (/)" />
+            <span class="search-kbd">/</span>
+          </div>
+          <div id="quickfilters" class="quick-filters">
+            <button class="filter-btn active" data-filter="">ALL</button>
+            <button class="filter-btn" data-filter="scope:team">TEAM</button>
+            <button class="filter-btn" data-filter="scope:project:">PROJECT</button>
+            <button class="filter-btn" data-filter="scope:personal">PERSONAL</button>
+            <button class="filter-btn" data-filter="type:decisions">DECISION</button>
+            <button class="filter-btn" data-filter="type:pitfalls">PITFALL</button>
+            <button class="filter-btn" data-filter="type:guidelines">GUIDELINE</button>
+          </div>
+        </div>
+        <div class="sidebar-scroll">
+          <div id="sidebar" class="sidebar-tree"></div>
+        </div>
+      </nav>
+
+      <!-- Main Panel (Article or Dashboard) -->
+      <main id="main-content" class="ide-main">
+        <div class="content-container" id="mainpanel">
+          <!-- Rendered Dashboard or Details Entry -->
+        </div>
+      </main>
+    </div>
+
+    <!-- Status Bar -->
+    <footer class="ide-statusbar">
+      <div class="status-left">
+        <span id="sbmode" class="status-badge">NORMAL</span>
+        <span id="sbfile" class="status-path">No entry selected</span>
+      </div>
+      <div class="status-right">
+        <span id="matchcount" class="status-count">0 entries</span>
+        <span id="sbstatus" class="status-sync">● LIVE</span>
+      </div>
+    </footer>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // Core state data
+  const state = {
+    entries: [],
+    byId: new Map(),
+    selectedId: null,
+    revision: null,
+    query: "",
+    collapsedScopes: new Set(),
+    collapsedTypes: new Set(),
+    visibleEntryIds: [] // Flattened visible IDs for keyboard navigation
+  };
+
+  // Type labels map
+  const TYPE_LABEL = {
+    decisions: "decision",
+    pitfalls: "pitfall",
+    guidelines: "guideline",
+    models: "model",
+    processes: "process"
+  };
+
+  const TYPE_SORT_ORDER = ["decisions", "pitfalls", "guidelines", "models", "processes"];
+
+  // Helper colors
+  function getScopeColor(scope) {
+    if (scope === "team") return "var(--color-team)";
+    if (scope === "personal") return "var(--color-personal)";
+    if (scope.startsWith("project:")) return "var(--color-project)";
+    return "var(--color-other)";
+  }
+
+  function getScopeLabel(scope) {
+    if (scope === "team") return "TEAM (团队通用)";
+    if (scope === "personal") return "PERSONAL (个人)";
+    if (scope.startsWith("project:")) return `PROJECT:${scope.slice("project:".length).toUpperCase()}`;
+    return scope.toUpperCase();
+  }
+
+  function getScopeRank(scope) {
+    if (scope === "team") return [0, ""];
+    if (scope.startsWith("project:")) return [1, scope];
+    if (scope === "personal") return [2, ""];
+    return [3, scope];
+  }
+
+  // HTML escape
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // Inline markdown formatter
+  function renderInline(text) {
+    let s = esc(text);
+    s = s.replace(/`([^`]+)`/g, (_, c) => "<code>" + c + "</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[\s(])_([^_\s][^_]*?)_(?=[\s).,]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }
+
+  // Block markdown parser
+  function renderMarkdown(md) {
+    const lines = md.replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let i = 0;
+    
+    const flushList = (buf, ordered) => {
+      if (!buf.length) return;
+      out.push("<" + (ordered ? "ol" : "ul") + ">" + buf.map((x) => "<li>" + renderInline(x) + "</li>").join("") + "</" + (ordered ? "ol" : "ul") + ">");
+      buf.length = 0;
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // 1. Code fence
+      const fence = /^```(\w*)\s*$/.exec(line);
+      if (fence) {
+        const lang = fence[1] || "plaintext";
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        i++; // Skip closing fence
+        
+        // Build mock terminal code block with clean copy function (copies only code lines, no line numbers!)
+        const codeRows = codeLines.map((ln, idx) => {
+          return `<div class="code-line"><span class="line-num">${idx + 1}</span><span class="line-content">${esc(ln)}</span></div>`;
+        }).join("");
+
+        out.push(
+          `<div class="terminal-code-block">` +
+            `<div class="code-header">` +
+              `<span class="dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></span>` +
+              `<span class="code-lang">${lang.toUpperCase()}</span>` +
+              `<button class="copy-btn" onclick="navigator.clipboard.writeText(Array.from(this.closest('.terminal-code-block').querySelectorAll('.line-content')).map(el => el.textContent).join('\\n')).then(() => { this.innerText='COPIED'; setTimeout(() => this.innerText='COPY', 1200); })">COPY</button>` +
+            `</div>` +
+            `<pre><code>${codeRows}</code></pre>` +
+          `</div>`
+        );
+        continue;
+      }
+
+      // 2. Heading
+      const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+      if (heading) {
+        const level = heading[1].length;
+        out.push(`<h${level}>` + renderInline(heading[2]) + `</h${level}>`);
+        i++;
+        continue;
+      }
+
+      // 3. Unordered list
+      if (/^\s*[-*+]\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+          buf.push(lines[i].replace(/^\s*[-*+]\s+/, ""));
+          i++;
+        }
+        flushList(buf, false);
+        continue;
+      }
+
+      // 4. Ordered list
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          buf.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
+          i++;
+        }
+        flushList(buf, true);
+        continue;
+      }
+
+      // 5. Blockquote
+      if (/^\s*>\s?/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+          buf.push(lines[i].replace(/^\s*>\s?/, ""));
+          i++;
+        }
+        out.push("<blockquote>" + renderInline(buf.join(" ")) + "</blockquote>");
+        continue;
+      }
+
+      // 6. Horizontal line
+      if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
+        out.push("<hr />");
+        i++;
+        continue;
+      }
+
+      // Empty line
+      if (line.trim() === "") {
+        i++;
+        continue;
+      }
+
+      // 7. Paragraph
+      const para = [];
+      while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,4}\s|```|\s*[-*+]\s|\s*\d+\.\s|\s*>|\s*-{3,}\s*$)/.test(lines[i])) {
+        para.push(lines[i]);
+        i++;
+      }
+      out.push("<p>" + renderInline(para.join(" ")) + "</p>");
+    }
+
+    return out.join("\n");
+  }
+
+  // Advanced query matching (prefix support: scope:xx, type:xx, tag:xx, maturity:xx)
+  function matchesQuery(entry, q) {
+    if (!q) return true;
+    
+    const parts = q.split(/\s+/);
+    return parts.every(part => {
+      if (!part) return true;
+      
+      if (part.includes(":")) {
+        const [prefix, val] = part.split(":");
+        if (!val) return true;
+        
+        if (prefix === "scope") {
+          return entry.scope.toLowerCase().includes(val.toLowerCase());
+        }
+        if (prefix === "type") {
+          const typeLabel = TYPE_LABEL[entry.type] || entry.type;
+          return entry.type.toLowerCase().includes(val.toLowerCase()) || typeLabel.toLowerCase().includes(val.toLowerCase());
+        }
+        if (prefix === "tag") {
+          return (entry.tags || []).some(t => t.toLowerCase().includes(val.toLowerCase()));
+        }
+        if (prefix === "maturity") {
+          return (entry.maturity || "").toLowerCase().includes(val.toLowerCase());
+        }
+      }
+      
+      const hay = (entry.id + " " + entry.title + " " + entry.scope + " " + entry.type + " " + (entry.tags || []).join(" ")).toLowerCase();
+      return hay.includes(part);
+    });
+  }
+
+  // Render Sidebar Tree
+  function renderSidebar() {
+    const q = state.query.trim().toLowerCase();
+    const visible = state.entries.filter((e) => matchesQuery(e, q));
+    
+    document.getElementById("matchcount").textContent = `${visible.length}/${state.entries.length} entries`;
+    
+    const sidebar = document.getElementById("sidebar");
+    sidebar.innerHTML = "";
+    state.visibleEntryIds = []; // Clear current visible list
+
+    if (!visible.length) {
+      sidebar.innerHTML = '<div style="color:var(--text-muted); font-family:var(--mono); font-size:11.5px; padding:24px; text-align:center;">No matching entries.</div>';
+      return;
+    }
+
+    // 1. Group hierarchy: Scope -> Type -> Entry
+    const tree = {};
+    for (const e of visible) {
+      if (!tree[e.scope]) tree[e.scope] = {};
+      if (!tree[e.scope][e.type]) tree[e.scope][e.type] = [];
+      tree[e.scope][e.type].push(e);
+    }
+
+    // 2. Sort Scope list
+    const sortedScopes = Object.keys(tree).sort((a, b) => {
+      const ra = getScopeRank(a), rb = getScopeRank(b);
+      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]);
+    });
+
+    // 3. Build tree DOM elements
+    for (let sIdx = 0; sIdx < sortedScopes.length; sIdx++) {
+      const scope = sortedScopes[sIdx];
+      const scopeColor = getScopeColor(scope);
+      const typesObj = tree[scope];
+      
+      const activeTypes = Object.keys(typesObj).sort((a, b) => {
+        return TYPE_SORT_ORDER.indexOf(a) - TYPE_SORT_ORDER.indexOf(b);
+      });
+
+      let scopeTotalCount = 0;
+      for (const t of activeTypes) {
+        scopeTotalCount += typesObj[t].length;
+      }
+
+      // Scope row (Level 1)
+      const scopeId = scope;
+      const isScopeCollapsed = state.collapsedScopes.has(scopeId);
+      const scopeRow = document.createElement("div");
+      scopeRow.className = "tree-row scope";
+      scopeRow.style.borderLeftColor = scopeColor;
+      
+      const toggleScopeIcon = isScopeCollapsed ? "▶" : "▼";
+      scopeRow.innerHTML = 
+        `<span class="tree-toggle-icon">${toggleScopeIcon}</span>` +
+        `<span class="tree-label" style="color:${scopeColor}">${esc(getScopeLabel(scope))}</span>` +
+        `<span class="tree-badge">${scopeTotalCount}</span>`;
+      
+      scopeRow.addEventListener("click", () => {
+        if (state.collapsedScopes.has(scopeId)) {
+          state.collapsedScopes.delete(scopeId);
+        } else {
+          state.collapsedScopes.add(scopeId);
+        }
+        renderSidebar();
+      });
+      sidebar.appendChild(scopeRow);
+
+      if (isScopeCollapsed) continue;
+
+      // Types list (Level 2)
+      for (let tIdx = 0; tIdx < activeTypes.length; tIdx++) {
+        const type = activeTypes[tIdx];
+        const entries = typesObj[type].sort((a, b) => a.id.localeCompare(b.id));
+        
+        const typeId = `${scope}:${type}`;
+        const isTypeCollapsed = state.collapsedTypes.has(typeId);
+        const isLastType = tIdx === activeTypes.length - 1;
+        
+        const typePrefix = isLastType ? "└── " : "├── ";
+        const typeRow = document.createElement("div");
+        typeRow.className = "tree-row type";
+        
+        const toggleTypeIcon = isTypeCollapsed ? "+" : "-";
+        const typeColor = `var(--type-${(TYPE_LABEL[type] || type)}-color)`;
+        
+        typeRow.innerHTML = 
+          `<span class="tree-indent">${typePrefix}</span>` +
+          `<span class="tree-toggle-icon">[${toggleTypeIcon}]</span>` +
+          `<span class="tree-label" style="color:${typeColor}">[${esc(TYPE_LABEL[type] || type).toUpperCase()}]</span>` +
+          `<span class="tree-badge">(${entries.length})</span>`;
+        
+        typeRow.addEventListener("click", (evt) => {
+          evt.stopPropagation();
+          if (state.collapsedTypes.has(typeId)) {
+            state.collapsedTypes.delete(typeId);
+          } else {
+            state.collapsedTypes.add(typeId);
+          }
+          renderSidebar();
+        });
+        sidebar.appendChild(typeRow);
+
+        if (isTypeCollapsed) continue;
+
+        // Entries list (Level 3)
+        for (let eIdx = 0; eIdx < entries.length; eIdx++) {
+          const entry = entries[eIdx];
+          const isLastEntry = eIdx === entries.length - 1;
+          
+          const indentStr = (isLastType ? "    " : "│   ") + (isLastEntry ? "└── " : "├── ");
+          const entryRow = document.createElement("div");
+          entryRow.className = "tree-row entry" + (entry.id === state.selectedId ? " active" : "");
+          
+          let maturityColor = "transparent";
+          if (entry.maturity === "draft") maturityColor = "var(--color-draft)";
+          if (entry.maturity === "verified") maturityColor = "var(--color-verified)";
+          if (entry.maturity === "proven") maturityColor = "var(--color-proven)";
+
+          entryRow.innerHTML = 
+            `<span class="tree-indent">${indentStr}</span>` +
+            `<span class="tree-iid">${esc(entry.id)}</span>` +
+            `<span class="tree-title">${esc(entry.title)}</span>` +
+            `<span class="tree-maturity-indicator" style="background:${maturityColor}" title="Maturity: ${entry.maturity || 'unknown'}"></span>`;
+          
+          entryRow.addEventListener("click", (evt) => {
+            evt.stopPropagation();
+            selectEntry(entry.id);
+          });
+          
+          sidebar.appendChild(entryRow);
+          
+          // Track visible entries for Arrow navigation
+          state.visibleEntryIds.push(entry.id);
+        }
+      }
+    }
+  }
+
+  // Welcome page Dashboard
+  function renderWelcomeDashboard() {
+    const total = state.entries.length;
+    if (!total) return;
+
+    const scopeCounts = { team: 0, project: 0, personal: 0 };
+    const typeCounts = { decisions: 0, pitfalls: 0, guidelines: 0, models: 0, processes: 0 };
+
+    for (const e of state.entries) {
+      if (e.scope === "team") scopeCounts.team++;
+      else if (e.scope === "personal") scopeCounts.personal++;
+      else if (e.scope.startsWith("project:")) scopeCounts.project++;
+
+      if (typeCounts[e.type] !== undefined) typeCounts[e.type]++;
+    }
+
+    const pct = (cnt) => ((cnt / total) * 100).toFixed(1);
+
+    const mainPanel = document.getElementById("mainpanel");
+    mainPanel.innerHTML = `
+      <div class="empty-state">
+        <div class="ascii-banner">
+  ██████╗  ██████╗███████╗    ████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗
+  ██╔══██╗██╔════╝██╔════╝    ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║
+  ██████╔╝██║     █████╗         ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║
+  ██╔═══╝ ██║     ██╔══╝         ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║
+  ██║     ╚██████╗██║            ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+  ╚═╝      ╚═════╝╚═╝            ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+        </div>
+        
+        <div class="quick-tips">
+          <strong>AURORA × TERMINAL · KNOWLEDGE BASE PREVIEW</strong>
+          <ul>
+            <li>按下 <span class="keyboard-shortcut">/</span> 聚焦搜索框输入条件过滤库</li>
+            <li>使用键盘 <span class="keyboard-shortcut">↑</span> / <span class="keyboard-shortcut">↓</span> 方向键快速在条目之间穿梭</li>
+            <li>在左侧树图点击父级节点或在键盘按下 <span class="keyboard-shortcut">Enter</span> 折叠 / 展开</li>
+            <li>点击侧栏分类标签或正文页中的分类、Scope、Tags 可直接联动搜索</li>
+          </ul>
+        </div>
+
+        <div class="welcome-dashboard">
+          <div class="dashboard-title">库数据分布概览 (TOTAL: ${total})</div>
+          
+          <div class="stat-section-title">[SCOPES 分布]</div>
+          <div class="stat-row">
+            <span class="stat-label">TEAM 团队通用</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(scopeCounts.team)}%; background:var(--color-team);"></div>
+            </div>
+            <span class="stat-value">${scopeCounts.team}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">PROJECT 项目专属</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(scopeCounts.project)}%; background:var(--color-project);"></div>
+            </div>
+            <span class="stat-value">${scopeCounts.project}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">PERSONAL 个人空间</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(scopeCounts.personal)}%; background:var(--color-personal);"></div>
+            </div>
+            <span class="stat-value">${scopeCounts.personal}</span>
+          </div>
+
+          <div class="stat-section-title">[TYPES 属性分类]</div>
+          <div class="stat-row">
+            <span class="stat-label">DECISION 决策</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(typeCounts.decisions)}%; background:var(--type-decision-color);"></div>
+            </div>
+            <span class="stat-value">${typeCounts.decisions}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">PITFALL 踩坑</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(typeCounts.pitfalls)}%; background:var(--type-pitfall-color);"></div>
+            </div>
+            <span class="stat-value">${typeCounts.pitfalls}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">GUIDELINE 指引</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(typeCounts.guidelines)}%; background:var(--type-guideline-color);"></div>
+            </div>
+            <span class="stat-value">${typeCounts.guidelines}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">MODEL 模型</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(typeCounts.models)}%; background:var(--type-model-color);"></div>
+            </div>
+            <span class="stat-value">${typeCounts.models}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">PROCESS 流程</span>
+            <div class="stat-bar-container">
+              <div class="stat-bar" style="width:${pct(typeCounts.processes)}%; background:var(--type-process-color);"></div>
+            </div>
+            <span class="stat-value">${typeCounts.processes}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Render selected Entry Details
+  function renderEntry(e) {
+    const mainPanel = document.getElementById("mainpanel");
+    
+    const scopeLabel = getScopeLabel(e.scope);
+    const scopeColor = getScopeColor(e.scope);
+    
+    const typeLabel = (TYPE_LABEL[e.type] || e.type).toLowerCase();
+    const typeColor = `var(--type-${typeLabel}-color)`;
+    
+    // Maturity label
+    let maturityHtml = "";
+    if (e.maturity) {
+      let matColor = "var(--color-other)";
+      if (e.maturity === "draft") matColor = "var(--color-draft)";
+      if (e.maturity === "verified") matColor = "var(--color-verified)";
+      if (e.maturity === "proven") matColor = "var(--color-proven)";
+      maturityHtml = `<span class="clickable-badge" style="color:${matColor}; background:var(--sidebar-bg); border: 1px solid var(--border);">${e.maturity.toUpperCase()}</span>`;
+    }
+
+    // Tags list
+    const tagsHtml = (e.tags || []).map(tg => {
+      return `<span class="tag-link" onclick="filterByTag('${esc(tg)}')">#${esc(tg)}</span>`;
+    }).join(" ");
+
+    // Update bottom status path
+    document.getElementById("sbfile").textContent = `${e.scope.replace(':', '/')} > ${e.type} > ${e.id}.md`;
+
+    mainPanel.innerHTML = `
+      <div class="main-container">
+        <!-- Path Breadcrumb -->
+        <div class="entry-meta-path">
+          KNOWLEDGE_ROOT / 
+          <span style="color:${scopeColor}; cursor:pointer;" onclick="filterByScope('${esc(e.scope)}')">${esc(e.scope.toUpperCase())}</span> / 
+          <span style="color:${typeColor}; cursor:pointer;" onclick="filterByType('${esc(e.type)}')">${esc(typeLabel.toUpperCase())}</span> / 
+          ${esc(e.id)}
+        </div>
+        
+        <!-- Big title -->
+        <h1 class="entry-title">${esc(e.title)}</h1>
+        
+        <!-- Properties Grid -->
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-key">[SCOPE]</span>
+            <span class="meta-val clickable-badge" style="color:${scopeColor}; background:var(--sidebar-bg); border: 1px solid var(--border);" onclick="filterByScope('${esc(e.scope)}')">${esc(scopeLabel)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">[TYPE]</span>
+            <span class="meta-val clickable-badge" style="color:${typeColor}; background:var(--sidebar-bg); border: 1px solid var(--border);" onclick="filterByType('${esc(e.type)}')">${esc(typeLabel.toUpperCase())}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">[MATURITY]</span>
+            <span class="meta-val">${maturityHtml || '<span style="color:var(--text-tertiary)">NONE</span>'}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">[ID]</span>
+            <span class="meta-val" style="color:var(--text-bright); font-family:var(--mono);">${esc(e.id)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">[STORE]</span>
+            <span class="meta-val" style="font-family:var(--mono);">${esc(e.store)}</span>
+          </div>
+          <div class="meta-item" style="grid-column: 1 / -1;">
+            <span class="meta-key">[TAGS]</span>
+            <span class="meta-val tags-list">${tagsHtml || '<span style="color:var(--text-tertiary)">none</span>'}</span>
+          </div>
+        </div>
+        
+        <!-- Divider -->
+        <hr style="border:none; border-top:1px solid var(--border); margin:28px 0;" />
+        
+        <!-- Markdown Body -->
+        <div class="md-body">
+          ${renderMarkdown(e.body || "")}
+        </div>
+      </div>
+    `;
+    mainPanel.scrollTop = 0;
+  }
+
+  // Action: Select Entry
+  function selectEntry(id) {
+    state.selectedId = id;
+    const e = state.byId.get(id);
+    if (e) {
+      renderEntry(e);
+    } else {
+      document.getElementById("sbfile").textContent = "No entry selected";
+      renderWelcomeDashboard();
+    }
+    renderSidebar();
+  }
+
+  // Filter handlers
+  window.filterByScope = (scope) => {
+    setSearchQuery(`scope:${scope}`);
+  };
+
+  window.filterByType = (type) => {
+    setSearchQuery(`type:${type}`);
+  };
+
+  window.filterByTag = (tag) => {
+    setSearchQuery(`tag:${tag}`);
+  };
+
+  function setSearchQuery(val) {
+    const searchInput = document.getElementById("search");
+    searchInput.value = val;
+    state.query = val;
+    
+    updateQuickFilterUI(val);
+    renderSidebar();
+    
+    const q = val.trim().toLowerCase();
+    const visible = state.entries.filter((e) => matchesQuery(e, q));
+    if (visible.length && state.selectedId && visible.some(e => e.id === state.selectedId)) {
+      // Keep selection
+    } else if (visible.length) {
+      selectEntry(visible[0].id);
+    } else {
+      selectEntry(null);
+    }
+  }
+
+  function updateQuickFilterUI(query) {
+    const btns = document.querySelectorAll(".filter-btn");
+    btns.forEach(btn => {
+      const filterVal = btn.getAttribute("data-filter");
+      if (filterVal === query) {
+        btn.classList.add("active");
+      } else if (filterVal === "scope:project:" && query.startsWith("scope:project:")) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+  }
+
+  // Status updates
+  function setStatus(text, live) {
+    const sbStatus = document.getElementById("sbstatus");
+    if (live) {
+      sbStatus.textContent = "● LIVE";
+      sbStatus.style.color = "";
+    } else {
+      sbStatus.textContent = `○ OFFLINE (${text})`;
+      sbStatus.style.color = "var(--type-pitfall-color)";
+    }
+  }
+
+  // Load knowledge
+  async function loadKnowledge() {
+    try {
+      const res = await fetch("/api/knowledge", { cache: "no-store" });
+      const data = await res.json();
+      state.entries = data.entries || [];
+      state.byId = new Map(state.entries.map((e) => [e.id, e]));
+      
+      renderSidebar();
+      
+      if (state.selectedId && state.byId.has(state.selectedId)) {
+        renderEntry(state.byId.get(state.selectedId));
+      } else {
+        renderWelcomeDashboard();
+      }
+      setStatus("已同步", true);
+    } catch (err) {
+      setStatus("数据加载失败", false);
+    }
+  }
+
+  // Poll revision
+  async function pollRevision() {
+    try {
+      const res = await fetch("/api/revision", { cache: "no-store" });
+      const { revision } = await res.json();
+      if (state.revision !== null && revision !== state.revision) {
+        await loadKnowledge();
+      }
+      state.revision = revision;
+      setStatus("同步中", true);
+    } catch (_) {
+      setStatus("失去连接", false);
+    }
+  }
+
+  // Search input listeners
+  const searchInput = document.getElementById("search");
+  searchInput.addEventListener("input", (ev) => {
+    state.query = ev.target.value;
+    updateQuickFilterUI(ev.target.value);
+    renderSidebar();
+    
+    const q = state.query.trim().toLowerCase();
+    const visible = state.entries.filter((e) => matchesQuery(e, q));
+    if (visible.length) {
+      const alreadySelectedVisible = visible.some(e => e.id === state.selectedId);
+      if (!alreadySelectedVisible) {
+        selectEntry(visible[0].id);
+      }
+    } else {
+      selectEntry(null);
+    }
+  });
+
+  searchInput.addEventListener("focus", () => {
+    document.getElementById("sbmode").textContent = "SEARCH";
+  });
+  searchInput.addEventListener("blur", () => {
+    document.getElementById("sbmode").textContent = "NORMAL";
+  });
+
+  // Filter pill clicks
+  document.getElementById("quickfilters").addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".filter-btn");
+    if (!btn) return;
+    const filterValue = btn.getAttribute("data-filter");
+    setSearchQuery(filterValue);
+  });
+
+  // Keybindings listener
+  document.addEventListener("keydown", (e) => {
+    // 1. "/" to search
+    if (e.key === "/") {
+      if (document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+      return;
+    }
+
+    // 2. Escape to blur or clear
+    if (e.key === "Escape") {
+      if (document.activeElement === searchInput) {
+        searchInput.blur();
+      } else {
+        setSearchQuery("");
+      }
+      return;
+    }
+
+    // 3. ArrowDown / ArrowUp to navigate
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!state.visibleEntryIds.length) return;
+      e.preventDefault();
+      
+      let currIdx = state.visibleEntryIds.indexOf(state.selectedId);
+      if (e.key === "ArrowDown") {
+        currIdx = (currIdx + 1) % state.visibleEntryIds.length;
+      } else {
+        currIdx = (currIdx - 1 + state.visibleEntryIds.length) % state.visibleEntryIds.length;
+      }
+      
+      selectEntry(state.visibleEntryIds[currIdx]);
+      
+      setTimeout(() => {
+        const activeRow = document.querySelector(".tree-row.entry.active");
+        if (activeRow) activeRow.scrollIntoView({ block: "nearest" });
+      }, 0);
+      return;
+    }
+
+    // 4. Enter to toggle collapse or blur input
+    if (e.key === "Enter") {
+      if (document.activeElement === searchInput) {
+        searchInput.blur();
+        return;
+      }
+      if (state.selectedId) {
+        const activeEntry = state.byId.get(state.selectedId);
+        if (activeEntry) {
+          const typeId = `${activeEntry.scope}:${activeEntry.type}`;
+          if (state.collapsedTypes.has(typeId)) {
+            state.collapsedTypes.delete(typeId);
+          } else {
+            state.collapsedTypes.add(typeId);
+          }
+          renderSidebar();
+        }
+      }
+    }
+  });
+
+  // Light / Dark Theme toggler
+  const themeBtn = document.getElementById("themebtn");
+  function toggleTheme() {
+    const currTheme = document.documentElement.getAttribute("data-theme") || "dark";
+    const nextTheme = currTheme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", nextTheme);
+    themeBtn.textContent = `THEME: ${nextTheme.toUpperCase()}`;
+    localStorage.setItem("pcf-theme", nextTheme);
+  }
+  themeBtn.addEventListener("click", toggleTheme);
+
+  // Initialize Theme
+  const initTheme = localStorage.getItem("pcf-theme") || "dark";
+  document.documentElement.setAttribute("data-theme", initTheme);
+  themeBtn.textContent = `THEME: ${initTheme.toUpperCase()}`;
+
+  // Start polling
+  loadKnowledge()
+    .then(pollRevision)
+    .catch((err) => setStatus("加载失败", false));
+  
+  setInterval(pollRevision, 4000);
+})();
+</script>
+</body>
+</html>
