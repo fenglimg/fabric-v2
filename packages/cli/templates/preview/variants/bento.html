@@ -1,0 +1,2187 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bento · 知识库预览</title>
+<meta name="variant-desc" content="现代 Bento 仪表盘风 · 归属/分类/成熟度三级视觉化总览" />
+<style>
+  /* Base & Theme Variables */
+  :root {
+    --bg-app: #f4f5f8;
+    --bg-panel: #ffffff;
+    --bg-card: #ffffff;
+    --bg-card-hover: #fbfcfe;
+    --bg-nav: rgba(255, 255, 255, 0.85);
+    
+    --text-main: #0f172a; /* Slate 900 */
+    --text-muted: #475569; /* Slate 600 */
+    --text-ghost: #94a3b8; /* Slate 400 */
+    --border: #e2e8f0; /* Slate 200 */
+    --border-hover: #cbd5e1; /* Slate 300 */
+    --border-active: #6366f1; /* Indigo 500 */
+    
+    --accent: #4f46e5; /* Indigo 600 */
+    --accent-light: #e0e7ff; /* Indigo 100 */
+    --accent-hover: #4338ca; /* Indigo 700 */
+    
+    /* Scope Color Themes */
+    --color-team: #0d9488; /* Teal 600 */
+    --color-team-bg: rgba(13, 148, 136, 0.06);
+    --color-team-border: rgba(13, 148, 136, 0.2);
+    --color-team-gradient: linear-gradient(135deg, rgba(13, 148, 136, 0.12) 0%, rgba(13, 148, 136, 0.02) 100%);
+
+    --color-project: #2563eb; /* Blue 600 */
+    --color-project-bg: rgba(37, 99, 235, 0.06);
+    --color-project-border: rgba(37, 99, 235, 0.2);
+    --color-project-gradient: linear-gradient(135deg, rgba(37, 99, 235, 0.12) 0%, rgba(37, 99, 235, 0.02) 100%);
+
+    --color-personal: #7c3aed; /* Violet 600 */
+    --color-personal-bg: rgba(124, 58, 237, 0.06);
+    --color-personal-border: rgba(124, 58, 237, 0.2);
+    --color-personal-gradient: linear-gradient(135deg, rgba(124, 58, 237, 0.12) 0%, rgba(124, 58, 237, 0.02) 100%);
+
+    /* Maturity Colors */
+    --color-draft: #64748b; /* Slate 500 */
+    --color-draft-bg: #f1f5f9;
+    --color-draft-border: #cbd5e1;
+    
+    --color-verified: #0f766e; /* Teal 700 */
+    --color-verified-bg: #ccfbf1;
+    --color-verified-border: #99f6e4;
+    
+    --color-proven: #16a34a; /* Green 600 */
+    --color-proven-bg: #dcfce7;
+    --color-proven-border: #bbf7d0;
+
+    /* Type Colors */
+    --type-decision-color: #059669; /* Emerald 600 */
+    --type-decision-bg: #ecfdf5;
+    --type-decision-border: #a7f3d0;
+    
+    --type-pitfall-color: #e11d48; /* Rose 600 */
+    --type-pitfall-bg: #fff1f2;
+    --type-pitfall-border: #fecdd3;
+
+    --type-guideline-color: #d97706; /* Amber 600 */
+    --type-guideline-bg: #fffbeb;
+    --type-guideline-border: #fde68a;
+
+    --type-model-color: #0284c7; /* Sky 600 */
+    --type-model-bg: #f0f9ff;
+    --type-model-border: #bae6fd;
+
+    --type-process-color: #7c3aed; /* Violet 600 */
+    --type-process-bg: #f5f3ff;
+    --type-process-border: #ddd6fe;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-xl: 24px;
+    
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  /* Manual Dark Mode Class & System Dark Preference Override */
+  .theme-dark, @media (prefers-color-scheme: dark) {
+    :root:not(.theme-light) {
+      --bg-app: #080c14;
+      --bg-panel: #0f172a; /* Slate 900 */
+      --bg-card: #1e293b; /* Slate 800 */
+      --bg-card-hover: #2d3b50; /* Slate 700 */
+      --bg-nav: rgba(15, 23, 42, 0.85);
+      
+      --text-main: #f8fafc; /* Slate 50 */
+      --text-muted: #94a3b8; /* Slate 400 */
+      --text-ghost: #64748b; /* Slate 500 */
+      --border: #334155; /* Slate 700 */
+      --border-hover: #475569; /* Slate 600 */
+      --border-active: #818cf8; /* Indigo 400 */
+      
+      --accent: #6366f1; /* Indigo 500 */
+      --accent-light: #1e1b4b; /* Indigo 950 */
+      --accent-hover: #4f46e5;
+      
+      --color-team: #14b8a6; /* Teal 500 */
+      --color-team-bg: rgba(20, 184, 166, 0.08);
+      --color-team-border: rgba(20, 184, 166, 0.3);
+      --color-team-gradient: linear-gradient(135deg, rgba(20, 184, 166, 0.15) 0%, rgba(20, 184, 166, 0.02) 100%);
+
+      --color-project: #3b82f6; /* Blue 500 */
+      --color-project-bg: rgba(59, 130, 246, 0.08);
+      --color-project-border: rgba(59, 130, 246, 0.3);
+      --color-project-gradient: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.02) 100%);
+
+      --color-personal: #8b5cf6; /* Violet 500 */
+      --color-personal-bg: rgba(139, 92, 246, 0.08);
+      --color-personal-border: rgba(139, 92, 246, 0.3);
+      --color-personal-gradient: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.02) 100%);
+
+      /* Maturity Colors */
+      --color-draft: #94a3b8;
+      --color-draft-bg: #1e293b;
+      --color-draft-border: #475569;
+      
+      --color-verified: #2dd4bf; /* Teal 400 */
+      --color-verified-bg: rgba(45, 212, 191, 0.15);
+      --color-verified-border: rgba(45, 212, 191, 0.3);
+      
+      --color-proven: #4ade80; /* Green 400 */
+      --color-proven-bg: rgba(74, 222, 128, 0.15);
+      --color-proven-border: rgba(74, 222, 128, 0.3);
+
+      /* Type Colors */
+      --type-decision-color: #34d399; /* Emerald 400 */
+      --type-decision-bg: rgba(52, 211, 153, 0.12);
+      --type-decision-border: rgba(52, 211, 153, 0.25);
+      
+      --type-pitfall-color: #fb7185; /* Rose 400 */
+      --type-pitfall-bg: rgba(251, 113, 133, 0.12);
+      --type-pitfall-border: rgba(251, 113, 133, 0.25);
+
+      --type-guideline-color: #fbbf24; /* Amber 400 */
+      --type-guideline-bg: rgba(251, 191, 36, 0.12);
+      --type-guideline-border: rgba(251, 191, 36, 0.25);
+
+      --type-model-color: #38bdf8; /* Sky 400 */
+      --type-model-bg: rgba(56, 189, 248, 0.12);
+      --type-model-border: rgba(56, 189, 248, 0.25);
+
+      --type-process-color: #a78bfa; /* Violet 400 */
+      --type-process-bg: rgba(167, 139, 250, 0.12);
+      --type-process-border: rgba(167, 139, 250, 0.25);
+
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  /* Reset & Base Elements */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1.5;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-hover);
+  }
+
+  /* Keyframe Animations */
+  @keyframes wobble {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-8deg); }
+    75% { transform: rotate(8deg); }
+  }
+  @keyframes pulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.6); opacity: 0.2; }
+    100% { transform: scale(1); opacity: 0.8; }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Header Navbar */
+  .navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    padding: 0 24px;
+    background-color: var(--bg-nav);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.02em;
+    color: var(--text-main);
+  }
+  .logo-icon {
+    font-size: 20px;
+    margin-right: 8px;
+    display: inline-block;
+    animation: wobble 4s ease-in-out infinite;
+  }
+  .logo-sub {
+    font-weight: 400;
+    color: var(--text-ghost);
+    margin-left: 4px;
+    font-size: 14px;
+  }
+  .nav-center {
+    flex: 1;
+    max-width: 500px;
+    margin: 0 24px;
+  }
+  .search-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+  .search-icon {
+    position: absolute;
+    left: 14px;
+    color: var(--text-ghost);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+  }
+  #search {
+    width: 100%;
+    height: 40px;
+    padding: 0 40px 0 38px;
+    font-size: 14px;
+    font-family: var(--sans);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    outline: none;
+    transition: all 0.2s ease;
+  }
+  #search:focus {
+    border-color: var(--accent);
+    background-color: var(--bg-card);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  }
+  .search-shortcut {
+    position: absolute;
+    right: 14px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-ghost);
+    background-color: var(--border);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    pointer-events: none;
+  }
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background-color: var(--bg-app);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-ghost);
+    position: relative;
+  }
+  .dot.live {
+    background-color: #10b981;
+  }
+  .dot.live::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 50%;
+    background-color: #10b981;
+    animation: pulse 2s infinite;
+  }
+  .theme-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+  .theme-btn:hover {
+    border-color: var(--border-hover);
+    background-color: var(--bg-card-hover);
+  }
+  .theme-btn svg {
+    transition: transform 0.5s ease;
+  }
+  .theme-btn:hover svg {
+    transform: rotate(30deg);
+  }
+
+  /* Dashboard Bento Stats Grid */
+  .dashboard {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1.6fr 1.1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stats-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .stats-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .stats-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-ghost);
+    letter-spacing: 0.05em;
+  }
+  .stats-card-icon {
+    font-size: 16px;
+  }
+
+  /* Stat Widget details */
+  .total-count-wrapper {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .total-count-num {
+    font-size: 38px;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  .total-count-label {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .scope-progress-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background-color: var(--border);
+    margin: 16px 0 8px;
+  }
+  .bar-segment {
+    height: 100%;
+    transition: width 0.5s ease;
+  }
+  .segment-team { background-color: var(--color-team); }
+  .segment-project { background-color: var(--color-project); }
+  .segment-personal { background-color: var(--color-personal); }
+  .scope-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-ghost);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .legend-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  /* Scope Buttons Grid */
+  .scope-buttons-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    flex: 1;
+  }
+  .scope-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--text-main);
+    transition: all 0.2s ease;
+  }
+  .scope-btn:hover {
+    border-color: var(--border-hover);
+    background-color: var(--bg-card-hover);
+  }
+  .scope-btn.active {
+    background-color: var(--scope-theme-bg);
+    border-color: var(--scope-theme-color);
+    color: var(--scope-theme-color);
+    font-weight: 600;
+  }
+  .scope-btn-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .scope-btn-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background-color: var(--border);
+    padding: 1px 6px;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+  }
+  .scope-btn.active .scope-btn-count {
+    color: #ffffff;
+    background-color: var(--scope-theme-color);
+  }
+
+  /* Type Buttons Row */
+  .type-buttons-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    flex: 1;
+  }
+  .type-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 11px;
+    color: var(--text-main);
+    transition: all 0.2s ease;
+  }
+  .type-btn:hover {
+    border-color: var(--border-hover);
+    background-color: var(--bg-card-hover);
+  }
+  .type-btn.active {
+    background-color: var(--type-theme-bg);
+    border-color: var(--type-theme-color);
+    color: var(--type-theme-color);
+    font-weight: 600;
+  }
+  .type-btn-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .type-btn-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    background-color: var(--border);
+    padding: 1px 5px;
+    border-radius: 8px;
+  }
+  .type-btn.active .type-btn-count {
+    color: #ffffff;
+    background-color: var(--type-theme-color);
+  }
+  /* Make Decisions span full row for bento aesthetics */
+  .type-btn-decisions {
+    grid-column: span 2;
+  }
+
+  /* Maturity Stats Card */
+  .maturity-chart-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    justify-content: center;
+    flex: 1;
+  }
+  .maturity-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+  }
+  .maturity-bar-row:hover {
+    opacity: 0.8;
+  }
+  .maturity-bar-row.active {
+    font-weight: 600;
+  }
+  .maturity-bar-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    width: 48px;
+    text-transform: capitalize;
+  }
+  .maturity-bar-bg {
+    flex: 1;
+    height: 8px;
+    background-color: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .maturity-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .maturity-bar-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-ghost);
+    width: 24px;
+    text-align: right;
+  }
+  .maturity-bar-row.active .maturity-bar-count {
+    color: var(--accent);
+  }
+
+  /* Main Workspace Split Layout */
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 24px;
+    align-items: start;
+  }
+  .bento-container {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Filter Status Indicator */
+  .filter-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    background-color: var(--accent-light);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    margin-bottom: 20px;
+    animation: slideIn 0.25s ease-out;
+  }
+  .dark-theme .filter-status-bar {
+    background-color: rgba(99, 102, 241, 0.15);
+  }
+  .filter-status-text {
+    font-size: 13px;
+    color: var(--text-main);
+    font-weight: 500;
+  }
+  .clear-filter-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .clear-filter-btn:hover {
+    text-decoration: underline;
+  }
+
+  /* Bento Group Sections */
+  .scope-section {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 32px;
+  }
+  .scope-section.scope-team {
+    border-left: 4px solid var(--color-team);
+    padding-left: 16px;
+  }
+  .scope-section.scope-project {
+    border-left: 4px solid var(--color-project);
+    padding-left: 16px;
+  }
+  .scope-section.scope-personal {
+    border-left: 4px solid var(--color-personal);
+    padding-left: 16px;
+  }
+
+  /* Bento Section Header Card */
+  .scope-header-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .scope-section.scope-team .scope-header-card {
+    background: var(--color-team-gradient);
+    border-color: var(--color-team-border);
+  }
+  .scope-section.scope-project .scope-header-card {
+    background: var(--color-project-gradient);
+    border-color: var(--color-project-border);
+  }
+  .scope-section.scope-personal .scope-header-card {
+    background: var(--color-personal-gradient);
+    border-color: var(--color-personal-border);
+  }
+  .scope-header-icon {
+    font-size: 24px;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background-color: var(--bg-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+  }
+  .scope-header-info {
+    flex: 1;
+  }
+  .scope-header-info h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .scope-header-info p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .scope-header-count {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 10px;
+    background-color: var(--bg-card);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  /* Bento Cards Grid */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  
+  /* Bento Card Design */
+  .bento-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 168px;
+    position: relative;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    animation: slideIn 0.3s ease-out forwards;
+  }
+  .bento-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 4px; height: 100%;
+  }
+  .bento-card.scope-team::before { background-color: var(--color-team); }
+  .bento-card.scope-project::before { background-color: var(--color-project); }
+  .bento-card.scope-personal::before { background-color: var(--color-personal); }
+
+  .bento-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-hover);
+  }
+  .bento-card.active {
+    background-color: var(--bg-card-hover);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+  }
+  .dark-theme .bento-card.active {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  }
+  
+  /* Card Sizing Rhythm */
+  @media (min-width: 1200px) {
+    .card-wide {
+      grid-column: span 2;
+    }
+  }
+
+  /* Bento Card Content Elements */
+  .card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .card-id {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-ghost);
+    background-color: var(--bg-app);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .card-maturity {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .maturity-dot-indicator {
+    display: flex;
+    gap: 3px;
+  }
+  .mat-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--border);
+  }
+  .mat-dot.active {
+    background-color: var(--mat-theme-color);
+  }
+  /* Pulse effect on Proven dot */
+  .mat-dot.active.pulse {
+    position: relative;
+    box-shadow: 0 0 6px var(--color-proven);
+  }
+  .mat-dot.active.pulse::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 50%;
+    background-color: inherit;
+    animation: pulse 1.8s infinite ease-in-out;
+  }
+  
+  .card-body {
+    flex: 1;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-wide .card-title {
+    -webkit-line-clamp: 3;
+  }
+  .card-snippet {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+  }
+  .card-wide .card-snippet {
+    -webkit-line-clamp: 2;
+  }
+
+  .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .type-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--type-border);
+    color: var(--type-color);
+    background-color: var(--type-bg);
+  }
+  .card-tags {
+    display: flex;
+    gap: 6px;
+    max-width: 140px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .tag {
+    font-size: 11px;
+    color: var(--text-ghost);
+  }
+
+  /* Empty state */
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 64px 24px;
+    background-color: var(--bg-card);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+    color: var(--text-muted);
+  }
+  .empty-state h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+
+  /* Sticky Detail Panel */
+  .preview-panel {
+    position: sticky;
+    top: 88px;
+    height: calc(100vh - 112px);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+  }
+  .preview-placeholder {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .placeholder-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    animation: wobble 5s ease-in-out infinite;
+  }
+  .placeholder-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text-main);
+  }
+  .placeholder-desc {
+    font-size: 13px;
+    max-width: 280px;
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+  .placeholder-shortcuts {
+    background-color: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .shortcut-item {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .shortcut-item span {
+    font-family: var(--mono);
+    font-weight: 700;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* Preview Content */
+  .preview-content {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+  }
+  .preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .preview-action-btn {
+    flex: 1;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .preview-action-btn:hover {
+    border-color: var(--border-hover);
+    background-color: var(--bg-card-hover);
+  }
+  .preview-action-btn.success {
+    background-color: var(--color-proven-bg);
+    border-color: var(--color-proven);
+    color: var(--color-proven);
+  }
+  .preview-close-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+  .preview-close-btn:hover {
+    border-color: var(--border-hover);
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+
+  .preview-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.3;
+    margin-bottom: 16px;
+  }
+  
+  /* Detail Metadata Grid */
+  .preview-metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 20px;
+  }
+  .meta-item {
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .meta-label {
+    color: var(--text-ghost);
+    font-weight: 600;
+  }
+  .meta-val {
+    color: var(--text-main);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meta-val.code {
+    font-family: var(--mono);
+    color: var(--text-muted);
+  }
+  .meta-val.badge {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .meta-val.badge.scope-team { background-color: var(--color-team-bg); color: var(--color-team); }
+  .meta-val.badge.scope-project { background-color: var(--color-project-bg); color: var(--color-project); }
+  .meta-val.badge.scope-personal { background-color: var(--color-personal-bg); color: var(--color-personal); }
+  
+  .meta-val.badge.maturity-draft { background-color: var(--color-draft-bg); color: var(--color-draft); }
+  .meta-val.badge.maturity-verified { background-color: var(--color-verified-bg); color: var(--color-verified); }
+  .meta-val.badge.maturity-proven { background-color: var(--color-proven-bg); color: var(--color-proven); }
+
+  .meta-val.badge.type-badge {
+    background-color: var(--type-bg);
+    color: var(--type-color);
+    border: 1px solid var(--type-border);
+  }
+
+  .preview-tags-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .preview-tag {
+    font-size: 11.5px;
+    background-color: var(--bg-app);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+  }
+
+  .preview-divider {
+    height: 1px;
+    background-color: var(--border);
+    margin-bottom: 20px;
+  }
+
+  /* Responsive Drawer Layout for Mobile */
+  .backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    backdrop-filter: blur(2px);
+  }
+  .backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (max-width: 992px) {
+    .workspace {
+      grid-template-columns: 1fr;
+    }
+    .preview-panel {
+      position: fixed;
+      top: 0;
+      right: -460px;
+      width: 440px;
+      max-width: 90%;
+      height: 100vh;
+      z-index: 1000;
+      border-radius: 0;
+      border-left: 1px solid var(--border);
+      border-top: none;
+      border-bottom: none;
+      box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+    }
+    .preview-panel.active {
+      right: 0;
+    }
+  }
+
+  /* Markdown Body Rendering Styles */
+  .md {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--text-main);
+  }
+  .md h1, .md h2, .md h3, .md h4 {
+    font-weight: 700;
+    line-height: 1.3;
+    margin: 20px 0 10px;
+    color: var(--text-main);
+  }
+  .md h1 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .md h2 { font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .md h3 { font-size: 15px; }
+  .md h4 { font-size: 14px; }
+  .md p { margin: 10px 0; }
+  .md ul, .md ol { margin: 10px 0; padding-left: 20px; }
+  .md li { margin: 4px 0; }
+  
+  .md code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background-color: var(--bg-app);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+  
+  .md pre {
+    background-color: #0f172a; /* Consistent Dark slate code theme */
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 16px 0;
+    position: relative;
+  }
+  .dark-theme .md pre {
+    background-color: #090d16;
+    border-color: #1e293b;
+  }
+  .md pre code {
+    background-color: transparent;
+    color: #e2e8f0;
+    padding: 0;
+    border-radius: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    display: block;
+  }
+  .code-block-wrapper {
+    position: relative;
+  }
+  .code-lang-badge {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #94a3b8;
+    background-color: #1e293b;
+    padding: 2px 6px;
+    border-radius: 4px;
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+  
+  .md blockquote {
+    margin: 16px 0;
+    padding: 4px 16px;
+    border-left: 4px solid var(--accent);
+    background-color: var(--bg-app);
+    color: var(--text-muted);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .md hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 24px 0;
+  }
+  
+  /* Tables styling in Markdown */
+  .md table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .md th, .md td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .md th {
+    background-color: var(--bg-app);
+    font-weight: 700;
+  }
+  .md tr:nth-child(even) {
+    background-color: rgba(0,0,0,0.015);
+  }
+  .dark-theme .md tr:nth-child(even) {
+    background-color: rgba(255,255,255,0.015);
+  }
+</style>
+</head>
+<body>
+  <!-- Header Banner -->
+  <header class="navbar">
+    <div class="nav-left">
+      <div class="logo">
+        <span class="logo-icon">🍱</span>
+        <span class="logo-text">Bento</span>
+        <span class="logo-sub">· 知识库预览</span>
+      </div>
+    </div>
+    
+    <div class="nav-center">
+      <div class="search-container">
+        <span class="search-icon">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </span>
+        <input id="search" type="search" placeholder="搜索标题 / ID / 标签 / Scope / 类型..." autocomplete="off" />
+        <span class="search-shortcut">/</span>
+      </div>
+    </div>
+    
+    <div class="nav-right">
+      <div class="status-indicator">
+        <span id="livedot" class="dot"></span>
+        <span id="statustext">连接中...</span>
+      </div>
+      <button id="theme-toggle" class="theme-btn" title="切换主题">
+        <svg class="sun-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"></circle>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M5.64 18.36l-1.42 1.42M19.78 4.22l-1.42 1.42"></path>
+        </svg>
+        <svg class="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Backdrop for mobile drawer -->
+  <div class="backdrop" id="backdrop"></div>
+
+  <!-- Dashboard Container -->
+  <main class="dashboard">
+    <!-- Bento Stats Widgets Row -->
+    <section class="stats-grid">
+      <!-- Card 1: Total & Stacked bar -->
+      <div class="stats-card total-card">
+        <div class="stats-card-header">
+          <span class="stats-card-title">全库知识总数</span>
+          <span class="stats-card-icon">📊</span>
+        </div>
+        <div class="total-count-wrapper">
+          <span class="total-count-num" id="total-count">0</span>
+          <span class="total-count-label">条已沉淀</span>
+        </div>
+        <div class="scope-progress-bar" id="scope-stacked-bar">
+          <div class="bar-segment segment-team" id="bar-team" style="width: 0%"></div>
+          <div class="bar-segment segment-project" id="bar-project" style="width: 0%"></div>
+          <div class="bar-segment segment-personal" id="bar-personal" style="width: 0%"></div>
+        </div>
+        <div class="scope-legend">
+          <div class="legend-item"><span class="legend-dot" style="background-color: var(--color-team)"></span><span>团队 (<span id="legend-team-count">0</span>)</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background-color: var(--color-project)"></span><span>项目 (<span id="legend-project-count">0</span>)</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background-color: var(--color-personal)"></span><span>个人 (<span id="legend-personal-count">0</span>)</span></div>
+        </div>
+      </div>
+
+      <!-- Card 2: Scope Filter Blocks -->
+      <div class="stats-card scope-stats-card">
+        <div class="stats-card-header">
+          <span class="stats-card-title">空间筛选 · Scope</span>
+          <span class="stats-card-icon">🌐</span>
+        </div>
+        <div class="scope-buttons-grid" id="scope-filters">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Card 3: Type Filter Chips -->
+      <div class="stats-card type-stats-card">
+        <div class="stats-card-header">
+          <span class="stats-card-title">分类统计与筛选 · Type</span>
+          <span class="stats-card-icon">🏷️</span>
+        </div>
+        <div class="type-buttons-list" id="type-filters">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Card 4: Maturity Distribution -->
+      <div class="stats-card maturity-stats-card">
+        <div class="stats-card-header">
+          <span class="stats-card-title">成熟度统计 · Maturity</span>
+          <span class="stats-card-icon">📈</span>
+        </div>
+        <div class="maturity-chart-container" id="maturity-filters">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace Layout -->
+    <div class="workspace">
+      <!-- Bento Card Lists -->
+      <div class="bento-container">
+        <!-- Active Filter Indicator Status -->
+        <div class="filter-status-bar" id="filter-status-bar" style="display: none;">
+          <div class="filter-status-text" id="filter-status-text">激活筛选器...</div>
+          <button class="clear-filter-btn" id="clear-filters-btn">清除筛选</button>
+        </div>
+
+        <!-- Rendered lists by Scope -->
+        <div id="bento-lists-wrapper">
+          <!-- Sections will render here -->
+        </div>
+      </div>
+
+      <!-- Sticky Preview Detail Panel -->
+      <div class="preview-panel" id="preview-panel">
+        <!-- Default Empty Placeholder -->
+        <div class="preview-placeholder" id="preview-placeholder">
+          <div class="placeholder-icon">🍱</div>
+          <h3 class="placeholder-title">选择一条知识查看详情</h3>
+          <p class="placeholder-desc">点击左侧 Bento 卡片，即可在此处阅读 Markdown 格式的完整内容与详细条目属性。</p>
+          <div class="placeholder-shortcuts">
+            <div class="shortcut-item"><span>/</span> 键聚焦搜索框</div>
+            <div class="shortcut-item"><span>Esc</span> 键关闭预览 / 清除筛选</div>
+          </div>
+        </div>
+        
+        <!-- Active Entry details (hidden by default) -->
+        <div class="preview-content" id="preview-content" style="display: none;">
+          <!-- Active detail layout populated by JS -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  "use strict";
+
+  // App State
+  const state = {
+    entries: [],
+    byId: new Map(),
+    selectedId: null,
+    revision: null,
+    
+    // Filters state
+    query: "",
+    filterScope: null,      // e.g. "team", "project:fabric-v2", "personal"
+    filterType: null,       // e.g. "decisions", "pitfalls", etc.
+    filterMaturity: null,   // e.g. "draft", "verified", "proven"
+  };
+
+  // Scope Config
+  const SCOPE_INFO = {
+    team: { label: "团队通用 · Team", icon: "👥", color: "var(--color-team)" },
+    personal: { label: "个人私有 · Personal", icon: "👤", color: "var(--color-personal)" }
+  };
+
+  function getScopeLabel(scope) {
+    if (scope === "team") return SCOPE_INFO.team.label;
+    if (scope === "personal") return SCOPE_INFO.personal.label;
+    if (scope.startsWith("project:")) {
+      return "项目 · " + scope.slice("project:".length).toUpperCase();
+    }
+    return scope;
+  }
+
+  function getScopeIcon(scope) {
+    if (scope === "team") return SCOPE_INFO.team.icon;
+    if (scope === "personal") return SCOPE_INFO.personal.icon;
+    if (scope.startsWith("project:")) return "📁";
+    return "📄";
+  }
+
+  function getScopeThemeColor(scope) {
+    if (scope === "team") return "var(--color-team)";
+    if (scope === "personal") return "var(--color-personal)";
+    if (scope.startsWith("project:")) return "var(--color-project)";
+    return "var(--text-ghost)";
+  }
+
+  // Type Config
+  const TYPE_CONFIG = {
+    decisions: { label: "决策 Decision", icon: "⚖️", color: "var(--type-decision-color)", class: "type-decision" },
+    pitfalls: { label: "避坑 Pitfall", icon: "⚠️", color: "var(--type-pitfall-color)", class: "type-pitfall" },
+    guidelines: { label: "指南 Guideline", icon: "💡", color: "var(--type-guideline-color)", class: "type-guideline" },
+    models: { label: "模型 Model", icon: "🧩", color: "var(--type-model-color)", class: "type-model" },
+    processes: { label: "流程 Process", icon: "⚙️", color: "var(--type-process-color)", class: "type-process" }
+  };
+
+  function getFormattedType(type) {
+    return TYPE_CONFIG[type] || { label: type, icon: "📄", color: "var(--text-ghost)", class: "type-default" };
+  }
+
+  // Maturity Config
+  const MATURITY_CONFIG = {
+    draft: { label: "草稿 Draft", steps: 1, color: "var(--color-draft)" },
+    verified: { label: "已验证 Verified", steps: 2, color: "var(--color-verified)" },
+    proven: { label: "已沉淀 Proven", steps: 3, color: "var(--color-proven)", pulse: true }
+  };
+
+  function getMaturityInfo(mat) {
+    return MATURITY_CONFIG[mat] || { label: mat || "未定义", steps: 0, color: "var(--text-ghost)" };
+  }
+
+  // Scope Rank for sorting sections
+  function scopeRank(scope) {
+    if (scope === "team") return [0, ""];
+    if (scope.startsWith("project:")) return [1, scope];
+    if (scope === "personal") return [2, ""];
+    return [3, scope];
+  }
+
+  // Escaping HTML
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // Inline markdown rendering
+  function inline(text) {
+    let s = esc(text);
+    s = s.replace(/`([^`]+)`/g, (_, c) => "<code>" + c + "</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[\s(])_([^_\s][^_]*?)_(?=[\s).,]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }
+
+  // Markdown renderer supporting headings, lists, code fences, blockquotes, hr, and tables.
+  function renderMarkdown(md) {
+    const lines = md.replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let i = 0;
+    
+    const flushList = (buf, ordered) => {
+      if (!buf.length) return;
+      out.push("<" + (ordered ? "ol" : "ul") + ">" + buf.map((x) => "<li>" + inline(x) + "</li>").join("") + "</" + (ordered ? "ol" : "ul") + ">");
+      buf.length = 0;
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Code blocks
+      const fence = /^```(\w*)\s*$/.exec(line);
+      if (fence) {
+        const lang = fence[1] || "";
+        const code = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) { 
+          code.push(lines[i]); 
+          i++; 
+        }
+        i++; // skip close fence
+        const langBadge = lang ? `<span class="code-lang-badge">${lang}</span>` : "";
+        out.push(`<div class="code-block-wrapper">${langBadge}<pre><code>${esc(code.join("\n"))}</code></pre></div>`);
+        continue;
+      }
+
+      // Headings
+      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (heading) {
+        const level = Math.min(heading[1].length, 4);
+        out.push("<h" + level + ">" + inline(heading[2]) + "</h" + level + ">");
+        i++;
+        continue;
+      }
+
+      // Bullet lists
+      if (/^\s*[-*]\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { 
+          buf.push(lines[i].replace(/^\s*[-*]\s+/, "")); 
+          i++; 
+        }
+        flushList(buf, false);
+        continue;
+      }
+
+      // Numbered lists
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { 
+          buf.push(lines[i].replace(/^\s*\d+\.\s+/, "")); 
+          i++; 
+        }
+        flushList(buf, true);
+        continue;
+      }
+
+      // Blockquotes
+      if (/^\s*>\s?/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) { 
+          buf.push(lines[i].replace(/^\s*>\s?/, "")); 
+          i++; 
+        }
+        out.push("<blockquote>" + inline(buf.join(" ")) + "</blockquote>");
+        continue;
+      }
+
+      // Horizontal Rules
+      if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { 
+        out.push("<hr />"); 
+        i++; 
+        continue; 
+      }
+
+      // Tables
+      if (/^\s*\|/.test(line)) {
+        const rows = [];
+        while (i < lines.length && /^\s*\|/.test(lines[i])) {
+          rows.push(lines[i]);
+          i++;
+        }
+        if (rows.length >= 2) {
+          let tableHtml = "<table>";
+          let startIdx = 0;
+          const hasSeparator = /^\s*\|[:\-\s|]+$/.test(rows[1]);
+          if (hasSeparator) {
+            const cols = rows[0].split("|").slice(1, -1).map(c => c.trim());
+            tableHtml += "<thead><tr>" + cols.map(c => "<th>" + inline(c) + "</th>").join("") + "</tr></thead>";
+            startIdx = 2;
+          }
+          tableHtml += "<tbody>";
+          for (let r = startIdx; r < rows.length; r++) {
+            const cols = rows[r].split("|").slice(1, -1).map(c => c.trim());
+            tableHtml += "<tr>" + cols.map(c => "<td>" + inline(c) + "</td>").join("") + "</tr>";
+          }
+          tableHtml += "</tbody></table>";
+          out.push(tableHtml);
+          continue;
+        }
+      }
+
+      // Blank line
+      if (line.trim() === "") { 
+        i++; 
+        continue; 
+      }
+
+      // Paragraph
+      const para = [];
+      while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+\.\s|\s*>|\s*-{3,}\s*$|\|)/.test(lines[i])) {
+        para.push(lines[i]); 
+        i++;
+      }
+      out.push("<p>" + inline(para.join(" ")) + "</p>");
+    }
+    return out.join("\n");
+  }
+
+  // Get plain-text snippet for cards
+  function getBodySnippet(body, maxLength = 75) {
+    if (!body) return "";
+    let text = body
+      .replace(/^#+\s+/gm, "") 
+      .replace(/^>\s+/gm, "")  
+      .replace(/```[\s\S]*?```/g, " [代码块] ") 
+      .replace(/`([^`]+)`/g, "$1") 
+      .replace(/\*\*([^*]+)\*\*/g, "$1") 
+      .replace(/\*([^*]+)\*/g, "$1") 
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1") 
+      .replace(/[-*+]\s+/g, "") 
+      .replace(/\d+\.\s+/g, "") 
+      .replace(/\n+/g, " ") 
+      .trim();
+    if (text.length > maxLength) {
+      return text.slice(0, maxLength) + "...";
+    }
+    return text;
+  }
+
+  // Dynamic Filtering Logic
+  function matchesFilters(e) {
+    // Search query matches title, id, scope, type, tags, body
+    if (state.query) {
+      const q = state.query.toLowerCase();
+      const tagsStr = (e.tags || []).join(" ");
+      const bodyStr = e.body || "";
+      const textToSearch = `${e.id} ${e.title} ${e.scope} ${e.type} ${tagsStr} ${bodyStr}`.toLowerCase();
+      if (!textToSearch.includes(q)) return false;
+    }
+    
+    // Scope filter
+    if (state.filterScope) {
+      if (state.filterScope === "team" && e.scope !== "team") return false;
+      if (state.filterScope === "personal" && e.scope !== "personal") return false;
+      if (state.filterScope === "project" && !e.scope.startsWith("project:")) return false;
+      if (state.filterScope.startsWith("project:") && e.scope !== state.filterScope) return false;
+    }
+
+    // Type filter
+    if (state.filterType && e.type !== state.filterType) return false;
+
+    // Maturity filter
+    if (state.filterMaturity && e.maturity !== state.filterMaturity) return false;
+
+    return true;
+  }
+
+  // Update Stats Dashboard (always uses complete repository values)
+  function updateStatsDashboard() {
+    const entries = state.entries;
+    const total = entries.length;
+    document.getElementById("total-count").textContent = total;
+
+    // Counts by Scope
+    let teamCount = 0;
+    let projectCount = 0;
+    let personalCount = 0;
+    const scopeCounts = {};
+
+    // Counts by Type
+    const typeCounts = { decisions: 0, pitfalls: 0, guidelines: 0, models: 0, processes: 0 };
+
+    // Counts by Maturity
+    const maturityCounts = { draft: 0, verified: 0, proven: 0 };
+
+    entries.forEach(e => {
+      // Scope stats
+      if (e.scope === "team") teamCount++;
+      else if (e.scope === "personal") personalCount++;
+      else if (e.scope.startsWith("project:")) projectCount++;
+      scopeCounts[e.scope] = (scopeCounts[e.scope] || 0) + 1;
+
+      // Type stats
+      if (typeCounts[e.type] !== undefined) typeCounts[e.type]++;
+      else typeCounts[e.type] = (typeCounts[e.type] || 0) + 1;
+
+      // Maturity stats
+      if (e.maturity && maturityCounts[e.maturity] !== undefined) {
+        maturityCounts[e.maturity]++;
+      }
+    });
+
+    // Update Stacked Bar
+    const teamPct = total ? (teamCount / total) * 100 : 0;
+    const projectPct = total ? (projectCount / total) * 100 : 0;
+    const personalPct = total ? (personalCount / total) * 100 : 0;
+
+    document.getElementById("bar-team").style.width = teamPct + "%";
+    document.getElementById("bar-project").style.width = projectPct + "%";
+    document.getElementById("bar-personal").style.width = personalPct + "%";
+
+    document.getElementById("legend-team-count").textContent = teamCount;
+    document.getElementById("legend-project-count").textContent = projectCount;
+    document.getElementById("legend-personal-count").textContent = personalCount;
+
+    // Populate Scope Filter buttons dynamically
+    const scopeFiltersContainer = document.getElementById("scope-filters");
+    scopeFiltersContainer.innerHTML = "";
+
+    const scopesList = [
+      { id: "team", label: "团队通用", count: teamCount, themeColor: "var(--color-team)", themeBg: "var(--color-team-bg)" },
+      { id: "project", label: "项目专区", count: projectCount, themeColor: "var(--color-project)", themeBg: "var(--color-project-bg)" },
+      { id: "personal", label: "个人空间", count: personalCount, themeColor: "var(--color-personal)", themeBg: "var(--color-personal-bg)" }
+    ];
+
+    scopesList.forEach(s => {
+      const btn = document.createElement("button");
+      btn.className = "scope-btn" + (state.filterScope === s.id ? " active" : "");
+      btn.style.setProperty("--scope-theme-color", s.themeColor);
+      btn.style.setProperty("--scope-theme-bg", s.themeBg);
+      btn.innerHTML = `
+        <span class="scope-btn-label">${getScopeIcon(s.id)} ${s.label}</span>
+        <span class="scope-btn-count">${s.count}</span>
+      `;
+      btn.addEventListener("click", () => toggleScopeFilter(s.id));
+      scopeFiltersContainer.appendChild(btn);
+    });
+
+    // Populate Type filter widgets
+    const typeFiltersContainer = document.getElementById("type-filters");
+    typeFiltersContainer.innerHTML = "";
+
+    Object.keys(TYPE_CONFIG).forEach(t => {
+      const config = TYPE_CONFIG[t];
+      const count = typeCounts[t] || 0;
+      const btn = document.createElement("button");
+      btn.className = `type-btn type-btn-${t}` + (state.filterType === t ? " active" : "");
+      btn.style.setProperty("--type-theme-color", config.color);
+      btn.style.setProperty("--type-theme-bg", `var(--${config.class}-bg)`);
+      btn.innerHTML = `
+        <span class="type-btn-label">${config.icon} ${config.label.split(' ')[0]}</span>
+        <span class="type-btn-count">${count}</span>
+      `;
+      btn.addEventListener("click", () => toggleTypeFilter(t));
+      typeFiltersContainer.appendChild(btn);
+    });
+
+    // Populate Maturity distributions
+    const maturityFiltersContainer = document.getElementById("maturity-filters");
+    maturityFiltersContainer.innerHTML = "";
+
+    Object.keys(MATURITY_CONFIG).forEach(m => {
+      const config = MATURITY_CONFIG[m];
+      const count = maturityCounts[m] || 0;
+      const pct = total ? (count / total) * 100 : 0;
+      
+      const row = document.createElement("div");
+      row.className = "maturity-bar-row" + (state.filterMaturity === m ? " active" : "");
+      row.innerHTML = `
+        <div class="maturity-bar-label">${config.label.split(' ')[0]}</div>
+        <div class="maturity-bar-bg" title="${pct.toFixed(1)}% (${count} 条)">
+          <div class="maturity-bar-fill" style="width: ${pct}%; background-color: ${config.color}"></div>
+        </div>
+        <div class="maturity-bar-count">${count}</div>
+      `;
+      row.addEventListener("click", () => toggleMaturityFilter(m));
+      maturityFiltersContainer.appendChild(row);
+    });
+
+    updateFilterStatusBar();
+  }
+
+  // Update Filter Status Info Bar
+  function updateFilterStatusBar() {
+    const activeFilters = [];
+    if (state.query) activeFilters.push(`关键词: "${state.query}"`);
+    if (state.filterScope) {
+      if (state.filterScope === "project") activeFilters.push("空间: 所有项目");
+      else activeFilters.push(`空间: ${getScopeLabel(state.filterScope).split(' · ')[0]}`);
+    }
+    if (state.filterType) activeFilters.push(`分类: ${getFormattedType(state.filterType).label.split(' ')[0]}`);
+    if (state.filterMaturity) activeFilters.push(`成熟度: ${getMaturityInfo(state.filterMaturity).label.split(' ')[0]}`);
+
+    const bar = document.getElementById("filter-status-bar");
+    if (activeFilters.length > 0) {
+      bar.style.display = "flex";
+      document.getElementById("filter-status-text").innerHTML = `🔍 <strong>筛选中:</strong> ` + activeFilters.join(" • ");
+    } else {
+      bar.style.display = "none";
+    }
+  }
+
+  // Render Bento Cards Grid
+  function renderBentoLists() {
+    const visible = state.entries.filter(matchesFilters);
+    const wrapper = document.getElementById("bento-lists-wrapper");
+    wrapper.innerHTML = "";
+
+    if (visible.length === 0) {
+      wrapper.innerHTML = `
+        <div class="empty-state">
+          <h3>没有找到匹配的知识条目</h3>
+          <p>请尝试精简搜索词，或清除顶部的统计筛选状态。</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Group items by scope
+    const groups = new Map();
+    visible.forEach(e => {
+      if (!groups.has(e.scope)) groups.set(e.scope, []);
+      groups.get(e.scope).push(e);
+    });
+
+    // Sort scopes: team -> project (alphabetical) -> personal
+    const sortedScopes = [...groups.keys()].sort((a, b) => {
+      const ra = scopeRank(a), rb = scopeRank(b);
+      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]);
+    });
+
+    sortedScopes.forEach(scope => {
+      const items = groups.get(scope).sort((a, b) => a.type.localeCompare(b.type) || a.id.localeCompare(b.id));
+      const section = document.createElement("section");
+      section.className = `scope-section scope-${scope.split(':')[0]}`;
+
+      // Section Header Card
+      const headerCard = document.createElement("div");
+      headerCard.className = "scope-header-card";
+      headerCard.innerHTML = `
+        <div class="scope-header-icon">${getScopeIcon(scope)}</div>
+        <div class="scope-header-info">
+          <h2>${esc(getScopeLabel(scope))}</h2>
+          <p>${esc(getScopeDescription(scope))}</p>
+        </div>
+        <div class="scope-header-count">${items.length} 条</div>
+      `;
+      section.appendChild(headerCard);
+
+      // Grid for cards
+      const grid = document.createElement("div");
+      grid.className = "bento-grid";
+
+      items.forEach(e => {
+        const typeInfo = getFormattedType(e.type);
+        const matInfo = getMaturityInfo(e.maturity);
+        
+        // Maturity dot representation
+        let dotsHtml = "";
+        if (matInfo.steps > 0) {
+          dotsHtml += `<div class="maturity-dot-indicator" title="成熟度: ${matInfo.label}">`;
+          for (let step = 1; step <= 3; step++) {
+            const activeClass = step <= matInfo.steps ? "active" : "";
+            const pulseClass = (step === matInfo.steps && matInfo.pulse) ? "pulse" : "";
+            dotsHtml += `<span class="mat-dot ${activeClass} ${pulseClass}" style="--mat-theme-color: ${matInfo.color}"></span>`;
+          }
+          dotsHtml += `</div>`;
+        }
+
+        const isWide = e.maturity === "proven" || e.title.length > 25;
+
+        const card = document.createElement("div");
+        card.className = `bento-card scope-${scope.split(':')[0]}` + (isWide ? " card-wide" : "") + (e.id === state.selectedId ? " active" : "");
+        card.innerHTML = `
+          <div class="card-meta">
+            <span class="card-id">${esc(e.id)}</span>
+            ${dotsHtml}
+          </div>
+          <div class="card-body">
+            <h3 class="card-title">${esc(e.title)}</h3>
+            <p class="card-snippet">${esc(getBodySnippet(e.body))}</p>
+          </div>
+          <div class="card-footer">
+            <span class="type-chip" style="--type-color: ${typeInfo.color}; --type-border: ${typeInfo.color}33; --type-bg: var(--${typeInfo.class}-bg)">
+              <span>${typeInfo.icon}</span>
+              <span>${typeInfo.label.split(' ')[0]}</span>
+            </span>
+            <div class="card-tags">
+              ${(e.tags || []).slice(0, 2).map(t => `<span class="tag">#${esc(t)}</span>`).join("")}
+              ${(e.tags || []).length > 2 ? `<span class="tag">+${(e.tags || []).length - 2}</span>` : ""}
+            </div>
+          </div>
+        `;
+        card.addEventListener("click", () => selectEntry(e.id));
+        grid.appendChild(card);
+      });
+
+      section.appendChild(grid);
+      wrapper.appendChild(section);
+    });
+  }
+
+  function getScopeDescription(scope) {
+    if (scope === "team") return "通用研发决策、核心架构图表与工程化最佳避坑指南。";
+    if (scope === "personal") return "个人名义沉淀的试验性构想、流程记录与工作备忘。";
+    if (scope.startsWith("project:")) {
+      const pName = scope.slice("project:".length).toUpperCase();
+      return `${pName} 项目专属的业务定义、定制模型、发布流程与决策链条。`;
+    }
+    return "项目组特定沉淀内容。";
+  }
+
+  // Selected Entry Markdown Rendering
+  function renderEntry(e) {
+    const pane = document.getElementById("preview-content");
+    const placeholder = document.getElementById("preview-placeholder");
+    
+    placeholder.style.display = "none";
+    pane.style.display = "flex";
+
+    const typeInfo = getFormattedType(e.type);
+    const matInfo = getMaturityInfo(e.maturity);
+    
+    const scopeLabelStr = getScopeLabel(e.scope);
+    const formattedCreatedAt = e.createdAt ? new Date(e.createdAt).toLocaleString("zh-CN") : "暂无时间";
+
+    pane.innerHTML = `
+      <div class="preview-actions">
+        <button class="preview-action-btn" id="copy-id-btn">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          复制 ID
+        </button>
+        <button class="preview-action-btn" id="copy-md-btn">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+          </svg>
+          复制 MD
+        </button>
+        <button class="preview-close-btn" id="close-preview-btn" title="关闭详情">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <h1 class="preview-title">${esc(e.title)}</h1>
+
+      <div class="preview-metadata-grid">
+        <div class="meta-item"><span class="meta-label">唯一 ID:</span> <span class="meta-val code">${esc(e.id)}</span></div>
+        <div class="meta-item">
+          <span class="meta-label">归属空间:</span>
+          <span class="meta-val badge scope-${e.scope.split(':')[0]}">${esc(scopeLabelStr)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">条目分类:</span>
+          <span class="meta-val badge type-badge" style="--type-color: ${typeInfo.color}; --type-border: ${typeInfo.color}33; --type-bg: var(--${typeInfo.class}-bg)">
+            ${typeInfo.icon} ${typeInfo.label.split(' ')[0]}
+          </span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">成熟阶段:</span>
+          <span class="meta-val badge maturity-${e.maturity || 'draft'}">${esc(matInfo.label)}</span>
+        </div>
+        <div class="meta-item"><span class="meta-label">存储源:</span> <span class="meta-val code">${esc(e.store)}</span></div>
+        <div class="meta-item"><span class="meta-label">创建时间:</span> <span class="meta-val">${esc(formattedCreatedAt)}</span></div>
+      </div>
+
+      <div class="preview-tags-wrapper">
+        ${(e.tags || []).map(t => `<span class="preview-tag">#${esc(t)}</span>`).join("")}
+      </div>
+
+      <div class="preview-divider"></div>
+
+      <div class="preview-body md">
+        ${renderMarkdown(e.body || "")}
+      </div>
+    `;
+
+    // Event binding inside dynamically generated content
+    document.getElementById("copy-id-btn").addEventListener("click", (evt) => {
+      copyText(e.id, evt.currentTarget, "ID已复制");
+    });
+    
+    document.getElementById("copy-md-btn").addEventListener("click", (evt) => {
+      copyText(e.body || "", evt.currentTarget, "Markdown已复制");
+    });
+
+    document.getElementById("close-preview-btn").addEventListener("click", closePreview);
+
+    // Scroll details container to top
+    document.getElementById("preview-panel").scrollTop = 0;
+  }
+
+  // Toggle Filters
+  function toggleScopeFilter(scopeId) {
+    if (state.filterScope === scopeId) {
+      state.filterScope = null;
+    } else {
+      state.filterScope = scopeId;
+    }
+    updateStatsDashboard();
+    renderBentoLists();
+  }
+
+  function toggleTypeFilter(typeId) {
+    if (state.filterType === typeId) {
+      state.filterType = null;
+    } else {
+      state.filterType = typeId;
+    }
+    updateStatsDashboard();
+    renderBentoLists();
+  }
+
+  function toggleMaturityFilter(matId) {
+    if (state.filterMaturity === matId) {
+      state.filterMaturity = null;
+    } else {
+      state.filterMaturity = matId;
+    }
+    updateStatsDashboard();
+    renderBentoLists();
+  }
+
+  function clearAllFilters() {
+    state.query = "";
+    state.filterScope = null;
+    state.filterType = null;
+    state.filterMaturity = null;
+    document.getElementById("search").value = "";
+    updateStatsDashboard();
+    renderBentoLists();
+  }
+
+  function selectEntry(id) {
+    state.selectedId = id;
+    const e = state.byId.get(id);
+    if (e) {
+      renderEntry(e);
+      // Toggle active states on bento grid list
+      document.querySelectorAll(".bento-card").forEach(card => card.classList.remove("active"));
+      // Highlight new card
+      const targetCard = Array.from(document.querySelectorAll(".bento-card")).find(c => c.querySelector(".card-id").textContent === id);
+      if (targetCard) targetCard.classList.add("active");
+      
+      // On mobile view, slide open the drawer
+      document.getElementById("preview-panel").classList.add("active");
+      document.getElementById("backdrop").classList.add("active");
+    }
+  }
+
+  function closePreview() {
+    state.selectedId = null;
+    document.getElementById("preview-content").style.display = "none";
+    document.getElementById("preview-placeholder").style.display = "flex";
+    document.querySelectorAll(".bento-card").forEach(card => card.classList.remove("active"));
+
+    // On mobile view, slide close drawer
+    document.getElementById("preview-panel").classList.remove("active");
+    document.getElementById("backdrop").classList.remove("active");
+  }
+
+  // Clipboard Copier
+  function copyText(text, btnEl, successText = "已复制") {
+    navigator.clipboard.writeText(text).then(() => {
+      const originalHtml = btnEl.innerHTML;
+      btnEl.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        ${successText}
+      `;
+      btnEl.classList.add("success");
+      setTimeout(() => {
+        btnEl.innerHTML = originalHtml;
+        btnEl.classList.remove("success");
+      }, 1500);
+    }).catch(err => {
+      alert("复制失败: " + err);
+    });
+  }
+
+  // Set Sync Status indicator
+  function setStatus(text, live) {
+    document.getElementById("statustext").textContent = text;
+    document.getElementById("livedot").className = "dot" + (live ? " live" : "");
+  }
+
+  // Fetch API handlers
+  async function loadKnowledge() {
+    try {
+      const res = await fetch("/api/knowledge", { cache: "no-store" });
+      const data = await res.json();
+      state.entries = data.entries || [];
+      state.byId = new Map(state.entries.map((e) => [e.id, e]));
+      
+      updateStatsDashboard();
+      renderBentoLists();
+
+      // Maintain selection if exists
+      if (state.selectedId && state.byId.has(state.selectedId)) {
+        renderEntry(state.byId.get(state.selectedId));
+      }
+      setStatus(`${state.entries.length} 条已连接`, true);
+    } catch (err) {
+      setStatus("数据加载错误", false);
+    }
+  }
+
+  async function pollRevision() {
+    try {
+      const res = await fetch("/api/revision", { cache: "no-store" });
+      const { revision } = await res.json();
+      if (state.revision !== null && revision !== state.revision) {
+        await loadKnowledge();
+      }
+      state.revision = revision;
+      setStatus(`${state.entries.length} 条实时`, true);
+    } catch (_) { 
+      setStatus("服务连接断开", false); 
+    }
+  }
+
+  // Bind Search actions
+  document.getElementById("search").addEventListener("input", (ev) => {
+    state.query = ev.target.value;
+    updateStatsDashboard();
+    renderBentoLists();
+  });
+
+  // Bind Clear Filters
+  document.getElementById("clear-filters-btn").addEventListener("click", clearAllFilters);
+  document.getElementById("backdrop").addEventListener("click", closePreview);
+
+  // Keyboard Shortcuts: / key for search, Esc to close/clear
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== document.getElementById("search")) {
+      e.preventDefault();
+      document.getElementById("search").focus();
+      document.getElementById("search").select();
+    }
+    if (e.key === "Escape") {
+      if (state.selectedId) {
+        closePreview();
+      } else {
+        clearAllFilters();
+      }
+    }
+  });
+
+  // Theme Management
+  const themeToggle = document.getElementById("theme-toggle");
+  const currentTheme = localStorage.getItem("theme");
+  const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  
+  if (currentTheme === "dark" || (!currentTheme && systemPrefersDark)) {
+    document.documentElement.classList.add("theme-dark");
+    themeToggle.querySelector(".sun-icon").style.display = "none";
+    themeToggle.querySelector(".moon-icon").style.display = "block";
+  } else {
+    document.documentElement.classList.add("theme-light");
+  }
+  
+  themeToggle.addEventListener("click", () => {
+    if (document.documentElement.classList.contains("theme-dark")) {
+      document.documentElement.classList.replace("theme-dark", "theme-light");
+      localStorage.setItem("theme", "light");
+      themeToggle.querySelector(".sun-icon").style.display = "block";
+      themeToggle.querySelector(".moon-icon").style.display = "none";
+    } else {
+      document.documentElement.classList.replace("theme-light", "theme-dark");
+      localStorage.setItem("theme", "dark");
+      themeToggle.querySelector(".sun-icon").style.display = "none";
+      themeToggle.querySelector(".moon-icon").style.display = "block";
+    }
+  });
+
+  // Init
+  loadKnowledge().then(pollRevision).catch((err) => setStatus("加载失败", false));
+  setInterval(pollRevision, 4000);
+})();
+</script>
+</body>
+</html>

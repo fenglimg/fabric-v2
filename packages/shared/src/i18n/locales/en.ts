@@ -49,6 +49,20 @@ export const enMessages: Messages = {
   "cli.inspect.explain.census": "census",
   "cli.inspect.explain.census-total": "total {total}",
   "cli.inspect.error": "inspect failed: {message}",
+
+  // `fabric preview` — local read-only knowledge preview web server (loopback-only).
+  "cli.preview.description": "Start a local read-only knowledge preview (browse in your browser, grouped by scope)",
+  "cli.preview.arg.port": "Port to listen on (default 7777).",
+  "cli.preview.arg.host": "Host to bind (default 127.0.0.1, loopback only).",
+  "cli.preview.arg.open": "Open the browser on start (default on; use --no-open to disable).",
+  "cli.preview.arg.target": "Override the project root (defaults to cwd).",
+  "cli.preview.arg.variant": "Default style variant to open (default: lumen; all styles at /gallery).",
+  "cli.preview.gallery-hint": "All styles gallery: {url}",
+  "cli.preview.started": "Knowledge preview started: {url}",
+  "cli.preview.opening": "Opening browser…",
+  "cli.preview.stop-hint": "Press Ctrl-C to stop.",
+  "cli.preview.stopped": "Preview stopped.",
+  "cli.preview.error": "preview failed: {message}",
   "cli.audit.description": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
 
   // `fabric audit cite` — 0%-recall-coverage self-diagnosis hints.

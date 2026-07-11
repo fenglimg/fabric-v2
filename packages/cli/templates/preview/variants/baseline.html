@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>基线 · Fabric 知识预览</title>
+<meta name="variant-desc" content="干净 flat 双栏 · 受众分组侧栏(我搭的基线)" />
+<style>
+  /* Baseline built-in theme — flat, light + dark. agy elevates this later. */
+  :root {
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --surface-2: #f4f4f2;
+    --border: #e6e4df;
+    --text: #1f1e1c;
+    --text-2: #6b6862;
+    --text-3: #97938c;
+    --accent: #3a6ff0;
+    --team: #0f9488;
+    --project: #3a6ff0;
+    --personal: #8a7cc8;
+    --draft: #b0762a;
+    --verified: #0f9488;
+    --proven: #2f9e44;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1917; --surface: #232220; --surface-2: #2b2a27; --border: #383632;
+      --text: #ecebe8; --text-2: #a8a49c; --text-3: #726e67; --accent: #6f97f5;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6; }
+
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface); position: sticky; top: 0; z-index: 10;
+  }
+  .brand { font-weight: 600; font-size: 15px; white-space: nowrap; }
+  .brand span { color: var(--text-3); font-weight: 400; }
+  #search {
+    flex: 1; max-width: 460px; padding: 8px 12px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); outline: none;
+  }
+  #search:focus { border-color: var(--accent); }
+  .status { margin-left: auto; font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .dot.live { background: var(--proven); }
+
+  .layout { display: grid; grid-template-columns: 300px 1fr; height: calc(100% - 58px); }
+  nav {
+    overflow-y: auto; border-right: 1px solid var(--border);
+    background: var(--surface); padding: 8px 0;
+  }
+  .group { margin: 4px 0 10px; }
+  .group-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 18px 5px; font-size: 12px; font-weight: 600;
+    color: var(--text-2); text-transform: none; letter-spacing: 0.02em;
+  }
+  .group-head .cnt { margin-left: auto; color: var(--text-3); font-weight: 400; }
+  .scope-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .item {
+    padding: 6px 18px 6px 33px; cursor: pointer; font-size: 13.5px;
+    color: var(--text); border-left: 2px solid transparent;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .item:hover { background: var(--surface-2); }
+  .item.active { background: var(--surface-2); border-left-color: var(--accent); }
+  .item .iid { font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+  .item .ititle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  main { overflow-y: auto; padding: 28px 40px 80px; }
+  .empty { color: var(--text-3); margin-top: 80px; text-align: center; }
+  .entry-head { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .entry-title { font-size: 22px; font-weight: 600; margin: 0 0 10px; line-height: 1.3; }
+  .badges { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  .badge {
+    font-size: 11.5px; padding: 2px 9px; border-radius: 20px;
+    background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border);
+    font-family: var(--mono);
+  }
+  .badge.scope { color: #fff; border: none; }
+  .badge.maturity-draft { color: var(--draft); border-color: var(--draft); }
+  .badge.maturity-verified { color: var(--verified); border-color: var(--verified); }
+  .badge.maturity-proven { color: var(--proven); border-color: var(--proven); }
+
+  .md { max-width: 820px; }
+  .md h1, .md h2, .md h3, .md h4 { font-weight: 600; line-height: 1.3; margin: 1.4em 0 0.5em; }
+  .md h1 { font-size: 20px; } .md h2 { font-size: 18px; } .md h3 { font-size: 16px; } .md h4 { font-size: 15px; }
+  .md p { margin: 0.7em 0; }
+  .md ul, .md ol { margin: 0.6em 0; padding-left: 1.5em; }
+  .md li { margin: 0.25em 0; }
+  .md code { font-family: var(--mono); font-size: 13px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+  .md pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; font-size: 13px; line-height: 1.5; }
+  .md blockquote { margin: 0.8em 0; padding: 2px 14px; border-left: 3px solid var(--border); color: var(--text-2); }
+  .md a { color: var(--accent); text-decoration: none; }
+  .md a:hover { text-decoration: underline; }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 1.4em 0; }
+  .md table { border-collapse: collapse; margin: 0.8em 0; }
+  .md th, .md td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Fabric <span>· 知识预览</span></div>
+    <input id="search" type="search" placeholder="搜索标题 / id / 标签 / scope…" autocomplete="off" />
+    <div class="status"><span class="dot" id="livedot"></span><span id="statustext">加载中…</span></div>
+  </header>
+  <div class="layout">
+    <nav id="sidebar"></nav>
+    <main id="content"><div class="empty">← 从左侧选一条知识查看</div></main>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+  const state = { entries: [], byId: new Map(), selectedId: null, revision: null, query: "" };
+
+  const SCOPE_COLOR = { team: "#0f9488", personal: "#8a7cc8" };
+  const PROJECT_COLOR = "#3a6ff0";
+  const TYPE_LABEL = { decisions: "decision", pitfalls: "pitfall", guidelines: "guideline", models: "model", processes: "process" };
+
+  function scopeColor(scope) {
+    if (scope === "team") return SCOPE_COLOR.team;
+    if (scope === "personal") return SCOPE_COLOR.personal;
+    if (scope.startsWith("project:")) return PROJECT_COLOR;
+    return "#97938c";
+  }
+  function scopeLabel(scope) {
+    if (scope === "team") return "团队通用 · team";
+    if (scope === "personal") return "个人 · personal";
+    if (scope.startsWith("project:")) return "项目 · " + scope.slice("project:".length);
+    return scope;
+  }
+  // Ordering: team → project:* (alpha) → personal → others.
+  function scopeRank(scope) {
+    if (scope === "team") return [0, ""];
+    if (scope.startsWith("project:")) return [1, scope];
+    if (scope === "personal") return [2, ""];
+    return [3, scope];
+  }
+
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // Compact, dependency-free markdown → HTML (knowledge entries use a limited
+  // subset: headings, lists, code fences, inline code, bold/italic, links,
+  // blockquotes, hr, tables). Best-effort rendering for a read-only preview.
+  function inline(text) {
+    let s = esc(text);
+    s = s.replace(/`([^`]+)`/g, (_, c) => "<code>" + c + "</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[\s(])_([^_\s][^_]*?)_(?=[\s).,]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }
+  function renderMarkdown(md) {
+    const lines = md.replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let i = 0;
+    const flushList = (buf, ordered) => {
+      if (!buf.length) return;
+      out.push("<" + (ordered ? "ol" : "ul") + ">" + buf.map((x) => "<li>" + inline(x) + "</li>").join("") + "</" + (ordered ? "ol" : "ul") + ">");
+      buf.length = 0;
+    };
+    while (i < lines.length) {
+      const line = lines[i];
+      const fence = /^```(\w*)\s*$/.exec(line);
+      if (fence) {
+        const code = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) { code.push(lines[i]); i++; }
+        i++;
+        out.push("<pre><code>" + esc(code.join("\n")) + "</code></pre>");
+        continue;
+      }
+      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (heading) {
+        const level = Math.min(heading[1].length, 4);
+        out.push("<h" + level + ">" + inline(heading[2]) + "</h" + level + ">");
+        i++;
+        continue;
+      }
+      if (/^\s*[-*]\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\s*[-*]\s+/, "")); i++; }
+        flushList(buf, false);
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i++; }
+        flushList(buf, true);
+        continue;
+      }
+      if (/^\s*>\s?/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+        out.push("<blockquote>" + inline(buf.join(" ")) + "</blockquote>");
+        continue;
+      }
+      if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { out.push("<hr />"); i++; continue; }
+      if (line.trim() === "") { i++; continue; }
+      // paragraph — gather consecutive non-blank, non-block lines
+      const para = [];
+      while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+\.\s|\s*>|\s*-{3,}\s*$)/.test(lines[i])) {
+        para.push(lines[i]); i++;
+      }
+      out.push("<p>" + inline(para.join(" ")) + "</p>");
+    }
+    return out.join("\n");
+  }
+
+  function matchesQuery(entry, q) {
+    if (!q) return true;
+    const hay = (entry.id + " " + entry.title + " " + entry.scope + " " + entry.type + " " + (entry.tags || []).join(" ")).toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderSidebar() {
+    const q = state.query.trim().toLowerCase();
+    const visible = state.entries.filter((e) => matchesQuery(e, q));
+    const groups = new Map();
+    for (const e of visible) {
+      if (!groups.has(e.scope)) groups.set(e.scope, []);
+      groups.get(e.scope).push(e);
+    }
+    const scopes = [...groups.keys()].sort((a, b) => {
+      const ra = scopeRank(a), rb = scopeRank(b);
+      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]);
+    });
+    const nav = document.getElementById("sidebar");
+    nav.innerHTML = "";
+    if (!scopes.length) { nav.innerHTML = '<div class="empty" style="margin-top:40px">无匹配</div>'; return; }
+    for (const scope of scopes) {
+      const items = groups.get(scope).sort((a, b) => a.type.localeCompare(b.type) || a.id.localeCompare(b.id));
+      const group = document.createElement("div");
+      group.className = "group";
+      const head = document.createElement("div");
+      head.className = "group-head";
+      head.innerHTML = '<span class="scope-dot" style="background:' + scopeColor(scope) + '"></span>'
+        + '<span>' + esc(scopeLabel(scope)) + '</span><span class="cnt">' + items.length + '</span>';
+      group.appendChild(head);
+      for (const e of items) {
+        const el = document.createElement("div");
+        el.className = "item" + (e.id === state.selectedId ? " active" : "");
+        el.innerHTML = '<span class="iid">' + esc(e.id) + '</span><span class="ititle">' + esc(e.title) + '</span>';
+        el.addEventListener("click", () => selectEntry(e.id));
+        group.appendChild(el);
+      }
+      nav.appendChild(group);
+    }
+  }
+
+  function renderEntry(e) {
+    const content = document.getElementById("content");
+    const maturity = e.maturity ? '<span class="badge maturity-' + esc(e.maturity) + '">' + esc(e.maturity) + '</span>' : "";
+    const tags = (e.tags || []).map((tg) => '<span class="badge">#' + esc(tg) + '</span>').join("");
+    content.innerHTML =
+      '<div class="entry-head">'
+        + '<h1 class="entry-title">' + esc(e.title) + '</h1>'
+        + '<div class="badges">'
+          + '<span class="badge scope" style="background:' + scopeColor(e.scope) + '">' + esc(scopeLabel(e.scope)) + '</span>'
+          + '<span class="badge">' + esc(TYPE_LABEL[e.type] || e.type) + '</span>'
+          + maturity
+          + '<span class="badge">' + esc(e.id) + '</span>'
+          + '<span class="badge">store: ' + esc(e.store) + '</span>'
+          + tags
+        + '</div>'
+      + '</div>'
+      + '<div class="md">' + renderMarkdown(e.body || "") + '</div>';
+    content.scrollTop = 0;
+  }
+
+  function selectEntry(id) {
+    state.selectedId = id;
+    const e = state.byId.get(id);
+    if (e) renderEntry(e);
+    renderSidebar();
+  }
+
+  function setStatus(text, live) {
+    document.getElementById("statustext").textContent = text;
+    document.getElementById("livedot").className = "dot" + (live ? " live" : "");
+  }
+
+  async function loadKnowledge() {
+    const res = await fetch("/api/knowledge", { cache: "no-store" });
+    const data = await res.json();
+    state.entries = data.entries || [];
+    state.byId = new Map(state.entries.map((e) => [e.id, e]));
+    renderSidebar();
+    if (state.selectedId && state.byId.has(state.selectedId)) renderEntry(state.byId.get(state.selectedId));
+    setStatus(state.entries.length + " 条知识 · 实时", true);
+  }
+
+  async function pollRevision() {
+    try {
+      const res = await fetch("/api/revision", { cache: "no-store" });
+      const { revision } = await res.json();
+      if (state.revision !== null && revision !== state.revision) await loadKnowledge();
+      state.revision = revision;
+    } catch (_) { setStatus("连接断开", false); }
+  }
+
+  document.getElementById("search").addEventListener("input", (ev) => {
+    state.query = ev.target.value;
+    renderSidebar();
+  });
+
+  loadKnowledge().then(pollRevision).catch((err) => setStatus("加载失败: " + err.message, false));
+  setInterval(pollRevision, 4000);
+})();
+</script>
+</body>
+</html>
