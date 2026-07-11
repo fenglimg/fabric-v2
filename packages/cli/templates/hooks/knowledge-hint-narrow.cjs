@@ -577,10 +577,17 @@ function resetSyntheticSessionId() {
  * convention.
  */
 function sessionHintsCachePath(projectRoot, sessionId) {
+  // ISS-20260711-259: sanitize session_id before embedding in a filesystem path
+  // (mirrors narrowResultCacheFileName). Untrusted session ids must not introduce
+  // path separators or traversal segments into .fabric/.cache/.
+  const safe = String(sessionId || "anonymous")
+    .replace(/[^A-Za-z0-9_.-]/g, "-")
+    .replace(/^[.-]+/, "")
+    .slice(0, 128) || "anonymous";
   return join(
     projectRoot,
     SESSION_HINTS_DIR_REL,
-    `${SESSION_HINTS_FILE_PREFIX}${sessionId}${SESSION_HINTS_FILE_SUFFIX}`,
+    `${SESSION_HINTS_FILE_PREFIX}${safe}${SESSION_HINTS_FILE_SUFFIX}`,
   );
 }
 

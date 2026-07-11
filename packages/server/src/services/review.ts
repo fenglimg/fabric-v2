@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   FabPendingInput,
@@ -23,8 +23,15 @@ import {
   type ScoringContext,
 } from "./plan-context.js";
 import { computeReadSetRevision } from "./cross-store-recall.js";
-import { allocateStoreKnowledgeId, isPersonalScope, loadProjectConfig } from "@fenglimg/fabric-shared";
 import {
+  allocateStoreKnowledgeId,
+  hasSecrets,
+  isPersonalScope,
+  lintCrossStoreReferences,
+  loadProjectConfig,
+} from "@fenglimg/fabric-shared";
+import {
+  lockedWriteFile,
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
   resolveWriteTargetStoreDir,
@@ -262,9 +269,89 @@ function storeKnowledgeRoots(projectRoot: string): string[] {
   return roots;
 }
 
+// ISS-20260711-147: resolve through realpath so a symlink under an admitted
+// store root cannot escape to a non-store location (isUnder on lexical paths
+// alone is insufficient when the leaf or an intermediate component is a link).
+function realpathExistingPrefix(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    // File may not exist yet (approve writes a new canonical path). Resolve the
+    // deepest existing ancestor and rejoin the missing suffix.
+    let cursor = path;
+    const missing: string[] = [];
+    while (cursor !== dirname(cursor)) {
+      missing.unshift(basename(cursor));
+      cursor = dirname(cursor);
+      try {
+        return missing.reduce((acc, part) => join(acc, part), realpathSync(cursor));
+      } catch {
+        // keep walking up
+      }
+    }
+    return path;
+  }
+}
+
 function isUnder(abs: string, root: string): boolean {
-  const rel = relative(root, abs);
+  const absReal = realpathExistingPrefix(abs);
+  const rootReal = realpathExistingPrefix(root);
+  const rel = relative(rootReal, absReal);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function assertNoSecretsInReviewContent(content: string, op: string): void {
+  // ISS-20260711-144 / 145: review write paths previously bypassed the extract-
+  // time hasSecrets gate, so approve/modify/reject could land credential-shaped
+  // text into store git. Fail closed before any disk write.
+  if (hasSecrets(content)) {
+    throw new Error(
+      `${op} blocked: content matches a credential/secret pattern — refuse to write secrets into knowledge store`,
+    );
+  }
+}
+
+function extractHardGlobalRefs(content: string): string[] {
+  // Conservative: store-qualified stable ids + wiki-style [[store:ID]] / bare refs.
+  const refs = new Set<string>();
+  const re = /\b(?:team|personal|store):[A-Z]{2}-[A-Z]{3}-\d{4}\b|\[\[([^\]]+)\]\]/gu;
+  for (const match of content.matchAll(re)) {
+    const full = match[0];
+    if (full.startsWith("[[")) {
+      const inner = (match[1] ?? "").trim();
+      if (inner.length > 0) refs.add(inner);
+    } else {
+      refs.add(full);
+    }
+  }
+  return [...refs];
+}
+
+function assertCrossStoreRefsSafe(content: string, entryLayer: "team" | "personal"): void {
+  // ISS-20260711-178: shared-layer writes must not hard-ref personal knowledge.
+  if (entryLayer !== "team") return;
+  const referencedGlobalRefs = extractHardGlobalRefs(content);
+  if (referencedGlobalRefs.length === 0) return;
+  // Literal personal-layer cites are an immediate violation in shared content
+  // (store_uuid map may be incomplete on this hot path; personal: prefix is enough).
+  const personalCites = referencedGlobalRefs.filter((r) => r.startsWith("personal:") || r.startsWith("KP-"));
+  if (personalCites.length > 0) {
+    throw new Error(
+      `write blocked: shared-store entry references personal knowledge (${personalCites.join(", ")})`,
+    );
+  }
+  // Also run the structured lint when refs look store-qualified (uuid form).
+  const storeVisibility: Record<string, "shared" | "personal"> = {};
+  const violations = lintCrossStoreReferences({
+    entryVisibility: "shared",
+    referencedGlobalRefs,
+    storeVisibility,
+  });
+  if (violations.length > 0) {
+    throw new Error(
+      `write blocked: shared-store entry references personal knowledge (${violations.map((v) => v.ref).join(", ")})`,
+    );
+  }
 }
 
 function resolveSandboxedPath(
@@ -730,7 +817,10 @@ async function approveOne(
       rewriteFrontmatterForPromote(content, stableId),
       { last_review_confirmed_at: new Date().toISOString() },
     );
-    await atomicWriteText(targetAbs, rewritten);
+    assertNoSecretsInReviewContent(rewritten, "approve");
+    assertCrossStoreRefsSafe(rewritten, layer);
+    // ISS-20260711-179: knowledge writes go through lockedWriteFile (was unused).
+    await lockedWriteFile(targetAbs, rewritten);
     writtenTarget = true;
 
     // Remove pending file. The decision tree keys off the SOURCE origin
@@ -868,10 +958,12 @@ async function rejectAll(
           : null;
         if (rejectedAbs !== null) {
           await ensureParentDirectory(rejectedAbs);
-          await atomicWriteText(rejectedAbs, merged);
+          assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(rejectedAbs, merged);
           await unlink(sandboxed.abs);
         } else if (merged !== content) {
-          await atomicWriteText(sandboxed.abs, merged);
+          assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(sandboxed.abs, merged);
         }
       }
     } catch {
@@ -1018,7 +1110,9 @@ async function modifyEntry(
     ...changes,
     last_review_confirmed_at: new Date().toISOString(),
   });
-  await atomicWriteText(target.absPath, merged);
+  assertNoSecretsInReviewContent(merged, "modify");
+  assertCrossStoreRefsSafe(merged, currentLayer);
+  await lockedWriteFile(target.absPath, merged);
   const changedFields = Object.keys(changes).filter(
     (field) => changes[field as keyof ModifyChanges] !== undefined,
   );
@@ -1267,7 +1361,8 @@ async function modifyLayerFlip(
   // Whether git mv relocated the file or not, the destination gets the rewritten
   // frontmatter (git mv moved the OLD bytes; this stamps the new id/layer in
   // place). When git mv did NOT run, the source still exists and must be removed.
-  await atomicWriteText(toAbs, rewritten);
+  assertNoSecretsInReviewContent(rewritten, "review-write");
+    await lockedWriteFile(toAbs, rewritten);
   if (!moved && existsSync(target.absPath) && target.absPath !== toAbs) {
     await unlink(target.absPath);
   }
@@ -1742,7 +1837,8 @@ async function deferAll(
         };
         const merged = rewriteFrontmatterMerge(content, patch);
         if (merged !== content) {
-          await atomicWriteText(sandboxed.abs, merged);
+          assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(sandboxed.abs, merged);
         }
       }
     } catch {
@@ -1823,7 +1919,8 @@ async function retireOne(
     ...(supersededBy !== undefined ? { superseded_by: supersededBy } : {}),
   };
   const merged = rewriteFrontmatterMerge(content, patch);
-  await atomicWriteText(target.absPath, merged);
+  assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(target.absPath, merged);
 
   const changedFields = supersededBy !== undefined
     ? ["deprecated", "superseded_by"]
