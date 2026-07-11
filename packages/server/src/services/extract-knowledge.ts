@@ -15,6 +15,8 @@ import { appendEventLedgerEvent } from "./event-ledger.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 import { classifyArchiveCandidate, formatDedupMarker } from "./archive-dedup-gate.js";
+import { withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
+
 import {
   atomicWriteText,
   ensureParentDirectory,
@@ -419,159 +421,166 @@ export async function extractKnowledge(
   // baked into a fresh idempotency_key so subsequent re-runs with the same
   // input still deterministically hit the same -N variant.
   const baseDir = pendingBase(layer, projectRoot, semanticScope);
-  const { absolutePath, sanitizedSlug: chosenSlug, idempotencyKey: chosenKey } =
-    await resolveDisambiguatedSlugPath({
-      baseDir,
-      type: input.type,
-      slug: sanitizedSlug,
-      primarySession,
-      baseIdempotencyKey: idempotencyKey,
-    });
-  // v2.2 全砍 Stage 2: both layers now write into a store under ~/.fabric/stores.
-  // The tool returns the absolute pending file path so structuredContent is
-  // directly machine-consumable by review/tests; presentation layers may shorten
-  // it to ~/... when rendering to humans.
-  const reportedPath = toPosixPath(absolutePath);
-
-  // Rebind the upper-scope variables so downstream renderers / event
-  // payloads use the disambiguated slug + matching idempotency_key.
-  const effectiveSanitizedSlug = chosenSlug;
-  const effectiveIdempotencyKey = chosenKey;
-
   // v2.1 global-refactor (W1/A1): the scope coordinate + physical store the entry
   // is written into. Resolved from the SAME write-target the pending file lands in
   // (baseDir above), so frontmatter `visibility_store` matches the entry's home.
   // Throws PersonalScopeLeakError if a personal scope would land in a shared store.
   const writeScopeMeta = resolveWriteScopeMeta(layer, projectRoot, semanticScope);
 
-  await ensureParentDirectory(absolutePath);
-
-  if (existsSync(absolutePath)) {
-    const existing = await readFile(absolutePath, "utf8");
-    const existingKey = readFrontmatterKey(existing, "x-fabric-idempotency-key");
-    if (existingKey === effectiveIdempotencyKey) {
-      // v2.0.0-rc.7 T6: Evidence-merge on idempotency_key collision.
-      // Previously, each repeated call appended `## Evidence (call N)` with
-      // the full summary verbatim — re-running extract three times produced
-      // three duplicated Notes blocks.
-      //
-      // v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): semantic decision —
-      // narrative body sections (## Summary / ## Why proposed / ## Session
-      // context) are now LAST-WINS, not first-wins. The rc.7 fix only merged
-      // Evidence (notes + recent_paths) but preserved the old `head`
-      // verbatim, which meant repeated extract calls with refined summaries
-      // could never replace the first call's incomplete narrative — the only
-      // workaround was reject + re-extract. Per audit §2.19, callers expect
-      // last-wins semantics on the narrative fields because each extract
-      // call represents the operator's CURRENT understanding.
-      //
-      // New flow: render the fresh entry first (new head with current
-      // summary / why proposed / session context, plus new Evidence holding
-      // current note + recent_paths), then transplant the OLD Evidence
-      // notes/paths INTO the fresh content (Evidence stays append-merged).
-      const fresh = renderFreshEntry({
+  // ISS-20260711-138: slug disambiguation + create/merge must be atomic across
+  // concurrent fab_propose sessions. Without a lock, two writers can both observe
+  // a free slot and clobber each other's pending file.
+  const pendingTypeDir = join(baseDir, input.type);
+  await ensureParentDirectory(join(pendingTypeDir, ".pending-slug.lock"));
+  return withFileLock(join(pendingTypeDir, ".pending-slug.lock"), async () => {
+    const { absolutePath, sanitizedSlug: chosenSlug, idempotencyKey: chosenKey } =
+      await resolveDisambiguatedSlugPath({
+        baseDir,
         type: input.type,
-        sourceSessions,
-        idempotencyKey: effectiveIdempotencyKey,
-        summary,
-        recentPaths: input.recent_paths,
-        layer,
-        semanticScope: writeScopeMeta.semantic_scope,
-        visibilityStore: writeScopeMeta.visibility_store,
-        proposedReason: input.proposed_reason,
-        sessionContext: input.session_context,
-        relevanceScope,
-        relevancePaths,
-        intentClues: input.intent_clues,
-        techStack: input.tech_stack,
-        impact: input.impact,
-        mustReadIf: input.must_read_if,
-        onboardSlot: input.onboard_slot,
-        // v2.0.0-rc.37 NEW-37: pass-through topic tags.
-        tags: input.tags,
-        // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
-        evidencePaths: input.evidence_paths,
+        slug: sanitizedSlug,
+        primarySession,
+        baseIdempotencyKey: idempotencyKey,
       });
-      const augmented = mergeEvidenceNotes(existing, fresh);
-      await atomicWriteText(absolutePath, augmented);
-      await emitEventBestEffort(projectRoot, {
-        event_type: "knowledge_proposed",
-        timestamp: new Date().toISOString(),
-        correlation_id: primarySession,
-        session_id: primarySession,
-        reason: `extract_knowledge:${effectiveSanitizedSlug}`,
-      });
-      return {
-        pending_path: reportedPath,
-        idempotency_key: effectiveIdempotencyKey,
-      };
+    // v2.2 全砍 Stage 2: both layers now write into a store under ~/.fabric/stores.
+    // The tool returns the absolute pending file path so structuredContent is
+    // directly machine-consumable by review/tests; presentation layers may shorten
+    // it to ~/... when rendering to humans.
+    const reportedPath = toPosixPath(absolutePath);
+
+    // Rebind the upper-scope variables so downstream renderers / event
+    // payloads use the disambiguated slug + matching idempotency_key.
+    const effectiveSanitizedSlug = chosenSlug;
+    const effectiveIdempotencyKey = chosenKey;
+
+    await ensureParentDirectory(absolutePath);
+
+    if (existsSync(absolutePath)) {
+      const existing = await readFile(absolutePath, "utf8");
+      const existingKey = readFrontmatterKey(existing, "x-fabric-idempotency-key");
+      if (existingKey === effectiveIdempotencyKey) {
+        // v2.0.0-rc.7 T6: Evidence-merge on idempotency_key collision.
+        // Previously, each repeated call appended `## Evidence (call N)` with
+        // the full summary verbatim — re-running extract three times produced
+        // three duplicated Notes blocks.
+        //
+        // v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): semantic decision —
+        // narrative body sections (## Summary / ## Why proposed / ## Session
+        // context) are now LAST-WINS, not first-wins. The rc.7 fix only merged
+        // Evidence (notes + recent_paths) but preserved the old `head`
+        // verbatim, which meant repeated extract calls with refined summaries
+        // could never replace the first call's incomplete narrative — the only
+        // workaround was reject + re-extract. Per audit §2.19, callers expect
+        // last-wins semantics on the narrative fields because each extract
+        // call represents the operator's CURRENT understanding.
+        //
+        // New flow: render the fresh entry first (new head with current
+        // summary / why proposed / session context, plus new Evidence holding
+        // current note + recent_paths), then transplant the OLD Evidence
+        // notes/paths INTO the fresh content (Evidence stays append-merged).
+        const fresh = renderFreshEntry({
+          type: input.type,
+          sourceSessions,
+          idempotencyKey: effectiveIdempotencyKey,
+          summary,
+          recentPaths: input.recent_paths,
+          layer,
+          semanticScope: writeScopeMeta.semantic_scope,
+          visibilityStore: writeScopeMeta.visibility_store,
+          proposedReason: input.proposed_reason,
+          sessionContext: input.session_context,
+          relevanceScope,
+          relevancePaths,
+          intentClues: input.intent_clues,
+          techStack: input.tech_stack,
+          impact: input.impact,
+          mustReadIf: input.must_read_if,
+          onboardSlot: input.onboard_slot,
+          // v2.0.0-rc.37 NEW-37: pass-through topic tags.
+          tags: input.tags,
+          // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
+          evidencePaths: input.evidence_paths,
+        });
+        const augmented = mergeEvidenceNotes(existing, fresh);
+        await atomicWriteText(absolutePath, augmented);
+        await emitEventBestEffort(projectRoot, {
+          event_type: "knowledge_proposed",
+          timestamp: new Date().toISOString(),
+          correlation_id: primarySession,
+          session_id: primarySession,
+          reason: `extract_knowledge:${effectiveSanitizedSlug}`,
+        });
+        return {
+          pending_path: reportedPath,
+          idempotency_key: effectiveIdempotencyKey,
+        };
+      }
+      // v2.0.0-rc.37 NEW-6: this branch is now unreachable because
+      // resolveDisambiguatedSlugPath either returns a free slot or throws
+      // when all suffixes are exhausted. Kept as a defensive guard against
+      // future refactors that might bypass the disambiguation helper.
+      throw new Error(
+        `slug collision (unreachable after rc.37 NEW-6): pending file ${reportedPath} already exists with key ${existingKey ?? "<missing>"} != ${effectiveIdempotencyKey}`,
+      );
     }
-    // v2.0.0-rc.37 NEW-6: this branch is now unreachable because
-    // resolveDisambiguatedSlugPath either returns a free slot or throws
-    // when all suffixes are exhausted. Kept as a defensive guard against
-    // future refactors that might bypass the disambiguation helper.
-    throw new Error(
-      `slug collision (unreachable after rc.37 NEW-6): pending file ${reportedPath} already exists with key ${existingKey ?? "<missing>"} != ${effectiveIdempotencyKey}`,
-    );
-  }
 
-  // C1-W4: archive kernel Stage 2 — dedup/conflict gate. Compare this fresh
-  // candidate against the curated canonical corpus (same type+layer bucket) and
-  // stamp a `x-fabric-dedup` review hint when it looks like a near-duplicate or
-  // a conflict. NEVER drops/merges here (KT-DEC-0019 no-server-filter) — the
-  // verdict travels to the single downstream review point (fabric-review).
-  // Candidate text mirrors the corpus text (same structured fields) so the
-  // similarity is symmetric. Best-effort: a corpus read failure → no marker,
-  // never blocks the archive.
-  const dedupMarker = await computeDedupMarker(projectRoot, {
-    text: [
+    // C1-W4: archive kernel Stage 2 — dedup/conflict gate. Compare this fresh
+    // candidate against the curated canonical corpus (same type+layer bucket) and
+    // stamp a `x-fabric-dedup` review hint when it looks like a near-duplicate or
+    // a conflict. NEVER drops/merges here (KT-DEC-0019 no-server-filter) — the
+    // verdict travels to the single downstream review point (fabric-review).
+    // Candidate text mirrors the corpus text (same structured fields) so the
+    // similarity is symmetric. Best-effort: a corpus read failure → no marker,
+    // never blocks the archive.
+    const dedupMarker = await computeDedupMarker(projectRoot, {
+      text: [
+        summary,
+        input.must_read_if ?? "",
+        ...(input.intent_clues ?? []),
+        ...(input.impact ?? []),
+        ...(input.tags ?? []),
+      ].join(" "),
+      knowledge_type: input.type,
+      layer,
+    });
+
+    const fresh = renderFreshEntry({
+      type: input.type,
+      sourceSessions,
+      idempotencyKey: effectiveIdempotencyKey,
       summary,
-      input.must_read_if ?? "",
-      ...(input.intent_clues ?? []),
-      ...(input.impact ?? []),
-      ...(input.tags ?? []),
-    ].join(" "),
-    knowledge_type: input.type,
-    layer,
-  });
+      recentPaths: input.recent_paths,
+      layer,
+      semanticScope: writeScopeMeta.semantic_scope,
+      visibilityStore: writeScopeMeta.visibility_store,
+      proposedReason: input.proposed_reason,
+      sessionContext: input.session_context,
+      relevanceScope,
+      relevancePaths,
+      intentClues: input.intent_clues,
+      techStack: input.tech_stack,
+      impact: input.impact,
+      mustReadIf: input.must_read_if,
+      onboardSlot: input.onboard_slot,
+      tags: input.tags,
+      // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
+      evidencePaths: input.evidence_paths,
+      dedupMarker,
+    });
+    await atomicWriteText(absolutePath, fresh);
 
-  const fresh = renderFreshEntry({
-    type: input.type,
-    sourceSessions,
-    idempotencyKey: effectiveIdempotencyKey,
-    summary,
-    recentPaths: input.recent_paths,
-    layer,
-    semanticScope: writeScopeMeta.semantic_scope,
-    visibilityStore: writeScopeMeta.visibility_store,
-    proposedReason: input.proposed_reason,
-    sessionContext: input.session_context,
-    relevanceScope,
-    relevancePaths,
-    intentClues: input.intent_clues,
-    techStack: input.tech_stack,
-    impact: input.impact,
-    mustReadIf: input.must_read_if,
-    onboardSlot: input.onboard_slot,
-    tags: input.tags,
-    // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
-    evidencePaths: input.evidence_paths,
-    dedupMarker,
-  });
-  await atomicWriteText(absolutePath, fresh);
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_proposed",
+      timestamp: new Date().toISOString(),
+      correlation_id: primarySession,
+      session_id: primarySession,
+      reason: `extract_knowledge:${effectiveSanitizedSlug}`,
+    });
 
-  await emitEventBestEffort(projectRoot, {
-    event_type: "knowledge_proposed",
-    timestamp: new Date().toISOString(),
-    correlation_id: primarySession,
-    session_id: primarySession,
-    reason: `extract_knowledge:${effectiveSanitizedSlug}`,
+    return {
+      pending_path: reportedPath,
+      idempotency_key: effectiveIdempotencyKey,
+    };
   });
-
-  return {
-    pending_path: reportedPath,
-    idempotency_key: effectiveIdempotencyKey,
-  };
 }
 
 // C1-W4: load the canonical corpus and classify the candidate through the dedup

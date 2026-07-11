@@ -67,22 +67,22 @@ describe("personalStoreCandidates", () => {
 });
 
 describe("storeSwitchPersonal", () => {
-  it("writes active_personal_store to the global config", () => {
-    storeSwitchPersonal("personal-work", { globalRoot });
+  it("writes active_personal_store to the global config", async () => {
+    await storeSwitchPersonal("personal-work", { globalRoot });
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal-work");
   });
 
-  it("accepts a store_uuid as well as an alias", () => {
-    storeSwitchPersonal(P2, { globalRoot });
+  it("accepts a store_uuid as well as an alias", async () => {
+    await storeSwitchPersonal(P2, { globalRoot });
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe(P2);
   });
 
-  it("refuses a non-personal (team) store", () => {
-    expect(() => storeSwitchPersonal("team", { globalRoot })).toThrow(/personal/i);
+  it("refuses a non-personal (team) store", async () => {
+    await expect(storeSwitchPersonal("team", { globalRoot })).rejects.toThrow(/personal/i);
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBeUndefined();
   });
 
-  it("refuses an unmounted alias", () => {
-    expect(() => storeSwitchPersonal("nope", { globalRoot })).toThrow();
+  it("refuses an unmounted alias", async () => {
+    await expect(storeSwitchPersonal("nope", { globalRoot })).rejects.toThrow();
   });
 });

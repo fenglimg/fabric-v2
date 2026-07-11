@@ -188,7 +188,7 @@ describe("doctor store checks", () => {
     expect(codes).not.toContain("active_personal_unset");
   });
 
-  it("--fix rewrites a dangling active pointer to the first personal store", () => {
+  it("--fix rewrites a dangling active pointer to the first personal store", async () => {
     const globalRoot = join(tmp("dr-ap4-"), ".fabric");
     saveGlobalConfig(
       globalConfigSchema.parse({
@@ -201,11 +201,11 @@ describe("doctor store checks", () => {
       }),
       globalRoot,
     );
-    expect(fixActivePersonalPointer(globalRoot)).toBe(true);
+    await expect(fixActivePersonalPointer(globalRoot)).resolves.toBe(true);
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal");
   });
 
-  it("--fix sets the active pointer to the first personal when unset with ≥2 personal", () => {
+  it("--fix sets the active pointer to the first personal when unset with ≥2 personal", async () => {
     const globalRoot = join(tmp("dr-ap5-"), ".fabric");
     saveGlobalConfig(
       globalConfigSchema.parse({
@@ -217,11 +217,11 @@ describe("doctor store checks", () => {
       }),
       globalRoot,
     );
-    expect(fixActivePersonalPointer(globalRoot)).toBe(true);
+    await expect(fixActivePersonalPointer(globalRoot)).resolves.toBe(true);
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal");
   });
 
-  it("--fix is a no-op (returns false) when the pointer is already valid", () => {
+  it("--fix is a no-op (returns false) when the pointer is already valid", async () => {
     const globalRoot = join(tmp("dr-ap6-"), ".fabric");
     saveGlobalConfig(
       globalConfigSchema.parse({
@@ -234,7 +234,7 @@ describe("doctor store checks", () => {
       }),
       globalRoot,
     );
-    expect(fixActivePersonalPointer(globalRoot)).toBe(false);
+    await expect(fixActivePersonalPointer(globalRoot)).resolves.toBe(false);
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal-work");
   });
 });

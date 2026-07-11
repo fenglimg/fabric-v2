@@ -8,7 +8,7 @@ import {
   readFileSync,
   statSync,
 } from "node:fs";
-import { appendFile, mkdir, readFile, truncate, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { join } from "node:path";
 
@@ -645,6 +645,13 @@ export async function rotateEventLedgerIfNeeded(
 
     await atomicWriteText(eventPath, newMainContent);
 
+    // ISS-20260711-128: final-delete expired cold archives (best-effort).
+    try {
+      await purgeExpiredEventArchives(projectRoot, { now, retentionDays });
+    } catch {
+      // never fail a successful rotation because archive GC failed
+    }
+
     return {
       rotated: true,
       archivedCount: archived.length,
@@ -761,6 +768,49 @@ export async function dropEventsFromLedger(
       archivePath: archiveRelativePath,
     };
   });
+}
+
+
+// ISS-20260711-128: age retention only moved lines into events.archive/; archives
+// were never deleted and grew forever. After a successful main-ledger rotation,
+// drop archive files whose YYYY-MM-DD filename date is older than
+// archiveRetentionDays (default 3× active retention, floor 90). Best-effort —
+// archive purge failures never fail the rotation that just succeeded.
+const EVENT_LEDGER_ARCHIVE_RETENTION_FLOOR_DAYS = 90;
+
+async function purgeExpiredEventArchives(
+  projectRoot: string,
+  opts: { now: Date; retentionDays: number },
+): Promise<number> {
+  const archiveDirAbsolute = join(projectRoot, EVENT_LEDGER_ARCHIVE_DIR);
+  let names: string[];
+  try {
+    names = await readdir(archiveDirAbsolute);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return 0;
+    throw error;
+  }
+  const archiveRetentionDays = Math.max(
+    opts.retentionDays * 3,
+    EVENT_LEDGER_ARCHIVE_RETENTION_FLOOR_DAYS,
+  );
+  const cutoffMs = opts.now.getTime() - archiveRetentionDays * 86_400_000;
+  let deleted = 0;
+  for (const name of names) {
+    // events-rotated-YYYY-MM-DD.jsonl or events-<label>-YYYY-MM-DD.jsonl(.gz)
+    const match = /(\d{4}-\d{2}-\d{2})(?:\.jsonl(?:\.gz)?)?$/u.exec(name);
+    if (match === null) continue;
+    const stamp = match[1]!;
+    const fileMs = Date.parse(`${stamp}T00:00:00.000Z`);
+    if (!Number.isFinite(fileMs) || fileMs >= cutoffMs) continue;
+    try {
+      await unlink(join(archiveDirAbsolute, name));
+      deleted += 1;
+    } catch {
+      // best-effort
+    }
+  }
+  return deleted;
 }
 
 function resolveRetentionDays(projectRoot: string, override?: number): number {

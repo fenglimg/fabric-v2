@@ -75,7 +75,7 @@ export async function bindRemoteStoreToProject(
   globalRoot: string = resolveGlobalRoot(),
 ): Promise<void> {
   const already = storeList(globalRoot).find((store) => store.remote === url);
-  const mounted = already ?? mountStoreFromRemote(url, globalRoot);
+  const mounted = already ?? await mountStoreFromRemote(url, globalRoot);
   await storeBind(projectRoot, { id: mounted.alias, suggested_remote: url }, { globalRoot });
   storeSwitchWrite(projectRoot, mounted.alias, { globalRoot });
   const activeProject = loadProjectConfig(projectRoot)?.active_project;

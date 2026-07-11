@@ -18,7 +18,7 @@ import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 import {
   loadGlobalConfig,
   resolveGlobalRoot,
-  saveGlobalConfig,
+  saveGlobalConfigAsync,
 } from "../store/global-config-io.js";
 import { deriveUid } from "../store/uid.js";
 import { syncStoreAliasLinks } from "../store/store-ops.js";
@@ -69,7 +69,7 @@ function gitClone(url: string, dest: string): void {
 // reuse the exact clone+mount path (the per-repo flow then binds the returned
 // store to the project + sets it as the write target). Returns the mounted
 // store's intrinsic identity so the caller never re-derives it from the remote.
-export function mountStoreFromRemote(url: string, globalRoot: string): { store_uuid: string; alias: string } {
+export async function mountStoreFromRemote(url: string, globalRoot: string): Promise<{ store_uuid: string; alias: string }> {
   const config = loadGlobalConfig(globalRoot);
   if (config === null) {
     // ISS-037: internal invariant — the global config should exist by now.
@@ -135,7 +135,7 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
         },
       );
     }
-    saveGlobalConfig(
+    await saveGlobalConfigAsync(
       addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
       globalRoot,
     );
@@ -148,7 +148,7 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
   renameSync(cloneDest, finalDir);
   rmSync(tmp, { recursive: true, force: true }); // tmp parent is now empty — clean it up
 
-  saveGlobalConfig(
+  await saveGlobalConfigAsync(
     addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
     globalRoot,
   );
@@ -164,11 +164,11 @@ export function mountStoreFromRemote(url: string, globalRoot: string): { store_u
 // the remote — but adopts the clone as the personal store (alias `personal`,
 // `personal: true`) instead of a team mount. Only valid when no global config
 // exists yet (the caller falls back to `runGlobalInstall` on any throw).
-export function cloneGlobalPersonalFromRemote(
+export async function cloneGlobalPersonalFromRemote(
   url: string,
   globalRoot: string,
   uid: string = deriveUid(),
-): { store_uuid: string } {
+): Promise<{ store_uuid: string }> {
   if (loadGlobalConfig(globalRoot) !== null) {
     throw new GenericIOError("global config already exists; refusing to clone a personal store over it", {
       actionHint:
@@ -204,7 +204,7 @@ export function cloneGlobalPersonalFromRemote(
   mkdirSync(join(finalDir, ".."), { recursive: true }); // ensure the `stores/personal/` bucket exists
   renameSync(cloneDest, finalDir);
 
-  saveGlobalConfig(globalConfigSchema.parse({ uid, stores: [personalStore] }), globalRoot);
+  await saveGlobalConfigAsync(globalConfigSchema.parse({ uid, stores: [personalStore] }), globalRoot);
   syncStoreAliasLinks(globalRoot);
   console.log(`cloned personal store '${identity.store_uuid}' from ${url}`);
   return { store_uuid: identity.store_uuid };
@@ -237,7 +237,7 @@ export async function runGlobalInstall(
   );
 
   if (options.url !== undefined) {
-    mountStoreFromRemote(options.url, globalRoot);
+    await mountStoreFromRemote(options.url, globalRoot);
   }
 
   // C3: materialize the by-alias readability links for the freshly-minted

@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { globalConfigSchema, initStore, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
 
-import { globalConfigPath, loadGlobalConfig, saveGlobalConfig } from "../store/global-config-io.js";
+import { globalConfigPath, loadGlobalConfig, saveGlobalConfigAsync } from "../store/global-config-io.js";
 import { runInstallTransaction, type InstallReceipt } from "./transaction.js";
 
 // ---------------------------------------------------------------------------
@@ -81,12 +81,12 @@ export async function installGlobalCore(
     },
     {
       name: "write-global-config",
-      apply: () => {
+      apply: async () => {
         const next = globalConfigSchema.parse({
           uid: options.uid,
           stores: [personalStore],
         });
-        saveGlobalConfig(next, options.globalRoot);
+        await saveGlobalConfigAsync(next, options.globalRoot);
         config = next;
       },
       rollback: () => {

@@ -250,7 +250,7 @@ export const doctorCommand = defineCommand({
         syncStoreAliasLinks();
         // 语义 A (multi-personal): repair a dangling/unset active personal pointer
         // (idempotent global-config fix; no-op for the common single-personal case).
-        fixActivePersonalPointer();
+        await fixActivePersonalPointer();
 
         // Knowledge-frontmatter mutations (consent already granted above when
         // the plan was non-empty). runDoctorFixKnowledge is safe to run for a

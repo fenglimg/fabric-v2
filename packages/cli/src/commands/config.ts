@@ -22,7 +22,7 @@ import { t } from "../i18n.js";
 import {
   loadGlobalConfig,
   resolveGlobalRoot,
-  saveGlobalConfig,
+  saveGlobalConfigAsync,
 } from "../store/global-config-io.js";
 
 // grill-6fixes (D1): the language base tone is a single machine-wide value in
@@ -417,7 +417,7 @@ export const configCmd = defineCommand({
             pendingError = t("cli.config.errors.uninit-workspace.message");
             continue;
           }
-          saveGlobalConfig(
+          await saveGlobalConfigAsync(
             { ...globalConfig, language: newValue as "zh-CN" | "en" },
             globalRoot,
           );

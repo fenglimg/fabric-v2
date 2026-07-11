@@ -7,6 +7,9 @@
 // without depending on the CLI package. This module re-exports the shared
 // symbols verbatim — every existing CLI importer keeps its `./global-config-io`
 // path unchanged.
+//
+// ISS-20260711-256: production mutation paths must use saveGlobalConfigAsync
+// (withFileLock + atomicWriteJson). saveGlobalConfig stays for test fixtures.
 // ---------------------------------------------------------------------------
 
 export {
@@ -14,4 +17,5 @@ export {
   globalConfigPath,
   loadGlobalConfig,
   saveGlobalConfig,
+  saveGlobalConfigAsync,
 } from "@fenglimg/fabric-shared";

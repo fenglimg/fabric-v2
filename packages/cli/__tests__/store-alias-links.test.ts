@@ -103,7 +103,7 @@ describe("store by-alias links (C3)", () => {
     }
     expect(existsSync(aliasLink(globalRoot, "team"))).toBe(true);
 
-    storeRemove("team", globalRoot);
+    await storeRemove("team", globalRoot);
     expect(existsSync(aliasLink(globalRoot, "team"))).toBe(false);
   });
 
@@ -127,7 +127,7 @@ describe("store by-alias links (C3)", () => {
   it("rejects path-traversal aliases before by-alias reconciliation", async () => {
     const globalRoot = await setup();
 
-    expect(() => storeAdd({ store_uuid: TEAM, alias: "../escape" }, globalRoot)).toThrow(
+    await expect(storeAdd({ store_uuid: TEAM, alias: "../escape" }, globalRoot)).rejects.toThrow(
       /store alias/,
     );
     expect(existsSync(join(globalRoot, "escape"))).toBe(false);
