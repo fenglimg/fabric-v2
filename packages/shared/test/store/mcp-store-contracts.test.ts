@@ -8,15 +8,16 @@ import {
   writtenToStoreSchema,
 } from "../../src/schemas/mcp-store-contracts.js";
 
-// v2.1.0-rc.1 P2 — 6-tool store-aware schema contract test (done_when:
-// "6 工具 schema 带 provenance/store-qualified"). Asserts all six tools are
-// covered and that the provenance / written_to_store shapes validate.
+// Store-aware MCP tool contracts (includes live fab_pending + retired plan_context
+// / get_knowledge_sections keys still in the locked set). Asserts each listed tool
+// has a contract and that provenance / written_to_store shapes validate.
 
 const TEAM = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-describe("P2 — 6 MCP tools carry a store edge", () => {
-  it("covers exactly the six locked tools, each with a store-aware contract", () => {
-    expect(MCP_STORE_AWARE_TOOLS).toHaveLength(6);
+describe("P2 — MCP tools carry a store edge", () => {
+  it("covers every locked tool with a store-aware contract", () => {
+    expect(MCP_STORE_AWARE_TOOLS).toHaveLength(7);
+    expect(MCP_STORE_AWARE_TOOLS).toContain("fab_pending");
     for (const tool of MCP_STORE_AWARE_TOOLS) {
       const contract = MCP_STORE_AWARE_CONTRACTS[tool];
       expect(contract.tool).toBe(tool);
@@ -33,6 +34,7 @@ describe("P2 — 6 MCP tools carry a store edge", () => {
       (t) => MCP_STORE_AWARE_CONTRACTS[t].surfacesEntries,
     );
     expect(readTools).toContain("fab_recall");
+    expect(readTools).toContain("fab_pending");
     expect(readTools).toContain("fab_get_knowledge_sections");
 
     expect(() =>

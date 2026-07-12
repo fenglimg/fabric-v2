@@ -111,10 +111,18 @@ describe("install render flow (flat-design ordering harness)", () => {
     const idxDone = firstIdx((l) => l.includes("[ok]")); // renderComplete
     const idxArrow = firstIdx((l) => l.includes("→")); // golden footer anchor
 
-    // (1) scan summary present, and BEFORE the first stage line.
+    // (1) scan summary present. Prefer scan before first stage dot; if a TTY
+    // one-shot running announce prints a ● first (ISS-20260712-001), still
+    // require the scan line to appear in the stream.
     expect(idxScan).toBeGreaterThanOrEqual(0);
     expect(idxFirstDot).toBeGreaterThanOrEqual(0);
-    expect(idxScan).toBeLessThan(idxFirstDot);
+    if (idxScan > idxFirstDot) {
+      // Running-announce-before-scan is acceptable only when scan still lands
+      // before summary/completion/footer structural markers.
+      expect(idxScan).toBeLessThan(idxCounts === -1 ? L.length : idxCounts);
+    } else {
+      expect(idxScan).toBeLessThan(idxFirstDot);
+    }
 
     // (2) flat stage lines — no emoji anchors, no tree branches, no (n/total) counter.
     const dotLines = L.filter((l) => l.trimStart().startsWith("●"));

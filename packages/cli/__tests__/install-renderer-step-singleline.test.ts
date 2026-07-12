@@ -44,10 +44,13 @@ describe("ConsoleOutputRenderer renderStep — single-line (no running placehold
     r.renderStep(success);
 
     const lines = logSpy.mock.calls.map((c) => String(c[0]));
-    // The "running" call is a no-op; only the terminal status line is written.
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).not.toContain("\x1b[1A");
-    expect(lines[0]).not.toContain("\x1b[2K");
+    // ISS-20260712-001: TTY may emit a one-shot non-destructive "running" line
+    // (no cursor-up), then the settled success line — still no overwrite escapes.
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    expect(lines.join("\n")).not.toContain("\x1b[1A");
+    expect(lines.join("\n")).not.toContain("\x1b[2K");
+    expect(lines[lines.length - 1]).toBeDefined();
   });
 
   it("non-TTY: only the terminal line prints, no cursor escapes", () => {
@@ -58,6 +61,7 @@ describe("ConsoleOutputRenderer renderStep — single-line (no running placehold
     r.renderStep(success);
 
     const lines = logSpy.mock.calls.map((c) => String(c[0]));
+    // non-TTY: running remains a no-op — only the settled line.
     expect(lines).toHaveLength(1);
     expect(lines[0]).not.toContain("\x1b[1A");
     expect(lines[0]).not.toContain("\x1b[2K");
@@ -71,7 +75,9 @@ describe("ConsoleOutputRenderer renderStep — single-line (no running placehold
     r.renderStep(success);
 
     const lines = logSpy.mock.calls.map((c) => String(c[0]));
-    expect(lines).toHaveLength(1);
+    // TTY still allows optional one-shot running announce; never cursor-up.
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines.length).toBeLessThanOrEqual(2);
     expect(lines.join("\n")).not.toContain("\x1b[1A");
     expect(lines.join("\n")).not.toContain("\x1b[2K");
   });

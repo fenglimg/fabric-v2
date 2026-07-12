@@ -22,7 +22,10 @@ import { storeUuidSchema } from "./store.js";
 //     and does not surface knowledge entries or write to a store.
 // ---------------------------------------------------------------------------
 
-// The 6 store-aware MCP tools (locked surface).
+// Store-aware MCP tools (locked surface).
+// Live set: recall / propose / review / pending / archive_scan.
+// Retired plan_context / get_knowledge_sections remain listed only if still
+// referenced by historic tests — prefer live tools for new contracts.
 export const MCP_STORE_AWARE_TOOLS = [
   "fab_recall",
   "fab_plan_context",
@@ -30,6 +33,7 @@ export const MCP_STORE_AWARE_TOOLS = [
   "fab_archive_scan",
   "fab_propose",
   "fab_review",
+  "fab_pending",
 ] as const;
 export type McpStoreAwareTool = (typeof MCP_STORE_AWARE_TOOLS)[number];
 
@@ -83,4 +87,7 @@ export const MCP_STORE_AWARE_CONTRACTS: Record<McpStoreAwareTool, McpStoreAwareC
     echoesWrittenStore: true,
   },
   fab_review: { tool: "fab_review", surfacesEntries: true, echoesWrittenStore: true },
+  // W3-K K2: read-only list/search lifted from fab_review — surfaces pending/
+  // canonical entries with store provenance, does not write.
+  fab_pending: { tool: "fab_pending", surfacesEntries: true, echoesWrittenStore: false },
 };

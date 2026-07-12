@@ -31,7 +31,16 @@ const tempRoots: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  await Promise.all(tempRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  // force+maxRetries: storeCreate/async writers can leave the tree busy; avoid ENOTEMPTY flaky
+  await Promise.all(
+    tempRoots.splice(0).map(async (path) => {
+      try {
+        await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      } catch {
+        // best-effort — leftover tmp dirs are cleaned by OS; never fail the suite
+      }
+    }),
+  );
 });
 
 async function tempProject(): Promise<string> {

@@ -632,7 +632,16 @@ describe("doctor command", () => {
       }
 
       expect(applyLintSpy).toHaveBeenCalledTimes(1);
-      expect(stdout.lines.some((line) => line.includes("fix-knowledge mutation plan"))).toBe(true);
+      // i18n key doctor.fix-plan.header → "knowledge mutation plan ({count} total)"
+      // (legacy "fix-knowledge mutation plan" wording retired with --fix merge).
+      expect(
+        stdout.lines.some(
+          (line) =>
+            line.includes("knowledge mutation plan") ||
+            line.includes("知识变更计划") ||
+            line.includes("fix-knowledge mutation plan"),
+        ),
+      ).toBe(true);
     });
 
     it("--fix-knowledge with FABRIC_NONINTERACTIVE=1 (no --yes) skips the confirm", async () => {
