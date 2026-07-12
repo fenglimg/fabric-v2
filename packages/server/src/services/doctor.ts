@@ -93,6 +93,10 @@ import {
   inspectCiteGoodhart,
   type CiteGoodhartInspection,
 } from "./doctor-cite-goodhart.js";
+import {
+  inspectDriftUnconsumed,
+  type DriftUnconsumedInspection,
+} from "./doctor-drift-unconsumed.js";
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
@@ -1809,46 +1813,9 @@ function createDraftBacklogCheck(
   );
 }
 
-// rc.36 TASK-09 (P1-NEW1): drift detection without subsequent demote — KB
-// dies slowly when drift events are emitted but no human/auto action follows.
-// 30-day window: if drift events > 0 AND zero knowledge_demoted in same
-// window, warn the operator that drift is observed but unconsumed.
-type DriftUnconsumedInspection = {
-  status: "ok" | "warn";
-  driftCount: number;
-  demoteCount: number;
-};
+// inspectDriftUnconsumed → doctor-drift-unconsumed.ts (W8)
 
-async function inspectDriftUnconsumed(projectRoot: string): Promise<DriftUnconsumedInspection> {
-  const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-  const MIN_DRIFT_FOR_WARN = 5;
-  const cutoffMs = Date.now() - WINDOW_MS;
-  let events: EventLedgerEvent[] = [];
-  try {
-    const result = await readEventLedger(projectRoot);
-    events = result.events;
-  } catch {
-    return { status: "ok", driftCount: 0, demoteCount: 0 };
-  }
-  let driftCount = 0;
-  let demoteCount = 0;
-  for (const e of events) {
-    if (e.ts < cutoffMs) continue;
-    if (e.event_type === "knowledge_drift_detected") driftCount += 1;
-    else if (e.event_type === "knowledge_demoted") demoteCount += 1;
-  }
-  // rc.36 TASK-32 review-iter-1 fix: warn whenever drift events outnumber
-  // demote events by the threshold. The earlier `demoteCount === 0` form
-  // cleared the warning the moment a single demote landed, even if 10 drift
-  // events remained unconsumed. Per-event pairing is deferred to the rc.37
-  // auto-demote pipeline; this count-delta heuristic is sufficient until then.
-  const unconsumed = driftCount - demoteCount;
-  return {
-    status: unconsumed >= MIN_DRIFT_FOR_WARN ? "warn" : "ok",
-    driftCount,
-    demoteCount,
-  };
-}
+
 
 function createDriftUnconsumedCheck(
   t: Translator,
@@ -3277,6 +3244,10 @@ export {
   runDoctorBodyReadMisfireCheck,
   type BodyReadMisfireReport,
 } from "./doctor-body-read-misfire.js";
+export {
+  inspectDriftUnconsumed,
+  type DriftUnconsumedInspection,
+} from "./doctor-drift-unconsumed.js";
 
 export {
   inspectCiteGoodhart,
