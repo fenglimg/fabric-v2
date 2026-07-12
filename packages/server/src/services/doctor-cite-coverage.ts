@@ -1,68 +1,29 @@
 // W4-15 (ISS-018): cite-coverage / cite-audit-rollup / archive-history domain
 // extracted from the doctor.ts god-file. Behaviour-preserving move — doctor.ts
 // re-exports every public symbol so the package surface is unchanged. The
-// inspectL1BootstrapSnapshotDrift + DoctorIssue/DoctorReport/LintMaturity refs
-// import back from doctor.ts (a benign ESM function/type cycle — all cross-refs
-// are resolved at call time, never at module-evaluation time).
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { constants } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
-import { Script } from "node:vm";
+// inspectL1BootstrapSnapshotDrift ref imports back from doctor.ts (a benign
+// ESM function cycle — resolved at call time, not at module-evaluation time).
+// ISS-20260531-069: drop cloned unused imports left from the godfile extract.
+import { appendFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import { minimatch } from "minimatch";
-import { ZodError } from "zod";
 
-import {
-  agentsMetaSchema,
-  AgentsMetaCountersSchema,
-  createTranslator,
-  forensicReportSchema,
-  parseKnowledgeId,
-  knowledgeTestIndexSchema,
-  BOOTSTRAP_MARKER_BEGIN,
-  BOOTSTRAP_MARKER_END,
-  BOOTSTRAP_REGEX,
-  ONBOARD_SLOT_NAMES,
-  ONBOARD_SLOT_TOTAL,
-  type AgentsMeta,
-  type AgentsMetaCounters,
-  type EventLedgerEvent,
-  type ForensicReport,
-  type KnowledgeTestIndex,
-  type OnboardSlot,
-  resolveFabricLocale,
-  type Translator,
-} from "@fenglimg/fabric-shared";
-import { detectFramework } from "@fenglimg/fabric-shared/node";
-// v2.0.0-rc.29 TASK-008 (BUG-F2): surface MCP payload thresholds in doctor.
-import {
-  PAYLOAD_LIMIT_DEFAULT_HARD_BYTES,
-  PAYLOAD_LIMIT_DEFAULT_WARN_BYTES,
-} from "@fenglimg/fabric-shared/node/mcp-payload-guard";
-import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-loader.js";
+import { type EventLedgerEvent } from "@fenglimg/fabric-shared";
 
-import { contextCache } from "../cache.js";
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
-import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
+import { ensureParentDirectory, getMetricsLedgerPath } from "./_shared.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
   readEventLedger,
-  rotateEventLedgerIfNeeded,
-  truncateLedgerToLastNewline,
 } from "./event-ledger.js";
 import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./cite-rollup.js";
 import type { CiteRollupRow } from "./cite-rollup.js";
-import { readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
+import { readMetrics } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
-import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 
 import { inspectL1BootstrapSnapshotDrift, normalizePath } from "./doctor.js";
-import type { DoctorIssue, DoctorReport, LintMaturity } from "./doctor.js";
 
 const CITE_POLICY_VERSION = "2.0.0-rc.20";
 
