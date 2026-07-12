@@ -8,6 +8,8 @@
 
 > Fabric —— 面向 AI Coding Agent 的跨客户端知识 sustainment 层。
 
+**一句话定位：** Fabric 管「团队应记住什么」（审过的 decision / pitfall / guideline…），**不是**终端/session 证据库，也不是多 agent 编排器。日志与测试输出是 **evidence**；能进正式库的必须走 pending → review。
+
 ## 从 AGENTS.md 到一个知识闭环
 
 AI Coding Agent 很强，但它不会“记住”。每开一次新会话，它都要重新理解一遍代码库，重新争论一遍同样的决策。那些你真正希望它记住的东西——为什么选 Postgres 不选 Mongo、上季度坑过我们的认证 bug、CI 里会挂的那个部署步骤——散落在 Slack、PR 评论，以及在 `CLAUDE.md` 和 Codex 配置之间各自漂移的 `AGENTS.md` 里。
@@ -132,6 +134,30 @@ hook 只负责提醒和记账——它从不阻塞，判断交给刚经历过上
 - **honesty iron law** —— 宁可少报不虚报；不自动建边、不自动升级 maturity、不用 usage 排序。
 - **agent-native** —— 为 Agent 设计，不是给人看的 Web UI。
 
+## 证据 vs 知识 · Agent 怎么检索
+
+| 层 | 角色 | 例子 |
+|---|---|---|
+| **Evidence（证据）** | 刚才发生了什么 | 测试失败日志、终端输出、会话 transcript |
+| **Knowledge（Fabric）** | 团队该记住什么 | 审过的决策、坑、规范 |
+| **Orchestration** | 怎么协作执行 | 外部工作流 / 编排工具（非 Fabric） |
+
+**单向管道（唯一合法沉淀路径）：**
+
+```text
+可选本地证据 → 人/Skill 提炼 → fab_propose pending → fabric-review → store 正式知识
+```
+
+**禁止：** 把日志/捕获**自动**升成正式知识；在 `fabric install` 里装 shell 捕获；把 pending 当成第二套知识库。
+
+**Agent 检索（读侧）—— lean 默认：**
+
+1. 改文件前先 `fab_recall(paths=[…])`（SessionStart / PreToolUse hook 也会浮现相关条目）。
+2. 先看描述 / `must_read_if` / impact，**不要**整库灌正文。
+3. 需要细则时再原生 `Read` 返回的 `read_path`。
+4. 引用须来自本 session 已召回的条目；dismiss 要带理由；空结果先查 store 绑定与 `fabric audit why-not-surfaced`，**不要编造 id**。
+5. 完整场景与失败路径见安装后的 **`fabric-recall-playbook`** skill（与 `USER-QUICKSTART` 同口径）。
+
 ## 快速开始
 
 ```bash
@@ -162,6 +188,8 @@ MCP server **只走 stdio** —— `fabric install` 会写好每个客户端的 
 - **不是 16 阶段工作流注入。** Fabric 是 harness-agnostic 的，它绑定到每个 harness 都已经发出的事件（`SessionStart` / `Stop` / `PreToolUse` / `PostToolUse`），让 harness 保留自己的工作流模型。
 - **暂时不是带权限的团队平台。** 跨 repo 的 git store 共享已经能用；角色模型（admin / contributor / reader）和更深的组织级 federation 刻意留到后面。
 - **不是重型检索栈。** 没有向量数据库、没有常驻 embedding 基础设施；向量这一路是可选的，能降级到词法检索。
+- **不是终端 / session 证据记忆。** 不内建 shell 捕获；原始日志不会自动变成正式知识。
+- **不是多 agent 编排器。** 知识 sustainment ≠ 工作流调度。
 
 ## 与腾讯 AI 团队那篇文章的定位
 
@@ -184,7 +212,7 @@ AI 正常开发
   ↓
 SessionStart / PreToolUse hook 浮现知识
   ↓
-Agent 调 fab_recall → 描述 + 读取路径；按需 Read 正文
+Agent 调 fab_recall → 描述 + 读取路径；按需 Read 正文（协议见 fabric-recall-playbook）
   ↓
 Stop hook 检测 archive / review 信号
   ↓
@@ -201,7 +229,7 @@ fabric doctor / fabric audit 持续保持健康
 
 ## 文档
 
-- [快速开始](./docs/USER-QUICKSTART.md) —— 5 分钟上手。
+- [快速开始](./docs/USER-QUICKSTART.md) —— 5 分钟上手（含证据 vs 知识、Agent 检索协议）。
 - [架构](./docs/ARCHITECTURE.md) —— 包 / 入口 / 安装流水线全景。
 - [运行时契约](./docs/RUNTIME-CONTRACTS.md) —— CLI、MCP、schema、配置入口。
 - [测试](./docs/TESTING.md) —— 测试策略、漂移闸、test seed 角色。
@@ -216,7 +244,7 @@ fabric doctor / fabric audit 持续保持健康
 - `packages/server` —— MCP server `fabric-knowledge-server`（5 个工具，stdio）+ 生命周期服务（recall、review、doctor、lint、事件账本、metrics）。
 - `packages/shared` —— CLI 与 server 共享的 schema（事件账本、api 契约、知识 frontmatter、store + scope）。
 - `packages/server-http-experimental` —— v1.8 时代的 HTTP/REST/SSE + Dashboard 包，已于 v2.0.0-rc.37 隔离。不构建 / 不测试。
-- `packages/cli/templates/skills/` —— `fabric install` 时分发的 Skill 模板（`fabric-archive`、`fabric-review`、`fabric-store`、`fabric-sync`）。
+- `packages/cli/templates/skills/` —— `fabric install` 时分发的 Skill 模板（`fabric-archive`、`fabric-review`、`fabric-store`、`fabric-sync`、`fabric-recall-playbook`）。
 - `packages/cli/templates/hooks/` —— 共享 hook 脚本 + 各客户端配置（`claude-code.json`、`codex-hooks.json`）。
 
 贡献者：clone、`pnpm install`、`pnpm -r build`、`pnpm -r test`。

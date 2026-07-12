@@ -7,6 +7,7 @@ import {
   installFabricArchiveSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
+  installFabricRecallPlaybookSkill,
   installFabricSyncSkill,
   installSharedSkillLib,
   installHookLibs,
@@ -88,12 +89,12 @@ export async function installHooks(
   assertExistingDirectory(normalizedTarget);
 
   const results: InstallStepResult[] = [];
-  // W3-C: 4-skill terminal set (0 router) — archive (real, +source) / review
-  // (real, +retire +relate) / sync / store (thin shims).
+  // W3-C + S2: 5-skill terminal set (0 router) — archive/review/sync/store/recall-playbook.
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricSyncSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricStoreSkill(normalizedTarget)));
+  results.push(...await runStep(() => installFabricRecallPlaybookSkill(normalizedTarget)));
   // rc.37 NEW-13: cross-skill shared policy lib (single source the 3 skills'
   // ref files reference for protected tokens / routing keys / layer heuristic).
   results.push(...await runStep(() => installSharedSkillLib(normalizedTarget)));
