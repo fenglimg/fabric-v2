@@ -48,7 +48,7 @@ Review iterates **per-store** — the read-set may span multiple stores (`fabric
 
 ### UX i18n Policy
 
-Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (`fab_review`, `fab_pending`, `fab_propose`, `relevance_scope`, layer/scope enums, `stable_id`, the verbatim `强 team` / `强 personal` / `默认 team` block) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
+Read machine-wide `~/.fabric/fabric-global.json` `language` (`zh-CN` | `en` only; ISS-20260712-016). Emit user-facing prose in that language. Project `fabric_language` is retired for AI skill rendering. Protected tokens (`fab_review`, `fab_pending`, `fab_propose`, `relevance_scope`, layer/scope enums, `stable_id`, the verbatim `强 team` / `强 personal` / `默认 team` block) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
 
 `Read ref/i18n-policy.md` for the full 5-class taxonomy + edge cases.
 
@@ -203,8 +203,8 @@ Pending entry presented for review
 
 - NEVER write a knowledge file directly via Edit/Write/Bash; the only legal mutation path is `mcp__fabric__fab_review`.
 - NEVER call `git mv` from this skill — layer flip and slug rename are server-side transactions.
-- NEVER invent an `action` value — `fab_review action` MUST be one of {`approve`, `reject`, `modify`, `modify-content`, `modify-layer`, `defer`} (write-only); read actions {`list`, `search`} go through the read-only `fab_pending` tool.
-- NEVER batch heterogeneous decisions into a single MCP call. Approve and reject MAY be batched within their own action; modify MUST be one call per entry.
+- NEVER invent an `action` value — `fab_review action` MUST be one of {`approve`, `reject`, `modify`, `modify-content`, `modify-layer`, `modify-content-batch`, `defer`, `retire`} (write-only); read actions {`list`, `search`} go through the read-only `fab_pending` tool.
+- NEVER batch heterogeneous decisions into a single MCP call. Approve, reject, defer, and retire MAY be batched within their own action (`pending_paths[]`); interactive `modify` / `modify-content` / `modify-layer` stay one call per entry. Homogeneous content edits across many entries MUST use `modify-content-batch` (`items[{pending_path, changes}]`) — not N sequential modify-content calls.
 - NEVER invoke `fab_review action="approve"` without at least one `pending_paths` entry.
 - NEVER infer a layer-flip target — the user MUST choose via AskUserQuestion.
 - MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_proposed`, `knowledge_scope_degraded`, `fab_review`, `fab_pending`, `MUST`, `NEVER`, `relevance_scope`, `relevance_paths`, `narrow`, `broad`, `proposed_reason`, `session_context`.

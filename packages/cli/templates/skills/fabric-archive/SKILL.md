@@ -19,7 +19,7 @@ If none hold, stop the skill and tell the user (UX i18n Policy class 2):
 - zh-CN: `没有触发归档信号；如需手动归档请显式调用 fabric-archive`
 - en: `No archive signal detected; to manually archive, explicitly invoke fabric-archive`
 
-Render per `fabric_language` resolved in Phase 0.5.
+Render per global `language` (`zh-CN`|`en`) resolved in Phase 0.5.
 
 This skill runs automatically — it does not interview the user for preferences. It gathers evidence, aborts if no archive signal exists, then classifies + persists.
 
@@ -66,7 +66,7 @@ Archives land in the **active write store** for the entry's scope — NEVER pick
 
 ### UX i18n Policy
 
-Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (MCP tool names, schema fields, the verbatim `强 team` / `强 personal` / `默认 team` heuristic) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
+Read machine-wide `~/.fabric/fabric-global.json` `language` (`zh-CN` | `en` only; ISS-20260712-016). Emit user-facing prose in that language. Project `fabric_language` is retired for AI skill rendering. Protected tokens (MCP tool names, schema fields, the verbatim `强 team` / `强 personal` / `默认 team` heuristic) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
 
 `Read ref/i18n-policy.md` for the full 5-class taxonomy + edge cases.
 
@@ -156,7 +156,7 @@ Sets the entry's **audience** `semantic_scope` (orthogonal to `layer`=store and 
 
 ### Phase 4 — Persist via MCP
 
-For each user-confirmed candidate, call `fab_propose` ONCE (NEVER batch). Required: `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `layer`, `relevance_scope`, `relevance_paths[]`, `proposed_reason` (enum), `session_context` (3-5 line narrative). One OPTIONAL audience field: `semantic_scope` — pass `team` ONLY when Phase 3.7 classified a team candidate as team-wide (cross-project); OMIT otherwise so the engine auto-derives `project:<active_project>` (or `team` when the repo has no `active_project`). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
+For each user-confirmed candidate, call `fab_propose` ONCE (NEVER batch). Required (must match `FabExtractKnowledgeInputBaseSchema`): `source_sessions[]`, `recent_paths[]` (cap 20), `user_messages_summary`, `type` (plural form: decisions/pitfalls/guidelines/models/processes), `slug`, `proposed_reason` (enum), `session_context` (3-5 line narrative). Author-facing scope is TWO optional fields only — `audience` (open scope coordinate; omit → engine defaults to `project:<active>` or `team`) + `paths` (relevance anchors; non-empty → narrow, empty/omit → broad). **Do NOT pass retired author fields `layer` / `relevance_scope` / `relevance_paths` / `semantic_scope`** — the engine derives them (ISS-20260711-173). Four OPTIONAL rc.23 triage fields (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) — populate when clean, **omit rather than guess**.
 
 Server returns `{ pending_path, idempotency_key }`. Display `pending_path` for the user. `idempotency_key = sha256({source_session, type, slug})` — repeated calls SAFE (server merges evidence).
 

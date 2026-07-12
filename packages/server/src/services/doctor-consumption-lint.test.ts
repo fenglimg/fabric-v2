@@ -31,6 +31,18 @@ function maturityWindows(count: number): MetricsRow[] {
 const corpus = ["team:KT-DEC-0001", "team:KT-DEC-0002", "team:KT-DEC-0003"];
 
 describe("aggregateConsumption", () => {
+
+  it("also aggregates knowledge_body_read: counters (post body_read cutover)", () => {
+    const rows = [
+      row(1, { "knowledge_body_read:team:KT-DEC-0001": 3, "knowledge_consumed:team:KT-DEC-0002": 1 }),
+    ];
+    const result = aggregateConsumption(rows, ["team:KT-DEC-0001", "team:KT-DEC-0002"], NOW);
+    expect(result.totalConsumedEvents).toBe(4);
+    expect(result.topConsumed.map((e) => e.stableId).sort()).toEqual([
+      "team:KT-DEC-0001",
+      "team:KT-DEC-0002",
+    ]);
+  });
   it("parses store-qualified ids from the knowledge_consumed: prefix", () => {
     const rows = [
       row(1, { "knowledge_consumed:team:KT-DEC-0001": 3, "knowledge_consumed:team:KT-DEC-0002": 1 }),

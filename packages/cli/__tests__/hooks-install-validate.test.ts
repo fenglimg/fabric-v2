@@ -80,6 +80,10 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     const narrowValidate = result.skipped.filter((p) =>
       p.endsWith(join("hooks", "knowledge-hint-narrow.cjs")),
     );
+    // ISS-20260711-260: cite-policy-evict is hard-required by knowledge-pretooluse.
+    const citeValidate = result.skipped.filter((p) =>
+      p.endsWith(join("hooks", "cite-policy-evict.cjs")),
+    );
     // Note: each client also produces a copy `skipped` if the file existed.
     // On a fresh target the copy produces `written` not `skipped`, so the
     // skipped entries ending in the hook filenames come exclusively from the
@@ -87,5 +91,6 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     expect(stopValidate.length).toBe(2);
     expect(broadValidate.length).toBe(2);
     expect(narrowValidate.length).toBe(2);
+    expect(citeValidate.length).toBe(2);
   });
 });

@@ -22,7 +22,7 @@ import { t } from "../i18n.js";
 import {
   loadGlobalConfig,
   resolveGlobalRoot,
-  saveGlobalConfig,
+  saveGlobalConfigAsync,
 } from "../store/global-config-io.js";
 
 // grill-6fixes (D1): the language base tone is a single machine-wide value in
@@ -417,7 +417,7 @@ export const configCmd = defineCommand({
             pendingError = t("cli.config.errors.uninit-workspace.message");
             continue;
           }
-          saveGlobalConfig(
+          await saveGlobalConfigAsync(
             { ...globalConfig, language: newValue as "zh-CN" | "en" },
             globalRoot,
           );
@@ -547,6 +547,16 @@ function isInteractiveConfig(): boolean {
 // scrollback so old menus can't be scrolled back to — the stable-panel feel the
 // user picked over the accumulating one-shot-prompt transcript.
 function clearScreen(): void {
+  // ISS-20260711-136: accessible / plain modes must not wipe viewport or scrollback.
+  if (
+    process.env.FABRIC_CONFIG_PLAIN === "1" ||
+    process.env.NO_COLOR !== undefined ||
+    process.env.TERM === "dumb" ||
+    process.stdout.isTTY !== true
+  ) {
+    process.stdout.write("\n");
+    return;
+  }
   process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
 }
 

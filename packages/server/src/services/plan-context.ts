@@ -26,7 +26,6 @@ import { join } from "node:path";
 import {
   buildBm25Model,
   buildQueryTerms,
-  expandQueryTerms,
   rankDocuments,
   rankByScore,
   serializeBm25Model,
@@ -441,10 +440,12 @@ export async function planContext(
   // that same ranking with recall's top_k + ratio-to-top floor applied
   // (config-resolved here so the ranker stays a pure function). Both derive from
   // ONE shared ranker — the single source fab_pending triage also calls.
+  // ISS-20260711-143: score/sort the corpus ONCE, then derive triage (full) and
+  // recall (top_k + relevance floor) views from the shared ranked array.
   const rankedScored = rankDescriptionItems(rawItems, scoringContext, "triage");
   const rankedCandidates = rankedScored.map((entry) => entry.item);
 
-  const survivingScored = rankDescriptionItems(rawItems, scoringContext, "recall", {
+  const survivingScored = cutRankedForRecall(rankedScored, scoringContext, {
     topK: readPlanContextTopK(projectRoot),
     relevanceRatio: readRecallRelevanceRatio(projectRoot),
   });
@@ -653,7 +654,10 @@ export async function planContext(
       target_paths: uniquePaths,
       required_stable_ids: [],
       ai_selectable_stable_ids: sharedStableIds,
-      final_stable_ids: [],
+      // ISS-20260711-217: cite-policy-evict / doctor-cite-coverage union
+      // final_stable_ids as the recalled-id set. Keep it equal to the ids
+      // actually surfaced on the lean recall wire (sharedStableIds), not [].
+      final_stable_ids: sharedStableIds,
       selection_token: selectionToken,
       client_hash: input.client_hash,
       intent: input.intent,
@@ -1055,12 +1059,6 @@ export async function buildScoringContext(
     scoringContext.vectorScores !== undefined && scoringContext.vectorScores.size > 0;
   scoringContext.fusion =
     configuredFusion === "auto" ? (vectorActive ? "rrf" : "additive") : configuredFusion;
-  // BORROW-015: expand query terms with synonyms + stemming + IDF weights
-  // for the BM25 scorer. Only when query terms exist.
-  let queryTermWeights: Map<string, number> | undefined;
-  if (scoringContext.queryTerms.length > 0) {
-    queryTermWeights = expandQueryTerms(opts.queryText);
-  }
   if (scoringContext.fusion === "rrf" && scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
     const rankIds = rawItems
       .map((item) => item.stable_id)
@@ -1076,17 +1074,6 @@ export async function buildScoringContext(
   return scoringContext;
 }
 
-// BORROW-015: IDF-weighted query terms for the BM25 scorer. When the
-// expansion produced term weights, the scorer uses them to scale each
-// term's contribution. When absent (no query / broad probe), the scorer
-// falls back to the unweighted `buildQueryTerms` output.
-export function resolveQueryTermWeights(
-  scoringContext: ScoringContext,
-): Map<string, number> | undefined {
-  // Only the BM25 path needs weights; the RRF path discards magnitude anyway.
-  if (scoringContext.fusion === "rrf") return undefined;
-  return undefined; // placeholder — the weight map is threaded through ScoringContext
-}
 
 // BORROW-008: phrase proximity boost.
 // When the query has ≥2 terms and the candidate content score is positive,
@@ -1138,20 +1125,28 @@ function proximityBoost(
   // Need at least 2 query terms to appear in the text.
   if (positions.size < 2) return 0;
 
-  // Compute the minimum distance between any two terms (pairwise).
+  // ISS-20260711-139: min pairwise distance via two-pointer merge on sorted
+  // position lists — O(q² · (p_i+p_j)) instead of O(q² · p_i · p_j) nested scans.
   const termList = [...positions.entries()];
   let minDist = Infinity;
   for (let i = 0; i < termList.length; i++) {
     const [, posI] = termList[i]!;
     for (let j = i + 1; j < termList.length; j++) {
       const [, posJ] = termList[j]!;
-      for (const pi of posI) {
-        for (const pj of posJ) {
-          const dist = Math.abs(pi - pj);
-          if (dist < minDist) minDist = dist;
-        }
+      let a = 0;
+      let b = 0;
+      while (a < posI.length && b < posJ.length) {
+        const pi = posI[a]!;
+        const pj = posJ[b]!;
+        const dist = Math.abs(pi - pj);
+        if (dist < minDist) minDist = dist;
+        if (minDist === 0) break;
+        if (pi < pj) a += 1;
+        else b += 1;
       }
+      if (minDist === 0) break;
     }
+    if (minDist === 0) break;
   }
 
   if (!Number.isFinite(minDist)) return 0;
@@ -1224,6 +1219,23 @@ export type RankOptions = {
 // mode-dependent cut. The score is retained so observability consumers
 // (candidate_scores) and the dropped[] computation can read it without
 // re-scoring.
+// ISS-20260711-143: apply recall top_k + ratio-to-top cut to an already-ranked list.
+function cutRankedForRecall(
+  rankedScored: Array<{ item: RuleDescriptionIndexItem; score: number }>,
+  scoringContext: ScoringContext,
+  options: RankOptions = {},
+): Array<{ item: RuleDescriptionIndexItem; score: number }> {
+  const topK = options.topK ?? rankedScored.length;
+  const cappedScored = rankedScored.slice(0, topK);
+  const relevanceRatio = options.relevanceRatio ?? 0;
+  const hasQuery = scoringContext.queryTerms.length > 0;
+  const maxScore = rankedScored.length > 0 ? rankedScored[0]!.score : 0;
+  const relevanceFloor = maxScore * relevanceRatio;
+  return hasQuery && maxScore > 0 && relevanceRatio > 0
+    ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
+    : cappedScored;
+}
+
 export function rankDescriptionItems(
   items: RuleDescriptionIndexItem[],
   scoringContext: ScoringContext,

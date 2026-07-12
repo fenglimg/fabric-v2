@@ -217,7 +217,7 @@ export const enMessages: Messages = {
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
-  "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  "doctor.section.fix-knowledge-mutations": "Knowledge mutations (via --fix):",
   // flat-design follow-up: the remaining doctor UI-shell strings (TL;DR header,
   // --fix mutation plan, filtered --help) move off hardcoded English into i18n so
   // the whole `fabric doctor` surface honours the machine locale. USAGE/OPTIONS/
@@ -255,12 +255,12 @@ export const enMessages: Messages = {
   "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
   "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
   "doctor.store.overflow-more": ", …(+{count} more)",
-  "doctor.fix-plan.header": "fix-knowledge mutation plan ({count} total)",
+  "doctor.fix-plan.header": "knowledge mutation plan ({count} total)",
   "doctor.fix-plan.preview": "preview:",
   "doctor.fix-plan.more": "... and {count} more",
   "doctor.help.tagline": "Diagnose and fix Fabric workspace issues",
   "doctor.help.flag.target": "Override project root (defaults to cwd)",
-  "doctor.help.flag.fix": "Auto-fix issues (derived-state + knowledge frontmatter/git mv)",
+  "doctor.help.flag.fix": "Auto-fix derived state + auto-safe knowledge lint mutations",
   "doctor.help.flag.json": "Output as JSON for programmatic consumption",
   "doctor.help.flag.verbose": "Show maintainer-audience action hints",
   "doctor.help.example.run": "Run diagnostics",
@@ -359,13 +359,14 @@ export const enMessages: Messages = {
   "cite-coverage.skip.other": "other",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",
+  "cli.doctor.args.fix.description":
+    "Repair derived Fabric state (meta + indexes) and apply auto-safe knowledge lint mutations (store counter floor, stale session-hints cleanup). Decay/frontmatter lints stay report-only — remediate those via fabric-review.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply knowledge lint mutations: archive overdue pending drafts, floor drifted per-store id counters, and prune stale session-hint caches. Decay lints (orphan demote / stale archive) are report-only — remediate those via the fab_review flow. Default doctor run remains report-only.",
+    "Legacy alias wording: knowledge lint mutations now run under `fabric doctor --fix` (store counter floor + stale session-hints cleanup). Decay lints (orphan demote / stale archive) remain report-only — remediate via fabric-review. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
-    "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
+    "Skip the knowledge-mutation safety confirm inside `fabric doctor --fix`. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
   "cli.doctor.args.verbose.description":
     "Show all action hints including maintainer-audience ones (Fabric contributors editing the source tree). By default these are folded for npm end users.",
@@ -731,7 +732,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fabric doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
+    "Run `fabric doctor --fix` to bump agents.meta.json counters to max_observed + 1.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
@@ -749,7 +750,7 @@ export const enMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     "{count} session-hints cache files under .fabric/.cache/ are older than {days} days. First: {detail}.",
   "doctor.check.session_hints_stale.remediation":
-    "Run `fabric doctor --fix-knowledge` to delete stale session-hints cache files.",
+    "Run `fabric doctor --fix` to delete stale session-hints cache files.",
   "doctor.check.hook_cache_writable.name": "Hook cache writable",
   "doctor.check.hook_cache_writable.ok":
     "Hook sidecar cache path {path} accepts write probes.",

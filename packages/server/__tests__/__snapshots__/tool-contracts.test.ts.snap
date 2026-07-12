@@ -1,5 +1,144 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`tool contracts > fab-archive-scan contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Scan event ledger for archive candidates (deterministic)",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "correlation_id": {
+        "description": "Optional caller-provided correlation id for Event Ledger records.",
+        "type": "string",
+      },
+      "now_ms": {
+        "description": "Override for the anti-loop cooldown clock (testing). Defaults to Date.now().",
+        "minimum": 0,
+        "type": "integer",
+      },
+      "range": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string",
+            },
+            "minItems": 1,
+            "type": "array",
+          },
+          {
+            "const": "all",
+            "type": "string",
+          },
+        ],
+        "description": "Phase 0 scope: explicit session_id[] to constrain the scan, or the 'all' sentinel. Omitted = scan everything since the last knowledge_proposed anchor.",
+      },
+      "session_id": {
+        "description": "Current client session id; recorded for cross-session debt tracking.",
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "already_proposed_keys": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "anchor_ts": {
+        "type": [
+          "number",
+          "null",
+        ],
+      },
+      "covered_through_ts": {
+        "type": [
+          "number",
+          "null",
+        ],
+      },
+      "dropped": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "user_dismissed",
+                "cooldown",
+                "no_new_signal",
+              ],
+              "type": "string",
+            },
+            "session_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "session_id",
+            "reason",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "session_ids": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+            "message": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "anchor_ts",
+      "session_ids",
+      "dropped",
+      "covered_through_ts",
+      "already_proposed_keys",
+    ],
+    "type": "object",
+  },
+}
+`;
+
 exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = `
 {
   "annotations": {
@@ -531,6 +670,323 @@ exports[`tool contracts > fab-pending contract matches snapshot 1`] = `
 }
 `;
 
+exports[`tool contracts > fab-recall contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Recall Fabric knowledge (one-call)",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "client_hash": {
+        "description": "Revision hash from a prior call; enables stale detection.",
+        "type": "string",
+      },
+      "correlation_id": {
+        "description": "Optional caller-provided correlation id for Event Ledger records.",
+        "type": "string",
+      },
+      "detected_entities": {
+        "additionalProperties": {
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+        "description": "Optional path-keyed detected entities.",
+        "type": "object",
+      },
+      "ids": {
+        "description": "Optional explicit stable_ids to SCOPE the returned read paths. When omitted, \`paths\` carries one read path per surfaced candidate. The candidate DESCRIPTION index is always returned in full for discovery — \`ids\` only narrows which read paths are surfaced (e.g. when you already know which entries to Read). Stale ids are redirect-rewritten before matching.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "include_related": {
+        "description": "When true, also surface the one-hop \`related\` graph neighbours (of the surfaced entries) that are present in the candidate set — their descriptions and read paths, NOT their bodies.",
+        "type": "boolean",
+      },
+      "include_score_breakdown": {
+        "description": "When true, populate \`entry.score_breakdown\` (numbers-only signal decomposition — bm25/vector/salience/recency/locality/proximity/credibility → final). Off by default for wire efficiency. Enable when debugging ranking or tuning scoring weights.",
+        "type": "boolean",
+      },
+      "intent": {
+        "description": "User-stated requirement or implementation intent; used to build a neutral requirement profile.",
+        "type": "string",
+      },
+      "known_tech": {
+        "description": "Known technologies involved.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "layer_filter": {
+        "description": "Restrict recall to the named layer. Default: fabric-config.default_layer_filter.",
+        "enum": [
+          "team",
+          "personal",
+          "both",
+        ],
+        "type": "string",
+      },
+      "paths": {
+        "description": "Candidate file paths to recall Fabric knowledge entries for. Same semantics as fab_plan_context.paths.",
+        "items": {
+          "type": "string",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+      "session_id": {
+        "description": "Current client session id (Claude Code: $session_id; Codex: corresponding identifier). Enables cross-session debt tracking. Falls back gracefully if omitted.",
+        "type": "string",
+      },
+      "target_paths": {
+        "description": "Path context for narrow-scope relevance filtering. Defaults to \`paths\`; empty = no filter.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "paths",
+    ],
+    "type": "object",
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "auto_healed": {
+        "type": "boolean",
+      },
+      "dropped_ids": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "dropped_reasons": {
+        "additionalProperties": false,
+        "properties": {
+          "payload_budget": {
+            "minimum": 0,
+            "type": "integer",
+          },
+          "retrieval_budget": {
+            "minimum": 0,
+            "type": "integer",
+          },
+        },
+        "type": "object",
+      },
+      "entries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "body_in_context": {
+              "type": "boolean",
+            },
+            "description": {
+              "additionalProperties": false,
+              "properties": {
+                "impact": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "knowledge_type": {
+                  "enum": [
+                    "models",
+                    "decisions",
+                    "guidelines",
+                    "pitfalls",
+                    "processes",
+                  ],
+                  "type": "string",
+                },
+                "must_read_if": {
+                  "type": "string",
+                },
+                "summary": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "summary",
+              ],
+              "type": "object",
+            },
+            "read_path": {
+              "type": "string",
+            },
+            "score_breakdown": {
+              "additionalProperties": false,
+              "properties": {
+                "bm25": {
+                  "type": "number",
+                },
+                "bm25_rank": {
+                  "type": "number",
+                },
+                "credibility": {
+                  "type": "number",
+                },
+                "final": {
+                  "type": "number",
+                },
+                "locality": {
+                  "type": "number",
+                },
+                "proximity": {
+                  "type": "number",
+                },
+                "recency": {
+                  "type": "number",
+                },
+                "salience": {
+                  "type": "number",
+                },
+                "vector": {
+                  "type": "number",
+                },
+                "vector_rank": {
+                  "type": "number",
+                },
+              },
+              "required": [
+                "final",
+                "salience",
+                "recency",
+                "locality",
+                "proximity",
+              ],
+              "type": "object",
+            },
+            "stable_id": {
+              "type": "string",
+            },
+            "store_alias": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "stable_id",
+            "description",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "next_steps": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "preflight_diagnostics": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "missing_description",
+                "empty_shell_suppressed",
+              ],
+              "type": "string",
+            },
+            "message": {
+              "type": "string",
+            },
+            "path": {
+              "type": "string",
+            },
+            "severity": {
+              "const": "warn",
+              "type": "string",
+            },
+            "stable_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "code",
+            "severity",
+            "message",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "previous_revision_hash": {
+        "type": "string",
+      },
+      "redirects": {
+        "additionalProperties": {
+          "type": "string",
+        },
+        "type": "object",
+      },
+      "related_appended": {
+        "additionalProperties": {
+          "type": "string",
+        },
+        "type": "object",
+      },
+      "revision_hash": {
+        "type": "string",
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+            "message": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "revision_hash",
+      "entries",
+    ],
+    "type": "object",
+  },
+}
+`;
+
 exports[`tool contracts > fab-review contract matches snapshot 1`] = `
 {
   "annotations": {
@@ -600,6 +1056,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "changes": {
             "additionalProperties": false,
             "properties": {
+              "evidence_paths": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
               "impact": {
                 "items": {
                   "type": "string",
@@ -630,6 +1092,16 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
               "must_read_if": {
                 "type": "string",
               },
+              "onboard_slot": {
+                "enum": [
+                  "tech-stack-decision",
+                  "architecture-pattern",
+                  "code-style-tone",
+                  "build-system-idiom",
+                  "domain-vocabulary",
+                ],
+                "type": "string",
+              },
               "related": {
                 "items": {
                   "type": "string",
@@ -657,6 +1129,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 "type": "string",
               },
               "tags": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "tech_stack": {
                 "items": {
                   "type": "string",
                 },
@@ -712,6 +1190,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "changes": {
             "additionalProperties": false,
             "properties": {
+              "evidence_paths": {
+                "$ref": "#/anyOf/2/properties/changes/properties/evidence_paths",
+              },
               "impact": {
                 "$ref": "#/anyOf/2/properties/changes/properties/impact",
               },
@@ -731,6 +1212,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
               "must_read_if": {
                 "$ref": "#/anyOf/2/properties/changes/properties/must_read_if",
               },
+              "onboard_slot": {
+                "$ref": "#/anyOf/2/properties/changes/properties/onboard_slot",
+              },
               "related": {
                 "$ref": "#/anyOf/2/properties/changes/properties/related",
               },
@@ -748,6 +1232,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
               },
               "tags": {
                 "$ref": "#/anyOf/2/properties/changes/properties/tags",
+              },
+              "tech_stack": {
+                "$ref": "#/anyOf/2/properties/changes/properties/tech_stack",
               },
               "title": {
                 "$ref": "#/anyOf/2/properties/changes/properties/title",
@@ -1092,553 +1579,6 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "type": "object",
       },
     ],
-  },
-}
-`;
-
-exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
-{
-  "annotations": {
-    "destructiveHint": false,
-    "idempotentHint": true,
-    "openWorldHint": false,
-    "readOnlyHint": true,
-    "title": "Fetch knowledge entry bodies",
-  },
-  "inputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "ai_selected_stable_ids": {
-        "description": "Stable ids picked from fab_plan_context candidates[].stable_id; choose 1..N to fetch bodies for",
-        "items": {
-          "type": "string",
-        },
-        "type": "array",
-      },
-      "ai_selection_reasons": {
-        "additionalProperties": {
-          "minLength": 1,
-          "type": "string",
-        },
-        "default": {},
-        "description": "Optional reason for each AI-selected L1 stable_id (audit telemetry). Omit to fetch bodies without annotating — server defaults to {} rather than rejecting the documented two-step call.",
-        "type": "object",
-      },
-      "client_hash": {
-        "description": "Optional caller-provided client hash propagated into knowledge_consumed events",
-        "type": "string",
-      },
-      "correlation_id": {
-        "description": "Optional caller-provided correlation id for Event Ledger records",
-        "type": "string",
-      },
-      "selection_token": {
-        "description": "Selection token returned by fab_plan_context",
-        "minLength": 1,
-        "type": "string",
-      },
-      "session_id": {
-        "description": "Optional caller-provided session id for Event Ledger records",
-        "type": "string",
-      },
-    },
-    "required": [
-      "selection_token",
-      "ai_selected_stable_ids",
-    ],
-    "type": "object",
-  },
-  "outputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "diagnostics": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "code": {
-              "enum": [
-                "missing_knowledge_metadata",
-                "unresolved_selected_id",
-              ],
-              "type": "string",
-            },
-            "message": {
-              "type": "string",
-            },
-            "severity": {
-              "const": "warn",
-              "type": "string",
-            },
-            "stable_id": {
-              "type": "string",
-            },
-          },
-          "required": [
-            "code",
-            "severity",
-            "stable_id",
-            "message",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "redirect_to": {
-        "anyOf": [
-          {
-            "additionalProperties": false,
-            "properties": {
-              "stable_id": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "stable_id",
-            ],
-            "type": "object",
-          },
-          {
-            "additionalProperties": {
-              "type": "string",
-            },
-            "type": "object",
-          },
-        ],
-        "description": "Post-layer-flip redirect. Pre-rc.37: { stable_id } shape from rc.3 fab_review/modify. rc.37+: also accepts a (old_id → new_id) map for fab_get_knowledge_sections / fab_recall transparent rewrite.",
-      },
-      "revision_hash": {
-        "type": "string",
-      },
-      "rules": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "body": {
-              "type": "string",
-            },
-            "path": {
-              "type": "string",
-            },
-            "stable_id": {
-              "type": "string",
-            },
-          },
-          "required": [
-            "stable_id",
-            "path",
-            "body",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "selected_stable_ids": {
-        "items": {
-          "type": "string",
-        },
-        "type": "array",
-      },
-      "warnings": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "action_hint": {
-              "type": "string",
-            },
-            "code": {
-              "type": "string",
-            },
-            "file": {
-              "type": "string",
-            },
-            "line": {
-              "type": "number",
-            },
-            "message": {
-              "type": "string",
-            },
-          },
-          "required": [
-            "code",
-            "file",
-            "action_hint",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-    },
-    "required": [
-      "revision_hash",
-      "selected_stable_ids",
-      "rules",
-      "diagnostics",
-    ],
-    "type": "object",
-  },
-}
-`;
-
-exports[`tool contracts > plan-context contract matches snapshot 1`] = `
-{
-  "annotations": {
-    "destructiveHint": false,
-    "idempotentHint": true,
-    "openWorldHint": false,
-    "readOnlyHint": true,
-    "title": "Plan rule context",
-  },
-  "inputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "client_hash": {
-        "description": "Revision hash from a prior fab_plan_context response; enables stale detection",
-        "type": "string",
-      },
-      "correlation_id": {
-        "description": "Optional caller-provided correlation id for Event Ledger records",
-        "type": "string",
-      },
-      "detected_entities": {
-        "additionalProperties": {
-          "items": {
-            "type": "string",
-          },
-          "type": "array",
-        },
-        "description": "Optional path-keyed detected entities for the requirement profile",
-        "type": "object",
-      },
-      "intent": {
-        "description": "User-stated requirement or implementation intent; used only to build a neutral requirement profile",
-        "type": "string",
-      },
-      "known_tech": {
-        "description": "Known technologies involved in the requirement profile",
-        "items": {
-          "type": "string",
-        },
-        "type": "array",
-      },
-      "layer_filter": {
-        "description": "Restrict description_index to the named layer. Default: fabric-config.default_layer_filter (TASK-002).",
-        "enum": [
-          "team",
-          "personal",
-          "both",
-        ],
-        "type": "string",
-      },
-      "paths": {
-        "description": "Candidate file paths to build neutral rule selection context for",
-        "items": {
-          "type": "string",
-        },
-        "minItems": 1,
-        "type": "array",
-      },
-      "session_id": {
-        "description": "Recommended: pass the current client session id (Claude Code: $session_id; Codex: corresponding identifier) — enables cross-session debt tracking in fabric doctor and accurate archive-hint cross-session count. Falls back gracefully if omitted.",
-        "type": "string",
-      },
-      "target_paths": {
-        "description": "Path context for narrow-scope relevance filtering. Defaults to \`paths\`; empty = no filter.",
-        "items": {
-          "type": "string",
-        },
-        "type": "array",
-      },
-    },
-    "required": [
-      "paths",
-    ],
-    "type": "object",
-  },
-  "outputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "auto_healed": {
-        "type": "boolean",
-      },
-      "candidates": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "always_active": {
-              "type": "boolean",
-            },
-            "description": {
-              "additionalProperties": false,
-              "properties": {
-                "aliases": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "created_at": {
-                  "type": "string",
-                },
-                "id": {
-                  "type": "string",
-                },
-                "impact": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "intent_clues": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "knowledge_type": {
-                  "enum": [
-                    "models",
-                    "decisions",
-                    "guidelines",
-                    "pitfalls",
-                    "processes",
-                  ],
-                  "type": "string",
-                },
-                "maturity": {
-                  "enum": [
-                    "draft",
-                    "verified",
-                    "proven",
-                  ],
-                  "type": "string",
-                },
-                "must_read_if": {
-                  "type": "string",
-                },
-                "related": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "relevance_paths": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "relevance_scope": {
-                  "enum": [
-                    "narrow",
-                    "broad",
-                  ],
-                  "type": "string",
-                },
-                "summary": {
-                  "type": "string",
-                },
-                "tags": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "tech_stack": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-              },
-              "required": [
-                "summary",
-              ],
-              "type": "object",
-            },
-            "stable_id": {
-              "type": "string",
-            },
-          },
-          "required": [
-            "stable_id",
-            "description",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "dropped": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string",
-            },
-            "reason": {
-              "enum": [
-                "retrieval_budget",
-                "payload_budget",
-              ],
-              "type": "string",
-            },
-          },
-          "required": [
-            "id",
-            "reason",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "entries": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "path": {
-              "type": "string",
-            },
-            "requirement_profile": {
-              "additionalProperties": false,
-              "properties": {
-                "detected_entities": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "known_tech": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "target_path": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "target_path",
-                "known_tech",
-                "detected_entities",
-              ],
-              "type": "object",
-            },
-          },
-          "required": [
-            "path",
-            "requirement_profile",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "intent": {
-        "type": "string",
-      },
-      "preflight_diagnostics": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "code": {
-              "enum": [
-                "missing_description",
-                "empty_shell_suppressed",
-              ],
-              "type": "string",
-            },
-            "message": {
-              "type": "string",
-            },
-            "path": {
-              "type": "string",
-            },
-            "severity": {
-              "const": "warn",
-              "type": "string",
-            },
-            "stable_ids": {
-              "items": {
-                "type": "string",
-              },
-              "type": "array",
-            },
-          },
-          "required": [
-            "code",
-            "severity",
-            "message",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "previous_revision_hash": {
-        "type": "string",
-      },
-      "redirects": {
-        "additionalProperties": {
-          "type": "string",
-        },
-        "type": "object",
-      },
-      "related_appended": {
-        "additionalProperties": {
-          "type": "string",
-        },
-        "type": "object",
-      },
-      "revision_hash": {
-        "type": "string",
-      },
-      "selection_token": {
-        "type": "string",
-      },
-      "stale": {
-        "type": "boolean",
-      },
-      "warnings": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "action_hint": {
-              "type": "string",
-            },
-            "code": {
-              "type": "string",
-            },
-            "file": {
-              "type": "string",
-            },
-            "line": {
-              "type": "number",
-            },
-            "message": {
-              "type": "string",
-            },
-          },
-          "required": [
-            "code",
-            "file",
-            "action_hint",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-    },
-    "required": [
-      "revision_hash",
-      "stale",
-      "selection_token",
-      "entries",
-      "candidates",
-      "preflight_diagnostics",
-    ],
-    "type": "object",
   },
 }
 `;

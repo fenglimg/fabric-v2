@@ -71,8 +71,7 @@ type DoctorArgs = {
 // mutation arm is wired, these decay lints are surfaced-and-remediated via the
 // fab_review flow (see their remediation copy), never auto-mutated.
 const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
-  knowledge_pending_auto_archive: "archive (git mv, pending)",
-  knowledge_index_drift: "counter bump (agents.meta)",
+  knowledge_index_drift: "store counter floor (if any)",
   knowledge_session_hints_stale: "cache delete",
 };
 
@@ -250,7 +249,7 @@ export const doctorCommand = defineCommand({
         syncStoreAliasLinks();
         // 语义 A (multi-personal): repair a dangling/unset active personal pointer
         // (idempotent global-config fix; no-op for the common single-personal case).
-        fixActivePersonalPointer();
+        await fixActivePersonalPointer();
 
         // Knowledge-frontmatter mutations (consent already granted above when
         // the plan was non-empty). runDoctorFixKnowledge is safe to run for a
@@ -433,25 +432,16 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: 
 // gist + its command) and hard-cap its width. The full remediation — paths,
 // config knobs like `broad_index_backstop` — lives in --verbose; the end user
 // just needs to know which command to run.
-const SHORT_HINT_CAP = 42;
+// ISS-20260712-003: preserve full first line / first command-bearing sentence.
+// Multi-paragraph remediation stays behind --verbose; do not hard-cap mid-command.
 function shortHint(hint: string): string {
-  const firstSentence = (hint.split("。")[0] ?? hint).trim();
-  const chars = Array.from(firstSentence);
-  if (chars.length <= SHORT_HINT_CAP) {
+  const firstLine = (hint.split("\n")[0] ?? hint).trim();
+  const firstSentence = (firstLine.split("。")[0] ?? firstLine).trim();
+  // Prefer a line that still contains a fabric CLI verb so recovery stays actionable.
+  if (/\bfabric\b|doctor|--fix|install/i.test(firstSentence)) {
     return firstSentence;
   }
-  // Cut on a word boundary so we never slice mid-word (the ugly `告警 s…`):
-  // scan back from the cap to the nearest natural break (space / CJK or ASCII
-  // comma / slash / backtick / close-paren), falling back to a hard cut if none
-  // is within reach.
-  let cut = SHORT_HINT_CAP - 1;
-  for (let i = SHORT_HINT_CAP - 1; i >= 28; i--) {
-    if (/[\s，、,/`)）]/.test(chars[i] ?? "")) {
-      cut = i;
-      break;
-    }
-  }
-  return `${chars.slice(0, cut).join("").trimEnd()}…`;
+  return firstSentence.length > 0 ? firstSentence : firstLine;
 }
 
 function renderActionableDigest(report: DoctorReport, dt: DoctorTranslator): void {

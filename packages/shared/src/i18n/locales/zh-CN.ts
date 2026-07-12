@@ -208,7 +208,7 @@ export const zhCNMessages: Messages = {
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
-  "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
+  "doctor.section.fix-knowledge-mutations": "知识侧变更：",
   // flat-design follow-up: doctor 剩余的 UI-shell 文案(TL;DR 头、--fix 变更计划、
   // 过滤版 --help)从硬编码英文搬进 i18n,让整个 `fabric doctor` 输出跟随机器语言。
   // USAGE/OPTIONS/EXAMPLES 标签保持英文,与其它命令 --help 的 citty renderUsage 对齐。
@@ -244,12 +244,12 @@ export const zhCNMessages: Messages = {
   "doctor.store.consumption-heatmap": "消费热区(近 {days}d,{consumed}/{total} 条被读,跨 {windows} 个窗口):{top}",
   "doctor.store.consumption-zero": "{count} 条在近 {days}d 内从未被消费:{sample}{overflow} —— 通过 `fab_review` 考虑淘汰(消费量只是信号之一,非陈旧的证据)",
   "doctor.store.overflow-more": ", …(+{count} 条)",
-  "doctor.fix-plan.header": "fix-knowledge 变更计划(共 {count} 项)",
+  "doctor.fix-plan.header": "知识侧变更计划(共 {count} 项)",
   "doctor.fix-plan.preview": "预览:",
   "doctor.fix-plan.more": "... 还有 {count} 项",
   "doctor.help.tagline": "诊断并修复 Fabric 工作区问题",
   "doctor.help.flag.target": "覆盖项目根目录(默认当前目录)",
-  "doctor.help.flag.fix": "自动修复(派生状态 + 知识 frontmatter/git mv)",
+  "doctor.help.flag.fix": "自动修复(派生状态 + 知识侧 cache/counter 变更)",
   "doctor.help.flag.json": "以 JSON 输出供程序消费",
   "doctor.help.flag.verbose": "显示面向维护者的操作提示",
   "doctor.help.example.run": "运行诊断",
@@ -339,13 +339,14 @@ export const zhCNMessages: Messages = {
   "cite-coverage.skip.other": "其他",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
-  "cli.doctor.args.fix.description": "修复 Fabric 派生状态（meta + 索引）。",
+  "cli.doctor.args.fix.description":
+    "自动修复派生状态（meta/索引/锁）与知识侧变更（store 计数器 floor、陈旧 session-hints 缓存清理）。衰减类 lint(orphan demote / stale archive)仍只读上报 — 请走 fab_review。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
-    "应用知识库 lint 变更:归档逾期 pending draft、修正漂移的 per-store id 计数器、清理陈旧 session-hint 缓存。衰减类 lint(orphan demote / stale archive)只读上报 — 请通过 fab_review 流程处理。默认 doctor 运行仍然只读。",
+    "（内部/legacy 名称）知识侧 mutation 臂，现已由 `fabric doctor --fix` 一并调用。勿再单独依赖 --fix-knowledge。",
   "cli.doctor.args.yes.description":
-    "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
+    "跳过 --fix 知识侧安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   // rc.35 TASK-12 (P0-11): --verbose 展开 maintainer 受众的 remediation。
   "cli.doctor.args.verbose.description":
     "展开全部 action hint,包括 maintainer 受众的(Fabric 贡献者修源码用)。默认 npm 终端用户视图会把这些折叠。",
@@ -709,7 +710,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "运行 `fabric doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
+    "运行 `fabric doctor --fix` 将 agents.meta.json counters 提升到 max_observed + 1。",
   "doctor.check.underseeded.name": "知识种子不足",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
@@ -727,7 +728,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
   "doctor.check.session_hints_stale.remediation":
-    "运行 `fabric doctor --fix-knowledge` 删除过期的 session-hints cache files。",
+    "运行 `fabric doctor --fix` 删除过期的 session-hints cache files。",
   "doctor.check.hook_cache_writable.name": "Hook 缓存可写",
   "doctor.check.hook_cache_writable.ok":
     "Hook sidecar cache 路径 {path} 可写入探针文件。",

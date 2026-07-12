@@ -176,6 +176,8 @@ describe("runDoctorReport", () => {
       // rc.36 TASK-05 (P0-8): empty-tags ratio. Adjacent to draft_backlog —
       // both flag observability gaps in canonical entry quality.
       "Knowledge tags coverage",
+      // ISS-20260711-221: body_read misfire wired into runDoctorReport.
+      "Knowledge body-read wiring",
       // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
       "Knowledge drift unconsumed",
       // v2.2 W5 R4: co-location "Knowledge counter desync" replaced by the
@@ -288,7 +290,8 @@ describe("runDoctorReport", () => {
     // rc.10: +1 write_route_target_unbound (write_routes[*].store ↔ required_stores) → 46.
     // rc.11: +1 stray_fabric_dir_detected (walker for `.fabric/` dirs left by pre-rc.10
     // hooks / pre-rc.11 server-side resolveProjectRoot) → 47.
-    expect(report.checks).toHaveLength(47);
+    // ISS-20260711-221: +1 knowledge body-read wiring → 48.
+    expect(report.checks).toHaveLength(48);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -972,7 +975,7 @@ describe("runDoctorReport", () => {
 
       const { runDoctorApplyLint } = await import("./doctor.js");
       const result = await runDoctorApplyLint(target);
-      const driftMutation = result.mutations.find((m) => m.kind === "knowledge_index_drift");
+      const driftMutation = result.mutations.find((m) => m.kind === "store_counter_floor");
       expect(driftMutation?.applied).toBe(true);
       expect(driftMutation?.detail).toContain("team:KT.DEC 2 -> 7");
       expect(readStoreCounters(storeDir()).KT.DEC).toBe(7);

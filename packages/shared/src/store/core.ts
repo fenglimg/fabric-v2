@@ -3,6 +3,7 @@ import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { atomicWriteJson, withFileLock } from "../node/atomic-write.js";
 import { readStoreIdentityAsync } from "../resolver/store-disk-reader.js";
 import {
   STORE_KNOWLEDGE_TYPE_DIRS,
@@ -95,12 +96,15 @@ export async function initStore(
   await mkdir(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
   await mkdir(join(absDir, STORE_LAYOUT.stateDir), { recursive: true });
 
-  await writeFile(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  // Write .gitignore first; store.json LAST so a crash mid-scaffold never leaves a
+  // recognisable half-init (disk readers key off store.json) — ISS-20260711-146.
   await writeFile(join(absDir, ".gitignore"), STORE_GITIGNORE, "utf8");
 
   if (options.git !== false) {
     await git(absDir, ["init", "-b", "main"]);
   }
+
+  await atomicWriteJson(identityFile, parsed, { indent: 2 });
 
   const readBack = await readStoreIdentityAsync(absDir);
   if (readBack === null) {
@@ -209,18 +213,39 @@ function storeProjectsPath(storeDir: string): string {
   return join(storeDir, STORE_LAYOUT.projectsFile);
 }
 
-// Enumerate the projects registered in a store. Absent/unreadable/invalid
-// projects.json ⇒ [] (a store need not have any projects).
+function storeProjectsLockPath(storeDir: string): string {
+  return `${storeProjectsPath(storeDir)}.lock`;
+}
+
+// Enumerate the projects registered in a store. Absent file ⇒ [].
+// Present but corrupt JSON/schema ⇒ throw (ISS-20260711-129): treating corrupt
+// as empty let the next addStoreProject overwrite surviving registry data.
 export async function readStoreProjects(storeDir: string): Promise<StoreProject[]> {
   const path = storeProjectsPath(storeDir);
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw err;
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(await readFile(path, "utf8"));
+    raw = JSON.parse(text);
   } catch {
-    return [];
+    throw new Error(
+      `projects.json at ${path} is not valid JSON — refusing to treat as empty (would risk overwrite on next add)`,
+    );
   }
   const parsed = storeProjectsFileSchema.safeParse(raw);
-  return parsed.success ? parsed.data.projects : [];
+  if (!parsed.success) {
+    throw new Error(
+      `projects.json at ${path} failed schema validation — refusing to treat as empty (would risk overwrite on next add): ${parsed.error.message}`,
+    );
+  }
+  return parsed.data.projects;
 }
 
 // True when `id` is a registered project in this store.
@@ -231,29 +256,56 @@ export async function storeHasProject(storeDir: string, id: string): Promise<boo
 // Register a new project in the store (writes projects.json). Refuses a
 // duplicate id so a typo never silently overwrites an existing project's
 // metadata. Returns the full project list after the add.
+//
+// ISS-20260711-130: RMW under withFileLock + atomicWriteJson so concurrent
+// addStoreProject calls cannot drop each other's projects.
 export async function addStoreProject(storeDir: string, project: StoreProject): Promise<StoreProject[]> {
   const parsed = storeProjectSchema.parse(project);
-  const existing = await readStoreProjects(storeDir);
-  if (existing.some((p) => p.id === parsed.id)) {
-    throw new Error(`project '${parsed.id}' already exists in store at ${storeDir}`);
-  }
-  const next = [...existing, parsed];
-  const validated = storeProjectsFileSchema.parse({ projects: next });
-  await writeFile(storeProjectsPath(storeDir), `${JSON.stringify(validated, null, 2)}\n`, "utf8");
-  return validated.projects;
+  return withFileLock(storeProjectsLockPath(storeDir), async () => {
+    const existing = await readStoreProjects(storeDir);
+    if (existing.some((p) => p.id === parsed.id)) {
+      throw new Error(`project '${parsed.id}' already exists in store at ${storeDir}`);
+    }
+    const next = [...existing, parsed];
+    const validated = storeProjectsFileSchema.parse({ projects: next });
+    await atomicWriteJson(storeProjectsPath(storeDir), validated, { indent: 2 });
+    return validated.projects;
+  });
 }
 
 // Cross-store pending aggregation API (roadmap gemini#3) — the底座 P2 fab_review
 // builds on instead of walking store git itself. Returns the union of pending
 // entries across the given (writable) stores, each tagged with provenance.
+// ISS-20260711-170: walk pending/<type>/*.md (layout mirrors canonical types),
+// not only the bare pending/ top-level (which is always empty for type-bucketed
+// pending trees).
 export async function aggregatePendingAcrossStores(stores: MountedStoreDir[]): Promise<StoreKnowledgeRef[]> {
-  const lists = await Promise.all(stores.map(async (store) =>
-    (await listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR))).map((file) => ({
-      store_uuid: store.store_uuid,
-      alias: store.alias,
-      type: STORE_PENDING_DIR,
-      file,
-    })),
-  ));
+  const lists = await Promise.all(
+    stores.map(async (store) => {
+      const pendingRoot = join(store.dir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR);
+      const refs: StoreKnowledgeRef[] = [];
+      // Production layout: pending/<type>/*.md
+      for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+        for (const file of await listMarkdown(join(pendingRoot, type))) {
+          refs.push({
+            store_uuid: store.store_uuid,
+            alias: store.alias,
+            type: STORE_PENDING_DIR,
+            file,
+          });
+        }
+      }
+      // Flat layout (tests / legacy): pending/*.md at the pending root.
+      for (const file of await listMarkdown(pendingRoot)) {
+        refs.push({
+          store_uuid: store.store_uuid,
+          alias: store.alias,
+          type: STORE_PENDING_DIR,
+          file,
+        });
+      }
+      return refs;
+    }),
+  );
   return lists.flat();
 }

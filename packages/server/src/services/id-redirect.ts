@@ -14,11 +14,24 @@
 // default (30 days) gives long-lived AI sessions plenty of time to observe
 // the rename without unbounded ledger replay cost.
 
+import { statSync } from "node:fs";
+
+import { getEventLedgerPath } from "./_shared.js";
 import { readEventLedger } from "./event-ledger.js";
 
 const DEFAULT_REDIRECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 export type IdRedirectMap = Map<string, string>;
+
+// ISS-20260711-134: avoid re-streaming events.jsonl on every plan-context call
+// when the ledger file has not grown/changed.
+type RedirectCacheEntry = {
+  size: number;
+  mtimeMs: number;
+  windowMs: number;
+  map: IdRedirectMap;
+};
+const redirectMapCache = new Map<string, RedirectCacheEntry>();
 
 /**
  * Read recent `knowledge_id_redirect` events from the ledger and fold them
@@ -37,6 +50,27 @@ export async function loadIdRedirectMap(
   const windowMs = options.windowMs ?? DEFAULT_REDIRECT_WINDOW_MS;
   const now = options.now ?? Date.now();
   const cutoffMs = now - windowMs;
+
+  // Fast path: reuse the last built map when the ledger file is unchanged.
+  const ledgerPath = getEventLedgerPath(projectRoot);
+  let size = -1;
+  let mtimeMs = -1;
+  try {
+    const st = statSync(ledgerPath);
+    size = st.size;
+    mtimeMs = st.mtimeMs;
+    const cached = redirectMapCache.get(projectRoot);
+    if (
+      cached !== undefined &&
+      cached.size === size &&
+      cached.mtimeMs === mtimeMs &&
+      cached.windowMs === windowMs
+    ) {
+      return new Map(cached.map);
+    }
+  } catch {
+    // missing ledger — fall through to empty read
+  }
 
   const { events } = await readEventLedger(projectRoot, {
     event_type: "knowledge_id_redirect",
@@ -72,6 +106,14 @@ export async function loadIdRedirectMap(
     compressed.set(oldId, current);
   }
 
+    if (size >= 0) {
+    redirectMapCache.set(projectRoot, {
+      size,
+      mtimeMs,
+      windowMs,
+      map: compressed,
+    });
+  }
   return compressed;
 }
 

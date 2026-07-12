@@ -42,17 +42,24 @@ function deepMergeAtPath(
   path: string,
   options: DeepMergeOptions,
 ): unknown {
-  // Array-append special case: both sides must be arrays AND the current
-  // path must be listed. Falls through to REPLACE if either side is not an
-  // array (e.g. user wrote an object where we expected an array — defer to
-  // source rather than crash).
-  if (
-    options.arrayAppendPaths &&
-    options.arrayAppendPaths.includes(path) &&
-    Array.isArray(target) &&
-    Array.isArray(source)
-  ) {
-    return appendArrayWithDedupe(target, source);
+  // Array-append special case at listed paths. ISS-20260711-261: never fall
+  // through to REPLACE when the path is arrayAppend-protected — that silently
+  // clobbered user hook slots whenever either side was non-array (e.g. a
+  // single object-shaped Stop entry). Protect user arrays; allow source to
+  // establish an array only when the target slot is not already an array.
+  if (options.arrayAppendPaths && options.arrayAppendPaths.includes(path)) {
+    if (Array.isArray(target) && Array.isArray(source)) {
+      return appendArrayWithDedupe(target, source);
+    }
+    if (Array.isArray(target)) {
+      return target;
+    }
+    if (Array.isArray(source)) {
+      return source;
+    }
+    // Neither side is an array — keep target when present so a malformed
+    // fragment cannot wipe an existing non-array user value either.
+    return target !== undefined ? target : source;
   }
 
   if (

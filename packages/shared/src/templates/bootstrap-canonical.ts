@@ -83,7 +83,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 
 ## 行为规则
 - **修改任何文件前**:先 \`fab_recall(paths=[<被改文件>])\` —— 一次调用拿回相关 KB 的描述 + 原生读取路径(\`entries[].read_path\`)。\`fab_recall\` 不再投递正文;需要某条正文时直接对其 \`entries[].read_path\` 做原生 Read(\`Read <store>/knowledge/<type>/<id>--*.md\`),这会被 PostToolUse hook 记为 \`knowledge_body_read\`。lean 默认:描述+索引已够发现条目,正文按需读一次,不每轮重灌(KT-GLD-0005)。
-- **\`.fabric/agents.meta.json\` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 \`fabric doctor --fix\`。
+- **\`.fabric/agents.meta.json\` 严禁手动编辑**（co-location index 已退役;知识在 mounted stores）。异常时跑 \`fabric doctor\` / \`fabric doctor --fix\` 自愈可修复项。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(条目按 \`semantic_scope\` 分三层:\`team\` 团队通用 / \`project:<id>\` 本项目专属(仅在绑定该项目的仓库浮现)/ \`personal\` 个人 \`KP-*\`,三者引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
@@ -152,7 +152,7 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 
 ## Behavior Rules
 - **Before modifying any file**: first \`fab_recall(paths=[<file-being-edited>])\` —— a single call returns the relevant KB descriptions + native read paths (\`entries[].read_path\`). \`fab_recall\` no longer delivers bodies; when you need a body, do a native Read of its \`entries[].read_path\` (\`Read <store>/knowledge/<type>/<id>--*.md\`), which the PostToolUse hook records as \`knowledge_body_read\`. Lean default: descriptions + index already suffice to discover entries; read a body once on demand, don't re-inject it every turn (KT-GLD-0005).
-- **Never hand-edit \`.fabric/agents.meta.json\`**; the engine syncs derived state automatically — run \`fabric doctor --fix\` for an explicit reconcile.
+- **Never hand-edit \`.fabric/agents.meta.json\`** (co-location index retired; knowledge lives in mounted stores). For anomalies run \`fabric doctor\` / \`fabric doctor --fix\` on fixable state.
 
 ## Knowledge Base (KB)
 - **Discovery**: the SessionStart hook lists broad-scoped entries (scoped by \`semantic_scope\` across three tiers: \`team\` team-wide / \`project:<id>\` this-project-only (surfaces only in repos bound to that project) / \`personal\` \`KP-*\`, all three referenced the same way); editing a file may trigger a narrow hint via the PreToolUse hook.

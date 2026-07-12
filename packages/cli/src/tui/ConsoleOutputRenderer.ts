@@ -86,6 +86,14 @@ export class ConsoleOutputRenderer implements OutputRenderer {
     // is a no-op and the settled line is printed once — robust regardless of any
     // interstitial output, on TTY and non-TTY alike.
     if (step.status === "running") {
+      // ISS-20260712-001: one-shot non-destructive progress on TTY so long stages
+      // are not silent. Avoid cursor-up overwrite (interstitial output breaks it).
+      if (process.stdout.isTTY === true && !(this as { _runningAnnounced?: Set<string> })._runningAnnounced?.has(step.name)) {
+        const bag = (this as { _runningAnnounced?: Set<string> });
+        bag._runningAnnounced ??= new Set();
+        bag._runningAnnounced.add(step.name);
+        this.write(buildStepLine({ ...step, detail: step.detail ?? "…" }, this.colorOn));
+      }
       return;
     }
     this.write(buildStepLine(step, this.colorOn));

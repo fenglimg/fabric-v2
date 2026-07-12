@@ -168,6 +168,10 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
     { stepSuffix: "", hookFile: "fabric-hint.cjs" },
     { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
     { stepSuffix: "-narrow", hookFile: "knowledge-hint-narrow.cjs" },
+    // ISS-20260711-260: knowledge-pretooluse hard-requires cite-policy-evict
+    // via require("./cite-policy-evict.cjs") — validate must catch a missing
+    // copy the same way it catches a missing pretooluse orchestrator.
+    { stepSuffix: "-cite-evict", hookFile: "cite-policy-evict.cjs" },
     // ux-w2-6: single PreToolUse orchestrator (merges narrow + cite).
     { stepSuffix: "-pretooluse", hookFile: "knowledge-pretooluse.cjs" },
     // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.

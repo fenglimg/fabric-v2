@@ -81,6 +81,46 @@ import {
   collectStoreKnowledgeSummaries,
   computeReadSetRevision,
 } from "./cross-store-recall.js";
+import {
+  inspectDraftBacklogFromCanonical,
+  inspectEmptyTagsFromCanonical,
+} from "./doctor-knowledge-hygiene.js";
+import {
+  runDoctorBodyReadMisfireCheck,
+  type BodyReadMisfireReport,
+} from "./doctor-body-read-misfire.js";
+import {
+  inspectCiteGoodhart,
+  type CiteGoodhartInspection,
+} from "./doctor-cite-goodhart.js";
+import {
+  inspectDriftUnconsumed,
+  type DriftUnconsumedInspection,
+} from "./doctor-drift-unconsumed.js";
+import {
+  runDoctorApplyLintWithDeps,
+  type DoctorApplyLintMutation,
+  type DoctorApplyLintMutationKind,
+  type DoctorApplyLintReport,
+} from "./doctor-apply-lint.js";
+import {
+  applySessionHintsStaleCleanup,
+  inspectSessionHintsStale,
+  SESSION_HINTS_STALE_DAYS,
+  type SessionHintsStaleCandidate,
+  type SessionHintsStaleInspection,
+} from "./doctor-session-hints-stale.js";
+import {
+  createBodyReadMisfireCheck,
+  createCiteGoodhartCheck,
+  createDraftBacklogCheck,
+  createDriftUnconsumedCheck,
+  createKnowledgeTagsEmptyCheck,
+  createSessionHintsStaleCheck,
+  createUnderseededCheck,
+  type UnderseededInspection,
+} from "./doctor-knowledge-checks.js";
+
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
@@ -285,64 +325,13 @@ export type DoctorFixReport = {
   report: DoctorReport;
 };
 
-// rc.4 TASK-003: report shape returned by `runDoctorApplyLint`. Mirrors
-// `DoctorFixReport` but the `mutations` payload itemizes each per-finding
-// repair (demote / archive / counter bump) so the CLI surface can render a
-// machine-parseable summary in addition to human prose.
-export type DoctorApplyLintMutationKind =
-  | "knowledge_orphan_demote_required"
-  | "knowledge_stale_archive_required"
-  | "knowledge_index_drift"
-  // rc.5 TASK-009 (B2): pending entries >30d are auto-archived under
-  // `.fabric/.archive/pending/<type>/` (team) or `~/.fabric/.archive/pending/<type>/`
-  // (personal). One mutation per pending file moved.
-  | "knowledge_pending_auto_archive"
-  // rc.6 TASK-021 (E3): session-hints cache files older than 7d are deleted
-  // by the doctor cleanup pass (lint #27 knowledge_session_hints_stale).
-  // These are local cache files at `.fabric/.cache/session-hints-{id}.json`,
-  // not git-tracked, so the apply-lint arm uses plain fs.unlink with no
-  // ledger event (no audit trail required for local hot-cache hygiene).
-  | "knowledge_session_hints_stale_cleanup"
-  // v2.0.0-rc.9 TASK-003 (A3): pending entries with frontmatter missing
-  // relevance_scope and/or relevance_paths get back-filled with the
-  // schema defaults (`relevance_scope: broad`, `relevance_paths: []`)
-  // by lint #28 (`relevance_fields_missing`). One mutation per back-filled
-  // pending file. A single aggregate `relevance_migration_run` event is
-  // emitted after the full walk (NOT per file) — see runDoctorApplyLint
-  // for the emission site.
-  | "knowledge_relevance_fields_missing";
+// DoctorApplyLint* types → doctor-apply-lint.ts (W8 Step C)
+export type {
+  DoctorApplyLintMutationKind,
+  DoctorApplyLintMutation,
+  DoctorApplyLintReport,
+} from "./doctor-apply-lint.js";
 
-export type DoctorApplyLintMutation = {
-  kind: DoctorApplyLintMutationKind;
-  // For demote / archive: project-relative POSIX path of the affected file
-  // (pre-mutation). For index_drift: synthetic path string
-  // `agents.meta.json#counters.<layer>.<type>`.
-  path: string;
-  // Detail of the mutation (e.g. "proven -> verified", ".fabric/.archive/...",
-  // "5 -> 8"). Free-form prose for human consumption.
-  detail: string;
-  // True when the mutation succeeded; false when the per-finding repair
-  // threw and was caught (the rest of the apply-lint run continues; see
-  // task spec idempotency / partial-failure rationale).
-  applied: boolean;
-  // Populated when applied=false. Truncated to 240 chars to prevent log noise.
-  error?: string;
-};
-
-export type DoctorApplyLintReport = {
-  changed: boolean;
-  mutations: DoctorApplyLintMutation[];
-  warnings: DoctorIssue[];
-  // Non-fixable manual errors that surfaced in the lint pass. When non-empty
-  // and the corresponding code is in MANUAL_LINT_ERROR_CODES, runDoctorApplyLint
-  // sets `aborted: true` and returns BEFORE applying any mutations — these
-  // findings indicate corruption that auto-fix could destroy.
-  manual_errors: DoctorIssue[];
-  aborted: boolean;
-  abort_reason?: string;
-  message: string;
-  report: DoctorReport;
-};
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
 
@@ -436,49 +425,7 @@ type EventLedgerInspection = {
   error?: string;
 };
 
-// v2.0.0-rc.33 W4-A4 (T5 P2): "draft backlog" detection. Warns when the
-// proportion of `draft`-maturity canonical entries exceeds DRAFT_BACKLOG_RATIO
-// (default 0.5). A workspace where the majority of entries never graduate
-// past draft signals a broken promote loop — the rc.32 baseline showed 92%
-// of entries stuck at draft, which is what motivated this lint.
-type DraftBacklogInspection = {
-  status: "ok" | "warn";
-  draftCount: number;
-  totalCount: number;
-  ratio: number; // draftCount / totalCount, 0..1
-};
-
-function emptyDraftBacklogInspection(): DraftBacklogInspection {
-  return { status: "ok", draftCount: 0, totalCount: 0, ratio: 0 };
-}
-
-// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
-// over the last 7 days of `assistant_turn_observed` events.
-//
-//   G1 ritual_cite     — same (kb_id, "applied") tuple repeated > 5 times
-//                        across the window without contract change. Signal:
-//                        user is reciting the cite incantation without acting.
-//   G2 dismissal_abuse — > 60% of "applied" cites carry a skip_reason
-//                        commitment instead of an operator contract. Signal:
-//                        user is bypassing contract enforcement.
-//   G5 placeholder_cite — "none" cites with generic kb_line_raw ("KB: none"
-//                        or "[unspecified]") > 5. Signal: cite line ritual
-//                        without semantic intent.
-//
-// v2.1.0-rc.1 (ADJ-P4-1, full remap): G3 chained_from_misuse was retired —
-// rc.37 NEW-1 collapsed the cite vocabulary to 2-state, so the `chained-from`
-// tag no longer exists (the parser/schema remap it to `applied`). The chain
-// LINK it carried is still surfaced as a sibling cite_id, but the distinct tag
-// it policed can never appear, so the lint became permanently dead. Removed
-// rather than left as a no-op (fix, don't hide).
-//
-// All patterns are warning-level (never error) — Goodhart heuristics produce
-// false positives by definition. Message enumerates fired patterns so the
-// operator can audit per-pattern without re-running.
-type CiteGoodhartInspection = {
-  status: "ok" | "warn";
-  fired: Array<{ pattern: "G1" | "G2" | "G5"; detail: string }>;
-};
+// CiteGoodhartInspection → doctor-cite-goodhart.ts (W8)
 
 type PreexistingRootFilesInspection = {
   detected: string[];
@@ -491,42 +438,8 @@ type PreexistingRootFilesInspection = {
 // with no remap.
 export type LintMaturity = "proven" | "verified" | "draft";
 
-// rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
-// Reports when the workspace's canonical knowledge node count is strictly
-// less than `underseed_node_threshold` (default 10, override via
-// .fabric/fabric-config.json#underseed_node_threshold). Mirrors the
-// fabric-hint Stop hook's import-signal threshold so the two surfaces stay
-// in lockstep — but the doctor lint is unconditional (no init-quiet /
-// proposal-cooldown guards), since `doctor` is the user's deliberate check
-// rather than an ambient nag.
-type UnderseededInspection = {
-  // Total canonical entry count across the five canonical type subdirs.
-  node_count: number;
-  // Effective threshold (config override or default).
-  threshold: number;
-  // True iff node_count < threshold. Pre-computed so createUnderseededCheck
-  // does not have to re-derive the trigger predicate.
-  underseeded: boolean;
-};
-
-// rc.6 TASK-021 (E3): session-hints cache hygiene. Lint #27 surfaces stale
-// per-session cache files (`.fabric/.cache/session-hints-{id}.json`) whose
-// mtime is older than the SESSION_HINTS_STALE_DAYS threshold (default 7d).
-// Info-kind: cache files are local hot-cache, not git-tracked — accumulation
-// is a hygiene concern, not a correctness break. The apply-lint arm deletes
-// matched files via fs.unlink (no ledger event — see mutation kind comment).
-type SessionHintsStaleCandidate = {
-  // Project-relative POSIX path of the stale cache file (display + apply-lint
-  // anchor). The apply-lint arm joins this back to projectRoot to unlink.
-  path: string;
-  // Age of the file (mtime delta) in whole days. Floor-rounded to keep the
-  // signal coarse; sub-day precision adds noise without informational value.
-  age_days: number;
-};
-
-type SessionHintsStaleInspection = {
-  candidates: SessionHintsStaleCandidate[];
-};
+// SessionHintsStale* types + inspect + SESSION_HINTS_* constants:
+// doctor-session-hints-stale.ts (W8 Step A). Apply arm still local (Step B).
 
 // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory. The lock is
 // written by `acquireLock` at the top of `fabric serve` and removed by
@@ -552,21 +465,6 @@ type CanonicalLayer = "team" | "personal";
 // and the hook agree on the same floor unless the user overrides
 // underseed_node_threshold in .fabric/fabric-config.json.
 const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
-
-// rc.6 TASK-021 (E3): session-hints cache files older than this threshold
-// are flagged by lint #27 (`knowledge_session_hints_stale`) and deleted by
-// the apply-lint mutation arm. 7 days mirrors a typical work-week cadence —
-// long enough that a paused-then-resumed session keeps its dedupe state,
-// short enough that an abandoned session's cache file doesn't accrete.
-const SESSION_HINTS_STALE_DAYS = 7;
-
-// File-name prefix / suffix for session-hints cache files. The narrow hook
-// (knowledge-hint-narrow.cjs) writes these under `.fabric/.cache/`. Keep
-// the constants here aligned with the hook's SESSION_HINTS_FILE_PREFIX /
-// SESSION_HINTS_FILE_SUFFIX — both surfaces MUST agree on the naming
-// convention for the cleanup pass to identify the right files.
-const SESSION_HINTS_FILE_PREFIX = "session-hints-";
-const SESSION_HINTS_FILE_SUFFIX = ".json";
 
 // rc.6 TASK-023 (E6): thresholds for lint #26 narrow_too_few. Hardcoded in
 // rc.6 — a fabric-config.json override may land in rc.7+ if dogfood
@@ -695,20 +593,17 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (reads event ledger); placed after the sync inspections so the await
   // doesn't gate them.
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
+  // ISS-20260711-221: wire body_read misfire into main doctor report.
+  const bodyReadMisfire = await runDoctorBodyReadMisfireCheck(projectRoot);
   // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
   // post-decolo canonical knowledge source. Summaries feed store-aware checks;
   // the count + corpus revision hash replace retired agents.meta-derived fields.
   const storeKnowledgeSummaries = await collectStoreKnowledgeSummaries(projectRoot);
   const storeRevision = await computeReadSetRevision(projectRoot);
-  // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
-  const draftBacklog = emptyDraftBacklogInspection();
-  // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
-  const knowledgeTagsEmpty: EmptyTagsInspection = {
-    status: "ok",
-    emptyCount: 0,
-    totalCount: storeKnowledgeSummaries.length,
-    ratio: 0,
-  };
+  // ISS-20260711-247: real draft/tag inspections over store canonical corpus.
+  const storeCanonicalForHygiene = await collectStoreCanonicalEntries(projectRoot);
+  const draftBacklog = inspectDraftBacklogFromCanonical(storeCanonicalForHygiene);
+  const knowledgeTagsEmpty = inspectEmptyTagsFromCanonical(storeCanonicalForHygiene);
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
   // in the last 30 days — drift detection runs but no consumption pipeline.
   const driftUnconsumed = await inspectDriftUnconsumed(projectRoot);
@@ -880,6 +775,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
+    createBodyReadMisfireCheck(t, bodyReadMisfire),
     createDriftUnconsumedCheck(t, driftUnconsumed),
     // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
     // replaced by the store-aware `store_counter_drift` (per-store committed
@@ -1322,194 +1218,24 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   };
 }
 
-// rc.4 TASK-003: lint mutation entry point. Behavior summary:
-//   * `lint:orphan_demote` (warning kind code=knowledge_orphan_demote_required):
-//     rewrite frontmatter `maturity:` one tier down (proven -> verified,
-//     verified -> draft) via atomicWriteText; emit knowledge_demoted event.
-//   * `lint:stale_archive` (code=knowledge_stale_archive_required):
-//     rename file to .fabric/.archive/<type>/<filename>; emit knowledge_archived
-//     event. Per task design the archive subtree is a tombstone (not git-tracked
-//     active history) so we use `fs.rename` rather than `git mv`. The events.jsonl
-//     entry IS the audit trail.
-//   * `lint:index_drift` (fixable_error code=knowledge_index_drift):
-//     bump agents.meta.json counters[layer][type] to max_observed + 1 via
-//     atomicWriteJson. NO event emission — the schema does not (yet) carry
-//     an agents_meta_repaired event type and v2.0 git diff of agents.meta.json
-//     is sufficient audit (decision documented in TASK-003 rationale step 4).
-//   * `lint:stable_id_duplicate` / `lint:layer_mismatch` (manual_error kinds):
-//     auto-fix is unsafe (data loss potential). runDoctorApplyLint aborts
-//     BEFORE applying any mutations and surfaces a clear "manual repair
-//     required" message via abort_reason.
-//   * `lint:pending_overdue` (warning kind): informational at 14d — humans
-//     triage via the fabric-review Skill. At 30d the entry crosses the
-//     PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS gate and `--apply-lint` git-mv's
-//     it to `.fabric/.archive/pending/<type>/` (team) or
-//     `~/.fabric/.archive/pending/<type>/` (personal), emitting one
-//     `pending_auto_archived` event per move (rc.5 TASK-009 B2).
-//
-// Idempotency: each mutation refreshes lastActiveAt indirectly (demoted /
-// archived events register the entry's stable_id with a fresh ts in the
-// next run's buildLastActiveIndex) and the inspections re-evaluate against
-// the new on-disk state, so a 2nd `--apply-lint` run on a dir with no new
-// findings produces 0 mutations and 0 events.
-// v2.2 Goal B (G-INTEGRITY): the loud-error gate now lists only
-// `knowledge_layer_mismatch` — the rebuilt store integrity lints fold the old
-// filename-id `stable_id_duplicate` into the frontmatter-id `stable_id_collision`
-// (a warning), since `deriveRuleIdentity` unifies the two id sources in the
-// store model. layer_mismatch stays a manual error (rename + move is unsafe to
-// auto-apply).
-const MANUAL_LINT_ERROR_CODES = new Set([
-  "knowledge_layer_mismatch",
-]);
-
+// runDoctorApplyLint → doctor-apply-lint.ts (W8 Step C)
 export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLintReport> {
-  const projectRoot = normalizeTarget(target);
-  const before = await runDoctorReport(projectRoot);
-  const mutations: DoctorApplyLintMutation[] = [];
-  const ledgerWarnings: DoctorIssue[] = [];
-
-  // Loud-error gate: stable_id_duplicate / layer_mismatch are corruption.
-  // Auto-fix could delete data. Abort before any mutation.
-  const blockingManual = before.manual_errors.find((issue) =>
-    MANUAL_LINT_ERROR_CODES.has(issue.code),
-  );
-  if (blockingManual !== undefined) {
-    return {
-      changed: false,
-      mutations: [],
-      warnings: [],
-      manual_errors: before.manual_errors,
-      aborted: true,
-      abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message} - apply-lint cannot resolve this safely; triage by hand.`,
-      message: `apply-lint aborted: ${blockingManual.code} requires manual repair.`,
-      report: before,
-    };
-  }
-
-  const now = Date.now();
-
-  // rc.6 TASK-021 (E3): session-hints cache cleanup (#27). Independent of
-  // all canonical/pending mutation paths — operates strictly on local hot-
-  // cache files under `.fabric/.cache/session-hints-*.json`. Ordering: runs
-  // after pending_auto_archive because they share no state and the cache
-  // cleanup is the cheapest mutation (single unlink per file); deferring it
-  // to last would arbitrarily inflate the perceived apply-lint runtime if
-  // an upstream mutation hangs. One mutation per stale cache file.
-  const sessionHintsStale = await inspectSessionHintsStale(projectRoot, now);
-  for (const candidate of sessionHintsStale.candidates) {
-    mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
-  }
-
-  // v2.2 store cutover: the relevance-fields back-fill walk over the retired
-  // dual-root pending tree is gone (store-aware re-implementation deferred).
-  // The aggregate `relevance_migration_run` heartbeat still fires every
-  // --apply-lint run for audit-trail symmetry with `doctor_run` (scanned_count
-  // / touched_count are 0 — there is no walk). Best-effort: a ledger-append
-  // failure does not abort the run.
-  try {
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "relevance_migration_run",
-      timestamp: new Date(now).toISOString(),
-      scanned_count: 0,
-      touched_count: 0,
-    });
-  } catch (error) {
-    ledgerWarnings.push(createLedgerAppendWarning("relevance migration aggregate event", error));
-  }
-
-  // v2.2 W5 R4 (agents.meta decolo): the co-location `index_drift` apply-lint
-  // mutation (bump agents.meta.json#counters) is retired. Its store-aware
-  // successor floors every read-set store's committed counters.json at disk-max
-  // (KT-DEC-0004 — floor never lowers). One aggregate mutation row per drifted
-  // store reconciled.
-  const storeCounterDrifts = inspectStoreCounters(projectRoot);
-  if (storeCounterDrifts.length > 0) {
-    const reconciled = fixStoreCounters(projectRoot);
-    const detail = storeCounterDrifts
-      .map((d) => `${d.store_alias}:${d.layer}.${d.type} ${d.current} -> ${d.disk_max}`)
-      .join("; ");
-    mutations.push({
-      kind: "knowledge_index_drift",
-      path: "stores/*/counters.json",
-      detail: detail || "(no store counters processed)",
-      applied: reconciled.length > 0,
-    });
-  }
-
-  contextCache.invalidate("meta_write", projectRoot);
-
-  const after = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
-  const successCount = mutations.filter((m) => m.applied).length;
-  const failureCount = mutations.length - successCount;
-
-  return {
-    changed: successCount > 0,
-    mutations,
-    warnings: after.warnings,
-    manual_errors: after.manual_errors,
-    aborted: false,
-    message: createApplyLintMessage(successCount, failureCount, after.manual_errors.length),
-    report: after,
-  };
+  return runDoctorApplyLintWithDeps(target, {
+    normalizeTarget,
+    runDoctorReport,
+    appendDoctorWarnings,
+    createLedgerAppendWarning,
+    contextCacheInvalidate: (kind, projectRoot) => {
+      // Apply-lint only ever invalidates meta_write; kind kept for API stability.
+      void kind;
+      contextCache.invalidate("meta_write", projectRoot);
+    },
+  });
 }
 
-function createApplyLintMessage(
-  succeeded: number,
-  failed: number,
-  manualErrorCount: number,
-): string {
-  const parts: string[] = [];
-  if (succeeded === 0 && failed === 0) {
-    parts.push("No apply-lint mutations were needed.");
-  } else {
-    parts.push(`Applied ${succeeded} apply-lint mutation${succeeded === 1 ? "" : "s"}.`);
-    if (failed > 0) {
-      parts.push(`${failed} mutation${failed === 1 ? "" : "s"} failed.`);
-    }
-  }
-  parts.push(
-    manualErrorCount === 0
-      ? "No manual errors remain."
-      : `${manualErrorCount} manual error${manualErrorCount === 1 ? "" : "s"} remain.`,
-  );
-  return parts.join(" ");
-}
 
-// rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
-// cleanup. Plain fs.unlink — these are local cache files, not git-tracked,
-// so no `git mv` / ledger event / rollback dance. Mirrors the lightweight
-// pattern called out in the task spec (vs. applyPendingAutoArchive's full
-// rename-with-event-emission).
-//
-// Failure mode: a per-file unlink failure (ENOENT — file disappeared
-// between inspection and mutation, EPERM — fs permissions, etc) is captured
-// as `applied: false` with the error message truncated. The apply-lint run
-// continues; doctor's contract is best-effort hygiene, not transactional.
-async function applySessionHintsStaleCleanup(
-  projectRoot: string,
-  candidate: SessionHintsStaleCandidate,
-): Promise<DoctorApplyLintMutation> {
-  const detail = `deleted (${candidate.age_days}d old)`;
-  const absPath = join(projectRoot, candidate.path);
-  try {
-    const { unlink } = await import("node:fs/promises");
-    await unlink(absPath);
-    return {
-      kind: "knowledge_session_hints_stale_cleanup",
-      path: candidate.path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_session_hints_stale_cleanup",
-      path: candidate.path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
+
+// applySessionHintsStaleCleanup → doctor-session-hints-stale.ts (W8 Step B)
 
 // v2.2 W5 R4 (agents.meta decolo): `applyIndexDriftFix` removed — it bumped the
 // retired co-location agents.meta.json#counters. Store counter flooring now goes
@@ -1625,116 +1351,9 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
   }
 }
 
-// v2.0.0-rc.33 W3-3 (P1-3): Goodhart inspection over 7d of cite events.
-// Reads `assistant_turn_observed` events from the ledger, applies 4 simple
-// heuristics. Threshold tuning matches the rc.32 baseline cite-coverage 3.1%
-// scenario — at that low signal density, > 5 instances of any one pattern
-// over 7d is meaningful (vs noise floor < 1 per day).
-async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartInspection> {
-  const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-  const RITUAL_REPEAT_THRESHOLD = 5;
-  const DISMISSAL_ABUSE_RATIO = 0.6;
-  const PLACEHOLDER_COUNT_THRESHOLD = 5;
-  const cutoffMs = Date.now() - WINDOW_MS;
-  const fired: CiteGoodhartInspection["fired"] = [];
+// inspectCiteGoodhart → doctor-cite-goodhart.ts (W8)
 
-  let events: EventLedgerEvent[] = [];
-  try {
-    const result = await readEventLedger(projectRoot);
-    events = result.events;
-  } catch {
-    return { status: "ok", fired: [] };
-  }
-  const turns = events.filter(
-    (e): e is Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }> => {
-      if (e.event_type !== "assistant_turn_observed") return false;
-      const ts = Date.parse(e.timestamp);
-      return Number.isFinite(ts) && ts >= cutoffMs;
-    },
-  );
-  if (turns.length === 0) {
-    return { status: "ok", fired: [] };
-  }
 
-  // G1: count (kb_id, "applied") tuples. Same tuple > threshold = ritual.
-  // v2.1.0-rc.1 (ADJ-P4-1, full remap): cite_tags reaches here normalized to the
-  // 2-state vocab (legacy 'recalled'/'planned'/'chained-from' → 'applied' on
-  // read), so the single 'applied' category captures the Goodhart signal (AI
-  // cites a single hot id over and over instead of expanding coverage).
-  const appliedCount = new Map<string, number>();
-  for (const turn of turns) {
-    for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] === "applied") {
-        const key = turn.cite_ids[i];
-        appliedCount.set(key, (appliedCount.get(key) ?? 0) + 1);
-      }
-    }
-  }
-  for (const [id, n] of appliedCount.entries()) {
-    if (n > RITUAL_REPEAT_THRESHOLD) {
-      fired.push({ pattern: "G1", detail: `${id} repeated as [applied] ${n}x in 7d` });
-      break; // one example is enough — operator scans the ledger for the rest
-    }
-  }
-
-  // G2: dismissal abuse — skip_reason ratio on applied cites.
-  let appliedTotal = 0;
-  let appliedWithSkip = 0;
-  for (const turn of turns) {
-    for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] !== "applied") continue;
-      appliedTotal += 1;
-      const commitment = turn.cite_commitments[i];
-      if (commitment && typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0) {
-        appliedWithSkip += 1;
-      }
-    }
-  }
-  if (appliedTotal >= 5 && appliedWithSkip / appliedTotal > DISMISSAL_ABUSE_RATIO) {
-    fired.push({
-      pattern: "G2",
-      detail: `${appliedWithSkip}/${appliedTotal} applied cites used skip:<reason> (> ${Math.round(DISMISSAL_ABUSE_RATIO * 100)}%)`,
-    });
-  }
-
-  // G3 chained_from_misuse retired in v2.1.0-rc.1 (ADJ-P4-1) — the chained-from
-  // tag no longer exists post-remap, so the lint was permanently dead. See the
-  // CiteGoodhartInspection type doc above.
-
-  // G5: placeholder cite — "none" tags with generic kb_line_raw.
-  // Generic markers: a kb_line_raw that is exactly "KB: none" (no bracketed reason)
-  // OR contains "[unspecified]". The rc.33 cite-policy doc lists these as the
-  // legacy/sentinel forms operators should NOT use long-term.
-  let placeholderCount = 0;
-  for (const turn of turns) {
-    if (turn.cite_tags.length === 0) continue;
-    const allNone = turn.cite_tags.every((t) => t === "none");
-    if (!allNone) continue;
-    const raw = (turn.kb_line_raw ?? "").trim();
-    if (raw === "KB: none" || raw.includes("[unspecified]")) {
-      placeholderCount += 1;
-    }
-  }
-  if (placeholderCount > PLACEHOLDER_COUNT_THRESHOLD) {
-    fired.push({
-      pattern: "G5",
-      detail: `${placeholderCount} placeholder "KB: none" / "[unspecified]" cites in 7d`,
-    });
-  }
-
-  return { status: fired.length === 0 ? "ok" : "warn", fired };
-}
-
-// rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when
-// >50% of entries carry `tags: []` — clustering / topical surfacing degrades
-// when most entries are tag-less. Threshold mirrors draft_backlog (>50% with
-// ≥10 entries total to avoid spurious warns in fresh repos).
-type EmptyTagsInspection = {
-  status: "ok" | "warn";
-  emptyCount: number;
-  totalCount: number;
-  ratio: number;
-};
 
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
 // `.fabric/.cache/knowledge-test.index.json` was derived from the co-location
@@ -1930,157 +1549,7 @@ function createEventLedgerSchemaCompatCheck(
   );
 }
 
-// v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog check. Single ratio + count
-// message — operator does not need a per-entry breakdown to act on the signal
-// (the action is "run fabric-review to promote drafts" regardless of which
-// entries are involved).
-function createDraftBacklogCheck(
-  t: Translator,
-  inspection: DraftBacklogInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.draft_backlog.name"),
-      t("doctor.check.draft_backlog.ok"),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 100);
-  return issueCheck(
-    t("doctor.check.draft_backlog.name"),
-    "warn",
-    "warning",
-    "knowledge_draft_backlog",
-    t("doctor.check.draft_backlog.message", {
-      draftCount: String(inspection.draftCount),
-      totalCount: String(inspection.totalCount),
-      pct: String(pct),
-    }),
-    t("doctor.check.draft_backlog.remediation"),
-  );
-}
-
-// rc.36 TASK-09 (P1-NEW1): drift detection without subsequent demote — KB
-// dies slowly when drift events are emitted but no human/auto action follows.
-// 30-day window: if drift events > 0 AND zero knowledge_demoted in same
-// window, warn the operator that drift is observed but unconsumed.
-type DriftUnconsumedInspection = {
-  status: "ok" | "warn";
-  driftCount: number;
-  demoteCount: number;
-};
-
-async function inspectDriftUnconsumed(projectRoot: string): Promise<DriftUnconsumedInspection> {
-  const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-  const MIN_DRIFT_FOR_WARN = 5;
-  const cutoffMs = Date.now() - WINDOW_MS;
-  let events: EventLedgerEvent[] = [];
-  try {
-    const result = await readEventLedger(projectRoot);
-    events = result.events;
-  } catch {
-    return { status: "ok", driftCount: 0, demoteCount: 0 };
-  }
-  let driftCount = 0;
-  let demoteCount = 0;
-  for (const e of events) {
-    if (e.ts < cutoffMs) continue;
-    if (e.event_type === "knowledge_drift_detected") driftCount += 1;
-    else if (e.event_type === "knowledge_demoted") demoteCount += 1;
-  }
-  // rc.36 TASK-32 review-iter-1 fix: warn whenever drift events outnumber
-  // demote events by the threshold. The earlier `demoteCount === 0` form
-  // cleared the warning the moment a single demote landed, even if 10 drift
-  // events remained unconsumed. Per-event pairing is deferred to the rc.37
-  // auto-demote pipeline; this count-delta heuristic is sufficient until then.
-  const unconsumed = driftCount - demoteCount;
-  return {
-    status: unconsumed >= MIN_DRIFT_FOR_WARN ? "warn" : "ok",
-    driftCount,
-    demoteCount,
-  };
-}
-
-function createDriftUnconsumedCheck(
-  t: Translator,
-  inspection: DriftUnconsumedInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.drift_unconsumed.name"),
-      t("doctor.check.drift_unconsumed.ok"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.drift_unconsumed.name"),
-    "warn",
-    "warning",
-    "knowledge_drift_unconsumed",
-    t("doctor.check.drift_unconsumed.message", {
-      driftCount: String(inspection.driftCount),
-      demoteCount: String(inspection.demoteCount),
-    }),
-    t("doctor.check.drift_unconsumed.remediation"),
-  );
-}
-
-// rc.36 TASK-05 (P0-8): empty-tags warn check.
-function createKnowledgeTagsEmptyCheck(
-  t: Translator,
-  inspection: EmptyTagsInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.knowledge_tags_empty.name"),
-      t("doctor.check.knowledge_tags_empty.ok"),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 100);
-  return issueCheck(
-    t("doctor.check.knowledge_tags_empty.name"),
-    "warn",
-    "warning",
-    "knowledge_tags_empty_ratio",
-    t("doctor.check.knowledge_tags_empty.message", {
-      emptyCount: String(inspection.emptyCount),
-      totalCount: String(inspection.totalCount),
-      pct: String(pct),
-    }),
-    t("doctor.check.knowledge_tags_empty.remediation"),
-  );
-}
-
-// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart check. Aggregates fired
-// patterns into a single multi-line message so the operator gets the full
-// audit hit list in one report row. Always warning severity — Goodhart
-// heuristics are advisory, not error-grade.
-function createCiteGoodhartCheck(
-  t: Translator,
-  inspection: CiteGoodhartInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.cite_goodhart.name"),
-      t("doctor.check.cite_goodhart.ok"),
-    );
-  }
-  const list = inspection.fired.map((f) => `${f.pattern}: ${f.detail}`).join("; ");
-  const count = inspection.fired.length;
-  return issueCheck(
-    t("doctor.check.cite_goodhart.name"),
-    "warn",
-    "warning",
-    "cite_goodhart_pattern",
-    t(`doctor.check.cite_goodhart.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.cite_goodhart.remediation"),
-    // rc.35 TASK-12 (P0-11): maintainer audience. G1/G2/G3/G5 are internal
-    // pattern codes from the cite-policy design memo — npm end users have
-    // no actionable lever for these. Fold by default; --verbose unfolds.
-    "maintainer",
-  );
-}
+// createDraftBacklog/Drift/Tags/BodyRead/CiteGoodhart → doctor-knowledge-checks.ts (W8)
 
 function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists || !ledger.writable) {
@@ -2430,43 +1899,7 @@ async function buildLastActiveIndex(
 // arm (applySessionHintsStaleCleanup) does the unlink. Directory absence is
 // the common-case empty-result branch (no narrow hook ever fired in this
 // workspace) — return zero candidates without an error.
-async function inspectSessionHintsStale(
-  projectRoot: string,
-  now: number,
-): Promise<SessionHintsStaleInspection> {
-  const cacheDir = join(projectRoot, ".fabric", ".cache");
-  let entries;
-  try {
-    entries = await readdirAsync(cacheDir, { withFileTypes: true });
-  } catch {
-    return { candidates: [] };
-  }
-  const candidates: SessionHintsStaleCandidate[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!entry.name.startsWith(SESSION_HINTS_FILE_PREFIX)) continue;
-    if (!entry.name.endsWith(SESSION_HINTS_FILE_SUFFIX)) continue;
-    const absPath = join(cacheDir, entry.name);
-    let mtimeMs = 0;
-    try {
-      mtimeMs = (await statAsync(absPath)).mtimeMs;
-    } catch {
-      // Unreadable stat → skip rather than guess at age. The next doctor
-      // run will retry (or the OS will reap a corrupted entry).
-      continue;
-    }
-    const ageDays = Math.floor((now - mtimeMs) / MS_PER_DAY);
-    if (ageDays < SESSION_HINTS_STALE_DAYS) continue;
-    candidates.push({
-      path: posix.join(".fabric", ".cache", entry.name),
-      age_days: ageDays,
-    });
-  }
-  // Stable display order — alphabetical by path so test assertions and
-  // human review aren't sensitive to readdir() ordering quirks.
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
-}
+// inspectSessionHintsStale → doctor-session-hints-stale.ts (W8 Step A)
 
 // rc.23 TASK-010 (e): inspect `.fabric/.serve.lock` for a dead-PID corpse.
 // Re-uses `readLockState` (best-effort JSON parse — returns null on
@@ -2518,66 +1951,7 @@ async function readUnderseedThresholdFromConfig(projectRoot: string): Promise<nu
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
-// rc.5 TASK-010: surface the underseeded lint (#22) as an `info` kind so it
-// shows in the report without bumping doctor's status to warn/error — a small
-// corpus is a legitimate state during early adoption, not a defect. The
-// actionHint points the user at the fabric-import Skill, mirroring the
-// fabric-hint hook's import-signal recommendation.
-function createUnderseededCheck(t: Translator, inspection: UnderseededInspection): DoctorCheck {
-  if (!inspection.underseeded) {
-    return okCheck(
-      t("doctor.check.underseeded.name"),
-      t("doctor.check.underseeded.ok", {
-        count: String(inspection.node_count),
-        threshold: String(inspection.threshold),
-      }),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.underseeded.name"),
-    "ok",
-    "info",
-    "knowledge_underseeded",
-    t(`doctor.check.underseeded.message.${inspection.node_count === 1 ? "singular" : "plural"}`, {
-      count: String(inspection.node_count),
-      threshold: String(inspection.threshold),
-    }),
-    t("doctor.check.underseeded.remediation"),
-  );
-}
-
-// rc.6 TASK-021 (E3): surface stale session-hints cache files as an info-
-// kind finding. Status remains "ok" — the cache is hot-cache hygiene, not
-// a correctness concern. The actionHint points at apply-lint so users can
-// reap accumulated cache files in a single pass.
-function createSessionHintsStaleCheck(
-  t: Translator,
-  inspection: SessionHintsStaleInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.session_hints_stale.name"),
-      t("doctor.check.session_hints_stale.ok", {
-        days: String(SESSION_HINTS_STALE_DAYS),
-      }),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.path} (${first.age_days}d old)`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.session_hints_stale.name"),
-    "ok",
-    "info",
-    "knowledge_session_hints_stale",
-    t(`doctor.check.session_hints_stale.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      days: String(SESSION_HINTS_STALE_DAYS),
-      detail,
-    }),
-    t("doctor.check.session_hints_stale.remediation"),
-  );
-}
+// createUnderseededCheck + createSessionHintsStaleCheck → doctor-knowledge-checks.ts (W8)
 
 // rc.23 TASK-010 (e): surface a stale `.fabric/.serve.lock` (dead-PID corpse)
 // as an info-kind advisory. Status stays "ok" — a stale lock is operator
@@ -3401,79 +2775,24 @@ function yamlQuoteIfNeeded(value: string): string {
 
 export { getEventLedgerPath };
 
-// ---------------------------------------------------------------------------
-// W3-3 (KT-DEC-0030): body_read misfire sub-check.
-//
-// After retrieval collapsed to one lean tool (KT-DEC-0026), the agent consumes a
-// knowledge body via a NATIVE Read of the store file, observed by the PostToolUse
-// hook as `knowledge_body_read`. The wire has a structural failure mode: if the
-// PostToolUse matcher is missing `Read` (config drift) the marker NEVER fires and
-// the planned → body_read → cite[applied] funnel goes dark silently.
-//
-// doctor can't witness a Read directly, so it proxies via `knowledge_context_planned`
-// — every fab_recall surfaces native read-paths to the agent, so sustained recall
-// activity with ZERO body_read events across the whole ledger is the misfire
-// signature. The check is deliberately BINARY (silence amid significant activity),
-// not a ratio: body_read is sparse BY DESIGN (the lean default reads bodies on
-// demand, KT-GLD-0005), so a low-but-nonzero rate is healthy, not a fault. Only
-// total silence past a recall-volume floor warns. Standalone (not wired into the
-// runDoctorReport pipeline yet); the function + tests pin the contract.
-//
-// hook = nudge, never a gate (KT-DEC-0007): the result is a warn-level hint only.
-// ---------------------------------------------------------------------------
+// W8: body-read misfire inspect lives in dedicated module.
+export {
+  runDoctorBodyReadMisfireCheck,
+  type BodyReadMisfireReport,
+} from "./doctor-body-read-misfire.js";
+export {
+  inspectDriftUnconsumed,
+  type DriftUnconsumedInspection,
+} from "./doctor-drift-unconsumed.js";
 
-export type BodyReadMisfireReport = {
-  recalls: number; // knowledge_context_planned count (read-paths surfaced)
-  body_reads: number; // knowledge_body_read count (native Reads observed)
-  status: "ok" | "warn";
-  message: string;
-};
+export {
+  inspectCiteGoodhart,
+  type CiteGoodhartInspection,
+} from "./doctor-cite-goodhart.js";
 
-// Recall-volume floor below which "zero body_read" is statistically
-// uninformative (new/quiet workspace) — never warn there.
-const BODY_READ_MISFIRE_MIN_RECALLS = 10;
-
-export async function runDoctorBodyReadMisfireCheck(
-  projectRoot: string,
-): Promise<BodyReadMisfireReport> {
-  const { events } = await readEventLedger(projectRoot);
-  let recalls = 0;
-  let bodyReads = 0;
-  for (const event of events) {
-    if (event.event_type === "knowledge_context_planned") {
-      recalls += 1;
-    } else if (event.event_type === "knowledge_body_read") {
-      bodyReads += 1;
-    }
-  }
-
-  if (recalls < BODY_READ_MISFIRE_MIN_RECALLS) {
-    return {
-      recalls,
-      body_reads: bodyReads,
-      status: "ok",
-      message:
-        `Only ${String(recalls)} recall(s) on record (< ${String(BODY_READ_MISFIRE_MIN_RECALLS)}) — ` +
-        `not enough activity to assess knowledge_body_read wiring.`,
-    };
-  }
-
-  if (bodyReads === 0) {
-    return {
-      recalls,
-      body_reads: 0,
-      status: "warn",
-      message:
-        `${String(recalls)} recall(s) surfaced read-paths but ZERO knowledge_body_read events — ` +
-        `the PostToolUse Read marker may be unwired. Check the PostToolUse matcher includes ` +
-        `\`Read\` in .claude/settings.json (and the codex equivalent), then rerun \`fabric install\`.`,
-    };
-  }
-
-  return {
-    recalls,
-    body_reads: bodyReads,
-    status: "ok",
-    message: `knowledge_body_read wiring healthy (${String(bodyReads)} body read(s) across ${String(recalls)} recall(s)).`,
-  };
-}
+export {
+  inspectSessionHintsStale,
+  SESSION_HINTS_STALE_DAYS,
+  type SessionHintsStaleCandidate,
+  type SessionHintsStaleInspection,
+} from "./doctor-session-hints-stale.js";

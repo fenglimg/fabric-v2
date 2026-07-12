@@ -633,7 +633,14 @@ function tallySessionActivity(events, sessionId) {
   for (const ev of events) {
     if (!ev || ev.session_id !== sessionId) continue;
     if (ev.event_type === "file_mutated") edits += 1;
-    else if (ev.event_type === "knowledge_consumed") consumed += 1;
+    // ISS-20260711-222: production emits knowledge_body_read (KT-DEC-0030);
+    // knowledge_consumed is retired as a live producer. Count both so historic
+    // ledgers still contribute without zeroing modern sessions.
+    else if (
+      ev.event_type === "knowledge_body_read" ||
+      ev.event_type === "knowledge_consumed"
+    )
+      consumed += 1;
   }
   return { edits, consumed };
 }
@@ -654,7 +661,13 @@ function emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out) 
   if (mode === "silent") return; // human channel globally muted
 
   const tally = tallySessionActivity(events, sessionId);
-  const pending = pendingStats && typeof pendingStats.total === "number" ? pendingStats.total : 0;
+  // ISS-20260712-005: producer returns {count, oldestAgeMs}; `total` was a dead field → always 0.
+  const pending =
+    pendingStats && typeof pendingStats.count === "number"
+      ? pendingStats.count
+      : pendingStats && typeof pendingStats.total === "number"
+        ? pendingStats.total
+        : 0;
   // Nothing happened yet this session AND no backlog → no trust anchor to show.
   if (tally.edits === 0 && tally.consumed === 0 && pending === 0) return;
 
@@ -1091,15 +1104,17 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     // count and age substrings (`${count} 条`, `${days} 天`) so existing
     // tests pass; drops the Agent-jussive "建议调用 ... skill ..." for a
     // polite question framing aimed at the human reader.
-    const ageSuffix =
+    // ISS-20260712-017: pass locale-neutral oldestDays; each banner variant
+    // owns its age suffix (no zh-hardcoded ageSuffix + en string-replace).
+    const oldestDays =
       stats.oldestAgeMs !== null
-        ? ` / 最早一条 ${(stats.oldestAgeMs / MS_PER_DAY).toFixed(1)} 天前`
+        ? (stats.oldestAgeMs / MS_PER_DAY).toFixed(1)
         : "";
     // rc.16 TASK-002: i18n via lib. Substrings ('${count} 条', 'fabric-review')
     // preserved by the lib's zh-CN templates.
     const line1 = renderBanner("reviewLine1", variant, {
       count: stats.count,
-      ageSuffix,
+      oldestDays,
     });
     const line2 = renderBanner("reviewCta", variant, {});
     const reason = `${line1}\n${line2}`;
@@ -1292,10 +1307,17 @@ function readUnderseedThreshold(projectRoot) {
 // a null/absent sessionId falls back to the legacy non-scoped path (upgrade +
 // pre-session-id callers), so existing on-disk state and tests are unaffected;
 // the Stop hook always passes the real session_id from its stdin payload.
-function resolveHookSessionId(payload) {
-  return payload && typeof payload.session_id === "string" && payload.session_id.length > 0
-    ? payload.session_id
-    : null;
+function resolveHookSessionId(payload, env) {
+  // ISS-20260712-007: align with cite-policy-evict — try payload, then FABRIC_SESSION_ID.
+  // Still return null (not a fake sentinel) when both missing so cadence/status can fail open.
+  if (payload && typeof payload.session_id === "string" && payload.session_id.length > 0) {
+    return payload.session_id;
+  }
+  const envBag = (env && env.processEnv) || process.env;
+  if (envBag && typeof envBag.FABRIC_SESSION_ID === "string" && envBag.FABRIC_SESSION_ID.length > 0) {
+    return envBag.FABRIC_SESSION_ID;
+  }
+  return null;
 }
 
 function sessionScopedCacheFile(baseRelPath, sessionId) {

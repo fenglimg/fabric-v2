@@ -133,4 +133,19 @@ describe("deepMerge — arrayAppendPaths option", () => {
     // hooks.Stop: APPEND
     expect(merged.hooks.Stop).toEqual([{ command: "nested-x" }, { command: "nested-y" }]);
   });
+
+  // ISS-20260711-261: protected paths must not REPLACE when either side is non-array.
+  it("arrayAppendPaths preserves target array when source is non-array", () => {
+    const target = { hooks: { Stop: [{ command: "user-hook.sh" }] } };
+    const source = { hooks: { Stop: { command: "malformed-object" } } };
+    const merged = deepMerge(target, source, { arrayAppendPaths: ["hooks.Stop"] });
+    expect(merged.hooks.Stop).toEqual([{ command: "user-hook.sh" }]);
+  });
+
+  it("arrayAppendPaths accepts source array when target slot is non-array", () => {
+    const target = { hooks: { Stop: { command: "legacy-object" } } };
+    const source = { hooks: { Stop: [{ command: "fabric-hint.cjs" }] } };
+    const merged = deepMerge(target, source, { arrayAppendPaths: ["hooks.Stop"] });
+    expect(merged.hooks.Stop).toEqual([{ command: "fabric-hint.cjs" }]);
+  });
 });

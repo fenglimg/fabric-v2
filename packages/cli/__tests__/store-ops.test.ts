@@ -56,25 +56,25 @@ afterEach(() => {
 });
 
 describe("fabric store mount/list", () => {
-  it("adds a store and persists it to the global config", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
+  it("adds a store and persists it to the global config", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
     expect(storeList(globalRoot)).toHaveLength(1);
     // Persisted: a fresh load sees it.
     expect(loadGlobalConfig(globalRoot)?.stores[0]?.alias).toBe("team");
   });
 
-  it("rejects an alias collision against a different store", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
-    expect(() => storeAdd({ store_uuid: PLATFORM, alias: "team" }, globalRoot)).toThrow(
+  it("rejects an alias collision against a different store", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    await expect(storeAdd({ store_uuid: PLATFORM, alias: "team" }, globalRoot)).rejects.toThrow(
       /alias 'team' already mounts/,
     );
   });
 
-  it("rejects a mount_name collision against a different store", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team", mount_name: "platform-kb" }, globalRoot);
-    expect(() =>
+  it("rejects a mount_name collision against a different store", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team", mount_name: "platform-kb" }, globalRoot);
+    await expect(
       storeAdd({ store_uuid: PLATFORM, alias: "platform", mount_name: "platform-kb" }, globalRoot),
-    ).toThrow(/mount_name 'platform-kb' already maps/);
+    ).rejects.toThrow(/mount_name 'platform-kb' already maps/);
   });
 });
 
@@ -204,18 +204,18 @@ describe("storeCreate --remote git wiring (W2-T4)", () => {
 });
 
 describe("fabric store remove (detach ≠ delete, E4)", () => {
-  it("detaches from the registry and reports the on-disk tree is intact", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
-    const { detached } = storeRemove("team", globalRoot);
+  it("detaches from the registry and reports the on-disk tree is intact", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    const { detached } = await storeRemove("team", globalRoot);
     expect(detached?.store_uuid).toBe(TEAM);
     expect(storeList(globalRoot)).toHaveLength(0);
   });
 });
 
 describe("fabric store explain", () => {
-  it("explains a store and flags local-only", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
-    storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
+  it("explains a store and flags local-only", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
+    await storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
     expect(storeExplain("team", globalRoot)?.local_only).toBe(false);
     expect(storeExplain("platform", globalRoot)?.local_only).toBe(true);
     expect(storeExplain("ghost", globalRoot)).toBeNull();
@@ -250,15 +250,15 @@ describe("fabric store bind / switch-write (project config)", () => {
     expect(cfg?.required_stores?.[0]?.suggested_remote).toBe("git@h:team-2.git");
   });
 
-  it("switch-write sets the legacy active write store and the new default write store", () => {
+  it("switch-write sets the legacy active write store and the new default write store", async () => {
     const projectRoot = seedProject();
-    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
     storeSwitchWrite(projectRoot, "team", { globalRoot });
     expect(loadProjectConfig(projectRoot)?.active_write_store).toBe("team");
     expect(loadProjectConfig(projectRoot)?.default_write_store).toBe("team");
   });
 
-  it("switch-write command refreshes the resolved-bindings snapshot write target", () => {
+  it("switch-write command refreshes the resolved-bindings snapshot write target", async () => {
     const projectRoot = seedProject();
     // W2 dual-slot (TASK-002): a project binds at most ONE team store. The team
     // slot here is `platform` (the single read-set store); the test asserts that
@@ -273,8 +273,8 @@ describe("fabric store bind / switch-write (project config)", () => {
       },
       projectRoot,
     );
-    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
-    storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
+    await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    await storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
     regenerateBindingsSnapshot(projectRoot, {
       globalRoot,
       now: "2026-06-01T00:00:00.000Z",
@@ -308,9 +308,9 @@ describe("fabric store bind / switch-write (project config)", () => {
     ).toBe("platform");
   });
 
-  it("switch-write --scope persists a semantic scope write route", () => {
+  it("switch-write --scope persists a semantic scope write route", async () => {
     const projectRoot = seedProject();
-    storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
+    await storeAdd({ store_uuid: PLATFORM, alias: "platform" }, globalRoot);
     storeSetWriteRoute(projectRoot, "project:fabric-v2", "platform", { globalRoot });
     expect(loadProjectConfig(projectRoot)?.write_routes).toEqual([
       { scope: "project:fabric-v2", store: "platform" },
@@ -325,8 +325,8 @@ describe("fabric store bind / switch-write (project config)", () => {
 });
 
 describe("clone onboarding — missing required stores (S51)", () => {
-  it("lists required stores not mounted in the global registry", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+  it("lists required stores not mounted in the global registry", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
     const projectRoot = mkdtempSync(join(tmpdir(), "fabric-clone-"));
     dirs.push(projectRoot);
     // W2 dual-slot (TASK-002): a project binds at most one team store. Declare
@@ -345,9 +345,9 @@ describe("clone onboarding — missing required stores (S51)", () => {
 });
 
 describe("onboarding nudge — unbound available stores (Wave A / D4)", () => {
-  it("lists mounted non-personal stores the project has not bound, excluding personal", () => {
-    storeAdd({ store_uuid: PERSONAL, alias: "personal", personal: true }, globalRoot);
-    storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
+  it("lists mounted non-personal stores the project has not bound, excluding personal", async () => {
+    await storeAdd({ store_uuid: PERSONAL, alias: "personal", personal: true }, globalRoot);
+    await storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
     const projectRoot = mkdtempSync(join(tmpdir(), "fabric-unbound-"));
     dirs.push(projectRoot);
     // Project declares no required stores → team is mounted-but-unbound.
@@ -357,8 +357,8 @@ describe("onboarding nudge — unbound available stores (Wave A / D4)", () => {
     expect(unbound.map((s) => s.alias)).toEqual(["team"]); // personal never needs binding
   });
 
-  it("returns nothing once the store is bound", () => {
-    storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
+  it("returns nothing once the store is bound", async () => {
+    await storeAdd({ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }, globalRoot);
     const projectRoot = mkdtempSync(join(tmpdir(), "fabric-bound-"));
     dirs.push(projectRoot);
     saveProjectConfig(

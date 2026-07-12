@@ -13,7 +13,7 @@ import { isCancel, select, text } from "@clack/prompts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "../../store/global-config-io.js";
+import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfigAsync } from "../../store/global-config-io.js";
 import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
 import { refreshLocale, t } from "../../i18n.js";
 import {
@@ -105,7 +105,7 @@ export class StoreStage implements Stage {
       // Persist the language pick now that the global config exists, then
       // refresh the process locale so every subsequent stage / prompt renders
       // in the chosen tone within THIS same install run.
-      this.persistLanguageSelection(globalRoot, pickedLanguage);
+      await this.persistLanguageSelection(globalRoot, pickedLanguage);
 
       // Handle --url flag: mount and bind remote store
       if (context.args.url) {
@@ -209,11 +209,11 @@ export class StoreStage implements Stage {
    * already matched — so the module-level translator, bound to the env locale
    * before the config carried `language`, picks up the persisted value.
    */
-  private persistLanguageSelection(globalRoot: string, picked: "zh-CN" | "en" | undefined): void {
+  private async persistLanguageSelection(globalRoot: string, picked: "zh-CN" | "en" | undefined): Promise<void> {
     if (picked === undefined) return;
     const config = loadGlobalConfig(globalRoot);
     if (config !== null && config.language !== picked) {
-      saveGlobalConfig({ ...config, language: picked }, globalRoot);
+      await saveGlobalConfigAsync({ ...config, language: picked }, globalRoot);
     }
     refreshLocale();
   }
@@ -261,7 +261,7 @@ export class StoreStage implements Stage {
     interactive: boolean,
   ): Promise<string> {
     const already = storeList(globalRoot).find((store) => store.remote === url);
-    const mounted = already ?? mountStoreFromRemote(url, globalRoot);
+    const mounted = already ?? await mountStoreFromRemote(url, globalRoot);
 
     const bound = await this.bindStoreToProject(projectRoot, mounted.alias, globalRoot, {
       suggestedRemote: url,
@@ -436,7 +436,7 @@ export class StoreStage implements Stage {
       if (active !== undefined && alias === active.alias) {
         return;
       }
-      storeSwitchPersonal(alias, { globalRoot });
+      await storeSwitchPersonal(alias, { globalRoot });
       console.log("");
       console.log(paint.success(t("cli.install.store.slot.personal.switched", { alias })));
       return;
@@ -448,7 +448,7 @@ export class StoreStage implements Stage {
       return;
     }
     await storeCreate(alias, new Date().toISOString(), { personal: true, globalRoot });
-    storeSwitchPersonal(alias, { globalRoot });
+    await storeSwitchPersonal(alias, { globalRoot });
     console.log("");
     console.log(paint.success(t("cli.install.store.slot.personal.switched", { alias })));
   }
@@ -736,7 +736,7 @@ export class StoreStage implements Stage {
     }
 
     try {
-      const { store_uuid } = cloneGlobalPersonalFromRemote(url, globalRoot);
+      const { store_uuid } = await cloneGlobalPersonalFromRemote(url, globalRoot);
       console.log("");
       console.log(paint.success(t("cli.install.store.personal.cloned-success", { uuid: store_uuid })));
       return true;
@@ -777,7 +777,7 @@ export class StoreStage implements Stage {
       const nextStores = config.stores.map((store) =>
         store.alias === "personal" ? { ...store, personal: true } : store,
       );
-      saveGlobalConfig({ ...config, stores: nextStores }, globalRoot);
+      await saveGlobalConfigAsync({ ...config, stores: nextStores }, globalRoot);
       return;
     }
     const uuid = randomUUID();
@@ -786,6 +786,6 @@ export class StoreStage implements Stage {
       join(globalRoot, storeRelativePathForMount(mounted)),
       { store_uuid: uuid, created_at: new Date().toISOString(), canonical_alias: "personal" },
     );
-    saveGlobalConfig({ ...config, stores: [mounted, ...config.stores] }, globalRoot);
+    await saveGlobalConfigAsync({ ...config, stores: [mounted, ...config.stores] }, globalRoot);
   }
 }

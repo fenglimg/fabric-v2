@@ -51,9 +51,12 @@ const SKILL_SLUG = {
 // ADJ-NEWN-2: per-MCP-tool store-aware contract key, so each mcp capability row
 // asserts ITS OWN contract exists (not a homogeneous "any contract" check).
 const MCP_CONTRACT_KEY: Record<string, keyof typeof MCP_STORE_AWARE_CONTRACTS> = {
+  // ISS-20260711-248: live tools only — retired plan_context/sections omitted.
   "mcp.fab_recall": "fab_recall",
-  "mcp.fab_plan_context": "fab_plan_context",
-  "mcp.fab_get_knowledge_sections": "fab_get_knowledge_sections",
+  "mcp.fab_propose": "fab_propose",
+  "mcp.fab_review": "fab_review",
+  "mcp.fab_pending": "fab_pending",
+  "mcp.fab_archive_scan": "fab_archive_scan",
 };
 
 let target: string;
