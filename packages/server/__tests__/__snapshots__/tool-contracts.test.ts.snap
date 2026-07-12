@@ -477,6 +477,9 @@ exports[`tool contracts > fab-pending contract matches snapshot 1`] = `
                 "pending_path_absolute": {
                   "type": "string",
                 },
+                "proposed_reason": {
+                  "type": "string",
+                },
                 "status": {
                   "enum": [
                     "active",
@@ -1378,6 +1381,25 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
             },
             "type": "array",
           },
+          "failed": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "pending_path": {
+                  "type": "string",
+                },
+                "reason": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "pending_path",
+                "reason",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
           "warnings": {
             "items": {
               "additionalProperties": false,
@@ -1543,6 +1565,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "action": {
             "const": "retire",
             "type": "string",
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/failed/items",
+            },
+            "type": "array",
           },
           "retired": {
             "items": {
