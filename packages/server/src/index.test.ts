@@ -38,6 +38,23 @@ describe("createFabricServer", () => {
       "fab_recall",
       "fab_review",
     ]);
+
+    // ISS-20260711-245: pin more than names — each registration must ship
+    // description + inputSchema + outputSchema + annotations so a no-op
+    // handler under the right name still fails this suite.
+    for (const call of registerTool.mock.calls) {
+      const def = call[1] as {
+        description?: string;
+        inputSchema?: unknown;
+        outputSchema?: unknown;
+        annotations?: unknown;
+      };
+      expect(typeof def.description).toBe("string");
+      expect((def.description ?? "").length).toBeGreaterThan(20);
+      expect(def.inputSchema).toBeDefined();
+      expect(def.outputSchema).toBeDefined();
+      expect(def.annotations).toBeDefined();
+    }
   });
 
   // v2.2 MC2-server-instructions (W1-T6): the server must hand the MCP client a

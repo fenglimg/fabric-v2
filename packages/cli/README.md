@@ -25,4 +25,4 @@
 - `fabric uninstall`
 - `fabric config`（rc.16 起将提供配置面板；当前为占位提示）
 
-`fabric doctor --fix` 只修复确定性的派生状态，例如 `.fabric/agents.meta.json`、`.fabric/.cache/knowledge-test.index.json`、缺失的 `.fabric/events.jsonl` 和 stale hashes。知识条目的 demote/archive/default backfill 走 `fabric doctor --fix` 或 `fabric-review`；语义冲突、未完成的初始化确认和本地客户端配置问题仍需要人工处理。
+`fabric doctor --fix` 只修复确定性的派生状态（例如缺失的 `.fabric/events.jsonl`、stale serve-lock、store counter floor、hook/config 可自愈项）。**不再重建** 已退役的 co-location `.fabric/agents.meta.json`（知识在 mounted stores 里，ISS-20260711-172）。知识条目的 demote/archive/default backfill 走 `fabric-review`；语义冲突、未完成的初始化确认和本地客户端配置问题仍需要人工处理。

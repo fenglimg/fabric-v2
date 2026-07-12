@@ -23,13 +23,20 @@ This document defines the manual release path for Fabric. The workflow is intent
 
 4. **CI green / CI 通过**
    Make sure the `ci.yml` workflow is green for the target commit and that local validation still passes.
+   The local checklist MUST mirror `.github/workflows/reusable-validate.yml` hard gates
+   (ISS-20260711-220) — not a reduced subset.
 
    ```bash
-   pnpm install
-   pnpm -r exec tsc --noEmit
-   pnpm -r --if-present test
+   pnpm install --frozen-lockfile
+   pnpm -r build
+   pnpm typecheck                    # = pnpm -r exec tsc --noEmit
+   pnpm lint                         # knip --strict
+   pnpm -r --if-present test:coverage
+   pnpm test:strategy
+   pnpm test:store-only-e2e
    node --experimental-strip-types scripts/lint-protected-tokens.ts
    NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test
+   node scripts/perf-benchmark.mjs > perf-report.json
    ```
 
 5. **Create release tag / tag 创建**
