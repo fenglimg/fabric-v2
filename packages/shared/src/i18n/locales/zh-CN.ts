@@ -221,6 +221,11 @@ export const zhCNMessages: Messages = {
   "doctor.store.no-global-config": "无全局 Fabric 配置 —— 运行 `fabric install --global <url>`",
   "doctor.store.missing-required": "必需 store '{id}' 未挂载;运行 `fabric store mount`",
   "doctor.store.unbound": "store '{alias}' 已挂载但未绑定到本项目;运行 `fabric store bind {alias}` 即可在此读取它的知识(再用 `fabric store switch-write {alias}` 把团队知识写入它)",
+  "doctor.store.empty": "已绑定 store 知识条数为 0（{stores}）——在 seed 或 clone 有内容前无法 first-hit；运行 `fabric first-hit --seed`（空本地库）或绑定带内容的远程 team store",
+  "doctor.store.no-write-target": "本项目无活动写库 —— 先 bind 再 switch-write：`fabric store bind <alias>` 然后 `fabric store switch-write <alias>`（或重跑 `fabric install`）",
+  "doctor.store.no-match": "知识存在但与探测路径无匹配 —— 放宽 paths 或为模块补 relevance_paths",
+  "doctor.store.hooks-missing": "知识已有但 SessionStart/PreToolUse hooks 缺失 —— 重跑 `fabric install`",
+  "doctor.store.first-hit-ok": "first-hit 就绪：{count} 条知识，store：{stores}",
   "doctor.store.alias-drift": "by-alias 可读性软链与注册表不同步:{refs};运行 `fabric doctor --fix` 修复 ~/.fabric/stores/by-alias/",
   "doctor.store.local-only": "store '{alias}' 仅本地;加一个 git remote 以备份",
   "doctor.store.executable": "store '{alias}' 含可执行/脚本文件({files})—— store 仅存数据;Fabric 从不运行它们 (S65)",
@@ -1336,6 +1341,11 @@ export const zhCNMessages: Messages = {
   // the web UI surface is re-enabled.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage 国际化键。
+  "cli.first-hit.description": "验收 install→first-hit 就绪（bind + 非空知识面）",
+  "cli.first-hit.args.json.description": "机器可读 JSON 报告",
+  "cli.first-hit.args.target.description": "项目根（默认 cwd）",
+  "cli.first-hit.args.seed.description": "若 store 为空则写入最小 starter 知识条目",
+  "cli.first-hit.args.paths.description": "逗号分隔的探测路径",
   "cli.onboard-coverage.description":
     "汇总当前工作区的 S5 onboard-slot 覆盖度。fabric-archive Skill 首跑阶段用它判断哪些项目语调槽位尚未被认领。",
   "cli.onboard-coverage.args.json.description":

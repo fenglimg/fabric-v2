@@ -38,4 +38,6 @@ export const allCommands = {
   // whose restart door KT-DEC-0016 deliberately kept open — a minimal
   // read-only surface, NOT a revival of the quarantined `serve`.
   preview: () => import("./preview.js").then((module) => module.default),
+  // M-first-value-loop: deterministic first-hit oracle + surface summary.
+  "first-hit": () => import("./first-hit.js").then((module) => module.default),
 };
