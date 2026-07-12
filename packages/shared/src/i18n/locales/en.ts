@@ -232,6 +232,11 @@ export const enMessages: Messages = {
   "doctor.store.no-global-config": "no global Fabric config — run `fabric install --global <url>`",
   "doctor.store.missing-required": "required store '{id}' is not mounted; run `fabric store mount`",
   "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project; run `fabric store bind {alias}` to read its knowledge here (then `fabric store switch-write {alias}` to write team knowledge into it)",
+  "doctor.store.empty": "bound store(s) have 0 knowledge entries ({stores}) — first-hit cannot succeed until you seed or clone knowledge; run `fabric first-hit --seed` (empty local store) or bind a remote team store with content",
+  "doctor.store.no-write-target": "no active write store for this project — bind and switch-write: `fabric store bind <alias>` then `fabric store switch-write <alias>` (or re-run `fabric install`)",
+  "doctor.store.no-match": "knowledge exists but no entry matches the probe paths — try broader paths or add relevance_paths for your modules",
+  "doctor.store.hooks-missing": "knowledge present but SessionStart/PreToolUse hooks missing — re-run `fabric install`",
+  "doctor.store.first-hit-ok": "first-hit ready: {count} knowledge entries across {stores}",
   "doctor.store.alias-drift": "by-alias readability link(s) out of sync for {refs}; run `fabric doctor --fix` to repair ~/.fabric/stores/by-alias/",
   "doctor.store.local-only": "store '{alias}' is local-only; add a git remote to back it up",
   "doctor.store.executable": "store '{alias}' contains executable/script files ({files}) — stores are data-only; Fabric never runs them (S65)",
@@ -1371,6 +1376,11 @@ export const enMessages: Messages = {
   // the web UI surface is re-enabled.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage i18n keys.
+  "cli.first-hit.description": "Prove install→first-hit readiness (bind + non-empty knowledge surface)",
+  "cli.first-hit.args.json.description": "Machine-readable JSON report",
+  "cli.first-hit.args.target.description": "Project root (default: cwd)",
+  "cli.first-hit.args.seed.description": "If empty store, write minimal starter knowledge entries",
+  "cli.first-hit.args.paths.description": "Comma-separated probe paths for surface check",
   "cli.onboard-coverage.description":
     "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
   "cli.onboard-coverage.args.json.description":
