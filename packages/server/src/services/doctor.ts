@@ -783,28 +783,41 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     const lockInspection = inspectStaleServeLock(projectRoot, Date.now());
     if (lockInspection.present && !lockInspection.pidAlive) {
       const lockFilePath = join(projectRoot, ".fabric", ".serve.lock");
+      // ENOENT after inspect = race-cleared → still count as fixed.
+      // Non-ENOENT (e.g. EACCES) must NOT abort the rest of --fix (ISS-20260531-031).
+      let unlinkOk = true;
       try {
         await unlink(lockFilePath);
       } catch (err: unknown) {
-        // ENOENT is fine — lock disappeared between inspect and unlink (race
-        // with another doctor run). Any other error propagates.
         const errno = err as NodeJS.ErrnoException;
-        if (errno.code !== "ENOENT") throw err;
+        if (errno.code !== "ENOENT") {
+          unlinkOk = false;
+          failed.push({
+            code: "stale_serve_lock",
+            name: "Serve lock",
+            message: `Could not remove stale .fabric/.serve.lock (${errno.code ?? "error"}): ${errno.message}`,
+            path: ".fabric/.serve.lock",
+            actionHint:
+              "Remove .fabric/.serve.lock manually (permission denied or other FS error). Other --fix repairs still applied.",
+          });
+        }
       }
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "serve_lock_cleared",
-        pid: lockInspection.pid,
-        age_ms: lockInspection.ageMs,
-        timestamp: new Date().toISOString(),
-      }).catch((error) => {
-        ledgerWarnings.push(createLedgerAppendWarning("stale serve lock cleanup", error));
-      });
-      fixed.push({
-        code: "stale_serve_lock",
-        name: "Serve lock",
-        message: `Removed stale .fabric/.serve.lock (dead PID ${lockInspection.pid}).`,
-        path: ".fabric/.serve.lock",
-      });
+      if (unlinkOk) {
+        await appendEventLedgerEvent(projectRoot, {
+          event_type: "serve_lock_cleared",
+          pid: lockInspection.pid,
+          age_ms: lockInspection.ageMs,
+          timestamp: new Date().toISOString(),
+        }).catch((error) => {
+          ledgerWarnings.push(createLedgerAppendWarning("stale serve lock cleanup", error));
+        });
+        fixed.push({
+          code: "stale_serve_lock",
+          name: "Serve lock",
+          message: `Removed stale .fabric/.serve.lock (dead PID ${lockInspection.pid}).`,
+          path: ".fabric/.serve.lock",
+        });
+      }
     }
   }
 

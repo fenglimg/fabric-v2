@@ -67,9 +67,9 @@ export const zhCNMessages: Messages = {
 
   // `fabric audit cite` — recall 覆盖率为 0 的自诊断提示。
   "cli.audit.cite.recall-mismatch-hint":
-    "recall 覆盖率为 0,但本窗口有 {recalls} 次 recall(分布在 {sessions} 个会话)—— 没有一个与编辑共享会话。多半是 fab_recall 调用方传了非客户端 session_id(关联按会话隔离)。见 AGENTS.md:fab_recall 必须传入真实客户端 session_id。",
+    "recall 覆盖率为 0,但本窗口有 {recalls} 次 recall(分布在 {sessions} 个会话)—— 没有一个与编辑共享会话。常见原因:(1) fab_recall 漏传/传错 session_id(必须是真实客户端 session_id;planned 无 session 永不与 edit 关联);(2) recall 的 paths 与编辑文件无 path-overlap(自动 cite 只计重叠的 planned.target_paths)。修:传 session_id、重装 hooks 启用 active-session sidecar、或 fab_recall 覆盖将编辑的路径。见 AGENTS.md 与 docs/UPGRADE.md。",
   "cli.audit.cite.recall-none-hint":
-    "recall 覆盖率为 0 —— 这些编辑前没有同会话的 fab_recall。改前先 recall,且传入真实客户端 session_id(关联按会话隔离)。见 AGENTS.md。",
+    "recall 覆盖率为 0 —— 这些编辑前没有同会话的 fab_recall(或 planned 事件 session_id 为空导致无法关联)。改前先 recall 并传入真实客户端 session_id;install 后 SessionStart 会写 .fabric/.cache/active-session.json 供服务端回填。仍要求 path-overlap:recall 要覆盖将编辑的文件,不要只 recall 无关的 .fabric 路径。见 AGENTS.md 与 docs/UPGRADE.md。",
 
   // `fabric audit --help` — 过滤式帮助(i18n 子命令清单)。
   "cli.audit.help.tagline": "知识与遥测审计面(只读)",

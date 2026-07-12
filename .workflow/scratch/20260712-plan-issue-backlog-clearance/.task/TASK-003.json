@@ -1,0 +1,9 @@
+{
+  "id": "TASK-003",
+  "title": "Bulk close C-tier duplicates/stale/low with per-issue reason",
+  "wave": 3,
+  "issues_file": ".workflow/issues/discoveries/triage-20260712-140252/C_triage_dup_or_stale.txt",
+  "approx": 110,
+  "status": "completed",
+  "completed_at": "2026-07-12T14:27:41.441718+00:00"
+}

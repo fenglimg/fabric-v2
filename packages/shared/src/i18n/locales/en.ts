@@ -69,9 +69,9 @@ export const enMessages: Messages = {
 
   // `fabric audit cite` — 0%-recall-coverage self-diagnosis hints.
   "cli.audit.cite.recall-mismatch-hint":
-    "recall coverage is 0 despite {recalls} recall(s) across {sessions} session(s) — none shared a session with an edit. The recall caller is likely passing a non-client session_id (correlation is session-scoped). See AGENTS.md: pass the real client session_id to fab_recall.",
+    "recall coverage is 0 despite {recalls} recall(s) across {sessions} session(s) — none shared a session with an edit. Likely causes: (1) fab_recall omitted/wrong session_id (must be real client session_id; empty planned events never join edits); (2) recall paths do not path-overlap the edited file (auto-cite only counts overlapping planned.target_paths). Fix: pass session_id, reinstall hooks for active-session sidecar, or fab_recall paths that cover the edit. See AGENTS.md + docs/UPGRADE.md.",
   "cli.audit.cite.recall-none-hint":
-    "recall coverage is 0 — no in-session fab_recall preceded these edits. Recall before editing, and pass the real client session_id (correlation is session-scoped). See AGENTS.md.",
+    "recall coverage is 0 — no in-session fab_recall preceded these edits (or planned events had empty session_id so they could not join). Recall before editing with the real client session_id; after install, SessionStart stamps .fabric/.cache/active-session.json as server fallback. Path-overlap still required: recall the files you will edit, not only unrelated .fabric paths. See AGENTS.md + docs/UPGRADE.md.",
 
   // `fabric audit --help` — filtered help (i18n'd subcommand listing).
   "cli.audit.help.tagline": "Knowledge & telemetry audit surfaces (read-only)",

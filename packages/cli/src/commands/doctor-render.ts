@@ -146,7 +146,8 @@ export function renderDoctorChecks(report: DoctorReport, verbose: boolean): stri
     // problem appears exactly once (no check-list ⊕ issue-list double-print the
     // user flagged). KT-GLD-0008: aggregate, never re-read.
     if (verbose && check.status !== "ok" && check.actionHint !== undefined && check.actionHint.length > 0) {
-      rows.push(`    ${paint.muted(`→ ${check.actionHint}`)}`);
+      // ASCII "-> " matches lib/error-render.ts GBK-safe convention (ISS-20260530-039).
+      rows.push(`    ${paint.muted(`-> ${check.actionHint}`)}`);
     }
   }
   // MCP payload thresholds: a one-line config FYI, not a pass/fail check. It used
@@ -250,7 +251,8 @@ export function renderActionableDigest(report: DoctorReport, dt: DoctorTranslato
   for (const { issue, mark } of userFacing) {
     writeStdout(`  ${mark} ${issue.name}`);
     if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
-      writeStdout(`    ${paint.muted(`→ ${shortHint(issue.actionHint)}`)}`);
+      // ASCII "-> " matches lib/error-render.ts GBK-safe convention (ISS-20260530-039).
+      writeStdout(`    ${paint.muted(`-> ${shortHint(issue.actionHint)}`)}`);
     }
   }
   writeStdout("");

@@ -32,7 +32,15 @@
  */
 "use strict";
 
-const { existsSync, mkdirSync, renameSync, writeFileSync, unlinkSync } = require("node:fs");
+const {
+  existsSync,
+  mkdirSync,
+  renameSync,
+  writeFileSync,
+  unlinkSync,
+  readdirSync,
+  statSync,
+} = require("node:fs");
 const { dirname, join } = require("node:path");
 
 const FABRIC_DIR = ".fabric";
@@ -41,6 +49,48 @@ const SIZE_CAP_BYTES = 5120; // ~5KB
 const MAX_USER_MESSAGES = 10;
 const MAX_MSG_CHARS = 500;
 const MAX_EDIT_PATHS = 60;
+// ISS-20260608-028: soft retention for local digests (ms). Best-effort unlink on write.
+const DIGEST_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Lightweight credential redaction for digest bullets (hook CJS cannot import
+// packages/shared). Patterns mirror store/secret-scan credential rules.
+const DIGEST_SECRET_RES = [
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/g,
+  /\bsk-[A-Za-z0-9]{20,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
+  /(?:password|passwd|secret|api[_-]?key|access[_-]?token|token)\s*[:=]\s*(?:"[^'"\s]{8,}"|'[^'"\s]{8,}'|[A-Za-z0-9_./+=:@-]{8,})/gi,
+];
+
+function redactDigestText(text) {
+  if (typeof text !== "string" || text.length === 0) return text;
+  let out = text;
+  for (const re of DIGEST_SECRET_RES) {
+    re.lastIndex = 0;
+    out = out.replace(re, "[REDACTED]");
+  }
+  return out;
+}
+
+function pruneStaleDigests(cacheDir, nowMs) {
+  try {
+    if (!existsSync(cacheDir)) return;
+    const now = typeof nowMs === "number" && Number.isFinite(nowMs) ? nowMs : Date.now();
+    for (const name of readdirSync(cacheDir)) {
+      if (!name.endsWith(".md")) continue;
+      const full = join(cacheDir, name);
+      try {
+        const st = statSync(full);
+        if (now - st.mtimeMs > DIGEST_MAX_AGE_MS) unlinkSync(full);
+      } catch {
+        // best-effort per file
+      }
+    }
+  } catch {
+    // best-effort
+  }
+}
 
 function sanitizeSessionId(id) {
   if (typeof id !== "string") return "";
@@ -68,12 +118,12 @@ function renderDigest({ session_id, title, user_messages, edit_paths }) {
 
   const messageBullets = userMsgs
     .slice(0, MAX_USER_MESSAGES)
-    .map((m) => `- ${truncateString(String(m ?? ""), MAX_MSG_CHARS)}`)
+    .map((m) => `- ${truncateString(redactDigestText(String(m ?? "")), MAX_MSG_CHARS)}`)
     .filter((line) => line.length > 2);
 
   const editBullets = edits
     .slice(0, MAX_EDIT_PATHS)
-    .map((p) => `- ${truncateString(String(p ?? ""), 200)}`)
+    .map((p) => `- ${truncateString(redactDigestText(String(p ?? "")), 200)}`)
     .filter((line) => line.length > 2);
 
   const messagesSection =
@@ -143,6 +193,7 @@ function writeDigest(opts) {
     if (!existsSync(cacheDir)) {
       mkdirSync(cacheDir, { recursive: true });
     }
+    pruneStaleDigests(cacheDir);
     writeFileSync(tmp, capped, "utf8");
     renameSync(tmp, target);
     return { written: true, path: target };
