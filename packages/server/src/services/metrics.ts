@@ -370,9 +370,16 @@ export type MetricsRow = {
  * dual-write allowlist below.
  */
 export const METRIC_COUNTER_NAMES = {
+  // Live consumption signal after KT-DEC-0030 (ISS-20260711-216).
+  knowledge_body_read: "knowledge_body_read",
+  // Legacy alias retained so older tests / dual-write allowlist comments stay
+  // greppable; production hooks should bump knowledge_body_read (or per-id
+  // knowledge_body_read:<alias>:<id>) instead.
   knowledge_consumed: "knowledge_consumed",
   edit_intent_checked: "edit_intent_checked",
   knowledge_context_planned: "knowledge_context_planned",
+  // Retired producer (fab_get_knowledge_sections). Kept for historical metrics
+  // window aggregation only — do not dual-write new ledger rows under this name.
   knowledge_sections_fetched: "knowledge_sections_fetched",
 } as const;
 export type MetricCounterName = (typeof METRIC_COUNTER_NAMES)[keyof typeof METRIC_COUNTER_NAMES];
@@ -384,21 +391,20 @@ export type MetricCounterName = (typeof METRIC_COUNTER_NAMES)[keyof typeof METRI
  * metrics.jsonl counter cannot supply:
  *
  *   - knowledge_context_planned  → doctor.buildLastActiveIndex (orphan/stale recency)
- *   - knowledge_sections_fetched → doctor.buildLastActiveIndex (orphan/stale recency)
- *   - knowledge_consumed         → doctor.ts use-signal pass (last-active primary signal)
+ *   - knowledge_body_read        → doctor cite-coverage + consumption heatmap (live)
  *   - edit_intent_checked        → doctor-cite-coverage (edits_touched + contract verify)
  *
  * The G8 leak gate (events-jsonl-gates.ts) MUST exempt these — otherwise it
- * false-positives on every fab_recall / edit, which is the recurring
- * `events_jsonl_health_degraded` warning. Currently this covers ALL four counter
- * names, so the gate's active leak set is empty (dormant) until the planned
- * rc.38+ consumer migration lets the audit events become counter-only. The gate
- * still fires for any NEW pure counter name added to METRIC_COUNTER_NAMES but not
- * listed here — so it keeps guarding future additions.
+ * false-positives on every fab_recall / edit. Retired dual-writes
+ * (knowledge_consumed / knowledge_sections_fetched) are intentionally omitted so
+ * new accidental appends surface as leaks. The gate still fires for any NEW pure
+ * counter name added to METRIC_COUNTER_NAMES but not listed here.
  */
 export const LEDGER_DUAL_WRITE_METRIC_NAMES = {
   knowledge_context_planned: METRIC_COUNTER_NAMES.knowledge_context_planned,
-  knowledge_sections_fetched: METRIC_COUNTER_NAMES.knowledge_sections_fetched,
-  knowledge_consumed: METRIC_COUNTER_NAMES.knowledge_consumed,
+  // ISS-20260711-216: sections_fetched / knowledge_consumed have no live
+  // production append sites; they remain schema-parseable for historic
+  // events.jsonl but are NOT dual-write targets. body_read is the live path.
+  knowledge_body_read: METRIC_COUNTER_NAMES.knowledge_body_read,
   edit_intent_checked: METRIC_COUNTER_NAMES.edit_intent_checked,
 } as const;

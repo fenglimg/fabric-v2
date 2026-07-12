@@ -723,7 +723,7 @@ async function approveOne(
     sourceIsStore = true;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_promote_failed",
       timestamp: new Date().toISOString(),
       reason: `approve:${pendingPath}: ${reason}`,
@@ -746,7 +746,7 @@ async function approveOne(
   // Best-effort: failure to write the synth proposed must not block the
   // approve, the promote_started/promoted pair below is the authoritative
   // signal for the operation.
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_proposed",
     timestamp: new Date().toISOString(),
     reason: `approve-synth:${slug}`,
@@ -755,7 +755,7 @@ async function approveOne(
   // Phase 1: signal we're starting. Emitted before any allocator/IO mutation
   // so forensic recovery (rc.3 doctor filesystem-edit fallback) can detect a
   // crashed approve mid-flight.
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_promote_started",
     timestamp: new Date().toISOString(),
     reason: `approve:${slug}`,
@@ -873,7 +873,7 @@ async function approveOne(
       }
     }
 
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_promoted",
       stable_id: stableId,
       timestamp: new Date().toISOString(),
@@ -902,7 +902,7 @@ async function approveOne(
     }
 
     const reason = err instanceof Error ? err.message : String(err);
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_promote_failed",
       ...(allocatedId !== undefined ? { stable_id: allocatedId } : {}),
       timestamp: new Date().toISOString(),
@@ -974,7 +974,7 @@ async function rejectAll(
       // reject is "the entry is no longer recommended", not "the file is
       // mutated", so partial mutation is acceptable.
     }
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_rejected",
       timestamp: new Date().toISOString(),
       reason: `reject:${pendingPath}: ${reason}`,
@@ -1116,7 +1116,7 @@ async function modifyEntry(
   const changedFields = Object.keys(changes).filter(
     (field) => changes[field as keyof ModifyChanges] !== undefined,
   );
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_modified",
     ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
     timestamp: new Date().toISOString(),
@@ -1309,7 +1309,7 @@ async function modifyLayerFlip(
   await ensureParentDirectory(toAbs);
 
   // Phase 1: signal start (mirrors approve's two-phase pattern).
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_promote_started",
     ...(priorStableId !== undefined ? { stable_id: priorStableId } : {}),
     timestamp: new Date().toISOString(),
@@ -1369,7 +1369,7 @@ async function modifyLayerFlip(
 
   const flipReason = `layer_flip:${priorStableId ?? "<unassigned>"}->${newStableId}`;
   const flipTimestamp = new Date().toISOString();
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_layer_changed",
     stable_id: newStableId,
     timestamp: flipTimestamp,
@@ -1389,7 +1389,7 @@ async function modifyLayerFlip(
   // knowledge_layer_changed. Shares `reason` with the paired flip event for
   // correlation.
   if (priorStableId !== undefined) {
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_id_redirect",
       timestamp: flipTimestamp,
       previous_stable_id: priorStableId,
@@ -1404,7 +1404,7 @@ async function modifyLayerFlip(
   // entry's relevance_paths array is now empty post-flip. Reason is a fixed
   // tag so doctor lints / observability filters can key off it.
   if (shouldAutoDegrade) {
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_scope_degraded",
       stable_id: newStableId,
       timestamp: new Date().toISOString(),
@@ -1844,7 +1844,7 @@ async function deferAll(
     } catch {
       // See rejectAll comment for failure semantics.
     }
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_deferred",
       timestamp: new Date().toISOString(),
       pending_path: pendingPath,
@@ -1932,7 +1932,7 @@ async function retireOne(
     after.superseded_by = supersededBy;
   }
 
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_modified",
     ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
     timestamp: new Date().toISOString(),
@@ -2288,4 +2288,39 @@ async function emitEventBestEffort(
   } catch {
     // Event emission is observability-only.
   }
+}
+
+/** Regulated knowledge mutation audit (ISS-20260711-131).
+ * Unlike emitEventBestEffort, ledger failure fails the mutation so disk
+ * changes never succeed without a durable audit row. Callers that already
+ * wrote files must roll back or surface the error to the operator.
+ */
+async function emitAuditEventRequired(
+  projectRoot: string,
+  event: EventLedgerEventInput,
+): Promise<void> {
+  await appendEventLedgerEvent(projectRoot, event);
+}
+
+const REGULATED_KNOWLEDGE_EVENT_TYPES = new Set([
+  "knowledge_promoted",
+  "knowledge_promote_failed",
+  "knowledge_modified",
+  "knowledge_rejected",
+  "knowledge_deferred",
+  "knowledge_layer_changed",
+  "knowledge_demoted",
+  "knowledge_archived",
+  "knowledge_unarchived",
+]);
+
+async function emitKnowledgeLifecycleEvent(
+  projectRoot: string,
+  event: EventLedgerEventInput,
+): Promise<void> {
+  if (REGULATED_KNOWLEDGE_EVENT_TYPES.has(event.event_type)) {
+    await emitAuditEventRequired(projectRoot, event);
+    return;
+  }
+  await emitEventBestEffort(projectRoot, event);
 }

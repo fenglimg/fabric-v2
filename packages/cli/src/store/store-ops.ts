@@ -33,8 +33,23 @@ import {
   writeRouteSchema,
 } from "@fenglimg/fabric-shared";
 
+import { appendEventLedgerEvent } from "@fenglimg/fabric-server";
+
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfigAsync } from "./global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "./project-config-io.js";
+
+/** Best-effort store topology audit (ISS-20260711-127). Never fails the config write. */
+async function emitStoreAdminEvent(
+  projectRoot: string | undefined,
+  event: Parameters<typeof appendEventLedgerEvent>[1],
+): Promise<void> {
+  const root = projectRoot && projectRoot.length > 0 ? projectRoot : process.cwd();
+  try {
+    await appendEventLedgerEvent(root, event);
+  } catch {
+    // observability-only — config mutation already committed
+  }
+}
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric store {list,add,remove,explain}` orchestration.
@@ -201,6 +216,13 @@ export async function storeAdd(
   const next = addMountedStore(requireConfig(globalRoot), store);
   await saveGlobalConfigAsync(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: keep the by-alias readability layer current.
+  await emitStoreAdminEvent(undefined, {
+    event_type: "store_mounted",
+    alias: store.alias,
+    store_uuid: store.store_uuid,
+    personal: store.personal === true,
+    source: "storeAdd",
+  });
   return next;
 }
 
@@ -278,6 +300,13 @@ export async function storeCreate(
   const next = addMountedStore(config, mounted);
   await saveGlobalConfigAsync(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: mint the by-alias readability link.
+  await emitStoreAdminEvent(undefined, {
+    event_type: "store_mounted",
+    alias,
+    store_uuid: uuid,
+    personal: options.personal === true,
+    source: "storeCreate",
+  });
   return { config: next, store_uuid: uuid, storeDir };
 }
 
@@ -400,6 +429,12 @@ export async function storeRemove(
   const result = detachMountedStore(requireConfig(globalRoot), alias);
   await saveGlobalConfigAsync(result.config, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: drop the detached store's by-alias link.
+  await emitStoreAdminEvent(undefined, {
+    event_type: "store_detached",
+    alias,
+    ...(result.detached ? { store_uuid: result.detached.store_uuid } : {}),
+    source: "storeRemove",
+  });
   return result;
 }
 
@@ -516,6 +551,13 @@ export async function storeBind(
     ...(activeProject === undefined ? {} : { active_project: activeProject }),
   };
   saveProjectConfig(next, projectRoot);
+  void emitStoreAdminEvent(projectRoot, {
+    event_type: "store_bound",
+    alias: entry.id,
+    store_uuid: entry.id,
+    ...(activeProject === undefined ? {} : { project: activeProject }),
+    source: "storeBind",
+  });
   return next;
 }
 
@@ -531,12 +573,20 @@ export function storeSwitchWrite(
   if (store === null || store.personal === true || store.writable === false) {
     throw new Error(`cannot set default write store '${alias}': mount a writable shared store first`);
   }
+  const previous = config.active_write_store ?? config.default_write_store;
   const next: FabricConfig = {
     ...config,
     active_write_store: alias,
     default_write_store: alias,
   };
   saveProjectConfig(next, projectRoot);
+  void emitStoreAdminEvent(projectRoot, {
+    event_type: "write_store_switched",
+    alias,
+    ...(previous !== undefined ? { previous_alias: previous } : {}),
+    switch_kind: "project_write",
+    source: "storeSwitchWrite",
+  });
   return next;
 }
 
@@ -561,8 +611,16 @@ export async function storeSwitchPersonal(
         "(`fabric install --global` mints one; `--url <remote>` clones an existing one)",
     );
   }
+  const previous = config.active_personal_store;
   const next: GlobalConfig = { ...config, active_personal_store: alias };
   await saveGlobalConfigAsync(next, globalRoot);
+  await emitStoreAdminEvent(undefined, {
+    event_type: "write_store_switched",
+    alias,
+    ...(previous !== undefined ? { previous_alias: previous } : {}),
+    switch_kind: "personal",
+    source: "storeSwitchPersonal",
+  });
   return next;
 }
 
@@ -617,8 +675,16 @@ export function storeSetWriteRoute(
     ...(config.write_routes ?? []).filter((existing) => existing.scope !== route.scope),
     route,
   ];
+  const previous = (config.write_routes ?? []).find((r) => r.scope === route.scope)?.store;
   const next: FabricConfig = { ...config, write_routes: routes };
   saveProjectConfig(next, projectRoot);
+  void emitStoreAdminEvent(projectRoot, {
+    event_type: "write_route_changed",
+    scope: route.scope,
+    alias,
+    ...(previous !== undefined ? { previous_alias: previous } : {}),
+    source: "storeSetWriteRoute",
+  });
   return next;
 }
 

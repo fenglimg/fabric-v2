@@ -633,7 +633,14 @@ function tallySessionActivity(events, sessionId) {
   for (const ev of events) {
     if (!ev || ev.session_id !== sessionId) continue;
     if (ev.event_type === "file_mutated") edits += 1;
-    else if (ev.event_type === "knowledge_consumed") consumed += 1;
+    // ISS-20260711-222: production emits knowledge_body_read (KT-DEC-0030);
+    // knowledge_consumed is retired as a live producer. Count both so historic
+    // ledgers still contribute without zeroing modern sessions.
+    else if (
+      ev.event_type === "knowledge_body_read" ||
+      ev.event_type === "knowledge_consumed"
+    )
+      consumed += 1;
   }
   return { edits, consumed };
 }

@@ -653,7 +653,10 @@ export async function planContext(
       target_paths: uniquePaths,
       required_stable_ids: [],
       ai_selectable_stable_ids: sharedStableIds,
-      final_stable_ids: [],
+      // ISS-20260711-217: cite-policy-evict / doctor-cite-coverage union
+      // final_stable_ids as the recalled-id set. Keep it equal to the ids
+      // actually surfaced on the lean recall wire (sharedStableIds), not [].
+      final_stable_ids: sharedStableIds,
       selection_token: selectionToken,
       client_hash: input.client_hash,
       intent: input.intent,
