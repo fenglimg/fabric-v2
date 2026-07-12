@@ -709,214 +709,139 @@ export async function installSharedSkillLib(
 }
 
 /**
+ * ISS-20260711-155: shared copy+chmod for hook scripts. Every per-hook installer
+ * only differs by template path, destination list, and step label.
+ * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the bit is ignored.
+ */
+async function installHookScriptCopies(
+  step: string,
+  templateRel: string,
+  destRels: readonly string[],
+  projectRoot: string,
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(templateRel);
+  const results: InstallStepResult[] = [];
+  for (const rel of destRels) {
+    const target = join(projectRoot, rel);
+    const result = await copyTextIdempotent(step, source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
  * Copy templates/hooks/fabric-hint.cjs into both supported clients'
  * hooks directories: .claude/hooks/ and .codex/hooks/.
- * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
- * platform ignores the bit.
- *
- * Renamed from archive-hint in rc.5 TASK-010 to reflect the script's
- * expanded three-signal scope (archive / review / import). The function
- * name `installArchiveHintHook` is preserved for call-site compatibility.
+ * Renamed from archive-hint in rc.5 TASK-010; function name preserved for call-sites.
  */
 export async function installArchiveHintHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.fabricHint.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-script",
+    HOOK_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.fabricHint,
+    projectRoot,
+  );
 }
 
 /**
- * Copy templates/hooks/knowledge-hint-broad.cjs into both supported
- * clients' hooks directories: .claude/hooks/ and .codex/hooks/.
- * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
- * platform ignores the bit.
- *
- * rc.6 TASK-019 (E1) — SessionStart broad-injection hook. Sibling to
- * {@link installArchiveHintHook}; both helpers share the copy plumbing but
- * each script is wired to a different hook event (Stop vs SessionStart) in
- * the per-client config templates.
+ * Copy templates/hooks/knowledge-hint-broad.cjs (SessionStart broad-injection).
  */
 export async function installKnowledgeHintBroadHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_BROAD_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.knowledgeHintBroad.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-broad-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-broad-script",
+    HOOK_BROAD_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.knowledgeHintBroad,
+    projectRoot,
+  );
 }
 
 /**
- * Copy templates/hooks/knowledge-hint-narrow.cjs into both supported
- * clients' hooks directories: .claude/hooks/ and .codex/hooks/.
- * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
- * platform ignores the bit.
- *
- * rc.6 TASK-020 (E2 + E4) — PreToolUse narrow-injection hook + edit-counter
- * sidecar. Sibling to {@link installKnowledgeHintBroadHook}; all three
- * cross-client hook scripts share the same copy plumbing and only differ in
- * the hook event their per-client config templates wire them to:
- *   - fabric-hint.cjs           → Stop          (rc.5 TASK-010)
- *   - knowledge-hint-broad.cjs  → SessionStart  (rc.6 TASK-019)
- *   - knowledge-hint-narrow.cjs → PreToolUse    (rc.6 TASK-020)
+ * Copy templates/hooks/knowledge-hint-narrow.cjs (PreToolUse narrow-injection).
  */
 export async function installKnowledgeHintNarrowHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_NARROW_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.knowledgeHintNarrow.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-narrow-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-narrow-script",
+    HOOK_NARROW_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.knowledgeHintNarrow,
+    projectRoot,
+  );
 }
 
 /**
- * ux-w2-6: copy templates/hooks/knowledge-pretooluse.cjs (the single PreToolUse
- * orchestrator) into both clients' hooks directories. Sibling copy plumbing to
- * {@link installKnowledgeHintNarrowHook}; the orchestrator requires narrow +
- * cite-policy-evict at runtime, so those two are still copied as well.
+ * ux-w2-6: copy templates/hooks/knowledge-pretooluse.cjs (PreToolUse orchestrator).
  */
 export async function installKnowledgePretoolUseHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_PRETOOLUSE_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.knowledgePretoolUse.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-pretooluse-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-pretooluse-script",
+    HOOK_PRETOOLUSE_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.knowledgePretoolUse,
+    projectRoot,
+  );
 }
 
 /**
- * v2.0.0-rc.34 TASK-06: copy templates/hooks/cite-policy-evict.cjs into the
- * Claude Code hooks directory ONLY. The sidecar relies on Claude Code's
- * UserPromptSubmit event + hookSpecificOutput stdout JSON envelope, neither
- * of which Codex CLI exposes. Defaults to OFF
- * (`cite_evict_interval = 0`); opt-in via fabric-config.json.
+ * v2.0.0-rc.34 TASK-06: copy templates/hooks/cite-policy-evict.cjs
+ * (Claude Code destinations only via HOOK_SCRIPT_DESTINATIONS.citePolicyEvict).
  */
 export async function installCitePolicyEvictHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.citePolicyEvict.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-cite-evict-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-cite-evict-script",
+    HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.citePolicyEvict,
+    projectRoot,
+  );
 }
 
 /**
- * lifecycle-refactor W2-T2: copy templates/hooks/session-end-marker.cjs into
- * both clients' hooks directories (.claude/.codex). chmod 0o755 on
- * POSIX. Sibling installer to {@link installKnowledgeHintNarrowHook}; same copy
- * plumbing, differs only in which hook event the per-client config wires it to
- * (SessionEnd). The script is a pure marker — appends one `session_ended` event
- * per session teardown (zero compute, advisory-locked append).
+ * lifecycle-refactor W2-T2: copy templates/hooks/session-end-marker.cjs.
  */
 export async function installSessionEndMarkerHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_SESSION_END_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.sessionEndMarker.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-session-end-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-session-end-script",
+    HOOK_SESSION_END_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.sessionEndMarker,
+    projectRoot,
+  );
 }
 
 /**
- * lifecycle-refactor W2-T3: copy templates/hooks/post-tooluse-mutation.cjs into
- * both clients' hooks directories (.claude/.codex). chmod 0o755 on
- * POSIX. Sibling installer to {@link installKnowledgeHintNarrowHook}; same copy
- * plumbing, registered against PostToolUse with Edit|Write|MultiEdit matchers.
- * The script appends one `file_mutated` event per edited path (per-call key
- * pairs with the PreToolUse narrow hint; advisory-locked append).
+ * lifecycle-refactor W2-T3: copy templates/hooks/post-tooluse-mutation.cjs.
  */
 export async function installPostTooluseMutationHook(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
-  const source = await readTemplate(HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL);
-  const targets = HOOK_SCRIPT_DESTINATIONS.postTooluseMutation.map((rel) => join(projectRoot, rel));
-  const results: InstallStepResult[] = [];
-  for (const target of targets) {
-    const result = await copyTextIdempotent("hook-post-tooluse-script", source, target);
-    if (result.status === "written" && process.platform !== "win32") {
-      try {
-        chmodSync(target, 0o755);
-      } catch {
-        // best-effort — hook still functions when invoked via `node script.cjs`
-      }
-    }
-    results.push(result);
-  }
-  return results;
+  return installHookScriptCopies(
+    "hook-post-tooluse-script",
+    HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.postTooluseMutation,
+    projectRoot,
+  );
 }
 
 /**
