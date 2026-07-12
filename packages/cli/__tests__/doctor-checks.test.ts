@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -279,5 +279,46 @@ describe("doctor store checks", () => {
     );
     expect(fixActivePersonalPointer(globalRoot)).toBe(false);
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal-work");
+  });
+});
+
+// D4-2: quality remediations must route operators to fab_review / fabric-review
+// (draft backlog promote + consumption-zero / retire candidates).
+describe("doctor quality remediations route to fab_review", () => {
+  it("pins ≥2 quality remediations that name fab_review or fabric-review", () => {
+    // Source locales (not runtime t()) — hermetic, no i18n bootstrap required.
+    const enPath = join(
+      process.cwd(),
+      "../shared/src/i18n/locales/en.ts",
+    );
+    const zhPath = join(
+      process.cwd(),
+      "../shared/src/i18n/locales/zh-CN.ts",
+    );
+    const en = readFileSync(enPath, "utf8");
+    const zh = readFileSync(zhPath, "utf8");
+
+    const requiredKeys = [
+      "doctor.check.draft_backlog.remediation",
+      "doctor.store.consumption-zero",
+    ] as const;
+
+    for (const key of requiredKeys) {
+      expect(en, `en missing ${key}`).toContain(key);
+      expect(zh, `zh missing ${key}`).toContain(key);
+    }
+
+    // draft backlog → fabric-review promote path
+    expect(en).toMatch(
+      /"doctor\.check\.draft_backlog\.remediation":\s*\n?\s*"[^"]*(?:fabric-review|fab_review)[^"]*"/u,
+    );
+    // zero-consumption → fab_review retirement signal
+    expect(en).toMatch(
+      /"doctor\.store\.consumption-zero":\s*"[^"]*(?:fabric-review|fab_review)[^"]*"/u,
+    );
+
+    // zh mirrors review intent (fabric-review or fab_review)
+    expect(zh).toMatch(/doctor\.check\.draft_backlog\.remediation[\s\S]{0,200}(?:fabric-review|fab_review)/u);
+    expect(zh).toMatch(/doctor\.store\.consumption-zero[\s\S]{0,200}(?:fabric-review|fab_review)/u);
   });
 });
