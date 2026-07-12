@@ -85,6 +85,10 @@ import {
   inspectDraftBacklogFromCanonical,
   inspectEmptyTagsFromCanonical,
 } from "./doctor-knowledge-hygiene.js";
+import {
+  runDoctorBodyReadMisfireCheck,
+  type BodyReadMisfireReport,
+} from "./doctor-body-read-misfire.js";
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
@@ -2016,6 +2020,12 @@ function createKnowledgeTagsEmptyCheck(
 }
 
 
+
+// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart check. Aggregates fired
+// patterns into a single multi-line message so the operator gets the full
+// audit hit list in one report row. Always warning severity — Goodhart
+// heuristics are advisory, not error-grade.
+
 // ISS-20260711-221: body_read misfire as a first-class doctor check.
 function createBodyReadMisfireCheck(
   t: Translator,
@@ -2034,10 +2044,6 @@ function createBodyReadMisfireCheck(
   );
 }
 
-// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart check. Aggregates fired
-// patterns into a single multi-line message so the operator gets the full
-// audit hit list in one report row. Always warning severity — Goodhart
-// heuristics are advisory, not error-grade.
 function createCiteGoodhartCheck(
   t: Translator,
   inspection: CiteGoodhartInspection,
@@ -3386,79 +3392,8 @@ function yamlQuoteIfNeeded(value: string): string {
 
 export { getEventLedgerPath };
 
-// ---------------------------------------------------------------------------
-// W3-3 (KT-DEC-0030): body_read misfire sub-check.
-//
-// After retrieval collapsed to one lean tool (KT-DEC-0026), the agent consumes a
-// knowledge body via a NATIVE Read of the store file, observed by the PostToolUse
-// hook as `knowledge_body_read`. The wire has a structural failure mode: if the
-// PostToolUse matcher is missing `Read` (config drift) the marker NEVER fires and
-// the planned → body_read → cite[applied] funnel goes dark silently.
-//
-// doctor can't witness a Read directly, so it proxies via `knowledge_context_planned`
-// — every fab_recall surfaces native read-paths to the agent, so sustained recall
-// activity with ZERO body_read events across the whole ledger is the misfire
-// signature. The check is deliberately BINARY (silence amid significant activity),
-// not a ratio: body_read is sparse BY DESIGN (the lean default reads bodies on
-// demand, KT-GLD-0005), so a low-but-nonzero rate is healthy, not a fault. Only
-// total silence past a recall-volume floor warns. Standalone (not wired into the
-// runDoctorReport pipeline yet); the function + tests pin the contract.
-//
-// hook = nudge, never a gate (KT-DEC-0007): the result is a warn-level hint only.
-// ---------------------------------------------------------------------------
-
-export type BodyReadMisfireReport = {
-  recalls: number; // knowledge_context_planned count (read-paths surfaced)
-  body_reads: number; // knowledge_body_read count (native Reads observed)
-  status: "ok" | "warn";
-  message: string;
-};
-
-// Recall-volume floor below which "zero body_read" is statistically
-// uninformative (new/quiet workspace) — never warn there.
-const BODY_READ_MISFIRE_MIN_RECALLS = 10;
-
-export async function runDoctorBodyReadMisfireCheck(
-  projectRoot: string,
-): Promise<BodyReadMisfireReport> {
-  const { events } = await readEventLedger(projectRoot);
-  let recalls = 0;
-  let bodyReads = 0;
-  for (const event of events) {
-    if (event.event_type === "knowledge_context_planned") {
-      recalls += 1;
-    } else if (event.event_type === "knowledge_body_read") {
-      bodyReads += 1;
-    }
-  }
-
-  if (recalls < BODY_READ_MISFIRE_MIN_RECALLS) {
-    return {
-      recalls,
-      body_reads: bodyReads,
-      status: "ok",
-      message:
-        `Only ${String(recalls)} recall(s) on record (< ${String(BODY_READ_MISFIRE_MIN_RECALLS)}) — ` +
-        `not enough activity to assess knowledge_body_read wiring.`,
-    };
-  }
-
-  if (bodyReads === 0) {
-    return {
-      recalls,
-      body_reads: 0,
-      status: "warn",
-      message:
-        `${String(recalls)} recall(s) surfaced read-paths but ZERO knowledge_body_read events — ` +
-        `the PostToolUse Read marker may be unwired. Check the PostToolUse matcher includes ` +
-        `\`Read\` in .claude/settings.json (and the codex equivalent), then rerun \`fabric install\`.`,
-    };
-  }
-
-  return {
-    recalls,
-    body_reads: bodyReads,
-    status: "ok",
-    message: `knowledge_body_read wiring healthy (${String(bodyReads)} body read(s) across ${String(recalls)} recall(s)).`,
-  };
-}
+// W8: body-read misfire inspect lives in dedicated module.
+export {
+  runDoctorBodyReadMisfireCheck,
+  type BodyReadMisfireReport,
+} from "./doctor-body-read-misfire.js";

@@ -1125,20 +1125,28 @@ function proximityBoost(
   // Need at least 2 query terms to appear in the text.
   if (positions.size < 2) return 0;
 
-  // Compute the minimum distance between any two terms (pairwise).
+  // ISS-20260711-139: min pairwise distance via two-pointer merge on sorted
+  // position lists — O(q² · (p_i+p_j)) instead of O(q² · p_i · p_j) nested scans.
   const termList = [...positions.entries()];
   let minDist = Infinity;
   for (let i = 0; i < termList.length; i++) {
     const [, posI] = termList[i]!;
     for (let j = i + 1; j < termList.length; j++) {
       const [, posJ] = termList[j]!;
-      for (const pi of posI) {
-        for (const pj of posJ) {
-          const dist = Math.abs(pi - pj);
-          if (dist < minDist) minDist = dist;
-        }
+      let a = 0;
+      let b = 0;
+      while (a < posI.length && b < posJ.length) {
+        const pi = posI[a]!;
+        const pj = posJ[b]!;
+        const dist = Math.abs(pi - pj);
+        if (dist < minDist) minDist = dist;
+        if (minDist === 0) break;
+        if (pi < pj) a += 1;
+        else b += 1;
       }
+      if (minDist === 0) break;
     }
+    if (minDist === 0) break;
   }
 
   if (!Number.isFinite(minDist)) return 0;
