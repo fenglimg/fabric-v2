@@ -100,3 +100,255 @@ describe("assessFirstHitSync", () => {
     expect(result.files.length).toBe(2);
   });
 });
+
+
+describe("D3 multi-store first-hit codes", () => {
+  function writeHooks(root: string) {
+    for (const client of [".claude", ".codex"] as const) {
+      mkdirSync(join(root, client, "hooks"), { recursive: true });
+      writeFileSync(join(root, client, "hooks", "knowledge-hint-broad.cjs"), "module.exports={}\n");
+      writeFileSync(join(root, client, "hooks", "knowledge-pretooluse.cjs"), "module.exports={}\n");
+    }
+  }
+
+  it("reports missing_required when required id is not mounted", () => {
+    const g = tempDir("d3-g-miss-");
+    const uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    mkdirSync(join(g, "stores", "team", uuid, "knowledge", "guidelines"), { recursive: true });
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-test",
+        stores: [{ store_uuid: uuid, alias: "team", personal: false }],
+      }),
+      "utf8",
+    );
+    const root = tempDir("d3-p-miss-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        active_write_store: "team",
+        required_stores: [{ id: "platform" }, { id: "team" }],
+      }),
+      "utf8",
+    );
+    writeHooks(root);
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("missing_required");
+    expect(r.missing_required_ids).toEqual(["platform"]);
+    expect(r.remediations.some((x) => x.includes("platform"))).toBe(true);
+  });
+
+  it("reports write_target_mismatch when active write is not mounted", () => {
+    const g = tempDir("d3-g-wtm-");
+    const uuid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const storeDir = join(g, "stores", "team", uuid);
+    mkdirSync(join(storeDir, "knowledge", "guidelines"), { recursive: true });
+    writeFileSync(join(storeDir, "knowledge", "guidelines", "KT-GLD-0001--x.md"), "# x\n", "utf8");
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-test",
+        stores: [{ store_uuid: uuid, alias: "team", personal: false }],
+      }),
+      "utf8",
+    );
+    const root = tempDir("d3-p-wtm-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        active_write_store: "other-team",
+        required_stores: [{ id: "team" }],
+      }),
+      "utf8",
+    );
+    writeHooks(root);
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("write_target_mismatch");
+  });
+
+  it("reports store_unreachable when registry points at missing dir", () => {
+    const g = tempDir("d3-g-unr-");
+    const uuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    // registry lists store but do NOT create dir
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-test",
+        stores: [{ store_uuid: uuid, alias: "team", personal: false }],
+      }),
+      "utf8",
+    );
+    const root = tempDir("d3-p-unr-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        active_write_store: "team",
+        required_stores: [{ id: "team" }],
+      }),
+      "utf8",
+    );
+    writeHooks(root);
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("store_unreachable");
+    expect(r.unreachable_aliases).toContain("team");
+  });
+
+  it("dual-store team+personal: ok when team write target has knowledge", () => {
+    const g = tempDir("d3-g-dual-");
+    const teamUuid = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const personalUuid = "11111111-1111-4111-8111-111111111111";
+    const teamDir = join(g, "stores", "team", teamUuid);
+    const personalDir = join(g, "stores", "personal", personalUuid);
+    mkdirSync(join(teamDir, "knowledge", "guidelines"), { recursive: true });
+    mkdirSync(join(personalDir, "knowledge", "guidelines"), { recursive: true });
+    writeFileSync(join(teamDir, "knowledge", "guidelines", "KT-GLD-0001--a.md"), "# a\n", "utf8");
+    writeFileSync(join(personalDir, "knowledge", "guidelines", "KP-GLD-0001--b.md"), "# b\n", "utf8");
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-test",
+        stores: [
+          { store_uuid: teamUuid, alias: "team", personal: false },
+          { store_uuid: personalUuid, alias: "personal", personal: true },
+        ],
+      }),
+      "utf8",
+    );
+    const root = tempDir("d3-p-dual-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        active_write_store: "team",
+        required_stores: [{ id: "team" }],
+      }),
+      "utf8",
+    );
+    writeHooks(root);
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    // resolver may only surface required team; personal is machine-wide
+    expect(r.ok).toBe(true);
+    expect(r.code).toBe("ok");
+    expect(r.total_entries).toBeGreaterThanOrEqual(1);
+  });
+});
+
+
+describe("D3 multi-store readiness", () => {
+  it("reports missing_required when required team is not mounted", () => {
+    const g = tempDir("fh-d3-miss-g-");
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-d3",
+        stores: [
+          {
+            store_uuid: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            alias: "personal",
+            personal: true,
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const root = tempDir("fh-d3-miss-p-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        required_stores: [{ id: "team" }],
+        active_write_store: "team",
+      }),
+      "utf8",
+    );
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("missing_required");
+    expect(r.missing_required_ids).toContain("team");
+    expect(r.remediations.some((x) => x.includes("bind"))).toBe(true);
+  });
+
+  it("reports write_target_mismatch when write target is not mounted", () => {
+    const g = tempDir("fh-d3-wt-g-");
+    const uuid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const storeDir = join(g, "stores", "team", uuid);
+    mkdirSync(join(storeDir, "knowledge", "guidelines"), { recursive: true });
+    writeFileSync(
+      join(storeDir, "knowledge", "guidelines", "KT-GLD-0001--x.md"),
+      "---\nid: KT-GLD-0001\n---\n# x\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-d3",
+        stores: [{ store_uuid: uuid, alias: "team", personal: false }],
+      }),
+      "utf8",
+    );
+    const root = tempDir("fh-d3-wt-p-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        required_stores: [{ id: "team" }],
+        active_write_store: "other-team",
+      }),
+      "utf8",
+    );
+    for (const client of [".claude", ".codex"]) {
+      mkdirSync(join(root, client, "hooks"), { recursive: true });
+      writeFileSync(join(root, client, "hooks", "knowledge-hint-broad.cjs"), "module.exports={}\n");
+      writeFileSync(join(root, client, "hooks", "knowledge-pretooluse.cjs"), "module.exports={}\n");
+    }
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    expect(r.ok).toBe(false);
+    expect(["write_target_mismatch", "unbound", "missing_required"]).toContain(r.code);
+  });
+
+  it("reports store_unreachable when store dir is missing on disk", () => {
+    const g = tempDir("fh-d3-unr-g-");
+    const uuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    // registry points at path that we never create
+    writeFileSync(
+      join(g, "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-d3",
+        stores: [{ store_uuid: uuid, alias: "team", personal: false }],
+      }),
+      "utf8",
+    );
+    const root = tempDir("fh-d3-unr-p-");
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        version: 1,
+        required_stores: [{ id: "team" }],
+        active_write_store: "team",
+      }),
+      "utf8",
+    );
+    for (const client of [".claude", ".codex"]) {
+      mkdirSync(join(root, client, "hooks"), { recursive: true });
+      writeFileSync(join(root, client, "hooks", "knowledge-hint-broad.cjs"), "module.exports={}\n");
+      writeFileSync(join(root, client, "hooks", "knowledge-pretooluse.cjs"), "module.exports={}\n");
+    }
+    const r = assessFirstHitSync(root, { globalRoot: g });
+    expect(r.ok).toBe(false);
+    expect(["store_unreachable", "empty_store", "unbound"]).toContain(r.code);
+  });
+});

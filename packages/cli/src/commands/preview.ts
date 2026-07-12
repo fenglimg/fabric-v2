@@ -29,8 +29,9 @@ import { t } from "../i18n.js";
 //     (the quarantine's bearer-auth/default-deny tax existed to guard a mutable
 //     surface this command simply does not expose);
 //   - reads knowledge LIVE from the mounted stores via collectStoreCanonicalEntries
-//     (the current store-based reader — NOT the retired co-location readAgentsMeta
-//     the quarantined /api/rules was built on);
+//     (shared store read path with first-hit's createStoreResolver/listStoreKnowledge
+//     lineage — NOT a second knowledge listing model; NOT retired co-location
+//     readAgentsMeta the quarantined /api/rules was built on);
 //   - the browser frontend (templates/preview/index.html) groups entries by
 //     semantic_scope (KT-MOD-0001 three-axis: team / project:<id> / personal) and
 //     polls /api/revision (computeReadSetRevision) to auto-refresh on change.

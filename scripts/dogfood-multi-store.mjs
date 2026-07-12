@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 /**
- * dogfood-first-value.mjs — M-first-value-loop / D5-5 regression oracle
+ * dogfood-multi-store.mjs — D3 oracle: required team not mounted → missing_required
  *
- * Hermetic FABRIC_HOME fixture (no global CLI pollution):
- *   mount team store + bind + one starter guideline → first-hit exit 0
+ * Uses workspace CLI dist + FABRIC_HOME isolation (same pattern as dogfood-first-value).
  *
- * Prefer workspace CLI dist so monorepo changes are tested.
- *
- * Usage: pnpm run dogfood:first-value
+ *   pnpm run dogfood:multi-store
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -17,8 +14,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIST = join(ROOT, "packages/cli/dist/index.js");
-const TEAM = "22222222-2222-4222-8222-222222222222";
-const PERSONAL = "11111111-1111-4111-8111-111111111111";
 
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, {
@@ -39,32 +34,26 @@ function ensureBuild() {
 function main() {
   ensureBuild();
 
-  const work = mkdtempSync(join(tmpdir(), "fabric-first-value-"));
+  const work = mkdtempSync(join(tmpdir(), "fabric-multi-store-"));
+  // resolveGlobalRoot() => join(FABRIC_HOME, ".fabric")
   const fabricHome = work;
-  const projectRoot = join(work, "project");
   const globalRoot = join(fabricHome, ".fabric");
-  // storeRelativePathForMount without mount_name → stores/team/<uuid>
-  // (mount_name: "team" would resolve to stores/team/team — keep uuid layout).
-  const teamStoreDir = join(globalRoot, "stores", "team", TEAM);
-  const knowledgeDir = join(teamStoreDir, "knowledge", "guidelines");
-
+  const projectRoot = join(work, "project");
+  mkdirSync(globalRoot, { recursive: true });
   mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
   mkdirSync(join(projectRoot, ".claude", "hooks"), { recursive: true });
-  mkdirSync(knowledgeDir, { recursive: true });
-  mkdirSync(join(globalRoot, "stores", "personal", PERSONAL, "knowledge"), { recursive: true });
 
+  // Only personal mounted — required team is missing (D3-1/D3-2 fail path).
   writeFileSync(
     join(globalRoot, "fabric-global.json"),
     JSON.stringify(
       {
-        uid: "u-first-value",
+        uid: "u-dog-ms",
         stores: [
-          { store_uuid: PERSONAL, alias: "personal", personal: true, writable: true },
           {
-            store_uuid: TEAM,
-            alias: "team",
-            remote: "git@example.com:team/first-value.git",
-            writable: true,
+            store_uuid: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            alias: "personal",
+            personal: true,
           },
         ],
       },
@@ -73,7 +62,6 @@ function main() {
     ),
     "utf8",
   );
-
   writeFileSync(
     join(projectRoot, ".fabric", "fabric-config.json"),
     JSON.stringify(
@@ -87,41 +75,14 @@ function main() {
     ),
     "utf8",
   );
-
   writeFileSync(join(projectRoot, ".claude", "hooks", "knowledge-hint-broad.cjs"), "module.exports={};\n");
   writeFileSync(join(projectRoot, ".claude", "hooks", "knowledge-pretooluse.cjs"), "module.exports={};\n");
-
-  // Starter knowledge so empty_store does not fire (simulates first-hit --seed result).
-  writeFileSync(
-    join(knowledgeDir, "KT-GLD-0001--first-value-seed.md"),
-    `---
-id: KT-GLD-0001
-type: guidelines
-layer: team
-maturity: draft
-relevance_scope: broad
-relevance_paths: []
-summary: First-value dogfood seed — proves store surface is non-empty.
-created_at: 2026-07-12
----
-
-# First-value seed
-
-## Summary
-
-Deterministic starter entry for dogfood:first-value.
-`,
-    "utf8",
-  );
 
   const env = {
     ...process.env,
     FABRIC_HOME: fabricHome,
     HOME: work,
   };
-
-  console.log("dogfood-first-value: workspace", ROOT);
-  console.log("dogfood-first-value: FABRIC_HOME", fabricHome);
 
   let raw = "";
   let status = 0;
@@ -135,6 +96,7 @@ Deterministic starter entry for dogfood:first-value.
     raw = `${err.stdout ?? ""}${err.stderr ?? ""}`;
   }
 
+  // Parse last JSON object in output (CLI may paint before JSON).
   let report = null;
   const jsonMatch = raw.match(/\{[\s\S]*\}\s*$/m);
   if (jsonMatch) {
@@ -145,35 +107,32 @@ Deterministic starter entry for dogfood:first-value.
     }
   }
 
-  const ok =
-    status === 0 &&
+  const okFail =
     report &&
-    report.ok === true &&
-    (report.code === "ok" || report.total_entries > 0);
+    report.ok === false &&
+    (report.code === "missing_required" ||
+      (Array.isArray(report.missing_required_ids) &&
+        report.missing_required_ids.includes("team")));
 
-  if (!ok) {
-    console.error("G-FIRST-VALUE FAIL");
-    console.error("status", status);
-    console.error(raw.slice(0, 1200));
+  // Also accept non-zero exit + message containing missing_required when JSON is plain text.
+  const textOk =
+    !report &&
+    status !== 0 &&
+    /missing_required/i.test(raw);
+
+  if (okFail || textOk) {
+    console.log("PASS missing_required (D3 multi-store dogfood)");
+    if (report) console.log(JSON.stringify({ code: report.code, missing: report.missing_required_ids }, null, 2));
     rmSync(work, { recursive: true, force: true });
-    process.exit(status || 1);
+    process.exit(0);
   }
 
-  console.log("G-FIRST-VALUE PASS: first-hit exit 0 with non-empty store");
-  console.log(
-    JSON.stringify(
-      {
-        code: report.code,
-        total_entries: report.total_entries,
-        write_target: report.write_target,
-      },
-      null,
-      2,
-    ),
-  );
-
-  rmSync(work, { recursive: true, force: true });
-  process.exit(0);
+  console.error("FAIL expected missing_required");
+  console.error("exit:", status);
+  console.error(raw.slice(0, 1200));
+  // keep work dir for debug
+  console.error("fixture kept at", work);
+  process.exit(1);
 }
 
 main();

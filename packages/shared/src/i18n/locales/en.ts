@@ -235,6 +235,12 @@ export const enMessages: Messages = {
   "doctor.store.empty": "bound store(s) have 0 knowledge entries ({stores}) — first-hit cannot succeed until you seed or clone knowledge; run `fabric first-hit --seed` (empty local store) or bind a remote team store with content",
   "doctor.store.no-write-target": "no active write store for this project — bind and switch-write: `fabric store bind <alias>` then `fabric store switch-write <alias>` (or re-run `fabric install`)",
   "doctor.store.no-match": "knowledge exists but no entry matches the probe paths — try broader paths or add relevance_paths for your modules",
+  "doctor.store.write-target-mismatch":
+    "active write store '{alias}' is not a valid team write target for this project — run `fabric store switch-write <mounted-team-alias>`",
+  "doctor.store.first-hit-missing-required":
+    "required store(s) not mounted: {ids} — bind/clone them then re-run `fabric first-hit`",
+  "doctor.store.first-hit-unreachable":
+    "bound store dir missing on disk: {aliases} — remount or re-clone, then `fabric doctor`",
   "doctor.store.hooks-missing": "knowledge present but SessionStart/PreToolUse hooks missing — re-run `fabric install`",
   "doctor.store.first-hit-ok": "first-hit ready: {count} knowledge entries across {stores}",
   "doctor.store.alias-drift": "by-alias readability link(s) out of sync for {refs}; run `fabric doctor --fix` to repair ~/.fabric/stores/by-alias/",
@@ -245,6 +251,7 @@ export const enMessages: Messages = {
   "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
   "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
   "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
+  "doctor.store.unreachable-bound": "bound store dir missing on disk: {stores} — re-clone or remount, then fabric doctor",
   "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
   "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
   "doctor.store.overflow-more": ", …(+{count} more)",

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,6 +27,18 @@ function tmp(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   dirs.push(dir);
   return dir;
+}
+
+/** Materialize on-disk mount roots so first-hit store_unreachable does not fire. */
+function ensureStoreDirs(
+  globalRoot: string,
+  stores: Array<{ store_uuid: string; mount_name?: string; personal?: boolean }>,
+): void {
+  for (const store of stores) {
+    mkdirSync(join(globalRoot, storeRelativePathForMount(store), "knowledge"), {
+      recursive: true,
+    });
+  }
 }
 
 describe("doctor store checks", () => {
@@ -63,6 +75,29 @@ describe("doctor store checks", () => {
 
   it("is clean when everything is mounted with remotes", () => {
     const globalRoot = join(tmp("dr-g3-"), ".fabric");
+    const stores = [
+      { store_uuid: PERSONAL, alias: "personal", personal: true as const },
+      { store_uuid: TEAM, alias: "team", remote: "git@h:team.git" },
+    ];
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores,
+      }),
+      globalRoot,
+    );
+    // Registry alone is not enough: first-hit store_unreachable checks on-disk dirs.
+    ensureStoreDirs(globalRoot, stores);
+    const projectRoot = tmp("dr-p3-");
+    saveProjectConfig(
+      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      projectRoot,
+    );
+    expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);
+  });
+
+  it("warns first_hit_store_unreachable when a bound store dir is missing on disk", () => {
+    const globalRoot = join(tmp("dr-g-unr-"), ".fabric");
     saveGlobalConfig(
       globalConfigSchema.parse({
         uid: "u-me",
@@ -73,12 +108,20 @@ describe("doctor store checks", () => {
       }),
       globalRoot,
     );
-    const projectRoot = tmp("dr-p3-");
+    // Intentionally no ensureStoreDirs — registry only.
+    const projectRoot = tmp("dr-p-unr-");
     saveProjectConfig(
-      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      {
+        project_id: "11111111-1111-4111-8111-111111111111",
+        required_stores: [{ id: "team" }],
+        active_write_store: "team",
+      },
       projectRoot,
     );
-    expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);
+    const diags = storeDoctorChecks(projectRoot, globalRoot);
+    const unr = diags.find((d) => d.code === "first_hit_store_unreachable");
+    expect(unr?.severity).toBe("warn");
+    expect(unr?.ref).toMatch(/team/);
   });
 
   it("nudges (info) a mounted store the project has not bound, never personal", () => {
@@ -236,5 +279,46 @@ describe("doctor store checks", () => {
     );
     expect(fixActivePersonalPointer(globalRoot)).toBe(false);
     expect(loadGlobalConfig(globalRoot)?.active_personal_store).toBe("personal-work");
+  });
+});
+
+// D4-2: quality remediations must route operators to fab_review / fabric-review
+// (draft backlog promote + consumption-zero / retire candidates).
+describe("doctor quality remediations route to fab_review", () => {
+  it("pins ≥2 quality remediations that name fab_review or fabric-review", () => {
+    // Source locales (not runtime t()) — hermetic, no i18n bootstrap required.
+    const enPath = join(
+      process.cwd(),
+      "../shared/src/i18n/locales/en.ts",
+    );
+    const zhPath = join(
+      process.cwd(),
+      "../shared/src/i18n/locales/zh-CN.ts",
+    );
+    const en = readFileSync(enPath, "utf8");
+    const zh = readFileSync(zhPath, "utf8");
+
+    const requiredKeys = [
+      "doctor.check.draft_backlog.remediation",
+      "doctor.store.consumption-zero",
+    ] as const;
+
+    for (const key of requiredKeys) {
+      expect(en, `en missing ${key}`).toContain(key);
+      expect(zh, `zh missing ${key}`).toContain(key);
+    }
+
+    // draft backlog → fabric-review promote path
+    expect(en).toMatch(
+      /"doctor\.check\.draft_backlog\.remediation":\s*\n?\s*"[^"]*(?:fabric-review|fab_review)[^"]*"/u,
+    );
+    // zero-consumption → fab_review retirement signal
+    expect(en).toMatch(
+      /"doctor\.store\.consumption-zero":\s*"[^"]*(?:fabric-review|fab_review)[^"]*"/u,
+    );
+
+    // zh mirrors review intent (fabric-review or fab_review)
+    expect(zh).toMatch(/doctor\.check\.draft_backlog\.remediation[\s\S]{0,200}(?:fabric-review|fab_review)/u);
+    expect(zh).toMatch(/doctor\.store\.consumption-zero[\s\S]{0,200}(?:fabric-review|fab_review)/u);
   });
 });
