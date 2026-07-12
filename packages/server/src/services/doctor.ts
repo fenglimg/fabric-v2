@@ -98,6 +98,12 @@ import {
   type DriftUnconsumedInspection,
 } from "./doctor-drift-unconsumed.js";
 import {
+  runDoctorApplyLintWithDeps,
+  type DoctorApplyLintMutation,
+  type DoctorApplyLintMutationKind,
+  type DoctorApplyLintReport,
+} from "./doctor-apply-lint.js";
+import {
   applySessionHintsStaleCleanup,
   inspectSessionHintsStale,
   SESSION_HINTS_STALE_DAYS,
@@ -308,46 +314,13 @@ export type DoctorFixReport = {
   report: DoctorReport;
 };
 
-// rc.4 TASK-003: report shape returned by `runDoctorApplyLint`. Mirrors
-// `DoctorFixReport` but the `mutations` payload itemizes each per-finding
-// repair (demote / archive / counter bump) so the CLI surface can render a
-// machine-parseable summary in addition to human prose.
-// ISS-20260711-183: only kinds with live apply-lint arms after store cutover.
-// Demote/archive/pending-auto-archive/relevance-backfill remain doctor *warnings*
-// but are not auto-mutated here (store-aware re-implementation deferred).
-export type DoctorApplyLintMutationKind =
-  | "knowledge_session_hints_stale_cleanup"
-  | "store_counter_floor";
+// DoctorApplyLint* types → doctor-apply-lint.ts (W8 Step C)
+export type {
+  DoctorApplyLintMutationKind,
+  DoctorApplyLintMutation,
+  DoctorApplyLintReport,
+} from "./doctor-apply-lint.js";
 
-export type DoctorApplyLintMutation = {
-  kind: DoctorApplyLintMutationKind;
-  // Path of the affected file or store counters target.
-  path: string;
-  // Detail of the mutation (e.g. "proven -> verified", ".fabric/.archive/...",
-  // "5 -> 8"). Free-form prose for human consumption.
-  detail: string;
-  // True when the mutation succeeded; false when the per-finding repair
-  // threw and was caught (the rest of the apply-lint run continues; see
-  // task spec idempotency / partial-failure rationale).
-  applied: boolean;
-  // Populated when applied=false. Truncated to 240 chars to prevent log noise.
-  error?: string;
-};
-
-export type DoctorApplyLintReport = {
-  changed: boolean;
-  mutations: DoctorApplyLintMutation[];
-  warnings: DoctorIssue[];
-  // Non-fixable manual errors that surfaced in the lint pass. When non-empty
-  // and the corresponding code is in MANUAL_LINT_ERROR_CODES, runDoctorApplyLint
-  // sets `aborted: true` and returns BEFORE applying any mutations — these
-  // findings indicate corruption that auto-fix could destroy.
-  manual_errors: DoctorIssue[];
-  aborted: boolean;
-  abort_reason?: string;
-  message: string;
-  report: DoctorReport;
-};
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
 
@@ -1268,132 +1241,22 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   };
 }
 
-// ISS-20260711-183: apply-lint entry point — live arms only (store cutover):
-//   * knowledge_session_hints_stale_cleanup — unlink stale session-hints cache
-//   * store_counter_floor — floor per-store counters.json at disk-max (KT-DEC-0004)
-//   * relevance_migration_run heartbeat (scanned/touched 0 when no dual-root walk)
-// Declared demote/archive/pending-auto-archive arms are intentionally NOT applied;
-// detection remains via doctor report + fabric-review.
-//
-// Idempotency: a 2nd --apply-lint on a clean tree yields 0 mutations.
-//
-// Loud-error gate: layer_mismatch is corruption; auto-fix is unsafe.
-const MANUAL_LINT_ERROR_CODES = new Set([
-  "knowledge_layer_mismatch",
-]);
-
+// runDoctorApplyLint → doctor-apply-lint.ts (W8 Step C)
 export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLintReport> {
-  const projectRoot = normalizeTarget(target);
-  const before = await runDoctorReport(projectRoot);
-  const mutations: DoctorApplyLintMutation[] = [];
-  const ledgerWarnings: DoctorIssue[] = [];
-
-  // Loud-error gate: stable_id_duplicate / layer_mismatch are corruption.
-  // Auto-fix could delete data. Abort before any mutation.
-  const blockingManual = before.manual_errors.find((issue) =>
-    MANUAL_LINT_ERROR_CODES.has(issue.code),
-  );
-  if (blockingManual !== undefined) {
-    return {
-      changed: false,
-      mutations: [],
-      warnings: [],
-      manual_errors: before.manual_errors,
-      aborted: true,
-      abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message}. apply-lint will not auto-mutate it — open the entry via fabric-review (or fix layer/path by hand), then re-run doctor.`,
-      message: `apply-lint aborted: ${blockingManual.code} requires manual repair.`,
-      report: before,
-    };
-  }
-
-  const now = Date.now();
-
-  // rc.6 TASK-021 (E3): session-hints cache cleanup (#27). Independent of
-  // all canonical/pending mutation paths — operates strictly on local hot-
-  // cache files under `.fabric/.cache/session-hints-*.json`. Ordering: runs
-  // after pending_auto_archive because they share no state and the cache
-  // cleanup is the cheapest mutation (single unlink per file); deferring it
-  // to last would arbitrarily inflate the perceived apply-lint runtime if
-  // an upstream mutation hangs. One mutation per stale cache file.
-  const sessionHintsStale = await inspectSessionHintsStale(projectRoot, now);
-  for (const candidate of sessionHintsStale.candidates) {
-    mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
-  }
-
-  // v2.2 store cutover: the relevance-fields back-fill walk over the retired
-  // dual-root pending tree is gone (store-aware re-implementation deferred).
-  // The aggregate `relevance_migration_run` heartbeat still fires every
-  // --apply-lint run for audit-trail symmetry with `doctor_run` (scanned_count
-  // / touched_count are 0 — there is no walk). Best-effort: a ledger-append
-  // failure does not abort the run.
-  try {
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "relevance_migration_run",
-      timestamp: new Date(now).toISOString(),
-      scanned_count: 0,
-      touched_count: 0,
-    });
-  } catch (error) {
-    ledgerWarnings.push(createLedgerAppendWarning("relevance migration aggregate event", error));
-  }
-
-  // v2.2 W5 R4 (agents.meta decolo): the co-location `index_drift` apply-lint
-  // mutation (bump agents.meta.json#counters) is retired. Its store-aware
-  // successor floors every read-set store's committed counters.json at disk-max
-  // (KT-DEC-0004 — floor never lowers). One aggregate mutation row per drifted
-  // store reconciled.
-  const storeCounterDrifts = inspectStoreCounters(projectRoot);
-  if (storeCounterDrifts.length > 0) {
-    const reconciled = fixStoreCounters(projectRoot);
-    const detail = storeCounterDrifts
-      .map((d) => `${d.store_alias}:${d.layer}.${d.type} ${d.current} -> ${d.disk_max}`)
-      .join("; ");
-    mutations.push({
-      kind: "store_counter_floor",
-      path: "stores/*/counters.json",
-      detail: detail || "(no store counters processed)",
-      applied: reconciled.length > 0,
-    });
-  }
-
-  contextCache.invalidate("meta_write", projectRoot);
-
-  const after = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
-  const successCount = mutations.filter((m) => m.applied).length;
-  const failureCount = mutations.length - successCount;
-
-  return {
-    changed: successCount > 0,
-    mutations,
-    warnings: after.warnings,
-    manual_errors: after.manual_errors,
-    aborted: false,
-    message: createApplyLintMessage(successCount, failureCount, after.manual_errors.length),
-    report: after,
-  };
+  return runDoctorApplyLintWithDeps(target, {
+    normalizeTarget,
+    runDoctorReport,
+    appendDoctorWarnings,
+    createLedgerAppendWarning,
+    contextCacheInvalidate: (kind, projectRoot) => {
+      // Apply-lint only ever invalidates meta_write; kind kept for API stability.
+      void kind;
+      contextCache.invalidate("meta_write", projectRoot);
+    },
+  });
 }
 
-function createApplyLintMessage(
-  succeeded: number,
-  failed: number,
-  manualErrorCount: number,
-): string {
-  const parts: string[] = [];
-  if (succeeded === 0 && failed === 0) {
-    parts.push("No apply-lint mutations were needed.");
-  } else {
-    parts.push(`Applied ${succeeded} apply-lint mutation${succeeded === 1 ? "" : "s"}.`);
-    if (failed > 0) {
-      parts.push(`${failed} mutation${failed === 1 ? "" : "s"} failed.`);
-    }
-  }
-  parts.push(
-    manualErrorCount === 0
-      ? "No manual errors remain."
-      : `${manualErrorCount} manual error${manualErrorCount === 1 ? "" : "s"} remain.`,
-  );
-  return parts.join(" ");
-}
+
 
 // applySessionHintsStaleCleanup → doctor-session-hints-stale.ts (W8 Step B)
 
