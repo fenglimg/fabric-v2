@@ -214,21 +214,31 @@ const STRINGS = {
   },
 
   // ---- Signal B: review -----------------------------------------------------
-  // Source (zh-CN): fabric-hint.cjs:651  `📋 Fabric: 已积累 ${stats.count} 条待审核知识${ageSuffix}。`
-  // params: { count, ageSuffix } — ageSuffix is " / 最早一条 N.N 天前" or "" (zh-CN only)
-  // For en variant we shape the suffix inline to keep substring "${count}" addressable.
+  // params: { count, oldestDays? } — ISS-20260712-017: locale-owned age suffix.
+  // Caller passes numeric days as string (e.g. "3.2") or "" / omit when no age.
+  // Never pass a pre-baked Chinese ageSuffix + EN string-replace (中英混用 drift).
   reviewLine1: {
-    "zh-CN": (p) => `📋 Fabric: 已积累 ${p.count} 条待审核知识${p.ageSuffix || ""}。`,
+    "zh-CN": (p) => {
+      const suffix =
+        p.oldestDays != null && String(p.oldestDays).length > 0
+          ? ` / 最早一条 ${p.oldestDays} 天前`
+          : "";
+      return `📋 Fabric: 已积累 ${p.count} 条待审核知识${suffix}。`;
+    },
     en: (p) => {
       const suffix =
-        p.ageSuffix && p.ageSuffix.length > 0
-          ? p.ageSuffix
-              .replace(" / 最早一条 ", " / oldest is ")
-              .replace(" 天前", "d old")
+        p.oldestDays != null && String(p.oldestDays).length > 0
+          ? ` / oldest is ${p.oldestDays}d old`
           : "";
       return `📋 Fabric: ${p.count} pending knowledge entries accumulated${suffix}.`;
     },
-    "zh-CN-hybrid": (p) => `📋 Fabric: 已积累 ${p.count} 条待审核知识${p.ageSuffix || ""}。`,
+    "zh-CN-hybrid": (p) => {
+      const suffix =
+        p.oldestDays != null && String(p.oldestDays).length > 0
+          ? ` / 最早一条 ${p.oldestDays} 天前`
+          : "";
+      return `📋 Fabric: 已积累 ${p.count} 条待审核知识${suffix}。`;
+    },
   },
 
   // Source (zh-CN): fabric-hint.cjs:652  `   是否调 /fabric-review 审核 pending/ 条目?`

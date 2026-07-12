@@ -11,7 +11,9 @@ vi.hoisted(() => {
 
 import configCmd from "../src/commands/config.ts";
 import doctorCommand from "../src/commands/doctor.ts";
-import installCommand from "../src/commands/install.ts";
+// ISS-20260711-187: gate live install-v2 (registry loads install-v2.js), not
+// the retired install.ts twin whose flag surface can silently drift.
+import { installCommand } from "../src/commands/install-v2.ts";
 // v2.0.0-rc.37 Wave A2: serveCommand import removed alongside fabric serve
 // quarantine (per [[fabric-serve-quarantine-not-delete]]); the command no
 // longer exists in main and is not part of the CLI surface contract.

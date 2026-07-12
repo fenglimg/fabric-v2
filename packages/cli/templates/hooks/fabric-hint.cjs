@@ -1104,15 +1104,17 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     // count and age substrings (`${count} 条`, `${days} 天`) so existing
     // tests pass; drops the Agent-jussive "建议调用 ... skill ..." for a
     // polite question framing aimed at the human reader.
-    const ageSuffix =
+    // ISS-20260712-017: pass locale-neutral oldestDays; each banner variant
+    // owns its age suffix (no zh-hardcoded ageSuffix + en string-replace).
+    const oldestDays =
       stats.oldestAgeMs !== null
-        ? ` / 最早一条 ${(stats.oldestAgeMs / MS_PER_DAY).toFixed(1)} 天前`
+        ? (stats.oldestAgeMs / MS_PER_DAY).toFixed(1)
         : "";
     // rc.16 TASK-002: i18n via lib. Substrings ('${count} 条', 'fabric-review')
     // preserved by the lib's zh-CN templates.
     const line1 = renderBanner("reviewLine1", variant, {
       count: stats.count,
-      ageSuffix,
+      oldestDays,
     });
     const line2 = renderBanner("reviewCta", variant, {});
     const reason = `${line1}\n${line2}`;

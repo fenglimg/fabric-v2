@@ -110,6 +110,17 @@ import {
   type SessionHintsStaleCandidate,
   type SessionHintsStaleInspection,
 } from "./doctor-session-hints-stale.js";
+import {
+  createBodyReadMisfireCheck,
+  createCiteGoodhartCheck,
+  createDraftBacklogCheck,
+  createDriftUnconsumedCheck,
+  createKnowledgeTagsEmptyCheck,
+  createSessionHintsStaleCheck,
+  createUnderseededCheck,
+  type UnderseededInspection,
+} from "./doctor-knowledge-checks.js";
+
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
@@ -414,22 +425,6 @@ type EventLedgerInspection = {
   error?: string;
 };
 
-// v2.0.0-rc.33 W4-A4 (T5 P2): "draft backlog" detection. Warns when the
-// proportion of `draft`-maturity canonical entries exceeds DRAFT_BACKLOG_RATIO
-// (default 0.5). A workspace where the majority of entries never graduate
-// past draft signals a broken promote loop — the rc.32 baseline showed 92%
-// of entries stuck at draft, which is what motivated this lint.
-type DraftBacklogInspection = {
-  status: "ok" | "warn";
-  draftCount: number;
-  totalCount: number;
-  ratio: number; // draftCount / totalCount, 0..1
-};
-
-function emptyDraftBacklogInspection(): DraftBacklogInspection {
-  return { status: "ok", draftCount: 0, totalCount: 0, ratio: 0 };
-}
-
 // CiteGoodhartInspection → doctor-cite-goodhart.ts (W8)
 
 type PreexistingRootFilesInspection = {
@@ -442,24 +437,6 @@ type PreexistingRootFilesInspection = {
 // proven → verified → draft; config-loader reads the same canonical config keys
 // with no remap.
 export type LintMaturity = "proven" | "verified" | "draft";
-
-// rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
-// Reports when the workspace's canonical knowledge node count is strictly
-// less than `underseed_node_threshold` (default 10, override via
-// .fabric/fabric-config.json#underseed_node_threshold). Mirrors the
-// fabric-hint Stop hook's import-signal threshold so the two surfaces stay
-// in lockstep — but the doctor lint is unconditional (no init-quiet /
-// proposal-cooldown guards), since `doctor` is the user's deliberate check
-// rather than an ambient nag.
-type UnderseededInspection = {
-  // Total canonical entry count across the five canonical type subdirs.
-  node_count: number;
-  // Effective threshold (config override or default).
-  threshold: number;
-  // True iff node_count < threshold. Pre-computed so createUnderseededCheck
-  // does not have to re-derive the trigger predicate.
-  underseeded: boolean;
-};
 
 // SessionHintsStale* types + inspect + SESSION_HINTS_* constants:
 // doctor-session-hints-stale.ts (W8 Step A). Apply arm still local (Step B).
@@ -1376,23 +1353,6 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
 
 // inspectCiteGoodhart → doctor-cite-goodhart.ts (W8)
 
-// rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when
-// >50% of entries carry `tags: []` — clustering / topical surfacing degrades
-// when most entries are tag-less. Threshold mirrors draft_backlog (>50% with
-// ≥10 entries total to avoid spurious warns in fresh repos).
-type EmptyTagsInspection = {
-  status: "ok" | "warn";
-  emptyCount: number;
-  totalCount: number;
-  ratio: number;
-};
-
-// ISS-20260711-247: real draft/tag inspections over store canonical corpus.
-const DRAFT_BACKLOG_RATIO = 0.5;
-const DRAFT_BACKLOG_MIN_TOTAL = 10;
-const EMPTY_TAGS_RATIO = 0.5;
-const EMPTY_TAGS_MIN_TOTAL = 10;
-
 
 
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
@@ -1589,141 +1549,7 @@ function createEventLedgerSchemaCompatCheck(
   );
 }
 
-// v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog check. Single ratio + count
-// message — operator does not need a per-entry breakdown to act on the signal
-// (the action is "run fabric-review to promote drafts" regardless of which
-// entries are involved).
-function createDraftBacklogCheck(
-  t: Translator,
-  inspection: DraftBacklogInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.draft_backlog.name"),
-      t("doctor.check.draft_backlog.ok"),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 100);
-  return issueCheck(
-    t("doctor.check.draft_backlog.name"),
-    "warn",
-    "warning",
-    "knowledge_draft_backlog",
-    t("doctor.check.draft_backlog.message", {
-      draftCount: String(inspection.draftCount),
-      totalCount: String(inspection.totalCount),
-      pct: String(pct),
-    }),
-    t("doctor.check.draft_backlog.remediation"),
-  );
-}
-
-// inspectDriftUnconsumed → doctor-drift-unconsumed.ts (W8)
-
-
-
-function createDriftUnconsumedCheck(
-  t: Translator,
-  inspection: DriftUnconsumedInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.drift_unconsumed.name"),
-      t("doctor.check.drift_unconsumed.ok"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.drift_unconsumed.name"),
-    "warn",
-    "warning",
-    "knowledge_drift_unconsumed",
-    t("doctor.check.drift_unconsumed.message", {
-      driftCount: String(inspection.driftCount),
-      demoteCount: String(inspection.demoteCount),
-    }),
-    t("doctor.check.drift_unconsumed.remediation"),
-  );
-}
-
-// rc.36 TASK-05 (P0-8): empty-tags warn check.
-function createKnowledgeTagsEmptyCheck(
-  t: Translator,
-  inspection: EmptyTagsInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.knowledge_tags_empty.name"),
-      t("doctor.check.knowledge_tags_empty.ok"),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 100);
-  return issueCheck(
-    t("doctor.check.knowledge_tags_empty.name"),
-    "warn",
-    "warning",
-    "knowledge_tags_empty_ratio",
-    t("doctor.check.knowledge_tags_empty.message", {
-      emptyCount: String(inspection.emptyCount),
-      totalCount: String(inspection.totalCount),
-      pct: String(pct),
-    }),
-    t("doctor.check.knowledge_tags_empty.remediation"),
-  );
-}
-
-
-
-// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart check. Aggregates fired
-// patterns into a single multi-line message so the operator gets the full
-// audit hit list in one report row. Always warning severity — Goodhart
-// heuristics are advisory, not error-grade.
-
-// ISS-20260711-221: body_read misfire as a first-class doctor check.
-function createBodyReadMisfireCheck(
-  t: Translator,
-  inspection: BodyReadMisfireReport,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck("Knowledge body-read wiring", inspection.message);
-  }
-  return issueCheck(
-    "Knowledge body-read wiring",
-    "warn",
-    "warning",
-    "knowledge_body_read_misfire",
-    inspection.message,
-    "Check PostToolUse matcher includes Read in .claude/settings.json (and Codex equivalent), then rerun `fabric install`.",
-  );
-}
-
-function createCiteGoodhartCheck(
-  t: Translator,
-  inspection: CiteGoodhartInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.cite_goodhart.name"),
-      t("doctor.check.cite_goodhart.ok"),
-    );
-  }
-  const list = inspection.fired.map((f) => `${f.pattern}: ${f.detail}`).join("; ");
-  const count = inspection.fired.length;
-  return issueCheck(
-    t("doctor.check.cite_goodhart.name"),
-    "warn",
-    "warning",
-    "cite_goodhart_pattern",
-    t(`doctor.check.cite_goodhart.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.cite_goodhart.remediation"),
-    // rc.35 TASK-12 (P0-11): maintainer audience. G1/G2/G3/G5 are internal
-    // pattern codes from the cite-policy design memo — npm end users have
-    // no actionable lever for these. Fold by default; --verbose unfolds.
-    "maintainer",
-  );
-}
+// createDraftBacklog/Drift/Tags/BodyRead/CiteGoodhart → doctor-knowledge-checks.ts (W8)
 
 function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists || !ledger.writable) {
@@ -2125,66 +1951,7 @@ async function readUnderseedThresholdFromConfig(projectRoot: string): Promise<nu
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
-// rc.5 TASK-010: surface the underseeded lint (#22) as an `info` kind so it
-// shows in the report without bumping doctor's status to warn/error — a small
-// corpus is a legitimate state during early adoption, not a defect. The
-// actionHint points the user at the fabric-import Skill, mirroring the
-// fabric-hint hook's import-signal recommendation.
-function createUnderseededCheck(t: Translator, inspection: UnderseededInspection): DoctorCheck {
-  if (!inspection.underseeded) {
-    return okCheck(
-      t("doctor.check.underseeded.name"),
-      t("doctor.check.underseeded.ok", {
-        count: String(inspection.node_count),
-        threshold: String(inspection.threshold),
-      }),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.underseeded.name"),
-    "ok",
-    "info",
-    "knowledge_underseeded",
-    t(`doctor.check.underseeded.message.${inspection.node_count === 1 ? "singular" : "plural"}`, {
-      count: String(inspection.node_count),
-      threshold: String(inspection.threshold),
-    }),
-    t("doctor.check.underseeded.remediation"),
-  );
-}
-
-// rc.6 TASK-021 (E3): surface stale session-hints cache files as an info-
-// kind finding. Status remains "ok" — the cache is hot-cache hygiene, not
-// a correctness concern. The actionHint points at apply-lint so users can
-// reap accumulated cache files in a single pass.
-function createSessionHintsStaleCheck(
-  t: Translator,
-  inspection: SessionHintsStaleInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.session_hints_stale.name"),
-      t("doctor.check.session_hints_stale.ok", {
-        days: String(SESSION_HINTS_STALE_DAYS),
-      }),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.path} (${first.age_days}d old)`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.session_hints_stale.name"),
-    "ok",
-    "info",
-    "knowledge_session_hints_stale",
-    t(`doctor.check.session_hints_stale.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      days: String(SESSION_HINTS_STALE_DAYS),
-      detail,
-    }),
-    t("doctor.check.session_hints_stale.remediation"),
-  );
-}
+// createUnderseededCheck + createSessionHintsStaleCheck → doctor-knowledge-checks.ts (W8)
 
 // rc.23 TASK-010 (e): surface a stale `.fabric/.serve.lock` (dead-PID corpse)
 // as an info-kind advisory. Status stays "ok" — a stale lock is operator
