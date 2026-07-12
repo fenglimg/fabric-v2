@@ -276,14 +276,36 @@ export async function addStoreProject(storeDir: string, project: StoreProject): 
 // Cross-store pending aggregation API (roadmap gemini#3) — the底座 P2 fab_review
 // builds on instead of walking store git itself. Returns the union of pending
 // entries across the given (writable) stores, each tagged with provenance.
+// ISS-20260711-170: walk pending/<type>/*.md (layout mirrors canonical types),
+// not only the bare pending/ top-level (which is always empty for type-bucketed
+// pending trees).
 export async function aggregatePendingAcrossStores(stores: MountedStoreDir[]): Promise<StoreKnowledgeRef[]> {
-  const lists = await Promise.all(stores.map(async (store) =>
-    (await listMarkdown(join(store.dir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR))).map((file) => ({
-      store_uuid: store.store_uuid,
-      alias: store.alias,
-      type: STORE_PENDING_DIR,
-      file,
-    })),
-  ));
+  const lists = await Promise.all(
+    stores.map(async (store) => {
+      const pendingRoot = join(store.dir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR);
+      const refs: StoreKnowledgeRef[] = [];
+      // Production layout: pending/<type>/*.md
+      for (const type of STORE_KNOWLEDGE_TYPE_DIRS) {
+        for (const file of await listMarkdown(join(pendingRoot, type))) {
+          refs.push({
+            store_uuid: store.store_uuid,
+            alias: store.alias,
+            type: STORE_PENDING_DIR,
+            file,
+          });
+        }
+      }
+      // Flat layout (tests / legacy): pending/*.md at the pending root.
+      for (const file of await listMarkdown(pendingRoot)) {
+        refs.push({
+          store_uuid: store.store_uuid,
+          alias: store.alias,
+          type: STORE_PENDING_DIR,
+          file,
+        });
+      }
+      return refs;
+    }),
+  );
   return lists.flat();
 }

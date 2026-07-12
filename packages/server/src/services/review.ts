@@ -25,10 +25,13 @@ import {
 import { computeReadSetRevision } from "./cross-store-recall.js";
 import {
   allocateStoreKnowledgeId,
+  aggregatePendingAcrossStores,
   hasSecrets,
   isPersonalScope,
   lintCrossStoreReferences,
   loadProjectConfig,
+  type MountedStoreDir,
+  readStoreIdentityAsync,
 } from "@fenglimg/fabric-shared";
 import {
   lockedWriteFile,
@@ -524,6 +527,27 @@ function isVisibleByLifecycle(
   return true;
 }
 
+
+
+/** ISS-20260711-170: resolve write-target stores as MountedStoreDir for aggregatePendingAcrossStores. */
+async function resolveWriteTargetMountedDirs(projectRoot: string): Promise<MountedStoreDir[]> {
+  const out: MountedStoreDir[] = [];
+  for (const layer of ["team", "personal"] as const) {
+    try {
+      const dir = resolveWriteTargetStoreDir(layer, projectRoot);
+      const identity = await readStoreIdentityAsync(dir);
+      out.push({
+        store_uuid: identity?.store_uuid ?? dir,
+        alias: identity?.canonical_alias ?? layer,
+        dir,
+      });
+    } catch {
+      // layer has no resolvable write-target — skip
+    }
+  }
+  return out;
+}
+
 async function listPending(
   projectRoot: string,
   filters: ListFilters | undefined,
@@ -542,121 +566,119 @@ async function listPending(
 
   const typesToScan = filters?.type !== undefined ? [filters.type] : PLURAL_TYPES;
 
-  // v2.2 全砍 Stage 2 (B2 cutover): pending lives ONLY in the resolved
-  // write-target stores (team + personal). Resolve each defensively — a read
-  // operation degrades to "nothing to list" for an un-onboarded layer rather
-  // than hard-failing (the hard-fail is reserved for the WRITE path). Entries
-  // are reported by absolute path (resolveSandboxedPath admits them under the
-  // store knowledge root).
-  const sources: Array<{ origin: "team" | "personal"; root: string; isStore: boolean }> = [];
-  for (const origin of ["team", "personal"] as const) {
-    try {
-      const pendingRoot = resolveStorePendingBase(origin, projectRoot);
-      sources.push({ origin, root: pendingRoot, isStore: true });
-      // v2.2 全砍 F15: rejected entries are MOVED to a sibling `rejected/` dir
-      // (out of the active pending queue). Surface them only when the caller
-      // opts in via include_rejected — preserving the audit/restore view.
-      if (filters?.include_rejected === true) {
-        sources.push({
-          origin,
-          root: pendingRoot.replace(`${sep}pending`, `${sep}rejected`),
-          isStore: true,
-        });
+  // ISS-20260711-170: primary discovery via aggregatePendingAcrossStores so the
+  // multi-store API has a real production consumer. include_rejected still walks
+  // the sibling rejected/ tree (aggregate is pending-only).
+  const mounted = await resolveWriteTargetMountedDirs(projectRoot);
+  const aggregated = mounted.length > 0 ? await aggregatePendingAcrossStores(mounted) : [];
+  const discovered: Array<{ absolutePath: string; origin: "team" | "personal"; type: PluralType }> = [];
+  for (const ref of aggregated) {
+    // Production: pending/<type>/file.md; flat/legacy: pending/file.md
+    const parent = basename(dirname(ref.file));
+    let type: PluralType | null = null;
+    if ((PLURAL_TYPES as readonly string[]).includes(parent)) {
+      type = parent as PluralType;
+    } else if (parent === "pending") {
+      // Flat pending root — no type bucket; only surface when no type filter.
+      if (filters?.type !== undefined) continue;
+      type = "decisions"; // placeholder bucket for list item shape
+    }
+    if (type === null) continue;
+    if (!typesToScan.includes(type)) continue;
+    const origin: "team" | "personal" =
+      ref.alias === "personal" || /[/\\]personal[/\\]/u.test(ref.file) ? "personal" : "team";
+    discovered.push({ absolutePath: ref.file, origin, type });
+  }
+  if (filters?.include_rejected === true) {
+    for (const origin of ["team", "personal"] as const) {
+      try {
+        const pendingRoot = resolveStorePendingBase(origin, projectRoot);
+        const rejectedRoot = pendingRoot.replace(`${sep}pending`, `${sep}rejected`);
+        for (const type of typesToScan) {
+          const dir = join(rejectedRoot, type);
+          if (!existsSync(dir)) continue;
+          let entries: string[];
+          try {
+            entries = await readdir(dir);
+          } catch {
+            continue;
+          }
+          for (const name of entries) {
+            if (!name.endsWith(".md")) continue;
+            discovered.push({ absolutePath: join(dir, name), origin, type });
+          }
+        }
+      } catch {
+        // skip unresolved layer
       }
-    } catch {
-      // layer has no resolvable write-target store — nothing to list there.
     }
   }
 
-  for (const source of sources) {
-    for (const type of typesToScan) {
-      const dir = join(source.root, type);
-      if (!existsSync(dir)) {
+  for (const source of discovered) {
+    const absolutePath = source.absolutePath;
+    const origin = source.origin;
+    const type = source.type;
+    let content: string;
+    try {
+      content = await readFile(absolutePath, "utf8");
+    } catch {
+      continue;
+    }
+    const fm = parseFrontmatter(content);
+    // Frontmatter `layer` declares the *destination* classification. For
+    // entries living under the personal pending root, default to
+    // "personal" when frontmatter omits the field; otherwise default to
+    // "team" (mirrors pre-B1 behavior).
+    const layer = fm.layer ?? (origin === "personal" ? "personal" : "team");
+    const maturity = fm.maturity ?? "draft";
+
+    // Apply filters (best-effort — missing frontmatter values fall back to defaults)
+    if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
+      continue;
+    }
+    if (filters?.maturity !== undefined && filters.maturity !== maturity) {
+      continue;
+    }
+    if (filters?.tags !== undefined && filters.tags.length > 0) {
+      const itemTags = fm.tags ?? [];
+      const hasAll = filters.tags.every((t) => itemTags.includes(t));
+      if (!hasAll) continue;
+    }
+    // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
+    // created_at frontmatter are conservatively excluded when the filter
+    // is set (caller asked for a date window — undated entries cannot be
+    // proven to fall inside it).
+    if (filters?.created_after !== undefined) {
+      const createdAt = fm.created_at;
+      if (createdAt === undefined || createdAt < filters.created_after) {
         continue;
-      }
-      let entries: string[];
-      try {
-        entries = await readdir(dir);
-      } catch {
-        continue;
-      }
-      for (const name of entries) {
-        if (!name.endsWith(".md")) continue;
-        const absolutePath = join(dir, name);
-        let content: string;
-        try {
-          content = await readFile(absolutePath, "utf8");
-        } catch {
-          continue;
-        }
-        const fm = parseFrontmatter(content);
-        // Frontmatter `layer` declares the *destination* classification. For
-        // entries living under the personal pending root, default to
-        // "personal" when frontmatter omits the field; otherwise default to
-        // "team" (mirrors pre-B1 behavior).
-        const layer = fm.layer ?? (source.origin === "personal" ? "personal" : "team");
-        const maturity = fm.maturity ?? "draft";
-
-        // Apply filters (best-effort — missing frontmatter values fall back to defaults)
-        if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
-          continue;
-        }
-        if (filters?.maturity !== undefined && filters.maturity !== maturity) {
-          continue;
-        }
-        if (filters?.tags !== undefined && filters.tags.length > 0) {
-          const itemTags = fm.tags ?? [];
-          const hasAll = filters.tags.every((t) => itemTags.includes(t));
-          if (!hasAll) continue;
-        }
-        // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
-        // created_at frontmatter are conservatively excluded when the filter
-        // is set (caller asked for a date window — undated entries cannot be
-        // proven to fall inside it).
-        if (filters?.created_after !== undefined) {
-          const createdAt = fm.created_at;
-          if (createdAt === undefined || createdAt < filters.created_after) {
-            continue;
-          }
-        }
-
-        // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): hide rejected/deferred entries
-        // by default. See isVisibleByLifecycle for the precise rules.
-        if (!isVisibleByLifecycle(fm, filters)) {
-          continue;
-        }
-
-        // Store-rooted entries (any layer) live outside both the project tree
-        // and the personal ~/.fabric root, so they are reported by absolute
-        // path. Non-store team → workspace-relative; non-store personal → `~/`.
-        const reportedPath = source.isStore
-          ? absolutePath
-          : source.origin === "personal"
-            ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
-            : relative(projectRoot, absolutePath);
-
-        items.push({
-          pending_path: reportedPath,
-          // v2.0.0-rc.27 TASK-001 (§2.12): absolute path companion for
-          // personal entries so programmatic consumers (Read, fs.readFile)
-          // don't need to shell-expand the `~` themselves. Store entries
-          // already report an absolute pending_path, so the companion is
-          // emitted for non-store personal entries only.
-          ...(source.origin === "personal" && !source.isStore ? { pending_path_absolute: absolutePath } : {}),
-          type,
-          layer,
-          maturity,
-          origin: source.origin,
-          ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
-          ...(fm.status !== undefined ? { status: fm.status } : {}),
-          ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
-          // v2.0.0-rc.27 TASK-006 (audit §2.23): full body when caller
-          // opted in. Reviewer UI consumes this to scan for prompt-injection
-          // payloads hidden under `## Evidence` body.
-          ...(filters?.include_body === true ? { body: extractBodyTrimmed(content) } : {}),
-        });
       }
     }
+
+    // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): hide rejected/deferred entries
+    // by default. See isVisibleByLifecycle for the precise rules.
+    if (!isVisibleByLifecycle(fm, filters)) {
+      continue;
+    }
+
+    // Store-rooted entries (any layer) live outside both the project tree
+    // and the personal ~/.fabric root, so they are reported by absolute path.
+    const reportedPath = absolutePath;
+
+    items.push({
+      pending_path: reportedPath,
+      type,
+      layer,
+      maturity,
+      origin: origin,
+      ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
+      ...(fm.status !== undefined ? { status: fm.status } : {}),
+      ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
+      // v2.0.0-rc.27 TASK-006 (audit §2.23): full body when caller
+      // opted in. Reviewer UI consumes this to scan for prompt-injection
+      // payloads hidden under `## Evidence` body.
+      ...(filters?.include_body === true ? { body: extractBodyTrimmed(content) } : {}),
+    });
   }
 
   return items;
@@ -1030,6 +1052,15 @@ type ModifyChanges = {
   must_read_if?: string;
   intent_clues?: string[];
   impact?: string[];
+  // ISS-20260711-180: keep in lockstep with _fabReviewModifyChangesSchema.
+  tech_stack?: string[];
+  evidence_paths?: string[];
+  onboard_slot?:
+    | "tech-stack-decision"
+    | "architecture-pattern"
+    | "code-style-tone"
+    | "build-system-idiom"
+    | "domain-vocabulary";
 };
 
 // v2.0.0-rc.27 TASK-001: superset of ModifyChanges used internally by
@@ -2160,6 +2191,10 @@ function rewriteFrontmatterMerge(
   if (patch.must_read_if !== undefined) updates.must_read_if = `must_read_if: ${quoteIfNeeded(patch.must_read_if)}`;
   if (patch.intent_clues !== undefined) updates.intent_clues = `intent_clues: ${flowArray(patch.intent_clues)}`;
   if (patch.impact !== undefined) updates.impact = `impact: ${flowArray(patch.impact)}`;
+  // ISS-20260711-180
+  if (patch.tech_stack !== undefined) updates.tech_stack = `tech_stack: ${flowArray(patch.tech_stack)}`;
+  if (patch.evidence_paths !== undefined) updates.evidence_paths = `evidence_paths: ${flowArray(patch.evidence_paths)}`;
+  if (patch.onboard_slot !== undefined) updates.onboard_slot = `onboard_slot: ${patch.onboard_slot}`;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
   // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
   // datetimes correctly (no colon in the date portion would need quoting,
@@ -2214,6 +2249,9 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.must_read_if !== undefined) lines.push(`must_read_if: ${quoteIfNeeded(patch.must_read_if)}`);
   if (patch.intent_clues !== undefined) lines.push(`intent_clues: ${flowArray(patch.intent_clues)}`);
   if (patch.impact !== undefined) lines.push(`impact: ${flowArray(patch.impact)}`);
+  if (patch.tech_stack !== undefined) lines.push(`tech_stack: ${flowArray(patch.tech_stack)}`);
+  if (patch.evidence_paths !== undefined) lines.push(`evidence_paths: ${flowArray(patch.evidence_paths)}`);
+  if (patch.onboard_slot !== undefined) lines.push(`onboard_slot: ${patch.onboard_slot}`);
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
   if (patch.last_review_confirmed_at !== undefined) lines.push(`last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`);

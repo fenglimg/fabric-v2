@@ -1067,6 +1067,19 @@ const _fabReviewModifyChangesSchema = z.object({
   must_read_if: z.string().optional(),
   intent_clues: z.array(z.string()).optional(),
   impact: z.array(z.string()).optional(),
+  // ISS-20260711-180: propose writes these; without them here zod .strip()
+  // silently drops modify patches (KT-PIT-0005 recurrence).
+  tech_stack: z.array(z.string()).optional(),
+  evidence_paths: z.array(z.string()).optional(),
+  onboard_slot: z
+    .enum([
+      "tech-stack-decision",
+      "architecture-pattern",
+      "code-style-tone",
+      "build-system-idiom",
+      "domain-vocabulary",
+    ])
+    .optional(),
 });
 
 export const FabReviewInputSchema = z.discriminatedUnion("action", [

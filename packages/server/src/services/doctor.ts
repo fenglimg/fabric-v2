@@ -695,20 +695,17 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (reads event ledger); placed after the sync inspections so the await
   // doesn't gate them.
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
+  // ISS-20260711-221: wire body_read misfire into main doctor report.
+  const bodyReadMisfire = await runDoctorBodyReadMisfireCheck(projectRoot);
   // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
   // post-decolo canonical knowledge source. Summaries feed store-aware checks;
   // the count + corpus revision hash replace retired agents.meta-derived fields.
   const storeKnowledgeSummaries = await collectStoreKnowledgeSummaries(projectRoot);
   const storeRevision = await computeReadSetRevision(projectRoot);
-  // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
-  const draftBacklog = emptyDraftBacklogInspection();
-  // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
-  const knowledgeTagsEmpty: EmptyTagsInspection = {
-    status: "ok",
-    emptyCount: 0,
-    totalCount: storeKnowledgeSummaries.length,
-    ratio: 0,
-  };
+  // ISS-20260711-247: real draft/tag inspections over store canonical corpus.
+  const storeCanonicalForHygiene = await collectStoreCanonicalEntries(projectRoot);
+  const draftBacklog = inspectDraftBacklogFromCanonical(storeCanonicalForHygiene);
+  const knowledgeTagsEmpty = inspectEmptyTagsFromCanonical(storeCanonicalForHygiene);
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
   // in the last 30 days — drift detection runs but no consumption pipeline.
   const driftUnconsumed = await inspectDriftUnconsumed(projectRoot);
@@ -880,6 +877,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
+    createBodyReadMisfireCheck(t, bodyReadMisfire),
     createDriftUnconsumedCheck(t, driftUnconsumed),
     // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
     // replaced by the store-aware `store_counter_drift` (per-store committed
@@ -1736,6 +1734,41 @@ type EmptyTagsInspection = {
   ratio: number;
 };
 
+// ISS-20260711-247: real draft/tag inspections over store canonical corpus.
+const DRAFT_BACKLOG_RATIO = 0.5;
+const DRAFT_BACKLOG_MIN_TOTAL = 10;
+const EMPTY_TAGS_RATIO = 0.5;
+const EMPTY_TAGS_MIN_TOTAL = 10;
+
+function inspectDraftBacklogFromCanonical(
+  entries: Awaited<ReturnType<typeof collectStoreCanonicalEntries>>,
+): DraftBacklogInspection {
+  const totalCount = entries.length;
+  let draftCount = 0;
+  for (const e of entries) {
+    if ((e.description.maturity ?? "draft") === "draft") draftCount += 1;
+  }
+  const ratio = totalCount === 0 ? 0 : draftCount / totalCount;
+  const status =
+    totalCount >= DRAFT_BACKLOG_MIN_TOTAL && ratio > DRAFT_BACKLOG_RATIO ? "warn" : "ok";
+  return { status, draftCount, totalCount, ratio };
+}
+
+function inspectEmptyTagsFromCanonical(
+  entries: Awaited<ReturnType<typeof collectStoreCanonicalEntries>>,
+): EmptyTagsInspection {
+  const totalCount = entries.length;
+  let emptyCount = 0;
+  for (const e of entries) {
+    const tags = e.description.tags;
+    if (tags === undefined || tags.length === 0) emptyCount += 1;
+  }
+  const ratio = totalCount === 0 ? 0 : emptyCount / totalCount;
+  const status =
+    totalCount >= EMPTY_TAGS_MIN_TOTAL && ratio > EMPTY_TAGS_RATIO ? "warn" : "ok";
+  return { status, emptyCount, totalCount, ratio };
+}
+
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
 // `.fabric/.cache/knowledge-test.index.json` was derived from the co-location
 // `.fabric/knowledge` via buildKnowledgeMeta (its staleness diffed against a
@@ -2046,6 +2079,25 @@ function createKnowledgeTagsEmptyCheck(
       pct: String(pct),
     }),
     t("doctor.check.knowledge_tags_empty.remediation"),
+  );
+}
+
+
+// ISS-20260711-221: body_read misfire as a first-class doctor check.
+function createBodyReadMisfireCheck(
+  t: Translator,
+  inspection: BodyReadMisfireReport,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck("Knowledge body-read wiring", inspection.message);
+  }
+  return issueCheck(
+    "Knowledge body-read wiring",
+    "warn",
+    "warning",
+    "knowledge_body_read_misfire",
+    inspection.message,
+    "Check PostToolUse matcher includes Read in .claude/settings.json (and Codex equivalent), then rerun `fabric install`.",
   );
 }
 
