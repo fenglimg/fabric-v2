@@ -168,4 +168,27 @@ describe("bootstrap-canonical", () => {
       ).toBe(BOOTSTRAP_MARKER_BEGIN);
     });
   });
+
+
+  describe("pre-action gating + archive-as-truth (peer micro-transfer)", () => {
+    it("teaches fab_recall(paths= with session_id before edit", () => {
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("fab_recall(paths=");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("session_id=");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("修改任何文件前");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("Pre-action gating");
+    });
+
+    it("states pending→review as only path into canonical", () => {
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("fab_propose");
+      expect(BOOTSTRAP_CANONICAL_ZH).toMatch(/fabric-review|fab_review/);
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("canonical");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("pending");
+    });
+
+    it("keeps soft archive cadence default 20 / archive_edit_threshold", () => {
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("archive_edit_threshold");
+      expect(BOOTSTRAP_CANONICAL_ZH).toContain("20");
+    });
+  });
+
 });

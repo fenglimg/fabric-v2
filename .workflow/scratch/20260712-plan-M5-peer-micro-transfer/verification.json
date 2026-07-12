@@ -1,0 +1,46 @@
+{
+  "phase": 1,
+  "status": "passed",
+  "verified_at": "2026-07-12T10:56:10Z",
+  "verifier": "ralph-executor-inline",
+  "must_haves": {
+    "truths": [
+      {
+        "criterion": "P0 gating checklist",
+        "status": "verified",
+        "evidence": "fabric-recall-playbook + bootstrap-canonical"
+      },
+      {
+        "criterion": "P0 altitude lint",
+        "status": "verified",
+        "evidence": "extract-knowledge assessBodyAltitude + tests"
+      },
+      {
+        "criterion": "P0 store UX pasteable",
+        "status": "verified",
+        "evidence": "first-hit remediationFor + i18n"
+      },
+      {
+        "criterion": "P1 archive narrative + signposts + probe + cadence",
+        "status": "verified",
+        "evidence": "docs + command-signposts + doctor probe + archive skill"
+      },
+      {
+        "criterion": "P2 diagnostics polish",
+        "status": "verified",
+        "evidence": "relevance drift actionHint + ai-client-policy-drift consistency"
+      }
+    ]
+  },
+  "gaps": [],
+  "antipatterns": [
+    {
+      "type": "preexisting_test_fail",
+      "file": "packages/cli/__tests__/doctor.test.ts",
+      "severity": "warning",
+      "note": "--fix-knowledge --yes stdout assertion fails without our probe change"
+    }
+  ],
+  "coverage_score": 1.0,
+  "notes": "All 8 tasks implemented in worktree m5-peer-micro-transfer; Wave1 P0 tests green; Wave2/3 shipped with unit evidence."
+}

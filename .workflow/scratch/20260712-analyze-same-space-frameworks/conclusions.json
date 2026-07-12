@@ -1,0 +1,56 @@
+{
+  "session_id": "ANL-same-space-frameworks-2026-07-12",
+  "scope_verdict": "medium",
+  "recommendations": [
+    {
+      "id": "R7",
+      "title": "Do not import mem0 as Fabric core",
+      "priority": "high",
+      "source": "mem0"
+    },
+    {
+      "id": "R8",
+      "title": "Do not build code KG into Fabric",
+      "priority": "high",
+      "source": "GitNexus"
+    },
+    {
+      "id": "R9",
+      "title": "Obsidian-style related graph polish only",
+      "priority": "medium",
+      "source": "Obsidian"
+    },
+    {
+      "id": "R10",
+      "title": "mem0 multi-signal validates hybrid retrieval",
+      "priority": "low",
+      "source": "mem0"
+    }
+  ],
+  "non_goals": [
+    "Import mem0 auto-memory into canonical",
+    "Ship GitNexus-class code KG in Fabric",
+    "Rebuild Obsidian vault UI as Fabric core"
+  ],
+  "key_findings": [
+    {
+      "id": "F5",
+      "summary": "mem0 is personalized conversational memory — false friend vs curated team knowledge",
+      "confidence": "high"
+    },
+    {
+      "id": "F6",
+      "summary": "GitNexus code KG reinforces Fabric non-goal (KT-DEC-0068)",
+      "confidence": "high"
+    },
+    {
+      "id": "F7",
+      "summary": "Obsidian validates local-md + link graph UX cousin only",
+      "confidence": "medium"
+    }
+  ],
+  "layer_map": [],
+  "peers_cloned": [],
+  "round2_addendum": "round2-mem0-gitnexus-obsidian.md",
+  "generated_at": "2026-07-12T10:08:28.000Z"
+}

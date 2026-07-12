@@ -1,0 +1,320 @@
+{
+  "phase": 1,
+  "phase_name": "M5-peer-micro-transfer",
+  "review_kind": "re-review",
+  "prior_review": ".workflow/scratch/20260712-review-P1-peer-micro-transfer/review.json",
+  "fix_notes": ".workflow/scratch/20260712-review-P1-peer-micro-transfer/fix-notes.md",
+  "level": "deep",
+  "verdict": "PASS_WITH_CONCERNS",
+  "reviewed_at": "2026-07-12T12:20:00Z",
+  "reviewer": "ralph-executor-re-review",
+  "dimensions_reviewed": [
+    "correctness",
+    "security",
+    "performance",
+    "architecture",
+    "maintainability",
+    "best-practices"
+  ],
+  "scope": "Verify prior critical/high BLOCK findings after fix; residual medium/low carried forward",
+  "files_spot_checked": [
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/lib/command-signposts.ts",
+    "packages/cli/src/store/first-hit.ts",
+    "packages/cli/__tests__/doctor.test.ts",
+    "packages/cli/__tests__/first-hit.test.ts",
+    "packages/cli/__tests__/command-signposts.test.ts",
+    "packages/server/src/services/doctor-body-altitude.ts",
+    "packages/server/src/services/doctor-body-altitude.test.ts",
+    "packages/server/src/services/cross-store-write.ts",
+    "packages/server/src/services/cross-store-write.test.ts",
+    "packages/server/src/services/extract-knowledge.ts",
+    "packages/server/src/services/extract-knowledge.test.ts",
+    "packages/shared/src/schemas/fabric-config.ts",
+    "packages/shared/test/fabric-config.test.ts"
+  ],
+  "prior_critical_high_resolution": {
+    "COR-001": {
+      "prior_severity": "critical",
+      "status": "RESOLVED",
+      "evidence": "packages/cli/src/commands/doctor.ts:25 imports assessFirstHit; probe branch line 223 calls it; behavioral test doctor.test.ts:859 asserts JSON ok/first_hit + no fix pipeline"
+    },
+    "COR-002": {
+      "prior_severity": "high",
+      "status": "RESOLVED",
+      "evidence": "doctor-body-altitude.ts:32 extractBody(entry.body) then assessBodyAltitude; proxyBody removed; doctor-body-altitude.test.ts covers body-vs-description"
+    },
+    "COR-003": {
+      "prior_severity": "high",
+      "status": "RESOLVED",
+      "evidence": "command-signposts.ts:18-20 successor 'fabric info scope'; command-signposts.test.ts locks not store list"
+    },
+    "SEC-001": {
+      "prior_severity": "high",
+      "status": "RESOLVED",
+      "evidence": "cross-store-write.ts:48-52 pasteSafeScope via SCOPE_COORDINATE_PATTERN; actionHint interpolates safeScope; test rejects newline/shell injection"
+    },
+    "ARCH-004": {
+      "prior_severity": "high",
+      "status": "RESOLVED",
+      "evidence": "fabric-config.ts:412 altitude_propose_gate schema default false; extract-knowledge.ts:96-104 loadProjectConfig path; env override kept; ad-hoc JSON.parse removed; fabric-config + extract-knowledge tests"
+    },
+    "BP-002": {
+      "prior_severity": "high",
+      "status": "RESOLVED",
+      "evidence": "doctor.test.ts:859-917 probe emits JSON first_hit, never runDoctorReport/Fix/ApplyLint"
+    },
+    "BP-003": {
+      "prior_severity": "high",
+      "status": "RESOLVED",
+      "evidence": "remediationLinesFor exported; first-hit.test.ts:357-381 asserts pasteable CLI lines + assessFirstHitSync remediations (not source grep)"
+    }
+  },
+  "side_effect_resolutions": {
+    "BP-011": {
+      "prior_severity": "medium",
+      "status": "RESOLVED",
+      "evidence": "doctor-body-altitude.test.ts now covers createBodyAltitudeDumpCheck + inspectBodyAltitude body path"
+    },
+    "SEC-003": {
+      "prior_severity": "low",
+      "status": "RESOLVED",
+      "evidence": "ad-hoc JSON.parse altitude path removed; gate via schema/loadProjectConfig"
+    }
+  },
+  "spec_compliance_delta": {
+    "TASK-002": {
+      "prior": "PARTIAL",
+      "now": "MET",
+      "note": "doctor altitude assesses entry.body"
+    },
+    "TASK-005": {
+      "prior": "PARTIAL",
+      "now": "MET",
+      "note": "scope-explain successor fabric info scope"
+    },
+    "TASK-006": {
+      "prior": "UNMET",
+      "now": "MET",
+      "note": "assessFirstHit import + behavioral probe test"
+    }
+  },
+  "focus_checks": {
+    "p0_gating_no_stop_flood": "PASS",
+    "p0_altitude_propose_default_warn": "PASS",
+    "p0_altitude_doctor_body_hygiene": "PASS",
+    "p0_store_ux_pasteable": "PASS_WITH_CONCERNS",
+    "p1_signpost_no_silent_alias": "PASS",
+    "p1_probe_readonly": "PASS",
+    "p1_finish_archive_soft": "PASS"
+  },
+  "test_evidence": {
+    "cli": "vitest doctor/first-hit/command-signposts → 37 passed",
+    "server": "vitest doctor-body-altitude/cross-store-write/extract-knowledge → 76 passed",
+    "shared": "vitest fabric-config → 38 passed"
+  },
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 11,
+    "low": 2,
+    "total": 13,
+    "resolved_from_prior": 9
+  },
+  "critical_high_remaining": [],
+  "findings": [
+    {
+      "id": "COR-004",
+      "dimension": "correctness",
+      "severity": "medium",
+      "status": "open",
+      "title": "transcript_header altitude rule ignores H2 structure",
+      "file": "packages/server/src/services/extract-knowledge.ts",
+      "line": 70,
+      "snippet": "if (hasTranscriptHeader && turnMarkers >= 2) { return { ok: false, code: \"body_altitude_transcript_shape\" } }",
+      "description": "Unlike turnMarkers>=3 (requires h2Count===0), transcript-header + 2 markers always fails even for structured ## guidelines that document dump anti-patterns.",
+      "impact": "False positives under FABRIC_ALTITUDE_PROPOSE_GATE=1 on legitimate guidelines.",
+      "suggestion": "Require h2Count===0 for transcript_header path."
+    },
+    {
+      "id": "COR-005",
+      "dimension": "correctness",
+      "severity": "medium",
+      "status": "open",
+      "title": "Altitude hard-gate refuse omits structured warnings",
+      "file": "packages/server/src/services/extract-knowledge.ts",
+      "line": 466,
+      "snippet": "if (altitudeProposeGateEnabled(projectRoot)) { return { pending_path: \"\", idempotency_key: idempotencyKey }; }",
+      "description": "Refuse path returns empty pending_path without warnings[]; warn path attaches code/detail/action_hint.",
+      "impact": "Clients cannot distinguish altitude refuse from other empty-pending failures.",
+      "suggestion": "Return warnings on refuse path as well."
+    },
+    {
+      "id": "COR-006",
+      "dimension": "correctness",
+      "severity": "medium",
+      "status": "open",
+      "title": "empty_store remediation emits non-pasteable / duplicate lines",
+      "file": "packages/cli/src/store/first-hit.ts",
+      "line": 175,
+      "snippet": "writeTarget ? `(write target: ${writeTarget})` : \"fabric store bind <remote...>\", \"fabric store bind <remote...>\"",
+      "description": "When writeTarget set, second line is parenthetical not CLI; when null, bind duplicated.",
+      "impact": "Line-by-line paste can fail.",
+      "suggestion": "Emit unique executable lines only; put write target in message."
+    },
+    {
+      "id": "COR-007",
+      "dimension": "correctness",
+      "severity": "medium",
+      "status": "open",
+      "title": "inspectBodyAltitude swallows failures as clean ok",
+      "file": "packages/server/src/services/doctor-body-altitude.ts",
+      "line": 49,
+      "snippet": "catch { return { entries: [] }; }",
+      "description": "Any throw returns empty entries → createBodyAltitudeDumpCheck status ok.",
+      "impact": "Doctor false-green when inspection never ran.",
+      "suggestion": "Surface warn/info on inspection failure."
+    },
+    {
+      "id": "COR-008",
+      "dimension": "correctness",
+      "severity": "medium",
+      "status": "open",
+      "title": "Warn-and-still-write altitude emits archive-attempted failure event",
+      "file": "packages/server/src/services/extract-knowledge.ts",
+      "line": 448,
+      "snippet": "event_type: \"knowledge_archive_attempted\", reason: `...:${reasonCode}` // then continues write",
+      "description": "Default warn mode still writes pending and later knowledge_proposed, but first records archive_attempted like hard refuses.",
+      "impact": "Incorrect archive attempt metrics for successful proposes.",
+      "suggestion": "Emit archive_attempted only on hard refuse; warn mode use warnings only."
+    },
+    {
+      "id": "PERF-001",
+      "dimension": "performance",
+      "severity": "medium",
+      "status": "open",
+      "title": "inspectBodyAltitude re-walks full corpus instead of reusing doctor hygiene pass",
+      "file": "packages/server/src/services/doctor-body-altitude.ts",
+      "line": 29,
+      "snippet": "const corpus = await collectStoreCanonicalEntries(projectRoot);",
+      "description": "Separate collectStoreCanonicalEntries from doctor hygiene corpus.",
+      "impact": "Extra CPU/alloc on every doctor report scaling with corpus size.",
+      "suggestion": "Pass existing hygiene corpus into inspectBodyAltitude."
+    },
+    {
+      "id": "PERF-003",
+      "dimension": "performance",
+      "severity": "medium",
+      "status": "open",
+      "title": "doctor --probe double first-hit + full storeDoctorChecks",
+      "file": "packages/cli/src/commands/doctor.ts",
+      "line": 223,
+      "snippet": "const firstHit = await assessFirstHit(...); stores = storeDoctorChecks(...);",
+      "description": "Probe still runs assessFirstHit plus storeDoctorChecks tree walks.",
+      "impact": "Probe latency grows with store trees.",
+      "suggestion": "Probe: only assessFirstHit; keep full checks on normal doctor."
+    },
+    {
+      "id": "BP-005",
+      "dimension": "best-practices",
+      "severity": "medium",
+      "status": "open",
+      "title": "doctor --probe hidden from --help",
+      "file": "packages/cli/src/commands/doctor.ts",
+      "line": 118,
+      "snippet": "HIDDEN_FLAGS = Set([strict, probe, ...])",
+      "description": "Readiness surface hidden with internal/debug flags.",
+      "impact": "Operators/agents following --help will not discover --probe.",
+      "suggestion": "Move probe into EXPOSED_FLAGS unless quarantine is intentional and documented."
+    },
+    {
+      "id": "BP-007",
+      "dimension": "best-practices",
+      "severity": "medium",
+      "status": "open",
+      "title": "relevance_paths_drift actionHint appends English hardcode after i18n",
+      "file": "packages/server/src/services/doctor-relevance-paths.ts",
+      "line": 326,
+      "snippet": "actionHint: `${t(...remediation)} — sample ${first.stable_id}; ...`",
+      "description": "Mixed-language doctor actionHint for zh-CN.",
+      "impact": "i18n consistency broken.",
+      "suggestion": "Add {sample} placeholder to en/zh remediation keys."
+    },
+    {
+      "id": "BP-008",
+      "dimension": "best-practices",
+      "severity": "medium",
+      "status": "open",
+      "title": "Signpost tests do not lock against allCommands silent aliases",
+      "file": "packages/cli/__tests__/command-signposts.test.ts",
+      "line": 35,
+      "snippet": "expect(retired.has(\"metrics\")).toBe(true);",
+      "description": "Test only checks table membership, not absence from allCommands.",
+      "impact": "Re-adding silent aliases would not fail CI.",
+      "suggestion": "Assert intersection of allCommands keys and retired names is empty."
+    },
+    {
+      "id": "MAINT-002",
+      "dimension": "maintainability",
+      "severity": "medium",
+      "status": "open",
+      "title": "Altitude heuristics live inside extract-knowledge write module",
+      "file": "packages/server/src/services/extract-knowledge.ts",
+      "line": 42,
+      "snippet": "export function assessBodyAltitude(...)",
+      "description": "Doctor still imports propose-path module for pure heuristics.",
+      "impact": "Harder to evolve altitude independently.",
+      "suggestion": "Move assessBodyAltitude to pure body-altitude.ts shared by both."
+    },
+    {
+      "id": "SEC-002",
+      "dimension": "security",
+      "severity": "medium",
+      "status": "open",
+      "title": "doctor --probe dumps unredacted paths unlike --debug-bundle",
+      "file": "packages/cli/src/commands/doctor.ts",
+      "line": 240,
+      "snippet": "writeStdout(JSON.stringify(snapshot, null, 2));",
+      "description": "Probe serializes full first-hit paths without redactSecrets.",
+      "impact": "Local FS layout can leak into CI logs/support tickets.",
+      "suggestion": "Redact paths or document probe as local-only."
+    },
+    {
+      "id": "COR-009",
+      "dimension": "correctness",
+      "severity": "low",
+      "status": "open",
+      "title": "assessBodyAltitude type parameter intentionally unused",
+      "file": "packages/server/src/services/extract-knowledge.ts",
+      "line": 85,
+      "snippet": "void type;",
+      "description": "Type arg discarded despite API surface.",
+      "impact": "Misleading API contract.",
+      "suggestion": "Remove type arg or implement type-aware rules."
+    },
+    {
+      "id": "BP-014",
+      "dimension": "best-practices",
+      "severity": "low",
+      "status": "open",
+      "title": "Signpost note strings English-only after i18n message",
+      "file": "packages/cli/src/lib/command-signposts.ts",
+      "line": 12,
+      "snippet": "note: \"metrics dashboard moved under audit\"",
+      "description": "formatSignpostMessage appends English note after localized template.",
+      "impact": "zh-CN mixed-language tombstones.",
+      "suggestion": "Drop notes or i18n note keys."
+    }
+  ],
+  "new_critical_high_from_fix": [],
+  "verdict_rationale": "All 7 prior critical/high findings verified fixed with source + test evidence (151 related tests green). No new critical/high introduced. Residual 11 medium + 2 low are non-blocking polish/perf/i18n; empty_store pasteable parenthetical (COR-006) and probe path redaction (SEC-002) remain the most user-visible mediums.",
+  "notes": [
+    "Ralph session paused; re-review executed directly per dispatch fallback.",
+    "ARCH-004 residual documented: altitude_propose_gate not on fabric config TUI (power-user JSON/env only) — accepted.",
+    "Prior positive PERF-006 (no Stop-hook flood) still holds; not re-listed as open finding."
+  ],
+  "next_steps": [
+    "Optional follow-up for mediums: COR-006 pasteable empty_store, COR-004/005 altitude edge cases, PERF-003 probe slimming",
+    "Proceed quality-test / merge path with residual medium caveats"
+  ]
+}

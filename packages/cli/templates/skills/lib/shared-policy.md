@@ -6,6 +6,10 @@
 > only its skill-specific examples and points here (`../../lib/shared-policy.md`)
 > for the common rules. Edit invariants HERE — never fork them per skill.
 
+## 0. Pre-action gating (MUST before Edit/Write)
+
+Agents **MUST** call `fab_recall(paths=[...], session_id=...)` before Edit/Write when knowledge might apply. Optionally Read selected `entries[].read_path`; say `dismissed: <id> (<reason>)` when skipping a hit. Hooks stay soft-nudge only (KT-DEC-0007) — **never** permanent `decision:block` for missing recall.
+
 ## 1. Protected tokens — NEVER translated
 
 When rendering bilingual (zh-CN ↔ en) output, prose is translated but the

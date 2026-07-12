@@ -12,7 +12,7 @@ Legacy aliases such as `stable` / `endorsed` are **not** live maturity values (K
 | **draft → verified** | Claim is clear, in-scope, not a near-duplicate; evidence / rationale holds under human review | `/fabric-review` → `fab_review` **approve** (pending) or **modify** with `maturity: verified` |
 | **verified → proven** | Repeated successful application, foundational value, or structural centrality — still human judgment | `fab_review` **modify** → `maturity: proven` |
 
-Pending archive output starts as **draft**. Promotion is always explicit review — not a silent counter threshold.
+Pending archive output starts as **draft**. New entries reach canonical **only** via the pending→review path (`fab_propose` then `fabric-review` / `fab_review` approve). Maturity promotion (`draft` → `verified` → `proven`) is always explicit human/review judgment — not a silent counter threshold and not default LLM bulk auto-promote.
 
 ## Retire (deprecate-over-delete)
 

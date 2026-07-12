@@ -176,6 +176,22 @@ The discriminator key is **`event_type`** (a `fabric-event` envelope), NEVER a b
 
 `Read ref/phase-4-5-emit.md` for the full event shape, 4-state outcome decision matrix, `covered_through_ts` watermark spec, multi-session emission rule, and E5-cron silent-skip trace.
 
+## Body altitude (quality)
+
+Write **reusable altitude** (decision / pitfall / guideline / model / process) — not session dumps.
+
+- Prefer 3–5 line structured `session_context` with `##` headings and operational trigger/action.
+- Dump-shaped bodies (dense `User:`/`Assistant:` turn markers, raw transcript headers) may emit `body_altitude_dump` / `body_altitude_transcript_shape` at `fab_propose` (default **warn** + still write; set `FABRIC_ALTITUDE_PROPOSE_GATE=1` or `altitude_propose_gate: true` to refuse with empty `pending_path`).
+- Doctor surfaces warn-only `knowledge_body_altitude_dump` for corpus hygiene — never auto-mutate.
+
+## Finish→archive cadence (light)
+
+After a **significant decision** lands, or an edit batch reaches config `archive_edit_threshold` (default **20**), lightly self-trigger this skill at a suitable turn:
+
+- Max **1** self-trigger per turn; same session/outcome do not repeat (anti-loop).
+- Soft Stop-hook nudge only (KT-DEC-0007) — **not** a task engine, not Spex/Trellis, not Stop-hook flood.
+- Still requires a real archive signal (user-driven normative or wrong-turn-revert); typo-only batches do not count.
+
 ## Hard Rules (DO NOT TRANSLATE) — DISPLAY / WRITE Split
 
 ### DISPLAY Rules

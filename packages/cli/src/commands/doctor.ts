@@ -22,8 +22,9 @@ import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
 import { knowledgeDoctorChecks } from "../store/knowledge-doctor-checks.js";
+import { assessFirstHit } from "../store/first-hit.js";
 import { fixActivePersonalPointer, syncStoreAliasLinks } from "../store/store-ops.js";
-import { buildDebugBundle } from "@fenglimg/fabric-shared";
+import { buildDebugBundle, redactSecrets } from "@fenglimg/fabric-shared";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
 // v2.0.0-rc.37 Wave A2: error-render imports removed alongside serve-lock
@@ -67,6 +68,7 @@ type DoctorArgs = {
   target?: string;
   fix?: boolean;
   json?: boolean;
+  probe?: boolean;
   strict?: boolean;
   // v2.1.0-rc.1 P6 (S40): redacted diagnostic bundle.
   "debug-bundle"?: boolean;
@@ -110,6 +112,7 @@ const EXPOSED_FLAGS = new Set([
   "fix",
   "json",
   "verbose",
+  "probe",
 ]);
 
 // All flags that should be hidden from --help but remain functional.
@@ -139,6 +142,12 @@ export const doctorCommand = defineCommand({
     json: {
       type: "boolean",
       description: t("cli.doctor.args.json.description"),
+      default: false,
+    },
+    // Peer micro-transfer P1-6: readiness JSON without --fix mutations.
+    probe: {
+      type: "boolean",
+      description: t("cli.doctor.args.probe.description"),
       default: false,
     },
     // v2.1.0-rc.1 P6 (S40): emit a redacted diagnostic bundle (config + store
@@ -206,6 +215,40 @@ export const doctorCommand = defineCommand({
         diagnostics: await collectStoreDiagnostics(resolution.target),
       });
       writeStdout(JSON.stringify(bundle, null, 2));
+      return;
+    }
+
+    // Peer micro-transfer P1-6: --probe readiness snapshot (no fix pipeline).
+    // SEC-002: deep-redact strings like --debug-bundle. PERF-003: skip storeDoctorChecks
+    // (it re-runs assessFirstHitSync + tree walks); first-hit alone is the readiness surface.
+    if (args.probe === true) {
+      const firstHit = await assessFirstHit({ projectRoot: resolution.target });
+      const redactDeep = (value: unknown): unknown => {
+        if (typeof value === "string") return redactSecrets(value);
+        if (Array.isArray(value)) return value.map(redactDeep);
+        if (value !== null && typeof value === "object") {
+          const out: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            out[k] = redactDeep(v);
+          }
+          return out;
+        }
+        return value;
+      };
+      const snapshot = {
+        ok: firstHit.ok,
+        first_hit: redactDeep(firstHit),
+        write_target: firstHit.write_target ? redactSecrets(firstHit.write_target) : firstHit.write_target,
+        hooks: redactDeep(firstHit.hooks),
+        issues_summary: {
+          first_hit_code: firstHit.code,
+        },
+        redacted: true,
+      };
+      writeStdout(JSON.stringify(snapshot, null, 2));
+      if (!snapshot.ok) {
+        process.exitCode = 1;
+      }
       return;
     }
 

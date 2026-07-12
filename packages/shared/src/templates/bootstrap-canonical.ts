@@ -82,7 +82,8 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 完整 maintainer 版见 \`docs/USER-QUICKSTART.md\`。
 
 ## 行为规则
-- **修改任何文件前**:先 \`fab_recall(paths=[<被改文件>])\` —— 一次调用拿回相关 KB 的描述 + 原生读取路径(\`entries[].read_path\`)。\`fab_recall\` 不再投递正文;需要某条正文时直接对其 \`entries[].read_path\` 做原生 Read(\`Read <store>/knowledge/<type>/<id>--*.md\`),这会被 PostToolUse hook 记为 \`knowledge_body_read\`。lean 默认:描述+索引已够发现条目,正文按需读一次,不每轮重灌(KT-GLD-0005)。
+- **Pre-action gating (修改任何文件前 MUST)**: ① 先 \`fab_recall(paths=[<被改文件>], session_id=<client-session-id>)\`；② 按需原生 Read 命中的 \`entries[].read_path\` 正文(PostToolUse 记为 \`knowledge_body_read\`)；③ 跳过不适用命中时说 \`dismissed: <id> (<reason>)\`。\`fab_recall\` 不再投递正文;lean 默认描述+索引已够发现条目(KT-GLD-0005)。PreToolUse 仅软 nudge,守 KT-DEC-0007(非 permanent gate / 无 \`decision:block\`)。
+- **Archive-as-truth**: 进 canonical **唯一路径** 是 \`fab_propose\` → pending → \`fabric-review\`/\`fab_review\` 审批；禁止把 chat/log 自动 promote 进 canonical。
 - **\`.fabric/agents.meta.json\` 严禁手动编辑**（co-location index 已退役;知识在 mounted stores）。异常时跑 \`fabric doctor\` / \`fabric doctor --fix\` 自愈可修复项。
 
 ## 知识库(KB)
@@ -92,7 +93,7 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **session_id**: 调用 \`fab_recall\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 \`fabric-hint.cjs\` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (4)**:写流程 \`fabric-archive\`(含 source mode 冷启动从 git/docs 回灌)/ \`fabric-review\`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 \`fabric-store\` / \`fabric-sync\`。
 - **Language**:渲染按 \`~/.fabric/fabric-global.json\` 的 \`language\` 字段(machine-wide tone)。
-- **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config \`archive_edit_threshold\` 一致)/ 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
+- **Archive cadence nudge** (rc.36 / finish→archive): 显著 decision 收口或一批 Edit 达到 config \`archive_edit_threshold\`(默认 20) 后,在合适回合轻量自调 \`fabric-archive\`(同 turn 最多 1 次;非 task engine / 非 Stop-hook flood)。Stop hook 仅 soft threshold nudge,守 KT-DEC-0007 — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 \`fab_pending action="list"\` 或 \`fabric-review\` 返回的 \`pending_path\`;不要 glob 项目本地 \`.fabric/knowledge/pending\`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.2 C1: 精简说明书)
@@ -151,7 +152,8 @@ As a dev you only need to: run \`fabric install\` once per repo, use \`fabric st
 See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 
 ## Behavior Rules
-- **Before modifying any file**: first \`fab_recall(paths=[<file-being-edited>])\` —— a single call returns the relevant KB descriptions + native read paths (\`entries[].read_path\`). \`fab_recall\` no longer delivers bodies; when you need a body, do a native Read of its \`entries[].read_path\` (\`Read <store>/knowledge/<type>/<id>--*.md\`), which the PostToolUse hook records as \`knowledge_body_read\`. Lean default: descriptions + index already suffice to discover entries; read a body once on demand, don't re-inject it every turn (KT-GLD-0005).
+- **Pre-action gating (MUST before Edit/Write)**: (1) call \`fab_recall(paths=[<file-being-edited>], session_id=<client-session-id>)\`; (2) optionally native-Read selected \`entries[].read_path\` bodies (PostToolUse records \`knowledge_body_read\`); (3) when skipping a hit, say \`dismissed: <id> (<reason>)\`. \`fab_recall\` no longer delivers bodies; lean default is description+index discovery (KT-GLD-0005). PreToolUse is soft nudge only per KT-DEC-0007 (never permanent gate / no \`decision:block\`).
+- **Archive-as-truth**: the **only** path into canonical is \`fab_propose\` → pending → \`fabric-review\`/\`fab_review\` approve; never auto-promote chat/logs into canonical.
 - **Never hand-edit \`.fabric/agents.meta.json\`** (co-location index retired; knowledge lives in mounted stores). For anomalies run \`fabric doctor\` / \`fabric doctor --fix\` on fixable state.
 
 ## Knowledge Base (KB)
@@ -161,7 +163,7 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 - **session_id**: when calling \`fab_recall\`, always pass the current client session id as the \`session_id\` argument (Claude Code's session id is in the stdin payload; Codex's corresponding identifier likewise). This lets \`fabric doctor --archive-history\` and the \`fabric-hint.cjs\` Stop hook track cross-session debt accurately.
 - **Skills (4)**: write flow \`fabric-archive\` (with source-mode cold-start backfill from git/docs) / \`fabric-review\` (with retire-deprecation + relate-edge sub-flows); store ops \`fabric-store\` / \`fabric-sync\`.
 - **Language**: rendered per the \`language\` field in \`~/.fabric/fabric-global.json\` (machine-wide tone).
-- **Archive cadence nudge** (rc.36): after each batch of edits (default ~20, matching the Stop hook threshold config \`archive_edit_threshold\`) / a significant decision, proactively propose the \`fabric-archive\` skill at a suitable turn — without an archive cadence the KB slowly dies.
+- **Archive cadence nudge** (rc.36 / finish→archive): after a significant decision lands or an edit batch reaches config \`archive_edit_threshold\` (default 20), lightly self-trigger \`fabric-archive\` at a suitable turn (max 1 per turn; not a task engine / not Stop-hook flood). Stop hook remains a soft threshold nudge per KT-DEC-0007 — without an archive cadence the KB slowly dies.
 - **Review backlog nudge** (rc.36): to judge the pending backlog, go through \`fab_pending action="list"\` or the \`pending_path\` returned by \`fabric-review\`; don't glob the project-local \`.fabric/knowledge/pending\`. When the visible pending count exceeds 10, proactively propose the \`fabric-review\` skill at a suitable turn to batch-review and avoid draft deadlock.
 
 ## Self-archive policy (v2.2 C1: lean spec)

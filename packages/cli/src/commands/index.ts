@@ -28,6 +28,7 @@ export const allCommands = {
   // descriptions / metrics / retired). doctor now keeps only health + fix.
   // W3-F: the metrics dashboard is reachable ONLY as `fabric audit metrics`
   // (top-level `metrics` alias retired — metrics.ts lives on as that subcommand).
+  // Tombstones for retired top-level names live in lib/command-signposts.ts (no silent aliases).
   audit: () => import("./audit.js").then((module) => module.default),
   // Block 5 (Option X) / W3-F: show what SessionStart injects (shared renderer
   // with the hook → byte-identical). Renamed from `context`. --explain for

@@ -1,0 +1,157 @@
+{
+  "id": "TASK-006",
+  "title": "P1-6 doctor --probe JSON readiness snapshot",
+  "description": "Add fabric doctor --probe that emits a machine-readable JSON readiness snapshot without running the full --fix mutation pipeline.",
+  "issue_id": null,
+  "issue_refs": [
+    "P1-6"
+  ],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "Add boolean flag probe to packages/cli/src/commands/doctor.ts DoctorArgs + citty args; when --probe (optionally with --json default true for probe), call a pure readiness builder that reuses assessFirstHit / storeDoctorChecks signals and prints JSON { ok, first_hit: FirstHitReport-like, stores: [...], hooks: {...}, write_target, issues_summary } without invoking runDoctorFix or runDoctorFixKnowledge.",
+  "status": "completed",
+  "completed_at": "2026-07-12T10:56:10Z",
+  "actual_duration": null,
+  "scope": "packages/cli/src/commands + packages/cli/src/store + packages/server doctor types if needed",
+  "focus_paths": [
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/store/first-hit.ts",
+    "packages/server/src/services/doctor-types.ts",
+    "packages/cli/__tests__/"
+  ],
+  "read_first": [
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/commands/first-hit.ts",
+    "packages/cli/src/store/first-hit.ts",
+    "packages/cli/src/store/doctor-checks.ts",
+    "packages/server/src/services/doctor-types.ts",
+    "packages/server/src/services/doctor.ts",
+    "packages/cli/__tests__/doctor.test.ts",
+    "packages/cli/__tests__/first-hit.test.ts"
+  ],
+  "depends_on": [],
+  "wave": 2,
+  "parallel_group": "p1",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/cli/src/commands/doctor.ts DoctorArgs includes `probe?: boolean` and citty args.probe type boolean",
+      "When probe path runs, code path does not call runDoctorFix or runDoctorFixKnowledge (rg -n 'probe' doctor.ts shows early branch)",
+      "Probe JSON includes at least keys: `ok` (boolean) and `first_hit` (object with `code` field matching FirstHitCode union) OR equivalent documented schema",
+      "Unit/CLI test asserts --probe output is valid JSON and ok is boolean",
+      "pnpm --filter @fenglimg/fabric-cli test -- doctor exits 0"
+    ],
+    "verification": "pnpm --filter @fenglimg/fabric-cli test -- doctor; rg -n 'probe' packages/cli/src/commands/doctor.ts packages/cli/__tests__",
+    "definition_of_done": "CI/scripts can call fabric doctor --probe --json for readiness without mutation side effects."
+  },
+  "files": [
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "action": "modify",
+      "target": "DoctorArgs + run() probe branch",
+      "change": "Add probe flag (EXPOSED_FLAGS or intentional advanced). On probe: build readiness JSON from assessFirstHit + lightweight store diagnostics; writeStdout JSON; skip fix pipeline; exit non-zero when first_hit not ok / readiness failed (mirror first-hit exit policy or document probe-specific exit)"
+    },
+    {
+      "path": "packages/cli/src/store/first-hit.ts",
+      "action": "modify",
+      "target": "assessFirstHit export reuse",
+      "change": "If needed, export a compact readiness DTO builder used by both first-hit and doctor --probe (avoid duplicating remediation logic)"
+    },
+    {
+      "path": "packages/server/src/services/doctor-types.ts",
+      "action": "modify",
+      "target": "optional DoctorProbeReport type",
+      "change": "Add exported type for probe snapshot if server package is the shared type home; else keep type local to CLI"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "cli.doctor.args.probe.description",
+      "change": "Describe --probe as machine JSON readiness without --fix"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "cli.doctor.args.probe.description",
+      "change": "ZH description for --probe"
+    },
+    {
+      "path": "packages/cli/__tests__/doctor.test.ts",
+      "action": "modify",
+      "target": "probe JSON readiness tests",
+      "change": "Invoke doctor command/handler with probe:true; parse JSON; assert shape; ensure no fix mutations when probe set"
+    }
+  ],
+  "implementation": [
+    "Reuse assessFirstHit({ projectRoot }) from first-hit.ts as the core readiness oracle",
+    "Compose probe report: { schema_version: 1, ok: report.ok, first_hit: report, generated_at: ISO }",
+    "Wire --probe to force JSON output (or require --json; prefer probe implies json for machine use)",
+    "Do not run migrateRootConfig mutations beyond read-only resolution if avoidable",
+    "Add tests using existing doctor test harness temp project fixtures"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli test -- doctor",
+      "pnpm --filter @fenglimg/fabric-cli test -- first-hit"
+    ],
+    "unit": [
+      "packages/cli/__tests__/doctor.test.ts"
+    ],
+    "integration": [
+      "packages/cli/__tests__/first-hit.test.ts"
+    ],
+    "success_metrics": [
+      "--probe emits valid JSON",
+      "no --fix side effects on probe path",
+      "tests green"
+    ]
+  },
+  "reference": {
+    "pattern": "fabric first-hit --json readiness + doctor --json report branch",
+    "files": [
+      "packages/cli/src/commands/first-hit.ts",
+      "packages/cli/src/commands/doctor.ts",
+      "packages/cli/src/store/first-hit.ts"
+    ],
+    "examples": "first-hit already proves install→bind→surface readiness; doctor --probe packages it for health scripts without full doctor report cost if possible"
+  },
+  "rationale": {
+    "chosen_approach": "Compose existing first-hit oracle under doctor --probe rather than inventing a third readiness system.",
+    "decision_factors": [
+      "doctor keeps health surface; audit stays separate",
+      "machine JSON for CI"
+    ],
+    "tradeoffs": "Probe may duplicate some first-hit CLI surface — acceptable if doctor is the ops entrypoint"
+  },
+  "risks": [
+    "Probe accidentally runs --fix path — gate with early return before fix",
+    "Exit code policy conflict with doctor --json warn exits — document probe uses first-hit exit codes"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "doctor",
+      "first-hit readiness"
+    ],
+    "affected_components": [
+      "doctor CLI",
+      "first-hit store"
+    ],
+    "affected_requirements": [
+      "P1-6"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "45m",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 2,
+    "execution_group": null,
+    "executor": "agent",
+    "status": "completed"
+  }
+}

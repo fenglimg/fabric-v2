@@ -1,6 +1,8 @@
 import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
+  "cli.signpost.retired": "命令 `{retired}` 已移除。请改用 `{successor}`。",
+  "cli.doctor.args.probe.description": "输出机器可读 JSON 就绪快照(first-hit + store/hooks),不跑 --fix",
   "cli.main.description":
     "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。首次使用?运行: fabric install",
   "cli.shared.created": "已创建",
@@ -220,9 +222,9 @@ export const zhCNMessages: Messages = {
   // 文案通过插值带上 store alias / 计数。
   "doctor.store.no-global-config": "无全局 Fabric 配置 —— 运行 `fabric install --global <url>`",
   "doctor.store.missing-required": "必需 store '{id}' 未挂载;运行 `fabric store mount`",
-  "doctor.store.unbound": "store '{alias}' 已挂载但未绑定到本项目;运行 `fabric store bind {alias}` 即可在此读取它的知识(再用 `fabric store switch-write {alias}` 把团队知识写入它)",
+  "doctor.store.unbound": "store '{alias}' 已挂载但未绑定到本项目 — 粘贴执行: `fabric store bind {alias}` 然后 `fabric store switch-write {alias}`",
   "doctor.store.empty": "已绑定 store 知识条数为 0（{stores}）——在 seed 或 clone 有内容前无法 first-hit；运行 `fabric first-hit --seed`（空本地库）或绑定带内容的远程 team store",
-  "doctor.store.no-write-target": "本项目无活动写库 —— 先 bind 再 switch-write：`fabric store bind <alias>` 然后 `fabric store switch-write <alias>`（或重跑 `fabric install`）",
+  "doctor.store.no-write-target": "本项目无 active write store — 粘贴执行: `fabric store bind <alias>` 然后 `fabric store switch-write <alias>`（或 `fabric install`）",
   "doctor.store.no-match": "知识存在但与探测路径无匹配 —— 放宽 paths 或为模块补 relevance_paths",
   "doctor.store.write-target-mismatch":
     "活动写库 '{alias}' 不是本项目的有效 team 写目标 —— 运行 `fabric store switch-write <已挂载 team 别名>`",
@@ -244,6 +246,13 @@ export const zhCNMessages: Messages = {
   "doctor.store.consumption-heatmap": "消费热区(近 {days}d,{consumed}/{total} 条被读,跨 {windows} 个窗口):{top}",
   "doctor.store.consumption-zero": "{count} 条在近 {days}d 内从未被消费:{sample}{overflow} —— 通过 `fab_review` 考虑淘汰(消费量只是信号之一,非陈旧的证据)",
   "doctor.store.overflow-more": ", …(+{count} 条)",
+
+  "doctor.check.knowledge_body_altitude_dump.name": "知识正文 altitude",
+  "doctor.check.knowledge_body_altitude_dump.ok": "未发现 dump 形态的知识正文。",
+  "doctor.check.knowledge_body_altitude_dump.message.singular": "1 条 dump 形态知识正文: {detail}",
+  "doctor.check.knowledge_body_altitude_dump.message.plural": "{count} 条 dump 形态知识正文(例如 {detail})",
+  "doctor.check.knowledge_body_altitude_dump.remediation": "改写成可复用的 decision/pitfall/guideline altitude(带 ## 结构),不要贴 session 流水;经 fabric-archive / fab_propose 重归档",
+  "doctor.check.knowledge_body_altitude_dump.scan_error": "正文 altitude 扫描失败({detail});doctor 无法确认语料干净。",
   "doctor.fix-plan.header": "知识侧变更计划(共 {count} 项)",
   "doctor.fix-plan.preview": "预览:",
   "doctor.fix-plan.more": "... 还有 {count} 项",
@@ -860,6 +869,7 @@ export const zhCNMessages: Messages = {
     "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个:{detail}。",
   "doctor.check.relevance_paths_drift.remediation":
     "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
+  "doctor.check.relevance_paths_drift.remediation_with_sample": "审阅该 entry 是否仍然相关 — 样本 {sample};使用 `fab_review.modify` 刷新 anchors,或使用 `fab_review.reject` 归档。",
   // W4-3 (KT-MOD-0001): narrow scope 但 relevance_paths 为空。
   "doctor.check.narrow_no_paths.name": "知识 narrow scope 缺路径",
   "doctor.check.narrow_no_paths.ok":

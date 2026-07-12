@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { assessFirstHitSync, seedStarterKnowledge } from "../src/store/first-hit.js";
+import { assessFirstHitSync, remediationLinesFor, seedStarterKnowledge } from "../src/store/first-hit.js";
 
 const temps: string[] = [];
 function tempDir(prefix: string): string {
@@ -350,5 +350,46 @@ describe("D3 multi-store readiness", () => {
     const r = assessFirstHitSync(root, { globalRoot: g });
     expect(r.ok).toBe(false);
     expect(["store_unreachable", "empty_store", "unbound"]).toContain(r.code);
+  });
+});
+
+
+describe("first-hit pasteable remediations (peer micro-transfer P0-3)", () => {
+  it("remediationLinesFor unbound/no_write_target/missing_required are pasteable CLI lines", () => {
+    const unbound = remediationLinesFor("unbound");
+    expect(unbound).toContain("fabric store bind <alias>");
+    expect(unbound).toContain("fabric store switch-write <alias>");
+    expect(unbound.every((line) => !line.includes("\n"))).toBe(true);
+
+    const noWrite = remediationLinesFor("no_write_target");
+    expect(noWrite).toContain("fabric store bind <alias>");
+    expect(noWrite).toContain("fabric store switch-write <alias>");
+    expect(noWrite[0]).toMatch(/^fabric /);
+
+    const missing = remediationLinesFor("missing_required");
+    expect(missing).toContain("fabric store bind <missing-id>");
+    expect(missing).toContain("fabric store mount <path-or-remote>");
+  });
+
+  it("assessFirstHitSync surfaces remediations on unbound-style failures", () => {
+    const root = tempDir("fh-remed-");
+    const r = assessFirstHitSync(root, { globalRoot: tempDir("fh-remed-g-") });
+    expect(r.ok).toBe(false);
+    expect(Array.isArray(r.remediations)).toBe(true);
+    expect(r.remediations.length).toBeGreaterThan(0);
+    expect(r.remediations.some((line) => line.startsWith("fabric "))).toBe(true);
+  });
+});
+
+describe("remediationLinesFor empty_store COR-006", () => {
+  it("empty_store lines are pasteable CLI only (no parentheticals, no dup bind when writeTarget set)", () => {
+    const withTarget = remediationLinesFor("empty_store", "/Users/me/.fabric/stores/team");
+    expect(withTarget.every((l) => l.startsWith("fabric "))).toBe(true);
+    expect(withTarget.some((l) => l.includes("("))).toBe(false);
+    expect(withTarget.filter((l) => l.includes("store bind")).length).toBe(0);
+
+    const noTarget = remediationLinesFor("empty_store", null);
+    expect(noTarget.every((l) => l.startsWith("fabric "))).toBe(true);
+    expect(noTarget.filter((l) => l.includes("store bind")).length).toBe(1);
   });
 });

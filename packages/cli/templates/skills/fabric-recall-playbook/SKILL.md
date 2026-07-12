@@ -15,6 +15,14 @@ Fabric is **curated knowledge**, not local evidence memory (logs/terminal/sessio
 - Agents **NEVER** auto-promote logs, terminal dumps, or raw transcripts to canonical knowledge.
 - For scenario tables and failure-path checklists, open `ref/scenarios.md` (linked from this skill).
 
+## Pre-action gating checklist (MUST before Edit/Write)
+
+When knowledge might apply, gate edits with this numbered checklist (soft policy — hooks stay nudge-only, KT-DEC-0007; **never** `decision:block` for missing recall):
+
+1. Call `fab_recall(paths=[files you will touch], session_id=<client-session-id>)` before any Edit/Write.
+2. Optionally `Read` only selected high-impact `entries[].read_path` bodies (lazy; no bulk dump).
+3. If a hit is wrong-scope / outdated / not applicable, say `dismissed: <id> (<reason>)` with reason enum `scope-mismatch | outdated | not-applicable | other:<text>` before overriding.
+
 ## Mental model
 
 | Layer | Product | Question |
@@ -28,7 +36,7 @@ Fabric is **curated knowledge**, not local evidence memory (logs/terminal/sessio
 
 ## Default workflow (agent)
 
-1. **Before editing files** — call `fab_recall(paths=[...], session_id=...)`.
+1. **Pre-action gate** — run the Pre-action gating checklist above (`fab_recall(paths=..., session_id=...)` before Edit/Write).
 2. **Rank by description** — use `must_read_if` / `impact` / summary; do **not** bulk-read every body.
 3. **On demand body** — `Read` only selected `entries[].read_path` (native Read = body consumption).
 4. **Apply or dismiss** — if a hit is wrong scope/outdated, say `dismissed: <id> (reason)`.

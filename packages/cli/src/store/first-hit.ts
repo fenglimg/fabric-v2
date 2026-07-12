@@ -152,6 +152,7 @@ function detectHooks(projectRoot: string): FirstHitHooks {
 }
 
 function remediationFor(code: FirstHitCode, writeTarget: string | null): string[] {
+  // OpenSpec-style pasteable recovery: every failure surfaces full CLI lines.
   switch (code) {
     case "no_global":
       return ["fabric install --global", "fabric install"];
@@ -166,29 +167,35 @@ function remediationFor(code: FirstHitCode, writeTarget: string | null): string[
       ];
     case "no_write_target":
       return [
+        "fabric store bind <alias>",
         "fabric store switch-write <alias>",
-        "or re-run: fabric install",
+        "fabric install",
         "fabric first-hit",
       ];
     case "empty_store":
-      return [
-        "fabric first-hit --seed",
-        writeTarget ? `(write target: ${writeTarget})` : "bind a store with knowledge first",
-        "or: fabric store bind <remote-team-store-with-content>",
-        "fabric first-hit",
-      ];
+      // COR-006: only pasteable CLI lines (no parenthetical notes; no duplicate bind).
+      return writeTarget
+        ? ["fabric first-hit --seed", "fabric first-hit"]
+        : [
+            "fabric store list",
+            "fabric store bind <remote-team-store-with-content>",
+            "fabric store switch-write <alias>",
+            "fabric first-hit --seed",
+            "fabric first-hit",
+          ];
     case "missing_required":
       return [
         "fabric store list",
-        "fabric store mount / fabric store bind <missing-id>  # or re-clone the team remote",
-        "fabric install  # refresh project required_stores + bindings",
+        "fabric store mount <path-or-remote>",
+        "fabric store bind <missing-id>",
+        "fabric install",
         "fabric first-hit",
       ];
     case "write_target_mismatch":
       return [
         "fabric store list",
         "fabric store switch-write <mounted-team-alias>",
-        "ensure active_write_store is mounted and bound (required_stores)",
+        "fabric store bind <mounted-team-alias>",
         "fabric first-hit",
       ];
     case "store_unreachable":
@@ -211,6 +218,11 @@ function remediationFor(code: FirstHitCode, writeTarget: string | null): string[
     default:
       return ["fabric doctor", "fabric first-hit"];
   }
+}
+
+/** Test/export surface for pasteable remediation tables (peer micro-transfer P0-3). */
+export function remediationLinesFor(code: FirstHitCode, writeTarget: string | null = null): string[] {
+  return remediationFor(code, writeTarget);
 }
 
 function messageFor(code: FirstHitCode, total: number, stores: FirstHitStoreRow[]): string {

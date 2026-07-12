@@ -10,6 +10,7 @@ import { renderAuditFilteredHelp } from "./commands/audit.js";
 import { renderDoctorFilteredHelp } from "./commands/doctor.js";
 import { renderTopLevelError, renderUnexpectedError } from "./lib/error-render.js";
 import { t } from "./i18n.js";
+import { formatSignpostMessage, resolveSignpost } from "./lib/command-signposts.js";
 
 declare const __CLI_VERSION__: string;
 
@@ -62,6 +63,16 @@ async function customShowUsage<T extends ArgsDef = ArgsDef>(
 
 export async function run(): Promise<void> {
   const rawArgs = process.argv.slice(2);
+
+  // Tombstone retired top-level names (no silent aliases).
+  const signpost = resolveSignpost(rawArgs[0]);
+  if (signpost !== null) {
+    const msg = formatSignpostMessage(signpost, (retired, successor) =>
+      t("cli.signpost.retired", { retired, successor }),
+    );
+    console.error(msg);
+    process.exit(1);
+  }
 
   // A bare `fabric` (no args) is a command-group with no default action, so it
   // must render the root help instead of citty's "No command specified." error
