@@ -61,8 +61,15 @@ jobs:
       - name: Lint protected tokens
         run: node --experimental-strip-types scripts/lint-protected-tokens.ts
 
-      - name: Verify NO_COLOR snapshots
-        run: NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test
+      # Slim: do NOT re-run the entire CLI suite (already covered above with coverage).
+      # Only reskin/i18n snapshot files that intentionally assert NO_COLOR output.
+      - name: Verify NO_COLOR snapshots (scoped)
+        run: >
+          NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli exec vitest run
+          __tests__/i18n.test.ts
+          __tests__/install-renderer-reskin.test.ts
+          __tests__/doctor-reskin.test.ts
+          __tests__/hud-reskin.test.ts
 
       - name: Perf benchmark (CLI + hook cold start p95 gate)
         run: node scripts/perf-benchmark.mjs > perf-report.json
