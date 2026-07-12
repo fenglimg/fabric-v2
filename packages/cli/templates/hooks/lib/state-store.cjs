@@ -147,6 +147,21 @@ async function writeTextStateAsync(projectRoot, fileName, text) {
   }
 }
 
+// Active-session sidecar — SessionStart / edit hooks stamp the client
+// session_id so MCP fab_recall can fall back when the agent omits the arg.
+// File: .fabric/.cache/active-session.json  Shape: { session_id, ts }.
+const ACTIVE_SESSION_FILE = "active-session.json";
+
+function writeActiveSession(projectRoot, sessionId, nowMs) {
+  if (typeof sessionId !== "string" || sessionId.length === 0) return false;
+  const ts =
+    typeof nowMs === "number" && Number.isFinite(nowMs) ? nowMs : Date.now();
+  return writeJsonState(projectRoot, ACTIVE_SESSION_FILE, {
+    session_id: sessionId,
+    ts,
+  });
+}
+
 module.exports = {
   cachePath,
   readJsonState,
@@ -157,6 +172,8 @@ module.exports = {
   readTextStateAsync,
   writeTextState,
   writeTextStateAsync,
+  writeActiveSession,
+  ACTIVE_SESSION_FILE,
   atomicWrite,
   atomicWriteAsync,
   CACHE_DIR_REL,

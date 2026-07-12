@@ -250,6 +250,37 @@ describe("planContext", () => {
     ]);
   });
 
+  // When the agent omits session_id, stamp knowledge_context_planned from the
+  // SessionStart/edit active-session sidecar so recall_coverage can join.
+  it("falls back to active-session sidecar when session_id is omitted", async () => {
+    const projectRoot = await createTeamProject();
+    mountStores();
+    const cacheDir = join(projectRoot, ".fabric", ".cache");
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(
+      join(cacheDir, "active-session.json"),
+      JSON.stringify({ session_id: "sess-from-sidecar", ts: Date.now() }),
+      "utf8",
+    );
+
+    await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      correlation_id: "corr-sidecar",
+      // deliberately omit session_id
+    });
+
+    const planned = await readEventLedger(projectRoot, {
+      event_type: "knowledge_context_planned",
+    });
+    expect(planned.events).toEqual([
+      expect.objectContaining({
+        event_type: "knowledge_context_planned",
+        correlation_id: "corr-sidecar",
+        session_id: "sess-from-sidecar",
+      }),
+    ]);
+  });
+
   it("marks the response stale when the client hash does not match the current revision", async () => {
     const projectRoot = await createTeamProject();
     // No store entries seeded → empty corpus, deterministic revision.

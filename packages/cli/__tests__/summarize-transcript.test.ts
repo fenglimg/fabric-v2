@@ -179,6 +179,60 @@ describe("summarizeTranscript — Codex CLI shape (audit §2.16 regression)", ()
     expect(r.assistant_turns[0].cite_tags).toEqual(["applied"]);
   });
 
+  // Leading multi-line KB: block (applied + dismissed) — previously only the
+  // first line was parsed so dismissed was dropped (ccpm dogfood 2026-07-12).
+  it("captures multi-line leading KB: applied + dismissed in one assistant turn", () => {
+    const path = writeTranscript([
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: [
+                "KB: team:KT-PIT-0014 [applied]",
+                "KB: team:KT-DEC-0045 [dismissed:not-applicable]",
+                "",
+                "dismissed: team:KT-DEC-0045 (not-applicable)",
+                "",
+                "body prose follows",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+    ]);
+    const r = summarizeTranscript(path);
+    expect(r.assistant_turns).toHaveLength(1);
+    expect(r.assistant_turns[0].kb_line_raw).toBe(
+      "KB: team:KT-PIT-0014 [applied]\nKB: team:KT-DEC-0045 [dismissed:not-applicable]",
+    );
+    expect(r.assistant_turns[0].cite_ids).toEqual(["KT-PIT-0014", "KT-DEC-0045"]);
+    expect(r.assistant_turns[0].cite_tags).toEqual(["applied", "dismissed"]);
+  });
+
+  it("ignores KB: lines that appear after prose (not leading)", () => {
+    const path = writeTranscript([
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Done.\n\nKB: KT-DEC-0001 [applied]\n",
+            },
+          ],
+        },
+      },
+    ]);
+    const r = summarizeTranscript(path);
+    expect(r.assistant_turns).toHaveLength(1);
+    expect(r.assistant_turns[0].kb_line_raw).toBeNull();
+    expect(r.assistant_turns[0].cite_ids).toEqual([]);
+  });
+
   it("returns empty result on missing file (best-effort, no throw)", () => {
     const r = summarizeTranscript("/no/such/file.jsonl");
     expect(r.user_messages).toEqual([]);

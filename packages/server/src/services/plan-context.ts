@@ -20,6 +20,7 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
+import { coalesceSessionId, readActiveSessionId } from "./active-session.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -649,6 +650,12 @@ export async function planContext(
   // will become the SOLE write path once those lint readers migrate.
   bumpCounter(projectRoot, METRIC_COUNTER_NAMES.knowledge_context_planned);
   try {
+    // session_id for cite-coverage recall↔edit join: prefer the agent-supplied
+    // arg, else the SessionStart/edit active-session sidecar. Without either,
+    // planned events stay unscoped and recall_coverage_rate stays 0 even when
+    // the agent did recall (ccpm dogfood 2026-07-12).
+    const activeSid = await readActiveSessionId(projectRoot);
+    const sessionId = coalesceSessionId(input.session_id, activeSid);
     await appendEventLedgerEvent(projectRoot, {
       event_type: "knowledge_context_planned",
       target_paths: uniquePaths,
@@ -664,7 +671,7 @@ export async function planContext(
       known_tech: input.known_tech,
       diagnostics: result.preflight_diagnostics,
       correlation_id: input.correlation_id,
-      session_id: input.session_id,
+      ...(sessionId ? { session_id: sessionId } : {}),
     });
   } catch {
     // Planning telemetry is best-effort and must not block rule discovery.

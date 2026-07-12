@@ -2083,34 +2083,43 @@ function summarizeTranscript(transcriptPath) {
         }
       }
       if (typeof firstText === "string" && firstText.length > 0) {
-        // First non-empty line.
+        // Leading contiguous `KB:` lines (applied + dismissed in one reply).
+        // parseCiteLine already supports multi-line input; previously only the
+        // first non-empty line was considered, so a second `KB: … [dismissed]`
+        // was dropped (ccpm dogfood 2026-07-12). Still require the FIRST
+        // non-empty line to be a `KB:` line so prose-only turns stay empty.
         const linesOfText = firstText.split(/\r?\n/);
-        let firstNonEmpty = "";
+        const kbBlockLines = [];
         for (const l of linesOfText) {
-          if (l.trim().length > 0) {
-            firstNonEmpty = l.trim();
-            break;
+          const trimmed = l.trim();
+          if (trimmed.length === 0) {
+            // Allow blank lines only after we already started a KB: prefix block.
+            if (kbBlockLines.length > 0) continue;
+            continue;
           }
+          if (/^KB:\s*/i.test(trimmed)) {
+            kbBlockLines.push(trimmed);
+            continue;
+          }
+          // First non-empty non-KB line ends the leading block (or means no cite).
+          break;
         }
-        if (firstNonEmpty.length > 0) {
-          // rc.24 TASK-04: route the FULL `KB: ...` line to the shared parser.
+        if (kbBlockLines.length > 0) {
+          // rc.24 TASK-04: route the FULL `KB: ...` block to the shared parser.
           // parseCiteLine handles sentinels (`KB: none [<reason>]`) AND full
           // cite form including contract tail (`KB: KT-DEC-0001 [recalled] →
-          // edit:foo.ts`) uniformly. The sentinel's `[<reason>]` tail stays in
-          // `kb_line_raw` for doctor's downstream histogram parse; cite_tags
-          // still emits the bare `none` token (schema enum-bound).
-          if (/^KB:\s*/i.test(firstNonEmpty)) {
-            kbLineRaw = firstNonEmpty;
-            if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
-              const parsed = citeLineParser.parseCiteLine(firstNonEmpty);
-              citeIds = parsed.cite_ids;
-              citeTags = parsed.cite_tags;
-              citeCommitments = parsed.cite_commitments;
-            }
-            // Degraded mode (lib missing) → keep kbLineRaw but emit empty
-            // arrays; doctor downstream treats this as "turn observed, parse
-            // unavailable" without crashing.
+          // edit:foo.ts`) uniformly. Multi-line applied+dismissed is now kept.
+          const kbBlock = kbBlockLines.join("\n");
+          kbLineRaw = kbBlock;
+          if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
+            const parsed = citeLineParser.parseCiteLine(kbBlock);
+            citeIds = parsed.cite_ids;
+            citeTags = parsed.cite_tags;
+            citeCommitments = parsed.cite_commitments;
           }
+          // Degraded mode (lib missing) → keep kbLineRaw but emit empty
+          // arrays; doctor downstream treats this as "turn observed, parse
+          // unavailable" without crashing.
         }
       }
       out.assistant_turns.push({

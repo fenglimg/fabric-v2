@@ -1430,6 +1430,16 @@ async function main(env, stdio) {
           ? payload.session_id
           : null;
       appendEditIntentToLedger(cwd, now, paths, toolName, payloadSessionId);
+      // Keep MCP fab_recall session_id fallback fresh (same sidecar as SessionStart).
+      if (typeof payloadSessionId === "string" && payloadSessionId.length > 0) {
+        try {
+          const { writeActiveSession } = require("./lib/state-store.cjs");
+          const tsMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+          writeActiveSession(cwd, payloadSessionId, tsMs);
+        } catch {
+          // best-effort
+        }
+      }
     }
 
     // E2 path is conditional on a recognized tool + extractable paths.
@@ -1465,6 +1475,22 @@ async function main(env, stdio) {
     // Resolve session id up-front (needed for the rc.37 NEW-17 result cache
     // key, and reused by the E3 emit-gate below).
     const sessionId = resolveSessionId(payload, env);
+
+    // Stamp active-session sidecar with the REAL client session_id (never the
+    // synthetic per-process fallback) so fab_recall can attach session_id when
+    // the agent omits it.
+    try {
+      const realSid =
+        payload && typeof payload === "object" && typeof payload.session_id === "string"
+          ? payload.session_id
+          : null;
+      if (typeof realSid === "string" && realSid.length > 0) {
+        const { writeActiveSession } = require("./lib/state-store.cjs");
+        writeActiveSession(cwd, realSid, nowMs);
+      }
+    } catch {
+      // best-effort — never block PreToolUse
+    }
 
     // Test seam: env.cliResult short-circuits the CLI spawn so unit tests
     // can feed canned plan-context-hint JSON without a built CLI binary.

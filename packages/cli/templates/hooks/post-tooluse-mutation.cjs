@@ -367,6 +367,17 @@ function main(env) {
         ? payload.session_id
         : null;
 
+    // Keep MCP fab_recall session_id fallback fresh across the session.
+    if (typeof sessionId === "string" && sessionId.length > 0) {
+      try {
+        const { writeActiveSession } = require("./lib/state-store.cjs");
+        const tsMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+        writeActiveSession(cwd, sessionId, tsMs);
+      } catch {
+        // best-effort — never block PostToolUse
+      }
+    }
+
     if (isEdit) {
       appendFileMutated(cwd, now, paths, toolCallId, toolName, sessionId);
     } else {

@@ -73,7 +73,11 @@ const {
   readConfigBoolean,
   readConfigString,
 } = require("./lib/config-cache.cjs");
-const { readTextState, writeTextState } = require("./lib/state-store.cjs");
+const {
+  readTextState,
+  writeTextState,
+  writeActiveSession,
+} = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
 // CLAUDE_PROJECT_DIR single-bit check below).
 // v2.2 dual-sink (Goal A): + emitDualSink (two-channel SessionStart emit).
@@ -1449,6 +1453,37 @@ function main(env, stdio) {
     if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {
       writeBroadLastEmit(cwd, nowMs);
     }
+
+    // Active-session sidecar for MCP fab_recall session_id fallback: when the
+    // agent omits session_id, planContext can still stamp knowledge_context_planned
+    // with the real client session so recall_coverage correlates. Best-effort.
+    // Sources: require.main stdin parse → env.session_id, env.payload.session_id
+    // (tests), FABRIC_SESSION_ID.
+    try {
+      const seamSid =
+        env && typeof env.session_id === "string" && env.session_id.length > 0
+          ? env.session_id
+          : null;
+      const payloadSid =
+        env &&
+        env.payload &&
+        typeof env.payload === "object" &&
+        typeof env.payload.session_id === "string" &&
+        env.payload.session_id.length > 0
+          ? env.payload.session_id
+          : null;
+      const envSid =
+        typeof process.env.FABRIC_SESSION_ID === "string" &&
+        process.env.FABRIC_SESSION_ID.length > 0
+          ? process.env.FABRIC_SESSION_ID
+          : null;
+      const activeSid = seamSid || payloadSid || envSid;
+      if (activeSid && !(env && env.skipActiveSessionWrite === true)) {
+        writeActiveSession(cwd, activeSid, nowMs);
+      }
+    } catch {
+      // never block session start
+    }
   } catch {
     // Silent — never block session start on hook failure.
   }
@@ -1501,6 +1536,28 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main({ cwd: resolveProjectRoot(process.cwd()) }, { stderr: process.stderr });
+  // Claude Code / Codex pass SessionStart JSON on stdin (session_id, …).
+  // Read once so we can stamp the active-session sidecar for MCP fab_recall.
+  let stdinRaw = "";
+  try {
+    stdinRaw = require("node:fs").readFileSync(0, "utf8");
+  } catch {
+    // no stdin — leave session_id unset
+  }
+  let session_id = null;
+  if (stdinRaw.length > 0) {
+    try {
+      const parsed = JSON.parse(stdinRaw);
+      if (parsed && typeof parsed.session_id === "string" && parsed.session_id.length > 0) {
+        session_id = parsed.session_id;
+      }
+    } catch {
+      // non-JSON stdin — ignore
+    }
+  }
+  main(
+    { cwd: resolveProjectRoot(process.cwd()), session_id },
+    { stderr: process.stderr },
+  );
   process.exit(0);
 }
