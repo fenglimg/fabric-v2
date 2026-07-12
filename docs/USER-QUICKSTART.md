@@ -11,6 +11,39 @@ your team accumulates get stored as markdown in mounted stores under
 `~/.fabric/stores/`, and **hook scripts surface the relevant ones** to your AI
 mid-session so it stops re-arguing every architecture decision from scratch.
 
+
+## Evidence vs knowledge (positioning)
+
+Fabric is a **curated knowledge sustainment** layer — decisions, pitfalls,
+guidelines, models, and processes that survive review. It is **not**:
+
+- a terminal / AI-session **evidence** capture tool (that class of product
+  keeps raw command output and transcripts for search-and-zoom);
+- a multi-agent **orchestrator** (workflow runners stay separate).
+
+| Layer | Role | Examples |
+| --- | --- | --- |
+| Evidence | What just happened | Terminal failures, test logs, session transcripts |
+| **Knowledge (Fabric)** | What the team should remember | Reviewed decisions / pitfalls / guidelines |
+| Orchestration | How agents coordinate work | External workflow tools |
+
+**Allowed pipeline (one-way):**
+
+```text
+local evidence (optional companion) → human/skill extract → fab_propose pending → fabric-review → canonical store
+```
+
+**Forbidden:**
+
+- auto-promoting raw logs / captures into **canonical** knowledge without review;
+- installing shell capture hooks as part of Fabric `install`;
+- treating pending draft sets as a second knowledge store.
+
+When an agent needs "what did the last test print?", retrieve **evidence**
+first (or ask the user); when it needs "why did we choose X?", use Fabric
+recall (`fab_recall` / SessionStart / PreToolUse). The optional
+`fabric-recall-playbook` skill packages that protocol for agents.
+
 ## What you (the developer) do — and don't do
 
 | You DO | You DON'T |

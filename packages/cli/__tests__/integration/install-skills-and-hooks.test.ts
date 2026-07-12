@@ -74,7 +74,7 @@ function readTemplate(rel: string): string {
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fresh init", () => {
-  it("writes archive+review skills + Stop + SessionStart + PreToolUse hooks + per-client configs (W3-C: 0 router, 4-skill set)", async () => {
+  it("writes archive+review skills + Stop + SessionStart + PreToolUse hooks + per-client configs (W3-C+S2: 0 router, 5-skill set)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-fresh");
     tempRoots.push(target);
 
@@ -276,7 +276,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
   // (archive/review/import); sync/store/audit/connect + the shared skill lib
   // came only from the downstream hooks stage. A bootstrap-only install must
   // ship the complete 7-skill set.
-  it("bootstrap-only install ships all 4 skills + shared skill lib (W3-C: 0 router)", async () => {
+  it("bootstrap-only install ships all 5 skills + shared skill lib (W3-C+S2: 0 router)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-skills");
     tempRoots.push(target);
 
@@ -287,12 +287,13 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     });
     await executeInitExecutionPlan(plan);
 
-    // W3-C terminal set: archive/review (real leaves) + store/sync (thin shims).
+    // W3-C + S2 terminal set: archive/review + store/sync + recall-playbook.
     for (const skill of [
       "fabric-archive",
       "fabric-review",
       "fabric-sync",
       "fabric-store",
+      "fabric-recall-playbook",
     ]) {
       expect(
         existsSync(join(target, ".claude/skills", skill, "SKILL.md")),

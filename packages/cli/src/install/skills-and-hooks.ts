@@ -71,7 +71,7 @@ export type InstallOptions = {
   // public surface is unchanged (consumers continue passing `{}`).
 };
 
-// W3-C: skill set collapsed to 4 (archive/review real + store/sync shim) with
+// W3-C + S2: skill set = 5 (archive/review real + store/sync shim + recall-playbook) with
 // 0 router — the router template + its generated Intent-Map machinery are gone.
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
@@ -79,6 +79,8 @@ const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_SYNC_TEMPLATE_REL = "skills/fabric-sync/SKILL.md";
 // v2.1 ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill template.
 const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
+// S2 (sivtr inspiration): retrieval protocol playbook for agents.
+const SKILL_RECALL_PLAYBOOK_TEMPLATE_REL = "skills/fabric-recall-playbook/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -124,10 +126,10 @@ const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
  * (the two clients that surface a Skills directory).
  */
 // W3-C (skill collapse): terminal skill set = 2 real leaf (archive/review) +
-// 2 thin shim (store/sync) + 0 router. The fabric router + fabric-import /
+// 2 thin shim (store/sync) + 1 protocol playbook + 0 router. The fabric router + fabric-import /
 // fabric-audit / fabric-connect were folded — import→archive `source` mode,
 // audit→review `retire` sub-flow, connect→review `relate` sub-flow — so the AI
-// chooses between 4 skills, not 8. The removed installed dirs are swept by
+// chooses between 5 skills (was 4 before S2 recall-playbook). The removed installed dirs are swept by
 // DEPRECATED_SKILL_DIRS below on the next `fabric install`.
 export const SKILL_DESTINATIONS = {
   fabricArchive: [
@@ -149,6 +151,11 @@ export const SKILL_DESTINATIONS = {
   fabricStore: [
     ".claude/skills/fabric-store/SKILL.md",
     ".codex/skills/fabric-store/SKILL.md",
+  ],
+  // S2: agent retrieval protocol (when/how/safety + failure paths).
+  fabricRecallPlaybook: [
+    ".claude/skills/fabric-recall-playbook/SKILL.md",
+    ".codex/skills/fabric-recall-playbook/SKILL.md",
   ],
 } as const;
 
@@ -186,6 +193,12 @@ const FABRIC_SKILL_INSTALL_SPECS = {
     templateRel: SKILL_STORE_TEMPLATE_REL,
     destinations: SKILL_DESTINATIONS.fabricStore,
     step: "skill-store",
+  },
+  fabricRecallPlaybook: {
+    slug: "fabric-recall-playbook",
+    templateRel: SKILL_RECALL_PLAYBOOK_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricRecallPlaybook,
+    step: "skill-recall-playbook",
   },
 } as const satisfies Record<keyof typeof SKILL_DESTINATIONS, FabricSkillInstallSpec>;
 
@@ -540,6 +553,18 @@ export async function installFabricStoreSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricStore);
+}
+
+/**
+ * S2 (sivtr inspiration): install the retrieval playbook skill — protocol for
+ * fab_recall / lazy body Read / failure paths. Single-file + thin ref/, same
+ * install path as store/sync shims.
+ */
+export async function installFabricRecallPlaybookSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricRecallPlaybook);
 }
 
 /**
