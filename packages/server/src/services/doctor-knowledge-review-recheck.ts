@@ -2,7 +2,7 @@ import type { Translator } from "@fenglimg/fabric-shared";
 
 import { readBroadReviewRecheckThresholdDays } from "../config-loader.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 C1 — broad REVIEW-RECHECK lint. The follow-up to the broad age-decay

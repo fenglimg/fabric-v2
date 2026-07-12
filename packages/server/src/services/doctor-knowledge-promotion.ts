@@ -1,7 +1,7 @@
 import type { Translator } from "@fenglimg/fabric-shared";
 
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 C1 — knowledge PROMOTION lint (the growth counterpart to the

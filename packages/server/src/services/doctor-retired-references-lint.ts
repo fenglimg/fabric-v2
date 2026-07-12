@@ -3,7 +3,7 @@ import { join, posix, relative } from "node:path";
 
 import type { Translator } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ux-w2-2: registry-driven retired-reference lint. The root cause of the W0-1 /
 // W0-2 class of bug is a STALE POINTER — agent-facing instruction text (a hook

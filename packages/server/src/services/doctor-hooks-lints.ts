@@ -6,7 +6,7 @@ import { Script } from "node:vm";
 import type { Translator } from "@fenglimg/fabric-shared";
 
 import { sha256 } from "./_shared.js";
-import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor.js";
+import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor-types.js";
 
 type HooksWiredStatus = "ok" | "skipped" | "missing-settings" | "incomplete";
 type HooksWiredInspection = {

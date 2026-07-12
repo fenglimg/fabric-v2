@@ -3,7 +3,7 @@ import { join, posix } from "node:path";
 
 import type { Translator } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor.js";
+import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor-types.js";
 
 export type SkillRefMirrorInspection =
   | { status: "ok" }

@@ -4,7 +4,7 @@ import type { Translator } from "@fenglimg/fabric-shared";
 
 import { readOrphanDemoteThresholdDays } from "../config-loader.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
-import type { DoctorCheck, LintMaturity } from "./doctor.js";
+import type { DoctorCheck, LintMaturity } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 Goal B (G-AGE) — knowledge decay lints over the read-set stores. The

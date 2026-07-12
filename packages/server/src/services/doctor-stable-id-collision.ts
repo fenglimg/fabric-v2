@@ -11,7 +11,7 @@ import {
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 Goal B (G-INTEGRITY) — doctor stable_id / layer integrity lints over the

@@ -17,7 +17,7 @@ import {
   type Translator,
 } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 W5 R4 (agents.meta decolo) — per-store stable_id counter health.

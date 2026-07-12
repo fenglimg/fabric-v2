@@ -14,7 +14,7 @@ import {
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 W4 (G-GUARD / A6) — doctor scope lint over the read-set stores.

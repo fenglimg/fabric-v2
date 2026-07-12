@@ -61,8 +61,9 @@ import { readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 
-import { inspectL1BootstrapSnapshotDrift, normalizePath } from "./doctor.js";
-import type { DoctorIssue, DoctorReport, LintMaturity } from "./doctor.js";
+import { inspectL1BootstrapSnapshotDrift } from "./doctor.js";
+import { normalizePath } from "./doctor-path.js";
+import type { DoctorIssue, DoctorReport, LintMaturity } from "./doctor-types.js";
 
 const CITE_POLICY_VERSION = "2.0.0-rc.20";
 

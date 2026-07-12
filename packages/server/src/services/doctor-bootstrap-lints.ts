@@ -10,7 +10,7 @@ import {
   type Translator,
 } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor.js";
+import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor-types.js";
 
 export type BootstrapAnchorInspection = {
   hasAgentsMd: boolean;

@@ -1,6 +1,6 @@
 import { loadProjectConfig, type Translator } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // write_route_target_unbound — cross-check that every write_routes[*].store
