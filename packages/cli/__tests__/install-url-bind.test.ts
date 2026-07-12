@@ -111,7 +111,7 @@ describe("mountStoreFromRemote robustness (store-onboarding grill)", () => {
     const { globalRoot } = setupGlobalAndProject();
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
     const remote = await makeFakeStoreRemote(TEAM);
-    mountStoreFromRemote(remote, globalRoot);
+    await mountStoreFromRemote(remote, globalRoot);
     expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
 
     // Simulate the orphan residue: drop the team store from the registry but
@@ -125,7 +125,7 @@ describe("mountStoreFromRemote robustness (store-onboarding grill)", () => {
 
     // Re-mounting the same remote must ADOPT the on-disk tree (same uuid), not
     // ENOTEMPTY on renameSync into the occupied directory.
-    const res = mountStoreFromRemote(remote, globalRoot);
+    const res = await mountStoreFromRemote(remote, globalRoot);
     expect(res.store_uuid).toBe(TEAM);
     expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2);
     expect(loadGlobalConfig(globalRoot)?.stores.some((s) => s.store_uuid === TEAM)).toBe(true);
@@ -136,8 +136,8 @@ describe("mountStoreFromRemote robustness (store-onboarding grill)", () => {
     await runGlobalInstall({ uid: "u-x", personalStoreUuid: PERSONAL, now: NOW }, globalRoot);
     const remote = await makeFakeStoreRemote(TEAM);
 
-    const first = mountStoreFromRemote(remote, globalRoot);
-    const second = mountStoreFromRemote(remote, globalRoot);
+    const first = await mountStoreFromRemote(remote, globalRoot);
+    const second = await mountStoreFromRemote(remote, globalRoot);
     expect(second.store_uuid).toBe(first.store_uuid);
     expect(second.alias).toBe(first.alias);
     expect(loadGlobalConfig(globalRoot)?.stores).toHaveLength(2); // personal + team, no duplicate
@@ -149,7 +149,7 @@ describe("mountStoreFromRemote robustness (store-onboarding grill)", () => {
     // Two remotes whose repo basename ("store") derives the SAME mount_name, so
     // both resolve to the same finalDir — but they carry different store uuids.
     const remoteA = await makeFakeStoreRemote(TEAM);
-    mountStoreFromRemote(remoteA, globalRoot);
+    await mountStoreFromRemote(remoteA, globalRoot);
     // Orphan A's registry entry, leaving A's tree at team/<mount_name>.
     const cfg = loadGlobalConfig(globalRoot)!;
     saveGlobalConfig(
@@ -157,7 +157,7 @@ describe("mountStoreFromRemote robustness (store-onboarding grill)", () => {
       globalRoot,
     );
     const remoteB = await makeFakeStoreRemote(OTHER);
-    expect(() => mountStoreFromRemote(remoteB, globalRoot)).toThrow(/different store already occupies/u);
+    await expect(mountStoreFromRemote(remoteB, globalRoot)).rejects.toThrow(/different store already occupies/u);
   });
 });
 

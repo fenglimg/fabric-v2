@@ -33,8 +33,23 @@ import {
   writeRouteSchema,
 } from "@fenglimg/fabric-shared";
 
-import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "./global-config-io.js";
+import { appendEventLedgerEvent } from "@fenglimg/fabric-server";
+
+import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfigAsync } from "./global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "./project-config-io.js";
+
+/** Best-effort store topology audit (ISS-20260711-127). Never fails the config write. */
+async function emitStoreAdminEvent(
+  projectRoot: string | undefined,
+  event: Parameters<typeof appendEventLedgerEvent>[1],
+): Promise<void> {
+  const root = projectRoot && projectRoot.length > 0 ? projectRoot : process.cwd();
+  try {
+    await appendEventLedgerEvent(root, event);
+  } catch {
+    // observability-only — config mutation already committed
+  }
+}
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric store {list,add,remove,explain}` orchestration.
@@ -194,13 +209,20 @@ export function detectAliasLinkDrift(globalRoot: string = resolveGlobalRoot()): 
   return drifted;
 }
 
-export function storeAdd(
+export async function storeAdd(
   store: MountedStore,
   globalRoot: string = resolveGlobalRoot(),
-): GlobalConfig {
+): Promise<GlobalConfig> {
   const next = addMountedStore(requireConfig(globalRoot), store);
-  saveGlobalConfig(next, globalRoot);
+  await saveGlobalConfigAsync(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: keep the by-alias readability layer current.
+  await emitStoreAdminEvent(undefined, {
+    event_type: "store_mounted",
+    alias: store.alias,
+    store_uuid: store.store_uuid,
+    personal: store.personal === true,
+    source: "storeAdd",
+  });
   return next;
 }
 
@@ -276,8 +298,15 @@ export async function storeCreate(
       ? mountedBase
       : { ...mountedBase, remote: options.remote };
   const next = addMountedStore(config, mounted);
-  saveGlobalConfig(next, globalRoot);
+  await saveGlobalConfigAsync(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: mint the by-alias readability link.
+  await emitStoreAdminEvent(undefined, {
+    event_type: "store_mounted",
+    alias,
+    store_uuid: uuid,
+    personal: options.personal === true,
+    source: "storeCreate",
+  });
   return { config: next, store_uuid: uuid, storeDir };
 }
 
@@ -297,8 +326,10 @@ function initStoreSync(absDir: string, identity: StoreIdentity): StoreIdentity {
   mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
   mkdirSync(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
   mkdirSync(join(absDir, STORE_LAYOUT.stateDir), { recursive: true });
-  writeFileSync(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  // Mirror async initStore: identity last so a crash mid-scaffold never leaves a
+  // recognisable half-init (disk readers key off store.json) — ISS-20260711-146.
   writeFileSync(join(absDir, ".gitignore"), STORE_GITIGNORE, "utf8");
+  writeFileSync(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
   return parsed;
 }
 
@@ -391,13 +422,19 @@ export function assertStoreMountable(
   }
 }
 
-export function storeRemove(
+export async function storeRemove(
   alias: string,
   globalRoot: string = resolveGlobalRoot(),
-): { config: GlobalConfig; detached: MountedStore | null } {
+): Promise<{ config: GlobalConfig; detached: MountedStore | null }> {
   const result = detachMountedStore(requireConfig(globalRoot), alias);
-  saveGlobalConfig(result.config, globalRoot);
+  await saveGlobalConfigAsync(result.config, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: drop the detached store's by-alias link.
+  await emitStoreAdminEvent(undefined, {
+    event_type: "store_detached",
+    alias,
+    ...(result.detached ? { store_uuid: result.detached.store_uuid } : {}),
+    source: "storeRemove",
+  });
   return result;
 }
 
@@ -514,6 +551,13 @@ export async function storeBind(
     ...(activeProject === undefined ? {} : { active_project: activeProject }),
   };
   saveProjectConfig(next, projectRoot);
+  void emitStoreAdminEvent(projectRoot, {
+    event_type: "store_bound",
+    alias: entry.id,
+    store_uuid: entry.id,
+    ...(activeProject === undefined ? {} : { project: activeProject }),
+    source: "storeBind",
+  });
   return next;
 }
 
@@ -529,12 +573,20 @@ export function storeSwitchWrite(
   if (store === null || store.personal === true || store.writable === false) {
     throw new Error(`cannot set default write store '${alias}': mount a writable shared store first`);
   }
+  const previous = config.active_write_store ?? config.default_write_store;
   const next: FabricConfig = {
     ...config,
     active_write_store: alias,
     default_write_store: alias,
   };
   saveProjectConfig(next, projectRoot);
+  void emitStoreAdminEvent(projectRoot, {
+    event_type: "write_store_switched",
+    alias,
+    ...(previous !== undefined ? { previous_alias: previous } : {}),
+    switch_kind: "project_write",
+    source: "storeSwitchWrite",
+  });
   return next;
 }
 
@@ -546,10 +598,10 @@ export function storeSwitchWrite(
 // target MUST be a mounted `personal:true` store — switch-write stays team-only
 // and is unchanged. The resolver's findPersonal honors this pointer for both the
 // read-set and the personal write-target.
-export function storeSwitchPersonal(
+export async function storeSwitchPersonal(
   alias: string,
   options: { globalRoot?: string } = {},
-): GlobalConfig {
+): Promise<GlobalConfig> {
   const globalRoot = options.globalRoot ?? resolveGlobalRoot();
   const config = requireConfig(globalRoot);
   const store = resolveStoreByAliasOrUuid(alias, globalRoot);
@@ -559,8 +611,16 @@ export function storeSwitchPersonal(
         "(`fabric install --global` mints one; `--url <remote>` clones an existing one)",
     );
   }
+  const previous = config.active_personal_store;
   const next: GlobalConfig = { ...config, active_personal_store: alias };
-  saveGlobalConfig(next, globalRoot);
+  await saveGlobalConfigAsync(next, globalRoot);
+  await emitStoreAdminEvent(undefined, {
+    event_type: "write_store_switched",
+    alias,
+    ...(previous !== undefined ? { previous_alias: previous } : {}),
+    switch_kind: "personal",
+    source: "storeSwitchPersonal",
+  });
   return next;
 }
 
@@ -571,7 +631,7 @@ export function storeSwitchPersonal(
 // field is dropped when no personal exists at all); an UNSET pointer with ≥2
 // personal stores is defaulted to the first. A valid pointer, or the 0/1-personal
 // no-pointer common case, is a no-op. Returns true iff the config was rewritten.
-export function fixActivePersonalPointer(globalRoot: string = resolveGlobalRoot()): boolean {
+export async function fixActivePersonalPointer(globalRoot: string = resolveGlobalRoot()): Promise<boolean> {
   const config = loadGlobalConfig(globalRoot);
   if (config === null) {
     return false;
@@ -592,10 +652,10 @@ export function fixActivePersonalPointer(globalRoot: string = resolveGlobalRoot(
     // Stale pointer with no personal store mounted at all → clear it.
     const cleared = { ...config };
     delete cleared.active_personal_store;
-    saveGlobalConfig(cleared, globalRoot);
+    await saveGlobalConfigAsync(cleared, globalRoot);
     return true;
   }
-  saveGlobalConfig({ ...config, active_personal_store: first.alias }, globalRoot);
+  await saveGlobalConfigAsync({ ...config, active_personal_store: first.alias }, globalRoot);
   return true;
 }
 
@@ -615,8 +675,16 @@ export function storeSetWriteRoute(
     ...(config.write_routes ?? []).filter((existing) => existing.scope !== route.scope),
     route,
   ];
+  const previous = (config.write_routes ?? []).find((r) => r.scope === route.scope)?.store;
   const next: FabricConfig = { ...config, write_routes: routes };
   saveProjectConfig(next, projectRoot);
+  void emitStoreAdminEvent(projectRoot, {
+    event_type: "write_route_changed",
+    scope: route.scope,
+    alias,
+    ...(previous !== undefined ? { previous_alias: previous } : {}),
+    source: "storeSetWriteRoute",
+  });
   return next;
 }
 

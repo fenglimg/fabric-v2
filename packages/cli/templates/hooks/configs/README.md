@@ -38,7 +38,7 @@ side-by-side so anyone editing one config knows what the other requires.
 | Event-name case      | PascalCase: `Stop`, `SessionStart`, `PreToolUse`, `UserPromptSubmit` | PascalCase: `Stop`, `SessionStart`, `PreToolUse`     |
 | Per-entry shape      | Nested matcher: `[{matcher, hooks:[{type:"command", command}]}]` | Flat: `[{command, matcher?}]`                      |
 | Path interpolation   | `${CLAUDE_PROJECT_DIR}` (env var)        | `"$(git rev-parse --show-toplevel)"` (shell expansion) |
-| Cite-policy event    | `UserPromptSubmit` (per-prompt)          | `SessionStart` 2nd entry (rc.37 NEW-21 parity)     |
+| Cite-policy event    | PreToolUse via `knowledge-pretooluse.cjs` (loads `cite-policy-evict.cjs`) | PreToolUse + `SessionStart` 2nd entry (rc.37 NEW-21) |
 
 Whenever a hook is added to one config, walk this table and add the equivalent
 entry to the other — `fabric install` merges each into its respective

@@ -77,7 +77,7 @@ const FIXTURE_PARAMS: Record<string, Record<string, unknown>> = {
   // crack 2: archive backlog (cross-session safety net) banners.
   backlogLine1: { count: 3 },
   backlogCta: {},
-  reviewLine1: { count: 7, ageSuffix: " / 最早一条 3.2 天前" },
+  reviewLine1: { count: 7, oldestDays: "3.2" },
   reviewCta: {},
   importLine1: { nodeCount: 3, threshold: 12, hoursSinceInit: "48.5" },
   importCta: {},
@@ -203,6 +203,8 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["📋 Fabric:", "7 "], // numeric "${count} " survives
     zhCNContract: ["7 条", "最早一条 3.2 天前"],
     enHints: ["pending knowledge entries", "oldest is", "3.2d old"],
+    // ISS-20260712-017: EN must not contain Chinese age fragments
+    enMustNotContain: ["最早一条", "天前"],
   },
   reviewCta: {
     protectedTokens: ["/fabric-review"],
@@ -373,13 +375,28 @@ describe("banner-i18n: renderBanner defensive paths", () => {
 
 describe("banner-i18n: readFabricLanguage", () => {
   let tempRoot: string;
+  let fakeHome: string;
+  let prevFabricHome: string | undefined;
+  let prevHome: string | undefined;
 
   beforeEach(() => {
+    // Isolate from the developer's real ~/.fabric/fabric-global.json so
+    // project-config fallbacks are hermetic (ISS-20260712-015 prefers global).
+    fakeHome = mkdtempSync(join(tmpdir(), "fabric-banneri18n-home-"));
+    prevFabricHome = process.env.FABRIC_HOME;
+    prevHome = process.env.HOME;
+    process.env.FABRIC_HOME = fakeHome;
+    process.env.HOME = fakeHome;
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-banneri18n-cfg-"));
   });
 
   afterEach(() => {
     rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+    if (prevFabricHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = prevFabricHome;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
   });
 
   it("returns 'zh-CN' (back-compat default) when .fabric/fabric-config.json is missing", () => {
@@ -411,9 +428,10 @@ describe("banner-i18n: readFabricLanguage", () => {
     expect(lib.readFabricLanguage(tempRoot)).toBe("zh-CN");
   });
 
-  it("returns the configured value when fabric_language is one of the four valid variants", () => {
-    const validValues: Variant[] = ["zh-CN", "en", "zh-CN-hybrid", "match-existing"];
-    for (const value of validValues) {
+  // ISS-20260712-015: runtime language is machine-wide zh-CN|en only.
+  // Project fabric_language is legacy fallback only when no global is set.
+  it("returns the project fabric_language when zh-CN or en and no global language", () => {
+    for (const value of ["zh-CN", "en"] as const) {
       mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
       writeFileSync(
         join(tempRoot, ".fabric", "fabric-config.json"),
@@ -424,6 +442,22 @@ describe("banner-i18n: readFabricLanguage", () => {
     }
   });
 
+  it("prefers machine-wide global language over project fabric_language", () => {
+    mkdirSync(join(fakeHome, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(fakeHome, ".fabric", "fabric-global.json"),
+      JSON.stringify({ language: "en" }),
+      "utf8",
+    );
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ fabric_language: "zh-CN" }),
+      "utf8",
+    );
+    expect(lib.readFabricLanguage(tempRoot)).toBe("en");
+  });
+
   it("returns 'zh-CN' (default) when fabric_language is an unknown enum value", () => {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     writeFileSync(
@@ -432,10 +466,20 @@ describe("banner-i18n: readFabricLanguage", () => {
       "utf8",
     );
     // Per lib comment + VALID_LANGUAGES check, unknown values fall through
-    // to DEFAULT_LANGUAGE which is 'zh-CN' (rc.15 back-compat). Folding to
-    // 'match-existing' would happen at render time if the explicit value
-    // were 'match-existing', but for unknown values the read contract is
-    // strict: only known enum members pass through.
+    // to DEFAULT_LANGUAGE which is 'zh-CN' (rc.15 back-compat).
     expect(lib.readFabricLanguage(tempRoot)).toBe("zh-CN");
+  });
+
+  // Retired hybrid/match-existing fold to en on project-config path (legacy).
+  it("maps retired zh-CN-hybrid / match-existing project config to en", () => {
+    for (const value of ["zh-CN-hybrid", "match-existing"] as const) {
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ fabric_language: value }),
+        "utf8",
+      );
+      expect(lib.readFabricLanguage(tempRoot)).toBe("en");
+    }
   });
 });

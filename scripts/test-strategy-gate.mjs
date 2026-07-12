@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Drift gate for docs/TESTING.md.
+// Drift gate for docs/TESTING.md (slim).
 //
-// This does not judge coverage quality. It keeps the testing strategy entry
-// anchored to the repository's real methodology artifacts, documented root
-// scripts, and CI gates.
+// Keeps the testing strategy entry anchored to real package scripts and CI
+// gates. Does NOT re-litigate methodology keyword coverage — deep docs live
+// under .workflow/ and are linked from TESTING.md Appendix.
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -37,7 +37,10 @@ const docs = readText(docsPath);
 const rootPackage = JSON.parse(readText("package.json"));
 const reusableValidate = readText(".github/workflows/reusable-validate.yml");
 const ci = readText(".github/workflows/ci.yml");
+const release = readText(".github/workflows/release.yml");
 
+// Deep methodology must still exist on disk (linked from Appendix), but the
+// gate no longer forces TESTING.md to restate every keyword.
 const methodologyArtifacts = [
   "docs/methodology/test-methodology-v6.md",
   "docs/methodology/e2e-methodology-FINAL.md",
@@ -54,45 +57,27 @@ for (const artifact of methodologyArtifacts) {
 
 for (const heading of [
   "## Commands",
-  "## Authority",
-  "## Package Boundaries",
-  "## Strategy Model",
-  "## Scenario Matrix",
-  "## TDD Write-Red Discipline",
-  "## Fabric E2E/Dogfood",
-  "## Drift Gates",
   "## Gate Map",
-  "## Coverage Policy",
+  "## Package Boundaries",
+  "## Optional (not PR hard)",
+  "## Do not",
+  "## Appendix",
 ]) {
   requireIncludes(docsPath, docs, heading);
 }
 
 for (const phrase of [
+  "test:strategy",
+  "test:store-only-e2e",
+  "test:upgrade-e2e",
+  "reusable-validate",
+  "store-only",
+  "upgrade-e2e",
   "test-methodology-v6.md",
   "e2e-methodology-FINAL.md",
-  "mainstream-research.md",
-  "samespace-research.md",
-  "trackd-research.md",
-  "backtest-answer-set.md",
-  "discovery-rubric.md",
-  "四赛道",
-  "认识论轴",
-  "Phase 0 历史先验 census",
-  "Examination",
-  "Reality",
-  "Intent-interrogation",
-  "producer→consumer",
-  "J-META",
-  "J-EXP-META",
-  "T1-ledger",
-  "T3-LLM-judge",
-  "OWASP LLM Top 10",
-  "write-red",
-  "it.fails",
-  "Methodology backtest",
-  "store-only E2E",
-  "Cross-client hooks",
   "Windows smoke",
+  "PR hard",
+  "Release hard",
 ]) {
   requireIncludes(docsPath, docs, phrase);
 }
@@ -103,6 +88,7 @@ for (const scriptName of [
   "test:coverage",
   "test:strategy",
   "test:store-only-e2e",
+  "test:upgrade-e2e",
   "lint",
   "typecheck",
 ]) {
@@ -118,6 +104,7 @@ for (const command of [
   "pnpm -r --if-present test:coverage",
   "pnpm test:strategy",
   "pnpm test:store-only-e2e",
+  "pnpm test:upgrade-e2e",
   "NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test",
   "node scripts/perf-benchmark.mjs",
 ]) {
@@ -131,6 +118,9 @@ for (const command of [
 ]) {
   requireIncludes(".github/workflows/ci.yml", ci, command);
 }
+
+// Release must stay on the same validate path as PR (parity check).
+requireIncludes(".github/workflows/release.yml", release, "reusable-validate.yml");
 
 if (process.exitCode && process.exitCode !== 0) {
   process.exit(process.exitCode);

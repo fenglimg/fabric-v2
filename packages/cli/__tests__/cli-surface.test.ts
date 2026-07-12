@@ -11,18 +11,22 @@ vi.hoisted(() => {
 
 import configCmd from "../src/commands/config.ts";
 import doctorCommand from "../src/commands/doctor.ts";
-import installCommand from "../src/commands/install.ts";
+// ISS-20260711-187: gate live install-v2 (registry loads install-v2.js), not
+// the retired install.ts twin whose flag surface can silently drift.
+import { installCommand } from "../src/commands/install-v2.ts";
+import firstHitCommand from "../src/commands/first-hit.ts";
 // v2.0.0-rc.37 Wave A2: serveCommand import removed alongside fabric serve
 // quarantine (per [[fabric-serve-quarantine-not-delete]]); the command no
 // longer exists in main and is not part of the CLI surface contract.
 import uninstallCommand from "../src/commands/uninstall.ts";
+import { allCommands } from "../src/commands/index.ts";
 
 // Drift gate guidance — surfaced via snapshot hint and assertion failure messages.
 // Keep in sync with docs/test-seed/cli.md §1 Feature Surface.
 const DRIFT_HINT =
   "CLI surface drift detected. Either:\n" +
   "  - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u\n" +
-  "  - Update docs/test-seed/cli.md \u00A71 if seed is now outdated\n" +
+  "  - Update docs/test-seed/cli.md §1 if seed is now outdated\n" +
   "  - Revert command change if unintentional";
 
 type CittyArgDef = {
@@ -74,7 +78,7 @@ function commandSurface(cmd: CittyCommand): CommandSurface {
   };
 }
 
-describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
+describe("CLI surface drift gate (docs/test-seed/cli.md §1)", () => {
   // Snapshot layer: any add/remove/rename/default-change of a flag fails CI.
   // v2.0.0-rc.37 Wave A2: `serve` row removed alongside command quarantine.
   it.each([
@@ -89,22 +93,24 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
     expect(surface).toMatchSnapshot(`fabric ${name} surface — ${DRIFT_HINT}`);
   });
 
-  // Top-level CLI surface: assert the public command set matches the seed.
-  // (We import the registry indirectly through the commands themselves; the
-  //  registry shape lives in packages/cli/src/commands/index.ts and is
-  //  re-asserted here to fail loudly if a 6th public command appears.)
+  // Core public seed still covers install/doctor/uninstall/config; D5 requires
+  // first-hit to stay registered (allCommands + meta.name) so help/registry
+  // cannot drop the first-value oracle while advanced store/sync stay hidden.
   // rc.15 TASK-004 (C7+C9): rotated `scan` -> `config`; `plan-context-hint`
-  // stays callable but is hidden from --help and therefore from this assertion.
-  // v2.0.0-rc.37 Wave A2: `serve` removed from the public command set;
-  // restore alongside startHttpServer if the web UI surface is ever re-enabled.
-  it("public command set is exactly { install, doctor, uninstall, config }", () => {
+  // stays callable but is hidden from --help.
+  // v2.0.0-rc.37 Wave A2: `serve` removed from the public command set.
+  // ISS-20260711-187: install surface is gated via install-v2 (live registry).
+  it("core public seed includes install/doctor/uninstall/config and first-hit", () => {
     const names = [
       installCommand.meta?.name,
       doctorCommand.meta?.name,
       uninstallCommand.meta?.name,
       configCmd.meta?.name,
+      firstHitCommand.meta?.name,
     ].sort();
-    expect(names).toEqual(["config", "doctor", "install", "uninstall"]);
+    expect(names).toEqual(["config", "doctor", "first-hit", "install", "uninstall"]);
+    expect(Object.keys(allCommands)).toContain("first-hit");
+    expect(firstHitCommand.meta?.name).toBe("first-hit");
   });
 
   // Critical-flag layer: even if a future refactor renames descriptions, these

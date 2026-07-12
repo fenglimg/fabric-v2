@@ -83,7 +83,9 @@ Run each in order. Report output to the user. Any failure aborts.
 
 ```bash
 pnpm install --frozen-lockfile   # ensures lockfile reflects new versions if applicable
-pnpm -r --if-present typecheck   # if no typecheck script, run: pnpm -r exec tsc --noEmit
+# ISS-20260711-219: publishable packages have no `typecheck` script — `--if-present`
+# is a silent no-op. Root `pnpm typecheck` runs `pnpm -r exec tsc --noEmit`.
+pnpm typecheck
 pnpm lint                        # = knip --strict, this is the rc.12 failure class
 pnpm test                        # full workspace tests
 ```

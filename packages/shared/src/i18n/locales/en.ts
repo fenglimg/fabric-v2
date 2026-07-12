@@ -217,7 +217,7 @@ export const enMessages: Messages = {
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
-  "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  "doctor.section.fix-knowledge-mutations": "Knowledge mutations (via --fix):",
   // flat-design follow-up: the remaining doctor UI-shell strings (TL;DR header,
   // --fix mutation plan, filtered --help) move off hardcoded English into i18n so
   // the whole `fabric doctor` surface honours the machine locale. USAGE/OPTIONS/
@@ -232,6 +232,17 @@ export const enMessages: Messages = {
   "doctor.store.no-global-config": "no global Fabric config — run `fabric install --global <url>`",
   "doctor.store.missing-required": "required store '{id}' is not mounted; run `fabric store mount`",
   "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project; run `fabric store bind {alias}` to read its knowledge here (then `fabric store switch-write {alias}` to write team knowledge into it)",
+  "doctor.store.empty": "bound store(s) have 0 knowledge entries ({stores}) — first-hit cannot succeed until you seed or clone knowledge; run `fabric first-hit --seed` (empty local store) or bind a remote team store with content",
+  "doctor.store.no-write-target": "no active write store for this project — bind and switch-write: `fabric store bind <alias>` then `fabric store switch-write <alias>` (or re-run `fabric install`)",
+  "doctor.store.no-match": "knowledge exists but no entry matches the probe paths — try broader paths or add relevance_paths for your modules",
+  "doctor.store.write-target-mismatch":
+    "active write store '{alias}' is not a valid team write target for this project — run `fabric store switch-write <mounted-team-alias>`",
+  "doctor.store.first-hit-missing-required":
+    "required store(s) not mounted: {ids} — bind/clone them then re-run `fabric first-hit`",
+  "doctor.store.first-hit-unreachable":
+    "bound store dir missing on disk: {aliases} — remount or re-clone, then `fabric doctor`",
+  "doctor.store.hooks-missing": "knowledge present but SessionStart/PreToolUse hooks missing — re-run `fabric install`",
+  "doctor.store.first-hit-ok": "first-hit ready: {count} knowledge entries across {stores}",
   "doctor.store.alias-drift": "by-alias readability link(s) out of sync for {refs}; run `fabric doctor --fix` to repair ~/.fabric/stores/by-alias/",
   "doctor.store.local-only": "store '{alias}' is local-only; add a git remote to back it up",
   "doctor.store.executable": "store '{alias}' contains executable/script files ({files}) — stores are data-only; Fabric never runs them (S65)",
@@ -240,15 +251,16 @@ export const enMessages: Messages = {
   "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
   "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
   "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
+  "doctor.store.unreachable-bound": "bound store dir missing on disk: {stores} — re-clone or remount, then fabric doctor",
   "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
   "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
   "doctor.store.overflow-more": ", …(+{count} more)",
-  "doctor.fix-plan.header": "fix-knowledge mutation plan ({count} total)",
+  "doctor.fix-plan.header": "knowledge mutation plan ({count} total)",
   "doctor.fix-plan.preview": "preview:",
   "doctor.fix-plan.more": "... and {count} more",
   "doctor.help.tagline": "Diagnose and fix Fabric workspace issues",
   "doctor.help.flag.target": "Override project root (defaults to cwd)",
-  "doctor.help.flag.fix": "Auto-fix issues (derived-state + knowledge frontmatter/git mv)",
+  "doctor.help.flag.fix": "Auto-fix derived state + auto-safe knowledge lint mutations",
   "doctor.help.flag.json": "Output as JSON for programmatic consumption",
   "doctor.help.flag.verbose": "Show maintainer-audience action hints",
   "doctor.help.example.run": "Run diagnostics",
@@ -347,13 +359,14 @@ export const enMessages: Messages = {
   "cite-coverage.skip.other": "other",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",
+  "cli.doctor.args.fix.description":
+    "Repair derived Fabric state (meta + indexes) and apply auto-safe knowledge lint mutations (store counter floor, stale session-hints cleanup). Decay/frontmatter lints stay report-only — remediate those via fabric-review.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply knowledge lint mutations: archive overdue pending drafts, floor drifted per-store id counters, and prune stale session-hint caches. Decay lints (orphan demote / stale archive) are report-only — remediate those via the fab_review flow. Default doctor run remains report-only.",
+    "Legacy alias wording: knowledge lint mutations now run under `fabric doctor --fix` (store counter floor + stale session-hints cleanup). Decay lints (orphan demote / stale archive) remain report-only — remediate via fabric-review. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
-    "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
+    "Skip the knowledge-mutation safety confirm inside `fabric doctor --fix`. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
   "cli.doctor.args.verbose.description":
     "Show all action hints including maintainer-audience ones (Fabric contributors editing the source tree). By default these are folded for npm end users.",
@@ -719,7 +732,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fabric doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
+    "Run `fabric doctor --fix` to bump agents.meta.json counters to max_observed + 1.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
@@ -737,7 +750,7 @@ export const enMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     "{count} session-hints cache files under .fabric/.cache/ are older than {days} days. First: {detail}.",
   "doctor.check.session_hints_stale.remediation":
-    "Run `fabric doctor --fix-knowledge` to delete stale session-hints cache files.",
+    "Run `fabric doctor --fix` to delete stale session-hints cache files.",
   "doctor.check.hook_cache_writable.name": "Hook cache writable",
   "doctor.check.hook_cache_writable.ok":
     "Hook sidecar cache path {path} accepts write probes.",
@@ -1371,6 +1384,11 @@ export const enMessages: Messages = {
   // the web UI surface is re-enabled.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage i18n keys.
+  "cli.first-hit.description": "Prove install→first-hit readiness (bind + non-empty knowledge surface)",
+  "cli.first-hit.args.json.description": "Machine-readable JSON report",
+  "cli.first-hit.args.target.description": "Project root (default: cwd)",
+  "cli.first-hit.args.seed.description": "If empty store, write minimal starter knowledge entries",
+  "cli.first-hit.args.paths.description": "Comma-separated probe paths for surface check",
   "cli.onboard-coverage.description":
     "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
   "cli.onboard-coverage.args.json.description":

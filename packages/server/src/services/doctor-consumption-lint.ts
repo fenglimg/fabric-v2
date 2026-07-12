@@ -1,16 +1,18 @@
 // ---------------------------------------------------------------------------
 // BORROW-005: consumption frequency inspection (advisory).
 //
-// Aggregates per-entry `knowledge_consumed:<qualifiedId>` counters from
-// metrics.jsonl over a rolling window and surfaces two axes:
+// Aggregates per-entry consumption counters from metrics.jsonl over a rolling
+// window and surfaces two axes:
 //   - top-consumed entries (usage heatmap — most frequently read)
 //   - zero-consumed entries (never read in the window — potential rot)
 //
 // Data source: `.fabric/metrics.jsonl` rows (read via the canonical readMetrics
 // reader — the same source the `fabric metrics` dashboard consumes). The per-id
-// counter convention is `knowledge_consumed:<alias>:<stableId>` (store-qualified
-// id), which matches StoreCanonicalEntry.qualifiedId, so zero-consumed compares
-// against the qualified corpus ids directly.
+// Live counter convention (ISS-20260711-213, post KT-DEC-0030 body_read cutover)
+// is `knowledge_body_read:<alias>:<stableId>`. Legacy `knowledge_consumed:<...>`
+// counters remain accepted so historical metrics.jsonl windows still contribute.
+// Both match StoreCanonicalEntry.qualifiedId, so zero-consumed compares against
+// the qualified corpus ids directly.
 //
 // ⚠️ DATA-MATURITY GATE (the load-bearing fix). The naive "zero-consumed =
 // rot" signal is a false-alarm generator on a young corpus: with only a handful
@@ -30,6 +32,7 @@
 // ---------------------------------------------------------------------------
 
 import { readMetrics, type MetricsRow } from "./metrics.js";
+import { readEventLedger } from "./event-ledger.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 
 // ---------------------------------------------------------------------------
@@ -94,8 +97,18 @@ const DEFAULT_MIN_TOTAL_ENTRIES = 20;
 const DEFAULT_MIN_CONSUMED_WINDOWS = 30;
 const DEFAULT_MIN_CONSUMED_EVENTS = 50;
 
-const CONSUMED_PREFIX = "knowledge_consumed:";
+const CONSUMED_PREFIXES = ["knowledge_body_read:", "knowledge_consumed:"] as const;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function parseConsumedCounter(counterName: string): string | null {
+  for (const prefix of CONSUMED_PREFIXES) {
+    if (counterName.startsWith(prefix)) {
+      const id = counterName.slice(prefix.length);
+      return id.length > 0 ? id : null;
+    }
+  }
+  return null;
+}
 
 function resolveConfig(config?: Partial<ConsumptionLintConfig>): ConsumptionLintConfig {
   return {
@@ -140,11 +153,10 @@ export function aggregateConsumption(
 
     let windowHadConsumption = false;
     for (const [counterName, rawCount] of Object.entries(row.counters)) {
-      if (!counterName.startsWith(CONSUMED_PREFIX)) continue;
+      const id = parseConsumedCounter(counterName);
+      if (id === null) continue;
       const count = typeof rawCount === "number" ? rawCount : 0;
       if (count <= 0) continue;
-      const id = counterName.slice(CONSUMED_PREFIX.length);
-      if (id.length === 0) continue;
       consumed.set(id, (consumed.get(id) ?? 0) + count);
       totalConsumedEvents += count;
       windowHadConsumption = true;
@@ -196,6 +208,31 @@ export async function inspectConsumption(
   now: number = Date.now(),
 ): Promise<ConsumptionInspection> {
   const rows = await readMetrics(projectRoot);
+  // ISS-20260711-213: live consumption is knowledge_body_read on the event
+  // ledger (PostToolUse). Fold those into synthetic metrics-style counters so
+  // the heatmap no longer depends on the retired knowledge_consumed:* dual-write.
+  try {
+    const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_body_read" });
+    const cfg = resolveConfig(config);
+    const cutoffMs = now - cfg.windowDays * MS_PER_DAY;
+    const bodyCounters: Record<string, number> = {};
+    for (const event of ledger.events) {
+      if (event.event_type !== "knowledge_body_read") continue;
+      if (typeof event.ts === "number" && event.ts < cutoffMs) continue;
+      const store = typeof event.store === "string" && event.store.length > 0 ? event.store : "team";
+      const key = `knowledge_body_read:${store}:${event.stable_id}`;
+      bodyCounters[key] = (bodyCounters[key] ?? 0) + 1;
+    }
+    if (Object.keys(bodyCounters).length > 0) {
+      rows.push({
+        timestamp: new Date(now).toISOString(),
+        window: "ledger-body-read",
+        counters: bodyCounters,
+      });
+    }
+  } catch {
+    // ledger fold is best-effort — metrics-only heatmap still runs
+  }
   const entries = await collectStoreCanonicalEntries(projectRoot);
   const allQualifiedIds = entries.map((entry) => entry.qualifiedId);
   return aggregateConsumption(rows, allQualifiedIds, now, config);

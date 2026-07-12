@@ -834,6 +834,69 @@ export const fileMutatedEventSchema = z.object({
   store_id: z.string().optional(),
 });
 
+
+
+// Store topology admin events (ISS-20260711-127). Emitted by CLI store-ops
+// when mount / detach / bind / write-route changes alter knowledge access
+// boundaries. Best-effort from CLI (config write already succeeded); schema
+// presence is load-bearing so reads never drop the rows.
+export const storeMountedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("store_mounted"),
+  alias: z.string(),
+  store_uuid: z.string(),
+  personal: z.boolean().optional(),
+  source: z.string().optional(),
+});
+
+export const storeDetachedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("store_detached"),
+  alias: z.string(),
+  store_uuid: z.string().optional(),
+  source: z.string().optional(),
+});
+
+export const storeBoundEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("store_bound"),
+  alias: z.string(),
+  store_uuid: z.string().optional(),
+  project: z.string().optional(),
+  source: z.string().optional(),
+});
+
+export const writeStoreSwitchedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("write_store_switched"),
+  alias: z.string(),
+  previous_alias: z.string().optional(),
+  // Named switch_kind (not `kind`) so it never shadows the envelope
+  // kind: "fabric-event" discriminator required by every ledger row.
+  switch_kind: z.enum(["project_write", "personal"]).optional(),
+  source: z.string().optional(),
+});
+
+export const writeRouteChangedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("write_route_changed"),
+  scope: z.string(),
+  alias: z.string(),
+  previous_alias: z.string().optional(),
+  source: z.string().optional(),
+});
+
+// narrow_hint_failed — PreToolUse knowledge-hint-narrow observability when the
+// plan-context-hint CLI spawn fails (non-ENOENT). Without this schema member,
+// appendLockedLine writes were dropped on read by safeParse (ISS-20260711-215).
+export const narrowHintFailedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("narrow_hint_failed"),
+  hook_name: z.string(),
+  reason: z.string(),
+  bin: z.string().optional(),
+});
+
 // knowledge_body_read — PostToolUse marker (KT-DEC-0030). After retrieval
 // collapsed to one lean tool (KT-DEC-0026), fab_recall no longer delivers
 // bodies; the agent reads a body on demand via a NATIVE Read of the store file
@@ -968,6 +1031,14 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // lifecycle-refactor Wave 2 — dormant-hook activation markers.
   sessionEndedEventSchema,
   fileMutatedEventSchema,
+  // ISS-20260711-127: store topology admin events
+  storeMountedEventSchema,
+  storeDetachedEventSchema,
+  storeBoundEventSchema,
+  writeStoreSwitchedEventSchema,
+  writeRouteChangedEventSchema,
+  // ISS-20260711-215: narrow_hint_failed — CLI failure observability for narrow hook
+  narrowHintFailedEventSchema,
   // KT-DEC-0030: knowledge_body_read — PostToolUse native-Read consumption marker
   // (replaces knowledge_consumed as the funnel's "body opened" signal).
   knowledgeBodyReadEventSchema,
@@ -1032,6 +1103,14 @@ export type ClientCapabilitySnapshotEvent = z.infer<typeof clientCapabilitySnaps
 // lifecycle-refactor Wave 2 — dormant-hook activation markers.
 export type SessionEndedEvent = z.infer<typeof sessionEndedEventSchema>;
 export type FileMutatedEvent = z.infer<typeof fileMutatedEventSchema>;
+// ISS-20260711-127: store topology admin events
+export type StoreMountedEvent = z.infer<typeof storeMountedEventSchema>;
+export type StoreDetachedEvent = z.infer<typeof storeDetachedEventSchema>;
+export type StoreBoundEvent = z.infer<typeof storeBoundEventSchema>;
+export type WriteStoreSwitchedEvent = z.infer<typeof writeStoreSwitchedEventSchema>;
+export type WriteRouteChangedEvent = z.infer<typeof writeRouteChangedEventSchema>;
+// ISS-20260711-215
+export type NarrowHintFailedEvent = z.infer<typeof narrowHintFailedEventSchema>;
 export type KnowledgeBodyReadEvent = z.infer<typeof knowledgeBodyReadEventSchema>;
 export type PrecompactObservedEvent = z.infer<typeof precompactObservedEventSchema>;
 export type GraphEdgeCandidateRequestedEvent = z.infer<typeof graphEdgeCandidateRequestedEventSchema>;
@@ -1091,6 +1170,12 @@ export type EventLedgerEvent =
   | ClientCapabilitySnapshotEvent
   | SessionEndedEvent
   | FileMutatedEvent
+  | StoreMountedEvent
+  | StoreDetachedEvent
+  | StoreBoundEvent
+  | WriteStoreSwitchedEvent
+  | WriteRouteChangedEvent
+  | NarrowHintFailedEvent
   | KnowledgeBodyReadEvent
   | PrecompactObservedEvent
   | GraphEdgeCandidateRequestedEvent;

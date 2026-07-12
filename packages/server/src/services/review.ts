@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   FabPendingInput,
@@ -23,8 +23,18 @@ import {
   type ScoringContext,
 } from "./plan-context.js";
 import { computeReadSetRevision } from "./cross-store-recall.js";
-import { allocateStoreKnowledgeId, isPersonalScope, loadProjectConfig } from "@fenglimg/fabric-shared";
 import {
+  allocateStoreKnowledgeId,
+  aggregatePendingAcrossStores,
+  hasSecrets,
+  isPersonalScope,
+  lintCrossStoreReferences,
+  loadProjectConfig,
+  type MountedStoreDir,
+  readStoreIdentityAsync,
+} from "@fenglimg/fabric-shared";
+import {
+  lockedWriteFile,
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
   resolveWriteTargetStoreDir,
@@ -85,6 +95,8 @@ type ParsedFrontmatter = {
   tags?: string[];
   title?: string;
   summary?: string;
+  // ISS-20260712-011: triage list surfaces proposed_reason without a body Read.
+  proposed_reason?: string;
   // v2.0-rc.5 C1/C3: relevance hints. Missing fields are treated as broad+[]
   // at consumption time (matches knowledge-meta-builder defaults).
   relevance_scope?: RelevanceScope;
@@ -133,10 +145,14 @@ export async function reviewKnowledge(
 ): Promise<FabReviewOutput> {
   switch (input.action) {
     case "approve":
-      return {
-        action: "approve",
-        approved: await approveAll(projectRoot, input.pending_paths),
-      };
+      {
+        const { approved, failed } = await approveAll(projectRoot, input.pending_paths);
+        return {
+          action: "approve",
+          approved,
+          ...(failed.length > 0 ? { failed } : {}),
+        };
+      }
     case "reject":
       return {
         action: "reject",
@@ -178,15 +194,19 @@ export async function reviewKnowledge(
     // frontmatter-merge path as modify (resolveModifyTarget + rewriteFrontmatterMerge),
     // batched over pending_paths like reject/defer. Never deletes a file.
     case "retire":
-      return {
-        action: "retire",
-        retired: await retireAll(
+      {
+        const { retired, failed } = await retireAll(
           projectRoot,
           input.pending_paths,
           input.superseded_by,
           input.reason,
-        ),
-      };
+        );
+        return {
+          action: "retire",
+          retired,
+          ...(failed.length > 0 ? { failed } : {}),
+        };
+      }
     default: {
       const exhaustive: never = input;
       throw new Error(`unsupported action: ${JSON.stringify(exhaustive)}`);
@@ -262,9 +282,89 @@ function storeKnowledgeRoots(projectRoot: string): string[] {
   return roots;
 }
 
+// ISS-20260711-147: resolve through realpath so a symlink under an admitted
+// store root cannot escape to a non-store location (isUnder on lexical paths
+// alone is insufficient when the leaf or an intermediate component is a link).
+function realpathExistingPrefix(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    // File may not exist yet (approve writes a new canonical path). Resolve the
+    // deepest existing ancestor and rejoin the missing suffix.
+    let cursor = path;
+    const missing: string[] = [];
+    while (cursor !== dirname(cursor)) {
+      missing.unshift(basename(cursor));
+      cursor = dirname(cursor);
+      try {
+        return missing.reduce((acc, part) => join(acc, part), realpathSync(cursor));
+      } catch {
+        // keep walking up
+      }
+    }
+    return path;
+  }
+}
+
 function isUnder(abs: string, root: string): boolean {
-  const rel = relative(root, abs);
+  const absReal = realpathExistingPrefix(abs);
+  const rootReal = realpathExistingPrefix(root);
+  const rel = relative(rootReal, absReal);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function assertNoSecretsInReviewContent(content: string, op: string): void {
+  // ISS-20260711-144 / 145: review write paths previously bypassed the extract-
+  // time hasSecrets gate, so approve/modify/reject could land credential-shaped
+  // text into store git. Fail closed before any disk write.
+  if (hasSecrets(content)) {
+    throw new Error(
+      `${op} blocked: content matches a credential/secret pattern — refuse to write secrets into knowledge store`,
+    );
+  }
+}
+
+function extractHardGlobalRefs(content: string): string[] {
+  // Conservative: store-qualified stable ids + wiki-style [[store:ID]] / bare refs.
+  const refs = new Set<string>();
+  const re = /\b(?:team|personal|store):[A-Z]{2}-[A-Z]{3}-\d{4}\b|\[\[([^\]]+)\]\]/gu;
+  for (const match of content.matchAll(re)) {
+    const full = match[0];
+    if (full.startsWith("[[")) {
+      const inner = (match[1] ?? "").trim();
+      if (inner.length > 0) refs.add(inner);
+    } else {
+      refs.add(full);
+    }
+  }
+  return [...refs];
+}
+
+function assertCrossStoreRefsSafe(content: string, entryLayer: "team" | "personal"): void {
+  // ISS-20260711-178: shared-layer writes must not hard-ref personal knowledge.
+  if (entryLayer !== "team") return;
+  const referencedGlobalRefs = extractHardGlobalRefs(content);
+  if (referencedGlobalRefs.length === 0) return;
+  // Literal personal-layer cites are an immediate violation in shared content
+  // (store_uuid map may be incomplete on this hot path; personal: prefix is enough).
+  const personalCites = referencedGlobalRefs.filter((r) => r.startsWith("personal:") || r.startsWith("KP-"));
+  if (personalCites.length > 0) {
+    throw new Error(
+      `write blocked: shared-store entry references personal knowledge (${personalCites.join(", ")})`,
+    );
+  }
+  // Also run the structured lint when refs look store-qualified (uuid form).
+  const storeVisibility: Record<string, "shared" | "personal"> = {};
+  const violations = lintCrossStoreReferences({
+    entryVisibility: "shared",
+    referencedGlobalRefs,
+    storeVisibility,
+  });
+  if (violations.length > 0) {
+    throw new Error(
+      `write blocked: shared-store entry references personal knowledge (${violations.map((v) => v.ref).join(", ")})`,
+    );
+  }
 }
 
 function resolveSandboxedPath(
@@ -367,8 +467,10 @@ type ListItem = {
   layer: Layer;
   maturity: Maturity;
   tags?: string[];
+  // ISS-20260712-011: triage UI needs title/summary without an extra body Read.
   title?: string;
   summary?: string;
+  proposed_reason?: string;
   // origin indicates which write-target store root the entry came from.
   // Both layers now resolve to mounted store knowledge/pending/ trees.
   origin?: "team" | "personal";
@@ -437,6 +539,27 @@ function isVisibleByLifecycle(
   return true;
 }
 
+
+
+/** ISS-20260711-170: resolve write-target stores as MountedStoreDir for aggregatePendingAcrossStores. */
+async function resolveWriteTargetMountedDirs(projectRoot: string): Promise<MountedStoreDir[]> {
+  const out: MountedStoreDir[] = [];
+  for (const layer of ["team", "personal"] as const) {
+    try {
+      const dir = resolveWriteTargetStoreDir(layer, projectRoot);
+      const identity = await readStoreIdentityAsync(dir);
+      out.push({
+        store_uuid: identity?.store_uuid ?? dir,
+        alias: identity?.canonical_alias ?? layer,
+        dir,
+      });
+    } catch {
+      // layer has no resolvable write-target — skip
+    }
+  }
+  return out;
+}
+
 async function listPending(
   projectRoot: string,
   filters: ListFilters | undefined,
@@ -455,121 +578,124 @@ async function listPending(
 
   const typesToScan = filters?.type !== undefined ? [filters.type] : PLURAL_TYPES;
 
-  // v2.2 全砍 Stage 2 (B2 cutover): pending lives ONLY in the resolved
-  // write-target stores (team + personal). Resolve each defensively — a read
-  // operation degrades to "nothing to list" for an un-onboarded layer rather
-  // than hard-failing (the hard-fail is reserved for the WRITE path). Entries
-  // are reported by absolute path (resolveSandboxedPath admits them under the
-  // store knowledge root).
-  const sources: Array<{ origin: "team" | "personal"; root: string; isStore: boolean }> = [];
-  for (const origin of ["team", "personal"] as const) {
-    try {
-      const pendingRoot = resolveStorePendingBase(origin, projectRoot);
-      sources.push({ origin, root: pendingRoot, isStore: true });
-      // v2.2 全砍 F15: rejected entries are MOVED to a sibling `rejected/` dir
-      // (out of the active pending queue). Surface them only when the caller
-      // opts in via include_rejected — preserving the audit/restore view.
-      if (filters?.include_rejected === true) {
-        sources.push({
-          origin,
-          root: pendingRoot.replace(`${sep}pending`, `${sep}rejected`),
-          isStore: true,
-        });
+  // ISS-20260711-170: primary discovery via aggregatePendingAcrossStores so the
+  // multi-store API has a real production consumer. include_rejected still walks
+  // the sibling rejected/ tree (aggregate is pending-only).
+  const mounted = await resolveWriteTargetMountedDirs(projectRoot);
+  const aggregated = mounted.length > 0 ? await aggregatePendingAcrossStores(mounted) : [];
+  const discovered: Array<{ absolutePath: string; origin: "team" | "personal"; type: PluralType }> = [];
+  for (const ref of aggregated) {
+    // Production: pending/<type>/file.md; flat/legacy: pending/file.md
+    const parent = basename(dirname(ref.file));
+    let type: PluralType | null = null;
+    if ((PLURAL_TYPES as readonly string[]).includes(parent)) {
+      type = parent as PluralType;
+    } else if (parent === "pending") {
+      // Flat pending root — no type bucket; only surface when no type filter.
+      if (filters?.type !== undefined) continue;
+      type = "decisions"; // placeholder bucket for list item shape
+    }
+    if (type === null) continue;
+    if (!typesToScan.includes(type)) continue;
+    const origin: "team" | "personal" =
+      ref.alias === "personal" || /[/\\]personal[/\\]/u.test(ref.file) ? "personal" : "team";
+    discovered.push({ absolutePath: ref.file, origin, type });
+  }
+  if (filters?.include_rejected === true) {
+    for (const origin of ["team", "personal"] as const) {
+      try {
+        const pendingRoot = resolveStorePendingBase(origin, projectRoot);
+        const rejectedRoot = pendingRoot.replace(`${sep}pending`, `${sep}rejected`);
+        for (const type of typesToScan) {
+          const dir = join(rejectedRoot, type);
+          if (!existsSync(dir)) continue;
+          let entries: string[];
+          try {
+            entries = await readdir(dir);
+          } catch {
+            continue;
+          }
+          for (const name of entries) {
+            if (!name.endsWith(".md")) continue;
+            discovered.push({ absolutePath: join(dir, name), origin, type });
+          }
+        }
+      } catch {
+        // skip unresolved layer
       }
-    } catch {
-      // layer has no resolvable write-target store — nothing to list there.
     }
   }
 
-  for (const source of sources) {
-    for (const type of typesToScan) {
-      const dir = join(source.root, type);
-      if (!existsSync(dir)) {
+  for (const source of discovered) {
+    const absolutePath = source.absolutePath;
+    const origin = source.origin;
+    const type = source.type;
+    let content: string;
+    try {
+      content = await readFile(absolutePath, "utf8");
+    } catch {
+      continue;
+    }
+    const fm = parseFrontmatter(content);
+    // Frontmatter `layer` declares the *destination* classification. For
+    // entries living under the personal pending root, default to
+    // "personal" when frontmatter omits the field; otherwise default to
+    // "team" (mirrors pre-B1 behavior).
+    const layer = fm.layer ?? (origin === "personal" ? "personal" : "team");
+    const maturity = fm.maturity ?? "draft";
+
+    // Apply filters (best-effort — missing frontmatter values fall back to defaults)
+    if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
+      continue;
+    }
+    if (filters?.maturity !== undefined && filters.maturity !== maturity) {
+      continue;
+    }
+    if (filters?.tags !== undefined && filters.tags.length > 0) {
+      const itemTags = fm.tags ?? [];
+      const hasAll = filters.tags.every((t) => itemTags.includes(t));
+      if (!hasAll) continue;
+    }
+    // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
+    // created_at frontmatter are conservatively excluded when the filter
+    // is set (caller asked for a date window — undated entries cannot be
+    // proven to fall inside it).
+    if (filters?.created_after !== undefined) {
+      const createdAt = fm.created_at;
+      if (createdAt === undefined || createdAt < filters.created_after) {
         continue;
-      }
-      let entries: string[];
-      try {
-        entries = await readdir(dir);
-      } catch {
-        continue;
-      }
-      for (const name of entries) {
-        if (!name.endsWith(".md")) continue;
-        const absolutePath = join(dir, name);
-        let content: string;
-        try {
-          content = await readFile(absolutePath, "utf8");
-        } catch {
-          continue;
-        }
-        const fm = parseFrontmatter(content);
-        // Frontmatter `layer` declares the *destination* classification. For
-        // entries living under the personal pending root, default to
-        // "personal" when frontmatter omits the field; otherwise default to
-        // "team" (mirrors pre-B1 behavior).
-        const layer = fm.layer ?? (source.origin === "personal" ? "personal" : "team");
-        const maturity = fm.maturity ?? "draft";
-
-        // Apply filters (best-effort — missing frontmatter values fall back to defaults)
-        if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
-          continue;
-        }
-        if (filters?.maturity !== undefined && filters.maturity !== maturity) {
-          continue;
-        }
-        if (filters?.tags !== undefined && filters.tags.length > 0) {
-          const itemTags = fm.tags ?? [];
-          const hasAll = filters.tags.every((t) => itemTags.includes(t));
-          if (!hasAll) continue;
-        }
-        // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
-        // created_at frontmatter are conservatively excluded when the filter
-        // is set (caller asked for a date window — undated entries cannot be
-        // proven to fall inside it).
-        if (filters?.created_after !== undefined) {
-          const createdAt = fm.created_at;
-          if (createdAt === undefined || createdAt < filters.created_after) {
-            continue;
-          }
-        }
-
-        // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): hide rejected/deferred entries
-        // by default. See isVisibleByLifecycle for the precise rules.
-        if (!isVisibleByLifecycle(fm, filters)) {
-          continue;
-        }
-
-        // Store-rooted entries (any layer) live outside both the project tree
-        // and the personal ~/.fabric root, so they are reported by absolute
-        // path. Non-store team → workspace-relative; non-store personal → `~/`.
-        const reportedPath = source.isStore
-          ? absolutePath
-          : source.origin === "personal"
-            ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
-            : relative(projectRoot, absolutePath);
-
-        items.push({
-          pending_path: reportedPath,
-          // v2.0.0-rc.27 TASK-001 (§2.12): absolute path companion for
-          // personal entries so programmatic consumers (Read, fs.readFile)
-          // don't need to shell-expand the `~` themselves. Store entries
-          // already report an absolute pending_path, so the companion is
-          // emitted for non-store personal entries only.
-          ...(source.origin === "personal" && !source.isStore ? { pending_path_absolute: absolutePath } : {}),
-          type,
-          layer,
-          maturity,
-          origin: source.origin,
-          ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
-          ...(fm.status !== undefined ? { status: fm.status } : {}),
-          ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
-          // v2.0.0-rc.27 TASK-006 (audit §2.23): full body when caller
-          // opted in. Reviewer UI consumes this to scan for prompt-injection
-          // payloads hidden under `## Evidence` body.
-          ...(filters?.include_body === true ? { body: extractBodyTrimmed(content) } : {}),
-        });
       }
     }
+
+    // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): hide rejected/deferred entries
+    // by default. See isVisibleByLifecycle for the precise rules.
+    if (!isVisibleByLifecycle(fm, filters)) {
+      continue;
+    }
+
+    // Store-rooted entries (any layer) live outside both the project tree
+    // and the personal ~/.fabric root, so they are reported by absolute path.
+    const reportedPath = absolutePath;
+
+    items.push({
+      pending_path: reportedPath,
+      type,
+      layer,
+      maturity,
+      origin: origin,
+      ...(typeof fm.title === "string" && fm.title.length > 0 ? { title: fm.title } : {}),
+      ...(typeof fm.summary === "string" && fm.summary.length > 0 ? { summary: fm.summary } : {}),
+      ...(typeof fm.proposed_reason === "string" && fm.proposed_reason.length > 0
+        ? { proposed_reason: fm.proposed_reason }
+        : {}),
+      ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
+      ...(fm.status !== undefined ? { status: fm.status } : {}),
+      ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
+      // v2.0.0-rc.27 TASK-006 (audit §2.23): full body when caller
+      // opted in. Reviewer UI consumes this to scan for prompt-injection
+      // payloads hidden under `## Evidence` body.
+      ...(filters?.include_body === true ? { body: extractBodyTrimmed(content) } : {}),
+    });
   }
 
   return items;
@@ -582,17 +708,26 @@ async function listPending(
 async function approveAll(
   projectRoot: string,
   pendingPaths: string[],
-): Promise<Array<{ pending_path: string; stable_id: string }>> {
+): Promise<{
+  approved: Array<{ pending_path: string; stable_id: string }>;
+  failed: Array<{ pending_path: string; reason: string }>;
+}> {
   const approved: Array<{ pending_path: string; stable_id: string }> = [];
+  const failed: Array<{ pending_path: string; reason: string }> = [];
 
   for (const pendingPath of pendingPaths) {
     const result = await approveOne(projectRoot, pendingPath);
     if (result !== null) {
       approved.push(result);
+    } else {
+      failed.push({
+        pending_path: pendingPath,
+        reason: "approve skipped: path unresolved, IO failure, or gated",
+      });
     }
   }
 
-  return approved;
+  return { approved, failed };
 }
 
 async function approveOne(
@@ -636,7 +771,7 @@ async function approveOne(
     sourceIsStore = true;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_promote_failed",
       timestamp: new Date().toISOString(),
       reason: `approve:${pendingPath}: ${reason}`,
@@ -659,7 +794,7 @@ async function approveOne(
   // Best-effort: failure to write the synth proposed must not block the
   // approve, the promote_started/promoted pair below is the authoritative
   // signal for the operation.
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_proposed",
     timestamp: new Date().toISOString(),
     reason: `approve-synth:${slug}`,
@@ -668,7 +803,7 @@ async function approveOne(
   // Phase 1: signal we're starting. Emitted before any allocator/IO mutation
   // so forensic recovery (rc.3 doctor filesystem-edit fallback) can detect a
   // crashed approve mid-flight.
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_promote_started",
     timestamp: new Date().toISOString(),
     reason: `approve:${slug}`,
@@ -730,7 +865,10 @@ async function approveOne(
       rewriteFrontmatterForPromote(content, stableId),
       { last_review_confirmed_at: new Date().toISOString() },
     );
-    await atomicWriteText(targetAbs, rewritten);
+    assertNoSecretsInReviewContent(rewritten, "approve");
+    assertCrossStoreRefsSafe(rewritten, layer);
+    // ISS-20260711-179: knowledge writes go through lockedWriteFile (was unused).
+    await lockedWriteFile(targetAbs, rewritten);
     writtenTarget = true;
 
     // Remove pending file. The decision tree keys off the SOURCE origin
@@ -783,7 +921,7 @@ async function approveOne(
       }
     }
 
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_promoted",
       stable_id: stableId,
       timestamp: new Date().toISOString(),
@@ -812,7 +950,7 @@ async function approveOne(
     }
 
     const reason = err instanceof Error ? err.message : String(err);
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_promote_failed",
       ...(allocatedId !== undefined ? { stable_id: allocatedId } : {}),
       timestamp: new Date().toISOString(),
@@ -868,10 +1006,12 @@ async function rejectAll(
           : null;
         if (rejectedAbs !== null) {
           await ensureParentDirectory(rejectedAbs);
-          await atomicWriteText(rejectedAbs, merged);
+          assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(rejectedAbs, merged);
           await unlink(sandboxed.abs);
         } else if (merged !== content) {
-          await atomicWriteText(sandboxed.abs, merged);
+          assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(sandboxed.abs, merged);
         }
       }
     } catch {
@@ -882,7 +1022,7 @@ async function rejectAll(
       // reject is "the entry is no longer recommended", not "the file is
       // mutated", so partial mutation is acceptable.
     }
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_rejected",
       timestamp: new Date().toISOString(),
       reason: `reject:${pendingPath}: ${reason}`,
@@ -938,6 +1078,15 @@ type ModifyChanges = {
   must_read_if?: string;
   intent_clues?: string[];
   impact?: string[];
+  // ISS-20260711-180: keep in lockstep with _fabReviewModifyChangesSchema.
+  tech_stack?: string[];
+  evidence_paths?: string[];
+  onboard_slot?:
+    | "tech-stack-decision"
+    | "architecture-pattern"
+    | "code-style-tone"
+    | "build-system-idiom"
+    | "domain-vocabulary";
 };
 
 // v2.0.0-rc.27 TASK-001: superset of ModifyChanges used internally by
@@ -1018,11 +1167,13 @@ async function modifyEntry(
     ...changes,
     last_review_confirmed_at: new Date().toISOString(),
   });
-  await atomicWriteText(target.absPath, merged);
+  assertNoSecretsInReviewContent(merged, "modify");
+  assertCrossStoreRefsSafe(merged, currentLayer);
+  await lockedWriteFile(target.absPath, merged);
   const changedFields = Object.keys(changes).filter(
     (field) => changes[field as keyof ModifyChanges] !== undefined,
   );
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_modified",
     ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
     timestamp: new Date().toISOString(),
@@ -1215,7 +1366,7 @@ async function modifyLayerFlip(
   await ensureParentDirectory(toAbs);
 
   // Phase 1: signal start (mirrors approve's two-phase pattern).
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_promote_started",
     ...(priorStableId !== undefined ? { stable_id: priorStableId } : {}),
     timestamp: new Date().toISOString(),
@@ -1267,14 +1418,15 @@ async function modifyLayerFlip(
   // Whether git mv relocated the file or not, the destination gets the rewritten
   // frontmatter (git mv moved the OLD bytes; this stamps the new id/layer in
   // place). When git mv did NOT run, the source still exists and must be removed.
-  await atomicWriteText(toAbs, rewritten);
+  assertNoSecretsInReviewContent(rewritten, "review-write");
+    await lockedWriteFile(toAbs, rewritten);
   if (!moved && existsSync(target.absPath) && target.absPath !== toAbs) {
     await unlink(target.absPath);
   }
 
   const flipReason = `layer_flip:${priorStableId ?? "<unassigned>"}->${newStableId}`;
   const flipTimestamp = new Date().toISOString();
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_layer_changed",
     stable_id: newStableId,
     timestamp: flipTimestamp,
@@ -1294,7 +1446,7 @@ async function modifyLayerFlip(
   // knowledge_layer_changed. Shares `reason` with the paired flip event for
   // correlation.
   if (priorStableId !== undefined) {
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_id_redirect",
       timestamp: flipTimestamp,
       previous_stable_id: priorStableId,
@@ -1309,7 +1461,7 @@ async function modifyLayerFlip(
   // entry's relevance_paths array is now empty post-flip. Reason is a fixed
   // tag so doctor lints / observability filters can key off it.
   if (shouldAutoDegrade) {
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_scope_degraded",
       stable_id: newStableId,
       timestamp: new Date().toISOString(),
@@ -1742,13 +1894,14 @@ async function deferAll(
         };
         const merged = rewriteFrontmatterMerge(content, patch);
         if (merged !== content) {
-          await atomicWriteText(sandboxed.abs, merged);
+          assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(sandboxed.abs, merged);
         }
       }
     } catch {
       // See rejectAll comment for failure semantics.
     }
-    await emitEventBestEffort(projectRoot, {
+    await emitKnowledgeLifecycleEvent(projectRoot, {
       event_type: "knowledge_deferred",
       timestamp: new Date().toISOString(),
       pending_path: pendingPath,
@@ -1788,15 +1941,22 @@ async function retireAll(
   pendingPaths: string[],
   supersededBy: string | undefined,
   reason: string | undefined,
-): Promise<RetiredEntry[]> {
+): Promise<{ retired: RetiredEntry[]; failed: Array<{ pending_path: string; reason: string }> }> {
   const retired: RetiredEntry[] = [];
+  const failed: Array<{ pending_path: string; reason: string }> = [];
   for (const pendingPath of pendingPaths) {
     const result = await retireOne(projectRoot, pendingPath, supersededBy, reason);
     if (result !== null) {
       retired.push(result);
+    } else {
+      // ISS-20260712-012: surface skips so empty retired[] is not false-success.
+      failed.push({
+        pending_path: pendingPath,
+        reason: "retire skipped: path unresolved, not canonical, or IO failure",
+      });
     }
   }
-  return retired;
+  return { retired, failed };
 }
 
 async function retireOne(
@@ -1823,7 +1983,8 @@ async function retireOne(
     ...(supersededBy !== undefined ? { superseded_by: supersededBy } : {}),
   };
   const merged = rewriteFrontmatterMerge(content, patch);
-  await atomicWriteText(target.absPath, merged);
+  assertNoSecretsInReviewContent(merged, "review-write");
+    await lockedWriteFile(target.absPath, merged);
 
   const changedFields = supersededBy !== undefined
     ? ["deprecated", "superseded_by"]
@@ -1835,7 +1996,7 @@ async function retireOne(
     after.superseded_by = supersededBy;
   }
 
-  await emitEventBestEffort(projectRoot, {
+  await emitKnowledgeLifecycleEvent(projectRoot, {
     event_type: "knowledge_modified",
     ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
     timestamp: new Date().toISOString(),
@@ -1909,6 +2070,9 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
         break;
       case "title":
         out.title = stripQuotes(value);
+        break;
+      case "proposed_reason":
+        out.proposed_reason = stripQuotes(value);
         break;
       case "summary":
         out.summary = stripQuotes(value);
@@ -2063,6 +2227,10 @@ function rewriteFrontmatterMerge(
   if (patch.must_read_if !== undefined) updates.must_read_if = `must_read_if: ${quoteIfNeeded(patch.must_read_if)}`;
   if (patch.intent_clues !== undefined) updates.intent_clues = `intent_clues: ${flowArray(patch.intent_clues)}`;
   if (patch.impact !== undefined) updates.impact = `impact: ${flowArray(patch.impact)}`;
+  // ISS-20260711-180
+  if (patch.tech_stack !== undefined) updates.tech_stack = `tech_stack: ${flowArray(patch.tech_stack)}`;
+  if (patch.evidence_paths !== undefined) updates.evidence_paths = `evidence_paths: ${flowArray(patch.evidence_paths)}`;
+  if (patch.onboard_slot !== undefined) updates.onboard_slot = `onboard_slot: ${patch.onboard_slot}`;
   // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
   // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
   // datetimes correctly (no colon in the date portion would need quoting,
@@ -2117,6 +2285,9 @@ function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void 
   if (patch.must_read_if !== undefined) lines.push(`must_read_if: ${quoteIfNeeded(patch.must_read_if)}`);
   if (patch.intent_clues !== undefined) lines.push(`intent_clues: ${flowArray(patch.intent_clues)}`);
   if (patch.impact !== undefined) lines.push(`impact: ${flowArray(patch.impact)}`);
+  if (patch.tech_stack !== undefined) lines.push(`tech_stack: ${flowArray(patch.tech_stack)}`);
+  if (patch.evidence_paths !== undefined) lines.push(`evidence_paths: ${flowArray(patch.evidence_paths)}`);
+  if (patch.onboard_slot !== undefined) lines.push(`onboard_slot: ${patch.onboard_slot}`);
   if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
   if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
   if (patch.last_review_confirmed_at !== undefined) lines.push(`last_review_confirmed_at: ${quoteIfNeeded(patch.last_review_confirmed_at)}`);
@@ -2191,4 +2362,39 @@ async function emitEventBestEffort(
   } catch {
     // Event emission is observability-only.
   }
+}
+
+/** Regulated knowledge mutation audit (ISS-20260711-131).
+ * Unlike emitEventBestEffort, ledger failure fails the mutation so disk
+ * changes never succeed without a durable audit row. Callers that already
+ * wrote files must roll back or surface the error to the operator.
+ */
+async function emitAuditEventRequired(
+  projectRoot: string,
+  event: EventLedgerEventInput,
+): Promise<void> {
+  await appendEventLedgerEvent(projectRoot, event);
+}
+
+const REGULATED_KNOWLEDGE_EVENT_TYPES = new Set([
+  "knowledge_promoted",
+  "knowledge_promote_failed",
+  "knowledge_modified",
+  "knowledge_rejected",
+  "knowledge_deferred",
+  "knowledge_layer_changed",
+  "knowledge_demoted",
+  "knowledge_archived",
+  "knowledge_unarchived",
+]);
+
+async function emitKnowledgeLifecycleEvent(
+  projectRoot: string,
+  event: EventLedgerEventInput,
+): Promise<void> {
+  if (REGULATED_KNOWLEDGE_EVENT_TYPES.has(event.event_type)) {
+    await emitAuditEventRequired(projectRoot, event);
+    return;
+  }
+  await emitEventBestEffort(projectRoot, event);
 }

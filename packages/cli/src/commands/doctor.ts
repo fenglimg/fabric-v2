@@ -94,8 +94,7 @@ type DoctorArgs = {
 // mutation arm is wired, these decay lints are surfaced-and-remediated via the
 // fab_review flow (see their remediation copy), never auto-mutated.
 const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
-  knowledge_pending_auto_archive: "archive (git mv, pending)",
-  knowledge_index_drift: "counter bump (agents.meta)",
+  knowledge_index_drift: "store counter floor (if any)",
   knowledge_session_hints_stale: "cache delete",
 };
 
@@ -264,7 +263,7 @@ export const doctorCommand = defineCommand({
         syncStoreAliasLinks();
         // 语义 A (multi-personal): repair a dangling/unset active personal pointer
         // (idempotent global-config fix; no-op for the common single-personal case).
-        fixActivePersonalPointer();
+        await fixActivePersonalPointer();
 
         // Knowledge-frontmatter mutations (consent already granted above when
         // the plan was non-empty). runDoctorFixKnowledge is safe to run for a
@@ -443,6 +442,7 @@ async function collectStoreDiagnostics(projectRoot: string): Promise<StoreDiagno
   } catch {
     // Best-effort — a store-check failure never changes doctor's exit semantics.
   }
+  // First-hit readiness is included inside storeDoctorChecks (assessFirstHitSync).
   // PR #33 re-wire: async knowledge-health advisories (related graph / store
   // reachability / consumption heatmap). Isolated so a failure here cannot
   // suppress the synchronous diagnostics above.

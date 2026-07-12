@@ -48,7 +48,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "Repair derived Fabric state (meta + indexes).",
+      "description": "Repair derived Fabric state (meta + indexes) and apply auto-safe knowledge lint mutations (store counter floor, stale session-hints cleanup). Decay/frontmatter lints stay report-only — remediate those via fabric-review.",
       "name": "fix",
       "negativeDescription": undefined,
       "required": undefined,
@@ -93,7 +93,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
+      "description": "Skip the knowledge-mutation safety confirm inside \`fabric doctor --fix\`. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
       "name": "yes",
       "negativeDescription": undefined,
       "required": undefined,
@@ -173,6 +173,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' 
       "negativeDescription": undefined,
       "required": undefined,
       "type": "string",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Show full detail: don't collapse an idempotent re-install into a health-check card, and print the per-client capability table",
+      "name": "verbose",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
     },
     {
       "alias": undefined,

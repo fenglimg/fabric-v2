@@ -7,7 +7,8 @@ Fabric MCP knowledge server. Runs over stdio transport and serves Claude Code an
 - `fab_recall` — single-step recall: returns candidate descriptions + native read paths (no body delivery over MCP; read a body on demand via a native Read of the returned path)
 - `fab_archive_scan` — scan recent work for archive-worthy knowledge candidates
 - `fab_propose` — persist a pending knowledge entry
-- `fab_review` — list / approve / reject / modify / defer pending entries
+- `fab_pending` — read-only browse/search of pending + canonical knowledge (`list` / `search`)
+- `fab_review` — write-only triage of pending knowledge (`approve` / `reject` / `modify` / `modify-content` / `modify-content-batch` / `modify-layer` / `defer` / `retire`)
 
 ## Install
 

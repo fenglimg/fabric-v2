@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { findStoreExecutableViolations, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 
 import { getProjectTranslator } from "../i18n.js";
+import { assessFirstHitSync, type FirstHitCode } from "./first-hit.js";
 import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
 import { detectAliasLinkDrift, missingRequiredStores, unboundAvailableStores } from "./store-ops.js";
 
@@ -37,7 +38,16 @@ export type StoreDiagnosticCode =
   // BORROW-005: per-entry consumption heatmap (info, always when data present).
   | "knowledge_consumption_heatmap"
   // BORROW-005: entries never consumed in the window (warn, GATED on data maturity).
-  | "knowledge_consumption_zero";
+  | "knowledge_consumption_zero"
+  // M-first-value-loop readiness: empty store / no bind / no write target.
+  | "first_hit_unbound"
+  | "first_hit_no_write_target"
+  | "first_hit_empty_store"
+  | "first_hit_no_match"
+  | "first_hit_ok"
+  // D3 multi-store (first-hit fail codes mirrored for doctor surface)
+  | "write_target_mismatch"
+  | "first_hit_store_unreachable";
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;
@@ -146,6 +156,49 @@ export function storeDoctorChecks(
       severity: "info",
       message: t("doctor.store.active-personal-unset", { count: String(personals.length) }),
     });
+  }
+
+  // First-hit + D3 multi-store readiness. Avoid re-emitting missing_required_store
+  // (already pushed above). Full oracle: `fabric first-hit`.
+  try {
+    const hit = assessFirstHitSync(projectRoot, { globalRoot });
+    if (hit.code === "empty_store") {
+      const stores =
+        hit.bound_stores.map((s) => s.alias).join(", ") || hit.write_target || "—";
+      diagnostics.push({
+        code: "first_hit_empty_store",
+        severity: "warn",
+        ref: hit.write_target ?? hit.bound_stores[0]?.alias,
+        message: t("doctor.store.empty", { stores }),
+      });
+    } else if (hit.code === "hooks_missing") {
+      diagnostics.push({
+        code: "first_hit_unbound",
+        severity: "warn",
+        ref: hit.write_target ?? undefined,
+        message: t("doctor.store.hooks-missing"),
+      });
+    } else if (hit.code === "write_target_mismatch") {
+      diagnostics.push({
+        code: "write_target_mismatch",
+        severity: "warn",
+        ref: hit.write_target ?? undefined,
+        message: t("doctor.store.write-target-mismatch", {
+          alias: hit.write_target ?? "—",
+        }),
+      });
+    } else if (hit.code === "store_unreachable") {
+      const refs = (hit.unreachable_aliases ?? []).join(", ") || "—";
+      diagnostics.push({
+        code: "first_hit_store_unreachable",
+        severity: "warn",
+        ref: refs,
+        message: t("doctor.store.unreachable-bound", { stores: refs }),
+      });
+    }
+    // missing_required already covered by missingRequiredStores loop above.
+  } catch {
+    // Never crash doctor for first-hit assessment.
   }
 
   return diagnostics;

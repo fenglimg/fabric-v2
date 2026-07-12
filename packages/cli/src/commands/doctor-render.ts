@@ -34,11 +34,19 @@ export type FixKnowledgePlan = {
 // config knobs like `broad_index_backstop` — lives in --verbose; the end user
 // just needs to know which command to run.
 const SHORT_HINT_CAP = 42;
+// ISS-20260712-003: preserve full first line / first command-bearing sentence.
+// Multi-paragraph remediation stays behind --verbose; do not hard-cap mid-command.
 export function shortHint(hint: string): string {
-  const firstSentence = (hint.split("。")[0] ?? hint).trim();
-  const chars = Array.from(firstSentence);
-  if (chars.length <= SHORT_HINT_CAP) {
+  const firstLine = (hint.split("\n")[0] ?? hint).trim();
+  const firstSentence = (firstLine.split("。")[0] ?? firstLine).trim();
+  // Prefer a line that still contains a fabric CLI verb so recovery stays actionable.
+  if (/\bfabric\b|doctor|--fix|install/i.test(firstSentence)) {
     return firstSentence;
+  }
+  const base = firstSentence.length > 0 ? firstSentence : firstLine;
+  const chars = Array.from(base);
+  if (chars.length <= SHORT_HINT_CAP) {
+    return base;
   }
   // Cut on a word boundary so we never slice mid-word (the ugly `告警 s…`):
   // scan back from the cap to the nearest natural break (space / CJK or ASCII

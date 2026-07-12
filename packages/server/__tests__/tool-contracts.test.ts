@@ -1,12 +1,16 @@
 /**
  * Golden snapshot tests for MCP tool contracts.
  *
- * These snapshots pin the exact schema shape + annotations for each tool.
+ * These snapshots pin the exact schema shape + annotations for each LIVE tool.
  * If a snapshot fails it means a contract changed. If the change is intentional:
  *
  *   pnpm test -u
  *
  * Run that command in packages/server (or from the repo root) to accept new baselines.
+ *
+ * ISS-20260711-249: pin live tools only (fab_recall / fab_archive_scan / propose /
+ * review / pending). Retired plan-context / knowledge-sections are asserted GONE,
+ * not golden-pinned as current contracts.
  */
 
 import { describe, expect, it } from "vitest";
@@ -20,15 +24,15 @@ import {
   FabPendingOutputSchema,
   FabReviewInputSchema,
   FabReviewOutputSchema,
+  archiveScanAnnotations,
+  archiveScanInputSchema,
+  archiveScanOutputSchema,
   fabExtractKnowledgeAnnotations,
   fabPendingAnnotations,
   fabReviewAnnotations,
-  planContextAnnotations,
-  planContextInputSchema,
-  planContextOutputSchema,
-  knowledgeSectionsAnnotations,
-  knowledgeSectionsInputSchema,
-  knowledgeSectionsOutputSchema,
+  recallAnnotations,
+  recallInputSchema,
+  recallOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 type ToolContract = {
@@ -44,15 +48,16 @@ type ToolContract = {
 };
 
 const contracts: Record<string, ToolContract> = {
-  "plan-context": {
-    inputSchema: zodToJsonSchema(planContextInputSchema),
-    outputSchema: zodToJsonSchema(planContextOutputSchema),
-    annotations: planContextAnnotations,
+  // Live retrieval + archive scan (ISS-20260711-249)
+  "fab-recall": {
+    inputSchema: zodToJsonSchema(recallInputSchema),
+    outputSchema: zodToJsonSchema(recallOutputSchema),
+    annotations: recallAnnotations,
   },
-  "knowledge-sections": {
-    inputSchema: zodToJsonSchema(knowledgeSectionsInputSchema),
-    outputSchema: zodToJsonSchema(knowledgeSectionsOutputSchema),
-    annotations: knowledgeSectionsAnnotations,
+  "fab-archive-scan": {
+    inputSchema: zodToJsonSchema(archiveScanInputSchema),
+    outputSchema: zodToJsonSchema(archiveScanOutputSchema),
+    annotations: archiveScanAnnotations,
   },
   "fab-extract-knowledge": {
     inputSchema: zodToJsonSchema(FabExtractKnowledgeInputSchema),
@@ -64,7 +69,6 @@ const contracts: Record<string, ToolContract> = {
     outputSchema: zodToJsonSchema(FabReviewOutputSchema),
     annotations: fabReviewAnnotations,
   },
-  // W3-K K2: read-only browse/search surface lifted out of fab_review.
   "fab-pending": {
     inputSchema: zodToJsonSchema(FabPendingInputSchema),
     outputSchema: zodToJsonSchema(FabPendingOutputSchema),
@@ -87,13 +91,25 @@ describe("tool contracts", () => {
   }
 
   // rc.23 TASK-002 F4: getKnowledge* / fab_get_rules surface removed.
-  // These exports were orphaned after the two-step plan_context →
-  // get_knowledge_sections API rewrite. Assert they are gone so a future
-  // regression cannot silently re-introduce a dead tool surface.
   it("does not export removed getKnowledge* schemas (rc.23 F4)", () => {
     const exports = apiContracts as Record<string, unknown>;
     expect(exports.getKnowledgeInputSchema).toBeUndefined();
     expect(exports.getKnowledgeOutputSchema).toBeUndefined();
     expect(exports.getKnowledgeAnnotations).toBeUndefined();
+  });
+
+  // ISS-20260711-249: retired two-step tools must not be treated as live goldens.
+  // Schemas may still exist for historic ledger/compat, but the contract suite
+  // must not pin them as current MCP surface.
+  it("does not pin retired plan-context / knowledge-sections as live tools", () => {
+    expect(Object.keys(contracts)).not.toContain("plan-context");
+    expect(Object.keys(contracts)).not.toContain("knowledge-sections");
+    expect(Object.keys(contracts).sort()).toEqual([
+      "fab-archive-scan",
+      "fab-extract-knowledge",
+      "fab-pending",
+      "fab-recall",
+      "fab-review",
+    ]);
   });
 });

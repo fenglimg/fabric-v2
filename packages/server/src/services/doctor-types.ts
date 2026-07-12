@@ -111,47 +111,16 @@ export type DoctorFixReport = {
   report: DoctorReport;
 };
 
-// rc.4 TASK-003: report shape returned by `runDoctorApplyLint`. Mirrors
-// `DoctorFixReport` but the `mutations` payload itemizes each per-finding
-// repair (demote / archive / counter bump) so the CLI surface can render a
-// machine-parseable summary in addition to human prose.
+// Apply-lint mutation kinds (aligned with doctor-apply-lint.ts after store cutover).
 export type DoctorApplyLintMutationKind =
-  | "knowledge_orphan_demote_required"
-  | "knowledge_stale_archive_required"
-  | "knowledge_index_drift"
-  // rc.5 TASK-009 (B2): pending entries >30d are auto-archived under
-  // `.fabric/.archive/pending/<type>/` (team) or `~/.fabric/.archive/pending/<type>/`
-  // (personal). One mutation per pending file moved.
-  | "knowledge_pending_auto_archive"
-  // rc.6 TASK-021 (E3): session-hints cache files older than 7d are deleted
-  // by the doctor cleanup pass (lint #27 knowledge_session_hints_stale).
-  // These are local cache files at `.fabric/.cache/session-hints-{id}.json`,
-  // not git-tracked, so the apply-lint arm uses plain fs.unlink with no
-  // ledger event (no audit trail required for local hot-cache hygiene).
   | "knowledge_session_hints_stale_cleanup"
-  // v2.0.0-rc.9 TASK-003 (A3): pending entries with frontmatter missing
-  // relevance_scope and/or relevance_paths get back-filled with the
-  // schema defaults (`relevance_scope: broad`, `relevance_paths: []`)
-  // by lint #28 (`relevance_fields_missing`). One mutation per back-filled
-  // pending file. A single aggregate `relevance_migration_run` event is
-  // emitted after the full walk (NOT per file) — see runDoctorApplyLint
-  // for the emission site.
-  | "knowledge_relevance_fields_missing";
+  | "store_counter_floor";
 
 export type DoctorApplyLintMutation = {
   kind: DoctorApplyLintMutationKind;
-  // For demote / archive: project-relative POSIX path of the affected file
-  // (pre-mutation). For index_drift: synthetic path string
-  // `agents.meta.json#counters.<layer>.<type>`.
   path: string;
-  // Detail of the mutation (e.g. "proven -> verified", ".fabric/.archive/...",
-  // "5 -> 8"). Free-form prose for human consumption.
   detail: string;
-  // True when the mutation succeeded; false when the per-finding repair
-  // threw and was caught (the rest of the apply-lint run continues; see
-  // task spec idempotency / partial-failure rationale).
   applied: boolean;
-  // Populated when applied=false. Truncated to 240 chars to prevent log noise.
   error?: string;
 };
 
@@ -159,17 +128,12 @@ export type DoctorApplyLintReport = {
   changed: boolean;
   mutations: DoctorApplyLintMutation[];
   warnings: DoctorIssue[];
-  // Non-fixable manual errors that surfaced in the lint pass. When non-empty
-  // and the corresponding code is in MANUAL_LINT_ERROR_CODES, runDoctorApplyLint
-  // sets `aborted: true` and returns BEFORE applying any mutations — these
-  // findings indicate corruption that auto-fix could destroy.
   manual_errors: DoctorIssue[];
   aborted: boolean;
   abort_reason?: string;
   message: string;
   report: DoctorReport;
 };
-
 
 export type MetaInspection =
   | {

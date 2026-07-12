@@ -36,6 +36,10 @@ import {
   type UnderseededInspection,
 } from "./doctor-core-checks.js";
 import {
+  createBodyReadMisfireCheck,
+} from "./doctor-knowledge-checks.js";
+import type { BodyReadMisfireReport } from "./doctor-body-read-misfire.js";
+import {
   createBootstrapAnchorCheck,
   createL1BootstrapSnapshotDriftCheck,
   createL2ManagedBlockDriftCheck,
@@ -162,6 +166,7 @@ export type DoctorCheckBuildContext = {
   citeGoodhart: CiteGoodhartInspection;
   draftBacklog: DraftBacklogInspection;
   knowledgeTagsEmpty: EmptyTagsInspection;
+  bodyReadMisfire: BodyReadMisfireReport;
   driftUnconsumed: DriftUnconsumedInspection;
   storeCounterDrift: ReturnType<typeof inspectStoreCounters>;
   storeOrphans: ReturnType<typeof inspectStoreOrphans>;
@@ -222,6 +227,7 @@ export const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
   (ctx) => createCiteGoodhartCheck(ctx.t, ctx.citeGoodhart),
   (ctx) => createDraftBacklogCheck(ctx.t, ctx.draftBacklog),
   (ctx) => createKnowledgeTagsEmptyCheck(ctx.t, ctx.knowledgeTagsEmpty),
+  (ctx) => createBodyReadMisfireCheck(ctx.t, ctx.bodyReadMisfire),
   (ctx) => createDriftUnconsumedCheck(ctx.t, ctx.driftUnconsumed),
   (ctx) => createStoreCounterCheck(ctx.t, ctx.storeCounterDrift),
   (ctx) => createStoreOrphanCheck(ctx.t, ctx.storeOrphans),

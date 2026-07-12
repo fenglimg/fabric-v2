@@ -78,6 +78,7 @@ describe("event_type census", () => {
         "mcp_stdio_trace",
         "meta_reconciled",
         "meta_reconciled_on_startup",
+        "narrow_hint_failed",
         "payload_guard_observed",
         "pending_auto_archived",
         "precompact_observed",
@@ -90,6 +91,11 @@ describe("event_type census", () => {
         "skill_invocation_started",
         "skill_phase_transition",
         "skill_trigger_candidate",
+        "store_bound",
+        "store_detached",
+        "store_mounted",
+        "write_route_changed",
+        "write_store_switched",
       ]
     `);
   });

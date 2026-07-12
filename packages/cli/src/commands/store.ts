@@ -182,7 +182,7 @@ const mountCommand = defineCommand({
             ...(args["mount-name"] === undefined ? {} : { mount_name: args["mount-name"] }),
             remote: args.remote,
           };
-    const next = storeAdd(store);
+    const next = await storeAdd(store);
     const t = getProjectTranslator();
     console.log(
       okLine(
@@ -229,7 +229,7 @@ const removeCommand = defineCommand({
     alias: { type: "positional", required: true, description: "Alias to detach" },
   },
   async run({ args }) {
-    const { detached } = storeRemove(args.alias);
+    const { detached } = await storeRemove(args.alias);
     const t = getProjectTranslator();
     if (detached === null) {
       process.exitCode = 1;
@@ -343,8 +343,8 @@ const switchPersonalCommand = defineCommand({
   args: {
     alias: { type: "positional", required: true, description: "Alias/UUID of the personal store" },
   },
-  run({ args }) {
-    storeSwitchPersonal(args.alias);
+  async run({ args }) {
+    await storeSwitchPersonal(args.alias);
     console.log(okLine(getProjectTranslator()("cli.store.switch-personal", { alias: args.alias })));
   },
 });

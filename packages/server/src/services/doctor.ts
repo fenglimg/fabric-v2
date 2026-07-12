@@ -40,8 +40,7 @@ import type {
   DoctorSummary,
   DoctorReport,
   DoctorFixReport,
-  DoctorApplyLintMutation,
-  DoctorApplyLintReport,
+
   LintMaturity,
   EnrichDescriptionsMode,
   EnrichDescriptionsCandidate,
@@ -51,26 +50,39 @@ import { normalizePath, normalizeTarget, isValidJsonLine, createFixMessage } fro
 import {
   DEFAULT_UNDERSEED_NODE_THRESHOLD,
   MS_PER_DAY,
-  SESSION_HINTS_FILE_PREFIX,
-  SESSION_HINTS_FILE_SUFFIX,
-  SESSION_HINTS_STALE_DAYS,
-  emptyDraftBacklogInspection,
-  type CiteGoodhartInspection,
-  type DriftUnconsumedInspection,
-  type EmptyTagsInspection,
   type EventLedgerInspection,
   type ForensicInspection,
   type OnboardCoverageInspection,
   type PreexistingRootFilesInspection,
   type PromoteLedgerInvariantInspection,
-  type SessionHintsStaleCandidate,
-  type SessionHintsStaleInspection,
   type StaleServeLockInspection,
   type UnderseededInspection,
 } from "./doctor-core-checks.js";
 import {
   buildDoctorChecks,
 } from "./doctor-check-registry.js";
+import {
+  inspectDraftBacklogFromCanonical,
+  inspectEmptyTagsFromCanonical,
+} from "./doctor-knowledge-hygiene.js";
+import {
+  runDoctorBodyReadMisfireCheck,
+} from "./doctor-body-read-misfire.js";
+import {
+  inspectCiteGoodhart,
+} from "./doctor-cite-goodhart.js";
+import {
+  inspectDriftUnconsumed,
+} from "./doctor-drift-unconsumed.js";
+import {
+  runDoctorApplyLintWithDeps,
+  type DoctorApplyLintReport,
+} from "./doctor-apply-lint.js";
+import {
+  applySessionHintsStaleCleanup,
+  inspectSessionHintsStale,
+  SESSION_HINTS_STALE_DAYS,
+} from "./doctor-session-hints-stale.js";
 import {
   inspectStoreStableIdIntegrity,
 } from "./doctor-stable-id-collision.js";
@@ -167,6 +179,7 @@ export { detectWriteRouteUnbound } from "./doctor-write-route-lint.js";
 export type { WriteRouteViolation } from "./doctor-write-route-lint.js";
 export { detectStrayFabricDirs, fixStrayFabricDirs } from "./doctor-stray-fabric-dir.js";
 export { createStoreCounterCheck } from "./doctor-store-counters.js";
+export { runDoctorBodyReadMisfireCheck } from "./doctor-body-read-misfire.js";
 
 // Doctor W1: public report/issue types live in doctor-types.ts (re-exported for API stability).
 export type {
@@ -178,21 +191,22 @@ export type {
   DoctorSummary,
   DoctorReport,
   DoctorFixReport,
-  DoctorApplyLintMutationKind,
-  DoctorApplyLintMutation,
-  DoctorApplyLintReport,
   MetaInspection,
   LintMaturity,
   EnrichDescriptionsMode,
   EnrichDescriptionsCandidate,
   EnrichDescriptionsReport,
 } from "./doctor-types.js";
+export type {
+  DoctorApplyLintMutationKind,
+  DoctorApplyLintMutation,
+  DoctorApplyLintReport,
+} from "./doctor-apply-lint.js";
 export { normalizePath, normalizeTarget, isValidJsonLine, createFixMessage } from "./doctor-path.js";
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
 
 type CanonicalLayer = "team" | "personal";
-
 
 // rc.6 TASK-023 (E6): thresholds for lint #26 narrow_too_few. Hardcoded in
 // rc.6 — a fabric-config.json override may land in rc.7+ if dogfood
@@ -217,7 +231,6 @@ const HINT_SILENCE_COUNTER_FILE_REL = posix.join(
   ".cache",
   "hint-silence-counter",
 );
-
 
 // Knowledge subdirectories scanned by legacy filesystem-edit fallback checks.
 // these forensic checks can still inspect it without recreating the layout.
@@ -271,10 +284,8 @@ const TARGET_FILE_PATHS = [
   ".fabric/project-rules.md",
 ] as const;
 
-
 // Ordered check builders — order is a public contract (i18n snapshots + doctor-check-order test).
 // Append only at the end unless intentionally changing order with snapshot updates.
-
 
 function finalizeDoctorReport(input: {
   projectRoot: string;
@@ -376,15 +387,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const storeKnowledgeSummaries = await collectStoreKnowledgeSummaries(projectRoot);
   const scopeLint = await lintStoreScopes(projectRoot);
   const storeRevision = await computeReadSetRevision(projectRoot);
-  // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
-  const draftBacklog = emptyDraftBacklogInspection();
-  // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
-  const knowledgeTagsEmpty: EmptyTagsInspection = {
-    status: "ok",
-    emptyCount: 0,
-    totalCount: storeKnowledgeSummaries.length,
-    ratio: 0,
-  };
+  // v2.0.0-rc.33 W4-A4 + main W8: draft/empty-tags from store canonical corpus.
+  const storeCanonicalForHygiene = await collectStoreCanonicalEntries(projectRoot);
+  const draftBacklog = inspectDraftBacklogFromCanonical(storeCanonicalForHygiene);
+  const knowledgeTagsEmpty = inspectEmptyTagsFromCanonical(storeCanonicalForHygiene);
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
   // in the last 30 days — drift detection runs but no consumption pipeline.
   const driftUnconsumed = await inspectDriftUnconsumed(projectRoot);
@@ -449,6 +455,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (mtime-based). Info kind — does not bump report status. apply-lint
   // reaps matched files via unlink (no ledger event; local hot-cache).
   const sessionHintsStale = await inspectSessionHintsStale(projectRoot, lintNow);
+  // ISS-20260711-221: wire body_read misfire into main doctor report.
+  const bodyReadMisfire = await runDoctorBodyReadMisfireCheck(projectRoot);
   const hookCacheWritability = await inspectHookCacheWritability(projectRoot);
   // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Read-side only —
   // mutation (unlink + ledger event) is owned by runDoctorFix. Re-uses the
@@ -530,6 +538,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     draftBacklog,
     knowledgeTagsEmpty,
     driftUnconsumed,
+    bodyReadMisfire,
     storeCounterDrift,
     storeOrphans,
     projectRegistryDrift,
@@ -863,148 +872,17 @@ const MANUAL_LINT_ERROR_CODES = new Set([
 ]);
 
 export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLintReport> {
-  const projectRoot = normalizeTarget(target);
-  const before = await runDoctorReport(projectRoot);
-  const mutations: DoctorApplyLintMutation[] = [];
-  const ledgerWarnings: DoctorIssue[] = [];
-
-  // Loud-error gate: stable_id_duplicate / layer_mismatch are corruption.
-  // Auto-fix could delete data. Abort before any mutation.
-  const blockingManual = before.manual_errors.find((issue) =>
-    MANUAL_LINT_ERROR_CODES.has(issue.code),
-  );
-  if (blockingManual !== undefined) {
-    return {
-      changed: false,
-      mutations: [],
-      warnings: [],
-      manual_errors: before.manual_errors,
-      aborted: true,
-      abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message} - apply-lint cannot resolve this safely; triage by hand.`,
-      message: `apply-lint aborted: ${blockingManual.code} requires manual repair.`,
-      report: before,
-    };
-  }
-
-  const now = Date.now();
-
-  // rc.6 TASK-021 (E3): session-hints cache cleanup (#27). Independent of
-  // all canonical/pending mutation paths — operates strictly on local hot-
-  // cache files under `.fabric/.cache/session-hints-*.json`. Ordering: runs
-  // after pending_auto_archive because they share no state and the cache
-  // cleanup is the cheapest mutation (single unlink per file); deferring it
-  // to last would arbitrarily inflate the perceived apply-lint runtime if
-  // an upstream mutation hangs. One mutation per stale cache file.
-  const sessionHintsStale = await inspectSessionHintsStale(projectRoot, now);
-  for (const candidate of sessionHintsStale.candidates) {
-    mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
-  }
-
-  // The aggregate `relevance_migration_run` heartbeat still fires every
-  // --apply-lint run for audit-trail symmetry with `doctor_run` (scanned_count
-  // / touched_count are 0 — there is no walk). Best-effort: a ledger-append
-  // failure does not abort the run.
-  try {
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "relevance_migration_run",
-      timestamp: new Date(now).toISOString(),
-      scanned_count: 0,
-      touched_count: 0,
-    });
-  } catch (error) {
-    ledgerWarnings.push(createLedgerAppendWarning("relevance migration aggregate event", error));
-  }
-
-  // successor floors every read-set store's committed counters.json at disk-max
-  // (KT-DEC-0004 — floor never lowers). One aggregate mutation row per drifted
-  // store reconciled.
-  const storeCounterDrifts = inspectStoreCounters(projectRoot);
-  if (storeCounterDrifts.length > 0) {
-    const reconciled = fixStoreCounters(projectRoot);
-    const detail = storeCounterDrifts
-      .map((d) => `${d.store_alias}:${d.layer}.${d.type} ${d.current} -> ${d.disk_max}`)
-      .join("; ");
-    mutations.push({
-      kind: "knowledge_index_drift",
-      path: "stores/*/counters.json",
-      detail: detail || "(no store counters processed)",
-      applied: reconciled.length > 0,
-    });
-  }
-
-  contextCache.invalidate("meta_write", projectRoot);
-
-  const after = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
-  const successCount = mutations.filter((m) => m.applied).length;
-  const failureCount = mutations.length - successCount;
-
-  return {
-    changed: successCount > 0,
-    mutations,
-    warnings: after.warnings,
-    manual_errors: after.manual_errors,
-    aborted: false,
-    message: createApplyLintMessage(successCount, failureCount, after.manual_errors.length),
-    report: after,
-  };
-}
-
-function createApplyLintMessage(
-  succeeded: number,
-  failed: number,
-  manualErrorCount: number,
-): string {
-  const parts: string[] = [];
-  if (succeeded === 0 && failed === 0) {
-    parts.push("No apply-lint mutations were needed.");
-  } else {
-    parts.push(`Applied ${succeeded} apply-lint mutation${succeeded === 1 ? "" : "s"}.`);
-    if (failed > 0) {
-      parts.push(`${failed} mutation${failed === 1 ? "" : "s"} failed.`);
-    }
-  }
-  parts.push(
-    manualErrorCount === 0
-      ? "No manual errors remain."
-      : `${manualErrorCount} manual error${manualErrorCount === 1 ? "" : "s"} remain.`,
-  );
-  return parts.join(" ");
-}
-
-// rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
-// cleanup. Plain fs.unlink — these are local cache files, not git-tracked,
-// so no `git mv` / ledger event / rollback dance. Mirrors the lightweight
-// pattern called out in the task spec (vs. applyPendingAutoArchive's full
-// rename-with-event-emission).
-//
-// Failure mode: a per-file unlink failure (ENOENT — file disappeared
-// between inspection and mutation, EPERM — fs permissions, etc) is captured
-// as `applied: false` with the error message truncated. The apply-lint run
-// continues; doctor's contract is best-effort hygiene, not transactional.
-async function applySessionHintsStaleCleanup(
-  projectRoot: string,
-  candidate: SessionHintsStaleCandidate,
-): Promise<DoctorApplyLintMutation> {
-  const detail = `deleted (${candidate.age_days}d old)`;
-  const absPath = join(projectRoot, candidate.path);
-  try {
-    const { unlink } = await import("node:fs/promises");
-    await unlink(absPath);
-    return {
-      kind: "knowledge_session_hints_stale_cleanup",
-      path: candidate.path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_session_hints_stale_cleanup",
-      path: candidate.path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
+  return runDoctorApplyLintWithDeps(target, {
+    normalizeTarget,
+    runDoctorReport,
+    appendDoctorWarnings,
+    createLedgerAppendWarning,
+    contextCacheInvalidate: (kind, projectRoot) => {
+      // Apply-lint only ever invalidates meta_write; kind kept for API stability.
+      void kind;
+      contextCache.invalidate("meta_write", projectRoot);
+    },
+  });
 }
 
 // through fixStoreCounters (doctor-store-counters.ts).
@@ -1114,137 +992,6 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
   }
 }
 
-// v2.0.0-rc.33 W3-3 (P1-3): Goodhart inspection over 7d of cite events.
-// Reads `assistant_turn_observed` events from the ledger, applies 4 simple
-// heuristics. Threshold tuning matches the rc.32 baseline cite-coverage 3.1%
-// scenario — at that low signal density, > 5 instances of any one pattern
-// over 7d is meaningful (vs noise floor < 1 per day).
-async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartInspection> {
-  const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-  const RITUAL_REPEAT_THRESHOLD = 5;
-  const DISMISSAL_ABUSE_RATIO = 0.6;
-  const PLACEHOLDER_COUNT_THRESHOLD = 5;
-  const cutoffMs = Date.now() - WINDOW_MS;
-  const fired: CiteGoodhartInspection["fired"] = [];
-
-  let events: EventLedgerEvent[] = [];
-  try {
-    const result = await readEventLedger(projectRoot);
-    events = result.events;
-  } catch {
-    return { status: "ok", fired: [] };
-  }
-  const turns = events.filter(
-    (e): e is Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }> => {
-      if (e.event_type !== "assistant_turn_observed") return false;
-      const ts = Date.parse(e.timestamp);
-      return Number.isFinite(ts) && ts >= cutoffMs;
-    },
-  );
-  if (turns.length === 0) {
-    return { status: "ok", fired: [] };
-  }
-
-  // G1: count (kb_id, "applied") tuples. Same tuple > threshold = ritual.
-  // v2.1.0-rc.1 (ADJ-P4-1, full remap): cite_tags reaches here normalized to the
-  // 2-state vocab (legacy 'recalled'/'planned'/'chained-from' → 'applied' on
-  // read), so the single 'applied' category captures the Goodhart signal (AI
-  // cites a single hot id over and over instead of expanding coverage).
-  const appliedCount = new Map<string, number>();
-  for (const turn of turns) {
-    for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] === "applied") {
-        const key = turn.cite_ids[i];
-        appliedCount.set(key, (appliedCount.get(key) ?? 0) + 1);
-      }
-    }
-  }
-  for (const [id, n] of appliedCount.entries()) {
-    if (n > RITUAL_REPEAT_THRESHOLD) {
-      fired.push({ pattern: "G1", detail: `${id} repeated as [applied] ${n}x in 7d` });
-      break; // one example is enough — operator scans the ledger for the rest
-    }
-  }
-
-  // G2: dismissal abuse — skip_reason ratio on applied cites.
-  let appliedTotal = 0;
-  let appliedWithSkip = 0;
-  for (const turn of turns) {
-    for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] !== "applied") continue;
-      appliedTotal += 1;
-      const commitment = turn.cite_commitments[i];
-      if (commitment && typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0) {
-        appliedWithSkip += 1;
-      }
-    }
-  }
-  if (appliedTotal >= 5 && appliedWithSkip / appliedTotal > DISMISSAL_ABUSE_RATIO) {
-    fired.push({
-      pattern: "G2",
-      detail: `${appliedWithSkip}/${appliedTotal} applied cites used skip:<reason> (> ${Math.round(DISMISSAL_ABUSE_RATIO * 100)}%)`,
-    });
-  }
-
-  // CiteGoodhartInspection type doc above.
-
-  // G5: placeholder cite — "none" tags with generic kb_line_raw.
-  // Generic markers: a kb_line_raw that is exactly "KB: none" (no bracketed reason)
-  // OR contains "[unspecified]". The rc.33 cite-policy doc lists these as the
-  // legacy/sentinel forms operators should NOT use long-term.
-  let placeholderCount = 0;
-  for (const turn of turns) {
-    if (turn.cite_tags.length === 0) continue;
-    const allNone = turn.cite_tags.every((t) => t === "none");
-    if (!allNone) continue;
-    const raw = (turn.kb_line_raw ?? "").trim();
-    if (raw === "KB: none" || raw.includes("[unspecified]")) {
-      placeholderCount += 1;
-    }
-  }
-  if (placeholderCount > PLACEHOLDER_COUNT_THRESHOLD) {
-    fired.push({
-      pattern: "G5",
-      detail: `${placeholderCount} placeholder "KB: none" / "[unspecified]" cites in 7d`,
-    });
-  }
-
-  return { status: fired.length === 0 ? "ok" : "warn", fired };
-}
-
-
-async function inspectDriftUnconsumed(projectRoot: string): Promise<DriftUnconsumedInspection> {
-  const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-  const MIN_DRIFT_FOR_WARN = 5;
-  const cutoffMs = Date.now() - WINDOW_MS;
-  let events: EventLedgerEvent[] = [];
-  try {
-    const result = await readEventLedger(projectRoot);
-    events = result.events;
-  } catch {
-    return { status: "ok", driftCount: 0, demoteCount: 0 };
-  }
-  let driftCount = 0;
-  let demoteCount = 0;
-  for (const e of events) {
-    if (e.ts < cutoffMs) continue;
-    if (e.event_type === "knowledge_drift_detected") driftCount += 1;
-    else if (e.event_type === "knowledge_demoted") demoteCount += 1;
-  }
-  // rc.36 TASK-32 review-iter-1 fix: warn whenever drift events outnumber
-  // demote events by the threshold. The earlier `demoteCount === 0` form
-  // cleared the warning the moment a single demote landed, even if 10 drift
-  // events remained unconsumed. Per-event pairing is deferred to the rc.37
-  // auto-demote pipeline; this count-delta heuristic is sufficient until then.
-  const unconsumed = driftCount - demoteCount;
-  return {
-    status: unconsumed >= MIN_DRIFT_FOR_WARN ? "warn" : "ok",
-    driftCount,
-    demoteCount,
-  };
-}
-
-
 async function inspectPromoteLedgerInvariant(
   projectRoot: string,
 ): Promise<PromoteLedgerInvariantInspection> {
@@ -1264,7 +1011,6 @@ async function inspectPromoteLedgerInvariant(
   }
   return { proposedCount, promoteStartedCount, promotedCount, violation };
 }
-
 
 /**
  * v2.0.0-rc.37 NEW-39 (werewolf dogfood remediation): backfill emitter that
@@ -1344,7 +1090,6 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-
 function collectIssues(checks: DoctorCheck[], kind: DoctorIssueKind): DoctorIssue[] {
   return checks
     .filter((check) => check.kind === kind)
@@ -1396,7 +1141,6 @@ async function inspectPreexistingRootFiles(projectRoot: string): Promise<Preexis
   }
   return { detected };
 }
-
 
 // Build a Map<stable_id, lastActiveAtEpochMs> in a single pass over events.jsonl.
 // "Activity" is the union of events that reference a knowledge entry by its
@@ -1479,51 +1223,6 @@ async function buildLastActiveIndex(
   return map;
 }
 
-// rc.6 TASK-021 (E3): inspect `.fabric/.cache/` for session-hints cache
-// files older than SESSION_HINTS_STALE_DAYS (7d default). Age is mtime-based
-// and day-floor rounded.
-// Read-only: candidates are surfaced as info-kind findings; the apply-lint
-// arm (applySessionHintsStaleCleanup) does the unlink. Directory absence is
-// the common-case empty-result branch (no narrow hook ever fired in this
-// workspace) — return zero candidates without an error.
-async function inspectSessionHintsStale(
-  projectRoot: string,
-  now: number,
-): Promise<SessionHintsStaleInspection> {
-  const cacheDir = join(projectRoot, ".fabric", ".cache");
-  let entries;
-  try {
-    entries = await readdirAsync(cacheDir, { withFileTypes: true });
-  } catch {
-    return { candidates: [] };
-  }
-  const candidates: SessionHintsStaleCandidate[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!entry.name.startsWith(SESSION_HINTS_FILE_PREFIX)) continue;
-    if (!entry.name.endsWith(SESSION_HINTS_FILE_SUFFIX)) continue;
-    const absPath = join(cacheDir, entry.name);
-    let mtimeMs = 0;
-    try {
-      mtimeMs = (await statAsync(absPath)).mtimeMs;
-    } catch {
-      // Unreadable stat → skip rather than guess at age. The next doctor
-      // run will retry (or the OS will reap a corrupted entry).
-      continue;
-    }
-    const ageDays = Math.floor((now - mtimeMs) / MS_PER_DAY);
-    if (ageDays < SESSION_HINTS_STALE_DAYS) continue;
-    candidates.push({
-      path: posix.join(".fabric", ".cache", entry.name),
-      age_days: ageDays,
-    });
-  }
-  // Stable display order — alphabetical by path so test assertions and
-  // human review aren't sensitive to readdir() ordering quirks.
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
-}
-
 // rc.23 TASK-010 (e): inspect `.fabric/.serve.lock` for a dead-PID corpse.
 // Re-uses `readLockState` (best-effort JSON parse — returns null on
 // missing/malformed) and `isAlive` (process.kill signal-0 probe) from
@@ -1573,7 +1272,6 @@ async function readUnderseedThresholdFromConfig(projectRoot: string): Promise<nu
   }
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
-
 
 async function inspectOnboardCoverage(projectRoot: string): Promise<OnboardCoverageInspection> {
   const filled = {} as Record<OnboardSlot, string[]>;
@@ -1642,7 +1340,6 @@ function readFrontmatterScalar(content: string, key: string): string | undefined
   }
   return undefined;
 }
-
 
 // ---------------------------------------------------------------------------
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21).
@@ -1723,7 +1420,6 @@ async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<C
     };
   }
 }
-
 
 // `inspectCodexSkillLegacyPath` and their `create*Check` / `fix*` siblings.
 // They migrated v1.x agents-md-init-reminder/skill paths into the v1 client-
@@ -1846,7 +1542,6 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
     }
   }
 }
-
 
 async function ensureEventLedger(projectRoot: string): Promise<void> {
   const path = getEventLedgerPath(projectRoot);
@@ -2254,50 +1949,3 @@ export type BodyReadMisfireReport = {
 };
 
 // Recall-volume floor below which "zero body_read" is statistically
-// uninformative (new/quiet workspace) — never warn there.
-const BODY_READ_MISFIRE_MIN_RECALLS = 10;
-
-export async function runDoctorBodyReadMisfireCheck(
-  projectRoot: string,
-): Promise<BodyReadMisfireReport> {
-  const { events } = await readEventLedger(projectRoot);
-  let recalls = 0;
-  let bodyReads = 0;
-  for (const event of events) {
-    if (event.event_type === "knowledge_context_planned") {
-      recalls += 1;
-    } else if (event.event_type === "knowledge_body_read") {
-      bodyReads += 1;
-    }
-  }
-
-  if (recalls < BODY_READ_MISFIRE_MIN_RECALLS) {
-    return {
-      recalls,
-      body_reads: bodyReads,
-      status: "ok",
-      message:
-        `Only ${String(recalls)} recall(s) on record (< ${String(BODY_READ_MISFIRE_MIN_RECALLS)}) — ` +
-        `not enough activity to assess knowledge_body_read wiring.`,
-    };
-  }
-
-  if (bodyReads === 0) {
-    return {
-      recalls,
-      body_reads: 0,
-      status: "warn",
-      message:
-        `${String(recalls)} recall(s) surfaced read-paths but ZERO knowledge_body_read events — ` +
-        `the PostToolUse Read marker may be unwired. Check the PostToolUse matcher includes ` +
-        `\`Read\` in .claude/settings.json (and the codex equivalent), then rerun \`fabric install\`.`,
-    };
-  }
-
-  return {
-    recalls,
-    body_reads: bodyReads,
-    status: "ok",
-    message: `knowledge_body_read wiring healthy (${String(bodyReads)} body read(s) across ${String(recalls)} recall(s)).`,
-  };
-}

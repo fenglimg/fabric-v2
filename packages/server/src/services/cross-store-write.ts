@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import {
   STORE_KNOWLEDGE_TYPE_DIRS,
@@ -18,7 +18,7 @@ import {
   PersonalScopeLeakError,
   StoreWriteTargetUnresolvedError,
 } from "@fenglimg/fabric-shared/errors";
-import { withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteText, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 
 // ---------------------------------------------------------------------------
 // v2.1 global-refactor (W1-T2) — cross-store write-side wiring.
@@ -267,9 +267,10 @@ export async function lockedWriteFile(
       }
     }
 
-    // Write + return the new hash.
-    const { writeFile } = await import("node:fs/promises");
-    await writeFile(filePath, content, "utf8");
+    // Write + return the new hash. Atomic tmp+rename under the advisory lock
+    // (ISS-20260711-179: production write path for review promote/modify).
+    await mkdir(dirname(filePath), { recursive: true });
+    await atomicWriteText(filePath, content);
     return { committed: true, hash: sha256(content) };
   });
 }

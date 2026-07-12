@@ -26,17 +26,18 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
   server.registerTool(
     "fab_review",
     {
+      // ISS-20260711-135 / 174: description MUST match FabReviewInputSchema only.
+      // list/search live on fab_pending — never re-advertise them here.
       description:
         "Review pending knowledge entries in resolved store-backed knowledge/pending/. Discriminated by `action`; required fields per action: " +
-        "list → (filters optional); " +
         "approve → pending_paths[≥1]; " +
         "reject → pending_paths[≥1] + reason; " +
         "modify / modify-content → pending_path + changes; " +
         "modify-layer → pending_path + changes.layer(team|personal); " +
         "modify-content-batch → items[{pending_path, changes}][≥1] (batch content edits; per-item partial-failure reported in modified[]); " +
-        "search → query; " +
         "defer → pending_paths[≥1] (until/reason optional); " +
         "retire → pending_paths[≥1] (superseded_by/reason optional; marks canonical entries deprecated in place — deprecate-over-delete — so they stop surfacing in recall/broad indexes). " +
+        "(list/search moved to the read-only fab_pending tool.) " +
         "approve allocates a stable_id and promotes to the canonical store knowledge path. Skill-side tool — invoked by fabric-review.",
       // Flat ZodRawShape required by MCP SDK 1.29.0 registerTool. The
       // authoritative cross-field contract still lives in FabReviewInputSchema

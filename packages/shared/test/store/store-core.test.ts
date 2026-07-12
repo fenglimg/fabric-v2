@@ -7,10 +7,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { recognizeStoreDir } from "../../src/resolver/store-disk-reader.js";
 import { STORE_LAYOUT } from "../../src/schemas/store.js";
 import {
+  addStoreProject,
   aggregatePendingAcrossStores,
   initStore,
   listStoreKnowledge,
   readKnowledgeAcrossStores,
+  readStoreProjects,
   STORE_PENDING_DIR,
   type MountedStoreDir,
 } from "../../src/store/core.js";
@@ -181,5 +183,57 @@ describe("P1 store core — cross-store pending aggregation API", () => {
     expect(pending.filter((p) => p.store_uuid === TEAM_UUID)).toHaveLength(2);
     expect(pending.filter((p) => p.store_uuid === PLATFORM_UUID)).toHaveLength(1);
     expect(pending.every((p) => p.type === STORE_PENDING_DIR)).toBe(true);
+  });
+});
+
+
+describe("W1 data integrity — projects.json + initStore order", () => {
+  it("readStoreProjects throws on corrupt JSON instead of treating as empty (ISS-20260711-129)", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    const projectsPath = join(team.dir, STORE_LAYOUT.projectsFile);
+    writeFileSync(projectsPath, "{ not-json", "utf8");
+    await expect(readStoreProjects(team.dir)).rejects.toThrow(/not valid JSON|refusing to treat as empty/);
+    // Corrupt file still on disk — must not be silently wiped by a subsequent read.
+    expect(existsSync(projectsPath)).toBe(true);
+  });
+
+  it("readStoreProjects throws on schema-invalid projects.json (ISS-20260711-129)", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    const projectsPath = join(team.dir, STORE_LAYOUT.projectsFile);
+    writeFileSync(projectsPath, JSON.stringify({ projects: [{ id: "!!bad!!" }] }), "utf8");
+    await expect(readStoreProjects(team.dir)).rejects.toThrow(/schema validation|refusing to treat as empty/);
+  });
+
+  it("concurrent addStoreProject calls both land in projects.json (ISS-20260711-130)", async () => {
+    const home = createIsolatedHome();
+    const team = await makeStore(home, TEAM_UUID, "team");
+    await Promise.all([
+      addStoreProject(team.dir, { id: "alpha", created_at: "2026-07-11T00:00:00.000Z" }),
+      addStoreProject(team.dir, { id: "beta", created_at: "2026-07-11T00:00:01.000Z" }),
+    ]);
+    const projects = await readStoreProjects(team.dir);
+    expect(projects.map((p) => p.id).sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("initStore writes store.json last so mid-scaffold crash is not recognized (ISS-20260711-146)", async () => {
+    const home = createIsolatedHome();
+    const dir = join(home.storesRoot, "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    mkdirSync(dir, { recursive: true });
+
+    // Simulate a crash after knowledge dirs exist but before store.json is written:
+    // manually scaffold layout without identity, then assert disk reader rejects.
+    mkdirSync(join(dir, STORE_LAYOUT.knowledgeDir, "decisions"), { recursive: true });
+    writeFileSync(join(dir, ".gitignore"), "state/\n", "utf8");
+    expect(recognizeStoreDir(dir)).toBe(false);
+
+    await initStore(dir, {
+      store_uuid: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      created_at: "2026-07-11T00:00:00.000Z",
+      canonical_alias: "half",
+    }, { git: false });
+    expect(recognizeStoreDir(dir)).toBe(true);
+    expect(existsSync(join(dir, STORE_LAYOUT.identityFile))).toBe(true);
   });
 });

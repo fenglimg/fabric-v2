@@ -24,6 +24,7 @@ import { mountStoreFromRemote } from "../run-global-install.js";
 import { resolveGlobalRoot } from "../../store/global-config-io.js";
 import type { Stage, InstallContext, StageResult, DetectedClientSupport } from "./types.js";
 import { stageRan, stageFailedFromError } from "./pipeline.js";
+import { assessFirstHitSync } from "../../store/first-hit.js";
 
 // ---------------------------------------------------------------------------
 // Guidance Stage
@@ -92,6 +93,19 @@ export class GuidanceStage implements Stage {
         if (finalSupports.filter((s) => s.detected).length === 0) {
           footer.push(translate("cli.install.capabilities.none"));
         }
+      }
+      // First-hit readiness CTA (empty/unbound is not install success).
+      try {
+        const hit = assessFirstHitSync(context.target);
+        if (!hit.ok) {
+          footer.push("");
+          footer.push(paint.warn(`first-hit: ${hit.message}`));
+          for (const r of hit.remediations.slice(0, 3)) {
+            footer.push(paint.muted(`  → ${r}`));
+          }
+        }
+      } catch {
+        // never block install on readiness probe
       }
       context.state.guidanceFooter = footer;
 

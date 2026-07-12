@@ -13,6 +13,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
+import { setFirstReconcile } from "./services/first-reconcile-gate.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerRecall } from "./tools/recall.js";
@@ -340,10 +341,11 @@ export async function startStdioServer(): Promise<void> {
   // v2.2 W5 R2 (agents.meta decolo): the background startup `reconcileKnowledge`
   // pass — which rebuilt the co-location `agents.meta.json` index — is retired.
   // Knowledge now lives in mounted stores and the read paths read those stores
-  // directly, so there is no project-local index to rebuild on startup. The
-  // `first-reconcile-gate` is left wired into the tool handlers; with no
-  // producer registered it fast-paths to `ready` (no warning), preserving the
-  // handler shape without doing dead work.
+  // directly, so there is no project-local index to rebuild on startup.
+  // ISS-20260711-184: still register an explicit ready producer so the gate is
+  // a real producer/consumer pair (not a permanently-unregistered fast path).
+  // Future startup work (e.g. store index warm) can replace this promise.
+  setFirstReconcile(Promise.resolve());
   await server.connect(transport);
 
   // v2.0.0-rc.37 Wave B (B3): kick the metrics flush timer once the MCP

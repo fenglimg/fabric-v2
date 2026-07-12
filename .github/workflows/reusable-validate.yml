@@ -55,6 +55,9 @@ jobs:
       - name: Store-only mounted workflow E2E
         run: pnpm test:store-only-e2e
 
+      - name: Upgrade path E2E (stale hook/skill refresh)
+        run: pnpm test:upgrade-e2e
+
       - name: Lint protected tokens
         run: node --experimental-strip-types scripts/lint-protected-tokens.ts
 

@@ -19,6 +19,7 @@
 - `audit`（知识/遥测审计组：`cite` / `conflicts` / `history` / `descriptions` / `metrics` / `retired` 等）
 - `inspect`（展示 SessionStart 注入内容，与 hook 共用 renderer）
 - `preview`（只读知识预览 HTTP UI，**不是** 已 quarantine 的 `serve`）
+- `first-hit`（空仓/首 hit 验收与 seed；与 preview 共享 store 读路径）
 
 **Hidden / internal（注册但默认不进顶层 help；hooks / skills 仍会调用）**
 
@@ -34,16 +35,15 @@
 ## 常用命令
 
 - `fabric install`
-- `fabric doctor`
-- `fabric doctor --json`
-- `fabric doctor --fix`
-- `fabric store list`
+- `fabric doctor` / `fabric doctor --json` / `fabric doctor --fix`
+- `fabric store list` / `fabric store bind` / `fabric store switch-write`
 - `fabric sync`
 - `fabric info`
-- `fabric audit metrics`
+- `fabric audit` / `fabric audit metrics`
 - `fabric inspect`
-- `fabric preview`
+- `fabric preview`（只读知识预览）
+- `fabric first-hit`
+- `fabric config`（交互配置；`FABRIC_CONFIG_PLAIN=1` 或 `NO_COLOR` 时追加式 plain 菜单）
 - `fabric uninstall`
-- `fabric config`
 
 `fabric doctor --fix` 只修复确定性的派生状态，例如 `.fabric/agents.meta.json`、`.fabric/.cache/knowledge-test.index.json`、缺失的 `.fabric/events.jsonl` 和 stale hashes。知识条目的 demote/archive/default backfill 走 `fabric doctor --fix` 或 `fabric-review`；语义冲突、未完成的初始化确认和本地客户端配置问题仍需要人工处理。
