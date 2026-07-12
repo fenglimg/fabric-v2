@@ -475,7 +475,331 @@ const TARGET_FILE_PATHS = [
   ".fabric/project-rules.md",
 ] as const;
 
+
+// --- Doctor W2: runDoctorReport orchestration (collect → buildChecks → finalize) ---
+
+// Doctor W2: Phase-2 check assembly extracted from runDoctorReport.
+// Pure relative to collected inspections — no new I/O.
+type DoctorCheckBuildContext = {
+  t: Translator;
+  projectRoot: string;
+  storeKnowledgeSummaries: Awaited<ReturnType<typeof collectStoreKnowledgeSummaries>>;
+  scopeLint: Awaited<ReturnType<typeof lintStoreScopes>>;
+  framework: { kind: string; version: string; subkind: string };
+  entryPoints: Array<{ path: string; reason: string }>;
+  bootstrapAnchor: Awaited<ReturnType<typeof inspectBootstrapAnchor>>;
+  l1BootstrapSnapshotDrift: Awaited<ReturnType<typeof inspectL1BootstrapSnapshotDrift>>;
+  l2ManagedBlockDrift: Awaited<ReturnType<typeof inspectL2ManagedBlockDrift>>;
+  forensic: Awaited<ReturnType<typeof inspectForensic>>;
+  eventLedger: Awaited<ReturnType<typeof inspectEventLedger>>;
+  eventsJsonlGates: Awaited<ReturnType<typeof inspectEventsJsonlGates>>;
+  skillRefMirror: Awaited<ReturnType<typeof inspectSkillRefMirror>>;
+  skillTokenBudget: Awaited<ReturnType<typeof inspectSkillTokenBudget>>;
+  skillDescription: Awaited<ReturnType<typeof inspectSkillDescription>>;
+  skillContract: Awaited<ReturnType<typeof inspectSkillContract>>;
+  skillMdYamlInvalid: Awaited<ReturnType<typeof inspectSkillMdYamlInvalid>>;
+  retiredReferences: Awaited<ReturnType<typeof inspectRetiredReferences>>;
+  citeGoodhart: Awaited<ReturnType<typeof inspectCiteGoodhart>>;
+  draftBacklog: DraftBacklogInspection;
+  knowledgeTagsEmpty: EmptyTagsInspection;
+  driftUnconsumed: Awaited<ReturnType<typeof inspectDriftUnconsumed>>;
+  storeCounterDrift: ReturnType<typeof inspectStoreCounters>;
+  storeOrphans: ReturnType<typeof inspectStoreOrphans>;
+  projectRegistryDrift: Awaited<ReturnType<typeof inspectProjectRegistryDrift>>;
+  stableIdIntegrity: Awaited<ReturnType<typeof inspectStoreStableIdIntegrity>>;
+  relevancePaths: Awaited<ReturnType<typeof inspectStoreRelevancePaths>>;
+  broadIndexDrift: Awaited<ReturnType<typeof inspectBroadIndexDrift>>;
+  knowledgeAge: Awaited<ReturnType<typeof inspectStoreKnowledgeAge>>;
+  knowledgePromotion: Awaited<ReturnType<typeof inspectStoreKnowledgePromotion>>;
+  broadReviewRecheck: Awaited<ReturnType<typeof inspectStoreBroadReviewRecheck>>;
+  underseeded: UnderseededInspection;
+  sessionHintsStale: SessionHintsStaleInspection;
+  hookCacheWritability: Awaited<ReturnType<typeof inspectHookCacheWritability>>;
+  staleServeLock: StaleServeLockInspection;
+  onboardCoverage: Awaited<ReturnType<typeof inspectOnboardCoverage>>;
+  promoteLedgerInvariant: Awaited<ReturnType<typeof inspectPromoteLedgerInvariant>> | null;
+  globalCliVersion: GlobalCliInspection;
+  preexistingRootFiles: PreexistingRootFilesInspection;
+  hooksWired: Awaited<ReturnType<typeof inspectHooksWired>>;
+  hooksRuntime: Awaited<ReturnType<typeof inspectHooksRuntime>>;
+  hooksContentDrift: Awaited<ReturnType<typeof inspectHooksContentDrift>>;
+};
+
+function buildDoctorChecks(ctx: DoctorCheckBuildContext): DoctorCheck[] {
+  const {
+    t,
+    projectRoot,
+    storeKnowledgeSummaries,
+    scopeLint,
+    framework,
+    entryPoints,
+    bootstrapAnchor,
+    l1BootstrapSnapshotDrift,
+    l2ManagedBlockDrift,
+    forensic,
+    eventLedger,
+    eventsJsonlGates,
+    skillRefMirror,
+    skillTokenBudget,
+    skillDescription,
+    skillContract,
+    skillMdYamlInvalid,
+    retiredReferences,
+    citeGoodhart,
+    draftBacklog,
+    knowledgeTagsEmpty,
+    driftUnconsumed,
+    storeCounterDrift,
+    storeOrphans,
+    projectRegistryDrift,
+    stableIdIntegrity,
+    relevancePaths,
+    broadIndexDrift,
+    knowledgeAge,
+    knowledgePromotion,
+    broadReviewRecheck,
+    underseeded,
+    sessionHintsStale,
+    hookCacheWritability,
+    staleServeLock,
+    onboardCoverage,
+    promoteLedgerInvariant,
+    globalCliVersion,
+    preexistingRootFiles,
+    hooksWired,
+    hooksRuntime,
+    hooksContentDrift,
+  } = ctx;
+
+  return [
+
+
+    createBootstrapAnchorCheck(t, bootstrapAnchor),
+    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection. Order:
+    // anchor existence → L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔
+    // three-end blocks).
+    createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
+    createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
+    createForensicCheck(t, forensic, framework.kind, entryPoints.length),
+    // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
+    // is owned by the AI-side client init skill, not by `fabric install` CLI.
+    // The file's absence is a legitimate post-init state when the skill has
+    // not yet run, so flagging it as a doctor manual_error misrepresents
+    // ownership.
+    // v2.2 W5 R4 (agents.meta decolo): `createMetaCheck` (agents_meta_*),
+    // `createRuleContentRefCheck` (content_ref_*) and
+    // `createKnowledgeTestIndexCheck` (the co-location test-link index) retired
+    // — they inspected the project co-location agents.meta.json / its derived
+    // cache, which is no longer authoritative (knowledge lives in stores).
+    // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
+    // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
+    // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
+    // lint suite for the new knowledge frontmatter contract.
+    createEventLedgerCheck(t, eventLedger),
+    createEventLedgerPartialWriteCheck(t, eventLedger),
+    createEventsJsonlHealthCheck(t, eventsJsonlGates),
+    // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat warning surface for
+    // events.jsonl rows that fail Zod validation because of unknown
+    // schema_version or event_type tokens. Previously silently dropped.
+    createEventLedgerSchemaCompatCheck(t, eventLedger),
+    // v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL ref/ mirror parity.
+    // Detects hand-edits or partial install that breaks the byte-identical
+    // contract between .claude/skills/<slug>/ref/ and .codex/skills/<slug>/
+    // ref/. warning severity — fabric install restores parity.
+    createSkillRefMirrorCheck(t, skillRefMirror),
+    createSkillTokenBudgetCheck(t, skillTokenBudget),
+    createSkillDescriptionCheck(t, skillDescription),
+    createSkillContractCheck(t, skillContract),
+    // ux-w2-2: retired-reference (stale-pointer) lint — registry-driven.
+    createRetiredReferenceCheck(t, retiredReferences),
+    createCiteGoodhartCheck(t, citeGoodhart),
+    createDraftBacklogCheck(t, draftBacklog),
+    createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
+    createDriftUnconsumedCheck(t, driftUnconsumed),
+    // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
+    // replaced by the store-aware `store_counter_drift` (per-store committed
+    // counters.json, disk-max FLOOR / KT-DEC-0004). Registered below alongside
+    // the scope lint, the other store-scoped doctor check.
+    createStoreCounterCheck(t, storeCounterDrift),
+    // store-onboarding grill (Q5): on-disk store invisible to the registry
+    // (warning). `--fix` adopts it (rescue-before-delete — re-register, never
+    // an on-disk delete).
+    createStoreOrphanCheck(t, storeOrphans),
+    // W2 (F-003): project-registry drift over projects.json ↔ projects/ folder
+    // tree. unregistered-write (data unrouted) → manual_error; orphan-folder →
+    // warning; empty-folder → info; ghost-registration emits nothing (DA-05).
+    // `--fix` rescue-registers orphans/unregistered (addStoreProject — never a
+    // non-empty delete) and prunes only genuinely-empty registered folders.
+    createProjectRegistryDriftCheck(t, projectRegistryDrift),
+    // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
+    // does not bump report status. Recommends running the fabric-import skill
+    // to backfill knowledge when the corpus is below the threshold floor.
+    createUnderseededCheck(t, underseeded),
+    // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
+    createSessionHintsStaleCheck(t, sessionHintsStale),
+    createHookCacheWritabilityCheck(t, hookCacheWritability),
+    // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
+    // does not bump report status. `--fix` unlinks the corpse and emits
+    // `serve_lock_cleared`.
+    createStaleServeLockCheck(t, staleServeLock),
+    // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
+    // SKILL.md frontmatter that Codex CLI silently drops at load.
+    createSkillMdYamlInvalidCheck(t, skillMdYamlInvalid),
+    // v2.0.0-rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind.
+    // Surfaces uncovered S5 onboard slots and recommends /fabric-archive
+    // first-run phase. Sits adjacent to Skill markdown YAML — both are
+    // Skill-adjacent advisories. --fix never mutates onboard state.
+    createOnboardCoverageCheck(t, onboardCoverage),
+    // rc.31 BUG-M3/NEW-4: hooks_wired observability. Adjacent to onboard /
+    // promote-ledger checks — all three are install/runtime-state advisories.
+    createHooksWiredCheck(t, hooksWired),
+    createHooksRuntimeCheck(t, hooksRuntime),
+    createHooksContentDriftCheck(t, hooksContentDrift),
+    // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30 PATH
+    // installs against rc.31+ project schemas (the silent-hooks fault mode).
+    // Sits next to hooks_wired since both lints diagnose runtime install state.
+    createGlobalCliVersionCheck(t, globalCliVersion),
+    // rc.35 TASK-05 (P0-10.a): opaque-summary ratio — surfaces the
+    // werewolf-eval failure mode where description.summary == stable_id so
+    // hint output is "KT-PIT-0001 · KT-PIT-0001" (AI skips fetch). Built
+    // from the same MetaInspection so no extra disk reads.
+    createKnowledgeSummaryOpaqueCheck(
+      t,
+      // v2.2 全砍 F10 + W5 R4 (agents.meta decolo): the opacity scan is now
+      // store-only — canonical knowledge lives in the read-set stores (team +
+      // personal), which is exactly the surface this lint must cover. The legacy
+      // project agents.meta source is retired, so we feed an empty-but-valid meta
+      // (zero project nodes) and let the store-summary fold drive the result.
+      inspectKnowledgeSummaryOpaque(EMPTY_META_INSPECTION, storeKnowledgeSummaries),
+    ),
+    // v2.2 W4 (G-GUARD / A6): scope lint over the read-set stores — missing
+    // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
+    // only stores (the post-decolo knowledge home); never throws.
+    createScopeLintCheck(t, scopeLint),
+    // v2.2 Goal B (G-INTEGRITY): store stable_id collision (warning) + layer
+    // mismatch (manual error). Adjacent to the scope lint — both are store
+    // canonical-corpus integrity checks. Built from one shared store walk above.
+    createStableIdCollisionCheck(t, stableIdIntegrity.collision),
+    createLayerMismatchCheck(t, stableIdIntegrity.layerMismatch),
+    // v2.2 Goal B (G-RELEVANCE): relevance_paths hygiene — dangling (warning) +
+    // drift (info). Adjacent to the integrity cluster; both read the store
+    // canonical corpus and resolve anchors against the project workspace.
+    createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
+    createRelevancePathsDriftCheck(t, relevancePaths.drift),
+    // W4-3 (KT-MOD-0001): narrow-scope entry with empty relevance_paths =
+    // permanently dead (warning). W4-2 (KT-DEC-0028): broad-index-drift —
+    // per-store broad count nearing the backstop (warning → fabric-audit).
+    createNarrowNoPathsCheck(t, relevancePaths.narrowNoPaths),
+    createBroadIndexDriftCheck(t, broadIndexDrift),
+    // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (warning) +
+    // stale_archive (warning). Age from events.jsonl last-active (KT-DEC-0023);
+    // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
+    createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
+    createStaleArchiveCheck(t, knowledgeAge.staleArchive),
+    // v2.2 C1: knowledge promotion candidate (info kind — opportunity, not defect).
+    createPromotionCandidateCheck(t, knowledgePromotion),
+    // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
+    // counterpart to the usage-age decay it is exempt from).
+    createBroadReviewRecheckCheck(t, broadReviewRecheck),
+    // project-scope binding backfill lint — a store bound as the write target
+    // but with no project_id / active_project parks the project axis. The
+    // fresh-install hole is sealed in store.stage.ts; this covers existing repos
+    // (CLI `--fix` backfills via ensureStoreProjectBinding).
+    createUnboundProjectCheck(t, detectUnboundProject(projectRoot)),
+    // write_route_target_unbound — every write_routes[i].store must resolve
+    // against required_stores. Catches "route survived migration to single
+    // team slot" (werewolf-minigame case): route says `team → cocos` but
+    // required_stores only holds `team`, so fab_propose(audience:"team")
+    // would report "no write-target store resolved" at runtime. Static
+    // config-level check, no resolver, aligned with KT-DEC-0048 read-tolerant
+    // doctrine.
+    createWriteRouteUnboundCheck(t, detectWriteRouteUnbound(projectRoot)),
+    // rc.11 stray_fabric_dir_detected — walks the project tree for any
+    // `.fabric/` directory other than `<projectRoot>/.fabric`. Historical
+    // residue from the pre-rc.10 hook / pre-rc.11 server-side resolveProjectRoot
+    // fault mode where a subprocess whose cwd was a subdirectory of the repo
+    // created a stray `<subdir>/.fabric/` (scattering events.jsonl / metrics.jsonl
+    // / .cache). Adjacent to write_route_target_unbound — both catch config /
+    // filesystem cross-references that drifted through migrations.
+    createStrayFabricDirCheck(t, detectStrayFabricDirs(projectRoot), projectRoot),
+    // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
+    // coverage — both are observability advisories built off events.jsonl.
+    ...(promoteLedgerInvariant === null
+      ? []
+      : [createPromoteLedgerInvariantCheck(t, promoteLedgerInvariant)]),
+    createPreexistingRootFilesCheck(t, preexistingRootFiles),
+    // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
+    // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
+    // parse time, so the soft-deprecation warn-and-fix path no longer has a
+    // reachable input — fabric.config.json with a retired key fails before
+    // doctor ever inspects it.
+    // v2.0 / rc.2: `createLegacyV1ArtifactsCheck` removed alongside its
+    // path-list constant. The visibility-only warning referenced v1.x
+    // artifacts that are now archaeology. rc.4 owns v2 lint coverage; on a
+    // clean v2 install nothing is lost since the check fired only when v1
+    // artifacts remained.
+    
+  ];
+}
+
+
+function finalizeDoctorReport(input: {
+  projectRoot: string;
+  framework: { kind: string; version: string; subkind: string };
+  entryPoints: Array<{ path: string; reason: string }>;
+  storeRevision: string | null;
+  storeKnowledgeSummariesLength: number;
+  eventLedgerPath: string;
+  targetFiles: Record<string, boolean>;
+  checks: DoctorCheck[];
+}): DoctorReport {
+  const {
+    projectRoot,
+    framework,
+    entryPoints,
+    storeRevision,
+    storeKnowledgeSummariesLength,
+    eventLedgerPath,
+    targetFiles,
+    checks,
+  } = input;
+  const fixableErrors = collectIssues(checks, "fixable_error");
+  const manualErrors = collectIssues(checks, "manual_error");
+  const warnings = collectIssues(checks, "warning");
+  const infos = collectIssues(checks, "info");
+
+  return {
+    status: reduceStatus(checks.map((check) => check.status)),
+    checks,
+    fixable_errors: fixableErrors,
+    manual_errors: manualErrors,
+    warnings,
+    infos,
+    summary: {
+      target: projectRoot,
+      framework: {
+        kind: framework.kind,
+        version: framework.version,
+        subkind: framework.subkind,
+      },
+      entryPoints,
+      metaRevision: storeRevision,
+      computedMetaRevision: null,
+      ruleCount: storeKnowledgeSummariesLength,
+      eventLedgerPath,
+      fixableErrorCount: fixableErrors.length,
+      manualErrorCount: manualErrors.length,
+      warningCount: warnings.length,
+      infoCount: infos.length,
+      targetFiles,
+      payload_limits: resolvePayloadLimits(projectRoot),
+      health: computeDoctorHealth(manualErrors.length, fixableErrors.length, warnings.length),
+    },
+  };
+}
+
 export async function runDoctorReport(target: string): Promise<DoctorReport> {
+  // Phase 1 — collect inspections (I/O + derived state).
   const projectRoot = normalizeTarget(target);
   const t = createTranslator(resolveFabricLocale(projectRoot));
   const framework = detectFramework(projectRoot);
@@ -525,6 +849,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // post-decolo canonical knowledge source. Summaries feed store-aware checks;
   // the count + corpus revision hash replace retired agents.meta-derived fields.
   const storeKnowledgeSummaries = await collectStoreKnowledgeSummaries(projectRoot);
+  const scopeLint = await lintStoreScopes(projectRoot);
   const storeRevision = await computeReadSetRevision(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
   const draftBacklog = emptyDraftBacklogInspection();
@@ -664,214 +989,63 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       TARGET_FILE_PATHS.map(async (path) => [path, await pathExists(join(projectRoot, path))] as const),
     ),
   );
-  const checks: DoctorCheck[] = [
-    createBootstrapAnchorCheck(t, bootstrapAnchor),
-    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection. Order:
-    // anchor existence → L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔
-    // three-end blocks).
-    createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
-    createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
-    createForensicCheck(t, forensic, framework.kind, entryPoints.length),
-    // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
-    // is owned by the AI-side client init skill, not by `fabric install` CLI.
-    // The file's absence is a legitimate post-init state when the skill has
-    // not yet run, so flagging it as a doctor manual_error misrepresents
-    // ownership.
-    // v2.2 W5 R4 (agents.meta decolo): `createMetaCheck` (agents_meta_*),
-    // `createRuleContentRefCheck` (content_ref_*) and
-    // `createKnowledgeTestIndexCheck` (the co-location test-link index) retired
-    // — they inspected the project co-location agents.meta.json / its derived
-    // cache, which is no longer authoritative (knowledge lives in stores).
-    // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
-    // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
-    // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
-    // lint suite for the new knowledge frontmatter contract.
-    createEventLedgerCheck(t, eventLedger),
-    createEventLedgerPartialWriteCheck(t, eventLedger),
-    createEventsJsonlHealthCheck(t, eventsJsonlGates),
-    // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat warning surface for
-    // events.jsonl rows that fail Zod validation because of unknown
-    // schema_version or event_type tokens. Previously silently dropped.
-    createEventLedgerSchemaCompatCheck(t, eventLedger),
-    // v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL ref/ mirror parity.
-    // Detects hand-edits or partial install that breaks the byte-identical
-    // contract between .claude/skills/<slug>/ref/ and .codex/skills/<slug>/
-    // ref/. warning severity — fabric install restores parity.
-    createSkillRefMirrorCheck(t, skillRefMirror),
-    createSkillTokenBudgetCheck(t, skillTokenBudget),
-    createSkillDescriptionCheck(t, skillDescription),
-    createSkillContractCheck(t, skillContract),
-    // ux-w2-2: retired-reference (stale-pointer) lint — registry-driven.
-    createRetiredReferenceCheck(t, retiredReferences),
-    createCiteGoodhartCheck(t, citeGoodhart),
-    createDraftBacklogCheck(t, draftBacklog),
-    createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
-    createDriftUnconsumedCheck(t, driftUnconsumed),
-    // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
-    // replaced by the store-aware `store_counter_drift` (per-store committed
-    // counters.json, disk-max FLOOR / KT-DEC-0004). Registered below alongside
-    // the scope lint, the other store-scoped doctor check.
-    createStoreCounterCheck(t, storeCounterDrift),
-    // store-onboarding grill (Q5): on-disk store invisible to the registry
-    // (warning). `--fix` adopts it (rescue-before-delete — re-register, never
-    // an on-disk delete).
-    createStoreOrphanCheck(t, storeOrphans),
-    // W2 (F-003): project-registry drift over projects.json ↔ projects/ folder
-    // tree. unregistered-write (data unrouted) → manual_error; orphan-folder →
-    // warning; empty-folder → info; ghost-registration emits nothing (DA-05).
-    // `--fix` rescue-registers orphans/unregistered (addStoreProject — never a
-    // non-empty delete) and prunes only genuinely-empty registered folders.
-    createProjectRegistryDriftCheck(t, projectRegistryDrift),
-    // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
-    // does not bump report status. Recommends running the fabric-import skill
-    // to backfill knowledge when the corpus is below the threshold floor.
-    createUnderseededCheck(t, underseeded),
-    // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
-    createSessionHintsStaleCheck(t, sessionHintsStale),
-    createHookCacheWritabilityCheck(t, hookCacheWritability),
-    // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
-    // does not bump report status. `--fix` unlinks the corpse and emits
-    // `serve_lock_cleared`.
-    createStaleServeLockCheck(t, staleServeLock),
-    // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
-    // SKILL.md frontmatter that Codex CLI silently drops at load.
-    createSkillMdYamlInvalidCheck(t, skillMdYamlInvalid),
-    // v2.0.0-rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind.
-    // Surfaces uncovered S5 onboard slots and recommends /fabric-archive
-    // first-run phase. Sits adjacent to Skill markdown YAML — both are
-    // Skill-adjacent advisories. --fix never mutates onboard state.
-    createOnboardCoverageCheck(t, onboardCoverage),
-    // rc.31 BUG-M3/NEW-4: hooks_wired observability. Adjacent to onboard /
-    // promote-ledger checks — all three are install/runtime-state advisories.
-    createHooksWiredCheck(t, hooksWired),
-    createHooksRuntimeCheck(t, hooksRuntime),
-    createHooksContentDriftCheck(t, hooksContentDrift),
-    // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30 PATH
-    // installs against rc.31+ project schemas (the silent-hooks fault mode).
-    // Sits next to hooks_wired since both lints diagnose runtime install state.
-    createGlobalCliVersionCheck(t, globalCliVersion),
-    // rc.35 TASK-05 (P0-10.a): opaque-summary ratio — surfaces the
-    // werewolf-eval failure mode where description.summary == stable_id so
-    // hint output is "KT-PIT-0001 · KT-PIT-0001" (AI skips fetch). Built
-    // from the same MetaInspection so no extra disk reads.
-    createKnowledgeSummaryOpaqueCheck(
-      t,
-      // v2.2 全砍 F10 + W5 R4 (agents.meta decolo): the opacity scan is now
-      // store-only — canonical knowledge lives in the read-set stores (team +
-      // personal), which is exactly the surface this lint must cover. The legacy
-      // project agents.meta source is retired, so we feed an empty-but-valid meta
-      // (zero project nodes) and let the store-summary fold drive the result.
-      inspectKnowledgeSummaryOpaque(EMPTY_META_INSPECTION, storeKnowledgeSummaries),
-    ),
-    // v2.2 W4 (G-GUARD / A6): scope lint over the read-set stores — missing
-    // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
-    // only stores (the post-decolo knowledge home); never throws.
-    createScopeLintCheck(t, await lintStoreScopes(projectRoot)),
-    // v2.2 Goal B (G-INTEGRITY): store stable_id collision (warning) + layer
-    // mismatch (manual error). Adjacent to the scope lint — both are store
-    // canonical-corpus integrity checks. Built from one shared store walk above.
-    createStableIdCollisionCheck(t, stableIdIntegrity.collision),
-    createLayerMismatchCheck(t, stableIdIntegrity.layerMismatch),
-    // v2.2 Goal B (G-RELEVANCE): relevance_paths hygiene — dangling (warning) +
-    // drift (info). Adjacent to the integrity cluster; both read the store
-    // canonical corpus and resolve anchors against the project workspace.
-    createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
-    createRelevancePathsDriftCheck(t, relevancePaths.drift),
-    // W4-3 (KT-MOD-0001): narrow-scope entry with empty relevance_paths =
-    // permanently dead (warning). W4-2 (KT-DEC-0028): broad-index-drift —
-    // per-store broad count nearing the backstop (warning → fabric-audit).
-    createNarrowNoPathsCheck(t, relevancePaths.narrowNoPaths),
-    createBroadIndexDriftCheck(t, broadIndexDrift),
-    // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (warning) +
-    // stale_archive (warning). Age from events.jsonl last-active (KT-DEC-0023);
-    // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
-    createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
-    createStaleArchiveCheck(t, knowledgeAge.staleArchive),
-    // v2.2 C1: knowledge promotion candidate (info kind — opportunity, not defect).
-    createPromotionCandidateCheck(t, knowledgePromotion),
-    // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
-    // counterpart to the usage-age decay it is exempt from).
-    createBroadReviewRecheckCheck(t, broadReviewRecheck),
-    // project-scope binding backfill lint — a store bound as the write target
-    // but with no project_id / active_project parks the project axis. The
-    // fresh-install hole is sealed in store.stage.ts; this covers existing repos
-    // (CLI `--fix` backfills via ensureStoreProjectBinding).
-    createUnboundProjectCheck(t, detectUnboundProject(projectRoot)),
-    // write_route_target_unbound — every write_routes[i].store must resolve
-    // against required_stores. Catches "route survived migration to single
-    // team slot" (werewolf-minigame case): route says `team → cocos` but
-    // required_stores only holds `team`, so fab_propose(audience:"team")
-    // would report "no write-target store resolved" at runtime. Static
-    // config-level check, no resolver, aligned with KT-DEC-0048 read-tolerant
-    // doctrine.
-    createWriteRouteUnboundCheck(t, detectWriteRouteUnbound(projectRoot)),
-    // rc.11 stray_fabric_dir_detected — walks the project tree for any
-    // `.fabric/` directory other than `<projectRoot>/.fabric`. Historical
-    // residue from the pre-rc.10 hook / pre-rc.11 server-side resolveProjectRoot
-    // fault mode where a subprocess whose cwd was a subdirectory of the repo
-    // created a stray `<subdir>/.fabric/` (scattering events.jsonl / metrics.jsonl
-    // / .cache). Adjacent to write_route_target_unbound — both catch config /
-    // filesystem cross-references that drifted through migrations.
-    createStrayFabricDirCheck(t, detectStrayFabricDirs(projectRoot), projectRoot),
-    // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
-    // coverage — both are observability advisories built off events.jsonl.
-    ...(promoteLedgerInvariant === null
-      ? []
-      : [createPromoteLedgerInvariantCheck(t, promoteLedgerInvariant)]),
-    createPreexistingRootFilesCheck(t, preexistingRootFiles),
-    // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
-    // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
-    // parse time, so the soft-deprecation warn-and-fix path no longer has a
-    // reachable input — fabric.config.json with a retired key fails before
-    // doctor ever inspects it.
-    // v2.0 / rc.2: `createLegacyV1ArtifactsCheck` removed alongside its
-    // path-list constant. The visibility-only warning referenced v1.x
-    // artifacts that are now archaeology. rc.4 owns v2 lint coverage; on a
-    // clean v2 install nothing is lost since the check fired only when v1
-    // artifacts remained.
-  ];
-  const fixableErrors = collectIssues(checks, "fixable_error");
-  const manualErrors = collectIssues(checks, "manual_error");
-  const warnings = collectIssues(checks, "warning");
-  const infos = collectIssues(checks, "info");
+  // Phase 2 — assemble checks (pure relative to inspections above).
+  const checks = buildDoctorChecks({
+    t,
+    projectRoot,
+    storeKnowledgeSummaries,
+    scopeLint,
+    framework,
+    entryPoints,
+    bootstrapAnchor,
+    l1BootstrapSnapshotDrift,
+    l2ManagedBlockDrift,
+    forensic,
+    eventLedger,
+    eventsJsonlGates,
+    skillRefMirror,
+    skillTokenBudget,
+    skillDescription,
+    skillContract,
+    skillMdYamlInvalid,
+    retiredReferences,
+    citeGoodhart,
+    draftBacklog,
+    knowledgeTagsEmpty,
+    driftUnconsumed,
+    storeCounterDrift,
+    storeOrphans,
+    projectRegistryDrift,
+    stableIdIntegrity,
+    relevancePaths,
+    broadIndexDrift,
+    knowledgeAge,
+    knowledgePromotion,
+    broadReviewRecheck,
+    underseeded,
+    sessionHintsStale,
+    hookCacheWritability,
+    staleServeLock,
+    onboardCoverage,
+    promoteLedgerInvariant,
+    globalCliVersion,
+    preexistingRootFiles,
+    hooksWired,
+    hooksRuntime,
+    hooksContentDrift,
+  });
 
-  return {
-    status: reduceStatus(checks.map((check) => check.status)),
+// Phase 3 — aggregate issues + summary + health.
+  return finalizeDoctorReport({
+    projectRoot,
+    framework,
+    entryPoints,
+    storeRevision,
+    storeKnowledgeSummariesLength: storeKnowledgeSummaries.length,
+    eventLedgerPath: eventLedger.path,
+    targetFiles,
     checks,
-    fixable_errors: fixableErrors,
-    manual_errors: manualErrors,
-    warnings,
-    infos,
-    summary: {
-      target: projectRoot,
-      framework: {
-        kind: framework.kind,
-        version: framework.version,
-        subkind: framework.subkind,
-      },
-      entryPoints,
-      // v2.2 W5 R4 (agents.meta decolo): co-location agents.meta is retired.
-      // `metaRevision` now carries the read-set store-corpus revision hash
-      // (computeReadSetRevision — the same content fingerprint the recall path
-      // uses); `computedMetaRevision` no longer has a separate "recomputed vs
-      // stored" axis, so it is null; `ruleCount` counts the store corpus.
-      metaRevision: storeRevision,
-      computedMetaRevision: null,
-      ruleCount: storeKnowledgeSummaries.length,
-      eventLedgerPath: eventLedger.path,
-      fixableErrorCount: fixableErrors.length,
-      manualErrorCount: manualErrors.length,
-      warningCount: warnings.length,
-      infoCount: infos.length,
-      targetFiles,
-      // v2.0.0-rc.29 TASK-008 (BUG-F2): resolve and surface payload thresholds.
-      // Best-effort: a corrupt fabric.config.json should not fail doctor; on
-      // any read/parse error fall back to library defaults with source="default".
-      payload_limits: resolvePayloadLimits(projectRoot),
-      // v2.2 A14-doctor-health (W3-T4): 0-100 KB health rollup over the lint set.
-      health: computeDoctorHealth(manualErrors.length, fixableErrors.length, warnings.length),
-    },
-  };
+  });
 }
 
 // v2.0.0-rc.29 TASK-008 (BUG-F2): translate the optional override block into
