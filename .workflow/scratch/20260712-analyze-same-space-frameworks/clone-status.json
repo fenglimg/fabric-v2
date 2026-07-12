@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Spexcode",
+    "ok": true,
+    "path": "tmp/Spexcode",
+    "head": "aad74a0 merge node/distill-ce9e: deploy-runbook system plugin (replaces the mis-tracked AGENTS.md approach)",
+    "remote": "https://github.com/shuxueshuxue/Spexcode"
+  },
+  {
+    "name": "Superpowers",
+    "ok": true,
+    "path": "tmp/Superpowers",
+    "head": "d884ae0 Release v6.1.1: fix Codex SessionStart hook re-registration, add Codex portal packaging",
+    "remote": "https://github.com/obra/Superpowers"
+  },
+  {
+    "name": "trellis",
+    "ok": true,
+    "path": "tmp/trellis",
+    "head": "bde902c Merge pull request #408 from mindfold-ai/chore/refresh-wx9-qr",
+    "remote": "https://github.com/mindfold-ai/trellis"
+  },
+  {
+    "name": "EagleRAG",
+    "ok": true,
+    "path": "tmp/EagleRAG",
+    "head": "00cc713 docs: improve README layout and add banner image",
+    "remote": "https://github.com/zhiweio/EagleRAG"
+  },
+  {
+    "name": "spec-kit",
+    "ok": true,
+    "path": "tmp/spec-kit",
+    "head": "1be4299 chore: release 0.12.11, begin 0.12.12.dev0 development (#3460)",
+    "remote": "https://github.com/github/spec-kit"
+  },
+  {
+    "name": "OpenSpec",
+    "ok": true,
+    "path": "tmp/OpenSpec",
+    "head": "0a99f41 Deploy docs through Cloudflare Pages (#1342)",
+    "remote": "https://github.com/Fission-AI/OpenSpec"
+  },
+  {
+    "name": "mem0",
+    "ok": true,
+    "path": "tmp/mem0",
+    "head": "1783674 feat(vector-stores): add Databricks provider to TypeScript OSS SDK (#5824)",
+    "remote": "https://github.com/mem0ai/mem0"
+  },
+  {
+    "name": "GitNexus",
+    "ok": true,
+    "path": "tmp/GitNexus",
+    "head": "c644509 fix: stop Napi::Error SIGABRT on analyze — index C++ type lookups, terminate workers only at JS-safe points (#2432) (#2436)",
+    "remote": "https://github.com/abhigyanpatwari/GitNexus"
+  },
+  {
+    "name": "obsidian-api",
+    "ok": true,
+    "path": "tmp/obsidian-api",
+    "head": "6e21f1f add `null` to `Secret#onChange` callback argument type",
+    "remote": "https://github.com/obsidianmd/obsidian-api"
+  },
+  {
+    "name": "obsidian-releases",
+    "ok": true,
+    "path": "tmp/obsidian-releases",
+    "head": "a68a1fa chore: Mirror community plugins and themes (-1/+6 plugins, -0/+0 themes)",
+    "remote": "https://github.com/obsidianmd/obsidian-releases"
+  }
+]

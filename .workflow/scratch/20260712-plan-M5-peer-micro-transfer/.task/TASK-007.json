@@ -1,0 +1,148 @@
+{
+  "id": "TASK-007",
+  "title": "P1-7 light finish→archive cadence (no Stop flood)",
+  "description": "Light finish→archive guidance in skill/bootstrap/docs; keep fabric-hint archive nudge soft and threshold-based; not a task engine; no Stop-hook flood regression.",
+  "issue_id": null,
+  "issue_refs": [
+    "P1-7"
+  ],
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "Document light finish→archive cadence in packages/cli/templates/skills/fabric-archive/SKILL.md and bootstrap (after significant decision / after edit batch ≥ archive_edit_threshold default 20). Touch packages/cli/templates/hooks/fabric-hint.cjs only if needed to clarify single-nudge-per-Stop and threshold config — do NOT lower threshold to 1, do NOT add decision:block, do NOT emit multiple archive nudges per Stop.",
+  "status": "completed",
+  "completed_at": "2026-07-12T10:56:10Z",
+  "actual_duration": null,
+  "scope": "packages/cli/templates + bootstrap + fabric-hint tests",
+  "focus_paths": [
+    "packages/cli/templates/hooks/",
+    "packages/cli/templates/skills/fabric-archive/",
+    "packages/shared/src/templates/",
+    "packages/cli/__tests__/"
+  ],
+  "read_first": [
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/cli/templates/skills/fabric-archive/SKILL.md",
+    "packages/shared/src/templates/bootstrap-canonical.ts",
+    "packages/cli/__tests__/fabric-hint.test.ts",
+    "packages/cli/__tests__/fabric-hint-never-blocks.test.ts"
+  ],
+  "depends_on": [
+    "TASK-001",
+    "TASK-004"
+  ],
+  "wave": 2,
+  "parallel_group": "p1",
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "fabric-archive/SKILL.md contains finish→archive cadence guidance referencing archive_edit_threshold or default 20 and fabric-archive skill self-trigger limits (max 1/turn)",
+      "bootstrap-canonical.ts still states archive cadence nudge is soft / config archive_edit_threshold (default 20)",
+      "packages/cli/__tests__/fabric-hint-never-blocks.test.ts still passes (no decision:block for archive)",
+      "If fabric-hint.cjs changes, fabric-hint.test.ts asserts single archive nudge path and threshold default remains 20 (rg -n 'archive_edit_threshold|default 20' packages/cli/templates/hooks/fabric-hint.cjs)",
+      "pnpm --filter @fenglimg/fabric-cli test -- fabric-hint exits 0"
+    ],
+    "verification": "pnpm --filter @fenglimg/fabric-cli test -- fabric-hint; pnpm --filter @fenglimg/fabric-cli test -- fabric-hint-never-blocks; rg -n 'archive_edit_threshold|finish|cadence' packages/cli/templates/skills/fabric-archive packages/cli/templates/hooks/fabric-hint.cjs packages/shared/src/templates/bootstrap-canonical.ts",
+    "definition_of_done": "Agents know when to lightly archive after finishing work; Stop hook remains soft threshold nudge without flood."
+  },
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "cadence / when to archive section",
+      "change": "Add light finish→archive: after closing a meaningful decision or ~archive_edit_threshold edits; not after every typo; not a Trellis/Spex task engine"
+    },
+    {
+      "path": "packages/shared/src/templates/bootstrap-canonical.ts",
+      "action": "modify",
+      "target": "Archive cadence nudge bullet",
+      "change": "Clarify finish→archive is skill-driven + soft Stop nudge; threshold default 20; anti-loop max 1 self-trigger/turn"
+    },
+    {
+      "path": "packages/cli/templates/hooks/fabric-hint.cjs",
+      "action": "modify",
+      "target": "archive nudge comments / optional copy only",
+      "change": "Only if needed: tighten comments or human message to say 'finish batch then archive' without changing threshold default or adding extra emits. Prefer no logic change if tests already encode single-nudge."
+    },
+    {
+      "path": "packages/cli/__tests__/fabric-hint.test.ts",
+      "action": "modify",
+      "target": "cadence threshold assertions",
+      "change": "Keep/extend tests that archive nudge stays soft and threshold default 20; add regression if message copy changes"
+    }
+  ],
+  "implementation": [
+    "Read resolveArchiveEditThreshold / archive nudge section in fabric-hint.cjs (~L904+, ~L1009+)",
+    "Prefer skill/bootstrap narrative changes over hook logic",
+    "If hook copy is updated, preserve: soft additionalContext, nudge_mode gating, session-scoped cooldown, single-nudge-per-Stop",
+    "Explicitly document non-goal: not Spex session dashboard / Trellis task PRD",
+    "Run fabric-hint + never-blocks tests"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli test -- fabric-hint",
+      "pnpm --filter @fenglimg/fabric-cli test -- fabric-hint-never-blocks"
+    ],
+    "unit": [
+      "packages/cli/__tests__/fabric-hint.test.ts",
+      "packages/cli/__tests__/fabric-hint-never-blocks.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "default threshold remains 20",
+      "no decision:block",
+      "skill documents finish→archive"
+    ]
+  },
+  "reference": {
+    "pattern": "fabric-hint.cjs archive_edit_threshold default 20 + bootstrap Archive cadence nudge (rc.36)",
+    "files": [
+      "packages/cli/templates/hooks/fabric-hint.cjs",
+      "packages/shared/src/templates/bootstrap-canonical.ts"
+    ],
+    "examples": "In-session lane counts edits ≥ threshold then soft-nudges archive skill"
+  },
+  "rationale": {
+    "chosen_approach": "Light cadence is a policy micro-transfer, not a task engine; hook stays nudge-only (KT-DEC-0007).",
+    "decision_factors": [
+      "no Stop flood",
+      "not Trellis/Spex",
+      "existing threshold infrastructure"
+    ],
+    "tradeoffs": "Soft guidance may be ignored — acceptable vs hard gate flood risk"
+  },
+  "risks": [
+    "Executor lowers threshold or multi-nudge — convergence forbids",
+    "Bootstrap merge conflicts with TASK-001/004 — depends_on TASK-001; coordinate with 004 narrative"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "archive cadence",
+      "fabric-hint Stop",
+      "fabric-archive skill"
+    ],
+    "affected_components": [
+      "hooks",
+      "skills",
+      "bootstrap"
+    ],
+    "affected_requirements": [
+      "P1-7"
+    ],
+    "adr_ids": [
+      "KT-DEC-0007"
+    ]
+  },
+  "meta": {
+    "estimated_time": "35m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 2,
+    "execution_group": null,
+    "executor": "agent",
+    "status": "completed"
+  }
+}

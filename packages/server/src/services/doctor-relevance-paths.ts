@@ -323,7 +323,9 @@ export function createRelevancePathsDriftCheck(
       detail,
       windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
     }),
-    actionHint: t("doctor.check.relevance_paths_drift.remediation"),
+    actionHint: t("doctor.check.relevance_paths_drift.remediation_with_sample", {
+      sample: first.stable_id,
+    }),
   };
 }
 

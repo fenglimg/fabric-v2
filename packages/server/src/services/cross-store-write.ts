@@ -3,6 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
+  SCOPE_COORDINATE_PATTERN,
   STORE_KNOWLEDGE_TYPE_DIRS,
   STORE_LAYOUT,
   STORE_PENDING_DIR,
@@ -39,11 +40,24 @@ import { atomicWriteText, withFileLock } from "@fenglimg/fabric-shared/node/atom
 // fires on a genuinely un-onboarded write.
 // ---------------------------------------------------------------------------
 
+/**
+ * Paste-oriented actionHint may be auto-run by agents. Only interpolate scopes
+ * that match SCOPE_COORDINATE_PATTERN so malicious/malformed active_project
+ * cannot inject extra shell lines into multi-line paste remediations.
+ */
+export function pasteSafeScope(scope: string): string {
+  if (typeof scope !== "string") return "team";
+  const trimmed = scope.trim();
+  if (!SCOPE_COORDINATE_PATTERN.test(trimmed)) return "team";
+  return trimmed;
+}
+
 function writeTargetUnresolved(scope: string, layer: "team" | "personal"): StoreWriteTargetUnresolvedError {
+  const safeScope = pasteSafeScope(scope);
   const actionHint =
     layer === "personal"
-      ? "run `fabric install --global` to mint your personal store, then retry"
-      : `mount + bind a shared store, then set an explicit route: \`fabric store switch-write <alias> --scope ${scope}\``;
+      ? "paste:\nfabric install --global\nfabric store switch-write personal"
+      : `paste:\nfabric store bind <alias>\nfabric store switch-write <alias> --scope ${safeScope}\nfabric install`;
   return new StoreWriteTargetUnresolvedError(
     `no write-target store resolved for scope '${scope}' — knowledge writes are store-only (dual-root co-location removed)`,
     { actionHint, fixable: true, details: { layer, scope } },

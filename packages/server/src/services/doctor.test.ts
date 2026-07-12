@@ -138,6 +138,8 @@ describe("runDoctorReport", () => {
       "Knowledge tags coverage",
       // ISS-20260711-221: body_read misfire wired into runDoctorReport.
       "Knowledge body-read wiring",
+      // Peer micro-transfer P0-2: dump-shaped body altitude warn-only lint.
+      "Knowledge body altitude",
       // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
       "Knowledge drift unconsumed",
       // v2.2 W5 R4: co-location "Knowledge counter desync" replaced by the
@@ -251,7 +253,8 @@ describe("runDoctorReport", () => {
     // rc.11: +1 stray_fabric_dir_detected (walker for `.fabric/` dirs left by pre-rc.10
     // hooks / pre-rc.11 server-side resolveProjectRoot) → 47.
     // ISS-20260711-221: +1 knowledge body-read wiring → 48.
-    expect(report.checks).toHaveLength(48);
+    // Peer micro-transfer P0-2: +1 knowledge body altitude → 49.
+    expect(report.checks).toHaveLength(49);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

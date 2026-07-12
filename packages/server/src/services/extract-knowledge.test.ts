@@ -13,7 +13,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { readEventLedger } from "./event-ledger.js";
-import { extractKnowledge, pendingBase, quoteRelevancePath } from "./extract-knowledge.js";
+import { assessBodyAltitude, extractKnowledge, pendingBase, quoteRelevancePath } from "./extract-knowledge.js";
 import type { FabExtractKnowledgeInput } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type {
   KnowledgeArchiveAttemptedEvent,
@@ -1487,6 +1487,159 @@ describe("extractKnowledge", () => {
     );
     expect(cleanRedactionEvents).toHaveLength(0);
   });
+
+  describe("body altitude dump gate (peer micro-transfer P0-2)", () => {
+    it("assessBodyAltitude flags dense turn-marker dumps", () => {
+      const dump = [
+        "User: what happened in the meeting?",
+        "Assistant: we talked about many things.",
+        "User: can you dump the transcript?",
+        "Assistant: sure, here is everything.",
+      ].join("\n");
+      const r = assessBodyAltitude(dump, "Session dump of the long chat for later.", "guidelines");
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.code).toMatch(/body_altitude_/);
+      }
+    });
+
+    it("accepts long structured guideline bodies", () => {
+      const body = [
+        "## When",
+        "Editing packages/cli/src/store/**",
+        "## Do",
+        "Call fab_recall before edits and keep pending→review as the only canonical path.",
+        "## Do not",
+        "Paste multi-turn chat logs into knowledge bodies.",
+      ].join("\n");
+      const r = assessBodyAltitude(body, "Guideline for store UX pasteable recovery commands.", "guidelines");
+      expect(r.ok).toBe(true);
+    });
+
+    it("warns (default) on dump-shaped session_context but still writes pending", async () => {
+      const projectRoot = await createTempProject();
+      const dump = [
+        "User: recount the whole session",
+        "Assistant: turn one",
+        "User: keep going",
+        "Assistant: turn two more chatter",
+      ].join("\n");
+      const result = await extractKnowledge(
+        projectRoot,
+        buildInput({
+          source_sessions: ["sess-altitude-warn"],
+          user_messages_summary: "Capture of a long multi-turn chat for the archive queue.",
+          type: "guidelines",
+          slug: "session-dump-should-warn",
+          session_context: dump,
+        }),
+      );
+      expect(result.pending_path).not.toBe("");
+      expect(result.warnings?.some((w) => w.code.includes("body_altitude"))).toBe(true);
+    });
+
+    it("refuses dump-shaped body when FABRIC_ALTITUDE_PROPOSE_GATE=1", async () => {
+      const projectRoot = await createTempProject();
+      const prev = process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+      process.env.FABRIC_ALTITUDE_PROPOSE_GATE = "1";
+      try {
+        const dump = [
+          "User: recount the whole session",
+          "Assistant: turn one",
+          "User: keep going",
+          "Assistant: turn two more chatter",
+        ].join("\n");
+        const result = await extractKnowledge(
+          projectRoot,
+          buildInput({
+            source_sessions: ["sess-altitude-gate"],
+            user_messages_summary: "Capture of a long multi-turn chat for the archive queue.",
+            type: "guidelines",
+            slug: "session-dump-should-refuse",
+            session_context: dump,
+          }),
+        );
+        expect(result.pending_path).toBe("");
+        const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+        expect(
+          ledger.events.some((e) =>
+            ((e as { reason?: string }).reason ?? "").includes("body_altitude"),
+          ),
+        ).toBe(true);
+      } finally {
+        if (prev === undefined) delete process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+        else process.env.FABRIC_ALTITUDE_PROPOSE_GATE = prev;
+      }
+    });
+
+    it("still accepts long structured guidelines under propose-gate", async () => {
+      const projectRoot = await createTempProject();
+      const prev = process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+      process.env.FABRIC_ALTITUDE_PROPOSE_GATE = "1";
+      try {
+        const body = [
+          "## When",
+          "Touching store bind UX",
+          "## Do",
+          "Emit pasteable fabric store bind commands in actionHint.",
+          "## Why",
+          "Operators recover without reading docs.",
+        ].join("\n");
+        const result = await extractKnowledge(
+          projectRoot,
+          buildInput({
+            source_sessions: ["sess-altitude-ok"],
+            user_messages_summary: "Guideline for pasteable store recovery UX on missing write targets.",
+            type: "guidelines",
+            slug: "long-structured-guideline-ok",
+            session_context: body,
+          }),
+        );
+        expect(result.pending_path).not.toBe("");
+      } finally {
+        if (prev === undefined) delete process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+        else process.env.FABRIC_ALTITUDE_PROPOSE_GATE = prev;
+      }
+    });
+
+    it("honors fabric-config altitude_propose_gate via schema/loadProjectConfig path", async () => {
+      const projectRoot = await createTempProject();
+      const prev = process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+      delete process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+      try {
+        const { readFileSync, writeFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const cfgPath = join(projectRoot, ".fabric", "fabric-config.json");
+        const raw = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
+        writeFileSync(
+          cfgPath,
+          `${JSON.stringify({ ...raw, altitude_propose_gate: true }, null, 2)}\n`,
+          "utf8",
+        );
+        const dump = [
+          "User: recount the whole session",
+          "Assistant: turn one",
+          "User: keep going",
+          "Assistant: turn two more chatter",
+        ].join("\n");
+        const result = await extractKnowledge(
+          projectRoot,
+          buildInput({
+            source_sessions: ["sess-altitude-cfg"],
+            user_messages_summary: "Capture of a long multi-turn chat for the archive skill.",
+            type: "guidelines",
+            slug: "session-dump-config-gate",
+            session_context: dump,
+          }),
+        );
+        expect(result.pending_path).toBe("");
+      } finally {
+        if (prev === undefined) delete process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+        else process.env.FABRIC_ALTITUDE_PROPOSE_GATE = prev;
+      }
+    });
+  });
+
 });
 
 async function createTempProject(): Promise<string> {

@@ -1,0 +1,20 @@
+{
+  "status": "WARN",
+  "overall_score": 0.84,
+  "confidence": 84,
+  "checker_status": "WARN",
+  "critical_issues": [],
+  "warnings": [
+    "same-wave shared files mitigated by depends_on tweaks",
+    "TASK-003 may be gap-close on already-pasteable first-hit remediations",
+    "historical plan path collisions with older scratch plans (non-active milestone) non-blocking"
+  ],
+  "pressure_pass": {
+    "task": "TASK-002",
+    "result": "pass",
+    "notes": "dump-shape markers not pure length; dual fixtures; default warn + opt-in gate"
+  },
+  "proceed_recommendation": "YES",
+  "rewrite_required": false,
+  "checked_at": "2026-07-12T10:34:58.125067+00:00"
+}

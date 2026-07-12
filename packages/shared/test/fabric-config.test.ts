@@ -140,6 +140,20 @@ describe("fabricConfigSchema — cite/self-archive escape hatches", () => {
   });
 });
 
+describe("fabricConfigSchema — altitude_propose_gate (peer micro-transfer P0-2)", () => {
+  it("defaults altitude_propose_gate to false (warn-and-still-write)", () => {
+    expect(fabricConfigSchema.parse({}).altitude_propose_gate).toBe(false);
+  });
+
+  it("accepts explicit true for hard refuse", () => {
+    expect(fabricConfigSchema.parse({ altitude_propose_gate: true }).altitude_propose_gate).toBe(true);
+  });
+
+  it("rejects non-boolean altitude_propose_gate", () => {
+    expect(() => fabricConfigSchema.parse({ altitude_propose_gate: "1" })).toThrow();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // v2.2 dual-sink (Goal A / D4) — nudge_mode + observe.* human-output presets.
 //

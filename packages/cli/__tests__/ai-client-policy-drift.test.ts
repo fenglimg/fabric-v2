@@ -60,3 +60,22 @@ describe("AI client policy docs drift guard", () => {
     expect(parityMatrix).not.toContain(".cursor/skills");
   });
 });
+
+
+describe("peer-micro-transfer consistency", () => {
+  it("bootstrap-canonical and fabric-recall-playbook both teach fab_recall(paths=", () => {
+    const bootstrap = read("packages/shared/src/templates/bootstrap-canonical.ts");
+    const playbook = read("packages/cli/templates/skills/fabric-recall-playbook/SKILL.md");
+    expect(bootstrap).toContain("fab_recall(paths=");
+    expect(playbook).toContain("fab_recall(paths=");
+    expect(playbook).toContain("session_id=");
+    expect(bootstrap).toContain("session_id=");
+  });
+
+  it("fabric-archive skill template exists with altitude guidance", () => {
+    const archive = read("packages/cli/templates/skills/fabric-archive/SKILL.md");
+    expect(archive.length).toBeGreaterThan(100);
+    expect(archive).toMatch(/altitude|body_altitude|session dump|session dumps/i);
+  });
+});
+

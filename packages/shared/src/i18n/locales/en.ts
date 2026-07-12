@@ -1,6 +1,8 @@
 import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
+  "cli.signpost.retired": "Command `{retired}` was removed. Use `{successor}` instead.",
+  "cli.doctor.args.probe.description": "Emit a machine-readable JSON readiness snapshot (first-hit + store/hooks) without running --fix",
   "cli.main.description":
     "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically. First time? Run: fabric install",
   "cli.shared.created": "Created",
@@ -231,9 +233,9 @@ export const enMessages: Messages = {
   // with doctor.check.*; messages carry store alias / counts via interpolation.
   "doctor.store.no-global-config": "no global Fabric config — run `fabric install --global <url>`",
   "doctor.store.missing-required": "required store '{id}' is not mounted; run `fabric store mount`",
-  "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project; run `fabric store bind {alias}` to read its knowledge here (then `fabric store switch-write {alias}` to write team knowledge into it)",
+  "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project — paste: `fabric store bind {alias}` then `fabric store switch-write {alias}`",
   "doctor.store.empty": "bound store(s) have 0 knowledge entries ({stores}) — first-hit cannot succeed until you seed or clone knowledge; run `fabric first-hit --seed` (empty local store) or bind a remote team store with content",
-  "doctor.store.no-write-target": "no active write store for this project — bind and switch-write: `fabric store bind <alias>` then `fabric store switch-write <alias>` (or re-run `fabric install`)",
+  "doctor.store.no-write-target": "no active write store for this project — paste: `fabric store bind <alias>` then `fabric store switch-write <alias>` (or `fabric install`)",
   "doctor.store.no-match": "knowledge exists but no entry matches the probe paths — try broader paths or add relevance_paths for your modules",
   "doctor.store.write-target-mismatch":
     "active write store '{alias}' is not a valid team write target for this project — run `fabric store switch-write <mounted-team-alias>`",
@@ -255,6 +257,13 @@ export const enMessages: Messages = {
   "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
   "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
   "doctor.store.overflow-more": ", …(+{count} more)",
+
+  "doctor.check.knowledge_body_altitude_dump.name": "Knowledge body altitude",
+  "doctor.check.knowledge_body_altitude_dump.ok": "No dump-shaped knowledge bodies detected.",
+  "doctor.check.knowledge_body_altitude_dump.message.singular": "1 dump-shaped knowledge body: {detail}",
+  "doctor.check.knowledge_body_altitude_dump.message.plural": "{count} dump-shaped knowledge bodies (e.g. {detail})",
+  "doctor.check.knowledge_body_altitude_dump.remediation": "Rewrite as reusable decision/pitfall/guideline altitude (## structure), not a session transcript; re-archive via fabric-archive / fab_propose",
+  "doctor.check.knowledge_body_altitude_dump.scan_error": "Body-altitude scan failed ({detail}); doctor cannot confirm corpus is clean.",
   "doctor.fix-plan.header": "knowledge mutation plan ({count} total)",
   "doctor.fix-plan.preview": "preview:",
   "doctor.fix-plan.more": "... and {count} more",
@@ -883,6 +892,7 @@ export const enMessages: Messages = {
   "doctor.check.relevance_paths_drift.remediation":
     "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
   // W4-3 (KT-MOD-0001): narrow-scope entry with an empty relevance_paths set.
+  "doctor.check.relevance_paths_drift.remediation_with_sample": "Review whether the entry is still relevant — sample {sample}; refresh anchors via `fab_review.modify`, or archive via `fab_review.reject`.",
   "doctor.check.narrow_no_paths.name": "Knowledge narrow scope without paths",
   "doctor.check.narrow_no_paths.ok":
     "Every narrow-scope canonical entry carries at least one relevance_path.",

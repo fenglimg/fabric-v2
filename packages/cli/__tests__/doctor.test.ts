@@ -853,3 +853,78 @@ function createReport(status: "ok" | "warn" | "error") {
     },
   };
 }
+
+
+describe("doctor --probe readiness (peer micro-transfer P1-6)", () => {
+  it("probe flag is declared on doctor command args", async () => {
+    const doctor = (await import("../src/commands/doctor.js")).default;
+    const args = typeof doctor.args === "function" ? await doctor.args() : doctor.args;
+    expect(args).toBeTruthy();
+    expect(args).toHaveProperty("probe");
+    expect((args as { probe?: { type?: string } }).probe?.type).toBe("boolean");
+  });
+
+  it("probe emits JSON readiness with first_hit and never runs fix pipeline", async () => {
+    const runDoctorReport = vi.fn();
+    const runDoctorFix = vi.fn();
+    const runDoctorApplyLint = vi.fn();
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
+      runDoctorReport,
+      runDoctorFix,
+      runDoctorApplyLint,
+      appendEventLedgerEvent: vi.fn(),
+      checkBacklogAge: vi.fn(),
+      renderBacklogAgeLine: vi.fn(),
+    }));
+    vi.doMock("../src/store/first-hit.js", () => ({
+      assessFirstHit: vi.fn().mockResolvedValue({
+        ok: false,
+        code: "unbound",
+        exit_code: 2,
+        write_target: null,
+        hooks: { session_start: false, pre_tool_use: false, paths_checked: [] },
+        remediations: ["fabric store bind <alias>"],
+        message: "unbound",
+        bound_stores: [],
+        total_entries: 0,
+      }),
+    }));
+    vi.doMock("../src/store/doctor-checks.js", () => ({
+      storeDoctorChecks: vi.fn(() => [
+        { code: "no_global_config", severity: "warn", message: "global config is missing" },
+      ]),
+    }));
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+    const stdout = captureStdout();
+    const prevExit = process.exitCode;
+    try {
+      await doctorCommand.run?.({
+        args: {
+          target: "/tmp/fabric-target",
+          probe: true,
+          json: false,
+          fix: false,
+          strict: false,
+        },
+      } as never);
+    } finally {
+      stdout.restore();
+      process.exitCode = prevExit;
+    }
+
+    const parsed = JSON.parse(stdout.lines.join("\n"));
+    expect(parsed).toHaveProperty("ok", false);
+    expect(parsed.first_hit).toMatchObject({ code: "unbound", ok: false });
+    expect(parsed.issues_summary.first_hit_code).toBe("unbound");
+    // PERF-003: probe no longer embeds full storeDoctorChecks tree walks.
+    expect(parsed.stores).toBeUndefined();
+    // SEC-002: probe marks redaction like --debug-bundle.
+    expect(parsed.redacted).toBe(true);
+    expect(runDoctorReport).not.toHaveBeenCalled();
+    expect(runDoctorFix).not.toHaveBeenCalled();
+    expect(runDoctorApplyLint).not.toHaveBeenCalled();
+  });
+});
+

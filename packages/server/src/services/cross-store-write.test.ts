@@ -14,7 +14,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
-import { resolveStoreCanonicalBase } from "./cross-store-write.js";
+import { pasteSafeScope, resolveStoreCanonicalBase } from "./cross-store-write.js";
 
 // v2.1 global-refactor (W1-T2): proves the cross-store write-side wiring — when
 // the project selects an active write store, fab_propose routes the
@@ -396,5 +396,20 @@ describe("resolveStoreCanonicalBase project segment (W1/TASK-003)", () => {
       const base = resolveStoreCanonicalBase("team", projectRoot, bad);
       expect(base).toBe(teamStoreKnowledgeDir());
     }
+  });
+});
+
+describe("pasteSafeScope (peer micro-transfer SEC-001)", () => {
+  it("keeps valid scope coordinates", () => {
+    expect(pasteSafeScope("team")).toBe("team");
+    expect(pasteSafeScope("project:alpha")).toBe("project:alpha");
+    expect(pasteSafeScope("org:acme:team")).toBe("org:acme:team");
+  });
+
+  it("rejects newline / shell-injection payloads", () => {
+    expect(pasteSafeScope("team\nrm -rf /")).toBe("team");
+    expect(pasteSafeScope("project:x; curl evil")).toBe("team");
+    expect(pasteSafeScope("UPPER")).toBe("team");
+    expect(pasteSafeScope("")).toBe("team");
   });
 });

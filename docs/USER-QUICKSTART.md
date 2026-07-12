@@ -39,6 +39,18 @@ local evidence (optional companion) → human/skill extract → fab_propose pend
 - installing shell capture hooks as part of Fabric `install`;
 - treating pending draft sets as a second knowledge store.
 
+## Archive as truth
+
+Durable team memory is **not** chat memory. The only path into the canonical store is:
+
+```text
+local evidence / session insight → fab_propose (pending) → fabric-review / fab_review approve → canonical
+```
+
+- `pending` is required before canonical; there is no mem0-style auto-promote.
+- Archive cadence is light (skill self-trigger + soft Stop nudge) — not a task engine.
+- Multi-repo dogfood remains the product mainline; this narrative does not replace it.
+
 When an agent needs "what did the last test print?", retrieve **evidence**
 first (or ask the user); when it needs "why did we choose X?", use Fabric
 recall (`fab_recall` / SessionStart / PreToolUse). The optional

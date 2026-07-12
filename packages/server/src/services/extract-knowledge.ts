@@ -9,12 +9,22 @@ import {
   type ProposedReason,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
-import { hasSecrets, isPersonalScope, redactPii, resolveGlobalLocale } from "@fenglimg/fabric-shared";
+import {
+  hasSecrets,
+  isPersonalScope,
+  loadProjectConfig,
+  redactPii,
+  resolveGlobalLocale,
+} from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { resolveStorePendingBase, resolveWriteScopeMeta } from "./cross-store-write.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 import { classifyArchiveCandidate, formatDedupMarker } from "./archive-dedup-gate.js";
+import { assessBodyAltitude } from "./body-altitude.js";
+export type { BodyAltitudeAssessment } from "./body-altitude.js";
+export { assessBodyAltitude } from "./body-altitude.js";
+
 import { withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import {
@@ -24,6 +34,32 @@ import {
 } from "./_shared.js";
 
 const SLUG_MAX_LENGTH = 40;
+
+
+// Peer micro-transfer P0-2: dump-shaped body altitude heuristics.
+// Detect session-transcript dumps at propose time. Default mode is warn
+// (still write pending + surface altitude_warning via structured warnings).
+// Opt-in refuse gate: env FABRIC_ALTITUDE_PROPOSE_GATE=1 or fabric-config
+// altitude_propose_gate:true. Dump markers only — never length alone.
+
+/**
+ * Opt-in hard refuse for dump-shaped propose bodies.
+ * Precedence: env FABRIC_ALTITUDE_PROPOSE_GATE=1|true wins over project config.
+ * Config path: fabricConfigSchema.altitude_propose_gate via loadProjectConfig
+ * (safe default false = warn-and-still-write). Residual: schema field is not
+ * yet on the fabric config TUI panel (power-user JSON / env only).
+ */
+function altitudeProposeGateEnabled(projectRoot: string): boolean {
+  const env = process.env.FABRIC_ALTITUDE_PROPOSE_GATE;
+  if (env === "1" || env === "true") return true;
+  if (env === "0" || env === "false") return false;
+  try {
+    return loadProjectConfig(projectRoot)?.altitude_propose_gate === true;
+  } catch {
+    return false;
+  }
+}
+
 
 // v2.0.0-rc.37 NEW-31: prompt-injection sanitization for archived KB bodies.
 //
@@ -362,6 +398,46 @@ export async function extractKnowledge(
     };
   }
 
+  // Peer micro-transfer P0-2: body altitude dump detection (default warn).
+  const altitude = assessBodyAltitude(
+    input.session_context ?? "",
+    summary,
+    input.type,
+  );
+  let altitudeWarnings: Array<{
+    code: string;
+    file: string;
+    message?: string;
+    action_hint: string;
+  }> | undefined;
+  if (!altitude.ok) {
+    const reasonCode = altitude.code;
+    const warn = {
+      code: reasonCode,
+      file: `pending:${sanitizedSlug || input.slug}`,
+      message: `body looks dump-shaped (${altitude.detail}); write reusable decision/pitfall/guideline altitude, not session transcript`,
+      action_hint:
+        "Rewrite session_context as durable knowledge with ## structure; set FABRIC_ALTITUDE_PROPOSE_GATE=1 to refuse dumps",
+    };
+    // COR-008: only hard-refuse path records archive_attempted; warn-and-write continues to knowledge_proposed.
+    if (altitudeProposeGateEnabled(projectRoot)) {
+      await emitEventBestEffort(projectRoot, {
+        event_type: "knowledge_archive_attempted",
+        timestamp: new Date().toISOString(),
+        correlation_id: primarySession,
+        session_id: primarySession,
+        reason: `extract_knowledge:${sanitizedSlug || input.slug}:${reasonCode}`,
+      });
+      // COR-005: refuse returns structured warnings so clients can distinguish altitude refuse.
+      return {
+        pending_path: "",
+        idempotency_key: idempotencyKey,
+        warnings: [warn],
+      };
+    }
+    altitudeWarnings = [warn];
+  }
+
   // rc.5 B1: route to layer-specific pending root.
   //   team     → workspace .fabric/knowledge/pending  (reported workspace-relative)
   //   personal → ~/.fabric/knowledge/pending          (reported as `~/...` form,
@@ -512,6 +588,7 @@ export async function extractKnowledge(
         return {
           pending_path: reportedPath,
           idempotency_key: effectiveIdempotencyKey,
+          ...(altitudeWarnings !== undefined ? { warnings: altitudeWarnings } : {}),
         };
       }
       // v2.0.0-rc.37 NEW-6: this branch is now unreachable because
@@ -579,6 +656,7 @@ export async function extractKnowledge(
     return {
       pending_path: reportedPath,
       idempotency_key: effectiveIdempotencyKey,
+      ...(altitudeWarnings !== undefined ? { warnings: altitudeWarnings } : {}),
     };
   });
 }

@@ -405,6 +405,11 @@ export const fabricConfigSchema = z.object({
   // relieve; until then they ship as inert-safe opt-outs.
   cite_policy_enabled: z.boolean().optional().default(true),
   self_archive_policy_enabled: z.boolean().optional().default(true),
+  // Peer micro-transfer P0-2: when true, fab_propose hard-refuses dump-shaped
+  // session_context / bodies (body altitude). Default false = warn-and-still-write
+  // so corpus recovery stays non-blocking. Env FABRIC_ALTITUDE_PROPOSE_GATE=1
+  // overrides this to true for CI/dogfood. Power-user JSON only (not on config TUI).
+  altitude_propose_gate: z.boolean().optional().default(false),
   // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the narrow PreToolUse hint
   // emitted by knowledge-hint-narrow.cjs. After filtering to entries whose
   // `relevance_scope === "narrow"` (rc.27 TASK-005 audit §2.5 fix), the hook
