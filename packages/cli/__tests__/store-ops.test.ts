@@ -250,12 +250,55 @@ describe("fabric store bind / switch-write (project config)", () => {
     expect(cfg?.required_stores?.[0]?.suggested_remote).toBe("git@h:team-2.git");
   });
 
+  it("bind by mount_name (list display name) persists the short mount alias", async () => {
+    // Dogfood: list shows fabric-team-knowledge; alias is team. Binding the
+    // display name must not leave required_stores as the non-alias id.
+    const projectRoot = seedProject();
+    await storeAdd(
+      {
+        store_uuid: TEAM,
+        alias: "team",
+        mount_name: "fabric-team-knowledge",
+      },
+      globalRoot,
+    );
+    await storeBind(projectRoot, { id: "fabric-team-knowledge" }, { globalRoot });
+    expect(loadProjectConfig(projectRoot)?.required_stores?.map((r) => r.id)).toEqual(["team"]);
+  });
+
   it("switch-write sets the legacy active write store and the new default write store", async () => {
     const projectRoot = seedProject();
     await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
     storeSwitchWrite(projectRoot, "team", { globalRoot });
     expect(loadProjectConfig(projectRoot)?.active_write_store).toBe("team");
     expect(loadProjectConfig(projectRoot)?.default_write_store).toBe("team");
+  });
+
+  // Dogfood path (ccpm install): fabric-config often has required_stores +
+  // schema defaults but **no project_id** yet. switch-write must still persist
+  // active/default write store (else first-hit stays no_write_target forever).
+  it("switch-write persists when project_id is absent (install/dogfood shape)", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-store-proj-nopid-"));
+    dirs.push(projectRoot);
+    saveProjectConfig(
+      {
+        required_stores: [{ id: "team" }],
+        default_layer_filter: "both",
+        nudge_mode: "normal",
+      },
+      projectRoot,
+    );
+    await storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    const returned = storeSwitchWrite(projectRoot, "team", { globalRoot });
+    expect(returned.active_write_store).toBe("team");
+    expect(returned.default_write_store).toBe("team");
+    const disk = JSON.parse(readFileSync(projectConfigPath(projectRoot), "utf8")) as {
+      active_write_store?: string;
+      default_write_store?: string;
+    };
+    expect(disk.active_write_store).toBe("team");
+    expect(disk.default_write_store).toBe("team");
+    expect(loadProjectConfig(projectRoot)?.active_write_store).toBe("team");
   });
 
   it("switch-write command refreshes the resolved-bindings snapshot write target", async () => {

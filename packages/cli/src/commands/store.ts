@@ -276,10 +276,16 @@ const bindCommand = defineCommand({
       entry,
       args.project === undefined ? {} : { project: args.project },
     );
+    // After canonicalization, required id may be the short alias even when the
+    // user typed mount_name — show what was actually persisted.
+    const boundId =
+      next.required_stores?.find((r) => r.id === args.id)?.id ??
+      next.required_stores?.[next.required_stores.length - 1]?.id ??
+      args.id;
     console.log(
       okLine(
         getProjectTranslator(projectRoot)("cli.store.bound", {
-          id: args.id,
+          id: boundId,
           count: String(next.required_stores?.length ?? 0),
         }),
       ),
@@ -323,6 +329,8 @@ const switchWriteCommand = defineCommand({
       );
       return;
     }
+    // storeSwitchWrite verifies on-disk active_write_store after save (dogfood
+    // false-success guard). Only print ok after that round-trip.
     storeSwitchWrite(projectRoot, args.alias);
     regenerateBindingsSnapshot(projectRoot, { now: new Date().toISOString() });
     console.log(okLine(getProjectTranslator(projectRoot)("cli.store.switch-write", { alias: args.alias })));

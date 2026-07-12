@@ -521,16 +521,29 @@ export async function storeProjectCreate(
 // (W1/A2) — binding to a non-existent project is REFUSED so a typo can't route
 // writes/recall to a phantom project — and recorded as the repo's
 // `active_project` coordinate segment.
+//
+// Multi-repo dogfood (ccpm): `store list` leads with DESCRIPTIVE `mount_name`
+// (e.g. fabric-team-knowledge) while the bindable id is the short `alias`
+// (`team`). If the user pastes the display name and we persist it verbatim,
+// first-hit reports missing_required even though the store is mounted (KT-PIT-0027).
+// When a mounted store matches alias | store_uuid | mount_name, persist the
+// canonical **alias**. Unmounted ids stay as typed (clone-onboarding still works).
 export async function storeBind(
   projectRoot: string,
   entry: RequiredStoreEntry,
   options: { project?: string; globalRoot?: string } = {},
 ): Promise<FabricConfig> {
   const config = requireProjectConfig(projectRoot);
+  const globalRoot = options.globalRoot ?? resolveGlobalRoot();
+  const mounted = resolveStoreByAliasOrUuid(entry.id, globalRoot);
+  const canonicalId = mounted?.alias ?? entry.id;
+  const canonicalEntry: RequiredStoreEntry =
+    entry.suggested_remote === undefined
+      ? { id: canonicalId }
+      : { id: canonicalId, suggested_remote: entry.suggested_remote };
   let activeProject = config.active_project;
   if (options.project !== undefined) {
-    const globalRoot = options.globalRoot ?? resolveGlobalRoot();
-    const storeDir = resolveStoreDir(entry.id, globalRoot);
+    const storeDir = resolveStoreDir(canonicalId, globalRoot);
     if (storeDir === null) {
       throw new Error(
         `cannot bind project '${options.project}': store '${entry.id}' is not mounted — ` +
@@ -539,22 +552,22 @@ export async function storeBind(
     }
     if (!(await storeHasProject(storeDir, options.project))) {
       throw new Error(
-        `cannot bind to project '${options.project}': not registered in store '${entry.id}' — ` +
-          `create it first with \`fabric store project create ${entry.id} ${options.project}\``,
+        `cannot bind to project '${options.project}': not registered in store '${canonicalId}' — ` +
+          `create it first with \`fabric store project create ${canonicalId} ${options.project}\``,
       );
     }
     activeProject = options.project;
   }
   const next: FabricConfig = {
     ...config,
-    required_stores: bindRequiredStore(config.required_stores ?? [], entry),
+    required_stores: bindRequiredStore(config.required_stores ?? [], canonicalEntry),
     ...(activeProject === undefined ? {} : { active_project: activeProject }),
   };
   saveProjectConfig(next, projectRoot);
   void emitStoreAdminEvent(projectRoot, {
     event_type: "store_bound",
-    alias: entry.id,
-    store_uuid: entry.id,
+    alias: canonicalId,
+    store_uuid: mounted?.store_uuid ?? canonicalId,
     ...(activeProject === undefined ? {} : { project: activeProject }),
     source: "storeBind",
   });
@@ -563,6 +576,11 @@ export async function storeBind(
 
 // `fabric store switch-write <alias>`: set the project's active write store for
 // non-personal scopes (S60). Personal-scope writes are unaffected (R5#3).
+//
+// Multi-repo dogfood (ccpm, 2026-07-12): first-hit stays on `no_write_target` if
+// this mutation ever "succeeds" without disk persistence. We write through the
+// strict schema then **reload and assert** so CLI never prints ok on a silent
+// no-op (false-green onboarding).
 export function storeSwitchWrite(
   projectRoot: string,
   alias: string,
@@ -580,6 +598,18 @@ export function storeSwitchWrite(
     default_write_store: alias,
   };
   saveProjectConfig(next, projectRoot);
+  const reloaded = loadProjectConfig(projectRoot);
+  if (
+    reloaded?.active_write_store !== alias ||
+    reloaded.default_write_store !== alias
+  ) {
+    throw new Error(
+      `switch-write '${alias}' did not persist to .fabric/fabric-config.json ` +
+        `(active_write_store=${reloaded?.active_write_store ?? "∅"}, ` +
+        `default_write_store=${reloaded?.default_write_store ?? "∅"}) — ` +
+        `check that the project config is writable and not being overwritten`,
+    );
+  }
   void emitStoreAdminEvent(projectRoot, {
     event_type: "write_store_switched",
     alias,
@@ -587,7 +617,7 @@ export function storeSwitchWrite(
     switch_kind: "project_write",
     source: "storeSwitchWrite",
   });
-  return next;
+  return reloaded;
 }
 
 // 语义 A (multi-personal): `fabric store switch-personal <alias>` — set the
@@ -701,8 +731,15 @@ export function missingRequiredStores(
     return [];
   }
   const global = loadGlobalConfig(globalRoot);
+  // Match alias | store_uuid | mount_name — same keys as resolveStoreByAliasOrUuid
+  // so a legacy required id written as mount_name (pre-canonical-bind) is not
+  // falsely "missing" when the store is mounted under a short alias.
   const mounted = new Set(
-    (global?.stores ?? []).flatMap((s) => [s.alias, s.store_uuid]),
+    (global?.stores ?? []).flatMap((s) =>
+      s.mount_name === undefined || s.mount_name.length === 0
+        ? [s.alias, s.store_uuid]
+        : [s.alias, s.store_uuid, s.mount_name],
+    ),
   );
   return project.required_stores.filter((r) => !mounted.has(r.id));
 }
@@ -724,9 +761,13 @@ export function unboundAvailableStores(
   }
   const project = loadProjectConfig(projectRoot);
   const declared = new Set((project?.required_stores ?? []).map((r) => r.id));
-  return global.stores.filter(
-    (s) => s.personal !== true && !declared.has(s.alias) && !declared.has(s.store_uuid),
-  );
+  return global.stores.filter((s) => {
+    if (s.personal === true) return false;
+    if (declared.has(s.alias) || declared.has(s.store_uuid)) return false;
+    // Pre-canonicalization configs may still declare mount_name as required id.
+    if (s.mount_name !== undefined && declared.has(s.mount_name)) return false;
+    return true;
+  });
 }
 
 // W2 dual-slot (TASK-002): a single team-type candidate is one row of the team
