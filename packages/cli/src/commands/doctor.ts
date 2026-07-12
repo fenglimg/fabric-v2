@@ -71,7 +71,7 @@ type DoctorArgs = {
 // mutation arm is wired, these decay lints are surfaced-and-remediated via the
 // fab_review flow (see their remediation copy), never auto-mutated.
 const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
-  knowledge_index_drift: "counter bump (agents.meta)",
+  knowledge_index_drift: "store counter floor (if any)",
   knowledge_session_hints_stale: "cache delete",
 };
 

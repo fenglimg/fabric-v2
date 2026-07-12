@@ -97,6 +97,12 @@ import {
   inspectDriftUnconsumed,
   type DriftUnconsumedInspection,
 } from "./doctor-drift-unconsumed.js";
+import {
+  inspectSessionHintsStale,
+  SESSION_HINTS_STALE_DAYS,
+  type SessionHintsStaleCandidate,
+  type SessionHintsStaleInspection,
+} from "./doctor-session-hints-stale.js";
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
@@ -481,24 +487,8 @@ type UnderseededInspection = {
   underseeded: boolean;
 };
 
-// rc.6 TASK-021 (E3): session-hints cache hygiene. Lint #27 surfaces stale
-// per-session cache files (`.fabric/.cache/session-hints-{id}.json`) whose
-// mtime is older than the SESSION_HINTS_STALE_DAYS threshold (default 7d).
-// Info-kind: cache files are local hot-cache, not git-tracked — accumulation
-// is a hygiene concern, not a correctness break. The apply-lint arm deletes
-// matched files via fs.unlink (no ledger event — see mutation kind comment).
-type SessionHintsStaleCandidate = {
-  // Project-relative POSIX path of the stale cache file (display + apply-lint
-  // anchor). The apply-lint arm joins this back to projectRoot to unlink.
-  path: string;
-  // Age of the file (mtime delta) in whole days. Floor-rounded to keep the
-  // signal coarse; sub-day precision adds noise without informational value.
-  age_days: number;
-};
-
-type SessionHintsStaleInspection = {
-  candidates: SessionHintsStaleCandidate[];
-};
+// SessionHintsStale* types + inspect + SESSION_HINTS_* constants:
+// doctor-session-hints-stale.ts (W8 Step A). Apply arm still local (Step B).
 
 // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory. The lock is
 // written by `acquireLock` at the top of `fabric serve` and removed by
@@ -524,21 +514,6 @@ type CanonicalLayer = "team" | "personal";
 // and the hook agree on the same floor unless the user overrides
 // underseed_node_threshold in .fabric/fabric-config.json.
 const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
-
-// rc.6 TASK-021 (E3): session-hints cache files older than this threshold
-// are flagged by lint #27 (`knowledge_session_hints_stale`) and deleted by
-// the apply-lint mutation arm. 7 days mirrors a typical work-week cadence —
-// long enough that a paused-then-resumed session keeps its dedupe state,
-// short enough that an abandoned session's cache file doesn't accrete.
-const SESSION_HINTS_STALE_DAYS = 7;
-
-// File-name prefix / suffix for session-hints cache files. The narrow hook
-// (knowledge-hint-narrow.cjs) writes these under `.fabric/.cache/`. Keep
-// the constants here aligned with the hook's SESSION_HINTS_FILE_PREFIX /
-// SESSION_HINTS_FILE_SUFFIX — both surfaces MUST agree on the naming
-// convention for the cleanup pass to identify the right files.
-const SESSION_HINTS_FILE_PREFIX = "session-hints-";
-const SESSION_HINTS_FILE_SUFFIX = ".json";
 
 // rc.6 TASK-023 (E6): thresholds for lint #26 narrow_too_few. Hardcoded in
 // rc.6 — a fabric-config.json override may land in rc.7+ if dogfood
@@ -1324,7 +1299,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
       warnings: [],
       manual_errors: before.manual_errors,
       aborted: true,
-      abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message} - apply-lint cannot resolve this safely; triage by hand.`,
+      abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message}. apply-lint will not auto-mutate it — open the entry via fabric-review (or fix layer/path by hand), then re-run doctor.`,
       message: `apply-lint aborted: ${blockingManual.code} requires manual repair.`,
       report: before,
     };
@@ -2268,43 +2243,7 @@ async function buildLastActiveIndex(
 // arm (applySessionHintsStaleCleanup) does the unlink. Directory absence is
 // the common-case empty-result branch (no narrow hook ever fired in this
 // workspace) — return zero candidates without an error.
-async function inspectSessionHintsStale(
-  projectRoot: string,
-  now: number,
-): Promise<SessionHintsStaleInspection> {
-  const cacheDir = join(projectRoot, ".fabric", ".cache");
-  let entries;
-  try {
-    entries = await readdirAsync(cacheDir, { withFileTypes: true });
-  } catch {
-    return { candidates: [] };
-  }
-  const candidates: SessionHintsStaleCandidate[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!entry.name.startsWith(SESSION_HINTS_FILE_PREFIX)) continue;
-    if (!entry.name.endsWith(SESSION_HINTS_FILE_SUFFIX)) continue;
-    const absPath = join(cacheDir, entry.name);
-    let mtimeMs = 0;
-    try {
-      mtimeMs = (await statAsync(absPath)).mtimeMs;
-    } catch {
-      // Unreadable stat → skip rather than guess at age. The next doctor
-      // run will retry (or the OS will reap a corrupted entry).
-      continue;
-    }
-    const ageDays = Math.floor((now - mtimeMs) / MS_PER_DAY);
-    if (ageDays < SESSION_HINTS_STALE_DAYS) continue;
-    candidates.push({
-      path: posix.join(".fabric", ".cache", entry.name),
-      age_days: ageDays,
-    });
-  }
-  // Stable display order — alphabetical by path so test assertions and
-  // human review aren't sensitive to readdir() ordering quirks.
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
-}
+// inspectSessionHintsStale → doctor-session-hints-stale.ts (W8 Step A)
 
 // rc.23 TASK-010 (e): inspect `.fabric/.serve.lock` for a dead-PID corpse.
 // Re-uses `readLockState` (best-effort JSON parse — returns null on
@@ -3253,3 +3192,10 @@ export {
   inspectCiteGoodhart,
   type CiteGoodhartInspection,
 } from "./doctor-cite-goodhart.js";
+
+export {
+  inspectSessionHintsStale,
+  SESSION_HINTS_STALE_DAYS,
+  type SessionHintsStaleCandidate,
+  type SessionHintsStaleInspection,
+} from "./doctor-session-hints-stale.js";
