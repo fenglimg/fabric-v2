@@ -68,7 +68,9 @@ const { join } = require("node:path");
 const FABRIC_DIR = ".fabric";
 const CONFIG_FILE = "fabric-config.json";
 
-const VALID_LANGUAGES = ["zh-CN", "en", "zh-CN-hybrid", "match-existing"];
+// ISS-20260712-015: runtime language is machine-wide (~/.fabric/fabric-global.json
+// `language`). Project fabric_language is retired for hooks; only zh-CN|en remain.
+const VALID_LANGUAGES = ["zh-CN", "en"];
 // rc.16 TASK-002: backward-compat default. rc.15 and earlier hardcoded
 // zh-CN in the hook scripts; preserving zh-CN as the unset-default keeps
 // the rc.7+ fabric-hint test fixtures (which assert Chinese substrings
@@ -77,15 +79,29 @@ const VALID_LANGUAGES = ["zh-CN", "en", "zh-CN-hybrid", "match-existing"];
 const DEFAULT_LANGUAGE = "zh-CN";
 const RENDER_FALLBACK_VARIANT = "en";
 
+function readGlobalLanguage() {
+  try {
+    const home = process.env.FABRIC_HOME || process.env.HOME || "";
+    if (!home) return null;
+    const globalPath = join(home, ".fabric", "fabric-global.json");
+    if (!existsSync(globalPath)) return null;
+    const parsed = JSON.parse(readFileSync(globalPath, "utf8"));
+    const v = parsed && parsed.language;
+    if (typeof v === "string" && VALID_LANGUAGES.indexOf(v) !== -1) return v;
+  } catch {
+    // never block hooks
+  }
+  return null;
+}
+
 /**
- * Read `fabric_language` from <projectRoot>/.fabric/fabric-config.json.
- *
- * Returns one of the four valid language codes. Missing file, malformed JSON,
- * missing/unknown field value → DEFAULT_LANGUAGE ('zh-CN' — see comment on
- * the constant for the back-compat rationale). NEVER throws — config-read
- * failure must not block any hook.
+ * Resolve banner language. Prefers machine-wide ~/.fabric/fabric-global.json
+ * `language` (ISS-20260712-015). Falls back to project fabric-config only for
+ * legacy fixtures, then DEFAULT_LANGUAGE. NEVER throws.
  */
 function readFabricLanguage(projectRoot) {
+  const globalLang = readGlobalLanguage();
+  if (globalLang !== null) return globalLang;
   if (typeof projectRoot !== "string" || projectRoot.length === 0) {
     return DEFAULT_LANGUAGE;
   }
@@ -94,6 +110,8 @@ function readFabricLanguage(projectRoot) {
   try {
     const parsed = JSON.parse(readFileSync(configPath, "utf8"));
     const v = parsed && parsed.fabric_language;
+    // Map retired hybrid/match-existing → en (safe fallback for old fixtures).
+    if (v === "zh-CN-hybrid" || v === "match-existing") return "en";
     if (typeof v === "string" && VALID_LANGUAGES.indexOf(v) !== -1) {
       return v;
     }

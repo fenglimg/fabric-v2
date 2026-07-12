@@ -661,7 +661,13 @@ function emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out) 
   if (mode === "silent") return; // human channel globally muted
 
   const tally = tallySessionActivity(events, sessionId);
-  const pending = pendingStats && typeof pendingStats.total === "number" ? pendingStats.total : 0;
+  // ISS-20260712-005: producer returns {count, oldestAgeMs}; `total` was a dead field → always 0.
+  const pending =
+    pendingStats && typeof pendingStats.count === "number"
+      ? pendingStats.count
+      : pendingStats && typeof pendingStats.total === "number"
+        ? pendingStats.total
+        : 0;
   // Nothing happened yet this session AND no backlog → no trust anchor to show.
   if (tally.edits === 0 && tally.consumed === 0 && pending === 0) return;
 
@@ -1299,10 +1305,17 @@ function readUnderseedThreshold(projectRoot) {
 // a null/absent sessionId falls back to the legacy non-scoped path (upgrade +
 // pre-session-id callers), so existing on-disk state and tests are unaffected;
 // the Stop hook always passes the real session_id from its stdin payload.
-function resolveHookSessionId(payload) {
-  return payload && typeof payload.session_id === "string" && payload.session_id.length > 0
-    ? payload.session_id
-    : null;
+function resolveHookSessionId(payload, env) {
+  // ISS-20260712-007: align with cite-policy-evict — try payload, then FABRIC_SESSION_ID.
+  // Still return null (not a fake sentinel) when both missing so cadence/status can fail open.
+  if (payload && typeof payload.session_id === "string" && payload.session_id.length > 0) {
+    return payload.session_id;
+  }
+  const envBag = (env && env.processEnv) || process.env;
+  if (envBag && typeof envBag.FABRIC_SESSION_ID === "string" && envBag.FABRIC_SESSION_ID.length > 0) {
+    return envBag.FABRIC_SESSION_ID;
+  }
+  return null;
 }
 
 function sessionScopedCacheFile(baseRelPath, sessionId) {

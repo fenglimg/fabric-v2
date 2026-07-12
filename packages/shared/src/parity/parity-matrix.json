@@ -7,8 +7,14 @@
       "surface": "hook",
       "description": "On session start, surface broad-scoped knowledge entries grouped by store with global_ref labels.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "SessionStart hook; session_id from stdin payload" },
-        "codexCLI": { "supported": true, "mechanism": "session-start equivalent; corresponding session identifier" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "SessionStart hook; session_id from stdin payload"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "session-start equivalent; corresponding session identifier"
+        }
       }
     },
     {
@@ -16,8 +22,14 @@
       "surface": "hook",
       "description": "Before an edit, emit a store-aware narrow hint for the touched file paths.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "PreToolUse hook; additionalContext JSON contract" },
-        "codexCLI": { "supported": true, "mechanism": "pre-edit equivalent hook" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "PreToolUse hook; additionalContext JSON contract"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "pre-edit equivalent hook"
+        }
       }
     },
     {
@@ -25,8 +37,14 @@
       "surface": "hook",
       "description": "On stop, surface per-store review/archive backlog (per-store, not aggregated).",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "Stop hook" },
-        "codexCLI": { "supported": true, "mechanism": "turn-end equivalent" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "Stop hook"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "turn-end equivalent"
+        }
       }
     },
     {
@@ -34,8 +52,14 @@
       "surface": "skill",
       "description": "Archive flow writes to the active write store and echoes written_to_store.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills (managed block)" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills (managed block)"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills"
+        }
       }
     },
     {
@@ -43,8 +67,12 @@
       "surface": "skill",
       "description": "Review aggregates pending across the read-set's writable stores; promotion is a normal git commit.",
       "clients": {
-        "claudeCode": { "supported": true },
-        "codexCLI": { "supported": true }
+        "claudeCode": {
+          "supported": true
+        },
+        "codexCLI": {
+          "supported": true
+        }
       }
     },
     {
@@ -52,26 +80,14 @@
       "surface": "mcp",
       "description": "Recall returns read-set candidates, each carrying store_uuid + alias + local_id + global_ref.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "MCP stdio; cwd→project via ProjectRootResolver" },
-        "codexCLI": { "supported": true, "mechanism": "MCP stdio" }
-      }
-    },
-    {
-      "id": "mcp.fab_plan_context",
-      "surface": "mcp",
-      "description": "plan-context surfaces store-aware candidates (store_uuid + alias + global_ref) for the two-step recall path. ADJ-NEWN-2 coverage fill.",
-      "clients": {
-        "claudeCode": { "supported": true, "mechanism": "MCP stdio" },
-        "codexCLI": { "supported": true, "mechanism": "MCP stdio" }
-      }
-    },
-    {
-      "id": "mcp.fab_get_knowledge_sections",
-      "surface": "mcp",
-      "description": "get-knowledge-sections returns store-aware section bodies (store_uuid + alias + global_ref). ADJ-NEWN-2 coverage fill.",
-      "clients": {
-        "claudeCode": { "supported": true, "mechanism": "MCP stdio" },
-        "codexCLI": { "supported": true, "mechanism": "MCP stdio" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio; cwd→project via ProjectRootResolver"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        }
       }
     },
     {
@@ -79,8 +95,14 @@
       "surface": "skill",
       "description": "Multi-store pull+push sync flow delivered as a Skill (ADJ-NEWN-1 direction: sync semantics live in a Skill). Delivered to both clients (SKILL_DESTINATIONS.sync). ADJ-NEWN-2 coverage fill.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-sync" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-sync" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-sync"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-sync"
+        }
       }
     },
     {
@@ -88,8 +110,14 @@
       "surface": "skill",
       "description": "Knowledge-store ops façade (create/add/bind/list/switch-write) delivered as a Skill (ADJ-NEWN-1/#4). Delivered to both clients (SKILL_DESTINATIONS.store).",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-store" },
-        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-store" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": ".claude/skills/fabric-store"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": ".codex/skills/fabric-store"
+        }
       }
     },
     {
@@ -97,8 +125,66 @@
       "surface": "render",
       "description": "Plain-text / markdown minimal render set, language per project fabric_language.",
       "clients": {
-        "claudeCode": { "supported": true, "mechanism": "markdown in context" },
-        "codexCLI": { "supported": true, "mechanism": "markdown/plain text" }
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "markdown in context"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "markdown/plain text"
+        }
+      }
+    },
+    {
+      "id": "mcp.fab_propose",
+      "clients": {
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        }
+      }
+    },
+    {
+      "id": "mcp.fab_review",
+      "clients": {
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        }
+      }
+    },
+    {
+      "id": "mcp.fab_pending",
+      "clients": {
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        }
+      }
+    },
+    {
+      "id": "mcp.fab_archive_scan",
+      "clients": {
+        "claudeCode": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        },
+        "codexCLI": {
+          "supported": true,
+          "mechanism": "MCP stdio"
+        }
       }
     }
   ]

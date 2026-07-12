@@ -95,6 +95,8 @@ type ParsedFrontmatter = {
   tags?: string[];
   title?: string;
   summary?: string;
+  // ISS-20260712-011: triage list surfaces proposed_reason without a body Read.
+  proposed_reason?: string;
   // v2.0-rc.5 C1/C3: relevance hints. Missing fields are treated as broad+[]
   // at consumption time (matches knowledge-meta-builder defaults).
   relevance_scope?: RelevanceScope;
@@ -143,10 +145,14 @@ export async function reviewKnowledge(
 ): Promise<FabReviewOutput> {
   switch (input.action) {
     case "approve":
-      return {
-        action: "approve",
-        approved: await approveAll(projectRoot, input.pending_paths),
-      };
+      {
+        const { approved, failed } = await approveAll(projectRoot, input.pending_paths);
+        return {
+          action: "approve",
+          approved,
+          ...(failed.length > 0 ? { failed } : {}),
+        };
+      }
     case "reject":
       return {
         action: "reject",
@@ -188,15 +194,19 @@ export async function reviewKnowledge(
     // frontmatter-merge path as modify (resolveModifyTarget + rewriteFrontmatterMerge),
     // batched over pending_paths like reject/defer. Never deletes a file.
     case "retire":
-      return {
-        action: "retire",
-        retired: await retireAll(
+      {
+        const { retired, failed } = await retireAll(
           projectRoot,
           input.pending_paths,
           input.superseded_by,
           input.reason,
-        ),
-      };
+        );
+        return {
+          action: "retire",
+          retired,
+          ...(failed.length > 0 ? { failed } : {}),
+        };
+      }
     default: {
       const exhaustive: never = input;
       throw new Error(`unsupported action: ${JSON.stringify(exhaustive)}`);
@@ -457,8 +467,10 @@ type ListItem = {
   layer: Layer;
   maturity: Maturity;
   tags?: string[];
+  // ISS-20260712-011: triage UI needs title/summary without an extra body Read.
   title?: string;
   summary?: string;
+  proposed_reason?: string;
   // origin indicates which write-target store root the entry came from.
   // Both layers now resolve to mounted store knowledge/pending/ trees.
   origin?: "team" | "personal";
@@ -671,6 +683,11 @@ async function listPending(
       layer,
       maturity,
       origin: origin,
+      ...(typeof fm.title === "string" && fm.title.length > 0 ? { title: fm.title } : {}),
+      ...(typeof fm.summary === "string" && fm.summary.length > 0 ? { summary: fm.summary } : {}),
+      ...(typeof fm.proposed_reason === "string" && fm.proposed_reason.length > 0
+        ? { proposed_reason: fm.proposed_reason }
+        : {}),
       ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
       ...(fm.status !== undefined ? { status: fm.status } : {}),
       ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
@@ -691,17 +708,26 @@ async function listPending(
 async function approveAll(
   projectRoot: string,
   pendingPaths: string[],
-): Promise<Array<{ pending_path: string; stable_id: string }>> {
+): Promise<{
+  approved: Array<{ pending_path: string; stable_id: string }>;
+  failed: Array<{ pending_path: string; reason: string }>;
+}> {
   const approved: Array<{ pending_path: string; stable_id: string }> = [];
+  const failed: Array<{ pending_path: string; reason: string }> = [];
 
   for (const pendingPath of pendingPaths) {
     const result = await approveOne(projectRoot, pendingPath);
     if (result !== null) {
       approved.push(result);
+    } else {
+      failed.push({
+        pending_path: pendingPath,
+        reason: "approve skipped: path unresolved, IO failure, or gated",
+      });
     }
   }
 
-  return approved;
+  return { approved, failed };
 }
 
 async function approveOne(
@@ -1915,15 +1941,22 @@ async function retireAll(
   pendingPaths: string[],
   supersededBy: string | undefined,
   reason: string | undefined,
-): Promise<RetiredEntry[]> {
+): Promise<{ retired: RetiredEntry[]; failed: Array<{ pending_path: string; reason: string }> }> {
   const retired: RetiredEntry[] = [];
+  const failed: Array<{ pending_path: string; reason: string }> = [];
   for (const pendingPath of pendingPaths) {
     const result = await retireOne(projectRoot, pendingPath, supersededBy, reason);
     if (result !== null) {
       retired.push(result);
+    } else {
+      // ISS-20260712-012: surface skips so empty retired[] is not false-success.
+      failed.push({
+        pending_path: pendingPath,
+        reason: "retire skipped: path unresolved, not canonical, or IO failure",
+      });
     }
   }
-  return retired;
+  return { retired, failed };
 }
 
 async function retireOne(
@@ -2037,6 +2070,9 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
         break;
       case "title":
         out.title = stripQuotes(value);
+        break;
+      case "proposed_reason":
+        out.proposed_reason = stripQuotes(value);
         break;
       case "summary":
         out.summary = stripQuotes(value);

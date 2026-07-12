@@ -19,7 +19,7 @@ If none hold, stop the skill and tell the user (UX i18n Policy class 2):
 - zh-CN: `没有触发归档信号；如需手动归档请显式调用 fabric-archive`
 - en: `No archive signal detected; to manually archive, explicitly invoke fabric-archive`
 
-Render per `fabric_language` resolved in Phase 0.5.
+Render per global `language` (`zh-CN`|`en`) resolved in Phase 0.5.
 
 This skill runs automatically — it does not interview the user for preferences. It gathers evidence, aborts if no archive signal exists, then classifies + persists.
 
@@ -66,7 +66,7 @@ Archives land in the **active write store** for the entry's scope — NEVER pick
 
 ### UX i18n Policy
 
-Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (MCP tool names, schema fields, the verbatim `强 team` / `强 personal` / `默认 team` heuristic) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
+Read machine-wide `~/.fabric/fabric-global.json` `language` (`zh-CN` | `en` only; ISS-20260712-016). Emit user-facing prose in that language. Project `fabric_language` is retired for AI skill rendering. Protected tokens (MCP tool names, schema fields, the verbatim `强 team` / `强 personal` / `默认 team` heuristic) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).
 
 `Read ref/i18n-policy.md` for the full 5-class taxonomy + edge cases.
 

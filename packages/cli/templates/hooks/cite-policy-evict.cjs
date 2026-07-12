@@ -282,6 +282,9 @@ function extractPaths(toolInput) {
 }
 
 function resolveSessionId(payload, env) {
+  // ISS-20260712-006: never invent "anonymous" — that sentinel cannot match real
+  // knowledge_context_planned rows and false-fires the cite nudge after real recalls.
+  // Missing session_id → fail open (caller skips nudge).
   if (payload && typeof payload === "object" && typeof payload.session_id === "string" && payload.session_id.length > 0) {
     return payload.session_id;
   }
@@ -289,7 +292,7 @@ function resolveSessionId(payload, env) {
   if (envBag && typeof envBag.FABRIC_SESSION_ID === "string" && envBag.FABRIC_SESSION_ID.length > 0) {
     return envBag.FABRIC_SESSION_ID;
   }
-  return "anonymous";
+  return null;
 }
 
 // -----------------------------------------------------------------------------

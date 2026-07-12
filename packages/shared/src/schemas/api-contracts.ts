@@ -1312,6 +1312,8 @@ const _fabReviewListItemSchema = z.object({
   tags: z.array(z.string()).optional(),
   title: z.string().optional(),
   summary: z.string().optional(),
+  // ISS-20260712-011: triage UI needs proposed_reason without a second Read.
+  proposed_reason: z.string().optional(),
   // Store-only cutover: origin reflects the resolved store audience where the
   // pending file lives; layer reflects the declared classification that will
   // drive approval semantics.
@@ -1364,10 +1366,17 @@ const _fabReviewSearchItemSchema = z.object({
 // array so the first-reconcile gate can surface `meta_stale` / `reconcile_failed`
 // regardless of which review action ran. Field stays absent on the
 // steady-state path — no wire shape change for existing consumers.
+const _fabReviewFailedItemSchema = z.object({
+  pending_path: z.string(),
+  reason: z.string(),
+});
+
 export const FabReviewOutputSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("approve"),
     approved: z.array(z.object({ pending_path: z.string(), stable_id: z.string() })),
+    // ISS-20260712-012: partial-failure surface so empty approved[] is not false-success.
+    failed: z.array(_fabReviewFailedItemSchema).optional(),
     warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
@@ -1415,6 +1424,8 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
         superseded_by: z.string().optional(),
       }),
     ),
+    // ISS-20260712-012: partial-failure surface for skipped/unresolvable paths.
+    failed: z.array(_fabReviewFailedItemSchema).optional(),
     warnings: z.array(structuredWarningSchema).optional(),
   }),
 ]);
@@ -1479,6 +1490,12 @@ export const FabReviewOutputShape = {
     .optional()
     .describe(
       "Allocated stable ids paired with their original pending paths. Present when action=approve.",
+    ),
+  failed: z
+    .array(z.object({ pending_path: z.string(), reason: z.string() }))
+    .optional()
+    .describe(
+      "Paths that did not apply (approve/retire). Present when any path was skipped or failed.",
     ),
   rejected: z
     .array(z.string())

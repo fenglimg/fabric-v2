@@ -55,7 +55,7 @@ const HOOK_SCRIPTS = [
 ];
 const HOOK_CLIENTS = [".claude", ".codex"];
 const SKILL_CLIENTS = [".claude", ".codex"];
-const SKILLS = ["fabric-archive", "fabric-review", "fabric-import"];
+const SKILLS = ["fabric-archive", "fabric-review", "fabric-store", "fabric-sync"];
 
 function readIf(path: string): string | null {
   return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -72,7 +72,10 @@ function assertByteParity(
 ): void {
   const bodies = clients.map((c) => ({ client: c, body: readIf(join(root, relPathPerClient(c))) }));
   const present = bodies.filter((b) => b.body !== null);
-  if (present.length === 0) return; // not installed for any client — out of scope
+  if (present.length === 0) {
+    mismatches.push(`${label}: missing on all clients`);
+    return;
+  }
   const reference = present[0].body;
   for (const { client, body } of bodies) {
     if (body === null) {
