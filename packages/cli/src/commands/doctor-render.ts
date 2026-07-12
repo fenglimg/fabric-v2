@@ -1,13 +1,28 @@
 /**
- * Pure presentation helpers for `fabric doctor` (Doctor W6 minimum set).
- * Orchestration / consent / store diagnostics stay in doctor.ts.
+ * Pure presentation helpers for `fabric doctor` (Doctor W6+).
+ * I/O-heavy paths (store diagnostics collect, consent, event emit) stay in doctor.ts.
  */
-import type { DoctorReport } from "@fenglimg/fabric-server";
+import type {
+  DoctorApplyLintReport as DoctorFixKnowledgeReport,
+  DoctorIssue,
+  DoctorReport,
+} from "@fenglimg/fabric-server";
 import { paint } from "../colors.js";
 import { groupDot, headerRule } from "../tui/structure.js";
 import { t } from "../i18n.js";
 import type { StoreDiagnostic } from "../store/doctor-checks.js";
 
+type DoctorTranslator = typeof t;
+
+export type FixKnowledgePlan = {
+  totalCount: number;
+  // Per-code summary lines (e.g. "demote (maturity): 3 entry"). Ordered by
+  // label for stable rendering.
+  perCodeLines: string[];
+  // Up to N per-entry preview lines to give the user a hint about what is
+  // about to change. Long plans truncate with a tail summary line.
+  previewLines: string[];
+};
 
 // The default end-user digest: actionable issues only, maintainer-audience
 // findings folded out ENTIRELY (not just their actionHint — an end user can't
@@ -190,4 +205,89 @@ export function renderDoctorFilteredHelp(): void {
   lines.push(paint.human(t("doctor.help.footer")));
 
   writeStdout(lines.join("\n"));
+}
+
+export function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
+  writeStdout(renderDoctorHeader(report));
+  if (!verbose) {
+    renderActionableDigest(report, dt);
+    return;
+  }
+  const checksBlock = renderDoctorChecks(report, true);
+  if (checksBlock.length > 0) {
+    writeStdout(checksBlock);
+  }
+}
+
+export function renderActionableDigest(report: DoctorReport, dt: DoctorTranslator): void {
+  const ranked: Array<{ issue: DoctorIssue; mark: string }> = [
+    ...report.fixable_errors.map((issue) => ({ issue, mark: paint.error("✗") })),
+    ...report.manual_errors.map((issue) => ({ issue, mark: paint.error("✗") })),
+    ...report.warnings.map((issue) => ({ issue, mark: paint.warn("○") })),
+  ];
+  const userFacing = ranked.filter((r) => r.issue.audience !== "maintainer");
+  const hiddenMaintainer = ranked.length - userFacing.length;
+  const okCount = report.checks.filter((c) => c.status === "ok").length;
+
+  if (userFacing.length === 0) {
+    writeStdout(`${paint.success("✓")} ${dt("doctor.digest.clean", { count: String(report.checks.length) })}`);
+    if (hiddenMaintainer > 0) {
+      writeStdout(`  ${paint.muted(dt("doctor.digest.more-verbose", { count: String(hiddenMaintainer) }))}`);
+    }
+    return;
+  }
+
+  writeStdout("");
+  writeStdout(groupDot(dt("doctor.digest.todo", { count: String(userFacing.length) })));
+  for (const { issue, mark } of userFacing) {
+    writeStdout(`  ${mark} ${issue.name}`);
+    if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
+      writeStdout(`    ${paint.muted(`→ ${shortHint(issue.actionHint)}`)}`);
+    }
+  }
+  writeStdout("");
+  writeStdout(
+    paint.muted(dt("doctor.digest.summary", { todo: String(userFacing.length), ok: String(okCount) })),
+  );
+}
+
+export function renderStoreDiagnostics(diagnostics: StoreDiagnostic[], verbose: boolean): void {
+  const shown = verbose ? diagnostics : diagnostics.filter((d) => d.severity !== "info");
+  const block = renderDoctorStoreHealth(shown);
+  if (block.length === 0) {
+    return;
+  }
+  writeStdout("");
+  writeStdout(block);
+}
+
+export function renderFixKnowledgeMutations(
+  fixKnowledgeReport: DoctorFixKnowledgeReport,
+  dt: DoctorTranslator,
+): void {
+  if (fixKnowledgeReport.mutations.length === 0) {
+    return;
+  }
+  writeStdout("");
+  writeStdout(groupDot(dt("doctor.section.fix-knowledge-mutations")));
+  for (const mutation of fixKnowledgeReport.mutations) {
+    const marker = mutation.applied ? paint.success("✓") : paint.error("✗");
+    const errSuffix = mutation.applied || mutation.error === undefined ? "" : ` (${mutation.error})`;
+    writeStdout(`  ${marker} ${mutation.kind}: ${mutation.path} [${mutation.detail}]${errSuffix}`);
+  }
+}
+
+export function renderFixKnowledgePlan(plan: FixKnowledgePlan): void {
+  writeStdout("");
+  writeStdout(paint.warn(t("doctor.fix-plan.header", { count: String(plan.totalCount) })));
+  for (const line of plan.perCodeLines) {
+    writeStdout(line);
+  }
+  if (plan.previewLines.length > 0) {
+    writeStdout("");
+    writeStdout(`  ${t("doctor.fix-plan.preview")}`);
+    for (const line of plan.previewLines) {
+      writeStdout(line);
+    }
+  }
 }

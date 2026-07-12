@@ -18,8 +18,6 @@ import {
 
 import { backfillUnboundProject } from "../install/backfill-unbound-project.js";
 import { migrateRootConfig } from "../install/migrate-root-config.js";
-import { paint } from "../colors.js";
-import { groupDot, headerRule } from "../tui/structure.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
@@ -32,14 +30,20 @@ import { loadProjectConfig } from "../store/project-config-io.js";
 // preflight call. See KB [[fabric-serve-quarantine-not-delete]].
 
 import {
+  renderActionableDigest,
   renderDoctorChecks,
   renderDoctorFilteredHelp,
   renderDoctorHeader,
   renderDoctorStoreHealth,
+  renderFixKnowledgeMutations,
+  renderFixKnowledgePlan,
+  renderHumanReport,
+  renderStoreDiagnostics,
   renderStatus,
   shortHint,
   writeStderr,
   writeStdout,
+  type FixKnowledgePlan,
 } from "./doctor-render.js";
 
 // Keep package surface stable for reskin tests + top-level filtered help.
@@ -95,15 +99,6 @@ const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
   knowledge_session_hints_stale: "cache delete",
 };
 
-type FixKnowledgePlan = {
-  totalCount: number;
-  // Per-code summary lines (e.g. "demote (maturity): 3 entry"). Ordered by
-  // label for stable rendering.
-  perCodeLines: string[];
-  // Up to N per-entry preview lines to give the user a hint about what is
-  // about to change. Long plans truncate with a tail summary line.
-  previewLines: string[];
-};
 
 const PLAN_PREVIEW_LIMIT = 12;
 
@@ -431,50 +426,10 @@ export default doctorCommand;
 // actionable-only, a separate "top 3" block just re-printed the same lines a
 // fourth time (the doubled-render the user flagged). KT-GLD-0008: aggregate, do
 // not re-read.
-function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
-  writeStdout(renderDoctorHeader(report));
-  if (!verbose) {
-    renderActionableDigest(report, dt);
-    return;
-  }
-  const checksBlock = renderDoctorChecks(report, true);
-  if (checksBlock.length > 0) {
-    writeStdout(checksBlock);
-  }
-}
 
 
-function renderActionableDigest(report: DoctorReport, dt: DoctorTranslator): void {
-  const ranked: Array<{ issue: DoctorIssue; mark: string }> = [
-    ...report.fixable_errors.map((issue) => ({ issue, mark: paint.error("✗") })),
-    ...report.manual_errors.map((issue) => ({ issue, mark: paint.error("✗") })),
-    ...report.warnings.map((issue) => ({ issue, mark: paint.warn("○") })),
-  ];
-  const userFacing = ranked.filter((r) => r.issue.audience !== "maintainer");
-  const hiddenMaintainer = ranked.length - userFacing.length;
-  const okCount = report.checks.filter((c) => c.status === "ok").length;
 
-  if (userFacing.length === 0) {
-    writeStdout(`${paint.success("✓")} ${dt("doctor.digest.clean", { count: String(report.checks.length) })}`);
-    if (hiddenMaintainer > 0) {
-      writeStdout(`  ${paint.muted(dt("doctor.digest.more-verbose", { count: String(hiddenMaintainer) }))}`);
-    }
-    return;
-  }
 
-  writeStdout("");
-  writeStdout(groupDot(dt("doctor.digest.todo", { count: String(userFacing.length) })));
-  for (const { issue, mark } of userFacing) {
-    writeStdout(`  ${mark} ${issue.name}`);
-    if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
-      writeStdout(`    ${paint.muted(`→ ${shortHint(issue.actionHint)}`)}`);
-    }
-  }
-  writeStdout("");
-  writeStdout(
-    paint.muted(dt("doctor.digest.summary", { todo: String(userFacing.length), ok: String(okCount) })),
-  );
-}
 
 // v2.1.0-rc.1 P3 (S10/S51/R5#5): multi-store health checks. Read-only and
 // best-effort — a store-check failure must never change doctor's exit semantics
@@ -503,32 +458,10 @@ async function collectStoreDiagnostics(projectRoot: string): Promise<StoreDiagno
 // advisories (related-graph hubs, consumption heatmap, local-only / unbound
 // notices) — contributor telemetry, not end-user action items. warn/error store
 // PROBLEMS always show. --verbose restores the full set.
-function renderStoreDiagnostics(diagnostics: StoreDiagnostic[], verbose: boolean): void {
-  const shown = verbose ? diagnostics : diagnostics.filter((d) => d.severity !== "info");
-  const block = renderDoctorStoreHealth(shown);
-  if (block.length === 0) {
-    return;
-  }
-  writeStdout("");
-  writeStdout(block);
-}
 
 
-function renderFixKnowledgeMutations(
-  fixKnowledgeReport: DoctorFixKnowledgeReport,
-  dt: DoctorTranslator,
-): void {
-  if (fixKnowledgeReport.mutations.length === 0) {
-    return;
-  }
-  writeStdout("");
-  writeStdout(groupDot(dt("doctor.section.fix-knowledge-mutations")));
-  for (const mutation of fixKnowledgeReport.mutations) {
-    const marker = mutation.applied ? paint.success("✓") : paint.error("✗");
-    const errSuffix = mutation.applied || mutation.error === undefined ? "" : ` (${mutation.error})`;
-    writeStdout(`  ${marker} ${mutation.kind}: ${mutation.path} [${mutation.detail}]${errSuffix}`);
-  }
-}
+
+
 
 
 // v2.0.0-rc.7 T10: emit doctor_run to events.jsonl. Mirrors the
@@ -602,20 +535,7 @@ function computeFixKnowledgePlan(report: DoctorReport): FixKnowledgePlan {
   return { totalCount, perCodeLines, previewLines };
 }
 
-function renderFixKnowledgePlan(plan: FixKnowledgePlan): void {
-  writeStdout("");
-  writeStdout(paint.warn(t("doctor.fix-plan.header", { count: String(plan.totalCount) })));
-  for (const line of plan.perCodeLines) {
-    writeStdout(line);
-  }
-  if (plan.previewLines.length > 0) {
-    writeStdout("");
-    writeStdout(`  ${t("doctor.fix-plan.preview")}`);
-    for (const line of plan.previewLines) {
-      writeStdout(line);
-    }
-  }
-}
+
 
 type FixKnowledgeDecision = "proceed" | "abort";
 
