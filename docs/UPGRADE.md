@@ -12,6 +12,10 @@ fabric doctor                                # 3. 验证：无 ERROR、hooks 已
 
 第 2 步不能省。升级全局 CLI **不会**自动刷新已安装项目里的 hook 脚本和 bootstrap block；不重跑 `fabric install`，这些副本会停在旧版，导致 hook 行为与新版 CLI 不一致（历史上出现过 hook 停在旧副本、SessionStart 不注入知识、Skill 不触发等症状）。
 
+### 新命令需要升级全局 CLI
+
+`fabric first-hit`（以及 monorepo 里后加的同类 CLI 命令）**只存在于你安装的那份全局/本地 CLI 二进制里**。工作区源码改了但未 `npm install -g @fenglimg/fabric-cli@latest`（或未用 workspace `packages/cli/dist`）时，shell 里的 `fabric first-hit` 会报未知命令或跑旧逻辑。验证 monorepo 改动请用 workspace dist，不要默认信任全局 published 二进制。
+
 ## 升级后没生效的排查
 
 | 症状 | 根因 | 修法 |
@@ -19,6 +23,7 @@ fabric doctor                                # 3. 验证：无 ERROR、hooks 已
 | SessionStart 无知识注入 | hook 脚本仍是旧副本 | 该 repo 重跑 `fabric install` |
 | `fabric-archive` / `fabric-review` 不触发 | SKILL.md description 未更新 | 重跑 `fabric install` |
 | `fabric doctor` 报 schema / drift ERROR | bootstrap block 或配置停在旧版 | `fabric doctor --fix` |
+| `fabric first-hit` 未知命令 / 行为旧 | 全局 CLI 落后 monorepo | `npm install -g @fenglimg/fabric-cli@latest` |
 | 手工改过的 bootstrap block 被覆盖 | `fabric install` 幂等覆盖 managed block | 只改 `.fabric/AGENTS.md` 源，别手编两端 block |
 
 ## 铁律

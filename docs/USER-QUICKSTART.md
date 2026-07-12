@@ -123,6 +123,16 @@ so Fabric knows where a scope such as `project:fabric-v2` should write.
 
 Product default is **one team store per project** (max-1 team slot); personal is separate machine-wide identity.
 
+Maturity promote/retire rules (draft → verified → proven; not usage-count): [`docs/KNOWLEDGE-MATURITY.md`](./KNOWLEDGE-MATURITY.md).
+
+## After install — prove surface
+
+1. **`fabric first-hit`** — bind + non-empty knowledge + hooks (or diagnose with fail-loud codes).
+2. **`fabric inspect`** and/or **`fabric preview`** — read the same store surface hooks use (no second knowledge model).
+3. **Optional:** `fabric audit metrics` — consumption / cite-style telemetry when you care about ops health.
+
+Global CLI must be upgraded for new commands such as `first-hit` — see [`docs/UPGRADE.md`](./UPGRADE.md).
+
 ## First 30 minutes — troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -139,4 +149,5 @@ Product default is **one team store per project** (max-1 team slot); personal is
 - `docs/RUNTIME-CONTRACTS.md` — CLI, MCP, schema and config contract entry
 - `docs/TESTING.md` — test strategy and drift gates
 - `docs/UPGRADE.md` — supported upgrade notes
+- `docs/KNOWLEDGE-MATURITY.md` — draft / verified / proven + retire path
 - `AGENTS.md` — **AI policy file** (for AI assistants, not onboarding)

@@ -14,10 +14,11 @@
     "test:store-only-e2e": "node scripts/store-only-e2e.mjs",
     "test:upgrade-e2e": "node scripts/upgrade-e2e.mjs",
     "dogfood:first-value": "node scripts/dogfood-first-value.mjs",
+    "dogfood:multi-store": "node scripts/dogfood-multi-store.mjs",
+    "dogfood:quality-flywheel": "node scripts/dogfood-quality-flywheel.mjs",
     "lint": "knip --strict",
     "typecheck": "pnpm -r exec tsc --noEmit",
-    "prepare": "lefthook install",
-    "dogfood:multi-store": "node scripts/dogfood-multi-store.mjs"
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",
