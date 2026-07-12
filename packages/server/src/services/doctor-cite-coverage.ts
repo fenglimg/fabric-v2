@@ -61,7 +61,7 @@ import { readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
 import type { MetricsRow } from "./metrics.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 
-import { inspectL1BootstrapSnapshotDrift } from "./doctor.js";
+import { inspectL1BootstrapSnapshotDrift } from "./doctor-bootstrap-lints.js";
 import { normalizePath } from "./doctor-path.js";
 import type { DoctorIssue, DoctorReport, LintMaturity } from "./doctor-types.js";
 
