@@ -975,7 +975,7 @@ describe("runDoctorReport", () => {
 
       const { runDoctorApplyLint } = await import("./doctor.js");
       const result = await runDoctorApplyLint(target);
-      const driftMutation = result.mutations.find((m) => m.kind === "knowledge_index_drift");
+      const driftMutation = result.mutations.find((m) => m.kind === "store_counter_floor");
       expect(driftMutation?.applied).toBe(true);
       expect(driftMutation?.detail).toContain("team:KT.DEC 2 -> 7");
       expect(readStoreCounters(storeDir()).KT.DEC).toBe(7);

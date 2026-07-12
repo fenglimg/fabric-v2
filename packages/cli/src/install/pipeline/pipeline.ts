@@ -280,7 +280,7 @@ export class InstallPipeline {
             const errorInfo: ErrorInfo = {
               title: `${stageLabel(stageName)} ${t("cli.install.stages.failed")}`,
               message: result.errors.join(", "),
-              hint: "Check the error details above. Run with --debug for more information.",
+              hint: t("cli.install.stages.failed.hint") || "Re-run: fabric install  |  fabric doctor --fix  |  NO_COLOR=1 fabric install --debug",
             };
             liveRenderer.renderError(errorInfo);
           }

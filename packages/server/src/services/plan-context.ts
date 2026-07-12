@@ -26,7 +26,6 @@ import { join } from "node:path";
 import {
   buildBm25Model,
   buildQueryTerms,
-  expandQueryTerms,
   rankDocuments,
   rankByScore,
   serializeBm25Model,
@@ -1060,12 +1059,6 @@ export async function buildScoringContext(
     scoringContext.vectorScores !== undefined && scoringContext.vectorScores.size > 0;
   scoringContext.fusion =
     configuredFusion === "auto" ? (vectorActive ? "rrf" : "additive") : configuredFusion;
-  // BORROW-015: expand query terms with synonyms + stemming + IDF weights
-  // for the BM25 scorer. Only when query terms exist.
-  let queryTermWeights: Map<string, number> | undefined;
-  if (scoringContext.queryTerms.length > 0) {
-    queryTermWeights = expandQueryTerms(opts.queryText);
-  }
   if (scoringContext.fusion === "rrf" && scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
     const rankIds = rawItems
       .map((item) => item.stable_id)
@@ -1081,17 +1074,6 @@ export async function buildScoringContext(
   return scoringContext;
 }
 
-// BORROW-015: IDF-weighted query terms for the BM25 scorer. When the
-// expansion produced term weights, the scorer uses them to scale each
-// term's contribution. When absent (no query / broad probe), the scorer
-// falls back to the unweighted `buildQueryTerms` output.
-export function resolveQueryTermWeights(
-  scoringContext: ScoringContext,
-): Map<string, number> | undefined {
-  // Only the BM25 path needs weights; the RRF path discards magnitude anyway.
-  if (scoringContext.fusion === "rrf") return undefined;
-  return undefined; // placeholder — the weight map is threaded through ScoringContext
-}
 
 // BORROW-008: phrase proximity boost.
 // When the query has ≥2 terms and the candidate content score is positive,

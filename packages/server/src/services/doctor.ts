@@ -81,6 +81,10 @@ import {
   collectStoreKnowledgeSummaries,
   computeReadSetRevision,
 } from "./cross-store-recall.js";
+import {
+  inspectDraftBacklogFromCanonical,
+  inspectEmptyTagsFromCanonical,
+} from "./doctor-knowledge-hygiene.js";
 import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
 import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
 import {
@@ -289,34 +293,16 @@ export type DoctorFixReport = {
 // `DoctorFixReport` but the `mutations` payload itemizes each per-finding
 // repair (demote / archive / counter bump) so the CLI surface can render a
 // machine-parseable summary in addition to human prose.
+// ISS-20260711-183: only kinds with live apply-lint arms after store cutover.
+// Demote/archive/pending-auto-archive/relevance-backfill remain doctor *warnings*
+// but are not auto-mutated here (store-aware re-implementation deferred).
 export type DoctorApplyLintMutationKind =
-  | "knowledge_orphan_demote_required"
-  | "knowledge_stale_archive_required"
-  | "knowledge_index_drift"
-  // rc.5 TASK-009 (B2): pending entries >30d are auto-archived under
-  // `.fabric/.archive/pending/<type>/` (team) or `~/.fabric/.archive/pending/<type>/`
-  // (personal). One mutation per pending file moved.
-  | "knowledge_pending_auto_archive"
-  // rc.6 TASK-021 (E3): session-hints cache files older than 7d are deleted
-  // by the doctor cleanup pass (lint #27 knowledge_session_hints_stale).
-  // These are local cache files at `.fabric/.cache/session-hints-{id}.json`,
-  // not git-tracked, so the apply-lint arm uses plain fs.unlink with no
-  // ledger event (no audit trail required for local hot-cache hygiene).
   | "knowledge_session_hints_stale_cleanup"
-  // v2.0.0-rc.9 TASK-003 (A3): pending entries with frontmatter missing
-  // relevance_scope and/or relevance_paths get back-filled with the
-  // schema defaults (`relevance_scope: broad`, `relevance_paths: []`)
-  // by lint #28 (`relevance_fields_missing`). One mutation per back-filled
-  // pending file. A single aggregate `relevance_migration_run` event is
-  // emitted after the full walk (NOT per file) — see runDoctorApplyLint
-  // for the emission site.
-  | "knowledge_relevance_fields_missing";
+  | "store_counter_floor";
 
 export type DoctorApplyLintMutation = {
   kind: DoctorApplyLintMutationKind;
-  // For demote / archive: project-relative POSIX path of the affected file
-  // (pre-mutation). For index_drift: synthetic path string
-  // `agents.meta.json#counters.<layer>.<type>`.
+  // Path of the affected file or store counters target.
   path: string;
   // Detail of the mutation (e.g. "proven -> verified", ".fabric/.archive/...",
   // "5 -> 8"). Free-form prose for human consumption.
@@ -1320,42 +1306,16 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   };
 }
 
-// rc.4 TASK-003: lint mutation entry point. Behavior summary:
-//   * `lint:orphan_demote` (warning kind code=knowledge_orphan_demote_required):
-//     rewrite frontmatter `maturity:` one tier down (proven -> verified,
-//     verified -> draft) via atomicWriteText; emit knowledge_demoted event.
-//   * `lint:stale_archive` (code=knowledge_stale_archive_required):
-//     rename file to .fabric/.archive/<type>/<filename>; emit knowledge_archived
-//     event. Per task design the archive subtree is a tombstone (not git-tracked
-//     active history) so we use `fs.rename` rather than `git mv`. The events.jsonl
-//     entry IS the audit trail.
-//   * `lint:index_drift` (fixable_error code=knowledge_index_drift):
-//     bump agents.meta.json counters[layer][type] to max_observed + 1 via
-//     atomicWriteJson. NO event emission — the schema does not (yet) carry
-//     an agents_meta_repaired event type and v2.0 git diff of agents.meta.json
-//     is sufficient audit (decision documented in TASK-003 rationale step 4).
-//   * `lint:stable_id_duplicate` / `lint:layer_mismatch` (manual_error kinds):
-//     auto-fix is unsafe (data loss potential). runDoctorApplyLint aborts
-//     BEFORE applying any mutations and surfaces a clear "manual repair
-//     required" message via abort_reason.
-//   * `lint:pending_overdue` (warning kind): informational at 14d — humans
-//     triage via the fabric-review Skill. At 30d the entry crosses the
-//     PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS gate and `--apply-lint` git-mv's
-//     it to `.fabric/.archive/pending/<type>/` (team) or
-//     `~/.fabric/.archive/pending/<type>/` (personal), emitting one
-//     `pending_auto_archived` event per move (rc.5 TASK-009 B2).
+// ISS-20260711-183: apply-lint entry point — live arms only (store cutover):
+//   * knowledge_session_hints_stale_cleanup — unlink stale session-hints cache
+//   * store_counter_floor — floor per-store counters.json at disk-max (KT-DEC-0004)
+//   * relevance_migration_run heartbeat (scanned/touched 0 when no dual-root walk)
+// Declared demote/archive/pending-auto-archive arms are intentionally NOT applied;
+// detection remains via doctor report + fabric-review.
 //
-// Idempotency: each mutation refreshes lastActiveAt indirectly (demoted /
-// archived events register the entry's stable_id with a fresh ts in the
-// next run's buildLastActiveIndex) and the inspections re-evaluate against
-// the new on-disk state, so a 2nd `--apply-lint` run on a dir with no new
-// findings produces 0 mutations and 0 events.
-// v2.2 Goal B (G-INTEGRITY): the loud-error gate now lists only
-// `knowledge_layer_mismatch` — the rebuilt store integrity lints fold the old
-// filename-id `stable_id_duplicate` into the frontmatter-id `stable_id_collision`
-// (a warning), since `deriveRuleIdentity` unifies the two id sources in the
-// store model. layer_mismatch stays a manual error (rename + move is unsafe to
-// auto-apply).
+// Idempotency: a 2nd --apply-lint on a clean tree yields 0 mutations.
+//
+// Loud-error gate: layer_mismatch is corruption; auto-fix is unsafe.
 const MANUAL_LINT_ERROR_CODES = new Set([
   "knowledge_layer_mismatch",
 ]);
@@ -1427,7 +1387,7 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
       .map((d) => `${d.store_alias}:${d.layer}.${d.type} ${d.current} -> ${d.disk_max}`)
       .join("; ");
     mutations.push({
-      kind: "knowledge_index_drift",
+      kind: "store_counter_floor",
       path: "stores/*/counters.json",
       detail: detail || "(no store counters processed)",
       applied: reconciled.length > 0,
@@ -1740,34 +1700,7 @@ const DRAFT_BACKLOG_MIN_TOTAL = 10;
 const EMPTY_TAGS_RATIO = 0.5;
 const EMPTY_TAGS_MIN_TOTAL = 10;
 
-function inspectDraftBacklogFromCanonical(
-  entries: Awaited<ReturnType<typeof collectStoreCanonicalEntries>>,
-): DraftBacklogInspection {
-  const totalCount = entries.length;
-  let draftCount = 0;
-  for (const e of entries) {
-    if ((e.description.maturity ?? "draft") === "draft") draftCount += 1;
-  }
-  const ratio = totalCount === 0 ? 0 : draftCount / totalCount;
-  const status =
-    totalCount >= DRAFT_BACKLOG_MIN_TOTAL && ratio > DRAFT_BACKLOG_RATIO ? "warn" : "ok";
-  return { status, draftCount, totalCount, ratio };
-}
 
-function inspectEmptyTagsFromCanonical(
-  entries: Awaited<ReturnType<typeof collectStoreCanonicalEntries>>,
-): EmptyTagsInspection {
-  const totalCount = entries.length;
-  let emptyCount = 0;
-  for (const e of entries) {
-    const tags = e.description.tags;
-    if (tags === undefined || tags.length === 0) emptyCount += 1;
-  }
-  const ratio = totalCount === 0 ? 0 : emptyCount / totalCount;
-  const status =
-    totalCount >= EMPTY_TAGS_MIN_TOTAL && ratio > EMPTY_TAGS_RATIO ? "warn" : "ok";
-  return { status, emptyCount, totalCount, ratio };
-}
 
 // v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
 // `.fabric/.cache/knowledge-test.index.json` was derived from the co-location
