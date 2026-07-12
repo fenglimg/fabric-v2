@@ -105,10 +105,27 @@ for (const command of [
   "pnpm test:strategy",
   "pnpm test:store-only-e2e",
   "pnpm test:upgrade-e2e",
-  "NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test",
   "node scripts/perf-benchmark.mjs",
 ]) {
   requireIncludes(".github/workflows/reusable-validate.yml", reusableValidate, command);
+}
+
+// NO_COLOR gate: must still run under NO_COLOR for CLI snapshot/reskin tests.
+// Prefer scoped vitest (reskin/i18n only) — full CLI re-run after coverage is redundant.
+if (!reusableValidate.includes("NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli")) {
+  fail(
+    '.github/workflows/reusable-validate.yml missing a NO_COLOR=1 fabric-cli step ' +
+      '(scoped vitest or full package test)',
+  );
+}
+if (
+  !reusableValidate.includes("install-renderer-reskin") &&
+  !reusableValidate.includes("pnpm --filter @fenglimg/fabric-cli test")
+) {
+  fail(
+    ".github/workflows/reusable-validate.yml NO_COLOR step must cover reskin/i18n snapshots " +
+      "(install-renderer-reskin and/or full fabric-cli test)",
+  );
 }
 
 for (const command of [
