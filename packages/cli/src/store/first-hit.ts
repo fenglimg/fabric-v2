@@ -14,6 +14,7 @@ import {
 
 import { loadProjectConfig } from "./project-config-io.js";
 import { loadGlobalConfig } from "./global-config-io.js";
+import { missingRequiredStores } from "./store-ops.js";
 
 // ---------------------------------------------------------------------------
 // First-hit oracle (M-first-value-loop)
@@ -21,6 +22,7 @@ import { loadGlobalConfig } from "./global-config-io.js";
 // Proves install → bind → non-empty knowledge surface readiness without a live
 // LLM session. Fail-loud codes (exit_code for scripts/CI):
 //   unbound / no_write_target / empty_store / hooks_missing / no_match / ok
+//   + D3: missing_required / write_target_mismatch / store_unreachable
 // ---------------------------------------------------------------------------
 
 export type FirstHitCode =
@@ -31,7 +33,11 @@ export type FirstHitCode =
   | "no_match"
   | "hooks_missing"
   | "no_project"
-  | "no_global";
+  | "no_global"
+  // D3 multi-store reliability (M-post-d2-hardening Phase 1)
+  | "missing_required"
+  | "write_target_mismatch"
+  | "store_unreachable";
 
 export interface FirstHitStoreRow {
   alias: string;
@@ -56,6 +62,10 @@ export interface FirstHitReport {
   hooks: FirstHitHooks;
   write_target: string | null;
   project_root: string;
+  /** D3: required store ids not mounted (missing_required). */
+  missing_required_ids?: string[];
+  /** D3: paths that exist in registry but not on disk (store_unreachable). */
+  unreachable_aliases?: string[];
 }
 
 export interface AssessFirstHitOptions {
@@ -167,6 +177,27 @@ function remediationFor(code: FirstHitCode, writeTarget: string | null): string[
         "or: fabric store bind <remote-team-store-with-content>",
         "fabric first-hit",
       ];
+    case "missing_required":
+      return [
+        "fabric store list",
+        "fabric store mount / fabric store bind <missing-id>  # or re-clone the team remote",
+        "fabric install  # refresh project required_stores + bindings",
+        "fabric first-hit",
+      ];
+    case "write_target_mismatch":
+      return [
+        "fabric store list",
+        "fabric store switch-write <mounted-team-alias>",
+        "ensure active_write_store is mounted and bound (required_stores)",
+        "fabric first-hit",
+      ];
+    case "store_unreachable":
+      return [
+        "fabric store list",
+        "re-clone or repair the store directory under ~/.fabric/stores/",
+        "fabric doctor",
+        "fabric first-hit",
+      ];
     case "hooks_missing":
       return ["fabric install", "fabric first-hit"];
     case "no_match":
@@ -192,6 +223,12 @@ function messageFor(code: FirstHitCode, total: number, stores: FirstHitStoreRow[
       return "no_write_target: project has required stores but no active_write_store.";
     case "empty_store":
       return "empty_store: store(s) bound but 0 canonical knowledge files — empty store is not a happy path.";
+    case "missing_required":
+      return "missing_required: one or more required_stores are not mounted — multi-store bind incomplete.";
+    case "write_target_mismatch":
+      return "write_target_mismatch: active_write_store is not a mounted writable store on the read-set.";
+    case "store_unreachable":
+      return "store_unreachable: a bound store is registered but its directory is missing on disk.";
     case "no_match":
       return "no_match: knowledge exists but the probe surface is empty (path/scope filter).";
     case "hooks_missing":
@@ -220,6 +257,12 @@ function exitFor(code: FirstHitCode): number {
       return 4;
     case "no_match":
       return 5;
+    case "missing_required":
+      return 6;
+    case "write_target_mismatch":
+      return 7;
+    case "store_unreachable":
+      return 8;
     default:
       return 1;
   }
@@ -258,6 +301,19 @@ export async function assessFirstHit(options: AssessFirstHitOptions): Promise<Fi
   if (project === null) return fail("no_project");
 
   const required = (project.required_stores ?? []).map((r) => r.id);
+  const missing = missingRequiredStores(projectRoot, globalRoot).map((r) => r.id);
+  if (missing.length > 0) {
+    const r = fail("missing_required");
+    r.missing_required_ids = missing;
+    r.message = `missing_required: required store(s) not mounted: ${missing.join(", ")}`;
+    r.remediations = [
+      ...missing.map((id) => `fabric store bind ${id}  # or mount/clone then bind`),
+      "fabric store list",
+      "fabric first-hit",
+    ];
+    return r;
+  }
+
   const dirs = resolveMountedDirs(projectRoot, globalRoot);
 
   if (dirs.length === 0 && required.length === 0 && write_target === null) {
@@ -267,11 +323,54 @@ export async function assessFirstHit(options: AssessFirstHitOptions): Promise<Fi
     return fail("unbound");
   }
 
+  // D3: registry entry present but directory missing (clone/mount failure).
+  const unreachable = dirs.filter((d) => !existsSync(d.dir)).map((d) => d.alias);
+  if (unreachable.length > 0) {
+    const bound_partial = await countStoreEntries(dirs);
+    const r = fail("store_unreachable", bound_partial, 0);
+    r.unreachable_aliases = unreachable;
+    r.message = `store_unreachable: bound store dir missing on disk: ${unreachable.join(", ")}`;
+    r.remediations = [
+      ...unreachable.map((a) => `repair/re-clone store '${a}' under the fabric global stores root`),
+      "fabric doctor",
+      "fabric first-hit",
+    ];
+    return r;
+  }
+
   const bound_stores = await countStoreEntries(dirs);
   const total_entries = bound_stores.reduce((n, s) => n + s.entry_count, 0);
+  const boundAliases = new Set(bound_stores.map((s) => s.alias));
 
   if (write_target === null) {
     return fail("no_write_target", bound_stores, total_entries);
+  }
+
+  // D3: write target must resolve to a mounted non-personal store on the read-set
+  // (or at least be mounted). Mismatch ≠ empty_store / unbound.
+  const writeMounted = global.stores.find(
+    (s) => s.alias === write_target || s.store_uuid === write_target,
+  );
+  if (
+    writeMounted === undefined ||
+    writeMounted.personal === true ||
+    writeMounted.writable === false ||
+    (!boundAliases.has(writeMounted.alias) && !boundAliases.has(write_target))
+  ) {
+    const r = fail("write_target_mismatch", bound_stores, total_entries);
+    r.message =
+      writeMounted === undefined
+        ? `write_target_mismatch: active_write_store '${write_target}' is not mounted`
+        : writeMounted.personal === true
+          ? `write_target_mismatch: active_write_store '${write_target}' is personal — use a team store for switch-write`
+          : `write_target_mismatch: active_write_store '${write_target}' is not on this project's bound read-set`;
+    r.remediations = [
+      "fabric store list",
+      "fabric store switch-write <mounted-team-alias>",
+      "fabric store bind <alias>",
+      "fabric first-hit",
+    ];
+    return r;
   }
 
   if (total_entries === 0) {
@@ -344,14 +443,59 @@ export function assessFirstHitSync(
   } catch {
     return fail("unbound");
   }
+  const missing = missingRequiredStores(projectRoot, globalRoot).map((r) => r.id);
+  if (missing.length > 0) {
+    const r = fail("missing_required");
+    r.missing_required_ids = missing;
+    r.message = `missing_required: required store(s) not mounted: ${missing.join(", ")}`;
+    r.remediations = [
+      ...missing.map((id) => `fabric store bind ${id}`),
+      "fabric store list",
+      "fabric first-hit",
+    ];
+    return r;
+  }
+
   if (dirs.length === 0) return fail("unbound");
+
+  const unreachable = dirs.filter((d) => !existsSync(d.dir)).map((d) => d.alias);
+  if (unreachable.length > 0) {
+    const bound_partial: FirstHitStoreRow[] = dirs.map((d) => ({
+      alias: d.alias,
+      entry_count: existsSync(d.dir) ? countKnowledgeMarkdown(d.dir) : 0,
+      sample_ids: [],
+    }));
+    const r = fail("store_unreachable", bound_partial, 0);
+    r.unreachable_aliases = unreachable;
+    r.message = `store_unreachable: bound store dir missing on disk: ${unreachable.join(", ")}`;
+    return r;
+  }
 
   const bound_stores: FirstHitStoreRow[] = dirs.map((d) => {
     const n = countKnowledgeMarkdown(d.dir);
     return { alias: d.alias, entry_count: n, sample_ids: n > 0 ? ["(present)"] : [] };
   });
   const total = bound_stores.reduce((a, s) => a + s.entry_count, 0);
+  const boundAliases = new Set(bound_stores.map((s) => s.alias));
   if (write_target === null) return fail("no_write_target", bound_stores, total);
+
+  const writeMounted = global.stores.find(
+    (s) => s.alias === write_target || s.store_uuid === write_target,
+  );
+  if (
+    writeMounted === undefined ||
+    writeMounted.personal === true ||
+    writeMounted.writable === false ||
+    (!boundAliases.has(writeMounted.alias) && !boundAliases.has(write_target))
+  ) {
+    const r = fail("write_target_mismatch", bound_stores, total);
+    r.message =
+      writeMounted === undefined
+        ? `write_target_mismatch: active_write_store '${write_target}' is not mounted`
+        : `write_target_mismatch: active_write_store '${write_target}' is not valid for team write on this project`;
+    return r;
+  }
+
   if (total === 0) return fail("empty_store", bound_stores, 0);
   if (!hooks.session_start || !hooks.pre_tool_use) {
     return fail("hooks_missing", bound_stores, total);

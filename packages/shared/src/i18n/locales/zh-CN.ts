@@ -224,6 +224,12 @@ export const zhCNMessages: Messages = {
   "doctor.store.empty": "已绑定 store 知识条数为 0（{stores}）——在 seed 或 clone 有内容前无法 first-hit；运行 `fabric first-hit --seed`（空本地库）或绑定带内容的远程 team store",
   "doctor.store.no-write-target": "本项目无活动写库 —— 先 bind 再 switch-write：`fabric store bind <alias>` 然后 `fabric store switch-write <alias>`（或重跑 `fabric install`）",
   "doctor.store.no-match": "知识存在但与探测路径无匹配 —— 放宽 paths 或为模块补 relevance_paths",
+  "doctor.store.write-target-mismatch":
+    "活动写库 '{alias}' 不是本项目的有效 team 写目标 —— 运行 `fabric store switch-write <已挂载 team 别名>`",
+  "doctor.store.first-hit-missing-required":
+    "必需 store 未挂载: {ids} —— 先 bind/clone 再跑 `fabric first-hit`",
+  "doctor.store.first-hit-unreachable":
+    "已绑定 store 目录磁盘缺失: {aliases} —— remount/re-clone 后跑 `fabric doctor`",
   "doctor.store.hooks-missing": "知识已有但 SessionStart/PreToolUse hooks 缺失 —— 重跑 `fabric install`",
   "doctor.store.first-hit-ok": "first-hit 就绪：{count} 条知识，store：{stores}",
   "doctor.store.alias-drift": "by-alias 可读性软链与注册表不同步:{refs};运行 `fabric doctor --fix` 修复 ~/.fabric/stores/by-alias/",
@@ -234,6 +240,7 @@ export const zhCNMessages: Messages = {
   "doctor.store.related-broken": "{count} 条 `related` 链接指向语料中不存在的 id:{samples}{overflow} —— 通过 `fab_review` (modify) 修复 related 边,或编辑条目 frontmatter",
   "doctor.store.related-hub": "related 图谱枢纽(前 {shown} / 共 {total} 个被引用):{top}",
   "doctor.store.unreachable": "store '{alias}' 在 read-set 中但磁盘上不可达({reason});运行 `fabric store mount` / 重新 clone,再跑 `fabric doctor`",
+  "doctor.store.unreachable-bound": "已绑定 store 的磁盘目录缺失：{stores} — 请 re-clone 或 remount，再跑 fabric doctor",
   "doctor.store.consumption-heatmap": "消费热区(近 {days}d,{consumed}/{total} 条被读,跨 {windows} 个窗口):{top}",
   "doctor.store.consumption-zero": "{count} 条在近 {days}d 内从未被消费:{sample}{overflow} —— 通过 `fab_review` 考虑淘汰(消费量只是信号之一,非陈旧的证据)",
   "doctor.store.overflow-more": ", …(+{count} 条)",

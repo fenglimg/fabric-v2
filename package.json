@@ -16,7 +16,8 @@
     "dogfood:first-value": "node scripts/dogfood-first-value.mjs",
     "lint": "knip --strict",
     "typecheck": "pnpm -r exec tsc --noEmit",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "dogfood:multi-store": "node scripts/dogfood-multi-store.mjs"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",

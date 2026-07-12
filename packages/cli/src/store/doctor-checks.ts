@@ -44,7 +44,10 @@ export type StoreDiagnosticCode =
   | "first_hit_no_write_target"
   | "first_hit_empty_store"
   | "first_hit_no_match"
-  | "first_hit_ok";
+  | "first_hit_ok"
+  // D3 multi-store (first-hit fail codes mirrored for doctor surface)
+  | "write_target_mismatch"
+  | "first_hit_store_unreachable";
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;
@@ -155,11 +158,8 @@ export function storeDoctorChecks(
     });
   }
 
-  // First-hit readiness (M-first-value-loop): only the empty-store + hooks gaps
-  // that existing store diagnostics do not cover. Unbound / no-write-target are
-  // already implied by missing required bind / active_write; surfacing them here
-  // would noise healthy "mounted + required" doctor fixtures. Full oracle lives
-  // on `fabric first-hit`.
+  // First-hit + D3 multi-store readiness. Avoid re-emitting missing_required_store
+  // (already pushed above). Full oracle: `fabric first-hit`.
   try {
     const hit = assessFirstHitSync(projectRoot, { globalRoot });
     if (hit.code === "empty_store") {
@@ -178,7 +178,25 @@ export function storeDoctorChecks(
         ref: hit.write_target ?? undefined,
         message: t("doctor.store.hooks-missing"),
       });
+    } else if (hit.code === "write_target_mismatch") {
+      diagnostics.push({
+        code: "write_target_mismatch",
+        severity: "warn",
+        ref: hit.write_target ?? undefined,
+        message: t("doctor.store.write-target-mismatch", {
+          alias: hit.write_target ?? "—",
+        }),
+      });
+    } else if (hit.code === "store_unreachable") {
+      const refs = (hit.unreachable_aliases ?? []).join(", ") || "—";
+      diagnostics.push({
+        code: "first_hit_store_unreachable",
+        severity: "warn",
+        ref: refs,
+        message: t("doctor.store.unreachable-bound", { stores: refs }),
+      });
     }
+    // missing_required already covered by missingRequiredStores loop above.
   } catch {
     // Never crash doctor for first-hit assessment.
   }

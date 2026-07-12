@@ -29,6 +29,18 @@ function tmp(prefix: string): string {
   return dir;
 }
 
+/** Materialize on-disk mount roots so first-hit store_unreachable does not fire. */
+function ensureStoreDirs(
+  globalRoot: string,
+  stores: Array<{ store_uuid: string; mount_name?: string; personal?: boolean }>,
+): void {
+  for (const store of stores) {
+    mkdirSync(join(globalRoot, storeRelativePathForMount(store), "knowledge"), {
+      recursive: true,
+    });
+  }
+}
+
 describe("doctor store checks", () => {
   it("warns when no global config exists", () => {
     const diags = storeDoctorChecks(tmp("dr-proj-"), join(tmp("dr-g-"), ".fabric"));
@@ -63,6 +75,29 @@ describe("doctor store checks", () => {
 
   it("is clean when everything is mounted with remotes", () => {
     const globalRoot = join(tmp("dr-g3-"), ".fabric");
+    const stores = [
+      { store_uuid: PERSONAL, alias: "personal", personal: true as const },
+      { store_uuid: TEAM, alias: "team", remote: "git@h:team.git" },
+    ];
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores,
+      }),
+      globalRoot,
+    );
+    // Registry alone is not enough: first-hit store_unreachable checks on-disk dirs.
+    ensureStoreDirs(globalRoot, stores);
+    const projectRoot = tmp("dr-p3-");
+    saveProjectConfig(
+      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      projectRoot,
+    );
+    expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);
+  });
+
+  it("warns first_hit_store_unreachable when a bound store dir is missing on disk", () => {
+    const globalRoot = join(tmp("dr-g-unr-"), ".fabric");
     saveGlobalConfig(
       globalConfigSchema.parse({
         uid: "u-me",
@@ -73,12 +108,20 @@ describe("doctor store checks", () => {
       }),
       globalRoot,
     );
-    const projectRoot = tmp("dr-p3-");
+    // Intentionally no ensureStoreDirs — registry only.
+    const projectRoot = tmp("dr-p-unr-");
     saveProjectConfig(
-      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      {
+        project_id: "11111111-1111-4111-8111-111111111111",
+        required_stores: [{ id: "team" }],
+        active_write_store: "team",
+      },
       projectRoot,
     );
-    expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);
+    const diags = storeDoctorChecks(projectRoot, globalRoot);
+    const unr = diags.find((d) => d.code === "first_hit_store_unreachable");
+    expect(unr?.severity).toBe("warn");
+    expect(unr?.ref).toMatch(/team/);
   });
 
   it("nudges (info) a mounted store the project has not bound, never personal", () => {
