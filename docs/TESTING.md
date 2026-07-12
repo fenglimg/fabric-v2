@@ -49,7 +49,7 @@
 6. `pnpm test:store-only-e2e`
 7. `pnpm test:upgrade-e2e`
 8. `node --experimental-strip-types scripts/lint-protected-tokens.ts`
-9. `NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test`
+9. `NO_COLOR=1` + scoped CLI reskin/i18n snapshot tests (not full CLI suite)
 10. `node scripts/perf-benchmark.mjs`
 
 Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--version`，不替代 Linux 全量。
@@ -103,7 +103,7 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 | --- | --- |
 | 纯 shared 契约 | `pnpm --filter @fenglimg/fabric-shared test` |
 | server / MCP | `pnpm --filter @fenglimg/fabric-server test` |
-| CLI / hook 文案 | `NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test` |
+| CLI / hook 文案 | `NO_COLOR=1` + scoped reskin/i18n snapshot tests |
 | store 旅程 / install | `pnpm -r build && pnpm test:store-only-e2e`（升级路径再加 `test:upgrade-e2e`） |
 | 只改本文件或文档命令名 | `pnpm test:strategy` |
 
