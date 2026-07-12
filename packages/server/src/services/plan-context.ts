@@ -441,10 +441,12 @@ export async function planContext(
   // that same ranking with recall's top_k + ratio-to-top floor applied
   // (config-resolved here so the ranker stays a pure function). Both derive from
   // ONE shared ranker — the single source fab_pending triage also calls.
+  // ISS-20260711-143: score/sort the corpus ONCE, then derive triage (full) and
+  // recall (top_k + relevance floor) views from the shared ranked array.
   const rankedScored = rankDescriptionItems(rawItems, scoringContext, "triage");
   const rankedCandidates = rankedScored.map((entry) => entry.item);
 
-  const survivingScored = rankDescriptionItems(rawItems, scoringContext, "recall", {
+  const survivingScored = cutRankedForRecall(rankedScored, scoringContext, {
     topK: readPlanContextTopK(projectRoot),
     relevanceRatio: readRecallRelevanceRatio(projectRoot),
   });
@@ -1227,6 +1229,23 @@ export type RankOptions = {
 // mode-dependent cut. The score is retained so observability consumers
 // (candidate_scores) and the dropped[] computation can read it without
 // re-scoring.
+// ISS-20260711-143: apply recall top_k + ratio-to-top cut to an already-ranked list.
+function cutRankedForRecall(
+  rankedScored: Array<{ item: RuleDescriptionIndexItem; score: number }>,
+  scoringContext: ScoringContext,
+  options: RankOptions = {},
+): Array<{ item: RuleDescriptionIndexItem; score: number }> {
+  const topK = options.topK ?? rankedScored.length;
+  const cappedScored = rankedScored.slice(0, topK);
+  const relevanceRatio = options.relevanceRatio ?? 0;
+  const hasQuery = scoringContext.queryTerms.length > 0;
+  const maxScore = rankedScored.length > 0 ? rankedScored[0]!.score : 0;
+  const relevanceFloor = maxScore * relevanceRatio;
+  return hasQuery && maxScore > 0 && relevanceRatio > 0
+    ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
+    : cappedScored;
+}
+
 export function rankDescriptionItems(
   items: RuleDescriptionIndexItem[],
   scoringContext: ScoringContext,

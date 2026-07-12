@@ -63,10 +63,17 @@ interface CrossStoreEntry {
 interface ReadSetWalkCacheEntry {
   fingerprint: string;
   entries: CrossStoreEntry[];
+  lastAccessMs: number;
 }
 
+// ISS-20260711-141: bound the walk cache so long-lived MCP servers cannot retain
+// every project root's full markdown corpus forever.
+const READ_SET_WALK_CACHE_MAX = 8;
 const readSetWalkCache = new Map<string, ReadSetWalkCacheEntry>();
 let readSetWalkCount = 0;
+
+// ISS-20260711-132: cap concurrent full-file reads on a cold walk.
+const READ_SET_WALK_CONCURRENCY = 16;
 
 interface ReadSetSnapshot {
   refs: StoreKnowledgeRef[];
@@ -77,18 +84,58 @@ function readSetWalkCacheKey(projectRoot: string): string {
   return `${projectRoot}\0${process.env.FABRIC_HOME ?? ""}`;
 }
 
+function touchReadSetCache(key: string, entry: ReadSetWalkCacheEntry): void {
+  entry.lastAccessMs = Date.now();
+  // Map preserves insertion order; re-insert to mark as most-recently used.
+  readSetWalkCache.delete(key);
+  readSetWalkCache.set(key, entry);
+  while (readSetWalkCache.size > READ_SET_WALK_CACHE_MAX) {
+    const oldest = readSetWalkCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    readSetWalkCache.delete(oldest);
+  }
+}
+
+// ISS-20260711-142: O(stores) validation — path-list structural hash + one
+// mtime/size sample per store_uuid (first ref file), not per-entry stat fan-out.
 async function readSetFingerprint(refs: StoreKnowledgeRef[]): Promise<string> {
-  const parts = await Promise.all(
-    refs.map(async (ref) => {
-      try {
-        const fileStat = await stat(ref.file);
-        return `${ref.store_uuid}|${ref.alias}|${ref.file}|${fileStat.size}|${fileStat.mtimeMs}`;
-      } catch {
-        return `${ref.store_uuid}|${ref.alias}|${ref.file}|missing`;
-      }
-    }),
-  );
-  return parts.sort().join("\n");
+  const structure = refs
+    .map((ref) => `${ref.store_uuid}|${ref.alias}|${ref.file}|${ref.type}|${ref.project ?? ""}`)
+    .sort()
+    .join("\n");
+  const byStore = new Map<string, string>();
+  for (const ref of refs) {
+    if (!byStore.has(ref.store_uuid)) byStore.set(ref.store_uuid, ref.file);
+  }
+  const storeParts: string[] = [];
+  for (const [storeUuid, sampleFile] of [...byStore.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    try {
+      const fileStat = await stat(sampleFile);
+      storeParts.push(`${storeUuid}|${fileStat.size}|${fileStat.mtimeMs}`);
+    } catch {
+      storeParts.push(`${storeUuid}|missing`);
+    }
+  }
+  return `${structure}\n--\n${storeParts.join("\n")}`;
+}
+
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const i = next;
+      next += 1;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i]!, i);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 export function __resetReadSetWalkCacheForTests(): void {
@@ -225,35 +272,41 @@ async function walkReadSetStores(projectRoot: string): Promise<CrossStoreEntry[]
   const fingerprint = await readSetFingerprint(snapshot.refs);
   const cached = readSetWalkCache.get(key);
   if (cached !== undefined && cached.fingerprint === fingerprint) {
+    touchReadSetCache(key, cached);
     return cached.entries.slice();
   }
   const entries = await walkReadSetStoresUncached(snapshot);
-  readSetWalkCache.set(key, { fingerprint, entries });
+  touchReadSetCache(key, { fingerprint, entries, lastAccessMs: Date.now() });
   return entries.slice();
 }
 
 async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<CrossStoreEntry[]> {
   readSetWalkCount += 1;
-  const entries = await Promise.all(snapshot.refs.map(async (ref): Promise<CrossStoreEntry | null> => {
-    let source: string;
-    try {
-      source = await readFile(ref.file, "utf8");
-    } catch {
-      return null; // store file vanished between walk and read — skip, don't crash.
-    }
-    const stableId = deriveRuleIdentity(ref.file, source, undefined).stableId;
-    const layer = snapshot.personalUuids.has(ref.store_uuid) ? "personal" : "team";
-    return {
-      qualifiedId: `${ref.alias}:${stableId}`,
-      file: ref.file,
-      type: ref.type,
-      alias: ref.alias,
-      layer,
-      semanticScope: readSemanticScope(source, layer, ref.project),
-      deprecated: DEPRECATED_LINE.test(source),
-      source,
-    };
-  }));
+  // ISS-20260711-132: bounded concurrency instead of one Promise.all per file.
+  const entries = await mapPool(
+    snapshot.refs,
+    READ_SET_WALK_CONCURRENCY,
+    async (ref): Promise<CrossStoreEntry | null> => {
+      let source: string;
+      try {
+        source = await readFile(ref.file, "utf8");
+      } catch {
+        return null; // store file vanished between walk and read — skip, don't crash.
+      }
+      const stableId = deriveRuleIdentity(ref.file, source, undefined).stableId;
+      const layer = snapshot.personalUuids.has(ref.store_uuid) ? "personal" : "team";
+      return {
+        qualifiedId: `${ref.alias}:${stableId}`,
+        file: ref.file,
+        type: ref.type,
+        alias: ref.alias,
+        layer,
+        semanticScope: readSemanticScope(source, layer, ref.project),
+        deprecated: DEPRECATED_LINE.test(source),
+        source,
+      };
+    },
+  );
   return entries.filter((entry): entry is CrossStoreEntry => entry !== null);
 }
 

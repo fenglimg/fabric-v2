@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1177,10 +1177,13 @@ describe("dropEventsFromLedger — gzip archive (rc.39 T6)", () => {
 
     expect(result.rotated).toBe(true);
     expect(result.archivedCount).toBe(2);
-    expect(result.archivePath).toBe(".fabric/events.archive/events-empty-shell-fold-2026-05-29.jsonl.gz");
+    // ISS-20260711-133: immutable uniquely-named gzip members (…-YYYY-MM-DD-<ts>.jsonl.gz)
+    expect(result.archivePath).toMatch(
+      /^\.fabric\/events\.archive\/events-empty-shell-fold-2026-05-29-\d+\.jsonl\.gz$/,
+    );
 
     // Archive is a real gzip stream that decompresses to the two dropped events.
-    const gzPath = join(projectRoot, ".fabric", "events.archive", "events-empty-shell-fold-2026-05-29.jsonl.gz");
+    const gzPath = join(projectRoot, result.archivePath as string);
     expect(existsSync(gzPath)).toBe(true);
     const decompressed = gunzipSync(await readFile(gzPath)).toString("utf8");
     const archivedLines = decompressed.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
@@ -1197,26 +1200,36 @@ describe("dropEventsFromLedger — gzip archive (rc.39 T6)", () => {
     expect(mainRaw).not.toContain("event:drop-2");
   });
 
-  it("same-day same-label re-run appends into the existing .gz (decompress → concat → recompress)", async () => {
+  it("same-day same-label re-run writes a second immutable gzip member (no whole-archive recompress)", async () => {
     const projectRoot = await createTempProject();
     const now = new Date("2026-05-29T12:00:00.000Z");
     await seedLedger(projectRoot, [
       { kind: "fabric-event", id: "event:a", ts: now.getTime(), schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
     ]);
-    await dropEventsFromLedger(projectRoot, { label: "empty-shell-fold", now, predicate: (p) => p["event_type"] === "assistant_turn_observed" });
+    const first = await dropEventsFromLedger(projectRoot, { label: "empty-shell-fold", now, predicate: (p) => p["event_type"] === "assistant_turn_observed" });
 
     // Second batch, same day + label — re-seed the main ledger with a new turn.
+    // Bump `now` so the unique suffix differs while staying same calendar day.
+    const later = new Date(now.getTime() + 1000);
     await seedLedger(projectRoot, [
-      { kind: "fabric-event", id: "event:b", ts: now.getTime() + 1, schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
+      { kind: "fabric-event", id: "event:b", ts: later.getTime(), schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
     ]);
-    await dropEventsFromLedger(projectRoot, { label: "empty-shell-fold", now, predicate: (p) => p["event_type"] === "assistant_turn_observed" });
+    const second = await dropEventsFromLedger(projectRoot, { label: "empty-shell-fold", now: later, predicate: (p) => p["event_type"] === "assistant_turn_observed" });
 
-    const gzPath = join(projectRoot, ".fabric", "events.archive", "events-empty-shell-fold-2026-05-29.jsonl.gz");
-    const decompressed = gunzipSync(await readFile(gzPath)).toString("utf8");
-    const ids = decompressed.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l).id);
-    // Both batches present — the second run appended, not overwrote.
-    expect(ids).toContain("event:a");
-    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(first.archivePath).not.toEqual(second.archivePath);
+    const archiveDir = join(projectRoot, ".fabric", "events.archive");
+    const members = (await readdir(archiveDir)).filter((n) => n.endsWith(".jsonl.gz"));
+    expect(members.length).toBeGreaterThanOrEqual(2);
+
+    const allIds: string[] = [];
+    for (const name of members) {
+      const decompressed = gunzipSync(await readFile(join(archiveDir, name))).toString("utf8");
+      for (const line of decompressed.split("\n").filter((l) => l.length > 0)) {
+        allIds.push(JSON.parse(line).id);
+      }
+    }
+    expect(allIds).toContain("event:a");
+    expect(allIds).toContain("event:b");
   });
 });
 

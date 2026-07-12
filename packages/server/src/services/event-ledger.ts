@@ -9,7 +9,7 @@ import {
   statSync,
 } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 
 import {
@@ -726,23 +726,18 @@ export async function dropEventsFromLedger(
     // append by decompress→concat→recompress (rare; the fold is idempotent so a
     // second run finds nothing to archive). Archives are cold storage — no live
     // reader globs events.archive/, so .gz is purely a disk-footprint win.
+    // ISS-20260711-133: write immutable uniquely-named gzip members instead of
+    // decompress→concat→recompress of the whole same-day archive (event-loop
+    // blocking + peak memory grow with archive size).
     const yyyymmdd = formatUtcDate(now);
     const archiveDirAbsolute = join(projectRoot, EVENT_LEDGER_ARCHIVE_DIR);
-    const archiveFilename = `events-${opts.label}-${yyyymmdd}.jsonl.gz`;
+    const archiveFilename = `events-${opts.label}-${yyyymmdd}-${now.getTime()}.jsonl.gz`;
     const archiveAbsolutePath = join(archiveDirAbsolute, archiveFilename);
     const archiveRelativePath = `${EVENT_LEDGER_ARCHIVE_DIR}/${archiveFilename}`;
 
     await mkdir(archiveDirAbsolute, { recursive: true });
     const newArchiveText = archived.map((line) => `${line}\n`).join("");
-    let combinedArchiveText = newArchiveText;
-    try {
-      const existingGz = await readFile(archiveAbsolutePath);
-      combinedArchiveText = gunzipSync(existingGz).toString("utf8") + newArchiveText;
-    } catch (error) {
-      if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
-      // No prior same-day archive — write a fresh .gz.
-    }
-    await writeFile(archiveAbsolutePath, gzipSync(Buffer.from(combinedArchiveText, "utf8")));
+    await writeFile(archiveAbsolutePath, gzipSync(Buffer.from(newArchiveText, "utf8")));
 
     const auditEvent = eventLedgerEventSchema.parse({
       kind: "fabric-event",
