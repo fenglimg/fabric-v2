@@ -98,6 +98,7 @@ import {
   type DriftUnconsumedInspection,
 } from "./doctor-drift-unconsumed.js";
 import {
+  applySessionHintsStaleCleanup,
   inspectSessionHintsStale,
   SESSION_HINTS_STALE_DAYS,
   type SessionHintsStaleCandidate,
@@ -1394,41 +1395,7 @@ function createApplyLintMessage(
   return parts.join(" ");
 }
 
-// rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
-// cleanup. Plain fs.unlink — these are local cache files, not git-tracked,
-// so no `git mv` / ledger event / rollback dance. Mirrors the lightweight
-// pattern called out in the task spec (vs. applyPendingAutoArchive's full
-// rename-with-event-emission).
-//
-// Failure mode: a per-file unlink failure (ENOENT — file disappeared
-// between inspection and mutation, EPERM — fs permissions, etc) is captured
-// as `applied: false` with the error message truncated. The apply-lint run
-// continues; doctor's contract is best-effort hygiene, not transactional.
-async function applySessionHintsStaleCleanup(
-  projectRoot: string,
-  candidate: SessionHintsStaleCandidate,
-): Promise<DoctorApplyLintMutation> {
-  const detail = `deleted (${candidate.age_days}d old)`;
-  const absPath = join(projectRoot, candidate.path);
-  try {
-    const { unlink } = await import("node:fs/promises");
-    await unlink(absPath);
-    return {
-      kind: "knowledge_session_hints_stale_cleanup",
-      path: candidate.path,
-      detail,
-      applied: true,
-    };
-  } catch (error) {
-    return {
-      kind: "knowledge_session_hints_stale_cleanup",
-      path: candidate.path,
-      detail,
-      applied: false,
-      error: truncateErrorMessage(error),
-    };
-  }
-}
+// applySessionHintsStaleCleanup → doctor-session-hints-stale.ts (W8 Step B)
 
 // v2.2 W5 R4 (agents.meta decolo): `applyIndexDriftFix` removed — it bumped the
 // retired co-location agents.meta.json#counters. Store counter flooring now goes

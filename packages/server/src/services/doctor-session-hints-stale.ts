@@ -1,6 +1,6 @@
 // Session-hints cache hygiene inspect (W8 Step A only).
-// Apply-lint unlink arm stays in doctor.ts until Step B.
-import { readdir, stat } from "node:fs/promises";
+// Step B: apply-lint unlink arm lives here; doctor re-exports/uses it.
+import { readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { join as posixJoin } from "node:path/posix";
 
@@ -62,3 +62,44 @@ export async function inspectSessionHintsStale(
   return { candidates };
 }
 
+export type SessionHintsCleanupMutation = {
+  kind: "knowledge_session_hints_stale_cleanup";
+  path: string;
+  detail: string;
+  applied: boolean;
+  error?: string;
+};
+
+function truncateErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw.length > 240 ? `${raw.slice(0, 237)}...` : raw;
+}
+
+/**
+ * Apply-lint arm for lint #27: unlink one stale session-hints cache file.
+ * Local hot-cache only — no ledger event / git mv.
+ */
+export async function applySessionHintsStaleCleanup(
+  projectRoot: string,
+  candidate: SessionHintsStaleCandidate,
+): Promise<SessionHintsCleanupMutation> {
+  const detail = `deleted (${candidate.age_days}d old)`;
+  const absPath = join(projectRoot, candidate.path);
+  try {
+    await unlink(absPath);
+    return {
+      kind: "knowledge_session_hints_stale_cleanup",
+      path: candidate.path,
+      detail,
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_session_hints_stale_cleanup",
+      path: candidate.path,
+      detail,
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
+}
