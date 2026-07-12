@@ -44,19 +44,20 @@ describe("events-jsonl-gates inspection (Wave B B5)", () => {
     expect(report.ledgerSizeWarn).toBe(true);
   });
 
-  it("G8 future-guard — a metric counter name NOT in the dual-write allowlist still leaks", async () => {
-    // The gate's active leak set is METRIC_COUNTER_NAMES minus the dual-write
-    // allowlist. Today that set is empty (all four are consumed → dormant), so
-    // this exercises the mechanism via a synthetic counter name that is in
-    // METRIC_COUNTER_NAMES but deliberately treated as un-allowlisted: we assert
-    // the allowlist is the ONLY thing suppressing a leak. If a future pure
-    // counter is added to METRIC_COUNTER_NAMES without an allowlist entry, G8
-    // must fire for it. Guarded structurally below + by the dormancy test.
+  it("G8 future-guard — retired / pure metric counters stay outside dual-write allowlist", async () => {
+    // Live dual-write (allowlisted): context_planned / body_read / edit_intent.
+    // Retired dual-write names (knowledge_consumed / knowledge_sections_fetched)
+    // stay in METRIC_COUNTER_NAMES for historic windows but MUST remain leakable
+    // so accidental new ledger appends surface (ISS-20260711-216).
     const counterNames = new Set<string>(Object.values(METRIC_COUNTER_NAMES));
     const allowlisted = new Set<string>(Object.values(LEDGER_DUAL_WRITE_METRIC_NAMES));
-    const leakable = [...counterNames].filter((name) => !allowlisted.has(name));
-    // Dormant by design: every current counter is dual-write-consumed.
-    expect(leakable).toEqual([]);
+    const leakable = [...counterNames].filter((name) => !allowlisted.has(name)).sort();
+    expect(leakable).toEqual(
+      [
+        METRIC_COUNTER_NAMES.knowledge_consumed,
+        METRIC_COUNTER_NAMES.knowledge_sections_fetched,
+      ].sort(),
+    );
   });
 
   it("G9 metricsStaleWarn fires when metrics.jsonl mtime is stale", async () => {
@@ -106,13 +107,10 @@ describe("events-jsonl-gates inspection (Wave B B5)", () => {
     expect(report.metricLeakCount).toBe(0);
   });
 
-  it("G8 EXEMPTS all four ledger load-bearing dual-write metric event_types", async () => {
-    // All four metric counter names are intentionally appended to events.jsonl
-    // because a doctor lint consumes their structured per-id/per-path payload
-    // (buildLastActiveIndex / cite-coverage / use-signal pass) — same audit class
-    // as assistant_turn_observed (team KT-DEC-0021). NONE may count as a leak,
-    // otherwise G8 false-fires on every fab_recall / edit. Regression guard for
-    // the recurring events_jsonl_health_degraded warning.
+  it("G8 EXEMPTS live dual-write metric event_types (not retired aliases)", async () => {
+    // Live dual-writes only: context_planned / body_read / edit_intent_checked.
+    // Retired knowledge_sections_fetched + knowledge_consumed are intentional
+    // G8 leaks if re-appended (ISS-20260711-216).
     const projectRoot = await createTempProject();
     const path = join(projectRoot, ".fabric", "events.jsonl");
     const rows = [
@@ -129,6 +127,41 @@ describe("events-jsonl-gates inspection (Wave B B5)", () => {
         selection_token: "tok",
         diagnostics: [],
       },
+      {
+        kind: "fabric-event",
+        id: "event:body",
+        ts: Date.now(),
+        schema_version: 1,
+        event_type: METRIC_COUNTER_NAMES.knowledge_body_read,
+        stable_id: "KT-DEC-0001",
+        store_alias: "team",
+      },
+      {
+        kind: "fabric-event",
+        id: "event:edit",
+        ts: Date.now(),
+        schema_version: 1,
+        event_type: METRIC_COUNTER_NAMES.edit_intent_checked,
+        path: "src/foo.ts",
+        compliant: true,
+        intent: "",
+        ledger_entry_id: "le-1",
+        matched_rule_context_ts: null,
+        window_ms: 0,
+      },
+    ];
+    for (const row of rows) {
+      await appendFile(path, `${JSON.stringify(row)}\n`);
+    }
+    const report = await inspectEventsJsonlGates(projectRoot);
+    expect(report.metricLeakCount).toBe(0);
+    expect(report.metricLeakSamples).toEqual([]);
+  });
+
+  it("G8 FLAGS retired dual-write metric event_types as leaks", async () => {
+    const projectRoot = await createTempProject();
+    const path = join(projectRoot, ".fabric", "events.jsonl");
+    const rows = [
       {
         kind: "fabric-event",
         id: "event:fetch",
@@ -152,26 +185,18 @@ describe("events-jsonl-gates inspection (Wave B B5)", () => {
         consumed_at: new Date().toISOString(),
         client_hash: "",
       },
-      {
-        kind: "fabric-event",
-        id: "event:edit",
-        ts: Date.now(),
-        schema_version: 1,
-        event_type: METRIC_COUNTER_NAMES.edit_intent_checked,
-        path: "src/foo.ts",
-        compliant: true,
-        intent: "",
-        ledger_entry_id: "le-1",
-        matched_rule_context_ts: null,
-        window_ms: 0,
-      },
     ];
     for (const row of rows) {
       await appendFile(path, `${JSON.stringify(row)}\n`);
     }
     const report = await inspectEventsJsonlGates(projectRoot);
-    expect(report.metricLeakCount).toBe(0);
-    expect(report.metricLeakSamples).toEqual([]);
+    expect(report.metricLeakCount).toBe(2);
+    expect(report.metricLeakSamples.sort()).toEqual(
+      [
+        METRIC_COUNTER_NAMES.knowledge_consumed,
+        METRIC_COUNTER_NAMES.knowledge_sections_fetched,
+      ].sort(),
+    );
   });
 });
 

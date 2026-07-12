@@ -973,7 +973,7 @@ async function executeInitStagePlan(
         // when hook scripts or path validation actually errored.
         const result = await installHooks(plan.target);
         for (const err of result.errors) {
-          writeBound(`hooks ${err}`);
+          writeStderr(`hooks ${err}`);
         }
         if (result.errors.length > 0) {
           console.log(

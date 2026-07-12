@@ -146,7 +146,9 @@
           "supported": true,
           "mechanism": "MCP stdio"
         }
-      }
+      },
+      "surface": "mcp",
+      "description": "Propose/persist a pending knowledge entry into the write-target store for later review."
     },
     {
       "id": "mcp.fab_review",
@@ -159,7 +161,9 @@
           "supported": true,
           "mechanism": "MCP stdio"
         }
-      }
+      },
+      "surface": "mcp",
+      "description": "Write-only triage of pending knowledge entries (approve / reject / modify / defer)."
     },
     {
       "id": "mcp.fab_pending",
@@ -172,7 +176,9 @@
           "supported": true,
           "mechanism": "MCP stdio"
         }
-      }
+      },
+      "surface": "mcp",
+      "description": "Read-only browse/search of pending + canonical knowledge."
     },
     {
       "id": "mcp.fab_archive_scan",
@@ -185,7 +191,9 @@
           "supported": true,
           "mechanism": "MCP stdio"
         }
-      }
+      },
+      "surface": "mcp",
+      "description": "Deterministic Phase 1 ledger scan for fabric-archive (session ids ready for digest)."
     }
   ]
 }
