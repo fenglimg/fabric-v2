@@ -1,14 +1,19 @@
 {
-  "worktree": true,
-  "milestone_num": "store-reliability-hardening",
-  "milestone": "Store Reliability Hardening",
-  "owned_phases": ["analysis", "plan", "execute", "verify"],
-  "phase_dependencies": {
-    "base_milestone": "Global Store Topology",
-    "base_branch": "milestone/global-store-topology"
-  },
-  "main_worktree": "C:/Project/fabric-v2",
-  "branch": "milestone/store-reliability-hardening",
-  "base_commit": "aa2bffeae83719280d3decde09733fc76eb6d8a2",
-  "created_at": "2026-06-08T23:23:00+08:00"
+  "milestone_num": "sivtr-p0-docs-playbook",
+  "branch": "milestone/sivtr-p0-docs-playbook",
+  "in_scope": [
+    "docs/USER-QUICKSTART.md",
+    "packages/cli/templates/skills/fabric-recall/**",
+    "packages/cli/src/install/skills-and-hooks.ts",
+    "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+    "packages/cli/src/install/pipeline/hooks.stage.ts",
+    ".workflow/scratch/20260712-sivtr-p0-baseline/**"
+  ],
+  "out_of_scope": [
+    "recall engine scoring",
+    "MCP tool schemas",
+    "terminal capture",
+    "WorkSet storage",
+    "T2/T3 product features"
+  ]
 }

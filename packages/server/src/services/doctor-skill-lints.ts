@@ -154,7 +154,12 @@ export async function inspectSkillRefMirror(projectRoot: string): Promise<SkillR
 }
 
 export async function inspectSkillTokenBudget(projectRoot: string): Promise<SkillTokenBudgetInspection> {
-  const WARN_TOKENS = 5_000;
+  // This lint watches only the two richest core skills (fabric-archive/review,
+  // see FABRIC_SKILL_SLUGS); in their lean "summary + ref pointer" form both
+  // legitimately run ~6–8K tokens, so a 5K warn was a permanent false-positive.
+  // Warn sits 2K below the 10K install-abort hard cap (see skills-and-hooks.ts
+  // validateSkillCanonicalSize) as a reaction buffer before shipping is blocked.
+  const WARN_TOKENS = 8_000;
   const ERROR_TOKENS = 10_000;
   const overSize: Array<{ slug: string; tokens: number; severity: "warn" | "error" }> = [];
   let highestSeverity: "ok" | "warn" | "error" = "ok";

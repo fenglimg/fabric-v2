@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => {
     installFabricReviewSkill: vi.fn(() => okList("skill-review-install")),
     installFabricSyncSkill: vi.fn(() => okList("skill-sync-install")),
     installFabricStoreSkill: vi.fn(() => okList("skill-store-install")),
+    installFabricPlaybookSkill: vi.fn(() => okList("skill-playbook-install")),
+    installFabricRecallPlaybookSkill: vi.fn(() => okList("skill-recall-playbook-install")),
     installSharedSkillLib: vi.fn(() => okList("skill-shared-lib")),
     installArchiveHintHook: vi.fn(() => okList("hook-script")),
     installKnowledgeHintBroadHook: vi.fn(() => okList("hook-broad-script")),

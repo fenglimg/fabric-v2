@@ -45,6 +45,7 @@ const SKILL_SLUG = {
   "skill.fabric-sync": "fabric-sync",
   // ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill.
   "skill.fabric-store": "fabric-store",
+  "skill.fabric-recall-playbook": "fabric-recall-playbook",
 } as const;
 
 // ADJ-NEWN-2: per-MCP-tool store-aware contract key, so each mcp capability row

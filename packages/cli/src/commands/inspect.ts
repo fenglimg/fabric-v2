@@ -14,6 +14,12 @@ import { groupDot, headerRule } from "../tui/structure.js";
 // Block 5 (Option X) / W3-F — `fabric inspect [--render human|ai] [--explain]`
 // (renamed from `fabric context`; NS-01 §1: "context of what?" was unintuitive).
 //
+// D5-3 shared knowledge read path: inspect reuses SessionStart's
+// plan-context / store resolver pipeline (createStoreResolver via
+// runPlanContextHint) — NOT a second ad-hoc FS walk of knowledge/.
+// first-hit uses createStoreResolver + listStoreKnowledge; preview uses
+// collectStoreCanonicalEntries on the same store mounts.
+//
 // Shows exactly what the SessionStart hook injects this session. Byte-identity
 // is structural, not best-effort: this command runs the SAME producer
 // (`runPlanContextHint`) and the SAME renderer (`buildSessionStartSinks`, the

@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { inspectSkillContract, inspectSkillDescription } from "./doctor-skill-lints.js";
+import {
+  inspectSkillContract,
+  inspectSkillDescription,
+  inspectSkillTokenBudget,
+} from "./doctor-skill-lints.js";
 
 function seedSkill(root: string, slug: string, description: string): void {
   const skillDir = join(root, ".claude", "skills", slug);
@@ -20,6 +24,14 @@ function seedInstalledSkill(root: string, client: ".claude" | ".codex", slug: st
   const skillDir = join(root, client, "skills", slug);
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(join(skillDir, "SKILL.md"), body, "utf8");
+}
+
+// tokens = Math.ceil(chars / 3), so `tokens * 3` chars yields exactly `tokens`.
+// inspectSkillTokenBudget reads .claude/skills/<slug>/SKILL.md.
+function seedSkillOfTokens(root: string, slug: string, tokens: number): void {
+  const skillDir = join(root, ".claude", "skills", slug);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), "a".repeat(tokens * 3), "utf8");
 }
 
 describe("inspectSkillDescription", () => {
@@ -167,6 +179,61 @@ describe("inspectSkillContract", () => {
       client: ".codex",
       problem: "missing_thin_shim_token",
       detail: "thin shim",
+    });
+  });
+});
+
+describe("inspectSkillTokenBudget", () => {
+  // The lint watches only fabric-archive/fabric-review (FABRIC_SKILL_SLUGS).
+  // These cases pin the warn boundary at 8K (raised from 5K) and error at 10K.
+  it("stays ok when the watched skills are under the 8K warn threshold", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-tok-ok-"));
+    // 7K sits between the old 5K warn and the new 8K warn — a regression
+    // sentinel: if WARN_TOKENS is reverted to 5K, this expectation flips to warn.
+    seedSkillOfTokens(root, "fabric-archive", 7_000);
+    seedSkillOfTokens(root, "fabric-review", 6_000);
+
+    await expect(inspectSkillTokenBudget(root)).resolves.toEqual({
+      status: "ok",
+      overSize: [],
+    });
+  });
+
+  it("treats exactly 8K tokens as within budget (strict > boundary)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-tok-boundary-"));
+    seedSkillOfTokens(root, "fabric-archive", 8_000);
+
+    await expect(inspectSkillTokenBudget(root)).resolves.toEqual({
+      status: "ok",
+      overSize: [],
+    });
+  });
+
+  it("warns above 8K but below the 10K error cap", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-tok-warn-"));
+    seedSkillOfTokens(root, "fabric-archive", 8_001);
+
+    const result = await inspectSkillTokenBudget(root);
+
+    expect(result.status).toBe("warn");
+    expect(result.overSize).toContainEqual({
+      slug: "fabric-archive",
+      tokens: 8_001,
+      severity: "warn",
+    });
+  });
+
+  it("errors above the 10K hard cap", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fabric-skill-tok-error-"));
+    seedSkillOfTokens(root, "fabric-review", 10_001);
+
+    const result = await inspectSkillTokenBudget(root);
+
+    expect(result.status).toBe("error");
+    expect(result.overSize).toContainEqual({
+      slug: "fabric-review",
+      tokens: 10_001,
+      severity: "error",
     });
   });
 });

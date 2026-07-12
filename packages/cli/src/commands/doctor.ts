@@ -488,6 +488,7 @@ async function collectStoreDiagnostics(projectRoot: string): Promise<StoreDiagno
   } catch {
     // Best-effort — a store-check failure never changes doctor's exit semantics.
   }
+  // First-hit readiness is included inside storeDoctorChecks (assessFirstHitSync).
   // PR #33 re-wire: async knowledge-health advisories (related graph / store
   // reachability / consumption heatmap). Isolated so a failure here cannot
   // suppress the synchronous diagnostics above.

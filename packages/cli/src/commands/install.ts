@@ -77,6 +77,7 @@ import {
   installFabricArchiveSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
+  installFabricRecallPlaybookSkill,
   installFabricSyncSkill,
   installHookLibs,
   installKnowledgeHintBroadHook,
@@ -879,12 +880,13 @@ async function executeInitStagePlan(
         // fabric-init) before installing modern skills, so rc.30 → rc.35
         // upgraders see deprecation cleanup as part of the install diff.
         installResults.push(...await runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(plan.target)));
-        // W3-C: 4-skill terminal set (0 router) — archive (real, +source mode) /
+        // W3-C: 5-skill terminal set (0 router) — archive (real, +source mode) /
         // review (real, +retire +relate) / sync / store (thin shims) + shared lib.
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-sync-install", () => installFabricSyncSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-store-install", () => installFabricStoreSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-recall-playbook-install", () => installFabricRecallPlaybookSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-shared-lib", () => installSharedSkillLib(plan.target)));
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
         // rc.6 TASK-019 (E1): SessionStart broad-injection hook script.

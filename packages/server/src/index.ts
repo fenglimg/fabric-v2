@@ -117,6 +117,7 @@ export {
   buildAlwaysActiveBodies,
   buildKnowledgeCensus,
   collectStoreCanonicalEntries,
+  computeReadSetRevision,
   type AlwaysActiveBody,
   type KnowledgeCensus,
   type StoreCanonicalEntry,

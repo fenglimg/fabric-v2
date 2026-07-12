@@ -11,6 +11,39 @@ your team accumulates get stored as markdown in mounted stores under
 `~/.fabric/stores/`, and **hook scripts surface the relevant ones** to your AI
 mid-session so it stops re-arguing every architecture decision from scratch.
 
+
+## Evidence vs knowledge (positioning)
+
+Fabric is a **curated knowledge sustainment** layer — decisions, pitfalls,
+guidelines, models, and processes that survive review. It is **not**:
+
+- a terminal / AI-session **evidence** capture tool (that class of product
+  keeps raw command output and transcripts for search-and-zoom);
+- a multi-agent **orchestrator** (workflow runners stay separate).
+
+| Layer | Role | Examples |
+| --- | --- | --- |
+| Evidence | What just happened | Terminal failures, test logs, session transcripts |
+| **Knowledge (Fabric)** | What the team should remember | Reviewed decisions / pitfalls / guidelines |
+| Orchestration | How agents coordinate work | External workflow tools |
+
+**Allowed pipeline (one-way):**
+
+```text
+local evidence (optional companion) → human/skill extract → fab_propose pending → fabric-review → canonical store
+```
+
+**Forbidden:**
+
+- auto-promoting raw logs / captures into **canonical** knowledge without review;
+- installing shell capture hooks as part of Fabric `install`;
+- treating pending draft sets as a second knowledge store.
+
+When an agent needs "what did the last test print?", retrieve **evidence**
+first (or ask the user); when it needs "why did we choose X?", use Fabric
+recall (`fab_recall` / SessionStart / PreToolUse). The optional
+`fabric-recall-playbook` skill packages that protocol for agents.
+
 ## What you (the developer) do — and don't do
 
 | You DO | You DON'T |
@@ -75,6 +108,31 @@ For one team store, install/onboarding writes the project route for you. For
 multiple shared stores, use `fabric store switch-write <alias> --scope <semantic_scope>`
 so Fabric knows where a scope such as `project:fabric-v2` should write.
 
+
+## Multi-store / team clone (≤1 screen)
+
+1. **Mount** the team store (once per machine): `fabric install --global --url <team-git-url>` or `fabric store add …`.
+2. **Bind** this repo: `fabric store bind <alias>` then `fabric store switch-write <alias>` (team write target — not personal).
+3. **Prove**: `fabric first-hit` — exit 0 means required stores are mounted, write target is valid, and knowledge is non-empty.
+4. **If it fails**, codes mean:
+   - `missing_required` — required id not mounted (clone/bind the missing store)
+   - `write_target_mismatch` — `active_write_store` is wrong/unmounted/personal
+   - `store_unreachable` — registry points at a missing directory (remount/re-clone)
+   - `empty_store` — bound but zero knowledge (`fabric first-hit --seed` on empty local only)
+5. **Doctor**: `fabric doctor` surfaces the same multi-store gaps with remediations.
+
+Product default is **one team store per project** (max-1 team slot); personal is separate machine-wide identity.
+
+Maturity promote/retire rules (draft → verified → proven; not usage-count): [`docs/KNOWLEDGE-MATURITY.md`](./KNOWLEDGE-MATURITY.md).
+
+## After install — prove surface
+
+1. **`fabric first-hit`** — bind + non-empty knowledge + hooks (or diagnose with fail-loud codes).
+2. **`fabric inspect`** and/or **`fabric preview`** — read the same store surface hooks use (no second knowledge model).
+3. **Optional:** `fabric audit metrics` — consumption / cite-style telemetry when you care about ops health.
+
+Global CLI must be upgraded for new commands such as `first-hit` — see [`docs/UPGRADE.md`](./UPGRADE.md).
+
 ## First 30 minutes — troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -91,4 +149,5 @@ so Fabric knows where a scope such as `project:fabric-v2` should write.
 - `docs/RUNTIME-CONTRACTS.md` — CLI, MCP, schema and config contract entry
 - `docs/TESTING.md` — test strategy and drift gates
 - `docs/UPGRADE.md` — supported upgrade notes
+- `docs/KNOWLEDGE-MATURITY.md` — draft / verified / proven + retire path
 - `AGENTS.md` — **AI policy file** (for AI assistants, not onboarding)

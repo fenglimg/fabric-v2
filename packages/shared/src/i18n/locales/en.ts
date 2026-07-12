@@ -49,6 +49,20 @@ export const enMessages: Messages = {
   "cli.inspect.explain.census": "census",
   "cli.inspect.explain.census-total": "total {total}",
   "cli.inspect.error": "inspect failed: {message}",
+
+  // `fabric preview` — local read-only knowledge preview web server (loopback-only).
+  "cli.preview.description": "Start a local read-only knowledge preview (browse in your browser, grouped by scope)",
+  "cli.preview.arg.port": "Port to listen on (default 7777).",
+  "cli.preview.arg.host": "Host to bind (default 127.0.0.1, loopback only).",
+  "cli.preview.arg.open": "Open the browser on start (default on; use --no-open to disable).",
+  "cli.preview.arg.target": "Override the project root (defaults to cwd).",
+  "cli.preview.arg.variant": "Default style variant to open (default: lumen; all styles at /gallery).",
+  "cli.preview.gallery-hint": "All styles gallery: {url}",
+  "cli.preview.started": "Knowledge preview started: {url}",
+  "cli.preview.opening": "Opening browser…",
+  "cli.preview.stop-hint": "Press Ctrl-C to stop.",
+  "cli.preview.stopped": "Preview stopped.",
+  "cli.preview.error": "preview failed: {message}",
   "cli.audit.description": "Knowledge & telemetry audit (cite/conflicts/history/metrics)",
 
   // `fabric audit cite` — 0%-recall-coverage self-diagnosis hints.
@@ -218,6 +232,17 @@ export const enMessages: Messages = {
   "doctor.store.no-global-config": "no global Fabric config — run `fabric install --global <url>`",
   "doctor.store.missing-required": "required store '{id}' is not mounted; run `fabric store mount`",
   "doctor.store.unbound": "store '{alias}' is mounted but not bound to this project; run `fabric store bind {alias}` to read its knowledge here (then `fabric store switch-write {alias}` to write team knowledge into it)",
+  "doctor.store.empty": "bound store(s) have 0 knowledge entries ({stores}) — first-hit cannot succeed until you seed or clone knowledge; run `fabric first-hit --seed` (empty local store) or bind a remote team store with content",
+  "doctor.store.no-write-target": "no active write store for this project — bind and switch-write: `fabric store bind <alias>` then `fabric store switch-write <alias>` (or re-run `fabric install`)",
+  "doctor.store.no-match": "knowledge exists but no entry matches the probe paths — try broader paths or add relevance_paths for your modules",
+  "doctor.store.write-target-mismatch":
+    "active write store '{alias}' is not a valid team write target for this project — run `fabric store switch-write <mounted-team-alias>`",
+  "doctor.store.first-hit-missing-required":
+    "required store(s) not mounted: {ids} — bind/clone them then re-run `fabric first-hit`",
+  "doctor.store.first-hit-unreachable":
+    "bound store dir missing on disk: {aliases} — remount or re-clone, then `fabric doctor`",
+  "doctor.store.hooks-missing": "knowledge present but SessionStart/PreToolUse hooks missing — re-run `fabric install`",
+  "doctor.store.first-hit-ok": "first-hit ready: {count} knowledge entries across {stores}",
   "doctor.store.alias-drift": "by-alias readability link(s) out of sync for {refs}; run `fabric doctor --fix` to repair ~/.fabric/stores/by-alias/",
   "doctor.store.local-only": "store '{alias}' is local-only; add a git remote to back it up",
   "doctor.store.executable": "store '{alias}' contains executable/script files ({files}) — stores are data-only; Fabric never runs them (S65)",
@@ -226,6 +251,7 @@ export const enMessages: Messages = {
   "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
   "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
   "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
+  "doctor.store.unreachable-bound": "bound store dir missing on disk: {stores} — re-clone or remount, then fabric doctor",
   "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",
   "doctor.store.consumption-zero": "{count} entries never consumed in the last {days}d: {sample}{overflow} — review for retirement via `fab_review` (consumption is one signal, not proof of rot)",
   "doctor.store.overflow-more": ", …(+{count} more)",
@@ -560,10 +586,10 @@ export const enMessages: Messages = {
     "{count} stale pointer(s) to retired tool/field names in agent-facing text: {sample}",
   "doctor.check.retired_reference.remediation":
     "Update the flagged text to the replacement token (or remove it), then re-run `fabric install` to resync the dogfood mirrors.",
-  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 5K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K; over 5K hurts progressive disclosure; over 10K is blocking (wasted model context + load latency).
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 8K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K, but the two watched skills (fabric-archive/review) are the richest core skills and legitimately run larger; warn sits at 8K (a 2K reaction buffer below the 10K install-abort hard cap) rather than 5K. Over 10K is blocking (wasted model context + load latency).
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
-    "All .claude/skills/<slug>/SKILL.md files are within token budget (warn 5K / error 10K).",
+    "All .claude/skills/<slug>/SKILL.md files are within token budget (warn 8K / error 10K).",
   "doctor.check.skill_token_budget.message.singular":
     "{count} SKILL.md exceeds the token budget: {list}. Sink detail into ref/ for progressive disclosure.",
   "doctor.check.skill_token_budget.message.plural":
@@ -1358,6 +1384,11 @@ export const enMessages: Messages = {
   // the web UI surface is re-enabled.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage i18n keys.
+  "cli.first-hit.description": "Prove install→first-hit readiness (bind + non-empty knowledge surface)",
+  "cli.first-hit.args.json.description": "Machine-readable JSON report",
+  "cli.first-hit.args.target.description": "Project root (default: cwd)",
+  "cli.first-hit.args.seed.description": "If empty store, write minimal starter knowledge entries",
+  "cli.first-hit.args.paths.description": "Comma-separated probe paths for surface check",
   "cli.onboard-coverage.description":
     "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
   "cli.onboard-coverage.args.json.description":

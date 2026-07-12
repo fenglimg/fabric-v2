@@ -7,6 +7,7 @@ import {
   installFabricReviewSkill,
   installFabricSyncSkill,
   installFabricStoreSkill,
+  installFabricRecallPlaybookSkill,
   installSharedSkillLib,
   installArchiveHintHook,
   installKnowledgeHintBroadHook,
@@ -63,12 +64,12 @@ export class HooksStage implements Stage {
       // Clean up deprecated skills
       installResults.push(...await this.runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(target)));
 
-      // W3-C: 4-skill terminal set (0 router) — archive/review real leaves,
-      // sync/store thin shims.
+      // W3-C + S2: 5-skill terminal set (0 router) — archive/review + sync/store + recall-playbook.
       installResults.push(...await this.runBestEffort("skill-install", () => installFabricArchiveSkill(target)));
       installResults.push(...await this.runBestEffort("skill-review-install", () => installFabricReviewSkill(target)));
       installResults.push(...await this.runBestEffort("skill-sync-install", () => installFabricSyncSkill(target)));
       installResults.push(...await this.runBestEffort("skill-store-install", () => installFabricStoreSkill(target)));
+      installResults.push(...await this.runBestEffort("skill-recall-playbook-install", () => installFabricRecallPlaybookSkill(target)));
       installResults.push(...await this.runBestEffort("skill-shared-lib", () => installSharedSkillLib(target)));
 
       // Install hook scripts

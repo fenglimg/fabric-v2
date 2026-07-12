@@ -62,8 +62,12 @@ function walkMarkdown(dir, onBody) {
   }
 }
 
-// ── Collect every cited/consumed stable_id from real telemetry ──
+// ── Collect every body-read / cite-ish stable_id from real telemetry ──
+// Lean recall (KT-DEC-0030): consumption signal is knowledge_body_read (native
+// Read of store file). Legacy knowledge_consumed / selection / sections_fetched
+// still counted when present so old dogfood ledgers remain auditable.
 const CITE_EVENT_TYPES = new Set([
+  "knowledge_body_read",
   "knowledge_consumed",
   "knowledge_selection",
   "knowledge_sections_fetched",
@@ -82,9 +86,22 @@ function collectCitedIds(eventsPath) {
     }
     if (!CITE_EVENT_TYPES.has(row.event_type)) continue;
     // stable_id may be a scalar or an array (selection rows).
-    const raw = row.stable_id ?? row.stable_ids ?? row.selected_stable_ids;
+    // knowledge_body_read also carries store + stable_id (often bare KP-/KT-).
+    const raw =
+      row.stable_id ??
+      row.stable_ids ??
+      row.selected_stable_ids ??
+      row.final_stable_ids ??
+      row.ai_selected_stable_ids;
     const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
-    for (const id of list) ids.push({ id, event_type: row.event_type, session_id: row.session_id });
+    for (const id of list) {
+      let qid = id;
+      // Qualify bare ids when store alias is on the body_read row.
+      if (typeof qid === "string" && !qid.includes(":") && typeof row.store === "string" && row.store) {
+        qid = `${row.store}:${qid}`;
+      }
+      ids.push({ id: qid, event_type: row.event_type, session_id: row.session_id });
+    }
   }
   return ids;
 }

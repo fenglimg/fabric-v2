@@ -47,6 +47,20 @@ export const zhCNMessages: Messages = {
   "cli.inspect.explain.census": "全集普查",
   "cli.inspect.explain.census-total": "总计 {total}",
   "cli.inspect.error": "inspect 失败:{message}",
+
+  // `fabric preview` — 本地只读知识预览 web 服务(loopback-only)。
+  "cli.preview.description": "启动本地只读知识预览页(浏览器里按受众分组浏览)",
+  "cli.preview.arg.port": "监听端口(默认 7777)。",
+  "cli.preview.arg.host": "监听地址(默认 127.0.0.1,仅本机可访问)。",
+  "cli.preview.arg.open": "启动后自动打开浏览器(默认开;传 --no-open 关闭)。",
+  "cli.preview.arg.target": "覆盖项目根目录(默认取 cwd)。",
+  "cli.preview.arg.variant": "默认打开的样式变体(默认 lumen;全部风格见 /gallery)。",
+  "cli.preview.gallery-hint": "所有样式画廊:{url}",
+  "cli.preview.started": "知识预览已启动:{url}",
+  "cli.preview.opening": "正在打开浏览器…",
+  "cli.preview.stop-hint": "按 Ctrl-C 停止。",
+  "cli.preview.stopped": "预览已停止。",
+  "cli.preview.error": "preview 失败:{message}",
   "cli.audit.description": "知识与遥测审计 (cite/conflicts/history/metrics)",
 
   // `fabric audit cite` — recall 覆盖率为 0 的自诊断提示。
@@ -207,6 +221,17 @@ export const zhCNMessages: Messages = {
   "doctor.store.no-global-config": "无全局 Fabric 配置 —— 运行 `fabric install --global <url>`",
   "doctor.store.missing-required": "必需 store '{id}' 未挂载;运行 `fabric store mount`",
   "doctor.store.unbound": "store '{alias}' 已挂载但未绑定到本项目;运行 `fabric store bind {alias}` 即可在此读取它的知识(再用 `fabric store switch-write {alias}` 把团队知识写入它)",
+  "doctor.store.empty": "已绑定 store 知识条数为 0（{stores}）——在 seed 或 clone 有内容前无法 first-hit；运行 `fabric first-hit --seed`（空本地库）或绑定带内容的远程 team store",
+  "doctor.store.no-write-target": "本项目无活动写库 —— 先 bind 再 switch-write：`fabric store bind <alias>` 然后 `fabric store switch-write <alias>`（或重跑 `fabric install`）",
+  "doctor.store.no-match": "知识存在但与探测路径无匹配 —— 放宽 paths 或为模块补 relevance_paths",
+  "doctor.store.write-target-mismatch":
+    "活动写库 '{alias}' 不是本项目的有效 team 写目标 —— 运行 `fabric store switch-write <已挂载 team 别名>`",
+  "doctor.store.first-hit-missing-required":
+    "必需 store 未挂载: {ids} —— 先 bind/clone 再跑 `fabric first-hit`",
+  "doctor.store.first-hit-unreachable":
+    "已绑定 store 目录磁盘缺失: {aliases} —— remount/re-clone 后跑 `fabric doctor`",
+  "doctor.store.hooks-missing": "知识已有但 SessionStart/PreToolUse hooks 缺失 —— 重跑 `fabric install`",
+  "doctor.store.first-hit-ok": "first-hit 就绪：{count} 条知识，store：{stores}",
   "doctor.store.alias-drift": "by-alias 可读性软链与注册表不同步:{refs};运行 `fabric doctor --fix` 修复 ~/.fabric/stores/by-alias/",
   "doctor.store.local-only": "store '{alias}' 仅本地;加一个 git remote 以备份",
   "doctor.store.executable": "store '{alias}' 含可执行/脚本文件({files})—— store 仅存数据;Fabric 从不运行它们 (S65)",
@@ -215,6 +240,7 @@ export const zhCNMessages: Messages = {
   "doctor.store.related-broken": "{count} 条 `related` 链接指向语料中不存在的 id:{samples}{overflow} —— 通过 `fab_review` (modify) 修复 related 边,或编辑条目 frontmatter",
   "doctor.store.related-hub": "related 图谱枢纽(前 {shown} / 共 {total} 个被引用):{top}",
   "doctor.store.unreachable": "store '{alias}' 在 read-set 中但磁盘上不可达({reason});运行 `fabric store mount` / 重新 clone,再跑 `fabric doctor`",
+  "doctor.store.unreachable-bound": "已绑定 store 的磁盘目录缺失：{stores} — 请 re-clone 或 remount，再跑 fabric doctor",
   "doctor.store.consumption-heatmap": "消费热区(近 {days}d,{consumed}/{total} 条被读,跨 {windows} 个窗口):{top}",
   "doctor.store.consumption-zero": "{count} 条在近 {days}d 内从未被消费:{sample}{overflow} —— 通过 `fab_review` 考虑淘汰(消费量只是信号之一,非陈旧的证据)",
   "doctor.store.overflow-more": ", …(+{count} 条)",
@@ -538,10 +564,10 @@ export const zhCNMessages: Messages = {
     "agent 可见文本中有 {count} 处指向退役工具/字段名的 stale pointer: {sample}",
   "doctor.check.retired_reference.remediation":
     "把命中文本改为替代 token (或删除), 再跑 `fabric install` 重同步 dogfood 镜像。",
-  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 8K / error > 10K token (chars/3 估算)。Anthropic 推荐 SKILL.md 热路径 ~3K, 但被监控的两个 skill (fabric-archive/review) 是最丰富的核心 skill, 合理偏大;warn 定在 8K (距 10K 装机硬闸留 2K 反应缓冲) 而非 5K。超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
   "doctor.check.skill_token_budget.name": "Skill token 预算",
   "doctor.check.skill_token_budget.ok":
-    "所有 .claude/skills/<slug>/SKILL.md 在 token budget 内 (warn 5K / error 10K)。",
+    "所有 .claude/skills/<slug>/SKILL.md 在 token budget 内 (warn 8K / error 10K)。",
   "doctor.check.skill_token_budget.message.singular":
     "{count} 个 SKILL.md 超出 token budget: {list}。建议把详细内容下沉到 ref/ progressive disclosure。",
   "doctor.check.skill_token_budget.message.plural":
@@ -1323,6 +1349,11 @@ export const zhCNMessages: Messages = {
   // the web UI surface is re-enabled.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage 国际化键。
+  "cli.first-hit.description": "验收 install→first-hit 就绪（bind + 非空知识面）",
+  "cli.first-hit.args.json.description": "机器可读 JSON 报告",
+  "cli.first-hit.args.target.description": "项目根（默认 cwd）",
+  "cli.first-hit.args.seed.description": "若 store 为空则写入最小 starter 知识条目",
+  "cli.first-hit.args.paths.description": "逗号分隔的探测路径",
   "cli.onboard-coverage.description":
     "汇总当前工作区的 S5 onboard-slot 覆盖度。fabric-archive Skill 首跑阶段用它判断哪些项目语调槽位尚未被认领。",
   "cli.onboard-coverage.args.json.description":

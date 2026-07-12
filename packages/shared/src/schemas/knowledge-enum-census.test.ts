@@ -1,3 +1,7 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { KnowledgeTypeSchema, MaturitySchema, LayerSchema } from "./api-contracts.js";
@@ -14,6 +18,28 @@ import { KnowledgeTypeSchema, MaturitySchema, LayerSchema } from "./api-contract
 // the authoritative schema fails here first.
 // ---------------------------------------------------------------------------
 
+const DEAD_MATURITY_ASSIGN =
+  /maturity\s*[:=]\s*["']?(stable|endorsed)["']?/iu;
+// Comments that document retirement of dead aliases are allowed; live z.enum /
+// assignment of stable|endorsed as maturity values are not.
+const COMMENT_LINE = /^\s*(\/\/|\/\*|\*|#)/u;
+
+function walkTsFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name === "dist" || name === "coverage") continue;
+    const abs = join(dir, name);
+    const st = statSync(abs);
+    if (st.isDirectory()) {
+      walkTsFiles(abs, out);
+      continue;
+    }
+    if (name.endsWith(".ts") || name.endsWith(".tsx") || name.endsWith(".mts")) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+
 describe("knowledge enum census (KT-DEC-0005)", () => {
   it("knowledge_type is exactly the 5 canonical types", () => {
     expect([...KnowledgeTypeSchema.options].sort()).toEqual(
@@ -23,9 +49,37 @@ describe("knowledge enum census (KT-DEC-0005)", () => {
 
   it("maturity is exactly the 3 canonical levels (no stable/endorsed aliases)", () => {
     expect([...MaturitySchema.options].sort()).toEqual(["draft", "proven", "verified"]);
+    expect(MaturitySchema.options).not.toContain("stable");
+    expect(MaturitySchema.options).not.toContain("endorsed");
   });
 
   it("layer is exactly the 2 canonical layers", () => {
     expect([...LayerSchema.options].sort()).toEqual(["personal", "team"]);
+  });
+
+  it("live packages/**/src do not assign maturity: stable|endorsed (dead vocab gate)", () => {
+    const packagesRoot = fileURLToPath(new URL("../../..", import.meta.url));
+    // packages/shared/src/schemas → packages/
+    const monorepoPackages = join(packagesRoot, "..");
+    const hits: string[] = [];
+    for (const pkg of ["shared", "cli", "server"]) {
+      const src = join(monorepoPackages, pkg, "src");
+      let files: string[] = [];
+      try {
+        files = walkTsFiles(src);
+      } catch {
+        continue;
+      }
+      for (const file of files) {
+        if (file.includes(`${join("schemas", "knowledge-enum-census")}`)) continue;
+        const lines = readFileSync(file, "utf8").split(/\r?\n/u);
+        lines.forEach((line, idx) => {
+          if (COMMENT_LINE.test(line)) return;
+          if (!DEAD_MATURITY_ASSIGN.test(line)) return;
+          hits.push(`${file}:${idx + 1}:${line.trim()}`);
+        });
+      }
+    }
+    expect(hits, hits.join("\n")).toEqual([]);
   });
 });

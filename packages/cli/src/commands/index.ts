@@ -33,4 +33,11 @@ export const allCommands = {
   // with the hook → byte-identical). Renamed from `context`. --explain for
   // per-entry provenance.
   inspect: () => import("./inspect.js").then((module) => module.default),
+  // Read-only knowledge preview: a loopback-only HTTP server serving a web UI
+  // that groups store knowledge by semantic_scope. This is the "future web UI"
+  // whose restart door KT-DEC-0016 deliberately kept open — a minimal
+  // read-only surface, NOT a revival of the quarantined `serve`.
+  preview: () => import("./preview.js").then((module) => module.default),
+  // M-first-value-loop: deterministic first-hit oracle + surface summary.
+  "first-hit": () => import("./first-hit.js").then((module) => module.default),
 };
