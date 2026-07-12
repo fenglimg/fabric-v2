@@ -53,7 +53,7 @@ const EVENTS_LEDGER_FILE = "events.jsonl";
 // Tool names that trigger the mutation marker. PostToolUse fires on many tool
 // names across clients; we only react to the file-edit tools (matches the
 // PreToolUse narrow hint's EDIT_TOOL_NAMES so Pre/Post pair on the same set).
-const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
+const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit", "apply_patch"]);
 
 // KT-DEC-0030: tool names that read a file body. After retrieval collapsed to
 // one lean tool (KT-DEC-0026), the agent consumes a knowledge body via a NATIVE
@@ -121,6 +121,36 @@ function extractToolInput(payload) {
  * hint handles (single file_path / array file_paths / MultiEdit edits[]).
  * Returns a deduped array of strings — empty when none recognizable.
  */
+
+/**
+ * ISS-20260711-212: harvest paths from a Codex apply_patch tool_input.
+ * Codex may pass the patch body as a string (`input` / `patch` / `content`)
+ * carrying `*** Update|Add|Delete File:` directives (same grammar fabric-hint
+ * already parses for transcript digests).
+ */
+function extractApplyPatchPaths(toolInput) {
+  if (!toolInput || typeof toolInput !== "object") return [];
+  const candidates = [toolInput.input, toolInput.patch, toolInput.content, toolInput.file_path];
+  const collected = [];
+  const fileDirectiveRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+?)\s*$/gm;
+  for (const c of candidates) {
+    if (typeof c !== "string" || c.length === 0) continue;
+    // Plain path form (rare): treat non-patch strings that look like paths.
+    if (!c.includes("***") && (c.includes("/") || c.endsWith(".ts") || c.endsWith(".js") || c.endsWith(".md"))) {
+      // Only accept when the field is file_path-like and short.
+      if (c.length < 512 && !c.includes("\n")) collected.push(c);
+      continue;
+    }
+    let m;
+    fileDirectiveRe.lastIndex = 0;
+    while ((m = fileDirectiveRe.exec(c)) !== null) {
+      const fp = m[1].trim();
+      if (fp.length > 0) collected.push(fp);
+    }
+  }
+  return collected;
+}
+
 function extractPaths(toolInput) {
   if (!toolInput || typeof toolInput !== "object") return [];
   const collected = [];
@@ -144,6 +174,11 @@ function extractPaths(toolInput) {
         collected.push(edit.file_path);
       }
     }
+  }
+
+  // ISS-20260711-212: Codex apply_patch path harvest
+  for (const p of extractApplyPatchPaths(toolInput)) {
+    collected.push(p);
   }
 
   const seen = new Set();

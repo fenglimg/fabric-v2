@@ -116,6 +116,24 @@ describe("post-tooluse-mutation.cjs — extractPaths", () => {
       hook.extractPaths({ file_path: "src/a.ts", edits: [{ file_path: "src/a.ts" }, { file_path: "src/b.ts" }] }),
     ).toEqual(["src/a.ts", "src/b.ts"]);
   });
+  // ISS-20260711-212: Codex apply_patch path harvest
+  it("harvests paths from apply_patch *** File: directives", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: packages/cli/src/a.ts",
+      "+const x = 1",
+      "*** Add File: packages/cli/src/b.ts",
+      "+export {}",
+      "*** End Patch",
+    ].join("\n");
+    expect(hook.extractPaths({ input: patch })).toEqual([
+      "packages/cli/src/a.ts",
+      "packages/cli/src/b.ts",
+    ]);
+  });
+  it("EDIT_TOOL_NAMES includes apply_patch", () => {
+    expect(hook.CONSTANTS.EDIT_TOOL_NAMES.has("apply_patch")).toBe(true);
+  });
 });
 
 describe("post-tooluse-mutation.cjs — main marker append", () => {

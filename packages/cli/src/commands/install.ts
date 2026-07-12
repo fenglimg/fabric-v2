@@ -965,8 +965,29 @@ async function executeInitStagePlan(
         return { name: "mcp", disposition: "ran" };
       }
       case "hooks": {
+        // ISS-20260711-257: installHooks is best-effort and returns errors[]
+        // without throwing. Mirror the v2 hooks.stage — surface failures and
+        // mark the stage failed so operators don't see a green "completed/ran"
+        // when hook scripts or path validation actually errored.
         const result = await installHooks(plan.target);
-        console.log(formatInitStageResult("hooks", "completed", result.installed.length, result.skipped.length));
+        for (const err of result.errors) {
+          writeBound(`hooks ${err}`);
+        }
+        if (result.errors.length > 0) {
+          console.log(
+            formatInitStageResult(
+              "hooks",
+              "completed",
+              result.installed.length,
+              result.skipped.length,
+              `errors=${result.errors.length}`,
+            ),
+          );
+          return { name: "hooks", disposition: "failed" };
+        }
+        console.log(
+          formatInitStageResult("hooks", "completed", result.installed.length, result.skipped.length),
+        );
         return { name: "hooks", disposition: "ran" };
       }
       default:

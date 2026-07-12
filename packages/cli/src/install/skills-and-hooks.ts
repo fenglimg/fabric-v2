@@ -1483,7 +1483,17 @@ async function mergeJsonIdempotent(
   fragment: Record<string, unknown>,
   arrayAppendPaths: string[],
 ): Promise<InstallStepResult> {
-  const existing = await readJsonObjectOrEmpty(target);
+  // ISS-20260711-258: refuse to "heal" a non-object settings/hooks file by
+  // replacing it with {}. That silently destroyed user content (e.g. a
+  // settings.json that was accidentally an array or primitive) and then
+  // overwrote the path with only the fabric fragment.
+  let existing: Record<string, unknown>;
+  try {
+    existing = await readJsonObjectOrEmpty(target);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { step, path: target, status: "error", message };
+  }
   // v2.0.0-rc.27 TASK-004 (audit §2.6): sweep stale fabric-owned hook
   // entries BEFORE the merge so the upgrade path
   // (rc.5 archive-hint → rc.5+ fabric-hint, or relative-path → sigil-path)
@@ -1507,7 +1517,11 @@ async function readJsonObjectOrEmpty(path: string): Promise<Record<string, unkno
     }
     const parsed = JSON.parse(raw) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
+      throw new Error(
+        `refusing to merge into non-object JSON at ${path} (got ${
+          parsed === null ? "null" : Array.isArray(parsed) ? "array" : typeof parsed
+        }) — fix or rename the file before re-running fabric install`,
+      );
     }
     return parsed as Record<string, unknown>;
   } catch (error: unknown) {

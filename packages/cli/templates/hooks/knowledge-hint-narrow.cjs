@@ -184,7 +184,7 @@ let SYNTHETIC_SESSION_ID = null;
 
 // Tool names that trigger the narrow-injection branch. PreToolUse fires on
 // many tool names across clients; we only react to file-edit tools.
-const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
+const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit", "apply_patch"]);
 
 // v2.0.0-rc.33 W2 fabric-config keys & defaults. Mirror of the schema in
 // packages/shared/src/schemas/fabric-config.ts — hooks cannot require()
@@ -303,6 +303,36 @@ function extractToolInput(payload) {
  * Returns a deduped array of strings — empty when no path is recognizable.
  * Order: first occurrence wins (stable across re-renders of the same payload).
  */
+
+/**
+ * ISS-20260711-212: harvest paths from a Codex apply_patch tool_input.
+ * Codex may pass the patch body as a string (`input` / `patch` / `content`)
+ * carrying `*** Update|Add|Delete File:` directives (same grammar fabric-hint
+ * already parses for transcript digests).
+ */
+function extractApplyPatchPaths(toolInput) {
+  if (!toolInput || typeof toolInput !== "object") return [];
+  const candidates = [toolInput.input, toolInput.patch, toolInput.content, toolInput.file_path];
+  const collected = [];
+  const fileDirectiveRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+?)\s*$/gm;
+  for (const c of candidates) {
+    if (typeof c !== "string" || c.length === 0) continue;
+    // Plain path form (rare): treat non-patch strings that look like paths.
+    if (!c.includes("***") && (c.includes("/") || c.endsWith(".ts") || c.endsWith(".js") || c.endsWith(".md"))) {
+      // Only accept when the field is file_path-like and short.
+      if (c.length < 512 && !c.includes("\n")) collected.push(c);
+      continue;
+    }
+    let m;
+    fileDirectiveRe.lastIndex = 0;
+    while ((m = fileDirectiveRe.exec(c)) !== null) {
+      const fp = m[1].trim();
+      if (fp.length > 0) collected.push(fp);
+    }
+  }
+  return collected;
+}
+
 function extractPaths(toolInput) {
   if (!toolInput || typeof toolInput !== "object") return [];
   const collected = [];
@@ -331,6 +361,11 @@ function extractPaths(toolInput) {
         collected.push(edit.file_path);
       }
     }
+  }
+
+  // ISS-20260711-212: Codex apply_patch path harvest
+  for (const p of extractApplyPatchPaths(toolInput)) {
+    collected.push(p);
   }
 
   // Dedupe preserving first-occurrence order.

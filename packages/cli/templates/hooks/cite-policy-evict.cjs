@@ -67,7 +67,7 @@ const EVENTS_LEDGER_REL = join(".fabric", "events.jsonl");
 // Tool names that trigger the recall-nudge branch. PreToolUse fires on many
 // tool names across clients; we only react to file-edit tools (mirrors
 // knowledge-hint-narrow.cjs EDIT_TOOL_NAMES).
-const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
+const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit", "apply_patch"]);
 
 // Default recency window: a fab_recall within the last 30 minutes counts as
 // "informing" the edit. Generous — a long edit session after one recall sweep
@@ -218,6 +218,36 @@ function extractToolInput(payload) {
  * Pull edit target paths from a tool_input object. Handles scalar file_path,
  * array file_paths, and MultiEdit edits[]. Deduped, first-occurrence order.
  */
+
+/**
+ * ISS-20260711-212: harvest paths from a Codex apply_patch tool_input.
+ * Codex may pass the patch body as a string (`input` / `patch` / `content`)
+ * carrying `*** Update|Add|Delete File:` directives (same grammar fabric-hint
+ * already parses for transcript digests).
+ */
+function extractApplyPatchPaths(toolInput) {
+  if (!toolInput || typeof toolInput !== "object") return [];
+  const candidates = [toolInput.input, toolInput.patch, toolInput.content, toolInput.file_path];
+  const collected = [];
+  const fileDirectiveRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+?)\s*$/gm;
+  for (const c of candidates) {
+    if (typeof c !== "string" || c.length === 0) continue;
+    // Plain path form (rare): treat non-patch strings that look like paths.
+    if (!c.includes("***") && (c.includes("/") || c.endsWith(".ts") || c.endsWith(".js") || c.endsWith(".md"))) {
+      // Only accept when the field is file_path-like and short.
+      if (c.length < 512 && !c.includes("\n")) collected.push(c);
+      continue;
+    }
+    let m;
+    fileDirectiveRe.lastIndex = 0;
+    while ((m = fileDirectiveRe.exec(c)) !== null) {
+      const fp = m[1].trim();
+      if (fp.length > 0) collected.push(fp);
+    }
+  }
+  return collected;
+}
+
 function extractPaths(toolInput) {
   if (!toolInput || typeof toolInput !== "object") return [];
   const collected = [];
@@ -236,6 +266,11 @@ function extractPaths(toolInput) {
       }
     }
   }
+  // ISS-20260711-212: Codex apply_patch path harvest
+  for (const p of extractApplyPatchPaths(toolInput)) {
+    collected.push(p);
+  }
+
   const seen = new Set();
   const out = [];
   for (const p of collected) {
@@ -439,7 +474,36 @@ async function main(env, stdio) {
 
     const toolName = extractToolName(payload);
     if (!toolName || !EDIT_TOOL_NAMES.has(toolName)) {
-      return; // not a file-edit tool — silent
+      // ISS-20260711-214 / NEW-21: Codex registers this script as a 2nd
+      // SessionStart entry. SessionStart payloads have no tool_name — emit a
+      // one-shot soft cite tip (never a gate) instead of going fully silent.
+      const eventName =
+        payload &&
+        (payload.hook_event_name || payload.event_name || payload.event || payload.type);
+      const isSessionStart =
+        eventName === "SessionStart" ||
+        eventName === "session_start" ||
+        (payload &&
+          typeof payload === "object" &&
+          !toolName &&
+          payload.tool_input === undefined &&
+          payload.input === undefined);
+      if (isSessionStart) {
+        const streams = (env && env.stdio) || stdio || {};
+        emitContext(
+          [
+            "[fabric cite] SessionStart: 编辑前先 fab_recall(paths=[...])，系统会自动记账引用。",
+            "(nudge only — 不阻塞; cite 覆盖率见 fabric audit cite)",
+          ].join("\n"),
+          {
+            client: isClaudeCode() || (env && env.forceClaudeCode === true) ? "cc" : undefined,
+            eventName: "SessionStart",
+            forceStderr: true,
+            streams,
+          },
+        );
+      }
+      return;
     }
 
     const editPaths = extractPaths(extractToolInput(payload));
