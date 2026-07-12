@@ -175,7 +175,7 @@ describe("install-v2 pipeline UX", () => {
     // (StoreStage.ensureLanguageSelected) early-returns instead of consuming
     // the store-onboarding select mock below.
     saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
-    storeCreate("team", "2026-06-08T00:00:00.000Z", {
+    await storeCreate("team", "2026-06-08T00:00:00.000Z", {
       uuid: teamUuid,
       git: false,
       globalRoot,
@@ -268,7 +268,7 @@ describe("install-v2 pipeline UX", () => {
     // (StoreStage.ensureLanguageSelected) early-returns instead of consuming
     // the store-onboarding select mock below.
     saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
-    storeCreate("team", "2026-06-08T00:00:00.000Z", {
+    await storeCreate("team", "2026-06-08T00:00:00.000Z", {
       uuid: teamUuid,
       git: false,
       globalRoot,
@@ -309,7 +309,7 @@ describe("install-v2 pipeline UX", () => {
     const globalRoot = join(home, ".fabric");
     const teamUuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", language: "en" }), globalRoot);
-    storeCreate("team", "2026-06-08T00:00:00.000Z", { uuid: teamUuid, git: false, globalRoot });
+    await storeCreate("team", "2026-06-08T00:00:00.000Z", { uuid: teamUuid, git: false, globalRoot });
     // Seed an existing project whose id will NOT match the temp repo's git name,
     // so the ambiguity guard must prompt instead of silently forking.
     await storeProjectCreate("team", "existing-app", "2026-06-08T00:00:00.000Z", {
@@ -374,7 +374,7 @@ describe("install-v2 pipeline UX", () => {
       }),
       globalRoot,
     );
-    storeCreate("team", "2026-06-08T00:00:00.000Z", {
+    await storeCreate("team", "2026-06-08T00:00:00.000Z", {
       uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       git: false,
       globalRoot,
@@ -420,7 +420,7 @@ describe("install-v2 pipeline UX", () => {
       }),
       globalRoot,
     );
-    storeCreate("team", "2026-06-08T00:00:00.000Z", {
+    await storeCreate("team", "2026-06-08T00:00:00.000Z", {
       uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       git: false,
       globalRoot,

@@ -57,16 +57,18 @@ async function setupHome(): Promise<string> {
     }),
     globalRoot,
   );
-  // storeCreate mints the per-store on-disk skeleton so scope-explain's
-  // buildResolveInput can resolve read_set entries without throwing.
-  storeCreate("personal", "2026-05-30T00:00:00.000Z", {
+  // storeCreate is async (global config RMW + on-disk skeleton). MUST await
+  // before returning — fire-and-forget races afterEach rm(home) and produces
+  // ENOENT rename on fabric-global.json (CI / full suite flake, multi-repo
+  // dogfood era).
+  await storeCreate("personal", "2026-05-30T00:00:00.000Z", {
     uuid: PERSONAL,
     personal: true,
     git: false,
     globalRoot,
   });
-  storeCreate("team", "2026-05-30T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
-  storeCreate("other-team", "2026-05-30T00:00:00.000Z", {
+  await storeCreate("team", "2026-05-30T00:00:00.000Z", { uuid: TEAM, git: false, globalRoot });
+  await storeCreate("other-team", "2026-05-30T00:00:00.000Z", {
     uuid: OTHER_TEAM,
     git: false,
     globalRoot,
