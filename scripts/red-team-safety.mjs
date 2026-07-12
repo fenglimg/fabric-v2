@@ -20,23 +20,33 @@
 // Each attack records expected=BLOCKED/REJECTED and the actual verdict. Any attack
 // that gets through (guard fails open) → non-zero exit. Hard gate: zero breaches.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import {
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const SHARED_DIST = join(ROOT, "packages/shared/dist/index.js");
+const PAYLOAD_GUARD_DIST = join(ROOT, "packages/shared/dist/node/mcp-payload-guard.js");
+
+if (!existsSync(SHARED_DIST) || !existsSync(PAYLOAD_GUARD_DIST)) {
+  console.error(
+    "[red-team-safety] missing packages/shared dist — run `pnpm --filter @fenglimg/fabric-shared build` first",
+  );
+  process.exit(2);
+}
+
+const {
   scanForSecrets,
   hasSecrets,
   redactSecrets,
   redactPii,
   storeAliasSchema,
   storeMountNameSchema,
-} from "/Users/wepie/Desktop/personal-projects/pcf-release-eval/packages/shared/dist/index.js";
-import {
-  enforcePayloadLimit,
-  PAYLOAD_LIMIT_DEFAULT_HARD_BYTES,
-} from "/Users/wepie/Desktop/personal-projects/pcf-release-eval/packages/shared/dist/node/mcp-payload-guard.js";
+} = await import(pathToFileURL(SHARED_DIST).href);
+const { enforcePayloadLimit, PAYLOAD_LIMIT_DEFAULT_HARD_BYTES } = await import(
+  pathToFileURL(PAYLOAD_GUARD_DIST).href,
+);
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const breaches = [];
 const results = [];
 const record = (klass, vector, expected, contained, detail) => {
