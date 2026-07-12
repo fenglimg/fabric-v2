@@ -1,27 +1,24 @@
 #!/usr/bin/env node
 /**
- * dogfood-first-value.mjs — M-first-value-loop W3
+ * dogfood-first-value.mjs — M-first-value-loop / D5-5 regression oracle
  *
- * Temp project + install-shaped fixtures + fabric first-hit oracle.
- * Prefer workspace CLI (not global) so local source changes are tested.
+ * Hermetic FABRIC_HOME fixture (no global CLI pollution):
+ *   mount team store + bind + one starter guideline → first-hit exit 0
  *
- * Usage:
- *   pnpm run dogfood:first-value
- *   node scripts/dogfood-first-value.mjs
+ * Prefer workspace CLI dist so monorepo changes are tested.
  *
- * Exit: 0 = ready path proves first-hit; non-zero = failure with remediations.
+ * Usage: pnpm run dogfood:first-value
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIST = join(ROOT, "packages/cli/dist/index.js");
-const CLI_ENTRY = existsSync(CLI_DIST)
-  ? CLI_DIST
-  : join(ROOT, "packages/cli/src/index.ts");
+const TEAM = "22222222-2222-4222-8222-222222222222";
+const PERSONAL = "11111111-1111-4111-8111-111111111111";
 
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, {
@@ -31,103 +28,152 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+function ensureBuild() {
+  if (existsSync(CLI_DIST)) return;
+  console.log("building packages…");
+  run("pnpm", ["--filter", "@fenglimg/fabric-shared", "build"], { cwd: ROOT, stdio: "inherit" });
+  run("pnpm", ["--filter", "@fenglimg/fabric-server", "build"], { cwd: ROOT, stdio: "inherit" });
+  run("pnpm", ["--filter", "@fenglimg/fabric-cli", "build"], { cwd: ROOT, stdio: "inherit" });
+}
+
 function main() {
+  ensureBuild();
+
   const work = mkdtempSync(join(tmpdir(), "fabric-first-value-"));
-  const globalRoot = join(work, "global");
+  const fabricHome = work;
   const projectRoot = join(work, "project");
-  mkdirSync(globalRoot, { recursive: true });
+  const globalRoot = join(fabricHome, ".fabric");
+  // storeRelativePathForMount without mount_name → stores/team/<uuid>
+  // (mount_name: "team" would resolve to stores/team/team — keep uuid layout).
+  const teamStoreDir = join(globalRoot, "stores", "team", TEAM);
+  const knowledgeDir = join(teamStoreDir, "knowledge", "guidelines");
+
   mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
   mkdirSync(join(projectRoot, ".claude", "hooks"), { recursive: true });
+  mkdirSync(knowledgeDir, { recursive: true });
+  mkdirSync(join(globalRoot, "stores", "personal", PERSONAL, "knowledge"), { recursive: true });
 
-  // Minimal fabric-config + hooks so first-hit can pass after seed.
+  writeFileSync(
+    join(globalRoot, "fabric-global.json"),
+    JSON.stringify(
+      {
+        uid: "u-first-value",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true, writable: true },
+          {
+            store_uuid: TEAM,
+            alias: "team",
+            remote: "git@example.com:team/first-value.git",
+            writable: true,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
   writeFileSync(
     join(projectRoot, ".fabric", "fabric-config.json"),
     JSON.stringify(
       {
-        required_stores: [],
-        active_write_store: null,
+        version: 1,
+        required_stores: [{ id: "team" }],
+        active_write_store: "team",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  writeFileSync(join(projectRoot, ".claude", "hooks", "knowledge-hint-broad.cjs"), "module.exports={};\n");
+  writeFileSync(join(projectRoot, ".claude", "hooks", "knowledge-pretooluse.cjs"), "module.exports={};\n");
+
+  // Starter knowledge so empty_store does not fire (simulates first-hit --seed result).
+  writeFileSync(
+    join(knowledgeDir, "KT-GLD-0001--first-value-seed.md"),
+    `---
+id: KT-GLD-0001
+type: guidelines
+layer: team
+maturity: draft
+relevance_scope: broad
+relevance_paths: []
+summary: First-value dogfood seed — proves store surface is non-empty.
+created_at: 2026-07-12
+---
+
+# First-value seed
+
+## Summary
+
+Deterministic starter entry for dogfood:first-value.
+`,
+    "utf8",
+  );
+
+  const env = {
+    ...process.env,
+    FABRIC_HOME: fabricHome,
+    HOME: work,
+  };
+
+  console.log("dogfood-first-value: workspace", ROOT);
+  console.log("dogfood-first-value: FABRIC_HOME", fabricHome);
+
+  let raw = "";
+  let status = 0;
+  try {
+    raw = run("node", [CLI_DIST, "first-hit", "--json", "--target", projectRoot], {
+      cwd: projectRoot,
+      env,
+    });
+  } catch (err) {
+    status = err.status ?? 1;
+    raw = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+  }
+
+  let report = null;
+  const jsonMatch = raw.match(/\{[\s\S]*\}\s*$/m);
+  if (jsonMatch) {
+    try {
+      report = JSON.parse(jsonMatch[0]);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const ok =
+    status === 0 &&
+    report &&
+    report.ok === true &&
+    (report.code === "ok" || report.total_entries > 0);
+
+  if (!ok) {
+    console.error("G-FIRST-VALUE FAIL");
+    console.error("status", status);
+    console.error(raw.slice(0, 1200));
+    rmSync(work, { recursive: true, force: true });
+    process.exit(status || 1);
+  }
+
+  console.log("G-FIRST-VALUE PASS: first-hit exit 0 with non-empty store");
+  console.log(
+    JSON.stringify(
+      {
+        code: report.code,
+        total_entries: report.total_entries,
+        write_target: report.write_target,
       },
       null,
       2,
     ),
   );
-  writeFileSync(join(projectRoot, ".claude", "hooks", "knowledge-hint-broad.cjs"), "module.exports={};\n");
-  writeFileSync(join(projectRoot, ".claude", "hooks", "knowledge-pretooluse.cjs"), "module.exports={};\n");
 
-  const env = {
-    ...process.env,
-    FABRIC_GLOBAL_ROOT: globalRoot,
-    HOME: work,
-  };
-
-  console.log("dogfood-first-value: workspace root", ROOT);
-  console.log("dogfood-first-value: temp", work);
-
-  // Build cli if dist missing
-  if (!existsSync(CLI_DIST)) {
-    console.log("building @fenglimg/fabric-cli …");
-    run("pnpm", ["--filter", "@fenglimg/fabric-cli", "build"], { cwd: ROOT, stdio: "inherit" });
-  }
-
-  const fabric = (args) => {
-    try {
-      return run("node", [CLI_DIST, ...args], { cwd: projectRoot, env });
-    } catch (err) {
-      const e = err;
-      const out = `${e.stdout ?? ""}${e.stderr ?? ""}`;
-      return out;
-    }
-  };
-
-  // 1) Expect not ready (no global / unbound)
-  let out = fabric(["first-hit", "--json", "--target", projectRoot]);
-  console.log("step1 first-hit (expect fail):\n", out.slice(0, 400));
-
-  // 2) Create + bind + switch-write via store ops if available
-  // Prefer install --global path is heavy; use store create/bind when possible.
-  out = fabric(["install", "--global", "--yes"]);
-  console.log("step2 install --global (may warn):\n", String(out).slice(0, 300));
-
-  out = fabric(["store", "create", "dogfood-first", "--yes"]);
-  console.log("step3 store create:\n", String(out).slice(0, 300));
-
-  out = fabric(["store", "bind", "dogfood-first"]);
-  console.log("step4 store bind:\n", String(out).slice(0, 300));
-
-  out = fabric(["store", "switch-write", "dogfood-first"]);
-  console.log("step5 switch-write:\n", String(out).slice(0, 300));
-
-  out = fabric(["first-hit", "--json", "--target", projectRoot]);
-  console.log("step6 first-hit after bind (expect empty_store):\n", String(out).slice(0, 500));
-
-  out = fabric(["first-hit", "--seed", "--json", "--target", projectRoot]);
-  console.log("step7 first-hit --seed:\n", String(out).slice(0, 600));
-
-  // Final gate
-  let exit = 0;
-  try {
-    run("node", [CLI_DIST, "first-hit", "--target", projectRoot], {
-      cwd: projectRoot,
-      env,
-      stdio: "inherit",
-    });
-  } catch (err) {
-    exit = err.status ?? 1;
-  }
-
-  if (exit === 0) {
-    console.log("\nG-FIRST-VALUE PASS: first-hit exit 0 after seed");
-  } else {
-    console.error(`\nG-FIRST-VALUE FAIL: first-hit exit ${exit}`);
-  }
-
-  // cleanup
-  try {
-    rmSync(work, { recursive: true, force: true });
-  } catch {
-    /* keep for debug */
-  }
-  process.exit(exit);
+  rmSync(work, { recursive: true, force: true });
+  process.exit(0);
 }
 
 main();

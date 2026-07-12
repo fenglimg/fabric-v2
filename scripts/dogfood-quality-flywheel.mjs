@@ -31,26 +31,52 @@ function run(cmd, args, opts = {}) {
 
 function ensureBuild() {
   if (existsSync(SERVER_DIST)) return;
-  console.log("building packages for quality flywheel…");
+  console.log("building packages…");
   run("pnpm", ["--filter", "@fenglimg/fabric-shared", "build"], { cwd: ROOT, stdio: "inherit" });
   run("pnpm", ["--filter", "@fenglimg/fabric-server", "build"], { cwd: ROOT, stdio: "inherit" });
 }
 
 function maturityOf(path) {
-  const m = readFileSync(path, "utf8").match(/^maturity:\s*(\S+)/mu);
+  const m = readFileSync(path, "utf8").match(/^maturity:\s*(\S+)/m);
   return m?.[1] ?? null;
 }
 
 async function main() {
   ensureBuild();
 
+  const { reviewKnowledge } = await import(SERVER_DIST);
+
   const work = mkdtempSync(join(tmpdir(), "fab-quality-"));
   const fabricHome = work;
-  process.env.FABRIC_HOME = fabricHome;
-  process.env.HOME = work;
-
+  const globalRoot = join(fabricHome, ".fabric");
   const projectRoot = join(work, "project");
+  // Two-layer layout: stores/personal|<group>/<uuid> (storeRelativePathForMount)
+  const personalDir = join(globalRoot, "stores", "personal", PERSONAL);
+  const teamDir = join(globalRoot, "stores", "team", TEAM);
+  const pendingDir = join(teamDir, "knowledge", "pending", "guidelines");
+
+  mkdirSync(join(personalDir, "knowledge"), { recursive: true });
+  mkdirSync(pendingDir, { recursive: true });
+  mkdirSync(join(teamDir, "knowledge", "guidelines"), { recursive: true });
   mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
+
+  process.env.FABRIC_HOME = fabricHome;
+
+  writeFileSync(
+    join(globalRoot, "fabric-global.json"),
+    JSON.stringify(
+      {
+        uid: "u-quality-dogfood",
+        stores: [
+          { store_uuid: PERSONAL, alias: "personal", personal: true, writable: true },
+          { store_uuid: TEAM, alias: "team", remote: "git@e:t.git", writable: true },
+        ],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
   writeFileSync(
     join(projectRoot, ".fabric", "fabric-config.json"),
     JSON.stringify(
@@ -65,140 +91,87 @@ async function main() {
     "utf8",
   );
 
-  // Mirror review.test provisionStores: global + mount dirs under FABRIC_HOME/.fabric
-  const globalRoot = join(fabricHome, ".fabric");
-  mkdirSync(globalRoot, { recursive: true });
-  writeFileSync(
-    join(globalRoot, "fabric-global.json"),
-    JSON.stringify(
-      {
-        uid: "u-quality-dogfood",
-        stores: [
-          { store_uuid: PERSONAL, alias: "personal", personal: true, writable: true },
-          {
-            store_uuid: TEAM,
-            alias: "team",
-            remote: "git@example:team.git",
-            writable: true,
-          },
-        ],
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-
-  const teamStoreDir = join(globalRoot, "stores", TEAM);
-  const pendingDir = join(teamStoreDir, "knowledge", "pending", "decisions");
-  mkdirSync(pendingDir, { recursive: true });
-  mkdirSync(join(globalRoot, "stores", PERSONAL, "knowledge"), { recursive: true });
-
-  const slug = "quality-flywheel-seed";
+  const slug = "quality-flywheel-draft";
   const pendingPath = join(pendingDir, `${slug}.md`);
-  writeFileSync(
-    pendingPath,
-    [
-      "---",
-      "type: decisions",
-      "maturity: draft",
-      "layer: team",
-      `created_at: ${new Date().toISOString()}`,
-      "source_session: dogfood-quality-flywheel",
-      "tags: [dogfood, quality]",
-      "x-fabric-idempotency-key: sha256:0000000000000000000000000000000000000000000000000000000000000001",
-      "---",
-      "",
-      "## Summary",
-      "",
-      "Deterministic D4 quality flywheel seed — promote draft to verified via fab_review.",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
+  const pendingBody = `---
+type: guidelines
+maturity: draft
+layer: team
+created_at: ${new Date().toISOString()}
+source_session: sess-quality-flywheel
+tags: [dogfood, quality]
+x-fabric-idempotency-key: sha256:0000000000000000000000000000000000000000000000000000000000000001
+---
 
-  // Init git so approve's git-aware paths do not explode if they touch projectRoot.
+## Summary
+
+D4 quality flywheel dogfood: promote me from draft to verified via fab_review.
+
+## Evidence
+
+Hermetic e2e seed — not production knowledge.
+`;
+  writeFileSync(pendingPath, pendingBody, "utf8");
+
   try {
-    run("git", ["init", "--quiet"], { cwd: projectRoot });
-    run("git", ["config", "user.email", "dogfood@example.com"], { cwd: projectRoot });
-    run("git", ["config", "user.name", "Fabric Dogfood"], { cwd: projectRoot });
-  } catch {
-    /* non-fatal */
-  }
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve" || !approve.approved?.[0]?.stable_id) {
+      console.error("FAIL: approve did not return stable_id", approve);
+      process.exit(1);
+    }
+    const { stable_id: stableId } = approve.approved[0];
+    const canonicalPath = join(teamDir, "knowledge", "guidelines", `${stableId}--${slug}.md`);
+    if (!existsSync(canonicalPath)) {
+      console.error("FAIL: canonical missing after approve", canonicalPath);
+      process.exit(1);
+    }
+    if (maturityOf(canonicalPath) !== "draft") {
+      console.error("FAIL: expected draft after approve, got", maturityOf(canonicalPath));
+      process.exit(1);
+    }
 
-  const { reviewKnowledge } = await import(SERVER_DIST);
+    const modify = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: canonicalPath,
+      changes: { maturity: "verified" },
+    });
+    if (modify.action !== "modify") {
+      console.error("FAIL: modify failed", modify);
+      process.exit(1);
+    }
+    if (maturityOf(canonicalPath) !== "verified") {
+      console.error("FAIL: maturity not verified after modify", maturityOf(canonicalPath));
+      process.exit(1);
+    }
 
-  const approve = await reviewKnowledge(projectRoot, {
-    action: "approve",
-    pending_paths: [pendingPath],
-  });
-
-  if (approve.action !== "approve" || !approve.approved?.[0]?.stable_id) {
-    console.error("FAIL: approve did not return stable_id", approve);
-    rmSync(work, { recursive: true, force: true });
+    console.log("PASS quality flywheel: approve + modify draft → verified");
+    console.log(
+      JSON.stringify(
+        {
+          stable_id: stableId,
+          before: "draft",
+          after: "verified",
+          path: canonicalPath,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log("NOTE: retire path = fab_review action=retire; no default LLM-judge auto-promote");
+    process.exit(0);
+  } catch (err) {
+    console.error("FAIL:", err?.message ?? err);
     process.exit(1);
+  } finally {
+    try {
+      rmSync(work, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
-
-  const stableId = approve.approved[0].stable_id;
-  const canonicalPath = join(
-    teamStoreDir,
-    "knowledge",
-    "decisions",
-    `${stableId}--${slug}.md`,
-  );
-
-  if (!existsSync(canonicalPath)) {
-    console.error("FAIL: canonical missing after approve:", canonicalPath);
-    rmSync(work, { recursive: true, force: true });
-    process.exit(1);
-  }
-
-  const before = maturityOf(canonicalPath);
-  if (before !== "draft") {
-    console.error("FAIL: post-approve maturity expected draft, got", before);
-    rmSync(work, { recursive: true, force: true });
-    process.exit(1);
-  }
-
-  const modify = await reviewKnowledge(projectRoot, {
-    action: "modify",
-    pending_path: canonicalPath,
-    changes: { maturity: "verified" },
-  });
-
-  if (modify.action !== "modify") {
-    console.error("FAIL: modify action unexpected", modify);
-    rmSync(work, { recursive: true, force: true });
-    process.exit(1);
-  }
-
-  const after = maturityOf(canonicalPath);
-  if (after !== "verified") {
-    console.error("FAIL: maturity not verified after modify, got", after);
-    rmSync(work, { recursive: true, force: true });
-    process.exit(1);
-  }
-
-  console.log("PASS quality flywheel: draft → verified via reviewKnowledge");
-  console.log(
-    JSON.stringify(
-      {
-        stable_id: stableId,
-        before,
-        after,
-        path: canonicalPath,
-        note: "retire path = fab_review action=retire; no default LLM-judge auto-promote",
-      },
-      null,
-      2,
-    ),
-  );
-
-  rmSync(work, { recursive: true, force: true });
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error("FAIL quality flywheel:", err);
-  process.exit(1);
-});
+main();
