@@ -7,6 +7,14 @@ description: "Knowledge retrieval playbook — when/how to fab_recall, lazy body
 
 Fabric is **curated knowledge**, not local evidence memory (logs/terminal/session dumps). This skill teaches **how to use** existing MCP/CLI retrieval — it does not replace `fab_recall` and does not capture terminal output.
 
+## Hard rules
+
+- Agents **MUST** call `fab_recall(paths=[...], session_id=...)` before editing files when knowledge might apply.
+- Agents **MUST** load bodies only via native `Read` of selected `entries[].read_path` (lazy body; no bulk dump).
+- Agents **NEVER** invent `stable_id` / cite ids without a real recall (or pending search) hit.
+- Agents **NEVER** auto-promote logs, terminal dumps, or raw transcripts to canonical knowledge.
+- For scenario tables and failure-path checklists, open `ref/scenarios.md` (linked from this skill).
+
 ## Mental model
 
 | Layer | Product | Question |
@@ -29,6 +37,8 @@ Fabric is **curated knowledge**, not local evidence memory (logs/terminal/sessio
 
 ## Scenario playbooks
 
+Detailed scenario matrices live in `ref/scenarios.md`. Summary:
+
 ### A. About to edit code
 - `fab_recall(paths=[files you will touch], intent="optional short goal")`
 - Read at most the top few high-impact bodies
@@ -39,46 +49,35 @@ Fabric is **curated knowledge**, not local evidence memory (logs/terminal/sessio
 - Prefer decisions/pitfalls with matching tags or paths
 - Verify body before claiming the decision text
 
-### C. Pending backlog / review prep
-- `fab_pending action=list` (filters as needed)
-- Route write/triage through `fabric-review` skill — this skill is read-side only
+### C. Pending backlog
+- `fab_pending action="list"` (optionally filter type/layer)
+- Batch review via `fabric-review` skill when backlog is large
 
-### D. "Nothing surfaced" / wrong knowledge
-1. Confirm store bind + write route (`fabric store list` / `fabric doctor`)
-2. `fabric audit why-not-surfaced <id>` when id known
-3. Broaden `intent` or paths; check `semantic_scope` / project bind
-4. If still empty: say so and continue with normal tools — **do not fabricate KB**
+### D. Empty recall / "why didn't this surface?"
+- Check: store bound? `semantic_scope`? broad vs narrow timing? wrong project bind?
+- Prefer `fabric audit why-not-surfaced <id>` when available
+- Re-run recall with narrower `paths` / clearer `intent`
 
-### E. User pastes logs / wants terminal evidence
-- Treat as **evidence**, not knowledge
-- Fix with normal tools; if durable rule emerges, `fabric-archive` → pending → review
-- Optional: mention a local evidence companion; **do not** shell-capture into Fabric
+### E. After a decision / wrong-turn
+- Propose archive via `fabric-archive` (user-driven or wrong-turn-revert) — do not dump session logs as knowledge
 
-## Safety (non-interactive)
-
-- Prefer MCP tools already available; avoid opening TUIs or destructive store ops
-- Do not dump entire store into context
-- Do not claim current repo state from knowledge alone — verify files/commands
-- Lifecycle writes: `fabric-archive` / `fabric-review` only (not this skill)
-
-## Failure paths (must not skip)
+## Failure paths (short)
 
 | Symptom | Do |
 | --- | --- |
-| Empty `entries[]` | Diagnose bind/scope; broaden intent; admit gap |
-| Only low-relevance hits | Read none or one; dismiss with reason |
-| `no write-target` on propose | Not this skill — see write/MCP cwd pitfalls; still may recall |
-| User wants "agent memory of last command" | Evidence layer; not Fabric core |
+| Empty candidates | Diagnose bind/scope/timing; widen intent carefully; do not fabricate ids |
+| Too much noise | Prefer description ranking; read fewer bodies; tighten paths |
+| Cite unresolved | Treat as debt; fix with real recall or dismiss explicitly |
+| propose fails write-target | Check MCP cwd / store bind / write-target (not a recall bug) |
 
-## Related skills
+## Out of scope (this skill)
 
-- `fabric-archive` — propose pending from session insight
-- `fabric-review` — approve/reject/retire/relate
-- `fabric-store` / `fabric-sync` — store ops / git sync
+- Capturing terminal/test logs as knowledge (evidence tools)
+- Workflow orchestration (maestro-flow)
+- Replacing doctor/install/sync CLIs
 
-## Out of scope
+## Related tools
 
-- Terminal/shell capture hooks
-- WorkSet-like intermediate knowledge storage
-- Changing recall ranking/fusion engines
-- Auto-archive from logs
+- MCP: `fab_recall`, `fab_pending`, `fab_propose`, `fab_review`
+- Skills: `fabric-archive`, `fabric-review`, `fabric-store`, `fabric-sync`
+- CLI: `fabric doctor`, `fabric audit cite`, `fabric store …`
