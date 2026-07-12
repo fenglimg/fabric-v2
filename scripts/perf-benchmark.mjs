@@ -302,7 +302,7 @@ const payload = report.hook_cold_start.injection_payload;
 // store (no index built), so the hook emits an empty sink → total_bytes=0. A
 // 0-byte "pass" would be a false-green, so treat 0 as measurement-invalid (n/a)
 // rather than pass. The real injection size is measured against a representative
-// corpus in the G-PERF scorecard (re-runnable via scripts/measure-injection.mjs).
+// corpus in the G-PERF scorecard.
 const payloadMeasured = payload.total_bytes > 0;
 const payloadPass = payloadMeasured && payload.total_bytes <= HOOK_PAYLOAD_BUDGET_BYTES;
 report.verdict = {
