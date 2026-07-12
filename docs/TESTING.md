@@ -7,16 +7,16 @@
 测试策略按 3 层读取：
 
 1. **项目当前事实**：本文件、根 `package.json`、各 package `vitest.config.ts`、`.github/workflows/reusable-validate.yml`、`.github/workflows/ci.yml`。
-2. **全面测试方法论**：[test-methodology-v6.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/test-methodology-v6.md)。这是 v0→v6 多轮冷评、回测、human frame-challenge 后的 incumbent。
-3. **Fabric E2E/dogfood 方法论**：[e2e-methodology-FINAL.md](../.workflow/.scratchpad/e2e-methodology-FINAL.md)。这是 v2.1 多 store 后的端到端旅程方法论。
+2. **全面测试方法论**：[test-methodology-v6.md](./methodology/test-methodology-v6.md)。这是 v0→v6 多轮冷评、回测、human frame-challenge 后的 incumbent。
+3. **Fabric E2E/dogfood 方法论**：[e2e-methodology-FINAL.md](./methodology/e2e-methodology-FINAL.md)。这是 v2.1 多 store 后的端到端旅程方法论。
 
 方法论调研材料：
 
-- [mainstream-research.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/mainstream-research.md)：ISO 25010、HTSM、探索式测试、风险驱动、fitness functions、RAGAS、agent trajectory eval。
-- [samespace-research.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/samespace-research.md)：mem0/Letta/Zep、Braintrust/LangSmith/Langfuse、MCP Inspector。
-- [trackd-research.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/trackd-research.md)：OWASP LLM Top 10、LLM/agent 红队、成本和 loop 失控防护。
-- [backtest-answer-set.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/backtest-answer-set.md)：confirmed/refuted 回测答案集。
-- [discovery-rubric.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/discovery-rubric.md)：发现力评分规约。
+- [mainstream-research.md](./methodology/mainstream-research.md)：ISO 25010、HTSM、探索式测试、风险驱动、fitness functions、RAGAS、agent trajectory eval。
+- [samespace-research.md](./methodology/samespace-research.md)：mem0/Letta/Zep、Braintrust/LangSmith/Langfuse、MCP Inspector。
+- [trackd-research.md](./methodology/trackd-research.md)：OWASP LLM Top 10、LLM/agent 红队、成本和 loop 失控防护。
+- [backtest-answer-set.md](./methodology/backtest-answer-set.md)：confirmed/refuted 回测答案集。
+- [discovery-rubric.md](./methodology/discovery-rubric.md)：发现力评分规约。
 
 ## Commands
 

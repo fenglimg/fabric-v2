@@ -1,1 +1,0 @@
-{"id":"DEC-20260623111513","timestamp":"2026-06-23T11:15:13.370Z","source":"ralph","node_id":"post-goal-audit","type":"goal-gate","verdict":"all_met","unmet_count":0,"unmet_ids":[],"confidence_score":100,"parse_failed":false,"summary":"W3-A 4 sub-goals all met via 14-gate acceptance + 1118 tests + theme-parity; mechanical evidence (grep/git/tsc/test)"}

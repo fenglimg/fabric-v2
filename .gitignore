@@ -86,3 +86,8 @@ local_cache/
 # it is a local dev tool — kept out of VCS by its own design (self-marked
 # "not committed"); not a CI gate.
 scripts/i18n-audit.mjs
+
+# repo-hygiene-slim (2026-07-12): maestro CLI session runtime + issue-mine discoveries.
+# Registry/state and issues/*.jsonl stay tracked; only per-run session dirs & discovery blobs.
+.workflow/.maestro/
+.workflow/issues/discoveries/
