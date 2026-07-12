@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 import { runDoctorReport } from "./doctor.js";
 
 const tempRoots: string[] = [];
@@ -90,6 +90,15 @@ describe("runDoctorReport i18n snapshots", () => {
     expect(zhReport.checks.map((check) => check.name)).not.toEqual(
       enReport.checks.map((check) => check.name),
     );
+  });
+
+  // Doctor W5: registry/builders must preserve this machine-field order.
+  // Prefer this lock over free-form reordering of DOCTOR_CHECK_BUILDERS.
+  it("locks machine check order for registry refactors (code/kind/status contract)", async () => {
+    const target = createV2KnowledgeProject("doctor-check-order-lock");
+    setGlobalLanguage("en");
+    const report = await runDoctorReport(target);
+    expect(invariantChecks(report.checks)).toMatchSnapshot();
   });
 });
 

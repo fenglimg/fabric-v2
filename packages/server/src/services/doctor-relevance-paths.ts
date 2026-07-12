@@ -7,7 +7,7 @@ import { minimatch } from "minimatch";
 import type { Translator } from "@fenglimg/fabric-shared";
 
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // v2.2 Goal B (G-RELEVANCE) — relevance_paths hygiene lints over the read-set

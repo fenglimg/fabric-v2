@@ -23,7 +23,6 @@ const config: KnipConfig = {
   ignoreDependencies: [
     '@fenglimg/fabric-shared',
     '@fenglimg/fabric-server',
-    '@fenglimg/fabric-dashboard',
     // CLI: dynamic import().then() chains not followed by knip --strict for dep tracking.
     '@clack/prompts',
     'picocolors',
@@ -109,19 +108,6 @@ const config: KnipConfig = {
       project: ['src/**/*.ts'],
       ignore: ['src/**/__tests__/**', 'src/**/*.test.ts']
     },
-    'packages/dashboard': {
-      entry: [
-        'src/main.tsx',
-        'src/app.tsx',
-        'src/components/**/*.{ts,tsx}',
-        'src/views/**/*.{ts,tsx}',
-        'src/hooks/**/*.ts',
-        'src/api/**/*.ts',
-        'src/i18n/**/*.{ts,tsx}'
-      ],
-      project: ['src/**/*.{ts,tsx}'],
-      ignore: ['src/**/*.test.{ts,tsx}']
-    }
   }
 }
 

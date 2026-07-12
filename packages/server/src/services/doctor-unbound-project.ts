@@ -1,6 +1,6 @@
 import { loadProjectConfig, type Translator } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // unbound_project — project-scope binding backfill lint.

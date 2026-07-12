@@ -77,10 +77,12 @@ describe("werewolf-snapshot fixture (rc.37 F1)", () => {
     expect(metaInvalid).toBeUndefined();
 
     // Store-only cutover no longer counts retired project-local .fabric/knowledge
-    // as the canonical corpus for draft backlog.
-    const draftBacklog = report.checks.find((c) => c.name === "Knowledge draft backlog");
+    // as the canonical corpus for draft backlog. Match by stable code (i18n names vary).
+    const draftBacklog = report.checks.find((c) => c.code === "knowledge_draft_backlog" || c.name.includes("draft"));
     expect(draftBacklog?.status).toBe("ok");
-    expect(draftBacklog?.message).not.toContain("53/57");
+    if (draftBacklog?.message) {
+      expect(draftBacklog.message).not.toContain("53/57");
+    }
 
     // doctor-decruft W2: the "Knowledge auto-promote" info-surface assertion was
     // removed — the empty-stub draft_auto_promote check was deleted.

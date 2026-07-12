@@ -13,7 +13,7 @@ import {
   type Translator,
 } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // Store-orphan detection (store-onboarding grill, Q5).

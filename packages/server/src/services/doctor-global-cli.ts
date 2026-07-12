@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 import type { Translator } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // rc.35 TASK-04 (P0-9.b): global_cli_outdated inspection.
 //

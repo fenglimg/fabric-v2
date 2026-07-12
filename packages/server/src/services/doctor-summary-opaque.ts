@@ -1,7 +1,7 @@
 import type { Translator } from "@fenglimg/fabric-shared";
 
 import type { StoreKnowledgeSummary } from "./cross-store-recall.js";
-import type { DoctorCheck, MetaInspection } from "./doctor.js";
+import type { DoctorCheck, MetaInspection } from "./doctor-types.js";
 
 // rc.35 TASK-05 (P0-10.a): knowledge_summary_opaque inspection.
 //

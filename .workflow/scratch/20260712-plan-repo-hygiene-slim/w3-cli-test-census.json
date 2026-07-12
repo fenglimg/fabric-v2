@@ -1,0 +1,212 @@
+{
+  "milestone": "repo-hygiene-slim",
+  "date": "2026-07-12",
+  "cli_command_sizes": [
+    {
+      "file": "audit.ts",
+      "lines": 860,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": true
+    },
+    {
+      "file": "config.ts",
+      "lines": 632,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "doctor-render.ts",
+      "lines": 294,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": true
+    },
+    {
+      "file": "doctor.ts",
+      "lines": 571,
+      "paint": false,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "index.ts",
+      "lines": 42,
+      "paint": false,
+      "writeStdout": false,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "info.ts",
+      "lines": 493,
+      "paint": true,
+      "writeStdout": false,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "inspect.ts",
+      "lines": 186,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "install-v2.ts",
+      "lines": 201,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "install.ts",
+      "lines": 1061,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "metrics.ts",
+      "lines": 175,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "onboard-coverage.ts",
+      "lines": 334,
+      "paint": false,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "plan-context-hint.ts",
+      "lines": 327,
+      "paint": false,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "preview.ts",
+      "lines": 390,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "store-link.ts",
+      "lines": 281,
+      "paint": false,
+      "writeStdout": false,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "store.ts",
+      "lines": 779,
+      "paint": true,
+      "writeStdout": false,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "sync.ts",
+      "lines": 123,
+      "paint": true,
+      "writeStdout": false,
+      "localWriteHelpers": false
+    },
+    {
+      "file": "uninstall.ts",
+      "lines": 1070,
+      "paint": true,
+      "writeStdout": true,
+      "localWriteHelpers": true
+    }
+  ],
+  "safe_actions": {
+    "cli": {
+      "verdict": "no_safe_mechanical_slim_this_wave",
+      "rationale": [
+        "doctor already split to doctor-render (W6/W6.1)",
+        "remaining large surfaces install/uninstall/audit/store are I/O+stage orchestration not pure render",
+        "writeStdout/writeStderr duplicates are tiny (2-3 lines) and local — consolidating risks circular imports across command/install boundaries",
+        "knip --strict on production packages: no dead exports"
+      ],
+      "deferred": [
+        "optional: shared writeStdout/writeStderr in packages/cli/src/lib/ if a later wave needs it",
+        "optional: install/uninstall normalizeTarget + assertExistingDirectory shared helper"
+      ]
+    },
+    "tests": {
+      "verdict": "no_safe_delete_or_merge_this_wave",
+      "rationale": [
+        "top files are contract suites (doctor-cite-coverage, fabric-hint, knowledge-hint-*, review) with distinct fixtures and assertion surfaces",
+        "line density is mostly setup + scenario matrix, not copy-paste dead tests",
+        "safe hygiene done: locale-hardcoded name assertions that break under zh-CN fixed (werewolf + audience)"
+      ],
+      "top10": [
+        {
+          "path": "packages/server/src/services/doctor-cite-coverage.test.ts",
+          "lines": 2887,
+          "its": 69,
+          "l_per_it": 41.8
+        },
+        {
+          "path": "packages/cli/__tests__/fabric-hint.test.ts",
+          "lines": 2666,
+          "its": 133,
+          "l_per_it": 20.0
+        },
+        {
+          "path": "packages/server/src/services/review.test.ts",
+          "lines": 2399,
+          "its": 78,
+          "l_per_it": 30.8
+        },
+        {
+          "path": "packages/cli/__tests__/knowledge-hint-broad.test.ts",
+          "lines": 1866,
+          "its": 80,
+          "l_per_it": 23.3
+        },
+        {
+          "path": "packages/cli/__tests__/knowledge-hint-narrow.test.ts",
+          "lines": 1856,
+          "its": 103,
+          "l_per_it": 18.0
+        },
+        {
+          "path": "packages/server/src/services/doctor.test.ts",
+          "lines": 1818,
+          "its": 72,
+          "l_per_it": 25.2
+        },
+        {
+          "path": "packages/server/src/services/plan-context.test.ts",
+          "lines": 1541,
+          "its": 51,
+          "l_per_it": 30.2
+        },
+        {
+          "path": "packages/server/src/services/extract-knowledge.test.ts",
+          "lines": 1499,
+          "its": 54,
+          "l_per_it": 27.8
+        },
+        {
+          "path": "packages/server/src/services/event-ledger.test.ts",
+          "lines": 1234,
+          "its": 38,
+          "l_per_it": 32.5
+        },
+        {
+          "path": "packages/shared/test/api-contracts.test.ts",
+          "lines": 1057,
+          "its": 66,
+          "l_per_it": 16.0
+        }
+      ],
+      "total_files": 275,
+      "total_lines": 66899
+    }
+  }
+}

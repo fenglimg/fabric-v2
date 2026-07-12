@@ -6,31 +6,19 @@ import {
   applySessionHintsStaleCleanup,
   inspectSessionHintsStale,
 } from "./doctor-session-hints-stale.js";
-import type { DoctorIssue, DoctorReport } from "./doctor.js";
+import type {
+  DoctorIssue,
+  DoctorReport,
+  DoctorApplyLintMutation,
+  DoctorApplyLintMutationKind,
+  DoctorApplyLintReport,
+} from "./doctor-types.js";
 
-// ISS-20260711-183: only kinds with live apply-lint arms after store cutover.
-export type DoctorApplyLintMutationKind =
-  | "knowledge_session_hints_stale_cleanup"
-  | "store_counter_floor";
-
-export type DoctorApplyLintMutation = {
-  kind: DoctorApplyLintMutationKind;
-  path: string;
-  detail: string;
-  applied: boolean;
-  error?: string;
-};
-
-export type DoctorApplyLintReport = {
-  changed: boolean;
-  mutations: DoctorApplyLintMutation[];
-  warnings: DoctorIssue[];
-  manual_errors: DoctorIssue[];
-  aborted: boolean;
-  abort_reason?: string;
-  message: string;
-  report: DoctorReport;
-};
+export type {
+  DoctorApplyLintMutation,
+  DoctorApplyLintMutationKind,
+  DoctorApplyLintReport,
+} from "./doctor-types.js";
 
 const MANUAL_LINT_ERROR_CODES = new Set(["knowledge_layer_mismatch"]);
 

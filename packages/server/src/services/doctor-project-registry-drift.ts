@@ -14,7 +14,7 @@ import {
   type Translator,
 } from "@fenglimg/fabric-shared";
 
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // W2 (F-003 / DA-05·DA-06·DA-07) — doctor lint over the store project registry.

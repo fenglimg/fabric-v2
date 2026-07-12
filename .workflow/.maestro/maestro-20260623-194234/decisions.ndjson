@@ -1,1 +1,0 @@
-{"id":"DEC-20260623122701","timestamp":"2026-06-23T12:27:01.348Z","source":"ralph","node_id":"post-goal-audit","type":"goal-gate","verdict":"all_met","unmet_count":0,"confidence_score":100,"summary":"W3-B 5 sub-goals met via mechanical gates (tsc/knip/tests/parity/scope-grep)"}

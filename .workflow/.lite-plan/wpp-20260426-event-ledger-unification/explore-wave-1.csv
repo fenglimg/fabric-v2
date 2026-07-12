@@ -1,5 +1,0 @@
-id,angle,description,focus,deps,wave
-"E1","event-ledger-storage","Explore current ledger/audit storage, schemas, APIs, SSE watchers, and tests to plan migration to .fabric/events.jsonl.","LEDGER_PATH AUDIT_LOG_FILE read-ledger audit-log ledger schemas /api/ledger /api/events watcher history replay","","1"
-"E2","mcp-instrumentation","Explore Fabric server MCP tools/services to identify where typed events should be recorded automatically, replacing explicit fab_append_intent.","registerTool plan-context rule-sections append-intent tool lifecycle recordEvent typed events MCP services","","1"
-"E3","rule-baseline-doctor","Explore doctor, sync-meta, agents meta hash flow, and rule text source-of-truth path for baseline sync and drift acceptance.","doctor sync-meta agents.meta hash drift baseline rule text source of truth doctor fix","","1"
-"E4","deprecation-cli-templates","Explore CLI templates, protected tokens, tests, bootstrap docs, and command exports affected by explicitly deprecating fab_append_intent and fab_update_registry.","fab_append_intent fab_update_registry protected tokens bootstrap templates CLI command tests docs deprecation","","1"

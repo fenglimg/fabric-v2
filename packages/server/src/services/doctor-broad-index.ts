@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Translator } from "@fenglimg/fabric-shared";
 
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
-import type { DoctorCheck } from "./doctor.js";
+import type { DoctorCheck } from "./doctor-types.js";
 
 // ---------------------------------------------------------------------------
 // W4-2 (KT-DEC-0028 / KT-MOD-0001) — broad-index-drift lint.

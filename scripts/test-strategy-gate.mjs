@@ -42,8 +42,13 @@ const release = readText(".github/workflows/release.yml");
 // Deep methodology must still exist on disk (linked from Appendix), but the
 // gate no longer forces TESTING.md to restate every keyword.
 const methodologyArtifacts = [
-  ".workflow/.maestro/20260602-test-methodology-optimize/scratchpad/test-methodology-v6.md",
-  ".workflow/.scratchpad/e2e-methodology-FINAL.md",
+  "docs/methodology/test-methodology-v6.md",
+  "docs/methodology/e2e-methodology-FINAL.md",
+  "docs/methodology/mainstream-research.md",
+  "docs/methodology/samespace-research.md",
+  "docs/methodology/trackd-research.md",
+  "docs/methodology/backtest-answer-set.md",
+  "docs/methodology/discovery-rubric.md",
 ];
 
 for (const artifact of methodologyArtifacts) {

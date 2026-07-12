@@ -1,5 +1,0 @@
-"id","angle","description","focus","deps","wave","status","findings","key_files","error"
-"E1","entry-docs","全局检查作为 AI 首轮入口的安装与初始化文档，确认哪些 README/quickstart/CLI README 仍保留旧术语、旧叙事或未做本土化覆盖。","README CLI README quickstart installation init onboarding entry docs AI first-read","","1","pending","","",""
-"E2","deep-docs-gaps","检查已经改过的 docs/getting-started.md、docs/initialization.md、docs/dashboard-tour.md、docs/launch-story.md 中还残留哪些英文术语、内部概念或未统一的叙事。","getting-started initialization dashboard-tour launch-story residual terms canonical evidence follow-up handoff","","1","pending","","",""
-"E3","template-and-hook-copy","检查会直接影响 AI 对话质量的模板和 hook 文案，包括 codex/claude skill、hook reminder、CLI 内 reason/follow-up 文案，确认哪些还没覆盖。","templates codex hooks claude hooks skill reminder follow-up reason-message AI prompt quality","","1","pending","","",""
-"E4","tests-and-locales-tail","检查英文 locale、中文 locale、测试断言和快照里仍保留的旧词，区分哪些是应该保留的技术名，哪些是实际还没完成收口的尾项。","en locale zh-CN locale test snapshot canonical Rule Topology legacy wording","","1","pending","","",""
