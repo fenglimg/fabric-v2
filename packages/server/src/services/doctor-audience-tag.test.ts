@@ -89,10 +89,13 @@ describe("doctor audience tagging (rc.35 TASK-12)", () => {
   it("user-default checks (no explicit audience) flow through as undefined", async () => {
     const root = makeProject();
     const report = await runDoctorReport(root);
-    // bootstrap_anchor is a user-actionable check that does NOT tag audience.
-    const anchor = report.checks.find((c) => c.name.includes("Bootstrap anchor"));
+    // Match by stable code (locale-independent). bootstrap_anchor_missing fires
+    // when neither AGENTS.md nor CLAUDE.md exists; the check itself has no
+    // audience tag so it flows as undefined → renderer default "user".
+    const anchor =
+      report.checks.find((c) => c.code === "bootstrap_anchor_missing") ??
+      report.checks.find((c) => c.name.includes("Bootstrap") || c.name.includes("锚点"));
     expect(anchor).toBeDefined();
-    // Undefined audience → renderer treats as "user" (inline render).
     expect(anchor?.audience).toBeUndefined();
   });
 });

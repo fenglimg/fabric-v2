@@ -1,10 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { access, appendFile, mkdir, readFile, readdir as readdirAsync, rename, stat as statAsync, unlink, writeFile } from "node:fs/promises";
+import { access, readFile, readdir as readdirAsync, rename, stat as statAsync, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { homedir } from "node:os";
-import { join, posix, relative as nodeRelative, sep } from "node:path";
-
-import { ZodError } from "zod";
+import { join, posix, sep } from "node:path";
 
 import {
   createTranslator,
@@ -14,10 +10,7 @@ import {
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
   ONBOARD_SLOT_NAMES,
-  ONBOARD_SLOT_TOTAL,
-  type AgentsMeta,
   type EventLedgerEvent,
-  type ForensicReport,
   type OnboardSlot,
   resolveFabricLocale,
   type Translator,
@@ -28,17 +21,16 @@ import {
   PAYLOAD_LIMIT_DEFAULT_HARD_BYTES,
   PAYLOAD_LIMIT_DEFAULT_WARN_BYTES,
 } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
-import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-loader.js";
+import { readPayloadLimits } from "../config-loader.js";
 
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
-import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath } from "./_shared.js";
+import { ensureParentDirectory, getEventLedgerPath } from "./_shared.js";
 import {
-  createGlobalCliVersionCheck,
   inspectGlobalCliVersion,
   type GlobalCliInspection,
 } from "./doctor-global-cli.js";
-import { computeDoctorHealth, type DoctorHealth } from "./doctor-health.js";
+import { computeDoctorHealth } from "./doctor-health.js";
 import type {
   DoctorStatus,
   DoctorIssueKind,
@@ -48,10 +40,8 @@ import type {
   DoctorSummary,
   DoctorReport,
   DoctorFixReport,
-  DoctorApplyLintMutationKind,
   DoctorApplyLintMutation,
   DoctorApplyLintReport,
-  MetaInspection,
   LintMaturity,
   EnrichDescriptionsMode,
   EnrichDescriptionsCandidate,
@@ -59,98 +49,83 @@ import type {
 } from "./doctor-types.js";
 import { normalizePath, normalizeTarget, isValidJsonLine, createFixMessage } from "./doctor-path.js";
 import {
-  createKnowledgeSummaryOpaqueCheck,
-  inspectKnowledgeSummaryOpaque,
-} from "./doctor-summary-opaque.js";
+  DEFAULT_UNDERSEED_NODE_THRESHOLD,
+  MS_PER_DAY,
+  SESSION_HINTS_FILE_PREFIX,
+  SESSION_HINTS_FILE_SUFFIX,
+  SESSION_HINTS_STALE_DAYS,
+  emptyDraftBacklogInspection,
+  type CiteGoodhartInspection,
+  type DriftUnconsumedInspection,
+  type EmptyTagsInspection,
+  type EventLedgerInspection,
+  type ForensicInspection,
+  type OnboardCoverageInspection,
+  type PreexistingRootFilesInspection,
+  type PromoteLedgerInvariantInspection,
+  type SessionHintsStaleCandidate,
+  type SessionHintsStaleInspection,
+  type StaleServeLockInspection,
+  type UnderseededInspection,
+} from "./doctor-core-checks.js";
 import {
-  createLayerMismatchCheck,
-  createStableIdCollisionCheck,
+  buildDoctorChecks,
+} from "./doctor-check-registry.js";
+import {
   inspectStoreStableIdIntegrity,
 } from "./doctor-stable-id-collision.js";
 import {
-  createRelevancePathsDanglingCheck,
-  createRelevancePathsDriftCheck,
-  createNarrowNoPathsCheck,
   inspectStoreRelevancePaths,
 } from "./doctor-relevance-paths.js";
 import {
-  createBroadIndexDriftCheck,
   inspectBroadIndexDrift,
 } from "./doctor-broad-index.js";
 import {
-  createOrphanDemoteCheck,
-  createStaleArchiveCheck,
   inspectStoreKnowledgeAge,
 } from "./doctor-knowledge-age.js";
 import {
-  createPromotionCandidateCheck,
   inspectStoreKnowledgePromotion,
 } from "./doctor-knowledge-promotion.js";
 import {
-  createBroadReviewRecheckCheck,
   inspectStoreBroadReviewRecheck,
 } from "./doctor-knowledge-review-recheck.js";
-// v2.2 W5 R4 (agents.meta decolo): doctor no longer reads/rebuilds the project
-// co-location agents.meta.json (buildKnowledgeMeta / writeKnowledgeMeta /
-// readAgentsMeta) nor reconciles it (reconcileKnowledge / resolveContentRefPath).
-// Knowledge lives in stores; per-store counters health goes through
-// doctor-store-counters.ts.
 import {
   collectStoreCanonicalEntries,
   collectStoreKnowledgeSummaries,
   computeReadSetRevision,
 } from "./cross-store-recall.js";
-import { createScopeLintCheck, lintStoreScopes } from "./doctor-scope-lint.js";
-import { createUnboundProjectCheck, detectUnboundProject } from "./doctor-unbound-project.js";
-import {
-  createWriteRouteUnboundCheck,
-  detectWriteRouteUnbound,
-} from "./doctor-write-route-lint.js";
+import { lintStoreScopes } from "./doctor-scope-lint.js";
 // v2.3.0-rc.11: stray_fabric_dir_detected — walker + rescue-rename fix arm for
 // residue `.fabric/` dirs left by pre-rc.10 hooks / pre-rc.11 server-side
 // resolveProjectRoot when a subprocess cwd landed in a subdirectory.
 import {
-  createStrayFabricDirCheck,
   detectStrayFabricDirs,
   fixStrayFabricDirs,
 } from "./doctor-stray-fabric-dir.js";
 import {
-  createStoreCounterCheck,
   fixStoreCounters,
   inspectStoreCounters,
 } from "./doctor-store-counters.js";
 import {
-  createStoreOrphanCheck,
   fixStoreOrphans,
   inspectStoreOrphans,
 } from "./doctor-store-orphan.js";
 import {
-  createProjectRegistryDriftCheck,
   fixProjectRegistryDrift,
   inspectProjectRegistryDrift,
 } from "./doctor-project-registry-drift.js";
 import {
   appendEventLedgerEvent,
-  dropEventsFromLedger,
   readEventLedger,
   rotateEventLedgerIfNeeded,
   truncateLedgerToLastNewline,
 } from "./event-ledger.js";
-import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./cite-rollup.js";
-import type { CiteRollupRow } from "./cite-rollup.js";
 import { flushMetrics } from "./metrics.js";
-import type { MetricsRow } from "./metrics.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
 import {
   inspectEventsJsonlGates,
-  type EventsJsonlGatesReport,
 } from "./events-jsonl-gates.js";
 import {
-  createSkillContractCheck,
-  createSkillDescriptionCheck,
-  createSkillMdYamlInvalidCheck,
-  createSkillRefMirrorCheck,
-  createSkillTokenBudgetCheck,
   inspectSkillContract,
   inspectSkillDescription,
   inspectSkillMdYamlInvalid,
@@ -158,23 +133,15 @@ import {
   inspectSkillTokenBudget,
 } from "./doctor-skill-lints.js";
 import {
-  createRetiredReferenceCheck,
   inspectRetiredReferences,
 } from "./doctor-retired-references-lint.js";
 import {
-  createHookCacheWritabilityCheck,
-  createHooksContentDriftCheck,
-  createHooksRuntimeCheck,
-  createHooksWiredCheck,
   inspectHookCacheWritability,
   inspectHooksContentDrift,
   inspectHooksRuntime,
   inspectHooksWired,
 } from "./doctor-hooks-lints.js";
 import {
-  createBootstrapAnchorCheck,
-  createL1BootstrapSnapshotDriftCheck,
-  createL2ManagedBlockDriftCheck,
   inspectBootstrapAnchor,
   inspectL1BootstrapSnapshotDrift,
   inspectL2ManagedBlockDrift,
@@ -224,175 +191,8 @@ export { normalizePath, normalizeTarget, isValidJsonLine, createFixMessage } fro
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
 
-// v2.2 W5 R4 (agents.meta decolo): a valid-but-empty MetaInspection. `inspectMeta`
-// (which read the retired co-location agents.meta.json) is gone, but the exported
-// `inspectKnowledgeSummaryOpaque` still takes a MetaInspection as its first arg
-// (back-compat with its own test). Feeding this empty-valid value makes the
-// project-node loop a no-op so the lint runs purely over the read-set stores —
-// the post-decolo canonical knowledge home.
-const EMPTY_META_INSPECTION: MetaInspection = {
-  present: true,
-  valid: true,
-  meta: { revision: "", nodes: {} } as unknown as AgentsMeta,
-  revision: "",
-  computedRevision: null,
-  ruleCount: 0,
-  missingContentRefs: [],
-  invalidContentRefs: [],
-  stale: false,
-  changed: false,
-};
-
-type EventLedgerInspection = {
-  exists: boolean;
-  writable: boolean;
-  parseable: boolean;
-  hasPartialWrite: boolean;
-  partialWriteByteOffset: number;
-  partialWriteByteLength: number;
-  // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat counters surfaced
-  // from event-ledger.LedgerWarning. `schemaVersionUnsupportedCount` counts
-  // lines whose `schema_version !== 1` (legacy rc.0/rc.1 imports or future
-  // rollback artifacts). `eventTypeUnknownCount` counts lines whose
-  // `event_type` is not in the current discriminator set (likely a newer
-  // server emitted a token the running CLI does not recognise — operator
-  // should upgrade the CLI). Both default to 0; the new
-  // `createEventLedgerSchemaCompatCheck` surfaces warnings when either is
-  // non-zero.
-  schemaVersionUnsupportedCount: number;
-  eventTypeUnknownCount: number;
-  schemaVersionSamples: string[];
-  eventTypeSamples: string[];
-  path: string;
-  error?: string;
-};
-
-// v2.0.0-rc.33 W4-A4 (T5 P2): "draft backlog" detection. Warns when the
-// proportion of `draft`-maturity canonical entries exceeds DRAFT_BACKLOG_RATIO
-// (default 0.5). A workspace where the majority of entries never graduate
-// past draft signals a broken promote loop — the rc.32 baseline showed 92%
-// of entries stuck at draft, which is what motivated this lint.
-type DraftBacklogInspection = {
-  status: "ok" | "warn";
-  draftCount: number;
-  totalCount: number;
-  ratio: number; // draftCount / totalCount, 0..1
-};
-
-function emptyDraftBacklogInspection(): DraftBacklogInspection {
-  return { status: "ok", draftCount: 0, totalCount: 0, ratio: 0 };
-}
-
-// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
-// over the last 7 days of `assistant_turn_observed` events.
-//
-//   G1 ritual_cite     — same (kb_id, "applied") tuple repeated > 5 times
-//                        across the window without contract change. Signal:
-//                        user is reciting the cite incantation without acting.
-//   G2 dismissal_abuse — > 60% of "applied" cites carry a skip_reason
-//                        commitment instead of an operator contract. Signal:
-//                        user is bypassing contract enforcement.
-//   G5 placeholder_cite — "none" cites with generic kb_line_raw ("KB: none"
-//                        or "[unspecified]") > 5. Signal: cite line ritual
-//                        without semantic intent.
-//
-// v2.1.0-rc.1 (ADJ-P4-1, full remap): G3 chained_from_misuse was retired —
-// rc.37 NEW-1 collapsed the cite vocabulary to 2-state, so the `chained-from`
-// tag no longer exists (the parser/schema remap it to `applied`). The chain
-// LINK it carried is still surfaced as a sibling cite_id, but the distinct tag
-// it policed can never appear, so the lint became permanently dead. Removed
-// rather than left as a no-op (fix, don't hide).
-//
-// All patterns are warning-level (never error) — Goodhart heuristics produce
-// false positives by definition. Message enumerates fired patterns so the
-// operator can audit per-pattern without re-running.
-type CiteGoodhartInspection = {
-  status: "ok" | "warn";
-  fired: Array<{ pattern: "G1" | "G2" | "G5"; detail: string }>;
-};
-
-type PreexistingRootFilesInspection = {
-  detected: string[];
-};
-
-// LintMaturity re-exported from doctor-types.ts (see top re-exports).
-
-// rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
-// Reports when the workspace's canonical knowledge node count is strictly
-// less than `underseed_node_threshold` (default 10, override via
-// .fabric/fabric-config.json#underseed_node_threshold). Mirrors the
-// fabric-hint Stop hook's import-signal threshold so the two surfaces stay
-// in lockstep — but the doctor lint is unconditional (no init-quiet /
-// proposal-cooldown guards), since `doctor` is the user's deliberate check
-// rather than an ambient nag.
-type UnderseededInspection = {
-  // Total canonical entry count across the five canonical type subdirs.
-  node_count: number;
-  // Effective threshold (config override or default).
-  threshold: number;
-  // True iff node_count < threshold. Pre-computed so createUnderseededCheck
-  // does not have to re-derive the trigger predicate.
-  underseeded: boolean;
-};
-
-// rc.6 TASK-021 (E3): session-hints cache hygiene. Lint #27 surfaces stale
-// per-session cache files (`.fabric/.cache/session-hints-{id}.json`) whose
-// mtime is older than the SESSION_HINTS_STALE_DAYS threshold (default 7d).
-// Info-kind: cache files are local hot-cache, not git-tracked — accumulation
-// is a hygiene concern, not a correctness break. The apply-lint arm deletes
-// matched files via fs.unlink (no ledger event — see mutation kind comment).
-type SessionHintsStaleCandidate = {
-  // Project-relative POSIX path of the stale cache file (display + apply-lint
-  // anchor). The apply-lint arm joins this back to projectRoot to unlink.
-  path: string;
-  // Age of the file (mtime delta) in whole days. Floor-rounded to keep the
-  // signal coarse; sub-day precision adds noise without informational value.
-  age_days: number;
-};
-
-type SessionHintsStaleInspection = {
-  candidates: SessionHintsStaleCandidate[];
-};
-
-// rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory. The lock is
-// written by `acquireLock` at the top of `fabric serve` and removed by
-// `releaseLock` on graceful shutdown; a SIGKILL / crash leaves the file
-// behind, holding a dead PID. A subsequent `fabric serve` invocation then hits
-// `ServeLockHeldError` with confusing 423 prose. Doctor surfaces a
-// non-blocking info-kind advisory (`stale_serve_lock`) when the lock holds a
-// dead PID, and `--fix` unlinks the corpse. `present=false` means no lock
-// file (skip); `pidAlive=true` means a healthy `fabric serve` is running (skip).
-type StaleServeLockInspection =
-  | { present: false }
-  | {
-      present: true;
-      pid: number;
-      acquiredAt: number;
-      ageMs: number;
-      pidAlive: boolean;
-    };
 type CanonicalLayer = "team" | "personal";
 
-// rc.5 TASK-010: default underseed threshold for lint #22 (knowledge_underseeded).
-// Mirrors the fabric-hint hook's DEFAULT_UNDERSEED_NODE_THRESHOLD so the lint
-// and the hook agree on the same floor unless the user overrides
-// underseed_node_threshold in .fabric/fabric-config.json.
-const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
-
-// rc.6 TASK-021 (E3): session-hints cache files older than this threshold
-// are flagged by lint #27 (`knowledge_session_hints_stale`) and deleted by
-// the apply-lint mutation arm. 7 days mirrors a typical work-week cadence —
-// long enough that a paused-then-resumed session keeps its dedupe state,
-// short enough that an abandoned session's cache file doesn't accrete.
-const SESSION_HINTS_STALE_DAYS = 7;
-
-// File-name prefix / suffix for session-hints cache files. The narrow hook
-// (knowledge-hint-narrow.cjs) writes these under `.fabric/.cache/`. Keep
-// the constants here aligned with the hook's SESSION_HINTS_FILE_PREFIX /
-// SESSION_HINTS_FILE_SUFFIX — both surfaces MUST agree on the naming
-// convention for the cleanup pass to identify the right files.
-const SESSION_HINTS_FILE_PREFIX = "session-hints-";
-const SESSION_HINTS_FILE_SUFFIX = ".json";
 
 // rc.6 TASK-023 (E6): thresholds for lint #26 narrow_too_few. Hardcoded in
 // rc.6 — a fabric-config.json override may land in rc.7+ if dogfood
@@ -418,10 +218,8 @@ const HINT_SILENCE_COUNTER_FILE_REL = posix.join(
   "hint-silence-counter",
 );
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Knowledge subdirectories scanned by legacy filesystem-edit fallback checks.
-// The project-local tree is no longer required, but if legacy content exists
 // these forensic checks can still inspect it without recreating the layout.
 const KNOWLEDGE_CANONICAL_TYPE_DIRS = [
   "decisions",
@@ -438,7 +236,6 @@ const CANONICAL_KNOWLEDGE_FILENAME_PATTERN =
   /^(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})(?:--[a-z0-9][a-z0-9-]*)?\.md$/u;
 
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
-// v2.2 W5 R4 (agents.meta decolo): `COUNTER_TYPE_CODES` removed (only the retired counter_desync / index_drift checks used it).
 
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
@@ -454,7 +251,6 @@ const IGNORED_DIRECTORIES = new Set([
   "node_modules",
 ]);
 // v2.0: bootstrap is anchored at the repo root (AGENTS.md / CLAUDE.md), and
-// v1.x bootstrap artifacts are no longer authoritative. The summary.targetFiles
 // map is intentionally additive — we keep it focused on top-level Fabric
 // state files.
 //
@@ -476,136 +272,8 @@ const TARGET_FILE_PATHS = [
 ] as const;
 
 
-// --- Doctor W2: runDoctorReport orchestration (collect → buildChecks → finalize) ---
-
-// Doctor W2: Phase-2 check assembly extracted from runDoctorReport.
-// Pure relative to collected inspections — no new I/O.
-type DoctorCheckBuildContext = {
-  t: Translator;
-  projectRoot: string;
-  storeKnowledgeSummaries: Awaited<ReturnType<typeof collectStoreKnowledgeSummaries>>;
-  scopeLint: Awaited<ReturnType<typeof lintStoreScopes>>;
-  framework: { kind: string; version: string; subkind: string };
-  entryPoints: Array<{ path: string; reason: string }>;
-  bootstrapAnchor: Awaited<ReturnType<typeof inspectBootstrapAnchor>>;
-  l1BootstrapSnapshotDrift: Awaited<ReturnType<typeof inspectL1BootstrapSnapshotDrift>>;
-  l2ManagedBlockDrift: Awaited<ReturnType<typeof inspectL2ManagedBlockDrift>>;
-  forensic: Awaited<ReturnType<typeof inspectForensic>>;
-  eventLedger: Awaited<ReturnType<typeof inspectEventLedger>>;
-  eventsJsonlGates: Awaited<ReturnType<typeof inspectEventsJsonlGates>>;
-  skillRefMirror: Awaited<ReturnType<typeof inspectSkillRefMirror>>;
-  skillTokenBudget: Awaited<ReturnType<typeof inspectSkillTokenBudget>>;
-  skillDescription: Awaited<ReturnType<typeof inspectSkillDescription>>;
-  skillContract: Awaited<ReturnType<typeof inspectSkillContract>>;
-  skillMdYamlInvalid: Awaited<ReturnType<typeof inspectSkillMdYamlInvalid>>;
-  retiredReferences: Awaited<ReturnType<typeof inspectRetiredReferences>>;
-  citeGoodhart: Awaited<ReturnType<typeof inspectCiteGoodhart>>;
-  draftBacklog: DraftBacklogInspection;
-  knowledgeTagsEmpty: EmptyTagsInspection;
-  driftUnconsumed: Awaited<ReturnType<typeof inspectDriftUnconsumed>>;
-  storeCounterDrift: ReturnType<typeof inspectStoreCounters>;
-  storeOrphans: ReturnType<typeof inspectStoreOrphans>;
-  projectRegistryDrift: Awaited<ReturnType<typeof inspectProjectRegistryDrift>>;
-  stableIdIntegrity: Awaited<ReturnType<typeof inspectStoreStableIdIntegrity>>;
-  relevancePaths: Awaited<ReturnType<typeof inspectStoreRelevancePaths>>;
-  broadIndexDrift: Awaited<ReturnType<typeof inspectBroadIndexDrift>>;
-  knowledgeAge: Awaited<ReturnType<typeof inspectStoreKnowledgeAge>>;
-  knowledgePromotion: Awaited<ReturnType<typeof inspectStoreKnowledgePromotion>>;
-  broadReviewRecheck: Awaited<ReturnType<typeof inspectStoreBroadReviewRecheck>>;
-  underseeded: UnderseededInspection;
-  sessionHintsStale: SessionHintsStaleInspection;
-  hookCacheWritability: Awaited<ReturnType<typeof inspectHookCacheWritability>>;
-  staleServeLock: StaleServeLockInspection;
-  onboardCoverage: Awaited<ReturnType<typeof inspectOnboardCoverage>>;
-  promoteLedgerInvariant: Awaited<ReturnType<typeof inspectPromoteLedgerInvariant>> | null;
-  globalCliVersion: GlobalCliInspection;
-  preexistingRootFiles: PreexistingRootFilesInspection;
-  hooksWired: Awaited<ReturnType<typeof inspectHooksWired>>;
-  hooksRuntime: Awaited<ReturnType<typeof inspectHooksRuntime>>;
-  hooksContentDrift: Awaited<ReturnType<typeof inspectHooksContentDrift>>;
-};
-
-function materializeDoctorChecks(
-  builders: ReadonlyArray<(ctx: DoctorCheckBuildContext) => DoctorCheck | DoctorCheck[] | null | undefined>,
-  ctx: DoctorCheckBuildContext,
-): DoctorCheck[] {
-  const out: DoctorCheck[] = [];
-  for (const build of builders) {
-    const item = build(ctx);
-    if (item == null) continue;
-    if (Array.isArray(item)) out.push(...item);
-    else out.push(item);
-  }
-  return out;
-}
-
 // Ordered check builders — order is a public contract (i18n snapshots + doctor-check-order test).
 // Append only at the end unless intentionally changing order with snapshot updates.
-const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
-  (ctx: DoctorCheckBuildContext) => DoctorCheck | DoctorCheck[] | null | undefined
-> = [
-  (ctx) => createBootstrapAnchorCheck(ctx.t, ctx.bootstrapAnchor),
-  (ctx) => createL1BootstrapSnapshotDriftCheck(ctx.t, ctx.l1BootstrapSnapshotDrift),
-  (ctx) => createL2ManagedBlockDriftCheck(ctx.t, ctx.l2ManagedBlockDrift),
-  (ctx) => createForensicCheck(ctx.t, ctx.forensic, ctx.framework.kind, ctx.entryPoints.length),
-  (ctx) => createEventLedgerCheck(ctx.t, ctx.eventLedger),
-  (ctx) => createEventLedgerPartialWriteCheck(ctx.t, ctx.eventLedger),
-  (ctx) => createEventsJsonlHealthCheck(ctx.t, ctx.eventsJsonlGates),
-  (ctx) => createEventLedgerSchemaCompatCheck(ctx.t, ctx.eventLedger),
-  (ctx) => createSkillRefMirrorCheck(ctx.t, ctx.skillRefMirror),
-  (ctx) => createSkillTokenBudgetCheck(ctx.t, ctx.skillTokenBudget),
-  (ctx) => createSkillDescriptionCheck(ctx.t, ctx.skillDescription),
-  (ctx) => createSkillContractCheck(ctx.t, ctx.skillContract),
-  (ctx) => createRetiredReferenceCheck(ctx.t, ctx.retiredReferences),
-  (ctx) => createCiteGoodhartCheck(ctx.t, ctx.citeGoodhart),
-  (ctx) => createDraftBacklogCheck(ctx.t, ctx.draftBacklog),
-  (ctx) => createKnowledgeTagsEmptyCheck(ctx.t, ctx.knowledgeTagsEmpty),
-  (ctx) => createDriftUnconsumedCheck(ctx.t, ctx.driftUnconsumed),
-  (ctx) => createStoreCounterCheck(ctx.t, ctx.storeCounterDrift),
-  (ctx) => createStoreOrphanCheck(ctx.t, ctx.storeOrphans),
-  (ctx) => createProjectRegistryDriftCheck(ctx.t, ctx.projectRegistryDrift),
-  (ctx) => createUnderseededCheck(ctx.t, ctx.underseeded),
-  (ctx) => createSessionHintsStaleCheck(ctx.t, ctx.sessionHintsStale),
-  (ctx) => createHookCacheWritabilityCheck(ctx.t, ctx.hookCacheWritability),
-  (ctx) => createStaleServeLockCheck(ctx.t, ctx.staleServeLock),
-  (ctx) => createSkillMdYamlInvalidCheck(ctx.t, ctx.skillMdYamlInvalid),
-  (ctx) => createOnboardCoverageCheck(ctx.t, ctx.onboardCoverage),
-  (ctx) => createHooksWiredCheck(ctx.t, ctx.hooksWired),
-  (ctx) => createHooksRuntimeCheck(ctx.t, ctx.hooksRuntime),
-  (ctx) => createHooksContentDriftCheck(ctx.t, ctx.hooksContentDrift),
-  (ctx) => createGlobalCliVersionCheck(ctx.t, ctx.globalCliVersion),
-  (ctx) => createKnowledgeSummaryOpaqueCheck(
-      ctx.t,
-      // v2.2 全砍 F10 + W5 R4 (agents.meta decolo): the opacity scan is now
-      // store-only — canonical knowledge lives in the read-set stores (team +
-      // personal), which is exactly the surface this lint must cover. The legacy
-      // project agents.meta source is retired, so we feed an empty-but-valid meta
-      // (zero project nodes) and let the store-summary fold drive the result.
-      inspectKnowledgeSummaryOpaque(EMPTY_META_INSPECTION, ctx.storeKnowledgeSummaries),
-    ),
-  (ctx) => createScopeLintCheck(ctx.t, ctx.scopeLint),
-  (ctx) => createStableIdCollisionCheck(ctx.t, ctx.stableIdIntegrity.collision),
-  (ctx) => createLayerMismatchCheck(ctx.t, ctx.stableIdIntegrity.layerMismatch),
-  (ctx) => createRelevancePathsDanglingCheck(ctx.t, ctx.relevancePaths.dangling),
-  (ctx) => createRelevancePathsDriftCheck(ctx.t, ctx.relevancePaths.drift),
-  (ctx) => createNarrowNoPathsCheck(ctx.t, ctx.relevancePaths.narrowNoPaths),
-  (ctx) => createBroadIndexDriftCheck(ctx.t, ctx.broadIndexDrift),
-  (ctx) => createOrphanDemoteCheck(ctx.t, ctx.knowledgeAge.orphanDemote),
-  (ctx) => createStaleArchiveCheck(ctx.t, ctx.knowledgeAge.staleArchive),
-  (ctx) => createPromotionCandidateCheck(ctx.t, ctx.knowledgePromotion),
-  (ctx) => createBroadReviewRecheckCheck(ctx.t, ctx.broadReviewRecheck),
-  (ctx) => createUnboundProjectCheck(ctx.t, detectUnboundProject(ctx.projectRoot)),
-  (ctx) => createWriteRouteUnboundCheck(ctx.t, detectWriteRouteUnbound(ctx.projectRoot)),
-  (ctx) => createStrayFabricDirCheck(ctx.t, detectStrayFabricDirs(ctx.projectRoot), ctx.projectRoot),
-  (ctx) => (ctx.promoteLedgerInvariant === null
-      ? []
-      : [createPromoteLedgerInvariantCheck(ctx.t, ctx.promoteLedgerInvariant)]),
-  (ctx) => createPreexistingRootFilesCheck(ctx.t, ctx.preexistingRootFiles),
-];
-
-function buildDoctorChecks(ctx: DoctorCheckBuildContext): DoctorCheck[] {
-  return materializeDoctorChecks(DOCTOR_CHECK_BUILDERS, ctx);
-}
 
 
 function finalizeDoctorReport(input: {
@@ -683,11 +351,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     retiredReferences,
   ] = await Promise.all([
     inspectForensic(projectRoot),
-    // v2.2 W5 R4 (agents.meta decolo): `inspectMeta` (read co-location
-    // agents.meta.json) and `inspectKnowledgeTestIndex` (its derived
-    // .fabric/.cache test-link index) are retired — knowledge lives in stores
-    // now; the project co-location agents.meta + test-index machinery (and the
-    // reconcileKnowledge rebuild behind their --fix) is gone.
     inspectEventLedger(projectRoot),
     // v2.0.0-rc.37 Wave B (B5): composite hard-gate inspection (G7 size /
     // G8 metric leak / G9 metrics stale / G10 rotation overdue).
@@ -710,9 +373,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (reads event ledger); placed after the sync inspections so the await
   // doesn't gate them.
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
-  // v2.2 W5 R4 (agents.meta decolo): the read-set store corpus is the
-  // post-decolo canonical knowledge source. Summaries feed store-aware checks;
-  // the count + corpus revision hash replace retired agents.meta-derived fields.
   const storeKnowledgeSummaries = await collectStoreKnowledgeSummaries(projectRoot);
   const scopeLint = await lintStoreScopes(projectRoot);
   const storeRevision = await computeReadSetRevision(projectRoot);
@@ -728,15 +388,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
   // in the last 30 days — drift detection runs but no consumption pipeline.
   const driftUnconsumed = await inspectDriftUnconsumed(projectRoot);
-  // v2.2 W5 R4 (agents.meta decolo): `meta_manually_diverged` and
-  // `knowledge_dir_unindexed` retired — both compared the project co-location
-  // `.fabric/knowledge` against agents.meta.json (no longer authoritative;
-  // knowledge lives in stores) and their only --fix was reconcileKnowledge.
-  // v2.2 W5 R4 (agents.meta decolo): the co-location `counter_desync` /
-  // `index_drift` checks (against agents.meta.json#counters) are retired. The
-  // monotonic stable_id counter now lives per-store in committed counters.json
-  // (store-counters.ts / KT-DEC-0004); `store_counter_drift` is its store-aware
-  // replacement — disk-max FLOOR semantics over every read-set store.
+  // Per-store monotonic stable_id counters (KT-DEC-0004); disk-max FLOOR.
   const storeCounterDrift = inspectStoreCounters(projectRoot);
   // store-onboarding grill (Q5): on-disk store dirs absent from the registry
   // (orphans). Global-scoped (reads ~/.fabric/stores, not the project); never
@@ -969,19 +621,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.fixable_errors, "event_ledger_missing"));
   }
 
-  // v2.2 W5 R4 (agents.meta decolo): the co-location reconcile fix-path is
-  // retired. It rebuilt the project `.fabric/agents.meta.json` (+ its derived
-  // knowledge-test index) from `.fabric/knowledge`, which is no longer the
-  // canonical knowledge home (knowledge lives in stores). The checks that drove
-  // it — agents_meta_* / content_ref_missing / knowledge_dir_unindexed /
-  // knowledge_test_index_* / meta_manually_diverged — and the co-location
-  // `counter_desync` are all retired in runDoctorReport.
-  //
-  // `store_counter_drift` is the store-aware successor to counter_desync /
-  // index_drift: it floors each read-set store's committed counters.json at the
-  // highest stable_id observed on disk (KT-DEC-0004 — floor never lowers, so the
-  // monotonic invariant holds and the next allocation in that store cannot
-  // re-mint an existing id).
+  // Floor each read-set store's counters.json at the highest on-disk stable_id
+  // (KT-DEC-0004 — floor never lowers, so next allocation cannot re-mint).
   if (before.fixable_errors.some((issue) => issue.code === "store_counter_drift")) {
     fixStoreCounters(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "store_counter_drift"));
@@ -1173,7 +814,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   }
 
   // v2.2 store cutover: draft auto-promote is disabled until it can operate
-  // against store-backed knowledge instead of retired project-local entries.
 
   const report = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
 
@@ -1196,11 +836,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 //     event. Per task design the archive subtree is a tombstone (not git-tracked
 //     active history) so we use `fs.rename` rather than `git mv`. The events.jsonl
 //     entry IS the audit trail.
-//   * `lint:index_drift` (fixable_error code=knowledge_index_drift):
-//     bump agents.meta.json counters[layer][type] to max_observed + 1 via
-//     atomicWriteJson. NO event emission — the schema does not (yet) carry
-//     an agents_meta_repaired event type and v2.0 git diff of agents.meta.json
-//     is sufficient audit (decision documented in TASK-003 rationale step 4).
 //   * `lint:stable_id_duplicate` / `lint:layer_mismatch` (manual_error kinds):
 //     auto-fix is unsafe (data loss potential). runDoctorApplyLint aborts
 //     BEFORE applying any mutations and surfaces a clear "manual repair
@@ -1265,8 +900,6 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
   }
 
-  // v2.2 store cutover: the relevance-fields back-fill walk over the retired
-  // dual-root pending tree is gone (store-aware re-implementation deferred).
   // The aggregate `relevance_migration_run` heartbeat still fires every
   // --apply-lint run for audit-trail symmetry with `doctor_run` (scanned_count
   // / touched_count are 0 — there is no walk). Best-effort: a ledger-append
@@ -1282,8 +915,6 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
     ledgerWarnings.push(createLedgerAppendWarning("relevance migration aggregate event", error));
   }
 
-  // v2.2 W5 R4 (agents.meta decolo): the co-location `index_drift` apply-lint
-  // mutation (bump agents.meta.json#counters) is retired. Its store-aware
   // successor floors every read-set store's committed counters.json at disk-max
   // (KT-DEC-0004 — floor never lowers). One aggregate mutation row per drifted
   // store reconciled.
@@ -1376,8 +1007,6 @@ async function applySessionHintsStaleCleanup(
   }
 }
 
-// v2.2 W5 R4 (agents.meta decolo): `applyIndexDriftFix` removed — it bumped the
-// retired co-location agents.meta.json#counters. Store counter flooring now goes
 // through fixStoreCounters (doctor-store-counters.ts).
 
 function truncateErrorMessage(error: unknown): string {
@@ -1385,7 +1014,7 @@ function truncateErrorMessage(error: unknown): string {
   return raw.length > 240 ? `${raw.slice(0, 237)}...` : raw;
 }
 
-async function inspectForensic(projectRoot: string): Promise<{ present: boolean; valid: boolean; report: ForensicReport | null; error?: string }> {
+async function inspectForensic(projectRoot: string): Promise<ForensicInspection> {
   const path = join(projectRoot, ".fabric", "forensic.json");
   try {
     const parsed = forensicReportSchema.parse(JSON.parse(await readFile(path, "utf8")));
@@ -1398,12 +1027,7 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
   }
 }
 
-// v2.2 W5 R4 (agents.meta decolo): `inspectMeta` / `tryBuildRuleMeta` /
-// `inspectContentRefs` removed. They read the retired co-location
-// `.fabric/agents.meta.json` (+ rebuilt it via buildKnowledgeMeta to compute a
-// stale/changed signal). Knowledge now lives in stores; the agents_meta_* /
-// content_ref_* checks they fed are retired. The `MetaInspection` type is kept
-// (EMPTY_META_INSPECTION + the still-exported inspectKnowledgeSummaryOpaque).
+// Event ledger health inspection for createEventLedger* checks.
 
 async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspection> {
   const path = getEventLedgerPath(projectRoot);
@@ -1562,8 +1186,6 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
     });
   }
 
-  // G3 chained_from_misuse retired in v2.1.0-rc.1 (ADJ-P4-1) — the chained-from
-  // tag no longer exists post-remap, so the lint was permanently dead. See the
   // CiteGoodhartInspection type doc above.
 
   // G5: placeholder cite — "none" tags with generic kb_line_raw.
@@ -1590,249 +1212,6 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
   return { status: fired.length === 0 ? "ok" : "warn", fired };
 }
 
-// rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when
-// >50% of entries carry `tags: []` — clustering / topical surfacing degrades
-// when most entries are tag-less. Threshold mirrors draft_backlog (>50% with
-// ≥10 entries total to avoid spurious warns in fresh repos).
-type EmptyTagsInspection = {
-  status: "ok" | "warn";
-  emptyCount: number;
-  totalCount: number;
-  ratio: number;
-};
-
-// v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeTestIndex` removed. The
-// `.fabric/.cache/knowledge-test.index.json` was derived from the co-location
-// `.fabric/knowledge` via buildKnowledgeMeta (its staleness diffed against a
-// rebuilt index, its --fix was reconcileKnowledge) — all retired now that
-// knowledge lives in stores.
-
-function createForensicCheck(
-  t: Translator,
-  forensic: Awaited<ReturnType<typeof inspectForensic>>,
-  frameworkKind: string,
-  entryPointCount: number,
-): DoctorCheck {
-  if (!forensic.present) {
-    return issueCheck(
-      t("doctor.check.forensic.name"),
-      "error",
-      "manual_error",
-      "forensic_missing",
-      t(`doctor.check.forensic.message.missing.${entryPointCount === 1 ? "singular" : "plural"}`, {
-        error: forensic.error ?? t("doctor.check.forensic.message.missing-default"),
-        frameworkKind,
-        count: String(entryPointCount),
-      }),
-      t("doctor.check.forensic.remediation"),
-    );
-  }
-  if (!forensic.valid) {
-    return issueCheck(
-      t("doctor.check.forensic.name"),
-      "error",
-      "manual_error",
-      "forensic_invalid",
-      forensic.error ?? t("doctor.check.forensic.message.invalid-default"),
-      t("doctor.check.forensic.remediation"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.forensic.name"),
-    t("doctor.check.forensic.ok", { frameworkKind: forensic.report?.framework.kind ?? "unknown" }),
-  );
-}
-
-// v2.0: `createInitContextCheck` removed alongside `inspectInitContext` —
-// see comment at the call site in `runDoctorReport`.
-
-// v2.2 W5 R4 (agents.meta decolo): `createMetaCheck` (agents_meta_*),
-// `createRuleContentRefCheck` (content_ref_*) and `createKnowledgeTestIndexCheck`
-// removed — they rendered checks over the retired co-location agents.meta.json
-// and its derived knowledge-test index. Knowledge lives in stores now.
-
-// v2.0.0-rc.37 Wave B (B5): composite hard-gate check for events.jsonl /
-// metrics.jsonl health. Surfaces G7 (size) / G8 (metric leak) /
-// G9 (metrics staleness) / G10 (rotation overdue) as a single
-// warning-severity finding. G11 is a code-time invariant verified by
-// services/events-jsonl-gates.test.ts.
-function createEventsJsonlHealthCheck(
-  t: Translator,
-  report: EventsJsonlGatesReport,
-): DoctorCheck {
-  const findings: string[] = [];
-  if (report.ledgerSizeWarn) {
-    findings.push(
-      t("doctor.check.events_jsonl_health.message.size", {
-        sizeMb: (report.ledgerSizeBytes / (1024 * 1024)).toFixed(1),
-      }),
-    );
-  }
-  if (report.metricLeakCount > 0) {
-    findings.push(
-      t("doctor.check.events_jsonl_health.message.metric_leak", {
-        count: String(report.metricLeakCount),
-        samples: report.metricLeakSamples.join(", "),
-      }),
-    );
-  }
-  if (report.metricsStaleWarn && report.metricsStalenessMs !== null) {
-    findings.push(
-      t("doctor.check.events_jsonl_health.message.metrics_stale", {
-        minutes: String(Math.floor(report.metricsStalenessMs / 60_000)),
-      }),
-    );
-  }
-  if (report.rotationOverdueWarn && report.ledgerStalenessMs !== null) {
-    findings.push(
-      t("doctor.check.events_jsonl_health.message.rotation_overdue", {
-        days: String(Math.floor(report.ledgerStalenessMs / 86_400_000)),
-      }),
-    );
-  }
-  if (findings.length === 0) {
-    return okCheck(
-      t("doctor.check.events_jsonl_health.name"),
-      t("doctor.check.events_jsonl_health.ok"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.events_jsonl_health.name"),
-    "warn",
-    "warning",
-    "events_jsonl_health_degraded",
-    findings.join(" | "),
-    t("doctor.check.events_jsonl_health.remediation"),
-  );
-}
-
-function createEventLedgerCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
-  if (!ledger.exists) {
-    return issueCheck(
-      t("doctor.check.event_ledger.name"),
-      "error",
-      "fixable_error",
-      "event_ledger_missing",
-      t("doctor.check.event_ledger.message.missing"),
-      t("doctor.check.event_ledger.remediation.missing"),
-    );
-  }
-  if (!ledger.writable) {
-    return issueCheck(
-      t("doctor.check.event_ledger.name"),
-      "error",
-      "manual_error",
-      "event_ledger_not_writable",
-      ledger.error ?? t("doctor.check.event_ledger.message.not_writable-default"),
-      t("doctor.check.event_ledger.remediation.not_writable"),
-    );
-  }
-  if (!ledger.parseable) {
-    return issueCheck(
-      t("doctor.check.event_ledger.name"),
-      "error",
-      "manual_error",
-      "event_ledger_invalid",
-      ledger.error ?? t("doctor.check.event_ledger.message.invalid-default"),
-      t("doctor.check.event_ledger.remediation.invalid"),
-    );
-  }
-  return okCheck(t("doctor.check.event_ledger.name"), t("doctor.check.event_ledger.ok"));
-}
-
-// v2.0.0-rc.27 TASK-010 (audit §2.24): surfaces forward-compat warnings when
-// events.jsonl contains rows the current parser cannot validate (legacy
-// schema_version != 1 OR an event_type not in the discriminator set). Both
-// states usually mean the operator needs to pick between two recoveries:
-//   1) archive + recreate events.jsonl (when stale rc.0/rc.1 rows linger), or
-//   2) upgrade the CLI (when a newer server emitted a token this CLI does not
-//      yet recognise).
-// `warning` severity, not `error` — readEventLedger already silently drops
-// these rows so the workspace continues to function; the check exists to
-// stop the audit blind-spot, not to block progress.
-function createEventLedgerSchemaCompatCheck(
-  t: Translator,
-  ledger: EventLedgerInspection,
-): DoctorCheck {
-  if (!ledger.exists || !ledger.writable) {
-    return okCheck(
-      t("doctor.check.event_ledger_schema_compat.name"),
-      t("doctor.check.event_ledger_schema_compat.ok.skipped"),
-    );
-  }
-  const hasUnsupportedVersion = ledger.schemaVersionUnsupportedCount > 0;
-  const hasUnknownEventType = ledger.eventTypeUnknownCount > 0;
-  if (!hasUnsupportedVersion && !hasUnknownEventType) {
-    return okCheck(
-      t("doctor.check.event_ledger_schema_compat.name"),
-      t("doctor.check.event_ledger_schema_compat.ok.clean"),
-    );
-  }
-  const parts: string[] = [];
-  if (hasUnsupportedVersion) {
-    parts.push(
-      t("doctor.check.event_ledger_schema_compat.message.schema_version", {
-        count: String(ledger.schemaVersionUnsupportedCount),
-        samples: ledger.schemaVersionSamples.join(", "),
-      }),
-    );
-  }
-  if (hasUnknownEventType) {
-    parts.push(
-      t("doctor.check.event_ledger_schema_compat.message.event_type", {
-        count: String(ledger.eventTypeUnknownCount),
-        samples: ledger.eventTypeSamples.join(", "),
-      }),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.event_ledger_schema_compat.name"),
-    "warn",
-    "warning",
-    "event_ledger_schema_compat",
-    parts.join(" "),
-    t("doctor.check.event_ledger_schema_compat.remediation"),
-  );
-}
-
-// v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog check. Single ratio + count
-// message — operator does not need a per-entry breakdown to act on the signal
-// (the action is "run fabric-review to promote drafts" regardless of which
-// entries are involved).
-function createDraftBacklogCheck(
-  t: Translator,
-  inspection: DraftBacklogInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.draft_backlog.name"),
-      t("doctor.check.draft_backlog.ok"),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 100);
-  return issueCheck(
-    t("doctor.check.draft_backlog.name"),
-    "warn",
-    "warning",
-    "knowledge_draft_backlog",
-    t("doctor.check.draft_backlog.message", {
-      draftCount: String(inspection.draftCount),
-      totalCount: String(inspection.totalCount),
-      pct: String(pct),
-    }),
-    t("doctor.check.draft_backlog.remediation"),
-  );
-}
-
-// rc.36 TASK-09 (P1-NEW1): drift detection without subsequent demote — KB
-// dies slowly when drift events are emitted but no human/auto action follows.
-// 30-day window: if drift events > 0 AND zero knowledge_demoted in same
-// window, warn the operator that drift is observed but unconsumed.
-type DriftUnconsumedInspection = {
-  status: "ok" | "warn";
-  driftCount: number;
-  demoteCount: number;
-};
 
 async function inspectDriftUnconsumed(projectRoot: string): Promise<DriftUnconsumedInspection> {
   const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -1865,132 +1244,6 @@ async function inspectDriftUnconsumed(projectRoot: string): Promise<DriftUnconsu
   };
 }
 
-function createDriftUnconsumedCheck(
-  t: Translator,
-  inspection: DriftUnconsumedInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.drift_unconsumed.name"),
-      t("doctor.check.drift_unconsumed.ok"),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.drift_unconsumed.name"),
-    "warn",
-    "warning",
-    "knowledge_drift_unconsumed",
-    t("doctor.check.drift_unconsumed.message", {
-      driftCount: String(inspection.driftCount),
-      demoteCount: String(inspection.demoteCount),
-    }),
-    t("doctor.check.drift_unconsumed.remediation"),
-  );
-}
-
-// rc.36 TASK-05 (P0-8): empty-tags warn check.
-function createKnowledgeTagsEmptyCheck(
-  t: Translator,
-  inspection: EmptyTagsInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.knowledge_tags_empty.name"),
-      t("doctor.check.knowledge_tags_empty.ok"),
-    );
-  }
-  const pct = Math.round(inspection.ratio * 100);
-  return issueCheck(
-    t("doctor.check.knowledge_tags_empty.name"),
-    "warn",
-    "warning",
-    "knowledge_tags_empty_ratio",
-    t("doctor.check.knowledge_tags_empty.message", {
-      emptyCount: String(inspection.emptyCount),
-      totalCount: String(inspection.totalCount),
-      pct: String(pct),
-    }),
-    t("doctor.check.knowledge_tags_empty.remediation"),
-  );
-}
-
-// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart check. Aggregates fired
-// patterns into a single multi-line message so the operator gets the full
-// audit hit list in one report row. Always warning severity — Goodhart
-// heuristics are advisory, not error-grade.
-function createCiteGoodhartCheck(
-  t: Translator,
-  inspection: CiteGoodhartInspection,
-): DoctorCheck {
-  if (inspection.status === "ok") {
-    return okCheck(
-      t("doctor.check.cite_goodhart.name"),
-      t("doctor.check.cite_goodhart.ok"),
-    );
-  }
-  const list = inspection.fired.map((f) => `${f.pattern}: ${f.detail}`).join("; ");
-  const count = inspection.fired.length;
-  return issueCheck(
-    t("doctor.check.cite_goodhart.name"),
-    "warn",
-    "warning",
-    "cite_goodhart_pattern",
-    t(`doctor.check.cite_goodhart.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      list,
-    }),
-    t("doctor.check.cite_goodhart.remediation"),
-    // rc.35 TASK-12 (P0-11): maintainer audience. G1/G2/G3/G5 are internal
-    // pattern codes from the cite-policy design memo — npm end users have
-    // no actionable lever for these. Fold by default; --verbose unfolds.
-    "maintainer",
-  );
-}
-
-function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
-  if (!ledger.exists || !ledger.writable) {
-    return okCheck(
-      t("doctor.check.event_ledger_partial_write.name"),
-      t("doctor.check.event_ledger_partial_write.ok.skipped"),
-    );
-  }
-  if (ledger.hasPartialWrite) {
-    return issueCheck(
-      t("doctor.check.event_ledger_partial_write.name"),
-      "error",
-      "fixable_error",
-      "event_ledger_partial_write",
-      t("doctor.check.event_ledger_partial_write.message", {
-        byteOffset: String(ledger.partialWriteByteOffset),
-        byteLength: String(ledger.partialWriteByteLength),
-      }),
-      t("doctor.check.event_ledger_partial_write.remediation"),
-    );
-  }
-  return okCheck(
-    t("doctor.check.event_ledger_partial_write.name"),
-    t("doctor.check.event_ledger_partial_write.ok.clean"),
-  );
-}
-
-function okCheck(name: string, message: string): DoctorCheck {
-  return { name, status: "ok", message };
-}
-
-// rc.31 BUG-G2/G5: promote-ledger invariant inspection.
-//
-// Invariant: proposed_count >= promote_started_count >= promoted_count.
-// Counter-examples surface ledger emit-cadence bugs (e.g. werewolf-minigame
-// rc.30 audit: proposed=17, started=48, promoted=52 — both proposed<started
-// and started<promoted violated). The check is observability-only and never
-// blocks --fix; remediation is to verify all 3 events fire in extract+approve
-// paths or rerun fabric doctor after rc.31 review.approve synth fix.
-type PromoteLedgerInvariantInspection = {
-  proposedCount: number;
-  promoteStartedCount: number;
-  promotedCount: number;
-  violation: "proposed-lt-started" | "started-lt-promoted" | null;
-};
 
 async function inspectPromoteLedgerInvariant(
   projectRoot: string,
@@ -2012,30 +1265,6 @@ async function inspectPromoteLedgerInvariant(
   return { proposedCount, promoteStartedCount, promotedCount, violation };
 }
 
-function createPromoteLedgerInvariantCheck(
-  t: Translator,
-  inspection: PromoteLedgerInvariantInspection,
-): DoctorCheck {
-  const params = {
-    proposed: String(inspection.proposedCount),
-    started: String(inspection.promoteStartedCount),
-    promoted: String(inspection.promotedCount),
-  };
-  if (inspection.violation === null) {
-    return okCheck(
-      t("doctor.check.promote_ledger_invariant.name"),
-      t("doctor.check.promote_ledger_invariant.ok", params),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.promote_ledger_invariant.name"),
-    "warn",
-    "warning",
-    "promote_ledger_invariant_violated",
-    t(`doctor.check.promote_ledger_invariant.message.${inspection.violation}`, params),
-    t("doctor.check.promote_ledger_invariant.remediation"),
-  );
-}
 
 /**
  * v2.0.0-rc.37 NEW-39 (werewolf dogfood remediation): backfill emitter that
@@ -2115,26 +1344,6 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-function issueCheck(
-  name: string,
-  status: DoctorStatus,
-  kind: DoctorIssueKind,
-  code: string,
-  message: string,
-  actionHint?: string,
-  audience?: "user" | "maintainer",
-): DoctorCheck {
-  return {
-    name,
-    status,
-    kind,
-    code,
-    fixable: kind === "fixable_error",
-    message,
-    actionHint,
-    audience,
-  };
-}
 
 function collectIssues(checks: DoctorCheck[], kind: DoctorIssueKind): DoctorIssue[] {
   return checks
@@ -2177,10 +1386,6 @@ function appendDoctorWarnings(report: DoctorReport, extraWarnings: DoctorIssue[]
   };
 }
 
-// v2.2 W5 R4 (agents.meta decolo): `inspectMetaManuallyDiverged` removed (compared co-location agents.meta against disk).
-// v2.2 W5 R4 (agents.meta decolo): `inspectKnowledgeDirUnindexed` / `collectMdFilesUnder` / `createKnowledgeDirUnindexedCheck` removed (pure co-location agents.meta-vs-disk check).
-// v2.2 W5 R4 (agents.meta decolo): `inspectCounterDesync` / `createCounterDesyncCheck` removed — replaced by store_counter_drift (doctor-store-counters.ts).
-// v2.2 W5 R4 (agents.meta decolo): `createMetaManuallyDivergedCheck` removed (co-location agents.meta vs disk).
 async function inspectPreexistingRootFiles(projectRoot: string): Promise<PreexistingRootFilesInspection> {
   const candidates = ["CLAUDE.md", "AGENTS.md"];
   const detected: string[] = [];
@@ -2192,20 +1397,6 @@ async function inspectPreexistingRootFiles(projectRoot: string): Promise<Preexis
   return { detected };
 }
 
-function createPreexistingRootFilesCheck(t: Translator, inspection: PreexistingRootFilesInspection): DoctorCheck {
-  if (inspection.detected.length === 0) {
-    return okCheck(t("doctor.check.preexisting_root_files.name"), t("doctor.check.preexisting_root_files.ok"));
-  }
-  return {
-    name: t("doctor.check.preexisting_root_files.name"),
-    status: "ok",
-    kind: "info",
-    code: "preexisting_root_claude_md",
-    fixable: false,
-    message: t("doctor.check.preexisting_root_files.message", { files: inspection.detected.join(", ") }),
-    actionHint: t("doctor.check.preexisting_root_files.remediation"),
-  };
-}
 
 // Build a Map<stable_id, lastActiveAtEpochMs> in a single pass over events.jsonl.
 // "Activity" is the union of events that reference a knowledge entry by its
@@ -2383,139 +1574,6 @@ async function readUnderseedThresholdFromConfig(projectRoot: string): Promise<nu
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
-// rc.5 TASK-010: surface the underseeded lint (#22) as an `info` kind so it
-// shows in the report without bumping doctor's status to warn/error — a small
-// corpus is a legitimate state during early adoption, not a defect. The
-// actionHint points the user at the fabric-import Skill, mirroring the
-// fabric-hint hook's import-signal recommendation.
-function createUnderseededCheck(t: Translator, inspection: UnderseededInspection): DoctorCheck {
-  if (!inspection.underseeded) {
-    return okCheck(
-      t("doctor.check.underseeded.name"),
-      t("doctor.check.underseeded.ok", {
-        count: String(inspection.node_count),
-        threshold: String(inspection.threshold),
-      }),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.underseeded.name"),
-    "ok",
-    "info",
-    "knowledge_underseeded",
-    t(`doctor.check.underseeded.message.${inspection.node_count === 1 ? "singular" : "plural"}`, {
-      count: String(inspection.node_count),
-      threshold: String(inspection.threshold),
-    }),
-    t("doctor.check.underseeded.remediation"),
-  );
-}
-
-// rc.6 TASK-021 (E3): surface stale session-hints cache files as an info-
-// kind finding. Status remains "ok" — the cache is hot-cache hygiene, not
-// a correctness concern. The actionHint points at apply-lint so users can
-// reap accumulated cache files in a single pass.
-function createSessionHintsStaleCheck(
-  t: Translator,
-  inspection: SessionHintsStaleInspection,
-): DoctorCheck {
-  if (inspection.candidates.length === 0) {
-    return okCheck(
-      t("doctor.check.session_hints_stale.name"),
-      t("doctor.check.session_hints_stale.ok", {
-        days: String(SESSION_HINTS_STALE_DAYS),
-      }),
-    );
-  }
-  const first = inspection.candidates[0];
-  const detail = `${first.path} (${first.age_days}d old)`;
-  const count = inspection.candidates.length;
-  return issueCheck(
-    t("doctor.check.session_hints_stale.name"),
-    "ok",
-    "info",
-    "knowledge_session_hints_stale",
-    t(`doctor.check.session_hints_stale.message.${count === 1 ? "singular" : "plural"}`, {
-      count: String(count),
-      days: String(SESSION_HINTS_STALE_DAYS),
-      detail,
-    }),
-    t("doctor.check.session_hints_stale.remediation"),
-  );
-}
-
-// rc.23 TASK-010 (e): surface a stale `.fabric/.serve.lock` (dead-PID corpse)
-// as an info-kind advisory. Status stays "ok" — a stale lock is operator
-// hygiene, not a doctor-fatal. `--fix` (runDoctorFix) unlinks the file and
-// emits `serve_lock_cleared`. Skip cases: no lock file (steady state) and
-// lock held by a live PID (a healthy `fabric serve` is running — never touch).
-function createStaleServeLockCheck(
-  t: Translator,
-  inspection: StaleServeLockInspection,
-): DoctorCheck {
-  if (!inspection.present) {
-    return okCheck(
-      t("doctor.check.stale_serve_lock.name"),
-      t("doctor.check.stale_serve_lock.ok.no_lock"),
-    );
-  }
-  if (inspection.pidAlive) {
-    return okCheck(
-      t("doctor.check.stale_serve_lock.name"),
-      t("doctor.check.stale_serve_lock.ok.live_pid", {
-        pid: String(inspection.pid),
-      }),
-    );
-  }
-  // Coarse "K time ago" — days when ≥1d, hours otherwise. Matches the prose
-  // shape requested in the task spec; we floor-round so a 0-day reading
-  // never confuses the operator about whether the lock is fresh.
-  const days = Math.floor(inspection.ageMs / MS_PER_DAY);
-  const hours = Math.floor(inspection.ageMs / (60 * 60 * 1000));
-  const acquiredAgo =
-    days >= 1
-      ? t(`doctor.check.stale_serve_lock.age.day.${days === 1 ? "singular" : "plural"}`, {
-          count: String(days),
-        })
-      : t(`doctor.check.stale_serve_lock.age.hour.${hours === 1 ? "singular" : "plural"}`, {
-          count: String(hours),
-        });
-  return issueCheck(
-    t("doctor.check.stale_serve_lock.name"),
-    "ok",
-    "info",
-    "stale_serve_lock",
-    t("doctor.check.stale_serve_lock.message.dead_pid", {
-      pid: String(inspection.pid),
-      acquiredAgo,
-    }),
-    t("doctor.check.stale_serve_lock.remediation.dead_pid"),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory.
-//
-// Walks canonical knowledge frontmatter for the `onboard_slot:` key, reads
-// `fabric-config.json#onboard_slots_opted_out`, and reports which of the
-// five S5 slots are unclaimed. Info kind — does NOT bump doctor status.
-//
-// This mirrors `runOnboardCoverage` in packages/cli/src/commands/onboard-coverage.ts
-// — duplicated rather than imported because the server package has zero
-// dependency on the CLI package (and vice-versa for the cross-package
-// boundary). The scanner shape is small enough that duplication is cheaper
-// than carving out a third "core" package. A drift test in doctor.test.ts
-// asserts both implementations stay in agreement on a shared fixture.
-//
-// `--fix` does NOT touch onboard coverage — slot fill is a user-driven Skill
-// flow, never an automated mutation. The advisory just informs.
-// ---------------------------------------------------------------------------
-
-type OnboardCoverageInspection = {
-  filled: Record<OnboardSlot, string[]>;
-  missing: OnboardSlot[];
-  opted_out: string[];
-};
 
 async function inspectOnboardCoverage(projectRoot: string): Promise<OnboardCoverageInspection> {
   const filled = {} as Record<OnboardSlot, string[]>;
@@ -2585,39 +1643,9 @@ function readFrontmatterScalar(content: string, key: string): string | undefined
   return undefined;
 }
 
-function createOnboardCoverageCheck(t: Translator, inspection: OnboardCoverageInspection): DoctorCheck {
-  const filledCount = ONBOARD_SLOT_NAMES.filter(
-    (slot) => inspection.filled[slot].length > 0,
-  ).length;
-  if (inspection.missing.length === 0) {
-    return okCheck(
-      t("doctor.check.onboard_coverage.name"),
-      t("doctor.check.onboard_coverage.ok.complete", {
-        filledCount: String(filledCount),
-        total: String(ONBOARD_SLOT_TOTAL),
-        optedOutCount: String(inspection.opted_out.length),
-      }),
-    );
-  }
-  return issueCheck(
-    t("doctor.check.onboard_coverage.name"),
-    "ok",
-    "info",
-    "onboard_coverage_incomplete",
-    t("doctor.check.onboard_coverage.message.incomplete", {
-      missingSlots: inspection.missing.join(", "),
-      filledCount: String(filledCount),
-      total: String(ONBOARD_SLOT_TOTAL),
-      optedOutCount: String(inspection.opted_out.length),
-    }),
-    t("doctor.check.onboard_coverage.remediation.incomplete"),
-  );
-}
 
 // ---------------------------------------------------------------------------
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21).
-//
-// Store-only cutover: the legacy dual-root canonical iterator is retired.
 // Enrichment now walks mounted store read-set entries via
 // collectStoreCanonicalEntries, then parses the stable_id token from each
 // canonical filename for compatibility with the old enrichment report shape.
@@ -2696,22 +1724,15 @@ async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<C
   }
 }
 
-// v2.2 W5 R4 (agents.meta decolo): `inspectIndexDrift` removed — its store-aware successor is inspectStoreCounters (doctor-store-counters.ts).
 
-// v2.2 W5 R4 (agents.meta decolo): `createIndexDriftCheck` removed (co-location agents.meta#counters drift).
-
-// v2/rc.2: Removed `inspectClaudeSkillLegacyPath`, `inspectClaudeHookLegacyPath`,
 // `inspectCodexSkillLegacyPath` and their `create*Check` / `fix*` siblings.
 // They migrated v1.x agents-md-init-reminder/skill paths into the v1 client-
 // side init reminder/skill paths, both of which are now archaeology — rc.4
 // owns v2 lint coverage for whatever skill/hook paths v2 introduces.
 
-// v2.0 / rc.2: `inspectLegacyClientPaths`, `createLegacyClientPathCheck`,
-// and `fixLegacyClientPaths` removed. Retired clientPaths keys
 // (windsurf/rooCode/geminiCLI) are now rejected at Zod parse time on the
 // strict clientPathsSchema — there is no soft-deprecation path to detect or
 // fix. The corresponding `legacy_client_path_present` event-type literal
-// remains in event-ledger.ts and will be removed in TASK-006 alongside the
 // broader event-vocabulary rename.
 
 // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 drift fix. Replays the
@@ -2826,7 +1847,6 @@ async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> 
   }
 }
 
-// v2.2 W5 R4 (agents.meta decolo): `fixCounterDesync` removed — store counters floor via fixStoreCounters (doctor-store-counters.ts).
 
 async function ensureEventLedger(projectRoot: string): Promise<void> {
   const path = getEventLedgerPath(projectRoot);
