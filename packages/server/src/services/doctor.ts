@@ -525,221 +525,86 @@ type DoctorCheckBuildContext = {
   hooksContentDrift: Awaited<ReturnType<typeof inspectHooksContentDrift>>;
 };
 
-function buildDoctorChecks(ctx: DoctorCheckBuildContext): DoctorCheck[] {
-  const {
-    t,
-    projectRoot,
-    storeKnowledgeSummaries,
-    scopeLint,
-    framework,
-    entryPoints,
-    bootstrapAnchor,
-    l1BootstrapSnapshotDrift,
-    l2ManagedBlockDrift,
-    forensic,
-    eventLedger,
-    eventsJsonlGates,
-    skillRefMirror,
-    skillTokenBudget,
-    skillDescription,
-    skillContract,
-    skillMdYamlInvalid,
-    retiredReferences,
-    citeGoodhart,
-    draftBacklog,
-    knowledgeTagsEmpty,
-    driftUnconsumed,
-    storeCounterDrift,
-    storeOrphans,
-    projectRegistryDrift,
-    stableIdIntegrity,
-    relevancePaths,
-    broadIndexDrift,
-    knowledgeAge,
-    knowledgePromotion,
-    broadReviewRecheck,
-    underseeded,
-    sessionHintsStale,
-    hookCacheWritability,
-    staleServeLock,
-    onboardCoverage,
-    promoteLedgerInvariant,
-    globalCliVersion,
-    preexistingRootFiles,
-    hooksWired,
-    hooksRuntime,
-    hooksContentDrift,
-  } = ctx;
+function materializeDoctorChecks(
+  builders: ReadonlyArray<(ctx: DoctorCheckBuildContext) => DoctorCheck | DoctorCheck[] | null | undefined>,
+  ctx: DoctorCheckBuildContext,
+): DoctorCheck[] {
+  const out: DoctorCheck[] = [];
+  for (const build of builders) {
+    const item = build(ctx);
+    if (item == null) continue;
+    if (Array.isArray(item)) out.push(...item);
+    else out.push(item);
+  }
+  return out;
+}
 
-  return [
-
-
-    createBootstrapAnchorCheck(t, bootstrapAnchor),
-    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection. Order:
-    // anchor existence → L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔
-    // three-end blocks).
-    createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
-    createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
-    createForensicCheck(t, forensic, framework.kind, entryPoints.length),
-    // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
-    // is owned by the AI-side client init skill, not by `fabric install` CLI.
-    // The file's absence is a legitimate post-init state when the skill has
-    // not yet run, so flagging it as a doctor manual_error misrepresents
-    // ownership.
-    // v2.2 W5 R4 (agents.meta decolo): `createMetaCheck` (agents_meta_*),
-    // `createRuleContentRefCheck` (content_ref_*) and
-    // `createKnowledgeTestIndexCheck` (the co-location test-link index) retired
-    // — they inspected the project co-location agents.meta.json / its derived
-    // cache, which is no longer authoritative (knowledge lives in stores).
-    // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
-    // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
-    // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
-    // lint suite for the new knowledge frontmatter contract.
-    createEventLedgerCheck(t, eventLedger),
-    createEventLedgerPartialWriteCheck(t, eventLedger),
-    createEventsJsonlHealthCheck(t, eventsJsonlGates),
-    // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat warning surface for
-    // events.jsonl rows that fail Zod validation because of unknown
-    // schema_version or event_type tokens. Previously silently dropped.
-    createEventLedgerSchemaCompatCheck(t, eventLedger),
-    // v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL ref/ mirror parity.
-    // Detects hand-edits or partial install that breaks the byte-identical
-    // contract between .claude/skills/<slug>/ref/ and .codex/skills/<slug>/
-    // ref/. warning severity — fabric install restores parity.
-    createSkillRefMirrorCheck(t, skillRefMirror),
-    createSkillTokenBudgetCheck(t, skillTokenBudget),
-    createSkillDescriptionCheck(t, skillDescription),
-    createSkillContractCheck(t, skillContract),
-    // ux-w2-2: retired-reference (stale-pointer) lint — registry-driven.
-    createRetiredReferenceCheck(t, retiredReferences),
-    createCiteGoodhartCheck(t, citeGoodhart),
-    createDraftBacklogCheck(t, draftBacklog),
-    createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
-    createDriftUnconsumedCheck(t, driftUnconsumed),
-    // v2.2 W5 R4 (agents.meta decolo): co-location `counter_desync` retired —
-    // replaced by the store-aware `store_counter_drift` (per-store committed
-    // counters.json, disk-max FLOOR / KT-DEC-0004). Registered below alongside
-    // the scope lint, the other store-scoped doctor check.
-    createStoreCounterCheck(t, storeCounterDrift),
-    // store-onboarding grill (Q5): on-disk store invisible to the registry
-    // (warning). `--fix` adopts it (rescue-before-delete — re-register, never
-    // an on-disk delete).
-    createStoreOrphanCheck(t, storeOrphans),
-    // W2 (F-003): project-registry drift over projects.json ↔ projects/ folder
-    // tree. unregistered-write (data unrouted) → manual_error; orphan-folder →
-    // warning; empty-folder → info; ghost-registration emits nothing (DA-05).
-    // `--fix` rescue-registers orphans/unregistered (addStoreProject — never a
-    // non-empty delete) and prunes only genuinely-empty registered folders.
-    createProjectRegistryDriftCheck(t, projectRegistryDrift),
-    // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
-    // does not bump report status. Recommends running the fabric-import skill
-    // to backfill knowledge when the corpus is below the threshold floor.
-    createUnderseededCheck(t, underseeded),
-    // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
-    createSessionHintsStaleCheck(t, sessionHintsStale),
-    createHookCacheWritabilityCheck(t, hookCacheWritability),
-    // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
-    // does not bump report status. `--fix` unlinks the corpse and emits
-    // `serve_lock_cleared`.
-    createStaleServeLockCheck(t, staleServeLock),
-    // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
-    // SKILL.md frontmatter that Codex CLI silently drops at load.
-    createSkillMdYamlInvalidCheck(t, skillMdYamlInvalid),
-    // v2.0.0-rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind.
-    // Surfaces uncovered S5 onboard slots and recommends /fabric-archive
-    // first-run phase. Sits adjacent to Skill markdown YAML — both are
-    // Skill-adjacent advisories. --fix never mutates onboard state.
-    createOnboardCoverageCheck(t, onboardCoverage),
-    // rc.31 BUG-M3/NEW-4: hooks_wired observability. Adjacent to onboard /
-    // promote-ledger checks — all three are install/runtime-state advisories.
-    createHooksWiredCheck(t, hooksWired),
-    createHooksRuntimeCheck(t, hooksRuntime),
-    createHooksContentDriftCheck(t, hooksContentDrift),
-    // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30 PATH
-    // installs against rc.31+ project schemas (the silent-hooks fault mode).
-    // Sits next to hooks_wired since both lints diagnose runtime install state.
-    createGlobalCliVersionCheck(t, globalCliVersion),
-    // rc.35 TASK-05 (P0-10.a): opaque-summary ratio — surfaces the
-    // werewolf-eval failure mode where description.summary == stable_id so
-    // hint output is "KT-PIT-0001 · KT-PIT-0001" (AI skips fetch). Built
-    // from the same MetaInspection so no extra disk reads.
-    createKnowledgeSummaryOpaqueCheck(
-      t,
+// Ordered check builders — order is a public contract (i18n snapshots + doctor-check-order test).
+// Append only at the end unless intentionally changing order with snapshot updates.
+const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
+  (ctx: DoctorCheckBuildContext) => DoctorCheck | DoctorCheck[] | null | undefined
+> = [
+  (ctx) => createBootstrapAnchorCheck(ctx.t, ctx.bootstrapAnchor),
+  (ctx) => createL1BootstrapSnapshotDriftCheck(ctx.t, ctx.l1BootstrapSnapshotDrift),
+  (ctx) => createL2ManagedBlockDriftCheck(ctx.t, ctx.l2ManagedBlockDrift),
+  (ctx) => createForensicCheck(ctx.t, ctx.forensic, ctx.framework.kind, ctx.entryPoints.length),
+  (ctx) => createEventLedgerCheck(ctx.t, ctx.eventLedger),
+  (ctx) => createEventLedgerPartialWriteCheck(ctx.t, ctx.eventLedger),
+  (ctx) => createEventsJsonlHealthCheck(ctx.t, ctx.eventsJsonlGates),
+  (ctx) => createEventLedgerSchemaCompatCheck(ctx.t, ctx.eventLedger),
+  (ctx) => createSkillRefMirrorCheck(ctx.t, ctx.skillRefMirror),
+  (ctx) => createSkillTokenBudgetCheck(ctx.t, ctx.skillTokenBudget),
+  (ctx) => createSkillDescriptionCheck(ctx.t, ctx.skillDescription),
+  (ctx) => createSkillContractCheck(ctx.t, ctx.skillContract),
+  (ctx) => createRetiredReferenceCheck(ctx.t, ctx.retiredReferences),
+  (ctx) => createCiteGoodhartCheck(ctx.t, ctx.citeGoodhart),
+  (ctx) => createDraftBacklogCheck(ctx.t, ctx.draftBacklog),
+  (ctx) => createKnowledgeTagsEmptyCheck(ctx.t, ctx.knowledgeTagsEmpty),
+  (ctx) => createDriftUnconsumedCheck(ctx.t, ctx.driftUnconsumed),
+  (ctx) => createStoreCounterCheck(ctx.t, ctx.storeCounterDrift),
+  (ctx) => createStoreOrphanCheck(ctx.t, ctx.storeOrphans),
+  (ctx) => createProjectRegistryDriftCheck(ctx.t, ctx.projectRegistryDrift),
+  (ctx) => createUnderseededCheck(ctx.t, ctx.underseeded),
+  (ctx) => createSessionHintsStaleCheck(ctx.t, ctx.sessionHintsStale),
+  (ctx) => createHookCacheWritabilityCheck(ctx.t, ctx.hookCacheWritability),
+  (ctx) => createStaleServeLockCheck(ctx.t, ctx.staleServeLock),
+  (ctx) => createSkillMdYamlInvalidCheck(ctx.t, ctx.skillMdYamlInvalid),
+  (ctx) => createOnboardCoverageCheck(ctx.t, ctx.onboardCoverage),
+  (ctx) => createHooksWiredCheck(ctx.t, ctx.hooksWired),
+  (ctx) => createHooksRuntimeCheck(ctx.t, ctx.hooksRuntime),
+  (ctx) => createHooksContentDriftCheck(ctx.t, ctx.hooksContentDrift),
+  (ctx) => createGlobalCliVersionCheck(ctx.t, ctx.globalCliVersion),
+  (ctx) => createKnowledgeSummaryOpaqueCheck(
+      ctx.t,
       // v2.2 全砍 F10 + W5 R4 (agents.meta decolo): the opacity scan is now
       // store-only — canonical knowledge lives in the read-set stores (team +
       // personal), which is exactly the surface this lint must cover. The legacy
       // project agents.meta source is retired, so we feed an empty-but-valid meta
       // (zero project nodes) and let the store-summary fold drive the result.
-      inspectKnowledgeSummaryOpaque(EMPTY_META_INSPECTION, storeKnowledgeSummaries),
+      inspectKnowledgeSummaryOpaque(EMPTY_META_INSPECTION, ctx.storeKnowledgeSummaries),
     ),
-    // v2.2 W4 (G-GUARD / A6): scope lint over the read-set stores — missing
-    // scope fields / personal-leak-in-shared-store / dangling project ref. Reads
-    // only stores (the post-decolo knowledge home); never throws.
-    createScopeLintCheck(t, scopeLint),
-    // v2.2 Goal B (G-INTEGRITY): store stable_id collision (warning) + layer
-    // mismatch (manual error). Adjacent to the scope lint — both are store
-    // canonical-corpus integrity checks. Built from one shared store walk above.
-    createStableIdCollisionCheck(t, stableIdIntegrity.collision),
-    createLayerMismatchCheck(t, stableIdIntegrity.layerMismatch),
-    // v2.2 Goal B (G-RELEVANCE): relevance_paths hygiene — dangling (warning) +
-    // drift (info). Adjacent to the integrity cluster; both read the store
-    // canonical corpus and resolve anchors against the project workspace.
-    createRelevancePathsDanglingCheck(t, relevancePaths.dangling),
-    createRelevancePathsDriftCheck(t, relevancePaths.drift),
-    // W4-3 (KT-MOD-0001): narrow-scope entry with empty relevance_paths =
-    // permanently dead (warning). W4-2 (KT-DEC-0028): broad-index-drift —
-    // per-store broad count nearing the backstop (warning → fabric-audit).
-    createNarrowNoPathsCheck(t, relevancePaths.narrowNoPaths),
-    createBroadIndexDriftCheck(t, broadIndexDrift),
-    // v2.2 Goal B (G-AGE): knowledge decay — orphan_demote (warning) +
-    // stale_archive (warning). Age from events.jsonl last-active (KT-DEC-0023);
-    // thresholds 90/30/14d per maturity tier (KT-DEC-0008).
-    createOrphanDemoteCheck(t, knowledgeAge.orphanDemote),
-    createStaleArchiveCheck(t, knowledgeAge.staleArchive),
-    // v2.2 C1: knowledge promotion candidate (info kind — opportunity, not defect).
-    createPromotionCandidateCheck(t, knowledgePromotion),
-    // v2.2 C1: broad review-recheck nudge (info kind — broad's review-clock
-    // counterpart to the usage-age decay it is exempt from).
-    createBroadReviewRecheckCheck(t, broadReviewRecheck),
-    // project-scope binding backfill lint — a store bound as the write target
-    // but with no project_id / active_project parks the project axis. The
-    // fresh-install hole is sealed in store.stage.ts; this covers existing repos
-    // (CLI `--fix` backfills via ensureStoreProjectBinding).
-    createUnboundProjectCheck(t, detectUnboundProject(projectRoot)),
-    // write_route_target_unbound — every write_routes[i].store must resolve
-    // against required_stores. Catches "route survived migration to single
-    // team slot" (werewolf-minigame case): route says `team → cocos` but
-    // required_stores only holds `team`, so fab_propose(audience:"team")
-    // would report "no write-target store resolved" at runtime. Static
-    // config-level check, no resolver, aligned with KT-DEC-0048 read-tolerant
-    // doctrine.
-    createWriteRouteUnboundCheck(t, detectWriteRouteUnbound(projectRoot)),
-    // rc.11 stray_fabric_dir_detected — walks the project tree for any
-    // `.fabric/` directory other than `<projectRoot>/.fabric`. Historical
-    // residue from the pre-rc.10 hook / pre-rc.11 server-side resolveProjectRoot
-    // fault mode where a subprocess whose cwd was a subdirectory of the repo
-    // created a stray `<subdir>/.fabric/` (scattering events.jsonl / metrics.jsonl
-    // / .cache). Adjacent to write_route_target_unbound — both catch config /
-    // filesystem cross-references that drifted through migrations.
-    createStrayFabricDirCheck(t, detectStrayFabricDirs(projectRoot), projectRoot),
-    // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
-    // coverage — both are observability advisories built off events.jsonl.
-    ...(promoteLedgerInvariant === null
+  (ctx) => createScopeLintCheck(ctx.t, ctx.scopeLint),
+  (ctx) => createStableIdCollisionCheck(ctx.t, ctx.stableIdIntegrity.collision),
+  (ctx) => createLayerMismatchCheck(ctx.t, ctx.stableIdIntegrity.layerMismatch),
+  (ctx) => createRelevancePathsDanglingCheck(ctx.t, ctx.relevancePaths.dangling),
+  (ctx) => createRelevancePathsDriftCheck(ctx.t, ctx.relevancePaths.drift),
+  (ctx) => createNarrowNoPathsCheck(ctx.t, ctx.relevancePaths.narrowNoPaths),
+  (ctx) => createBroadIndexDriftCheck(ctx.t, ctx.broadIndexDrift),
+  (ctx) => createOrphanDemoteCheck(ctx.t, ctx.knowledgeAge.orphanDemote),
+  (ctx) => createStaleArchiveCheck(ctx.t, ctx.knowledgeAge.staleArchive),
+  (ctx) => createPromotionCandidateCheck(ctx.t, ctx.knowledgePromotion),
+  (ctx) => createBroadReviewRecheckCheck(ctx.t, ctx.broadReviewRecheck),
+  (ctx) => createUnboundProjectCheck(ctx.t, detectUnboundProject(ctx.projectRoot)),
+  (ctx) => createWriteRouteUnboundCheck(ctx.t, detectWriteRouteUnbound(ctx.projectRoot)),
+  (ctx) => createStrayFabricDirCheck(ctx.t, detectStrayFabricDirs(ctx.projectRoot), ctx.projectRoot),
+  (ctx) => (ctx.promoteLedgerInvariant === null
       ? []
-      : [createPromoteLedgerInvariantCheck(t, promoteLedgerInvariant)]),
-    createPreexistingRootFilesCheck(t, preexistingRootFiles),
-    // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
-    // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
-    // parse time, so the soft-deprecation warn-and-fix path no longer has a
-    // reachable input — fabric.config.json with a retired key fails before
-    // doctor ever inspects it.
-    // v2.0 / rc.2: `createLegacyV1ArtifactsCheck` removed alongside its
-    // path-list constant. The visibility-only warning referenced v1.x
-    // artifacts that are now archaeology. rc.4 owns v2 lint coverage; on a
-    // clean v2 install nothing is lost since the check fired only when v1
-    // artifacts remained.
-    
-  ];
+      : [createPromoteLedgerInvariantCheck(ctx.t, ctx.promoteLedgerInvariant)]),
+  (ctx) => createPreexistingRootFilesCheck(ctx.t, ctx.preexistingRootFiles),
+];
+
+function buildDoctorChecks(ctx: DoctorCheckBuildContext): DoctorCheck[] {
+  return materializeDoctorChecks(DOCTOR_CHECK_BUILDERS, ctx);
 }
 
 

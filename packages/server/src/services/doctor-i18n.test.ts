@@ -91,6 +91,15 @@ describe("runDoctorReport i18n snapshots", () => {
       enReport.checks.map((check) => check.name),
     );
   });
+
+  // Doctor W5: registry/builders must preserve this machine-field order.
+  // Prefer this lock over free-form reordering of DOCTOR_CHECK_BUILDERS.
+  it("locks machine check order for registry refactors (code/kind/status contract)", async () => {
+    const target = createV2KnowledgeProject("doctor-check-order-lock");
+    setGlobalLanguage("en");
+    const report = await runDoctorReport(target);
+    expect(invariantChecks(report.checks)).toMatchSnapshot();
+  });
 });
 
 function projectChecks(checks: DoctorCheck[]): Array<{

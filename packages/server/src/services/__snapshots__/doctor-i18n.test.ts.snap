@@ -1,5 +1,292 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`runDoctorReport i18n snapshots > locks machine check order for registry refactors (code/kind/status contract) 1`] = `
+[
+  {
+    "code": null,
+    "index": 0,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 1,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 2,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 3,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 4,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 5,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 6,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 7,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 8,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 9,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 10,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 11,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 12,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 13,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 14,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 15,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 16,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 17,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 18,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 19,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": "knowledge_underseeded",
+    "index": 20,
+    "kind": "info",
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 21,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 22,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 23,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 24,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": "onboard_coverage_incomplete",
+    "index": 25,
+    "kind": "info",
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 26,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 27,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 28,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 29,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 30,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 31,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 32,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 33,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 34,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 35,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 36,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 37,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 38,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 39,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 40,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 41,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 42,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 43,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 44,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": null,
+    "index": 45,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": "preexisting_root_claude_md",
+    "index": 46,
+    "kind": "info",
+    "status": "ok",
+  },
+]
+`;
+
 exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks from global language=zh-CN 1`] = `
 [
   {
