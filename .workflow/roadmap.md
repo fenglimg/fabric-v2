@@ -8,13 +8,13 @@
 
 ### Milestone 1: 召回质量与一致性对齐 (v2.4)
 **Target**: fab_recall + fab_pending 共用单一可观测、量纲一致、中文友好的排序引擎;返回瘦身、截断按相关度。
-**Status**: active
+**Status**: completed — closed 2026-07-12 per KT-DEC-0074 (ledger close only; residual issues = polish)
 
 **Minimum-phase principle**: 单 phase。5 个波次为同模块(召回排序+返回)紧耦合工作,由 phase 内 wave DAG 处理排序与风险分级,无硬依赖边界需要 phase 切分。
 
 #### Phases
 
-- [ ] **Phase 1: 召回引擎重构与统一** — 排序融合/可观测/返回/语义/统一接入,5 波 DAG
+- [x] **Phase 1: 召回引擎重构与统一** — 排序融合/可观测/返回/语义/统一接入,5 波 DAG（W1–W5 + wire 瘦身已在 main；#45 等）
 
 #### Phase Details
 
@@ -50,4 +50,6 @@
 
 | Milestone | Phase | Status | Completed |
 |-----------|-------|--------|-----------|
-| 1. 召回质量与一致性对齐 | 1. 召回引擎重构与统一 | Not started | - |
+| 1. 召回质量与一致性对齐 | 1. 召回引擎重构与统一 | **Completed** (KT-DEC-0074) | 2026-07-12 |
+
+> 关账说明：实现波已落地后补关账本，**不**再开 recall 实现波。residual issues 记 polish，不当 blocker。
