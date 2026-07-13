@@ -1441,7 +1441,7 @@ describe("planContext BM25 model cache (ISS-024)", () => {
   });
 
   // P1 recall-engine-refactor (TASK-002): cold-process disk-cache hit. The first
-  // call builds + serializes the model to `.fabric/cache/bm25/<revision>.json`.
+  // call builds + serializes the model to `.fabric/.cache/bm25/<revision>.json`.
   // Clearing ONLY the in-memory tier (__resetBm25Cache) simulates a fresh hook
   // process whose memory cache is empty but whose disk cache survives — the
   // second call over the SAME revision must rehydrate from disk and NOT call

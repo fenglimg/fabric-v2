@@ -977,6 +977,17 @@ export const enMessages: Messages = {
     "Found {count} stray .fabric director(ies) ({dirs}) left by subprocesses that mistook a subdirectory for the project root (pre-rc.10 hooks / pre-rc.11 server-side). These scatter events.jsonl / metrics.jsonl / .cache across the source tree.",
   "doctor.check.stray_fabric_dir_detected.remediation":
     "Run `fabric doctor --fix` to rename each stray dir to `.fabric.stale-<timestamp>` (rescue-before-delete — never a hard delete). Review the renamed dirs before merging events. Also upgrade global fabric-cli to rc.11+ so the server-side git-anchor resolver is active.",
+  // legacy_fabric_cache_dir_detected — the recall engine's BM25 / vector
+  // caches used to live at `.fabric/cache/{bm25,vectors}`; unify-fabric-cache-dir
+  // moved them into `.fabric/.cache/` next to the hook sidecar cache so one
+  // .gitignore rule covers both. Old data is intact; the fix is a rename.
+  "doctor.check.legacy_fabric_cache_dir_detected.name": "Legacy .fabric/cache/ directories",
+  "doctor.check.legacy_fabric_cache_dir_detected.ok":
+    "Recall caches live under .fabric/.cache/ — no legacy .fabric/cache/{bm25,vectors} remains.",
+  "doctor.check.legacy_fabric_cache_dir_detected.message":
+    "Found {count} legacy recall-cache dir(s) ({dirs}). These pre-date the unify-fabric-cache-dir move to .fabric/.cache/; the on-disk data (BM25 snapshots / vector embeddings) is intact — a rename preserves it.",
+  "doctor.check.legacy_fabric_cache_dir_detected.remediation":
+    "Run `fabric doctor --fix` to rename each legacy dir into its `.fabric/.cache/` counterpart (idempotent; skipped if the new path already holds newer data). No re-embed cost is paid; the snapshot files are moved as-is.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

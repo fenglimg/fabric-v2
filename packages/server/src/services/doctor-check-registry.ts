@@ -105,6 +105,8 @@ import {
   createStrayFabricDirCheck,
   detectStrayFabricDirs,
 } from "./doctor-stray-fabric-dir.js";
+import { createLegacyFabricCacheDirCheck } from "./doctor-legacy-fabric-cache.js";
+import { detectLegacyFabricCacheDirs } from "./fabric-cache-migration.js";
 import {
   createStoreCounterCheck,
 } from "./doctor-store-counters.js";
@@ -265,6 +267,7 @@ export const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
   (ctx) => createUnboundProjectCheck(ctx.t, detectUnboundProject(ctx.projectRoot)),
   (ctx) => createWriteRouteUnboundCheck(ctx.t, detectWriteRouteUnbound(ctx.projectRoot)),
   (ctx) => createStrayFabricDirCheck(ctx.t, detectStrayFabricDirs(ctx.projectRoot), ctx.projectRoot),
+  (ctx) => createLegacyFabricCacheDirCheck(ctx.t, detectLegacyFabricCacheDirs(ctx.projectRoot)),
   (ctx) => (ctx.promoteLedgerInvariant === null
       ? []
       : [createPromoteLedgerInvariantCheck(ctx.t, ctx.promoteLedgerInvariant)]),

@@ -294,7 +294,7 @@ describe("buildVectorScores disk cache (TASK-004)", () => {
   ];
   const cacheFiles = (): string[] => {
     try {
-      return readdirSync(join(root, ".fabric", "cache", "vectors"));
+      return readdirSync(join(root, ".fabric", ".cache", "vectors"));
     } catch {
       return [];
     }
@@ -318,7 +318,7 @@ describe("buildVectorScores disk cache (TASK-004)", () => {
 
     const files = cacheFiles();
     expect(files).toEqual(["rev-abc.json"]); // revision-named file
-    const payload = JSON.parse(readFileSync(join(root, ".fabric", "cache", "vectors", files[0]), "utf8"));
+    const payload = JSON.parse(readFileSync(join(root, ".fabric", ".cache", "vectors", files[0]), "utf8"));
     expect(payload.version).toBe(1);
     expect(payload.embedding_model).toBe("fast-bge-small-zh-v1.5");
     expect(payload.dimension).toBe(3);
@@ -415,7 +415,7 @@ describe("buildVectorScores disk cache (TASK-004)", () => {
     expect(batches[1]).toHaveLength(3); // batch 2: the 3 evicted stale-width docs
     // The rewritten snapshot now records the new dimension.
     const payload = JSON.parse(
-      readFileSync(join(root, ".fabric", "cache", "vectors", "rev-dim.json"), "utf8"),
+      readFileSync(join(root, ".fabric", ".cache", "vectors", "rev-dim.json"), "utf8"),
     );
     expect(payload.dimension).toBe(4);
   });
