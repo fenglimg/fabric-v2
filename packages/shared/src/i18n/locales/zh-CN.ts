@@ -2,7 +2,7 @@ import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
   "cli.signpost.retired": "命令 `{retired}` 已移除。请改用 `{successor}`。",
-  "cli.doctor.args.probe.description": "输出机器可读 JSON 就绪快照(first-hit + store/hooks),不跑 --fix",
+  "cli.doctor.args.probe.description": "输出机器可读 JSON 就绪快照(first-hit + store/hooks),不跑 --fix CI 优先用 --probe 做轻量就绪快照；完整 cite-coverage 扫描按需运行。",
   "cli.main.description":
     "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。首次使用?运行: fabric install",
   "cli.shared.created": "已创建",

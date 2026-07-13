@@ -28,6 +28,7 @@ const signalDecide = require("./lib/signal-decide.cjs");
 const maintenanceSignal = require("./lib/maintenance-signal.cjs");
 const graphEdgeEmit = require("./lib/graph-edge-emit.cjs");
 const softSignalEmit = require("./lib/soft-signal-emit.cjs");
+const hintThresholds = require("./lib/hint-thresholds.cjs");
 const stopStdin = require("./lib/stop-stdin.cjs");
 const sessionStatusEmit = require("./lib/session-status-emit.cjs");
 
@@ -654,42 +655,9 @@ function main(env, stdio) {
       };
     }
 
-    // rc.7 T7: read the externalized thresholds and pass them into decide.
-    // Reader failures degrade silently to documented defaults — fabric-hint
-    // must never block on config errors (see hook contract above).
-    //
-    // rc.16 TASK-002 (F2-apply): resolve `fabric_language` ONCE per main()
-    // invocation via the banner-i18n lib. The result threads through
-    // `thresholds.variant` into both decide() and evaluateMaintenanceSignal()
-    // so we read the config file at most once, not five times. Lib reader
-    // is never-throw; defensive try/catch is belt-and-suspenders.
-    let variant = "zh-CN";
-    try {
-      variant = readFabricLanguage(cwd);
-    } catch {
-      variant = "zh-CN";
-    }
-
-    let thresholds;
-    try {
-      thresholds = {
-        archiveHintHours: readArchiveHintHours(cwd),
-        reviewHintPendingCount: readReviewHintPendingCount(cwd),
-        reviewHintPendingAgeDays: readReviewHintPendingAgeDays(cwd),
-        maintenanceHintDays: readMaintenanceHintDays(cwd),
-        maintenanceHintCooldownDays: readMaintenanceHintCooldownDays(cwd),
-        variant,
-      };
-    } catch {
-      thresholds = {
-        archiveHintHours: DEFAULT_ARCHIVE_HINT_HOURS,
-        reviewHintPendingCount: DEFAULT_REVIEW_HINT_PENDING_COUNT,
-        reviewHintPendingAgeDays: DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
-        maintenanceHintDays: DEFAULT_MAINTENANCE_HINT_DAYS,
-        maintenanceHintCooldownDays: DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
-        variant,
-      };
-    }
+    // rc.7 T7 / ISS-20260713-052: threshold bag assembled in lib/hint-thresholds.cjs
+    const thresholds = hintThresholds.buildStopThresholds(cwd);
+    const variant = thresholds.variant;
 
     // rc.7 T4: build the 人-first banner activity overview from the
     // edit-counter sidecar. Anchored at the last knowledge_proposed event

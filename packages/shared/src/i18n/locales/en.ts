@@ -2,7 +2,7 @@ import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
   "cli.signpost.retired": "Command `{retired}` was removed. Use `{successor}` instead.",
-  "cli.doctor.args.probe.description": "Emit a machine-readable JSON readiness snapshot (first-hit + store/hooks) without running --fix",
+  "cli.doctor.args.probe.description": "Emit a machine-readable JSON readiness snapshot (first-hit + store/hooks) without running --fix Prefer --probe in CI for a cheap readiness snapshot; full cite-coverage scans remain on-demand.",
   "cli.main.description":
     "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically. First time? Run: fabric install",
   "cli.shared.created": "Created",

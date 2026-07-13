@@ -27,7 +27,7 @@ export const ANSI = {
 // name, so a palette re-tune never touches call sites.
 export const PALETTE = {
   success: "[38;2;46;204;113m", // emerald
-  warn: "[38;2;241;196;15m", // amber
+  warn: "[38;2;180;120;0m", // darker amber — ISS-20260713-068 light-terminal contrast
   error: "[38;2;231;76;60m", // alizarin
   drift: "[38;2;155;89;182m", // amethyst
   ai: "[38;2;52;152;219m", // peter-river blue
@@ -41,7 +41,7 @@ export type ThemeToken = keyof typeof PALETTE;
 // ISS-20260713-035: 256-color fallback when truecolor is unavailable.
 export const PALETTE_256: Record<ThemeToken, string> = {
   success: "[38;5;77m",
-  warn: "[38;5;220m",
+  warn: "[38;5;178m",
   error: "[38;5;203m",
   drift: "[38;5;141m",
   ai: "[38;5;75m",

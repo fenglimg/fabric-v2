@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { agentsMetaSchema, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { IOFabricError } from "@fenglimg/fabric-shared/errors";
@@ -69,11 +69,36 @@ function getAgentsMetaPath(projectRoot: string): string {
 //   5. Fall back to `startCwd` unchanged (fresh repo with no marker yet).
 //
 // `startCwd` is optional to keep call sites unchanged; tests pass a tmpdir.
+/**
+ * ISS-20260713-047: FABRIC_PROJECT_ROOT / CLAUDE_PROJECT_DIR are trusted-operator
+ * overrides. Still realpath + require usable absolute roots so relative typos and
+ * filesystem-root values fail closed to the git-anchor walk.
+ */
+function normalizeTrustedRootOverride(raw: string): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  try {
+    const abs = isAbsolute(trimmed) ? trimmed : resolve(trimmed);
+    const real = existsSync(abs) ? realpathSync(abs) : abs;
+    if (real === "/" || /^[A-Za-z]:[\\/]?$/.test(real)) return null;
+    return real;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveProjectRoot(startCwd?: string): string {
   const envOverride = process.env.FABRIC_PROJECT_ROOT;
-  if (typeof envOverride === "string" && envOverride.length > 0) return envOverride;
+  if (typeof envOverride === "string" && envOverride.length > 0) {
+    const normalized = normalizeTrustedRootOverride(envOverride);
+    if (normalized !== null) return normalized;
+  }
   const claudeRoot = process.env.CLAUDE_PROJECT_DIR;
-  if (typeof claudeRoot === "string" && claudeRoot.length > 0) return claudeRoot;
+  if (typeof claudeRoot === "string" && claudeRoot.length > 0) {
+    const normalized = normalizeTrustedRootOverride(claudeRoot);
+    if (normalized !== null) return normalized;
+  }
 
   const start = typeof startCwd === "string" && startCwd.length > 0 ? startCwd : process.cwd();
   let dir = start;

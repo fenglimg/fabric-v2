@@ -6,6 +6,12 @@
  * fabric-archive Skill (Phase 0.0) can stitch together cross-session
  * context when it runs after Signal A fires.
  *
+ * ISS-20260713-069 privacy posture:
+ *   - Digests hold truncated user_messages + edit_paths for archive mining only.
+ *   - Credential/PII redaction applied before write (DIGEST_SECRET_RES).
+ *   - Soft retention DIGEST_MAX_AGE_MS (30d): every write purges stale digests.
+ *   - Operators: delete .fabric/.cache/session-digests/ anytime; not synced via git.
+ *
  * Contract (non-blocking, best-effort):
  *   - writeDigest({ projectRoot, session_id, user_messages, edit_paths, title })
  *   - returns { written: boolean, path: string | null } — never throws
@@ -214,6 +220,10 @@ function writeDigest(opts) {
   }
 }
 
+function purgeSessionDigestsBestEffort(projectRoot, nowMs) {
+  const cacheDir = join(projectRoot, CACHE_REL);
+  pruneStaleDigests(cacheDir, nowMs);
+}
 module.exports = {
   writeDigest,
   // exposed for tests
@@ -225,5 +235,5 @@ module.exports = {
     MAX_USER_MESSAGES,
     MAX_MSG_CHARS,
     MAX_EDIT_PATHS,
-  },
+  , pruneStaleDigests, purgeSessionDigestsBestEffort, DIGEST_MAX_AGE_MS },
 };

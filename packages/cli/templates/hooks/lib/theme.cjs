@@ -13,7 +13,7 @@ const ANSI = {
 
 const PALETTE = {
   success: "\x1b[38;2;46;204;113m", // emerald
-  warn: "\x1b[38;2;241;196;15m", // amber
+  warn: "\x1b[38;2;180;120;0m", // amber
   error: "\x1b[38;2;231;76;60m", // alizarin
   drift: "\x1b[38;2;155;89;182m", // amethyst
   ai: "\x1b[38;2;52;152;219m", // peter-river blue
@@ -24,7 +24,7 @@ const PALETTE = {
 
 const PALETTE_256 = {
   success: "\x1b[38;5;77m",
-  warn: "\x1b[38;5;220m",
+  warn: "\x1b[38;5;178m",
   error: "\x1b[38;5;203m",
   drift: "\x1b[38;5;141m",
   ai: "\x1b[38;5;75m",
