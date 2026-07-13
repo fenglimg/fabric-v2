@@ -57,7 +57,14 @@ interface CrossStoreEntry {
   // of the surfacing builders (recall candidates + broad SessionStart indexes) by
   // filterOutDeprecated. Parsed once here so every consumer sees the same signal.
   deprecated: boolean;
-  source: string; // raw markdown (read once during the walk)
+  /**
+   * ISS-20260713-002: cache stores frontmatter-only (or a small head cap), not
+   * the full markdown body. Full text is re-read from `file` when a consumer
+   * needs the body (collectStoreCanonicalEntries). `contentHash` is the sha256
+   * of the full file at walk time for revision fingerprints.
+   */
+  source: string;
+  contentHash: string;
 }
 
 interface ReadSetWalkCacheEntry {
@@ -96,27 +103,26 @@ function touchReadSetCache(key: string, entry: ReadSetWalkCacheEntry): void {
   }
 }
 
-// ISS-20260711-142: O(stores) validation — path-list structural hash + one
-// mtime/size sample per store_uuid (first ref file), not per-entry stat fan-out.
+// ISS-20260713-012: fingerprint EVERY ref's size/mtime (not one sample file per
+// store). Sampling only the first file left content edits on non-sampled paths
+// serving stale walk-cache bodies until process restart.
 async function readSetFingerprint(refs: StoreKnowledgeRef[]): Promise<string> {
   const structure = refs
     .map((ref) => `${ref.store_uuid}|${ref.alias}|${ref.file}|${ref.type}|${ref.project ?? ""}`)
     .sort()
     .join("\n");
-  const byStore = new Map<string, string>();
-  for (const ref of refs) {
-    if (!byStore.has(ref.store_uuid)) byStore.set(ref.store_uuid, ref.file);
-  }
-  const storeParts: string[] = [];
-  for (const [storeUuid, sampleFile] of [...byStore.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+  const contentParts: string[] = [];
+  const sorted = [...refs].sort((a, b) => a.file.localeCompare(b.file));
+  await mapPool(sorted, READ_SET_WALK_CONCURRENCY, async (ref) => {
     try {
-      const fileStat = await stat(sampleFile);
-      storeParts.push(`${storeUuid}|${fileStat.size}|${fileStat.mtimeMs}`);
+      const fileStat = await stat(ref.file);
+      contentParts.push(`${ref.file}|${fileStat.size}|${fileStat.mtimeMs}`);
     } catch {
-      storeParts.push(`${storeUuid}|missing`);
+      contentParts.push(`${ref.file}|missing`);
     }
-  }
-  return `${structure}\n--\n${storeParts.join("\n")}`;
+  });
+  contentParts.sort();
+  return `${structure}\n--\n${contentParts.join("\n")}`;
 }
 
 async function mapPool<T, R>(
@@ -280,6 +286,18 @@ async function walkReadSetStores(projectRoot: string): Promise<CrossStoreEntry[]
   return entries.slice();
 }
 
+
+/** Keep YAML frontmatter (+ small head) for description extract; drop body for cache. */
+function frontmatterHead(source: string, maxChars = 8192): string {
+  if (source.startsWith("---")) {
+    const end = source.indexOf("\n---", 3);
+    if (end !== -1) {
+      return source.slice(0, Math.min(end + 4, maxChars));
+    }
+  }
+  return source.length <= maxChars ? source : source.slice(0, maxChars);
+}
+
 async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<CrossStoreEntry[]> {
   readSetWalkCount += 1;
   // ISS-20260711-132: bounded concurrency instead of one Promise.all per file.
@@ -303,7 +321,9 @@ async function walkReadSetStoresUncached(snapshot: ReadSetSnapshot): Promise<Cro
         layer,
         semanticScope: readSemanticScope(source, layer, ref.project),
         deprecated: DEPRECATED_LINE.test(source),
-        source,
+        contentHash: sha256(source),
+        // ISS-20260713-002: do not retain full body in the 8-root walk cache.
+        source: frontmatterHead(source),
       };
     },
   );
@@ -398,7 +418,11 @@ export interface AlwaysActiveBody {
   /** description.summary — the overflow-degrade fallback when the body cannot
    *  fit the injection char budget (the budget is enforced hook-side, D10). */
   summary: string;
-  /** frontmatter-stripped markdown body. */
+  /**
+   * ISS-20260713-014 / KT-DEC-0036: SessionStart wire is index-only.
+   * Body is empty on this path; full text via Read/fab_recall.
+   * Field retained for wire compatibility.
+   */
   body: string;
 }
 
@@ -519,7 +543,8 @@ export async function buildAlwaysActiveBodies(
         type,
         layer: entry.layer,
         summary: typeof desc.summary === "string" ? desc.summary : "",
-        body: extractBody(entry.source),
+        // ISS-20260713-014: do not serialize full markdown on SessionStart wire.
+        body: "",
       });
     }
   } catch {
@@ -557,7 +582,7 @@ export interface StoreKnowledgeSummary {
 export async function computeReadSetRevision(projectRoot: string): Promise<string> {
   const revisionSource = (await walkReadSetStores(projectRoot))
     .filter((entry) => !entry.file.includes("/knowledge/pending/"))
-    .map((entry) => `${entry.qualifiedId}|${sha256(entry.source)}`)
+    .map((entry) => `${entry.qualifiedId}|${entry.contentHash}`)
     .sort()
     .join("\n");
   return sha256(revisionSource);
@@ -591,13 +616,20 @@ export async function collectStoreCanonicalEntries(projectRoot: string): Promise
     if (description === undefined) {
       continue;
     }
+    // ISS-20260713-002: body is not in the walk cache — re-read for callers that need it.
+    let body = entry.source;
+    try {
+      body = await readFile(entry.file, "utf8");
+    } catch {
+      /* keep head */
+    }
     out.push({
       stableId: entry.qualifiedId.slice(entry.alias.length + 1),
       qualifiedId: entry.qualifiedId,
       file: entry.file,
       type: entry.type,
       layer: entry.layer,
-      body: entry.source,
+      body,
       description,
     });
   }

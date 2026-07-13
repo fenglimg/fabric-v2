@@ -1,0 +1,115 @@
+{
+  "status": "reviewing",
+  "plan": {
+    "task_ids": [
+      "TASK-001",
+      "TASK-002",
+      "TASK-003",
+      "TASK-004",
+      "TASK-005"
+    ],
+    "task_count": 5,
+    "complexity": "medium",
+    "waves": [
+      {
+        "wave": 1,
+        "name": "critical correctness 036/037 verify-close",
+        "tasks": [
+          "TASK-001"
+        ],
+        "issues": [
+          "ISS-20260713-036",
+          "ISS-20260713-037"
+        ]
+      },
+      {
+        "wave": 2,
+        "name": "security transcript sandbox 041",
+        "tasks": [
+          "TASK-002"
+        ],
+        "issues": [
+          "ISS-20260713-041"
+        ]
+      },
+      {
+        "wave": 3,
+        "name": "architecture rank SSOT + scoring slice + fabric-hint modularization",
+        "tasks": [
+          "TASK-003",
+          "TASK-004",
+          "TASK-005"
+        ],
+        "issues": [
+          "ISS-20260713-039",
+          "ISS-20260713-038",
+          "ISS-20260713-040"
+        ]
+      }
+    ],
+    "executor_assignments": {},
+    "confidence": 0.86
+  },
+  "issues": [
+    {
+      "id": "ISS-20260713-036",
+      "gap_ref": "COR-001",
+      "severity": "critical",
+      "task": "TASK-001",
+      "state": "ALREADY_FIXED_VERIFY_CLOSE"
+    },
+    {
+      "id": "ISS-20260713-037",
+      "gap_ref": "COR-002",
+      "severity": "high",
+      "task": "TASK-001",
+      "state": "ALREADY_FIXED_VERIFY_CLOSE"
+    },
+    {
+      "id": "ISS-20260713-041",
+      "gap_ref": "SEC-001",
+      "severity": "high",
+      "task": "TASK-002",
+      "state": "OPEN_IMPLEMENT"
+    },
+    {
+      "id": "ISS-20260713-039",
+      "gap_ref": "ARCH-002",
+      "severity": "high",
+      "task": "TASK-003",
+      "state": "OPEN_IMPLEMENT"
+    },
+    {
+      "id": "ISS-20260713-038",
+      "gap_ref": "ARCH-001",
+      "severity": "high",
+      "task": "TASK-004",
+      "state": "OPEN_IMPLEMENT"
+    },
+    {
+      "id": "ISS-20260713-040",
+      "gap_ref": "ARCH-007",
+      "severity": "high",
+      "task": "TASK-005",
+      "state": "OPEN_IMPLEMENT"
+    }
+  ],
+  "updated_at": "2026-07-13T03:04:32.870Z",
+  "session_id": "ralph-v2-20260713-111826",
+  "milestone": "M-adhoc-20260713-residual-registered-6",
+  "review": {
+    "level": "standard",
+    "verdict": "WARN",
+    "reviewed_at": "2026-07-13T03:04:32.870Z",
+    "severity_distribution": {
+      "critical": 0,
+      "high": 4,
+      "medium": 21,
+      "low": 7,
+      "total": 32
+    },
+    "findings_count": 32,
+    "issues_created": 4,
+    "path": "scratch/20260713-review-P1-residual-registered-036-041/review.json"
+  }
+}

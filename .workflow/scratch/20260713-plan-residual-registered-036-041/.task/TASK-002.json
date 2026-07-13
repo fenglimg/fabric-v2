@@ -1,0 +1,126 @@
+{
+  "id": "TASK-002",
+  "title": "Secure summarizeTranscript path sandbox (041)",
+  "description": "ISS-041: transcript-summary.summarizeTranscript 对 stdin transcript_path 无 root/realpath allowlist，可任意读文件并流入 digest/events。实现 known client transcript roots 沙箱 + size/suffix 限制，并扩展 summarize-transcript 测试。",
+  "issue_id": "ISS-20260713-041",
+  "issue_refs": [
+    "ISS-20260713-041"
+  ],
+  "type": "fix",
+  "priority": "high",
+  "effort": "medium",
+  "action": "In packages/cli/templates/hooks/lib/transcript-summary.cjs::summarizeTranscript, before readFileSync: reject non-absolute paths; resolve realpath (or realpath of existing parent + basename); require path under allowlisted roots [join(homedir(),'.claude','projects'), join(homedir(),'.codex')] (plus optional FABRIC_TRANSCRIPT_ROOTS env override for tests); require .jsonl suffix; enforce max size default 8*1024*1024 via statSync; on any fail return empty {user_messages:[],edit_paths:[],title:'',assistant_turns:[]}. Update packages/cli/__tests__/summarize-transcript.test.ts with allow/deny cases.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+  "focus_paths": [
+    "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+    "packages/cli/__tests__/summarize-transcript.test.ts",
+    "packages/cli/__tests__/fabric-hint-cite.test.ts"
+  ],
+  "read_first": [
+    "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+    "packages/cli/__tests__/summarize-transcript.test.ts",
+    "packages/cli/templates/hooks/lib/client-adapter.cjs",
+    "packages/cli/templates/hooks/fabric-hint.cjs"
+  ],
+  "depends_on": [],
+  "wave": 2,
+  "parallel_group": null,
+  "execution_group": "G2-security",
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/cli/templates/hooks/lib/transcript-summary.cjs contains realpath/realpathSync (or equivalent) and prefix allowlist check before readFileSync(transcriptPath)",
+      "summarizeTranscript rejects relative paths and paths outside ~/.claude/projects and ~/.codex (and any explicit test roots) by returning empty summary without throw",
+      "summarizeTranscript enforces .jsonl suffix and a max byte size gate before full read",
+      "packages/cli/__tests__/summarize-transcript.test.ts includes at least one denied path case (e.g. /etc/passwd or tmp outside roots) and one allowed-under-root case",
+      "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/summarize-transcript.test.ts __tests__/fabric-hint-cite.test.ts exits 0"
+    ],
+    "verification": "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/summarize-transcript.test.ts __tests__/fabric-hint-cite.test.ts; rg -n 'realpath|allowlist|MAX_|\\.jsonl|homedir' packages/cli/templates/hooks/lib/transcript-summary.cjs",
+    "definition_of_done": "越界 transcript_path 无法被 summarizeTranscript 读取；合法 client transcript 仍可摘要；SEC-001/ISS-041 可 close。"
+  },
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+      "action": "modify",
+      "target": "summarizeTranscript + isAllowedTranscriptPath helper",
+      "change": "Add absolute-path + realpath prefix allowlist under known roots; .jsonl suffix; size cap; fail-closed to empty summary"
+    },
+    {
+      "path": "packages/cli/__tests__/summarize-transcript.test.ts",
+      "action": "modify",
+      "target": "sandbox deny/allow cases",
+      "change": "Add tests: outside root denied; relative denied; allowed path under temp root via env/test seam still parses CC/Codex shapes"
+    }
+  ],
+  "implementation": [
+    "Introduce helper isAllowedTranscriptPath(transcriptPath) in transcript-summary.cjs using path.isAbsolute, fs.realpathSync (try/catch), path.resolve/relative, and root list from os.homedir()+'.claude/projects' and os.homedir()+'.codex'",
+    "Add test seam: if process.env.FABRIC_TRANSCRIPT_ROOTS is set (comma-separated absolutes), use those roots instead/in addition so vitest can mkdtemp under allowlist",
+    "Gate: suffix must be .jsonl (case-sensitive or lowercased); statSync size <= MAX_TRANSCRIPT_BYTES (8MB default constant)",
+    "Keep existing parser logic for CC + Codex envelopes unchanged after successful open",
+    "Update summarize-transcript.test.ts: write fixtures under allowed temp root; assert deny for path outside roots and for non-.jsonl; ensure existing shape tests still pass via root seam",
+    "Run summarize-transcript + fabric-hint-cite tests; ensure fabric-hint re-export summarizeTranscript still works"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/summarize-transcript.test.ts __tests__/fabric-hint-cite.test.ts"
+    ],
+    "unit": [
+      "packages/cli/__tests__/summarize-transcript.test.ts",
+      "packages/cli/__tests__/fabric-hint-cite.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "deny cases return empty summary",
+      "allow cases still parse CC/Codex",
+      "no throw on forbidden paths"
+    ]
+  },
+  "reference": {
+    "pattern": "fail-closed empty summary (existing ENOENT/catch behavior); client roots from Claude Code projects + Codex home",
+    "files": [
+      "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+      "packages/cli/templates/hooks/lib/client-adapter.cjs"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "prefix allowlist on realpath is minimal, behavior-preserving for legitimate client transcripts, and closes arbitrary file read without redesigning digest pipeline",
+    "decision_factors": [
+      "stdin transcript_path is untrusted input from hook payload",
+      "content can flow to digests/events"
+    ],
+    "tradeoffs": "Custom nonstandard transcript locations need FABRIC_TRANSCRIPT_ROOTS; acceptable for security default"
+  },
+  "risks": [
+    "realpath on missing file — resolve parent carefully or fail-closed",
+    "tests currently write to tmpdir outside default roots — must use env seam or inject roots",
+    "symlink escape if only string-prefix without realpath"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "session digest transcript summary",
+      "assistant turn cite extraction"
+    ],
+    "affected_components": [
+      "transcript-summary",
+      "fabric-hint"
+    ],
+    "affected_requirements": [
+      "SEC-001"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "45m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 2,
+    "execution_group": "G2-security",
+    "executor": "agent"
+  }
+}

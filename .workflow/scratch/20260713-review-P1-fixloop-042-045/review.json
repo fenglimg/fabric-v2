@@ -1,0 +1,120 @@
+{
+  "phase": 1,
+  "slug": "fixloop-042-045",
+  "level": "quick",
+  "mode": "focused-reverify",
+  "verdict": "PASS",
+  "reviewed_at": "2026-07-13T03:23:24.000Z",
+  "reviewer": "ralph-executor",
+  "session_id": "ralph-v2-20260713-111826",
+  "plan_ref": "PLN-20260713-residual-registered-036-041",
+  "prior_review": "scratch/20260713-review-P1-residual-registered-036-041/review.json",
+  "exec_path": "scratch/20260713-plan-residual-registered-036-041",
+  "scope_note": "Re-verify only prior high findings SEC-001/SEC-002/COR-010/ARCH-001 (ISS-044/045/043/042). Did not re-open full 036-041 architecture census.",
+  "dimensions_reviewed": ["correctness", "security", "architecture"],
+  "files_reviewed": [
+    "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+    "packages/cli/__tests__/summarize-transcript.test.ts",
+    "packages/cli/__tests__/fabric-hint.test.ts",
+    "packages/server/src/services/recall.ts",
+    "packages/server/src/services/plan-context-ids.ts",
+    "packages/server/src/services/plan-context-scoring.ts",
+    "packages/server/src/services/compare-stable-ids.test.ts"
+  ],
+  "severity_distribution": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "total": 0
+  },
+  "critical_files": [],
+  "findings": [],
+  "resolved_highs": [
+    {
+      "prior_id": "SEC-001",
+      "issue_id": "ISS-20260713-044",
+      "status": "RESOLVED",
+      "title": "FABRIC_TRANSCRIPT_ROOTS can fully disable ISS-041 sandbox",
+      "evidence": {
+        "code": [
+          "transcript-summary.cjs:26-32 isFilesystemRoot rejects `/` and drive roots",
+          "transcript-summary.cjs:67-69 seam only when NODE_ENV=test or FABRIC_TEST=1",
+          "transcript-summary.cjs:77 production returns defaults only (ignores env)",
+          "transcript-summary.cjs:51/87-88 empty after root-filter → defaults (fail-closed)"
+        ],
+        "tests": [
+          "summarize-transcript.test.ts: denies FABRIC_TRANSCRIPT_ROOTS=/",
+          "summarize-transcript.test.ts: ignores FABRIC_TRANSCRIPT_ROOTS outside test seam"
+        ]
+      }
+    },
+    {
+      "prior_id": "SEC-002",
+      "issue_id": "ISS-20260713-045",
+      "status": "RESOLVED",
+      "title": "TOCTOU: allow 校验后用原始路径 readFileSync",
+      "evidence": {
+        "code": [
+          "transcript-summary.cjs:151-179 resolveAllowedTranscriptPath returns validated realpath",
+          "transcript-summary.cjs:219-224 summarizeTranscript reads allowedReal only (not original path)"
+        ],
+        "tests": [
+          "summarize-transcript.test.ts: reads via realpath when path is symlink under allowlisted root"
+        ]
+      }
+    },
+    {
+      "prior_id": "COR-010",
+      "issue_id": "ISS-20260713-043",
+      "status": "RESOLVED",
+      "title": "Archive value-gate uses sessionAnchorTs instead of sessionArchiveWatermark",
+      "evidence": {
+        "code": [
+          "fabric-hint.cjs:1181-1188 archive value-gate uses sessionArchiveWatermark (null→0 via predicate)",
+          "ledger-scan.cjs:15-17 hasHighValueArchiveSignal → isHighValueArchiveCandidate",
+          "ledger-scan.cjs:224-225 backlog path already used watermark (aligned)"
+        ],
+        "tests": [
+          "fabric-hint.test.ts ISS-043: hasHighValueArchiveSignal keeps first high-value when watermark null; sessionAnchorTs wrong-anchor excludes it"
+        ]
+      }
+    },
+    {
+      "prior_id": "ARCH-001",
+      "issue_id": "ISS-20260713-042",
+      "status": "RESOLVED",
+      "title": "relatedLookupKeys still dual-implemented in recall.ts",
+      "evidence": {
+        "code": [
+          "services/recall.ts:22 import { relatedLookupKeys } from \"./plan-context-ids.js\"",
+          "services/recall.ts:368-369 comment: SSOT lives in plan-context-ids; do not re-implement",
+          "no local function relatedLookupKeys in recall.ts",
+          "plan-context-scoring.ts re-exports only; plan-context-ids.ts owns implementation"
+        ],
+        "tests": [
+          "compare-stable-ids.test.ts: relatedLookupKeys SSOT (ISS-042) facade matches ids module"
+        ]
+      }
+    }
+  ],
+  "test_evidence": {
+    "cli": {
+      "command": "vitest run __tests__/summarize-transcript.test.ts __tests__/fabric-hint.test.ts",
+      "result": "2 files, 150 passed"
+    },
+    "server": {
+      "command": "vitest run src/services/compare-stable-ids.test.ts src/services/recall.test.ts",
+      "result": "2 files, 27 passed"
+    },
+    "prior_fixloop": "scratch/20260713-plan-residual-registered-036-041/verification-fixloop.json status=DONE; 042-045 close_ready"
+  },
+  "issues_created": [],
+  "notes": [
+    "Focused re-review only; medium/low residuals from prior standard review (fabric-hint residual LOC, ledger size caps, dual summarizeTranscript, etc.) intentionally not re-scored as highs.",
+    "No new critical/high findings on the four fixed paths.",
+    "state.json artifact registration left to orchestrator (ralph executor does not call ralph complete)."
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "id": "TASK-004",
+  "title": "Scoring further slice 038 — factors/rank-core/id-graph",
+  "description": "ISS-038: plan-context-scoring.ts ~802 LOC 仍混合 context build、fusion factors、rank/cut、relatedLookupKeys。在 TASK-003 SSOT 后继续切片：score-factors / rank-core / id-graph，保留 buildScoringContext 为装配函数，plan-context facade 公开 re-export 不变。",
+  "issue_id": "ISS-20260713-038",
+  "issue_refs": [
+    "ISS-20260713-038"
+  ],
+  "type": "fix",
+  "priority": "high",
+  "effort": "large",
+  "action": "After TASK-003, extract from plan-context-scoring.ts into sibling modules under packages/server/src/services/: (1) plan-context-score-factors.ts — salienceScore/contentScore/recencyBoost/localityBoost/credibilityFactor/scoreDescriptionItem/scoreBreakdownForItem + locality helpers; (2) plan-context-rank-core.ts OR keep rank helpers in scoring but ensure cut/rankDescriptionItems/sortDescriptionItems live with rank concerns without redefining types; (3) move relatedLookupKeys to plan-context-ids.ts if not already there (id-graph). Keep export async function buildScoringContext and type ScoringContext assembly in plan-context-scoring.ts or thin re-export. packages/server/src/services/plan-context.ts public exports (buildScoringContext, cutRankedForRecall, rankDescriptionItems if any, scoreBreakdownForItem, relatedLookupKeys, RankMode, RankOptions, ScoringContext) must remain importable from plan-context.js.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/server/src/services/",
+  "focus_paths": [
+    "packages/server/src/services/plan-context-scoring.ts",
+    "packages/server/src/services/plan-context-ids.ts",
+    "packages/server/src/services/plan-context-rank.ts",
+    "packages/server/src/services/plan-context.ts"
+  ],
+  "read_first": [
+    "packages/server/src/services/plan-context-scoring.ts",
+    "packages/server/src/services/plan-context-ids.ts",
+    "packages/server/src/services/plan-context-rank.ts",
+    "packages/server/src/services/plan-context.ts",
+    "packages/server/src/services/plan-context-selection.ts",
+    "packages/server/src/services/plan-context.test.ts",
+    "packages/server/src/services/recall.test.ts"
+  ],
+  "depends_on": [
+    "TASK-003"
+  ],
+  "wave": 3,
+  "parallel_group": null,
+  "execution_group": "G3-arch-scoring-slice",
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/server/src/services/plan-context-scoring.ts line count is substantially below pre-slice ~802 (target ≤550 or clear module split with ≥2 new sibling files owning factor/id helpers)",
+      "New or existing modules own score factor functions and relatedLookupKeys without behavior change (scoreBreakdownForItem vs fused score agreement tests still pass)",
+      "rg -n 'export (async )?function (buildScoringContext|cutRankedForRecall|scoreBreakdownForItem|relatedLookupKeys)|export type (ScoringContext|RankMode|RankOptions)' packages/server/src/services/plan-context.ts still shows facade re-exports",
+      "No duplicate RankMode/RankOptions definitions reintroduced in scoring",
+      "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/plan-context.test.ts src/services/plan-context-scope-rank.test.ts src/services/plan-context-shadow-ranker.test.ts src/services/selection-token-cache.test.ts src/services/compare-stable-ids.test.ts src/services/recall.test.ts exits 0",
+      "pnpm --filter @fenglimg/fabric-server exec tsc --noEmit exits 0"
+    ],
+    "verification": "wc -l plan-context-scoring.ts + new modules; vitest suite above; tsc --noEmit; confirm plan-context public API imports",
+    "definition_of_done": "scoring god-module 进一步按 concern 切片；buildScoringContext 仍为装配；facade 稳定；ISS-038 close 或留下精确 residual LOC gap（禁止 false-close）。"
+  },
+  "files": [
+    {
+      "path": "packages/server/src/services/plan-context-scoring.ts",
+      "action": "modify",
+      "target": "buildScoringContext assembly; re-export moved symbols as needed",
+      "change": "Thin to context assembly + wiring; remove inlined factor/id bodies after extract"
+    },
+    {
+      "path": "packages/server/src/services/plan-context-score-factors.ts",
+      "action": "create",
+      "target": "score factor pure functions + scoreBreakdownForItem",
+      "change": "House salience/content/recency/locality/credibility/scoreDescriptionItem/scoreBreakdownForItem (+ path helpers)"
+    },
+    {
+      "path": "packages/server/src/services/plan-context-ids.ts",
+      "action": "modify",
+      "target": "relatedLookupKeys",
+      "change": "Move or re-export relatedLookupKeys as id-graph helper if not already present; keep compareStableIds cohesion"
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "action": "modify",
+      "target": "public re-exports",
+      "change": "Update import paths if symbols moved; preserve export names for callers"
+    }
+  ],
+  "implementation": [
+    "Map current scoring.ts regions: ScoringContext+buildScoringContext (~43-257), proximity/sort (~258-370), rank/cut (~374-430), factors/breakdown (~536-795), relatedLookupKeys (~797+)",
+    "Create plan-context-score-factors.ts with pure factor functions and scoreBreakdownForItem; import ScoringContext type only",
+    "Move relatedLookupKeys into plan-context-ids.ts (or dedicated small id-graph file re-exported from ids) and update scoring/recall/plan-context imports — note recall.ts may have a private relatedLookupKeys; do not blindly merge unless identical, prefer shared export if safe",
+    "Keep buildScoringContext in scoring module as assembly; rankDescriptionItems/cutRankedForRecall remain exported from scoring (post-003 thin cut) or rank-core without type redefs",
+    "Update plan-context.ts re-exports only as needed; run full plan-context + recall vitest + tsc",
+    "If time-box prevents complete factor extract, ship partial extract with residual LOC noted — do not claim full close"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/plan-context.test.ts src/services/plan-context-scope-rank.test.ts src/services/plan-context-shadow-ranker.test.ts src/services/selection-token-cache.test.ts src/services/compare-stable-ids.test.ts src/services/recall.test.ts",
+      "pnpm --filter @fenglimg/fabric-server exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/server/src/services/plan-context.test.ts",
+      "packages/server/src/services/recall.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "behavior-preserving scores",
+      "facade exports compile",
+      "scoring.ts thinner or multi-module split evident"
+    ]
+  },
+  "reference": {
+    "pattern": "ISS-011 first slice: facade + scoring/selection/bm25/doc-text modules; continue same style",
+    "files": [
+      "packages/server/src/services/plan-context.ts",
+      "packages/server/src/services/plan-context-selection.ts",
+      "packages/server/src/services/plan-context-scoring.ts"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Vertical concern extract after rank SSOT prevents re-copying cut/types into new modules",
+    "decision_factors": [
+      "802 LOC secondary god module residual after 011",
+      "must preserve public API"
+    ],
+    "tradeoffs": "Multiple small files vs one scoring file — prefer 2-3 focused modules over micro-files"
+  },
+  "risks": [
+    "scoreBreakdownForItem must stay bit-identical to fused score path (recall tests guard)",
+    "import cycles between scoring and factors",
+    "private relatedLookupKeys in recall.ts may diverge — verify before forced share"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "planContext scoring",
+      "recall ranking diagnostics"
+    ],
+    "affected_components": [
+      "plan-context-scoring",
+      "plan-context-ids",
+      "plan-context facade"
+    ],
+    "affected_requirements": [
+      "ARCH-001"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "90m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 3,
+    "execution_group": "G3-arch-scoring-slice",
+    "executor": "agent"
+  }
+}

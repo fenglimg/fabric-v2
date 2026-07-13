@@ -279,6 +279,29 @@ export const configCmd = defineCommand({
       description: t("cli.config.args.target.description"),
       valueHint: "path",
     },
+    list: {
+      type: "boolean",
+      description: "List panel-editable config keys (non-interactive)",
+    },
+    get: {
+      type: "string",
+      description: "Get one config field by key (non-interactive)",
+      valueHint: "key",
+    },
+    set: {
+      type: "string",
+      description: "Set one config field by key (non-interactive; requires --value)",
+      valueHint: "key",
+    },
+    value: {
+      type: "string",
+      description: "Value for --set",
+      valueHint: "value",
+    },
+    json: {
+      type: "boolean",
+      description: "Emit machine-readable JSON for list/get",
+    },
   },
   subCommands: {
     "dismiss-slot": dismissSlotCmd,
@@ -318,13 +341,103 @@ export const configCmd = defineCommand({
       return;
     }
 
-    // Non-TTY short-circuit. clack prompts require a TTY for keyboard input;
-    // running `fabric config` from a non-interactive shell (CI, snapshot tests,
-    // pipes) prints the intro + a one-line notice and exits 0 instead of
-    // hanging. The interactive workflow is the only supported edit path.
+    // ISS-20260713-003 / 010: non-interactive get/set/list before TTY gate.
+    const wantsList = args.list === true;
+    const getKey = typeof args.get === "string" && args.get.length > 0 ? args.get : null;
+    const setKey = typeof args.set === "string" && args.set.length > 0 ? args.set : null;
+    if (wantsList || getKey !== null || setKey !== null) {
+      try {
+        const raw = await readFile(configPath, "utf8");
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error(t("cli.config.errors.expected-object", { path: configPath }));
+        }
+        const panel = getPanelFields();
+        const allowed = new Set(panel.map((f) => f.key));
+        // fabric_language is global-routed in the interactive panel; expose via get/set too.
+        allowed.add(LANGUAGE_FIELD_KEY);
+
+        if (wantsList) {
+          const rows = panel.map((f) => ({
+            key: f.key,
+            value: parsed[f.key] ?? null,
+            type: f.type,
+          }));
+          if (args.json === true) {
+            console.log(JSON.stringify({ config_path: configPath, fields: rows }, null, 2));
+          } else {
+            for (const r of rows) {
+              console.log(`${r.key}=${JSON.stringify(r.value)}`);
+            }
+          }
+          return;
+        }
+
+        if (getKey !== null) {
+          if (!allowed.has(getKey) && !(getKey in parsed)) {
+            console.error(`unknown config key: ${getKey}`);
+            process.exitCode = 1;
+            return;
+          }
+          const value =
+            getKey === LANGUAGE_FIELD_KEY
+              ? (loadGlobalConfig(resolveGlobalRoot()) as { language?: string } | null)?.language ??
+                parsed[getKey] ??
+                null
+              : parsed[getKey] ?? null;
+          if (args.json === true) {
+            console.log(JSON.stringify({ key: getKey, value }, null, 2));
+          } else {
+            console.log(value === undefined ? "" : String(value));
+          }
+          return;
+        }
+
+        if (setKey !== null) {
+          if (args.value === undefined) {
+            console.error("fabric config --set requires --value");
+            process.exitCode = 1;
+            return;
+          }
+          if (setKey === LANGUAGE_FIELD_KEY) {
+            const globalRoot = resolveGlobalRoot();
+            const global = loadGlobalConfig(globalRoot) ?? { uid: "local", stores: [] };
+            await saveGlobalConfigAsync({ ...global, language: args.value }, globalRoot);
+            console.log(`set ${setKey}=${args.value}`);
+            return;
+          }
+          // Coerce booleans/numbers for known panel fields
+          const meta = panel.find((f) => f.key === setKey);
+          let coerced: unknown = args.value;
+          if (meta?.type === "boolean") {
+            coerced = args.value === "true" || args.value === "1";
+          } else if (meta?.type === "number") {
+            const n = Number(args.value);
+            if (!Number.isFinite(n)) {
+              console.error(`invalid number for ${setKey}: ${args.value}`);
+              process.exitCode = 1;
+              return;
+            }
+            coerced = n;
+          }
+          const merged = { ...parsed, [setKey]: coerced };
+          await atomicWriteJson(configPath, merged);
+          console.log(`set ${setKey}=${JSON.stringify(coerced)}`);
+          return;
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(message);
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    // Non-TTY short-circuit when no get/set/list was requested.
     if (!isInteractiveConfig()) {
       console.log(t("cli.config.intro"));
       console.log(t("cli.config.non-tty-notice"));
+      console.log("Hint: fabric config --list | --get <key> | --set <key> --value <v> [--json]");
       return;
     }
 

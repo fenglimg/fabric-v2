@@ -38,6 +38,7 @@ export interface ProjectStatus {
   uid: string | null;
   mounted: string[];
   project_id: string | null;
+  active_project: string | null;
   // F9: distinguishes "no project config at all" from "project config exists
   // but project_id is unset" (the common case — project_id assignment is part
   // of the deferred global-refactor and not yet populated at install). Without
@@ -62,6 +63,7 @@ export function projectStatus(
     uid: global?.uid ?? null,
     mounted: (global?.stores ?? []).map((s) => s.alias),
     project_id: project?.project_id ?? null,
+    active_project: project?.active_project ?? project?.project_id ?? null,
     is_fabric_project: project !== null,
     required: (project?.required_stores ?? []).map((r) => r.id),
     active_write_store: project?.active_write_store ?? null,

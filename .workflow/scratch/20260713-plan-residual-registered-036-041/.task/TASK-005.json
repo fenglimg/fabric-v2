@@ -1,0 +1,164 @@
+{
+  "id": "TASK-005",
+  "title": "fabric-hint next modularization 040 — decide/config/state/emit",
+  "description": "ISS-040: fabric-hint.cjs 仍 ~1933 LOC。下一刀提取 signal-decide、hint-config、session-signal-state、assistant-turn-emit 到 lib/*；保持 module.exports 表面稳定；测试继续可 require facade。",
+  "issue_id": "ISS-20260713-040",
+  "issue_refs": [
+    "ISS-20260713-040"
+  ],
+  "type": "fix",
+  "priority": "high",
+  "effort": "large",
+  "action": "Extract from packages/cli/templates/hooks/fabric-hint.cjs into packages/cli/templates/hooks/lib/: (1) signal-decide.cjs — decide(...) + signal policy helpers used only by decide; (2) hint-config.cjs — threshold readers (readArchiveHintHours, readReviewHintPendingCount, readReviewHintPendingAgeDays, readMaintenanceHintDays, readMaintenanceHintCooldownDays, readCooldownHours, readUnderseedThreshold, readArchiveEditThreshold, readArchiveBacklogSessionCount, readArchiveBacklogIdleHours) + DEFAULT_* constants needed by readers; (3) session-signal-state.cjs — readShownCache/writeShownCache, readDismissedSignals/writeSessionDismiss/sessionDismissFileName, readMaintenanceLastEmit/writeMaintenanceLastEmit, DISMISSABLE_SIGNALS; (4) assistant-turn-emit.cjs — parseKbLine, extractAndWriteAssistantTurnsBestEffort (+ detectClient re-export or require client-adapter). fabric-hint.cjs keeps main orchestration + module.exports re-exporting the same keys as today (main, decide, readLedger, summarizeTranscript, parseKbLine, extractAndWriteAssistantTurnsBestEffort, threshold readers, dismiss helpers, CONSTANTS, ...).",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/cli/templates/hooks/",
+  "focus_paths": [
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/cli/templates/hooks/lib/",
+    "packages/cli/__tests__/fabric-hint.test.ts",
+    "packages/cli/__tests__/fabric-hint-cite.test.ts",
+    "packages/cli/__tests__/fabric-hint-dismiss.test.ts",
+    "packages/cli/__tests__/fabric-hint-graph-edge.test.ts",
+    "packages/cli/__tests__/fabric-hint-never-blocks.test.ts"
+  ],
+  "read_first": [
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+    "packages/cli/templates/hooks/lib/pending-stats.cjs",
+    "packages/cli/templates/hooks/lib/import-state.cjs",
+    "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+    "packages/cli/templates/hooks/lib/client-adapter.cjs",
+    "packages/cli/templates/hooks/lib/cite-line-parser.cjs",
+    "packages/cli/__tests__/fabric-hint.test.ts",
+    "packages/cli/__tests__/fabric-hint-dismiss.test.ts",
+    "packages/cli/__tests__/fabric-hint-cite.test.ts"
+  ],
+  "depends_on": [],
+  "wave": 3,
+  "parallel_group": null,
+  "execution_group": "G3-arch-fabric-hint",
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/cli/templates/hooks/lib/signal-decide.cjs exists and exports decide",
+      "packages/cli/templates/hooks/lib/hint-config.cjs exists and exports threshold readers used by tests/CONSTANTS defaults",
+      "packages/cli/templates/hooks/lib/session-signal-state.cjs exists and exports shown-cache + dismiss + maintenance last-emit helpers",
+      "packages/cli/templates/hooks/lib/assistant-turn-emit.cjs exists and exports parseKbLine and extractAndWriteAssistantTurnsBestEffort",
+      "packages/cli/templates/hooks/fabric-hint.cjs module.exports still includes keys: main, decide, readLedger, summarizeTranscript, parseKbLine, extractAndWriteAssistantTurnsBestEffort, readDismissedSignals, writeSessionDismiss, readShownCache, writeShownCache, CONSTANTS",
+      "packages/cli/templates/hooks/fabric-hint.cjs LOC reduced from ~1933 (target ≤1400 or clear residual documented if main still thick)",
+      "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts __tests__/fabric-hint-cite.test.ts __tests__/fabric-hint-dismiss.test.ts __tests__/fabric-hint-graph-edge.test.ts __tests__/fabric-hint-never-blocks.test.ts __tests__/summarize-transcript.test.ts exits 0"
+    ],
+    "verification": "ls lib/{signal-decide,hint-config,session-signal-state,assistant-turn-emit}.cjs; node -e \"const h=require('./packages/cli/templates/hooks/fabric-hint.cjs'); console.log(Object.keys(h).sort().join(','))\"; vitest suite above; wc -l fabric-hint.cjs",
+    "definition_of_done": "fabric-hint 下一轮 concern split 落地；exports 稳定；相关测试绿；ISS-040 close 或显式 residual（main 仍厚时写明剩余 concern），禁止 false-close。"
+  },
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/lib/signal-decide.cjs",
+      "action": "create",
+      "target": "decide + signal policy",
+      "change": "Move decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner, importInFlight, backlogStats) and pure helpers only it needs"
+    },
+    {
+      "path": "packages/cli/templates/hooks/lib/hint-config.cjs",
+      "action": "create",
+      "target": "threshold readers + defaults",
+      "change": "Move read* threshold helpers and DEFAULT_* constants they own"
+    },
+    {
+      "path": "packages/cli/templates/hooks/lib/session-signal-state.cjs",
+      "action": "create",
+      "target": "shown cache / dismiss / maintenance last emit",
+      "change": "Move session-scoped state I/O helpers"
+    },
+    {
+      "path": "packages/cli/templates/hooks/lib/assistant-turn-emit.cjs",
+      "action": "create",
+      "target": "parseKbLine + extractAndWriteAssistantTurnsBestEffort",
+      "change": "Move cite/assistant-turn emission helpers; require cite-line-parser/client-adapter as needed"
+    },
+    {
+      "path": "packages/cli/templates/hooks/fabric-hint.cjs",
+      "action": "modify",
+      "target": "main + module.exports facade",
+      "change": "require new libs; re-export same public surface; keep main orchestration"
+    }
+  ],
+  "implementation": [
+    "Inventory module.exports keys at fabric-hint.cjs:1830+ as freeze list before extract",
+    "Extract hint-config first (lowest coupling threshold readers)",
+    "Extract session-signal-state (shown cache + dismiss + maintenance emit)",
+    "Extract assistant-turn-emit (parseKbLine + extractAndWriteAssistantTurnsBestEffort)",
+    "Extract signal-decide (decide + dependent pure helpers); inject config/state via params or requires",
+    "Wire fabric-hint.cjs requires and re-exports; keep CONSTANTS object fields identical for tests",
+    "Run full fabric-hint* + summarize-transcript vitest suite; fix only export wiring bugs",
+    "If full 4-way extract exceeds budget, land ≥2 modules with residual list — do not false-close 040"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts __tests__/fabric-hint-cite.test.ts __tests__/fabric-hint-dismiss.test.ts __tests__/fabric-hint-graph-edge.test.ts __tests__/fabric-hint-never-blocks.test.ts __tests__/summarize-transcript.test.ts"
+    ],
+    "unit": [
+      "packages/cli/__tests__/fabric-hint.test.ts",
+      "packages/cli/__tests__/fabric-hint-cite.test.ts",
+      "packages/cli/__tests__/fabric-hint-dismiss.test.ts",
+      "packages/cli/__tests__/fabric-hint-graph-edge.test.ts",
+      "packages/cli/__tests__/fabric-hint-never-blocks.test.ts",
+      "packages/cli/__tests__/summarize-transcript.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "exports key set stable",
+      "all listed vitest files green",
+      "orchestrator LOC reduced or residual explicit"
+    ]
+  },
+  "reference": {
+    "pattern": "ISS-020 extract style: ledger-scan/pending-stats/import-state/transcript-summary required by fabric-hint and re-exported",
+    "files": [
+      "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+      "packages/cli/templates/hooks/lib/pending-stats.cjs",
+      "packages/cli/templates/hooks/lib/import-state.cjs",
+      "packages/cli/templates/hooks/lib/transcript-summary.cjs"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Four concern modules mirror residual extract_targets in context-package; facade stability avoids rewriting 187 tests",
+    "decision_factors": [
+      "1933 LOC incomplete split residual",
+      "tests bind to fabric-hint module.exports"
+    ],
+    "tradeoffs": "main may remain sizable; next residual ok if decide/config/state/emit extracted"
+  },
+  "risks": [
+    "Circular requires among lib modules — prefer param injection for decide",
+    "CONSTANTS freeze surface large — must keep field names for tests",
+    "detectClient duplication vs client-adapter — prefer require client-adapter if already equivalent"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "Stop hook archive/review/import/maintenance hints",
+      "cite assistant turn emission"
+    ],
+    "affected_components": [
+      "fabric-hint",
+      "hooks lib"
+    ],
+    "affected_requirements": [
+      "ARCH-007"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "100m",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 3,
+    "execution_group": "G3-arch-fabric-hint",
+    "executor": "agent"
+  }
+}

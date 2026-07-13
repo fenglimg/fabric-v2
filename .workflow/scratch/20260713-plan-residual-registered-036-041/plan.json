@@ -1,0 +1,216 @@
+{
+  "summary": "gap-fix：清扫 residual registered 6 条（ISS-036~041）。W1 验证并关账已修的 COR-001/COR-002（readLedger full-file + partial-tail）；W2 实现 transcript_path 沙箱（SEC-001）并与 037 一并关账；W3 先收口 rank SSOT（039），再切片 scoring god-module（038），最后继续 fabric-hint 模块化（040）。不发 rc、不扩无关 backlog。",
+  "approach": "1) 036/037 已在 011/020 closeout 的 COR 修复中落地：本 plan 只做契约测试/smoke 锁定 + issue close evidence，禁止重写。2) 041 在 summarizeTranscript 入口加 known client transcript root allowlist + realpath 前缀 + size/suffix 限制，默认拒绝越界路径。3) 039 先于 038：删除 scoring 内重复 RankMode/RankOptions 与 cut 实现，cutRankedForRecall 改为 applyRankCapAndFloor 薄包装，类型只从 plan-context-rank 导出。4) 038 在 SSOT 稳定后抽 score-factors / rank-core / id-graph，buildScoringContext 保持装配，plan-context facade 公开 re-export 不变。5) 040 再抽 signal-decide / hint-config / session-signal-state / assistant-turn-emit，module.exports 表面稳定。",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005"
+  ],
+  "task_count": 5,
+  "complexity": "medium",
+  "estimated_time": "4.5h",
+  "recommended_execution": "Agent",
+  "waves": [
+    {
+      "wave": 1,
+      "name": "critical correctness 036/037 verify-close",
+      "tasks": [
+        "TASK-001"
+      ],
+      "issues": [
+        "ISS-20260713-036",
+        "ISS-20260713-037"
+      ]
+    },
+    {
+      "wave": 2,
+      "name": "security transcript sandbox 041",
+      "tasks": [
+        "TASK-002"
+      ],
+      "issues": [
+        "ISS-20260713-041"
+      ]
+    },
+    {
+      "wave": 3,
+      "name": "architecture rank SSOT + scoring slice + fabric-hint modularization",
+      "tasks": [
+        "TASK-003",
+        "TASK-004",
+        "TASK-005"
+      ],
+      "issues": [
+        "ISS-20260713-039",
+        "ISS-20260713-038",
+        "ISS-20260713-040"
+      ]
+    }
+  ],
+  "data_flow": {
+    "diagram": null,
+    "stages": [
+      "verify full-file ledger + partial-tail contracts",
+      "sandbox summarizeTranscript path roots",
+      "unify rank cut/types SSOT",
+      "slice plan-context-scoring modules",
+      "extract fabric-hint decision/config/state/emit libs"
+    ]
+  },
+  "design_decisions": [
+    "036/037: verify-not-rewrite — worktree 已有 full-file readLedger + parseJsonlEvents partial-tail drop；任务只补/确认契约测试与 close evidence，禁止再改行为路径",
+    "041 transcript sandbox: allowlist absolute realpath under known client transcript roots（Claude Code: ~/.claude/projects/**；Codex: ~/.codex/** 会话 transcript 根）；realpath prefix check；.jsonl suffix；size cap（建议 8MB 默认，超限返回 empty summary）；越界/相对路径/symlink escape → empty out，不 throw",
+    "039 rank SSOT: RankMode/RankOptions 只定义于 plan-context-rank.ts；scoring 与 plan-context facade re-export 之；cutRankedForRecall 必须调用 applyRankCapAndFloor，删除手写 topK+floor 副本",
+    "038 scoring slice: keep buildScoringContext as assembly orchestrator；抽出 score-factors / rank-core / id-graph（relatedLookupKeys）；plan-context.ts public re-export surface 不变",
+    "040 fabric-hint: module.exports 键集合保持稳定（main/decide/readLedger/summarizeTranscript/CONSTANTS/...）；新逻辑进 lib/*；测试可继续 require fabric-hint.cjs facade，低风险处可直测 lib",
+    "wave order hard: correctness → security → architecture；039 必须先于或与 038 同波次首任务，避免 038 继续复制 cut/types",
+    "若架构任务预算内无法完全关账：留下显式 residual gap + 当前 LOC/导出证据，禁止 false-close"
+  ],
+  "shared_context": {
+    "patterns": [
+      "verify-and-close for already-fixed COR findings",
+      "realpath prefix allowlist sandbox",
+      "thin facade + concern modules (ISS-011/020 style)",
+      "SSOT types in leaf helper module, re-export from facade",
+      "behavior-preserving modularization: export surface first"
+    ],
+    "conventions": [
+      "CommonJS hooks under packages/cli/templates/hooks/**/*.cjs",
+      "ESM TS services under packages/server/src/services/*.ts",
+      "vitest via pnpm --filter @fenglimg/fabric-cli|fabric-server",
+      "no silent behavior change; tests encode contracts",
+      "Chinese issue notes OK; code identifiers English"
+    ],
+    "dependencies": [
+      "node:fs realpathSync/existsSync/statSync/readFileSync",
+      "node:os homedir",
+      "node:path resolve/join/relative",
+      "prior evidence .workflow/scratch/20260713-plan-residual-issues-011-020/verification.json"
+    ]
+  },
+  "boundary": {
+    "in_scope": [
+      "ISS-20260713-036",
+      "ISS-20260713-037",
+      "ISS-20260713-041",
+      "ISS-20260713-038",
+      "ISS-20260713-039",
+      "ISS-20260713-040",
+      "targeted tests + close evidence"
+    ],
+    "out_of_scope": [
+      "rc release / version bump",
+      "unrelated backlog issues",
+      "full recall rewrite",
+      "reimplementing already-fixed COR-001/COR-002 logic",
+      "changing public MCP/tool schemas"
+    ],
+    "constraints": [
+      "preserve public exports and re-export surfaces",
+      "targeted tests green",
+      "no silent behavior change",
+      "architecture facade stable",
+      "prefer verify-and-close for 036/037",
+      "if architecture incomplete, leave residual open with explicit gap"
+    ]
+  },
+  "issues": [
+    {
+      "id": "ISS-20260713-036",
+      "gap_ref": "COR-001",
+      "severity": "critical",
+      "task": "TASK-001",
+      "state": "ALREADY_FIXED_VERIFY_CLOSE"
+    },
+    {
+      "id": "ISS-20260713-037",
+      "gap_ref": "COR-002",
+      "severity": "high",
+      "task": "TASK-001",
+      "state": "ALREADY_FIXED_VERIFY_CLOSE"
+    },
+    {
+      "id": "ISS-20260713-041",
+      "gap_ref": "SEC-001",
+      "severity": "high",
+      "task": "TASK-002",
+      "state": "OPEN_IMPLEMENT"
+    },
+    {
+      "id": "ISS-20260713-039",
+      "gap_ref": "ARCH-002",
+      "severity": "high",
+      "task": "TASK-003",
+      "state": "OPEN_IMPLEMENT"
+    },
+    {
+      "id": "ISS-20260713-038",
+      "gap_ref": "ARCH-001",
+      "severity": "high",
+      "task": "TASK-004",
+      "state": "OPEN_IMPLEMENT"
+    },
+    {
+      "id": "ISS-20260713-040",
+      "gap_ref": "ARCH-007",
+      "severity": "high",
+      "task": "TASK-005",
+      "state": "OPEN_IMPLEMENT"
+    }
+  ],
+  "definition_of_done": "6 issues 均有 close 或显式 residual gap 记录；036/037 契约测试+smoke 绿；041 sandbox 拒绝越界路径；039 无 dual Rank types/cut 实现；038 scoring 进一步切片且 facade re-export 不变；040 fabric-hint exports 稳定且相关 vitest 绿；server tsc --noEmit 绿。",
+  "prior_evidence": {
+    "path": ".workflow/scratch/20260713-plan-residual-issues-011-020/verification.json",
+    "note": "COR-001/COR-002 fixed; ARCH-002 skipped then; 036/037 are residual issue records of COR findings"
+  },
+  "_metadata": {
+    "timestamp": "2026-07-13T02:35:57Z",
+    "source": "workflow-planner",
+    "planning_mode": "gap-fix",
+    "plan_type": "fix",
+    "schema_version": "2.0",
+    "git_commit": "def84069",
+    "session_id": "ralph-v2-20260713-111826",
+    "milestone": "M-adhoc-20260713-residual-registered-6"
+  },
+  "confidence": {
+    "overall": 0.86,
+    "dimensions": {
+      "requirements_coverage": 0.95,
+      "task_quality": 0.88,
+      "dependency_correctness": 0.9,
+      "estimation_accuracy": 0.75,
+      "collision_safety": 0.85
+    },
+    "factors": {
+      "completeness": 0.92,
+      "specificity": 0.88,
+      "structural_validity": 0.9,
+      "user_validation": 0.7,
+      "consistency": 0.9
+    },
+    "pressure_pass": {
+      "task_id": "TASK-004",
+      "title": "Scoring further slice 038 — factors/rank-core/id-graph",
+      "read_first_count": 7,
+      "criteria_count": 6,
+      "action_concrete": true,
+      "result": "PASS"
+    },
+    "evidence_source": "inline plan-checker (planner agent terminated mid-flight after writing artifacts; local structural check)",
+    "checker_status": "PASS_WITH_WARNINGS",
+    "warnings": [
+      "workflow-planner agent terminated with API 403 after writing plan+tasks; artifacts validated locally",
+      "TASK-004/005 large architecture slices may leave residual if budget exceeded — tasks already encode no-false-close",
+      "TASK-002 depends on FABRIC_TRANSCRIPT_ROOTS test seam — implement carefully for existing tmp fixtures"
+    ],
+    "boundary_warning": 0.0
+  },
+  "boundary_grill": {
+    "executed": true,
+    "conflicts": [],
+    "notes": "No DEC conflicts with in_scope residual clearance; out_of_scope rc/release and full recall rewrite honored."
+  }
+}

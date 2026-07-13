@@ -435,7 +435,7 @@ export const fabricConfigSchema = z.object({
   // menu at most once per hour"; 0 means "no cooldown, current behavior."
   // Range 0..168 (one week). Stored alongside fabric-hint's cooldown cache
   // under a distinct knowledge-hint-broad key.
-  hint_broad_cooldown_hours: z.number().int().min(0).max(168).optional().default(0),
+  hint_broad_cooldown_hours: z.number().int().min(0).max(168).optional().default(24), // ISS-20260713-033
   // v2.0.0-rc.33 W2-5 (P1-8): cooldown for the narrow PreToolUse hint.
   // Same shape as hint_broad_cooldown_hours but applies to per-Edit hint
   // re-emission across the cooldown window — independent of E3 session-

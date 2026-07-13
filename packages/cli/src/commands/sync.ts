@@ -97,6 +97,10 @@ export const syncCommand = defineCommand({
   args: {
     continue: { type: "boolean", description: t("cli.sync.args.continue.description") },
     abort: { type: "boolean", description: t("cli.sync.args.abort.description") },
+    json: {
+      type: "boolean",
+      description: "Emit machine-readable JSON result (ISS-20260713-010)",
+    },
   },
   run({ args }) {
     const projectRoot = process.cwd();
@@ -107,15 +111,36 @@ export const syncCommand = defineCommand({
     }
 
     const options = { projectRoot, now: new Date().toISOString() };
+    let result;
     if (args.continue === true) {
-      report(runContinueSync(options), projectRoot);
+      result = runContinueSync(options);
+    } else if (args.abort === true) {
+      result = runAbortSync(options);
+    } else {
+      result = runStartSync(options);
+    }
+
+    // ISS-20260713-010: non-zero exit when not settled (conflict/offline/paused).
+    if (!result.settled) {
+      process.exitCode = 2;
+    }
+    if (args.json === true) {
+      console.log(
+        JSON.stringify(
+          {
+            settled: result.settled,
+            deferred: result.deferred,
+            snapshot_written: result.snapshotWritten,
+            session: result.session,
+            exit_code: result.settled ? 0 : 2,
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
-    if (args.abort === true) {
-      report(runAbortSync(options), projectRoot);
-      return;
-    }
-    report(runStartSync(options), projectRoot);
+    report(result, projectRoot);
   },
 });
 

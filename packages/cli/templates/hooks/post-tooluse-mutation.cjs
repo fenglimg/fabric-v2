@@ -290,10 +290,22 @@ function extractKnowledgeBodyRead(filePath) {
   if (idMatch === null) return null;
   const storeMatch = STORE_ALIAS_RE.exec(filePath);
   const slashed = filePath.split(/[\\/]/).join("/");
+  // ISS-20260713-024: prefer store-relative path (drop home prefix) to avoid
+  // leaking OS username in events.jsonl when ledgers are shared.
+  let pathOut = slashed;
+  const storesIdx = slashed.indexOf("/stores/");
+  if (storesIdx !== -1) {
+    pathOut = slashed.slice(storesIdx + 1); // stores/<alias>/knowledge/...
+  } else {
+    const home = (process.env.HOME || process.env.USERPROFILE || "").split(/[\\/]/).join("/");
+    if (home && slashed.startsWith(home + "/")) {
+      pathOut = "~/" + slashed.slice(home.length + 1);
+    }
+  }
   return {
     stable_id: idMatch[1],
     store: storeMatch !== null ? storeMatch[1] : null,
-    path: slashed,
+    path: pathOut,
   };
 }
 

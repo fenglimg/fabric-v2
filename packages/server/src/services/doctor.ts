@@ -598,6 +598,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const projectRoot = normalizeTarget(target);
   const before = await runDoctorReport(projectRoot);
   const fixed: DoctorIssue[] = [];
+  const failed: DoctorIssue[] = [];
   const ledgerWarnings: DoctorIssue[] = [];
 
   // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 drift fix MUST run before
@@ -843,9 +844,9 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const report = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
 
   return {
-    changed: fixed.length > 0,
+    changed: fixed.length > 0 || failed.length > 0,
     fixed,
-    remaining_manual_errors: report.manual_errors,
+    remaining_manual_errors: [...report.manual_errors, ...failed],
     warnings: report.warnings,
     message: createFixMessage(fixed, report),
     report,

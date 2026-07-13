@@ -57,6 +57,7 @@ const { headerRule, scopeBadge } = require("./lib/theme.cjs");
 // event-writer (envelope stamp + event_type guard + advisory-lock append) so
 // the row always satisfies the event-ledger schema the doctor reads.
 const { appendEvent } = require("./lib/event-writer.cjs");
+const eventReader = require("./lib/event-reader.cjs");
 const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
@@ -227,7 +228,7 @@ const DEFAULT_HINT_BROAD_INDEX_BACKSTOP = 50;
 // Default 0 preserves rc.32 behavior — every SessionStart re-fires the banner.
 // Cache key uses a separate sidecar from the fabric-hint Signal A/B/C cache
 // so the two cooldowns don't interfere.
-const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 0;
+const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 24; // ISS-20260713-033: quiet default; set 0 for verbose
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
 
@@ -248,28 +249,12 @@ const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
 // when the ledger is missing/empty or no doctor_run has ever fired (the caller
 // treats null as "never run → stale"). NEVER throws (SessionStart never-block).
 function readLastDoctorRunAgeDays(cwd, nowMs) {
+  // ISS-20260713-008: tail-window only — never load full events.jsonl on SessionStart.
   try {
-    const p = join(cwd, FABRIC_DIR_REL, EVENT_LEDGER_FILE_NAME);
-    if (!existsSync(p)) return null;
-    const raw = readFileSync(p, "utf8");
-    const lines = raw.split(/\r?\n/);
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const line = lines[i].trim();
-      if (line.length === 0) continue;
-      let ev;
-      try {
-        ev = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (ev && ev.event_type === EVENT_TYPE_DOCTOR_RUN && typeof ev.ts === "number") {
-        return (nowMs - ev.ts) / MS_PER_DAY;
-      }
-    }
+    return eventReader.readLastDoctorRunAgeDays(cwd, nowMs);
   } catch {
-    // never-block
+    return null;
   }
-  return null;
 }
 // v2.0.0-rc.37 NEW-19: state-store resolves this basename under .fabric/.cache/.
 const HINT_BROAD_LAST_EMIT_FILE_NAME = "knowledge-hint-broad-last-emit";
@@ -481,7 +466,7 @@ const REVIEW_PENDING_THRESHOLD = 10;
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap is defensive — any
 // pathological hang must not stall session start.
-const CLI_TIMEOUT_MS = 2000;
+const CLI_TIMEOUT_MS = 8000; // ISS-20260713-028: after body-less wire, still allow cold cache
 
 // Maximum summary length per entry. Keeps each line bounded so stderr does
 // not blow up terminal width with multi-paragraph summaries from sloppy

@@ -1,0 +1,181 @@
+{
+  "mode": "gap-fix",
+  "session_id": "ralph-v2-20260713-111826",
+  "milestone": "M-adhoc-20260713-residual-registered-6",
+  "intent": "依次处理 residual registered issues：1) 先修 ISS-036 critical；2) 打包 036/037/041 正确性+安全；3) 架构债 038/039/040",
+  "wave_intent": [
+    {
+      "wave": 1,
+      "name": "critical correctness 036",
+      "goals": [
+        "G1"
+      ],
+      "issues": [
+        "ISS-20260713-036"
+      ]
+    },
+    {
+      "wave": 2,
+      "name": "correctness+security 037/041",
+      "goals": [
+        "G2"
+      ],
+      "issues": [
+        "ISS-20260713-037",
+        "ISS-20260713-041"
+      ]
+    },
+    {
+      "wave": 3,
+      "name": "architecture 038/039/040",
+      "goals": [
+        "G3"
+      ],
+      "issues": [
+        "ISS-20260713-038",
+        "ISS-20260713-039",
+        "ISS-20260713-040"
+      ]
+    }
+  ],
+  "boundary": {
+    "in_scope": [
+      "only these 6 issues + evidence/tests/close"
+    ],
+    "out_of_scope": [
+      "rc release",
+      "unrelated backlog",
+      "full recall rewrite"
+    ],
+    "constraints": [
+      "preserve public exports",
+      "targeted tests green",
+      "no silent behavior change",
+      "architecture facade stable"
+    ]
+  },
+  "prior_evidence": {
+    "path": ".workflow/scratch/20260713-plan-residual-issues-011-020/verification.json",
+    "note": "COR-001/COR-002 already fixed during 011/020 closeout; 036/037 are residual registered issue records of those findings and may need verify+close rather than re-code. ARCH-002 was skipped then."
+  },
+  "gaps": [
+    {
+      "issue_id": "ISS-20260713-036",
+      "title": "[correctness] readLedger full-file→256KB tail breaks behavior-preserving split",
+      "severity": "critical",
+      "priority": 1,
+      "status": "registered",
+      "description": "ledger-scan.readLedger was reported to call eventReader.readRecentEvents (256KB tail) instead of full events.jsonl read + partial-tail drop.",
+      "fix_direction": "Restore full-file readLedger semantics (Port main-branch full readFileSync + trailing-newline pop into ledger-scan.readLedger); keep tail helper only for intentional bounded readers.",
+      "location": "packages/cli/templates/hooks/lib/ledger-scan.cjs:21",
+      "current_code_state": "ALREADY_FIXED_IN_WORKTREE: readLedger uses readFileSync full-file + pop last line when no trailing newline; comments document contrast vs event-reader.readRecentEvents. Needs verification tests + issue close, not reimplementation.",
+      "source": "issue",
+      "gap_ref": "COR-001",
+      "affected_files": [
+        "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+        "packages/cli/__tests__/fabric-hint.test.ts"
+      ],
+      "tests": [
+        "packages/cli/__tests__/fabric-hint.test.ts (readLedger + partial-tail)"
+      ]
+    },
+    {
+      "issue_id": "ISS-20260713-037",
+      "title": "[correctness] JSONL partial-tail drop semantics inverted after extract",
+      "severity": "high",
+      "priority": 2,
+      "status": "registered",
+      "description": "Old readLedger dropped last line when file lacked trailing newline; parseJsonlEvents was keeping parseable last lines; fabric-hint tests describe partial-tail drop.",
+      "fix_direction": "Align readLedger path with intended contract and update tests (coupled with 036).",
+      "location": "packages/cli/templates/hooks/lib/event-reader.cjs:52",
+      "current_code_state": "ALREADY_FIXED_IN_WORKTREE: parseJsonlEvents drops final fragment when raw lacks trailing newline. Needs contract tests + issue close.",
+      "source": "issue",
+      "gap_ref": "COR-002",
+      "affected_files": [
+        "packages/cli/templates/hooks/lib/event-reader.cjs",
+        "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+        "packages/cli/__tests__/fabric-hint.test.ts"
+      ]
+    },
+    {
+      "issue_id": "ISS-20260713-041",
+      "title": "[security] transcript_path unsandboxed arbitrary file read in summarizeTranscript",
+      "severity": "high",
+      "priority": 2,
+      "status": "registered",
+      "description": "transcript-summary.summarizeTranscript reads stdin transcript_path with no root/realpath allowlist; content can flow to digests/events.",
+      "fix_direction": "Allowlist absolute paths under known client transcript roots; realpath prefix check; size/suffix limits.",
+      "location": "packages/cli/templates/hooks/lib/transcript-summary.cjs:32",
+      "current_code_state": "STILL_OPEN: existsSync + readFileSync(transcriptPath) with no sandbox.",
+      "source": "issue",
+      "gap_ref": "SEC-001",
+      "affected_files": [
+        "packages/cli/templates/hooks/lib/transcript-summary.cjs",
+        "packages/cli/__tests__/summarize-transcript.test.ts",
+        "packages/cli/__tests__/fabric-hint-cite.test.ts"
+      ]
+    },
+    {
+      "issue_id": "ISS-20260713-038",
+      "title": "[architecture] plan-context-scoring secondary god module (802 LOC)",
+      "severity": "high",
+      "priority": 2,
+      "status": "registered",
+      "description": "ISS-011 thinned facade to 722 LOC but scoring is 802 LOC mixing context build, fusion, factors, rank/cut, relatedLookupKeys. Debt relocated more than decomposed.",
+      "fix_direction": "Further slice score-factors / rank-core / id-graph; keep buildScoringContext as assembly.",
+      "location": "packages/server/src/services/plan-context-scoring.ts",
+      "current_code_state": "STILL_OPEN: 802 LOC; exports ScoringContext, buildScoringContext, RankMode, RankOptions, cutRankedForRecall, rankDescriptionItems, scoreBreakdownForItem, relatedLookupKeys.",
+      "source": "issue",
+      "gap_ref": "ARCH-001",
+      "affected_files": [
+        "packages/server/src/services/plan-context-scoring.ts",
+        "packages/server/src/services/plan-context-rank.ts",
+        "packages/server/src/services/plan-context-ids.ts",
+        "packages/server/src/services/plan-context.ts"
+      ]
+    },
+    {
+      "issue_id": "ISS-20260713-039",
+      "title": "[architecture] Dual rank-cut + dual RankMode/RankOptions SSOT break",
+      "severity": "high",
+      "priority": 2,
+      "status": "registered",
+      "description": "cutRankedForRecall reimplements topK+floor; RankMode/RankOptions declared in both plan-context-rank.ts and plan-context-scoring.ts. plan-context.ts imports/uses cutRankedForRecall.",
+      "fix_direction": "Single cut implementation via applyRankCapAndFloor; types only in plan-context-rank.ts re-exported by facade.",
+      "location": "packages/server/src/services/plan-context-scoring.ts:374-404; plan-context-rank.ts:6-32",
+      "current_code_state": "STILL_OPEN: cutRankedForRecall body duplicates applyRankCapAndFloor; rankDescriptionItems already delegates to applyRankCapAndFloor; dual type exports remain.",
+      "source": "issue",
+      "gap_ref": "ARCH-002",
+      "affected_files": [
+        "packages/server/src/services/plan-context-scoring.ts",
+        "packages/server/src/services/plan-context-rank.ts",
+        "packages/server/src/services/plan-context.ts"
+      ]
+    },
+    {
+      "issue_id": "ISS-20260713-040",
+      "title": "[architecture] fabric-hint still 1933 LOC incomplete concern split",
+      "severity": "high",
+      "priority": 2,
+      "status": "registered",
+      "description": "Only ledger/pending/import/transcript extracted; decide/main/config/dismiss/cite emit remain. Residual is incomplete split not thin orchestrator.",
+      "fix_direction": "Next extract signal-decide, hint-config, session-signal-state, assistant-turn-emit; migrate tests toward lib/*.",
+      "location": "packages/cli/templates/hooks/fabric-hint.cjs",
+      "current_code_state": "STILL_OPEN: 1933 LOC; decide@421, main@1504, module.exports@1830; already requires ledger-scan/pending-stats/import-state/transcript-summary.",
+      "source": "issue",
+      "gap_ref": "ARCH-007",
+      "affected_files": [
+        "packages/cli/templates/hooks/fabric-hint.cjs",
+        "packages/cli/templates/hooks/lib/",
+        "packages/cli/__tests__/fabric-hint*.ts"
+      ],
+      "extract_targets": [
+        "signal-decide (decide + signal policy)",
+        "hint-config (threshold readers + defaults)",
+        "session-signal-state (shown cache / dismiss / maintenance last emit)",
+        "assistant-turn-emit (parseKbLine / extractAndWriteAssistantTurnsBestEffort / digest emit helpers)"
+      ]
+    }
+  ],
+  "generated_at": "2026-07-13T02:34:30.851547+00:00"
+}

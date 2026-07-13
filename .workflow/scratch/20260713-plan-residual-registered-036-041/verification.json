@@ -1,0 +1,90 @@
+{
+  "plan": "PLN-20260713-residual-registered-036-041",
+  "session_id": "ralph-v2-20260713-111826",
+  "timestamp": "2026-07-13T03:48:00Z",
+  "status": "DONE",
+  "tasks": {
+    "TASK-001": {
+      "issues": ["ISS-20260713-036", "ISS-20260713-037"],
+      "status": "verified",
+      "evidence": {
+        "readLedger_full_file": "packages/cli/templates/hooks/lib/ledger-scan.cjs uses readFileSync full-file; does NOT call readRecentEvents",
+        "partial_tail_drop": "ledger-scan hasTrailingNewline endsWith('\\n') + lines.pop(); event-reader.parseJsonlEvents same contract",
+        "tests": "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts → 133 passed (includes partial-tail)"
+      },
+      "close_ready": true
+    },
+    "TASK-002": {
+      "issues": ["ISS-20260713-041"],
+      "status": "implemented",
+      "evidence": {
+        "sandbox": "transcript-summary.cjs: absolute + realpath prefix allowlist under ~/.claude/projects + ~/.codex; FABRIC_TRANSCRIPT_ROOTS test seam; .jsonl suffix; 8MB size cap; fail-closed empty summary",
+        "tests": "summarize-transcript.test.ts 13 passed (relative deny, outside-root deny, non-jsonl deny, allow under temp root); fabric-hint-cite 25 passed with FABRIC_TRANSCRIPT_ROOTS"
+      },
+      "close_ready": true
+    },
+    "TASK-003": {
+      "issues": ["ISS-20260713-039"],
+      "status": "implemented",
+      "evidence": {
+        "ssot": "RankMode/RankOptions only defined in plan-context-rank.ts; scoring re-exports types",
+        "cut": "cutRankedForRecall → applyRankCapAndFloor(rankedScored, 'recall', options, hasQuery); no inline slice/floor",
+        "tests": "plan-context + scope-rank + shadow-ranker + selection-token + compare-stable-ids + recall: 86 passed; tsc --noEmit green"
+      },
+      "close_ready": true
+    },
+    "TASK-004": {
+      "issues": ["ISS-20260713-038"],
+      "status": "implemented",
+      "evidence": {
+        "scoring_loc_before": 802,
+        "scoring_loc_after": 354,
+        "new_module": "plan-context-score-factors.ts (463 LOC) owns proximity/salience/content/recency/locality/credibility/scoreDescriptionItem/scoreBreakdownForItem",
+        "relatedLookupKeys": "moved to plan-context-ids.ts; scoring re-exports for facade stability",
+        "facade": "plan-context.ts public re-exports unchanged",
+        "tests": "same 86-test suite green"
+      },
+      "close_ready": true
+    },
+    "TASK-005": {
+      "issues": ["ISS-20260713-040"],
+      "status": "implemented",
+      "evidence": {
+        "fabric_hint_loc_before": 1933,
+        "fabric_hint_loc_after": 1417,
+        "modules": [
+          "lib/signal-decide.cjs",
+          "lib/hint-config.cjs",
+          "lib/session-signal-state.cjs",
+          "lib/assistant-turn-emit.cjs"
+        ],
+        "exports_stable": true,
+        "tests": "fabric-hint* + summarize-transcript: 191 passed"
+      },
+      "close_ready": true,
+      "residual": "main()/emitSoftSignal/evaluateMaintenanceSignal/graph-edge still live in fabric-hint orchestrator (~1.4k LOC); further extract optional"
+    }
+  },
+  "test_commands": {
+    "cli_hint": "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts __tests__/fabric-hint-cite.test.ts __tests__/fabric-hint-dismiss.test.ts __tests__/fabric-hint-graph-edge.test.ts __tests__/fabric-hint-never-blocks.test.ts __tests__/summarize-transcript.test.ts → 191 passed",
+    "server_plan_context": "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/plan-context.test.ts src/services/plan-context-scope-rank.test.ts src/services/plan-context-shadow-ranker.test.ts src/services/selection-token-cache.test.ts src/services/compare-stable-ids.test.ts src/services/recall.test.ts → 86 passed",
+    "server_tsc": "pnpm --filter @fenglimg/fabric-server exec tsc --noEmit → 0"
+  },
+  "issues_ready_to_close": [
+    "ISS-20260713-036",
+    "ISS-20260713-037",
+    "ISS-20260713-041",
+    "ISS-20260713-039",
+    "ISS-20260713-038",
+    "ISS-20260713-040"
+  ],
+  "goals": {
+    "G1": "met",
+    "G2": "met",
+    "G3": "met"
+  },
+  "notes": [
+    "Do not close issues in executor step — parent owns issue close",
+    "TASK-005 residual: main still thick but 4 concern modules extracted and exports stable"
+  ]
+}

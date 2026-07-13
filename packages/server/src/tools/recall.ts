@@ -9,6 +9,7 @@ import {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { appendPayloadWarning, type StructuredToolWarning } from "./payload-warning.js";
+import { toMcpToolError } from "./mcp-tool-error.js";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -110,7 +111,11 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         };
       } catch (error) {
         traceStatus = "error";
-        throw error;
+        return toMcpToolError(error, {
+          tool: "fab_recall",
+          actionHint:
+            "Pass non-empty paths[] and optional intent; ensure fabric install + bound stores.",
+        });
       } finally {
         tracker?.exit(requestId);
         // Best-effort MCP stdio trace (telemetry must never break the tool).

@@ -20,6 +20,7 @@ import {
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { reviewPending } from "../services/review.js";
+import { toMcpToolError } from "./mcp-tool-error.js";
 
 // W3-K K2 (read/write split): fab_pending is the read-only browse/search surface
 // lifted out of fab_review. It handles ONLY the two READ actions (list / search)
@@ -90,6 +91,8 @@ export function registerPending(server: McpServer, tracker?: InFlightTracker): v
           ],
           structuredContent: response,
         };
+      } catch (error) {
+        return toMcpToolError(error, { tool: "fab_pending" });
       } finally {
         tracker?.exit(requestId);
       }

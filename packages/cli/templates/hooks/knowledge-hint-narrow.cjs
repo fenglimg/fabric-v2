@@ -132,7 +132,7 @@ function readProjectId(cwd) {
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap mirrors
 // knowledge-hint-broad.cjs — any pathological hang must not stall edits.
-const CLI_TIMEOUT_MS = 2000;
+const CLI_TIMEOUT_MS = 8000; // ISS-20260713-028: after body-less wire, still allow cold cache
 
 // Maximum summary length per entry. Bounds each stderr line so a sloppy
 // pending entry can't blow up terminal width. Truncation appends an ellipsis.

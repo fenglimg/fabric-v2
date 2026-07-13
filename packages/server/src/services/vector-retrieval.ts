@@ -28,7 +28,7 @@
 //     Operators needing strict offline must pre-populate FABRIC_EMBED_CACHE_DIR.
 
 import { mkdirSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
@@ -322,6 +322,34 @@ const VECTOR_CACHE_VERSION = 1;
 //     revision↔filename mismatch (e.g. a truncated/renamed file) is also a miss.
 // Any mismatch on ANY axis → miss → re-embed + write-through (overwrite). Stored
 // under `.fabric/cache/vectors/`, alongside the BM25 cache's `.fabric/cache/bm25/`.
+
+async function pruneRevisionCacheDir(dir: string, keep = 2): Promise<void> {
+  try {
+    const names = await readdir(dir);
+    const jsons = names.filter((n) => n.endsWith(".json"));
+    if (jsons.length <= keep) return;
+    const withStat: Array<{ name: string; mtimeMs: number }> = [];
+    for (const name of jsons) {
+      try {
+        const st = await stat(join(dir, name));
+        withStat.push({ name, mtimeMs: st.mtimeMs });
+      } catch {
+        /* skip */
+      }
+    }
+    withStat.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const stale of withStat.slice(keep)) {
+      try {
+        await unlink(join(dir, stale.name));
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch {
+    /* ok */
+  }
+}
+
 const VECTOR_CACHE_DIR = ".fabric/cache/vectors";
 
 // Context threaded from the caller so the disk tier can key/validate the snapshot.
@@ -409,8 +437,10 @@ async function saveVectorCacheToDisk(
       vectors,
     };
     const path = vectorCachePath(ctx.projectRoot, ctx.corpusRevision);
-    await mkdir(join(ctx.projectRoot, VECTOR_CACHE_DIR), { recursive: true });
+    const dir = join(ctx.projectRoot, VECTOR_CACHE_DIR);
+    await mkdir(dir, { recursive: true });
     await writeFile(path, JSON.stringify(payload), "utf8");
+    await pruneRevisionCacheDir(dir, 2); // ISS-20260713-015
   } catch {
     // Best-effort: never let a persistence failure surface into recall.
   }

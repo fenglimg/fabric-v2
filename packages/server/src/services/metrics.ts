@@ -22,11 +22,11 @@
 //  - Idempotent flush — calling flushMetrics with zero counters is a no-op
 //    (no spurious empty rows).
 
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, readdirSync, statSync, unlinkSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { atomicWriteText, createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteText, createLedgerWriteQueue, withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { ensureParentDirectory, getMetricsLedgerPath, isNodeError } from "./_shared.js";
 
@@ -111,7 +111,11 @@ export async function flushMetrics(
   const path = getMetricsLedgerPath(projectRoot);
   try {
     await ensureParentDirectory(path);
-    await metricsQueue.append(path, JSON.stringify(row));
+    // ISS-20260713-030: cross-process lock so hooks appendLockedLine and server
+    // flush do not tear metrics.jsonl lines.
+    await withFileLock(`${path}.lock`, async () => {
+      await metricsQueue.append(path, JSON.stringify(row));
+    });
     try {
       if (statSync(path).size > METRICS_LEDGER_SIZE_WARN_BYTES) {
         await rotateMetricsIfNeeded(projectRoot, {
@@ -231,6 +235,13 @@ export async function rotateMetricsIfNeeded(
   await appendFile(archiveAbsolutePath, archived.map((line) => `${line}\n`).join(""), "utf8");
   await atomicWriteText(path, kept.length > 0 ? `${kept.join("\n")}\n` : "");
 
+  // Best-effort purge of old archives (ISS-20260713-023)
+  try {
+    purgeExpiredMetricsArchives(projectRoot, { now, retentionDays });
+  } catch {
+    /* never fail rotation */
+  }
+
   return {
     rotated: true,
     archivedCount: archived.length,
@@ -238,6 +249,38 @@ export async function rotateMetricsIfNeeded(
     archivePath: archiveRelativePath,
   };
 }
+
+
+/** ISS-20260713-023: delete metrics archive files older than retentionDays. */
+export function purgeExpiredMetricsArchives(
+  projectRoot: string,
+  opts: { now?: Date; retentionDays?: number } = {},
+): number {
+  const now = opts.now ?? new Date();
+  const retentionDays = opts.retentionDays ?? METRICS_LEDGER_DEFAULT_RETENTION_DAYS;
+  const cutoffMs = now.getTime() - retentionDays * 86_400_000;
+  const archiveDirAbsolute = join(projectRoot, METRICS_LEDGER_ARCHIVE_DIR);
+  let removed = 0;
+  try {
+    for (const name of readdirSync(archiveDirAbsolute)) {
+      if (!name.startsWith("metrics-rotated-") || !name.endsWith(".jsonl")) continue;
+      const full = join(archiveDirAbsolute, name);
+      try {
+        if (statSync(full).mtimeMs < cutoffMs) {
+          unlinkSync(full);
+          removed += 1;
+        }
+      } catch {
+        /* skip */
+      }
+    }
+  } catch {
+    /* missing archive dir */
+  }
+  return removed;
+}
+
+
 
 /**
  * Read accumulated metrics rows from `.fabric/metrics.jsonl`. Missing file

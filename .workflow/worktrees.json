@@ -10,7 +10,12 @@
       "base_commit": "aa2bffeae83719280d3decde09733fc76eb6d8a2",
       "status": "active",
       "created_at": "2026-06-08T23:23:00+08:00",
-      "owned_phases": ["analysis", "plan", "execute", "verify"],
+      "owned_phases": [
+        "analysis",
+        "plan",
+        "execute",
+        "verify"
+      ],
       "fork_session": "fork-20260608-232300"
     },
     {
@@ -22,7 +27,12 @@
       "base_commit": "e7164cbee24192d30063d6c96edaf2c495d10390",
       "status": "active",
       "created_at": "2026-06-09T01:08:45+08:00",
-      "owned_phases": ["analysis", "plan", "execute", "verify"],
+      "owned_phases": [
+        "analysis",
+        "plan",
+        "execute",
+        "verify"
+      ],
       "fork_session": "fork-20260609-010845"
     }
   ],

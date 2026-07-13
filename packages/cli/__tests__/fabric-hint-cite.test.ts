@@ -237,13 +237,22 @@ describe("fabric-hint.cjs — extractAndWriteAssistantTurnsBestEffort", () => {
   let tempRoot: string;
   let transcriptPath: string;
 
+  const prevTranscriptRoots = process.env.FABRIC_TRANSCRIPT_ROOTS;
+
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-cite-"));
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     transcriptPath = join(tempRoot, "transcript.jsonl");
+    // ISS-041: allow summarizeTranscript to read fixtures under tempRoot.
+    process.env.FABRIC_TRANSCRIPT_ROOTS = tempRoot;
   });
 
   afterEach(() => {
+    if (prevTranscriptRoots === undefined) {
+      delete process.env.FABRIC_TRANSCRIPT_ROOTS;
+    } else {
+      process.env.FABRIC_TRANSCRIPT_ROOTS = prevTranscriptRoots;
+    }
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {

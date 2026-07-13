@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 import {
   eventLedgerEventSchema,
+  redactPii,
   redactSecrets,
   type EventLedgerEvent,
   type EventLedgerEventInput,
@@ -27,6 +28,15 @@ import {
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 
 const ledgerQueue = createLedgerWriteQueue();
+
+// ISS-20260713-016: process-local typed cache so doctor/audit multipass
+// reuses one full parse per (path,mtime,size) instead of re-reading the file.
+const eventLedgerReadCache = new Map<
+  string,
+  { mtimeMs: number; size: number; events: StoredEventLedgerEvent[]; warnings: LedgerWarning[] }
+>();
+
+
 
 // F9 (ISS-20260531-002): the LedgerWriteQueue above only serializes writers
 // WITHIN one process. A second process (e.g. `fabric doctor --fix` truncating)
@@ -232,7 +242,7 @@ const DEEP_REDACTED_EVENT_FIELDS = new Set([
 ]);
 
 function redactSecretsDeep(value: unknown): unknown {
-  if (typeof value === "string") return redactSecrets(value);
+  if (typeof value === "string") return redactPii(redactSecrets(value)); // ISS-20260713-017 explicit dual scrub
   if (Array.isArray(value)) return value.map((entry) => redactSecretsDeep(entry));
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -248,7 +258,8 @@ function redactSecretsInEvent(event: EventLedgerEventInput): EventLedgerEventInp
   const out: Record<string, unknown> = { ...(event as Record<string, unknown>) };
   for (const key of Object.keys(out)) {
     if (REDACTED_EVENT_FIELDS.has(key) && typeof out[key] === "string") {
-      out[key] = redactSecrets(out[key] as string);
+      // ISS-20260713-017: call both helpers so PII remains even if SECRET_RULES splits later
+      out[key] = redactPii(redactSecrets(out[key] as string));
     } else if (DEEP_REDACTED_EVENT_FIELDS.has(key)) {
       out[key] = redactSecretsDeep(out[key]);
     }
@@ -284,6 +295,7 @@ export async function appendEventLedgerEvent(
   await withFileLock(eventLedgerLockPath(eventPath), () =>
     ledgerQueue.append(eventPath, JSON.stringify(nextEvent)),
   );
+  eventLedgerReadCache.delete(eventPath);
 
   // v2.0.0-rc.22 Scope A T3: post-append size check. Emits a one-shot stderr
   // warning when the ledger crosses 50MB so operators of long-lived MCP
@@ -321,8 +333,28 @@ export async function readEventLedger(
 ): Promise<ReadEventLedgerResult> {
   const eventPath = getEventLedgerPath(projectRoot);
   const warnings: LedgerWarning[] = [];
-  const events: StoredEventLedgerEvent[] = [];
+  let events: StoredEventLedgerEvent[] = [];
   const eventTypeFilter = options.event_type;
+
+  // ISS-20260713-016: serve unfiltered full reads from mtime cache; filtered
+  // callers still benefit when they reuse the cached events array in-memory.
+  try {
+    const st = statSync(eventPath);
+    const cached = eventLedgerReadCache.get(eventPath);
+    if (
+      cached &&
+      cached.mtimeMs === st.mtimeMs &&
+      cached.size === st.size &&
+      options.event_type === undefined &&
+      options.since === undefined &&
+      options.correlation_id === undefined &&
+      options.session_id === undefined
+    ) {
+      return { events: cached.events.slice(), warnings: cached.warnings.slice() };
+    }
+  } catch {
+    /* miss → fall through */
+  }
 
   try {
     await visitCompleteLedgerLines(eventPath, (line, lineIndex) => {
@@ -354,6 +386,24 @@ export async function readEventLedger(
     throw error;
   }
 
+  // Populate process cache with the full unfiltered parse (ISS-20260713-016).
+  try {
+    const st = statSync(eventPath);
+    eventLedgerReadCache.set(eventPath, {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      events: events.slice(),
+      warnings: warnings.slice(),
+    });
+    // bound cache entries
+    if (eventLedgerReadCache.size > 8) {
+      const first = eventLedgerReadCache.keys().next().value;
+      if (first !== undefined) eventLedgerReadCache.delete(first);
+    }
+  } catch {
+    /* ignore cache store failures */
+  }
+
   const filtered = events
     .filter((entry) => options.event_type === undefined || entry.event_type === options.event_type)
     .filter((entry) => options.since === undefined || entry.ts >= options.since)
@@ -362,6 +412,12 @@ export async function readEventLedger(
 
   return { events: filtered, warnings };
 }
+
+/** Test seam: clear process-local ledger cache. */
+export function __resetEventLedgerReadCache(): void {
+  eventLedgerReadCache.clear();
+}
+
 
 async function visitCompleteLedgerLines(
   eventPath: string,

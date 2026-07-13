@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   addMountedStore,
   addStoreProject,
+  assertAllowedGitRemote,
   bindRequiredStore,
   deriveMountLabel,
   detachMountedStore,
@@ -289,14 +290,15 @@ export async function storeCreate(
   // never pull/push (sync's `git pull --rebase`/`git push` had no `origin`).
   // Only when the repo was actually git-init'd (options.git !== false; tests use
   // pure-fs scaffolding) and a remote was requested.
-  if (options.remote !== undefined && options.git !== false) {
-    gitRemoteAdd(storeDir, options.remote);
+  // ISS-20260713-005: same protocol allowlist as install clone path.
+  const safeRemote =
+    options.remote === undefined ? undefined : assertAllowedGitRemote(options.remote);
+  if (safeRemote !== undefined && options.git !== false) {
+    gitRemoteAdd(storeDir, safeRemote);
   }
 
   const mounted: MountedStore =
-    options.remote === undefined
-      ? mountedBase
-      : { ...mountedBase, remote: options.remote };
+    safeRemote === undefined ? mountedBase : { ...mountedBase, remote: safeRemote };
   const next = addMountedStore(config, mounted);
   await saveGlobalConfigAsync(next, globalRoot);
   syncStoreAliasLinks(globalRoot); // C3: mint the by-alias readability link.
@@ -337,8 +339,9 @@ function initStoreSync(absDir: string, identity: StoreIdentity): StoreIdentity {
 // `origin` already exists (re-create over an existing tree shouldn't happen —
 // initStore refuses — but be defensive), update it via `set-url` instead.
 function gitRemoteAdd(storeDir: string, remote: string): void {
+  const safeRemote = assertAllowedGitRemote(remote);
   try {
-    execFileSync("git", ["remote", "add", "origin", remote], {
+    execFileSync("git", ["remote", "add", "origin", safeRemote], {
       cwd: storeDir,
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -347,7 +350,7 @@ function gitRemoteAdd(storeDir: string, remote: string): void {
     // remote-backed. A genuine git failure surfaces on the next sync with git's
     // own diagnostic; we don't want create to crash on a benign re-add.
     try {
-      execFileSync("git", ["remote", "set-url", "origin", remote], {
+      execFileSync("git", ["remote", "set-url", "origin", safeRemote], {
         cwd: storeDir,
         stdio: ["ignore", "ignore", "pipe"],
       });

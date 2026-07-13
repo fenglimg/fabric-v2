@@ -1399,6 +1399,19 @@ export const enMessages: Messages = {
   "cli.first-hit.args.target.description": "Project root (default: cwd)",
   "cli.first-hit.args.seed.description": "If empty store, write minimal starter knowledge entries",
   "cli.first-hit.args.paths.description": "Comma-separated probe paths for surface check",
+  "cli.first-hit.msg.ok": "first-hit ready: {total} knowledge entr{plural} across {stores} store(s); hooks present.",
+  "cli.first-hit.msg.unbound": "unbound: no store is bound to this project's read-set — knowledge cannot surface.",
+  "cli.first-hit.msg.no_write_target": "no_write_target: project has required stores but no active_write_store.",
+  "cli.first-hit.msg.empty_store": "empty_store: store(s) bound but 0 canonical knowledge files — empty store is not a happy path.",
+  "cli.first-hit.msg.missing_required": "missing_required: one or more required_stores are not mounted — multi-store bind incomplete.",
+  "cli.first-hit.msg.write_target_mismatch": "write_target_mismatch: active_write_store is not a mounted writable store on the read-set.",
+  "cli.first-hit.msg.store_unreachable": "store_unreachable: a bound store is registered but its directory is missing on disk.",
+  "cli.first-hit.msg.project_unsealed": "project_unsealed: write store is bound but project_id/active_project is missing — team knowledge will land flat (semantic_scope: team), not project-partitioned.",
+  "cli.first-hit.msg.no_match": "no_match: knowledge exists but the probe surface is empty (path/scope filter).",
+  "cli.first-hit.msg.hooks_missing": "hooks_missing: knowledge is present but SessionStart/PreToolUse hooks are not installed.",
+  "cli.first-hit.msg.no_project": "no_project: this directory is not a Fabric project (missing .fabric/fabric-config.json).",
+  "cli.first-hit.msg.no_global": "no_global: fabric global config missing — run fabric install --global first.",
+
   "cli.onboard-coverage.description":
     "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
   "cli.onboard-coverage.args.json.description":
@@ -1674,6 +1687,10 @@ export const enMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder warm: model '{model}' loaded (vector dim {dim}), cached at {dir}",
   "cli.info.recall.warm.fail":
     "embedder unavailable — the optional 'fastembed' package is not resolvable or the model failed to load.\n  Recall falls back to keyword mode (BM25 / additive). Install fastembed where the server resolves modules, then retry.",
+  "cli.store.mount.description": "Mount a knowledge store into the global registry",
+  "cli.store.create.description": "Create a brand-new local knowledge store and mount it",
+  "cli.store.remove.description": "Detach a store from the registry (does NOT delete it)",
+  "cli.store.explain.description": "Explain how a store alias resolves",
   "cli.store.list.description": "List mounted knowledge stores",
   // Footer note appended to `fabric store --help` — explains where the advanced
   // (meta.hidden) operations went so the list-only listing isn't a dead end.

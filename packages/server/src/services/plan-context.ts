@@ -1,41 +1,64 @@
+/**
+ * planContext facade (ISS-20260713-011).
+ * Scoring / BM25 cache / selection-token live in dedicated modules;
+ * this file orchestrates the plan-context pipeline and re-exports the public API.
+ */
 import {
-  buildStoreResolveInput,
-  createStoreResolver,
-  resolveCandidates,
-  type ResolutionCandidate,
   type RuleDescription,
   type RuleDescriptionIndexItem,
-  type RecallScoreBreakdown,
   type RecallScore,
-  tokenize,
 } from "@fenglimg/fabric-shared";
 import {
   trimToPayloadBudget,
   type PayloadGuardOptions,
 } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
-import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readEmbedConfig, readDefaultLayerFilter, readFusion, readCredibilityHalfLives, readCredibilityFloors } from "../config-loader.js";
+import { readSelectionTokenTtlMs, readPlanContextTopK, readRecallRelevanceRatio, readDefaultLayerFilter } from "../config-loader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 import { coalesceSessionId, readActiveSessionId } from "./active-session.js";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 
+import { compareStableIds as compareStableIdsPure, layerFromStableId as layerFromStableIdPure } from "./plan-context-ids.js";
 import {
-  buildBm25Model,
-  buildQueryTerms,
-  rankDocuments,
-  rankByScore,
-  serializeBm25Model,
-  rehydrateBm25Model,
-  type Bm25Field,
-  type Bm25Model,
-  type SerializedBm25Model,
-} from "./bm25.js";
-import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
+  buildScoringContext,
+  rankDescriptionItems,
+  cutRankedForRecall,
+  scoreBreakdownForItem,
+  relatedLookupKeys,
+  type ScoringContext,
+  type RankMode,
+  type RankOptions,
+} from "./plan-context-scoring.js";
+import {
+  SELECTION_TOKEN_TTL_DEFAULT_MS,
+  buildSelectionToken,
+  writeSelectionTokenState,
+  readSelectionToken,
+  createSelectionToken,
+  __selectionTokenCacheSize,
+  __resetSelectionTokenCache,
+  type SelectionTokenState,
+} from "./plan-context-selection.js";
+import { __bm25CacheStats, __resetBm25Cache } from "./plan-context-bm25-cache.js";
+
+// Re-exports — keep public import paths stable for recall / review-search / tests / index.
+export type { ScoringContext, RankMode, RankOptions, SelectionTokenState };
+export {
+  buildScoringContext,
+  rankDescriptionItems,
+  cutRankedForRecall,
+  scoreBreakdownForItem,
+  relatedLookupKeys,
+  readSelectionToken,
+  createSelectionToken,
+  __selectionTokenCacheSize,
+  __resetSelectionTokenCache,
+  __bm25CacheStats,
+  __resetBm25Cache,
+};
 
 // W4/Track1 (D1): a candidate's knowledge layer is a pure function of its
 // stable_id prefix — the single source of truth (KT-DEC-0004:
@@ -47,55 +70,8 @@ import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
 // id resolves to `team`, the safe default for the privacy layer filter (a
 // genuinely personal entry always carries a KP-* id, late-bound at approve).
 export function layerFromStableId(qualifiedId: string): "personal" | "team" {
-  const colon = qualifiedId.lastIndexOf(":");
-  const localId = colon === -1 ? qualifiedId : qualifiedId.slice(colon + 1);
-  return localId.startsWith("KP-") ? "personal" : "team";
+  return layerFromStableIdPure(qualifiedId);
 }
-
-// v2.2 A-INFRA-1 (W1-T2-BM25): scoring context threaded into buildDescriptionIndex
-// and the sort comparator. `queryTerms` are the CJK-tokenized caller intent;
-// `bm25` is the model built over the candidate corpus (only present when the
-// caller supplied query terms — otherwise ranking degrades to recency+locality).
-//
-// v2.2 C2-vector (W2-T7): `vectorScores` is the per-candidate cosine similarity
-// (0..1) against the query, present ONLY when embeddings are enabled AND the
-// optional embedder loaded AND a query exists; `vectorWeight` scales it. Absent
-// → text-only ranking (the default).
-export type ScoringContext = {
-  nowMs: number;
-  targetPaths: string[];
-  queryTerms: string[];
-  bm25?: Bm25Model;
-  vectorScores?: Map<string, number>;
-  vectorWeight?: number;
-  // ISS-007: precomputed stable_id → flattened document text, built ONCE in
-  // planContext and reused across the vector + BM25 paths so documentTextForItem
-  // (a multi-array join) is not rebuilt per consumer.
-  docTexts?: Map<string, string>;
-  // v2.1 global-refactor (W2/A4): stable_id → scope-resolution rank from
-  // resolveCandidates (scope-specificity project>team>personal + store
-  // tie-break). Used as the tie-break under EQUAL relevance score so a more
-  // specific scope outranks a broader one without overriding BM25 relevance.
-  scopeRank?: Map<string, number>;
-  // P1 recall-engine-refactor (TASK-003): content-channel fusion strategy.
-  // 'additive' (DEFAULT) = historical weighted-sum path; 'rrf' = Reciprocal Rank
-  // Fusion over the two CONTENT channels. Absent → 'additive'.
-  fusion?: "additive" | "rrf";
-  // P1 recall-engine-refactor (TASK-003): 1-indexed ordinal ranks of the two
-  // content channels, precomputed ONCE over the candidate corpus (RRF needs the
-  // global ordinal, not the per-item raw score). Present ONLY on the rrf path
-  // with query terms; a stable_id is ABSENT from a map when its channel score is
-  // <= 0 (zero-match exclusion). Undefined → additive path / no-query.
-  bm25Ranks?: Map<string, number>;
-  vectorRanks?: Map<string, number>;
-  // PLN-004 F1 credibility content-age decay: per-knowledge-type half-lives (days)
-  // and per-maturity floors, resolved ONCE per planContext call (buildScoringContext)
-  // and threaded here so credibilityFactor stays allocation-free on the per-candidate
-  // hot path. Optional: the single production construction site sets them; a bespoke
-  // test ScoringContext that omits them makes the factor a 1.0 no-op.
-  credibilityHalfLives?: Record<"decisions" | "guidelines" | "models" | "pitfalls" | "processes", number>;
-  credibilityFloors?: Record<"draft" | "verified" | "proven", number>;
-};
 
 export type PlanContextInput = {
   paths: string[];
@@ -242,67 +218,6 @@ export type PlanContextResult = {
   /** Internal service→tool signal; stripped before MCP output. */
   payload_over_budget?: boolean;
 };
-
-export type SelectionTokenState = {
-  token: string;
-  revision_hash: string;
-  target_paths: string[];
-  required_stable_ids: string[];
-  ai_selectable_stable_ids: string[];
-  created_at: number;
-  expires_at: number;
-};
-
-// v2.0.0-rc.29 TASK-008 (BUG-F3): default selection_token TTL. Overridable
-// at runtime via fabric.config.json's `selection_token_ttl_ms` (per
-// projectRoot).
-//
-// v2.0.0-rc.37 NEW-3: default bumped 5min → 30min. After A1 removed
-// `selectable=false` server-side filtering, the AI can legitimately reuse a
-// single fab_plan_context token across a longer reasoning loop (multi-tool
-// chains, iterative refinement). 5min was tuned for the single straight-through
-// plan→fetch pair; 30min covers mid-task token reuse without bloating cache.
-// Tokens stay valid until TTL/LRU expiry even if the read-set revision changes;
-// get_sections validates against the minted token state, not a global revision
-// invalidation. Operators on long-running agents can override via
-// fabric-config.selection_token_ttl_ms.
-const SELECTION_TOKEN_TTL_DEFAULT_MS = 30 * 60 * 1000;
-// v2.0-rc.7 T9: degenerate-mode threshold removed — the API is now symmetric
-// across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
-const selectionTokenCache = new Map<string, SelectionTokenState>();
-
-// ISS-027: the cache was unbounded — one entry per plan-context call lived up to
-// the TTL with no proactive eviction, so memory grew O(call-rate within the TTL
-// window). Cap it and run an expiry sweep on insert. The Map preserves insertion
-// order, and readSelectionToken re-inserts on a hit (LRU bump), so eviction from
-// the front drops the least-recently-used token.
-const SELECTION_TOKEN_CACHE_MAX = 1000;
-
-function sweepAndCapSelectionTokens(now: number): void {
-  // Proactive expiry sweep (bounded: the cache is capped below).
-  for (const [token, state] of selectionTokenCache) {
-    if (state.expires_at <= now) {
-      selectionTokenCache.delete(token);
-    }
-  }
-  // Capacity cap: evict the least-recently-used (front of insertion order) until
-  // there is room for the new token.
-  while (selectionTokenCache.size >= SELECTION_TOKEN_CACHE_MAX) {
-    const lru = selectionTokenCache.keys().next().value;
-    if (lru === undefined) {
-      break;
-    }
-    selectionTokenCache.delete(lru);
-  }
-}
-
-// Test seams (mirror the other cache seams in this module).
-export function __selectionTokenCacheSize(): number {
-  return selectionTokenCache.size;
-}
-export function __resetSelectionTokenCache(): void {
-  selectionTokenCache.clear();
-}
 
 /**
  * v2.0.0-rc.27 TASK-002 (audit §2.22): sandbox each caller-supplied path
@@ -680,82 +595,16 @@ export async function planContext(
   return result;
 }
 
-export function readSelectionToken(token: string, now = Date.now()): SelectionTokenState | undefined {
-  const state = selectionTokenCache.get(token);
-  if (state === undefined) {
-    return undefined;
-  }
-
-  if (state.expires_at <= now) {
-    selectionTokenCache.delete(token);
-    return undefined;
-  }
-
-  // ISS-027: LRU bump — re-insert so a recently-read token moves to the back of
-  // the insertion order and is evicted last under the capacity cap.
-  selectionTokenCache.delete(token);
-  selectionTokenCache.set(token, state);
-  return state;
-}
-
-// Exported for test scaffolds that need a selection_token without going
-// through the public planContext() entry point (e.g. two-stage flow tests
-// where the seeded corpus would otherwise drop into degenerate mode and
-// omit the token entirely). Internal API; not part of the MCP contract.
-export function createSelectionToken(
-  revisionHash: string,
-  targetPaths: string[],
-  requiredStableIds: string[],
-  aiSelectableStableIds: string[],
-  now = Date.now(),
-  // v2.0.0-rc.29 TASK-008 (BUG-F3): caller-provided TTL override (defaults to
-  // the constant when omitted). Test scaffolds can short-circuit by passing
-  // a small ttlMs to exercise expiry without sleeping for 5 minutes.
-  ttlMs: number = SELECTION_TOKEN_TTL_DEFAULT_MS,
-): string {
-  const token = buildSelectionToken(revisionHash, now);
-  writeSelectionTokenState(token, revisionHash, targetPaths, requiredStableIds, aiSelectableStableIds, now, ttlMs);
-  return token;
-}
-
-function buildSelectionToken(revisionHash: string, now: number): string {
-  return `selection:${revisionHash}:${now.toString(36)}:${Math.random().toString(36).slice(2)}`;
-}
-
-function writeSelectionTokenState(
-  token: string,
-  revisionHash: string,
-  targetPaths: string[],
-  requiredStableIds: string[],
-  aiSelectableStableIds: string[],
-  now: number,
-  ttlMs: number,
-): void {
-  // ISS-027: sweep expired + enforce the capacity cap before inserting.
-  sweepAndCapSelectionTokens(now);
-  selectionTokenCache.set(token, {
-    token,
-    revision_hash: revisionHash,
-    target_paths: targetPaths,
-    required_stable_ids: requiredStableIds,
-    ai_selectable_stable_ids: aiSelectableStableIds,
-    created_at: now,
-    expires_at: now + ttlMs,
-  });
-}
-
 function dedupePaths(paths: string[]): string[] {
   const seenPaths = new Set<string>();
 
   return paths.flatMap((path) => {
-    const normalizedPath = normalizeKnowledgePath(path);
-
-    if (seenPaths.has(normalizedPath)) {
+    const normalized = normalizeKnowledgePath(path);
+    if (seenPaths.has(normalized)) {
       return [];
     }
-
-    seenPaths.add(normalizedPath);
-    return [normalizedPath];
+    seenPaths.add(normalized);
+    return [normalized];
   });
 }
 
@@ -819,100 +668,7 @@ function partitionEmptyShells(items: RuleDescriptionIndexItem[]): {
 // index instead of re-tokenizing + re-indexing the full corpus each time. Two
 // projects sharing a revision share identical corpora, so a cross-project hit
 // returns an identical model — correct, not a leak.
-let bm25ModelCache: { revision: string; model: Bm25Model } | null = null;
-let bm25BuildCount = 0;
 
-// P1 recall-engine-refactor (TASK-002): on-disk BM25 model cache. The model is a
-// pure function of the candidate corpus, so it is keyed on the read-set revision
-// (computeReadSetRevision — cross-store-recall.ts). A COLD process (a fresh hook
-// invocation with an empty in-memory cache) can then `rehydrateBm25Model` from
-// disk instead of re-tokenizing + re-indexing the whole corpus — the cold-start
-// perf win. The key BINDS the read-set version: any content change moves the
-// revision → a different filename → a miss → rebuild (whole-revision granularity,
-// the chosen invalidation; no incremental). Stored under `.fabric/cache/bm25/`,
-// alongside the other `.fabric/`-rooted runtime state (metrics/events ledgers).
-const BM25_CACHE_DIR = ".fabric/cache/bm25";
-
-function bm25CachePath(projectRoot: string, revision: string): string {
-  // The revision is a sha256 hex string (computeReadSetRevision), optionally
-  // `sha256:`-prefixed — safe as a filename once the colon is normalized.
-  const safe = revision.replace(/[^A-Za-z0-9_-]/g, "_");
-  return join(projectRoot, BM25_CACHE_DIR, `${safe}.json`);
-}
-
-async function loadBm25ModelFromDisk(
-  projectRoot: string,
-  revision: string,
-): Promise<Bm25Model | null> {
-  try {
-    const raw = await readFile(bm25CachePath(projectRoot, revision), "utf8");
-    const parsed = JSON.parse(raw) as SerializedBm25Model;
-    // Reject a snapshot from a different serialization layout (version bump)
-    // rather than rehydrating a mismatched shape into a broken scorer.
-    if (parsed.version !== 1) return null;
-    return rehydrateBm25Model(parsed);
-  } catch {
-    // Missing file / parse error / corrupt snapshot → treat as a miss. The cache
-    // is a perf accelerator, never load-bearing: a bad read just rebuilds.
-    return null;
-  }
-}
-
-async function saveBm25ModelToDisk(
-  projectRoot: string,
-  revision: string,
-  model: Bm25Model,
-): Promise<void> {
-  try {
-    const path = bm25CachePath(projectRoot, revision);
-    await mkdir(join(projectRoot, BM25_CACHE_DIR), { recursive: true });
-    await writeFile(path, JSON.stringify(serializeBm25Model(model)), "utf8");
-  } catch {
-    // Best-effort: a write failure (read-only FS, concurrent writer) must never
-    // block ranking — the in-memory cache still serves this process.
-  }
-}
-
-// ISS-024 + P1 (TASK-002): two-tier corpus-keyed BM25 cache. Tier 1 (process
-// memory) serves hot repeat calls; tier 2 (disk, this function's addition) lets
-// a COLD process skip the rebuild by rehydrating the persisted snapshot. On a
-// total miss the model is built once, then written through to BOTH tiers.
-async function getOrBuildBm25Model(
-  projectRoot: string,
-  revision: string,
-  rawItems: RuleDescriptionIndexItem[],
-  docTexts: Map<string, string>,
-): Promise<Bm25Model> {
-  if (bm25ModelCache !== null && bm25ModelCache.revision === revision) {
-    return bm25ModelCache.model;
-  }
-  // Tier 2: cold-process disk hit — rehydrate, skip buildBm25Model entirely.
-  const fromDisk = await loadBm25ModelFromDisk(projectRoot, revision);
-  if (fromDisk !== null) {
-    bm25ModelCache = { revision, model: fromDisk };
-    return fromDisk;
-  }
-  // Total miss — build once, write through to memory + disk.
-  bm25BuildCount += 1;
-  const model = buildBm25Model(
-    rawItems.map((item) => ({
-      id: item.stable_id,
-      fields: documentFieldsForItem(item.description),
-    })),
-  );
-  bm25ModelCache = { revision, model };
-  await saveBm25ModelToDisk(projectRoot, revision, model);
-  return model;
-}
-
-// Test seams (mirror __knowledgeMetaCacheStats / __resetKnowledgeMetaCache).
-export function __bm25CacheStats(): { builds: number } {
-  return { builds: bm25BuildCount };
-}
-export function __resetBm25Cache(): void {
-  bm25ModelCache = null;
-  bm25BuildCount = 0;
-}
 
 // ISS-029: numeric-aware stable_id comparison. Plain localeCompare sorts
 // "KT-DEC-9999" AFTER "KT-DEC-10000" (lexicographic: '9' > '1'), so the
@@ -920,406 +676,7 @@ export function __resetBm25Cache(): void {
 // into 5 digits. Intl numeric collation compares the trailing digit run by
 // value, so 9999 < 10000 holds while same-width ids sort identically to before.
 export function compareStableIds(a: string, b: string): number {
-  return a.localeCompare(b, undefined, { numeric: true });
-}
-
-// v2.1 global-refactor (W2/A4): consume the resolver's double-axis ordering
-// (scope-specificity project>team>personal + store tie-break) and project it to
-// a stable_id → rank map. Used ONLY as the tie-break under equal relevance —
-// BM25/locality stays the primary key, so a more specific scope wins only when
-// content relevance is tied. Each candidate's semantic_scope comes from its
-// frontmatter (cross-store items) or falls back to its id-prefix-derived layer
-// (W4/Track1: KP-→personal, else team; KT-DEC-0004); the store axis is keyed off
-// the read-set store order so the active write store breaks ties first (S53).
-function buildScopeRankMap(
-  items: RuleDescriptionIndexItem[],
-  projectRoot: string,
-): Map<string, number> {
-  const input = buildStoreResolveInput(projectRoot);
-  const aliasToUuid = new Map<string, string>();
-  let storeOrder: string[] = [];
-  if (input !== null) {
-    for (const s of input.mountedStores) {
-      aliasToUuid.set(s.alias, s.store_uuid);
-    }
-    storeOrder = createStoreResolver()
-      .resolveReadSet(input)
-      .stores.map((s) => s.store_uuid);
-  }
-
-  const candidates: ResolutionCandidate[] = items.map((it) => {
-    const colon = it.stable_id.indexOf(":");
-    const alias = colon === -1 ? "" : it.stable_id.slice(0, colon);
-    const localId = colon === -1 ? it.stable_id : it.stable_id.slice(colon + 1);
-    const semanticScope =
-      it.description.semantic_scope ?? layerFromStableId(it.stable_id);
-    return {
-      global_ref: it.stable_id,
-      store_uuid: aliasToUuid.get(alias) ?? alias,
-      alias,
-      local_id: localId,
-      semantic_scope: semanticScope,
-    };
-  });
-
-  const { resolved } = resolveCandidates(candidates, { storeOrder });
-  const map = new Map<string, number>();
-  for (const r of resolved) {
-    map.set(r.global_ref, r.rank);
-  }
-  return map;
-}
-
-// Tie-break (under equal relevance score): a more specific scope ranks first via
-// the resolveCandidates rank map; stable_id is the final deterministic fallback.
-function compareScopeThenId(
-  left: RuleDescriptionIndexItem,
-  right: RuleDescriptionIndexItem,
-  scopeRank: Map<string, number> | undefined,
-): number {
-  if (scopeRank !== undefined) {
-    const lr = scopeRank.get(left.stable_id);
-    const rr = scopeRank.get(right.stable_id);
-    if (lr !== undefined && rr !== undefined && lr !== rr) {
-      return lr - rr; // lower rank = more specific scope / earlier store → first
-    }
-  }
-  return compareStableIds(left.stable_id, right.stable_id);
-}
-
-// P1 recall-engine-refactor (TASK-005): build the BM25 / vector / scope-rank /
-// fusion scoring context over a candidate corpus + query. Extracted verbatim
-// from planContext so fab_recall and fab_pending triage construct an IDENTICAL
-// context — the single ranking source. `revision` keys the on-disk BM25 cache
-// (cross-store recall passes the read-set revision; the triage path passes a
-// corpus content fingerprint). All the OPTIONAL channels (BM25 only with query
-// terms, vector only with embeddings enabled, RRF rank maps only under the rrf
-// fusion flag) degrade exactly as the historical inline block did.
-export async function buildScoringContext(
-  projectRoot: string,
-  revision: string,
-  rawItems: RuleDescriptionIndexItem[],
-  opts: { queryText: string; targetPaths: string[] },
-): Promise<ScoringContext> {
-  const scoringContext: ScoringContext = {
-    nowMs: Date.now(),
-    targetPaths: opts.targetPaths,
-    queryTerms: buildQueryTerms(opts.queryText),
-    // PLN-004 F1: resolve the credibility half-lives + floors ONCE here (never per
-    // candidate) so credibilityFactor is a pure lookup on the ranking hot path.
-    credibilityHalfLives: readCredibilityHalfLives(projectRoot),
-    credibilityFloors: readCredibilityFloors(projectRoot),
-  };
-
-  // ISS-007: flatten each candidate's selection text ONCE here, then reuse the
-  // same string for vector embedding and BM25 tokenization.
-  const docTexts = new Map<string, string>();
-  for (const item of rawItems) {
-    docTexts.set(item.stable_id, documentTextForItem(item.description));
-  }
-  scoringContext.docTexts = docTexts;
-
-  // ISS-024: corpus-keyed BM25 model (two-tier memory+disk cache). Only built
-  // when query terms exist — a query-less probe ranks on recency+locality.
-  if (scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
-    scoringContext.bm25 = await getOrBuildBm25Model(projectRoot, revision, rawItems, docTexts);
-  }
-
-  // v2.1 global-refactor (W2/A4): scope-resolution rank for the equal-relevance
-  // tie-break (project:x outranks team/personal only under tied relevance).
-  scoringContext.scopeRank = buildScopeRankMap(rawItems, projectRoot);
-
-  // v2.2 C2-vector (W2-T7): OPTIONAL semantic supplement. Default OFF — runs only
-  // when embed_enabled AND the optional fastembed loads AND a query exists.
-  const embedConfig = readEmbedConfig(projectRoot);
-  if (embedConfig.enabled && opts.queryText.trim().length > 0 && rawItems.length > 0) {
-    const embedder = await loadEmbedder(embedConfig.model);
-    // TASK-004: version-keyed doc-vector disk cache. Key on the read-set revision
-    // (same content fingerprint as the BM25 cache) + the resolved embedding model,
-    // so a cold process rehydrates instead of re-embedding the corpus, and a model
-    // swap / corpus change naturally misses. embedConfig.model is always a concrete
-    // resolved value (readEmbedConfig falls back to DEFAULT_EMBED_MODEL).
-    const vectorScores = await buildVectorScores(
-      embedder,
-      opts.queryText,
-      rawItems.map((item) => ({
-        stable_id: item.stable_id,
-        text: docTexts.get(item.stable_id) ?? documentTextForItem(item.description),
-      })),
-      { projectRoot, corpusRevision: revision, embeddingModel: embedConfig.model },
-    );
-    if (vectorScores !== null) {
-      scoringContext.vectorScores = vectorScores;
-      scoringContext.vectorWeight = embedConfig.weight;
-    }
-  }
-
-  // P1 recall-engine-refactor (TASK-003 + auto follow-up): resolve the configured
-  // fusion to a concrete mode. 'auto' (default) → 'rrf' ONLY when the vector
-  // channel actually scored (embeddings installed + model warm), else 'additive':
-  // single-channel rrf (no vectors) discards BM25 magnitude for nothing and is
-  // strictly worse than additive (real-store shadow). Explicit 'additive'/'rrf'
-  // force the mode. The downstream RRF block + scoreDescriptionItem only ever see
-  // the resolved 'additive'|'rrf'.
-  const configuredFusion = readFusion(projectRoot);
-  const vectorActive =
-    scoringContext.vectorScores !== undefined && scoringContext.vectorScores.size > 0;
-  scoringContext.fusion =
-    configuredFusion === "auto" ? (vectorActive ? "rrf" : "additive") : configuredFusion;
-  if (scoringContext.fusion === "rrf" && scoringContext.queryTerms.length > 0 && rawItems.length > 0) {
-    const rankIds = rawItems
-      .map((item) => item.stable_id)
-      .sort((a, b) => compareStableIds(a, b));
-    if (scoringContext.bm25 !== undefined) {
-      scoringContext.bm25Ranks = rankDocuments(scoringContext.bm25, rankIds, scoringContext.queryTerms);
-    }
-    if (scoringContext.vectorScores !== undefined) {
-      scoringContext.vectorRanks = rankByScore(rankIds, scoringContext.vectorScores);
-    }
-  }
-
-  return scoringContext;
-}
-
-
-// BORROW-008: phrase proximity boost.
-// When the query has ≥2 terms and the candidate content score is positive,
-// compute the average minimum pairwise token distance across the query terms
-// in the candidate's combined text. A tight cluster (avg gap < 6 tokens)
-// earns a boost capped at 15% of the content score.
-//
-// Rationale: a multi-word query like "build pipeline" should rank an entry
-// containing "build pipeline" above one containing "build" on page 1 and
-// "pipeline" on page 10, even when BM25 scores both identically (term
-// frequency × inverse document frequency doesn't capture intra-document
-// adjacency).
-const PROXIMITY_WINDOW = 6;
-const PROXIMITY_BOOST_CAP = 0.15;
-
-function proximityBoost(
-  item: RuleDescriptionIndexItem,
-  context: ScoringContext,
-  contentScore: number,
-): number {
-  if (contentScore <= 0) return 0;
-
-  // Get the candidate's combined text.
-  const text = context.docTexts?.get(item.stable_id);
-  if (text === undefined || text.length === 0) return 0;
-
-  // Tokenize the text into a flat array of lower-cased tokens.
-  const tokens = text.toLowerCase().split(/[^a-z0-9_$#]+/u).filter(Boolean);
-
-  // Get query terms (≥2 needed for pairwise distance).
-  const queryTerms = context.queryTerms;
-  if (queryTerms.length < 2) return 0;
-
-  // Build position index for each query term in the text.
-  const positions = new Map<string, number[]>();
-  for (const qt of queryTerms) {
-    const qtLower = qt.toLowerCase();
-    const pos: number[] = [];
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i] === qtLower) {
-        pos.push(i);
-      }
-    }
-    if (pos.length > 0) {
-      positions.set(qtLower, pos);
-    }
-  }
-
-  // Need at least 2 query terms to appear in the text.
-  if (positions.size < 2) return 0;
-
-  // ISS-20260711-139: min pairwise distance via two-pointer merge on sorted
-  // position lists — O(q² · (p_i+p_j)) instead of O(q² · p_i · p_j) nested scans.
-  const termList = [...positions.entries()];
-  let minDist = Infinity;
-  for (let i = 0; i < termList.length; i++) {
-    const [, posI] = termList[i]!;
-    for (let j = i + 1; j < termList.length; j++) {
-      const [, posJ] = termList[j]!;
-      let a = 0;
-      let b = 0;
-      while (a < posI.length && b < posJ.length) {
-        const pi = posI[a]!;
-        const pj = posJ[b]!;
-        const dist = Math.abs(pi - pj);
-        if (dist < minDist) minDist = dist;
-        if (minDist === 0) break;
-        if (pi < pj) a += 1;
-        else b += 1;
-      }
-      if (minDist === 0) break;
-    }
-    if (minDist === 0) break;
-  }
-
-  if (!Number.isFinite(minDist)) return 0;
-
-  // Boost scales linearly from window/2 inward: at dist=0 → full cap,
-  // at dist=window → 0, beyond window → 0.
-  if (minDist >= PROXIMITY_WINDOW) return 0;
-  const ratio = 1 - minDist / PROXIMITY_WINDOW;
-  const boost = contentScore * PROXIMITY_BOOST_CAP * ratio;
-  return boost;
-}
-
-// KT-DEC-0038: returns each item paired with its fused score, sorted score-DESC
-// (stable_id / scope tie-break). The caller keeps the score to apply the
-// ratio-to-top relevance floor without re-scoring.
-function sortDescriptionItems(
-  rawItems: RuleDescriptionIndexItem[],
-  scoringContext?: ScoringContext,
-): Array<{ item: RuleDescriptionIndexItem; score: number }> {
-  // ISS-006: score each item exactly ONCE here, then sort on the precomputed
-  // score. The previous design called scoreDescriptionItem(left)+­(right) inside
-  // the comparator, so every candidate was re-scored ~log n times per sort
-  // (and BM25/locality recomputed each time). Precomputing is O(n) scores +
-  // O(n log n) cheap numeric/string comparisons, with byte-identical output:
-  // primary key = score DESC, tiebreaker = stable_id ASC.
-  // ISS-024: scoringContext.bm25 is now pre-built (and cached) by the caller, so
-  // this function no longer re-indexes the corpus per sort.
-  if (scoringContext === undefined) {
-    return [...rawItems]
-      .sort((left, right) => compareStableIds(left.stable_id, right.stable_id))
-      .map((item) => ({ item, score: 0 }));
-  }
-  const scored = rawItems.map((item) => ({
-    item,
-    score: scoreDescriptionItem(item, scoringContext),
-  }));
-  scored.sort((left, right) =>
-    left.score !== right.score
-      ? right.score - left.score // descending
-      : compareScopeThenId(left.item, right.item, scoringContext.scopeRank), // W2/A4 scope tie-break
-  );
-  return scored;
-}
-
-// P1 recall-engine-refactor (TASK-005): the SINGLE ranking core shared by
-// fab_recall and fab_pending triage. `mode` parameterizes ONLY the retrieval
-// CUT — every other step (score → sort → dedupe) is identical across both
-// consumers, so a ranking improvement lands once and serves both surfaces.
-//
-//   'recall' — apply top_k + the ratio-to-top relevance floor (the historical
-//     fab_recall cut: bound the surfaced set + drop low-relevance tail).
-//   'triage' — apply NEITHER. Pending review must never silently drop a
-//     candidate: every entry that reached this ranker survives, just RANKED.
-//     This is the load-bearing semantic difference — completeness over
-//     precision (守 KT-DEC-0019 no-server-filter philosophy for the reviewer
-//     surface). The caller is responsible for the relevance GATE upstream (the
-//     substring query + lifecycle/layer/maturity filters define "matches");
-//     triage never adds a budget cut ON TOP of that gate.
-export type RankMode = "recall" | "triage";
-
-export type RankOptions = {
-  // recall-mode cut knobs (resolved by the caller from fabric.config.json so the
-  // ranker stays a pure function). Ignored entirely in triage mode.
-  topK?: number;
-  relevanceRatio?: number;
-};
-
-// Returns each surviving item paired with its fused score, sorted score-DESC
-// (stable_id / scope tie-break), de-duplicated by stable_id, after the
-// mode-dependent cut. The score is retained so observability consumers
-// (candidate_scores) and the dropped[] computation can read it without
-// re-scoring.
-// ISS-20260711-143: apply recall top_k + ratio-to-top cut to an already-ranked list.
-function cutRankedForRecall(
-  rankedScored: Array<{ item: RuleDescriptionIndexItem; score: number }>,
-  scoringContext: ScoringContext,
-  options: RankOptions = {},
-): Array<{ item: RuleDescriptionIndexItem; score: number }> {
-  const topK = options.topK ?? rankedScored.length;
-  const cappedScored = rankedScored.slice(0, topK);
-  const relevanceRatio = options.relevanceRatio ?? 0;
-  const hasQuery = scoringContext.queryTerms.length > 0;
-  const maxScore = rankedScored.length > 0 ? rankedScored[0]!.score : 0;
-  const relevanceFloor = maxScore * relevanceRatio;
-  return hasQuery && maxScore > 0 && relevanceRatio > 0
-    ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
-    : cappedScored;
-}
-
-export function rankDescriptionItems(
-  items: RuleDescriptionIndexItem[],
-  scoringContext: ScoringContext,
-  mode: RankMode,
-  options: RankOptions = {},
-): Array<{ item: RuleDescriptionIndexItem; score: number }> {
-  // Score + sort (shared) then collapse stable_id duplicates, keeping the
-  // highest-ranked occurrence (the sort already placed it first).
-  const sorted = sortDescriptionItems(items, scoringContext);
-  const seen = new Set<string>();
-  const rankedScored = sorted.filter(({ item }) => {
-    if (seen.has(item.stable_id)) return false;
-    seen.add(item.stable_id);
-    return true;
-  });
-
-  // triage: no top_k, no floor — every ranked match survives (completeness).
-  if (mode === "triage") {
-    return rankedScored;
-  }
-
-  // recall: v2.2 A-INFRA-3 (W1-T3-TOPK) bounded top_k SAFETY cap applied AFTER
-  // ranking so the dropped tail is the least content-relevant, then the
-  // KT-DEC-0038 ratio-to-top relevance floor (the primary cut). The floor is
-  // gated on a QUERY being present (queryTerms.length > 0) — the no-intent broad
-  // probe keeps every candidate up to top_k. α=0 / 0-top-score also no-op.
-  const topK = options.topK ?? rankedScored.length;
-  const cappedScored = rankedScored.slice(0, topK);
-  const relevanceRatio = options.relevanceRatio ?? 0;
-  const hasQuery = scoringContext.queryTerms.length > 0;
-  const maxScore = rankedScored.length > 0 ? rankedScored[0]!.score : 0;
-  const relevanceFloor = maxScore * relevanceRatio;
-  return hasQuery && maxScore > 0 && relevanceRatio > 0
-    ? cappedScored.filter((entry) => entry.score >= relevanceFloor)
-    : cappedScored;
-}
-
-// v2.2 A-INFRA-1 (W1-T2-BM25): flatten a candidate's selection-signal fields
-// into the BM25 document text. Mirrors the surface the LLM reads when choosing,
-// so content relevance is scored over the same words the caller sees.
-function documentTextForItem(description: RuleDescription): string {
-  return [
-    description.summary,
-    description.must_read_if,
-    ...description.intent_clues,
-    ...description.tech_stack,
-    ...description.impact,
-    ...(description.tags ?? []),
-    // v2.2 glossary aliases (C-002): long-tail synonym terms feed the flat
-    // vector-embedding document verbatim, same as the BM25F summary slot below.
-    ...(description.aliases ?? []),
-  ].join(" ");
-}
-
-// C1-W6 (BM25F): map a candidate's selection-signal fields onto the four BM25F
-// slots so the field a query term hits is weighted (see bm25.ts FIELD_CONFIGS):
-//   title   ← summary           — the headline; the first thing the LLM reads.
-//   tags    ← tags + tech_stack — keyword-like, length-insensitive.
-//   summary ← must_read_if + intent_clues + aliases — the "when to use" trigger
-//             signal, plus v2.2 glossary synonyms (C-002 / R1). Aliases land in
-//             this MID-weight slot (NOT the keyword-like `tags` HIGH-weight slot)
-//             so a long-tail alias query lifts an entry into top_k WITHOUT
-//             out-ranking a direct content hit on summary/title ("content 领先").
-//   body    ← impact            — the descriptive consequence prose.
-// Tokenized here once per corpus build (cached via getOrBuildBm25Model). The
-// flat documentTextForItem above is kept verbatim for the vector-embedding path.
-function documentFieldsForItem(description: RuleDescription): Record<Bm25Field, string[]> {
-  return {
-    title: tokenize(description.summary),
-    tags: tokenize([...(description.tags ?? []), ...description.tech_stack].join(" ")),
-    summary: tokenize(
-      [description.must_read_if, ...description.intent_clues, ...(description.aliases ?? [])].join(
-        " ",
-      ),
-    ),
-    body: tokenize(description.impact.join(" ")),
-  };
+  return compareStableIdsPure(a, b);
 }
 
 // v2.0.0-rc.38 UX-2: an entry whose summary just echoes its stable_id and whose
@@ -1363,377 +720,4 @@ function buildPreflightDiagnostics(suppressedStableIds: string[]): PreflightDiag
 
 function dedupeStableIds(stableIds: string[]): string[] {
   return Array.from(new Set(stableIds));
-}
-
-
-// v2.0-rc.5 A3 (TASK-007): primary sort is stable_id only when no scoring
-// context — the legacy levelOrder switch keyed off L0/L1/L2 selection ceremony
-// which no longer drives output.
-//
-// v2.0.0-rc.33 W2-3 / W2-4 (P1-6 + P1-7): scoring layer. When `now` and
-// `targetPaths` are provided, sortDescriptionItems (above) computes a per-item
-// score ONCE and sorts DESCENDING by score, stable_id ascending as tiebreaker.
-// Scoring components (see scoreDescriptionItem):
-//
-//   recency_score (W2-3, P1-6):
-//     +100 if description.created_at parses and is within the last 7 days
-//     of `now`. Binary boost — avoids over-fitting to micro-time differences.
-//
-//   locality_score (W2-4, P1-7): max over (relevance_path, target_path) pairs
-//     +100 if exact file match (rp === tp)
-//     +50  if same directory (dirname matches)
-//     +25  if same package (first 2 path segments match — captures monorepo
-//          packages/cli, packages/server, src/auth etc. ad-hoc heuristic)
-//     +0   otherwise
-//
-// Sort is stable: items with identical scores fall through to the
-// pre-existing alphabetic stable_id order.
-
-// v2.0.0-rc.33 W2-3: recency boost — entries created within RECENCY_WINDOW_MS
-// of `now` get +RECENCY_BOOST. Binary boost (vs. linear decay) keeps the
-// sort key resilient against clock skew and ISO-string parse jitter.
-//
-// recency recalibration (grill-report): the boost was +100 — equal to a
-// same-FILE locality hit and ~2× a strong BM25 term match — so a burst of
-// recently-archived entries drowned older path-relevant ones (a same-package
-// recent entry outranked an exact-file old entry). Dropped to the same-package
-// locality tier (25) so recency is a genuine TIE-BREAK nudge: it reorders
-// entries already tied on content + structural signal, never trampling them.
-const RECENCY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const RECENCY_BOOST = 25;
-
-// v2.0.0-rc.33 W2-4: locality tiers. Same-file > same-dir > same-package >
-// none. Calibrated so locality leads recency: a same-file (100) / same-dir (50)
-// hit dominates the recency nudge (now 25 == same-package tier), keeping
-// path-locality the lead structural signal and recency a secondary tie-break.
-const LOCALITY_SAME_FILE = 100;
-const LOCALITY_SAME_DIR = 50;
-const LOCALITY_SAME_PACKAGE = 25;
-
-// v2.2 A-INFRA-1 (W1-T2-BM25): weight applied to the raw BM25 score before it
-// joins the additive score. Calibrated so content relevance LEADS the ranking:
-// a single strong term match (raw BM25 ~2-4 on the small KB corpus) clears the
-// top locality tier (same-file = 100), so a candidate whose TEXT matches the
-// caller's intent outranks one merely sitting in the same directory. Recency
-// and locality remain as secondary nudges / tie-breakers (and as the SOLE
-// signals when the caller supplied no query → BM25 contributes 0).
-const BM25_WEIGHT = 50;
-
-// v2.2 C3-salience (W2-T1): maturity-driven salience, deliberately sized as the
-// FINEST tie-breaker. A single BM25 term match moves the score by ~BM25_WEIGHT
-// (50) and a locality hit by 25-100; salience tops out at 15 (proven) so it can
-// only reorder candidates that already tie on content relevance AND locality.
-// This is the "防高成熟低相关压过正文" invariant: a `proven` entry that does not
-// match the intent never outranks a `draft` entry that does. Absent maturity
-// (legacy / unenriched) contributes 0, identical to draft.
-const SALIENCE_PROVEN = 15;
-const SALIENCE_VERIFIED = 8;
-const SALIENCE_DRAFT = 0;
-
-// P1 recall-engine-refactor (TASK-003): Reciprocal Rank Fusion of the two
-// CONTENT channels. RRF(d) = Σ 1/(k + rank_c(d)) over channels c ∈ {bm25,
-// vector} for which d has a positive score (a zero-match channel contributes
-// nothing — d is simply absent from that channel's rank map). The rank-only
-// fuse discards each channel's uncalibrated absolute magnitude, so a strong
-// BM25 hit and a strong vector hit combine on equal footing.
-//
-// k=10 is the conventional RRF smoothing constant (Cormack et al. 2009 used 60
-// over web-scale runs; a small KB corpus of tens of entries wants a smaller k so
-// the head-vs-tail gap stays expressive — k=10 keeps rank-1 (1/11≈0.091) clearly
-// ahead of rank-5 (1/15≈0.067) without a long flat tail). Starting point per the
-// task; the exact value is a tuning concern for the one-off real-store shadow run.
-const RRF_K = 10;
-
-// P1 recall-engine-refactor (TASK-003): normalization multiplier that lifts the
-// raw RRF sum (< 1) onto the structural-boost scale so a content hit can clear
-// the top structural tier (same-file 100 + proven 15 + recency 25 = 140). Sized
-// for the WORST case (the common BM25-only deployment, no embedder): a SINGLE
-// rank-1 content channel ≈ 1/(10+1) ≈ 0.0909, so 2000 → ≈182 > 140 — a content
-// hit still beats a structural-only entry even with only one channel firing. A
-// dual rank-1 (bm25 + vector) ≈ 2/11 → ≈364, comfortably ahead. This is the
-// SINGLE tunable knob the task defers to the real-store shadow run; it is a named
-// constant (not a magic literal) so calibration is a one-line change.
-const RRF_NORMALIZATION = 2000;
-
-// P1 recall-engine-refactor (follow-up — RRF structural re-scale). RRF compresses
-// the content channel into a narrow band (~RRF_NORMALIZATION/(k+rank): ≈182 at
-// rank 1 down to ≈59 at rank 24 on a ~70-entry corpus), whereas the structural
-// constants (LOCALITY_SAME_FILE 100 / RECENCY_BOOST 25 / SALIENCE 15/8) were
-// calibrated against the WIDE additive content scale (BM25×50 → hundreds–thousands).
-// Added verbatim under RRF they overpower content: a real-store shadow showed a
-// rank-24 content match riding same-file locality (+100) above a rank-3 match, and
-// the top match's lead collapsing from 7× (additive) to 1.1× (RRF). Scaling the
-// whole structural group by ~0.2 restores its ADDITIVE ROLE under RRF — same-file
-// locality (→20) is worth ~1–2 content ranks near the top (breaks near-ties, never
-// promotes a far-back match), and a zero-content structural-only entry (→≤20) stays
-// below every content hit (≥59). Uniform scale preserves the locality>recency>salience
-// ordering. The additive path is untouched (scale 1). Tunable; validated against the
-// real team store before any fusion=rrf default flip.
-const RRF_STRUCTURAL_SCALE = 0.2;
-
-function salienceScore(item: RuleDescriptionIndexItem): number {
-  switch (item.description?.maturity) {
-    case "proven":
-      return SALIENCE_PROVEN;
-    case "verified":
-      return SALIENCE_VERIFIED;
-    default:
-      // draft or unset — the lifecycle floor.
-      return SALIENCE_DRAFT;
-  }
-}
-
-// P1 recall-engine-refactor (TASK-003): the CONTENT contribution to the fused
-// score, isolated so the additive vs RRF choice lives in ONE place and the
-// structural boost (salience/recency/locality) is shared verbatim by both. RRF
-// fuses ONLY the two content channels (bm25_rank, vector_rank); structural
-// signals NEVER enter RRF. A candidate absent from a channel's rank map (its
-// channel score was <= 0 — zero-match exclusion) contributes 0 from that channel.
-function contentScore(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  const hasQuery = context.queryTerms.length > 0;
-
-  // RRF path: ONLY when fusion === 'rrf' AND query terms exist. The no-query
-  // probe NEVER takes this branch — it falls through to the additive path where
-  // the content channels naturally contribute 0, keeping no-query ranking
-  // byte-identical to the historical behavior.
-  if (context.fusion === "rrf" && hasQuery) {
-    let rrf = 0;
-    const bm25Rank = context.bm25Ranks?.get(item.stable_id);
-    if (bm25Rank !== undefined) rrf += 1 / (RRF_K + bm25Rank);
-    const vectorRank = context.vectorRanks?.get(item.stable_id);
-    if (vectorRank !== undefined) rrf += 1 / (RRF_K + vectorRank);
-    return RRF_NORMALIZATION * rrf;
-  }
-
-  // Additive path (DEFAULT). v2.2 A-INFRA-1 (W1-T2-BM25): content relevance — the
-  // lead signal. 0 when no query terms / no BM25 model (broad probe), preserving
-  // recency+locality-only ranking for the backward-compatible path.
-  let content = 0;
-  if (context.bm25 !== undefined && hasQuery) {
-    content += BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms);
-  }
-  // v2.2 C2-vector (W2-T7): semantic recall SUPPLEMENT, layered after BM25. 0
-  // when embeddings are disabled / the optional embedder is absent / no query
-  // (vectorScores undefined) — the text-only fallback. The weight is kept below
-  // BM25_WEIGHT so vectors rescue semantic matches into the top_k without
-  // overriding lexical relevance.
-  if (context.vectorScores !== undefined) {
-    content += (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0);
-  }
-  return content;
-}
-
-// W2-3: recency boost — fresh within RECENCY_WINDOW_MS earns RECENCY_BOOST, else 0.
-// Shared by the ranking score AND the breakdown so the two never drift.
-function recencyBoost(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  const createdAtRaw = item.description?.created_at;
-  if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
-    const createdMs = Date.parse(createdAtRaw);
-    if (Number.isFinite(createdMs) && context.nowMs - createdMs < RECENCY_WINDOW_MS) {
-      return RECENCY_BOOST;
-    }
-  }
-  return 0;
-}
-
-// W2-4: path-locality boost — max tier over (relevance_path × target_path). Shared
-// by the ranking score AND the breakdown. ISS-010: stop at the top tier early.
-function localityBoost(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  if (context.targetPaths.length === 0) return 0;
-  const relevancePaths = item.description?.relevance_paths ?? [];
-  let best = 0;
-  outer: for (const rp of relevancePaths) {
-    for (const tp of context.targetPaths) {
-      const tier = localityTier(rp, tp);
-      if (tier > best) best = tier;
-      if (best === LOCALITY_SAME_FILE) break outer;
-    }
-  }
-  return best;
-}
-
-// fusion-mode structural scale: RRF_STRUCTURAL_SCALE under RRF (compresses the
-// additive-calibrated structural group to a tiebreaker fraction of the narrow RRF
-// content band), 1 on the additive default (constants unchanged). Gated on a query
-// for the same reason RRF content is — the no-query probe stays full-weight additive.
-function structuralScaleFor(context: ScoringContext): number {
-  return context.fusion === "rrf" && context.queryTerms.length > 0 ? RRF_STRUCTURAL_SCALE : 1;
-}
-
-// PLN-004 F1: content-age credibility MULTIPLIER. Exponential decay off created_at
-// with a per-knowledge-type half-life, clamped UP by a per-maturity floor so a
-// stale-but-endorsed entry keeps a minimum weight and a literal match is never
-// zeroed. ORTHOGONAL to recencyBoost (a 7-day ADDITIVE freshness bump on the same
-// created_at) and to the orphan_demote usage-inactivity ladder (last-activity age):
-// this is a continuous full-age-axis MULTIPLICATIVE content-age decay, so composing
-// it with those never double-penalizes. Missing/unparseable created_at → 1 (no
-// penalty). created_at is the available age driver — content_hash-driven
-// content_changed_at is deferred (no persistence layer). The half-life/floor maps are
-// resolved once in buildScoringContext; absent only in bespoke test contexts, where
-// the factor is a 1.0 no-op.
-function credibilityFactor(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  const halfLives = context.credibilityHalfLives;
-  const floors = context.credibilityFloors;
-  if (halfLives === undefined || floors === undefined) return 1;
-  const createdAtRaw = item.description?.created_at;
-  if (typeof createdAtRaw !== "string" || createdAtRaw.length === 0) return 1;
-  const createdMs = Date.parse(createdAtRaw);
-  if (!Number.isFinite(createdMs)) return 1;
-  const ageDays = (context.nowMs - createdMs) / (24 * 60 * 60 * 1000);
-  if (ageDays <= 0) return 1;
-  const type = item.description?.knowledge_type;
-  const halfLife = type !== undefined ? halfLives[type] : halfLives.decisions;
-  const factor = Math.pow(2, -ageDays / halfLife);
-  const maturity = item.description?.maturity;
-  const floor = maturity !== undefined ? floors[maturity] : floors.draft;
-  return Math.max(floor, Math.min(1, factor));
-}
-
-function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringContext): number {
-  // P1 recall-engine-refactor (TASK-003 + RRF re-scale follow-up): content channels
-  // (additive OR RRF) + a structural boost. The structural group (salience maturity
-  // tie-breaker + recency + path-locality) only separates entries of comparable
-  // content relevance, never overriding content. Under RRF the group is scaled to a
-  // tiebreaker fraction (structuralScaleFor) so the rank-compressed content channel
-  // still leads; under additive the scale is 1 (original calibration).
-  const content = contentScore(item, context);
-  const structural = salienceScore(item) + recencyBoost(item, context) + localityBoost(item, context);
-  // BORROW-008: phrase proximity boost — a multi-word query whose terms appear
-  // close together in the candidate text gets a small boost (≤15% of content score).
-  // Window = 6 tokens; only when query has ≥2 terms and content score > 0.
-  const proximity = proximityBoost(item, context, content);
-  // PLN-004 F1: multiply the fused additive score by the content-age credibility
-  // factor (mirrors maestro-flow scoring.ts `score *= credibilityFactor`). Applied to
-  // the WHOLE fused return so a stale entry sinks even on a literal match, floored per
-  // maturity so it is never zeroed. MUST be mirrored EXACTLY in scoreBreakdownForItem
-  // or `final` desyncs from this ranking score (KT-PIT-0036 class invariant).
-  return (content + structuralScaleFor(context) * structural + proximity) * credibilityFactor(item, context);
-}
-
-// P1 recall-observability: numbers-only decomposition of scoreDescriptionItem's
-// fused score into its weighted signal contributions. Mirrors scoreDescriptionItem
-// EXACTLY component-for-component so `final` === scoreDescriptionItem(item, ctx)
-// — pure observability, NOT a second scoring path that could drift from ranking.
-// bm25/vector are the content-channel contributions actually summed in (0 when
-// the signal is absent). P1 recall-engine-refactor (TASK-003): under RRF fusion
-// these become the normalized RRF channel terms and bm25_rank/vector_rank carry
-// the ordinal each channel contributed.
-function scoreBreakdownForItem(
-  item: RuleDescriptionIndexItem,
-  context: ScoringContext,
-): RecallScoreBreakdown {
-  const hasQuery = context.queryTerms.length > 0;
-  const rrfMode = context.fusion === "rrf" && hasQuery;
-
-  // P1 recall-engine-refactor (TASK-003): the content channels mirror
-  // scoreDescriptionItem's contentScore EXACTLY so `final` stays === the ranking
-  // score. Under RRF, bm25/vector are the NORMALIZED RRF terms and *_rank carry
-  // the ordinal; under additive they are the weighted raw scores (rank unset).
-  let bm25 = 0;
-  let vector = 0;
-  let bm25Rank: number | undefined;
-  let vectorRank: number | undefined;
-  if (rrfMode) {
-    bm25Rank = context.bm25Ranks?.get(item.stable_id);
-    if (bm25Rank !== undefined) bm25 = RRF_NORMALIZATION * (1 / (RRF_K + bm25Rank));
-    vectorRank = context.vectorRanks?.get(item.stable_id);
-    if (vectorRank !== undefined) vector = RRF_NORMALIZATION * (1 / (RRF_K + vectorRank));
-  } else {
-    bm25 =
-      context.bm25 !== undefined && hasQuery
-        ? BM25_WEIGHT * context.bm25.scoreDoc(item.stable_id, context.queryTerms)
-        : 0;
-    vector =
-      context.vectorScores !== undefined
-        ? (context.vectorWeight ?? 0) * (context.vectorScores.get(item.stable_id) ?? 0)
-        : 0;
-  }
-  // Structural group mirrors scoreDescriptionItem EXACTLY: the same shared helpers,
-  // the same fusion-mode scale — so the displayed salience/recency/locality are the
-  // ACTUAL (scaled) contributions and `final` stays === the ranking score. Under RRF
-  // these are the scaled tiebreaker values; under additive they are the raw constants.
-  const scale = structuralScaleFor(context);
-  const salience = salienceScore(item) * scale;
-  const recency = recencyBoost(item, context) * scale;
-  const locality = localityBoost(item, context) * scale;
-  // BORROW-008 parity fix: scoreDescriptionItem adds proximityBoost UNSCALED
-  // (outside structuralScaleFor), keyed off `content` (=== bm25 + vector, the
-  // RRF/additive content total). This breakdown historically OMITTED it, so
-  // `final` was score − proximity for every multi-term-query candidate, breaking
-  // the "final === scoreDescriptionItem by construction" invariant the comments
-  // above assert. Mirror it here — same helper, same content arg, unscaled.
-  const proximity = proximityBoost(item, context, bm25 + vector);
-
-  // PLN-004 F1: mirror scoreDescriptionItem's credibility multiplier EXACTLY — the
-  // same helper multiplies the same subtotal, so `final` stays === the ranking score
-  // (the final===score invariant, guarded by recall.test.ts :210/:528). `credibility`
-  // is the multiplier itself (a distinct factor, NOT an additive component): the
-  // additive components sum to the subtotal, and subtotal * credibility === final.
-  const credibility = credibilityFactor(item, context);
-  const final = (bm25 + vector + salience + recency + locality + proximity) * credibility;
-  return {
-    final,
-    ...(bm25 !== 0 ? { bm25 } : {}),
-    ...(bm25Rank !== undefined ? { bm25_rank: bm25Rank } : {}),
-    ...(vector !== 0 ? { vector } : {}),
-    ...(vectorRank !== undefined ? { vector_rank: vectorRank } : {}),
-    salience,
-    recency,
-    locality,
-    proximity,
-    credibility,
-  };
-}
-
-function localityTier(relevancePath: string, targetPath: string): number {
-  if (relevancePath === targetPath) return LOCALITY_SAME_FILE;
-  const rpDir = dirnameOfPath(relevancePath);
-  const tpDir = dirnameOfPath(targetPath);
-  if (rpDir.length > 0 && rpDir === tpDir) return LOCALITY_SAME_DIR;
-  const rpPkg = packageRootOfPath(relevancePath);
-  const tpPkg = packageRootOfPath(targetPath);
-  if (rpPkg.length > 0 && rpPkg === tpPkg) return LOCALITY_SAME_PACKAGE;
-  return 0;
-}
-
-function dirnameOfPath(p: string): string {
-  // v2.0.0-rc.33 W4 review-fix (gemini Critical-2): two distinct cases need
-  // different "dirname" semantics:
-  //
-  //   - Glob pattern (e.g. `src/**/*.ts`): the "directory" IS the prefix
-  //     before the first glob wildcard — `src` in this example. Walking
-  //     parent-dirname on `src/` strips it to `""`, which over-broadens
-  //     and breaks LOCALITY_SAME_DIR for target `src/foo.ts`.
-  //
-  //   - File path (e.g. `src/foo.ts`): "directory" is the parent —
-  //     `src` via lastIndexOf("/"). Standard dirname semantics.
-  //
-  // Pre-fix code applied parent-dirname to BOTH cases, causing globs to
-  // double-strip and never match same-dir-tier with their own files.
-  const idx = p.search(/[*?[]/);
-  if (idx >= 0) {
-    // Glob: directory == prefix before first wildcard, trailing slash stripped.
-    return p.slice(0, idx).replace(/\/$/, "");
-  }
-  // File path: dirname (one level up).
-  const lastSlash = p.lastIndexOf("/");
-  return lastSlash >= 0 ? p.slice(0, lastSlash) : "";
-}
-
-function packageRootOfPath(p: string): string {
-  // First two path segments captures the conventional `packages/<name>` or
-  // `src/<area>` monorepo / mid-size-app rooting. Ad-hoc heuristic; the W2-4
-  // task spec calls this out as a "rough scoring" knob, not a precise
-  // dependency-graph lookup.
-  const idx = p.search(/[*?[]/);
-  const stem = idx >= 0 ? p.slice(0, idx).replace(/\/$/, "") : p;
-  const segments = stem.split("/").filter(Boolean);
-  if (segments.length < 2) return "";
-  return segments.slice(0, 2).join("/");
-}
-
-function relatedLookupKeys(stableId: string): string[] {
-  const parts = stableId.split(":");
-  const localId = parts.at(-1);
-  return localId === undefined || localId === stableId ? [stableId] : [stableId, localId];
 }

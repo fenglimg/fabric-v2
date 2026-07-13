@@ -21,6 +21,7 @@ import {
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { reviewKnowledge } from "../services/review.js";
 import { unsealedProjectScopeWarning } from "../services/write-scope-warning.js";
+import { toMcpToolError } from "./mcp-tool-error.js";
 
 export function registerReview(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -99,6 +100,8 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
           ],
           structuredContent: response,
         };
+      } catch (error) {
+        return toMcpToolError(error, { tool: "fab_review" });
       } finally {
         tracker?.exit(requestId);
       }

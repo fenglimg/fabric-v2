@@ -1,4 +1,15 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { atomicWriteJson, withFileLock } from "../node/atomic-write.js";
@@ -156,6 +167,64 @@ function readEntryId(file: string): string | null {
  * its higher value. Sync write (no lock) because the only callers run in
  * exclusive one-shot contexts (post-migrate CLI step, `doctor --fix`).
  */
+
+/** Sync ownership-token lock for counters.json (ISS-20260713-026). */
+function withCountersFileLockSync<T>(lockPath: string, fn: () => T): T {
+  const token = `${process.pid}.${randomUUID()}`;
+  const start = Date.now();
+  const maxWaitMs = 10_000;
+  const staleMs = 10_000;
+  for (;;) {
+    let fd: number | undefined;
+    try {
+      fd = openSync(lockPath, "wx");
+      writeFileSync(lockPath, token, "utf8");
+      try {
+        closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+      try {
+        return fn();
+      } finally {
+        try {
+          if (readFileSync(lockPath, "utf8") === token) rmSync(lockPath, { force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      const code = err && typeof err === "object" && "code" in err ? (err as NodeJS.ErrnoException).code : undefined;
+      if (code !== "EEXIST") throw err;
+      try {
+        const st = statSync(lockPath);
+        if (Date.now() - st.mtimeMs > staleMs) {
+          const stale = readFileSync(lockPath, "utf8");
+          if (readFileSync(lockPath, "utf8") === stale) rmSync(lockPath, { force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (Date.now() - start > maxWaitMs) {
+        throw new Error(`withCountersFileLockSync: timeout on ${lockPath}`);
+      }
+      // brief spin
+      const end = Date.now() + 20;
+      while (Date.now() < end) {
+        /* spin */
+      }
+    }
+  }
+}
+
+function atomicWriteCountersSync(path: string, counters: AgentsMetaCounters): void {
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  const body = `${JSON.stringify(counters, null, 2)}\n`;
+  writeFileSync(tmp, body, "utf8");
+  renameSync(tmp, path);
+}
+
 export function reconcileStoreCounters(storeDir: string): AgentsMetaCounters {
   const current = readStoreCounters(storeDir);
   const next: AgentsMetaCounters = {
@@ -182,6 +251,16 @@ export function reconcileStoreCounters(storeDir: string): AgentsMetaCounters {
     }
   }
 
-  writeFileSync(storeCountersPath(storeDir), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  // ISS-20260713-026: hold counters lock + atomic write so allocate cannot race.
+  withCountersFileLockSync(`${storeCountersPath(storeDir)}.lock`, () => {
+    // Re-floor under lock against current disk counters + on-disk ids.
+    const latest = readStoreCounters(storeDir);
+    for (const layer of ["KP", "KT"] as const) {
+      for (const code of ["MOD", "DEC", "GLD", "PIT", "PRO"] as const) {
+        next[layer][code] = Math.max(next[layer][code], latest[layer][code]);
+      }
+    }
+    atomicWriteCountersSync(storeCountersPath(storeDir), next);
+  });
   return next;
 }

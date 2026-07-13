@@ -55,20 +55,26 @@ const DIGEST_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 // Lightweight credential redaction for digest bullets (hook CJS cannot import
 // packages/shared). Patterns mirror store/secret-scan credential rules.
 const DIGEST_SECRET_RES = [
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/g,
-  /\bsk-[A-Za-z0-9]{20,}\b/g,
-  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
-  /(?:password|passwd|secret|api[_-]?key|access[_-]?token|token)\s*[:=]\s*(?:"[^'"\s]{8,}"|'[^'"\s]{8,}'|[A-Za-z0-9_./+=:@-]{8,})/gi,
+  [/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]"],
+  [/-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/g, "[REDACTED]"],
+  [/\bsk-[A-Za-z0-9]{20,}\b/g, "[REDACTED]"],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[REDACTED]"],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, "[REDACTED]"],
+  [/(?:password|passwd|secret|api[_-]?key|access[_-]?token|token)\s*[:=]\s*(?:"[^'"\s]{8,}"|'[^'"\s]{8,}'|[A-Za-z0-9_./+=:@-]{8,})/gi, "[REDACTED]"],
+  // ISS-20260713-027: PII parity with packages/shared secret-scan PII_RULES
+  [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED:email]"],
+  [/\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/g, "[REDACTED:ipv4]"],
+  [/(?<!\d)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}(?!\d)/g, "[REDACTED:phone]"],
 ];
 
 function redactDigestText(text) {
   if (typeof text !== "string" || text.length === 0) return text;
   let out = text;
-  for (const re of DIGEST_SECRET_RES) {
+  for (const entry of DIGEST_SECRET_RES) {
+    const re = Array.isArray(entry) ? entry[0] : entry;
+    const ph = Array.isArray(entry) ? entry[1] : "[REDACTED]";
     re.lastIndex = 0;
-    out = out.replace(re, "[REDACTED]");
+    out = out.replace(re, ph);
   }
   return out;
 }

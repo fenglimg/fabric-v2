@@ -1364,6 +1364,19 @@ export const zhCNMessages: Messages = {
   "cli.first-hit.args.target.description": "项目根（默认 cwd）",
   "cli.first-hit.args.seed.description": "若 store 为空则写入最小 starter 知识条目",
   "cli.first-hit.args.paths.description": "逗号分隔的探测路径",
+  "cli.first-hit.msg.ok": "first-hit 就绪：{stores} 个 store 共 {total} 条知识；hooks 已安装。",
+  "cli.first-hit.msg.unbound": "unbound：本项目 read-set 未绑定任何 store，知识无法浮现。",
+  "cli.first-hit.msg.no_write_target": "no_write_target：已有 required stores 但未设置 active_write_store。",
+  "cli.first-hit.msg.empty_store": "empty_store：store 已绑定但规范知识文件为 0 — 空 store 不是成功路径。",
+  "cli.first-hit.msg.missing_required": "missing_required：required_stores 中有未挂载的 store。",
+  "cli.first-hit.msg.write_target_mismatch": "write_target_mismatch：active_write_store 不在已挂载可写 read-set 上。",
+  "cli.first-hit.msg.store_unreachable": "store_unreachable：已绑定 store 在注册表中但磁盘目录缺失。",
+  "cli.first-hit.msg.project_unsealed": "project_unsealed：已绑定写库但缺少 project_id/active_project — 团队知识会落成 flat（semantic_scope: team）而非项目分区。",
+  "cli.first-hit.msg.no_match": "no_match：知识存在但探测面为空（路径/scope 过滤）。",
+  "cli.first-hit.msg.hooks_missing": "hooks_missing：知识已在但 SessionStart/PreToolUse hooks 未安装。",
+  "cli.first-hit.msg.no_project": "no_project：当前目录不是 Fabric 项目（缺少 .fabric/fabric-config.json）。",
+  "cli.first-hit.msg.no_global": "no_global：缺少全局 fabric 配置 — 请先运行 fabric install --global。",
+
   "cli.onboard-coverage.description":
     "汇总当前工作区的 S5 onboard-slot 覆盖度。fabric-archive Skill 首跑阶段用它判断哪些项目语调槽位尚未被认领。",
   "cli.onboard-coverage.args.json.description":
@@ -1638,6 +1651,10 @@ export const zhCNMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder 已预热:模型 '{model}' 已加载(向量维度 {dim}),缓存于 {dir}",
   "cli.info.recall.warm.fail":
     "embedder 不可用 —— 可选的 'fastembed' 包无法解析,或模型加载失败。\n  召回回退到关键词模式(BM25 / additive)。请在 server 能解析模块的位置安装 fastembed 后重试。",
+  "cli.store.mount.description": "将知识 store 挂载到全局注册表",
+  "cli.store.create.description": "创建并挂载本地知识 store",
+  "cli.store.remove.description": "从注册表卸下 store（不删除磁盘）",
+  "cli.store.explain.description": "解释 store 别名如何解析",
   "cli.store.list.description": "列出挂载的 store",
   // 追加在 `fabric store --help` 末尾的说明 —— 交代进阶(meta.hidden)操作去哪了,
   // 否则只剩 list 一行会让用户以为 store 没别的能力。
