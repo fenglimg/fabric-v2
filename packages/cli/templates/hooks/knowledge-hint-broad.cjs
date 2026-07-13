@@ -730,7 +730,15 @@ function renderSummary(payload, maxLen) {
         process.stderr.write(
           `[fabric] hint payload version=${payload.version} unsupported (expected 2), skipping\n`,
         );
-      } catch {}
+      } catch (err) {
+        // ISS-20260713-051: never empty-catch on user-visible injection path.
+        try {
+          const message = err && typeof err === "object" && "message" in err ? String(err.message) : String(err);
+          process.stderr.write(`[fabric-knowledge-hint-broad] stderr write failed: ${message}\n`);
+        } catch {
+          /* last-resort: still must not throw upward */
+        }
+      }
     }
     return [];
   }

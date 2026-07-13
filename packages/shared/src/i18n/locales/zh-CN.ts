@@ -122,7 +122,7 @@ export const zhCNMessages: Messages = {
     "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 cc,codex。",
   "cli.config.errors.expected-object": "{path} 中应为对象。",
   "cli.config.install.no-configs":
-    "未检测到 Fabric MCP 客户端配置。请创建客户端目录，或在 fabric.config.json 中设置 clientPaths。",
+    "未检测到 Fabric MCP 客户端配置。请创建客户端目录，或在 .fabric/fabric-config.json 中设置 clientPaths。",
   "cli.config.install.no-config-path": "跳过 {client}：未检测到配置路径。",
   "cli.config.install.dry-run": "[dry-run] {client}：将写入 {path}",
   "cli.config.install.wrote": "{client}：已写入 {path}",
@@ -1183,7 +1183,7 @@ export const zhCNMessages: Messages = {
     "  2. 预热模型缓存 (首跑会联网下载模型权重 ~数十-数百 MB, 不上传任何 KB 数据):\n" +
     "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # 严格离线者预先放好权重\n" +
     "  注: 切换 embed_model 后已有向量维度/语义变化, 下次 recall 会按新模型重新嵌入 (doc 向量按文本缓存, 自动失配重算)。\n" +
-    "  关闭: 编辑 fabric.config.json 设 embed_enabled=false。",
+    "  关闭: 编辑 .fabric/fabric-config.json 设 embed_enabled=false。",
   // C5: store onboarding 交互文案统一走 t()。
   "cli.install.store.local-store": "本地 store",
   "cli.install.store.bind-mounted.prompt": "把一个已挂载的知识 store 绑定到本项目？",

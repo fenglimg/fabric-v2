@@ -56,7 +56,8 @@ const OBSERVE_EVENTS = ["session_start", "pre_tool_use", "stop"];
  *   1. env `FABRIC_NUDGE_MODE`             — opt-in override, no repo edits
  *   2. project `.fabric/fabric-config.json` — per-repo setting (existing)
  *   3. global `~/.fabric/fabric-global.json` — machine-wide preference
- *   4. default `"silent"`                    — G1 human-mute alignment
+ *   4. default `"normal"`                    — missing-key fallback for old installs
+ *      (new scaffolds write `"minimal"` explicitly; see install-scaffold-config)
  *
  * Any layer whose value is missing / not-a-string / not in NUDGE_MODES silently
  * falls through to the next. Never throws — a broken config MUST NOT block hooks

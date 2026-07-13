@@ -131,7 +131,7 @@ export const enMessages: Messages = {
     "Unknown client \"{client}\". Use a comma-separated list such as cc,codex.",
   "cli.config.errors.expected-object": "Expected object in {path}",
   "cli.config.install.no-configs":
-    "No Fabric MCP client config detected. Create the client directory or set clientPaths in fabric.config.json.",
+    "No Fabric MCP client config detected. Create the client directory or set clientPaths in .fabric/fabric-config.json.",
   "cli.config.install.no-config-path": "Skipping {client}: no config path detected.",
   "cli.config.install.dry-run": "[dry-run] {client}: would write {path}",
   "cli.config.install.wrote": "{client}: wrote {path}",
@@ -1215,7 +1215,7 @@ export const enMessages: Messages = {
     "  2. Warm the model cache (the first run downloads the weights, ~tens–hundreds of MB; no KB data is uploaded):\n" +
     "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # strict-offline: pre-place the weights here\n" +
     "  Note: after switching embed_model the existing vector dim/semantics change; the next recall re-embeds with the new model (doc vectors are cached by text and auto-recompute on mismatch).\n" +
-    "  Disable: set embed_enabled=false in fabric.config.json.",
+    "  Disable: set embed_enabled=false in .fabric/fabric-config.json.",
   // C5: store onboarding interactive copy routed through t().
   "cli.install.store.local-store": "local store",
   "cli.install.store.bind-mounted.prompt": "Bind an already-mounted knowledge store to this project?",
