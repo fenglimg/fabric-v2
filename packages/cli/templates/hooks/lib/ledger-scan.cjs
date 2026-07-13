@@ -1,6 +1,6 @@
 // ISS-20260713-020: ledger scan helpers for Stop-hook archive / backlog signals.
 
-const { existsSync, readFileSync } = require("node:fs");
+const { existsSync, readFileSync, statSync } = require("node:fs");
 const { join } = require("node:path");
 const { isHighValueArchiveCandidate } = require("./high-value-predicate.cjs");
 
@@ -11,6 +11,10 @@ const DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
+// ISS-20260713-056/070: align with server events-jsonl-gates G7 default (10MB).
+const EVENTS_JSONL_SIZE_WARN_BYTES = 10 * 1024 * 1024;
+/** @type {{ path: string, mtimeMs: number, size: number, events: object[] } | null} */
+let _ledgerCache = null;
 
 function hasHighValueArchiveSignal(events, watermarkTs, sessionId) {
   return isHighValueArchiveCandidate(events, sessionId, watermarkTs);
@@ -31,6 +35,36 @@ function readLedger(projectRoot) {
   const eventPath = join(projectRoot, FABRIC_DIR, EVENT_LEDGER_FILE);
   if (!existsSync(eventPath)) {
     return [];
+  }
+
+  let st;
+  try {
+    st = statSync(eventPath);
+  } catch {
+    return [];
+  }
+
+  // ISS-20260713-048: process-local mtime+size cache (same-process re-entry).
+  if (
+    _ledgerCache &&
+    _ledgerCache.path === eventPath &&
+    _ledgerCache.mtimeMs === st.mtimeMs &&
+    _ledgerCache.size === st.size
+  ) {
+    return _ledgerCache.events;
+  }
+
+  if (st.size > EVENTS_JSONL_SIZE_WARN_BYTES) {
+    try {
+      const mb = (st.size / (1024 * 1024)).toFixed(1);
+      process.stderr.write(
+        "[fabric-hint] events.jsonl is " +
+          mb +
+          "MB (>10MB); Stop-hook full-read may be slow. Run `fabric doctor --fix` to rotate, or set fabric_event_retention_days in .fabric/fabric-config.json.\n",
+      );
+    } catch {
+      /* never block */
+    }
   }
 
   let raw;
@@ -59,7 +93,12 @@ function readLedger(projectRoot) {
       // corrupt JSON line — drop silently
     }
   }
+  _ledgerCache = { path: eventPath, mtimeMs: st.mtimeMs, size: st.size, events };
   return events;
+}
+
+function clearLedgerCache() {
+  _ledgerCache = null;
 }
 
 function countEditsSince(projectRoot, anchorTs) {
@@ -362,6 +401,8 @@ function getTopEditedDirectories(projectRoot, topN, anchorTs) {
 
 module.exports = {
   readLedger,
+  clearLedgerCache,
+  EVENTS_JSONL_SIZE_WARN_BYTES,
   hasHighValueArchiveSignal,
   sessionArchiveWatermark,
   sessionFirstActivityTs,

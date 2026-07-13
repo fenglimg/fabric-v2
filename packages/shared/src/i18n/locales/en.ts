@@ -556,7 +556,7 @@ export const enMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
   "doctor.check.events_jsonl_health.remediation":
-    "Run `fabric doctor --fix` — it triggers a rotation AND flushes metrics.jsonl (rc.2 F16: clears idle-buffered metric counters without a server restart). If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
+    "Run `fabric doctor --fix` — it triggers events.jsonl rotation (honors fabric_event_retention_days: 7|30|90 in .fabric/fabric-config.json) AND flushes metrics.jsonl. If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "No partial-write check needed (ledger missing or not writable).",

@@ -69,6 +69,9 @@ export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string)
     // fabric-import/archive/review skills read a built-in default when the key
     // is absent, so the shipped config stays lean (panel knobs only).
     review_stale_pending_days: 14,
+    // ISS-20260713-056/070: events.jsonl retention (days). Server rotateEventLedgerIfNeeded
+    // honors this (7|30|90). Doctor G7/G10 warn when ledger is large/stale; run doctor --fix.
+    fabric_event_retention_days: 30,
   };
 
   mkdirSync(fabricDir, { recursive: true });

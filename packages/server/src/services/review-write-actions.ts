@@ -31,53 +31,29 @@ import {
   type FrontmatterScalarPatch,
 } from "./review-frontmatter.js";
 import { hasUnresolvedDismissal } from "./promotion-gate.js";
+import {
+  bindReviewWriteDeps,
+  D,
+  PLURAL_TYPES,
+  SCOPE_COORDINATE_PATTERN,
+  type ReviewWriteDeps,
+  type PluralType,
+  type Layer,
+  type Maturity,
+  type RelevanceScope,
+  type LifecycleStatus,
+} from "./review-write-shared.js";
+import {
+  type ModifyChanges,
+  type ResolvedTarget,
+  pickModifyEventValues,
+  resolveModifyTarget,
+  inferTypeFromPath,
+  extractSlug,
+} from "./review-write-modify-helpers.js";
 
-type PluralType = KnowledgeType;
-type Layer = "team" | "personal";
-type Maturity = "draft" | "verified" | "proven";
-type RelevanceScope = "narrow" | "broad";
-type LifecycleStatus = "active" | "rejected" | "deferred";
+export { bindReviewWriteDeps, type ReviewWriteDeps } from "./review-write-shared.js";
 
-const PLURAL_TYPES: ReadonlyArray<PluralType> = [
-  "decisions",
-  "pitfalls",
-  "guidelines",
-  "models",
-  "processes",
-];
-
-const SCOPE_COORDINATE_PATTERN = /^(?:personal|team|project:[a-z0-9][a-z0-9_-]*)$/u;
-
-// Injected from review.ts facade to share sandbox + audit without circular imports.
-export type ReviewWriteDeps = {
-  resolveSandboxedPath: (
-    projectRoot: string,
-    pendingPath: string,
-    opts?: { allowPersonal?: boolean },
-  ) => { abs: string; isInProjectTree: boolean };
-  assertNoSecretsInReviewContent: (content: string, op: string) => void;
-  assertCrossStoreRefsSafe: (content: string, entryLayer: "team" | "personal") => void;
-  emitKnowledgeLifecycleEvent: (
-    projectRoot: string,
-    event: EventLedgerEventInput,
-  ) => Promise<void>;
-  extractBodyTrimmed: (content: string) => string;
-  resolvePersonalRoot: () => string;
-  storeKnowledgeRoots: (projectRoot: string) => string[];
-  isUnder: (abs: string, root: string) => boolean;
-  realpathExistingPrefix: (path: string) => string;
-};
-
-let deps: ReviewWriteDeps | null = null;
-
-export function bindReviewWriteDeps(d: ReviewWriteDeps): void {
-  deps = d;
-}
-
-function D(): ReviewWriteDeps {
-  if (!deps) throw new Error("review-write-actions: bindReviewWriteDeps not called");
-  return deps;
-}
 
 export async function approveAll(
   projectRoot: string,
@@ -423,50 +399,6 @@ export async function rejectAll(
 // the resolved store knowledge roots.
 // ---------------------------------------------------------------------------
 
-type ModifyChanges = {
-  title?: string;
-  summary?: string;
-  layer?: Layer;
-  maturity?: Maturity;
-  tags?: string[];
-  // v2.0-rc.5 C3 (TASK-012): relevance fields editable via modify. Apply to
-  // pending AND canonical entries. A narrow team → personal layer flip
-  // triggers an auto-degrade override (broad + []) regardless of caller-sent
-  // values — see `modifyEntry`.
-  relevance_scope?: RelevanceScope;
-  relevance_paths?: string[];
-  // v2.2 project-scope migration: in-place re-scope of the resolution
-  // coordinate (team → project:<id>). visibility_store is untouched —
-  // scope ⊥ store. Personal-root coordinates are rejected in modifyEntry.
-  semantic_scope?: string;
-  // v2.2 graph edges (KT-DEC-0031): `related` H2 adjacency. REPLACE semantics
-  // like tags. Previously dropped by zod .strip() in the changes schema before
-  // it ever reached here (the only related-write path was non-functional).
-  related?: string[];
-  // rc.9 (2026-07-06): discovery-signal scalar patches. Same recurrence pattern
-  // as `related` above (KT-PIT-0005 / KT-PIT-0018): pre-rc.9 the zod .strip()
-  // silently dropped these three, so the only path to fix a bad-shape
-  // must_read_if / missing intent_clues was direct Edit — bypassing the skill
-  // audit trail. REPLACE semantics; must_read_if is a scalar string; the other
-  // two are flow-arrays mirroring tags/related.
-  must_read_if?: string;
-  intent_clues?: string[];
-  impact?: string[];
-  // ISS-20260711-180: keep in lockstep with _fabReviewModifyChangesSchema.
-  tech_stack?: string[];
-  evidence_paths?: string[];
-  onboard_slot?:
-    | "tech-stack-decision"
-    | "architecture-pattern"
-    | "code-style-tone"
-    | "build-system-idiom"
-    | "domain-vocabulary";
-};
-
-// Prefer shared FrontmatterScalarPatch from review-frontmatter (includes modify + lifecycle fields).
-// Local ModifyChanges remains the public modify surface (no status/deferred_until).
-type _AssertModifySubset = ModifyChanges extends FrontmatterScalarPatch ? true : false;
-
 
 export async function modifyEntry(
   projectRoot: string,
@@ -582,70 +514,6 @@ export async function modifyContentBatch(
     }
   }
   return results;
-}
-
-type ResolvedTarget = {
-  absPath: string;
-  // Whether the target lives under the project's git tree (team or pending)
-  // or under FABRIC_HOME (personal canonical).
-  isInProjectTree: boolean;
-  // Plural type (parsed from path segment if available); null for pending
-  // files where the directory is `pending/<type>/` — caller can derive.
-  inferredType: PluralType | null;
-  // Slug (filename without .md, with id prefix stripped if present).
-  slug: string;
-};
-
-function pickModifyEventValues(
-  source: Partial<ParsedFrontmatter & ModifyChanges>,
-  fields: string[],
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const field of fields) {
-    out[field] = source[field as keyof (ParsedFrontmatter & ModifyChanges)] ?? null;
-  }
-  return out;
-}
-
-function resolveModifyTarget(
-  projectRoot: string,
-  pendingPath: string,
-): ResolvedTarget | null {
-  // Defense-in-depth: constrain caller-supplied path to the resolved store
-  // knowledge roots. Reject traversal attempts. modify accepts both pending and
-  // canonical store entries.
-  let sandboxed: { abs: string; isInProjectTree: boolean };
-  try {
-    sandboxed = D().resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
-  } catch {
-    return null;
-  }
-
-  if (existsSync(sandboxed.abs)) {
-    return {
-      absPath: sandboxed.abs,
-      isInProjectTree: sandboxed.isInProjectTree,
-      inferredType: inferTypeFromPath(pendingPath),
-      slug: extractSlug(pendingPath),
-    };
-  }
-
-  return null;
-}
-
-function inferTypeFromPath(path: string): PluralType | null {
-  // Match `<...>/knowledge/[pending/]<type>/<file>.md`.
-  const match = /(?:^|[\\/])knowledge[\\/](?:pending[\\/])?([^\\/]+)[\\/][^\\/]+\.md$/u.exec(path);
-  if (match === null) return null;
-  const seg = match[1];
-  if (seg !== undefined && PLURAL_TYPES.includes(seg as PluralType)) {
-    return seg as PluralType;
-  }
-  return null;
-}
-
-function extractSlug(path: string): string {
-  return extractReviewSlug(path);
 }
 
 // test hook lives in review.ts facade re-exporting review-path

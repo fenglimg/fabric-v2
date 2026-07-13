@@ -534,7 +534,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
   "doctor.check.events_jsonl_health.remediation":
-    "运行 `fabric doctor --fix` —— 它会触发 rotation 并 flush metrics.jsonl(rc.2 F16: 无需重启 server 即可清出 idle 期未刷的 metric counter)。若告警仍持续, 再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中, 检查最近代码改动是否绕过 bumpCounter API 直接 appendEventLedgerEvent 写了 4 个 metric-managed event_type 之一。",
+    "运行 `fabric doctor --fix` —— 会按 .fabric/fabric-config.json 的 fabric_event_retention_days(7|30|90) 轮转 events.jsonl，并 flush metrics.jsonl。若告警仍持续，再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中，检查最近代码是否绕过 bumpCounter 直接写了 metric-managed event_type。",
   "doctor.check.event_ledger_partial_write.name": "事件账本半截写入",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "无需执行 partial-write 检查（ledger 缺失或不可写）。",
