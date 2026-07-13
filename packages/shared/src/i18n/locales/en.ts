@@ -1146,6 +1146,7 @@ export const enMessages: Messages = {
   // so its MCP server loads — that is the default anchor; the --reapply maintenance
   // hint moves to --verbose.
   "cli.install.next-step.restart": "restart any open Claude Code / Codex session to load Fabric (new sessions pick it up automatically).",
+  "cli.install.next-step.nudge-mode": "Human breadcrumbs default to minimal (one status line/session). Mute with nudge_mode: \"silent\" in .fabric/fabric-config.json or FABRIC_NUDGE_MODE=silent; raise with normal/verbose.",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

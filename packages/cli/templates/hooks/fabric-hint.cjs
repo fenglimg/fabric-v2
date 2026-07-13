@@ -400,7 +400,7 @@ function findLastDoctorRunTs(events) {
  *   - null on no trigger
  *
  * `recommended_skill` is intentionally null — the maintenance prompt
- * recommends a CLI invocation (`fabric doctor --lint`), not a Skill, because
+ * recommends a CLI invocation (`fabric doctor`), not a Skill, because
  * doctor is a CLI surface (Q-13 boundary). The hook payload still shapes the
  * `recommended_skill` key so consumers can branch on it.
  */
@@ -816,8 +816,20 @@ function main(env, stdio) {
       // high-value. Backlog path (countBacklogSessions) already uses watermark.
       const watermarkTs = sessionArchiveWatermark(events, sid);
       if (!hasHighValueArchiveSignal(events, watermarkTs, sid)) {
-        return; // no high-value candidate → stay quiet (D6 value-gate)
+        // ISS-20260713-050: value-gate suppress must NOT bare-return. Fall through
+        // to the no-signal path so emitSessionStatus can still surface a human
+        // trust-anchor (when nudge_mode allows). Archive CTA stays suppressed.
+        result = null;
       }
+    }
+
+    if (result === null) {
+      try {
+        emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out);
+      } catch {
+        // status breadcrumb is decorative — never throw
+      }
+      return;
     }
 
     // v2.0.0-rc.37 NEW-16: per-signal dismiss. A chosen signal whose type the

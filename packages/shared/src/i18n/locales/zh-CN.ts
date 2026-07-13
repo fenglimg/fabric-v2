@@ -1115,6 +1115,7 @@ export const zhCNMessages: Messages = {
   // flat-design (G6): 装完最该做的事是重启客户端让 MCP 生效 —— 这才是默认锚点动作;
   // --reapply 维护提示退到 --verbose。
   "cli.install.next-step.restart": "重启已开的 Claude Code / Codex 会话以加载 Fabric(新会话自动生效)。",
+  "cli.install.next-step.nudge-mode": "人可见提示默认 minimal（每会话一条状态）。可在 .fabric/fabric-config.json 设 nudge_mode: \"silent\" 静音，或 FABRIC_NUDGE_MODE=silent；要更吵用 normal/verbose。",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

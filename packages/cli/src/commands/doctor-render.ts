@@ -63,18 +63,16 @@ export function shortHint(hint: string): string {
 }
 
 
-// flat-design status glyph — the SAME ✓ / ○ / ✗ vocabulary as info / store /
-// sync and the install renderer (paint.success/warn/error). Replaces doctor's
-// legacy `[ok]`/`[warn]`/`[error]` bracket labels, which read as machine-log
-// noise and were the one place doctor diverged from every other command's look.
+// ISS-20260713-065: text-role first, optional glyph accent. Under NO_COLOR the
+// role words remain self-describing ([ok]/[warn]/[error]).
 export function renderStatus(status: "ok" | "warn" | "error"): string {
   if (status === "ok") {
-    return paint.success("✓");
+    return paint.success("[ok] ✓");
   }
   if (status === "warn") {
-    return paint.warn("○");
+    return paint.warn("[warn] ○");
   }
-  return paint.error("✗");
+  return paint.error("[error] ✗");
 }
 
 

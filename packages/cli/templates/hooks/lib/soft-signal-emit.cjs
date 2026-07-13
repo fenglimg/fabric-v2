@@ -21,7 +21,7 @@ try {
   nudgePolicy = null;
 }
 
-const SIGNAL_TYPE_ENUM = new Set(["archive", "review", "maintenance", "other"]);
+const SIGNAL_TYPE_ENUM = new Set(["archive", "archive_backlog", "review", "maintenance", "other"]);
 // High-value (knowledge-loss) signals surface at lower nudge_mode volumes.
 const HIGH_VALUE_SIGNALS = new Set(["archive", "archive_backlog"]);
 // ONLY signals allowed to emit a nudge on Stop (C-003 archive family).

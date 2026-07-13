@@ -88,6 +88,8 @@ export class GuidanceStage implements Stage {
             action: translate("cli.install.next-step.restart"),
           }),
         );
+        // ISS-20260713-058: disclose default human-nudge volume after install.
+        footer.push(paint.muted(translate("cli.install.next-step.nudge-mode")));
         // Still surface the "no supported client detected" edge case — it means the
         // install cannot actually reach an AI client.
         if (finalSupports.filter((s) => s.detected).length === 0) {
