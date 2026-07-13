@@ -8,19 +8,19 @@ exports[`doctor reskin render helpers (NO_COLOR) > renders store health as a gro
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the B-横线 header + status badge 1`] = `
-"fabric doctor · /repo ○
+"fabric doctor · /repo [warn] ○
 ----------------------------------------"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the checks section quiet (warn/error only) 1`] = `
 "* Checks
-  ○ Events ledger health: metrics stalled
-  ✗ Lock file: lock is stale"
+  [warn] ○ Events ledger health: metrics stalled
+  [error] ✗ Lock file: lock is stale"
 `;
 
 exports[`doctor reskin render helpers (NO_COLOR) > renders the checks section verbose (includes passing rows) 1`] = `
 "* Checks
-  ✓ Bootstrap anchor: anchor present
-  ○ Events ledger health: metrics stalled
-  ✗ Lock file: lock is stale"
+  [ok] ✓ Bootstrap anchor: anchor present
+  [warn] ○ Events ledger health: metrics stalled
+  [error] ✗ Lock file: lock is stale"
 `;
