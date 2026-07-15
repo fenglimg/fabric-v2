@@ -83,6 +83,9 @@ const { dirname, join } = require("node:path");
 // re-edited within a session and the knowledge graph hasn't changed).
 const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.cjs");
 const { resolveProjectRoot } = require("./lib/project-root.cjs");
+const toolPathExtract = require("./lib/tool-path-extract.cjs");
+const hintNarrowConfig = require("./lib/hint-narrow-config.cjs");
+const hintSummaryFormat = require("./lib/hint-summary-format.cjs");
 // W1-01 (ISS-011): the PreToolUse hook is the highest-frequency, most
 // concurrency-exposed write surface in Fabric. Multi-window edits spawn
 // concurrent hook processes that all append to the SAME non-session-scoped
@@ -132,7 +135,7 @@ function readProjectId(cwd) {
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap mirrors
 // knowledge-hint-broad.cjs — any pathological hang must not stall edits.
-const CLI_TIMEOUT_MS = 2000;
+const CLI_TIMEOUT_MS = 8000; // ISS-20260713-028: after body-less wire, still allow cold cache
 
 // Maximum summary length per entry. Bounds each stderr line so a sloppy
 // pending entry can't blow up terminal width. Truncation appends an ellipsis.
@@ -311,72 +314,11 @@ function extractToolInput(payload) {
  * already parses for transcript digests).
  */
 function extractApplyPatchPaths(toolInput) {
-  if (!toolInput || typeof toolInput !== "object") return [];
-  const candidates = [toolInput.input, toolInput.patch, toolInput.content, toolInput.file_path];
-  const collected = [];
-  const fileDirectiveRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+?)\s*$/gm;
-  for (const c of candidates) {
-    if (typeof c !== "string" || c.length === 0) continue;
-    // Plain path form (rare): treat non-patch strings that look like paths.
-    if (!c.includes("***") && (c.includes("/") || c.endsWith(".ts") || c.endsWith(".js") || c.endsWith(".md"))) {
-      // Only accept when the field is file_path-like and short.
-      if (c.length < 512 && !c.includes("\n")) collected.push(c);
-      continue;
-    }
-    let m;
-    fileDirectiveRe.lastIndex = 0;
-    while ((m = fileDirectiveRe.exec(c)) !== null) {
-      const fp = m[1].trim();
-      if (fp.length > 0) collected.push(fp);
-    }
-  }
-  return collected;
+  return toolPathExtract.extractApplyPatchPaths(toolInput);
 }
 
 function extractPaths(toolInput) {
-  if (!toolInput || typeof toolInput !== "object") return [];
-  const collected = [];
-
-  // Shape 1: scalar file_path
-  if (typeof toolInput.file_path === "string" && toolInput.file_path.length > 0) {
-    collected.push(toolInput.file_path);
-  }
-
-  // Shape 2: array file_paths
-  if (Array.isArray(toolInput.file_paths)) {
-    for (const p of toolInput.file_paths) {
-      if (typeof p === "string" && p.length > 0) collected.push(p);
-    }
-  }
-
-  // Shape 3: MultiEdit edits[] — each entry may carry its own file_path
-  if (Array.isArray(toolInput.edits)) {
-    for (const edit of toolInput.edits) {
-      if (
-        edit &&
-        typeof edit === "object" &&
-        typeof edit.file_path === "string" &&
-        edit.file_path.length > 0
-      ) {
-        collected.push(edit.file_path);
-      }
-    }
-  }
-
-  // ISS-20260711-212: Codex apply_patch path harvest
-  for (const p of extractApplyPatchPaths(toolInput)) {
-    collected.push(p);
-  }
-
-  // Dedupe preserving first-occurrence order.
-  const seen = new Set();
-  const out = [];
-  for (const p of collected) {
-    if (seen.has(p)) continue;
-    seen.add(p);
-    out.push(p);
-  }
-  return out;
+  return toolPathExtract.extractPaths(toolInput);
 }
 
 // -----------------------------------------------------------------------------
@@ -826,16 +768,7 @@ function mergeUnique(existing, incoming) {
  * possibly-empty array; the caller treats empty as "nothing to hint".
  */
 function toProjectRelativePaths(cwd, paths) {
-  if (!Array.isArray(paths)) return [];
-  const { isAbsolute: pathIsAbsolute, relative: pathRelative } = require("node:path");
-  return paths
-    .filter((p) => typeof p === "string" && p.length > 0)
-    .map((p) => {
-      const rel = pathIsAbsolute(p) ? pathRelative(cwd, p) : p;
-      return rel.startsWith("..") ? null : rel;
-    })
-    .filter((p) => typeof p === "string" && p.length > 0)
-    .map((p) => p.split(/[\\/]/).join("/"));
+  return toolPathExtract.toProjectRelativePaths(cwd, paths);
 }
 
 /**
@@ -1014,46 +947,19 @@ async function writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPaylo
 // -----------------------------------------------------------------------------
 
 function _readNarrowConfigValue(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return null;
-  try {
-    return JSON.parse(readFileSync(configPath, "utf8"));
-  } catch {
-    return null;
-  }
+  return hintNarrowConfig._readNarrowConfigValue(projectRoot);
 }
 
 function readNarrowTopK(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_narrow_top_k;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 20) {
-      return Math.floor(v);
-    }
-  }
-  return DEFAULT_HINT_NARROW_TOP_K;
+  return hintNarrowConfig.readNarrowTopK(projectRoot);
 }
 
 function readNarrowDedupWindowTurns(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_narrow_dedup_window_turns;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 50) {
-      return Math.floor(v);
-    }
-  }
-  return DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS;
+  return hintNarrowConfig.readNarrowDedupWindowTurns(projectRoot);
 }
 
 function readNarrowCooldownHours(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_narrow_cooldown_hours;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 168) {
-      return v;
-    }
-  }
-  return DEFAULT_HINT_NARROW_COOLDOWN_HOURS;
+  return hintNarrowConfig.readNarrowCooldownHours(projectRoot);
 }
 
 // TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): the narrow per-edit
@@ -1063,20 +969,11 @@ function readNarrowCooldownHours(projectRoot) {
 // the Stop / SessionStart surfaces. Default OFF (empty list) keeps narrow ON
 // (impact-bearing, C-004). Any read/parse failure → not dismissed (never-block).
 function readNarrowDismissed(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object" && Array.isArray(parsed.hint_dismiss_signals)) {
-    return parsed.hint_dismiss_signals.includes("narrow");
-  }
-  return false;
+  return hintNarrowConfig.readNarrowDismissed(projectRoot);
 }
 
 function readReminderToContext(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_reminder_to_context;
-    if (typeof v === "boolean") return v;
-  }
-  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+  return hintNarrowConfig.readReminderToContext(projectRoot);
 }
 
 function readNarrowLastEmit(projectRoot) {
@@ -1277,48 +1174,15 @@ function applyNarrowDedupWindow(state, narrow, targetPaths, windowTurns, current
 
 // v2.0.0-rc.33 W4-A3: maxLen sourced from fabric-config#hint_summary_max_len.
 function truncateSummary(raw, maxLen) {
-  const s = typeof raw === "string" ? raw : "";
-  const flat = s.replace(/\s+/g, " ").trim();
-  const cap = typeof maxLen === "number" && maxLen > 0 ? maxLen : DEFAULT_SUMMARY_MAX_LEN;
-  if (flat.length <= cap) return flat;
-  return `${flat.slice(0, cap - 1)}…`;
+  return hintSummaryFormat.truncateSummary(raw, maxLen);
 }
 
 function formatEntryLine(entry, maxLen) {
-  const id = entry.id || "(no-id)";
-  const type = entry.type || "unknown";
-  const maturity = entry.maturity || "unknown";
-  const summary = truncateSummary(entry.summary, maxLen);
-  const tail = summary.length > 0 ? ` ${summary}` : "";
-  // lifecycle-refactor W3-T2 (§7 图谱消费 / §5 hook 沿 related 二阶召回): mark entries
-  // pulled in by a surfaced entry's one-hop `related` graph edge with their source
-  // provenance. Omitted for ordinarily-ranked entries — no fake graph annotation
-  // is ever synthesized (graph-empty honesty).
-  const provenance =
-    typeof entry.related_to === "string" && entry.related_to.length > 0
-      ? ` (related-to-${entry.related_to})`
-      : "";
-  const head = `  [${id}] (${type}/${maturity})${tail}${provenance}`;
-  // TASK-003 (impact-map MVP): when the entry declares a non-empty impact list,
-  // append a ⚠️ consequence line right after the entry (rendered as a separate
-  // stderr line — the caller joins the returned string on "\n"). Omitted for
-  // entries with no/empty impact so the existing narrow-hint format is unchanged.
-  const impact =
-    Array.isArray(entry.impact) && entry.impact.length > 0
-      ? `\n      ⚠️ 后果: ${entry.impact.filter((s) => typeof s === "string" && s.length > 0).join(" | ")}`
-      : "";
-  return `${head}${impact}`;
+  return hintSummaryFormat.formatEntryLine(entry, maxLen);
 }
 
 function readSummaryMaxLen(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_summary_max_len;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
-      return Math.floor(v);
-    }
-  }
-  return DEFAULT_SUMMARY_MAX_LEN;
+  return hintNarrowConfig.readSummaryMaxLen(projectRoot);
 }
 
 /**

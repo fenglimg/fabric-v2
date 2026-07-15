@@ -39,11 +39,13 @@ export type StoreDiagnosticCode =
   | "knowledge_consumption_heatmap"
   // BORROW-005: entries never consumed in the window (warn, GATED on data maturity).
   | "knowledge_consumption_zero"
-  // M-first-value-loop readiness: empty store / no bind / no write target.
+  // M-first-value-loop readiness: empty store / no bind / no write target / hooks.
   | "first_hit_unbound"
   | "first_hit_no_write_target"
   | "first_hit_empty_store"
   | "first_hit_no_match"
+  | "first_hit_hooks_missing"
+  | "first_hit_project_unsealed"
   | "first_hit_ok"
   // D3 multi-store (first-hit fail codes mirrored for doctor surface)
   | "write_target_mismatch"
@@ -172,11 +174,26 @@ export function storeDoctorChecks(
         message: t("doctor.store.empty", { stores }),
       });
     } else if (hit.code === "hooks_missing") {
+      // ISS-20260713-061: code must match meaning (was first_hit_unbound + hooks-missing msg).
       diagnostics.push({
-        code: "first_hit_unbound",
+        code: "first_hit_hooks_missing",
         severity: "warn",
         ref: hit.write_target ?? undefined,
         message: t("doctor.store.hooks-missing"),
+      });
+    } else if (hit.code === "unbound" || hit.code === "no_write_target") {
+      diagnostics.push({
+        code: hit.code === "unbound" ? "first_hit_unbound" : "first_hit_no_write_target",
+        severity: "warn",
+        ref: hit.write_target ?? hit.bound_stores[0]?.alias,
+        message: hit.message,
+      });
+    } else if (hit.code === "no_match" || hit.code === "project_unsealed") {
+      diagnostics.push({
+        code: hit.code === "no_match" ? "first_hit_no_match" : "first_hit_project_unsealed",
+        severity: "warn",
+        ref: hit.write_target ?? undefined,
+        message: hit.message,
       });
     } else if (hit.code === "write_target_mismatch") {
       diagnostics.push({

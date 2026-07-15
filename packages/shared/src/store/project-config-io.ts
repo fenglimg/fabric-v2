@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { fabricConfigLoadSchema, fabricConfigSchema } from "../schemas/fabric-config.js";
@@ -45,5 +45,19 @@ export function loadProjectConfig(projectRoot: string): FabricConfig | null {
 export function saveProjectConfig(config: FabricConfig, projectRoot: string): void {
   const validated = fabricConfigSchema.parse(config);
   mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
-  writeFileSync(projectConfigPath(projectRoot), `${JSON.stringify(validated, null, 2)}\n`, "utf8");
+  // ISS-20260713-025: atomic tmp+rename (parity with saveGlobalConfigAsync).
+  const target = projectConfigPath(projectRoot);
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  const body = `${JSON.stringify(validated, null, 2)}\n`;
+  try {
+    writeFileSync(tmp, body, "utf8");
+    renameSync(tmp, target);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
 }

@@ -63,18 +63,16 @@ export function shortHint(hint: string): string {
 }
 
 
-// flat-design status glyph — the SAME ✓ / ○ / ✗ vocabulary as info / store /
-// sync and the install renderer (paint.success/warn/error). Replaces doctor's
-// legacy `[ok]`/`[warn]`/`[error]` bracket labels, which read as machine-log
-// noise and were the one place doctor diverged from every other command's look.
+// ISS-20260713-065: text-role first, optional glyph accent. Under NO_COLOR the
+// role words remain self-describing ([ok]/[warn]/[error]).
 export function renderStatus(status: "ok" | "warn" | "error"): string {
   if (status === "ok") {
-    return paint.success("✓");
+    return paint.success("[ok] ✓");
   }
   if (status === "warn") {
-    return paint.warn("○");
+    return paint.warn("[warn] ○");
   }
-  return paint.error("✗");
+  return paint.error("[error] ✗");
 }
 
 
@@ -146,7 +144,8 @@ export function renderDoctorChecks(report: DoctorReport, verbose: boolean): stri
     // problem appears exactly once (no check-list ⊕ issue-list double-print the
     // user flagged). KT-GLD-0008: aggregate, never re-read.
     if (verbose && check.status !== "ok" && check.actionHint !== undefined && check.actionHint.length > 0) {
-      rows.push(`    ${paint.muted(`→ ${check.actionHint}`)}`);
+      // ASCII "-> " matches lib/error-render.ts GBK-safe convention (ISS-20260530-039).
+      rows.push(`    ${paint.muted(`-> ${check.actionHint}`)}`);
     }
   }
   // MCP payload thresholds: a one-line config FYI, not a pass/fail check. It used
@@ -250,7 +249,8 @@ export function renderActionableDigest(report: DoctorReport, dt: DoctorTranslato
   for (const { issue, mark } of userFacing) {
     writeStdout(`  ${mark} ${issue.name}`);
     if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
-      writeStdout(`    ${paint.muted(`→ ${shortHint(issue.actionHint)}`)}`);
+      // ASCII "-> " matches lib/error-render.ts GBK-safe convention (ISS-20260530-039).
+      writeStdout(`    ${paint.muted(`-> ${shortHint(issue.actionHint)}`)}`);
     }
   }
   writeStdout("");

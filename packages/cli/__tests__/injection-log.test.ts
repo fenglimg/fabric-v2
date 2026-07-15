@@ -92,7 +92,11 @@ describe("logInjection (HK3 injection telemetry)", () => {
     const root = tmp();
     logInjection(root, { surface: "broad", stableIds: ["a"], ts: 1 });
     const lockPath = join(root, ".fabric", "injections.jsonl.lock");
-    writeFileSync(lockPath, "");
+    // ISS-20260713-006: a real crashed holder leaves its ownership token stamped
+    // in the lock file (written immediately after openSync). Reclaim is token-aware:
+    // only a non-empty stale stamp is stolen — an empty file is treated as a
+    // mid-race and refused. Simulate the realistic crashed-holder state.
+    writeFileSync(lockPath, "99999.1700000000000.deadbeef");
     const oldSec = Date.now() / 1000 - 3600; // 1h ago — well past STALE_LOCK_MS
     utimesSync(lockPath, oldSec, oldSec);
     logInjection(root, { surface: "broad", stableIds: ["b"], ts: 2 }); // stale → reclaimed + written

@@ -85,6 +85,11 @@ type HookModule = {
   // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
   isImportInFlight: (projectRoot: string, now?: Date) => boolean;
   // crack 1 + 2: two-lane archive strategy helpers.
+  hasHighValueArchiveSignal: (
+    events: Array<Record<string, unknown>>,
+    watermarkTs: number | null,
+    sessionId: string,
+  ) => boolean;
   sessionArchiveWatermark: (
     events: Array<Record<string, unknown>>,
     sessionId: string,
@@ -456,6 +461,21 @@ describe("fabric-hint.cjs — two-lane archive helpers (crack 1 + 2)", () => {
   it("sessionAnchorTs falls back to first activity when never archived", () => {
     const events = [hv("A", 1000), mut("A", 2000), mut("A", 3000)];
     expect(hook.sessionAnchorTs(events, "A")).toBe(1000);
+  });
+
+  // ISS-20260713-043: archive value-gate must use sessionArchiveWatermark (null
+  // → 0), not sessionAnchorTs (first-activity). A never-archived session whose
+  // first event is already high-value would be swallowed by strict `> anchor`.
+  it("hasHighValueArchiveSignal keeps first high-value event when watermark is null (never archived)", () => {
+    const events = [hv("A", 1000), mut("A", 2000)];
+    // watermark null (never archived) → treated as 0 → first hv counts
+    expect(hook.hasHighValueArchiveSignal(events, null, "A")).toBe(true);
+    // wrong anchor (first activity) would exclude the first hv (strict >)
+    const wrongAnchor = hook.sessionAnchorTs(events, "A");
+    expect(wrongAnchor).toBe(1000);
+    expect(hook.hasHighValueArchiveSignal(events, wrongAnchor, "A")).toBe(false);
+    // sessionArchiveWatermark stays null for never-archived
+    expect(hook.sessionArchiveWatermark(events, "A")).toBeNull();
   });
 
   it("countSessionMutationsSince counts only this session's file_mutated past the anchor", () => {
@@ -1739,7 +1759,7 @@ describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
     expect(result?.signal).toBe("maintenance");
     expect(result?.recommended_skill).toBeNull();
     expect(result?.reason).toMatch(/已 14 天未跑 lint/);
-    expect(result?.reason).toMatch(/fabric doctor --lint/);
+    expect(result?.reason).toMatch(/fabric doctor/);
   });
 
   it("fires when no doctor_run event has ever been recorded AND canonical_count >= 5", () => {
@@ -2315,7 +2335,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(result).not.toBeNull();
     expect(result?.reason).toMatch(/📋 Fabric:/);
     expect(result?.reason).toMatch(/从未运行 lint 检查/);
-    expect(result?.reason).toMatch(/fabric doctor --lint/);
+    expect(result?.reason).toMatch(/fabric doctor/);
     expect(result?.reason).toMatch(/是否调/);
   });
 

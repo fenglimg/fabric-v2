@@ -230,6 +230,8 @@ describe("D3 multi-store first-hit codes", () => {
       join(root, ".fabric", "fabric-config.json"),
       JSON.stringify({
         version: 1,
+        project_id: "demo",
+        active_project: "demo",
         active_write_store: "team",
         required_stores: [{ id: "team" }],
       }),

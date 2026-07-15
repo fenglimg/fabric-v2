@@ -60,6 +60,7 @@ const { isAbsolute, join, relative } = require("node:path");
 // Codex stderr). The installer copies every lib/*.cjs alongside the hook.
 const { readConfigNumber } = require("./lib/config-cache.cjs");
 const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
+const eventReader = require("./lib/event-reader.cjs");
 const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
 const EVENTS_LEDGER_REL = join(".fabric", "events.jsonl");
@@ -354,21 +355,9 @@ function pathsOverlap(recallPaths, editPaths, projectRoot) {
  * corrupt ledger yields []. Lines that fail JSON.parse are skipped.
  */
 function readEventsLedger(cwd) {
+  // ISS-20260713-032/008: shared tail reader (no full-file load).
   try {
-    const raw = readFileSync(join(cwd, EVENTS_LEDGER_REL), "utf8");
-    if (raw.length === 0) return [];
-    const out = [];
-    for (const line of raw.split("\n")) {
-      const t = line.trim();
-      if (t.length === 0) continue;
-      try {
-        const obj = JSON.parse(t);
-        if (obj && typeof obj === "object" && typeof obj.ts === "number") out.push(obj);
-      } catch {
-        // skip malformed line
-      }
-    }
-    return out;
+    return eventReader.readRecentEvents(cwd);
   } catch {
     return [];
   }

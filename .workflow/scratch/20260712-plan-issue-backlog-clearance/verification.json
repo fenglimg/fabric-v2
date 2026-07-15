@@ -1,0 +1,13 @@
+{
+  "plan_id": "PLN-20260712-issue-backlog-clearance",
+  "verified_at": "2026-07-12T14:27:41.441718+00:00",
+  "waves": {
+    "1_close_A": {"status": "passed", "closed": ["ISS-20260712-001","ISS-20260712-002","ISS-20260712-004"], "evidence": "a8a941a7 active-session+multi-line KB; 99077998 doctor --probe snapshot"},
+    "2_B_ux": {"status": "passed", "closed": ["ISS-20260712-003","ISS-20260712-005","ISS-20260712-006","ISS-20260712-007"], "evidence": "docs/UPGRADE.md monorepo+reinstall guidance; i18n audit cite hints for session_id+path-overlap"},
+    "3_bulk_C": {"status": "passed", "closed_count": 112, "note": "duplicates/stale/low/quarantine closed with per-issue resolution"},
+    "4_defer_D": {"status": "passed", "closed": ["ISS-20260530-018","ISS-20260531-003","ISS-20260531-037"], "resolution": "wontfix_this_milestone doctor god-file"}
+  },
+  "open_remaining": 13,
+  "open_start": 135,
+  "closed_total": 122
+}

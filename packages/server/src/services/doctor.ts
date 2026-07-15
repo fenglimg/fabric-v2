@@ -47,6 +47,7 @@ import type {
   EnrichDescriptionsReport,
 } from "./doctor-types.js";
 import { normalizePath, normalizeTarget, isValidJsonLine, createFixMessage } from "./doctor-path.js";
+import { synthesizeMustReadIfStub, yamlQuoteIfNeeded } from "./doctor-frontmatter-helpers.js";
 import {
   DEFAULT_UNDERSEED_NODE_THRESHOLD,
   MS_PER_DAY,
@@ -599,6 +600,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const projectRoot = normalizeTarget(target);
   const before = await runDoctorReport(projectRoot);
   const fixed: DoctorIssue[] = [];
+  const failed: DoctorIssue[] = [];
   const ledgerWarnings: DoctorIssue[] = [];
 
   // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 drift fix MUST run before
@@ -797,28 +799,41 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     const lockInspection = inspectStaleServeLock(projectRoot, Date.now());
     if (lockInspection.present && !lockInspection.pidAlive) {
       const lockFilePath = join(projectRoot, ".fabric", ".serve.lock");
+      // ENOENT after inspect = race-cleared → still count as fixed.
+      // Non-ENOENT (e.g. EACCES) must NOT abort the rest of --fix (ISS-20260531-031).
+      let unlinkOk = true;
       try {
         await unlink(lockFilePath);
       } catch (err: unknown) {
-        // ENOENT is fine — lock disappeared between inspect and unlink (race
-        // with another doctor run). Any other error propagates.
         const errno = err as NodeJS.ErrnoException;
-        if (errno.code !== "ENOENT") throw err;
+        if (errno.code !== "ENOENT") {
+          unlinkOk = false;
+          failed.push({
+            code: "stale_serve_lock",
+            name: "Serve lock",
+            message: `Could not remove stale .fabric/.serve.lock (${errno.code ?? "error"}): ${errno.message}`,
+            path: ".fabric/.serve.lock",
+            actionHint:
+              "Remove .fabric/.serve.lock manually (permission denied or other FS error). Other --fix repairs still applied.",
+          });
+        }
       }
-      await appendEventLedgerEvent(projectRoot, {
-        event_type: "serve_lock_cleared",
-        pid: lockInspection.pid,
-        age_ms: lockInspection.ageMs,
-        timestamp: new Date().toISOString(),
-      }).catch((error) => {
-        ledgerWarnings.push(createLedgerAppendWarning("stale serve lock cleanup", error));
-      });
-      fixed.push({
-        code: "stale_serve_lock",
-        name: "Serve lock",
-        message: `Removed stale .fabric/.serve.lock (dead PID ${lockInspection.pid}).`,
-        path: ".fabric/.serve.lock",
-      });
+      if (unlinkOk) {
+        await appendEventLedgerEvent(projectRoot, {
+          event_type: "serve_lock_cleared",
+          pid: lockInspection.pid,
+          age_ms: lockInspection.ageMs,
+          timestamp: new Date().toISOString(),
+        }).catch((error) => {
+          ledgerWarnings.push(createLedgerAppendWarning("stale serve lock cleanup", error));
+        });
+        fixed.push({
+          code: "stale_serve_lock",
+          name: "Serve lock",
+          message: `Removed stale .fabric/.serve.lock (dead PID ${lockInspection.pid}).`,
+          path: ".fabric/.serve.lock",
+        });
+      }
     }
   }
 
@@ -844,9 +859,9 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const report = appendDoctorWarnings(await runDoctorReport(projectRoot), ledgerWarnings);
 
   return {
-    changed: fixed.length > 0,
+    changed: fixed.length > 0 || failed.length > 0,
     fixed,
-    remaining_manual_errors: report.manual_errors,
+    remaining_manual_errors: [...report.manual_errors, ...failed],
     warnings: report.warnings,
     message: createFixMessage(fixed, report),
     report,
@@ -1894,46 +1909,13 @@ export async function enrichDescriptions(
 // the first H1 heading (`# Title`), falling back to a humanized form of the
 // canonical filename slug. The result is trimmed and clamped to 120 chars to
 // match the field's documented per-item budget (see api-contracts.ts).
-function synthesizeMustReadIfStub(source: string, filename: string): string {
-  const h1Match = /^#\s+(.+?)\s*$/mu.exec(source);
-  let raw = h1Match !== null ? h1Match[1] : filename.replace(/^K[PT]-[A-Z]+-\d+--/, "").replace(/\.md$/u, "").replace(/-/g, " ");
-  raw = raw.trim();
-  if (raw.length === 0) {
-    raw = "describes a knowledge invariant for this project";
-  }
-  if (raw.length > 120) {
-    raw = `${raw.slice(0, 117)}...`;
-  }
-  return raw;
-}
+
 
 // YAML flow scalar quoting. Mirrors the extract-knowledge `quoteRelevancePath`
 // rule: if the string contains characters that would confuse the line-based
 // parser (colon, `#`, leading `-`, leading `?`, brackets, quotes), wrap in
 // double quotes and escape embedded quotes/backslashes. Otherwise emit bare.
-function yamlQuoteIfNeeded(value: string): string {
-  if (value.length === 0) {
-    return '""';
-  }
-  // ISS-001: also force-quote on ANY control char (newline/CR/tab). An internal
-  // newline with no other special char would otherwise emit bare and break the
-  // single-line frontmatter structure (injection surface). When quoting, escape
-  // backslash first, then quote, then collapse control chars to YAML escapes.
-  if (
-    /[:#"'\\[\]{},&*!|>%@`]/.test(value) ||
-    /^[\s-?]/.test(value) ||
-    /\s$/.test(value) ||
-    /[\n\r\t]/.test(value)
-  ) {
-    return `"${value
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, "\\n")
-      .replace(/\r/g, "\\r")
-      .replace(/\t/g, "\\t")}"`;
-  }
-  return value;
-}
+
 
 export { getEventLedgerPath };
 

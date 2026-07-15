@@ -238,11 +238,25 @@ describe("fabric-hint.cjs — session-digest integration", () => {
     ) => void;
   };
 
+  let prevTranscriptRoots: string | undefined;
+
   beforeEach(() => {
     tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-digest-"));
+    // ISS-20260713-041 transcript sandbox: summarizeTranscript only reads paths
+    // under an allowed root (default ~/.claude/projects | ~/.codex). The test
+    // seam (NODE_ENV=test, set by vitest) lets us allowlist the temp fixture dir
+    // via FABRIC_TRANSCRIPT_ROOTS — without it the transcript is rejected and
+    // the digest comes out empty. Mirrors summarize-transcript.test.ts.
+    prevTranscriptRoots = process.env.FABRIC_TRANSCRIPT_ROOTS;
+    process.env.FABRIC_TRANSCRIPT_ROOTS = tempRoot;
   });
 
   afterEach(() => {
+    if (prevTranscriptRoots === undefined) {
+      delete process.env.FABRIC_TRANSCRIPT_ROOTS;
+    } else {
+      process.env.FABRIC_TRANSCRIPT_ROOTS = prevTranscriptRoots;
+    }
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {

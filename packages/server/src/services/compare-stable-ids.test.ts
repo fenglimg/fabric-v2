@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { compareStableIds } from "./plan-context.js";
+import { compareStableIds, relatedLookupKeys } from "./plan-context.js";
+import { relatedLookupKeys as relatedLookupKeysFromIds } from "./plan-context-ids.js";
 
 // W4-07 (ISS-029): stable_id ordering must be numeric-aware in the counter
 // suffix so a 5-digit counter sorts AFTER 9999, not before. Plain
@@ -24,5 +25,26 @@ describe("compareStableIds (ISS-029 counter-width overflow)", () => {
     expect(sorted[0]).toBe("KP-DEC-9999"); // KP < KT
     expect(sorted[1]).toBe("KT-DEC-0001"); // DEC < PIT within KT
     expect(sorted[2]).toBe("KT-PIT-0001");
+  });
+});
+
+// ISS-20260713-042: relatedLookupKeys SSOT in plan-context-ids; facade re-exports.
+describe("relatedLookupKeys SSOT (ISS-042)", () => {
+  it("returns [qualified, bare] for store-qualified ids", () => {
+    expect(relatedLookupKeysFromIds("team:KT-DEC-0001")).toEqual([
+      "team:KT-DEC-0001",
+      "KT-DEC-0001",
+    ]);
+  });
+
+  it("returns [id] for bare ids", () => {
+    expect(relatedLookupKeysFromIds("KT-DEC-0001")).toEqual(["KT-DEC-0001"]);
+  });
+
+  it("facade re-export matches plan-context-ids SSOT", () => {
+    const samples = ["team:KT-DEC-0001", "KT-PIT-0042", "personal:KP-DEC-0003"];
+    for (const id of samples) {
+      expect(relatedLookupKeys(id)).toEqual(relatedLookupKeysFromIds(id));
+    }
   });
 });

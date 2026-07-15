@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { log } from "@clack/prompts";
 import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
+import { appendEventLedgerEvent } from "@fenglimg/fabric-server";
 import { defineCommand } from "citty";
 // v2.0.0-rc.37 Wave A2: serve-lock preflight import removed. With `fabric serve`
 // quarantined to packages/server-http-experimental/, no main-line process
@@ -712,7 +713,13 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
         drifted.push(entry.path);
       }
     }
-    appendInstallDiffLedgerEvent(plan.eventsPath, { applied, canonical, drifted });
+    // ISS-20260713-018: route through appendEventLedgerEvent (withFileLock +
+    // redaction) instead of bare appendFileSync on the same events.jsonl.
+    await appendInstallDiffLedgerEvent(plan.target, {
+      applied,
+      canonical,
+      drifted,
+    });
   }
 
   return {
@@ -1018,28 +1025,23 @@ function assertExistingDirectory(target: string): void {
 /**
  * rc.15 (formerly rc.14 TASK-002) — emit `install_diff_applied` per install run.
  *
- * The payload's three buckets cover the full scaffold-stage diff classification
- * (every scaffold path lands in exactly one). Doctor / forensic tooling can
- * read these events to surface idempotent re-runs vs. apply-missing-pieces
- * runs without re-running the classifier. The legacy `reapply_completed`
- * event type was retired in rc.15 along with --reapply itself.
+ * ISS-20260713-018: use the shared locked/redacting ledger writer. Fire-and-
+ * forget (void) so scaffold stays sync-friendly; failures are best-effort.
  */
-function appendInstallDiffLedgerEvent(
-  eventsPath: string,
+async function appendInstallDiffLedgerEvent(
+  projectRoot: string,
   payload: { applied: string[]; canonical: string[]; drifted: string[] },
-): void {
-  const event = {
-    kind: "fabric-event",
-    id: `event:${randomUUID()}`,
-    ts: Date.now(),
-    schema_version: 1,
-    event_type: "install_diff_applied",
-    applied: payload.applied,
-    canonical: payload.canonical,
-    drifted: payload.drifted,
-  };
-  const line = `${JSON.stringify(event)}\n`;
-  appendFileSync(eventsPath, line, "utf8");
+): Promise<void> {
+  try {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "install_diff_applied",
+      applied: payload.applied,
+      canonical: payload.canonical,
+      drifted: payload.drifted,
+    });
+  } catch {
+    // best-effort observability — install must not fail on ledger write
+  }
 }
 
 async function runBestEffort(

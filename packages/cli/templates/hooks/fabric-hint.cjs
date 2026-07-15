@@ -13,6 +13,49 @@ const { appendLockedLine } = require("./lib/injection-log.cjs");
 const { appendEvent } = require("./lib/event-writer.cjs");
 const { resolveProjectRoot } = require("./lib/project-root.cjs");
 
+// ISS-20260713-020: concern modules extracted from this monolith
+const pendingStatsLib = require("./lib/pending-stats.cjs");
+const importStateLib = require("./lib/import-state.cjs");
+const ledgerScan = require("./lib/ledger-scan.cjs");
+const { summarizeTranscript } = require("./lib/transcript-summary.cjs");
+
+// ISS-20260713-040: further concern modules
+const hintConfig = require("./lib/hint-config.cjs");
+const sessionSignalState = require("./lib/session-signal-state.cjs");
+const assistantTurnEmit = require("./lib/assistant-turn-emit.cjs");
+const signalDecide = require("./lib/signal-decide.cjs");
+// residual thin-orchestrator extracts (main / emitSoft / maintenance / graph-edge)
+const maintenanceSignal = require("./lib/maintenance-signal.cjs");
+const graphEdgeEmit = require("./lib/graph-edge-emit.cjs");
+const softSignalEmit = require("./lib/soft-signal-emit.cjs");
+const hintThresholds = require("./lib/hint-thresholds.cjs");
+const stopStdin = require("./lib/stop-stdin.cjs");
+const sessionStatusEmit = require("./lib/session-status-emit.cjs");
+
+const readWorkspaceBindingId = pendingStatsLib.readWorkspaceBindingId;
+const readSnapshotKnowledgeStats = pendingStatsLib.readSnapshotKnowledgeStats;
+const readLegacyPendingStats = pendingStatsLib.readLegacyPendingStats;
+const readPendingStats = pendingStatsLib.readPendingStats;
+const countCanonicalNodes = pendingStatsLib.countCanonicalNodes;
+// pending constants still defined below for CONSTANTS export compatibility when present
+const isImportInFlight = importStateLib.isImportInFlight;
+const IMPORT_STATE_FILE_REL = importStateLib.IMPORT_STATE_FILE_REL;
+const IMPORT_IN_FLIGHT_MAX_AGE_HOURS = importStateLib.IMPORT_IN_FLIGHT_MAX_AGE_HOURS;
+const readLedger = ledgerScan.readLedger;
+const hasHighValueArchiveSignal = ledgerScan.hasHighValueArchiveSignal;
+const sessionArchiveWatermark = ledgerScan.sessionArchiveWatermark;
+const sessionFirstActivityTs = ledgerScan.sessionFirstActivityTs;
+const sessionAnchorTs = ledgerScan.sessionAnchorTs;
+const countSessionMutationsSince = ledgerScan.countSessionMutationsSince;
+const countBacklogSessions = ledgerScan.countBacklogSessions;
+const tallySessionActivity = ledgerScan.tallySessionActivity;
+const countEditsSince = ledgerScan.countEditsSince;
+const getTopEditedDirectories = ledgerScan.getTopEditedDirectories;
+const EDIT_COUNTER_FILE_REL = ledgerScan.EDIT_COUNTER_FILE_REL;
+const ARCHIVE_BACKLOG_ANTI_LOOP_HOURS = ledgerScan.ARCHIVE_BACKLOG_ANTI_LOOP_HOURS;
+const DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT = ledgerScan.DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT;
+const DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS = ledgerScan.DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS;
+
 // v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
 // on failure — see contract in lib/session-digest-writer.cjs).
 let sessionDigestWriter = null;
@@ -96,235 +139,39 @@ try {
 } catch {
   bindingsSnapshotReader = null;
 }
-
-// Read the workspace binding id (snapshot key) from project config. Standard
-// repos default to project_id; worktrees can set workspace_binding_id to isolate
-// hook/runtime state without changing project identity.
-function readWorkspaceBindingId(cwd) {
-  try {
-    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
-    if (typeof parsed.workspace_binding_id === "string") return parsed.workspace_binding_id;
-    return typeof parsed.project_id === "string" ? parsed.project_id : null;
-  } catch {
-    return null;
-  }
-}
-
-function readSnapshotKnowledgeStats(projectRoot, now) {
-  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const empty = { pendingCount: 0, oldestPendingAgeMs: null, canonicalCount: 0 };
-  if (bindingsSnapshotReader === null) {
-    return null;
-  }
-  const bindingId = readWorkspaceBindingId(projectRoot);
-  if (bindingId === null) {
-    return null;
-  }
-  try {
-    const snapshot = bindingsSnapshotReader.readBindingsSnapshot(bindingId);
-    // No snapshot file → empty corpus (KT-DEC-0007), preserving prior behavior.
-    if (!snapshot) {
-      return empty;
-    }
-    // LIVE recount off the snapshot's resolved store dirs. The cached
-    // knowledge_stats projection is frozen at snapshot-write time, so once the
-    // pending queue is reviewed (or store content syncs out-of-band) it goes
-    // stale — that is the phantom review-backlog this hook used to report
-    // (KT-PIT-0017). The authoritative count is the live *.md walk under the
-    // resolved store dirs.
-    const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
-    // #3: a snapshot predating knowledge_store_dirs makes liveKnowledgeStats
-    // return null — counts are undeterminable and the cached projection is
-    // unreliable. Return `undefined` (a marker distinct from the `null` that
-    // lib/binding-absent returns, which readPendingStats uses as its legacy-
-    // fallback signal) so countCanonicalNodes maps it to "unknown" and the
-    // underseed signal SKIPS rather than false-firing on a stale corpus (snapshot
-    // self-heals on the next install/sync). Distinguished from the missing-
-    // snapshot case above, which stays `empty` (genuine fresh-project zero).
-    if (live === null) {
-      return undefined;
-    }
-    const pendingCount =
-      Number.isFinite(live.pendingCount) && live.pendingCount > 0 ? Math.floor(live.pendingCount) : 0;
-    const canonicalCount =
-      Number.isFinite(live.canonicalCount) && live.canonicalCount > 0
-        ? Math.floor(live.canonicalCount)
-        : 0;
-    const oldestPendingAgeMs =
-      pendingCount > 0 &&
-      Number.isFinite(live.oldestPendingMtimeMs) &&
-      live.oldestPendingMtimeMs > 0
-        ? Math.max(0, nowMs - live.oldestPendingMtimeMs)
-        : null;
-    return { pendingCount, oldestPendingAgeMs, canonicalCount };
-  } catch {
-    return empty;
-  }
-}
-
-function readLegacyPendingStats(projectRoot, now) {
-  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const baseDir = join(projectRoot, FABRIC_DIR, PENDING_DIR);
-
-  let count = 0;
-  let oldestMtime = null;
-
-  if (!existsSync(baseDir)) {
-    return { count: 0, oldestAgeMs: null };
-  }
-
-  for (const type of PENDING_TYPES) {
-    const typeDir = join(baseDir, type);
-    if (!existsSync(typeDir)) continue;
-
-    let entries;
-    try {
-      entries = readdirSync(typeDir);
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.endsWith(".md")) continue;
-      const filePath = join(typeDir, entry);
-      let mtime;
-      try {
-        mtime = statSync(filePath).mtimeMs;
-      } catch {
-        continue;
-      }
-      count += 1;
-      if (oldestMtime === null || mtime < oldestMtime) {
-        oldestMtime = mtime;
-      }
-    }
-  }
-
-  return {
-    count,
-    oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
-  };
-}
-
-// CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
-// DRY violation accepted: this hook script runs in user repos WITHOUT
-// node_modules access, so it cannot import from @fenglimg/fabric-server.
-const FABRIC_DIR = ".fabric";
+// CONSTANTS — SSOT for thresholds/defaults lives in lib/hint-config.cjs.
+// Facade re-exports for CONSTANTS surface + main() local names (tests depend on
+// hook.CONSTANTS.*). Event-type / ledger file names that are unique to this
+// orchestrator's I/O stay local.
+const FABRIC_DIR = hintConfig.FABRIC_DIR;
 const EVENT_LEDGER_FILE = "events.jsonl";
-// v2.0.0-rc.39 (P1 emit-fold): high-frequency empty-shell assistant_turn_observed
-// turns (kb_line_raw=null AND no cite_ids AND no cite_commitments) carry zero
-// cite-audit signal, so emitting one events.jsonl line each is pure bloat. They
-// are folded at the emit source into a single per-Stop metrics.jsonl counter row
-// `{ counters: { assistant_turn_observed[:<client>]: N } }`. The cite-coverage /
-// emit-cadence readers add this counter back into total_turns so the metric is
-// byte-for-byte invariant (the fold preserves count semantics, incl. the legacy
-// per-Stop re-emission, exactly). Mirrors packages/server/src/services/metrics.ts
-// row shape; written directly (the .cjs hook cannot import the TS service).
+// v2.0.0-rc.39 (P1 emit-fold): empty-shell assistant_turn_observed fold target.
 const METRICS_LEDGER_FILE = "metrics.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
-
-// G3 (ralph-v2-20260709 / GRL-STOPHOOK-AIONLY-20260709): archive high-value
-// predicate now sourced from the shared SST twin. The .cjs mirror at
-// lib/high-value-predicate.cjs is byte-parity with
-// packages/shared/src/high-value-predicate.ts (the canonical); server MCP
-// (archive-scan.ts) imports the TS canon. Round-trip parity locked by
-// packages/server/src/services/high-value-sst.test.ts. This eliminates the
-// crack-2 26→1 virtual-alarm drift (two independent implementations).
-//
-// hasHighValueArchiveSignal is kept as a thin wrapper to preserve the two
-// existing call sites' legacy arg order (events, watermarkTs, sessionId). The
-// underlying SST uses (events, sessionId, watermarkTs). Session scope is
-// REQUIRED in the SST — the workspace-wide branch (undefined sid) is removed
-// because both remaining call sites always pass sid; the removal is what
-// nails down the 3.8% purity fix.
-const { isHighValueArchiveCandidate } = require("./lib/high-value-predicate.cjs");
-
-function hasHighValueArchiveSignal(events, watermarkTs, sessionId) {
-  return isHighValueArchiveCandidate(events, sessionId, watermarkTs);
-}
-// v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
-const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
-// v2.0.0-rc.20 TASK-03: per-turn cite-policy observation event. Emitted by
-// extractAndWriteAssistantTurnsBestEffort() after the Stop hook parses each
-// assistant envelope's first non-empty line for a `KB:` prefix. Schema
-// registered in packages/shared/src/schemas/event-ledger.ts (rc.20 TASK-02).
+// G3: hasHighValueArchiveSignal thin wrapper over shared SST twin (see ledger-scan).
+const EVENT_TYPE_DOCTOR_RUN = maintenanceSignal.EVENT_TYPE_DOCTOR_RUN || "doctor_run";
 const EVENT_TYPE_ASSISTANT_TURN_OBSERVED = "assistant_turn_observed";
-// rc.6 TASK-022 (E5): Signal A is now `24h OR N-edits since last
-// knowledge_proposed`. The edit-count branch reads
-// `.fabric/.cache/edit-counter` (one ISO-8601 line per PreToolUse fire,
-// populated by rc.6 TASK-020 / E4). Filters lines with ts > last
-// knowledge_proposed event ts; fires when the count reaches
-// archive_edit_threshold (default 20, configurable via fabric-config.json).
-//
-// rc.5 TASK-015 (C6) had reduced Signal A to pure 24h-only because the prior
-// `5 plan_contexts since last archive` branch was unreliable (rc.5+ hooks
-// auto-fire plan_context events, inflating the count). The edit-counter
-// sidecar fixes that: PreToolUse fires correlate with real Edit/Write/MultiEdit
-// activity, not tooling chatter.
-//
-// Safe-degrade contract: if `.fabric/.cache/edit-counter` is missing or every
-// line malformed, the edit branch contributes 0 and Signal A reverts to
-// 24h-only — matching the rc.5 contract. If no knowledge_proposed event has
-// ever fired, Signal A stays silent regardless of edit count (an
-// "anchor"-less workspace is Signal C's domain).
-// rc.7 T7: archive_hint_hours, review_hint_pending_count, and
-// review_hint_pending_age_days are now read from .fabric/fabric-config.json.
-// The DEFAULT_ constants below carry the documented fallback when the config
-// file is missing, malformed, or the field is absent. Call sites use the
-// readArchiveHintHours / readReviewHintPendingCount /
-// readReviewHintPendingAgeDays helpers — see docs/configuration.md.
-const DEFAULT_ARCHIVE_HINT_HOURS = 24;
-const MS_PER_HOUR = 60 * 60 * 1000;
-const EDIT_COUNTER_FILE_REL = join(".fabric", ".cache", "edit-counter");
-const DEFAULT_ARCHIVE_EDIT_THRESHOLD = 20;
-
-// rc.3 TASK-004: second signal — pending-overflow → review skill recommendation.
-const PENDING_DIR = "knowledge/pending";
-const PENDING_TYPES = ["decisions", "pitfalls", "guidelines", "models", "processes"];
-const DEFAULT_REVIEW_HINT_PENDING_COUNT = 10;
-const DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS = 7;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-// rc.7 T7 / T10 pre-wiring: Signal D (maintenance hint) thresholds. T10 will
-// consume these to decide when a "run fabric doctor" reminder fires; T7 only
-// surfaces them on the config-loader surface so T10 doesn't have to bump the
-// config schema in a second commit. Defaults: 14d since last doctor invoke
-// triggers; 7d cooldown between repeats.
-const DEFAULT_MAINTENANCE_HINT_DAYS = 14;
-const DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS = 7;
-
-// rc.5 TASK-010: third signal — underseeded knowledge corpus → fabric-import skill.
-// Triggers when (a) canonical node count is below the underseed threshold AND
-// (b) the workspace has had a successful init_scan_completed event at least 24h
-// ago (so we don't nag during the immediate post-init window) AND (c) no
-// knowledge_proposed event has fired in the last 24h (so we don't nag while
-// the user is actively archiving).
-const KNOWLEDGE_CANONICAL_TYPES = PENDING_TYPES; // same five canonical type dirs
-const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
-const UNDERSEED_POST_INIT_QUIET_HOURS = 24;
-const UNDERSEED_NO_PROPOSED_HOURS = 24;
-
-// Cooldown throttle. After the hook surfaces a reminder, it stays silent for
-// this many hours — purely a reminder-noise throttle, not a state machine.
-// Override via .fabric/fabric-config.json#archive_hint_cooldown_hours.
-const CONFIG_FILE = "fabric-config.json";
-const DEFAULT_COOLDOWN_HOURS = 12;
-// Cache file path retains the historical `archive-hint-shown.json` name so an
-// in-place rename does not flush a user's existing cooldown state on first run
-// post-upgrade. The schema is signal-keyed (archive/review/import) so the new
-// import signal slot lives alongside the existing two.
-const SHOWN_CACHE_FILE = ".fabric/.cache/archive-hint-shown.json";
-
-// v2.0.0-rc.7 T10: dedicated Signal-D cooldown sidecar. The shared
-// SHOWN_CACHE_FILE above is signal-keyed (archive/review/import) and uses
-// hours-based cooldown; the maintenance signal uses a day-based threshold
-// (default 7d) so we keep it in its own sidecar to avoid mixing semantics.
-const MAINTENANCE_HINT_LAST_EMIT_FILE = ".fabric/.cache/maintenance-hint-last-emit";
-// Signal-D gate: only nag when canonical corpus has at least this many
-// entries. A fresh-init workspace shouldn't be reminded to run lint when
-// there's barely anything TO lint.
-const MAINTENANCE_HINT_MIN_CANONICAL = 5;
+// Threshold / path defaults — re-export only (no dual literals).
+const DEFAULT_ARCHIVE_HINT_HOURS = hintConfig.DEFAULT_ARCHIVE_HINT_HOURS;
+const MS_PER_HOUR = hintConfig.MS_PER_HOUR;
+const DEFAULT_ARCHIVE_EDIT_THRESHOLD = hintConfig.DEFAULT_ARCHIVE_EDIT_THRESHOLD;
+const PENDING_DIR = hintConfig.PENDING_DIR;
+const PENDING_TYPES = hintConfig.PENDING_TYPES;
+const DEFAULT_REVIEW_HINT_PENDING_COUNT = hintConfig.DEFAULT_REVIEW_HINT_PENDING_COUNT;
+const DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS = hintConfig.DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS;
+const MS_PER_DAY = hintConfig.MS_PER_DAY;
+const DEFAULT_MAINTENANCE_HINT_DAYS = hintConfig.DEFAULT_MAINTENANCE_HINT_DAYS;
+const DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS = hintConfig.DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS;
+const KNOWLEDGE_CANONICAL_TYPES = hintConfig.KNOWLEDGE_CANONICAL_TYPES;
+const DEFAULT_UNDERSEED_NODE_THRESHOLD = hintConfig.DEFAULT_UNDERSEED_NODE_THRESHOLD;
+const UNDERSEED_POST_INIT_QUIET_HOURS = hintConfig.UNDERSEED_POST_INIT_QUIET_HOURS;
+const UNDERSEED_NO_PROPOSED_HOURS = hintConfig.UNDERSEED_NO_PROPOSED_HOURS;
+const CONFIG_FILE = hintConfig.CONFIG_FILE;
+const DEFAULT_COOLDOWN_HOURS = hintConfig.DEFAULT_COOLDOWN_HOURS;
+const SHOWN_CACHE_FILE = hintConfig.SHOWN_CACHE_FILE;
+const MAINTENANCE_HINT_LAST_EMIT_FILE = hintConfig.MAINTENANCE_HINT_LAST_EMIT_FILE;
+const MAINTENANCE_HINT_MIN_CANONICAL = hintConfig.MAINTENANCE_HINT_MIN_CANONICAL;
 
 // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
 // fabric-import skill writes `.fabric/.import-state.json` checkpoints after
@@ -338,144 +185,6 @@ const MAINTENANCE_HINT_MIN_CANONICAL = 5;
 // pre-existing behaviour byte-for-byte. The 24h TTL on `last_checkpoint_at`
 // guards against stale state files that would otherwise permanently
 // silence Signal B if a user abandoned an import without completing.
-const IMPORT_STATE_FILE_REL = join(".fabric", ".import-state.json");
-const IMPORT_IN_FLIGHT_MAX_AGE_HOURS = 24;
-
-/**
- * Read the events.jsonl ledger from <projectRoot>/.fabric/events.jsonl.
- * Mirrors the semantics of readEventLedger in packages/server/src/services/event-ledger.ts:
- *   - ENOENT → return [] (fabric not initialized)
- *   - split on /\r?\n/
- *   - drop final fragment if file lacks trailing newline (partial-tail tolerance)
- *   - JSON.parse per line, swallow per-line errors (corrupt-line tolerance)
- */
-function readLedger(projectRoot) {
-  const eventPath = join(projectRoot, FABRIC_DIR, EVENT_LEDGER_FILE);
-  if (!existsSync(eventPath)) {
-    return [];
-  }
-
-  let raw;
-  try {
-    raw = readFileSync(eventPath, "utf8");
-  } catch {
-    return [];
-  }
-
-  const lines = raw.split(/\r?\n/);
-  const hasTrailingNewline = raw.endsWith("\n");
-  if (!hasTrailingNewline && lines.length > 0) {
-    lines.pop();
-  }
-
-  const events = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object") {
-        events.push(parsed);
-      }
-    } catch {
-      // corrupt JSON line — drop silently
-    }
-  }
-  return events;
-}
-
-/**
- * Read pending counts from the CLI-generated resolved-bindings snapshot.
- *
- * Returns { count, oldestAgeMs } where:
- *   - count: total .md file count across all type subdirs
- *   - oldestAgeMs: (nowMs - oldestMtimeMs) when count>0, else null
- *
- * Store-only cutover: hooks never walk project-local knowledge or store
- * trees. Missing snapshot stats degrade to zero (KT-DEC-0007).
- */
-function readPendingStats(projectRoot, now) {
-  const stats = readSnapshotKnowledgeStats(projectRoot, now);
-  // `!= null` (loose) also catches the `undefined` old-snapshot marker (#3) →
-  // fall through to the legacy reader (which degrades to 0 → no phantom review
-  // nudge), rather than dereferencing pendingCount on a non-object.
-  if (stats != null) {
-    return { count: stats.pendingCount, oldestAgeMs: stats.oldestPendingAgeMs };
-  }
-  return readLegacyPendingStats(projectRoot, now);
-}
-
-/**
- * Count canonical knowledge entries from the CLI-generated resolved-bindings
- * snapshot. Store-only: hooks never walk project-local knowledge or store
- * trees — a missing snapshot degrades to zero (KT-DEC-0007).
- */
-function countCanonicalNodes(projectRoot) {
-  const stats = readSnapshotKnowledgeStats(projectRoot);
-  // #3: `undefined` = snapshot EXISTS but predates knowledge_store_dirs →
-  // undeterminable → return null so decide()'s underseed signal SKIPS rather than
-  // false-firing on a stale corpus. `null` = no reader / not bound → degrade to 0
-  // (KT-DEC-0007, preserved). The `empty` object (missing snapshot) → canonical 0,
-  // still firing correctly for a genuinely fresh corpus.
-  if (stats === undefined) return null;
-  return stats === null ? 0 : stats.canonicalCount;
-}
-
-/**
- * Count edit-counter lines (timestamps) with ts strictly greater than the
- * given anchor ts. Each line in `.fabric/.cache/edit-counter` is one
- * ISO-8601 timestamp written by the rc.6 PreToolUse hook
- * (TASK-020 / E4) per Edit/Write/MultiEdit fire.
- *
- * Safe-degrade contract:
- *   - File missing → return 0 (Signal A reverts to 24h-only behaviour)
- *   - Line malformed (non-parseable as Date) → skip; other lines still count
- *   - Read failure (permission, race) → return 0
- *   - anchorTs is null → caller has no anchor event; we still parse but the
- *     caller will already short-circuit before invoking us. Returning the
- *     full count here is documented behaviour and used by the never-anchor
- *     edge case test.
- *
- * NEVER throws — the hook's overarching never-block invariant requires every
- * helper to return a sane value on any I/O or parse error.
- */
-function countEditsSince(projectRoot, anchorTs) {
-  const filePath = join(projectRoot, EDIT_COUNTER_FILE_REL);
-  if (!existsSync(filePath)) return 0;
-  let raw;
-  try {
-    raw = readFileSync(filePath, "utf8");
-  } catch {
-    return 0;
-  }
-  const lines = raw.split(/\r?\n/);
-  let count = 0;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    // rc.7 T4: support both line shapes —
-    //   legacy (rc.6): bare ISO-8601 timestamp per line
-    //   new (rc.7):    {"ts":"<iso>","paths":[...]} JSON per line
-    let ms = Number.NaN;
-    if (trimmed.charCodeAt(0) === 123 /* '{' */) {
-      try {
-        const obj = JSON.parse(trimmed);
-        if (obj && typeof obj === "object" && typeof obj.ts === "string") {
-          ms = Date.parse(obj.ts);
-        }
-      } catch {
-        // fall through — malformed JSON, skip line
-      }
-    } else {
-      ms = Date.parse(trimmed);
-    }
-    if (!Number.isFinite(ms)) continue; // malformed → skip
-    if (anchorTs === null || ms > anchorTs) {
-      count += 1;
-    }
-  }
-  return count;
-}
 
 // ---------------------------------------------------------------------------
 // Two-lane archive strategy (crack 1 + 2).
@@ -497,118 +206,6 @@ function countEditsSince(projectRoot, anchorTs) {
 // ---------------------------------------------------------------------------
 
 // rc cross-session backlog constants. ANTI_LOOP mirrors archive-scan.ts.
-const ARCHIVE_BACKLOG_ANTI_LOOP_HOURS = 12;
-const DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT = 2;
-const DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS = 24;
-
-// Latest session_archive_attempted.covered_through_ts for this session, else null.
-function sessionArchiveWatermark(events, sessionId) {
-  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
-    return null;
-  }
-  let wm = null;
-  for (const ev of events) {
-    if (!ev || ev.session_id !== sessionId) continue;
-    if (ev.event_type !== "session_archive_attempted") continue;
-    if (typeof ev.covered_through_ts !== "number") continue;
-    if (wm === null || ev.covered_through_ts > wm) wm = ev.covered_through_ts;
-  }
-  return wm;
-}
-
-// Earliest event ts carrying this session_id, else null.
-function sessionFirstActivityTs(events, sessionId) {
-  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
-    return null;
-  }
-  let first = null;
-  for (const ev of events) {
-    if (!ev || ev.session_id !== sessionId || typeof ev.ts !== "number") continue;
-    if (first === null || ev.ts < first) first = ev.ts;
-  }
-  return first;
-}
-
-// Per-session archive anchor: this session's own last archive watermark, else
-// its first activity ts. null only when the session has zero ledger presence.
-function sessionAnchorTs(events, sessionId) {
-  const wm = sessionArchiveWatermark(events, sessionId);
-  if (wm !== null) return wm;
-  return sessionFirstActivityTs(events, sessionId);
-}
-
-// Count this session's `file_mutated` events strictly after the anchor (anchor
-// null → count all of the session's mutations). Replaces the session-blind
-// countEditsSince(edit-counter) for the archive TRIGGER (crack 1).
-function countSessionMutationsSince(events, sessionId, anchorTs) {
-  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
-    return 0;
-  }
-  let count = 0;
-  for (const ev of events) {
-    if (!ev || ev.session_id !== sessionId) continue;
-    if (ev.event_type !== "file_mutated" || typeof ev.ts !== "number") continue;
-    if (anchorTs === null || ev.ts > anchorTs) count += 1;
-  }
-  return count;
-}
-
-// Cross-session safety net (crack 2). Counts DEAD sessions (carry a
-// `session_ended` marker OR have been idle beyond idleHours) — OTHER than the
-// current one — that hold unarchived high-value work and are NOT
-// `user_dismissed` / inside the 12h anti-loop cooldown. This is the per-session
-// replacement for the global-24h archive timer: it is NOT reset by any
-// neighbour's archive, so a low-signal session that simply ended is no longer
-// orphaned. Mirrors archive-scan.ts's outcome-filter semantics.
-function countBacklogSessions(events, nowMs, currentSessionId, idleHours) {
-  if (!Array.isArray(events)) return 0;
-  const idleMs =
-    (typeof idleHours === "number" && idleHours > 0 ? idleHours : DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS) *
-    MS_PER_HOUR;
-  const lastActivity = new Map(); // sid -> max ts
-  const ended = new Set(); // sid with a session_ended marker
-  const lastAttempt = new Map(); // sid -> latest session_archive_attempted event
-  const sessions = new Set();
-  for (const ev of events) {
-    if (!ev || typeof ev.session_id !== "string" || ev.session_id.length === 0) continue;
-    const sid = ev.session_id;
-    sessions.add(sid);
-    if (typeof ev.ts === "number") {
-      const prev = lastActivity.get(sid);
-      if (prev === undefined || ev.ts > prev) lastActivity.set(sid, ev.ts);
-    }
-    if (ev.event_type === "session_ended") ended.add(sid);
-    if (ev.event_type === "session_archive_attempted" && typeof ev.ts === "number") {
-      const prior = lastAttempt.get(sid);
-      if (!prior || (typeof prior.ts === "number" && ev.ts > prior.ts)) lastAttempt.set(sid, ev);
-    }
-  }
-  let count = 0;
-  for (const sid of sessions) {
-    if (sid === currentSessionId) continue; // live lane handles the current session
-    const last = lastActivity.get(sid);
-    const isDead = ended.has(sid) || (typeof last === "number" && nowMs - last >= idleMs);
-    if (!isDead) continue;
-    const attempt = lastAttempt.get(sid);
-    if (attempt && attempt.outcome === "user_dismissed") continue; // respect dismissal
-    if (
-      attempt &&
-      typeof attempt.ts === "number" &&
-      nowMs - attempt.ts < ARCHIVE_BACKLOG_ANTI_LOOP_HOURS * MS_PER_HOUR
-    ) {
-      continue; // inside anti-loop cooldown
-    }
-    // Probe high-value work since the session's OWN archive watermark — null
-    // (never archived) means probe the whole session (wm→0), so a high-value
-    // signal that was the session's first event still counts. Using the
-    // first-activity anchor here would wrongly exclude it (strict `> anchor`).
-    const wm = sessionArchiveWatermark(events, sid);
-    if (!hasHighValueArchiveSignal(events, wm, sid)) continue; // no unarchived high-value work
-    count += 1;
-  }
-  return count;
-}
-
 // ---------------------------------------------------------------------------
 // Observability grill (a + Q4): session-activity status breadcrumb.
 //
@@ -624,269 +221,13 @@ function countBacklogSessions(events, nowMs, currentSessionId, idleHours) {
 // the current session — knowledge_context_planned / knowledge_proposed lack
 // session_id and are intentionally excluded (a cross-session count would
 // mislead). Exported for unit tests.
-function tallySessionActivity(events, sessionId) {
-  let edits = 0;
-  let consumed = 0;
-  if (!Array.isArray(events) || typeof sessionId !== "string" || sessionId.length === 0) {
-    return { edits, consumed };
-  }
-  for (const ev of events) {
-    if (!ev || ev.session_id !== sessionId) continue;
-    if (ev.event_type === "file_mutated") edits += 1;
-    // ISS-20260711-222: production emits knowledge_body_read (KT-DEC-0030);
-    // knowledge_consumed is retired as a live producer. Count both so historic
-    // ledgers still contribute without zeroing modern sessions.
-    else if (
-      ev.event_type === "knowledge_body_read" ||
-      ev.event_type === "knowledge_consumed"
-    )
-      consumed += 1;
-  }
-  return { edits, consumed };
-}
-
 // Emit the human-facing session status breadcrumb when no actionable signal
 // fired. Human sink ONLY. Cadence by nudge_mode: silent → never; minimal/normal
 // → once per session; verbose → every turn. Folds in the tier-guidance line on
 // the first status of the session so the volume knob is discoverable. Never
 // throws — the caller wraps it, but every branch degrades silently anyway.
 function emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out) {
-  if (nudgePolicy === null || clientAdapter === null) return;
-  if (typeof clientAdapter.emitDualSink !== "function") return;
-  const sessionId = resolveHookSessionId(stdinPayload);
-  if (typeof sessionId !== "string" || sessionId.length === 0) return;
-
-  const mode =
-    typeof nudgePolicy.readNudgeMode === "function" ? nudgePolicy.readNudgeMode(cwd) : "normal";
-  if (mode === "silent") return; // human channel globally muted
-
-  const tally = tallySessionActivity(events, sessionId);
-  // ISS-20260712-005: producer returns {count, oldestAgeMs}; `total` was a dead field → always 0.
-  const pending =
-    pendingStats && typeof pendingStats.count === "number"
-      ? pendingStats.count
-      : pendingStats && typeof pendingStats.total === "number"
-        ? pendingStats.total
-        : 0;
-  // Nothing happened yet this session AND no backlog → no trust anchor to show.
-  if (tally.edits === 0 && tally.consumed === 0 && pending === 0) return;
-
-  // Cadence gate: normal/minimal show once per session; verbose every turn.
-  const cache = readShownCache(cwd, sessionId);
-  const firstThisSession = cache._status === undefined;
-  if (mode !== "verbose" && !firstThisSession) return;
-
-  const variant = readFabricLanguage(cwd);
-  const line1 = renderBanner("statusLine", variant, {
-    edits: tally.edits,
-    consumed: tally.consumed,
-    pending,
-  });
-  // Tier guidance only on the first status of the session (don't repeat it on
-  // every verbose turn).
-  const human = firstThisSession
-    ? `${line1}\n${renderBanner("statusTier", variant, { mode })}`
-    : line1;
-
-  clientAdapter.emitDualSink(
-    { human, ai: null },
-    { client: clientAdapter.detectClient(__dirname), eventName: "Stop", streams: { stdout: out } },
-  );
-
-  cache._status = nowMs;
-  writeShownCache(cwd, cache, sessionId);
-}
-
-/**
- * v2.0.0-rc.8 (TASK-002): detect whether a fabric-import skill run is
- * currently in flight, used to gate Signal B (review hint) so the Stop
- * hook does not interrupt an active import when its pending pile crosses
- * the review threshold.
- *
- * Truth table — returns false (i.e. NOT in flight, do not gate) on:
- *   - `.fabric/.import-state.json` missing (no import has ever started or
- *     state file was deleted)
- *   - JSON.parse failure (malformed state file — never-block invariant
- *     forbids permanently silencing Signal B due to corruption)
- *   - `phase === "complete"` (import finished — see fabric-import SKILL.md
- *     Phase 3.4)
- *   - `last_checkpoint_at` missing OR older than IMPORT_IN_FLIGHT_MAX_AGE_HOURS
- *     (stale state — user likely abandoned the import; do not let a forever
- *     orphaned state file silence Signal B forever)
- *   - any unexpected throw (defensive — never-block invariant)
- *
- * Returns true ONLY when state file exists, parses, has a non-"complete"
- * phase, and a fresh `last_checkpoint_at` (< 24h ago). Field names
- * (`phase`, `last_checkpoint_at`) verified against fabric-import SKILL.md
- * § Checkpoint Logic.
- *
- * `now` is optional — defaults to `new Date()`. Tests can inject a fixed
- * Date for determinism; production callers may omit it.
- */
-function isImportInFlight(projectRoot, now) {
-  try {
-    const p = join(projectRoot, IMPORT_STATE_FILE_REL);
-    if (!existsSync(p)) return false;
-    let raw;
-    try {
-      raw = readFileSync(p, "utf8");
-    } catch {
-      return false;
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return false;
-    }
-    if (parsed === null || typeof parsed !== "object") return false;
-    if (parsed.phase === "complete") return false;
-    const ts = parsed.last_checkpoint_at;
-    if (typeof ts !== "string" || ts.length === 0) return false;
-    const ms = Date.parse(ts);
-    if (!Number.isFinite(ms)) return false;
-    const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-    const ageHours = (nowMs - ms) / MS_PER_HOUR;
-    if (ageHours > IMPORT_IN_FLIGHT_MAX_AGE_HOURS) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * rc.7 T4: read the edit-counter sidecar and return the top-N most-edited
- * directories (grouped by the leading 2 path segments) since `anchorTs`.
- *
- * Output shape: an ordered array (desc by count) of
- *   { dir: "packages/cli", count: 12 }
- * objects, truncated to `topN`. Empty array when no aggregable lines are
- * present (file missing, all lines bare-ISO legacy, all paths bare basenames,
- * unreadable file, etc.). The Signal A banner uses this to render a
- * 人-first "最近活动集中在: ..." overview honest to the hook's actual
- * awareness (PreToolUse paths only — no content/diff peek).
- *
- * Safe-degrade contract:
- *   - File missing / unreadable → return []
- *   - Line malformed / non-JSON → skip; other lines still aggregate
- *   - paths field missing or empty → skip (no signal to add)
- *   - Single-segment paths (e.g. "README.md") → grouped under the literal
- *     filename so the user still gets *some* signal; multi-segment paths
- *     are bucketed by their leading two segments (".fabric/.cache" /
- *     "packages/cli" etc.).
- *   - anchorTs === null → aggregate over the entire file (matches the
- *     fire-counter's "no anchor" branch behaviour).
- *
- * NEVER throws — best-effort.
- */
-function getTopEditedDirectories(projectRoot, topN, anchorTs) {
-  const n = typeof topN === "number" && Number.isFinite(topN) && topN > 0
-    ? Math.floor(topN)
-    : 3;
-  const filePath = join(projectRoot, EDIT_COUNTER_FILE_REL);
-  if (!existsSync(filePath)) return [];
-  let raw;
-  try {
-    raw = readFileSync(filePath, "utf8");
-  } catch {
-    return [];
-  }
-  const lines = raw.split(/\r?\n/);
-  const counts = new Map();
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    // Only the JSON-line shape carries paths. Bare ISO lines (legacy rc.6
-    // sidecar) cannot contribute to the activity overview.
-    if (trimmed.charCodeAt(0) !== 123 /* '{' */) continue;
-    let obj;
-    try {
-      obj = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    if (!obj || typeof obj !== "object") continue;
-    // anchor gating mirrors countEditsSince() — strictly newer than anchor.
-    if (typeof obj.ts === "string") {
-      const ms = Date.parse(obj.ts);
-      if (anchorTs !== null && Number.isFinite(ms) && ms <= anchorTs) continue;
-      if (anchorTs !== null && !Number.isFinite(ms)) continue;
-    } else if (anchorTs !== null) {
-      // No parseable ts and an anchor was requested → can't decide, skip.
-      continue;
-    }
-    const paths = Array.isArray(obj.paths) ? obj.paths : [];
-    // Within one hook fire we dedupe the same directory bucket so a
-    // MultiEdit that touched 5 files under packages/cli/ contributes 1 to
-    // the bucket, not 5. The fire-cadence semantic stays consistent.
-    const fireBuckets = new Set();
-    for (const p of paths) {
-      if (typeof p !== "string" || p.length === 0) continue;
-      // Normalise to forward-slash for cross-platform stability and strip
-      // any leading "./". POSIX-style only — the hook ships under POSIX
-      // path conventions even on Windows (the project doesn't currently
-      // ship a CRLF/backslash test matrix for the sidecar).
-      //
-      // v2.0.0-rc.27 TASK-005 (audit §2.8 leak surface): absolute paths
-      // already accumulated in legacy sidecars start with `/`. We strip
-      // the leading slash and also reject buckets that resolve to user-home
-      // segments (`Users/<name>/...`, `home/<name>/...`) so historical
-      // pollution from absolute-path writes doesn't surface the user's
-      // $HOME in the archive banner. The rc.27 appendEditCounter no longer
-      // writes such paths, but the sidecar is append-only so old lines
-      // persist until rotation.
-      let norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
-      // Strip leading `/` so a stale absolute entry doesn't generate a leak.
-      while (norm.startsWith("/")) norm = norm.slice(1);
-      const segs = norm.split("/").filter((s) => s.length > 0);
-      // Reject any bucket whose top segments look like a host-system home
-      // prefix. The pattern is `<top>/<user>/...` where top ∈ Users|home|root.
-      // This silently drops legacy absolute-path entries from $HOME without
-      // mangling the buckets for legitimate project-relative `Users/...`
-      // (unlikely but possible) — the heuristic favours $HOME leak prevention
-      // over false-positive bucketing of project paths named after Unix
-      // conventions.
-      if (segs.length >= 2 && (segs[0] === "Users" || segs[0] === "home" || segs[0] === "root")) {
-        continue;
-      }
-      // v2.0.0-rc.27 TASK-005 (audit §2.8 file-as-dir): when segs[1] looks
-      // like a file (contains a dot-extension at the end), surface segs[0]
-      // alone instead of `segs[0]/segs[1]/` — a 2-seg path of the form
-      // `assets/foo.ts` would otherwise render as "assets/foo.ts/" which
-      // misleads the operator about whether they're seeing a file or a
-      // directory. The extension regex is permissive: any `.X` where X is
-      // 1-8 alphanumerics counts. README.md / package.json / foo.ts all
-      // match; "v1.2" or "dotted.module" do too — acceptable false-positive
-      // rate, since the worst outcome is over-aggregation to the parent.
-      const looksLikeFile = (segment) => /\.[A-Za-z0-9]{1,8}$/u.test(segment);
-      let bucket;
-      if (segs.length >= 2) {
-        if (looksLikeFile(segs[1])) {
-          bucket = `${segs[0]}/`;
-        } else {
-          // Leading 2 segments: "packages/cli", "docs/decisions", etc. We
-          // trail with "/" so the banner reads "packages/cli/" — clearly a
-          // directory rather than a file basename.
-          bucket = `${segs[0]}/${segs[1]}/`;
-        }
-      } else if (segs.length === 1) {
-        // Single segment — treat the basename as its own bucket. Bare
-        // root-level files (README.md, package.json) get some signal too.
-        bucket = segs[0];
-      } else {
-        continue;
-      }
-      fireBuckets.add(bucket);
-    }
-    for (const b of fireBuckets) {
-      counts.set(b, (counts.get(b) || 0) + 1);
-    }
-  }
-  if (counts.size === 0) return [];
-  const sorted = Array.from(counts.entries()).map(([dir, count]) => ({ dir, count }));
-  // Sort desc by count; tie-break alphabetically so output is deterministic.
-  sorted.sort((a, b) => (b.count - a.count) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
-  return sorted.slice(0, n);
+  return sessionStatusEmit.emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out);
 }
 
 /**
@@ -895,9 +236,7 @@ function getTopEditedDirectories(projectRoot, topN, anchorTs) {
  * no aggregable activity (so the banner caller can skip the line entirely).
  */
 function formatActivityOverview(projectRoot, anchorTs) {
-  const top = getTopEditedDirectories(projectRoot, 3, anchorTs);
-  if (top.length === 0) return "";
-  return top.map((e) => `${e.dir} (${e.count} edits)`).join(", ");
+  return sessionStatusEmit.formatActivityOverview(projectRoot, anchorTs);
 }
 
 /**
@@ -905,18 +244,6 @@ function formatActivityOverview(projectRoot, anchorTs) {
  * falling back to DEFAULT_ARCHIVE_EDIT_THRESHOLD (20). Any read/parse failure
  * or non-positive value → default. Mirrors readUnderseedThreshold's contract.
  */
-function readArchiveEditThreshold(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_ARCHIVE_EDIT_THRESHOLD;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.archive_edit_threshold;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_ARCHIVE_EDIT_THRESHOLD;
-}
 
 /**
  * Decide whether to emit a hook reminder.
@@ -968,228 +295,7 @@ function readArchiveEditThreshold(projectRoot) {
 // defaults so existing in-process callers (tests that pre-date T7) still
 // pass without modification — they implicitly exercise the default path.
 function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner, importInFlight, backlogStats) {
-  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const stats = pendingStats || { count: 0, oldestAgeMs: null };
-  const underseed =
-    underseedStats || { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
-  // crack 1: per-session edit view. `editsSinceArchive` = current session's
-  // file_mutated count since its own archive anchor; `anchorPresent` = the
-  // session has any ledger activity (the trigger gate, replacing the old
-  // "global knowledge_proposed exists" gate).
-  const editStats =
-    editCounterStats || {
-      editsSinceArchive: 0,
-      threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD,
-      anchorPresent: false,
-    };
-  // crack 2: cross-session backlog view (dead sessions with unarchived work).
-  const backlog =
-    backlogStats || {
-      deadSessionCount: 0,
-      threshold: DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT,
-    };
-  const cfg = thresholds || {};
-  // crack 2: the global archive_hint_hours timer is retired (the cross-session
-  // case is now the archive_backlog signal). cfg.archiveHintHours is still
-  // accepted on the thresholds bag for back-compat but no longer drives Signal A.
-  const reviewHintPendingCount =
-    typeof cfg.reviewHintPendingCount === "number" && cfg.reviewHintPendingCount > 0
-      ? cfg.reviewHintPendingCount
-      : DEFAULT_REVIEW_HINT_PENDING_COUNT;
-  const reviewHintPendingAgeDays =
-    typeof cfg.reviewHintPendingAgeDays === "number" && cfg.reviewHintPendingAgeDays > 0
-      ? cfg.reviewHintPendingAgeDays
-      : DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS;
-  // rc.16 TASK-002: banner variant for the i18n lib. Defaults to 'zh-CN' so
-  // existing test callers (which never pass thresholds.variant) get the rc.15
-  // byte-identical Chinese output. main() always supplies the resolved variant.
-  const variant = typeof cfg.variant === "string" ? cfg.variant : "zh-CN";
-
-  // ---- Archive signal (crack 1 — per-session edit count) -------------------
-  // In-session lane: nudge when THIS session has accumulated >= threshold file
-  // mutations since its OWN archive anchor (computed per-session in main() from
-  // file_mutated events — `editStats.editsSinceArchive`). The old global
-  // 24h-OR-N-edits trigger is retired: the hours branch became the
-  // archive_backlog signal below (crack 2), and the edit count is now
-  // session-scoped so a neighbour window's archive can't zero this window's
-  // work. `anchorPresent` gates the trigger (a session with zero ledger
-  // activity has nothing to count).
-  //
-  // `lastProposedTs` / `hoursElapsed` are still derived here for the IMPORT
-  // signal's "no knowledge_proposed in last 24h" guard further down.
-  let lastProposedTs = null;
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const ev = events[i];
-    if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
-      lastProposedTs = ev.ts;
-      break;
-    }
-  }
-  const hoursElapsed =
-    lastProposedTs === null ? null : (nowMs - lastProposedTs) / MS_PER_HOUR;
-
-  const triggerByEdits =
-    editStats.anchorPresent === true &&
-    typeof editStats.editsSinceArchive === "number" &&
-    editStats.editsSinceArchive >= editStats.threshold;
-
-  // PRECEDENCE: in-session archive wins over backlog/review/import — recent
-  // local work is the most actionable reminder.
-  if (triggerByEdits) {
-    // 人-first banner: edit-count fragment only (the hours fragment retired with
-    // the global timer). Substring contracts ('次编辑', '阈值 N', 'fabric-archive')
-    // preserved by banner-i18n's zh-CN templates. The activity overview line is
-    // injected by main() via `banner` so decide() stays pure / filesystem-free.
-    const parts = [
-      renderBanner("archivePartsEdits", variant, {
-        count: editStats.editsSinceArchive,
-        threshold: editStats.threshold,
-      }),
-    ];
-    const line1 = renderBanner("archiveLine1", variant, { parts: parts.join(" / ") });
-    const activity = banner && typeof banner.activityOverview === "string"
-      ? banner.activityOverview
-      : "";
-    const line2 = activity.length > 0
-      ? renderBanner("archiveActivity", variant, { activity })
-      : "";
-    const line3 = renderBanner("archiveCta", variant, {});
-    const reason = [line1, line2, line3].filter((l) => l.length > 0).join("\n");
-    return {
-      decision: "soft",
-      reason,
-      signal: "archive",
-      recommended_skill: "fabric-archive",
-      // v2.1 NEW-N-3: surface the firing sub-signal's numbers for the
-      // hook_signal_emitted ledger row main() writes.
-      threshold: editStats.threshold,
-      actual_value: editStats.editsSinceArchive,
-    };
-  }
-
-  // ---- Archive backlog signal (crack 2 — cross-session safety net) ---------
-  // Fires when N+ DEAD sessions (session_ended / idle) carry unarchived
-  // high-value work — the per-session replacement for the old global-24h timer
-  // (which any neighbour's archive reset, orphaning low-signal ended sessions).
-  // KT-DEC-0007: a soft reminder, never a gate. Ranked AFTER in-session archive
-  // but BEFORE review/import: losing knowledge from an ended session is a
-  // sharper signal than a review/import backlog.
-  if (backlog.threshold > 0 && backlog.deadSessionCount >= backlog.threshold) {
-    const line1 = renderBanner("backlogLine1", variant, { count: backlog.deadSessionCount });
-    const line2 = renderBanner("backlogCta", variant, {});
-    const reason = `${line1}\n${line2}`;
-    return {
-      decision: "soft",
-      reason,
-      signal: "archive_backlog",
-      recommended_skill: "fabric-archive",
-      threshold: backlog.threshold,
-      actual_value: backlog.deadSessionCount,
-    };
-  }
-
-  // ---- Review signal (rc.3 TASK-004) ---------------------------------------
-  const triggerByPendingCount = stats.count >= reviewHintPendingCount;
-  const triggerByPendingAge =
-    stats.oldestAgeMs !== null && stats.oldestAgeMs / MS_PER_DAY >= reviewHintPendingAgeDays;
-
-  // v2.0.0-rc.8 (TASK-002): suppress ONLY Signal B while a fabric-import
-  // skill run is in flight (read from .fabric/.import-state.json by main()
-  // and threaded in as `importInFlight`). Signals A, C, D are unaffected.
-  // We fall through to Signal C evaluation rather than returning null —
-  // review backlog should not pre-empt import-recommendation evaluation
-  // when import is mid-run.
-  if ((triggerByPendingCount || triggerByPendingAge) && importInFlight !== true) {
-    // rc.7 T4: 人-first banner reformat for Signal B. Keeps the pending
-    // count and age substrings (`${count} 条`, `${days} 天`) so existing
-    // tests pass; drops the Agent-jussive "建议调用 ... skill ..." for a
-    // polite question framing aimed at the human reader.
-    // ISS-20260712-017: pass locale-neutral oldestDays; each banner variant
-    // owns its age suffix (no zh-hardcoded ageSuffix + en string-replace).
-    const oldestDays =
-      stats.oldestAgeMs !== null
-        ? (stats.oldestAgeMs / MS_PER_DAY).toFixed(1)
-        : "";
-    // rc.16 TASK-002: i18n via lib. Substrings ('${count} 条', 'fabric-review')
-    // preserved by the lib's zh-CN templates.
-    const line1 = renderBanner("reviewLine1", variant, {
-      count: stats.count,
-      oldestDays,
-    });
-    const line2 = renderBanner("reviewCta", variant, {});
-    const reason = `${line1}\n${line2}`;
-    return {
-      decision: "soft",
-      reason,
-      signal: "review",
-      recommended_skill: "fabric-review",
-      // v2.1 NEW-N-3: dual trigger (pending-count OR oldest-age). Report the
-      // count pair when it fired, else the oldest-age-in-days pair.
-      threshold: triggerByPendingCount ? reviewHintPendingCount : reviewHintPendingAgeDays,
-      actual_value: triggerByPendingCount ? stats.count : stats.oldestAgeMs / MS_PER_DAY,
-    };
-  }
-
-  // ---- Import signal (rc.5 TASK-010) — underseeded corpus -------------------
-  // All three conditions must hold (logical AND):
-  //  1. node count < threshold (sparse corpus)
-  //  2. init_scan_completed event >= 24h ago (workspace has been initialized
-  //     for at least a day — we don't nag during the immediate post-init
-  //     window when the user is still authoring baseline knowledge)
-  //  3. no knowledge_proposed event in last 24h (user isn't actively
-  //     archiving — if they were, the archive signal would have fired anyway,
-  //     but we keep this guard explicit per spec)
-  let lastInitScanTs = null;
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const ev = events[i];
-    if (
-      ev &&
-      ev.event_type === EVENT_TYPE_INIT_SCAN_COMPLETED &&
-      typeof ev.ts === "number"
-    ) {
-      lastInitScanTs = ev.ts;
-      break;
-    }
-  }
-  const hoursSinceInit =
-    lastInitScanTs === null ? null : (nowMs - lastInitScanTs) / MS_PER_HOUR;
-  const hoursSinceProposed = hoursElapsed; // reuse archive-signal calc above
-  const triggerUnderseed =
-    // #3: null = undeterminable canonical count (old snapshot) → skip. Guard
-    // first because `null < threshold` coerces to true in JS and would else
-    // false-fire the underseed nudge on a stale corpus.
-    underseed.nodeCount != null &&
-    underseed.nodeCount < underseed.threshold &&
-    hoursSinceInit !== null &&
-    hoursSinceInit >= UNDERSEED_POST_INIT_QUIET_HOURS &&
-    (hoursSinceProposed === null || hoursSinceProposed >= UNDERSEED_NO_PROPOSED_HOURS);
-
-  if (triggerUnderseed) {
-    // rc.16 TASK-002: i18n via lib. Substrings ('${nodeCount}/${threshold}',
-    // 'fabric-import', '${hoursSinceInit}h') preserved by the lib's zh-CN
-    // templates. Note: hoursSinceInit is passed as already-toFixed(1) string
-    // to keep the lib pure (no number formatting in render path).
-    const line1 = renderBanner("importLine1", variant, {
-      nodeCount: underseed.nodeCount,
-      threshold: underseed.threshold,
-      hoursSinceInit: hoursSinceInit.toFixed(1),
-    });
-    const line2 = renderBanner("importCta", variant, {});
-    const reason = `${line1}\n${line2}`;
-    return {
-      decision: "soft",
-      reason,
-      signal: "import",
-      // W3-C: fabric-import folded into fabric-archive `source` mode.
-      recommended_skill: "fabric-archive",
-      // v2.1 NEW-N-3: underseed corpus trigger — node-count vs threshold. The
-      // "import" signal collapses to schema signal_type "other" in main().
-      threshold: underseed.threshold,
-      actual_value: underseed.nodeCount,
-    };
-  }
-
-  return null;
+  return signalDecide.decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner, importInFlight, backlogStats);
 }
 
 // ---------------------------------------------------------------------------
@@ -1201,103 +307,21 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
 // most once per field and the file is <1KB.
 // ---------------------------------------------------------------------------
 
-function _readConfigNumber(projectRoot, fieldName, defaultValue) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return defaultValue;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed[fieldName];
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
-  }
-  return defaultValue;
-}
-
-function readArchiveHintHours(projectRoot) {
-  return _readConfigNumber(projectRoot, "archive_hint_hours", DEFAULT_ARCHIVE_HINT_HOURS);
-}
-
-function readReviewHintPendingCount(projectRoot) {
-  return _readConfigNumber(
-    projectRoot,
-    "review_hint_pending_count",
-    DEFAULT_REVIEW_HINT_PENDING_COUNT,
-  );
-}
-
-function readReviewHintPendingAgeDays(projectRoot) {
-  return _readConfigNumber(
-    projectRoot,
-    "review_hint_pending_age_days",
-    DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
-  );
-}
-
-function readMaintenanceHintDays(projectRoot) {
-  return _readConfigNumber(projectRoot, "maintenance_hint_days", DEFAULT_MAINTENANCE_HINT_DAYS);
-}
-
-function readMaintenanceHintCooldownDays(projectRoot) {
-  return _readConfigNumber(
-    projectRoot,
-    "maintenance_hint_cooldown_days",
-    DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
-  );
-}
 
 // crack 2: cross-session backlog signal thresholds.
-function readArchiveBacklogSessionCount(projectRoot) {
-  return _readConfigNumber(
-    projectRoot,
-    "archive_backlog_session_count",
-    DEFAULT_ARCHIVE_BACKLOG_SESSION_COUNT,
-  );
-}
 
-function readArchiveBacklogIdleHours(projectRoot) {
-  return _readConfigNumber(
-    projectRoot,
-    "archive_backlog_idle_hours",
-    DEFAULT_ARCHIVE_BACKLOG_IDLE_HOURS,
-  );
-}
 
 /**
  * Resolve the cooldown setting from .fabric/fabric-config.json
  * (archive_hint_cooldown_hours), falling back to DEFAULT_COOLDOWN_HOURS.
  * Any read/parse failure → default (never block on config errors).
  */
-function readCooldownHours(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_COOLDOWN_HOURS;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.archive_hint_cooldown_hours;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_COOLDOWN_HOURS;
-}
 
 /**
  * Resolve the underseed-node threshold from .fabric/fabric-config.json
  * (underseed_node_threshold), falling back to DEFAULT_UNDERSEED_NODE_THRESHOLD.
  * Any read/parse failure → default (never block on config errors).
  */
-function readUnderseedThreshold(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.underseed_node_threshold;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
-}
 
 // F13 (ISS-20260531-038): the reminder cooldown sidecars were process-global
 // (one file per project, no session key), so in concurrent multi-window sessions
@@ -1308,56 +332,9 @@ function readUnderseedThreshold(projectRoot) {
 // pre-session-id callers), so existing on-disk state and tests are unaffected;
 // the Stop hook always passes the real session_id from its stdin payload.
 function resolveHookSessionId(payload, env) {
-  // ISS-20260712-007: align with cite-policy-evict — try payload, then FABRIC_SESSION_ID.
-  // Still return null (not a fake sentinel) when both missing so cadence/status can fail open.
-  if (payload && typeof payload.session_id === "string" && payload.session_id.length > 0) {
-    return payload.session_id;
-  }
-  const envBag = (env && env.processEnv) || process.env;
-  if (envBag && typeof envBag.FABRIC_SESSION_ID === "string" && envBag.FABRIC_SESSION_ID.length > 0) {
-    return envBag.FABRIC_SESSION_ID;
-  }
-  return null;
+  return stopStdin.resolveHookSessionId(payload, env);
 }
 
-function sessionScopedCacheFile(baseRelPath, sessionId) {
-  if (sessionId === undefined || sessionId === null || String(sessionId).length === 0) {
-    return baseRelPath;
-  }
-  const safe = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, "-");
-  const lastSlash = baseRelPath.lastIndexOf("/");
-  const dot = baseRelPath.lastIndexOf(".");
-  return dot > lastSlash
-    ? `${baseRelPath.slice(0, dot)}-${safe}${baseRelPath.slice(dot)}`
-    : `${baseRelPath}-${safe}`;
-}
-
-function readShownCache(projectRoot, sessionId) {
-  const cachePath = join(projectRoot, sessionScopedCacheFile(SHOWN_CACHE_FILE, sessionId));
-  if (!existsSync(cachePath)) return {};
-  try {
-    const parsed = JSON.parse(readFileSync(cachePath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeShownCache(projectRoot, cache, sessionId) {
-  const cachePath = join(projectRoot, sessionScopedCacheFile(SHOWN_CACHE_FILE, sessionId));
-  try {
-    // ISS-016: atomic tmp+rename so a crash never leaves a truncated shown-cache.
-    // Falls back to a plain write only if the shared lib failed to load.
-    if (stateStore && typeof stateStore.atomicWrite === "function") {
-      stateStore.atomicWrite(cachePath, JSON.stringify(cache));
-    } else {
-      mkdirSync(dirname(cachePath), { recursive: true });
-      writeFileSync(cachePath, JSON.stringify(cache));
-    }
-  } catch {
-    // Silent — cache failure must never block the hook.
-  }
-}
 
 // -----------------------------------------------------------------------------
 // v2.0.0-rc.37 NEW-16 — per-signal dismiss.
@@ -1380,75 +357,16 @@ function writeShownCache(projectRoot, cache, sessionId) {
 // precedence model — KT-DEC-0007 anti-nag spirit).
 // -----------------------------------------------------------------------------
 
-const DISMISSABLE_SIGNALS = ["archive", "archive_backlog", "review", "import", "maintenance"];
-
-function sessionDismissFileName(sessionId) {
-  const safe = String(sessionId || "anonymous").replace(/[^A-Za-z0-9_.-]/g, "-");
-  return `hint-dismiss-${safe}.json`;
-}
 
 // Returns a Set of dismissed signal types (config-durable ∪ session sidecar).
 // Never throws — degrades to an empty set when libs are absent.
-function readDismissedSignals(projectRoot, sessionId) {
-  const dismissed = new Set();
-  try {
-    if (configCache && typeof configCache.readConfig === "function") {
-      const cfg = configCache.readConfig(projectRoot);
-      const list = cfg && cfg.hint_dismiss_signals;
-      if (Array.isArray(list)) {
-        for (const s of list) {
-          if (DISMISSABLE_SIGNALS.includes(s)) dismissed.add(s);
-        }
-      }
-    }
-  } catch {
-    // defensive
-  }
-  try {
-    if (stateStore && typeof stateStore.readJsonState === "function" && sessionId) {
-      const sidecar = stateStore.readJsonState(
-        projectRoot,
-        sessionDismissFileName(sessionId),
-        (p) => p && typeof p === "object" && Array.isArray(p.dismissed),
-      );
-      if (sidecar) {
-        for (const s of sidecar.dismissed) {
-          if (DISMISSABLE_SIGNALS.includes(s)) dismissed.add(s);
-        }
-      }
-    }
-  } catch {
-    // defensive
-  }
-  return dismissed;
-}
 
 // Persist a session-scoped dismiss set (additive merge). Exposed for the
 // agent-driven write path + tests; not auto-invoked by the hook. Never throws.
-function writeSessionDismiss(projectRoot, sessionId, signals) {
-  if (!stateStore || typeof stateStore.writeJsonState !== "function") return;
-  const fileName = sessionDismissFileName(sessionId);
-  const prior = stateStore.readJsonState(
-    projectRoot,
-    fileName,
-    (p) => p && typeof p === "object" && Array.isArray(p.dismissed),
-  );
-  const merged = new Set(prior && Array.isArray(prior.dismissed) ? prior.dismissed : []);
-  for (const s of Array.isArray(signals) ? signals : []) {
-    if (DISMISSABLE_SIGNALS.includes(s)) merged.add(s);
-  }
-  stateStore.writeJsonState(projectRoot, fileName, { dismissed: [...merged] });
-}
 
 // Bilingual one-line dismiss hint appended to every nudge so the user knows
 // the lever exists. Variant fold mirrors banner-i18n: zh-CN / zh-CN-hybrid →
 // Chinese; en / match-existing / unknown → English.
-function renderDismissOption(signal, variant) {
-  const zh = variant === "zh-CN" || variant === "zh-CN-hybrid";
-  return zh
-    ? `  (不想再看到此类提醒？在 .fabric/fabric-config.json 设 "hint_dismiss_signals": ["${signal}"]，或让我本会话关闭 ${signal} 提醒)`
-    : `  (Silence this nudge? Set "hint_dismiss_signals": ["${signal}"] in .fabric/fabric-config.json, or ask me to dismiss ${signal} for this session)`;
-}
 
 /**
  * v2.0.0-rc.7 T10: find the most recent doctor_run event ts in the ledger.
@@ -1457,50 +375,14 @@ function renderDismissOption(signal, variant) {
  * on first match).
  */
 function findLastDoctorRunTs(events) {
-  if (!Array.isArray(events)) return null;
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const ev = events[i];
-    if (ev && ev.event_type === EVENT_TYPE_DOCTOR_RUN && typeof ev.ts === "number") {
-      return ev.ts;
-    }
-  }
-  return null;
+  return maintenanceSignal.findLastDoctorRunTs(events);
 }
 
 /**
  * v2.0.0-rc.7 T10: read the Signal-D cooldown sidecar timestamp (epoch ms).
  * Missing file / parse failure → null (allow signal to fire).
  */
-function readMaintenanceLastEmit(projectRoot, sessionId) {
-  const p = join(projectRoot, sessionScopedCacheFile(MAINTENANCE_HINT_LAST_EMIT_FILE, sessionId));
-  if (!existsSync(p)) return null;
-  try {
-    const raw = readFileSync(p, "utf8").trim();
-    if (raw.length === 0) return null;
-    const ms = Date.parse(raw);
-    if (Number.isFinite(ms)) return ms;
-    const asNum = Number(raw);
-    if (Number.isFinite(asNum) && asNum > 0) return asNum;
-  } catch {
-    // ignore
-  }
-  return null;
-}
 
-function writeMaintenanceLastEmit(projectRoot, nowMs, sessionId) {
-  const p = join(projectRoot, sessionScopedCacheFile(MAINTENANCE_HINT_LAST_EMIT_FILE, sessionId));
-  try {
-    // ISS-016: atomic tmp+rename (see writeShownCache).
-    if (stateStore && typeof stateStore.atomicWrite === "function") {
-      stateStore.atomicWrite(p, new Date(nowMs).toISOString());
-    } else {
-      mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, new Date(nowMs).toISOString());
-    }
-  } catch {
-    // Silent — sidecar failure must never block the hook.
-  }
-}
 
 /**
  * v2.0.0-rc.7 T10: Signal D — maintenance hint.
@@ -1519,78 +401,12 @@ function writeMaintenanceLastEmit(projectRoot, nowMs, sessionId) {
  *   - null on no trigger
  *
  * `recommended_skill` is intentionally null — the maintenance prompt
- * recommends a CLI invocation (`fabric doctor --lint`), not a Skill, because
+ * recommends a CLI invocation (`fabric doctor`), not a Skill, because
  * doctor is a CLI surface (Q-13 boundary). The hook payload still shapes the
  * `recommended_skill` key so consumers can branch on it.
  */
 function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thresholds) {
-  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const cfg = thresholds || {};
-  const days =
-    typeof cfg.maintenanceHintDays === "number" && cfg.maintenanceHintDays > 0
-      ? cfg.maintenanceHintDays
-      : DEFAULT_MAINTENANCE_HINT_DAYS;
-  const cooldownDays =
-    typeof cfg.maintenanceHintCooldownDays === "number" && cfg.maintenanceHintCooldownDays > 0
-      ? cfg.maintenanceHintCooldownDays
-      : DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS;
-  // rc.16 TASK-002: banner variant for the i18n lib. Defaults to 'zh-CN' so
-  // existing rc.7 T10 test fixtures (which never set thresholds.variant) get
-  // the byte-identical Chinese maintenance banner.
-  const variant = typeof cfg.variant === "string" ? cfg.variant : "zh-CN";
-
-  if (canonicalCount < MAINTENANCE_HINT_MIN_CANONICAL) {
-    return null;
-  }
-
-  // Cooldown gate — short-circuit when we just nagged.
-  // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastEmit (backward
-  // clock skew) bypasses cooldown — treats sidecar as "expired" so the gate
-  // heals on the next invocation instead of waiting (cooldown + |skew|).
-  if (
-    typeof lastEmitMs === "number" &&
-    Number.isFinite(lastEmitMs) &&
-    nowMs >= lastEmitMs &&
-    nowMs - lastEmitMs < cooldownDays * MS_PER_DAY
-  ) {
-    return null;
-  }
-
-  const lastDoctorTs = findLastDoctorRunTs(events);
-  // Build a reason line tailored to the "never" vs "stale" branch so the
-  // user sees an honest diagnosis. The Chinese phrasing is contract-locked
-  // (T10 spec) — keep it stable across rc.7 patches.
-  let ageDays = null;
-  if (lastDoctorTs !== null) {
-    ageDays = (nowMs - lastDoctorTs) / MS_PER_DAY;
-    if (ageDays < days) return null; // doctor ran recently, no nag.
-  }
-
-  // rc.16 TASK-002: i18n via lib. Substrings ('从未运行 lint 检查',
-  // '已 N 天未跑 lint', 'fabric doctor --lint') preserved by the lib's
-  // zh-CN templates. ageDays passed as already-toFixed(1) string to keep
-  // the lib pure (no number formatting in render path).
-  const line2 = renderBanner("maintenanceLine2", variant, {});
-  const line1 = lastDoctorTs === null
-    ? renderBanner("maintenanceLine1Never", variant, {})
-    : renderBanner("maintenanceLine1Aged", variant, {
-        days,
-        ageDays: ageDays.toFixed(1),
-      });
-  const reason = `${line1}\n${line2}`;
-
-  return {
-    decision: "soft",
-    reason,
-    signal: "maintenance",
-    // CLI recommendation rather than Skill — doctor is a CLI surface.
-    recommended_skill: null,
-    // v2.1 NEW-N-3: staleness trigger. threshold=days; actual=ageDays. When
-    // lint was NEVER run ageDays is null — main() skips the signal emit rather
-    // than fabricate a number (honest gap over fake telemetry).
-    threshold: days,
-    actual_value: ageDays,
-  };
+  return maintenanceSignal.evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thresholds);
 }
 
 // lifecycle-refactor W3-A2 (§7 graph generation signal): after a successful
@@ -1612,80 +428,11 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
 // is id-less we honestly skip; the request will fire on the approve event that
 // allocates the id. A session-scoped sidecar de-dupes so repeated Stop fires in
 // one session don't re-request the same id.
-const STABLE_ID_RE = /^K[TP]-[A-Z]{3}-\d{4}$/;
-const GRAPH_EDGE_REQUESTED_SIDECAR = ".fabric/.cache/graph-edge-requested";
+const STABLE_ID_RE = graphEdgeEmit.STABLE_ID_RE;
+const GRAPH_EDGE_REQUESTED_SIDECAR = graphEdgeEmit.GRAPH_EDGE_REQUESTED_SIDECAR;
 
 function emitGraphEdgeCandidateBestEffort(cwd, events, sessionId) {
-  try {
-    if (!Array.isArray(events) || events.length === 0) return;
-    const fabricDir = join(cwd, FABRIC_DIR);
-    if (!existsSync(fabricDir)) return;
-
-    // O(1)-amortized tail scan for the newest knowledge_proposed carrying a
-    // real (non-sentinel) stable_id. Stop at the first knowledge_proposed we
-    // see — if the latest archive is id-less, we honestly skip rather than
-    // reaching back to an older approved entry (that older entry's edges were
-    // already requested when IT landed).
-    let stableId = null;
-    let store;
-    for (let i = events.length - 1; i >= 0; i -= 1) {
-      const ev = events[i];
-      if (!ev || ev.event_type !== EVENT_TYPE_PROPOSED) continue;
-      const candidate = typeof ev.stable_id === "string" ? ev.stable_id : null;
-      if (candidate && STABLE_ID_RE.test(candidate)) {
-        stableId = candidate;
-        if (typeof ev.store === "string" && ev.store.length > 0) store = ev.store;
-      }
-      // First knowledge_proposed encountered (newest) decides; do not walk past
-      // it to an older one.
-      break;
-    }
-    if (stableId === null) return;
-
-    // Session-scoped de-dup: skip if we already requested edges for this exact
-    // stable_id this session. Sidecar is a single line holding the last id.
-    const sidecarPath = join(cwd, sessionScopedCacheFile(GRAPH_EDGE_REQUESTED_SIDECAR, sessionId));
-    try {
-      if (existsSync(sidecarPath)) {
-        const prev = readFileSync(sidecarPath, "utf8").trim();
-        if (prev === stableId) return;
-      }
-    } catch {
-      // unreadable sidecar → fall through and (re)emit; de-dup is best-effort.
-    }
-
-    let idSuffix;
-    try {
-      idSuffix = require("node:crypto").randomUUID();
-    } catch {
-      idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    }
-    const event = {
-      kind: "fabric-event",
-      id: `event:${idSuffix}`,
-      ts: Date.now(),
-      schema_version: 1,
-      event_type: "graph_edge_candidate_requested",
-      stable_id: stableId,
-    };
-    if (store !== undefined) event.store = store;
-    if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
-    appendEvent(fabricDir, event);
-
-    // Record the de-dup marker (best-effort; atomic when state-store lib loaded).
-    try {
-      if (stateStore && typeof stateStore.atomicWrite === "function") {
-        stateStore.atomicWrite(sidecarPath, stableId);
-      } else {
-        mkdirSync(dirname(sidecarPath), { recursive: true });
-        writeFileSync(sidecarPath, stableId);
-      }
-    } catch {
-      // de-dup marker write failed — at worst we re-request next Stop; harmless.
-    }
-  } catch {
-    // best-effort §7 signal — never block the Stop hook (KT-DEC-0007).
-  }
+  return graphEdgeEmit.emitGraphEdgeCandidateBestEffort(cwd, events, sessionId);
 }
 
 // v2.1 NEW-N-3 (ADJ-NEWN-3): hook_signal_emitted instrumentation. Writes ONE
@@ -1696,46 +443,9 @@ function emitGraphEdgeCandidateBestEffort(cwd, events, sessionId) {
 // does not spam the ledger every session. Skips silently when threshold /
 // actual_value are not finite numbers (e.g. maintenance "never run" → null
 // age). Never blocks the hook (KT-DEC-0007).
-const SIGNAL_TYPE_ENUM = new Set(["archive", "review", "maintenance", "other"]);
+const SIGNAL_TYPE_ENUM = softSignalEmit.SIGNAL_TYPE_ENUM;
 function emitSignalFiredEvent(cwd, sessionId, result) {
-  try {
-    if (!result || typeof result.signal !== "string") return;
-    const threshold = result.threshold;
-    const actualValue = result.actual_value;
-    if (
-      typeof threshold !== "number" ||
-      !Number.isFinite(threshold) ||
-      typeof actualValue !== "number" ||
-      !Number.isFinite(actualValue)
-    ) {
-      return;
-    }
-    const fabricDir = join(cwd, FABRIC_DIR);
-    if (!existsSync(fabricDir)) return;
-    // "import" / any non-canonical signal collapses to schema's catch-all "other".
-    const signalType = SIGNAL_TYPE_ENUM.has(result.signal) ? result.signal : "other";
-    let idSuffix;
-    try {
-      idSuffix = require("node:crypto").randomUUID();
-    } catch {
-      idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    }
-    const event = {
-      kind: "fabric-event",
-      id: `event:${idSuffix}`,
-      ts: Date.now(),
-      schema_version: 1,
-      event_type: "hook_signal_emitted",
-      signal_type: signalType,
-      threshold,
-      actual_value: actualValue,
-      fired: true,
-    };
-    if (typeof sessionId === "string" && sessionId.length > 0) event.session_id = sessionId;
-    appendEvent(fabricDir, event);
-  } catch {
-    // best-effort telemetry — never block the hook
-  }
+  return softSignalEmit.emitSignalFiredEvent(cwd, sessionId, result);
 }
 
 /**
@@ -1750,31 +460,7 @@ function emitSignalFiredEvent(cwd, sessionId, result) {
  * throws.
  */
 function tryReadStdinJson() {
-  try {
-    // Skip the read entirely when stdin is a TTY (interactive invocation, no
-    // payload). readFileSync on fd 0 would block forever in that case.
-    if (process.stdin.isTTY === true) return null;
-    const buf = readFileSync(0, "utf8");
-    if (typeof buf !== "string" || buf.trim().length === 0) return null;
-    const parsed = JSON.parse(buf);
-    if (parsed === null || typeof parsed !== "object") return null;
-    return parsed;
-  } catch (e) {
-    // v2.0.0-rc.29 TASK-008 (BUG-L1): hook used to silent-swallow JSON.parse
-    // errors which masked real client-side payload bugs (e.g. CLI hosts that
-    // stopped emitting Stop-hook JSON envelopes). Log a single best-effort
-    // diagnostic line so operators see WHY the hook went quiet; keep returning
-    // null so downstream behaviour (graceful exit 0, no rule render) is
-    // unchanged.
-    try {
-      const message = (e && typeof e === "object" && "message" in e) ? String(e.message) : String(e);
-      process.stderr.write(`[fabric-hint] malformed input: ${message}\n`);
-    } catch {
-      // stderr write failed (very unusual — sandbox / closed fd). The
-      // hook contract still requires we never throw upward.
-    }
-    return null;
-  }
+  return stopStdin.tryReadStdinJson();
 }
 
 /**
@@ -1802,22 +488,6 @@ function tryReadStdinJson() {
  *
  * Never throws.
  */
-function parseKbLine(raw) {
-  // Compose the full `KB: <raw>` line because the shared parser anchors on
-  // the `KB:` prefix. Handles the legacy `none` / `<sentinel>` inputs naturally
-  // because parseCiteLine's SENTINEL_RE matches the composed line.
-  if (typeof raw !== "string") {
-    return { cite_ids: [], cite_tags: [], cite_commitments: [] };
-  }
-  const composed = `KB: ${raw}`;
-  if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
-    return citeLineParser.parseCiteLine(composed);
-  }
-  // Degraded fallback: lib missing (e.g. partial install). Emit empty result
-  // so downstream consumers see the cite-line as unobservable rather than
-  // mis-parsed. The Stop-hook contract is best-effort, never blocking.
-  return { cite_ids: [], cite_tags: [], cite_commitments: [] };
-}
 
 /**
  * v2.0.0-rc.20 TASK-03: detect which client surface invoked the hook so the
@@ -1835,23 +505,6 @@ function parseKbLine(raw) {
  * Returns `undefined` when neither signal fires (a custom deployment). The
  * Zod schema marks `client` optional, so omitting it leaves the event valid.
  */
-function detectClient() {
-  // Delegate the full 3-tier detection (env → CLAUDE_PROJECT_DIR → path
-  // heuristic) to the shared adapter. __dirname is passed so the path
-  // heuristic reflects THIS hook's location.
-  if (clientAdapter && typeof clientAdapter.detectClient === "function") {
-    return clientAdapter.detectClient(__dirname);
-  }
-  // Fallback (adapter lib absent): env override only.
-  const envClient = process.env.FABRIC_HINT_CLIENT;
-  if (typeof envClient === "string" && envClient.length > 0) {
-    const normalised = envClient.trim().toLowerCase();
-    if (normalised === "cc" || normalised === "codex") {
-      return normalised;
-    }
-  }
-  return undefined;
-}
 
 /**
  * v2.0.0-rc.20 TASK-03: emit one `assistant_turn_observed` event per
@@ -1869,329 +522,6 @@ function detectClient() {
  * tuple on older Node where randomUUID is missing (cjs hook tooling
  * defensively targets Node 18+, but the fallback keeps it event-shaped).
  */
-function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
-  if (stdinPayload === null || typeof stdinPayload !== "object") return;
-  try {
-    const sessionId = stdinPayload.session_id;
-    if (typeof sessionId !== "string" || sessionId.length === 0) return;
-    const transcript = summarizeTranscript(stdinPayload.transcript_path);
-    const turns = transcript.assistant_turns;
-    if (!Array.isArray(turns) || turns.length === 0) return;
-
-    // Resolve event-ledger path. Caller already validated cwd shape.
-    const fabricDir = join(cwd, FABRIC_DIR);
-    if (!existsSync(fabricDir)) {
-      // No .fabric/ → workspace is uninitialised. Silently skip; the digest
-      // writer applies the same guard via its own internal check.
-      return;
-    }
-    const client = detectClient();
-    let randomUUID;
-    try {
-      ({ randomUUID } = require("node:crypto"));
-    } catch {
-      randomUUID = null;
-    }
-
-    // v2.0.0-rc.39 (P1 emit-fold): empty-shell turns (no KB: line, no cites)
-    // do not get an events.jsonl line — they are tallied and folded into one
-    // metrics.jsonl counter row at the end of this batch. This zeroes the 99%
-    // empty-shell bloat at the source while keeping cite-bearing turns as
-    // discrete audit events. Count carries per-Stop re-emission exactly (we
-    // tally every empty turn the transcript presents, not just new ones), so
-    // the reader-side counter merge reconstructs total_turns byte-for-byte.
-    let emptyShellCount = 0;
-    for (const turn of turns) {
-      try {
-        const citeIds = Array.isArray(turn.cite_ids) ? turn.cite_ids : [];
-        const citeCommitments = Array.isArray(turn.cite_commitments)
-          ? turn.cite_commitments
-          : [];
-        const isEmptyShell =
-          (turn.kb_line_raw === null || turn.kb_line_raw === undefined) &&
-          citeIds.length === 0 &&
-          citeCommitments.length === 0;
-        if (isEmptyShell) {
-          emptyShellCount += 1;
-          continue;
-        }
-        const idSuffix = typeof randomUUID === "function"
-          ? randomUUID()
-          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        const event = {
-          kind: "fabric-event",
-          id: `event:${idSuffix}`,
-          ts: Date.now(),
-          schema_version: 1,
-          session_id: sessionId,
-          event_type: EVENT_TYPE_ASSISTANT_TURN_OBSERVED,
-          kb_line_raw: turn.kb_line_raw,
-          cite_ids: citeIds,
-          cite_tags: Array.isArray(turn.cite_tags) ? turn.cite_tags : [],
-          // rc.24 TASK-04: cite_commitments parallel array (assistantTurn
-          // ObservedEventSchema gained this slot in rc.24 TASK-01). Empty
-          // array for legacy turns or when the parser lib is unavailable —
-          // the schema defaults `.default([])` so omitting it would also be
-          // valid, but emitting an explicit `[]` keeps the on-disk shape
-          // uniform across rc.24+ events.
-          cite_commitments: citeCommitments,
-          turn_id: `${sessionId}-${turn.envelope_index}`,
-          envelope_index: turn.envelope_index,
-          timestamp: new Date().toISOString(),
-        };
-        if (client !== undefined) event.client = client;
-        appendEvent(fabricDir, event);
-      } catch {
-        // Per-turn failure must not abort the remaining turns; the Stop hook
-        // contract is "never block on hook failure". Best-effort continues.
-      }
-    }
-
-    // rc.39 emit-fold: write one metrics.jsonl counter row for the folded
-    // empty-shell turns. Best-effort — a failure here must never block the
-    // Stop hook (KT-DEC-0007). The counter key is namespaced by client so the
-    // reader's per_client total_turns breakdown stays invariant; an undefined
-    // client (adapter lib absent) folds into the bare `assistant_turn_observed`
-    // key, mirroring how such turns omit the event-side `client` discriminator.
-    if (emptyShellCount > 0) {
-      try {
-        const counterKey =
-          client !== undefined
-            ? `${EVENT_TYPE_ASSISTANT_TURN_OBSERVED}:${client}`
-            : EVENT_TYPE_ASSISTANT_TURN_OBSERVED;
-        const metricsRow = {
-          timestamp: new Date().toISOString(),
-          window: "stop",
-          counters: { [counterKey]: emptyShellCount },
-        };
-        const metricsPath = join(fabricDir, METRICS_LEDGER_FILE);
-        appendLockedLine(metricsPath, JSON.stringify(metricsRow) + "\n");
-      } catch {
-        // metrics fold is observability-only; never block the hook on failure.
-      }
-    }
-  } catch {
-    // Outer guard — never throw. Hook continues silently.
-  }
-}
-
-/**
- * v2.0.0-rc.7 T5: extract user_messages + edit_paths + 1-line title from the
- * transcript JSONL referenced by the hook's stdin payload. Best-effort, never
- * throws.
- *
- * Claude Code's transcript_path points at a JSONL where each line is a
- * message envelope. We sniff for `role: "user"` lines (text content) and
- * for tool-use entries naming Edit / Write / MultiEdit to harvest file_path.
- *
- * v2.0.0-rc.20 TASK-03: additionally collects `assistant_turns[]` — one
- * entry per assistant envelope with the parsed KB-line cite metadata. Field
- * is additive; existing callers (writeSessionDigestBestEffort) ignore it.
- */
-function summarizeTranscript(transcriptPath) {
-  // rc.20 TASK-03: additive `assistant_turns` array — one entry per assistant
-  // envelope, regardless of whether the first line matched KB:. Downstream
-  // consumers (extractAndWriteAssistantTurnsBestEffort) emit one
-  // assistant_turn_observed event per element; `kb_line_raw=null` when no
-  // KB: line was found.
-  const out = { user_messages: [], edit_paths: [], title: "", assistant_turns: [] };
-  if (typeof transcriptPath !== "string" || transcriptPath.length === 0) return out;
-  if (!existsSync(transcriptPath)) return out;
-  let raw;
-  try {
-    raw = readFileSync(transcriptPath, "utf8");
-  } catch {
-    return out;
-  }
-  const lines = raw.split(/\r?\n/);
-  let envelopeIndex = -1;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    let envelope;
-    try {
-      envelope = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    if (envelope === null || typeof envelope !== "object") continue;
-    envelopeIndex += 1;
-
-    // v2.0.0-rc.27 TASK-009 (audit §2.16): Codex CLI uses a different
-    // envelope shape — { type:"response_item", payload:{ type:"message",
-    // role, content:[{type:"input_text"|"output_text", text}] } } — vs Claude
-    // Code's { type:"user", message:{ role, content } }. Resolve role +
-    // content from whichever shape is present; without this, every Codex
-    // session's digest came out empty (audit §2.16 — fixed here).
-    const role =
-      envelope.role ||
-      (envelope.message && envelope.message.role) ||
-      (envelope.payload && envelope.payload.role);
-    if (role === "user") {
-      const content =
-        envelope.content ||
-        (envelope.message && envelope.message.content) ||
-        (envelope.payload && envelope.payload.content);
-      if (typeof content === "string") {
-        out.user_messages.push(content);
-      } else if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block && typeof block === "object" && typeof block.text === "string") {
-            out.user_messages.push(block.text);
-          }
-        }
-      }
-    }
-
-    // rc.20 TASK-03: assistant envelope — capture first non-empty line of the
-    // first text block and parse for `KB:` prefix. We push ONE assistant_turns
-    // entry per assistant envelope (even when no KB: line) so downstream can
-    // distinguish "turn observed, no KB" (kb_line_raw=null) from "no turn".
-    if (role === "assistant") {
-      const content =
-        envelope.content ||
-        (envelope.message && envelope.message.content) ||
-        (envelope.payload && envelope.payload.content);
-      let firstText = null;
-      if (typeof content === "string") {
-        firstText = content;
-      } else if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") {
-            firstText = block.text;
-            break;
-          }
-        }
-      }
-      let kbLineRaw = null;
-      let citeIds = [];
-      let citeTags = [];
-      // rc.24 TASK-04: parallel `cite_commitments` array, populated by the
-      // shared cite-line parser. One entry per non-sentinel cite (index-aligned
-      // with cite_ids). Sentinel `KB: none` contributes a `cite_tags=["none"]`
-      // entry but no commitment — matches the parseCiteLine index contract.
-      let citeCommitments = [];
-      // v2.0.0-rc.27 TASK-009: Codex assistant blocks carry text under
-      // `type:"output_text"` (not `type:"text"`). Fall back when no text-typed
-      // block matched but a typed output_text block exists.
-      if (firstText === null && Array.isArray(content)) {
-        for (const block of content) {
-          if (block && typeof block === "object" && block.type === "output_text" && typeof block.text === "string") {
-            firstText = block.text;
-            break;
-          }
-        }
-      }
-      if (typeof firstText === "string" && firstText.length > 0) {
-        // Leading contiguous `KB:` lines (applied + dismissed in one reply).
-        // parseCiteLine already supports multi-line input; previously only the
-        // first non-empty line was considered, so a second `KB: … [dismissed]`
-        // was dropped (ccpm dogfood 2026-07-12). Still require the FIRST
-        // non-empty line to be a `KB:` line so prose-only turns stay empty.
-        const linesOfText = firstText.split(/\r?\n/);
-        const kbBlockLines = [];
-        for (const l of linesOfText) {
-          const trimmed = l.trim();
-          if (trimmed.length === 0) {
-            // Allow blank lines only after we already started a KB: prefix block.
-            if (kbBlockLines.length > 0) continue;
-            continue;
-          }
-          if (/^KB:\s*/i.test(trimmed)) {
-            kbBlockLines.push(trimmed);
-            continue;
-          }
-          // First non-empty non-KB line ends the leading block (or means no cite).
-          break;
-        }
-        if (kbBlockLines.length > 0) {
-          // rc.24 TASK-04: route the FULL `KB: ...` block to the shared parser.
-          // parseCiteLine handles sentinels (`KB: none [<reason>]`) AND full
-          // cite form including contract tail (`KB: KT-DEC-0001 [recalled] →
-          // edit:foo.ts`) uniformly. Multi-line applied+dismissed is now kept.
-          const kbBlock = kbBlockLines.join("\n");
-          kbLineRaw = kbBlock;
-          if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
-            const parsed = citeLineParser.parseCiteLine(kbBlock);
-            citeIds = parsed.cite_ids;
-            citeTags = parsed.cite_tags;
-            citeCommitments = parsed.cite_commitments;
-          }
-          // Degraded mode (lib missing) → keep kbLineRaw but emit empty
-          // arrays; doctor downstream treats this as "turn observed, parse
-          // unavailable" without crashing.
-        }
-      }
-      out.assistant_turns.push({
-        envelope_index: envelopeIndex,
-        kb_line_raw: kbLineRaw,
-        cite_ids: citeIds,
-        cite_tags: citeTags,
-        cite_commitments: citeCommitments,
-      });
-    }
-
-    // Tool use — look for Edit / Write / MultiEdit and harvest file_path.
-    const candidates = [];
-    if (envelope.type === "tool_use") candidates.push(envelope);
-    const msgContent = envelope.message && envelope.message.content;
-    if (Array.isArray(msgContent)) {
-      for (const block of msgContent) {
-        if (block && block.type === "tool_use") candidates.push(block);
-      }
-    }
-    for (const tu of candidates) {
-      const name = tu.name;
-      if (name === "Edit" || name === "Write" || name === "MultiEdit") {
-        const input = tu.input || tu.parameters || {};
-        const fp = input.file_path || input.filePath || input.path;
-        if (typeof fp === "string" && fp.length > 0) {
-          out.edit_paths.push(fp);
-        }
-        if (name === "MultiEdit" && Array.isArray(input.edits)) {
-          for (const e of input.edits) {
-            const f = e && (e.file_path || e.filePath || e.path);
-            if (typeof f === "string" && f.length > 0) out.edit_paths.push(f);
-          }
-        }
-      }
-    }
-
-    // v2.0.0-rc.27 TASK-009 (audit §2.16): Codex apply_patch path. Codex
-    // emits one response_item envelope per file-edit invocation with payload
-    // shape { type:"custom_tool_call", name:"apply_patch", input:<patch
-    // string> }. The patch body lists target files via `*** Update File:`,
-    // `*** Add File:`, `*** Delete File:` directives — harvest those.
-    if (
-      envelope.type === "response_item" &&
-      envelope.payload &&
-      envelope.payload.type === "custom_tool_call" &&
-      envelope.payload.name === "apply_patch" &&
-      typeof envelope.payload.input === "string"
-    ) {
-      const patchInput = envelope.payload.input;
-      const fileDirectiveRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+?)\s*$/gm;
-      let m;
-      while ((m = fileDirectiveRe.exec(patchInput)) !== null) {
-        const fp = m[1].trim();
-        if (fp.length > 0) out.edit_paths.push(fp);
-      }
-    }
-  }
-  // 1-line title = first non-empty user message (trimmed). Falls back to "".
-  if (out.user_messages.length > 0) {
-    const first = out.user_messages[0].replace(/\s+/g, " ").trim();
-    out.title = first.slice(0, 80);
-  }
-  // Dedup edit_paths preserving order.
-  const seen = new Set();
-  out.edit_paths = out.edit_paths.filter((p) => {
-    if (seen.has(p)) return false;
-    seen.add(p);
-    return true;
-  });
-  return out;
-}
 
 /**
  * v2.0.0-rc.7 T5: writeSessionDigestBestEffort — non-blocking digest fan-out.
@@ -2199,22 +529,7 @@ function summarizeTranscript(transcriptPath) {
  * swallowed; the Stop hook contract remains "never block on hook failure".
  */
 function writeSessionDigestBestEffort(projectRoot, stdinPayload) {
-  if (sessionDigestWriter === null) return;
-  if (stdinPayload === null) return;
-  try {
-    const sessionId = stdinPayload.session_id;
-    if (typeof sessionId !== "string" || sessionId.length === 0) return;
-    const transcript = summarizeTranscript(stdinPayload.transcript_path);
-    sessionDigestWriter.writeDigest({
-      projectRoot,
-      session_id: sessionId,
-      title: transcript.title,
-      user_messages: transcript.user_messages,
-      edit_paths: transcript.edit_paths,
-    });
-  } catch {
-    // Best-effort. Stop hook continues.
-  }
+  return stopStdin.writeSessionDigestBestEffort(projectRoot, stdinPayload);
 }
 
 // ux-w0-3 (KT-DEC-0007): the SINGLE soft-emit path for EVERY Stop-hook signal
@@ -2227,40 +542,17 @@ function writeSessionDigestBestEffort(projectRoot, stdinPayload) {
 // inline paths). When the client adapter is unavailable, falls back to a plain
 // non-blocking JSON payload (decision stays "soft", never blocking).
 function emitSoftSignal(out, result, cwd, highValue) {
-  const reasonText = typeof result.reason === "string" ? result.reason : "";
-  delete result.threshold;
-  delete result.actual_value;
-  const client =
-    clientAdapter && typeof clientAdapter.detectClient === "function"
-      ? clientAdapter.detectClient(__dirname)
-      : undefined;
-  // Known client (cc / codex): emit the dual-sink envelope on stdout —
-  // additionalContext(AI, always) + systemMessage(human, gated by nudge_mode).
-  if (client && clientAdapter && typeof clientAdapter.emitDualSink === "function") {
-    const humanGate =
-      nudgePolicy !== null
-        ? nudgePolicy.resolveHumanSink(cwd, "stop", { highValue })
-        : { emitHuman: true };
-    clientAdapter.emitDualSink(
-      { human: humanGate.emitHuman ? reasonText : null, ai: reasonText },
-      { client, eventName: "Stop", streams: { stdout: out } },
-    );
-    return;
-  }
-  // Unknown client / no adapter → emit the reason as a plain, non-blocking
-  // payload on stdout. `result.decision` is "soft" (non-blocking), so this is
-  // a reminder, not a gate (KT-DEC-0007).
-  out.write(JSON.stringify(result));
+  return softSignalEmit.emitSoftSignal(out, result, cwd, highValue);
 }
 
 // High-value (knowledge-loss) signals surface at lower nudge_mode volumes.
-const HIGH_VALUE_SIGNALS = new Set(["archive", "archive_backlog"]);
+const HIGH_VALUE_SIGNALS = softSignalEmit.HIGH_VALUE_SIGNALS;
 
 // TASK-005 (grill G5 / C-003): the ONLY signals allowed to emit a nudge on the
 // Stop hook. C-003 LOCKS the archive family here (趁热归档 value dies if moved to
 // SessionStart). review / import / maintenance moved to the SessionStart summary
 // line (knowledge-hint-broad.cjs) and are silent on Stop.
-const STOP_EMIT_SIGNALS = new Set(["archive", "archive_backlog"]);
+const STOP_EMIT_SIGNALS = softSignalEmit.STOP_EMIT_SIGNALS;
 
 /**
  * Main entry — invoked both as a CLI (require.main === module) and in-process by tests.
@@ -2363,42 +655,9 @@ function main(env, stdio) {
       };
     }
 
-    // rc.7 T7: read the externalized thresholds and pass them into decide.
-    // Reader failures degrade silently to documented defaults — fabric-hint
-    // must never block on config errors (see hook contract above).
-    //
-    // rc.16 TASK-002 (F2-apply): resolve `fabric_language` ONCE per main()
-    // invocation via the banner-i18n lib. The result threads through
-    // `thresholds.variant` into both decide() and evaluateMaintenanceSignal()
-    // so we read the config file at most once, not five times. Lib reader
-    // is never-throw; defensive try/catch is belt-and-suspenders.
-    let variant = "zh-CN";
-    try {
-      variant = readFabricLanguage(cwd);
-    } catch {
-      variant = "zh-CN";
-    }
-
-    let thresholds;
-    try {
-      thresholds = {
-        archiveHintHours: readArchiveHintHours(cwd),
-        reviewHintPendingCount: readReviewHintPendingCount(cwd),
-        reviewHintPendingAgeDays: readReviewHintPendingAgeDays(cwd),
-        maintenanceHintDays: readMaintenanceHintDays(cwd),
-        maintenanceHintCooldownDays: readMaintenanceHintCooldownDays(cwd),
-        variant,
-      };
-    } catch {
-      thresholds = {
-        archiveHintHours: DEFAULT_ARCHIVE_HINT_HOURS,
-        reviewHintPendingCount: DEFAULT_REVIEW_HINT_PENDING_COUNT,
-        reviewHintPendingAgeDays: DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
-        maintenanceHintDays: DEFAULT_MAINTENANCE_HINT_DAYS,
-        maintenanceHintCooldownDays: DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
-        variant,
-      };
-    }
+    // rc.7 T7 / ISS-20260713-052: threshold bag assembled in lib/hint-thresholds.cjs
+    const thresholds = hintThresholds.buildStopThresholds(cwd);
+    const variant = thresholds.variant;
 
     // rc.7 T4: build the 人-first banner activity overview from the
     // edit-counter sidecar. Anchored at the last knowledge_proposed event
@@ -2518,10 +777,27 @@ function main(env, stdio) {
     // re-gated here. Other signals (review/import/maintenance) are unaffected.
     if (result.signal === "archive") {
       const sid = resolveHookSessionId(stdinPayload);
-      const watermarkTs = sessionAnchorTs(events, sid);
+      // ISS-20260713-043: value-gate must use sessionArchiveWatermark (null when
+      // never archived → treated as 0), NOT sessionAnchorTs. sessionAnchorTs falls
+      // back to first-activity ts, and hasHighValueArchiveSignal uses strict `>`;
+      // that wrongly swallows a never-archived session whose first event is already
+      // high-value. Backlog path (countBacklogSessions) already uses watermark.
+      const watermarkTs = sessionArchiveWatermark(events, sid);
       if (!hasHighValueArchiveSignal(events, watermarkTs, sid)) {
-        return; // no high-value candidate → stay quiet (D6 value-gate)
+        // ISS-20260713-050: value-gate suppress must NOT bare-return. Fall through
+        // to the no-signal path so emitSessionStatus can still surface a human
+        // trust-anchor (when nudge_mode allows). Archive CTA stays suppressed.
+        result = null;
       }
+    }
+
+    if (result === null) {
+      try {
+        emitSessionStatus(cwd, events, stdinPayload, nowMs, pendingStats, out);
+      } catch {
+        // status breadcrumb is decorative — never throw
+      }
+      return;
     }
 
     // v2.0.0-rc.37 NEW-16: per-signal dismiss. A chosen signal whose type the
@@ -2594,6 +870,63 @@ function main(env, stdio) {
   }
 }
 
+
+function _readConfigNumber(projectRoot, fieldName, defaultValue) {
+  return hintConfig._readConfigNumber(projectRoot, fieldName, defaultValue);
+}
+function readArchiveHintHours(projectRoot) { return hintConfig.readArchiveHintHours(projectRoot); }
+function readReviewHintPendingCount(projectRoot) { return hintConfig.readReviewHintPendingCount(projectRoot); }
+function readReviewHintPendingAgeDays(projectRoot) { return hintConfig.readReviewHintPendingAgeDays(projectRoot); }
+function readMaintenanceHintDays(projectRoot) { return hintConfig.readMaintenanceHintDays(projectRoot); }
+function readMaintenanceHintCooldownDays(projectRoot) { return hintConfig.readMaintenanceHintCooldownDays(projectRoot); }
+function readArchiveBacklogSessionCount(projectRoot) { return hintConfig.readArchiveBacklogSessionCount(projectRoot); }
+function readArchiveBacklogIdleHours(projectRoot) { return hintConfig.readArchiveBacklogIdleHours(projectRoot); }
+function readCooldownHours(projectRoot) { return hintConfig.readCooldownHours(projectRoot); }
+function readUnderseedThreshold(projectRoot) { return hintConfig.readUnderseedThreshold(projectRoot); }
+function readArchiveEditThreshold(projectRoot) { return hintConfig.readArchiveEditThreshold(projectRoot); }
+
+
+const DISMISSABLE_SIGNALS = sessionSignalState.DISMISSABLE_SIGNALS;
+function sessionScopedCacheFile(baseRelPath, sessionId) {
+  return sessionSignalState.sessionScopedCacheFile(baseRelPath, sessionId);
+}
+function readShownCache(projectRoot, sessionId) {
+  return sessionSignalState.readShownCache(projectRoot, sessionId);
+}
+function writeShownCache(projectRoot, cache, sessionId) {
+  return sessionSignalState.writeShownCache(projectRoot, cache, sessionId);
+}
+function sessionDismissFileName(sessionId) {
+  return sessionSignalState.sessionDismissFileName(sessionId);
+}
+function readDismissedSignals(projectRoot, sessionId) {
+  return sessionSignalState.readDismissedSignals(projectRoot, sessionId);
+}
+function writeSessionDismiss(projectRoot, sessionId, signals) {
+  return sessionSignalState.writeSessionDismiss(projectRoot, sessionId, signals);
+}
+function renderDismissOption(signal, variant) {
+  return sessionSignalState.renderDismissOption(signal, variant);
+}
+function readMaintenanceLastEmit(projectRoot, sessionId) {
+  return sessionSignalState.readMaintenanceLastEmit(projectRoot, sessionId);
+}
+function writeMaintenanceLastEmit(projectRoot, nowMs, sessionId) {
+  return sessionSignalState.writeMaintenanceLastEmit(projectRoot, nowMs, sessionId);
+}
+
+
+function parseKbLine(raw) {
+  return assistantTurnEmit.parseKbLine(raw);
+}
+function detectClient() {
+  return assistantTurnEmit.detectClient();
+}
+function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
+  return assistantTurnEmit.extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload);
+}
+
+
 module.exports = {
   main,
   readLedger,
@@ -2610,6 +943,7 @@ module.exports = {
   isImportInFlight,
   decide,
   // crack 1 + 2: two-lane archive strategy helpers (exported for unit testing).
+  hasHighValueArchiveSignal,
   sessionArchiveWatermark,
   sessionFirstActivityTs,
   sessionAnchorTs,

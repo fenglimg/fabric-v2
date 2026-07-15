@@ -2,7 +2,7 @@
   "version": "3.1",
   "project_name": "fabric-v2-store-only-align",
   "status": "idle",
-  "current_milestone": null,
+  "current_milestone": "M-adhoc-20260713-residual-registered-6",
   "current_task_id": null,
   "milestones": [
     {
@@ -55,6 +55,80 @@
       "merge_pr": "https://github.com/fenglimg/fabric-v2/pull/56",
       "merge_commit": "080457d55e6cc2d9656a0aab406c25dec6fd2210",
       "source_artifact": "ANL-same-space-frameworks-2026-07-12"
+    },
+    {
+      "id": "M-adhoc-20260713-high-tier-a",
+      "type": "adhoc",
+      "name": "Ad-hoc: open high Tier A clearance",
+      "status": "completed",
+      "phases": [
+        1
+      ],
+      "phase_slugs": {
+        "1": "standalone"
+      },
+      "roadmap_ref": null,
+      "created_at": "2026-07-12T15:38:47.342Z",
+      "source_artifact": "DBP-20260713-001714",
+      "completed_at": "2026-07-12T16:05:31.079Z",
+      "close_note": "Tier A high clearance: 8 fixed, residual high deferred"
+    },
+    {
+      "id": "M-adhoc-20260713-high-tier-b",
+      "type": "adhoc",
+      "name": "Ad-hoc: residual high Tier B",
+      "status": "completed",
+      "phases": [
+        1
+      ],
+      "phase_slugs": {
+        "1": "standalone"
+      },
+      "created_at": "2026-07-12T16:18:31.072Z",
+      "completed_at": "2026-07-12T16:22:56.600Z",
+      "close_note": "Tier B residual high: 5 fixed, 3 deferred"
+    },
+    {
+      "id": "M-adhoc-20260713-final-clearance",
+      "type": "adhoc",
+      "name": "Ad-hoc: final backlog clearance",
+      "status": "completed",
+      "phases": [
+        1
+      ],
+      "phase_slugs": {
+        "1": "standalone"
+      },
+      "created_at": "2026-07-12T16:42:18.811Z",
+      "completed_at": "2026-07-12T16:49:54.814Z",
+      "close_note": "partial: 5 issues closed; 011/013/020 residual god-module/monolith work remains"
+    },
+    {
+      "id": "M-adhoc-20260713-residual-issues",
+      "type": "adhoc",
+      "name": "Ad-hoc: residual open issues 011+020",
+      "status": "completed",
+      "phases": [
+        1
+      ],
+      "phase_slugs": {
+        "1": "standalone"
+      },
+      "created_at": "2026-07-12T17:19:13.202Z"
+    },
+    {
+      "id": "M-adhoc-20260713-residual-registered-6",
+      "type": "adhoc",
+      "name": "Ad-hoc: residual registered ISS-036..041 clearance",
+      "status": "active",
+      "phases": [
+        1
+      ],
+      "phase_slugs": {
+        "1": "standalone"
+      },
+      "roadmap_ref": null,
+      "created_at": "2026-07-13T02:40:31.851305Z"
     }
   ],
   "_milestone_schema": "{ id, name, type: 'standard'|'adhoc', status, phases[], phase_slugs{}, roadmap_ref, created_at }",
@@ -361,6 +435,120 @@
         "feature_branch": "feat/fabric-kb-lifecycle",
         "upstream": "本会话 Fabric dogfood 遥测分析 + maestro-flow 知识系统调研"
       }
+    },
+    {
+      "id": "PLN-20260713-high-tier-a",
+      "type": "plan",
+      "scope": "standalone",
+      "path": "scratch/20260713-plan-high-tier-a",
+      "status": "completed",
+      "milestone": "M-adhoc-20260713-high-tier-a",
+      "created_at": "2026-07-12T15:38:47.362Z",
+      "metadata": {
+        "issues": [
+          "ISS-20260713-001",
+          "ISS-20260713-004",
+          "ISS-20260713-005",
+          "ISS-20260713-007",
+          "ISS-20260713-009",
+          "ISS-20260713-012",
+          "ISS-20260713-014",
+          "ISS-20260713-018"
+        ],
+        "waves": 4
+      }
+    },
+    {
+      "id": "PLN-20260713-high-tier-b",
+      "type": "plan",
+      "scope": "standalone",
+      "path": "scratch/20260713-plan-high-tier-b",
+      "status": "completed",
+      "milestone": "M-adhoc-20260713-high-tier-b",
+      "created_at": "2026-07-12T16:18:31.072Z"
+    },
+    {
+      "id": "PLN-20260713-final-clearance",
+      "type": "plan",
+      "scope": "standalone",
+      "path": "scratch/20260713-plan-final-clearance",
+      "status": "completed",
+      "milestone": "M-adhoc-20260713-final-clearance",
+      "created_at": "2026-07-12T16:42:18.811Z"
+    },
+    {
+      "id": "PLN-20260713-residual-011-020",
+      "type": "plan",
+      "scope": "standalone",
+      "path": "scratch/20260713-plan-residual-issues-011-020",
+      "status": "completed",
+      "milestone": "M-adhoc-20260713-residual-issues",
+      "created_at": "2026-07-12T17:19:13.202Z"
+    },
+    {
+      "id": "EXC-004",
+      "type": "execute",
+      "milestone": "M-adhoc-20260713-residual-issues",
+      "phase": 1,
+      "path": ".workflow/scratch/20260713-plan-residual-issues-011-020",
+      "status": "completed",
+      "harvested": false,
+      "created_at": "2026-07-12T17:28:33.738Z",
+      "completed_at": "2026-07-12T17:28:33.738Z"
+    },
+    {
+      "id": "REV-001",
+      "type": "review",
+      "milestone": "M-adhoc-20260713-residual-issues",
+      "phase": 1,
+      "scope": "phase",
+      "path": "scratch/20260713-plan-residual-issues-011-020",
+      "status": "completed",
+      "depends_on": "EXC-004",
+      "harvested": false,
+      "created_at": "2026-07-12T17:30:00.000Z",
+      "completed_at": "2026-07-12T17:38:22.000Z",
+      "review": {
+        "level": "standard",
+        "verdict": "BLOCK",
+        "findings_count": 29,
+        "issues_created": 6,
+        "severity_distribution": {
+          "critical": 1,
+          "high": 8,
+          "medium": 12,
+          "low": 8,
+          "total": 29
+        }
+      }
+    },
+    {
+      "id": "PLN-20260713-residual-registered-036-041",
+      "type": "plan",
+      "milestone": "M-adhoc-20260713-residual-registered-6",
+      "phase": 1,
+      "scope": "standalone",
+      "path": ".workflow/scratch/20260713-plan-residual-registered-036-041",
+      "status": "completed",
+      "depends_on": [],
+      "harvested": false,
+      "created_at": "2026-07-13T02:40:31.851305Z",
+      "completed_at": "2026-07-13T02:40:31.851305Z",
+      "session_id": "ralph-v2-20260713-111826",
+      "summary": "gap-fix residual registered ISS-036/037/041/038/039/040 three-wave plan (5 tasks)"
+    },
+    {
+      "id": "REV-002",
+      "type": "review",
+      "milestone": "M-adhoc-20260713-residual-registered-6",
+      "phase": 1,
+      "scope": "phase",
+      "path": "scratch/20260713-review-P1-residual-registered-036-041",
+      "status": "completed",
+      "depends_on": "PLN-20260713-residual-registered-036-041",
+      "harvested": false,
+      "created_at": "2026-07-13T03:04:32.870Z",
+      "completed_at": "2026-07-13T03:04:32.870Z"
     }
   ],
   "last_updated": "2026-07-12T13:30:00.000Z",
@@ -418,5 +606,5 @@
     }
   ],
   "phase": null,
-  "updated_at": "2026-07-12T13:30:00.000Z"
+  "updated_at": "2026-07-13T03:04:32.870Z"
 }

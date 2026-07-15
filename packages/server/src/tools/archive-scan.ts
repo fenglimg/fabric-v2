@@ -13,6 +13,7 @@ import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { collectArchiveScan } from "../services/archive-scan.js";
+import { toMcpToolError } from "./mcp-tool-error.js";
 
 // v2.0.0-rc.37 NEW-9: deterministic Phase 1 ledger scan for fabric-archive.
 // Read-only: no gate wait / auto-heal needed (the scan reads events.jsonl, not
@@ -58,6 +59,8 @@ export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker
           ],
           structuredContent: result,
         };
+      } catch (error) {
+        return toMcpToolError(error, { tool: "fab_archive_scan" });
       } finally {
         tracker?.exit(requestId);
       }

@@ -449,7 +449,8 @@ describe("plan-context-hint — always_bodies projection (dual-sink D9)", () => 
       type: "guidelines",
       layer: "team",
       summary: "Code style guidelines",
-      body: "# Code style\n\nUse 2-space indent.",
+      // ISS-20260713-014: SessionStart wire is index-only
+      body: "",
     });
     expect(output.always_bodies[1].id).toBe("personal:KP-MOD-9001");
   });

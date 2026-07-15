@@ -20,11 +20,11 @@ exports[`ConsoleOutputRenderer reskin — error block (NO_COLOR) > renders the g
 `;
 
 exports[`ConsoleOutputRenderer reskin — install steps + summary (NO_COLOR) > renders install steps as flat C-圆点 lines (spec §0.4) 1`] = `
-"● Preflight       ✓
-● Environment     ✓
-● Store           ✓
-● Hooks           ○
-● MCP             ✓
-● Validate        ✓
-● Guidance        ✓"
+"● Preflight       [ok] ✓
+● Environment     [ok] ✓
+● Store           [ok] ✓
+● Hooks           [skip] ○
+● MCP             [ok] ✓
+● Validate        [ok] ✓
+● Guidance        [ok] ✓"
 `;

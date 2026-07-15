@@ -1,0 +1,132 @@
+{
+  "id": "TASK-001",
+  "title": "Verify+lock COR-001/COR-002 (036+037) full-file readLedger + partial-tail",
+  "description": "ISS-036/037 在 worktree 中已修复（ledger-scan.readLedger full-file + trailing-newline pop；event-reader.parseJsonlEvents partial-tail drop）。本任务禁止重写实现，只验证契约、补齐/确认测试与 smoke evidence，并准备 close 证据。",
+  "issue_id": "ISS-20260713-036",
+  "issue_refs": [
+    "ISS-20260713-036",
+    "ISS-20260713-037"
+  ],
+  "type": "fix",
+  "priority": "critical",
+  "effort": "small",
+  "action": "Verify packages/cli/templates/hooks/lib/ledger-scan.cjs::readLedger uses readFileSync full-file (NOT eventReader.readRecentEvents / DEFAULT_TAIL_BYTES) and drops last line when raw lacks trailing newline; verify packages/cli/templates/hooks/lib/event-reader.cjs::parseJsonlEvents pops final fragment without trailing newline; run fabric-hint partial-tail tests + optional inline full-vs-tail smoke; write close evidence only — no behavior rewrite if already correct.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/cli/templates/hooks/lib/",
+  "focus_paths": [
+    "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+    "packages/cli/templates/hooks/lib/event-reader.cjs",
+    "packages/cli/__tests__/fabric-hint.test.ts"
+  ],
+  "read_first": [
+    "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+    "packages/cli/templates/hooks/lib/event-reader.cjs",
+    "packages/cli/__tests__/fabric-hint.test.ts",
+    ".workflow/scratch/20260713-plan-residual-issues-011-020/verification.json"
+  ],
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": null,
+  "execution_group": "G1-correctness-verify",
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "packages/cli/templates/hooks/lib/ledger-scan.cjs readLedger body contains readFileSync(eventPath and does NOT call readRecentEvents",
+      "packages/cli/templates/hooks/lib/ledger-scan.cjs contains hasTrailingNewline / endsWith(\"\\n\") and lines.pop() for partial-tail drop",
+      "packages/cli/templates/hooks/lib/event-reader.cjs parseJsonlEvents drops final fragment when !raw.endsWith(\"\\n\") via lines.pop()",
+      "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts exits 0 and includes readLedger partial-tail cases",
+      "optional smoke: full-file readLedger sees EARLY marker on large ledger while readRecentEvents 256KB tail misses it (if smoke script run)"
+    ],
+    "verification": "1) rg -n 'readRecentEvents|readFileSync|endsWith|lines.pop' packages/cli/templates/hooks/lib/ledger-scan.cjs packages/cli/templates/hooks/lib/event-reader.cjs; 2) pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts; 3) if needed, node smoke comparing full vs tail EARLY marker + partial-tail lengths.",
+    "definition_of_done": "036/037 契约被测试锁定；实现确认 full-file + partial-tail；可 close 两条 issue，无需行为改动。"
+  },
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+      "action": "verify",
+      "target": "readLedger",
+      "change": "Confirm full-file readFileSync + trailing-newline pop; do not route through readRecentEvents(DEFAULT_TAIL_BYTES=256KB)"
+    },
+    {
+      "path": "packages/cli/templates/hooks/lib/event-reader.cjs",
+      "action": "verify",
+      "target": "parseJsonlEvents",
+      "change": "Confirm final fragment drop when raw lacks trailing newline"
+    },
+    {
+      "path": "packages/cli/__tests__/fabric-hint.test.ts",
+      "action": "modify",
+      "target": "describe fabric-hint.cjs — readLedger",
+      "change": "Only if coverage gaps: ensure partial-tail + corrupt-line contracts remain; prefer no churn if tests already cover"
+    }
+  ],
+  "implementation": [
+    "Read ledger-scan.cjs::readLedger and confirm comments + body: full-file readFileSync, hasTrailingNewline pop, JSON.parse per line",
+    "Read event-reader.cjs::parseJsonlEvents and confirm same trailing-newline pop contract",
+    "Confirm fabric-hint.test.ts describe('fabric-hint.cjs — readLedger') includes partial-tail drop case; add only if missing",
+    "Run vitest fabric-hint.test.ts; optionally rerun prior cor001_smoke (full has EARLY, tail lacks EARLY, partial-tail lengths)",
+    "Record evidence for issue close of ISS-20260713-036 and ISS-20260713-037 (point to verification.json COR-001/COR-002 + current test pass)"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-cli exec vitest run __tests__/fabric-hint.test.ts"
+    ],
+    "unit": [
+      "packages/cli/__tests__/fabric-hint.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "readLedger tests pass",
+      "no call path from readLedger to readRecentEvents",
+      "partial-tail contract asserted"
+    ]
+  },
+  "reference": {
+    "pattern": "Prior COR-001/COR-002 fix evidence in residual-issues-011-020 verification.json",
+    "files": [
+      ".workflow/scratch/20260713-plan-residual-issues-011-020/verification.json",
+      "packages/cli/templates/hooks/lib/ledger-scan.cjs",
+      "packages/cli/templates/hooks/lib/event-reader.cjs"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "verify-and-close avoids reimplementation churn on already-correct COR fixes while still closing residual registered issue records",
+    "decision_factors": [
+      "context-package current_code_state ALREADY_FIXED_IN_WORKTREE",
+      "prior verification.json marks COR-001/COR-002 fixed"
+    ],
+    "tradeoffs": "Does not further unify ledger parsers (out of scope 032/008)"
+  },
+  "risks": [
+    "Executor may reimplement unnecessarily — guard with verify-first instruction",
+    "Tests only via fabric-hint facade re-export; acceptable if facade still re-exports readLedger"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "fabric-hint Stop hook ledger scan",
+      "event-reader JSONL parse"
+    ],
+    "affected_components": [
+      "ledger-scan",
+      "event-reader"
+    ],
+    "affected_requirements": [
+      "COR-001",
+      "COR-002"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "30m",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 1,
+    "execution_group": "G1-correctness-verify",
+    "executor": "agent"
+  }
+}

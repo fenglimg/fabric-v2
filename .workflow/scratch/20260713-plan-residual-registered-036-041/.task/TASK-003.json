@@ -1,0 +1,135 @@
+{
+  "id": "TASK-003",
+  "title": "Rank SSOT 039 — single cut + types in plan-context-rank",
+  "description": "ISS-039: cutRankedForRecall 手写 topK+floor 与 applyRankCapAndFloor 重复；RankMode/RankOptions 在 plan-context-rank.ts 与 plan-context-scoring.ts 双定义。统一为 rank 模块 SSOT，facade 继续 re-export。",
+  "issue_id": "ISS-20260713-039",
+  "issue_refs": [
+    "ISS-20260713-039"
+  ],
+  "type": "fix",
+  "priority": "high",
+  "effort": "medium",
+  "action": "Delete RankMode/RankOptions type declarations from packages/server/src/services/plan-context-scoring.ts; import type { RankMode, RankOptions } and applyRankCapAndFloor from ./plan-context-rank.js; rewrite cutRankedForRecall to thin wrapper: return applyRankCapAndFloor(rankedScored, 'recall', options, scoringContext.queryTerms.length > 0); keep rankDescriptionItems using applyRankCapAndFloor; ensure plan-context.ts continues export type { RankMode, RankOptions } and cutRankedForRecall without dual definitions.",
+  "status": "pending",
+  "completed_at": null,
+  "actual_duration": null,
+  "scope": "packages/server/src/services/",
+  "focus_paths": [
+    "packages/server/src/services/plan-context-scoring.ts",
+    "packages/server/src/services/plan-context-rank.ts",
+    "packages/server/src/services/plan-context.ts"
+  ],
+  "read_first": [
+    "packages/server/src/services/plan-context-rank.ts",
+    "packages/server/src/services/plan-context-scoring.ts",
+    "packages/server/src/services/plan-context.ts",
+    "packages/server/src/services/plan-context.test.ts",
+    "packages/server/src/services/plan-context-scope-rank.test.ts"
+  ],
+  "depends_on": [],
+  "wave": 3,
+  "parallel_group": null,
+  "execution_group": "G3-arch-rank-ssot",
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "rg -n 'export type RankMode|export type RankOptions' packages/server/src/services/plan-context-scoring.ts returns no matches",
+      "rg -n 'export type RankMode|export type RankOptions' packages/server/src/services/plan-context-rank.ts finds the sole definitions",
+      "cutRankedForRecall body calls applyRankCapAndFloor and does not reimplement rankedScored.slice(0, topK) + relevanceFloor filter inline",
+      "packages/server/src/services/plan-context.ts still re-exports RankMode, RankOptions, cutRankedForRecall",
+      "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/plan-context.test.ts src/services/plan-context-scope-rank.test.ts src/services/recall.test.ts exits 0",
+      "pnpm --filter @fenglimg/fabric-server exec tsc --noEmit exits 0"
+    ],
+    "verification": "rg dual-type/cut patterns; vitest plan-context* + recall; tsc --noEmit",
+    "definition_of_done": "rank cut 与 Rank types 单一来源；cutRankedForRecall 为薄包装；公开 facade 类型导出不变；ISS-039 可 close。"
+  },
+  "files": [
+    {
+      "path": "packages/server/src/services/plan-context-scoring.ts",
+      "action": "modify",
+      "target": "RankMode/RankOptions/cutRankedForRecall",
+      "change": "Remove dual type exports; cutRankedForRecall delegates to applyRankCapAndFloor(rankedScored, 'recall', options, hasQuery)"
+    },
+    {
+      "path": "packages/server/src/services/plan-context-rank.ts",
+      "action": "verify",
+      "target": "RankMode RankOptions applyRankCapAndFloor",
+      "change": "Confirm remains SSOT; expand comments if needed only"
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "action": "modify",
+      "target": "import/export types",
+      "change": "Prefer importing RankMode/RankOptions from plan-context-rank.js (or re-export chain that does not redefine); keep public export type surface identical"
+    }
+  ],
+  "implementation": [
+    "Read applyRankCapAndFloor signature and cutRankedForRecall current body (lines ~389-403)",
+    "In plan-context-scoring.ts: remove export type RankMode/RankOptions blocks; import type { RankMode, RankOptions } from plan-context-rank.js (applyRankCapAndFloor already imported)",
+    "Replace cutRankedForRecall implementation with: const hasQuery = scoringContext.queryTerms.length > 0; return applyRankCapAndFloor(rankedScored, 'recall', options, hasQuery);",
+    "Adjust plan-context.ts imports so RankMode/RankOptions come from rank SSOT (directly or via scoring re-export without local defs)",
+    "Run plan-context + scope-rank + recall tests and tsc --noEmit"
+  ],
+  "test": {
+    "commands": [
+      "pnpm --filter @fenglimg/fabric-server exec vitest run src/services/plan-context.test.ts src/services/plan-context-scope-rank.test.ts src/services/recall.test.ts",
+      "pnpm --filter @fenglimg/fabric-server exec tsc --noEmit"
+    ],
+    "unit": [
+      "packages/server/src/services/plan-context.test.ts",
+      "packages/server/src/services/plan-context-scope-rank.test.ts",
+      "packages/server/src/services/recall.test.ts"
+    ],
+    "integration": [],
+    "success_metrics": [
+      "no dual Rank type exports",
+      "cut uses applyRankCapAndFloor only",
+      "tests + tsc green"
+    ]
+  },
+  "reference": {
+    "pattern": "rankDescriptionItems already delegates to applyRankCapAndFloor — mirror that for cutRankedForRecall",
+    "files": [
+      "packages/server/src/services/plan-context-rank.ts",
+      "packages/server/src/services/plan-context-scoring.ts"
+    ],
+    "examples": null
+  },
+  "rationale": {
+    "chosen_approach": "Thin wrapper preserves call sites (cutRankedForRecall(scoringContext,...)) while eliminating algorithm drift; types live in rank module only",
+    "decision_factors": [
+      "must land before further scoring slice to avoid re-duplication",
+      "prior ARCH-002 was skipped in 011/020 fix-loop"
+    ],
+    "tradeoffs": "cutRankedForRecall hardcodes mode 'recall' which matches current call sites"
+  },
+  "risks": [
+    "Subtle hasQuery semantics must match queryTerms.length > 0 used today",
+    "Import cycles if plan-context-rank starts importing scoring — keep rank pure"
+  ],
+  "code_skeleton": null,
+  "doc_context": {
+    "affected_features": [
+      "planContext ranking cut",
+      "recall ranking"
+    ],
+    "affected_components": [
+      "plan-context-scoring",
+      "plan-context-rank",
+      "plan-context facade"
+    ],
+    "affected_requirements": [
+      "ARCH-002"
+    ],
+    "adr_ids": []
+  },
+  "meta": {
+    "estimated_time": "40m",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 3,
+    "execution_group": "G3-arch-rank-ssot",
+    "executor": "agent"
+  }
+}

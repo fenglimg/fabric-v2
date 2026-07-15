@@ -13,12 +13,23 @@ const ANSI = {
 
 const PALETTE = {
   success: "\x1b[38;2;46;204;113m", // emerald
-  warn: "\x1b[38;2;241;196;15m", // amber
+  warn: "\x1b[38;2;180;120;0m", // amber
   error: "\x1b[38;2;231;76;60m", // alizarin
   drift: "\x1b[38;2;155;89;182m", // amethyst
   ai: "\x1b[38;2;52;152;219m", // peter-river blue
   human: "\x1b[38;2;26;188;156m", // turquoise
   accent: "\x1b[38;2;155;89;182m", // amethyst
+  muted: ANSI.dim,
+};
+
+const PALETTE_256 = {
+  success: "\x1b[38;5;77m",
+  warn: "\x1b[38;5;178m",
+  error: "\x1b[38;5;203m",
+  drift: "\x1b[38;5;141m",
+  ai: "\x1b[38;5;75m",
+  human: "\x1b[38;5;80m",
+  accent: "\x1b[38;5;141m",
   muted: ANSI.dim,
 };
 
@@ -30,10 +41,23 @@ function isColorEnabled(env, isTTY) {
   return Boolean(isTTY === undefined ? process.stdout.isTTY : isTTY);
 }
 
-function paint(token, text, colorOn) {
+function detectColorDepth(env, isTTY) {
+  if (!isColorEnabled(env, isTTY)) return "none";
+  const colorterm = String((env && env.COLORTERM) || "").toLowerCase();
+  if (colorterm.includes("truecolor") || colorterm.includes("24bit")) return "truecolor";
+  const term = String((env && env.TERM) || "").toLowerCase();
+  if (term.includes("256color") || term.includes("256")) return "ansi256";
+  if (term === "linux" || term === "dumb") return "ansi16";
+  return "truecolor";
+}
+
+
+function paint(token, text, colorOn, depth) {
   const on = colorOn === undefined ? isColorEnabled() : colorOn;
-  if (!on) return text;
-  return `${PALETTE[token]}${text}${ANSI.reset}`;
+  if (depth === undefined) depth = detectColorDepth();
+  if (!on || depth === "none") return text;
+  const pal = depth === "ansi256" ? PALETTE_256 : PALETTE;
+  return `${pal[token]}${text}${ANSI.reset}`;
 }
 
 const SYMBOL_ASCII = { ok: "[ok]", warn: "[warn]", error: "[error]" };
@@ -68,4 +92,6 @@ function scopeBadge(scope, colorOn) {
   return on ? paint(SCOPE_BADGE_TOKEN[scope], text, true) : text;
 }
 
-module.exports = { ANSI, PALETTE, isColorEnabled, paint, symbol, SYMBOL_ASCII, sectionBar, headerRule, scopeBadge };
+module.exports = {
+  PALETTE_256,
+  detectColorDepth, ANSI, PALETTE, isColorEnabled, paint, symbol, SYMBOL_ASCII, sectionBar, headerRule, scopeBadge };

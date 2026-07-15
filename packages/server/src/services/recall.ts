@@ -19,6 +19,7 @@ import {
   type PlanContextResult,
   type PreflightDiagnostic,
 } from "./plan-context.js";
+import { relatedLookupKeys } from "./plan-context-ids.js";
 import { buildCrossStoreBodyIndex } from "./cross-store-recall.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 
@@ -364,8 +365,5 @@ export function attachPathStore(p: RecallPath): RecallPath {
   return { ...p, store: { alias: p.stable_id.slice(0, colon) } };
 }
 
-function relatedLookupKeys(stableId: string): string[] {
-  const parts = stableId.split(":");
-  const localId = parts.at(-1);
-  return localId === undefined || localId === stableId ? [stableId] : [stableId, localId];
-}
+// ISS-20260713-042: relatedLookupKeys SSOT lives in plan-context-ids.ts
+// (imported above). Do not re-implement here.

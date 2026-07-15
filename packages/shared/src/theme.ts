@@ -27,7 +27,7 @@ export const ANSI = {
 // name, so a palette re-tune never touches call sites.
 export const PALETTE = {
   success: "[38;2;46;204;113m", // emerald
-  warn: "[38;2;241;196;15m", // amber
+  warn: "[38;2;180;120;0m", // darker amber — ISS-20260713-068 light-terminal contrast
   error: "[38;2;231;76;60m", // alizarin
   drift: "[38;2;155;89;182m", // amethyst
   ai: "[38;2;52;152;219m", // peter-river blue
@@ -37,6 +37,19 @@ export const PALETTE = {
 } as const;
 
 export type ThemeToken = keyof typeof PALETTE;
+
+// ISS-20260713-035: 256-color fallback when truecolor is unavailable.
+export const PALETTE_256: Record<ThemeToken, string> = {
+  success: "[38;5;77m",
+  warn: "[38;5;178m",
+  error: "[38;5;203m",
+  drift: "[38;5;141m",
+  ai: "[38;5;75m",
+  human: "[38;5;80m",
+  accent: "[38;5;141m",
+  muted: ANSI.dim,
+};
+
 
 // NO_COLOR (https://no-color.org) is an unconditional opt-out; FORCE_COLOR is its
 // dual (force ON regardless of TTY). When neither is set, fall back to the TTY
@@ -49,12 +62,35 @@ export function isColorEnabled(env: NodeJS.ProcessEnv = process.env, isTTY?: boo
   return Boolean(isTTY ?? process.stdout.isTTY);
 }
 
+export type ColorDepth = "none" | "ansi16" | "ansi256" | "truecolor";
+
+// ISS-20260713-035
+export function detectColorDepth(
+  env: NodeJS.ProcessEnv = process.env,
+  isTTY?: boolean,
+): ColorDepth {
+  if (!isColorEnabled(env, isTTY)) return "none";
+  const colorterm = (env.COLORTERM || "").toLowerCase();
+  if (colorterm.includes("truecolor") || colorterm.includes("24bit")) return "truecolor";
+  const term = (env.TERM || "").toLowerCase();
+  if (term.includes("256color") || term.includes("256")) return "ansi256";
+  if (term === "linux" || term === "dumb") return "ansi16";
+  return "truecolor";
+}
+
+
 // Paint `text` with a semantic token, closing with RESET. When colour is
 // disabled the raw text is returned verbatim (zero escapes) — the byte contract
 // the parity test pins.
-export function paint(token: ThemeToken, text: string, colorOn = isColorEnabled()): string {
-  if (!colorOn) return text;
-  return `${PALETTE[token]}${text}${ANSI.reset}`;
+export function paint(
+  token: ThemeToken,
+  text: string,
+  colorOn = isColorEnabled(),
+  depth: ColorDepth = detectColorDepth(),
+): string {
+  if (!colorOn || depth === "none") return text;
+  const pal = depth === "ansi256" ? PALETTE_256 : PALETTE;
+  return `${pal[token]}${text}${ANSI.reset}`;
 }
 
 // Status glyphs — coloured marker + ascii fallback. The ascii core ([ok]/[warn]/

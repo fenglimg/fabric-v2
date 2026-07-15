@@ -110,6 +110,7 @@ export interface PlanContextHintAlwaysBody {
   type: string;
   layer: "team" | "personal";
   summary: string;
+  /** Always empty on SessionStart wire (ISS-20260713-014 index-only). */
   body: string;
 }
 
@@ -296,7 +297,8 @@ export async function runPlanContextHint(opts: {
       type: b.type,
       layer: b.layer,
       summary: b.summary,
-      body: b.body,
+      // ISS-20260713-014: never re-ship body even if server regresses.
+      body: "",
     })),
     census,
   };

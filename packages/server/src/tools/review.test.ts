@@ -256,13 +256,14 @@ describe("registerReview", () => {
     registerReview(server, tracker);
     const t = tool();
 
-    await expect(
-      t.handler({
-        action: "modify",
-        pending_path: ".fabric/knowledge/pending/decisions/no-such-file.md",
-        changes: { maturity: "verified" },
-      }),
-    ).rejects.toBeDefined();
+    // ISS-20260713-009: the handler maps the failure to a structured MCP error
+    // result instead of rethrowing. tracker.exit() must still fire (try/finally).
+    const result = await t.handler({
+      action: "modify",
+      pending_path: ".fabric/knowledge/pending/decisions/no-such-file.md",
+      changes: { maturity: "verified" },
+    });
+    expect(result).toMatchObject({ isError: true });
 
     expect(enter).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
@@ -374,9 +375,10 @@ describe("registerReview", () => {
 
     // Pass an input that the FLAT shape would accept (every per-action field
     // is optional there) but the discriminated union must REJECT
-    // (action=approve with no pending_paths). The handler's
-    // FabReviewInputSchema.parse must throw.
-    await expect(t.handler({ action: "approve" })).rejects.toBeInstanceOf(z.ZodError);
+    // (action=approve with no pending_paths). ISS-20260713-009: the resulting
+    // ZodError is mapped to a structured MCP error (code "invalid_input").
+    const result = await t.handler({ action: "approve" });
+    expect(result).toMatchObject({ isError: true, structuredContent: { code: "invalid_input" } });
   });
 
   it("test_fab_review_approve_missing_id_throws_zod_error_naming_id", async () => {
@@ -391,22 +393,18 @@ describe("registerReview", () => {
     registerReview(server);
     const t = tool();
 
-    let caught: unknown;
-    try {
-      await t.handler({ action: "approve" });
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(z.ZodError);
-    const zerr = caught as z.ZodError;
-    const hasPendingPathsIssue = zerr.issues.some((i) => i.path.includes("pending_paths"));
-    expect(hasPendingPathsIssue, JSON.stringify(zerr.issues)).toBe(true);
-    // Error type is the canonical `invalid_type` (or required) discriminator
-    // missing — both indicate the union failed to select a branch.
-    const codes = new Set(zerr.issues.map((i) => i.code));
-    expect(
-      codes.has("invalid_type") || codes.has("invalid_union") || codes.has("invalid_literal"),
-    ).toBe(true);
+    // ISS-20260713-009: the ZodError is mapped to a structured MCP error result
+    // (code "invalid_input") whose `issues[]` carry `{ path, message }` with the
+    // path joined to a dotted string. We assert the same semantic intent: the
+    // rejected approve input names the missing required `pending_paths` field.
+    const result = (await t.handler({ action: "approve" })) as {
+      isError?: boolean;
+      structuredContent: { code: string; issues?: Array<{ path: string; message: string }> };
+    };
+    expect(result).toMatchObject({ isError: true, structuredContent: { code: "invalid_input" } });
+    const issues = result.structuredContent.issues ?? [];
+    const hasPendingPathsIssue = issues.some((i) => i.path.includes("pending_paths"));
+    expect(hasPendingPathsIssue, JSON.stringify(issues)).toBe(true);
   });
 
   it("test_fab_review_each_action_happy_path_validates_output_shape", async () => {

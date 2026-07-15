@@ -25,6 +25,7 @@ export * from "./store/global-config-io.js";
 export * from "./store/project-config-io.js";
 export * from "./store/resolve-input.js";
 export * from "./store/secret-scan.js";
+export * from "./store/git-remote-allowlist.js";
 export * from "./scanner/scan-recommendations.js";
 export * from "./store/cross-store-lint.js";
 export * from "./store/observability.js";

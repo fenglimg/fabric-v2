@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   STORES_ROOT_DIR,
   addMountedStore,
+  assertAllowedGitRemote,
   deriveMountLabel,
   disambiguateAlias,
   globalConfigSchema,
@@ -45,19 +46,34 @@ export interface RunGlobalInstallOptions {
 }
 
 function gitClone(url: string, dest: string): void {
+  // ISS-20260713-005: protocol allowlist before spawn. `--` only stops option
+  // injection; ext:: / file:// remain dangerous as the repo positional.
+  let safeUrl: string;
+  try {
+    safeUrl = assertAllowedGitRemote(url);
+  } catch (error) {
+    throw new GenericIOError(
+      error instanceof Error ? error.message : `git remote not allowlisted: ${url}`,
+      {
+        actionHint:
+          "use https://, ssh://, git://, or git@host:path remotes only; ext:: and file:// are blocked",
+        details: error,
+      },
+    );
+  }
   // ISS-031: announce the clone so `fabric install --global <url>` is not silent
   // during a slow network fetch, and inherit git's stderr so its native progress
   // bar (and, on failure, its real diagnostic — ISS-032) reaches the user.
-  console.log(`cloning store from ${url} (this may take a while)…`);
+  console.log(`cloning store from ${safeUrl} (this may take a while)…`);
   try {
     // `--` terminates option parsing so an option-like url (e.g. `--upload-pack=…`,
-    // `-x`, `ext::sh -c …`) is treated as a positional repo argument, never as a
-    // git option (ISS-002 arg-injection hardening).
-    execFileSync("git", ["clone", "--", url, dest], { stdio: ["ignore", "ignore", "inherit"] });
+    // `-x`) is treated as a positional repo argument, never as a git option
+    // (ISS-002 arg-injection hardening).
+    execFileSync("git", ["clone", "--", safeUrl, dest], { stdio: ["ignore", "ignore", "inherit"] });
   } catch (error) {
     // ISS-037: git's own diagnostic was just printed (inherited stderr); add the
     // actionable next step so the failure is not a bare "Command failed".
-    throw new GenericIOError(`git clone of ${url} failed`, {
+    throw new GenericIOError(`git clone of ${safeUrl} failed`, {
       actionHint:
         "check the url is reachable and points to a Fabric store git repo (the git error above shows the cause), then re-run `fabric install --global <url>`",
       details: error,

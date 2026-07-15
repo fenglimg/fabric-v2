@@ -255,7 +255,10 @@ describe("registerPending", () => {
 
     // The FLAT shape accepts action=search with no query (every per-action
     // field is optional there) but the discriminated union must REJECT it.
-    await expect(t.handler({ action: "search" })).rejects.toBeInstanceOf(z.ZodError);
+    // ISS-20260713-009: the ZodError is mapped to a structured MCP error result
+    // (code "invalid_input") rather than rethrown.
+    const result = await t.handler({ action: "search" });
+    expect(result).toMatchObject({ isError: true, structuredContent: { code: "invalid_input" } });
   });
 
   it("list and search happy paths validate the output shape", async () => {

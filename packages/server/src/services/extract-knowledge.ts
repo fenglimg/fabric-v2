@@ -375,6 +375,8 @@ export async function extractKnowledge(
   // the already-injection-sanitized fields and is store-agnostic (works for the
   // current layout and the v2.1 multi-store write target alike). Clean content
   // scans to no findings, so the hot path is unchanged.
+  // Include path/meta arrays written into pending body/frontmatter (ISS-20260608-030):
+  // recent_paths land in Evidence; relevance_paths/tech_stack/impact in YAML.
   const secretScanTarget = [
     input.slug ?? "",
     input.user_messages_summary ?? "",
@@ -383,6 +385,10 @@ export async function extractKnowledge(
     ...(input.intent_clues ?? []),
     ...(input.tags ?? []),
     ...(input.evidence_paths ?? []),
+    ...(input.recent_paths ?? []),
+    ...(input.paths ?? []),
+    ...(input.tech_stack ?? []),
+    ...(input.impact ?? []),
   ].join("\n");
   if (hasSecrets(secretScanTarget)) {
     await emitEventBestEffort(projectRoot, {

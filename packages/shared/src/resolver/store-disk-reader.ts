@@ -89,8 +89,13 @@ function hasScriptExtension(name: string): boolean {
 // record a synthetic violation and stop, so an over-large/over-deep store is
 // flagged (and refused trust) rather than partially-scanned-and-trusted — an
 // attacker cannot bury an executable past the bound to evade the S65 guard.
+// ISS-20260713-057: hot knowledge paths should prefer store counters / bindings
+// snapshots (listStoreKnowledge / readKnowledgeAcrossStores), not this walk.
+// This scanner is for mount/verify executable-guard (S65) and doctor-style audits.
 const STORE_SCAN_MAX_DEPTH = 32;
-const STORE_SCAN_MAX_ENTRIES = 100_000;
+// Fail-closed bound: large pure-markdown KBs rarely approach this; lower default
+// keeps mount-time CPU bounded under multi-store growth.
+const STORE_SCAN_MAX_ENTRIES = 50_000;
 
 export type FindStoreExecutableViolationsOptions = {
   maxDepth?: number;

@@ -329,7 +329,11 @@ describe("fabricConfigSchema — ux-w2-3: hardcoded skill thresholds dropped (le
     expect(parsed.hint_narrow_top_k).toBe(5);
     expect(parsed.hint_narrow_dedup_window_turns).toBe(5);
     expect(parsed.hint_narrow_cooldown_hours).toBe(0);
-    expect(parsed.hint_broad_cooldown_hours).toBe(0);
+    // ISS-20260713-033: broad SessionStart cooldown ships a non-zero quiet
+    // default (24h) so repeat session-opens don't re-fire the full banner;
+    // knowledge-hint-broad.cjs mirrors DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 24.
+    // Set 0 for verbose/debug.
+    expect(parsed.hint_broad_cooldown_hours).toBe(24);
   });
 
   it("a minimal user config still parses with the retired keys absent", () => {

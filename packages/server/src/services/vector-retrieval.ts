@@ -28,12 +28,11 @@
 //     Operators needing strict offline must pre-populate FABRIC_EMBED_CACHE_DIR.
 
 import { mkdirSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { resolveGlobalRoot } from "@fenglimg/fabric-shared";
-
 import { migrateLegacyFabricCache } from "./fabric-cache-migration.js";
 
 // A minimal embedder contract — `embed` maps texts to dense vectors in input
@@ -323,11 +322,40 @@ const VECTOR_CACHE_VERSION = 1;
 //   - corpus_revision: bound in the filename AND re-checked in the body, so a
 //     revision↔filename mismatch (e.g. a truncated/renamed file) is also a miss.
 // Any mismatch on ANY axis → miss → re-embed + write-through (overwrite). Stored
-// under `.fabric/.cache/vectors/`, alongside the BM25 cache's `.fabric/.cache/bm25/`
-// (unify-fabric-cache-dir — the `.fabric/.gitignore`'s single `.cache/` rule
-// now covers both). Older installs are migrated lazily on first read/write via
-// migrateLegacyFabricCache; a legacy `.fabric/cache/vectors/` is renamed in
-// place, preserving every cached embedding so no re-embed cost is paid.
+// under `.fabric/cache/vectors/`, alongside the BM25 cache's `.fabric/cache/bm25/`.
+
+async function pruneRevisionCacheDir(dir: string, keep = 2): Promise<void> {
+  try {
+    const names = await readdir(dir);
+    const jsons = names.filter((n) => n.endsWith(".json"));
+    if (jsons.length <= keep) return;
+    const withStat: Array<{ name: string; mtimeMs: number }> = [];
+    for (const name of jsons) {
+      try {
+        const st = await stat(join(dir, name));
+        withStat.push({ name, mtimeMs: st.mtimeMs });
+      } catch {
+        /* skip */
+      }
+    }
+    withStat.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const stale of withStat.slice(keep)) {
+      try {
+        await unlink(join(dir, stale.name));
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch {
+    /* ok */
+  }
+}
+
+// Stored under `.fabric/.cache/vectors/`, alongside the BM25 cache's
+// `.fabric/.cache/bm25/` (unify-fabric-cache-dir — the `.fabric/.gitignore`'s
+// single `.cache/` rule now covers both). Older installs are migrated lazily on
+// first read/write via migrateLegacyFabricCache; a legacy `.fabric/cache/vectors/`
+// is renamed in place, preserving every cached embedding so no re-embed is paid.
 const VECTOR_CACHE_DIR = ".fabric/.cache/vectors";
 
 // Context threaded from the caller so the disk tier can key/validate the snapshot.
@@ -415,8 +443,10 @@ async function saveVectorCacheToDisk(
       vectors,
     };
     const path = vectorCachePath(ctx.projectRoot, ctx.corpusRevision);
-    await mkdir(join(ctx.projectRoot, VECTOR_CACHE_DIR), { recursive: true });
+    const dir = join(ctx.projectRoot, VECTOR_CACHE_DIR);
+    await mkdir(dir, { recursive: true });
     await writeFile(path, JSON.stringify(payload), "utf8");
+    await pruneRevisionCacheDir(dir, 2); // ISS-20260713-015
   } catch {
     // Best-effort: never let a persistence failure surface into recall.
   }

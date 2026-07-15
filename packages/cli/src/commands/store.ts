@@ -158,7 +158,7 @@ const listCommand = defineCommand({
 
 const mountCommand = defineCommand({
   // hidden: skill/CI/recovery-facing — kept callable, omitted from `store --help`.
-  meta: { name: "mount", description: "Mount a knowledge store into the global registry", hidden: true },
+  meta: { name: "mount", description: t("cli.store.mount.description"), hidden: true },
   args: {
     uuid: { type: "string", required: true, description: "Intrinsic store UUID" },
     alias: { type: "string", required: true, description: "Local alias for this store" },
@@ -196,7 +196,7 @@ const mountCommand = defineCommand({
 });
 
 const createCommand = defineCommand({
-  meta: { name: "create", description: "Create a brand-new local knowledge store and mount it", hidden: true },
+  meta: { name: "create", description: t("cli.store.create.description"), hidden: true },
   args: {
     alias: { type: "string", required: true, description: "Local alias for the new store" },
     "mount-name": { type: "string", description: "Stable local directory under ~/.fabric/stores/" },
@@ -224,7 +224,7 @@ const createCommand = defineCommand({
 });
 
 const removeCommand = defineCommand({
-  meta: { name: "remove", description: "Detach a store from the registry (does NOT delete it)", hidden: true },
+  meta: { name: "remove", description: t("cli.store.remove.description"), hidden: true },
   args: {
     alias: { type: "positional", required: true, description: "Alias to detach" },
   },
@@ -241,7 +241,7 @@ const removeCommand = defineCommand({
 });
 
 const explainCommand = defineCommand({
-  meta: { name: "explain", description: "Explain how a store alias resolves", hidden: true },
+  meta: { name: "explain", description: t("cli.store.explain.description"), hidden: true },
   args: {
     alias: { type: "positional", required: true, description: "Alias to explain" },
   },

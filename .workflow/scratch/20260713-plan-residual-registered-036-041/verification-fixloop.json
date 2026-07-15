@@ -1,0 +1,67 @@
+{
+  "plan": "PLN-20260713-residual-registered-036-041",
+  "session_id": "ralph-v2-20260713-111826",
+  "timestamp": "2026-07-13T04:22:00Z",
+  "status": "DONE",
+  "loop": "post-review-fix",
+  "tasks": {
+    "ISS-20260713-044": {
+      "status": "implemented",
+      "evidence": {
+        "refuse_filesystem_root": "isFilesystemRoot drops `/` and drive roots",
+        "test_seam_gated": "FABRIC_TRANSCRIPT_ROOTS honored only when NODE_ENV=test or FABRIC_TEST=1; production ignores env",
+        "tests": "summarize-transcript: denies ROOTS=/; ignores env outside test seam"
+      },
+      "close_ready": true
+    },
+    "ISS-20260713-045": {
+      "status": "implemented",
+      "evidence": {
+        "read_path": "summarizeTranscript reads resolveAllowedTranscriptPath realpath only",
+        "tests": "reads via realpath when path is symlink under allowlisted root"
+      },
+      "close_ready": true
+    },
+    "ISS-20260713-043": {
+      "status": "implemented",
+      "evidence": {
+        "value_gate": "fabric-hint archive value-gate uses sessionArchiveWatermark (null→0), not sessionAnchorTs",
+        "tests": "fabric-hint.test.ts ISS-043 cases"
+      },
+      "close_ready": true
+    },
+    "ISS-20260713-042": {
+      "status": "implemented",
+      "evidence": {
+        "ssot": "recall.ts imports relatedLookupKeys from plan-context-ids; no local function",
+        "tests": "recall + plan-context + compare-stable-ids green"
+      },
+      "close_ready": true
+    }
+  },
+  "prior_issues_still_good": [
+    "ISS-20260713-036",
+    "ISS-20260713-037",
+    "ISS-20260713-041",
+    "ISS-20260713-038",
+    "ISS-20260713-039",
+    "ISS-20260713-040"
+  ],
+  "test_commands": {
+    "cli_summarize": "vitest summarize-transcript → 16 passed",
+    "cli_hint": "vitest fabric-hint + cite earlier 174 passed in batch",
+    "server": "vitest recall/plan-context/compare-stable-ids → 79 passed; tsc --noEmit green earlier"
+  },
+  "issues_ready_to_close": [
+    "ISS-20260713-036",
+    "ISS-20260713-037",
+    "ISS-20260713-038",
+    "ISS-20260713-039",
+    "ISS-20260713-040",
+    "ISS-20260713-041",
+    "ISS-20260713-042",
+    "ISS-20260713-043",
+    "ISS-20260713-044",
+    "ISS-20260713-045"
+  ]
+}

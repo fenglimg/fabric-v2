@@ -69,6 +69,23 @@ function readBindingsSnapshot(bindingId, globalRoot) {
 
 // Recursively count *.md files under `dir`, tracking the oldest mtime. Missing
 // / unreadable dirs contribute zero (degrade silently — a hook never throws).
+// ISS-20260713-031: process-local cache keyed by store root mtimes — avoids full
+// recursive recount on every SessionStart/Stop when content is unchanged.
+const liveStatsCache = new Map(); // key -> { pendingCount, canonicalCount, oldestPendingMtimeMs }
+
+function storeDirsFingerprint(dirs) {
+  const parts = [];
+  for (const d of dirs) {
+    if (typeof d !== "string" || d.length === 0) continue;
+    try {
+      parts.push(d + "|" + String(statSync(d).mtimeMs));
+    } catch {
+      parts.push(d + "|missing");
+    }
+  }
+  return parts.join("\n");
+}
+
 function countMarkdownFiles(dir) {
   let count = 0;
   let oldestMtimeMs = null;
@@ -121,12 +138,19 @@ function countMarkdownFiles(dir) {
 // so the numbers are always fresh regardless of how content changed. Falls back
 // to the cached `knowledge_stats` for snapshots written before this field
 // existed. Returns null only when neither source is available.
+// ISS-20260713-022: single authority for hook-side counts when knowledge_store_dirs
+// is present = LIVE recount (not store-counters JSON, not dual algorithms).
+// Snapshot knowledge_stats is write-time only and never used for nudges when live
+// dirs are available (KT-PIT-0017 false-nudge).
 function liveKnowledgeStats(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     return null;
   }
   const dirs = snapshot.knowledge_store_dirs;
   if (Array.isArray(dirs) && dirs.length > 0) {
+    const fp = storeDirsFingerprint(dirs);
+    const hit = liveStatsCache.get(fp);
+    if (hit) return hit;
     let pendingCount = 0;
     let canonicalCount = 0;
     let oldestPendingMtimeMs = null;
@@ -146,7 +170,14 @@ function liveKnowledgeStats(snapshot) {
         oldestPendingMtimeMs = pending.oldestMtimeMs;
       }
     }
-    return { pendingCount, canonicalCount, oldestPendingMtimeMs };
+    const result = { pendingCount, canonicalCount, oldestPendingMtimeMs };
+    liveStatsCache.set(fp, result);
+    // bound cache size
+    if (liveStatsCache.size > 16) {
+      const first = liveStatsCache.keys().next().value;
+      liveStatsCache.delete(first);
+    }
+    return result;
   }
   // #3 (GH issue): snapshot predates knowledge_store_dirs. The cached
   // `knowledge_stats` projection is frozen at snapshot-write time and goes stale

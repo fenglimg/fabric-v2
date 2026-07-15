@@ -194,17 +194,18 @@ describe("registerExtractKnowledge", () => {
     registerExtractKnowledge(server, tracker);
     const t = tool();
 
-    await expect(
-      t.handler({
-        source_sessions: ["sess-throw"],
-        recent_paths: [],
-        user_messages_summary: "Forces a failure path.",
-        proposed_reason: "decision-confirmation",
-        session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
-        type: "decisions",
-        slug: "force-throw",
-      }),
-    ).rejects.toBeDefined();
+    // ISS-20260713-009: the handler no longer rethrows — it maps the failure to
+    // a structured MCP error result. tracker.exit() must still fire (try/finally).
+    const result = await t.handler({
+      source_sessions: ["sess-throw"],
+      recent_paths: [],
+      user_messages_summary: "Forces a failure path.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
+      type: "decisions",
+      slug: "force-throw",
+    });
+    expect(result).toMatchObject({ isError: true });
 
     expect(enter).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
@@ -328,16 +329,15 @@ describe("registerExtractKnowledge", () => {
     registerExtractKnowledge(server);
     const t = tool();
 
-    await expect(
-      t.handler({
-        recent_paths: [],
-        user_messages_summary: "Missing source_sessions must be rejected.",
-        proposed_reason: "decision-confirmation",
-        session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
-        type: "decisions",
-        slug: "missing-source-sessions",
-      }),
-    ).rejects.toBeTruthy();
+    const result = await t.handler({
+      recent_paths: [],
+      user_messages_summary: "Missing source_sessions must be rejected.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
+      type: "decisions",
+      slug: "missing-source-sessions",
+    });
+    expect(result).toMatchObject({ isError: true, structuredContent: { code: "invalid_input" } });
   });
 
   it("rejects input with an empty source_sessions array", async () => {
@@ -347,17 +347,16 @@ describe("registerExtractKnowledge", () => {
     registerExtractKnowledge(server);
     const t = tool();
 
-    await expect(
-      t.handler({
-        source_sessions: [],
-        recent_paths: [],
-        user_messages_summary: "Empty source_sessions must be rejected.",
-        proposed_reason: "decision-confirmation",
-        session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
-        type: "decisions",
-        slug: "empty-source-sessions",
-      }),
-    ).rejects.toBeTruthy();
+    const result = await t.handler({
+      source_sessions: [],
+      recent_paths: [],
+      user_messages_summary: "Empty source_sessions must be rejected.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the extract-knowledge tool handler. Turning point: validated the parse path.",
+      type: "decisions",
+      slug: "empty-source-sessions",
+    });
+    expect(result).toMatchObject({ isError: true, structuredContent: { code: "invalid_input" } });
   });
 
   it("rejects an illegal audience scope coordinate with a structured action_hint (W3-K K5)", async () => {
@@ -367,20 +366,21 @@ describe("registerExtractKnowledge", () => {
     registerExtractKnowledge(server);
     const t = tool();
 
-    await expect(
-      t.handler({
-        source_sessions: ["s1"],
-        recent_paths: [],
-        user_messages_summary: "Illegal audience must be rejected with a legal-example hint.",
-        proposed_reason: "decision-confirmation",
-        session_context: "Session goal: cover the audience scope-coordinate validation. Turning point: asserted the action_hint carries a legal example.",
-        type: "decisions",
-        slug: "illegal-audience",
-        audience: "Project:Bad Caps",
-      }),
-    ).rejects.toMatchObject({
-      code: "scope_coordinate_invalid",
-      action_hint: expect.stringContaining("project:fabric-v2"),
+    const result = await t.handler({
+      source_sessions: ["s1"],
+      recent_paths: [],
+      user_messages_summary: "Illegal audience must be rejected with a legal-example hint.",
+      proposed_reason: "decision-confirmation",
+      session_context: "Session goal: cover the audience scope-coordinate validation. Turning point: asserted the action_hint carries a legal example.",
+      type: "decisions",
+      slug: "illegal-audience",
+      audience: "Project:Bad Caps",
+    });
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        action_hint: expect.stringContaining("project:fabric-v2"),
+      },
     });
   });
 

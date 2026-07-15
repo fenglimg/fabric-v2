@@ -2,7 +2,7 @@ import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
   "cli.signpost.retired": "命令 `{retired}` 已移除。请改用 `{successor}`。",
-  "cli.doctor.args.probe.description": "输出机器可读 JSON 就绪快照(first-hit + store/hooks),不跑 --fix",
+  "cli.doctor.args.probe.description": "输出机器可读 JSON 就绪快照(first-hit + store/hooks),不跑 --fix CI 优先用 --probe 做轻量就绪快照；完整 cite-coverage 扫描按需运行。",
   "cli.main.description":
     "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。首次使用?运行: fabric install",
   "cli.shared.created": "已创建",
@@ -67,9 +67,9 @@ export const zhCNMessages: Messages = {
 
   // `fabric audit cite` — recall 覆盖率为 0 的自诊断提示。
   "cli.audit.cite.recall-mismatch-hint":
-    "recall 覆盖率为 0,但本窗口有 {recalls} 次 recall(分布在 {sessions} 个会话)—— 没有一个与编辑共享会话。多半是 fab_recall 调用方传了非客户端 session_id(关联按会话隔离)。见 AGENTS.md:fab_recall 必须传入真实客户端 session_id。",
+    "recall 覆盖率为 0,但本窗口有 {recalls} 次 recall(分布在 {sessions} 个会话)—— 没有一个与编辑共享会话。常见原因:(1) fab_recall 漏传/传错 session_id(必须是真实客户端 session_id;planned 无 session 永不与 edit 关联);(2) recall 的 paths 与编辑文件无 path-overlap(自动 cite 只计重叠的 planned.target_paths)。修:传 session_id、重装 hooks 启用 active-session sidecar、或 fab_recall 覆盖将编辑的路径。见 AGENTS.md 与 docs/UPGRADE.md。",
   "cli.audit.cite.recall-none-hint":
-    "recall 覆盖率为 0 —— 这些编辑前没有同会话的 fab_recall。改前先 recall,且传入真实客户端 session_id(关联按会话隔离)。见 AGENTS.md。",
+    "recall 覆盖率为 0 —— 这些编辑前没有同会话的 fab_recall(或 planned 事件 session_id 为空导致无法关联)。改前先 recall 并传入真实客户端 session_id;install 后 SessionStart 会写 .fabric/.cache/active-session.json 供服务端回填。仍要求 path-overlap:recall 要覆盖将编辑的文件,不要只 recall 无关的 .fabric 路径。见 AGENTS.md 与 docs/UPGRADE.md。",
 
   // `fabric audit --help` — 过滤式帮助(i18n 子命令清单)。
   "cli.audit.help.tagline": "知识与遥测审计面(只读)",
@@ -122,7 +122,7 @@ export const zhCNMessages: Messages = {
     "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 cc,codex。",
   "cli.config.errors.expected-object": "{path} 中应为对象。",
   "cli.config.install.no-configs":
-    "未检测到 Fabric MCP 客户端配置。请创建客户端目录，或在 fabric.config.json 中设置 clientPaths。",
+    "未检测到 Fabric MCP 客户端配置。请创建客户端目录，或在 .fabric/fabric-config.json 中设置 clientPaths。",
   "cli.config.install.no-config-path": "跳过 {client}：未检测到配置路径。",
   "cli.config.install.dry-run": "[dry-run] {client}：将写入 {path}",
   "cli.config.install.wrote": "{client}：已写入 {path}",
@@ -534,7 +534,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
   "doctor.check.events_jsonl_health.remediation":
-    "运行 `fabric doctor --fix` —— 它会触发 rotation 并 flush metrics.jsonl(rc.2 F16: 无需重启 server 即可清出 idle 期未刷的 metric counter)。若告警仍持续, 再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中, 检查最近代码改动是否绕过 bumpCounter API 直接 appendEventLedgerEvent 写了 4 个 metric-managed event_type 之一。",
+    "运行 `fabric doctor --fix` —— 会按 .fabric/fabric-config.json 的 fabric_event_retention_days(7|30|90) 轮转 events.jsonl，并 flush metrics.jsonl。若告警仍持续，再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中，检查最近代码是否绕过 bumpCounter 直接写了 metric-managed event_type。",
   "doctor.check.event_ledger_partial_write.name": "事件账本半截写入",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "无需执行 partial-write 检查（ledger 缺失或不可写）。",
@@ -1126,6 +1126,7 @@ export const zhCNMessages: Messages = {
   // flat-design (G6): 装完最该做的事是重启客户端让 MCP 生效 —— 这才是默认锚点动作;
   // --reapply 维护提示退到 --verbose。
   "cli.install.next-step.restart": "重启已开的 Claude Code / Codex 会话以加载 Fabric(新会话自动生效)。",
+  "cli.install.next-step.nudge-mode": "人可见提示默认 minimal（每会话一条状态）。可在 .fabric/fabric-config.json 设 nudge_mode: \"silent\" 静音，或 FABRIC_NUDGE_MODE=silent；要更吵用 normal/verbose。",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
@@ -1193,7 +1194,7 @@ export const zhCNMessages: Messages = {
     "  2. 预热模型缓存 (首跑会联网下载模型权重 ~数十-数百 MB, 不上传任何 KB 数据):\n" +
     "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # 严格离线者预先放好权重\n" +
     "  注: 切换 embed_model 后已有向量维度/语义变化, 下次 recall 会按新模型重新嵌入 (doc 向量按文本缓存, 自动失配重算)。\n" +
-    "  关闭: 编辑 fabric.config.json 设 embed_enabled=false。",
+    "  关闭: 编辑 .fabric/fabric-config.json 设 embed_enabled=false。",
   // C5: store onboarding 交互文案统一走 t()。
   "cli.install.store.local-store": "本地 store",
   "cli.install.store.bind-mounted.prompt": "把一个已挂载的知识 store 绑定到本项目？",
@@ -1375,6 +1376,19 @@ export const zhCNMessages: Messages = {
   "cli.first-hit.args.target.description": "项目根（默认 cwd）",
   "cli.first-hit.args.seed.description": "若 store 为空则写入最小 starter 知识条目",
   "cli.first-hit.args.paths.description": "逗号分隔的探测路径",
+  "cli.first-hit.msg.ok": "first-hit 就绪：{stores} 个 store 共 {total} 条知识；hooks 已安装。",
+  "cli.first-hit.msg.unbound": "unbound：本项目 read-set 未绑定任何 store，知识无法浮现。",
+  "cli.first-hit.msg.no_write_target": "no_write_target：已有 required stores 但未设置 active_write_store。",
+  "cli.first-hit.msg.empty_store": "empty_store：store 已绑定但规范知识文件为 0 — 空 store 不是成功路径。",
+  "cli.first-hit.msg.missing_required": "missing_required：required_stores 中有未挂载的 store。",
+  "cli.first-hit.msg.write_target_mismatch": "write_target_mismatch：active_write_store 不在已挂载可写 read-set 上。",
+  "cli.first-hit.msg.store_unreachable": "store_unreachable：已绑定 store 在注册表中但磁盘目录缺失。",
+  "cli.first-hit.msg.project_unsealed": "project_unsealed：已绑定写库但缺少 project_id/active_project — 团队知识会落成 flat（semantic_scope: team）而非项目分区。",
+  "cli.first-hit.msg.no_match": "no_match：知识存在但探测面为空（路径/scope 过滤）。",
+  "cli.first-hit.msg.hooks_missing": "hooks_missing：知识已在但 SessionStart/PreToolUse hooks 未安装。",
+  "cli.first-hit.msg.no_project": "no_project：当前目录不是 Fabric 项目（缺少 .fabric/fabric-config.json）。",
+  "cli.first-hit.msg.no_global": "no_global：缺少全局 fabric 配置 — 请先运行 fabric install --global。",
+
   "cli.onboard-coverage.description":
     "汇总当前工作区的 S5 onboard-slot 覆盖度。fabric-archive Skill 首跑阶段用它判断哪些项目语调槽位尚未被认领。",
   "cli.onboard-coverage.args.json.description":
@@ -1649,6 +1663,10 @@ export const zhCNMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder 已预热:模型 '{model}' 已加载(向量维度 {dim}),缓存于 {dir}",
   "cli.info.recall.warm.fail":
     "embedder 不可用 —— 可选的 'fastembed' 包无法解析,或模型加载失败。\n  召回回退到关键词模式(BM25 / additive)。请在 server 能解析模块的位置安装 fastembed 后重试。",
+  "cli.store.mount.description": "将知识 store 挂载到全局注册表",
+  "cli.store.create.description": "创建并挂载本地知识 store",
+  "cli.store.remove.description": "从注册表卸下 store（不删除磁盘）",
+  "cli.store.explain.description": "解释 store 别名如何解析",
   "cli.store.list.description": "列出挂载的 store",
   // 追加在 `fabric store --help` 末尾的说明 —— 交代进阶(meta.hidden)操作去哪了,
   // 否则只剩 list 一行会让用户以为 store 没别的能力。

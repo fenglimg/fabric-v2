@@ -1,0 +1,70 @@
+{
+  "id": "PLN-20260712-issue-backlog-clearance",
+  "created_at": "2026-07-12T14:09:30.969Z",
+  "intent": "Clear open issue backlog on branch fix/issue-backlog-clearance-20260712",
+  "approach": "Tiered close: A verify-close already fixed; B implement remaining UX from 20260712; C bulk close duplicates/stale/low with reason; D defer god-file maintainability as wontfix_this_milestone or keep open deferred.",
+  "waves": [
+    {
+      "wave": 1,
+      "name": "close-A-already-fixed",
+      "issues": [
+        "ISS-20260712-001",
+        "ISS-20260712-002",
+        "ISS-20260712-004"
+      ],
+      "actions": [
+        "Verify active-session + multi-line KB + doctor probe snapshot on branch (commits a8a941a7, 99077998)",
+        "Close issues with resolution fixed + evidence paths/commits"
+      ]
+    },
+    {
+      "wave": 2,
+      "name": "implement-B-ux",
+      "issues": [
+        "ISS-20260712-003",
+        "ISS-20260712-005",
+        "ISS-20260712-006",
+        "ISS-20260712-007"
+      ],
+      "actions": [
+        "003/007: docs/doctor or install summary note about global CLI shadow + re-install consumer hooks",
+        "006: improve audit cite zero-coverage copy for session_id correlation",
+        "005: soft-nudge or doc for path-overlap cite accounting; avoid large schema change"
+      ]
+    },
+    {
+      "wave": 3,
+      "name": "bulk-triage-C",
+      "issues_tier": [
+        "C_triage_dup_or_stale",
+        "C_low_close_or_wontfix",
+        "C_bulk_review"
+      ],
+      "approx_count": 110,
+      "actions": [
+        "Close duplicates of god-file / knip / i18n / hook-order as duplicate of canonical",
+        "Close stale Cursor/quarantine/test-seed as fixed or wontfix with reason",
+        "Leave genuine medium backlog open only when still valid and not superseding"
+      ]
+    },
+    {
+      "wave": 4,
+      "name": "defer-D",
+      "issues": [
+        "ISS-20260530-018",
+        "ISS-20260531-003",
+        "ISS-20260531-037"
+      ],
+      "actions": [
+        "Mark deferred or close as wontfix_this_milestone with pointer to future maintainability milestone"
+      ]
+    }
+  ],
+  "out_of_scope": [
+    "Full doctor.ts rewrite",
+    "Ranking engine rewrite",
+    "Closing without reason"
+  ],
+  "definition_of_done": "Open registered count reduced primarily via justified closes; 001-007 resolved (fixed or wontfix with rationale); branch green enough for PR.",
+  "triage_dir": ".workflow/issues/discoveries/triage-20260712-140252"
+}

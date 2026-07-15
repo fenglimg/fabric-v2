@@ -15,6 +15,7 @@ import {
 import { loadProjectConfig } from "./project-config-io.js";
 import { loadGlobalConfig } from "./global-config-io.js";
 import { missingRequiredStores } from "./store-ops.js";
+import { t } from "../i18n.js";
 
 // ---------------------------------------------------------------------------
 // First-hit oracle (M-first-value-loop)
@@ -37,7 +38,9 @@ export type FirstHitCode =
   // D3 multi-store reliability (M-post-d2-hardening Phase 1)
   | "missing_required"
   | "write_target_mismatch"
-  | "store_unreachable";
+  | "store_unreachable"
+  // ISS-20260713-004: bound write store but no project coordinate seal
+  | "project_unsealed";
 
 export interface FirstHitStoreRow {
   alias: string;
@@ -205,6 +208,12 @@ function remediationFor(code: FirstHitCode, writeTarget: string | null): string[
         "fabric doctor",
         "fabric first-hit",
       ];
+    case "project_unsealed":
+      return [
+        "fabric doctor --fix",
+        "fabric store bind <alias> --project <project-id>",
+        "fabric first-hit",
+      ];
     case "hooks_missing":
       return ["fabric install", "fabric first-hit"];
     case "no_match":
@@ -226,32 +235,22 @@ export function remediationLinesFor(code: FirstHitCode, writeTarget: string | nu
 }
 
 function messageFor(code: FirstHitCode, total: number, stores: FirstHitStoreRow[]): string {
-  switch (code) {
-    case "ok":
-      return `first-hit ready: ${total} knowledge entr${total === 1 ? "y" : "ies"} across ${stores.length} store(s); hooks present.`;
-    case "unbound":
-      return "unbound: no store is bound to this project's read-set — knowledge cannot surface.";
-    case "no_write_target":
-      return "no_write_target: project has required stores but no active_write_store.";
-    case "empty_store":
-      return "empty_store: store(s) bound but 0 canonical knowledge files — empty store is not a happy path.";
-    case "missing_required":
-      return "missing_required: one or more required_stores are not mounted — multi-store bind incomplete.";
-    case "write_target_mismatch":
-      return "write_target_mismatch: active_write_store is not a mounted writable store on the read-set.";
-    case "store_unreachable":
-      return "store_unreachable: a bound store is registered but its directory is missing on disk.";
-    case "no_match":
-      return "no_match: knowledge exists but the probe surface is empty (path/scope filter).";
-    case "hooks_missing":
-      return "hooks_missing: knowledge is present but SessionStart/PreToolUse hooks are not installed.";
-    case "no_project":
-      return "no_project: this directory is not a Fabric project (missing .fabric/fabric-config.json).";
-    case "no_global":
-      return "no_global: fabric global config missing — run fabric install --global first.";
-    default:
-      return String(code);
+  // ISS-20260713-021: localized human messages; machine `code` field stays English.
+  const key = `cli.first-hit.msg.${code}` as const;
+  try {
+    if (code === "ok") {
+      return t(key, {
+        total: String(total),
+        stores: String(stores.length),
+        plural: total === 1 ? "y" : "ies",
+      });
+    }
+    const msg = t(key);
+    if (msg && msg !== key) return msg;
+  } catch {
+    /* fall through */
   }
+  return String(code);
 }
 
 function exitFor(code: FirstHitCode): number {
@@ -275,6 +274,8 @@ function exitFor(code: FirstHitCode): number {
       return 7;
     case "store_unreachable":
       return 8;
+    case "project_unsealed":
+      return 9;
     default:
       return 1;
   }
@@ -401,6 +402,15 @@ export async function assessFirstHit(options: AssessFirstHitOptions): Promise<Fi
     return fail("no_match", bound_stores, total_entries);
   }
 
+  // ISS-20260713-004: multi-repo first-hit must not green-light an unsealed project.
+  // Without project_id/active_project, team writes land flat (semantic_scope: team).
+  const sealed =
+    (typeof project.project_id === "string" && project.project_id.length > 0) ||
+    (typeof project.active_project === "string" && project.active_project.length > 0);
+  if (!sealed) {
+    return fail("project_unsealed", bound_stores, total_entries);
+  }
+
   return {
     code: "ok",
     ok: true,
@@ -511,6 +521,12 @@ export function assessFirstHitSync(
   if (total === 0) return fail("empty_store", bound_stores, 0);
   if (!hooks.session_start || !hooks.pre_tool_use) {
     return fail("hooks_missing", bound_stores, total);
+  }
+  const sealed =
+    (typeof project.project_id === "string" && project.project_id.length > 0) ||
+    (typeof project.active_project === "string" && project.active_project.length > 0);
+  if (!sealed) {
+    return fail("project_unsealed", bound_stores, total);
   }
   return {
     code: "ok",

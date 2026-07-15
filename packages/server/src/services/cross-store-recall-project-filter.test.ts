@@ -236,8 +236,9 @@ describe("dual-sink — buildAlwaysActiveBodies project filter + type selection"
     // every returned entry is a guideline/model with a non-empty body
     for (const b of bodies) {
       expect(["guidelines", "models"]).toContain(b.type);
-      expect(b.body.length).toBeGreaterThan(0);
-      expect(b.body).not.toContain("semantic_scope:"); // frontmatter stripped
+      // ISS-20260713-014: SessionStart wire is index-only — body intentionally empty
+      expect(b.body).toBe("");
+      expect(b.summary.length).toBeGreaterThan(0); // frontmatter stripped
     }
   });
 });

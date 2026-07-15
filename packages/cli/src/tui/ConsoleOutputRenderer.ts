@@ -178,22 +178,21 @@ export function toErrorInfo(error: Error | ErrorInfo): ErrorInfo {
 const STEP_NAME_COL = 16;
 
 /**
- * Flat-design status glyph for a step line. The glyph carries the COLOUR (status
- * semantics live here: success-green ✓ / warn-amber ○ / error-red ✗), so the
- * leading `●` can stay a neutral dim structural marker (spec §0.4 / §0.5). Under
- * NO_COLOR each degrades to the bare glyph — mirrors the summary detailMarker.
+ * Flat-design status marker for a step line.
+ * ISS-20260713-065/066: always include a text role so NO_COLOR / screen-reader
+ * capture remains self-describing; glyph is an optional accent.
  */
 function statusGlyph(status: StepInfo["status"], colorOn: boolean): string {
   switch (status) {
     case "success":
-      return paint("success", "✓", colorOn);
+      return paint("success", "[ok] ✓", colorOn);
     case "error":
-      return paint("error", "✗", colorOn);
+      return paint("error", "[error] ✗", colorOn);
     case "skipped":
-      return paint("warn", "○", colorOn);
+      return paint("warn", "[skip] ○", colorOn);
     case "pending":
     default:
-      return paint("muted", "·", colorOn);
+      return paint("muted", "[..]", colorOn);
   }
 }
 

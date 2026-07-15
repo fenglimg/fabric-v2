@@ -23,10 +23,10 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
       "Created <fixture-2>/.fabric/events.jsonl",
       "Created <fixture-2>/.fabric/forensic.json",
       "Next Installing bootstrap templates...",
-      "completed bootstrap: installed=119 skipped=10",
+      "completed bootstrap: installed=155 skipped=10",
       "Next Configuring MCP clients...",
       "Next Installing hooks & skills...",
-      "completed hooks: installed=0 skipped=133",
+      "completed hooks: installed=0 skipped=169",
       "Reason .fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
       "ran: bootstrap, hooks",
       "skipped: none",
@@ -42,6 +42,61 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
   1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.
   2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-archive skill's source mode to backfill from git history.
   3. Verify it works: ask your AI "what does Fabric know about this repo?", or run \`fabric doctor\` to check health.",
+      "",
+      "More: docs/surfaces.md explains when to use CLI vs Skill vs MCP.",
+    ],
+  },
+  "locale": "en",
+  "uninstall": {
+    "description": "Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
+    "usage": "fabric uninstall - Uninstall Fabric from the target project (global stores under ~/.fabric/stores/ are never deleted)",
+  },
+}
+`;
+
+exports[`cli i18n > renders en command descriptions and output snapshots 2`] = `
+{
+  "config": {
+    "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, MCP client wiring, etc.)",
+    "errors": [
+      "Workspace not initialized. Run \`fabric install\` first.",
+    ],
+    "stderr": [],
+    "stdout": [],
+  },
+  "install": {
+    "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks)",
+    "errors": [],
+    "stderr": [
+      "bootstrap hook-lib : ENOENT: no such file or directory, rename '/var/folders/hp/j7fm_vwj68z90lght1sj1bmc0000gn/T/fab-i18n-install-zh-CN-55408-1784086420652-03866a6f9e638/.codex/hooks/lib/nudge-policy.cjs.55408.1784086425620.629e.tmp' -> '/var/folders/hp/j7fm_vwj68z90lght1sj1bmc0000gn/T/fab-i18n-install-zh-CN-55408-1784086420652-03866a6f9e638/.codex/hooks/lib/nudge-policy.cjs'",
+      "使用全局安装的 @fenglimg/fabric-server",
+      "失败 mcp: __vite_ssr_import_meta__.resolve is not a function",
+    ],
+    "stdout": [
+      "已完成 bootstrap: installed=93 skipped=10 (errors=1)",
+      "下一步 正在配置 MCP 客户端...",
+      "下一步 正在安装 hook 与 skill...",
+      "installed global Fabric (uid <uid>)",
+      "Created <fixture-2>/AGENTS.md",
+      "Created <fixture-2>/.fabric/events.jsonl",
+      "Created <fixture-2>/.fabric/forensic.json",
+      "Next Installing bootstrap templates...",
+      "已完成 hooks: installed=150 skipped=19",
+      "原因 .fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
+      "已执行: bootstrap, hooks",
+      "已跳过: 无",
+      "失败: mcp",
+      "客户端能力摘要",
+      "客户端           Bootstrap  MCP   Hook    Skill   后续动作      ",
+      "---------------  ---------  ----  ------  ------  --------------",
+      "Claude Code CLI  已就绪     失败  已安装  已安装  可在客户端继续",
+      "",
+      "重启提示: 已运行的 Claude Code / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
+      "",
+      "下一步 —— 拿到第一份价值:
+  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface (主动呈现) 给助手。
+  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-archive skill 的 source mode 从 git 历史回灌。
+  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 \`fabric doctor\` 查健康。",
       "",
       "More: docs/surfaces.md explains when to use CLI vs Skill vs MCP.",
     ],
@@ -77,10 +132,10 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "已创建 <fixture-2>/.fabric/events.jsonl",
       "已创建 <fixture-2>/.fabric/forensic.json",
       "下一步 正在安装 bootstrap 模板...",
-      "已完成 bootstrap: installed=119 skipped=10",
+      "已完成 bootstrap: installed=155 skipped=10",
       "下一步 正在配置 MCP 客户端...",
       "下一步 正在安装 hook 与 skill...",
-      "已完成 hooks: installed=0 skipped=133",
+      "已完成 hooks: installed=0 skipped=169",
       "原因 .fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
       "已执行: bootstrap, hooks",
       "已跳过: 无",

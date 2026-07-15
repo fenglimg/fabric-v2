@@ -2,7 +2,7 @@ import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
   "cli.signpost.retired": "Command `{retired}` was removed. Use `{successor}` instead.",
-  "cli.doctor.args.probe.description": "Emit a machine-readable JSON readiness snapshot (first-hit + store/hooks) without running --fix",
+  "cli.doctor.args.probe.description": "Emit a machine-readable JSON readiness snapshot (first-hit + store/hooks) without running --fix Prefer --probe in CI for a cheap readiness snapshot; full cite-coverage scans remain on-demand.",
   "cli.main.description":
     "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically. First time? Run: fabric install",
   "cli.shared.created": "Created",
@@ -69,9 +69,9 @@ export const enMessages: Messages = {
 
   // `fabric audit cite` — 0%-recall-coverage self-diagnosis hints.
   "cli.audit.cite.recall-mismatch-hint":
-    "recall coverage is 0 despite {recalls} recall(s) across {sessions} session(s) — none shared a session with an edit. The recall caller is likely passing a non-client session_id (correlation is session-scoped). See AGENTS.md: pass the real client session_id to fab_recall.",
+    "recall coverage is 0 despite {recalls} recall(s) across {sessions} session(s) — none shared a session with an edit. Likely causes: (1) fab_recall omitted/wrong session_id (must be real client session_id; empty planned events never join edits); (2) recall paths do not path-overlap the edited file (auto-cite only counts overlapping planned.target_paths). Fix: pass session_id, reinstall hooks for active-session sidecar, or fab_recall paths that cover the edit. See AGENTS.md + docs/UPGRADE.md.",
   "cli.audit.cite.recall-none-hint":
-    "recall coverage is 0 — no in-session fab_recall preceded these edits. Recall before editing, and pass the real client session_id (correlation is session-scoped). See AGENTS.md.",
+    "recall coverage is 0 — no in-session fab_recall preceded these edits (or planned events had empty session_id so they could not join). Recall before editing with the real client session_id; after install, SessionStart stamps .fabric/.cache/active-session.json as server fallback. Path-overlap still required: recall the files you will edit, not only unrelated .fabric paths. See AGENTS.md + docs/UPGRADE.md.",
 
   // `fabric audit --help` — filtered help (i18n'd subcommand listing).
   "cli.audit.help.tagline": "Knowledge & telemetry audit surfaces (read-only)",
@@ -131,7 +131,7 @@ export const enMessages: Messages = {
     "Unknown client \"{client}\". Use a comma-separated list such as cc,codex.",
   "cli.config.errors.expected-object": "Expected object in {path}",
   "cli.config.install.no-configs":
-    "No Fabric MCP client config detected. Create the client directory or set clientPaths in fabric.config.json.",
+    "No Fabric MCP client config detected. Create the client directory or set clientPaths in .fabric/fabric-config.json.",
   "cli.config.install.no-config-path": "Skipping {client}: no config path detected.",
   "cli.config.install.dry-run": "[dry-run] {client}: would write {path}",
   "cli.config.install.wrote": "{client}: wrote {path}",
@@ -556,7 +556,7 @@ export const enMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
   "doctor.check.events_jsonl_health.remediation":
-    "Run `fabric doctor --fix` — it triggers a rotation AND flushes metrics.jsonl (rc.2 F16: clears idle-buffered metric counters without a server restart). If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
+    "Run `fabric doctor --fix` — it triggers events.jsonl rotation (honors fabric_event_retention_days: 7|30|90 in .fabric/fabric-config.json) AND flushes metrics.jsonl. If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "No partial-write check needed (ledger missing or not writable).",
@@ -1157,6 +1157,7 @@ export const enMessages: Messages = {
   // so its MCP server loads — that is the default anchor; the --reapply maintenance
   // hint moves to --verbose.
   "cli.install.next-step.restart": "restart any open Claude Code / Codex session to load Fabric (new sessions pick it up automatically).",
+  "cli.install.next-step.nudge-mode": "Human breadcrumbs default to minimal (one status line/session). Mute with nudge_mode: \"silent\" in .fabric/fabric-config.json or FABRIC_NUDGE_MODE=silent; raise with normal/verbose.",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",
@@ -1225,7 +1226,7 @@ export const enMessages: Messages = {
     "  2. Warm the model cache (the first run downloads the weights, ~tens–hundreds of MB; no KB data is uploaded):\n" +
     "       export FABRIC_EMBED_CACHE_DIR=~/.cache/fabric-embed   # strict-offline: pre-place the weights here\n" +
     "  Note: after switching embed_model the existing vector dim/semantics change; the next recall re-embeds with the new model (doc vectors are cached by text and auto-recompute on mismatch).\n" +
-    "  Disable: set embed_enabled=false in fabric.config.json.",
+    "  Disable: set embed_enabled=false in .fabric/fabric-config.json.",
   // C5: store onboarding interactive copy routed through t().
   "cli.install.store.local-store": "local store",
   "cli.install.store.bind-mounted.prompt": "Bind an already-mounted knowledge store to this project?",
@@ -1410,6 +1411,19 @@ export const enMessages: Messages = {
   "cli.first-hit.args.target.description": "Project root (default: cwd)",
   "cli.first-hit.args.seed.description": "If empty store, write minimal starter knowledge entries",
   "cli.first-hit.args.paths.description": "Comma-separated probe paths for surface check",
+  "cli.first-hit.msg.ok": "first-hit ready: {total} knowledge entr{plural} across {stores} store(s); hooks present.",
+  "cli.first-hit.msg.unbound": "unbound: no store is bound to this project's read-set — knowledge cannot surface.",
+  "cli.first-hit.msg.no_write_target": "no_write_target: project has required stores but no active_write_store.",
+  "cli.first-hit.msg.empty_store": "empty_store: store(s) bound but 0 canonical knowledge files — empty store is not a happy path.",
+  "cli.first-hit.msg.missing_required": "missing_required: one or more required_stores are not mounted — multi-store bind incomplete.",
+  "cli.first-hit.msg.write_target_mismatch": "write_target_mismatch: active_write_store is not a mounted writable store on the read-set.",
+  "cli.first-hit.msg.store_unreachable": "store_unreachable: a bound store is registered but its directory is missing on disk.",
+  "cli.first-hit.msg.project_unsealed": "project_unsealed: write store is bound but project_id/active_project is missing — team knowledge will land flat (semantic_scope: team), not project-partitioned.",
+  "cli.first-hit.msg.no_match": "no_match: knowledge exists but the probe surface is empty (path/scope filter).",
+  "cli.first-hit.msg.hooks_missing": "hooks_missing: knowledge is present but SessionStart/PreToolUse hooks are not installed.",
+  "cli.first-hit.msg.no_project": "no_project: this directory is not a Fabric project (missing .fabric/fabric-config.json).",
+  "cli.first-hit.msg.no_global": "no_global: fabric global config missing — run fabric install --global first.",
+
   "cli.onboard-coverage.description":
     "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
   "cli.onboard-coverage.args.json.description":
@@ -1685,6 +1699,10 @@ export const enMessages: Messages = {
   "cli.info.recall.warm.ok": "embedder warm: model '{model}' loaded (vector dim {dim}), cached at {dir}",
   "cli.info.recall.warm.fail":
     "embedder unavailable — the optional 'fastembed' package is not resolvable or the model failed to load.\n  Recall falls back to keyword mode (BM25 / additive). Install fastembed where the server resolves modules, then retry.",
+  "cli.store.mount.description": "Mount a knowledge store into the global registry",
+  "cli.store.create.description": "Create a brand-new local knowledge store and mount it",
+  "cli.store.remove.description": "Detach a store from the registry (does NOT delete it)",
+  "cli.store.explain.description": "Explain how a store alias resolves",
   "cli.store.list.description": "List mounted knowledge stores",
   // Footer note appended to `fabric store --help` — explains where the advanced
   // (meta.hidden) operations went so the list-only listing isn't a dead end.

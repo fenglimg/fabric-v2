@@ -298,7 +298,7 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
       mimeType: "text/markdown",
     },
     async (_uri: URL) => {
-      const projectRoot = process.env.FABRIC_PROJECT_ROOT ?? process.cwd();
+      const projectRoot = resolveProjectRoot(process.cwd());
       const path = join(projectRoot, ".fabric", "bootstrap", "README.md");
       let text = "";
       if (existsSync(path)) {

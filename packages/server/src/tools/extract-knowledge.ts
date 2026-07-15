@@ -24,6 +24,7 @@ import {
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { extractKnowledge } from "../services/extract-knowledge.js";
 import { unsealedProjectScopeWarning } from "../services/write-scope-warning.js";
+import { toMcpToolError } from "./mcp-tool-error.js";
 
 export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -110,6 +111,8 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
           ],
           structuredContent: response,
         };
+      } catch (error) {
+        return toMcpToolError(error, { tool: "fab_propose" });
       } finally {
         tracker?.exit(requestId);
       }

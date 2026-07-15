@@ -43,15 +43,15 @@ function tmp(prefix: string): string {
 }
 
 describe("install --global git clone arg safety", () => {
-  it("inserts `--` before an option-like url so it is treated as a repo path", async () => {
+  it("inserts `--` before an allowed https url (option-injection hardening)", async () => {
     const globalRoot = join(tmp("fabric-gi-argsafe-"), ".fabric");
-    const maliciousUrl = "--upload-pack=touch /tmp/pwned";
+    const url = "https://example.com/org/fabric-store.git";
 
     // The mocked clone is a no-op → cloned dir has no store.json → mount throws.
     // We only care that the argv handed to git was safe.
     await expect(
       runGlobalInstall(
-        { url: maliciousUrl, uid: "u-x", personalStoreUuid: PERSONAL, now: "2026-05-30T00:00:00.000Z" },
+        { url, uid: "u-x", personalStoreUuid: PERSONAL, now: "2026-05-30T00:00:00.000Z" },
         globalRoot,
       ),
     ).rejects.toThrow();
@@ -60,7 +60,57 @@ describe("install --global git clone arg safety", () => {
     expect(cloneCall).toBeDefined();
     // argv must be: ["clone", "--", <url>, <dest>] — `--` immediately before url.
     expect(cloneCall?.[1]).toBe("--");
-    expect(cloneCall?.[2]).toBe(maliciousUrl);
-    expect(cloneCall?.indexOf(maliciousUrl)).toBeGreaterThan(cloneCall?.indexOf("--") ?? -1);
+    expect(cloneCall?.[2]).toBe(url);
+    expect(cloneCall?.indexOf(url)).toBeGreaterThan(cloneCall?.indexOf("--") ?? -1);
+  });
+
+  it("rejects option-like urls before git clone (allowlist + dash prefix)", async () => {
+    const globalRoot = join(tmp("fabric-gi-dash-"), ".fabric");
+    await expect(
+      runGlobalInstall(
+        {
+          url: "--upload-pack=touch /tmp/pwned",
+          uid: "u-x",
+          personalStoreUuid: PERSONAL,
+          now: "2026-05-30T00:00:00.000Z",
+        },
+        globalRoot,
+      ),
+    ).rejects.toThrow(/not allowlisted|option-like/i);
+    expect(cloneCalls.length).toBe(0);
+  });
+});
+
+describe("install --global git remote protocol allowlist (ISS-20260713-005)", () => {
+  it("rejects ext:: remotes before git clone", async () => {
+    const globalRoot = join(tmp("fabric-gi-ext-"), ".fabric");
+    await expect(
+      runGlobalInstall(
+        {
+          url: "ext::sh -c \"touch /tmp/pwned\"",
+          uid: "u-x",
+          personalStoreUuid: PERSONAL,
+          now: "2026-05-30T00:00:00.000Z",
+        },
+        globalRoot,
+      ),
+    ).rejects.toThrow(/not allowlisted|ext::/i);
+    expect(cloneCalls.length).toBe(0);
+  });
+
+  it("rejects file:// remotes before git clone", async () => {
+    const globalRoot = join(tmp("fabric-gi-file-"), ".fabric");
+    await expect(
+      runGlobalInstall(
+        {
+          url: "file:///tmp/evil.git",
+          uid: "u-x",
+          personalStoreUuid: PERSONAL,
+          now: "2026-05-30T00:00:00.000Z",
+        },
+        globalRoot,
+      ),
+    ).rejects.toThrow(/not allowlisted|file:/i);
+    expect(cloneCalls.length).toBe(0);
   });
 });

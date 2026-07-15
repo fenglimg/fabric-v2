@@ -438,6 +438,7 @@ export const doctorCommand = defineCommand({
     //   * --fix-knowledge aborted (manual_error blocker) → 1
     //   * --fix-knowledge with any failed mutation → 1
     //   * any error status (or strict + warnings) → 1
+    //   * ISS-20260713-060: store diagnostics severity=error also → 1
     //   * otherwise → 0
     if (fixKnowledgeReport != null) {
       if (fixKnowledgeReport.aborted) {
@@ -450,7 +451,12 @@ export const doctorCommand = defineCommand({
       }
     }
 
-    if (report.status === "error" || (args.strict === true && (report.status === "warn" || report.warnings.length > 0))) {
+    const storeHasError = storeDiagnostics.some((d) => d.severity === "error");
+    if (
+      report.status === "error" ||
+      storeHasError ||
+      (args.strict === true && (report.status === "warn" || report.warnings.length > 0 || storeDiagnostics.some((d) => d.severity === "warn")))
+    ) {
       process.exitCode = 1;
     }
   },

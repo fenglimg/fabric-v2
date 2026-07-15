@@ -8,9 +8,11 @@
  * role, content:[{type:"input_text"|"output_text", text}] } }`), every field
  * came back empty — producing the "no user messages captured" digests the
  * werewolf-minigame audit surfaced.
+ *
+ * ISS-20260713-041: path sandbox — fixtures write under FABRIC_TRANSCRIPT_ROOTS.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -39,8 +41,45 @@ const { summarizeTranscript } = require(hookPath) as {
   summarizeTranscript: (path: string) => Summary;
 };
 
+const emptySummary = (): Summary => ({
+  user_messages: [],
+  edit_paths: [],
+  title: "",
+  assistant_turns: [],
+});
+
+/** Shared allowlisted temp root for this file (ISS-041 test seam). */
+let allowedRoot: string;
+const createdDirs: string[] = [];
+const prevRoots = process.env.FABRIC_TRANSCRIPT_ROOTS;
+
+beforeEach(() => {
+  allowedRoot = mkdtempSync(join(tmpdir(), "fabric-summarize-root-"));
+  createdDirs.push(allowedRoot);
+  process.env.FABRIC_TRANSCRIPT_ROOTS = allowedRoot;
+});
+
+afterEach(() => {
+  if (prevRoots === undefined) {
+    delete process.env.FABRIC_TRANSCRIPT_ROOTS;
+  } else {
+    process.env.FABRIC_TRANSCRIPT_ROOTS = prevRoots;
+  }
+  while (createdDirs.length > 0) {
+    const d = createdDirs.pop();
+    if (d) {
+      try {
+        rmSync(d, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+});
+
 function writeTranscript(lines: object[]): string {
-  const dir = mkdtempSync(join(tmpdir(), "fabric-summarize-"));
+  const dir = mkdtempSync(join(allowedRoot, "case-"));
+  createdDirs.push(dir);
   const path = join(dir, "transcript.jsonl");
   writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n"), "utf8");
   return path;
@@ -234,11 +273,10 @@ describe("summarizeTranscript — Codex CLI shape (audit §2.16 regression)", ()
   });
 
   it("returns empty result on missing file (best-effort, no throw)", () => {
-    const r = summarizeTranscript("/no/such/file.jsonl");
-    expect(r.user_messages).toEqual([]);
-    expect(r.edit_paths).toEqual([]);
-    expect(r.assistant_turns).toEqual([]);
-    expect(r.title).toBe("");
+    // Missing path under allowlisted root still fail-closed empty (ENOENT).
+    const missing = join(allowedRoot, "no-such-file.jsonl");
+    const r = summarizeTranscript(missing);
+    expect(r).toEqual(emptySummary());
   });
 });
 
@@ -257,5 +295,121 @@ describe("summarizeTranscript — mixed-shape transcripts", () => {
     ]);
     const r = summarizeTranscript(path);
     expect(r.user_messages).toEqual(["cc user msg", "codex user msg"]);
+  });
+});
+
+describe("summarizeTranscript — ISS-041 path sandbox", () => {
+  it("denies relative paths (fail-closed empty, no throw)", () => {
+    const r = summarizeTranscript("relative/transcript.jsonl");
+    expect(r).toEqual(emptySummary());
+  });
+
+  it("denies absolute paths outside allowlisted roots", () => {
+    // Outside FABRIC_TRANSCRIPT_ROOTS (allowedRoot) — even if file exists.
+    const outsideDir = mkdtempSync(join(tmpdir(), "fabric-summarize-outside-"));
+    createdDirs.push(outsideDir);
+    const outsidePath = join(outsideDir, "transcript.jsonl");
+    writeFileSync(
+      outsidePath,
+      JSON.stringify({ type: "user", message: { role: "user", content: "secret" } }) + "\n",
+      "utf8",
+    );
+    const r = summarizeTranscript(outsidePath);
+    expect(r.user_messages).toEqual([]);
+    expect(r).toEqual(emptySummary());
+  });
+
+  it("denies non-.jsonl suffix under allowlisted root", () => {
+    const bad = join(allowedRoot, "notes.txt");
+    writeFileSync(
+      bad,
+      JSON.stringify({ type: "user", message: { role: "user", content: "nope" } }) + "\n",
+      "utf8",
+    );
+    const r = summarizeTranscript(bad);
+    expect(r).toEqual(emptySummary());
+  });
+
+  it("allows absolute path under FABRIC_TRANSCRIPT_ROOTS temp root", () => {
+    const path = writeTranscript([
+      { type: "user", message: { role: "user", content: "allowed root ok" } },
+    ]);
+    const r = summarizeTranscript(path);
+    expect(r.user_messages).toEqual(["allowed root ok"]);
+    expect(r.title).toBe("allowed root ok");
+  });
+
+  // ISS-20260713-044: FABRIC_TRANSCRIPT_ROOTS=/ must not fully disable sandbox.
+  it("denies FABRIC_TRANSCRIPT_ROOTS=/ (filesystem root is not allowlisted)", () => {
+    process.env.FABRIC_TRANSCRIPT_ROOTS = "/";
+    // File under /tmp is absolute and would pass if `/` were accepted as a root.
+    const outsideDir = mkdtempSync(join(tmpdir(), "fabric-summarize-rootbypass-"));
+    createdDirs.push(outsideDir);
+    const outsidePath = join(outsideDir, "transcript.jsonl");
+    writeFileSync(
+      outsidePath,
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: "should-not-read" },
+      }) + "\n",
+      "utf8",
+    );
+    const r = summarizeTranscript(outsidePath);
+    expect(r).toEqual(emptySummary());
+    // Also: getAllowedTranscriptRoots must not include `/` after filter.
+    const { getAllowedTranscriptRoots } = require(
+      fileURLToPath(new URL("../templates/hooks/lib/transcript-summary.cjs", import.meta.url)),
+    ) as { getAllowedTranscriptRoots: () => string[] };
+    expect(getAllowedTranscriptRoots().includes("/")).toBe(false);
+  });
+
+  // ISS-20260713-044: production ignores FABRIC_TRANSCRIPT_ROOTS entirely.
+  it("ignores FABRIC_TRANSCRIPT_ROOTS outside test seam (NODE_ENV/FABRIC_TEST)", () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevFabricTest = process.env.FABRIC_TEST;
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.FABRIC_TEST;
+      // Even with a temp root in env, production must not honor it.
+      process.env.FABRIC_TRANSCRIPT_ROOTS = allowedRoot;
+      const path = writeTranscript([
+        { type: "user", message: { role: "user", content: "prod-must-deny-temp-root" } },
+      ]);
+      const r = summarizeTranscript(path);
+      expect(r).toEqual(emptySummary());
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+      if (prevFabricTest === undefined) delete process.env.FABRIC_TEST;
+      else process.env.FABRIC_TEST = prevFabricTest;
+    }
+  });
+
+  // ISS-20260713-045: summarizeTranscript reads the resolved realpath, not the
+  // unsanitized original (TOCTOU / symlink diverge).
+  it("reads via realpath when path is a symlink under allowlisted root", () => {
+    const { symlinkSync } = require("node:fs") as typeof import("node:fs");
+    const realDir = mkdtempSync(join(allowedRoot, "real-"));
+    createdDirs.push(realDir);
+    const realPath = join(realDir, "transcript.jsonl");
+    writeFileSync(
+      realPath,
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: "via-realpath" },
+      }) + "\n",
+      "utf8",
+    );
+    const linkDir = mkdtempSync(join(allowedRoot, "link-"));
+    createdDirs.push(linkDir);
+    const linkPath = join(linkDir, "transcript.jsonl");
+    try {
+      symlinkSync(realPath, linkPath);
+    } catch {
+      // Some CI environments disable symlink creation — skip soft.
+      return;
+    }
+    const r = summarizeTranscript(linkPath);
+    expect(r.user_messages).toEqual(["via-realpath"]);
   });
 });
