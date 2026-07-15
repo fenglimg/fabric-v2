@@ -116,6 +116,7 @@ import {
   detectStrayFabricDirs,
   fixStrayFabricDirs,
 } from "./doctor-stray-fabric-dir.js";
+import { fixLegacyFabricCacheDirs } from "./doctor-legacy-fabric-cache.js";
 import {
   fixStoreCounters,
   inspectStoreCounters,
@@ -666,6 +667,19 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       if (results.some((r) => r.ok)) {
         fixed.push(findIssue(before.warnings, "stray_fabric_dir_detected"));
       }
+    }
+  }
+
+  // legacy_fabric_cache_dir_detected — the pre-unify-fabric-cache-dir
+  // `.fabric/cache/{bm25,vectors}` snapshots. Fix is an idempotent rename to
+  // `.fabric/.cache/{bm25,vectors}`, preserving every cached BM25 / embedding
+  // (no re-embed cost). Lazy migration in plan-context / vector-retrieval
+  // catches most cases; this arm is the catch-up for projects that haven't
+  // triggered recall since the upgrade.
+  if (before.warnings.some((issue) => issue.code === "legacy_fabric_cache_dir_detected")) {
+    const result = fixLegacyFabricCacheDirs(projectRoot);
+    if (result.ok && result.before.length > 0) {
+      fixed.push(findIssue(before.warnings, "legacy_fabric_cache_dir_detected"));
     }
   }
 

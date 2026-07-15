@@ -215,6 +215,11 @@ describe("runDoctorReport", () => {
       // the pre-rc.10 hook / pre-rc.11 server-side resolveProjectRoot fault
       // mode (subprocess cwd landed in a subdir → stray `<subdir>/.fabric/`).
       "Stray .fabric directories",
+      // unify-fabric-cache-dir: recall engine BM25/vector caches moved from
+      // `.fabric/cache/{bm25,vectors}` → `.fabric/.cache/…` (co-located with
+      // hook sidecar cache so a single `.gitignore` rule covers both).
+      // Adjacent to Stray .fabric directories — both are legacy-layout sweeps.
+      "Legacy .fabric/cache/ directories",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
@@ -254,7 +259,9 @@ describe("runDoctorReport", () => {
     // hooks / pre-rc.11 server-side resolveProjectRoot) → 47.
     // ISS-20260711-221: +1 knowledge body-read wiring → 48.
     // Peer micro-transfer P0-2: +1 knowledge body altitude → 49.
-    expect(report.checks).toHaveLength(49);
+    // unify-fabric-cache-dir: +1 legacy_fabric_cache_dir_detected (rename
+    // legacy `.fabric/cache/{bm25,vectors}` → `.fabric/.cache/…`) → 50.
+    expect(report.checks).toHaveLength(50);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

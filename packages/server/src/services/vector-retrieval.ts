@@ -33,6 +33,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { resolveGlobalRoot } from "@fenglimg/fabric-shared";
+import { migrateLegacyFabricCache } from "./fabric-cache-migration.js";
 
 // A minimal embedder contract — `embed` maps texts to dense vectors in input
 // order. The concrete fastembed adapter implements this; tests inject fakes.
@@ -350,7 +351,12 @@ async function pruneRevisionCacheDir(dir: string, keep = 2): Promise<void> {
   }
 }
 
-const VECTOR_CACHE_DIR = ".fabric/cache/vectors";
+// Stored under `.fabric/.cache/vectors/`, alongside the BM25 cache's
+// `.fabric/.cache/bm25/` (unify-fabric-cache-dir — the `.fabric/.gitignore`'s
+// single `.cache/` rule now covers both). Older installs are migrated lazily on
+// first read/write via migrateLegacyFabricCache; a legacy `.fabric/cache/vectors/`
+// is renamed in place, preserving every cached embedding so no re-embed is paid.
+const VECTOR_CACHE_DIR = ".fabric/.cache/vectors";
 
 // Context threaded from the caller so the disk tier can key/validate the snapshot.
 // OPTIONAL on buildVectorScores: when absent, the disk tier is skipped entirely
@@ -464,6 +470,10 @@ export async function buildVectorScores(
     // cached and only the (varying) query is embedded. Skipped entirely when the
     // caller passes no cache context (backward compatible).
     if (cache !== undefined) {
+      // Legacy `.fabric/cache/vectors/` → `.fabric/.cache/vectors/` migration
+      // is idempotent + cheap (existsSync gate); run once per cold read so a
+      // pre-migration snapshot rehydrates without a re-embed round.
+      migrateLegacyFabricCache(cache.projectRoot);
       const fromDisk = await loadVectorCacheFromDisk(cache);
       if (fromDisk !== null) {
         for (const [text, vector] of fromDisk) {

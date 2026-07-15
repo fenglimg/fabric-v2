@@ -954,6 +954,17 @@ export const zhCNMessages: Messages = {
     "发现 {count} 个游离 .fabric 目录({dirs}),它们是子进程在子目录被误认作 project root 的历史遗留(rc.10 之前的 hook / rc.11 之前的 server 侧),会导致 events.jsonl / metrics.jsonl / .cache 散落。",
   "doctor.check.stray_fabric_dir_detected.remediation":
     "跑 `fabric doctor --fix` 会把每个游离 dir 改名为 `.fabric.stale-<timestamp>`(rescue-before-delete,不硬删)。改名后可人工核对是否需要合并 events 再删。同时升级本机 fabric-cli 至 rc.11+ 让 server 侧 git-anchor 生效。",
+  // legacy_fabric_cache_dir_detected — 老版 recall engine 把 BM25/vector 缓存
+  // 放 `.fabric/cache/{bm25,vectors}`;unify-fabric-cache-dir 后统一到
+  // `.fabric/.cache/` 与 hook sidecar 同处,一条 .gitignore 覆盖两者。老数据
+  // 完好,--fix 仅 rename 迁移。
+  "doctor.check.legacy_fabric_cache_dir_detected.name": "老版 .fabric/cache/ 目录",
+  "doctor.check.legacy_fabric_cache_dir_detected.ok":
+    "Recall 缓存已在 .fabric/.cache/ 下,无残留 .fabric/cache/{bm25,vectors}。",
+  "doctor.check.legacy_fabric_cache_dir_detected.message":
+    "发现 {count} 个老版 recall 缓存目录({dirs})。这些是 unify-fabric-cache-dir 之前的位置;磁盘上的 BM25 快照 / 向量 embedding 数据完好,rename 即可保留。",
+  "doctor.check.legacy_fabric_cache_dir_detected.remediation":
+    "跑 `fabric doctor --fix` 把每个老目录 rename 到 `.fabric/.cache/` 对应位置(幂等;若新路径已有更新数据则跳过)。不涉及重新 embed,快照文件原样迁移。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

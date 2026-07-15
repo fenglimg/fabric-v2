@@ -12,6 +12,7 @@ import {
   type SerializedBm25Model,
 } from "./bm25.js";
 import { documentFieldsForItem } from "./plan-context-doc-text.js";
+import { migrateLegacyFabricCache } from "./fabric-cache-migration.js";
 
 // ISS-024: corpus-keyed BM25 model cache. The model depends only on the
 // candidate corpus (a pure function of meta), so keying on meta.revision (a
@@ -29,8 +30,11 @@ let bm25BuildCount = 0;
 // disk instead of re-tokenizing + re-indexing the whole corpus — the cold-start
 // perf win. The key BINDS the read-set version: any content change moves the
 // revision → a different filename → a miss → rebuild (whole-revision granularity,
-// the chosen invalidation; no incremental). Stored under `.fabric/cache/bm25/`,
-// alongside the other `.fabric/`-rooted runtime state (metrics/events ledgers).
+// the chosen invalidation; no incremental). Stored under `.fabric/.cache/bm25/`,
+// co-located with the hook sidecar cache so `.fabric/.gitignore`'s single
+// `.cache/` line covers both subsystems (unify-fabric-cache-dir). Older installs
+// whose caches live under `.fabric/cache/bm25/` are migrated lazily on first
+// read/write via migrateLegacyFabricCache.
 
 /** ISS-20260713-015: keep only the newest N revision snapshots in a cache dir. */
 export async function pruneRevisionCacheDir(dir: string, keep = 2): Promise<void> {
@@ -60,7 +64,7 @@ export async function pruneRevisionCacheDir(dir: string, keep = 2): Promise<void
   }
 }
 
-const BM25_CACHE_DIR = ".fabric/cache/bm25";
+const BM25_CACHE_DIR = ".fabric/.cache/bm25";
 
 function bm25CachePath(projectRoot: string, revision: string): string {
   // The revision is a sha256 hex string (computeReadSetRevision), optionally
@@ -93,6 +97,7 @@ async function saveBm25ModelToDisk(
   model: Bm25Model,
 ): Promise<void> {
   try {
+    migrateLegacyFabricCache(projectRoot);
     const path = bm25CachePath(projectRoot, revision);
     const dir = join(projectRoot, BM25_CACHE_DIR);
     await mkdir(dir, { recursive: true });
@@ -117,6 +122,11 @@ export async function getOrBuildBm25Model(
   if (bm25ModelCache !== null && bm25ModelCache.revision === revision) {
     return bm25ModelCache.model;
   }
+  // Legacy `.fabric/cache/{bm25,vectors}` → `.fabric/.cache/…` migration is
+  // idempotent + cheap (existsSync gate), so running it once per cold miss costs
+  // nothing on already-migrated projects and lets the disk-tier read below hit
+  // rehydrated snapshots from older installs.
+  migrateLegacyFabricCache(projectRoot);
   // Tier 2: cold-process disk hit — rehydrate, skip buildBm25Model entirely.
   const fromDisk = await loadBm25ModelFromDisk(projectRoot, revision);
   if (fromDisk !== null) {
