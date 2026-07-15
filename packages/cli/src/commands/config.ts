@@ -46,6 +46,13 @@ const LANGUAGE_FIELD_KEY = "fabric_language";
 
 type ConfigArgs = {
   target?: string;
+  // Non-interactive get/set/list surface (ISS-20260713-003 / 010): drives the
+  // TTY-less `fabric config --list / --get <key> / --set <key> --value <v>` path.
+  list?: boolean;
+  get?: string;
+  set?: string;
+  value?: string;
+  json?: boolean;
 };
 
 type InstallMcpClientsOptions = {
@@ -353,7 +360,7 @@ export const configCmd = defineCommand({
           throw new Error(t("cli.config.errors.expected-object", { path: configPath }));
         }
         const panel = getPanelFields();
-        const allowed = new Set(panel.map((f) => f.key));
+        const allowed = new Set<string>(panel.map((f) => f.key));
         // fabric_language is global-routed in the interactive panel; expose via get/set too.
         allowed.add(LANGUAGE_FIELD_KEY);
 
@@ -400,9 +407,24 @@ export const configCmd = defineCommand({
             return;
           }
           if (setKey === LANGUAGE_FIELD_KEY) {
+            const langField = panel.find((f) => f.key === LANGUAGE_FIELD_KEY);
+            const allowedLangs = langField?.enum_values ?? [];
+            if (!allowedLangs.includes(args.value)) {
+              console.error(
+                `invalid value for ${setKey}: ${args.value} (allowed: ${allowedLangs.join(", ")})`,
+              );
+              process.exitCode = 1;
+              return;
+            }
             const globalRoot = resolveGlobalRoot();
             const global = loadGlobalConfig(globalRoot) ?? { uid: "local", stores: [] };
-            await saveGlobalConfigAsync({ ...global, language: args.value }, globalRoot);
+            // Runtime-validated above against the language field's enum_values
+            // (fabricLanguageSchema = ["zh-CN", "en"]), so the narrowing cast to
+            // the global config's language type is sound.
+            await saveGlobalConfigAsync(
+              { ...global, language: args.value as "zh-CN" | "en" },
+              globalRoot,
+            );
             console.log(`set ${setKey}=${args.value}`);
             return;
           }

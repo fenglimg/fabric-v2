@@ -386,22 +386,35 @@ export async function readEventLedger(
     throw error;
   }
 
-  // Populate process cache with the full unfiltered parse (ISS-20260713-016).
-  try {
-    const st = statSync(eventPath);
-    eventLedgerReadCache.set(eventPath, {
-      mtimeMs: st.mtimeMs,
-      size: st.size,
-      events: events.slice(),
-      warnings: warnings.slice(),
-    });
-    // bound cache entries
-    if (eventLedgerReadCache.size > 8) {
-      const first = eventLedgerReadCache.keys().next().value;
-      if (first !== undefined) eventLedgerReadCache.delete(first);
+  // Populate process cache ONLY for a FULL unfiltered parse (ISS-20260713-016).
+  // A filtered read (event_type/since/correlation_id/session_id) skips
+  // non-matching lines via the pushdown above, so its `events` array is PARTIAL.
+  // The cache lookup above serves ONLY unfiltered callers — so caching a
+  // filtered read's partial (often empty) list under {mtime,size} would poison
+  // the next unfiltered reader with a truncated result. Mirror the lookup guard:
+  // store only when every narrowing option is absent.
+  const isUnfilteredRead =
+    options.event_type === undefined &&
+    options.since === undefined &&
+    options.correlation_id === undefined &&
+    options.session_id === undefined;
+  if (isUnfilteredRead) {
+    try {
+      const st = statSync(eventPath);
+      eventLedgerReadCache.set(eventPath, {
+        mtimeMs: st.mtimeMs,
+        size: st.size,
+        events: events.slice(),
+        warnings: warnings.slice(),
+      });
+      // bound cache entries
+      if (eventLedgerReadCache.size > 8) {
+        const first = eventLedgerReadCache.keys().next().value;
+        if (first !== undefined) eventLedgerReadCache.delete(first);
+      }
+    } catch {
+      /* ignore cache store failures */
     }
-  } catch {
-    /* ignore cache store failures */
   }
 
   const filtered = events

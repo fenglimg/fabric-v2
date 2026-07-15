@@ -57,6 +57,12 @@ export interface PanelFieldMeta {
   readonly key: PanelFieldKey;
   /** Logical grouping for panel section headers. */
   readonly group: PanelFieldGroup;
+  /**
+   * JSON value type of the stored config value. Drives non-interactive
+   * `fabric config --get/--set/--list` coercion + display; orthogonal to
+   * `widget` (UI presentation) and `enum_values` (allowed set).
+   */
+  readonly type: "boolean" | "number" | "string";
   /** Clack widget hint — `select` for enums, `text` for free-form numbers. */
   readonly widget: "select" | "text";
   /** i18n key for the field label; strings landed in TASK-006. */
@@ -84,6 +90,7 @@ function makePositiveIntField(
   return {
     key,
     group: "B_hint_threshold",
+    type: "number",
     widget: "text",
     label_i18n_key: `cli.config.fields.${key}.label`,
     description_i18n_key: `cli.config.fields.${key}.description`,
@@ -119,6 +126,7 @@ function makeEnumField(
   return {
     key,
     group,
+    type: "string",
     widget: "select",
     label_i18n_key: `cli.config.fields.${key}.label`,
     description_i18n_key: `cli.config.fields.${key}.description`,
@@ -149,6 +157,7 @@ function makeBooleanField(key: keyof FabricConfigSchemaShape, defaultValue: bool
   return {
     key,
     group: "D_behavior",
+    type: "boolean",
     widget: "select",
     label_i18n_key: `cli.config.fields.${key}.label`,
     description_i18n_key: `cli.config.fields.${key}.description`,

@@ -27,6 +27,17 @@ export default defineConfig({
     environment: "node",
     include: ["__tests__/**/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
+    // Run test FILES serially. The install/uninstall/clone integration suites do
+    // real bootstrap writes (~93 hook/skill files each via atomic temp-file +
+    // rename). Under high file-parallelism (many-core dev boxes spawn one fork
+    // per core, each running a full 93-file install at once), those concurrent
+    // rename() syscalls sporadically race the OS filesystem — ENOENT on the .tmp
+    // source mid-rename → `install errors=1` → an incomplete tree → flaky
+    // byte-exact assertions (30+ non-deterministic failures locally, all green
+    // serially). Production never runs 14 installs at once, so this is a
+    // test-load artifact, not a product bug; serial file execution makes the
+    // suite deterministic on any core count without weakening a single assertion.
+    fileParallelism: false,
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],

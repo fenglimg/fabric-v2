@@ -41,6 +41,28 @@ function ensureStoreDirs(
   }
 }
 
+/** Seed one canonical knowledge markdown so first-hit does not report empty_store. */
+function seedStoreEntry(
+  globalRoot: string,
+  store: { store_uuid: string; mount_name?: string },
+): void {
+  const dir = join(globalRoot, storeRelativePathForMount(store), "knowledge", "guidelines");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "KT-GLD-0001--seed.md"),
+    "---\nid: KT-GLD-0001\ntype: guidelines\n---\nseed\n",
+    "utf8",
+  );
+}
+
+/** Install the two client hooks first-hit probes for so it does not report hooks_missing. */
+function installHooks(projectRoot: string): void {
+  const hooksDir = join(projectRoot, ".claude", "hooks");
+  mkdirSync(hooksDir, { recursive: true });
+  writeFileSync(join(hooksDir, "knowledge-hint-broad.cjs"), "// session-start hook\n", "utf8");
+  writeFileSync(join(hooksDir, "knowledge-pretooluse.cjs"), "// pre-tool-use hook\n", "utf8");
+}
+
 describe("doctor store checks", () => {
   it("warns when no global config exists", () => {
     const diags = storeDoctorChecks(tmp("dr-proj-"), join(tmp("dr-g-"), ".fabric"));
@@ -88,9 +110,22 @@ describe("doctor store checks", () => {
     );
     // Registry alone is not enough: first-hit store_unreachable checks on-disk dirs.
     ensureStoreDirs(globalRoot, stores);
+    // D3 first-hit (wired into doctor since 145551be): a genuinely clean project
+    // must also carry ≥1 knowledge entry on its read-set, else first-hit reports
+    // empty_store. Seed one canonical entry into the team store tree.
+    seedStoreEntry(globalRoot, { store_uuid: TEAM });
     const projectRoot = tmp("dr-p3-");
+    // ...and the client hooks must be installed, else first-hit reports
+    // hooks_missing. Materialize the two hooks first-hit probes for.
+    installHooks(projectRoot);
     saveProjectConfig(
-      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      {
+        project_id: "11111111-1111-4111-8111-111111111111",
+        required_stores: [{ id: "team" }],
+        // D3 first-hit: a genuinely clean project must name a write target,
+        // else first-hit reports no_write_target (surfaced as a warn diag).
+        active_write_store: "team",
+      },
       projectRoot,
     );
     expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);

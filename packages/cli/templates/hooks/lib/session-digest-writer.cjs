@@ -235,5 +235,8 @@ module.exports = {
     MAX_USER_MESSAGES,
     MAX_MSG_CHARS,
     MAX_EDIT_PATHS,
-  , pruneStaleDigests, purgeSessionDigestsBestEffort, DIGEST_MAX_AGE_MS },
+  },
+  pruneStaleDigests,
+  purgeSessionDigestsBestEffort,
+  DIGEST_MAX_AGE_MS,
 };

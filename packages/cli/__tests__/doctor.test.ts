@@ -10,6 +10,13 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("@fenglimg/fabric-server");
+  // vi.doMock registrations survive vi.resetModules(), so store-module mocks
+  // installed by individual tests (e.g. the info-severity advisory test mocks
+  // ../src/store/doctor-checks.js to return an error-severity diagnostic) must
+  // be unmocked here too — otherwise they leak into later --fix tests and flip
+  // process.exitCode to 1 via the storeHasError branch in doctor.ts.
+  vi.doUnmock("../src/store/doctor-checks.js");
+  vi.doUnmock("../src/store/first-hit.js");
   process.exitCode = originalExitCode;
 });
 

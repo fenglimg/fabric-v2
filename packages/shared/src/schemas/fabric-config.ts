@@ -432,7 +432,9 @@ export const fabricConfigSchema = z.object({
   // fabric-hint Stop hook — knowledge-hint-broad re-fires on every
   // SessionStart by default (compact / clear / new-window), which on long
   // sessions becomes redundant noise. Setting to 1 means "emit the broad
-  // menu at most once per hour"; 0 means "no cooldown, current behavior."
+  // menu at most once per hour"; 0 means "no cooldown, re-fire every open."
+  // ISS-20260713-033 shipped a non-zero quiet DEFAULT of 24 (at most once per
+  // day) so repeat session-opens stay quiet; set 0 for verbose/debug.
   // Range 0..168 (one week). Stored alongside fabric-hint's cooldown cache
   // under a distinct knowledge-hint-broad key.
   hint_broad_cooldown_hours: z.number().int().min(0).max(168).optional().default(24), // ISS-20260713-033
