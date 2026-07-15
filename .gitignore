@@ -45,6 +45,7 @@ packages/.fabric/
 .workflow/kg/*.db
 .workflow/embedding-index.bin
 .workflow/search-cache.json
+.workflow/search-cache.json.tmp
 .workflow/explore/
 # vector embedding store (zvec — RocksDB-style LOCK/WAL/manifest binary state)
 # and the search-daemon PID/port sidecar. Per-machine transient runtime state
