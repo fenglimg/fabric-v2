@@ -184,7 +184,7 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
     }
 
     const rawConfig = await readTomlConfigText(configPath);
-    const nextConfig = upsertCodexServerBlock(rawConfig, "fabric", createServerEntry(serverPath));
+    const nextConfig = upsertCodexServerBlock(rawConfig, "fabric", createServerEntry(serverPath, workspaceRoot));
 
     await mkdir(dirname(configPath), { recursive: true });
     await atomicWriteText(configPath, nextConfig);

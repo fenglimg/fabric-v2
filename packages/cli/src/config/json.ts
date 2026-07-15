@@ -324,7 +324,7 @@ abstract class JsonClientConfigWriter implements ClientConfigWriter {
       return;
     }
 
-    await writeJsonClientConfig(configPath, createServerEntry(serverPath));
+    await writeJsonClientConfig(configPath, createServerEntry(serverPath, workspaceRoot));
   }
 
   async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {

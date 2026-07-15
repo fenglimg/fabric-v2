@@ -89,8 +89,9 @@ describe("config atomic writes — output bytes match prior raw writeFile", () =
     await writer.write("/srv.js", process.cwd());
 
     const written = readFileSync(configPath, "utf8");
+    // ISS-58: env pins FABRIC_PROJECT_ROOT to the workspace root passed to write().
     const expected =
-      `[mcp_servers.fabric]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ["/srv.js"]\n`;
+      `[mcp_servers.fabric]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ["/srv.js"]\nenv = { FABRIC_PROJECT_ROOT = ${JSON.stringify(process.cwd())} }\n`;
 
     expect(written).toBe(expected);
   });
