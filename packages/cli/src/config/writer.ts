@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 export type ClientKind =
   | "ClaudeCodeCLI"
   | "ClaudeCodeDesktop"
@@ -50,10 +52,25 @@ export interface ClientConfigWriter {
 
 /**
  * serverPath may be absolute (global install) or project-relative (local install).
+ *
+ * ISS-58 (GH): when `projectRoot` is supplied, pin `FABRIC_PROJECT_ROOT` in the
+ * generated entry's env. The MCP client spawns the server with an UNCONTROLLED
+ * cwd (observed: `/`, or another fabric-installed repo). meta-reader's
+ * resolveProjectRoot() then either resolves nothing (cwd=`/` → empty write_routes
+ * → `fab_propose` "no write-target" + recall degraded to personal-only, silently)
+ * or git-anchors onto the WRONG repo (cwd=other project → silent cross-project
+ * read/write — a data-integrity risk). Pinning the trusted-operator override at
+ * install time makes the resolver deterministic regardless of spawn cwd. env is
+ * serialized by BOTH client formats (json deepMerge + codex TOML managed block),
+ * and FABRIC_PROJECT_ROOT is the highest-priority signal resolveProjectRoot reads.
  */
-export function createServerEntry(serverPath: string): ServerEntry {
-  return {
+export function createServerEntry(serverPath: string, projectRoot?: string): ServerEntry {
+  const entry: ServerEntry = {
     command: process.execPath,
     args: [serverPath],
   };
+  if (typeof projectRoot === "string" && projectRoot.length > 0) {
+    entry.env = { FABRIC_PROJECT_ROOT: resolve(projectRoot) };
+  }
+  return entry;
 }
