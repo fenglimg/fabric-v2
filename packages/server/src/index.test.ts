@@ -1,9 +1,32 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const tempRoots: string[] = [];
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
+  while (tempRoots.length > 0) {
+    rmSync(tempRoots.pop() as string, { recursive: true, force: true });
+  }
 });
+
+function newTmpDir(prefix: string): string {
+  const raw = mkdtempSync(join(tmpdir(), prefix));
+  tempRoots.push(raw);
+  return realpathSync(raw);
+}
+
+function newConfiguredProject(): string {
+  const root = newTmpDir("index-configured-");
+  mkdirSync(join(root, ".fabric"), { recursive: true });
+  writeFileSync(join(root, ".fabric", "fabric-config.json"), "{}\n");
+  return root;
+}
 
 // v2.0.0-rc.37 Wave A2: `describe("startHttpServer", ...)` block removed.
 // startHttpServer was quarantined to packages/server-http-experimental/ per
@@ -109,5 +132,102 @@ describe("createFabricServer", () => {
     expect(FABRIC_SERVER_INSTRUCTIONS.indexOf("fab_recall")).toBeLessThan(
       FABRIC_SERVER_INSTRUCTIONS.indexOf("SKILL-DRIVEN"),
     );
+  });
+});
+
+// ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): the initialize
+// instructions must lead with the outage banner when the resolved root
+// carries no project config, and stay verbatim otherwise.
+describe("buildServerInstructions", () => {
+  it("returns the plain instructions when the root is configured", async () => {
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+    const { buildServerInstructions, FABRIC_SERVER_INSTRUCTIONS } = await import("./index.js");
+    expect(buildServerInstructions(newConfiguredProject())).toBe(FABRIC_SERVER_INSTRUCTIONS);
+  });
+
+  it("prepends the project_root_unresolved banner when the config is absent", async () => {
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+    const { buildServerInstructions, FABRIC_SERVER_INSTRUCTIONS } = await import("./index.js");
+    const bare = newTmpDir("index-bare-");
+    const instructions = buildServerInstructions(bare);
+    // Banner leads (loud from the first server-authored words the client sees).
+    expect(instructions.startsWith("⚠️ WARNING: project root unresolved — serving personal store only")).toBe(true);
+    expect(instructions).toContain(bare);
+    expect(instructions).toContain("project_root_unresolved");
+    expect(instructions).toContain("FABRIC_PROJECT_ROOT");
+    // The full normal manifest still follows the banner.
+    expect(instructions).toContain(FABRIC_SERVER_INSTRUCTIONS);
+  });
+});
+
+// ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): post-initialize
+// roots adoption — the env > CLAUDE_PROJECT_DIR > roots > cwd chain itself is
+// covered in meta-reader.test.ts; here we pin the MCP-facing plumbing.
+describe("adoptMcpClientRoots", () => {
+  let savedFabricRoot: string | undefined;
+  let savedClaudeDir: string | undefined;
+
+  afterEach(async () => {
+    const { resetMcpRootsHint } = await import("./meta-reader.js");
+    resetMcpRootsHint();
+    if (savedFabricRoot === undefined) delete process.env.FABRIC_PROJECT_ROOT;
+    else process.env.FABRIC_PROJECT_ROOT = savedFabricRoot;
+    if (savedClaudeDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = savedClaudeDir;
+  });
+
+  function clearEnvOverrides(): void {
+    savedFabricRoot = process.env.FABRIC_PROJECT_ROOT;
+    savedClaudeDir = process.env.CLAUDE_PROJECT_DIR;
+    delete process.env.FABRIC_PROJECT_ROOT;
+    delete process.env.CLAUDE_PROJECT_DIR;
+  }
+
+  it("returns [] without touching the hint when the client lacks the roots capability", async () => {
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+    const { adoptMcpClientRoots } = await import("./index.js");
+    const listRoots = vi.fn();
+    const adopted = await adoptMcpClientRoots({
+      getClientCapabilities: () => ({}),
+      listRoots,
+    });
+    expect(adopted).toEqual([]);
+    expect(listRoots).not.toHaveBeenCalled();
+  });
+
+  it("adopts file:// roots so resolveProjectRoot picks them up (heals the rootless spawn)", async () => {
+    clearEnvOverrides();
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+    const { adoptMcpClientRoots } = await import("./index.js");
+    const { resolveProjectRoot } = await import("./meta-reader.js");
+
+    const projectRoot = newConfiguredProject();
+    mkdirSync(join(projectRoot, ".git"), { recursive: true });
+    const bareCwd = newTmpDir("index-rootless-cwd-");
+
+    const adopted = await adoptMcpClientRoots({
+      getClientCapabilities: () => ({ roots: {} }),
+      listRoots: async () => ({
+        roots: [
+          { uri: "https://not-a-file.example" },
+          { uri: pathToFileURL(projectRoot).href },
+        ],
+      }),
+    });
+    expect(adopted).toEqual([projectRoot]);
+    // The degenerate spawn cwd no longer wins — the client root does.
+    expect(resolveProjectRoot(bareCwd)).toBe(projectRoot);
+  });
+
+  it("returns [] when listRoots rejects (best-effort, never sinks startup)", async () => {
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+    const { adoptMcpClientRoots } = await import("./index.js");
+    const adopted = await adoptMcpClientRoots({
+      getClientCapabilities: () => ({ roots: {} }),
+      listRoots: async () => {
+        throw new Error("client went away");
+      },
+    });
+    expect(adopted).toEqual([]);
   });
 });

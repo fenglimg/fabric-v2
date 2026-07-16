@@ -165,6 +165,47 @@ describe("registerPending", () => {
     expect(result.content[0]!.text).not.toBe(JSON.stringify(result.structuredContent));
   });
 
+  // ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): a root without
+  // .fabric/fabric-config.json silently served the personal store only. The
+  // tool response must now carry the fail-loud project_root_unresolved warning.
+  it("appends the project_root_unresolved warning when the root has no fabric-config.json", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-pending-bare-"));
+    tempDirs.push(projectRoot);
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [
+        { store_uuid: TEST_PERSONAL_UUID, alias: "personal", personal: true, writable: true },
+      ],
+    });
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerPending(server);
+
+    const result = await tool().handler({ action: "list" });
+    const warnings = (result.structuredContent as {
+      warnings?: Array<{ code: string; message?: string; action_hint: string }>;
+    }).warnings;
+    const rootWarn = warnings?.find((w) => w.code === "project_root_unresolved");
+    expect(rootWarn).toBeDefined();
+    expect(rootWarn?.message).toContain("project root unresolved — serving personal store only");
+    expect(rootWarn?.action_hint).toContain("FABRIC_PROJECT_ROOT");
+  });
+
+  it("emits NO project_root_unresolved warning when the root carries fabric-config.json", async () => {
+    const projectRoot = await makeProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerPending(server);
+
+    const result = await tool().handler({ action: "list" });
+    const warnings = (result.structuredContent as {
+      warnings?: Array<{ code: string }>;
+    }).warnings;
+    expect(warnings?.some((w) => w.code === "project_root_unresolved") ?? false).toBe(false);
+  });
+
   it("invokes the search action end-to-end and returns structured content", async () => {
     const projectRoot = await makeProject();
     process.env.FABRIC_PROJECT_ROOT = projectRoot;

@@ -12,6 +12,7 @@ import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-gu
 
 import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
+import { projectRootWarning } from "../services/project-root-warning.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
   awaitFirstReconcileGate,
@@ -68,6 +69,13 @@ export function registerPending(server: McpServer, tracker?: InFlightTracker): v
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
         if (gateWarn) {
           response.warnings = [gateWarn];
+        }
+
+        // KT-PIT-0046: fail-loud when the root carries no project config —
+        // the read-set is personal-only and the caller must know.
+        const rootWarn = projectRootWarning(projectRoot);
+        if (rootWarn) {
+          response.warnings = [...(response.warnings ?? []), rootWarn];
         }
 
         const payloadLimits = readPayloadLimits(projectRoot);

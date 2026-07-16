@@ -17,6 +17,7 @@ import {
   gateWarning,
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
+import { projectRootWarning } from "../services/project-root-warning.js";
 import { recall, type RecallInput } from "../services/recall.js";
 import { appendEventLedgerEvent } from "../services/event-ledger.js";
 
@@ -61,6 +62,9 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
         const gateWarn = gateWarning(gateResult);
 
         const projectRoot = resolveProjectRoot();
+        // KT-PIT-0046: fail-loud when the root carries no project config —
+        // the read-set is personal-only and the caller must know.
+        const rootWarn = projectRootWarning(projectRoot);
 
         const input: RecallInput = {
           paths,
@@ -84,6 +88,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
           ...result,
           warnings: [
             ...(gateWarn ? [gateWarn] : []),
+            ...(rootWarn ? [rootWarn] : []),
           ],
         };
 

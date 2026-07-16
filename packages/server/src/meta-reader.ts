@@ -88,6 +88,66 @@ function normalizeTrustedRootOverride(raw: string): string | null {
   }
 }
 
+// Walk up from `start` to the nearest `.git` anchor, falling back to the
+// nearest pre-existing `.fabric/` seen during the same climb. Returns null when
+// neither marker exists in the chain. Bounded climb — a real repo is a handful
+// of hops; the cap guards against symlink / mount loops.
+function climbToAnchor(start: string): string | null {
+  let dir = start;
+  let firstFabric: string | null = null;
+  for (let i = 0; i < 64; i++) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    if (firstFabric === null && existsSync(join(dir, ".fabric"))) firstFabric = dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return firstFabric;
+}
+
+// ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): some MCP hosts
+// (Claude desktop app respawns) launch the server with cwd=/ and WITHOUT the
+// .mcp.json env — both env overrides and the cwd climb then come up empty and
+// the root degrades to "/". The MCP `roots` capability is the remaining honest
+// signal: the client's declared workspace roots. `startStdioServer` fetches
+// them once after initialize and records them here; `resolveProjectRoot`
+// consults them between the env overrides and the cwd climb.
+let mcpRootsHint: string[] = [];
+
+/**
+ * Record the MCP client's workspace roots as project-root candidates.
+ * Candidates are normalized (absolute, realpath'd, filesystem-root rejected)
+ * and must exist on disk; returns the accepted list. Order is preserved —
+ * the first root is the strongest candidate.
+ */
+export function setMcpRootsHint(paths: string[]): string[] {
+  const accepted: string[] = [];
+  for (const path of paths) {
+    const normalized = normalizeTrustedRootOverride(path);
+    if (normalized !== null && existsSync(normalized)) accepted.push(normalized);
+  }
+  mcpRootsHint = accepted;
+  return accepted.slice();
+}
+
+/** Test-only reset — mirrors the other module-state resets in this package. */
+export function resetMcpRootsHint(): void {
+  mcpRootsHint = [];
+}
+
+/**
+ * True when the resolved root actually carries a project config
+ * (`.fabric/fabric-config.json`) — the file `required_stores` (and thus the
+ * team read-set) comes from. A root without it serves the personal store only,
+ * which is the silent-degradation mode this predicate exists to make loud.
+ */
+export function isProjectRootConfigured(projectRoot: string): boolean {
+  return existsSync(join(projectRoot, ".fabric", "fabric-config.json"));
+}
+
+// Resolution order (first match wins):
+//   1. FABRIC_PROJECT_ROOT  2. CLAUDE_PROJECT_DIR  3. MCP client roots
+//   4. cwd climb (.git / .fabric anchor)  5. first MCP root  6. startCwd.
 export function resolveProjectRoot(startCwd?: string): string {
   const envOverride = process.env.FABRIC_PROJECT_ROOT;
   if (typeof envOverride === "string" && envOverride.length > 0) {
@@ -100,19 +160,17 @@ export function resolveProjectRoot(startCwd?: string): string {
     if (normalized !== null) return normalized;
   }
 
-  const start = typeof startCwd === "string" && startCwd.length > 0 ? startCwd : process.cwd();
-  let dir = start;
-  let firstFabric: string | null = null;
-  // Bounded climb — a real repo is a handful of hops; the cap guards against
-  // symlink / mount loops.
-  for (let i = 0; i < 64; i++) {
-    if (existsSync(join(dir, ".git"))) return dir;
-    if (firstFabric === null && existsSync(join(dir, ".fabric"))) firstFabric = dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+  for (const rootHint of mcpRootsHint) {
+    const anchored = climbToAnchor(rootHint);
+    if (anchored !== null) return anchored;
   }
-  return firstFabric ?? start;
+
+  const start = typeof startCwd === "string" && startCwd.length > 0 ? startCwd : process.cwd();
+  const anchored = climbToAnchor(start);
+  if (anchored !== null) return anchored;
+  // No anchor anywhere: an unanchored client root still beats an unanchored
+  // cwd (the rootless-spawn cwd is "/").
+  return mcpRootsHint[0] ?? start;
 }
 
 export async function readAgentsMeta(projectRoot: string): Promise<AgentsMeta> {
