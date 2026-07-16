@@ -15,6 +15,7 @@ import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-gu
 
 import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
+import { projectRootWarning } from "../services/project-root-warning.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
   awaitFirstReconcileGate,
@@ -79,6 +80,13 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
         if (gateWarn) {
           response.warnings = [gateWarn];
+        }
+
+        // KT-PIT-0046: fail-loud when the root carries no project config —
+        // no write_routes resolve and writes land personal-only at best.
+        const rootWarn = projectRootWarning(projectRoot);
+        if (rootWarn) {
+          response.warnings = [...(response.warnings ?? []), rootWarn];
         }
 
         // project-scope guard: fail-loud the unsealed-project drift at write

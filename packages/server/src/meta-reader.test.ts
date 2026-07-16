@@ -1,11 +1,16 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { resolveProjectRoot } from "./meta-reader.js";
+import {
+  isProjectRootConfigured,
+  resetMcpRootsHint,
+  resolveProjectRoot,
+  setMcpRootsHint,
+} from "./meta-reader.js";
 
 // v2.3.0-rc.11: git-anchor resolveProjectRoot on the server side. The old
 // implementation returned `process.cwd()` unchanged, so any Fabric CLI /
@@ -39,6 +44,7 @@ afterEach(() => {
     process.env.FABRIC_PROJECT_ROOT = savedEnvFabric;
   }
   process.chdir(savedCwd);
+  resetMcpRootsHint();
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }
@@ -115,6 +121,83 @@ describe("resolveProjectRoot (server side)", () => {
     const { root, deep } = newTmpProject();
     mkdirSync(join(root, "scripts", "asset-dedup", ".fabric"), { recursive: true });
     expect(resolveProjectRoot(deep)).toBe(root);
+  });
+});
+
+// ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): MCP client roots
+// slot between the env overrides and the cwd climb. `startCwd` below plays the
+// role of the degenerate spawn cwd ("/" in the wild — an anchor-free tmpdir in
+// tests, since climbing from the real "/" could hit developer-machine markers).
+describe("resolveProjectRoot — MCP client roots hint", () => {
+  function newBareDir(prefix: string): string {
+    const raw = mkdtempSync(join(tmpdir(), prefix));
+    tempRoots.push(raw);
+    return realpathSync(raw);
+  }
+
+  it("uses the roots hint when env is unset and cwd has no anchor (rootless-spawn repro)", () => {
+    const { root } = newTmpProject();
+    const bare = newBareDir("meta-reader-rootless-");
+    setMcpRootsHint([root]);
+    expect(resolveProjectRoot(bare)).toBe(root);
+  });
+
+  it("climbs from a roots hint that points inside the project", () => {
+    const { root, deep } = newTmpProject();
+    const bare = newBareDir("meta-reader-rootless-");
+    setMcpRootsHint([deep]);
+    expect(resolveProjectRoot(bare)).toBe(root);
+  });
+
+  it("env overrides beat the roots hint (FABRIC_PROJECT_ROOT > CLAUDE_PROJECT_DIR > roots)", () => {
+    const { root: envRoot } = newTmpProject();
+    const { root: hintRoot } = newTmpProject();
+    setMcpRootsHint([hintRoot]);
+    process.env.CLAUDE_PROJECT_DIR = envRoot;
+    expect(resolveProjectRoot(newBareDir("meta-reader-rootless-"))).toBe(envRoot);
+    process.env.FABRIC_PROJECT_ROOT = hintRoot;
+    expect(resolveProjectRoot(newBareDir("meta-reader-rootless-"))).toBe(hintRoot);
+  });
+
+  it("an anchored cwd climb is NOT preempted by an unanchored roots hint", () => {
+    const { root, deep } = newTmpProject();
+    const bareHint = newBareDir("meta-reader-barehint-");
+    setMcpRootsHint([bareHint]);
+    // Hint has no .git/.fabric; the cwd climb finds the real anchor.
+    expect(resolveProjectRoot(deep)).toBe(root);
+  });
+
+  it("an unanchored roots hint still beats an unanchored cwd (better than '/')", () => {
+    const bareHint = newBareDir("meta-reader-barehint-");
+    const bareCwd = newBareDir("meta-reader-barecwd-");
+    setMcpRootsHint([bareHint]);
+    expect(resolveProjectRoot(bareCwd)).toBe(bareHint);
+  });
+
+  it("skips unusable roots: nonexistent paths and the filesystem root", () => {
+    const { root } = newTmpProject();
+    const accepted = setMcpRootsHint(["/", join(tmpdir(), "does-not-exist-xyz"), root]);
+    expect(accepted).toEqual([root]);
+    expect(resolveProjectRoot(newBareDir("meta-reader-rootless-"))).toBe(root);
+  });
+
+  it("resetMcpRootsHint restores the pre-hint fallback", () => {
+    const { root } = newTmpProject();
+    const bare = newBareDir("meta-reader-rootless-");
+    setMcpRootsHint([root]);
+    resetMcpRootsHint();
+    expect(resolveProjectRoot(bare)).toBe(bare);
+  });
+});
+
+describe("isProjectRootConfigured", () => {
+  it("is true only when .fabric/fabric-config.json exists at the root", () => {
+    const { root } = newTmpProject();
+    expect(isProjectRootConfigured(root)).toBe(false);
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    expect(isProjectRootConfigured(root)).toBe(false);
+    writeFileSync(join(root, ".fabric", "fabric-config.json"), "{}\n");
+    expect(isProjectRootConfigured(root)).toBe(true);
   });
 });
 

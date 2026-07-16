@@ -10,6 +10,7 @@ import {
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { appendPayloadWarning } from "./payload-warning.js";
 import { resolveProjectRoot } from "../meta-reader.js";
+import { projectRootWarning } from "../services/project-root-warning.js";
 import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { collectArchiveScan } from "../services/archive-scan.js";
@@ -40,6 +41,12 @@ export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker
           correlation_id,
           session_id,
         });
+        // KT-PIT-0046: fail-loud when the root carries no project config —
+        // the scan sees personal-store state only.
+        const rootWarn = projectRootWarning(projectRoot);
+        if (rootWarn) {
+          result.warnings = [...(result.warnings ?? []), rootWarn];
+        }
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(result);
         // v2.2 MC5-action-hint (W3-T3): symmetric warn surfacing via the shared helper.

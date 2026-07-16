@@ -11,7 +11,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
-import { resolveProjectRoot } from "./meta-reader.js";
+import { isProjectRootConfigured, resolveProjectRoot, setMcpRootsHint } from "./meta-reader.js";
+import { projectRootUnresolvedMessage } from "./services/project-root-warning.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
 import { setFirstReconcile } from "./services/first-reconcile-gate.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
@@ -269,6 +270,23 @@ export const FABRIC_SERVER_INSTRUCTIONS = [
   "- Cite the KB id you applied or dismissed before edits, per the project's cite policy.",
 ].join("\n");
 
+// ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): when the host
+// spawned us with cwd=/ and no env, the resolved root carries no project
+// config and the read-set silently collapses to the personal store. The
+// initialize `instructions` are the first server-authored words the client
+// sees — lead with the outage banner so the degradation is loud from the
+// handshake on. Tool responses carry the matching `project_root_unresolved`
+// warning (which clears once client roots are adopted post-initialize).
+export function buildServerInstructions(projectRoot: string): string {
+  if (isProjectRootConfigured(projectRoot)) return FABRIC_SERVER_INSTRUCTIONS;
+  return [
+    `⚠️ WARNING: ${projectRootUnresolvedMessage(projectRoot)}`,
+    "If this client exposes MCP workspace roots, the server adopts them right after initialize and team stores load on the next tool call — otherwise set FABRIC_PROJECT_ROOT (or CLAUDE_PROJECT_DIR) in the MCP server env, or launch the server from inside the project. Tool responses carry a `project_root_unresolved` warning until resolved.",
+    "",
+    FABRIC_SERVER_INSTRUCTIONS,
+  ].join("\n");
+}
+
 export function createFabricServer(tracker?: InFlightTracker): McpServer {
   const server = new McpServer(
     {
@@ -276,7 +294,7 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
       version: __SERVER_VERSION__,
     },
     {
-      instructions: FABRIC_SERVER_INSTRUCTIONS,
+      instructions: buildServerInstructions(resolveProjectRoot()),
     },
   );
 
@@ -319,9 +337,47 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
   return server;
 }
 
+/**
+ * The slice of the MCP `Server` the roots adoption consumes — injectable so
+ * tests can drive it without a live transport.
+ */
+export interface McpRootsSource {
+  getClientCapabilities(): { roots?: unknown } | undefined;
+  listRoots(): Promise<{ roots: Array<{ uri?: string }> }>;
+}
+
+/**
+ * ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): fetch the client's
+ * workspace roots (when the client declares the `roots` capability) and record
+ * them as project-root candidates via `setMcpRootsHint`. Returns the accepted
+ * absolute paths ([] when the capability is absent or the fetch fails —
+ * best-effort, never sinks startup). Called from `oninitialized`; the
+ * env > CLAUDE_PROJECT_DIR > roots > cwd priority lives in
+ * `resolveProjectRoot`, which every tool call re-runs, so adoption heals
+ * subsequent calls without a restart.
+ */
+export async function adoptMcpClientRoots(source: McpRootsSource): Promise<string[]> {
+  try {
+    if (source.getClientCapabilities()?.roots === undefined) return [];
+    const { roots } = await source.listRoots();
+    const paths: string[] = [];
+    for (const root of roots) {
+      if (typeof root.uri !== "string" || !root.uri.startsWith("file:")) continue;
+      try {
+        paths.push(fileURLToPath(root.uri));
+      } catch {
+        // skip malformed URIs — one bad root must not drop the others
+      }
+    }
+    return setMcpRootsHint(paths);
+  } catch {
+    return [];
+  }
+}
+
 export async function startStdioServer(): Promise<void> {
   const tracker = createInFlightTracker();
-  const projectRoot = resolveProjectRoot();
+  let projectRoot = resolveProjectRoot();
 
   // TASK-034: info-level detection of pre-existing root markdown files.
   // Surfaced BEFORE handshake so the operator sees the hint regardless of
@@ -331,8 +387,51 @@ export async function startStdioServer(): Promise<void> {
     process.stderr.write(`${rootMsg}\n`);
   }
 
+  // KT-PIT-0046 / KT-PIT-0042 (loud, positive sink for the degradation): a
+  // root without .fabric/fabric-config.json serves the personal store only.
+  if (!isProjectRootConfigured(projectRoot)) {
+    process.stderr.write(
+      `[startup] warning: ${projectRootUnresolvedMessage(projectRoot)}. ` +
+        `Waiting for MCP client roots after initialize; set FABRIC_PROJECT_ROOT to pin explicitly.\n`,
+    );
+  }
+
   const server = createFabricServer(tracker);
   const transport = new StdioServerTransport();
+
+  // Adopt the client's workspace roots once the handshake completes (roots can
+  // only be requested post-initialize). Wired BEFORE connect so the callback
+  // cannot miss a fast handshake. On adoption, re-target the root-keyed
+  // background jobs; per-call paths re-run resolveProjectRoot themselves.
+  server.server.oninitialized = () => {
+    void (async () => {
+      const adopted = await adoptMcpClientRoots(server.server);
+      if (adopted.length === 0) {
+        if (!isProjectRootConfigured(projectRoot)) {
+          process.stderr.write(
+            "[roots] client exposed no usable MCP roots — project root stays unresolved; serving personal store only.\n",
+          );
+        }
+        return;
+      }
+      const newRoot = resolveProjectRoot();
+      if (newRoot !== projectRoot) {
+        process.stderr.write(
+          `[roots] project root re-resolved via MCP client roots: "${projectRoot}" → "${newRoot}"\n`,
+        );
+        stopMetricsFlush(projectRoot);
+        stopRotationTick(projectRoot);
+        startMetricsFlush(newRoot);
+        startRotationTick(newRoot);
+        projectRoot = newRoot;
+      }
+      if (!isProjectRootConfigured(projectRoot)) {
+        process.stderr.write(
+          `[roots] warning: ${projectRootUnresolvedMessage(projectRoot)}\n`,
+        );
+      }
+    })();
+  };
 
   // v2.0.0-rc.23 TASK-009 (d): connect the MCP handshake immediately so MCP
   // clients (`claude mcp list`) see the server as available the moment stdio is
@@ -363,18 +462,20 @@ export async function startStdioServer(): Promise<void> {
     await server.close();
   };
 
-  process.on(
-    "SIGINT",
-    createShutdownHandler({ signal: "SIGINT", tracker, projectRoot, closeServer }),
-  );
-  process.on(
-    "SIGTERM",
-    createShutdownHandler({ signal: "SIGTERM", tracker, projectRoot, closeServer }),
-  );
-  process.on(
-    "SIGHUP",
-    createShutdownHandler({ signal: "SIGHUP", tracker, projectRoot, closeServer }),
-  );
+  // `projectRoot` may be re-resolved by the post-initialize roots adoption
+  // above; the getter keeps the shutdown flush pointed at the live root.
+  const shutdownDeps = (signal: NodeJS.Signals): ShutdownHandlerDeps => ({
+    signal,
+    tracker,
+    get projectRoot() {
+      return projectRoot;
+    },
+    closeServer,
+  });
+
+  process.on("SIGINT", createShutdownHandler(shutdownDeps("SIGINT")));
+  process.on("SIGTERM", createShutdownHandler(shutdownDeps("SIGTERM")));
+  process.on("SIGHUP", createShutdownHandler(shutdownDeps("SIGHUP")));
 }
 
 /**
