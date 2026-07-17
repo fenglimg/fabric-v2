@@ -19,7 +19,9 @@ import { contextCache } from "../cache.js";
 // (matches the ANL-002 sample scenario surface: dropped-heavy, mixed KB types),
 // run the real recall pipeline, and assert the seeded-payload budget (17000B
 // target from PLN-002, semantic-preservation-adjusted from the original 12000B).
-// Also records verification.json for downstream audit + regression tracking.
+// Also records verification.json for downstream audit + regression tracking —
+// opt-in via FABRIC_RECORD_VERIFICATION=1, so regular `pnpm test` runs never
+// rewrite the git-tracked snapshot (volatile bytes/timestamp would dirty the tree).
 //
 // The empty-store measurement (against REPO_ROOT with no test mount) records
 // envelope overhead as a lower bound; the seeded 24-entry measurement is the
@@ -160,7 +162,7 @@ async function seedTwentyFourEntries(): Promise<string> {
 
 describe("recall wire-thinning payload verification (TASK-007)", () => {
   it(
-    "seeded 24-entry payload stays under 17000B + records verification.json",
+    "seeded 24-entry payload stays under 17000B (+ records verification.json when FABRIC_RECORD_VERIFICATION=1)",
     async () => {
       const projectRoot = await seedTwentyFourEntries();
 
@@ -227,11 +229,13 @@ describe("recall wire-thinning payload verification (TASK-007)", () => {
         recorded_at: new Date().toISOString(),
       };
 
-      mkdirSync(OUT_DIR, { recursive: true });
-      writeFileSync(
-        join(OUT_DIR, "verification.json"),
-        JSON.stringify(verification, null, 2) + "\n",
-      );
+      if (process.env.FABRIC_RECORD_VERIFICATION === "1") {
+        mkdirSync(OUT_DIR, { recursive: true });
+        writeFileSync(
+          join(OUT_DIR, "verification.json"),
+          JSON.stringify(verification, null, 2) + "\n",
+        );
+      }
 
       // Assertions.
       expect(res.entries.length).toBeGreaterThan(0);
