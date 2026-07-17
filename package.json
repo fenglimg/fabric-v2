@@ -1,7 +1,7 @@
 {
   "name": "fabric-monorepo",
   "private": true,
-  "version": "2.3.0-rc.17",
+  "version": "2.3.0",
   "workspaces": [
     "packages/*"
   ],
