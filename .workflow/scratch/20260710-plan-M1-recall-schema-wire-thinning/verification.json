@@ -10,7 +10,7 @@
   },
   "payload_bytes_before_original_sample": 29517,
   "payload_bytes_after_seeded": 14211,
-  "payload_bytes_after_seeded_opt_in": 18344,
+  "payload_bytes_after_seeded_opt_in": 18372,
   "target_bytes": 17000,
   "warning_threshold_bytes": 16384,
   "reduction_pct": 52,
@@ -30,5 +30,5 @@
     "store_alias_flat": true,
     "intent_clues_absent_on_entries": true
   },
-  "recorded_at": "2026-07-12T14:41:48.467Z"
+  "recorded_at": "2026-07-16T11:39:00.835Z"
 }
