@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { selectionTokenTtlMsSchema, planContextTopKSchema } from "@fenglimg/fabric-shared";
-import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
+import { STORE_LAYOUT, loadGlobalConfig, storeConfigSchema } from "@fenglimg/fabric-shared";
+import type { FabricConfig, McpPayloadLimits, StoreConfig } from "@fenglimg/fabric-shared";
+
+import { resolveWriteTargetStoreDir } from "./services/cross-store-write.js";
 
 // v2.2 A-INFRA-3 (W1-T3-TOPK): library default for the plan_context candidate
 // cap when fabric.config.json omits `plan_context_top_k`. Mirrors the
@@ -16,6 +18,137 @@ export const PLAN_CONTEXT_TOP_K_DEFAULT = 24;
 // 0.25 self-normalizes against the current query's max so it is immune to BM25's
 // uncalibrated cross-query scale. 0 disables the floor (keep all up to top_k).
 export const RECALL_RELEVANCE_RATIO_DEFAULT = 0.25;
+
+// ---------------------------------------------------------------------------
+// config-layering W2 (TASK-002) — env > project > store > default cascade.
+//
+// KT-MOD-0002 (config 4-layer priority): the canonical override order for a
+// Fabric config knob is env(FABRIC_<NAME>) > project(.fabric/fabric-config.json)
+// > store(store-config.json) > code default. Any layer whose value is absent,
+// malformed, or out-of-range SILENTLY FALLS THROUGH to the next layer and NEVER
+// throws (KT-DEC-0048 write-strict/read-tolerant; the readers are on the hot
+// recall path). Every layer runs the SAME single-field guard, so a corrupt
+// value at ANY layer is skipped, not honored.
+//
+// STORE-LAYER SOURCE (C-006): the store layer is PINNED to the team/shared store
+// only — `resolveWriteTargetStoreDir('team', projectRoot)` returns that store's
+// ROOT (parallel to store.json), where `store-config.json` lives. Personal-only
+// or unbound repos have no team write-target: the resolver throws → caught → {},
+// so those repos get the library default (C-008 hot-path-safe). Machine-scoped
+// secrets (the remote embedding endpoint/key) are NEVER read from the store
+// layer — they stay on the machine layer (~/.fabric global config), KT-DEC-0063.
+// ---------------------------------------------------------------------------
+
+// Per-projectRoot memoized store config. Resolving the write-target store walks
+// the global config + mounted-store registry; do it ONCE per root and reuse the
+// parsed config across every knob read rather than re-resolving per knob.
+const storeConfigCache = new Map<string, StoreConfig>();
+
+/**
+ * Resolve the STORE-layer config (`store-config.json` at the team store root).
+ * Returns `{}` — never throws — on any of: no team write-target resolves
+ * (personal-only / unbound repo), the file is absent, the JSON is malformed, or
+ * it fails `storeConfigSchema`. An absent knob therefore falls through the
+ * cascade to the next layer, never injecting a schema default (the schema
+ * carries none). Memoized per projectRoot.
+ */
+export function resolveStoreConfig(projectRoot: string): StoreConfig {
+  const cached = storeConfigCache.get(projectRoot);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const resolved = loadStoreConfigUncached(projectRoot);
+  storeConfigCache.set(projectRoot, resolved);
+  return resolved;
+}
+
+function loadStoreConfigUncached(projectRoot: string): StoreConfig {
+  try {
+    // Store ROOT (parallel to store.json), NOT the knowledge dir — the store
+    // config home is `<storeRoot>/store-config.json` (STORE_LAYOUT.configFile).
+    const storeRoot = resolveWriteTargetStoreDir("team", projectRoot);
+    const configPath = join(storeRoot, STORE_LAYOUT.configFile);
+    if (!existsSync(configPath)) {
+      return {};
+    }
+    const parsed = storeConfigSchema.safeParse(JSON.parse(readFileSync(configPath, "utf8")));
+    return parsed.success ? parsed.data : {};
+  } catch {
+    // resolveWriteTargetStoreDir throws when no team target resolves; a corrupt
+    // file JSON.parse throws — either way fall through to the next cascade layer.
+    return {};
+  }
+}
+
+// Read a string env override (enum/model knobs), treating an unset OR blank
+// value as "layer absent" so an empty `FABRIC_*=""` never wins the cascade.
+function envRaw(name: string): unknown {
+  const value = process.env[name];
+  return value === undefined || value.trim() === "" ? undefined : value;
+}
+
+// Read a NUMERIC env override, coercing the (always-string) env value to a
+// finite number. Env is inherently string-typed, so ONLY this env-layer helper
+// coerces — the project/store JSON layers stay type-strict (a JSON string is not
+// a number). Unset/blank/non-numeric → undefined (layer absent).
+function envNum(name: string): number | undefined {
+  const value = envRaw(name);
+  if (value === undefined) {
+    return undefined;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// Single-field guards shared across the env(pre-coerced) + project + store
+// layers. TYPE-STRICT: a non-number JSON value is rejected (not coerced), so a
+// project/store `"20"` string falls through rather than being honored. Same
+// guard per layer is the whole point: a corrupt value at any layer is skipped.
+function intGuard(min: number, max: number): (v: unknown) => number | undefined {
+  return (v) =>
+    typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v >= min && v <= max
+      ? v
+      : undefined;
+}
+
+function floatGuard(min: number, max: number): (v: unknown) => number | undefined {
+  return (v) => (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? v : undefined);
+}
+
+// First layer whose guard accepts its value, in env > project > store order;
+// undefined when every layer is absent/invalid (callers coalesce to a default
+// or preserve the undefined-means-fallback contract).
+function firstValidLayer<T>(
+  layers: readonly unknown[],
+  guard: (v: unknown) => T | undefined,
+): T | undefined {
+  for (const layer of layers) {
+    if (layer === undefined || layer === null) {
+      continue;
+    }
+    const valid = guard(layer);
+    if (valid !== undefined) {
+      return valid;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the first VALID layer value in env > project > store order, else the
+ * library default. Every layer runs the SAME single-field `validate` guard, so a
+ * corrupt value at one layer falls through to the next (env beats project beats
+ * store; project ALWAYS beats store, C-004). Never throws.
+ */
+function resolveLayered<T>(
+  envVal: unknown,
+  projectVal: unknown,
+  storeVal: unknown,
+  def: T,
+  validate: (v: unknown) => T | undefined,
+): T {
+  return firstValidLayer([envVal, projectVal, storeVal], validate) ?? def;
+}
 
 /**
  * Reads the project config from `.fabric/fabric-config.json` — the single source
@@ -37,6 +170,17 @@ function readFabricConfig(projectRoot: string): FabricConfig {
   return parsed as FabricConfig;
 }
 
+// Read the project config as a raw key→unknown bag for the cascade's project
+// layer. Best-effort: a missing/corrupt file yields `{}` so the store layer /
+// default still resolves (the individual readers keep their own try/catch too).
+function projectLayer(projectRoot: string): Record<string, unknown> {
+  try {
+    return readFabricConfig(projectRoot) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Returns the explicit MCP payload byte limits from `mcpPayloadLimits`, or
  * undefined when absent so call sites fall back to the payload guard's built-in
@@ -46,58 +190,34 @@ function readFabricConfig(projectRoot: string): FabricConfig {
  * limits are no longer profile-scaled — `payloadHardBytes` is a fixed 413 safety
  * guardrail (the guard default) unless the operator pins an explicit override.
  * Any missing sub-field of an explicit override is filled by the guard default
- * at the call site.
+ * at the call site. NOT a store-overridable knob — repo/machine scoped only.
  */
 export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undefined {
   return readFabricConfig(projectRoot).mcpPayloadLimits;
 }
 
 /**
- * v2.0.0-rc.29 TASK-008 (BUG-F3): returns the selection_token_ttl_ms override
- * from fabric.config.json, or undefined when absent so the caller (plan-context.ts)
- * falls back to its 5-minute default. Best-effort: any parse failure returns
- * undefined rather than throwing — plan_context is on the hot read path and
- * must not crash on a corrupt config file.
- *
- * v2.0.0-rc.29 REVIEW (codex HIGH-3): the raw JSON read previously bypassed
- * schema validation via `readFabricConfig`'s cast, so a string / negative /
- * out-of-range value would propagate into `plan-context.ts`'s
- * `expires_at = now + ttlMs` and produce a bogus expiry. Now: read raw, then
- * `selectionTokenTtlMsSchema.safeParse` — failure returns undefined and the
- * caller falls back to the library default.
+ * v2.0.0-rc.29 TASK-008 (BUG-F3): returns the selection_token_ttl_ms override,
+ * or undefined when absent so the caller (plan-context.ts) falls back to its
+ * 5-minute default. config-layering W2 (TASK-002): now cascades
+ * env(FABRIC_SELECTION_TOKEN_TTL_MS) > project > store, preserving the
+ * undefined-means-fallback contract (no library default injected here). Range
+ * 30s..1h; a value outside range at any layer falls through. Best-effort — any
+ * parse failure returns undefined rather than throwing (hot read path).
  */
 export function readSelectionTokenTtlMs(projectRoot: string): number | undefined {
   try {
-    const raw = readFabricConfig(projectRoot).selection_token_ttl_ms;
-    if (raw === undefined) return undefined;
-    const parsed = selectionTokenTtlMsSchema.safeParse(raw);
-    return parsed.success ? parsed.data : undefined;
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return firstValidLayer(
+      [envNum("FABRIC_SELECTION_TOKEN_TTL_MS"), proj.selection_token_ttl_ms, store.selection_token_ttl_ms],
+      intGuard(30_000, 3_600_000),
+    );
   } catch {
     return undefined;
   }
 }
 
-/**
- * v2.2 A-INFRA-3 (W1-T3-TOPK): returns the `plan_context_top_k` override from
- * fabric.config.json, or PLAN_CONTEXT_TOP_K_DEFAULT when absent / invalid.
- * Best-effort and hot-path safe: any read/parse failure returns the default so
- * plan_context never crashes on a corrupt config file. Validates the single
- * field (planContextTopKSchema) rather than the whole config so an unrelated
- * corrupt field stays isolated.
- */
-/**
- * v2.2 C2-vector (W2-T7): resolve the optional embedding settings. `weight`
- * defaults to 30. Best-effort and hot-path safe — any read/parse failure returns
- * the safe text-only default (enabled:false) so plan_context never crashes on a
- * corrupt config.
- *
- * P1 recall-engine-refactor (TASK-004): `enabled` now DEFAULTS TRUE — CJK
- * semantic recall is on out of the box. It is OFF only when the config sets
- * `embed_enabled` explicitly to `false`. The optional `fastembed` package is
- * degrade-safe: when absent, loadEmbedder returns null and ranking falls back to
- * the pure text path (one-time hint, no crash), so default-on never blocks an
- * install that can't build the embedder.
- */
 // v2.1 ③ vector-chinese-model (P3): supported fastembed@2.x EmbeddingModel enum
 // VALUES (the strings init() consumes). Mirrors the schema enum in
 // fabric-config.ts. Default is the light Chinese model — the whole point of ③:
@@ -114,25 +234,103 @@ const SUPPORTED_EMBED_MODELS = new Set<string>([
   "fast-all-MiniLM-L6-v2",
 ]);
 
-export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight: number; model: string } {
+function modelGuard(v: unknown): string | undefined {
+  return typeof v === "string" && SUPPORTED_EMBED_MODELS.has(v) ? v : undefined;
+}
+
+/**
+ * The resolved embedding settings.
+ *
+ * `enabled` / `weight` / `model` shape the LOCAL fastembed channel; `model`
+ * cascades env(FABRIC_EMBED_MODEL) > project > store > DEFAULT_EMBED_MODEL and
+ * `weight` cascades project > store > 30 (both store-overridable knobs).
+ *
+ * `remoteEndpoint` / `remoteApiKey` drive the OPTIONAL remote embedding transport
+ * and are MACHINE-layer only (KT-DEC-0063): env(FABRIC_EMBED_ENDPOINT /
+ * FABRIC_EMBED_API_KEY) ?? the `~/.fabric` global config (embed_endpoint /
+ * embed_api_key). The store-config path is NEVER consulted for these — a shared
+ * store may not dictate a repo's remote transport or leak a secret. Omitted when
+ * unset.
+ */
+export interface EmbedConfig {
+  enabled: boolean;
+  weight: number;
+  model: string;
+  remoteEndpoint?: string;
+  remoteApiKey?: string;
+}
+
+// Resolve a machine-scoped secret: env override first, else the ~/.fabric global
+// config (globalConfigSchema is `.passthrough()`, so embed_endpoint/embed_api_key
+// survive as forward-compat keys). Best-effort: a missing/malformed global config
+// — or the test-runtime resolveGlobalRoot guard — degrades to undefined. The
+// store layer is intentionally NOT a source here (secrets stay machine-local).
+function resolveMachineSecret(envName: string, globalKey: string): string | undefined {
+  const fromEnv = process.env[envName];
+  if (typeof fromEnv === "string" && fromEnv.trim() !== "") {
+    return fromEnv;
+  }
+  try {
+    const global = loadGlobalConfig() as Record<string, unknown> | null;
+    const value = global?.[globalKey];
+    return typeof value === "string" && value.trim() !== "" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * v2.2 C2-vector (W2-T7): resolve the optional embedding settings.
+ *
+ * `enabled` DEFAULTS TRUE (P1 recall-engine-refactor TASK-004; KT-PIT-0029 out
+ * of scope for this cascade) — OFF only when the PROJECT config sets
+ * `embed_enabled` explicitly to `false`. Best-effort and hot-path safe: any
+ * read/parse failure returns the safe text-only default so plan_context never
+ * crashes on a corrupt config.
+ */
+export function readEmbedConfig(projectRoot: string): EmbedConfig {
   try {
     const config = readFabricConfig(projectRoot);
-    // TASK-004: default TRUE — enabled unless the operator explicitly opts out
-    // with embed_enabled:false. (Was `=== true`, i.e. default-OFF.)
+    const proj = config as Record<string, unknown>;
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+
+    // embed_enabled: default TRUE, PROJECT-only (KT-PIT-0029 out of scope — the
+    // store layer does not toggle a repo's embedding on/off).
     const enabled = config.embed_enabled !== false;
-    const rawWeight = config.embed_weight;
+
     // Cap at 49 (< BM25_WEIGHT 50) — enforces the supplement-not-override
-    // invariant; out-of-range / non-integer / non-finite all fall to 30.
-    const weight = typeof rawWeight === "number" && Number.isInteger(rawWeight) && rawWeight >= 0 && rawWeight <= 49
-      ? rawWeight
-      : 30;
-    // v2.1 ③: pin the embedding model. An unknown / non-string value falls back
-    // to the light Chinese default rather than fastembed's English baseline.
-    const rawModel = (config as { embed_model?: unknown }).embed_model;
-    const model = typeof rawModel === "string" && SUPPORTED_EMBED_MODELS.has(rawModel)
-      ? rawModel
-      : DEFAULT_EMBED_MODEL;
-    return { enabled, weight, model };
+    // invariant; out-of-range / non-integer / non-finite fall through the cascade.
+    const weight = resolveLayered(
+      envNum("FABRIC_EMBED_WEIGHT"),
+      proj.embed_weight,
+      store.embed_weight,
+      30,
+      intGuard(0, 49),
+    );
+
+    // v2.1 ③: pin the embedding model. An unknown / non-string value at any layer
+    // falls through to the light Chinese default rather than fastembed's English
+    // baseline. Store-layer participates so a team can standardize the model.
+    const model = resolveLayered(
+      envRaw("FABRIC_EMBED_MODEL"),
+      proj.embed_model,
+      store.embed_model,
+      DEFAULT_EMBED_MODEL,
+      modelGuard,
+    );
+
+    // Remote transport — MACHINE layer only (env ?? ~/.fabric global). The store
+    // config is NEVER read for endpoint/key (KT-DEC-0063 secrets stay machine-local).
+    const remoteEndpoint = resolveMachineSecret("FABRIC_EMBED_ENDPOINT", "embed_endpoint");
+    const remoteApiKey = resolveMachineSecret("FABRIC_EMBED_API_KEY", "embed_api_key");
+
+    return {
+      enabled,
+      weight,
+      model,
+      ...(remoteEndpoint !== undefined ? { remoteEndpoint } : {}),
+      ...(remoteApiKey !== undefined ? { remoteApiKey } : {}),
+    };
   } catch {
     return { enabled: false, weight: 30, model: DEFAULT_EMBED_MODEL };
   }
@@ -142,65 +340,72 @@ export function readEmbedConfig(projectRoot: string): { enabled: boolean; weight
 // recall / plan_context when the call omits an explicit `layer_filter`. Mirrors
 // the schema default (`default_layer_filter` → "both" = no filtering). Returns
 // "both" on any read/parse failure so a corrupt config never narrows results.
+// config-layering W2 (TASK-002): cascades env > project > store > "both".
+function layerFilterGuard(v: unknown): "team" | "personal" | "both" | undefined {
+  return v === "team" || v === "personal" || v === "both" ? v : undefined;
+}
+
 export function readDefaultLayerFilter(projectRoot: string): "team" | "personal" | "both" {
   try {
-    const config = readFabricConfig(projectRoot);
-    const raw = (config as { default_layer_filter?: unknown }).default_layer_filter;
-    return raw === "team" || raw === "personal" ? raw : "both";
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return resolveLayered(
+      envRaw("FABRIC_DEFAULT_LAYER_FILTER"),
+      proj.default_layer_filter,
+      store.default_layer_filter,
+      "both",
+      layerFilterGuard,
+    );
   } catch {
     return "both";
   }
 }
 
+/**
+ * v2.2 A-INFRA-3 (W1-T3-TOPK): returns the `plan_context_top_k` override, or
+ * PLAN_CONTEXT_TOP_K_DEFAULT when absent / invalid. config-layering W2: cascades
+ * env(FABRIC_PLAN_CONTEXT_TOP_K) > project > store > default. Best-effort and
+ * hot-path safe — any failure returns the default. Validates the single field
+ * (int 1..200) per layer so an unrelated corrupt field stays isolated.
+ */
 export function readPlanContextTopK(projectRoot: string): number {
   try {
-    // KT-DEC-0037: top_k is the sole retrieval knob — the profile enum is gone.
-    const raw = readFabricConfig(projectRoot).plan_context_top_k;
-    if (raw !== undefined) {
-      const parsed = planContextTopKSchema.safeParse(raw);
-      if (parsed.success) return parsed.data;
-    }
-    return PLAN_CONTEXT_TOP_K_DEFAULT;
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return resolveLayered(
+      envNum("FABRIC_PLAN_CONTEXT_TOP_K"),
+      proj.plan_context_top_k,
+      store.plan_context_top_k,
+      PLAN_CONTEXT_TOP_K_DEFAULT,
+      intGuard(1, 200),
+    );
   } catch {
     return PLAN_CONTEXT_TOP_K_DEFAULT;
   }
 }
 
 /**
- * KT-DEC-0038: returns the `recall_relevance_ratio` override (α) from
- * fabric-config.json, or RECALL_RELEVANCE_RATIO_DEFAULT (0.25) when absent /
- * invalid. Best-effort and hot-path safe — any read/parse failure returns the
- * default. Valid range [0, 1]; 0 disables the ratio-to-top floor.
+ * KT-DEC-0038: returns the `recall_relevance_ratio` override (α), or
+ * RECALL_RELEVANCE_RATIO_DEFAULT (0.25) when absent / invalid. config-layering
+ * W2: cascades env(FABRIC_RECALL_RELEVANCE_RATIO) > project > store > default.
+ * Best-effort and hot-path safe. Valid range [0, 1]; 0 disables the floor.
  */
 export function readRecallRelevanceRatio(projectRoot: string): number {
   try {
-    const raw = readFabricConfig(projectRoot).recall_relevance_ratio;
-    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0 && raw <= 1) {
-      return raw;
-    }
-    return RECALL_RELEVANCE_RATIO_DEFAULT;
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return resolveLayered(
+      envNum("FABRIC_RECALL_RELEVANCE_RATIO"),
+      proj.recall_relevance_ratio,
+      store.recall_relevance_ratio,
+      RECALL_RELEVANCE_RATIO_DEFAULT,
+      floatGuard(0, 1),
+    );
   } catch {
     return RECALL_RELEVANCE_RATIO_DEFAULT;
   }
 }
 
-/**
- * v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity orphan_demote thresholds. Returns
- * the override Map keyed by the doctor's internal LintMaturity ladder
- * (proven|verified|draft) so doctor's orphan_demote inspect can spread it
- * over the hardcoded defaults. Absent keys fall through. Best-effort: any
- * read/parse failure returns an empty map.
- *
- * v2.2 Goal B (G-VOCAB / ADJ-2): the doctor's LintMaturity ladder now speaks
- * the CANONICAL maturity enum (draft/verified/proven, KT-DEC-0005) directly —
- * the legacy stable/endorsed remap is retired. This loader reads the canonical
- * config keys (`orphan_demote_proven_days` / `orphan_demote_verified_days` /
- * `orphan_demote_draft_days`) and returns them under matching canonical keys.
- *
- * Validation rule mirrors the schema: integer in [1, 3650] (one day to ten
- * years). Out-of-range or non-numeric values are silently dropped so a
- * partial override file does not nuke the hardcoded defaults wholesale.
- */
 // v2.2 C1 (processes/maturity-promotion-rubric-v1): default days a `broad` entry
 // may go without a fab-review re-confirmation before doctor surfaces a RECHECK
 // nudge. 180d (≈6 months) deliberately sits ABOVE the proven decay threshold
@@ -210,47 +415,51 @@ export function readRecallRelevanceRatio(projectRoot: string): number {
 export const BROAD_REVIEW_RECHECK_DAYS_DEFAULT = 180;
 
 /**
- * v2.2 C1: returns the `broad_review_recheck_days` override from
- * fabric-config.json, or BROAD_REVIEW_RECHECK_DAYS_DEFAULT (180) when absent /
- * invalid. Best-effort and hot-path safe — any read/parse failure returns the
- * default. Validation mirrors the orphan_demote keys: integer in [1, 3650].
+ * v2.2 C1: returns the `broad_review_recheck_days` override, or
+ * BROAD_REVIEW_RECHECK_DAYS_DEFAULT (180) when absent / invalid. config-layering
+ * W2: cascades env(FABRIC_BROAD_REVIEW_RECHECK_DAYS) > project > store > default.
+ * Validation mirrors the orphan_demote keys: integer in [1, 3650].
  */
 export function readBroadReviewRecheckThresholdDays(projectRoot: string): number {
   try {
-    const raw = (readFabricConfig(projectRoot) as { broad_review_recheck_days?: unknown })
-      .broad_review_recheck_days;
-    if (typeof raw === "number" && Number.isFinite(raw) && Number.isInteger(raw) && raw >= 1 && raw <= 3650) {
-      return raw;
-    }
-    return BROAD_REVIEW_RECHECK_DAYS_DEFAULT;
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return resolveLayered(
+      envNum("FABRIC_BROAD_REVIEW_RECHECK_DAYS"),
+      proj.broad_review_recheck_days,
+      store.broad_review_recheck_days,
+      BROAD_REVIEW_RECHECK_DAYS_DEFAULT,
+      intGuard(1, 3650),
+    );
   } catch {
     return BROAD_REVIEW_RECHECK_DAYS_DEFAULT;
   }
 }
 
-export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Record<"proven" | "verified" | "draft", number>> {
+// Per-maturity orphan_demote thresholds. Returns ONLY the keys with a valid
+// override (Partial) so doctor spreads them over its hardcoded defaults; absent
+// keys fall through. config-layering W2: each key cascades
+// env > project > store; a key with no valid layer is omitted. Integer [1, 3650].
+const ORPHAN_DEMOTE_KEYS = [
+  ["proven", "orphan_demote_proven_days", "FABRIC_ORPHAN_DEMOTE_PROVEN_DAYS"],
+  ["verified", "orphan_demote_verified_days", "FABRIC_ORPHAN_DEMOTE_VERIFIED_DAYS"],
+  ["draft", "orphan_demote_draft_days", "FABRIC_ORPHAN_DEMOTE_DRAFT_DAYS"],
+] as const;
+
+export function readOrphanDemoteThresholdDays(
+  projectRoot: string,
+): Partial<Record<"proven" | "verified" | "draft", number>> {
   try {
-    const cfg = readFabricConfig(projectRoot) as Partial<
-      Record<
-        | "orphan_demote_proven_days"
-        | "orphan_demote_verified_days"
-        | "orphan_demote_draft_days",
-        unknown
-      >
-    >;
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    const guard = intGuard(1, 3650);
     const out: Partial<Record<"proven" | "verified" | "draft", number>> = {};
-    const validate = (v: unknown): number | undefined => {
-      if (typeof v !== "number" || !Number.isFinite(v) || v < 1 || v > 3650 || !Number.isInteger(v)) {
-        return undefined;
+    for (const [maturity, field, env] of ORPHAN_DEMOTE_KEYS) {
+      const value = firstValidLayer([envNum(env), proj[field], store[field]], guard);
+      if (value !== undefined) {
+        out[maturity] = value;
       }
-      return v;
-    };
-    const proven = validate(cfg.orphan_demote_proven_days);
-    if (proven !== undefined) out.proven = proven;
-    const verified = validate(cfg.orphan_demote_verified_days);
-    if (verified !== undefined) out.verified = verified;
-    const d = validate(cfg.orphan_demote_draft_days);
-    if (d !== undefined) out.draft = d;
+    }
     return out;
   } catch {
     return {};
@@ -258,10 +467,17 @@ export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Reco
 }
 
 // PLN-004 F1 (credibility content-age decay): per-knowledge-type half-lives (days)
-// driving the recall-scoring credibility multiplier. Clones the
-// readOrphanDemoteThresholdDays best-effort per-key validated pattern but returns a
-// FULL record (default-filled) so the multiplier never has to handle undefined.
-// Defaults run longer than upstream because team-curated knowledge ages slower.
+// driving the recall-scoring credibility multiplier. Returns a FULL record
+// (default-filled) so the multiplier never handles undefined. config-layering W2:
+// each type cascades env > project > store > default. Integer [1, 3650].
+const CREDIBILITY_HALF_LIFE_KEYS = [
+  ["decisions", "credibility_half_life_decisions_days", "FABRIC_CREDIBILITY_HALF_LIFE_DECISIONS_DAYS", 180],
+  ["guidelines", "credibility_half_life_guidelines_days", "FABRIC_CREDIBILITY_HALF_LIFE_GUIDELINES_DAYS", 150],
+  ["models", "credibility_half_life_models_days", "FABRIC_CREDIBILITY_HALF_LIFE_MODELS_DAYS", 150],
+  ["pitfalls", "credibility_half_life_pitfalls_days", "FABRIC_CREDIBILITY_HALF_LIFE_PITFALLS_DAYS", 120],
+  ["processes", "credibility_half_life_processes_days", "FABRIC_CREDIBILITY_HALF_LIFE_PROCESSES_DAYS", 120],
+] as const;
+
 export function readCredibilityHalfLives(
   projectRoot: string,
 ): Record<"decisions" | "guidelines" | "models" | "pitfalls" | "processes", number> {
@@ -273,33 +489,13 @@ export function readCredibilityHalfLives(
     processes: 120,
   };
   try {
-    const cfg = readFabricConfig(projectRoot) as Partial<
-      Record<
-        | "credibility_half_life_decisions_days"
-        | "credibility_half_life_guidelines_days"
-        | "credibility_half_life_models_days"
-        | "credibility_half_life_pitfalls_days"
-        | "credibility_half_life_processes_days",
-        unknown
-      >
-    >;
-    const validate = (v: unknown): number | undefined => {
-      if (typeof v !== "number" || !Number.isFinite(v) || v < 1 || v > 3650 || !Number.isInteger(v)) {
-        return undefined;
-      }
-      return v;
-    };
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    const guard = intGuard(1, 3650);
     const out = { ...defaults };
-    const dec = validate(cfg.credibility_half_life_decisions_days);
-    if (dec !== undefined) out.decisions = dec;
-    const gui = validate(cfg.credibility_half_life_guidelines_days);
-    if (gui !== undefined) out.guidelines = gui;
-    const mod = validate(cfg.credibility_half_life_models_days);
-    if (mod !== undefined) out.models = mod;
-    const pit = validate(cfg.credibility_half_life_pitfalls_days);
-    if (pit !== undefined) out.pitfalls = pit;
-    const pro = validate(cfg.credibility_half_life_processes_days);
-    if (pro !== undefined) out.processes = pro;
+    for (const [type, field, env, def] of CREDIBILITY_HALF_LIFE_KEYS) {
+      out[type] = resolveLayered(envNum(env), proj[field], store[field], def, guard);
+    }
     return out;
   } catch {
     return { ...defaults };
@@ -307,8 +503,14 @@ export function readCredibilityHalfLives(
 }
 
 // PLN-004 F1: per-maturity floor the credibility multiplier never decays below.
-// Full record (default-filled), same best-effort validation shape. Higher maturity
-// → higher floor so endorsed-but-stale knowledge retains a minimum weight.
+// Full record (default-filled). config-layering W2: each maturity cascades
+// env > project > store > default. Range [0, 1]. Higher maturity → higher floor.
+const CREDIBILITY_FLOOR_KEYS = [
+  ["draft", "credibility_floor_draft", "FABRIC_CREDIBILITY_FLOOR_DRAFT", 0.4],
+  ["verified", "credibility_floor_verified", "FABRIC_CREDIBILITY_FLOOR_VERIFIED", 0.55],
+  ["proven", "credibility_floor_proven", "FABRIC_CREDIBILITY_FLOOR_PROVEN", 0.7],
+] as const;
+
 export function readCredibilityFloors(
   projectRoot: string,
 ): Record<"draft" | "verified" | "proven", number> {
@@ -318,65 +520,65 @@ export function readCredibilityFloors(
     proven: 0.7,
   };
   try {
-    const cfg = readFabricConfig(projectRoot) as Partial<
-      Record<
-        "credibility_floor_draft" | "credibility_floor_verified" | "credibility_floor_proven",
-        unknown
-      >
-    >;
-    const validate = (v: unknown): number | undefined => {
-      if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
-        return undefined;
-      }
-      return v;
-    };
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    const guard = floatGuard(0, 1);
     const out = { ...defaults };
-    const draft = validate(cfg.credibility_floor_draft);
-    if (draft !== undefined) out.draft = draft;
-    const verified = validate(cfg.credibility_floor_verified);
-    if (verified !== undefined) out.verified = verified;
-    const proven = validate(cfg.credibility_floor_proven);
-    if (proven !== undefined) out.proven = proven;
+    for (const [maturity, field, env, def] of CREDIBILITY_FLOOR_KEYS) {
+      out[maturity] = resolveLayered(envNum(env), proj[field], store[field], def, guard);
+    }
     return out;
   } catch {
     return { ...defaults };
   }
 }
 
-// v2.1 ④ conflict-detection (P4): bm25 similarity floor for the knowledge-
-// conflict lint. Reads `.fabric/fabric-config.json` (the schema-described,
-// hook-facing config file) — NOT the root `fabric.config.json` that
-// readFabricConfig targets. Returns the configured value when it is a valid
-// [0,1] number, else undefined (caller falls back to the lint default).
 // P1 recall-engine-refactor (TASK-003): content-channel fusion strategy.
 // 'auto' (DEFAULT) is adaptive — planContext resolves it to 'rrf' when the vector
 // channel is actually scoring, else 'additive' (see resolveFusion at the recall
 // site). 'additive' / 'rrf' force a mode. Best-effort and hot-path safe — any
 // read/parse failure OR an unrecognized value returns 'auto', so a corrupt config
 // gets the safe adaptive behavior, never a silently-forced degenerate ranking.
+// config-layering W2: cascades env(FABRIC_FUSION) > project > store > 'auto'.
 export const FUSION_DEFAULT: "additive" | "rrf" | "auto" = "auto";
+
+function fusionGuard(v: unknown): "additive" | "rrf" | "auto" | undefined {
+  return v === "additive" || v === "rrf" || v === "auto" ? v : undefined;
+}
 
 export function readFusion(projectRoot: string): "additive" | "rrf" | "auto" {
   try {
-    const raw = (readFabricConfig(projectRoot) as { fusion?: unknown }).fusion;
-    if (raw === "rrf" || raw === "additive") return raw;
-    return "auto";
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return resolveLayered(
+      envRaw("FABRIC_FUSION"),
+      proj.fusion,
+      store.fusion,
+      FUSION_DEFAULT,
+      fusionGuard,
+    );
   } catch {
-    return "auto";
+    return FUSION_DEFAULT;
   }
 }
 
+// v2.1 ④ conflict-detection (P4): bm25 similarity floor for the knowledge-
+// conflict lint. Returns the configured value when it is a valid [0,1] number,
+// else undefined (caller falls back to the lint default). config-layering W2:
+// cascades env(FABRIC_CONFLICT_LINT_SIMILARITY_THRESHOLD) > project > store,
+// preserving the undefined-means-fallback contract.
 export function readConflictLintThreshold(projectRoot: string): number | undefined {
   try {
-    const cfgPath = join(projectRoot, ".fabric", "fabric-config.json");
-    if (!existsSync(cfgPath)) return undefined;
-    const parsed = JSON.parse(readFileSync(cfgPath, "utf8")) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    const v = (parsed as Record<string, unknown>).conflict_lint_similarity_threshold;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) {
-      return v;
-    }
-    return undefined;
+    const proj = projectLayer(projectRoot);
+    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    return firstValidLayer(
+      [
+        envNum("FABRIC_CONFLICT_LINT_SIMILARITY_THRESHOLD"),
+        proj.conflict_lint_similarity_threshold,
+        store.conflict_lint_similarity_threshold,
+      ],
+      floatGuard(0, 1),
+    );
   } catch {
     return undefined;
   }
