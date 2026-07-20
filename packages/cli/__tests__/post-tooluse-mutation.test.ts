@@ -287,6 +287,27 @@ describe("post-tooluse-mutation.cjs — extractKnowledgeBodyRead (KT-DEC-0030)",
     ).toBe("KT-PRO-0002");
   });
 
+  it("parses a project-scoped body under knowledge/projects/<id>/<type>/ (3-segment prefix)", () => {
+    // Regression: KNOWLEDGE_BODY_PATH_RE pinned to a single segment silently
+    // dropped every project-scoped body_read (the deep prefix never matched).
+    const r = hook.extractKnowledgeBodyRead(
+      "/Users/me/.fabric/stores/team/fabric-team-knowledge/knowledge/projects/fabric-v2/decisions/KT-DEC-0050--hook-project-root-git-anchor-resolver.md",
+    );
+    expect(r).not.toBeNull();
+    expect(r?.stable_id).toBe("KT-DEC-0050");
+    expect(r?.store).toBe("team");
+  });
+
+  it("parses a project-scoped personal body and keeps the store-relative path", () => {
+    const r = hook.extractKnowledgeBodyRead(
+      "C:\\Users\\me\\.fabric\\stores\\personal\\kb\\knowledge\\projects\\werewolf\\pitfalls\\KP-PIT-0004--x.md",
+    );
+    expect(r?.stable_id).toBe("KP-PIT-0004");
+    expect(r?.store).toBe("personal");
+    // path is store-relative (drops the home/OS prefix, keeps the deep segments)
+    expect(r?.path).toBe("stores/personal/kb/knowledge/projects/werewolf/pitfalls/KP-PIT-0004--x.md");
+  });
+
   it("returns null store when no stores/<alias>/ segment is present (legacy dual-root)", () => {
     const r = hook.extractKnowledgeBodyRead(
       "/Users/me/.fabric/knowledge/decisions/KT-DEC-0007--single-cjs-hook.md",
@@ -331,6 +352,32 @@ describe("post-tooluse-mutation.cjs — knowledge_body_read append (KT-DEC-0030)
     expect(ev.tool_name).toBe("Read");
     expect(ev.session_id).toBe("sess-7");
     expect(ev.ts).toBe(now.getTime());
+    expect(eventLedgerEventSchema.safeParse(ev).success).toBe(true);
+  });
+
+  it("emits a knowledge_body_read on a Read of a project-scoped body (deep prefix)", () => {
+    const root = mkRoot("body-read-project");
+    mkFabric(root);
+    const now = new Date("2026-07-20T00:00:00.000Z");
+    hook.main({
+      cwd: root,
+      now,
+      payload: {
+        tool_name: "Read",
+        tool_use_id: "toolu_proj",
+        session_id: "sess-proj",
+        tool_input: {
+          file_path:
+            "/Users/me/.fabric/stores/team/kb/knowledge/projects/fabric-v2/pitfalls/KT-PIT-0034--hook-cwd-as-project-root-stray-fabric.md",
+        },
+      },
+    });
+    const lines = readLedgerLines(root).map((l) => JSON.parse(l));
+    expect(lines).toHaveLength(1);
+    const ev = lines[0];
+    expect(ev.event_type).toBe("knowledge_body_read");
+    expect(ev.stable_id).toBe("KT-PIT-0034");
+    expect(ev.store).toBe("team");
     expect(eventLedgerEventSchema.safeParse(ev).success).toBe(true);
   });
 
