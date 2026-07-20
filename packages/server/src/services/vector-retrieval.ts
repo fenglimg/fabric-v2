@@ -33,6 +33,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { resolveGlobalRoot } from "@fenglimg/fabric-shared";
+import { readEmbedConfig } from "../config-loader.js";
 import { migrateLegacyFabricCache } from "./fabric-cache-migration.js";
 
 // A minimal embedder contract — `embed` maps texts to dense vectors in input
@@ -215,6 +216,149 @@ interface FastembedModule {
       embed(texts: string[]): AsyncIterable<Iterable<number>[] | Float32Array[]>;
     }>;
   };
+}
+
+// ---------------------------------------------------------------------------
+// config-layering W3 (TASK-003) — REMOTE embedding dual-mode.
+//
+// The embedding transport is selected in the recall hot path (plan-context-
+// scoring.ts) via resolveEmbedder(projectRoot). Three branches, keyed off the
+// MACHINE-layer remote settings resolved by config-loader.readEmbedConfig
+// (env(FABRIC_EMBED_ENDPOINT/API_KEY) ?? ~/.fabric global — KT-DEC-0063: secrets
+// stay machine-local, NEVER the store layer):
+//   - remoteEndpoint + remoteApiKey → remote HTTP embedder (loadRemoteEmbedder).
+//   - remoteEndpoint present but NO key → pure-text degrade (null) + a ONE-TIME
+//     hint; a missing key NEVER silently switches to a different/local model.
+//   - no remoteEndpoint → the existing local fastembed path (loadEmbedder),
+//     byte-identical to the pre-remote behavior.
+// Hot-path safe (C-008): construction errors + remote HTTP failures degrade to
+// text-only (null), never throw into recall.
+// ---------------------------------------------------------------------------
+
+// One-time stderr hint when a remote endpoint is configured but no API key is
+// present. Vectors degrade to text-only on that branch — we surface ONE line
+// (not per-recall spam) explaining the operator asked for remote but omitted the
+// key, and that the local model is deliberately NOT substituted.
+const REMOTE_KEY_MISSING_HINT =
+  "[fabric] a remote embedding endpoint is configured but no API key is set — " +
+  "falling back to text-only ranking (the local model is NOT substituted). Set " +
+  "FABRIC_EMBED_API_KEY (or embed_api_key in ~/.fabric) to enable remote " +
+  "embeddings.\n";
+
+const defaultRemoteKeyMissingHint = (): void => {
+  process.stderr.write(REMOTE_KEY_MISSING_HINT);
+};
+
+let remoteKeyMissingHinted = false;
+
+// Test seam: the hint sink + its one-shot latch are injectable so a test can
+// assert the hint fires EXACTLY ONCE without scraping the real stderr stream.
+let emitRemoteKeyMissingHint: () => void = defaultRemoteKeyMissingHint;
+
+function hintRemoteKeyMissingOnce(): void {
+  if (remoteKeyMissingHinted) {
+    return;
+  }
+  remoteKeyMissingHinted = true;
+  emitRemoteKeyMissingHint();
+}
+
+// Test seam: override the hint sink and reset the one-shot latch. Passing
+// undefined restores the real stderr sink. Not part of the runtime contract.
+export function __setRemoteKeyMissingHintForTesting(sink: (() => void) | undefined): void {
+  remoteKeyMissingHinted = false;
+  emitRemoteKeyMissingHint = sink ?? defaultRemoteKeyMissingHint;
+}
+
+// Minimal shape of an OpenAI-compatible embeddings response
+// (`POST /v1/embeddings` → `{ data: [{ embedding: number[] }, ...] }`), aligned
+// to input order. Typed loosely — the mapper validates shape at runtime.
+interface RemoteEmbeddingsResponse {
+  data?: Array<{ embedding?: unknown }>;
+}
+
+/**
+ * Build an {@link Embedder} backed by a remote OpenAI-compatible embeddings
+ * endpoint. `embed` POSTs `{ model, input: texts }` with
+ * `Authorization: Bearer <apiKey>` and maps `response.data[].embedding` back to
+ * the Embedder contract in input order.
+ *
+ * The HTTP client is an injectable seam (default: the global `fetch`) mirroring
+ * loadEmbedder's optional-package injection, so tests supply a fake without a
+ * real network. `embed` THROWS on a non-2xx status or a malformed/misaligned
+ * response — the caller (resolveEmbedder → buildVectorScores) catches it and
+ * degrades to the text-only path, so a remote transport failure never poisons
+ * recall (C-008). No API key or vector is ever logged (KT-DEC-0063).
+ */
+export async function loadRemoteEmbedder(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Embedder> {
+  return {
+    async embed(texts: string[]): Promise<number[][]> {
+      const res = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model, input: texts }),
+      });
+      if (!res.ok) {
+        throw new Error(`remote embedder HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as RemoteEmbeddingsResponse;
+      const rows = json.data;
+      if (!Array.isArray(rows) || rows.length !== texts.length) {
+        throw new Error("remote embedder response shape mismatch");
+      }
+      return rows.map((row) => {
+        const embedding = row?.embedding;
+        if (!Array.isArray(embedding)) {
+          throw new Error("remote embedder row missing embedding");
+        }
+        return embedding.map((n) => Number(n));
+      });
+    },
+  };
+}
+
+/**
+ * Select the embedding transport for this project's recall hot path — the SINGLE
+ * selection site (the local `loadEmbedder`/`buildVectorScores` split takes the
+ * embedder as a param). Layers the optional remote channel ON TOP of local
+ * fastembed without changing local behavior when no remote endpoint is set.
+ * Returns null on the two degrade branches (no key / remote construction error)
+ * so the caller falls back to text-only ranking. Never throws (C-008).
+ *
+ * `opts.fetchImpl` injects a fake HTTP client for tests; production passes none
+ * and loadRemoteEmbedder defaults to the global `fetch`.
+ */
+export async function resolveEmbedder(
+  projectRoot: string,
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<Embedder | null> {
+  const cfg = readEmbedConfig(projectRoot);
+  // Branch 1: endpoint + key → remote HTTP embedder. Any construction error
+  // degrades to text-only (belt-and-suspenders; embed() failures are also caught
+  // downstream in buildVectorScores).
+  if (cfg.remoteEndpoint !== undefined && cfg.remoteApiKey !== undefined) {
+    try {
+      return await loadRemoteEmbedder(cfg.remoteEndpoint, cfg.remoteApiKey, cfg.model, opts?.fetchImpl);
+    } catch {
+      return null;
+    }
+  }
+  // Branch 2: endpoint present but NO key → pure-text degrade + one-time hint.
+  // NEVER switch to the local model — the operator explicitly asked for remote.
+  if (cfg.remoteEndpoint !== undefined && cfg.remoteApiKey === undefined) {
+    hintRemoteKeyMissingOnce();
+    return null;
+  }
+  // Branch 3: no remote endpoint → local fastembed path, byte-identical.
+  return loadEmbedder(cfg.model);
 }
 
 /**

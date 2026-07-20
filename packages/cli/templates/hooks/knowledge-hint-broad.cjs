@@ -102,6 +102,16 @@ try {
 } catch {
   // Lib missing (old install) — store labels degrade to silent absence.
 }
+// config-layering W3 (TASK-004): SSOT store-layer config reader. Adds the STORE
+// layer + env layer to the broad_index_backstop / underseed_node_threshold
+// cascades (env > project > store > default). Optional require so an old install
+// lacking the lib degrades to the pre-store project > default behavior.
+let storeConfigReader = null;
+try {
+  storeConfigReader = require("./lib/store-config-reader.cjs");
+} catch {
+  // Lib missing (old install) — cascade degrades to project > default (no store).
+}
 // v2.2 HK3-telemetry (W3-T1): injection-side per-inject logger. Optional require
 // so an old install lacking the lib degrades to silent absence (no telemetry,
 // hook still works).
@@ -295,11 +305,34 @@ function countCanonicalNodes(projectRoot) {
  * Any read/parse failure → default (never block on config errors).
  */
 function readUnderseedThreshold(projectRoot) {
-  // > 0 guard via min: Number.MIN_VALUE (any positive). config-cache returns
-  // the parsed number when finite & in-range, else the default.
-  return readConfigNumber(projectRoot, "underseed_node_threshold", DEFAULT_UNDERSEED_NODE_THRESHOLD, {
+  // config-layering W3 (TASK-004): env > project > store > default (project wins
+  // over store, C-004). The store layer (single-owner store-config-reader.cjs)
+  // is integer-strict + positive, matching storeConfigSchema's
+  // `underseed_node_threshold: z.number().int().positive()`.
+  if (storeConfigReader !== null) {
+    const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
+    if (typeof envVal === "number") {
+      return envVal;
+    }
+  }
+  // Project layer: > 0 guard via min: Number.MIN_VALUE (any positive). undefined
+  // fallback so an absent/invalid project value falls through to the store layer.
+  const projectVal = readConfigNumber(projectRoot, "underseed_node_threshold", undefined, {
     min: Number.MIN_VALUE,
   });
+  if (typeof projectVal === "number") {
+    return projectVal;
+  }
+  if (storeConfigReader !== null) {
+    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
+      min: 1,
+    });
+    if (typeof storeVal === "number") {
+      return storeVal;
+    }
+  }
+  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
 /**
@@ -309,11 +342,33 @@ function readUnderseedThreshold(projectRoot) {
  * silently falls back to the default.
  */
 function readBroadIndexBackstop(projectRoot) {
-  return readConfigNumber(projectRoot, "broad_index_backstop", DEFAULT_HINT_BROAD_INDEX_BACKSTOP, {
+  // config-layering W3 (TASK-004): env > project > store > default (project wins
+  // over store, C-004). Range 20..500 mirrors storeConfigSchema's
+  // `broad_index_backstop: z.number().int().min(20).max(500)`.
+  const range = { min: 20, max: 500 };
+  if (storeConfigReader !== null) {
+    const envVal = storeConfigReader.readEnvInt("FABRIC_BROAD_INDEX_BACKSTOP", range);
+    if (typeof envVal === "number") {
+      return envVal;
+    }
+  }
+  // Project layer: undefined fallback so an absent/invalid value falls through.
+  const projectVal = readConfigNumber(projectRoot, "broad_index_backstop", undefined, {
     min: 20,
     max: 500,
     floor: true,
   });
+  if (typeof projectVal === "number") {
+    return projectVal;
+  }
+  if (storeConfigReader !== null) {
+    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "broad_index_backstop", range);
+    if (typeof storeVal === "number") {
+      return storeVal;
+    }
+  }
+  return DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
 }
 
 /**

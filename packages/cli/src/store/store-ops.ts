@@ -282,6 +282,10 @@ export async function storeCreate(
     initStoreSync(storeDir, identity);
   } else {
     await initStore(storeDir, identity, { git: options.git });
+    // config-layering W3 (TASK-006): the shared core (initStore) writes store.json
+    // identity-last and is not editable, so seed the NON-identity store-config
+    // AFTER it returns (order-irrelevant for a non-identity file). Idempotent.
+    seedStoreConfig(storeDir);
   }
 
   // v2.1 global-refactor (W2-T4, F-SYNC-REMOTE): wire the remote into the store's
@@ -328,11 +332,42 @@ function initStoreSync(absDir: string, identity: StoreIdentity): StoreIdentity {
   mkdirSync(join(absDir, STORE_LAYOUT.knowledgeDir, STORE_PENDING_DIR), { recursive: true });
   mkdirSync(join(absDir, STORE_LAYOUT.bindingsDir), { recursive: true });
   mkdirSync(join(absDir, STORE_LAYOUT.stateDir), { recursive: true });
+  // config-layering W3 (TASK-006): seed the store-config BEFORE store.json so the
+  // identity-last invariant is preserved (store.json stays the FINAL write below).
+  seedStoreConfig(absDir);
   // Mirror async initStore: identity last so a crash mid-scaffold never leaves a
   // recognisable half-init (disk readers key off store.json) — ISS-20260711-146.
   writeFileSync(join(absDir, ".gitignore"), STORE_GITIGNORE, "utf8");
   writeFileSync(identityFile, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
   return parsed;
+}
+
+// config-layering W3 (TASK-006): idempotently seed a `store-config.json` at the
+// store ROOT (parallel to store.json / projects.json / counters.json) so a team
+// has an obvious committed home for the store-overridable corpus knobs. It
+// travels with the corpus in the store git tree (like store.json). NEVER
+// overwrites an existing file (existsSync guard, mirroring the store.json
+// half-init guard, ISS-20260711-146). The basename comes from
+// STORE_LAYOUT.configFile — no hardcoded literal.
+//
+// Seed body: a schema-valid object carrying only a `_comment` guidance key, which
+// rides storeConfigSchema's passthrough root (so `safeParse` succeeds) and points
+// teams at the knob keys. Removing the comment / adding real knobs stays valid.
+const STORE_CONFIG_SEED = `${JSON.stringify(
+  {
+    _comment:
+      "Store-layer defaults for corpus-shaping knobs (STORE_OVERRIDABLE_KNOBS), inherited by every repo bound to this store. Cascade: env > project (.fabric/fabric-config.json) > store (this file) > default. Example: \"embed_model\": \"fast-bge-small-zh-v1.5\". Replace this _comment with real knobs when you set any.",
+  },
+  null,
+  2,
+)}\n`;
+
+function seedStoreConfig(absDir: string): void {
+  const cfgFile = join(absDir, STORE_LAYOUT.configFile);
+  if (existsSync(cfgFile)) {
+    return;
+  }
+  writeFileSync(cfgFile, STORE_CONFIG_SEED, "utf8");
 }
 
 // `git remote add origin <remote>` in the store's repo. Idempotent: if an

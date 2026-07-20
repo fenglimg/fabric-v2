@@ -64,6 +64,8 @@ export {
 export { readEmbedConfig, readFusion } from "./config-loader.js";
 export {
   loadEmbedder,
+  loadRemoteEmbedder,
+  resolveEmbedder,
   defaultEmbedCacheDir,
   OPTIONAL_EMBED_PACKAGE,
   isEmbedderResolvable,

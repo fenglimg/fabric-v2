@@ -110,14 +110,38 @@ function readCooldownHours(projectRoot) {
 }
 
 function readUnderseedThreshold(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  // config-layering W3 (TASK-004): env > project > store > default (project wins
+  // over store, C-004). The store layer is read via the single-owner
+  // store-config-reader.cjs (NO copied inline body — SSOT); optional require so an
+  // old install lacking the lib degrades to the pre-store project > default path.
+  let storeConfigReader = null;
   try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.underseed_node_threshold;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+    storeConfigReader = require("./store-config-reader.cjs");
   } catch {
-    // fall through to default
+    storeConfigReader = null;
+  }
+  if (storeConfigReader !== null) {
+    const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
+    if (typeof envVal === "number") return envVal;
+  }
+  // Project layer.
+  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
+  if (existsSync(configPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+      const v = parsed && parsed.underseed_node_threshold;
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+    } catch {
+      // fall through to store / default
+    }
+  }
+  // Store layer (single owner).
+  if (storeConfigReader !== null) {
+    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
+      min: 1,
+    });
+    if (typeof storeVal === "number") return storeVal;
   }
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
