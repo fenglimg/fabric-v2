@@ -64,10 +64,14 @@ const READ_TOOL_NAMES = new Set(["Read"]);
 
 // Matches a Fabric knowledge file path and captures the stable_id from the
 // basename. The id grammar mirrors KT-DEC-0004 (`K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN`).
-// The path MUST sit under a `/knowledge/<type>/` segment so arbitrary Reads that
-// merely happen to embed an id-shaped token never false-fire.
+// The path MUST sit under `/knowledge/` and end at a `<type>/<ID>--*.md` file.
+// The intermediate segment group is `(?:[^\\/]+[\\/])+` (one-or-more), NOT a
+// single segment: project-scoped bodies live under a deeper
+// `/knowledge/projects/<project-id>/<type>/` prefix (3 segments), and pinning
+// this to exactly one segment silently dropped every project-scoped
+// knowledge_body_read (88% of entries in a project-heavy store).
 const KNOWLEDGE_BODY_PATH_RE =
-  /[\\/]knowledge[\\/][^\\/]+[\\/](K[PT]-(?:DEC|MOD|GLD|PIT|PRO)-\d{3,})--[^\\/]*\.md$/;
+  /[\\/]knowledge[\\/](?:[^\\/]+[\\/])+(K[PT]-(?:DEC|MOD|GLD|PIT|PRO)-\d{3,})--[^\\/]*\.md$/;
 
 // Captures the store alias from a multistore path (`.../stores/<alias>/...`).
 // Absent for legacy dual-root layouts → store stays undefined (still a valid event).
