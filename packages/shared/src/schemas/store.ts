@@ -185,6 +185,13 @@ export const STORE_LAYOUT = {
   // monotonic invariant). Replaces the retired co-location
   // <projectRoot>/.fabric/agents.meta.json#counters.
   countersFile: "counters.json",
+  // config-layering W1 (TASK-001): the STORE layer's config home. A committed
+  // JSON at the store root that may DEFAULT the corpus-shaping knobs
+  // (STORE_OVERRIDABLE_KNOBS in schemas/fabric-config.ts) for every repo bound to
+  // this store. Parsed by storeConfigSchema (read-tolerant, KT-DEC-0048). The
+  // cascade resolver, the hook twin, and the scaffold all reference this single
+  // SSOT basename.
+  configFile: "store-config.json",
   knowledgeDir: "knowledge",
   bindingsDir: "bindings",
   stateDir: "state",
@@ -365,3 +372,74 @@ export const globalConfigSchema = z
   .passthrough();
 
 export type GlobalConfig = z.infer<typeof globalConfigSchema>;
+
+// ---------------------------------------------------------------------------
+// config-layering W1 (TASK-001) — STORE-layer config home (`store-config.json`
+// at the store root, STORE_LAYOUT.configFile). A store may DEFAULT the
+// corpus-shaping knobs for every repo bound to it (e.g. a team store pins
+// `embed_model` / `credibility_half_life_*` so the whole team recalls with the
+// same tuning). The cascade resolver layers this BENEATH the project config and
+// env overrides; only the knobs enumerated in STORE_OVERRIDABLE_KNOBS
+// (schemas/fabric-config.ts) are honored from this layer — machine-scoped keys
+// (nudge_mode/observe/hint_summary_max_len/remote endpoint+key) are NOT.
+//
+// READ-TOLERANT (KT-DEC-0048, write-strict/read-tolerant): EVERY field is
+// `.optional()` with NO `.default()` and NO throwing `.refine()`, and the root
+// is `.passthrough()` (mirroring globalConfigSchema's lenient root). A malformed
+// or forward-compat store-config never aborts the hot read path — an absent knob
+// simply falls through to the next cascade layer.
+//
+// NOTE (SSOT): the per-field constraints below are copied VERBATIM from the
+// matching fields in fabricConfigSchema (schemas/fabric-config.ts). They are
+// INLINED rather than imported to avoid a store.ts ↔ fabric-config.ts top-level
+// module-eval cycle (fabric-config.ts already imports store.ts), which would
+// leave the helper bindings undefined when this `z.object` evaluates. Keep the
+// two in sync when a knob's range changes.
+// ---------------------------------------------------------------------------
+export const storeConfigSchema = z
+  .object({
+    // Retrieval knobs (mirror fabricConfigSchema).
+    plan_context_top_k: z.number().int().min(1).max(200).optional(),
+    recall_relevance_ratio: z.number().min(0).max(1).optional(),
+    // Embedding channel.
+    embed_enabled: z.boolean().optional(),
+    embed_weight: z.number().int().min(0).max(49).optional(),
+    embed_model: z
+      .enum([
+        "fast-bge-small-zh-v1.5",
+        "fast-multilingual-e5-large",
+        "fast-bge-small-en-v1.5",
+        "fast-bge-small-en",
+        "fast-bge-base-en-v1.5",
+        "fast-bge-base-en",
+        "fast-all-MiniLM-L6-v2",
+      ])
+      .optional(),
+    fusion: z.enum(["additive", "rrf", "auto"]).optional(),
+    // Recall layer / scale.
+    default_layer_filter: z.enum(["team", "personal", "both"]).optional(),
+    broad_index_backstop: z.number().int().min(20).max(500).optional(),
+    // Knowledge hygiene / conflict lint.
+    conflict_lint_similarity_threshold: z.number().min(0).max(1).optional(),
+    broad_review_recheck_days: z.number().int().min(1).max(3650).optional(),
+    underseed_node_threshold: z.number().int().positive().optional(),
+    selection_token_ttl_ms: z.number().int().min(30_000).max(3_600_000).optional(),
+    // Credibility content-age decay half-lives (per knowledge type).
+    credibility_half_life_decisions_days: z.number().int().min(1).max(3650).optional(),
+    credibility_half_life_guidelines_days: z.number().int().min(1).max(3650).optional(),
+    credibility_half_life_models_days: z.number().int().min(1).max(3650).optional(),
+    credibility_half_life_pitfalls_days: z.number().int().min(1).max(3650).optional(),
+    credibility_half_life_processes_days: z.number().int().min(1).max(3650).optional(),
+    // Credibility floors (per maturity).
+    credibility_floor_draft: z.number().min(0).max(1).optional(),
+    credibility_floor_verified: z.number().min(0).max(1).optional(),
+    credibility_floor_proven: z.number().min(0).max(1).optional(),
+    // Orphan-demote inactivity thresholds (per maturity).
+    orphan_demote_proven_days: z.number().int().min(1).max(3650).optional(),
+    orphan_demote_verified_days: z.number().int().min(1).max(3650).optional(),
+    orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
+  })
+  // Root lenient (KT-DEC-0048): tolerate forward-compat keys without aborting.
+  .passthrough();
+
+export type StoreConfig = z.infer<typeof storeConfigSchema>;
