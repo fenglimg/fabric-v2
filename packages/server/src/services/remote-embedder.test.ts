@@ -20,6 +20,7 @@ import {
   resolveEmbedder,
   loadRemoteEmbedder,
   buildVectorScores,
+  embeddingCacheIdentity,
   __resetEmbedderForTesting,
   __resetVectorCache,
   __setRemoteKeyMissingHintForTesting,
@@ -155,6 +156,15 @@ describe("loadRemoteEmbedder — HTTP transport", () => {
 });
 
 describe("resolveEmbedder — three-branch selection", () => {
+  it("cache identity fingerprints endpoint without including credentials", () => {
+    const first = embeddingCacheIdentity("m", "https://embed.example/a");
+    const second = embeddingCacheIdentity("m", "https://embed.example/b");
+    expect(first).not.toBe(second);
+    expect(first).toMatch(/^remote:m:[a-f0-9]{64}$/);
+    expect(first).not.toContain("sk-");
+    expect(embeddingCacheIdentity("m")).toBe("local:m");
+  });
+
   it("branch 1: endpoint + key → remote embedder POSTing model/input via the injected fetch", async () => {
     const projectRoot = await freshProjectRoot();
     process.env.FABRIC_EMBED_ENDPOINT = "https://embed.example/v1/embeddings";

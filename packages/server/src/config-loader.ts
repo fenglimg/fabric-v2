@@ -47,10 +47,10 @@ const storeConfigCache = new Map<string, StoreConfig>();
 /**
  * Resolve the STORE-layer config (`store-config.json` at the team store root).
  * Returns `{}` — never throws — on any of: no team write-target resolves
- * (personal-only / unbound repo), the file is absent, the JSON is malformed, or
- * it fails `storeConfigSchema`. An absent knob therefore falls through the
- * cascade to the next layer, never injecting a schema default (the schema
- * carries none). Memoized per projectRoot.
+ * (personal-only / unbound repo), the file is absent, or the JSON/root shape is
+ * malformed. Known fields are parsed independently, so one invalid value cannot
+ * erase valid siblings. An absent/invalid knob falls through to the next layer,
+ * never injecting a schema default (the schema carries none). Memoized per root.
  */
 export function resolveStoreConfig(projectRoot: string): StoreConfig {
   const cached = storeConfigCache.get(projectRoot);
@@ -71,8 +71,22 @@ function loadStoreConfigUncached(projectRoot: string): StoreConfig {
     if (!existsSync(configPath)) {
       return {};
     }
-    const parsed = storeConfigSchema.safeParse(JSON.parse(readFileSync(configPath, "utf8")));
-    return parsed.success ? parsed.data : {};
+    const raw: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      return {};
+    }
+    const source = raw as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+    for (const [key, schema] of Object.entries(storeConfigSchema.shape)) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) {
+        continue;
+      }
+      const parsed = schema.safeParse(source[key]);
+      if (parsed.success) {
+        result[key] = parsed.data;
+      }
+    }
+    return result as StoreConfig;
   } catch {
     // resolveWriteTargetStoreDir throws when no team target resolves; a corrupt
     // file JSON.parse throws — either way fall through to the next cascade layer.

@@ -29,6 +29,7 @@
 
 import { mkdirSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
@@ -428,11 +429,16 @@ export function __resetVectorCache(): void {
   docVectorCache.clear();
 }
 
-function cacheDocVector(text: string, vector: number[]): void {
-  if (docVectorCache.has(text)) {
-    docVectorCache.delete(text);
+function docVectorCacheKey(identity: string, text: string): string {
+  return `${identity}\0${text}`;
+}
+
+function cacheDocVector(identity: string, text: string, vector: number[]): void {
+  const key = docVectorCacheKey(identity, text);
+  if (docVectorCache.has(key)) {
+    docVectorCache.delete(key);
   }
-  docVectorCache.set(text, vector);
+  docVectorCache.set(key, vector);
   while (docVectorCache.size > DOC_VECTOR_CACHE_MAX) {
     const lru = docVectorCache.keys().next().value;
     if (lru === undefined) {
@@ -446,7 +452,15 @@ function cacheDocVector(text: string, vector: number[]): void {
 // doc-vector snapshot layout. Bump on ANY serialization-shape change so a stale
 // snapshot from an older layout is rejected as a miss (never rehydrated into a
 // broken shape). Mirrors the SerializedBm25Model.version === 1 gate.
-const VECTOR_CACHE_VERSION = 1;
+const VECTOR_CACHE_VERSION = 2;
+
+export function embeddingCacheIdentity(model: string, remoteEndpoint?: string): string {
+  if (remoteEndpoint === undefined) {
+    return `local:${model}`;
+  }
+  const endpointFingerprint = createHash("sha256").update(remoteEndpoint).digest("hex");
+  return `remote:${model}:${endpointFingerprint}`;
+}
 
 // TASK-004: on-disk doc-embedding cache, tier 2 behind the in-memory Map (tier 1).
 // docVectorCache alone re-embeds the WHOLE corpus on every COLD process (a fresh
@@ -510,6 +524,7 @@ export interface VectorCacheContext {
   projectRoot: string;
   corpusRevision: string;
   embeddingModel: string;
+  embeddingIdentity?: string;
 }
 
 // The serialized snapshot. `vectors` maps doc TEXT → vector (same key as the
@@ -517,17 +532,19 @@ export interface VectorCacheContext {
 interface SerializedVectorCache {
   version: number;
   embedding_model: string;
+  embedding_identity: string;
   dimension: number;
   corpus_revision: string;
   vectors: Array<[string, number[]]>;
 }
 
-function vectorCachePath(projectRoot: string, revision: string): string {
+function vectorCachePath(projectRoot: string, revision: string, identity: string): string {
   // The revision is a sha256 hex string (computeReadSetRevision), optionally
   // `sha256:`-prefixed — safe as a filename once the colon is normalized. Mirrors
   // bm25CachePath's normalization so the two caches key filenames identically.
   const safe = revision.replace(/[^A-Za-z0-9_-]/g, "_");
-  return join(projectRoot, VECTOR_CACHE_DIR, `${safe}.json`);
+  const identityHash = createHash("sha256").update(identity).digest("hex").slice(0, 16);
+  return join(projectRoot, VECTOR_CACHE_DIR, `${safe}.${identityHash}.json`);
 }
 
 /**
@@ -538,15 +555,17 @@ function vectorCachePath(projectRoot: string, revision: string): string {
  */
 async function loadVectorCacheFromDisk(
   ctx: VectorCacheContext,
+  identity: string,
 ): Promise<Map<string, number[]> | null> {
   try {
-    const raw = await readFile(vectorCachePath(ctx.projectRoot, ctx.corpusRevision), "utf8");
+    const raw = await readFile(vectorCachePath(ctx.projectRoot, ctx.corpusRevision, identity), "utf8");
     const parsed = JSON.parse(raw) as SerializedVectorCache;
     // Reject a snapshot from a different layout / model / corpus. The dimension
     // is validated per-vector below (against the snapshot's own declared width),
     // so a corrupt row cannot smuggle a wrong-width vector into the tier-1 Map.
     if (parsed.version !== VECTOR_CACHE_VERSION) return null;
     if (parsed.embedding_model !== ctx.embeddingModel) return null;
+    if (parsed.embedding_identity !== identity) return null;
     if (parsed.corpus_revision !== ctx.corpusRevision) return null;
     if (!Array.isArray(parsed.vectors) || parsed.vectors.length === 0) return null;
     const dimension = parsed.dimension;
@@ -575,6 +594,7 @@ async function loadVectorCacheFromDisk(
  */
 async function saveVectorCacheToDisk(
   ctx: VectorCacheContext,
+  identity: string,
   vectors: Array<[string, number[]]>,
   dimension: number,
 ): Promise<void> {
@@ -582,11 +602,12 @@ async function saveVectorCacheToDisk(
     const payload: SerializedVectorCache = {
       version: VECTOR_CACHE_VERSION,
       embedding_model: ctx.embeddingModel,
+      embedding_identity: identity,
       dimension,
       corpus_revision: ctx.corpusRevision,
       vectors,
     };
-    const path = vectorCachePath(ctx.projectRoot, ctx.corpusRevision);
+    const path = vectorCachePath(ctx.projectRoot, ctx.corpusRevision, identity);
     const dir = join(ctx.projectRoot, VECTOR_CACHE_DIR);
     await mkdir(dir, { recursive: true });
     await writeFile(path, JSON.stringify(payload), "utf8");
@@ -609,6 +630,9 @@ export async function buildVectorScores(
     return null;
   }
   try {
+    const embeddingIdentity =
+      cache?.embeddingIdentity ??
+      (cache !== undefined ? embeddingCacheIdentity(cache.embeddingModel) : "unscoped");
     // Tier 2 (disk): on a COLD process, rehydrate the persisted snapshot into the
     // in-memory Map BEFORE computing misses, so the miss loop finds the docs
     // cached and only the (varying) query is embedded. Skipped entirely when the
@@ -618,10 +642,10 @@ export async function buildVectorScores(
       // is idempotent + cheap (existsSync gate); run once per cold read so a
       // pre-migration snapshot rehydrates without a re-embed round.
       migrateLegacyFabricCache(cache.projectRoot);
-      const fromDisk = await loadVectorCacheFromDisk(cache);
+      const fromDisk = await loadVectorCacheFromDisk(cache, embeddingIdentity);
       if (fromDisk !== null) {
         for (const [text, vector] of fromDisk) {
-          cacheDocVector(text, vector);
+          cacheDocVector(embeddingIdentity, text, vector);
         }
       }
     }
@@ -629,7 +653,7 @@ export async function buildVectorScores(
     // Embed the query (always) plus only the docs whose text is not yet cached.
     const missTexts: string[] = [];
     for (const item of items) {
-      if (!docVectorCache.has(item.text)) {
+      if (!docVectorCache.has(docVectorCacheKey(embeddingIdentity, item.text))) {
         missTexts.push(item.text);
       }
     }
@@ -640,7 +664,7 @@ export async function buildVectorScores(
     }
     const queryVec = embedded[0];
     for (let m = 0; m < missTexts.length; m += 1) {
-      cacheDocVector(missTexts[m], embedded[m + 1]);
+      cacheDocVector(embeddingIdentity, missTexts[m], embedded[m + 1]);
     }
 
     // Query-anchored dimension guard (TASK-004 red line). `queryVec` was produced
@@ -654,9 +678,10 @@ export async function buildVectorScores(
     // loader's own dimension check (which cannot know the current width pre-embed).
     const staleTexts: string[] = [];
     for (const item of items) {
-      const cached = docVectorCache.get(item.text);
+      const key = docVectorCacheKey(embeddingIdentity, item.text);
+      const cached = docVectorCache.get(key);
       if (cached !== undefined && cached.length !== queryVec.length) {
-        docVectorCache.delete(item.text);
+        docVectorCache.delete(key);
         staleTexts.push(item.text);
       }
     }
@@ -666,14 +691,14 @@ export async function buildVectorScores(
         return null;
       }
       for (let s = 0; s < staleTexts.length; s += 1) {
-        cacheDocVector(staleTexts[s], reEmbedded[s]);
+        cacheDocVector(embeddingIdentity, staleTexts[s], reEmbedded[s]);
       }
     }
     const embeddedNewDoc = missTexts.length > 0 || staleTexts.length > 0;
 
     const scores = new Map<string, number>();
     for (const item of items) {
-      const docVec = docVectorCache.get(item.text);
+      const docVec = docVectorCache.get(docVectorCacheKey(embeddingIdentity, item.text));
       if (docVec === undefined) {
         // Defensive: a doc we just embedded should always be present. Bail to
         // the text-only fallback rather than emit a partial score set.
@@ -692,7 +717,7 @@ export async function buildVectorScores(
     if (cache !== undefined && embeddedNewDoc) {
       const snapshot: Array<[string, number[]]> = [];
       for (const item of items) {
-        const vec = docVectorCache.get(item.text);
+        const vec = docVectorCache.get(docVectorCacheKey(embeddingIdentity, item.text));
         if (vec !== undefined) {
           snapshot.push([item.text, vec]);
         }
@@ -703,7 +728,7 @@ export async function buildVectorScores(
       // than persisting a payload that would fail its own dimension check on load.
       const uniform = dimension > 0 && snapshot.every(([, v]) => v.length === dimension);
       if (uniform) {
-        await saveVectorCacheToDisk(cache, snapshot, dimension);
+        await saveVectorCacheToDisk(cache, embeddingIdentity, snapshot, dimension);
       }
     }
 

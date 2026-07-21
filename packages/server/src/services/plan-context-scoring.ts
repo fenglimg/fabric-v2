@@ -25,7 +25,11 @@ import {
   rankByScore,
   type Bm25Model,
 } from "./bm25.js";
-import { resolveEmbedder, buildVectorScores } from "./vector-retrieval.js";
+import {
+  resolveEmbedder,
+  buildVectorScores,
+  embeddingCacheIdentity,
+} from "./vector-retrieval.js";
 import { compareStableIds, layerFromStableId } from "./plan-context-ids.js";
 import {
   applyRankCapAndFloor,
@@ -229,7 +233,15 @@ export async function buildScoringContext(
         stable_id: item.stable_id,
         text: docTexts.get(item.stable_id) ?? documentTextForItem(item.description),
       })),
-      { projectRoot, corpusRevision: revision, embeddingModel: embedConfig.model },
+      {
+        projectRoot,
+        corpusRevision: revision,
+        embeddingModel: embedConfig.model,
+        embeddingIdentity: embeddingCacheIdentity(
+          embedConfig.model,
+          embedConfig.remoteEndpoint,
+        ),
+      },
     );
     if (vectorScores !== null) {
       scoringContext.vectorScores = vectorScores;
@@ -353,4 +365,3 @@ export function rankDescriptionItems(
   const hasQuery = scoringContext.queryTerms.length > 0;
   return applyRankCapAndFloor(rankedScored, mode, options, hasQuery);
 }
-

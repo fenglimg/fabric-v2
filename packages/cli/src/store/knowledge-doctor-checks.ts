@@ -110,7 +110,12 @@ function appendStoreKnobOverrideDiagnostics(projectRoot: string, out: StoreDiagn
   const t = getProjectTranslator(projectRoot);
   let projectCfg: Record<string, unknown>;
   try {
-    projectCfg = (loadProjectConfig(projectRoot) as Record<string, unknown> | null) ?? {};
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(projectRoot, ".fabric", "fabric-config.json"), "utf8"),
+    );
+    projectCfg = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     // A corrupt project config is not this advisory's concern (other lints own it).
     return;

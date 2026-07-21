@@ -116,6 +116,14 @@ describe("doctor store_knob_repo_override advisory (TASK-005)", () => {
     expect(knobOverrides(await knowledgeDoctorChecks(projectRoot))).toEqual([]);
   });
 
+  it("does not treat schema defaults as explicit repo overrides", async () => {
+    const projectRoot = makeRepo({
+      projectConfig: {},
+      storeConfig: { broad_index_backstop: 40 },
+    });
+    expect(knobOverrides(await knowledgeDoctorChecks(projectRoot))).toEqual([]);
+  });
+
   it("no advisory when the team store has no store-config.json (best-effort empty)", async () => {
     const projectRoot = makeRepo({ projectConfig: { broad_index_backstop: 80 } });
     expect(knobOverrides(await knowledgeDoctorChecks(projectRoot))).toEqual([]);

@@ -98,6 +98,10 @@ const FIXTURES: Array<{ name: string; storeConfig: object | string }> = [
   { name: "backstop non-integer", storeConfig: { broad_index_backstop: 100.5 } },
   { name: "underseed non-positive", storeConfig: { underseed_node_threshold: 0 } },
   { name: "underseed non-integer", storeConfig: { underseed_node_threshold: 4.5 } },
+  {
+    name: "mixed valid and invalid fields stay isolated",
+    storeConfig: { broad_index_backstop: 40, underseed_node_threshold: 0 },
+  },
   { name: "malformed store JSON", storeConfig: "{ not json" },
   { name: "empty store config", storeConfig: {} },
 ];
@@ -106,7 +110,8 @@ describe("store-config-reader.cjs ↔ config-loader.resolveStoreConfig parity (b
   for (const fixture of FIXTURES) {
     it(`agrees on both knobs — ${fixture.name}`, async () => {
       const { projectRoot, storeRoot } = await makeRepo(fixture.storeConfig);
-      // config-loader canon: whole-object schema parse (invalid field → {}).
+      // config-loader canon: per-field tolerant parse (one bad field cannot
+      // erase valid siblings), matching the hook reader's isolation semantics.
       const canon = resolveStoreConfig(projectRoot) as Record<string, number | undefined>;
       for (const { key, range } of KNOBS) {
         const canonVal = canon[key];
