@@ -7,7 +7,7 @@ import { FabricError } from "@fenglimg/fabric-shared/errors";
 import {
   readEmbedConfig,
   readFusion,
-  loadEmbedder,
+  resolveEmbedder,
   defaultEmbedCacheDir,
   isEmbedderResolvable,
 } from "@fenglimg/fabric-server";
@@ -337,10 +337,13 @@ export function gatherRecallStatus(projectRoot: string): RecallEngineStatus {
   // false-negative in pnpm / dev-linked layouts.
   const fastembedResolvable = isEmbedderResolvable();
   const modelCached = isModelCached(cacheDir, embed.model);
+  // Remote embedder: when remoteEndpoint + remoteApiKey are both configured,
+  // the server uses loadRemoteEmbedder which needs neither local fastembed nor
+  // a cached model — the vector channel is ready via the remote transport.
+  const remoteConfigured = embed.remoteEndpoint !== undefined && embed.remoteApiKey !== undefined;
   // vector_ready predicts whether the vector channel will actually score: enabled
-  // + package present + model already on disk. (A cold model still downloads on
-  // first recall, but until then `auto` plays it safe with additive.)
-  const vectorReady = embed.enabled && fastembedResolvable && modelCached;
+  // + (remote configured OR local package present + model on disk).
+  const vectorReady = embed.enabled && (remoteConfigured || (fastembedResolvable && modelCached));
 
   let fusionEffective: "additive" | "rrf";
   let fusionReason: string;
@@ -359,8 +362,8 @@ export function gatherRecallStatus(projectRoot: string): RecallEngineStatus {
       : "auto → additive (vector channel not ready: " +
         [
           embed.enabled ? null : "embed_enabled=false",
-          fastembedResolvable ? null : "fastembed not resolvable",
-          modelCached ? null : "model not cached",
+          remoteConfigured ? null : fastembedResolvable ? null : "fastembed not resolvable",
+          remoteConfigured ? null : modelCached ? null : "model not cached",
         ]
           .filter(Boolean)
           .join(", ") +
@@ -441,8 +444,10 @@ async function runRecallWarm(json?: boolean) {
   const projectRoot = process.cwd();
   const embed = readEmbedConfig(projectRoot);
   const cacheDir = defaultEmbedCacheDir();
-  // Actively load the embedder — this triggers the model download on a cold cache.
-  const embedder = await loadEmbedder(embed.model);
+  // resolveEmbedder routes to the correct transport: remote HTTP when
+  // remoteEndpoint + remoteApiKey are configured, local fastembed otherwise.
+  // For remote mode the probe embedding call below tests the endpoint.
+  const embedder = await resolveEmbedder(projectRoot);
   let dim: number | null = null;
   let ok = embedder !== null;
   if (embedder !== null) {
