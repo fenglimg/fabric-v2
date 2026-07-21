@@ -25,7 +25,11 @@ import {
   rankByScore,
   type Bm25Model,
 } from "./bm25.js";
-import { loadEmbedder, buildVectorScores } from "./vector-retrieval.js";
+import {
+  resolveEmbedder,
+  buildVectorScores,
+  embeddingCacheIdentity,
+} from "./vector-retrieval.js";
 import { compareStableIds, layerFromStableId } from "./plan-context-ids.js";
 import {
   applyRankCapAndFloor,
@@ -211,7 +215,12 @@ export async function buildScoringContext(
   // when embed_enabled AND the optional fastembed loads AND a query exists.
   const embedConfig = readEmbedConfig(projectRoot);
   if (embedConfig.enabled && opts.queryText.trim().length > 0 && rawItems.length > 0) {
-    const embedder = await loadEmbedder(embedConfig.model);
+    // config-layering W3 (TASK-003): resolveEmbedder is the SINGLE embedder-
+    // selection site — it re-reads the (memoized) embed config internally and
+    // returns the remote HTTP embedder, a pure-text degrade (null), or the local
+    // fastembed embedder. embedConfig here still supplies .enabled/.model (cache
+    // key)/.weight for the surrounding block.
+    const embedder = await resolveEmbedder(projectRoot);
     // TASK-004: version-keyed doc-vector disk cache. Key on the read-set revision
     // (same content fingerprint as the BM25 cache) + the resolved embedding model,
     // so a cold process rehydrates instead of re-embedding the corpus, and a model
@@ -224,7 +233,15 @@ export async function buildScoringContext(
         stable_id: item.stable_id,
         text: docTexts.get(item.stable_id) ?? documentTextForItem(item.description),
       })),
-      { projectRoot, corpusRevision: revision, embeddingModel: embedConfig.model },
+      {
+        projectRoot,
+        corpusRevision: revision,
+        embeddingModel: embedConfig.model,
+        embeddingIdentity: embeddingCacheIdentity(
+          embedConfig.model,
+          embedConfig.remoteEndpoint,
+        ),
+      },
     );
     if (vectorScores !== null) {
       scoringContext.vectorScores = vectorScores;
@@ -348,4 +365,3 @@ export function rankDescriptionItems(
   const hasQuery = scoringContext.queryTerms.length > 0;
   return applyRankCapAndFloor(rankedScored, mode, options, hasQuery);
 }
-

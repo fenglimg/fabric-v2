@@ -1,0 +1,59 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-20260720-config-layering",
+    "session_path": "scratch/20260720-grill-config-layering-wrapup/",
+    "generated_at": "2026-07-20"
+  },
+  "requirements": [
+    { "id": "R-001", "title": "共享语料旋钮下沉 Store 层默认", "description": "~15 个决定共享语料排序/浮现/维护的旋钮（embed_model / broad_index_backstop / fusion / embed_weight / recall_relevance_ratio / plan_context_top_k / credibility_*(8) / orphan_demote_*(3) / broad_review_recheck_days / conflict_lint_*）获得随 store git 分发的默认值层", "priority": "must", "ref": "grill-report.md#Synthesis-D2" },
+    { "id": "R-002", "title": "远程嵌入本地/远程双模", "description": "嵌入支持本地 fastembed 与远程 API 两种；model 身份归 Store，provider endpoint+api_key 归 Machine", "priority": "must", "ref": "grill-report.md#Synthesis-D5" },
+    { "id": "R-003", "title": "分层解析器 + doctor 软告警", "description": "实现 env>project>store>硬编码 级联解析器；repo 覆盖 store 层旋钮时 doctor 非阻断告警团队不一致", "priority": "must", "ref": "grill-report.md#Synthesis-D3" }
+  ],
+  "constraints": [
+    { "id": "C-001", "area": "arch", "constraint": "配置分层 MUST 归入 Machine/Store/Repo 三家之一；personal 是 store 的 personal:true flag，不是独立层", "rationale": "personal/team store 结构同构（S42），②③合并、⑤降为覆盖机制", "status": "locked", "ref": "grill-report.md#D1" },
+    { "id": "C-002", "area": "arch", "constraint": "决定共享语料排序/浮现/维护的旋钮 MUST 有 Store 层默认（随 store git 分发）", "rationale": "行为旋钮住 per-repo 不随库走 → 团队分发后召回发散的结构性 gap", "status": "locked", "ref": "grill-report.md#D2" },
+    { "id": "C-003", "area": "arch", "constraint": "旋钮优先级 MUST 为 env > project(repo) > store默认 > 硬编码；store 层旋钮被 repo 覆盖 MUST 触发 doctor 软告警", "rationale": "默认一致成最省力路径，覆盖显形；12-factor（KT-MOD-0002）", "status": "locked", "ref": "grill-report.md#D3" },
+    { "id": "C-004", "area": "arch", "constraint": "store 层旋钮 MUST NOT 硬锁禁止 repo 覆盖", "rationale": "保留个人本地实验自由，D2 user-in-control 红线（KT-DEC-0007）", "status": "locked", "ref": "grill-report.md#D4" },
+    { "id": "C-005", "area": "arch", "constraint": "远程 model 声明但成员缺 key 时 MUST 关向量通道走纯 BM25 文本，MUST NOT 静默换本地模型", "rationale": "换模型=换语义空间=破团队一致；关通道保一致只降质量", "status": "locked", "ref": "grill-report.md#D6" },
+    { "id": "C-006", "area": "arch", "constraint": "每个旋钮 MUST 有唯一 canonical home（默认所在层），其他层仅显式覆盖且 doctor 可见；无旋钮被两家共有却无确定解析顺序", "rationale": "用户红线『不要配置相互打架』——合并层级的安全边界", "status": "locked", "ref": "grill-report.md#C-006" },
+    { "id": "C-007", "area": "arch", "constraint": "实现前 MUST 先产出全量 blueprint（15 旋钮迁移 + 远程嵌入 + 覆盖层 + 解析器）", "rationale": "范围较大，先规划再动手", "status": "locked", "ref": "grill-report.md#D7" },
+    { "id": "C-008", "area": "coding", "constraint": "store-config 解析进召回 hot-path MUST best-effort hot-path-safe（parse 失败回默认不崩）；committed 文件 parser MUST lenient/passthrough 保跨版本 back-compat", "rationale": "复用现有 config-loader reader 模式 + globalConfigSchema .passthrough() 先例", "status": "locked", "ref": "grill-report.md#R4-R5" }
+  ],
+  "domain": {
+    "problem_statement": "Fabric 配置散在多个声称层级、行为旋钮住 per-repo project 配置不随 store 分发，导致团队分发同一知识库后各成员召回行为发散。收尾原设想的『删死旋钮/接线』已由代码完成，真问题是配置分层架构：层级如何合并、每个旋钮归哪一层、如何保团队一致又不牺牲个人自由。",
+    "terminology": [
+      { "term": "Machine 层", "definition": "机器/账号级配置家 ~/.fabric/fabric-global.json", "code_ref": "schemas/store.ts:340", "status": "locked" },
+      { "term": "Store 层", "definition": "随知识库 git 分发的配置家；personal/team 同构；目标携带共享语料行为默认", "code_ref": "schemas/store.ts:54", "status": "locked" },
+      { "term": "Repo 层", "definition": "本代码库级配置家 .fabric/fabric-config.json", "code_ref": "schemas/fabric-config.ts:158", "status": "locked" },
+      { "term": "共享语料旋钮", "definition": "决定共享知识排序/浮现/维护、必须有 Store 层默认才保团队一致的旋钮", "code_ref": "schemas/fabric-config.ts", "status": "locked" },
+      { "term": "canonical home", "definition": "每个旋钮默认值的唯一层，其他层仅显式覆盖（C-006 防打架）", "code_ref": "design", "status": "locked" },
+      { "term": "远程嵌入双模", "definition": "嵌入支持本地 fastembed 与远程 API；model→Store，endpoint+key→Machine", "code_ref": "vector-retrieval.ts", "status": "open" },
+      { "term": "degrade-to-text", "definition": "缺远程 key 时关向量通道走 BM25 文本、不静默换模型", "code_ref": "design D6", "status": "locked" }
+    ],
+    "audience": "Fabric maintainer（零用户 clean-slate 阶段，为未来多成员团队分发做架构准备）",
+    "industry": "developer-tooling / cross-client AI knowledge layer"
+  },
+  "non_goals": [
+    { "title": "一次性五层全重构", "rationale": "scope creep，改为 blueprint 分阶段（先 embed_model+broad_index 两 seam）", "ref": "grill-report.md#Non-Goals" },
+    { "title": "store 硬锁不可覆盖", "rationale": "牺牲个人实验自由，与 D2 user-in-control 冲突", "ref": "grill-report.md#Non-Goals" },
+    { "title": "提交裸向量进 git", "rationale": "KT-DEC-0063 fastembed/ONNX 跨平台漂移致静默召回错位", "ref": "grill-report.md#Non-Goals" },
+    { "title": "删死旋钮 / 接线 embed_enabled", "rationale": "代码已完成——死旋钮删净、embed_enabled 漂移已修（KT-PIT-0029）", "ref": "grill-report.md#Refuted" }
+  ],
+  "insights": [
+    { "area": "arch", "summary": "唯一随 store 走的文件 store.json 只装 identity、零行为旋钮；所有行为旋钮住 per-repo project 配置不随库 → 团队一致在结构上今天不可能", "evidence": "store.ts:54 storeIdentitySchema 无 broad_index/embed 字段；broad_index_backstop 读 fabric-config.json (knowledge-hint-broad.cjs:311)", "ref": "grill-report.md#结构性根因" },
+    { "area": "arch", "summary": "5 声称层塌成 3 家+1 机制：personal 偏好⊕store 配置合并（store 同构），local 降为 env+.local.json 覆盖机制", "evidence": "S42 isomorphic layout；storeMountGroup personal:true flag (store.ts:231)", "ref": "grill-report.md#层级合并挑战" },
+    { "area": "arch", "summary": "向量索引是 per-project 可重建缓存（.fabric/.cache/vectors/，embed_model 做 key），不入 git、不随 store；故原 B『index 随库』前提错，但 embed_model 仍应住 Store——理由是语义空间团队共享，非索引位置", "evidence": "vector-retrieval.ts:307-368 cache keyed on embedding_model", "ref": "grill-report.md#关键证据-3" },
+    { "area": "arch", "summary": "远程嵌入天然劈两层：model 身份（语义空间）团队共享归 Store，provider endpoint+key 各人各份归 Machine；缺 key 降级关通道而非换模型", "evidence": "vector-retrieval.ts 纯本地 fastembed（远程未实现）", "ref": "grill-report.md#远程嵌入本地-远程双模设计" }
+  ],
+  "open_questions": [
+    { "area": "arch", "question": "blueprint 内 15 旋钮迁移的分阶段顺序（先 embed_model+broad_index seam，其余 backlog 排序）", "options": ["两 seam 先行", "按共享语料影响面排序", "recall 类一批 + maintenance 类一批"], "ref": "grill-report.md#R3" },
+    { "area": "arch", "question": "覆盖机制 local 层是否实现 gitignored .fabric/fabric-config.local.json，还是纯 env 逃生口", "options": [".local.json + env", "纯 env", "blueprint 内定"], "ref": "terminology.md#覆盖机制" },
+    { "area": "arch", "question": "store-config 物理落点：扩 store.json 加 defaults 块 vs 新增独立 committed store-config.json", "options": ["store.json#defaults 块", "独立 store-config.json", "blueprint 内定"], "ref": "grill-report.md#D2" }
+  ],
+  "references": [
+    { "type": "grill-report", "path": "grill-report.md" },
+    { "type": "terminology", "path": "terminology.md" }
+  ]
+}

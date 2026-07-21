@@ -61,6 +61,37 @@ export function migrateRequiredStores(config: {
   return { ...config, required_stores: [...personal, kept] };
 }
 
+// config-layering W1 (TASK-001): the registry of corpus-shaping knobs the STORE
+// layer (store-config.json, STORE_LAYOUT.configFile) is allowed to default.
+// Two consumers share this ONE source of truth:
+//   - `fabric doctor` uses it to detect repo-level overrides of store defaults.
+//   - the cascade resolver uses it as the store-layer ALLOW-LIST — only these
+//     keys are honored from store-config.json (env > project > store > builtin).
+// Grouped families are named ONCE (credibility_half_life / credibility_floor /
+// orphan_demote), so this tuple has EXACTLY 15 entries even though the concrete
+// storeConfigSchema fields expand to 23 (5 half-life + 3 floor + 3 orphan_demote).
+//
+// It MUST NOT include machine-scoped keys — a store may not dictate a repo's
+// human-output presets or remote transport: `nudge_mode`, `observe`,
+// `hint_summary_max_len`, and any remote endpoint/key are intentionally ABSENT.
+export const STORE_OVERRIDABLE_KNOBS = [
+  "plan_context_top_k",
+  "recall_relevance_ratio",
+  "embed_weight",
+  "embed_model",
+  "fusion",
+  "default_layer_filter",
+  "broad_index_backstop",
+  "conflict_lint_similarity_threshold",
+  "broad_review_recheck_days",
+  "underseed_node_threshold",
+  "selection_token_ttl_ms",
+  "credibility_half_life",
+  "credibility_floor",
+  "orphan_demote",
+  "embed_enabled",
+] as const;
+
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
 // v2.0: Fabric scope is locked to Claude Code and Codex CLI.

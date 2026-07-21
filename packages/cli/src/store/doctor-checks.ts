@@ -39,6 +39,10 @@ export type StoreDiagnosticCode =
   | "knowledge_consumption_heatmap"
   // BORROW-005: entries never consumed in the window (warn, GATED on data maturity).
   | "knowledge_consumption_zero"
+  // config-layering W3 (TASK-005): a repo's fabric-config.json overrides a
+  // store-layer knob the TEAM store also defaults (INFO advisory, non-blocking —
+  // the project layer is ALLOWED to win, C-004 D2 user-in-control).
+  | "store_knob_repo_override"
   // M-first-value-loop readiness: empty store / no bind / no write target / hooks.
   | "first_hit_unbound"
   | "first_hit_no_write_target"

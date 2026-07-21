@@ -252,6 +252,7 @@ export const enMessages: Messages = {
   "doctor.store.active-personal-unset": "{count} personal stores are mounted but none is active; run `fabric store switch-personal <alias>` to pick one (or `fabric doctor --fix` to default to the first)",
   "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
   "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
+  "doctor.store.knob-repo-override": "repo overrides store-layer knob '{key}' — the project layer wins by design (C-004 D2 user-in-control); align only if intentional",
   "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
   "doctor.store.unreachable-bound": "bound store dir missing on disk: {stores} — re-clone or remount, then fabric doctor",
   "doctor.store.consumption-heatmap": "top consumed (last {days}d, {consumed}/{total} entries read across {windows} window(s)): {top}",

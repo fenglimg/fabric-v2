@@ -8,6 +8,7 @@ import {
   cosineSimilarity,
   buildVectorScores,
   buildEmbedInitOptions,
+  embeddingCacheIdentity,
   loadEmbedder,
   __resetEmbedderForTesting,
   __resetVectorCache,
@@ -305,7 +306,7 @@ describe("buildVectorScores disk cache (TASK-004)", () => {
     if (root !== undefined) rmSync(root, { recursive: true, force: true });
   });
 
-  it("writes a versioned snapshot on first embed (four required keys)", async () => {
+  it("writes a versioned snapshot on first embed (identity included)", async () => {
     root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
     __resetVectorCache();
     const { embedder } = countingEmbedder();
@@ -317,10 +318,12 @@ describe("buildVectorScores disk cache (TASK-004)", () => {
     expect(scores).not.toBeNull();
 
     const files = cacheFiles();
-    expect(files).toEqual(["rev-abc.json"]); // revision-named file
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^rev-abc\.[a-f0-9]{16}\.json$/);
     const payload = JSON.parse(readFileSync(join(root, ".fabric", ".cache", "vectors", files[0]), "utf8"));
-    expect(payload.version).toBe(1);
+    expect(payload.version).toBe(2);
     expect(payload.embedding_model).toBe("fast-bge-small-zh-v1.5");
+    expect(payload.embedding_identity).toBe("local:fast-bge-small-zh-v1.5");
     expect(payload.dimension).toBe(3);
     expect(payload.corpus_revision).toBe("rev-abc");
     // The snapshot holds every doc's vector, keyed by doc text.
@@ -415,9 +418,33 @@ describe("buildVectorScores disk cache (TASK-004)", () => {
     expect(batches[1]).toHaveLength(3); // batch 2: the 3 evicted stale-width docs
     // The rewritten snapshot now records the new dimension.
     const payload = JSON.parse(
-      readFileSync(join(root, ".fabric", ".cache", "vectors", "rev-dim.json"), "utf8"),
+      readFileSync(join(root, ".fabric", ".cache", "vectors", cacheFiles()[0]), "utf8"),
     );
     expect(payload.dimension).toBe(4);
+  });
+
+  it("isolates L1 and L2 vectors by transport, model, and endpoint", async () => {
+    root = mkdtempSync(join(tmpdir(), "fab-vec-cache-"));
+    const localIdentity = embeddingCacheIdentity("m");
+    const remoteIdentity = embeddingCacheIdentity("m", "https://embed.example/a");
+    const local = countingEmbedder();
+    await buildVectorScores(local.embedder, "q1", items, {
+      projectRoot: root,
+      corpusRevision: "rev-identity",
+      embeddingModel: "m",
+      embeddingIdentity: localIdentity,
+    });
+
+    const remote = countingEmbedder();
+    await buildVectorScores(remote.embedder, "q2", items, {
+      projectRoot: root,
+      corpusRevision: "rev-identity",
+      embeddingModel: "m",
+      embeddingIdentity: remoteIdentity,
+    });
+
+    expect(remote.batches[0]).toHaveLength(4);
+    expect(cacheFiles()).toHaveLength(2);
   });
 
   it("NEVER touches the disk cache when the embedder is unavailable (degrade-safe)", async () => {
