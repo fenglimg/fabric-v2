@@ -45,7 +45,7 @@ const { isAbsolute, join, relative } = require("node:path");
 // writes through the single guarded event-writer (envelope stamp + event_type
 // guard + advisory-lock append) so every row satisfies the event-ledger schema.
 const { appendEvents } = require("./lib/event-writer.cjs");
-const { resolveProjectRoot } = require("./lib/project-root.cjs");
+const { createProjectContextResolver } = require("./lib/project-root.cjs");
 
 const FABRIC_DIR_REL = ".fabric";
 const EVENTS_LEDGER_FILE = "events.jsonl";
@@ -433,6 +433,7 @@ if (require.main === module) {
   } catch {
     // No stdin — proceed with empty payload (E*: no append without paths).
   }
-  main({ cwd: resolveProjectRoot(process.cwd()), now: new Date(), stdin: stdinRaw });
+  const context = createProjectContextResolver({ explicitRoot: process.env.CLAUDE_PROJECT_DIR });
+  main({ cwd: context.workspaceRoot, now: new Date(), stdin: stdinRaw });
   process.exit(0);
 }

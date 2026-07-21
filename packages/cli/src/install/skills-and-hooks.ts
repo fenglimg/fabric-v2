@@ -909,7 +909,9 @@ export async function installHookLibs(
   const libTemplateDir = findTemplatePath(HOOK_LIB_TEMPLATE_DIR_REL);
   let libFiles: string[];
   try {
-    libFiles = readdirSync(libTemplateDir).filter((name) => name.endsWith(".cjs"));
+    libFiles = readdirSync(libTemplateDir)
+      .filter((name) => name.endsWith(".cjs"))
+      .sort();
   } catch (error: unknown) {
     return [
       {
@@ -919,6 +921,19 @@ export async function installHookLibs(
         message: error instanceof Error ? error.message : String(error),
       },
     ];
+  }
+
+  const requiredProjectContextLibs = ["project-context-runtime.cjs", "project-root.cjs"];
+  const missingProjectContextLibs = requiredProjectContextLibs.filter(
+    (name) => !libFiles.includes(name),
+  );
+  if (missingProjectContextLibs.length > 0) {
+    return missingProjectContextLibs.map((name) => ({
+      step: "hook-lib",
+      path: join(libTemplateDir, name),
+      status: "error" as const,
+      message: "missing-required-project-context-runtime",
+    }));
   }
 
   if (libFiles.length === 0) {

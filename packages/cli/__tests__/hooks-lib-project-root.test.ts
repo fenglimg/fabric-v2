@@ -1,90 +1,133 @@
-/**
- * Unit tests for the shared project-root resolver
- * (templates/hooks/lib/project-root.cjs).
- *
- * Regression guard for the stray-`.fabric` bug: hooks used to derive their
- * `.fabric` base from `process.cwd()` (the session's subdirectory), scattering
- * telemetry dirs across the source tree. resolveProjectRoot pins the
- * resolution order — CLAUDE_PROJECT_DIR → nearest `.git` ancestor → nearest
- * `.fabric` ancestor → unchanged cwd — and the critical stray-immune property:
- * a `.fabric/` left in an intermediate directory must NOT capture the walk.
- */
-import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-const { resolveProjectRoot } = require("../templates/hooks/lib/project-root.cjs") as {
-  resolveProjectRoot: (startCwd?: string) => string;
+import { afterEach, describe, expect, it } from "vitest";
+
+import type { ProjectContextResolverInput } from "@fenglimg/fabric-shared";
+import { createProjectContextResolver as createEsmContext } from "@fenglimg/fabric-shared";
+
+const require = createRequire(import.meta.url);
+const runtime = require(
+  fileURLToPath(new URL("../templates/hooks/lib/project-context-runtime.cjs", import.meta.url)),
+) as {
+  createProjectContextResolver: (input?: ProjectContextResolverInput) => Readonly<{
+    workspaceRoot: string;
+    identityRoot: string;
+    projectId: string;
+    bindingId: string;
+    source: string;
+  }>;
 };
 
-const savedEnv = { ...process.env };
-const tmpDirs: string[] = [];
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+const tempDirs: string[] = [];
 
-function makeTmp(prefix: string): string {
-  const d = mkdtempSync(join(tmpdir(), prefix));
-  tmpDirs.push(d);
-  return d;
+function makeTemp(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
 }
 
-beforeEach(() => {
-  delete process.env.CLAUDE_PROJECT_DIR;
-});
+function git(cwd: string, args: string[]): void {
+  execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
+}
+
+function createRepo(prefix: string, projectId = PROJECT_ID): string {
+  const repo = makeTemp(prefix);
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "hook-runtime@fabric.local"]);
+  git(repo, ["config", "user.name", "Hook Runtime Test"]);
+  mkdirSync(join(repo, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(repo, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ project_id: projectId }, null, 2)}\n`,
+  );
+  writeFileSync(join(repo, "README.md"), "fixture\n");
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "seed"]);
+  return repo;
+}
+
+function expectContextParity(input: ProjectContextResolverInput): void {
+  expect(runtime.createProjectContextResolver(input)).toEqual(createEsmContext(input));
+}
+
+function captureErrorCode(
+  resolver: (input: ProjectContextResolverInput) => unknown,
+  input: ProjectContextResolverInput,
+): string | undefined {
+  try {
+    resolver(input);
+    return undefined;
+  } catch (error: unknown) {
+    return error && typeof error === "object" && "code" in error
+      ? String((error as { code: unknown }).code)
+      : undefined;
+  }
+}
 
 afterEach(() => {
-  process.env = { ...savedEnv };
-  for (const d of tmpDirs.splice(0)) {
-    if (existsSync(d)) rmSync(d, { recursive: true, force: true });
+  for (const dir of tempDirs.splice(0).reverse()) {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
-describe("resolveProjectRoot — shared hook project-root resolver", () => {
-  it("returns CLAUDE_PROJECT_DIR verbatim when set, ignoring the filesystem walk", () => {
-    const base = makeTmp("pr-env-");
-    const sub = join(base, "packages", "cli", "src");
-    mkdirSync(sub, { recursive: true });
-    process.env.CLAUDE_PROJECT_DIR = "/explicit/project/root";
-    expect(resolveProjectRoot(sub)).toBe("/explicit/project/root");
+describe("shared ESM and generated hook CJS ProjectContext parity", () => {
+  it("matches every context field for explicit and client-root cases", () => {
+    const repo = createRepo("hook-runtime-golden-");
+    expectContextParity({ explicitRoot: repo });
+    expectContextParity({ roots: [repo] });
   });
 
-  it("walks up to the nearest .git ancestor from a deep subdirectory", () => {
-    const base = makeTmp("pr-git-");
-    mkdirSync(join(base, ".git"), { recursive: true });
-    const sub = join(base, "packages", "cli", "src", "commands");
-    mkdirSync(sub, { recursive: true });
-    expect(resolveProjectRoot(sub)).toBe(base);
+  it("matches identity inheritance in a real linked worktree", () => {
+    const repo = createRepo("hook-runtime-main-");
+    const linkedParent = makeTemp("hook-runtime-linked-");
+    const linked = join(linkedParent, "work");
+    git(repo, ["worktree", "add", "-b", "linked", linked]);
+
+    expectContextParity({ roots: [linked] });
+    const context = runtime.createProjectContextResolver({ roots: [linked] });
+    expect(context.workspaceRoot).not.toBe(context.identityRoot);
+    expect(context.projectId).toBe(PROJECT_ID);
+    expect(context.bindingId).toBe(PROJECT_ID);
+    expect(context.source).toBe("client-root");
   });
 
-  it("is stray-immune: a .fabric in an intermediate dir does NOT capture the walk — .git root wins", () => {
-    const base = makeTmp("pr-stray-");
-    mkdirSync(join(base, ".git"), { recursive: true });
-    const mid = join(base, "packages", "cli");
-    mkdirSync(join(mid, ".fabric"), { recursive: true }); // stray telemetry dir
-    const sub = join(mid, "src", "commands");
-    mkdirSync(sub, { recursive: true });
-    expect(resolveProjectRoot(sub)).toBe(base);
+  it("matches an explicit worktree binding override", () => {
+    const repo = createRepo("hook-runtime-isolated-main-");
+    const linkedParent = makeTemp("hook-runtime-isolated-linked-");
+    const linked = join(linkedParent, "work");
+    git(repo, ["worktree", "add", "-b", "isolated", linked]);
+    writeFileSync(
+      join(linked, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ project_id: PROJECT_ID, workspace_binding_id: "isolated-hook" })}\n`,
+    );
+
+    expectContextParity({ roots: [linked] });
+    expect(runtime.createProjectContextResolver({ roots: [linked] }).bindingId).toBe(
+      "isolated-hook",
+    );
   });
 
-  it("falls back to the nearest .fabric anchor when no .git exists anywhere up the chain", () => {
-    const base = makeTmp("pr-nogit-");
-    const proj = join(base, "proj");
-    mkdirSync(join(proj, ".fabric"), { recursive: true });
-    const sub = join(proj, "sub", "deep");
-    mkdirSync(sub, { recursive: true });
-    expect(resolveProjectRoot(sub)).toBe(proj);
-  });
-
-  it("returns the start cwd unchanged when no .git or .fabric marker is found", () => {
-    const bare = makeTmp("pr-bare-");
-    expect(resolveProjectRoot(bare)).toBe(bare);
-  });
-
-  it("defaults to process.cwd() when called with no argument", () => {
-    delete process.env.CLAUDE_PROJECT_DIR;
-    // process.cwd() is inside this git repo, so the resolver climbs to a .git root.
-    const got = resolveProjectRoot();
-    expect(typeof got).toBe("string");
-    expect(existsSync(join(got, ".git")) || got === process.cwd()).toBe(true);
+  it.each([
+    ["unresolved", () => ({ cwd: makeTemp("hook-runtime-rootless-") })],
+    [
+      "ambiguous",
+      () => ({
+        roots: [
+          createRepo("hook-runtime-first-", "first-project"),
+          createRepo("hook-runtime-second-", "second-project"),
+        ],
+      }),
+    ],
+  ])("matches the typed %s error code", (_name, makeInput) => {
+    const input = makeInput() as ProjectContextResolverInput;
+    expect(captureErrorCode(runtime.createProjectContextResolver, input)).toBe(
+      captureErrorCode(createEsmContext, input),
+    );
   });
 });
