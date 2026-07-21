@@ -322,21 +322,27 @@ export function readEmbedConfig(projectRoot: string): EmbedConfig {
       intGuard(0, 49),
     );
 
-    // v2.1 ③: pin the embedding model. An unknown / non-string value at any layer
-    // falls through to the light Chinese default rather than fastembed's English
-    // baseline. Store-layer participates so a team can standardize the model.
+    // Remote transport — MACHINE layer only (env ?? ~/.fabric global). The store
+    // config is NEVER read for endpoint/key (KT-DEC-0063 secrets stay machine-local).
+    // Resolved BEFORE model so remote mode can relax the model guard.
+    const remoteEndpoint = resolveMachineSecret("FABRIC_EMBED_ENDPOINT", "embed_endpoint");
+    const remoteApiKey = resolveMachineSecret("FABRIC_EMBED_API_KEY", "embed_api_key");
+
+    // v2.1 ③: pin the embedding model. Remote APIs have their own model namespace
+    // (e.g. "BAAI/bge-m3"), so when a remote endpoint is configured accept any
+    // non-empty string; without remote, validate against the local fastembed enum.
+    // Machine layer (env ?? global config) is included so a workstation-wide remote
+    // model can be set in ~/.fabric once rather than per-project.
+    const guard = remoteEndpoint !== undefined
+      ? (v: unknown): string | undefined => (typeof v === "string" && v.trim() !== "" ? v : undefined)
+      : modelGuard;
     const model = resolveLayered(
-      envRaw("FABRIC_EMBED_MODEL"),
+      resolveMachineSecret("FABRIC_EMBED_MODEL", "embed_model"),
       proj.embed_model,
       store.embed_model,
       DEFAULT_EMBED_MODEL,
-      modelGuard,
+      guard,
     );
-
-    // Remote transport — MACHINE layer only (env ?? ~/.fabric global). The store
-    // config is NEVER read for endpoint/key (KT-DEC-0063 secrets stay machine-local).
-    const remoteEndpoint = resolveMachineSecret("FABRIC_EMBED_ENDPOINT", "embed_endpoint");
-    const remoteApiKey = resolveMachineSecret("FABRIC_EMBED_API_KEY", "embed_api_key");
 
     return {
       enabled,
