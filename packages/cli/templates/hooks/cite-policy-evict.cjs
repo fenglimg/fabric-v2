@@ -29,7 +29,7 @@
  *     (KT-DEC-0007): Claude Code receives it as a PreToolUse additionalContext
  *     envelope on stdout; Codex as stderr. The edit always proceeds.
  *
- * Config (.fabric/fabric-config.json):
+ * Config (.fabric/fabric-config.json, with ~/.fabric/fabric-global.json fallback):
  *   - `cite_recall_nudge` (boolean, default true) — master switch. Set false to
  *     silence the nudge entirely (mirrors the cite_evict_interval=0 opt-out
  *     convention of the rc.34 hook this replaces).
@@ -58,7 +58,12 @@ const { isAbsolute, join, relative } = require("node:path");
 
 // Shared config read + client-aware emit (Claude Code stdout envelope vs
 // Codex stderr). The installer copies every lib/*.cjs alongside the hook.
-const { readConfigNumber } = require("./lib/config-cache.cjs");
+const {
+  readConfig,
+  readGlobalConfig,
+  readConfigNumber,
+  readConfigBoolean,
+} = require("./lib/config-cache.cjs");
 const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
 const eventReader = require("./lib/event-reader.cjs");
 const { resolveProjectRoot } = require("./lib/project-root.cjs");
@@ -80,25 +85,18 @@ const DEFAULT_CITE_RECALL_WINDOW_MINUTES = 30;
 // -----------------------------------------------------------------------------
 
 /**
- * Read `.fabric/fabric-config.json#cite_recall_nudge`. Default true (ON).
+ * Read `cite_recall_nudge` from project config, then machine-global config.
+ * Default true (ON).
  * Any failure path (missing file, parse error, non-boolean) → default.
  */
 function readNudgeEnabled(cwd) {
-  try {
-    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
-    if (parsed && typeof parsed === "object" && typeof parsed.cite_recall_nudge === "boolean") {
-      return parsed.cite_recall_nudge;
-    }
-  } catch {
-    // fall through to default
-  }
-  return true;
+  return readConfigBoolean(cwd, "cite_recall_nudge", true, { globalFallback: true });
 }
 
 /**
  * TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): unified per-signal
  * opt-out. Returns true when "cite-evict" is listed in
- * `.fabric/fabric-config.json#hint_dismiss_signals` — the same enum that
+ * project/global `hint_dismiss_signals` — the same enum that
  * silences the Stop (archive) and SessionStart (review/import/maintenance)
  * surfaces. This is a SECOND opt-out lever alongside the pre-existing
  * `cite_recall_nudge:false` boolean (both silence this hook); listing the key
@@ -106,25 +104,23 @@ function readNudgeEnabled(cwd) {
  * read/parse failure → not dismissed (never-block).
  */
 function readCiteEvictDismissed(cwd) {
-  try {
-    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.hint_dismiss_signals)) {
-      return parsed.hint_dismiss_signals.includes("cite-evict");
-    }
-  } catch {
-    // never-block
-  }
+  const projectSignals = readConfig(cwd).hint_dismiss_signals;
+  if (Array.isArray(projectSignals)) return projectSignals.includes("cite-evict");
+  const globalSignals = readGlobalConfig().hint_dismiss_signals;
+  if (Array.isArray(globalSignals)) return globalSignals.includes("cite-evict");
   return false;
 }
 
 /**
- * Read `.fabric/fabric-config.json#cite_recall_window_minutes`. Default 30,
- * floor 0 (0 = unbounded). Reuses the shared defensive numeric reader.
+ * Read `cite_recall_window_minutes` from project config, then machine-global
+ * config. Default 30, floor 0 (0 = unbounded). Reuses the shared defensive
+ * numeric reader.
  */
 function readWindowMinutes(cwd) {
   return readConfigNumber(cwd, "cite_recall_window_minutes", DEFAULT_CITE_RECALL_WINDOW_MINUTES, {
     min: 0,
     integer: true,
+    globalFallback: true,
   });
 }
 

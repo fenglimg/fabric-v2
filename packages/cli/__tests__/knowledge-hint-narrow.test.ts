@@ -118,8 +118,16 @@ type HookModule = {
 const hook = require(hookPath) as HookModule;
 
 const tempRoots: string[] = [];
+let originalFabricHome: string | undefined;
+
+beforeEach(() => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = mkRoot("narrow-global-home");
+});
 
 afterEach(() => {
+  if (originalFabricHome === undefined) delete process.env.FABRIC_HOME;
+  else process.env.FABRIC_HOME = originalFabricHome;
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }

@@ -31,10 +31,7 @@
  * behavior), nor block the hook.
  */
 
-const { readConfig } = require("./config-cache.cjs");
-const { readFileSync } = require("node:fs");
-const { homedir } = require("node:os");
-const { join: pathJoin } = require("node:path");
+const { readConfig, readGlobalConfig } = require("./config-cache.cjs");
 
 const NUDGE_MODES = ["silent", "minimal", "normal", "verbose"];
 // G2 (GRL-STOPHOOK-AIONLY-20260709) boundary decision:
@@ -78,13 +75,9 @@ function readNudgeMode(projectRoot) {
   } catch {
     // fall through
   }
-  // Layer 3: global config at ~/.fabric/fabric-global.json. Read raw (no cache
-  // for now — cheap, rarely hit hot path). Never-throw on any I/O or JSON error.
+  // Layer 3: shared machine-global config reader.
   try {
-    const globalPath = pathJoin(homedir(), ".fabric", "fabric-global.json");
-    const raw = readFileSync(globalPath, "utf8");
-    const parsed = JSON.parse(raw);
-    const globalMode = parsed && parsed.nudge_mode;
+    const globalMode = readGlobalConfig().nudge_mode;
     if (typeof globalMode === "string" && NUDGE_MODES.includes(globalMode)) {
       return globalMode;
     }

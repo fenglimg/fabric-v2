@@ -7,78 +7,69 @@ const DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS = 5;
 const DEFAULT_HINT_NARROW_COOLDOWN_HOURS = 0;
 const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 const DEFAULT_SUMMARY_MAX_LEN = 80;
-const { existsSync, readFileSync } = require("node:fs");
-const { join } = require("node:path");
+const {
+  readConfig,
+  readGlobalConfig,
+  readConfigNumber,
+  readConfigBoolean,
+} = require("./config-cache.cjs");
 
 function _readNarrowConfigValue(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return null;
-  try {
-    return JSON.parse(readFileSync(configPath, "utf8"));
-  } catch {
-    return null;
-  }
+  const parsed = readConfig(projectRoot);
+  return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
 function readNarrowTopK(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_narrow_top_k;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 20) {
-      return Math.floor(v);
-    }
-  }
-  return DEFAULT_HINT_NARROW_TOP_K;
+  return readConfigNumber(projectRoot, "hint_narrow_top_k", DEFAULT_HINT_NARROW_TOP_K, {
+    min: 1,
+    max: 20,
+    floor: true,
+    globalFallback: true,
+  });
 }
 
 function readNarrowDedupWindowTurns(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_narrow_dedup_window_turns;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 50) {
-      return Math.floor(v);
-    }
-  }
-  return DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS;
+  return readConfigNumber(
+    projectRoot,
+    "hint_narrow_dedup_window_turns",
+    DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS,
+    { min: 1, max: 50, floor: true, globalFallback: true },
+  );
 }
 
 function readNarrowCooldownHours(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_narrow_cooldown_hours;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 168) {
-      return v;
-    }
-  }
-  return DEFAULT_HINT_NARROW_COOLDOWN_HOURS;
+  return readConfigNumber(
+    projectRoot,
+    "hint_narrow_cooldown_hours",
+    DEFAULT_HINT_NARROW_COOLDOWN_HOURS,
+    { min: 0, max: 168, globalFallback: true },
+  );
 }
 
 function readNarrowDismissed(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object" && Array.isArray(parsed.hint_dismiss_signals)) {
-    return parsed.hint_dismiss_signals.includes("narrow");
-  }
+  const projectSignals = readConfig(projectRoot).hint_dismiss_signals;
+  if (Array.isArray(projectSignals)) return projectSignals.includes("narrow");
+  const globalSignals = readGlobalConfig().hint_dismiss_signals;
+  if (Array.isArray(globalSignals)) return globalSignals.includes("narrow");
   return false;
 }
 
 function readReminderToContext(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_reminder_to_context;
-    if (typeof v === "boolean") return v;
-  }
-  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+  return readConfigBoolean(
+    projectRoot,
+    "hint_reminder_to_context",
+    DEFAULT_HINT_REMINDER_TO_CONTEXT,
+    { globalFallback: true },
+  );
 }
 
 function readSummaryMaxLen(projectRoot) {
-  const parsed = _readNarrowConfigValue(projectRoot);
-  if (parsed && typeof parsed === "object") {
-    const v = parsed.hint_summary_max_len;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
-      return Math.floor(v);
-    }
-  }
-  return DEFAULT_SUMMARY_MAX_LEN;
+  return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
+    min: 40,
+    max: 240,
+    floor: true,
+    globalFallback: true,
+  });
 }
 
 module.exports = {
