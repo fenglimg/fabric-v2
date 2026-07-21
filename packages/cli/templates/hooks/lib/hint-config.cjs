@@ -1,6 +1,7 @@
 // ISS-20260713-040: threshold readers + documented defaults for fabric-hint.
 const { existsSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
+const { readGlobalConfig } = require("./config-cache.cjs");
 
 const FABRIC_DIR = ".fabric";
 const CONFIG_FILE = "fabric-config.json";
@@ -37,14 +38,17 @@ try {
 
 function _readConfigNumber(projectRoot, fieldName, defaultValue) {
   const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return defaultValue;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed[fieldName];
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
+  if (existsSync(configPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+      const v = parsed && parsed[fieldName];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+    } catch {
+      // fall through to global
+    }
   }
+  const gv = readGlobalConfig()[fieldName];
+  if (typeof gv === "number" && Number.isFinite(gv) && gv > 0) return gv;
   return defaultValue;
 }
 
@@ -97,23 +101,11 @@ function readArchiveBacklogIdleHours(projectRoot) {
 }
 
 function readCooldownHours(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_COOLDOWN_HOURS;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.archive_hint_cooldown_hours;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_COOLDOWN_HOURS;
+  return _readConfigNumber(projectRoot, "archive_hint_cooldown_hours", DEFAULT_COOLDOWN_HOURS);
 }
 
 function readUnderseedThreshold(projectRoot) {
-  // config-layering W3 (TASK-004): env > project > store > default (project wins
-  // over store, C-004). The store layer is read via the single-owner
-  // store-config-reader.cjs (NO copied inline body — SSOT); optional require so an
-  // old install lacking the lib degrades to the pre-store project > default path.
+  // config-layering: env > project > global > store > default
   let storeConfigReader = null;
   try {
     storeConfigReader = require("./store-config-reader.cjs");
@@ -124,7 +116,6 @@ function readUnderseedThreshold(projectRoot) {
     const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
     if (typeof envVal === "number") return envVal;
   }
-  // Project layer.
   const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
   if (existsSync(configPath)) {
     try {
@@ -132,10 +123,11 @@ function readUnderseedThreshold(projectRoot) {
       const v = parsed && parsed.underseed_node_threshold;
       if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
     } catch {
-      // fall through to store / default
+      // fall through
     }
   }
-  // Store layer (single owner).
+  const gv = readGlobalConfig().underseed_node_threshold;
+  if (typeof gv === "number" && Number.isFinite(gv) && gv > 0) return gv;
   if (storeConfigReader !== null) {
     const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
     const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
@@ -147,15 +139,7 @@ function readUnderseedThreshold(projectRoot) {
 }
 
 function readArchiveEditThreshold(projectRoot) {
-  if (!existsSync(join(projectRoot, FABRIC_DIR, CONFIG_FILE))) return DEFAULT_ARCHIVE_EDIT_THRESHOLD;
-  try {
-    const parsed = JSON.parse(readFileSync(join(projectRoot, FABRIC_DIR, CONFIG_FILE), "utf8"));
-    const v = parsed && parsed.archive_edit_threshold;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through
-  }
-  return DEFAULT_ARCHIVE_EDIT_THRESHOLD;
+  return _readConfigNumber(projectRoot, "archive_edit_threshold", DEFAULT_ARCHIVE_EDIT_THRESHOLD);
 }
 
 module.exports = {
