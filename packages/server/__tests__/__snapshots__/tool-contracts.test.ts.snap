@@ -245,7 +245,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "type": "array",
       },
       "tech_stack": {
-        "description": "Tech stack / languages / frameworks the rule applies to (e.g. ['typescript', 'cocos-creator', 'nodejs']). Inferred from recent_paths file extensions and manifest files. Optional — omit when the rule is stack-agnostic.",
+        "description": "DEPRECATED (v-next grill D2): new writes merge tech_stack values into tags. Field retained for backward-compatible parsing of existing entries. Was: tech stack / languages / frameworks the rule applies to.",
         "items": {
           "type": "string",
         },

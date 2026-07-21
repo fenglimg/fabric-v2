@@ -254,6 +254,12 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_body_altitude_dump.message.plural": "{count} 条 dump 形态知识正文(例如 {detail})",
   "doctor.check.knowledge_body_altitude_dump.remediation": "改写成可复用的 decision/pitfall/guideline altitude(带 ## 结构),不要贴 session 流水;经 fabric-archive / fab_propose 重归档",
   "doctor.check.knowledge_body_altitude_dump.scan_error": "正文 altitude 扫描失败({detail});doctor 无法确认语料干净。",
+  "doctor.check.knowledge_body_dedup.name": "知识正文去重(v-next)",
+  "doctor.check.knowledge_body_dedup.ok": "未发现旧格式正文段落或废弃 frontmatter(## Summary / ## Evidence / ## Why proposed / ## Session context / tech_stack 均已清理)。",
+  "doctor.check.knowledge_body_dedup.message.singular": "1 条条目含旧格式正文段落或废弃 frontmatter: {detail}",
+  "doctor.check.knowledge_body_dedup.message.plural": "{count} 条条目含旧格式正文段落或废弃 frontmatter(例如 {detail})",
+  "doctor.check.knowledge_body_dedup.remediation": "运行 `fabric doctor --fix` 去除冗余正文段落、将 ## Session context 重命名为 ## Context、并将 tech_stack 合并到 tags。",
+  "doctor.check.knowledge_body_dedup.scan_error": "正文去重扫描失败({detail});doctor 无法确认语料干净。",
   "doctor.fix-plan.header": "知识侧变更计划(共 {count} 项)",
   "doctor.fix-plan.preview": "预览:",
   "doctor.fix-plan.more": "... 还有 {count} 项",
@@ -399,7 +405,7 @@ export const zhCNMessages: Messages = {
     "--layer 取值无效: {input}。预期 team / personal / all。",
   // rc.23 TASK-007 (a-C2): --enrich-descriptions 回填四个 description 字段。
   "cli.doctor.args.enrich-descriptions.description":
-    "回填正式知识条目缺失的 intent_clues / tech_stack / impact / must_read_if 字段（默认只读;搭配 --auto 写入 stub）。",
+    "回填正式知识条目缺失的 intent_clues / impact / must_read_if 字段（默认只读;搭配 --auto 写入 stub）。",
   "cli.doctor.args.auto.description":
     "与 --enrich-descriptions 搭配：为缺失字段写入确定性 stub 值。不加 --auto 仅做只读扫描。",
   "cli.doctor.args.dry-run.description":
@@ -412,7 +418,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
   "doctor.enrich.allComplete":
-    "所有正式知识条目均已包含 intent_clues / tech_stack / impact / must_read_if。",
+    "所有正式知识条目均已包含 intent_clues / impact / must_read_if。",
   // rc.26 TASK-02a: doctor foundation-batch check messages.
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap 快照漂移",
   "doctor.check.bootstrap_snapshot_drift.message.drift":

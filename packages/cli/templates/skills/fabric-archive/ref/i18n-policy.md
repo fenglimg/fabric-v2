@@ -45,7 +45,7 @@ Rendering rule:
 
 Protected tokens (`fab_propose`, `relevance_scope`,
 `relevance_paths`, `narrow`, `broad`, `source_sessions`, `proposed_reason`,
-`session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
+`session_context`, `intent_clues`, `impact`, `must_read_if`,
 `pending_path`, `layer`, `team`, `personal`,
 `knowledge_scope_degraded`, `MUST`, `NEVER`, `knowledge/pending`, the verbatim
 `强 team` / `强 personal` / `默认 team` heuristic block, etc.) are NEVER

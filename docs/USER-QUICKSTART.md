@@ -150,7 +150,7 @@ Global CLI must be upgraded for new commands such as `first-hit` — see [`docs/
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `fabric doctor` shows a JSON dump | Outdated global CLI (rc.30 against rc.31+ project schema) | `npm install -g @fenglimg/fabric-cli@latest` + re-run `fabric install` |
-| AI ignores hint output like `KT-PIT-0001 · KT-PIT-0001` | Opaque summaries (description.summary == stable_id) | Run `/fabric-review` skill OR wait for the rc.35 hint-renderer fallback to extract `## Summary` automatically |
+| AI ignores hint output like `KT-PIT-0001 · KT-PIT-0001` | Opaque summaries (description.summary == stable_id) | Run `/fabric-review` skill OR wait for the rc.35 hint-renderer fallback to extract frontmatter `summary` automatically |
 | `fabric-archive` skill never fires | Hooks not wired in `.claude/settings.json` | `fabric install` re-injects hooks idempotently |
 | AI never writes `KB:` cite lines | Cite policy text not in your AGENTS.md managed block | `fabric install` re-syncs the cite policy block |
 | SKILL.md feels too long to read | It is — designed as a phase navigator, not a manual | Skim Hard Rules + the phase you're currently in; ref files have details |

@@ -9,7 +9,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 1. Call `fab_pending` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
 3. Before presenting, perform **Semantic Check + Activation Check** (see `ref/semantic-check.md`) by issuing one or more `fab_pending action="search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries, then judge whether the pending entry changes next action.
-4. For each pending item, render a per-item block. v2.0.0-rc.7 T6: render `proposed_reason` (frontmatter) + `## Why proposed` line (body, 1-line enum explanation) + first line of `## Session context` so future-self has full context without re-reading the transcript. UX i18n Policy class 1 — roll-up templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`, `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
+4. For each pending item, render a per-item block. Render `proposed_reason` (frontmatter) with its display-time description from `PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE` enum (v-next grill D8) + first line of `## Context` so future-self has full context without re-reading the transcript. UX i18n Policy class 1 — roll-up templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`, `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
 
    **en variant** (`fabric_language === "en"`):
 
@@ -22,7 +22,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    intent_clues: [hook parity, client stdout JSON, NOT UI copy]
    impact: avoids split client hooks drifting silently
    Proposed reason: decision-confirmation — ≥2 alternatives weighed; rationale stated.
-   Session context: Session goal: ship Stop-hook for v2 release.
+   Context: Session goal: ship Stop-hook for v2 release.
    ⚠ Possible duplicate of KT-D-0007 (LLM subjective dup/subsumption judgement; thresholds intentionally not quantified)
    ⚠ reached-but-inert if summary/triage fields do not change next action
    ```
@@ -38,15 +38,15 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    intent_clues: [hook parity, client stdout JSON, NOT UI copy]
    impact: avoids split client hooks drifting silently
    Proposed reason: decision-confirmation — ≥2 候选方案经权衡后确认选型。
-   Session context: Session goal: ship Stop-hook for v2 release.
+   Context: Session goal: ship Stop-hook for v2 release.
    ⚠ 可能重复 KT-D-0007 (LLM 主观判断 dup/subsumption；具体阈值不可量化)
    ⚠ reached-but-inert: 摘要 / triage 字段若不能改变下一步动作,先走 modify-content
    ```
 
-   The Skill MUST read `proposed_reason` from the pending file's frontmatter (parse the YAML block, key `proposed_reason`) and the `## Why proposed` line / first non-blank line of `## Session context` from the body. If either is missing on a pre-rc.7 pending entry, render the legacy fallback (UX i18n Policy class 1):
+   The Skill MUST read `proposed_reason` from the pending file's frontmatter (parse the YAML block, key `proposed_reason`) and render its display-time description from `PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE` enum (v-next grill D8 — body `## Why proposed` is removed; the enum is the single source for reason descriptions). Read the first non-blank line of `## Context` (renamed from `## Session context`) from the body. If either is missing on a pre-rc.7 pending entry, render the legacy fallback (UX i18n Policy class 1):
 
-   - en: `Proposed reason: <legacy entry, no reason recorded>` and `Session context: <not recorded>`
-   - zh-CN: `Proposed reason: <历史条目，未记录 reason>` 与 `Session context: <未记录>`
+   - en: `Proposed reason: <legacy entry, no reason recorded>` and `Context: <not recorded>`
+   - zh-CN: `Proposed reason: <历史条目，未记录 reason>` 与 `Context: <未记录>`
 
    …so the reviewer can still proceed.
 

@@ -92,7 +92,7 @@ mcp__fabric__fab_propose({
   session_context: "Imported from git log analysis. Origin: commit <sha7> (<subject 30 chars>). No live session — see commit body for full context.",
   // rc.23 TASK-006 four OPTIONAL triage fields — populate from commit body when clean, omit otherwise.
   intent_clues: ["<inferred trigger if commit body suggests one>"],
-  tech_stack: ["<lang/framework from recent_paths extensions>"],
+  tags: ["<lang/framework from recent_paths extensions>"],
   impact: ["<consequence stated in commit body / doc>"],
   must_read_if: "<one-line strongest trigger from commit's touched-path family>"
 })

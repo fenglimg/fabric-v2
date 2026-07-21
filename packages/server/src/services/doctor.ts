@@ -109,6 +109,7 @@ import {
 } from "./cross-store-recall.js";
 import { lintStoreScopes } from "./doctor-scope-lint.js";
 import { inspectBodyAltitude } from "./doctor-body-altitude.js";
+import { inspectBodyDedup, fixBodyDedup } from "./doctor-body-dedup.js";
 // v2.3.0-rc.11: stray_fabric_dir_detected — walker + rescue-rename fix arm for
 // residue `.fabric/` dirs left by pre-rc.10 hooks / pre-rc.11 server-side
 // resolveProjectRoot when a subprocess cwd landed in a subdirectory.
@@ -461,6 +462,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // ISS-20260711-221: wire body_read misfire into main doctor report.
   const bodyReadMisfire = await runDoctorBodyReadMisfireCheck(projectRoot);
   const bodyAltitude = await inspectBodyAltitude(projectRoot);
+  const bodyDedup = await inspectBodyDedup(projectRoot);
   const hookCacheWritability = await inspectHookCacheWritability(projectRoot);
   // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Read-side only —
   // mutation (unlink + ledger event) is owned by runDoctorFix. Re-uses the
@@ -544,6 +546,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     driftUnconsumed,
     bodyReadMisfire,
     bodyAltitude,
+    bodyDedup,
     storeCounterDrift,
     storeOrphans,
     projectRegistryDrift,
@@ -852,6 +855,15 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.warnings.some((issue) => issue.code === "promote_ledger_invariant_violated")) {
     ledgerWarnings.push(...await fixPromoteLedgerInvariant(projectRoot));
     fixed.push(findIssue(before.warnings, "promote_ledger_invariant_violated"));
+  }
+
+  // v-next grill D5/D7: strip legacy body sections (## Summary / ## Evidence /
+  // ## Why proposed) and rename ## Session context → ## Context.
+  if (before.fixable_errors.some((issue) => issue.code === "knowledge_body_dedup")) {
+    const result = await fixBodyDedup(projectRoot);
+    if (result.fixed > 0) {
+      fixed.push(findIssue(before.fixable_errors, "knowledge_body_dedup"));
+    }
   }
 
   // v2.2 store cutover: draft auto-promote is disabled until it can operate

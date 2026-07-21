@@ -41,6 +41,8 @@ import {
 import type { BodyReadMisfireReport } from "./doctor-body-read-misfire.js";
 import type { BodyAltitudeInspection } from "./doctor-body-altitude.js";
 import { createBodyAltitudeDumpCheck } from "./doctor-body-altitude.js";
+import type { BodyDedupInspection } from "./doctor-body-dedup.js";
+import { createBodyDedupCheck } from "./doctor-body-dedup.js";
 import {
   createBootstrapAnchorCheck,
   createL1BootstrapSnapshotDriftCheck,
@@ -172,6 +174,7 @@ export type DoctorCheckBuildContext = {
   knowledgeTagsEmpty: EmptyTagsInspection;
   bodyReadMisfire: BodyReadMisfireReport;
   bodyAltitude: BodyAltitudeInspection;
+  bodyDedup: BodyDedupInspection;
   driftUnconsumed: DriftUnconsumedInspection;
   storeCounterDrift: ReturnType<typeof inspectStoreCounters>;
   storeOrphans: ReturnType<typeof inspectStoreOrphans>;
@@ -234,6 +237,7 @@ export const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
   (ctx) => createKnowledgeTagsEmptyCheck(ctx.t, ctx.knowledgeTagsEmpty),
   (ctx) => createBodyReadMisfireCheck(ctx.t, ctx.bodyReadMisfire),
   (ctx) => createBodyAltitudeDumpCheck(ctx.t, ctx.bodyAltitude),
+  (ctx) => createBodyDedupCheck(ctx.t, ctx.bodyDedup),
   (ctx) => createDriftUnconsumedCheck(ctx.t, ctx.driftUnconsumed),
   (ctx) => createStoreCounterCheck(ctx.t, ctx.storeCounterDrift),
   (ctx) => createStoreOrphanCheck(ctx.t, ctx.storeOrphans),

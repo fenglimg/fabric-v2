@@ -284,7 +284,8 @@ describe("registerExtractKnowledge", () => {
       "utf8",
     );
     expect(body).toMatch(/^intent_clues: \["editing hooks\.ts"\]$/mu);
-    expect(body).toMatch(/^tech_stack: \["typescript"\]$/mu);
+    // v-next (grill D2): tech_stack merged into tags.
+    expect(body).not.toMatch(/^tech_stack:/mu);
     expect(body).toMatch(/^impact: \["protected-token drift"\]$/mu);
     expect(body).toMatch(/^must_read_if: "touching hooks\.ts"$/mu);
   });

@@ -53,6 +53,8 @@ const _ruleDescriptionSchema = z.object({
   // contract at the field level). So they are optional on the wire. plan-context
   // still returns them in full — zod keeps optional-present values, only ABSENT
   // is now allowed, so no plan-context consumer regresses.
+  // DEPRECATED (v-next grill D2): new writes merge tech_stack into tags.
+  // Field retained for backward-compatible parsing of existing entries.
   tech_stack: z.array(z.string()).optional(),
   impact: z.array(z.string()).optional(),
   // TASK-002 wire dedup: omitted when identical to `summary` (~40% of KB entries
@@ -868,7 +870,7 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      "Tech stack / languages / frameworks the rule applies to (e.g. ['typescript', 'cocos-creator', 'nodejs']). Inferred from recent_paths file extensions and manifest files. Optional — omit when the rule is stack-agnostic.",
+      "DEPRECATED (v-next grill D2): new writes merge tech_stack values into tags. Field retained for backward-compatible parsing of existing entries. Was: tech stack / languages / frameworks the rule applies to.",
     ),
   impact: z
     .array(z.string())
@@ -1865,7 +1867,9 @@ export const KnowledgeEntryFrontmatterSchema = z.object({
   maturity: MaturitySchema, // draft | verified | proven
   layer: LayerSchema, // personal | team
   created_at: z.string(), // ISO 8601 timestamp
-  // Note: 'tags' and other fields can be added later but core schema is these 6
+  // v-next grill D4: runtime already treats superseded_by as first-class
+  // (retire writes review-write-actions.ts:827, parse reads :180, doctor lint consumes).
+  superseded_by: z.string().optional(),
 });
 export type KnowledgeEntryFrontmatter = z.infer<typeof KnowledgeEntryFrontmatterSchema>;
 
