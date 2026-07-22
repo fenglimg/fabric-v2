@@ -189,30 +189,64 @@ function escapeHtml(value: string): string {
 // was injected. Also guards against double-injection.
 const SOURCE_TOGGLE_MARKER = "fabric-source-toggle";
 
-// The knowledge source toggle ("本项目 / 全部") is injected SERVER-SIDE into every
-// style variant rather than authored into each of the 7 bespoke templates:
+// A fixed control bar is injected SERVER-SIDE into every style variant rather
+// than authored into each of the 7 bespoke templates:
 //   - ONE source of truth — new variants get it for free, no per-template churn;
-//   - keeps the variant HTML as pure STYLE artifacts (agy owns them) while this
-//     functional control (which drives /api/knowledge?all=) stays app logic.
-// It (a) wraps window.fetch so every /api/knowledge request carries the current
-// selection (persisted in sessionStorage, default = this-project read-set), and
-// (b) renders a fixed-position two-segment toggle that flips the flag and calls
-// the variant's global loadKnowledge() for an instant re-render. The wrapper is
-// injected into <head> so it is installed BEFORE the variant's body script fires
-// its first load — a prior "全部" selection survives a refresh.
+//   - keeps the variant HTML as pure STYLE artifacts (agy owns them) while these
+//     functional controls (source selection + all-view store labels + deprecated
+//     filter/mark) stay app logic.
+// It wraps window.fetch so every /api/knowledge response is (a) tagged with the
+// current source selection via ?all= (persisted in sessionStorage, default =
+// this-project read-set), then (b) TRANSFORMED in place before the variant sees
+// it — because all 7 variants group by `entry.scope` and render `entry.title`
+// but none of them know about `store`/`deprecated`, decorating the shared JSON
+// is the one layout-agnostic lever that reaches every template at once:
+//   - #3 (all view): when "全部" is active, prefix each title with `[<store>]` so
+//     which physical library an entry belongs to is visible per-row (scope
+//     grouping already separates each `project:<id>`, so "哪个项目" is covered;
+//     this fills the "哪个库" gap when multiple stores' team entries collapse).
+//   - #9 (deprecated): mark deprecated entries in the title ("已弃用 · …") and,
+//     when the user toggles the filter on, drop them from the list. Default is
+//     SHOW+mark, honoring deprecate-over-delete discoverability (KT-DEC-0055):
+//     a retired entry's rationale stays reachable, just visibly flagged.
+// The wrapper is injected into <head> so it is installed BEFORE the variant's
+// body script fires its first load — a prior selection survives a refresh. The
+// /graph module is NOT injected (it renders its own view and dims deprecated
+// nodes itself), so this decoration never touches the graph's data.
 const SOURCE_TOGGLE_SNIPPET = `<script>(function(){
-  var KEY='fabricPreviewAllStores';
+  var KEY='fabricPreviewAllStores', DEPKEY='fabricPreviewHideDeprecated';
   function allOn(){try{return sessionStorage.getItem(KEY)==='1'}catch(e){return false}}
+  function hideDep(){try{return sessionStorage.getItem(DEPKEY)==='1'}catch(e){return false}}
   var _fetch=window.fetch.bind(window);
   window.fetch=function(input,init){
+    var isK=false;
     try{
       var url=(typeof input==='string')?input:(input&&input.url);
       if(url&&url.indexOf('/api/knowledge')===0){
+        isK=true;
         var u=url+(url.indexOf('?')===-1?'?':'&')+'all='+(allOn()?'1':'0');
         input=(typeof input==='string')?u:new Request(u,input);
       }
     }catch(e){}
-    return _fetch(input,init);
+    var p=_fetch(input,init);
+    if(!isK)return p;
+    // Decorate the shared /api/knowledge payload in place: filter deprecated when
+    // hidden, then mark titles (store prefix in all-view, deprecated flag always).
+    // All 7 variants render entry.title, so this reaches every layout uniformly.
+    return p.then(function(r){
+      return r.json().then(function(d){
+        var list=(d&&d.entries)||[];
+        if(hideDep())list=list.filter(function(e){return !e.deprecated;});
+        var showAll=allOn();
+        list.forEach(function(e){
+          if(e.deprecated)e.title='已弃用 · '+(e.title||'');
+          if(showAll)e.title='['+(e.store||'?')+'] '+(e.title||'');
+        });
+        d.entries=list;
+        return new Response(JSON.stringify(d),{status:r.status,statusText:r.statusText,
+          headers:{'content-type':'application/json; charset=utf-8'}});
+      }).catch(function(){return r;});
+    });
   };
   // Variant scripts run inside an IIFE, so their loadKnowledge() is NOT a global
   // we can call. Re-fetch via a full reload: the fetch wrapper above is installed
@@ -239,13 +273,23 @@ const SOURCE_TOGGLE_SNIPPET = `<script>(function(){
       var active=(b.dataset.on==='1')===allOn();
       b.style.opacity=active?'1':'.6';b.style.background=active?'rgba(127,127,127,.3)':'transparent';
     })}
+    // Deprecated filter toggle: flips SHOW+mark ⇄ HIDE. Default (unset) = show, so
+    // retired entries stay discoverable per KT-DEC-0055; the list marks them and
+    // this lets a user hide the noise on demand.
+    var dep=document.createElement('button');dep.type='button';
+    dep.style.cssText='border:0;cursor:pointer;padding:6px 12px;border-radius:6px;color:inherit;background:transparent;'+
+      'transition:all .12s;margin-left:2px;border-left:1px solid rgba(127,127,127,.28)';
+    function paintDep(){var hidden=hideDep();dep.textContent=hidden?'弃用·隐藏':'弃用·显示';
+      dep.style.opacity=hidden?'1':'.6';dep.style.background=hidden?'rgba(127,127,127,.3)':'transparent';}
+    dep.onclick=function(){try{sessionStorage.setItem(DEPKEY,hideDep()?'0':'1')}catch(e){}paintDep();reload()};
     // Entry point to the relationship graph module; carries the current source
     // selection so the graph opens in the same scope the user is browsing.
     var graph=document.createElement('a');
     graph.textContent='⁙ 关联图';graph.href='/graph?all='+(allOn()?'1':'0');
     graph.style.cssText='display:flex;align-items:center;text-decoration:none;color:inherit;opacity:.72;'+
       'cursor:pointer;padding:6px 12px;border-radius:6px;margin-right:2px;border-right:1px solid rgba(127,127,127,.28)';
-    wrap.appendChild(graph);wrap.appendChild(proj);wrap.appendChild(all);paint();document.body.appendChild(wrap);
+    wrap.appendChild(graph);wrap.appendChild(proj);wrap.appendChild(all);wrap.appendChild(dep);
+    paint();paintDep();document.body.appendChild(wrap);
   }
   // #2/#6 truncation relief — template-agnostic. Any leaf element whose text is
   // clipped (scrollWidth > clientWidth: store name, semantic_scope chip, long
