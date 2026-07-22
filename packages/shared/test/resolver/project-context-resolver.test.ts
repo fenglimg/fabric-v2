@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -92,7 +92,12 @@ describe("createProjectContextResolver", () => {
       explicitRoot: selected,
       roots: [selected, other],
     });
-    expect(context.workspaceRoot).toBe(realpathSync(selected));
+    // Oracle via the resolver's own canonicalization (git toplevel), not
+    // realpathSync — the two diverge on Windows 8.3 short paths (RUNNER~1 vs
+    // runneradmin). This asserts the intent: explicit-pin selects `selected`
+    // over the ambiguous `other` without throwing.
+    const canonicalSelected = createProjectContextResolver({ roots: [selected] }).workspaceRoot;
+    expect(context.workspaceRoot).toBe(canonicalSelected);
     expect(context.source).toBe("explicit-pin");
   });
 
