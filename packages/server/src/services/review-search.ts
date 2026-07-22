@@ -236,9 +236,14 @@ export async function listIndexedSearchEntries(
 // — crucially — applies NO top_k and NO floor, so pending review never silently
 // drops a match (守 KT-DEC-0019 no-server-filter). Mirrors the prior search
 // haystack: title || summary || tags || filename (+ body when include_body).
+//
+// Multi-term (OR): `lowerQueries` is one-or-more already-lowercased terms. An
+// entry survives when ANY term hits ANY haystack — so a batch query is a UNION,
+// widening the candidate set rather than intersecting it. A single-element array
+// is byte-identical to the prior single-substring behavior.
 export function matchesTriageQuery(
   indexed: IndexedSearchEntry,
-  lowerQuery: string,
+  lowerQueries: readonly string[],
   includeBody: boolean,
 ): boolean {
   const haystacks = [
@@ -248,7 +253,7 @@ export function matchesTriageQuery(
     indexed.name,
     includeBody ? indexed.body : "",
   ].map((s) => s.toLowerCase());
-  return haystacks.some((h) => h.includes(lowerQuery));
+  return haystacks.some((h) => lowerQueries.some((q) => h.includes(q)));
 }
 
 // P1 recall-engine-refactor (TASK-005): pending/canonical → ranker item adapter.
@@ -290,10 +295,15 @@ export function pendingEntryToRankerItem(indexed: IndexedSearchEntry): RuleDescr
 // shared rankDescriptionItems('triage') orders the matches with no top_k/floor.
 export async function triageSearch(
   projectRoot: string,
-  query: string,
+  query: string | readonly string[],
   filters: ListFilters | undefined,
 ): Promise<SearchItem[]> {
-  const lowerQuery = query.toLowerCase();
+  // Normalize single/batch into an OR term list for the gate, and a joined
+  // string for the ranker's queryText (BM25/vector scores over the union of
+  // terms — the same corpus signal a single-string query produced).
+  const terms = (typeof query === "string" ? [query] : query).filter((t) => t.length > 0);
+  const lowerQueries = terms.map((t) => t.toLowerCase());
+  const queryText = terms.join(" ");
   const includeBody = filters?.include_body === true;
 
   // v2.2 全砍 Stage 2 (B2 cutover): search scans pending + canonical (+ rejected
@@ -371,7 +381,7 @@ export async function triageSearch(
 
         // Substring relevance GATE (the "match" definition). Triage ranking
         // below adds NO further cut, so a gated match is never silently dropped.
-        if (!matchesTriageQuery(indexed, lowerQuery, includeBody)) continue;
+        if (!matchesTriageQuery(indexed, lowerQueries, includeBody)) continue;
 
         const item = pendingEntryToRankerItem(indexed);
         matchedByKey.set(item.stable_id, { indexed, source, type });
@@ -396,7 +406,7 @@ export async function triageSearch(
     revision = "triage-search";
   }
   const scoringContext: ScoringContext = await buildScoringContext(projectRoot, revision, rankerItems, {
-    queryText: query,
+    queryText,
     targetPaths: [],
   });
   const ranked = rankDescriptionItems(rankerItems, scoringContext, "triage");

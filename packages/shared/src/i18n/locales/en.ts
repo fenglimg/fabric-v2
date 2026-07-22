@@ -59,6 +59,8 @@ export const enMessages: Messages = {
   "cli.preview.arg.open": "Open the browser on start (default on; use --no-open to disable).",
   "cli.preview.arg.target": "Override the project root (defaults to cwd).",
   "cli.preview.arg.variant": "Default style variant to open (default: lumen; all styles at /gallery).",
+  "cli.preview.arg.all": "Show knowledge from every mounted store (bypass this project's read-set; default shows only this project).",
+  "cli.preview.port-fallback": "Port {requested} was busy — using {actual} instead.",
   "cli.preview.gallery-hint": "All styles gallery: {url}",
   "cli.preview.started": "Knowledge preview started: {url}",
   "cli.preview.opening": "Opening browser…",

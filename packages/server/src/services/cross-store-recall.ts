@@ -235,13 +235,25 @@ function activeProjectOf(projectRoot: string): string | undefined {
 // for F7 body delivery in get_sections). Returns [] (never throws) when there
 // is no global config / no mounted store / a store walk fails — both callers are
 // on read paths that must degrade gracefully, never crash.
-async function resolveReadSetSnapshot(projectRoot: string): Promise<ReadSetSnapshot | null> {
+async function resolveReadSetSnapshot(
+  projectRoot: string,
+  opts: { allStores?: boolean } = {},
+): Promise<ReadSetSnapshot | null> {
   const resolveInput = buildStoreResolveInput(projectRoot);
   if (resolveInput === null) {
     return null;
   }
-  const readSet = createStoreResolver().resolveReadSet(resolveInput);
-  if (readSet.stores.length === 0) {
+  // Default: the project's resolved read-set (required_stores ∪ implicit
+  // personal), scope-filtered downstream — the surfacing/recall contract.
+  // allStores: EVERY machine-mounted store, bypassing the project read-set. This
+  // is the read-only `fabric preview --all` viewer surface ONLY; the hot recall
+  // path never sets it, so cross-project scope isolation (KT-MOD-0001) is intact
+  // for surfacing — a store is walked here purely to be DISPLAYED, never to be
+  // proactively surfaced into a session.
+  const storeEntries = opts.allStores
+    ? resolveInput.mountedStores.map((s) => ({ store_uuid: s.store_uuid, alias: s.alias }))
+    : createStoreResolver().resolveReadSet(resolveInput).stores;
+  if (storeEntries.length === 0) {
     return null;
   }
   // store_uuid → "personal" | "team" for layer tagging (the read-set entry does
@@ -250,7 +262,7 @@ async function resolveReadSetSnapshot(projectRoot: string): Promise<ReadSetSnaps
     resolveInput.mountedStores.filter((s) => s.personal).map((s) => s.store_uuid),
   );
   const globalRoot = resolveGlobalRoot();
-  const dirs: MountedStoreDir[] = readSet.stores.map((entry) => ({
+  const dirs: MountedStoreDir[] = storeEntries.map((entry) => ({
     store_uuid: entry.store_uuid,
     alias: entry.alias,
     dir: join(
@@ -284,6 +296,19 @@ async function walkReadSetStores(projectRoot: string): Promise<CrossStoreEntry[]
   const entries = await walkReadSetStoresUncached(snapshot);
   touchReadSetCache(key, { fingerprint, entries, lastAccessMs: Date.now() });
   return entries.slice();
+}
+
+// Walk EVERY machine-mounted store (not just the project read-set). Deliberately
+// UNcached: this is the low-frequency `fabric preview --all` viewer path, and
+// sharing the read-set walk cache (keyed by projectRoot) would let an all-stores
+// walk poison the hot recall path's cache. Returns [] (never throws) — same
+// degrade contract as walkReadSetStores.
+async function walkAllMountedStores(projectRoot: string): Promise<CrossStoreEntry[]> {
+  const snapshot = await resolveReadSetSnapshot(projectRoot, { allStores: true });
+  if (snapshot === null) {
+    return [];
+  }
+  return walkReadSetStoresUncached(snapshot);
 }
 
 
@@ -606,9 +631,15 @@ export interface StoreCanonicalEntry {
   description: NonNullable<ReturnType<typeof extractRuleDescription>>;
 }
 
-export async function collectStoreCanonicalEntries(projectRoot: string): Promise<StoreCanonicalEntry[]> {
+export async function collectStoreCanonicalEntries(
+  projectRoot: string,
+  opts: { allStores?: boolean } = {},
+): Promise<StoreCanonicalEntry[]> {
   const out: StoreCanonicalEntry[] = [];
-  for (const entry of await walkReadSetStores(projectRoot)) {
+  const walked = opts.allStores
+    ? await walkAllMountedStores(projectRoot)
+    : await walkReadSetStores(projectRoot);
+  for (const entry of walked) {
     if (entry.file.includes("/knowledge/pending/")) {
       continue; // curated corpus only — drafts are not canonical.
     }

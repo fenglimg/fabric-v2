@@ -228,6 +228,36 @@ describe("registerPending", () => {
     expect(result.content[0]!.text).toContain("Fabric pending: search");
   });
 
+  // P1 multi-keyword: an array query matches with OR semantics — one call now
+  // covers what used to take N single-term searches.
+  it("search accepts an array query and unions the matches (OR)", async () => {
+    const projectRoot = await makeProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    await seedPendingFile(projectRoot, "decisions", "alpha-target");
+    await seedPendingFile(projectRoot, "guidelines", "beta-target");
+
+    const { server, tool } = captureRegistration();
+    registerPending(server);
+    const t = tool();
+
+    // (a) both terms hit → both entries returned (union, not intersection).
+    const both = await t.handler({ action: "search", query: ["alpha-target", "beta-target"] });
+    const bothPaths = (both.structuredContent as { items: Array<{ path: string }> }).items.map(
+      (i) => i.path,
+    );
+    expect(bothPaths.some((p) => p.includes("alpha-target"))).toBe(true);
+    expect(bothPaths.some((p) => p.includes("beta-target"))).toBe(true);
+
+    // (b) one term matches, one is a miss → OR still surfaces the hit (proves the
+    // array is not treated as an AND / single literal phrase).
+    const orHit = await t.handler({ action: "search", query: ["alpha-target", "zzz-nomatch"] });
+    const orPaths = (orHit.structuredContent as { items: Array<{ path: string }> }).items.map(
+      (i) => i.path,
+    );
+    expect(orPaths.some((p) => p.includes("alpha-target"))).toBe(true);
+    expect(orPaths.some((p) => p.includes("beta-target"))).toBe(false);
+  });
+
   it("calls tracker.enter and tracker.exit around the handler invocation", async () => {
     const projectRoot = await makeProject();
     process.env.FABRIC_PROJECT_ROOT = projectRoot;

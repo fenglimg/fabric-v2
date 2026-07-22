@@ -230,10 +230,21 @@ export interface RunPreviewOptions {
   port?: number;
   target?: string;
   variant?: string;
+  // When true, `/api/knowledge` defaults to walking EVERY machine-mounted store
+  // (bypassing the project read-set) instead of only this project's read-set.
+  // Per request, `?all=1` / `?all=0` overrides this default without a restart.
+  allStores?: boolean;
 }
 
 export interface PreviewServerHandle {
   url: string;
+  // The port the server actually bound. Differs from the requested port when
+  // that port was in use and we fell back to an OS-assigned free port.
+  port: number;
+  // True when the requested port was busy (EADDRINUSE) and we auto-fell back to
+  // an ephemeral port — the caller can surface a note so the user isn't
+  // surprised the URL's port changed.
+  portWasBusy: boolean;
   close: () => Promise<void>;
 }
 
@@ -242,6 +253,7 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
   const host = options.host ?? LOOPBACK_HOST;
   const port = options.port ?? DEFAULT_PORT;
   const defaultVariant = options.variant ?? DEFAULT_VARIANT;
+  const defaultAllStores = options.allStores === true;
 
   const server = createServer((req, res) => {
     void (async () => {
@@ -287,7 +299,13 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           return;
         }
         if (pathname === "/api/knowledge") {
-          const entries = await collectStoreCanonicalEntries(projectRoot);
+          // Source selection: `?all=1` walks every mounted store, `?all=0` forces
+          // the project read-set, absent falls back to the server's default (the
+          // --all flag). Lets a future UI toggle switch source without a restart.
+          const allParam = new URL(req.url ?? "/", `http://${host}`).searchParams.get("all");
+          const allStores =
+            allParam === null ? defaultAllStores : allParam === "1" || allParam === "true";
+          const entries = await collectStoreCanonicalEntries(projectRoot, { allStores });
           sendJson(res, 200, { entries: entries.map(toPreviewEntry) });
           return;
         }
@@ -302,20 +320,39 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
     })();
   });
 
-  await new Promise<void>((resolveListen, rejectListen) => {
-    const onError = (error: Error): void => rejectListen(error);
-    server.once("error", onError);
-    // Loopback ONLY — never bind 0.0.0.0 (KT-DEC-0016 attack-surface boundary).
-    server.listen(port, host, () => {
-      server.off("error", onError);
-      resolveListen();
+  // Loopback ONLY — never bind 0.0.0.0 (KT-DEC-0016 attack-surface boundary).
+  const listenOn = (p: number): Promise<void> =>
+    new Promise<void>((resolveListen, rejectListen) => {
+      const onError = (error: Error): void => rejectListen(error);
+      server.once("error", onError);
+      server.listen(p, host, () => {
+        server.off("error", onError);
+        resolveListen();
+      });
     });
-  });
+
+  // Port auto-fallback: a busy port (EADDRINUSE — e.g. a second `fabric preview`,
+  // or the default 7777 already taken) must not crash the command. Retry once on
+  // an OS-assigned ephemeral port (listen 0); the printed URL reflects the real
+  // bound port. `port === 0` was already ephemeral, so nothing to fall back to.
+  let portWasBusy = false;
+  try {
+    await listenOn(port);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE" && port !== 0) {
+      portWasBusy = true;
+      await listenOn(0);
+    } else {
+      throw error;
+    }
+  }
 
   const address = server.address();
   const boundPort = typeof address === "object" && address !== null ? address.port : port;
   return {
     url: `http://${host}:${boundPort}/`,
+    port: boundPort,
+    portWasBusy,
     close: () => new Promise<void>((resolveClose) => server.close(() => resolveClose())),
   };
 }
@@ -347,8 +384,17 @@ export const previewCommand = defineCommand({
       type: "string",
       description: t("cli.preview.arg.variant"),
     },
+    all: {
+      type: "boolean",
+      description: t("cli.preview.arg.all"),
+      default: false,
+    },
   },
-  async run({ args }: { args: { port?: string; host?: string; open?: boolean; target?: string; variant?: string } }) {
+  async run({
+    args,
+  }: {
+    args: { port?: string; host?: string; open?: boolean; target?: string; variant?: string; all?: boolean };
+  }) {
     try {
       const port = args.port === undefined ? DEFAULT_PORT : Number.parseInt(args.port, 10);
       if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -359,9 +405,15 @@ export const previewCommand = defineCommand({
         port,
         target: typeof args.target === "string" ? args.target : undefined,
         variant: typeof args.variant === "string" && args.variant.length > 0 ? args.variant : undefined,
+        allStores: args.all === true,
       });
 
       process.stdout.write(`${paint.success("✓")} ${t("cli.preview.started", { url: paint.accent(handle.url) })}\n`);
+      if (handle.portWasBusy) {
+        process.stdout.write(
+          `${paint.muted(t("cli.preview.port-fallback", { requested: String(port), actual: String(handle.port) }))}\n`,
+        );
+      }
       process.stdout.write(`${paint.muted(t("cli.preview.gallery-hint", { url: `${handle.url}gallery` }))}\n`);
       if (args.open !== false) {
         process.stdout.write(`${paint.muted(t("cli.preview.opening"))}\n`);
