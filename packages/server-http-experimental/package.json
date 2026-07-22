@@ -1,6 +1,6 @@
 {
   "name": "@fenglimg/fabric-server-http-experimental",
-  "version": "2.5.0-rc.1",
+  "version": "2.5.0-rc.2",
   "private": true,
   "description": "Quarantined HTTP server + serve lock + bearer auth for Fabric v2.0.0. Reserved for future web UI restart. NOT built or tested by default; do not depend on this package from main.",
   "type": "module",
