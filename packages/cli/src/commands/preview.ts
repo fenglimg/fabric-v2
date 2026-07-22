@@ -162,6 +162,75 @@ function escapeHtml(value: string): string {
   });
 }
 
+// A stable marker so a test (and a human viewing source) can assert the toggle
+// was injected. Also guards against double-injection.
+const SOURCE_TOGGLE_MARKER = "fabric-source-toggle";
+
+// The knowledge source toggle ("本项目 / 全部") is injected SERVER-SIDE into every
+// style variant rather than authored into each of the 7 bespoke templates:
+//   - ONE source of truth — new variants get it for free, no per-template churn;
+//   - keeps the variant HTML as pure STYLE artifacts (agy owns them) while this
+//     functional control (which drives /api/knowledge?all=) stays app logic.
+// It (a) wraps window.fetch so every /api/knowledge request carries the current
+// selection (persisted in sessionStorage, default = this-project read-set), and
+// (b) renders a fixed-position two-segment toggle that flips the flag and calls
+// the variant's global loadKnowledge() for an instant re-render. The wrapper is
+// injected into <head> so it is installed BEFORE the variant's body script fires
+// its first load — a prior "全部" selection survives a refresh.
+const SOURCE_TOGGLE_SNIPPET = `<script>(function(){
+  var KEY='fabricPreviewAllStores';
+  function allOn(){try{return sessionStorage.getItem(KEY)==='1'}catch(e){return false}}
+  var _fetch=window.fetch.bind(window);
+  window.fetch=function(input,init){
+    try{
+      var url=(typeof input==='string')?input:(input&&input.url);
+      if(url&&url.indexOf('/api/knowledge')===0){
+        var u=url+(url.indexOf('?')===-1?'?':'&')+'all='+(allOn()?'1':'0');
+        input=(typeof input==='string')?u:new Request(u,input);
+      }
+    }catch(e){}
+    return _fetch(input,init);
+  };
+  // Variant scripts run inside an IIFE, so their loadKnowledge() is NOT a global
+  // we can call. Re-fetch via a full reload: the fetch wrapper above is installed
+  // in <head> BEFORE the variant's body script fires its first load, and the
+  // selection persists in sessionStorage — so the reloaded page renders the new
+  // source immediately.
+  function reload(){location.reload()}
+  function mount(){
+    if(document.getElementById('${SOURCE_TOGGLE_MARKER}'))return;
+    var wrap=document.createElement('div');
+    wrap.id='${SOURCE_TOGGLE_MARKER}';wrap.setAttribute('role','group');
+    wrap.style.cssText='position:fixed;right:14px;bottom:14px;z-index:99999;display:flex;'+
+      'font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;'+
+      'background:rgba(127,127,127,.14);border:1px solid rgba(127,127,127,.28);border-radius:9px;'+
+      'padding:3px;backdrop-filter:blur(6px);box-shadow:0 2px 10px rgba(0,0,0,.16)';
+    function seg(label,on){
+      var b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.on=on?'1':'0';
+      b.style.cssText='border:0;cursor:pointer;padding:6px 12px;border-radius:6px;color:inherit;background:transparent;transition:all .12s';
+      b.onclick=function(){try{sessionStorage.setItem(KEY,on?'1':'0')}catch(e){}paint();reload()};
+      return b;
+    }
+    var proj=seg('本项目',false),all=seg('全部',true);
+    function paint(){[proj,all].forEach(function(b){
+      var active=(b.dataset.on==='1')===allOn();
+      b.style.opacity=active?'1':'.6';b.style.background=active?'rgba(127,127,127,.3)':'transparent';
+    })}
+    wrap.appendChild(proj);wrap.appendChild(all);paint();document.body.appendChild(wrap);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
+})();</script>`;
+
+// Inject the toggle snippet just before </head> (so its fetch-wrapper installs
+// before the variant's body script runs). No </head> (or already injected) →
+// return unchanged, so a malformed template still serves.
+function injectSourceToggle(html: string): string {
+  if (html.includes(SOURCE_TOGGLE_MARKER)) return html;
+  const idx = html.toLowerCase().indexOf("</head>");
+  if (idx === -1) return html;
+  return html.slice(0, idx) + SOURCE_TOGGLE_SNIPPET + html.slice(idx);
+}
+
 function renderGallery(variants: VariantInfo[]): string {
   const cards =
     variants.length === 0
@@ -174,7 +243,7 @@ function renderGallery(variants: VariantInfo[]): string {
           <div class="meta"><span class="vname">${escapeHtml(v.title)}</span><span class="vdesc">${escapeHtml(v.desc)}</span></div>
           <a class="full" href="/v/${encodeURIComponent(v.name)}" target="_blank" rel="noopener">全屏打开 ↗</a>
         </div>
-        <div class="frame"><iframe src="/v/${encodeURIComponent(v.name)}" loading="lazy" title="${escapeHtml(v.title)}"></iframe></div>
+        <div class="frame"><iframe src="/v/${encodeURIComponent(v.name)}?embed=1" loading="lazy" title="${escapeHtml(v.title)}"></iframe></div>
       </section>`,
           )
           .join("");
@@ -262,15 +331,22 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           sendJson(res, 405, { error: "method not allowed" });
           return;
         }
-        const pathname = new URL(req.url ?? "/", `http://${host}`).pathname;
+        const reqUrl = new URL(req.url ?? "/", `http://${host}`);
+        const pathname = reqUrl.pathname;
+        // The gallery embeds each variant in an iframe as `?embed=1`; those inner
+        // frames suppress the source toggle (one toggle per mini-preview would be
+        // clutter, and each would only steer its own frame's data).
+        const isEmbed = reqUrl.searchParams.get("embed") === "1";
 
         if (pathname === "/" || pathname === "/index.html") {
           // Default landing = the chosen default variant; the full side-by-side
           // gallery lives at /gallery. Fall back to the gallery if the default
           // variant file is missing.
           const defaultFile = join(variantsDir(), `${defaultVariant}.html`);
+          // Inject the source toggle only into the variant view, never the
+          // gallery fallback (its iframes carry their own suppressed variants).
           const html = existsSync(defaultFile)
-            ? readFileSync(defaultFile, "utf8")
+            ? injectSourceToggle(readFileSync(defaultFile, "utf8"))
             : renderGallery(listVariants());
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
           res.end(html);
@@ -294,8 +370,9 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
             sendJson(res, 404, { error: `unknown variant: ${name}` });
             return;
           }
+          const variantHtml = readFileSync(file, "utf8");
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-          res.end(readFileSync(file, "utf8"));
+          res.end(isEmbed ? variantHtml : injectSourceToggle(variantHtml));
           return;
         }
         if (pathname === "/api/knowledge") {
