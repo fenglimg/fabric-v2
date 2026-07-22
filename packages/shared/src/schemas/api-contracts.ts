@@ -1169,6 +1169,17 @@ export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
 // write-only) fab_review tool — pure relocation, ZERO behavior change.
 // ---------------------------------------------------------------------------
 
+// A search query is EITHER a single substring OR a batch of substrings. The
+// batch form (string[]) matches with OR semantics — an entry survives the gate
+// when ANY term hits — so a caller that used to fire N sequential single-term
+// searches can now issue ONE call. A lone string keeps the exact prior behavior
+// (single-substring gate), so this is a pure widening: every existing caller is
+// unchanged.
+export const _fabPendingQuerySchema = z.union([
+  z.string().min(1),
+  z.array(z.string().min(1)).min(1),
+]);
+
 export const FabPendingInputSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("list"),
@@ -1176,7 +1187,7 @@ export const FabPendingInputSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("search"),
-    query: z.string().min(1),
+    query: _fabPendingQuerySchema,
     filters: _fabReviewFiltersSchema,
   }),
 ]);
@@ -1201,12 +1212,12 @@ export const FabPendingInputShape = {
   filters: _fabReviewFiltersSchema.describe(
     "Optional filters (type/layer/maturity/tags/created_after). Used by action=list and action=search.",
   ),
-  query: z
-    .string()
-    .min(1)
+  query: _fabPendingQuerySchema
     .optional()
     .describe(
-      "Substring query against title/summary/tags/path. Required (non-empty) when action=search.",
+      "Substring query against title/summary/tags/path. Required when action=search. " +
+        "Accepts a single string OR an array of strings; the array form matches with OR semantics " +
+        "(an entry survives when ANY term hits) so one call replaces N single-term searches.",
     ),
 } as const;
 

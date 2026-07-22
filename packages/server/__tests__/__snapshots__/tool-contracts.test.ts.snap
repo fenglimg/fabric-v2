@@ -416,8 +416,20 @@ exports[`tool contracts > fab-pending contract matches snapshot 1`] = `
             "$ref": "#/anyOf/0/properties/filters",
           },
           "query": {
-            "minLength": 1,
-            "type": "string",
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string",
+              },
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string",
+                },
+                "minItems": 1,
+                "type": "array",
+              },
+            ],
           },
         },
         "required": [
