@@ -44,7 +44,7 @@ export class ClaudeCodeDesktopWriter implements ClientConfigWriter {
       return;
     }
 
-    await writeJsonClientConfig(configPath, createServerEntry(serverPath, mcpRootPolicy));
+    await writeJsonClientConfig(configPath, createServerEntry(serverPath, mcpRootPolicy), this.clientKind);
   }
 
   async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {
@@ -77,7 +77,7 @@ export async function writeClaudeCodeAll(serverEntry: ServerEntry, workspaceRoot
       continue;
     }
 
-    await writeJsonClientConfig(configPath, serverEntry);
+    await writeJsonClientConfig(configPath, serverEntry, writer.clientKind);
   }
 }
 
