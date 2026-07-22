@@ -1,5 +1,54 @@
 import { z } from "zod";
 
+// ===========================================================================
+// ProjectContextResolver
+// ===========================================================================
+
+export const PROJECT_CONTEXT_SOURCES = ["explicit-pin", "client-root", "cwd"] as const;
+export type ProjectContextSource = (typeof PROJECT_CONTEXT_SOURCES)[number];
+
+export interface ProjectContext {
+  /** Active checkout used for workspace-local files and operation state. */
+  workspaceRoot: string;
+  /** Main Git worktree (or non-Git marker root) that owns project/store identity. */
+  identityRoot: string;
+  projectId: string;
+  /** Runtime state key; explicitly isolated or shared with projectId by default. */
+  bindingId: string;
+  source: ProjectContextSource;
+}
+
+export interface ProjectContextResolverInput {
+  /** Trusted operator override. When present it takes precedence over other roots. */
+  explicitRoot?: string;
+  /** Workspace roots supplied by the active client. */
+  roots?: readonly string[];
+  /** Process working directory used only when no stronger signal exists. */
+  cwd?: string;
+}
+
+export class ProjectContextUnresolvedError extends Error {
+  readonly code = "FABRIC_PROJECT_CONTEXT_UNRESOLVED";
+
+  constructor(readonly candidates: readonly string[]) {
+    super(
+      candidates.length === 0
+        ? "Fabric project context is unresolved: no workspace root was provided"
+        : `Fabric project context is unresolved for: ${candidates.join(", ")}`,
+    );
+    this.name = "ProjectContextUnresolvedError";
+  }
+}
+
+export class ProjectContextAmbiguousError extends Error {
+  readonly code = "FABRIC_PROJECT_CONTEXT_AMBIGUOUS";
+
+  constructor(readonly workspaceRoots: readonly string[]) {
+    super(`Fabric project context is ambiguous across roots: ${workspaceRoots.join(", ")}`);
+    this.name = "ProjectContextAmbiguousError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P0 — Resolver CONTRACTS (interfaces + golden-case meta-schemas).
 //

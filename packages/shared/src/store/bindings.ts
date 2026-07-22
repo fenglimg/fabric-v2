@@ -23,6 +23,7 @@ import {
 } from "../schemas/bindings-snapshot.js";
 import type { StoreReadSet, StoreResolveInput } from "../resolver/contracts.js";
 import { createStoreResolver } from "../resolver/store-resolver.js";
+import { loadProjectConfig } from "./project-config-io.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — Bindings snapshot generation + read (P3→P4 chain).
@@ -66,6 +67,22 @@ export function resolveWorkspaceBindingId(config: {
   workspace_binding_id?: string;
 }): string | undefined {
   return config.workspace_binding_id ?? config.project_id;
+}
+
+/** Resolve repo identity from identityRoot and an optional per-worktree binding override. */
+export function resolveBindingIdForRoots(
+  identityRoot: string,
+  workspaceRoot: string = identityRoot,
+): string | undefined {
+  const identityConfig = loadProjectConfig(identityRoot);
+  if (identityConfig === null) return undefined;
+  if (workspaceRoot === identityRoot) return resolveWorkspaceBindingId(identityConfig);
+  const workspaceConfig = loadProjectConfig(workspaceRoot);
+  return (
+    workspaceConfig?.workspace_binding_id ??
+    identityConfig.workspace_binding_id ??
+    identityConfig.project_id
+  );
 }
 
 export interface WriteBindingsSnapshotOptions {
