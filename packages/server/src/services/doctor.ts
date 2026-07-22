@@ -15,6 +15,7 @@ import {
   resolveFabricLocale,
   type Translator,
 } from "@fenglimg/fabric-shared";
+import type { ProjectContext } from "@fenglimg/fabric-shared";
 import { detectFramework } from "@fenglimg/fabric-shared/node";
 // v2.0.0-rc.29 TASK-008 (BUG-F2): surface MCP payload thresholds in doctor.
 import {
@@ -346,9 +347,13 @@ function finalizeDoctorReport(input: {
   };
 }
 
-export async function runDoctorReport(target: string): Promise<DoctorReport> {
+export async function runDoctorReport(
+  target: string | Readonly<ProjectContext>,
+): Promise<DoctorReport> {
   // Phase 1 — collect inspections (I/O + derived state).
-  const projectRoot = normalizeTarget(target);
+  const projectRoot = normalizeTarget(
+    typeof target === "string" ? target : target.workspaceRoot,
+  );
   const t = createTranslator(resolveFabricLocale(projectRoot));
   const framework = detectFramework(projectRoot);
   const entryPoints = await collectEntryPoints(projectRoot);
