@@ -53,6 +53,13 @@ export interface PreviewEntry {
   maturity: string | undefined;
   createdAt: string | undefined;
   tags: string[];
+  // The entry's `related` graph edges — LOCAL stable_ids (e.g. "KT-GLD-0019")
+  // this entry links to. Same-store by the KT→KP privacy iron law, so the graph
+  // resolves them within the entry's store. Powers the relationship graph view.
+  related: string[];
+  // Frontmatter `deprecated: true` (deprecate-over-delete). The list/graph views
+  // dim these so a retired entry is visibly distinct from a live one.
+  deprecated: boolean;
   body: string;
 }
 
@@ -64,6 +71,20 @@ function readFrontmatterField(source: string, field: string): string | undefined
   const match = new RegExp(String.raw`^${field}:\s*(.+?)\s*$`, "mu").exec(frontmatter[1]);
   if (match === null) return undefined;
   return match[1].replace(/^["'](.*)["']$/u, "$1").trim();
+}
+
+// Parse an inline-array frontmatter field (`related: [KT-GLD-0019, KT-PRO-0011]`
+// or bare `related: KT-GLD-0019`) into trimmed string ids. Mirrors the
+// dependency-free regex frontmatter convention above; unquotes each element and
+// drops empties. Returns [] when the field is absent.
+function readFrontmatterList(source: string, field: string): string[] {
+  const raw = readFrontmatterField(source, field);
+  if (raw === undefined) return [];
+  return raw
+    .replace(/^\[(.*)\]$/u, "$1")
+    .split(",")
+    .map((s) => s.trim().replace(/^["'](.*)["']$/u, "$1").trim())
+    .filter((s) => s.length > 0);
 }
 
 function stripFrontmatter(source: string): string {
@@ -94,6 +115,8 @@ function toPreviewEntry(entry: StoreCanonicalEntry): PreviewEntry {
     maturity: entry.description.maturity,
     createdAt: entry.description.created_at ?? readFrontmatterField(entry.body, "created_at"),
     tags: entry.description.tags ?? [],
+    related: readFrontmatterList(entry.body, "related"),
+    deprecated: readFrontmatterField(entry.body, "deprecated") === "true",
     body: stripFrontmatter(entry.body),
   };
 }
@@ -216,9 +239,36 @@ const SOURCE_TOGGLE_SNIPPET = `<script>(function(){
       var active=(b.dataset.on==='1')===allOn();
       b.style.opacity=active?'1':'.6';b.style.background=active?'rgba(127,127,127,.3)':'transparent';
     })}
-    wrap.appendChild(proj);wrap.appendChild(all);paint();document.body.appendChild(wrap);
+    // Entry point to the relationship graph module; carries the current source
+    // selection so the graph opens in the same scope the user is browsing.
+    var graph=document.createElement('a');
+    graph.textContent='⁙ 关联图';graph.href='/graph?all='+(allOn()?'1':'0');
+    graph.style.cssText='display:flex;align-items:center;text-decoration:none;color:inherit;opacity:.72;'+
+      'cursor:pointer;padding:6px 12px;border-radius:6px;margin-right:2px;border-right:1px solid rgba(127,127,127,.28)';
+    wrap.appendChild(graph);wrap.appendChild(proj);wrap.appendChild(all);paint();document.body.appendChild(wrap);
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
+  // #2/#6 truncation relief — template-agnostic. Any leaf element whose text is
+  // clipped (scrollWidth > clientWidth: store name, semantic_scope chip, long
+  // title) gets a native title= tooltip so the full value is one hover away. A
+  // debounced MutationObserver re-scans as the variant renders/refreshes its
+  // list, so it covers content that arrives after first paint.
+  function titleTruncated(){
+    var els=document.body.querySelectorAll('*');
+    for(var i=0;i<els.length;i++){ var el=els[i];
+      if(el.childElementCount===0 && el.scrollWidth>el.clientWidth+1){
+        var t=(el.textContent||'').trim();
+        if(t && el.getAttribute('title')!==t) el.setAttribute('title',t);
+      }
+    }
+  }
+  var tq=null;
+  function scheduleTitles(){ if(tq)return; tq=setTimeout(function(){tq=null;try{titleTruncated()}catch(e){}},250); }
+  function startTitles(){
+    scheduleTitles();
+    try{ new MutationObserver(scheduleTitles).observe(document.body,{childList:true,subtree:true,characterData:true}); }catch(e){}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){mount();startTitles();});
+  else {mount();startTitles();}
 })();</script>`;
 
 // Inject the toggle snippet just before </head> (so its fetch-wrapper installs
@@ -229,6 +279,209 @@ function injectSourceToggle(html: string): string {
   const idx = html.toLowerCase().indexOf("</head>");
   if (idx === -1) return html;
   return html.slice(0, idx) + SOURCE_TOGGLE_SNIPPET + html.slice(idx);
+}
+
+// ---------------------------------------------------------------------------
+// Relationship graph module (`/graph`). A self-contained view — NOT a style
+// variant — so the graph feature lives in ONE place (no 7-template churn) and
+// the variants stay pure browse surfaces. It fetches /api/knowledge (honoring
+// the ?all= source selection), builds nodes (entries) + edges (each entry's
+// `related` ids resolved WITHIN its store — same-store by the KT→KP privacy
+// law), runs a small dependency-free force simulation, and renders an
+// interactive SVG (pan / wheel-zoom / node drag / hover-highlight neighbours).
+// Nodes are coloured by scope (team/project/personal) and deprecated entries
+// are dimmed. Client JS deliberately avoids template literals / ${} so it nests
+// cleanly inside this server-side template literal.
+// ---------------------------------------------------------------------------
+function renderGraphView(): string {
+  return `<!doctype html>
+<html lang="zh"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric 预览 · 关联图</title>
+<style>
+  :root{--bg:#f6f6f4;--surface:#fff;--border:#e5e3de;--text:#1f1e1c;--text2:#6b6862;
+    --team:#0d9488;--project:#2563eb;--personal:#7c3aed;--edge:rgba(120,120,120,.34);}
+  @media (prefers-color-scheme:dark){:root{--bg:#161512;--surface:#232220;--border:#383632;--text:#ecebe8;--text2:#a8a49c;
+    --team:#2dd4bf;--project:#60a5fa;--personal:#a78bfa;--edge:rgba(160,160,160,.26);}}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+  .bar{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:center;gap:16px;
+    padding:0 18px;background:var(--surface);border-bottom:1px solid var(--border);z-index:10}
+  .bar h1{font-size:15px;font-weight:600;margin:0;white-space:nowrap}
+  .bar .sp{flex:1}
+  .bar a,.seg{text-decoration:none;color:var(--text2);font-size:13px;cursor:pointer;padding:5px 10px;border-radius:6px}
+  .seg.active{color:var(--text);background:rgba(127,127,127,.16)}
+  .legend{display:flex;gap:12px;font-size:12px;color:var(--text2);align-items:center;white-space:nowrap}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  #stat{font-size:12px;color:var(--text2);white-space:nowrap}
+  svg{position:fixed;top:52px;left:0;width:100vw;height:calc(100vh - 52px);cursor:grab;display:block}
+  svg.pan{cursor:grabbing}
+  .tip{position:fixed;pointer-events:none;z-index:20;max-width:340px;padding:8px 11px;border-radius:8px;
+    background:var(--surface);border:1px solid var(--border);box-shadow:0 4px 18px rgba(0,0,0,.2);
+    font-size:12px;line-height:1.55;opacity:0;transition:opacity .1s}
+  .tip b{display:block;font-size:12px;margin-bottom:3px}
+  .tip .m{color:var(--text2)}
+  .empty{position:fixed;top:55%;left:0;right:0;text-align:center;color:var(--text2)}
+</style></head><body>
+<div class="bar">
+  <h1>知识关联图</h1>
+  <span class="legend"><span><i style="background:var(--team)"></i>团队</span>
+    <span><i style="background:var(--project)"></i>项目</span>
+    <span><i style="background:var(--personal)"></i>个人</span>
+    <span style="opacity:.5"><i style="background:#9aa"></i>已弃用</span></span>
+  <span id="stat"></span>
+  <span class="sp"></span>
+  <span class="seg" id="sProj">本项目</span><span class="seg" id="sAll">全部</span>
+  <a href="/">← 返回列表</a>
+</div>
+<svg id="g"><g id="view"></g></svg><div class="tip" id="tip"></div>
+<script>
+(function(){
+  var params=new URLSearchParams(location.search);
+  var all=params.get('all')==='1';
+  try{ if(params.get('all')!==null) sessionStorage.setItem('fabricPreviewAllStores', all?'1':'0'); }catch(e){}
+  var sp=document.getElementById('sProj'), sa=document.getElementById('sAll');
+  sp.className='seg'+(all?'':' active'); sa.className='seg'+(all?' active':'');
+  sp.onclick=function(){location.href='/graph?all=0'}; sa.onclick=function(){location.href='/graph?all=1'};
+
+  var SVGNS='http://www.w3.org/2000/svg';
+  var svg=document.getElementById('g'), view=document.getElementById('view'), tip=document.getElementById('tip');
+  function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+  function color(root){return root==='personal'?cssVar('--personal'):root==='project'?cssVar('--project'):cssVar('--team');}
+  // SVG presentation attributes do NOT resolve CSS var() — resolve to concrete colors once.
+  var EDGE=cssVar('--edge'), BG=cssVar('--bg');
+  // Layout runs in a FIXED virtual space; the SVG viewBox then scales it to fill
+  // the element. This sidesteps reading the pane's pixel size (unreliable at load
+  // in some embedded browsers) — the graph always fills and centers itself.
+  var VW=1400, VH=900, vb={x:0,y:0,w:VW,h:VH};
+  function applyVB(){ svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h); }
+  function clientToUser(cx,cy){ var pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; var m=svg.getScreenCTM(); return m?pt.matrixTransform(m.inverse()):{x:cx,y:cy}; }
+
+  fetch('/api/knowledge?all='+(all?'1':'0'),{cache:'no-store'})
+    .then(function(r){return r.json()})
+    .then(function(d){ build(d.entries||[]); })
+    .catch(function(e){ document.body.insertAdjacentHTML('beforeend','<div class="empty">加载失败: '+e.message+'</div>'); });
+
+  var nodes=[], edges=[];
+  function build(entries){
+    nodes=entries.map(function(e,i){
+      var root=(e.scope||'team').split(':')[0];
+      var ang=i*2.399963, rad=Math.min(VW,VH)*0.44*Math.sqrt((i+1)/entries.length);
+      return {id:e.qualifiedId, local:e.id, title:e.title||e.id, store:e.store, scope:e.scope||'team',
+        root:root, dep:!!e.deprecated, deg:0, x:VW/2+Math.cos(ang)*rad, y:VH/2+Math.sin(ang)*rad, vx:0, vy:0};
+    });
+    var byKey={}; nodes.forEach(function(n){ byKey[n.store+'|'+n.local]=n; });
+    var seen={};
+    entries.forEach(function(e){
+      var s=byKey[e.store+'|'+e.id]; if(!s) return;
+      (e.related||[]).forEach(function(rid){
+        var t=byKey[e.store+'|'+rid]; if(!t||t===s) return;
+        var key=[s.id,t.id].sort().join('::'); if(seen[key]) return; seen[key]=1;
+        edges.push({s:s,t:t}); s.deg++; t.deg++;
+      });
+    });
+    document.getElementById('stat').textContent=nodes.length+' 条 · '+edges.length+' 关联';
+    if(!nodes.length){ document.body.insertAdjacentHTML('beforeend','<div class="empty">该视角下暂无知识条目</div>'); return; }
+    simulate(); paint(); fit(); wire();
+  }
+
+  function simulate(){
+    var k=Math.min(VW,VH)/Math.sqrt(nodes.length)*0.9;
+    for(var it=0; it<300; it++){
+      for(var a=0;a<nodes.length;a++){ var na=nodes[a];
+        for(var b=a+1;b<nodes.length;b++){ var nb=nodes[b];
+          var dx=na.x-nb.x, dy=na.y-nb.y, dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+          var f=k*k/(dist*dist)*9, fx=dx/dist*f, fy=dy/dist*f;
+          na.vx+=fx; na.vy+=fy; nb.vx-=fx; nb.vy-=fy;
+        }
+      }
+      for(var e=0;e<edges.length;e++){ var ed=edges[e];
+        var dx=ed.t.x-ed.s.x, dy=ed.t.y-ed.s.y, dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+        var f=(dist-k)*0.02, fx=dx/dist*f, fy=dy/dist*f;
+        ed.s.vx+=fx; ed.s.vy+=fy; ed.t.vx-=fx; ed.t.vy-=fy;
+      }
+      for(var n=0;n<nodes.length;n++){ var nd=nodes[n];
+        nd.vx+=(VW/2-nd.x)*0.004; nd.vy+=(VH/2-nd.y)*0.004;
+        nd.vx*=0.82; nd.vy*=0.82;
+        nd.x+=Math.max(-22,Math.min(22,nd.vx)); nd.y+=Math.max(-22,Math.min(22,nd.vy));
+      }
+    }
+  }
+
+  function paint(){
+    var frag=document.createDocumentFragment();
+    edges.forEach(function(ed){
+      var l=document.createElementNS(SVGNS,'line');
+      l.setAttribute('stroke',EDGE); l.setAttribute('stroke-width','1.2'); l.setAttribute('stroke-linecap','round');
+      ed.el=l; frag.appendChild(l);
+    });
+    nodes.forEach(function(nd){
+      var c=document.createElementNS(SVGNS,'circle');
+      c.setAttribute('r', String(5+Math.min(11,nd.deg*1.4)));
+      c.setAttribute('fill', nd.dep?'#9aa0a6':color(nd.root));
+      c.setAttribute('opacity', nd.dep?'0.4':'0.92');
+      c.setAttribute('stroke',BG); c.setAttribute('stroke-width','2');
+      c.style.cursor='pointer'; c.__n=nd; nd.el=c; frag.appendChild(c);
+    });
+    view.appendChild(frag);
+    position();
+  }
+  function position(){
+    edges.forEach(function(ed){ ed.el.setAttribute('x1',ed.s.x);ed.el.setAttribute('y1',ed.s.y);ed.el.setAttribute('x2',ed.t.x);ed.el.setAttribute('y2',ed.t.y); });
+    nodes.forEach(function(nd){ nd.el.setAttribute('cx',nd.x);nd.el.setAttribute('cy',nd.y); });
+  }
+
+  // Frame the graph: set viewBox to the node bounding box + padding. SVG scales
+  // this to the element automatically (preserveAspectRatio), so it always fills.
+  function fit(){
+    var minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+    nodes.forEach(function(n){ minx=Math.min(minx,n.x); miny=Math.min(miny,n.y); maxx=Math.max(maxx,n.x); maxy=Math.max(maxy,n.y); });
+    var pad=Math.max(50,(maxx-minx)*0.06);
+    vb={x:minx-pad, y:miny-pad, w:Math.max(50,(maxx-minx)+pad*2), h:Math.max(50,(maxy-miny)+pad*2)};
+    applyVB();
+  }
+
+  function wire(){
+    var drag=null, pan=null;
+    svg.addEventListener('mousedown',function(ev){
+      if(ev.target&&ev.target.__n){ drag=ev.target.__n; }
+      else { pan={cx:ev.clientX,cy:ev.clientY,x:vb.x,y:vb.y}; }
+      svg.classList.add('pan');
+    });
+    window.addEventListener('mousemove',function(ev){
+      if(drag){ var u=clientToUser(ev.clientX,ev.clientY); drag.x=u.x; drag.y=u.y; position(); }
+      else if(pan){ var r=svg.getBoundingClientRect(); vb.x=pan.x-(ev.clientX-pan.cx)*(vb.w/r.width); vb.y=pan.y-(ev.clientY-pan.cy)*(vb.h/r.height); applyVB(); }
+    });
+    window.addEventListener('mouseup',function(){ drag=null; pan=null; svg.classList.remove('pan'); });
+    svg.addEventListener('wheel',function(ev){
+      ev.preventDefault();
+      var u=clientToUser(ev.clientX,ev.clientY), f=ev.deltaY<0?0.88:1.14;
+      vb.x=u.x-(u.x-vb.x)*f; vb.y=u.y-(u.y-vb.y)*f; vb.w*=f; vb.h*=f; applyVB();
+    },{passive:false});
+
+    var adj={}; nodes.forEach(function(n){adj[n.id]={}});
+    edges.forEach(function(ed){ adj[ed.s.id][ed.t.id]=1; adj[ed.t.id][ed.s.id]=1; });
+    nodes.forEach(function(nd){
+      nd.el.addEventListener('mouseenter',function(ev){
+        tip.innerHTML='<b>'+esc(nd.title)+'</b><span class="m">'+esc(nd.local)+' · '+esc(nd.store)+' · '+esc(nd.scope)+(nd.dep?' · 已弃用':'')+' · '+nd.deg+' 关联</span>';
+        tip.style.opacity='1'; moveTip(ev);
+        nodes.forEach(function(o){ o.el.setAttribute('opacity', (o===nd||adj[nd.id][o.id])?'1':'0.12'); });
+        edges.forEach(function(ed){ var on=(ed.s===nd||ed.t===nd); ed.el.setAttribute('stroke', on?color(nd.root):EDGE); ed.el.setAttribute('stroke-width', on?'2.4':'0.6'); ed.el.setAttribute('opacity', on?'0.9':'0.15'); });
+      });
+      nd.el.addEventListener('mousemove',moveTip);
+      nd.el.addEventListener('mouseleave',function(){
+        tip.style.opacity='0';
+        nodes.forEach(function(o){ o.el.setAttribute('opacity', o.dep?'0.4':'0.92'); });
+        edges.forEach(function(ed){ ed.el.setAttribute('stroke',EDGE); ed.el.setAttribute('stroke-width','1.2'); ed.el.setAttribute('opacity','1'); });
+      });
+    });
+    function moveTip(ev){ tip.style.left=Math.min(ev.clientX+14,window.innerWidth-350)+'px'; tip.style.top=(ev.clientY+14)+'px'; }
+  }
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'}); }
+})();
+</script>
+</body></html>`;
 }
 
 function renderGallery(variants: VariantInfo[]): string {
@@ -355,6 +608,13 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
         if (pathname === "/gallery") {
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
           res.end(renderGallery(listVariants()));
+          return;
+        }
+        // /graph — the relationship graph module (self-contained view). It reads
+        // /api/knowledge?all= client-side, so no server data is inlined here.
+        if (pathname === "/graph") {
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          res.end(renderGraphView());
           return;
         }
         // /v/<name> — a single style variant. Name is one path segment; reject
