@@ -9,7 +9,10 @@ import {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { appendPayloadWarning } from "./payload-warning.js";
-import { resolveProjectRoot } from "../meta-reader.js";
+import {
+  defaultProjectContextProvider,
+  type ProjectContextProvider,
+} from "../project-context-provider.js";
 import { projectRootWarning } from "../services/project-root-warning.js";
 import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
@@ -20,7 +23,11 @@ import { toMcpToolError } from "./mcp-tool-error.js";
 // Read-only: no gate wait / auto-heal needed (the scan reads events.jsonl, not
 // the knowledge index). The Skill calls this, then loads digests for the
 // returned session_ids + does semantic stitching.
-export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker): void {
+export function registerArchiveScan(
+  server: McpServer,
+  tracker?: InFlightTracker,
+  contextProvider: ProjectContextProvider = defaultProjectContextProvider,
+): void {
   server.registerTool(
     "fab_archive_scan",
     {
@@ -34,7 +41,8 @@ export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
-        const projectRoot = resolveProjectRoot();
+        const context = contextProvider.snapshotForCall();
+        const projectRoot = context.workspaceRoot;
         const result = await collectArchiveScan(projectRoot, {
           range,
           now_ms,
@@ -43,7 +51,7 @@ export function registerArchiveScan(server: McpServer, tracker?: InFlightTracker
         });
         // KT-PIT-0046: fail-loud when the root carries no project config —
         // the scan sees personal-store state only.
-        const rootWarn = projectRootWarning(projectRoot);
+        const rootWarn = projectRootWarning(context);
         if (rootWarn) {
           result.warnings = [...(result.warnings ?? []), rootWarn];
         }

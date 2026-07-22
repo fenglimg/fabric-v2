@@ -10,9 +10,11 @@
 // store and personal entries from the implicit personal store. Every candidate
 // id is store-qualified (`<alias>:<stable_id>`).
 
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -25,6 +27,8 @@ import {
 
 import { contextCache } from "../cache.js";
 import { planContext, layerFromStableId } from "../services/plan-context.js";
+import { adoptMcpClientRoots } from "../index.js";
+import { ProjectContextProvider } from "../project-context-provider.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -52,6 +56,73 @@ afterEach(async () => {
     await rm(path, { recursive: true, force: true });
   }));
 });
+
+describe("MCP roots integration with real worktrees", () => {
+  it("rejects ambiguous multi-root context at the provider boundary", async () => {
+    const first = await createMcpGitProject("11111111-1111-4111-8111-111111111111");
+    const second = await createMcpGitProject("22222222-2222-4222-8222-222222222222");
+    const provider = new ProjectContextProvider();
+    await adoptMcpClientRoots({
+      getClientCapabilities: () => ({ roots: {} }),
+      listRoots: async () => ({
+        roots: [first, second].map((root) => ({ uri: pathToFileURL(root).href })),
+      }),
+    }, provider);
+
+    expect(() => provider.snapshotForCall()).toThrowError(
+      expect.objectContaining({ code: "FABRIC_PROJECT_CONTEXT_AMBIGUOUS" }),
+    );
+  });
+
+  it("keeps project A stable in-flight while the next operation uses project B", async () => {
+    const first = await createMcpGitProject("11111111-1111-4111-8111-111111111111");
+    const second = await createMcpGitProject("22222222-2222-4222-8222-222222222222");
+    const provider = new ProjectContextProvider();
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    let currentRoot = first;
+
+    await adoptMcpClientRoots({
+      getClientCapabilities: () => ({ roots: {} }),
+      listRoots: async () => ({ roots: [{ uri: pathToFileURL(currentRoot).href }] }),
+    }, provider);
+    const inFlight = provider.snapshotForCall();
+
+    currentRoot = second;
+    const switching = adoptMcpClientRoots({
+      getClientCapabilities: () => ({ roots: {} }),
+      listRoots: async () => {
+        await barrier;
+        return { roots: [{ uri: pathToFileURL(currentRoot).href }] };
+      },
+    }, provider);
+
+    expect(inFlight.projectId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(provider.snapshotForCall().projectId).toBe(inFlight.projectId);
+    release();
+    await switching;
+
+    expect(inFlight.projectId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(provider.snapshotForCall().projectId).toBe("22222222-2222-4222-8222-222222222222");
+  });
+});
+
+async function createMcpGitProject(projectId: string): Promise<string> {
+  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-mcp-roots-project-"));
+  tempDirs.push(projectRoot);
+  execFileSync("git", ["init", "-b", "main"], { cwd: projectRoot, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "mcp-matrix@fabric.local"], { cwd: projectRoot });
+  execFileSync("git", ["config", "user.name", "MCP Matrix"], { cwd: projectRoot });
+  await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+  await writeFile(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    `${JSON.stringify({ project_id: projectId })}\n`,
+  );
+  await writeFile(join(projectRoot, "README.md"), "mcp roots fixture\n");
+  execFileSync("git", ["add", "."], { cwd: projectRoot });
+  execFileSync("git", ["commit", "-m", "seed mcp roots fixture"], { cwd: projectRoot, stdio: "ignore" });
+  return projectRoot;
+}
 
 describe("mcp-server integration (multi-store read model)", () => {
   it("plan_context_returns_layer_tagged_index — team + personal store entries surface with correct layer tags", async () => {

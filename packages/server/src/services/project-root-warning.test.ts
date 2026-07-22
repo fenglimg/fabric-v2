@@ -56,4 +56,17 @@ describe("projectRootWarning (KT-PIT-0046 fail-loud)", () => {
   it("message helper embeds the resolved root verbatim", () => {
     expect(projectRootUnresolvedMessage("/")).toContain('"/"');
   });
+
+  it("preserves degraded personal-store visibility for a captured context", () => {
+    const root = newTmpDir();
+    const warning = projectRootWarning(Object.freeze({
+      workspaceRoot: root,
+      identityRoot: root,
+      projectId: `unresolved:${root}`,
+      bindingId: `unresolved:${root}`,
+      source: "cwd" as const,
+    }));
+    expect(warning?.code).toBe(PROJECT_ROOT_UNRESOLVED_CODE);
+    expect(warning?.message).toContain("personal store only");
+  });
 });

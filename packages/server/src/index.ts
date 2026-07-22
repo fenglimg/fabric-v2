@@ -9,9 +9,14 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { RootsListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
-import { isProjectRootConfigured, resolveProjectRoot, setMcpRootsHint } from "./meta-reader.js";
+import { isProjectRootConfigured } from "./meta-reader.js";
+import {
+  defaultProjectContextProvider,
+  ProjectContextProvider,
+} from "./project-context-provider.js";
 import { projectRootUnresolvedMessage } from "./services/project-root-warning.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
 import { setFirstReconcile } from "./services/first-reconcile-gate.js";
@@ -289,23 +294,26 @@ export function buildServerInstructions(projectRoot: string): string {
   ].join("\n");
 }
 
-export function createFabricServer(tracker?: InFlightTracker): McpServer {
+export function createFabricServer(
+  tracker?: InFlightTracker,
+  contextProvider: ProjectContextProvider = defaultProjectContextProvider,
+): McpServer {
   const server = new McpServer(
     {
       name: "fabric-knowledge-server",
       version: __SERVER_VERSION__,
     },
     {
-      instructions: buildServerInstructions(resolveProjectRoot()),
+      instructions: buildServerInstructions(contextProvider.snapshotForCall().workspaceRoot),
     },
   );
 
-  registerRecall(server, tracker);
-  registerArchiveScan(server, tracker);
-  registerExtractKnowledge(server, tracker);
-  registerReview(server, tracker);
+  registerRecall(server, tracker, contextProvider);
+  registerArchiveScan(server, tracker, contextProvider);
+  registerExtractKnowledge(server, tracker, contextProvider);
+  registerReview(server, tracker, contextProvider);
   // W3-K K2: the read-only browse/search surface lifted out of fab_review.
-  registerPending(server, tracker);
+  registerPending(server, tracker, contextProvider);
 
   // v2.0: the legacy bootstrap README MCP resource is preserved as a contract
   // shim. Knowledge now lives in mounted stores; this resource returns an
@@ -318,7 +326,7 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
       mimeType: "text/markdown",
     },
     async (_uri: URL) => {
-      const projectRoot = resolveProjectRoot(process.cwd());
+      const projectRoot = contextProvider.snapshotForCall(process.cwd()).workspaceRoot;
       const path = join(projectRoot, ".fabric", "bootstrap", "README.md");
       let text = "";
       if (existsSync(path)) {
@@ -358,7 +366,10 @@ export interface McpRootsSource {
  * `resolveProjectRoot`, which every tool call re-runs, so adoption heals
  * subsequent calls without a restart.
  */
-export async function adoptMcpClientRoots(source: McpRootsSource): Promise<string[]> {
+export async function adoptMcpClientRoots(
+  source: McpRootsSource,
+  contextProvider: ProjectContextProvider = defaultProjectContextProvider,
+): Promise<string[]> {
   try {
     if (source.getClientCapabilities()?.roots === undefined) return [];
     const { roots } = await source.listRoots();
@@ -371,7 +382,7 @@ export async function adoptMcpClientRoots(source: McpRootsSource): Promise<strin
         // skip malformed URIs — one bad root must not drop the others
       }
     }
-    return setMcpRootsHint(paths);
+    return [...await contextProvider.refreshRoots(async () => paths)];
   } catch {
     return [];
   }
@@ -379,7 +390,8 @@ export async function adoptMcpClientRoots(source: McpRootsSource): Promise<strin
 
 export async function startStdioServer(): Promise<void> {
   const tracker = createInFlightTracker();
-  let projectRoot = resolveProjectRoot();
+  const contextProvider = new ProjectContextProvider();
+  let projectRoot = contextProvider.snapshotForCall().workspaceRoot;
 
   // TASK-034: info-level detection of pre-existing root markdown files.
   // Surfaced BEFORE handshake so the operator sees the hint regardless of
@@ -398,42 +410,45 @@ export async function startStdioServer(): Promise<void> {
     );
   }
 
-  const server = createFabricServer(tracker);
+  const server = createFabricServer(tracker, contextProvider);
   const transport = new StdioServerTransport();
+
+  const refreshProjectRoot = async (): Promise<void> => {
+    const adopted = await adoptMcpClientRoots(server.server, contextProvider);
+    if (adopted.length === 0) {
+      if (!isProjectRootConfigured(projectRoot)) {
+        process.stderr.write(
+          "[roots] client exposed no usable MCP roots — project root stays unresolved; serving personal store only.\n",
+        );
+      }
+      return;
+    }
+    const newRoot = contextProvider.snapshotForCall().workspaceRoot;
+    if (newRoot !== projectRoot) {
+      process.stderr.write(
+        `[roots] project root re-resolved via MCP client roots: "${projectRoot}" → "${newRoot}"\n`,
+      );
+      stopMetricsFlush(projectRoot);
+      stopRotationTick(projectRoot);
+      startMetricsFlush(newRoot);
+      startRotationTick(newRoot);
+      projectRoot = newRoot;
+    }
+    if (!isProjectRootConfigured(projectRoot)) {
+      process.stderr.write(`[roots] warning: ${projectRootUnresolvedMessage(projectRoot)}\n`);
+    }
+  };
 
   // Adopt the client's workspace roots once the handshake completes (roots can
   // only be requested post-initialize). Wired BEFORE connect so the callback
   // cannot miss a fast handshake. On adoption, re-target the root-keyed
   // background jobs; per-call paths re-run resolveProjectRoot themselves.
   server.server.oninitialized = () => {
-    void (async () => {
-      const adopted = await adoptMcpClientRoots(server.server);
-      if (adopted.length === 0) {
-        if (!isProjectRootConfigured(projectRoot)) {
-          process.stderr.write(
-            "[roots] client exposed no usable MCP roots — project root stays unresolved; serving personal store only.\n",
-          );
-        }
-        return;
-      }
-      const newRoot = resolveProjectRoot();
-      if (newRoot !== projectRoot) {
-        process.stderr.write(
-          `[roots] project root re-resolved via MCP client roots: "${projectRoot}" → "${newRoot}"\n`,
-        );
-        stopMetricsFlush(projectRoot);
-        stopRotationTick(projectRoot);
-        startMetricsFlush(newRoot);
-        startRotationTick(newRoot);
-        projectRoot = newRoot;
-      }
-      if (!isProjectRootConfigured(projectRoot)) {
-        process.stderr.write(
-          `[roots] warning: ${projectRootUnresolvedMessage(projectRoot)}\n`,
-        );
-      }
-    })();
+    void refreshProjectRoot();
   };
+  server.server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+    await refreshProjectRoot();
+  });
 
   // v2.0.0-rc.23 TASK-009 (d): connect the MCP handshake immediately so MCP
   // clients (`claude mcp list`) see the server as available the moment stdio is

@@ -10,7 +10,10 @@ import {
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { appendPayloadWarning, type StructuredToolWarning } from "./payload-warning.js";
 import { toMcpToolError } from "./mcp-tool-error.js";
-import { resolveProjectRoot } from "../meta-reader.js";
+import {
+  defaultProjectContextProvider,
+  type ProjectContextProvider,
+} from "../project-context-provider.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
   awaitFirstReconcileGate,
@@ -25,7 +28,11 @@ import { appendEventLedgerEvent } from "../services/event-ledger.js";
 // knowledge-sections.ts envelope handling (gate wait + auto-heal + payload
 // guard + structured warnings) so callers get identical telemetry surface
 // regardless of whether they take the two-step or combined path.
-export function registerRecall(server: McpServer, tracker?: InFlightTracker): void {
+export function registerRecall(
+  server: McpServer,
+  tracker?: InFlightTracker,
+  contextProvider: ProjectContextProvider = defaultProjectContextProvider,
+): void {
   server.registerTool(
     "fab_recall",
     {
@@ -50,6 +57,7 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
       include_score_breakdown,
     }) => {
       const requestId = randomUUID();
+      let context: ReturnType<ProjectContextProvider["snapshotForCall"]> | undefined;
       // v2.1 GATE-INTERACT-T2 (#2 slice): time the round-trip so the MCP stdio
       // surface emits a `mcp_stdio_trace` ledger event (NEW-N-3 instrumentation).
       // Wall-clock via a monotonic-ish counter avoided: hrtime is fine server-side.
@@ -58,13 +66,14 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
       let payloadBytesOut = 0;
       tracker?.enter(requestId);
       try {
+        context = contextProvider.snapshotForCall();
         const gateResult = await awaitFirstReconcileGate();
         const gateWarn = gateWarning(gateResult);
 
-        const projectRoot = resolveProjectRoot();
+        const projectRoot = context.workspaceRoot;
         // KT-PIT-0046: fail-loud when the root carries no project config —
         // the read-set is personal-only and the caller must know.
-        const rootWarn = projectRootWarning(projectRoot);
+        const rootWarn = projectRootWarning(context);
 
         const input: RecallInput = {
           paths,
@@ -130,17 +139,19 @@ export function registerRecall(server: McpServer, tracker?: InFlightTracker): vo
             JSON.stringify({ paths, intent, known_tech, detected_entities, target_paths, ids }),
             "utf8",
           );
-          await appendEventLedgerEvent(resolveProjectRoot(), {
-            event_type: "mcp_stdio_trace",
-            ...(correlation_id ? { correlation_id } : {}),
-            ...(session_id ? { session_id } : {}),
-            tool_name: "fab_recall",
-            request_id: requestId,
-            duration_ms: durationMs,
-            status: traceStatus,
-            payload_bytes_in: payloadBytesIn,
-            payload_bytes_out: payloadBytesOut,
-          });
+          if (context !== undefined) {
+            await appendEventLedgerEvent(context.workspaceRoot, {
+              event_type: "mcp_stdio_trace",
+              ...(correlation_id ? { correlation_id } : {}),
+              ...(session_id ? { session_id } : {}),
+              tool_name: "fab_recall",
+              request_id: requestId,
+              duration_ms: durationMs,
+              status: traceStatus,
+              payload_bytes_in: payloadBytesIn,
+              payload_bytes_out: payloadBytesOut,
+            });
+          }
         } catch {
           // swallow — telemetry is never load-bearing.
         }

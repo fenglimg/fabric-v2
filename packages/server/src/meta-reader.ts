@@ -1,6 +1,5 @@
-import { existsSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { agentsMetaSchema, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { IOFabricError } from "@fenglimg/fabric-shared/errors";
@@ -43,135 +42,15 @@ function getAgentsMetaPath(projectRoot: string): string {
   return join(projectRoot, ".fabric", "agents.meta.json");
 }
 
-// v2.3.0-rc.11: root-cause fix for the stray-`.fabric/` fault mode that Cascade
-// triggers when the server subprocess is launched from a subdirectory of the
-// project (e.g. `fabric …` invoked from `scripts/asset-dedup/out/`). The old
-// implementation returned `process.cwd()` unchanged, so downstream writers
-// (plan-context bm25, vector-retrieval, event-ledger, metrics) then created a
-// brand-new `<cwd>/.fabric/` inside the subdirectory rather than writing to the
-// authoritative repo root.
-//
-// The hook side already got a matching git-anchor resolver in rc.10
-// (`packages/cli/templates/hooks/lib/project-root.cjs`, KT-DEC-0050). This is
-// the server-side twin — same resolution order, plus the server-only
-// FABRIC_PROJECT_ROOT explicit override kept at the top.
-//
-// Resolution order (first match wins):
-//   1. FABRIC_PROJECT_ROOT — explicit operator override (server-only knob).
-//   2. CLAUDE_PROJECT_DIR — the same env Claude Code injects into hooks.
-//   3. Walk up from `startCwd` (default `process.cwd()`) to the nearest
-//      ancestor holding a `.git/` marker. `.git` is the authoritative repo
-//      anchor and — crucially — IMMUNE to the stray `.fabric/` subdirectories
-//      this resolver exists to prevent (a stray `.fabric/` in a subdir must
-//      NOT capture the walk).
-//   4. No `.git` in the chain (non-git Fabric project): fall back to the
-//      nearest pre-existing `.fabric/` anchor seen during the same climb.
-//   5. Fall back to `startCwd` unchanged (fresh repo with no marker yet).
-//
-// `startCwd` is optional to keep call sites unchanged; tests pass a tmpdir.
-/**
- * ISS-20260713-047: FABRIC_PROJECT_ROOT / CLAUDE_PROJECT_DIR are trusted-operator
- * overrides. Still realpath + require usable absolute roots so relative typos and
- * filesystem-root values fail closed to the git-anchor walk.
- */
-function normalizeTrustedRootOverride(raw: string): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
-  try {
-    const abs = isAbsolute(trimmed) ? trimmed : resolve(trimmed);
-    const real = existsSync(abs) ? realpathSync(abs) : abs;
-    if (real === "/" || /^[A-Za-z]:[\\/]?$/.test(real)) return null;
-    return real;
-  } catch {
-    return null;
-  }
-}
-
-// Walk up from `start` to the nearest `.git` anchor, falling back to the
-// nearest pre-existing `.fabric/` seen during the same climb. Returns null when
-// neither marker exists in the chain. Bounded climb — a real repo is a handful
-// of hops; the cap guards against symlink / mount loops.
-function climbToAnchor(start: string): string | null {
-  let dir = start;
-  let firstFabric: string | null = null;
-  for (let i = 0; i < 64; i++) {
-    if (existsSync(join(dir, ".git"))) return dir;
-    if (firstFabric === null && existsSync(join(dir, ".fabric"))) firstFabric = dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return firstFabric;
-}
-
-// ISS werewolf-minigame (rootless MCP spawn, KT-PIT-0046): some MCP hosts
-// (Claude desktop app respawns) launch the server with cwd=/ and WITHOUT the
-// .mcp.json env — both env overrides and the cwd climb then come up empty and
-// the root degrades to "/". The MCP `roots` capability is the remaining honest
-// signal: the client's declared workspace roots. `startStdioServer` fetches
-// them once after initialize and records them here; `resolveProjectRoot`
-// consults them between the env overrides and the cwd climb.
-let mcpRootsHint: string[] = [];
-
-/**
- * Record the MCP client's workspace roots as project-root candidates.
- * Candidates are normalized (absolute, realpath'd, filesystem-root rejected)
- * and must exist on disk; returns the accepted list. Order is preserved —
- * the first root is the strongest candidate.
- */
-export function setMcpRootsHint(paths: string[]): string[] {
-  const accepted: string[] = [];
-  for (const path of paths) {
-    const normalized = normalizeTrustedRootOverride(path);
-    if (normalized !== null && existsSync(normalized)) accepted.push(normalized);
-  }
-  mcpRootsHint = accepted;
-  return accepted.slice();
-}
-
-/** Test-only reset — mirrors the other module-state resets in this package. */
-export function resetMcpRootsHint(): void {
-  mcpRootsHint = [];
-}
-
-/**
- * True when the resolved root actually carries a project config
- * (`.fabric/fabric-config.json`) — the file `required_stores` (and thus the
- * team read-set) comes from. A root without it serves the personal store only,
- * which is the silent-degradation mode this predicate exists to make loud.
- */
-export function isProjectRootConfigured(projectRoot: string): boolean {
-  return existsSync(join(projectRoot, ".fabric", "fabric-config.json"));
-}
-
-// Resolution order (first match wins):
-//   1. FABRIC_PROJECT_ROOT  2. CLAUDE_PROJECT_DIR  3. MCP client roots
-//   4. cwd climb (.git / .fabric anchor)  5. first MCP root  6. startCwd.
-export function resolveProjectRoot(startCwd?: string): string {
-  const envOverride = process.env.FABRIC_PROJECT_ROOT;
-  if (typeof envOverride === "string" && envOverride.length > 0) {
-    const normalized = normalizeTrustedRootOverride(envOverride);
-    if (normalized !== null) return normalized;
-  }
-  const claudeRoot = process.env.CLAUDE_PROJECT_DIR;
-  if (typeof claudeRoot === "string" && claudeRoot.length > 0) {
-    const normalized = normalizeTrustedRootOverride(claudeRoot);
-    if (normalized !== null) return normalized;
-  }
-
-  for (const rootHint of mcpRootsHint) {
-    const anchored = climbToAnchor(rootHint);
-    if (anchored !== null) return anchored;
-  }
-
-  const start = typeof startCwd === "string" && startCwd.length > 0 ? startCwd : process.cwd();
-  const anchored = climbToAnchor(start);
-  if (anchored !== null) return anchored;
-  // No anchor anywhere: an unanchored client root still beats an unanchored
-  // cwd (the rootless-spawn cwd is "/").
-  return mcpRootsHint[0] ?? start;
-}
+// Compatibility facade: project-root/context ownership lives in
+// project-context-provider.ts. Keep these exports so downstream consumers do
+// not acquire a second resolution policy during the migration.
+export {
+  isProjectRootConfigured,
+  resetMcpRootsHint,
+  resolveProjectRoot,
+  setMcpRootsHint,
+} from "./project-context-provider.js";
 
 export async function readAgentsMeta(projectRoot: string): Promise<AgentsMeta> {
   const cached = contextCache.get<AgentsMeta>("meta", projectRoot);

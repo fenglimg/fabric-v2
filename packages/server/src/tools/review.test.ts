@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -134,6 +136,11 @@ async function makeProject(): Promise<string> {
 }
 
 describe("registerReview", () => {
+  it("captures exactly one immutable context per operation", () => {
+    const source = readFileSync(fileURLToPath(new URL("./review.ts", import.meta.url)), "utf8");
+    expect(source.match(/snapshotForCall\(/gu)).toHaveLength(1);
+    expect(source).not.toContain("resolveProjectRoot");
+  });
   it("registers fab_review with correct name and schemas", () => {
     const { server, tool } = captureRegistration();
     registerReview(server);

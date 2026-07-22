@@ -21,10 +21,13 @@ function newTmpDir(prefix: string): string {
   return realpathSync(raw);
 }
 
-function newConfiguredProject(): string {
+function newConfiguredProject(projectId?: string): string {
   const root = newTmpDir("index-configured-");
   mkdirSync(join(root, ".fabric"), { recursive: true });
-  writeFileSync(join(root, ".fabric", "fabric-config.json"), "{}\n");
+  writeFileSync(
+    join(root, ".fabric", "fabric-config.json"),
+    `${JSON.stringify(projectId === undefined ? {} : { project_id: projectId })}\n`,
+  );
   return root;
 }
 
@@ -229,5 +232,28 @@ describe("adoptMcpClientRoots", () => {
       },
     });
     expect(adopted).toEqual([]);
+  });
+
+  it("refreshes later per-call snapshots after roots/list_changed", async () => {
+    clearEnvOverrides();
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+    const { adoptMcpClientRoots } = await import("./index.js");
+    const { ProjectContextProvider } = await import("./project-context-provider.js");
+    const first = newConfiguredProject("first");
+    const second = newConfiguredProject("second");
+    const provider = new ProjectContextProvider();
+    let current = first;
+    const source = {
+      getClientCapabilities: () => ({ roots: {} }),
+      listRoots: async () => ({ roots: [{ uri: pathToFileURL(current).href }] }),
+    };
+
+    await adoptMcpClientRoots(source, provider);
+    const inFlight = provider.snapshotForCall();
+    current = second;
+    await adoptMcpClientRoots(source, provider);
+
+    expect(inFlight.projectId).toBe("first");
+    expect(provider.snapshotForCall().projectId).toBe("second");
   });
 });

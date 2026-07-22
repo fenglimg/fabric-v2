@@ -11,7 +11,10 @@ import {
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
 import { appendPayloadWarning } from "./payload-warning.js";
-import { resolveProjectRoot } from "../meta-reader.js";
+import {
+  defaultProjectContextProvider,
+  type ProjectContextProvider,
+} from "../project-context-provider.js";
 import { projectRootWarning } from "../services/project-root-warning.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -35,7 +38,11 @@ import { toMcpToolError } from "./mcp-tool-error.js";
 // UNIFIED ranker — reviewPending → triageSearch → rankDescriptionItems('triage').
 // fab_pending triage and fab_recall share ONE improved ranker; triage applies NO
 // top_k / NO floor so pending review never silently drops a match.
-export function registerPending(server: McpServer, tracker?: InFlightTracker): void {
+export function registerPending(
+  server: McpServer,
+  tracker?: InFlightTracker,
+  contextProvider: ProjectContextProvider = defaultProjectContextProvider,
+): void {
   server.registerTool(
     "fab_pending",
     {
@@ -56,6 +63,7 @@ export function registerPending(server: McpServer, tracker?: InFlightTracker): v
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
+        const context = contextProvider.snapshotForCall();
         // v2.0.0-rc.23 TASK-009 (d): see plan-context.ts for rationale.
         const gateResult = await awaitFirstReconcileGate();
         const gateWarn = gateWarning(gateResult);
@@ -63,7 +71,7 @@ export function registerPending(server: McpServer, tracker?: InFlightTracker): v
         // Narrow via the discriminatedUnion to recover full per-action
         // strictness (e.g. action=search requires a non-empty query).
         const narrowed = FabPendingInputSchema.parse(input);
-        const projectRoot = resolveProjectRoot();
+        const projectRoot = context.workspaceRoot;
         const result = await reviewPending(projectRoot, narrowed);
 
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
@@ -73,7 +81,7 @@ export function registerPending(server: McpServer, tracker?: InFlightTracker): v
 
         // KT-PIT-0046: fail-loud when the root carries no project config —
         // the read-set is personal-only and the caller must know.
-        const rootWarn = projectRootWarning(projectRoot);
+        const rootWarn = projectRootWarning(context);
         if (rootWarn) {
           response.warnings = [...(response.warnings ?? []), rootWarn];
         }
