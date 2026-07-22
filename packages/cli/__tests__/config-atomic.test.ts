@@ -89,9 +89,10 @@ describe("config atomic writes — output bytes match prior raw writeFile", () =
     await writer.write("/srv.js", process.cwd());
 
     const written = readFileSync(configPath, "utf8");
-    // ISS-58: env pins FABRIC_PROJECT_ROOT to the workspace root passed to write().
+    // TASK-006: default write() is dynamic mode — no persisted FABRIC_PROJECT_ROOT.
+    // Pinned-mode env serialization is covered by mcp-changed-detection / toml pin tests.
     const expected =
-      `[mcp_servers.fabric]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ["/srv.js"]\nenv = { FABRIC_PROJECT_ROOT = ${JSON.stringify(process.cwd())} }\n`;
+      `[mcp_servers.fabric]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ["/srv.js"]\n`;
 
     expect(written).toBe(expected);
   });
