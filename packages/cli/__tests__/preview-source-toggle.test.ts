@@ -47,4 +47,34 @@ describe("preview source toggle injection", () => {
     // The gallery shell itself is not a variant view — no toggle script.
     expect(html).not.toContain("fabricPreviewAllStores");
   });
+
+  // The injected control bar also owns #3 (all-view store labels) and #9
+  // (deprecated filter/mark) — decorating the shared /api/knowledge payload so
+  // every variant gets them without per-template edits. These lock that wiring.
+  it("injects the deprecated filter toggle + its persisted flag", async () => {
+    const base = await start();
+    const html = await (await fetch(`${base}/v/lumen`)).text();
+    expect(html).toContain("fabricPreviewHideDeprecated");
+    expect(html).toContain("弃用·显示");
+    expect(html).toContain("弃用·隐藏");
+  });
+
+  it("decorates the shared knowledge payload (store prefix + deprecated mark)", async () => {
+    const base = await start();
+    const html = await (await fetch(`${base}/v/lumen`)).text();
+    // #9: deprecated entries are flagged in the title regardless of layout.
+    expect(html).toContain("已弃用 · ");
+    // #3: in all-view the store becomes a per-row title prefix.
+    expect(html).toContain("['+(e.store||'?')+'] ");
+    // The transform runs against /api/knowledge responses.
+    expect(html).toContain("e.deprecated");
+  });
+
+  it("does not decorate the graph module (it dims deprecated itself)", async () => {
+    const base = await start();
+    const html = await (await fetch(`${base}/graph`)).text();
+    // The graph is a self-contained view, never wrapped by the injected snippet.
+    expect(html).not.toContain("fabric-source-toggle");
+    expect(html).not.toContain("fabricPreviewHideDeprecated");
+  });
 });
