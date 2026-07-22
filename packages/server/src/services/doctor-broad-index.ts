@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Translator } from "@fenglimg/fabric-shared";
 
+import { resolveStoreConfig } from "../config-loader.js";
 import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
 import type { DoctorCheck } from "./doctor-types.js";
 
@@ -44,12 +45,37 @@ export interface BroadIndexDriftInspection {
   drifted_stores: BroadIndexStoreCount[];
 }
 
-// Best-effort reader for `.fabric/fabric-config.json#broad_index_backstop`.
-// Mirrors knowledge-hint-broad.cjs#readBroadIndexBackstop EXACTLY (same file,
-// same 20..500 clamp, floor) so the lint and the hook agree on the value for a
-// given workspace. Any failure (missing file, parse error, out-of-range) →
-// default 50.
+// Best-effort reader for `broad_index_backstop`. Cascades: project-level
+// `.fabric/fabric-config.json` → store-level `store-config.json` (via
+// resolveStoreConfig) → default 50. The store's own backstop takes effect when
+// the project config omits the key, so a team store can set a higher ceiling
+// (e.g. 80) without every bound project repeating it.
 async function readBroadIndexBackstop(projectRoot: string): Promise<number> {
+  // Project layer — highest priority.
+  const projectValue = await readProjectBackstop(projectRoot);
+  if (projectValue !== undefined) {
+    return projectValue;
+  }
+  // Store layer — the store's store-config.json, already parsed + validated by
+  // resolveStoreConfig (same 20..500 range enforced by storeConfigSchema).
+  try {
+    const storeCfg = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    const sv = storeCfg.broad_index_backstop;
+    if (typeof sv === "number" && Number.isFinite(sv)) {
+      const floored = Math.floor(sv);
+      if (floored >= BROAD_INDEX_BACKSTOP_MIN && floored <= BROAD_INDEX_BACKSTOP_MAX) {
+        return floored;
+      }
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_BROAD_INDEX_BACKSTOP;
+}
+
+// Read the project-level backstop from `.fabric/fabric-config.json`.
+// Returns undefined when absent/invalid so the caller can fall through.
+async function readProjectBackstop(projectRoot: string): Promise<number | undefined> {
   const configPath = join(projectRoot, ".fabric", "fabric-config.json");
   try {
     const raw = await readFile(configPath, "utf8");
@@ -64,9 +90,9 @@ async function readBroadIndexBackstop(projectRoot: string): Promise<number> {
       }
     }
   } catch {
-    // fall through to default
+    // fall through
   }
-  return DEFAULT_BROAD_INDEX_BACKSTOP;
+  return undefined;
 }
 
 export async function inspectBroadIndexDrift(
