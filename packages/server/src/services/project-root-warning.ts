@@ -12,6 +12,8 @@
  * stderr + the initialize instructions.
  */
 
+import type { ProjectContext } from "@fenglimg/fabric-shared";
+
 import { isProjectRootConfigured } from "../meta-reader.js";
 
 /**
@@ -29,7 +31,12 @@ export interface ProjectRootWarning {
 
 export const PROJECT_ROOT_UNRESOLVED_CODE = "project_root_unresolved";
 
-export function projectRootUnresolvedMessage(projectRoot: string): string {
+function workspaceRoot(input: string | Readonly<ProjectContext>): string {
+  return typeof input === "string" ? input : input.workspaceRoot;
+}
+
+export function projectRootUnresolvedMessage(input: string | Readonly<ProjectContext>): string {
+  const projectRoot = workspaceRoot(input);
   return (
     `project root unresolved — serving personal store only ` +
     `(resolved "${projectRoot}", no .fabric/fabric-config.json found; team stores are NOT loaded)`
@@ -46,7 +53,10 @@ const PROJECT_ROOT_ACTION_HINT =
  * `.fabric/fabric-config.json`, else null. Tool handlers append the non-null
  * result to their response `warnings[]`.
  */
-export function projectRootWarning(projectRoot: string): ProjectRootWarning | null {
+export function projectRootWarning(
+  input: string | Readonly<ProjectContext>,
+): ProjectRootWarning | null {
+  const projectRoot = workspaceRoot(input);
   if (isProjectRootConfigured(projectRoot)) return null;
   return {
     code: PROJECT_ROOT_UNRESOLVED_CODE,

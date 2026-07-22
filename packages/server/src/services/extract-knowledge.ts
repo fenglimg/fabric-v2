@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE,
   type FabExtractKnowledgeInput,
   type FabExtractKnowledgeOutput,
   type ProposedReason,
@@ -14,7 +13,6 @@ import {
   isPersonalScope,
   loadProjectConfig,
   redactPii,
-  resolveGlobalLocale,
 } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
@@ -890,9 +888,14 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     const body = args.intentClues.map((s) => quoteRelevancePath(s)).join(", ");
     frontmatterLines.push(`intent_clues: [${body}]`);
   }
-  if (args.techStack !== undefined) {
-    const body = args.techStack.map((s) => quoteRelevancePath(s)).join(", ");
-    frontmatterLines.push(`tech_stack: [${body}]`);
+  if (args.techStack !== undefined && args.techStack.length > 0) {
+    // v-next grill D2: merge tech_stack values into tags instead of separate field.
+    const merged = [...new Set([...(args.tags ?? []), ...args.techStack])];
+    // Tags line was already emitted above; overwrite it with merged values.
+    const tagsLineIdx = frontmatterLines.findIndex((l) => l.startsWith("tags:"));
+    if (tagsLineIdx >= 0) {
+      frontmatterLines[tagsLineIdx] = `tags: [${merged.map((t) => quoteRelevancePath(t)).join(", ")}]`;
+    }
   }
   if (args.impact !== undefined) {
     const body = args.impact.map((s) => quoteRelevancePath(s)).join(", ");
@@ -928,36 +931,28 @@ function renderFreshEntry(args: FreshEntryArgs): string {
   );
   const frontmatter = frontmatterLines.join("\n");
 
-  // v2.0.0-rc.7 T6: body section order is fixed:
-  //   ## Summary
-  //   ## Why proposed       (1-line from PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE)
-  //   ## Session context    (3-5 line passthrough from input)
-  //   ## Evidence           (merged on idempotency collision — no per-call section)
-  // Content-layer i18n: the explanation follows the unified language flow
-  // (`resolveGlobalLocale` — global language → env fallback), so an en-locale
-  // machine writes an English `## Why proposed` line and a zh-CN machine a
-  // Chinese one. Same single source the bootstrap writer and CLI display use.
-  const reasonExplanation =
-    PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE[resolveGlobalLocale()][args.proposedReason];
-  const body = [
+  // v-next (grill D1/D5/D8): body slimmed to single ## Context section.
+  // - ## Summary removed (verbatim with frontmatter summary — grill D1)
+  // - ## Why proposed removed (display-time enum rendering — grill D8)
+  // - ## Session context renamed to ## Context (single narrative section)
+  // - ## Evidence removed (paths moved to frontmatter evidence_paths — grill D5)
+  // evidence_paths frontmatter line is emitted above when args.evidencePaths is present;
+  // for backward compat, emit legacy ## Evidence only when evidencePaths is absent.
+  const bodyParts = [
     "",
-    "## Summary",
-    "",
-    args.summary,
-    "",
-    "## Why proposed",
-    "",
-    `${args.proposedReason} — ${reasonExplanation}`,
-    "",
-    "## Session context",
+    "## Context",
     "",
     args.sessionContext,
-    "",
-    "## Evidence",
-    "",
-    renderEvidenceBlock(args.summary, args.recentPaths),
-    "",
-  ].join("\n");
+  ];
+  if (
+    (args.evidencePaths === undefined || args.evidencePaths.length === 0) &&
+    args.recentPaths !== undefined &&
+    args.recentPaths.length > 0
+  ) {
+    bodyParts.push("", "## Evidence", "", renderEvidenceBlock(args.summary, args.recentPaths));
+  }
+  bodyParts.push("");
+  const body = bodyParts.join("\n");
 
   return `${frontmatter}\n${body}`;
 }
@@ -998,55 +993,97 @@ function renderEvidenceBlock(summary: string, recentPaths: string[]): string {
   ].join("\n");
 }
 
-// v2.0.0-rc.7 T6: replace prior append-`## Evidence (call N)` semantics with a
-// merged `## Evidence` section. On idempotency collision we parse Evidence from
-// both old + fresh content, dedup notes by trimmed text, and rewrite —
-// guaranteeing a single section regardless of how many times extract is re-invoked.
-//
-// v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): semantic flip — narrative
-// `head` (## Summary / ## Why proposed / ## Session context) now comes from
-// FRESH content instead of EXISTING. This makes those sections last-wins
-// while keeping Evidence (notes + Recent paths) append-merged. Callers
-// re-running extract with a refined understanding finally see the new
-// narrative land on disk; prior calls' contributions remain visible in
-// Evidence notes for the audit trail.
-//
-// Bullet shape: each note becomes a leading-dash list item under `Notes:`.
-// Recent paths are union-merged (dedup by literal path string).
+// v-next grill D1: classify body ## Summary text vs frontmatter summary.
+// Exported for doctor --fix backfill (TASK-004).
+export function classifySummaryState(
+  bodySum: string,
+  fmSum: string,
+): "verbatim" | "near" | "diverged" {
+  const a = bodySum.trim();
+  const b = fmSum.trim();
+  if (a === b) return "verbatim";
+  const na = a.replace(/\s+/gu, " ");
+  const nb = b.replace(/\s+/gu, " ");
+  if (na === nb) return "near";
+  if (na.length > 0 && nb.length > 0 && (na.includes(nb) || nb.includes(na))) {
+    return "near";
+  }
+  if (na.length > 0 && nb.length > 0) {
+    const dist = levenshteinDistance(na, nb);
+    const maxLen = Math.max(na.length, nb.length);
+    if (1 - dist / maxLen > 0.85) return "near";
+  }
+  return "diverged";
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        (prev[j] ?? 0) + 1,
+        (curr[j - 1] ?? 0) + 1,
+        (prev[j - 1] ?? 0) + cost,
+      );
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n] ?? 0;
+}
+
+function parseFrontmatterFlowArray(rawValue: string): string[] {
+  const trimmed = rawValue.trim();
+  const arrMatch = /^\[([\s\S]*)\]$/u.exec(trimmed);
+  if (arrMatch === null) return [];
+  const inner = arrMatch[1] ?? "";
+  if (inner.trim().length === 0) return [];
+  const items: string[] = [];
+  const re = /"((?:[^"\\]|\\.)*)"/gu;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(inner)) !== null) {
+    const raw = m[1] ?? "";
+    items.push(
+      raw.replace(/\\(["\\nrt])/gu, (_, ch: string) => {
+        if (ch === '"') return '"';
+        if (ch === "\\") return "\\";
+        if (ch === "n") return "\n";
+        if (ch === "r") return "\r";
+        if (ch === "t") return "\t";
+        return ch;
+      }),
+    );
+  }
+  return items;
+}
+
+// v-next convergence-on-write: read dual formats (body ## Evidence +
+// frontmatter evidence_paths), write new-only (frontmatter evidence_paths,
+// no body ## Evidence). Narrative sections (## Summary / ## Why proposed)
+// stripped unconditionally — last-wins semantics (rc.27).
 function mergeEvidenceNotes(existing: string, fresh: string): string {
-  // Find the Evidence section in the fresh content (the new head + new
-  // notes + new recent_paths). The fresh content always has an Evidence
-  // section because it comes from renderFreshEntry.
-  const freshSplit = splitAtEvidence(fresh);
-  if (freshSplit === null) {
-    // Defensive: fresh content lacks Evidence. Should not happen given
-    // renderFreshEntry's contract, but degrade to "use fresh as-is" rather
-    // than mangling.
-    return fresh.endsWith("\n") ? fresh : `${fresh}\n`;
-  }
-  const freshHead = freshSplit.head;
+  // 1. Collect evidence paths from all sources (body + frontmatter)
+  const oldBodyEvidence = collectEvidenceItems(existing);
+  const freshBodyEvidence = collectEvidenceItems(fresh);
+  const oldFmRaw = readFrontmatterKey(existing, "evidence_paths");
+  const freshFmRaw = readFrontmatterKey(fresh, "evidence_paths");
+  const oldFmPaths = oldFmRaw !== undefined ? parseFrontmatterFlowArray(oldFmRaw) : [];
+  const freshFmPaths = freshFmRaw !== undefined ? parseFrontmatterFlowArray(freshFmRaw) : [];
 
-  // Collect evidence (notes + paths) from BOTH existing and fresh. Order
-  // matters for the dedup pass below — existing items appear first so a
-  // re-archive doesn't reorder historical notes.
-  const oldEvidence = collectEvidenceItems(existing);
-  const freshEvidence = collectEvidenceItems(fresh);
-
-  // Dedup notes (case-sensitive after whitespace collapse).
-  const mergedNotes: string[] = [];
-  const seenNotes = new Set<string>();
-  for (const note of [...oldEvidence.notes, ...freshEvidence.notes]) {
-    const key = note.replace(/\s+/gu, " ").trim();
-    if (key.length === 0) continue;
-    if (seenNotes.has(key)) continue;
-    seenNotes.add(key);
-    mergedNotes.push(note);
-  }
-
-  // Dedup paths (literal trimmed string).
   const mergedPaths: string[] = [];
   const seenPaths = new Set<string>();
-  for (const p of [...oldEvidence.paths, ...freshEvidence.paths]) {
+  for (const p of [
+    ...oldFmPaths,
+    ...oldBodyEvidence.paths,
+    ...freshFmPaths,
+    ...freshBodyEvidence.paths,
+  ]) {
     const key = p.trim();
     if (key.length === 0) continue;
     if (seenPaths.has(key)) continue;
@@ -1054,26 +1091,45 @@ function mergeEvidenceNotes(existing: string, fresh: string): string {
     mergedPaths.push(key);
   }
 
-  const pathLines = mergedPaths.length === 0
-    ? "_(no recent paths reported)_"
-    : mergedPaths.map((p) => `- ${p}`).join("\n");
-  const noteLines = mergedNotes.length === 0
-    ? "_(no notes recorded)_"
-    : mergedNotes.map((n) => `- ${n}`).join("\n");
+  // 2. Rebuild from fresh content (last-wins for narrative)
+  const fmEndMatch = /^---\n[\s\S]*?\n---/u.exec(fresh);
+  if (fmEndMatch === null) {
+    return fresh.endsWith("\n") ? fresh : `${fresh}\n`;
+  }
+  const fmBlock = fmEndMatch[0];
+  let body = fresh.slice(fmBlock.length);
 
-  const evidenceBody = [
-    "Recent paths:",
-    "",
-    pathLines,
-    "",
-    "Notes:",
-    "",
-    noteLines,
-  ].join("\n");
+  // 2a. Upsert evidence_paths in frontmatter
+  const fmLines = fmBlock.slice(4, -4).split("\n");
+  const epLine =
+    mergedPaths.length > 0
+      ? `evidence_paths: [${mergedPaths.map((p) => quoteRelevancePath(p)).join(", ")}]`
+      : undefined;
+  const epIdx = fmLines.findIndex((l) => l.startsWith("evidence_paths:"));
+  if (epIdx >= 0) {
+    if (epLine !== undefined) {
+      fmLines[epIdx] = epLine;
+    } else {
+      fmLines.splice(epIdx, 1);
+    }
+  } else if (epLine !== undefined) {
+    const xIdx = fmLines.findIndex((l) => l.startsWith("x-fabric-"));
+    if (xIdx >= 0) {
+      fmLines.splice(xIdx, 0, epLine);
+    } else {
+      fmLines.push(epLine);
+    }
+  }
+  const updatedFm = `---\n${fmLines.join("\n")}\n---`;
 
-  // Rebuild: fresh head (new frontmatter + new Summary + new Why proposed
-  // + new Session context) + merged Evidence section. Trailing newline.
-  return `${freshHead}\n## Evidence\n\n${evidenceBody}\n`;
+  // 2b. Strip ## Evidence from body (convergence-on-write)
+  body = body.replace(
+    /\n## Evidence(?:\s*\(call \d+\))?\s*\n[\s\S]*?(?=\n## |$)/gu,
+    "",
+  );
+
+  const result = `${updatedFm}${body}`;
+  return result.endsWith("\n") ? result : `${result}\n`;
 }
 
 /**

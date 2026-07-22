@@ -8,6 +8,7 @@ import {
   createWerewolfFixtureRoot,
   setProcessTty,
 } from "./helpers/init-test-utils.ts";
+import { installCommand, resolveMcpRootPolicy } from "../src/commands/install-v2.js";
 
 // Reader-consumed fields enumerated in init.ts writeDefaultFabricConfig.
 // Source-of-truth: packages/shared/src/schemas/fabric-config.ts +
@@ -60,6 +61,21 @@ afterEach(() => {
 });
 
 describe("init CLI surface", () => {
+  it("exposes dynamic MCP root defaults and validates pinned combinations", () => {
+    expect(installCommand.args?.["mcp-root-mode"]).toBeDefined();
+    expect(installCommand.args?.["mcp-project-root"]).toBeDefined();
+    expect(resolveMcpRootPolicy({})).toEqual({ mode: "dynamic" });
+    expect(resolveMcpRootPolicy({ "mcp-root-mode": "pinned", "mcp-project-root": "/tmp/project/.." })).toEqual({
+      mode: "pinned",
+      projectRoot: "/tmp",
+      provenance: "operator",
+    });
+    expect(() => resolveMcpRootPolicy({ "mcp-root-mode": "unknown" })).toThrow(/Invalid/);
+    expect(() => resolveMcpRootPolicy({ "mcp-root-mode": "pinned" })).toThrow(/required/);
+    expect(() => resolveMcpRootPolicy({ "mcp-project-root": "relative" })).toThrow(/requires/);
+    expect(() => resolveMcpRootPolicy({ "mcp-root-mode": "pinned", "mcp-project-root": "relative" })).toThrow(/absolute/);
+  });
+
   it("does not write scaffold files when --dry-run is used", async () => {
     process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-plan-acceptance");

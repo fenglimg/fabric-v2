@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,6 +62,14 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook validates per client.
     expect(skippedJoined).toContain(join(target, ".claude", "hooks", "knowledge-hint-narrow.cjs"));
     expect(skippedJoined).toContain(join(target, ".codex", "hooks", "knowledge-hint-narrow.cjs"));
+    for (const client of [".claude", ".codex"]) {
+      expect(
+        existsSync(join(target, client, "hooks", "lib", "project-context-runtime.cjs")),
+      ).toBe(true);
+      expect(existsSync(join(target, client, "hooks", "lib", "project-root.cjs"))).toBe(
+        true,
+      );
+    }
   });
 
   it("happy-path skipped count is exactly 2 fabric-hint + 2 broad-hint + 2 narrow-hint validate entries (one per client)", async () => {

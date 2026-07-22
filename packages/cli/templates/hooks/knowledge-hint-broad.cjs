@@ -58,7 +58,7 @@ const { headerRule, scopeBadge } = require("./lib/theme.cjs");
 // the row always satisfies the event-ledger schema the doctor reads.
 const { appendEvent } = require("./lib/event-writer.cjs");
 const eventReader = require("./lib/event-reader.cjs");
-const { resolveProjectRoot } = require("./lib/project-root.cjs");
+const { createProjectContextResolver } = require("./lib/project-root.cjs");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
@@ -1603,8 +1603,9 @@ if (require.main === module) {
       // non-JSON stdin — ignore
     }
   }
+  const context = createProjectContextResolver({ explicitRoot: process.env.CLAUDE_PROJECT_DIR });
   main(
-    { cwd: resolveProjectRoot(process.cwd()), session_id },
+    { cwd: context.workspaceRoot, session_id },
     { stderr: process.stderr },
   );
   process.exit(0);

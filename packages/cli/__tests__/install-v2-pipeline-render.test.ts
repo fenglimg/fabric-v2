@@ -38,6 +38,7 @@ function rendererContext(
     options: { planOnly: false, skipBootstrap: false, skipHooks: false, skipMcp: false },
     mcpInstallMode: "global",
     claudeMcpScope: "project",
+    mcpRootPolicy: { mode: "dynamic" },
     interactive: true,
     wizardEnabled: false,
     stageResults: [],

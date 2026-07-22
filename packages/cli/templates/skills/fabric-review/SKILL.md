@@ -99,7 +99,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
   - *retire* (W3-C, 吸收原 fabric-audit): 语义淘汰陈旧/孤儿/被取代的 **canonical** 条目。引擎 `fabric doctor`(给 orphan/stale/health 信号);守两条红线 **deprecate-over-delete**(陈旧≠该删,降 maturity / 标 `superseded_by` 保留 rationale)+ **rescue-before-delete**(删前必做独特-rationale 抢救检查)。逐条判三态 still-valid / superseded(deprecate)/ never-valid(rescue 后删空壳),处置经 `fab_review` 写路径落盘。**完整两条红线定义 / 意图→动作映射 / 三态流程 / scope 纠偏 → `Read ref/retire-mode.md`。**
   - *relate* (W3-C, 吸收原 fabric-connect): **默认不主动建边**,仅用户显式「连一下 / 补 related」时进入。`fab_recall` 拿候选 + `read_path`(现有 `related` 不在 wire,须对 `read_path` 原生 Read frontmatter 取)→ 按互补/规避/取代/同域/引用链判**高置信**隐藏关联(稀疏优于稠密)→ 落盘**复用 `fab_review` modify 写路径**(零新写面,追加源条目 `related` 数组)。§4 隐私铁律 `KT→KP` FORBIDDEN。**关联类型判据表 / 流程 / 约束 → `Read ref/relate-mode.md`。**
 
-`Read ref/per-mode-flows.md` for full step-by-step procedures, bilingual rendering blocks (en + zh-CN per-item display, AskUserQuestion templates, health dashboard format), and the rc.7 T6 `proposed_reason` + `## Why proposed` + `## Session context` rendering contract.
+`Read ref/per-mode-flows.md` for full step-by-step procedures, bilingual rendering blocks (en + zh-CN per-item display, AskUserQuestion templates, health dashboard format), and the `proposed_reason` enum display-time rendering + `## Context` contract (v-next grill D8).
 
 ## Semantic Check (LLM-Assisted Duplicate / Contradiction Detection)
 

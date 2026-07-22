@@ -30,10 +30,9 @@ mcp__fabric__fab_propose({
   // frontmatter alone, without re-reading the body. Omit any field the
   // skill cannot infer cleanly — guessing is worse than omitting.
   intent_clues: ["<short trigger>", "<negative trigger e.g. 'NOT for X'>"],  // when this rule applies / when NOT
-  tech_stack: ["<lang/framework>", "..."],  // inferred from recent_paths (see table below)
   impact: ["<consequence of ignoring>"],    // why future-self should care
-  must_read_if: "<one-line strong trigger>" // single condition; if it holds, the entry is required reading
-  // tags? — NOT in current schema; reserved for future
+  must_read_if: "<one-line strong trigger>", // single condition; if it holds, the entry is required reading
+  tags: ["<lang/framework>", "<topic>"],    // tech_stack values merge here (v-next grill D2)
 })
 ```
 
@@ -42,7 +41,7 @@ mcp__fabric__fab_propose({
 | Field          | Inference source                                                                 | Skip when                          |
 |----------------|----------------------------------------------------------------------------------|------------------------------------|
 | `intent_clues` | Pull from `session_context` turning point + negative phrasing in the transcript ("not for", "don't do X when") | No clear trigger phrasing surfaced |
-| `tech_stack`   | Map `recent_paths` extensions: `.ts`→`typescript`, `.tsx`→`typescript`+`react`, `.go`→`go`, `package.json`→`nodejs`, `pyproject.toml`→`python`, `Cargo.toml`→`rust`. Add framework markers from path heuristics (`cocos`→`cocos-creator`, `next.config`→`nextjs`) | Rule is stack-agnostic            |
+| `tags`         | Merge tech-stack values (`.ts`→`typescript`, `.tsx`→`react`, `.go`→`go`, `package.json`→`nodejs`) plus topic tags. Replaces deprecated `tech_stack` field (v-next grill D2) | No meaningful tags to infer       |
 | `impact`       | Pull from the diagnostic-loop body — "wasted 30 min", "production outage", "silent data loss" | No observable consequence stated   |
 | `must_read_if` | Strongest single trigger from the worth-archive signal: a file path, a routine, a recurring condition; ≤160 chars | No single dominant trigger fits    |
 

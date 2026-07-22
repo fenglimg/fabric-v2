@@ -11,7 +11,7 @@ const { dirname, join } = require("node:path");
 // primitive (it is not a schema-governed event ledger).
 const { appendLockedLine } = require("./lib/injection-log.cjs");
 const { appendEvent } = require("./lib/event-writer.cjs");
-const { resolveProjectRoot } = require("./lib/project-root.cjs");
+const { createProjectContextResolver } = require("./lib/project-root.cjs");
 
 // ISS-20260713-020: concern modules extracted from this monolith
 const pendingStatsLib = require("./lib/pending-stats.cjs");
@@ -1029,6 +1029,7 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main({ cwd: resolveProjectRoot(process.cwd()), now: new Date() }, { stdout: process.stdout });
+  const context = createProjectContextResolver({ explicitRoot: process.env.CLAUDE_PROJECT_DIR });
+  main({ cwd: context.workspaceRoot, now: new Date() }, { stdout: process.stdout });
   process.exit(0);
 }

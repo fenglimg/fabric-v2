@@ -335,15 +335,13 @@ describe("extractKnowledge", () => {
     expect(fileContents).toMatch(/^proposed_reason: decision-confirmation$/mu);
     expect(fileContents).toMatch(/^tags: \[\]$/mu);
     expect(fileContents).toMatch(/^x-fabric-idempotency-key: sha256:[0-9a-f]{64}$/mu);
-    // v2.0.0-rc.7 T6: body section order — Summary / Why proposed / Session context / Evidence
-    expect(fileContents).toMatch(/^## Summary$/mu);
-    expect(fileContents).toMatch(/^## Why proposed$/mu);
-    expect(fileContents).toMatch(/^## Session context$/mu);
+    // v-next (grill D1/D5/D8): body sections — Context + Evidence (legacy fallback)
+    expect(fileContents).not.toMatch(/^## Summary$/mu);
+    expect(fileContents).not.toMatch(/^## Why proposed$/mu);
+    expect(fileContents).toMatch(/^## Context$/mu);
     expect(fileContents).toMatch(/^## Evidence$/mu);
     // No more `## Evidence (call N)` blocks.
     expect(fileContents).not.toMatch(/^## Evidence \(call \d+\)$/mu);
-    // Why proposed line includes enum + 1-line description.
-    expect(fileContents).toMatch(/decision-confirmation — /u);
 
     const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_proposed" });
     expect(ledger.events).toHaveLength(1);
@@ -379,16 +377,15 @@ describe("extractKnowledge", () => {
     expect(second.pending_path).toBe(first.pending_path);
 
     const body = await readFile(pendingAbs(first.pending_path), "utf8");
-    // Both notes appear (merge-evidence dedup semantics).
-    expect(body).toMatch(/First-call summary body\./u);
+    // v-next: frontmatter summary is last-wins.
     expect(body).toMatch(/Second-call summary body — should merge, not duplicate\./u);
-    // v2.0.0-rc.7 T6: single `## Evidence` section, no `(call N)` sub-blocks.
-    const evidenceHeadingMatches = body.match(/^## Evidence$/gmu) ?? [];
-    expect(evidenceHeadingMatches.length).toBe(1);
+    // v-next convergence-on-write: no body ## Evidence, paths in frontmatter.
+    expect(body).not.toMatch(/^## Evidence$/mu);
     expect(body).not.toMatch(/^## Evidence \(call \d+\)$/mu);
-    // Both paths merged.
-    expect(body).toMatch(/^- a\.ts$/mu);
-    expect(body).toMatch(/^- b\.ts$/mu);
+    // Both paths merged in frontmatter evidence_paths.
+    expect(body).toMatch(/^evidence_paths:/mu);
+    expect(body).toMatch(/a\.ts/u);
+    expect(body).toMatch(/b\.ts/u);
 
     const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_proposed" });
     expect(ledger.events).toHaveLength(2);
@@ -423,21 +420,15 @@ describe("extractKnowledge", () => {
       join(storePendingDir("team", "decisions"), "dedup-test.md"),
       "utf8",
     );
-    // Exactly ONE `## Evidence` section.
-    const evidenceHeadings = body.match(/^## Evidence$/gmu) ?? [];
-    expect(evidenceHeadings.length).toBe(1);
-    // No legacy `## Evidence (call N)` blocks at all.
+    // v-next: no body ## Evidence after merge (paths in frontmatter).
+    expect(body).not.toMatch(/^## Evidence$/gmu);
     expect(body).not.toMatch(/^## Evidence \(call \d+\)$/mu);
-    // The note bullet appears exactly once under Notes (dedup by trimmed text);
-    // it also surfaces in the `## Summary` section AND (rc.31 BUG-2.9 fix) in
-    // the frontmatter `summary:` field, so total occurrences is 3 (frontmatter
-    // summary + Summary body copy + 1 deduped Notes bullet) — but NEVER 4+
-    // duplicated Notes blocks the way the rc.6 append-on-collision behaved.
+    // v-next: summary appears only in frontmatter (last-wins, no body sections).
     const noteOccurrences = body.split(sharedNote).length - 1;
-    expect(noteOccurrences).toBe(3);
-    // The bulleted note line under Notes appears exactly once.
+    expect(noteOccurrences).toBe(1);
+    // No bulleted notes section.
     const bulletOccurrences = (body.match(new RegExp(`^- ${sharedNote.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`, "gmu")) ?? []).length;
-    expect(bulletOccurrences).toBe(1);
+    expect(bulletOccurrences).toBe(0);
   });
 
   it("extractKnowledge_T6_merge_keeps_distinct_notes_from_multiple_calls", async () => {
@@ -471,15 +462,15 @@ describe("extractKnowledge", () => {
       join(storePendingDir("team", "models"), "merged-evidence.md"),
       "utf8",
     );
-    expect(body).toMatch(/Observation A: discovered pattern X\./u);
-    expect(body).toMatch(/Observation B: pattern X interacts with Y\./u);
+    // v-next: frontmatter summary is last-wins (only latest call survives).
     expect(body).toMatch(/Observation C: revised understanding after Z\./u);
-    // Single Evidence section regardless of call count.
-    expect((body.match(/^## Evidence$/gmu) ?? []).length).toBe(1);
-    // Three distinct recent_paths merged in.
-    expect(body).toMatch(/^- one\.ts$/mu);
-    expect(body).toMatch(/^- two\.ts$/mu);
-    expect(body).toMatch(/^- three\.ts$/mu);
+    // v-next: no body ## Evidence section after merge.
+    expect(body).not.toMatch(/^## Evidence$/gmu);
+    // Three distinct recent_paths merged in frontmatter evidence_paths.
+    expect(body).toMatch(/^evidence_paths:/mu);
+    expect(body).toMatch(/one\.ts/u);
+    expect(body).toMatch(/two\.ts/u);
+    expect(body).toMatch(/three\.ts/u);
   });
 
   // v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): narrative sections
@@ -516,26 +507,23 @@ describe("extractKnowledge", () => {
       "utf8",
     );
 
-    // ## Summary section: last-wins (v2 only).
-    const summaryBlock = /## Summary\s*\n\s*\n([\s\S]*?)\n\s*\n## /u.exec(body);
-    expect(summaryBlock).not.toBeNull();
-    expect(summaryBlock?.[1]?.trim()).toBe("Refined complete summary v2.");
+    // v-next: frontmatter summary is last-wins.
+    expect(body).toMatch(/summary: "Refined complete summary v2\."/u);
+    // No body ## Summary section.
+    expect(body).not.toMatch(/^## Summary$/mu);
 
-    // ## Session context: last-wins (v2 only).
-    const sessionBlock = /## Session context\s*\n\s*\n([\s\S]*?)\n\s*\n## /u.exec(body);
-    expect(sessionBlock).not.toBeNull();
-    expect(sessionBlock?.[1]?.trim()).toBe(
+    // ## Context: last-wins (replaces ## Session context).
+    const contextBlock = /## Context\s*\n\s*\n([\s\S]*?)$/u.exec(body);
+    expect(contextBlock).not.toBeNull();
+    expect(contextBlock?.[1]?.trim()).toBe(
       "Issue A turned out to be issue B in disguise.",
     );
 
-    // ## Evidence Notes: BOTH summaries appear (append-merged dedup).
-    const evidenceBlock = /## Evidence\s*\n([\s\S]*?)$/u.exec(body);
-    expect(evidenceBlock?.[1]).toMatch(/Stale incomplete summary v1\./u);
-    expect(evidenceBlock?.[1]).toMatch(/Refined complete summary v2\./u);
-
-    // ## Evidence Recent paths: BOTH paths appear.
-    expect(body).toMatch(/^- only-a\.ts$/mu);
-    expect(body).toMatch(/^- plus-b\.ts$/mu);
+    // v-next: no body ## Evidence, paths in frontmatter evidence_paths.
+    expect(body).not.toMatch(/^## Evidence$/mu);
+    expect(body).toMatch(/^evidence_paths:/mu);
+    expect(body).toMatch(/only-a\.ts/u);
+    expect(body).toMatch(/plus-b\.ts/u);
   });
 
   it("extractKnowledge_emits_archive_attempted_on_empty_summary", async () => {
@@ -729,7 +717,8 @@ describe("extractKnowledge", () => {
   it("extractKnowledge_renders_no_recent_paths_marker_when_recent_paths_empty", async () => {
     const projectRoot = await createTempProject();
 
-    // recent_paths=[] exercises the empty-array branch in renderEvidenceBlock.
+    // v-next: when recent_paths is empty and evidence_paths is absent,
+    // no Evidence section is emitted at all.
     const result = await extractKnowledge(projectRoot, buildInput({
       source_sessions: ["sess-empty-paths"],
       recent_paths: [],
@@ -739,7 +728,8 @@ describe("extractKnowledge", () => {
     }));
 
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
-    expect(body).toMatch(/_\(no recent paths reported\)_/u);
+    expect(body).not.toMatch(/^## Evidence$/mu);
+    expect(body).not.toMatch(/evidence_paths:/mu);
   });
 
   it("extractKnowledge_handles_existing_file_without_trailing_newline", async () => {
@@ -771,10 +761,12 @@ describe("extractKnowledge", () => {
     expect(second.pending_path).toBe(first.pending_path);
 
     const body = await readFile(path, "utf8");
-    // Both notes present, single Evidence section.
-    expect(body).toMatch(/First body for evidence merge path\./u);
+    // v-next: last-wins summary, paths in frontmatter evidence_paths.
     expect(body).toMatch(/Second body, merged\./u);
-    expect((body.match(/^## Evidence$/gmu) ?? []).length).toBe(1);
+    expect(body).not.toMatch(/^## Evidence$/mu);
+    expect(body).toMatch(/^evidence_paths:/mu);
+    expect(body).toMatch(/a\.ts/u);
+    expect(body).toMatch(/b\.ts/u);
   });
 
   it("extractKnowledge_disambiguates_on_existing_file_without_frontmatter (rc.37 NEW-6)", async () => {
@@ -1204,7 +1196,9 @@ describe("extractKnowledge", () => {
     expect(body).toMatch(
       /^intent_clues: \["when editing batch UI code", "NOT for one-off scripts"\]$/mu,
     );
-    expect(body).toMatch(/^tech_stack: \["typescript", "cocos-creator"\]$/mu);
+    // v-next (grill D2): tech_stack merged into tags.
+    expect(body).not.toMatch(/^tech_stack:/mu);
+    expect(body).toMatch(/^tags: \["typescript", "cocos-creator"\]$/mu);
     expect(body).toMatch(/^impact: \["O\(n²\) re-render on every frame"\]$/mu);
     // must_read_if renders as a quoted scalar (single line).
     expect(body).toMatch(
@@ -1245,7 +1239,9 @@ describe("extractKnowledge", () => {
     }));
 
     const body = await readFile(pendingAbs(result.pending_path), "utf8");
-    expect(body).toMatch(/^tech_stack: \["typescript"\]$/mu);
+    // v-next (grill D2): tech_stack merged into tags.
+    expect(body).not.toMatch(/^tech_stack:/mu);
+    expect(body).toMatch(/^tags: \["typescript"\]$/mu);
     expect(body).toMatch(/^must_read_if: "auditing cite-policy logs"$/mu);
     expect(body).not.toMatch(/^intent_clues:/mu);
     expect(body).not.toMatch(/^impact:/mu);

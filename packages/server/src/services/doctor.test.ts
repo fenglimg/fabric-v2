@@ -140,6 +140,8 @@ describe("runDoctorReport", () => {
       "Knowledge body-read wiring",
       // Peer micro-transfer P0-2: dump-shaped body altitude warn-only lint.
       "Knowledge body altitude",
+      // v-next grill D5/D7/D8: legacy body section dedup check.
+      "Knowledge body dedup (v-next)",
       // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
       "Knowledge drift unconsumed",
       // v2.2 W5 R4: co-location "Knowledge counter desync" replaced by the
@@ -261,7 +263,8 @@ describe("runDoctorReport", () => {
     // Peer micro-transfer P0-2: +1 knowledge body altitude → 49.
     // unify-fabric-cache-dir: +1 legacy_fabric_cache_dir_detected (rename
     // legacy `.fabric/cache/{bm25,vectors}` → `.fabric/.cache/…`) → 50.
-    expect(report.checks).toHaveLength(50);
+    // v-next grill D5/D7/D8: +1 knowledge_body_dedup → 51.
+    expect(report.checks).toHaveLength(51);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

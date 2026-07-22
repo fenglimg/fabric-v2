@@ -193,7 +193,7 @@ mcp__fabric__fab_propose({
   session_context:
     "Session goal: capture onboard tech-stack baseline.\nTurning point: read package.json + tsconfig.json + pnpm-workspace.yaml; stack confirmed.",
   onboard_slot: "tech-stack-decision",    // ← claims the slot
-  tech_stack: ["typescript", "nodejs", "pnpm", "vitest"]
+  tags: ["typescript", "nodejs", "pnpm", "vitest"]
 })
 ```
 

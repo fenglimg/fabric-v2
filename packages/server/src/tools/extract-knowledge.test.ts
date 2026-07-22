@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,6 +114,11 @@ function captureRegistration(): { tool: () => RegisteredTool; server: McpServer 
 }
 
 describe("registerExtractKnowledge", () => {
+  it("captures exactly one immutable context per operation", () => {
+    const source = readFileSync(fileURLToPath(new URL("./extract-knowledge.ts", import.meta.url)), "utf8");
+    expect(source.match(/snapshotForCall\(/gu)).toHaveLength(1);
+    expect(source).not.toContain("resolveProjectRoot");
+  });
   it("registers fab_propose with correct name and schemas", () => {
     const { server, tool } = captureRegistration();
     registerExtractKnowledge(server);
@@ -284,7 +291,8 @@ describe("registerExtractKnowledge", () => {
       "utf8",
     );
     expect(body).toMatch(/^intent_clues: \["editing hooks\.ts"\]$/mu);
-    expect(body).toMatch(/^tech_stack: \["typescript"\]$/mu);
+    // v-next (grill D2): tech_stack merged into tags.
+    expect(body).not.toMatch(/^tech_stack:/mu);
     expect(body).toMatch(/^impact: \["protected-token drift"\]$/mu);
     expect(body).toMatch(/^must_read_if: "touching hooks\.ts"$/mu);
   });

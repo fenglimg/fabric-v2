@@ -11,6 +11,11 @@ export type ServerEntry = {
   env?: Record<string, string>;
 };
 
+/** Controls whether MCP clients persist a project-root override. */
+export type McpRootPolicy =
+  | { mode: "dynamic" }
+  | { mode: "pinned"; projectRoot: string; provenance: "operator" | "project" };
+
 /**
  * Result of a {@link ClientConfigWriter.remove} invocation. The shape mirrors
  * the per-client install report consumed by `fabric uninstall` so the orchestrator
@@ -37,7 +42,7 @@ export type RemoveResult = {
 export interface ClientConfigWriter {
   clientKind: ClientKind;
   detect(workspaceRoot: string, overridePath?: string): Promise<string | null>;
-  write(serverPath: string, workspaceRoot: string, overridePath?: string): Promise<void>;
+  write(serverPath: string, workspaceRoot: string, overridePath?: string, mcpRootPolicy?: McpRootPolicy): Promise<void>;
   /**
    * Prune the named MCP server entry from the client's config. Idempotent and
    * best-effort: missing config files / absent entries return `skipped` rather
@@ -53,24 +58,26 @@ export interface ClientConfigWriter {
 /**
  * serverPath may be absolute (global install) or project-relative (local install).
  *
- * ISS-58 (GH): when `projectRoot` is supplied, pin `FABRIC_PROJECT_ROOT` in the
- * generated entry's env. The MCP client spawns the server with an UNCONTROLLED
+ * Dynamic mode leaves root resolution to the running server. Pinned mode writes
+ * the trusted operator/project override and a provenance marker. The MCP client
+ * spawns the server with an UNCONTROLLED
  * cwd (observed: `/`, or another fabric-installed repo). meta-reader's
  * resolveProjectRoot() then either resolves nothing (cwd=`/` → empty write_routes
  * → `fab_propose` "no write-target" + recall degraded to personal-only, silently)
  * or git-anchors onto the WRONG repo (cwd=other project → silent cross-project
- * read/write — a data-integrity risk). Pinning the trusted-operator override at
- * install time makes the resolver deterministic regardless of spawn cwd. env is
- * serialized by BOTH client formats (json deepMerge + codex TOML managed block),
- * and FABRIC_PROJECT_ROOT is the highest-priority signal resolveProjectRoot reads.
+ * read/write — a data-integrity risk). The two environment keys are serialized
+ * by both JSON and Codex TOML writers.
  */
-export function createServerEntry(serverPath: string, projectRoot?: string): ServerEntry {
+export function createServerEntry(serverPath: string, mcpRootPolicy: McpRootPolicy = { mode: "dynamic" }): ServerEntry {
   const entry: ServerEntry = {
     command: process.execPath,
     args: [serverPath],
   };
-  if (typeof projectRoot === "string" && projectRoot.length > 0) {
-    entry.env = { FABRIC_PROJECT_ROOT: resolve(projectRoot) };
+  if (mcpRootPolicy.mode === "pinned") {
+    entry.env = {
+      FABRIC_PROJECT_ROOT: resolve(mcpRootPolicy.projectRoot),
+      FABRIC_PROJECT_ROOT_PROVENANCE: `${mcpRootPolicy.provenance}:v1`,
+    };
   }
   return entry;
 }

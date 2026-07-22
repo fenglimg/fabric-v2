@@ -63,6 +63,7 @@ export class McpStage implements Stage {
       const result = await configCommand.installMcpClients(target, {
         localServerPath: mode === "local" ? LOCAL_FABRIC_SERVER_PATH : undefined,
         claudeMcpScope: context.claudeMcpScope,
+        mcpRootPolicy: context.mcpRootPolicy,
       });
 
       if (result.details.length === 0) {

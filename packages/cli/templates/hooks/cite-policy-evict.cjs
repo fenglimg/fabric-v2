@@ -66,7 +66,7 @@ const {
 } = require("./lib/config-cache.cjs");
 const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
 const eventReader = require("./lib/event-reader.cjs");
-const { resolveProjectRoot } = require("./lib/project-root.cjs");
+const { createProjectContextResolver } = require("./lib/project-root.cjs");
 
 const EVENTS_LEDGER_REL = join(".fabric", "events.jsonl");
 
@@ -564,5 +564,6 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main({ cwd: resolveProjectRoot(process.cwd()) });
+  const context = createProjectContextResolver({ explicitRoot: process.env.CLAUDE_PROJECT_DIR });
+  main({ cwd: context.workspaceRoot });
 }

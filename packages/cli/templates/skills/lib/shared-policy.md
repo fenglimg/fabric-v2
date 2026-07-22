@@ -18,7 +18,7 @@ following classes of token appear **verbatim in both variants**:
 - **MCP tool + field names**: `fab_propose`, `fab_review`, `fab_pending`,
   `fab_recall`, `fab_archive_scan`,
   `relevance_scope`, `relevance_paths`, `source_sessions`, `proposed_reason`,
-  `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
+  `session_context`, `intent_clues`, `impact`, `must_read_if`,
   `evidence_paths`, `tags`, `pending_path`, `layer`.
 - **Enum / routing values**: `narrow`, `broad`, `team`, `personal`, `draft`,
   `verified`, `proven`, `knowledge_scope_degraded`.

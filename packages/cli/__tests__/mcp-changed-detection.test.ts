@@ -2,7 +2,7 @@
 // ACTUALLY changed content this run. The mcp stage keys its `changed` flag off
 // result.changed (not result.installed) so an idempotent re-run no longer blocks
 // the end-pass health-check collapse.
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,17 +23,19 @@ afterEach(() => {
  * resolveClients always selects the Codex writer (no dependency on a real
  * ~/.codex on the test machine).
  */
-function makeWorkspace(): { target: string; codexConfigPath: string } {
+function makeWorkspace(): { target: string; codexConfigPath: string; claudeCodePath: string; claudeDesktopPath: string } {
   const target = mkdtempSync(join(tmpdir(), "fabric-mcp-changed-"));
   tempRoots.push(target);
   const codexConfigPath = join(target, "codex-config.toml");
+  const claudeCodePath = join(target, "claude-code.json");
+  const claudeDesktopPath = join(target, "claude-desktop.json");
   mkdirSync(join(target, ".fabric"), { recursive: true });
   writeFileSync(
     join(target, ".fabric", "fabric-config.json"),
-    JSON.stringify({ clientPaths: { codexCLI: codexConfigPath } }, null, 2),
+    JSON.stringify({ clientPaths: { codexCLI: codexConfigPath, claudeCodeCLI: claudeCodePath, claudeCodeDesktop: claudeDesktopPath } }, null, 2),
     "utf8",
   );
-  return { target, codexConfigPath };
+  return { target, codexConfigPath, claudeCodePath, claudeDesktopPath };
 }
 
 describe("installMcpClients — change detection (TASK-004/Bug-A)", () => {
@@ -57,5 +59,34 @@ describe("installMcpClients — change detection (TASK-004/Bug-A)", () => {
     });
     expect(second.installed).toContain("CodexCLI");
     expect(second.changed).toHaveLength(0);
+  });
+
+  it("dynamic mode writes all concrete writers without root pins", async () => {
+    const fixture = makeWorkspace();
+    await installMcpClients(fixture.target, {
+      localServerPath: "/tmp/fabric-server.js",
+      mcpRootPolicy: { mode: "dynamic" },
+    });
+
+    for (const path of [fixture.claudeCodePath, fixture.claudeDesktopPath, fixture.codexConfigPath]) {
+      const output = readFileSync(path, "utf8");
+      expect(output).not.toContain("FABRIC_PROJECT_ROOT");
+      expect(output).not.toContain("PROVENANCE");
+    }
+  });
+
+  it("pinned mode writes all concrete writers with normalized root and explicit marker", async () => {
+    const fixture = makeWorkspace();
+    const selectedRoot = join(fixture.target, "nested", "..");
+    await installMcpClients(fixture.target, {
+      localServerPath: "/tmp/fabric-server.js",
+      mcpRootPolicy: { mode: "pinned", projectRoot: selectedRoot, provenance: "operator" },
+    });
+
+    for (const path of [fixture.claudeCodePath, fixture.claudeDesktopPath, fixture.codexConfigPath]) {
+      const output = readFileSync(path, "utf8");
+      expect(output).toContain(fixture.target);
+      expect(output).toContain("operator:v1");
+    }
   });
 });

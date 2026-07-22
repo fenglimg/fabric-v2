@@ -38,6 +38,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "build:hook-project-context": "node ../../scripts/build-hook-project-context.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"

@@ -265,6 +265,12 @@ export const enMessages: Messages = {
   "doctor.check.knowledge_body_altitude_dump.message.plural": "{count} dump-shaped knowledge bodies (e.g. {detail})",
   "doctor.check.knowledge_body_altitude_dump.remediation": "Rewrite as reusable decision/pitfall/guideline altitude (## structure), not a session transcript; re-archive via fabric-archive / fab_propose",
   "doctor.check.knowledge_body_altitude_dump.scan_error": "Body-altitude scan failed ({detail}); doctor cannot confirm corpus is clean.",
+  "doctor.check.knowledge_body_dedup.name": "Knowledge body dedup (v-next)",
+  "doctor.check.knowledge_body_dedup.ok": "No legacy body sections or deprecated frontmatter detected (## Summary / ## Evidence / ## Why proposed / ## Session context / tech_stack all clean).",
+  "doctor.check.knowledge_body_dedup.message.singular": "1 entry has legacy body sections or deprecated frontmatter: {detail}",
+  "doctor.check.knowledge_body_dedup.message.plural": "{count} entries have legacy body sections or deprecated frontmatter (e.g. {detail})",
+  "doctor.check.knowledge_body_dedup.remediation": "Run `fabric doctor --fix` to strip redundant body sections, rename ## Session context → ## Context, and merge tech_stack into tags.",
+  "doctor.check.knowledge_body_dedup.scan_error": "Body-dedup scan failed ({detail}); doctor cannot confirm corpus is clean.",
   "doctor.fix-plan.header": "knowledge mutation plan ({count} total)",
   "doctor.fix-plan.preview": "preview:",
   "doctor.fix-plan.more": "... and {count} more",
@@ -420,7 +426,7 @@ export const enMessages: Messages = {
   // rc.23 TASK-007 (a-C2): --enrich-descriptions flag set. Back-fills the
   // four description-grade frontmatter fields on canonical knowledge entries.
   "cli.doctor.args.enrich-descriptions.description":
-    "Back-fill missing intent_clues / tech_stack / impact / must_read_if on canonical knowledge entries (read-only by default; pair with --auto to write stubs).",
+    "Back-fill missing intent_clues / impact / must_read_if on canonical knowledge entries (read-only by default; pair with --auto to write stubs).",
   "cli.doctor.args.auto.description":
     "With --enrich-descriptions: write deterministic stub values for missing fields. Without --auto, the run is read-only.",
   "cli.doctor.args.dry-run.description":
@@ -433,7 +439,7 @@ export const enMessages: Messages = {
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
   "doctor.enrich.allComplete":
-    "All canonical knowledge entries already declare intent_clues / tech_stack / impact / must_read_if.",
+    "All canonical knowledge entries already declare intent_clues / impact / must_read_if.",
   // rc.26 TASK-02a: doctor foundation-batch check messages.
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
   "doctor.check.bootstrap_snapshot_drift.message.drift":

@@ -82,7 +82,7 @@ const { dirname, join } = require("node:path");
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
 const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.cjs");
-const { resolveProjectRoot } = require("./lib/project-root.cjs");
+const { createProjectContextResolver } = require("./lib/project-root.cjs");
 const toolPathExtract = require("./lib/tool-path-extract.cjs");
 const hintNarrowConfig = require("./lib/hint-narrow-config.cjs");
 const hintSummaryFormat = require("./lib/hint-summary-format.cjs");
@@ -1692,8 +1692,9 @@ if (require.main === module) {
   } catch {
     // No stdin — proceed with empty payload (E4 still runs).
   }
+  const context = createProjectContextResolver({ explicitRoot: process.env.CLAUDE_PROJECT_DIR });
   main(
-    { cwd: resolveProjectRoot(process.cwd()), now: new Date(), stdin: stdinRaw },
+    { cwd: context.workspaceRoot, now: new Date(), stdin: stdinRaw },
     { stderr: process.stderr },
   ).finally(() => process.exit(0));
 }

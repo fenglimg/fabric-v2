@@ -7,6 +7,8 @@ import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { ClientConfigWriter, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
+import type { McpRootPolicy } from "./writer.js";
+import { inspectManagedRootPin } from "./root-pin-migration.js";
 
 function expandHome(filePath: string): string {
   if (filePath === "~") {
@@ -177,14 +179,25 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
     return existsSync(codexDir) ? resolve(join(codexDir, "config.toml")) : null;
   }
 
-  async write(serverPath: string, workspaceRoot: string, overridePath?: string): Promise<void> {
+  async write(serverPath: string, workspaceRoot: string, overridePath?: string, mcpRootPolicy?: McpRootPolicy): Promise<void> {
     const configPath = await this.detect(workspaceRoot, overridePath);
     if (configPath === null) {
       return;
     }
 
     const rawConfig = await readTomlConfigText(configPath);
-    const nextConfig = upsertCodexServerBlock(rawConfig, "fabric", createServerEntry(serverPath, workspaceRoot));
+    // A dynamic reinstall must not erase an operator/project pin that was
+    // already explicit. Managed legacy pins are removed by TASK-005 migration;
+    // only the explicit marker is carried forward here.
+    let effectivePolicy = mcpRootPolicy;
+    if (effectivePolicy?.mode !== "pinned") {
+      const existingPin = inspectManagedRootPin({ clientKind: this.clientKind, raw: rawConfig });
+      if (existingPin.state === "explicit" && existingPin.root !== undefined && existingPin.marker !== undefined) {
+        const provenance = existingPin.marker.startsWith("project:") ? "project" : "operator";
+        effectivePolicy = { mode: "pinned", projectRoot: existingPin.root, provenance };
+      }
+    }
+    const nextConfig = upsertCodexServerBlock(rawConfig, "fabric", createServerEntry(serverPath, effectivePolicy));
 
     await mkdir(dirname(configPath), { recursive: true });
     await atomicWriteText(configPath, nextConfig);

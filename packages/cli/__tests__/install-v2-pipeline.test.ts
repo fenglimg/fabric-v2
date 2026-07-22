@@ -56,6 +56,7 @@ function baseContext(target: string, overrides: Partial<InstallContext> = {}): I
     options: { planOnly: false, skipBootstrap: false, skipHooks: false, skipMcp: false },
     mcpInstallMode: "global",
     claudeMcpScope: "project",
+    mcpRootPolicy: { mode: "dynamic" },
     interactive: false,
     wizardEnabled: false,
     stageResults: [],

@@ -135,15 +135,15 @@ exports[`runDoctorReport i18n snapshots > locks machine check order for registry
     "status": "ok",
   },
   {
-    "code": "knowledge_underseeded",
+    "code": null,
     "index": 22,
-    "kind": "info",
+    "kind": null,
     "status": "ok",
   },
   {
-    "code": null,
+    "code": "knowledge_underseeded",
     "index": 23,
-    "kind": null,
+    "kind": "info",
     "status": "ok",
   },
   {
@@ -165,15 +165,15 @@ exports[`runDoctorReport i18n snapshots > locks machine check order for registry
     "status": "ok",
   },
   {
-    "code": "onboard_coverage_incomplete",
+    "code": null,
     "index": 27,
-    "kind": "info",
+    "kind": null,
     "status": "ok",
   },
   {
-    "code": null,
+    "code": "onboard_coverage_incomplete",
     "index": 28,
-    "kind": null,
+    "kind": "info",
     "status": "ok",
   },
   {
@@ -297,8 +297,14 @@ exports[`runDoctorReport i18n snapshots > locks machine check order for registry
     "status": "ok",
   },
   {
-    "code": "preexisting_root_claude_md",
+    "code": null,
     "index": 49,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": "preexisting_root_claude_md",
+    "index": 50,
     "kind": "info",
     "status": "ok",
   },
@@ -449,6 +455,14 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "kind": null,
     "message_prefix_30_chars": "未发现 dump 形态的知识正文。",
     "name": "知识正文 altitude",
+    "status": "ok",
+  },
+  {
+    "actionHint_prefix_30_chars": null,
+    "code": null,
+    "kind": null,
+    "message_prefix_30_chars": "未发现旧格式正文段落或废弃 frontmatter(## S",
+    "name": "知识正文去重(v-next)",
     "status": "ok",
   },
   {
@@ -854,6 +868,14 @@ exports[`runDoctorReport i18n snapshots > renders stable English doctor checks f
     "kind": null,
     "message_prefix_30_chars": "No dump-shaped knowledge bodie",
     "name": "Knowledge body altitude",
+    "status": "ok",
+  },
+  {
+    "actionHint_prefix_30_chars": null,
+    "code": null,
+    "kind": null,
+    "message_prefix_30_chars": "No legacy body sections or dep",
+    "name": "Knowledge body dedup (v-next)",
     "status": "ok",
   },
   {

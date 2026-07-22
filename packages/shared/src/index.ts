@@ -15,6 +15,8 @@ export * from "./schemas/store-stable-id.js";
 export * from "./schemas/parity-matrix.js";
 export * from "./resolver/contracts.js";
 export * from "./resolver/project-root-resolver.js";
+export * from "./resolver/project-context-resolver.js";
+export * from "./resolver/git-worktree-identity.js";
 export * from "./resolver/store-resolver.js";
 export * from "./resolver/store-disk-reader.js";
 export * from "./resolver/store-qualified-id.js";

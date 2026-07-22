@@ -14,7 +14,10 @@ import { SCOPE_COORDINATE_HINT } from "@fenglimg/fabric-shared";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
 import { appendPayloadWarning } from "./payload-warning.js";
-import { resolveProjectRoot } from "../meta-reader.js";
+import {
+  defaultProjectContextProvider,
+  type ProjectContextProvider,
+} from "../project-context-provider.js";
 import { projectRootWarning } from "../services/project-root-warning.js";
 import { readPayloadLimits } from "../config-loader.js";
 import {
@@ -27,7 +30,11 @@ import { extractKnowledge } from "../services/extract-knowledge.js";
 import { unsealedProjectScopeWarning } from "../services/write-scope-warning.js";
 import { toMcpToolError } from "./mcp-tool-error.js";
 
-export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTracker): void {
+export function registerExtractKnowledge(
+  server: McpServer,
+  tracker?: InFlightTracker,
+  contextProvider: ProjectContextProvider = defaultProjectContextProvider,
+): void {
   server.registerTool(
     "fab_propose",
     {
@@ -41,6 +48,7 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
+        const context = contextProvider.snapshotForCall();
         // v2.0.0-rc.23 TASK-009 (d): see plan-context.ts for rationale.
         const gateResult = await awaitFirstReconcileGate();
         const gateWarn = gateWarning(gateResult);
@@ -74,7 +82,7 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
           throw parseErr;
         }
 
-        const projectRoot = resolveProjectRoot();
+        const projectRoot = context.workspaceRoot;
         const result = await extractKnowledge(projectRoot, validated);
 
         const response: typeof result & { warnings?: GateWarning[] } = { ...result };
@@ -84,7 +92,7 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
 
         // KT-PIT-0046: fail-loud when the root carries no project config —
         // no write_routes resolve and writes land personal-only at best.
-        const rootWarn = projectRootWarning(projectRoot);
+        const rootWarn = projectRootWarning(context);
         if (rootWarn) {
           response.warnings = [...(response.warnings ?? []), rootWarn];
         }
