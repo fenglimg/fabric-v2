@@ -7,6 +7,7 @@ import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { ClientConfigWriter, ClientKind, McpRootPolicy, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
+import { inspectManagedRootPin } from "./root-pin-migration.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -194,9 +195,35 @@ async function readJsonConfig(configPath: string): Promise<JsonObject> {
   }
 }
 
-export async function writeJsonClientConfig(configPath: string, serverEntry: ServerEntry): Promise<void> {
+export async function writeJsonClientConfig(
+  configPath: string,
+  serverEntry: ServerEntry,
+  clientKind: ClientKind = "ClaudeCodeCLI",
+): Promise<void> {
   const existing = await readJsonConfig(configPath);
   const merged = deepMerge(existing, { mcpServers: { fabric: serverEntry } });
+
+  // Fabric owns its entry's env authoritatively. A plain deep-merge would let a
+  // dynamic (env-less) reinstall INHERIT a stale FABRIC_PROJECT_ROOT pin from the
+  // prior entry (the TASK-006 JSON gap). Mirror the TOML writer: replace env
+  // wholesale, and on dynamic only carry an EXPLICIT operator/project pin forward
+  // — managed/ambiguous installer pins are dropped so the server resolves the
+  // root dynamically. Other mcpServers entries stay untouched (deep-merged above).
+  const fabricEntry = (merged.mcpServers as JsonObject).fabric as JsonObject;
+  if (serverEntry.env) {
+    fabricEntry.env = { ...serverEntry.env };
+  } else {
+    const existingFabric = (existing.mcpServers as JsonObject | undefined)?.fabric as ServerEntry | undefined;
+    const pin = inspectManagedRootPin({ clientKind, entry: existingFabric ?? null });
+    if (pin.state === "explicit" && pin.root !== undefined) {
+      fabricEntry.env = {
+        FABRIC_PROJECT_ROOT: pin.root,
+        ...(pin.marker !== undefined ? { FABRIC_PROJECT_ROOT_PROVENANCE: pin.marker } : {}),
+      };
+    } else {
+      delete fabricEntry.env;
+    }
+  }
 
   await mkdir(dirname(configPath), { recursive: true });
   await atomicWriteJson(configPath, merged, { indent: 2 });
@@ -324,7 +351,7 @@ abstract class JsonClientConfigWriter implements ClientConfigWriter {
       return;
     }
 
-    await writeJsonClientConfig(configPath, createServerEntry(serverPath, mcpRootPolicy));
+    await writeJsonClientConfig(configPath, createServerEntry(serverPath, mcpRootPolicy), this.clientKind);
   }
 
   async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {
