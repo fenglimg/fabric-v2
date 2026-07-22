@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
-import type { ClientConfigWriter, ClientKind, RemoveResult, ServerEntry } from "./writer.js";
+import type { ClientConfigWriter, ClientKind, McpRootPolicy, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
 
 type JsonObject = Record<string, unknown>;
@@ -318,13 +318,13 @@ abstract class JsonClientConfigWriter implements ClientConfigWriter {
     return configPath === null ? null : normalizeConfigPath(configPath);
   }
 
-  async write(serverPath: string, workspaceRoot: string, overridePath?: string): Promise<void> {
+  async write(serverPath: string, workspaceRoot: string, overridePath?: string, mcpRootPolicy?: McpRootPolicy): Promise<void> {
     const configPath = await this.detect(workspaceRoot, overridePath);
     if (configPath === null) {
       return;
     }
 
-    await writeJsonClientConfig(configPath, createServerEntry(serverPath, workspaceRoot));
+    await writeJsonClientConfig(configPath, createServerEntry(serverPath, mcpRootPolicy));
   }
 
   async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {

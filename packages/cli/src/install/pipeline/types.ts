@@ -1,4 +1,5 @@
 import type { ClaudeMcpScope } from "../../config/json.js";
+import type { McpRootPolicy } from "../../config/writer.js";
 import type { OutputRenderer, StepInfo } from "../../tui/types.js";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +24,8 @@ export type InitArgs = {
    * --verbose logic (collapse opt-out + C-006 capability-table reveal).
    */
   verbose?: boolean;
+  "mcp-root-mode"?: string;
+  "mcp-project-root"?: string;
 };
 
 /**
@@ -119,6 +122,8 @@ export interface InstallContext {
   mcpInstallMode: McpInstallMode;
   /** Claude MCP scope */
   claudeMcpScope: ClaudeMcpScope;
+  /** Persistence policy for machine-global MCP client roots. */
+  mcpRootPolicy: McpRootPolicy;
   /** Whether running interactively */
   interactive: boolean;
   /** Whether wizard is enabled */

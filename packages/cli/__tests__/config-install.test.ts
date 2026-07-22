@@ -4,8 +4,6 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolve } from "node:path";
-
 import { CodexTOMLConfigWriter } from "../src/config/toml.ts";
 import { createServerEntry } from "../src/config/writer.ts";
 
@@ -24,13 +22,10 @@ describe("Codex config install", () => {
 
     await writer.write("/tmp/fabric-server.js", process.cwd());
 
-    // ISS-58: env pins FABRIC_PROJECT_ROOT to the workspace root so the MCP
-    // server resolves the right project regardless of its spawn cwd.
     expect(readFileSync(configPath, "utf8")).toBe(
       `[mcp_servers.fabric]
 command = ${JSON.stringify(process.execPath)}
 args = ["/tmp/fabric-server.js"]
-env = { FABRIC_PROJECT_ROOT = ${JSON.stringify(process.cwd())} }
 `,
     );
   });
@@ -69,16 +64,36 @@ trust_level = "trusted"
 [mcp_servers.fabric]
 command = ${JSON.stringify(process.execPath)}
 args = ["/new/server.js"]
-env = { FABRIC_PROJECT_ROOT = ${JSON.stringify(process.cwd())} }
 `,
     );
   });
+
+  it("preserves an explicit pin on a dynamic reinstall", async () => {
+    const { configPath } = createTempConfig();
+    const writer = new CodexTOMLConfigWriter(configPath);
+    await writer.write("/srv.js", process.cwd(), undefined, {
+      mode: "pinned",
+      projectRoot: "/tmp/operator-project",
+      provenance: "operator",
+    });
+    await writer.write("/srv.js", process.cwd(), undefined, { mode: "dynamic" });
+    const output = readFileSync(configPath, "utf8");
+    expect(output).toContain('FABRIC_PROJECT_ROOT = "/tmp/operator-project"');
+    expect(output).toContain('FABRIC_PROJECT_ROOT_PROVENANCE = "operator:v1"');
+  });
 });
 
-describe("createServerEntry — ISS-58 FABRIC_PROJECT_ROOT pin (client-agnostic)", () => {
-  it("pins env.FABRIC_PROJECT_ROOT to the resolved project root when supplied", () => {
-    const entry = createServerEntry("/srv.js", "/Users/x/proj");
-    expect(entry.env).toEqual({ FABRIC_PROJECT_ROOT: resolve("/Users/x/proj") });
+describe("createServerEntry — MCP root policy", () => {
+  it("pins a normalized root with an explicit provenance marker", () => {
+    const entry = createServerEntry("/srv.js", {
+      mode: "pinned",
+      projectRoot: "/Users/x/proj/../proj",
+      provenance: "operator",
+    });
+    expect(entry.env).toEqual({
+      FABRIC_PROJECT_ROOT: "/Users/x/proj",
+      FABRIC_PROJECT_ROOT_PROVENANCE: "operator:v1",
+    });
   });
 
   it("omits env when no project root is supplied (global-install path)", () => {
@@ -86,8 +101,8 @@ describe("createServerEntry — ISS-58 FABRIC_PROJECT_ROOT pin (client-agnostic)
     expect(entry.env).toBeUndefined();
   });
 
-  it("omits env for an empty-string project root (fail-open, no bogus pin)", () => {
-    const entry = createServerEntry("/srv.js", "");
+  it("omits env for dynamic mode", () => {
+    const entry = createServerEntry("/srv.js", { mode: "dynamic" });
     expect(entry.env).toBeUndefined();
   });
 });

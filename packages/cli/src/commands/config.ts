@@ -18,6 +18,7 @@ import { headerRule } from "../tui/structure.js";
 import { resolveClients } from "../config/resolver.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
+import type { McpRootPolicy } from "../config/writer.js";
 import { t } from "../i18n.js";
 import {
   loadGlobalConfig,
@@ -55,11 +56,12 @@ type ConfigArgs = {
   json?: boolean;
 };
 
-type InstallMcpClientsOptions = {
+export type InstallMcpClientsOptions = {
   clients?: ClientKind[];
   dryRun?: boolean;
   localServerPath?: string;
   claudeMcpScope?: ClaudeMcpScope;
+  mcpRootPolicy?: McpRootPolicy;
 };
 
 type McpInstallAction = "wrote" | "dry-run" | "skipped";
@@ -753,7 +755,7 @@ export async function installMcpClients(
     // TASK-004/Bug-A: snapshot the target file BEFORE the (unconditional) write,
     // then compare AFTER, so an idempotent re-write doesn't read as a real change.
     const before = await readFileIfExists(configPath);
-    await writer.write(serverPath, workspaceRoot);
+    await writer.write(serverPath, workspaceRoot, undefined, options.mcpRootPolicy);
     const after = await readFileIfExists(configPath);
     installed.push(writer.clientKind);
     if (before !== after) {

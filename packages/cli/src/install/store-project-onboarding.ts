@@ -2,6 +2,11 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 
+import {
+  createProjectContextResolver,
+  resolveGitWorktreeIdentity,
+} from "@fenglimg/fabric-shared";
+
 import { loadProjectConfig, saveProjectConfig } from "../store/project-config-io.js";
 import {
   storeBind,
@@ -56,12 +61,15 @@ export async function ensureStoreProjectBinding(
   options: EnsureStoreProjectBindingOptions,
 ): Promise<StoreProjectBindingResult> {
   const now = options.now ?? new Date().toISOString();
-  const project_id = ensureProjectId(projectRoot, options.uuid);
-  const currentConfig = loadProjectConfig(projectRoot);
+  const identityRoot = resolveGitWorktreeIdentity(projectRoot)?.identityRoot ?? projectRoot;
+  ensureProjectId(identityRoot, options.uuid);
+  const context = createProjectContextResolver({ roots: [projectRoot] });
+  const project_id = context.projectId;
+  const currentConfig = loadProjectConfig(context.identityRoot);
   const requested =
     options.requestedProjectId ??
     currentConfig?.active_project ??
-    suggestStoreProjectId(projectRoot);
+    suggestStoreProjectId(context.identityRoot);
   const active_project = normalizeStoreProjectId(requested);
 
   const projects = await storeProjectList(storeAlias, options.globalRoot);
@@ -77,12 +85,12 @@ export async function ensureStoreProjectBinding(
     options.suggestedRemote === undefined
       ? { id: storeAlias }
       : { id: storeAlias, suggested_remote: options.suggestedRemote };
-  await storeBind(projectRoot, entry, { project: active_project, globalRoot: options.globalRoot });
-  storeSwitchWrite(projectRoot, storeAlias, { globalRoot: options.globalRoot });
-  storeSetWriteRoute(projectRoot, `project:${active_project}`, storeAlias, {
+  await storeBind(context.identityRoot, entry, { project: active_project, globalRoot: options.globalRoot });
+  storeSwitchWrite(context.identityRoot, storeAlias, { globalRoot: options.globalRoot });
+  storeSetWriteRoute(context.identityRoot, `project:${active_project}`, storeAlias, {
     globalRoot: options.globalRoot,
   });
-  regenerateBindingsSnapshot(projectRoot, {
+  regenerateBindingsSnapshot(context.identityRoot, {
     now,
     globalRoot: options.globalRoot,
   });

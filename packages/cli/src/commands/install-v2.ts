@@ -16,6 +16,8 @@ import { HooksStage } from "../install/pipeline/hooks.stage.js";
 import { McpStage } from "../install/pipeline/mcp.stage.js";
 import { ValidateStage } from "../install/pipeline/validate.stage.js";
 import { GuidanceStage } from "../install/pipeline/guidance.stage.js";
+import type { McpRootPolicy } from "../config/writer.js";
+import { isAbsolute, resolve } from "node:path";
 
 // Import the TUI renderer (W3-A: theme.ts-backed, non-Ink)
 import { createInstallRenderer } from "../tui/index.js";
@@ -73,6 +75,17 @@ export const installCommand = defineCommand({
       description: t("cli.install.args.verbose.description"),
       default: false,
     },
+    "mcp-root-mode": {
+      type: "string",
+      description: "MCP project-root persistence mode: dynamic (default) or pinned",
+      valueHint: "dynamic|pinned",
+      default: "dynamic",
+    },
+    "mcp-project-root": {
+      type: "string",
+      description: "Absolute project root to persist when --mcp-root-mode=pinned",
+      valueHint: "absolute-path",
+    },
   },
   async run({ args }: { args: InitArgs }) {
     await runInitCommand(args);
@@ -86,6 +99,7 @@ export default installCommand;
 // ---------------------------------------------------------------------------
 
 export async function runInitCommand(args: InitArgs): Promise<void> {
+  const mcpRootPolicy = resolveMcpRootPolicy(args);
   const logger = createDebugLogger(args.debug);
 
   // Handle --global flag: set up global home only (no project wiring)
@@ -114,7 +128,7 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
   const renderer = shouldUseInstallRenderer(args, terminalInteractive)
     ? createInstallRenderer({ verbose: args.debug })
     : undefined;
-  const context = createInstallContext(args, resolution.target, renderer);
+  const context = createInstallContext(args, resolution.target, renderer, mcpRootPolicy);
 
   // Build and execute the pipeline
   const pipeline = new InstallPipeline()
@@ -149,7 +163,7 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
 // Context Creation
 // ---------------------------------------------------------------------------
 
-function createInstallContext(args: InitArgs, target: string, renderer?: OutputRenderer): InstallContext {
+function createInstallContext(args: InitArgs, target: string, renderer?: OutputRenderer, mcpRootPolicy: McpRootPolicy = { mode: "dynamic" }): InstallContext {
   const terminalInteractive = isInteractiveInit();
   const planOnly = args["dry-run"] === true;
 
@@ -171,6 +185,7 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
     },
     mcpInstallMode: "global",
     claudeMcpScope: "project",
+    mcpRootPolicy,
     interactive: terminalInteractive && !args.yes,
     wizardEnabled: terminalInteractive && !args.yes && !planOnly,
     stageResults: [],
@@ -178,6 +193,28 @@ function createInstallContext(args: InitArgs, target: string, renderer?: OutputR
     state: { firstInstall },
     renderer,
   };
+}
+
+/** Parse and validate the public MCP root persistence flags before any writes. */
+export function resolveMcpRootPolicy(args: InitArgs): McpRootPolicy {
+  const mode = args["mcp-root-mode"] ?? "dynamic";
+  const projectRoot = args["mcp-project-root"];
+  if (mode !== "dynamic" && mode !== "pinned") {
+    throw new Error(`Invalid --mcp-root-mode: ${mode}. Expected dynamic or pinned.`);
+  }
+  if (mode === "dynamic") {
+    if (projectRoot !== undefined) {
+      throw new Error("--mcp-project-root requires --mcp-root-mode=pinned.");
+    }
+    return { mode: "dynamic" };
+  }
+  if (projectRoot === undefined || projectRoot.trim().length === 0) {
+    throw new Error("--mcp-project-root is required when --mcp-root-mode=pinned.");
+  }
+  if (!isAbsolute(projectRoot)) {
+    throw new Error("--mcp-project-root must be an absolute path.");
+  }
+  return { mode: "pinned", projectRoot: resolve(projectRoot), provenance: "operator" };
 }
 
 // ---------------------------------------------------------------------------

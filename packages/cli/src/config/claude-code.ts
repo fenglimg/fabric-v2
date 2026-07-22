@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, platform } from "node:os";
 
-import type { ClientConfigWriter, RemoveResult, ServerEntry } from "./writer.js";
+import type { ClientConfigWriter, McpRootPolicy, RemoveResult, ServerEntry } from "./writer.js";
+import { createServerEntry } from "./writer.js";
 import { ClaudeCodeCLIWriter, normalizeConfigPath, removeJsonClientConfigEntry, writeJsonClientConfig } from "./json.js";
 
 export function getClaudeDesktopConfigPath(): string {
@@ -37,16 +38,13 @@ export class ClaudeCodeDesktopWriter implements ClientConfigWriter {
     return existsSync(configPath) || overridePath !== undefined || this.configuredPath !== undefined ? configPath : null;
   }
 
-  async write(serverPath: string, workspaceRoot: string, overridePath?: string): Promise<void> {
+  async write(serverPath: string, workspaceRoot: string, overridePath?: string, mcpRootPolicy?: McpRootPolicy): Promise<void> {
     const configPath = await this.detect(workspaceRoot, overridePath);
     if (configPath === null) {
       return;
     }
 
-    await writeJsonClientConfig(configPath, {
-      command: process.execPath,
-      args: [serverPath],
-    });
+    await writeJsonClientConfig(configPath, createServerEntry(serverPath, mcpRootPolicy));
   }
 
   async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {

@@ -4938,6 +4938,23 @@ function findProjectMarker(start) {
   }
   return null;
 }
+function resolveProjectRoot(startCwd) {
+  const envRoot = process.env.CLAUDE_PROJECT_DIR;
+  if (typeof envRoot === "string" && envRoot.length > 0) return envRoot;
+  const start = typeof startCwd === "string" && startCwd.length > 0 ? startCwd : process.cwd();
+  let current = start;
+  let firstFabric = null;
+  for (let depth = 0; depth < 64; depth += 1) {
+    if (fs.existsSync(path.join(current, ".git"))) return current;
+    if (firstFabric === null && fs.existsSync(path.join(current, ".fabric"))) {
+      firstFabric = current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return firstFabric ?? start;
+}
 function resolveRoots(candidate) {
   const gitIdentity = resolveGitWorktreeIdentity(candidate);
   if (gitIdentity !== null) {
@@ -4993,3 +5010,4 @@ function createProjectContextResolver(input = {}) {
 exports.ProjectContextAmbiguousError = ProjectContextAmbiguousError;
 exports.ProjectContextUnresolvedError = ProjectContextUnresolvedError;
 exports.createProjectContextResolver = createProjectContextResolver;
+exports.resolveProjectRoot = resolveProjectRoot;
