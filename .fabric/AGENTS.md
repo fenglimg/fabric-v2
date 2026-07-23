@@ -28,8 +28,9 @@
 完整 maintainer 版见 `docs/USER-QUICKSTART.md`。
 
 ## 行为规则
-- **修改任何文件前**:先 `fab_recall(paths=[<被改文件>])` —— 一次调用拿回相关 KB 的描述 + 原生读取路径(`entries[].read_path`)。`fab_recall` 不再投递正文;需要某条正文时直接对其 `entries[].read_path` 做原生 Read(`Read <store>/knowledge/<type>/<id>--*.md`),这会被 PostToolUse hook 记为 `knowledge_body_read`。lean 默认:描述+索引已够发现条目,正文按需读一次,不每轮重灌(KT-GLD-0005)。
-- **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fabric doctor --fix`。
+- **Pre-action gating (修改任何文件前 MUST)**: ① 先 `fab_recall(paths=[<被改文件>], session_id=<client-session-id>)`；② 按需原生 Read 命中的 `entries[].read_path` 正文(PostToolUse 记为 `knowledge_body_read`)；③ 跳过不适用命中时说 `dismissed: <id> (<reason>)`。`fab_recall` 不再投递正文;lean 默认描述+索引已够发现条目(KT-GLD-0005)。PreToolUse 仅软 nudge,守 KT-DEC-0007(非 permanent gate / 无 `decision:block`)。
+- **Archive-as-truth**: 进 canonical **唯一路径** 是 `fab_propose` → pending → `fabric-review`/`fab_review` 审批；禁止把 chat/log 自动 promote 进 canonical。
+- **`.fabric/agents.meta.json` 严禁手动编辑**（co-location index 已退役;知识在 mounted stores）。异常时跑 `fabric doctor` / `fabric doctor --fix` 自愈可修复项。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(条目按 `semantic_scope` 分三层:`team` 团队通用 / `project:<id>` 本项目专属(仅在绑定该项目的仓库浮现)/ `personal` 个人 `KP-*`,三者引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
@@ -38,7 +39,7 @@
 - **session_id**: 调用 `fab_recall` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 `fabric-hint.cjs` Stop hook 准确识别跨会话 debt 状态。
 - **Skills (4)**:写流程 `fabric-archive`(含 source mode 冷启动从 git/docs 回灌)/ `fabric-review`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 `fabric-store` / `fabric-sync`。
 - **Language**:渲染按 `~/.fabric/fabric-global.json` 的 `language` 字段(machine-wide tone)。
-- **Archive cadence nudge** (rc.36): 每完成一批 Edit(默认 ~20 次, 与 Stop hook 阈值 config `archive_edit_threshold` 一致)/ 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
+- **Archive cadence nudge** (rc.36 / finish→archive): 显著 decision 收口或一批 Edit 达到 config `archive_edit_threshold`(默认 20) 后,在合适回合轻量自调 `fabric-archive`(同 turn 最多 1 次;非 task engine / 非 Stop-hook flood)。Stop hook 仅 soft threshold nudge,守 KT-DEC-0007 — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_pending action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.2 C1: 精简说明书)
