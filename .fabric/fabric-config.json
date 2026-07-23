@@ -2,18 +2,18 @@
   "project_id": "a64bccdc-b91e-4947-90f1-432280965050",
   "required_stores": [
     {
-      "id": "team"
+      "id": "fabric-team"
     }
   ],
-  "active_write_store": "team",
+  "active_write_store": "fabric-team",
   "active_project": "fabric-v2",
   "write_routes": [
     {
       "scope": "project:fabric-v2",
-      "store": "team"
+      "store": "fabric-team"
     }
   ],
-  "default_write_store": "team",
+  "default_write_store": "fabric-team",
   "default_layer_filter": "both",
   "archive_hint_cooldown_hours": 12,
   "underseed_node_threshold": 10,
