@@ -2014,11 +2014,20 @@
       state.byId = new Map(state.entries.map((e) => [e.id, e]));
       
       renderSidebar();
-      
+
       if (state.selectedId && state.byId.has(state.selectedId)) {
         renderEntry(state.byId.get(state.selectedId));
       } else {
-        renderDashboard();
+        // 关联图侧板「查看详情」以 ?entry=<qualifiedId> 跳回列表定位条目
+        const entryParam = new URLSearchParams(location.search).get("entry");
+        const hit = entryParam
+          ? state.entries.find((e) => e.qualifiedId === entryParam || e.id === entryParam)
+          : null;
+        if (hit) {
+          selectEntry(hit.id);
+        } else {
+          renderDashboard();
+        }
       }
       
       setStatus(`${state.entries.length} 条知识 · 实时`, true);
