@@ -50,4 +50,11 @@ describe("preview single-template controls", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("关联图");
   });
+
+  it("api payload carries the writeStore key (write-store-first group ordering)", async () => {
+    const base = await start();
+    const payload = (await (await fetch(`${base}/api/knowledge`)).json()) as { writeStore?: string | null };
+    // Always present; null when the cwd has no .fabric binding (hermetic test env).
+    expect("writeStore" in payload).toBe(true);
+  });
 });

@@ -15,6 +15,7 @@ import {
 
 import { paint } from "../colors.js";
 import { t } from "../i18n.js";
+import { loadProjectConfig } from "../store/project-config-io.js";
 
 // ---------------------------------------------------------------------------
 // `fabric preview` — loopback-only, read-only knowledge preview server.
@@ -456,7 +457,10 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           const allStores =
             allParam === null ? defaultAllStores : allParam === "1" || allParam === "true";
           const entries = await collectStoreCanonicalEntries(projectRoot, { allStores });
-          sendJson(res, 200, { entries: entries.map(toPreviewEntry) });
+          // writeStore lets the sidebar order the current project's write-target
+          // store group first. Read live (cheap) so a switch-write shows on refresh.
+          const writeStore = loadProjectConfig(projectRoot)?.active_write_store ?? null;
+          sendJson(res, 200, { entries: entries.map(toPreviewEntry), writeStore });
           return;
         }
         if (pathname === "/api/revision") {

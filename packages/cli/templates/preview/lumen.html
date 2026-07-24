@@ -1278,6 +1278,7 @@
     byId: new Map(),
     selectedId: null,
     revision: null,
+    writeStore: null,
     query: "",
     sort: "tree", // "tree" | "id" | "recent" | "maturity"
     collapsedScopes: new Set(),
@@ -1539,65 +1540,81 @@
     });
   }
 
-  // Hierarchical Directory Tree Rendering
+  // 组标题恒含 store 名(D7):scope 词短化 + store 全名(不做缩写魔法)
+  function groupTitle(scope, store) {
+    if (scope === "team") return "团队 · " + store;
+    if (scope === "personal") return "个人 · " + store;
+    if (scope.startsWith("project:")) return "项目 " + scope.slice("project:".length).toUpperCase() + " · " + store;
+    return scope + " · " + store;
+  }
+
+  // Hierarchical Directory Tree Rendering — (scope, store) 复合分组(D4):
+  // 同 scope 不同物理库各自成组,双 team 库混排由结构解决,不再拼 [store] 前缀
   function renderTreeSidebar(visible, sidebar) {
     const tree = {};
     for (const e of visible) {
-      if (!tree[e.scope]) tree[e.scope] = {};
-      if (!tree[e.scope][e.type]) tree[e.scope][e.type] = [];
-      tree[e.scope][e.type].push(e);
+      const key = e.scope + "|" + e.store;
+      if (!tree[key]) tree[key] = { scope: e.scope, store: e.store, types: {} };
+      if (!tree[key].types[e.type]) tree[key].types[e.type] = [];
+      tree[key].types[e.type].push(e);
     }
-    
-    const sortedScopes = Object.keys(tree).sort((a, b) => {
-      const ra = getScopeRank(a), rb = getScopeRank(b);
-      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]);
+
+    // 排序:当前项目 write store 优先,再按 scope 层级,再按 store 名
+    const sortedKeys = Object.keys(tree).sort((a, b) => {
+      const ga = tree[a], gb = tree[b];
+      const wa = ga.store === state.writeStore ? 0 : 1;
+      const wb = gb.store === state.writeStore ? 0 : 1;
+      if (wa !== wb) return wa - wb;
+      const ra = getScopeRank(ga.scope), rb = getScopeRank(gb.scope);
+      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]) || ga.store.localeCompare(gb.store);
     });
-    
-    for (let sIdx = 0; sIdx < sortedScopes.length; sIdx++) {
-      const scope = sortedScopes[sIdx];
+
+    for (let sIdx = 0; sIdx < sortedKeys.length; sIdx++) {
+      const key = sortedKeys[sIdx];
+      const scope = tree[key].scope;
       const scopeColor = getScopeColor(scope);
-      const typesObj = tree[scope];
-      
+      const typesObj = tree[key].types;
+
       const activeTypes = Object.keys(typesObj).sort((a, b) => {
         return TYPE_SORT_ORDER.indexOf(a) - TYPE_SORT_ORDER.indexOf(b);
       });
-      
+
       let scopeTotalCount = 0;
       for (const t of activeTypes) {
         scopeTotalCount += typesObj[t].length;
       }
-      
-      const isScopeCollapsed = state.collapsedScopes.has(scope);
+
+      const isScopeCollapsed = state.collapsedScopes.has(key);
       const scopeRow = document.createElement("div");
       scopeRow.className = "tree-row scope";
       scopeRow.style.borderLeft = `3px solid ${scopeColor}`;
-      
+
       const scopeType = scope.startsWith("project:") ? "project" : scope;
-      
+
       scopeRow.innerHTML = `
         <span class="tree-toggle-icon">${isScopeCollapsed ? "▶" : "▼"}</span>
         <span class="scope-icon" style="color:${scopeColor}">${SVG[scopeType] || SVG.project}</span>
-        <span class="tree-label">${esc(scopeLabel(scope))}</span>
+        <span class="tree-label">${esc(groupTitle(scope, tree[key].store))}</span>
         <span class="tree-badge" style="background: ${scopeColor}16; color: ${scopeColor}">${scopeTotalCount}</span>
       `;
-      
+
       scopeRow.addEventListener("click", () => {
-        if (state.collapsedScopes.has(scope)) {
-          state.collapsedScopes.delete(scope);
+        if (state.collapsedScopes.has(key)) {
+          state.collapsedScopes.delete(key);
         } else {
-          state.collapsedScopes.add(scope);
+          state.collapsedScopes.add(key);
         }
         renderSidebar();
       });
       sidebar.appendChild(scopeRow);
-      
+
       if (isScopeCollapsed) continue;
-      
+
       for (let tIdx = 0; tIdx < activeTypes.length; tIdx++) {
         const type = activeTypes[tIdx];
         const entries = typesObj[type].sort((a, b) => a.id.localeCompare(b.id));
-        
-        const typeId = `${scope}:${type}`;
+
+        const typeId = `${key}:${type}`;
         const isTypeCollapsed = state.collapsedTypes.has(typeId);
         const typeRow = document.createElement("div");
         typeRow.className = "tree-row type";
@@ -1993,6 +2010,7 @@
       // 默认显示+标记已弃用(deprecate-over-delete 可发现性,KT-DEC-0055);开关开启才隐藏
       if (hideDep()) list = list.filter((e) => !e.deprecated);
       state.entries = list;
+      state.writeStore = data.writeStore || null;
       state.byId = new Map(state.entries.map((e) => [e.id, e]));
       
       renderSidebar();
