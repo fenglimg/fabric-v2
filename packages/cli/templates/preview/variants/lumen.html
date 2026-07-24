@@ -814,12 +814,23 @@
     margin-bottom: 24px;
   }
   .entry-title {
-    font-size: 20px; /* 标题实为整句 summary,30px 会占多行;20px 既醒目又不臃肿 */
+    font-size: 24px; /* 标题已走精炼链(title 字段/H1),单行短句可以放大 */
     font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.45;
     margin-bottom: 16px;
     color: var(--text);
+  }
+  .detail-summary {
+    /* 归档 summary 全文——次级信息,置于 meta 卡与正文之间 */
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.8;
+    margin: 20px 0 8px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-left: 3px solid var(--border);
+    border-radius: 0 var(--radius) var(--radius) 0;
   }
 
   .metadata-grid {
@@ -1678,6 +1689,13 @@
     const tIcon = SVG[e.type] || SVG.decisions;
     const tLabel = TYPE_LABEL_ZH[e.type] || e.type;
 
+    // 标题已走精炼链（title 字段/H1）；summary 全文退居正文顶部段落。
+    // body 开头的 H1 与页头标题重复时跳过，避免双标题。
+    const summaryHtml = e.summary && e.summary !== e.title
+      ? `<p class="detail-summary">${esc(e.summary)}</p>`
+      : "";
+    const bodyMd = (e.body || "").replace(/^\s*#\s+[^\n]*\n?/, "");
+
     container.innerHTML = `
       <article class="entry-card">
         <header class="entry-header" style="border:none; background:none; padding:0; margin-bottom: 24px;">
@@ -1714,8 +1732,8 @@
             <span class="meta-value">${tagsHtml}</span>
           </div>
         </div>
-        
-        <div class="md">${renderMarkdown(e.body || "")}</div>
+        ${summaryHtml}
+        <div class="md">${renderMarkdown(bodyMd)}</div>
       </article>
     `;
     

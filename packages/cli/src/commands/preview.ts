@@ -50,6 +50,9 @@ export interface PreviewEntry {
   type: string;
   scope: string;
   title: string;
+  // Full archival summary (frontmatter `summary`) — shown in the detail pane
+  // body, NOT as the list/detail title (title uses the concise-first chain).
+  summary: string | undefined;
   maturity: string | undefined;
   createdAt: string | undefined;
   tags: string[];
@@ -91,6 +94,24 @@ function stripFrontmatter(source: string): string {
   return source.replace(/^---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/u, "").replace(/^\s+/u, "");
 }
 
+// First `# ` heading of a frontmatter-stripped body. Second link of the
+// title chain — most legacy entries carry a concise Chinese H1.
+export function extractH1Title(body: string): string | undefined {
+  const match = /^#\s+(.+?)\s*$/mu.exec(body);
+  return match === null ? undefined : match[1].trim();
+}
+
+// First sentence of the archival summary, clamped to 40 chars — the
+// user-locked "中文优先" fallback for entries with neither `title:` nor an H1
+// (e.g. the wespy corpus). Never an English slug (rejected in a prior session).
+export function firstSentence(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return undefined;
+  const cut = trimmed.split(/(?<=[。！？!?])|(?<=[.])\s|\r?\n/u)[0]!.trim();
+  return cut.length > 40 ? `${cut.slice(0, 40)}…` : cut;
+}
+
 // qualifiedId is `<alias>:<stableId>` (S61). Neither segment contains ':', so
 // the alias is everything before the trailing `:<stableId>`.
 function storeAliasOf(entry: StoreCanonicalEntry): string {
@@ -98,26 +119,38 @@ function storeAliasOf(entry: StoreCanonicalEntry): string {
   return cut > 0 ? entry.qualifiedId.slice(0, cut) : entry.layer;
 }
 
-function toPreviewEntry(entry: StoreCanonicalEntry): PreviewEntry {
+export function toPreviewEntry(entry: StoreCanonicalEntry): PreviewEntry {
   // Scope truth: parse the raw body's frontmatter first (always present),
   // fall back to the parsed description, then to the id-prefix-derived layer.
   const scope =
     readFrontmatterField(entry.body, "semantic_scope") ??
     entry.description.semantic_scope ??
     entry.layer;
+  const body = stripFrontmatter(entry.body);
+  // Title chain (census-verified, user-locked): frontmatter `title:` (universal
+  // in fabric-team, always concise Chinese) → body H1 → summary first sentence
+  // (40-char clamp) → stableId. Deliberately NOT the meta-builder's
+  // rule-description extractor — its summary-first priority is the opposite of
+  // what a display title needs.
+  const title =
+    readFrontmatterField(entry.body, "title") ??
+    extractH1Title(body) ??
+    firstSentence(entry.description.summary) ??
+    entry.stableId;
   return {
     id: entry.stableId,
     qualifiedId: entry.qualifiedId,
     store: storeAliasOf(entry),
     type: entry.type,
     scope,
-    title: entry.description.summary ?? entry.stableId,
+    title,
+    summary: entry.description.summary,
     maturity: entry.description.maturity,
     createdAt: entry.description.created_at ?? readFrontmatterField(entry.body, "created_at"),
     tags: entry.description.tags ?? [],
     related: readFrontmatterList(entry.body, "related"),
     deprecated: readFrontmatterField(entry.body, "deprecated") === "true",
-    body: stripFrontmatter(entry.body),
+    body,
   };
 }
 
