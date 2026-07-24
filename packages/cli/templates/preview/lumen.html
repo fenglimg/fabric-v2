@@ -308,6 +308,35 @@
     border-color: var(--border-strong);
   }
 
+  /* 视图切换 tab(列表|关联图)与数据源切换(本项目|全部)——原底部注入浮动条
+   * 三控件按维度归位:导航进 header tab,数据源紧邻计数徽章,过滤进 chips 行 */
+  .view-tabs, .source-switch {
+    display: flex;
+    align-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px;
+  }
+  .view-tab, .source-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 16px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .view-tab:hover, .source-btn:hover { color: var(--text); }
+  .view-tab.active, .source-btn.active {
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
   /* --------------------------------------------------------
    * Layout & Navigation
    * -------------------------------------------------------- */
@@ -412,6 +441,20 @@
     border-color: var(--accent);
     color: var(--accent);
     font-weight: 600;
+  }
+
+  /* 已弃用条目:淡化 + 「弃」徽章(默认可见,deprecate-over-delete 可发现性) */
+  .tree-row.is-deprecated .tree-title,
+  .tree-row.is-deprecated .tree-iid { opacity: 0.5; text-decoration: line-through; }
+  .dep-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
   }
 
   .sidebar-scroll {
@@ -1176,6 +1219,14 @@
       <kbd class="search-kbd">/</kbd>
     </div>
     <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+      <nav class="view-tabs" id="viewtabs" aria-label="视图切换">
+        <span class="view-tab active">列表</span>
+        <a class="view-tab" id="graphtab" href="/graph">关联图</a>
+      </nav>
+      <div class="source-switch" id="sourceswitch" role="group" aria-label="数据源">
+        <button class="source-btn" data-all="0">本项目</button>
+        <button class="source-btn" data-all="1">全部</button>
+      </div>
       <button class="theme-toggle" id="themebtn">THEME: LIGHT</button>
       <div class="status">
         <span class="dot" id="livedot"></span>
@@ -1204,6 +1255,7 @@
           <button class="filter-btn" data-filter="scope:project:">项目</button>
           <button class="filter-btn" data-filter="type:decisions">决策</button>
           <button class="filter-btn" data-filter="type:pitfalls">踩坑</button>
+          <button class="filter-btn" id="depfilter" title="默认显示并标记已弃用条目;开启后隐藏">弃用·隐藏</button>
         </div>
       </div>
       <!-- Scrollable List -->
@@ -1578,13 +1630,14 @@
           const entry = entries[eIdx];
           const entryRow = document.createElement("div");
           const isActive = entry.id === state.selectedId;
-          entryRow.className = `tree-row entry ${isActive ? 'active' : ''}`;
+          entryRow.className = `tree-row entry ${isActive ? 'active' : ''}${entry.deprecated ? ' is-deprecated' : ''}`;
 
           let maturityClass = entry.maturity ? `maturity-${entry.maturity}` : "";
 
           entryRow.innerHTML = `
             <span class="tree-iid">${esc(entry.id)}</span>
             <span class="tree-title">${esc(entry.title)}</span>
+            ${entry.deprecated ? '<span class="dep-badge" title="已弃用(deprecate-over-delete,理由保留可查)">弃</span>' : ''}
             ${entry.maturity ? `<span class="tree-maturity-indicator ${maturityClass}" title="成熟度: ${entry.maturity}"></span>` : ''}
           `;
           
@@ -1625,7 +1678,7 @@
       
       const row = document.createElement("div");
       const isActive = entry.id === state.selectedId;
-      row.className = `tree-row entry flat-row ${isActive ? 'active' : ''}`;
+      row.className = `tree-row entry flat-row ${isActive ? 'active' : ''}${entry.deprecated ? ' is-deprecated' : ''}`;
       
       const scopeIcon = SVG[scopeType] || SVG.project;
       let maturityClass = entry.maturity ? `maturity-${entry.maturity}` : "";
@@ -1636,6 +1689,7 @@
         <span class="tree-iid">${esc(entry.id)}</span>
         <span class="flat-type-badge" style="color: var(--type-${entry.type.slice(0,-1)}-color); background: var(--type-${entry.type.slice(0,-1)}-bg)">${esc(tLabel.toUpperCase())}</span>
         <span class="tree-title" title="${esc(entry.title)}">${esc(entry.title)}</span>
+        ${entry.deprecated ? '<span class="dep-badge" title="已弃用(deprecate-over-delete,理由保留可查)">弃</span>' : ''}
         ${entry.maturity ? `<span class="tree-maturity-indicator ${maturityClass}" title="成熟度: ${entry.maturity}"></span>` : ''}
       `;
       
@@ -1699,7 +1753,7 @@
     container.innerHTML = `
       <article class="entry-card">
         <header class="entry-header" style="border:none; background:none; padding:0; margin-bottom: 24px;">
-          <h1 class="entry-title">${esc(e.title)}</h1>
+          <h1 class="entry-title">${esc(e.title)}${e.deprecated ? ' <span class="dep-badge" style="vertical-align:middle;font-size:12px;padding:3px 8px;" title="deprecate-over-delete,理由保留可查">已弃用</span>' : ''}</h1>
         </header>
         
         <div class="metadata-grid">
@@ -1915,12 +1969,30 @@
     document.getElementById("livedot").className = "dot" + (live ? " live" : "");
   }
 
+  // Source selection & deprecated filter (归位自原注入式浮动条,sessionStorage 键不变)
+  const ALLKEY = "fabricPreviewAllStores", DEPKEY = "fabricPreviewHideDeprecated";
+  function allOn() { try { return sessionStorage.getItem(ALLKEY) === "1"; } catch (e) { return false; } }
+  function hideDep() { try { return sessionStorage.getItem(DEPKEY) === "1"; } catch (e) { return false; } }
+  function paintSourceControls() {
+    document.querySelectorAll("#sourceswitch .source-btn").forEach((b) => {
+      b.classList.toggle("active", (b.dataset.all === "1") === allOn());
+    });
+    const dep = document.getElementById("depfilter");
+    dep.classList.toggle("active", hideDep());
+    dep.textContent = hideDep() ? "弃用·已隐藏" : "弃用·隐藏";
+    // 关联图带上当前数据源,图与列表同 scope
+    document.getElementById("graphtab").href = "/graph?all=" + (allOn() ? "1" : "0");
+  }
+
   // Data Loading & Polling
   async function loadKnowledge() {
     try {
-      const res = await fetch("/api/knowledge", { cache: "no-store" });
+      const res = await fetch("/api/knowledge?all=" + (allOn() ? "1" : "0"), { cache: "no-store" });
       const data = await res.json();
-      state.entries = data.entries || [];
+      let list = data.entries || [];
+      // 默认显示+标记已弃用(deprecate-over-delete 可发现性,KT-DEC-0055);开关开启才隐藏
+      if (hideDep()) list = list.filter((e) => !e.deprecated);
+      state.entries = list;
       state.byId = new Map(state.entries.map((e) => [e.id, e]));
       
       renderSidebar();
@@ -2056,6 +2128,45 @@
   const initTheme = localStorage.getItem("pcf-theme") || "light";
   document.documentElement.setAttribute("data-theme", initTheme);
   themeBtn.textContent = initTheme === "dark" ? "☾ DARK" : "☀ LIGHT";
+
+  // 数据源切换(本项目|全部):写 sessionStorage 后直接重载数据,无需整页刷新
+  document.getElementById("sourceswitch").addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".source-btn");
+    if (!btn) return;
+    try { sessionStorage.setItem(ALLKEY, btn.dataset.all); } catch (e) {}
+    paintSourceControls();
+    loadKnowledge();
+  });
+  // 弃用开关:默认显示+标记,开启后隐藏。
+  // stopPropagation:本按钮也在 #quickfilters 容器内,不拦会同时触发容器的
+  // data-filter 搜索代理,产生双渲染竞态(旧数据覆盖过滤结果)。
+  document.getElementById("depfilter").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    try { sessionStorage.setItem(DEPKEY, hideDep() ? "0" : "1"); } catch (e) {}
+    paintSourceControls();
+    loadKnowledge();
+  });
+  paintSourceControls();
+
+  // 截断补偿(移植自原注入条):被 CSS 裁剪的叶子元素补 title= 悬浮全文
+  function titleTruncated() {
+    const els = document.body.querySelectorAll("*");
+    for (const el of els) {
+      if (el.childElementCount === 0 && el.scrollWidth > el.clientWidth + 1) {
+        const txt = (el.textContent || "").trim();
+        if (txt && el.getAttribute("title") !== txt) el.setAttribute("title", txt);
+      }
+    }
+  }
+  let titleQueue = null;
+  function scheduleTitles() {
+    if (titleQueue) return;
+    titleQueue = setTimeout(() => { titleQueue = null; try { titleTruncated(); } catch (e) {} }, 250);
+  }
+  scheduleTitles();
+  try {
+    new MutationObserver(scheduleTitles).observe(document.body, { childList: true, subtree: true, characterData: true });
+  } catch (e) {}
 
   // Bootstrapping
   loadKnowledge()
