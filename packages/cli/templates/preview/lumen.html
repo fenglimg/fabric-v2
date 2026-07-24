@@ -1361,7 +1361,7 @@
   function scopeLabel(scope) {
     if (scope === "team") return "团队通用 · Team";
     if (scope === "personal") return "个人空间 · Personal";
-    if (scope.startsWith("project:")) return "项目专属 · " + scope.slice("project:".length).toUpperCase();
+    if (scope.startsWith("project:")) return "项目专属 · " + scope.slice("project:".length);
     return scope;
   }
 
@@ -1557,7 +1557,7 @@
   function groupTitle(scope, store) {
     if (scope === "team") return "团队 · " + store;
     if (scope === "personal") return "个人 · " + store;
-    if (scope.startsWith("project:")) return "项目 " + scope.slice("project:".length).toUpperCase() + " · " + store;
+    if (scope.startsWith("project:")) return "项目 " + scope.slice("project:".length) + " · " + store;
     return scope + " · " + store;
   }
 
