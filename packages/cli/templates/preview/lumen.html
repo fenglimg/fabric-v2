@@ -308,6 +308,35 @@
     border-color: var(--border-strong);
   }
 
+  /* 视图切换 tab(列表|关联图)与数据源切换(本项目|全部)——原底部注入浮动条
+   * 三控件按维度归位:导航进 header tab,数据源紧邻计数徽章,过滤进 chips 行 */
+  .view-tabs, .source-switch {
+    display: flex;
+    align-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px;
+  }
+  .view-tab, .source-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 16px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .view-tab:hover, .source-btn:hover { color: var(--text); }
+  .view-tab.active, .source-btn.active {
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
   /* --------------------------------------------------------
    * Layout & Navigation
    * -------------------------------------------------------- */
@@ -412,6 +441,20 @@
     border-color: var(--accent);
     color: var(--accent);
     font-weight: 600;
+  }
+
+  /* 已弃用条目:淡化 + 「弃」徽章(默认可见,deprecate-over-delete 可发现性) */
+  .tree-row.is-deprecated .tree-title,
+  .tree-row.is-deprecated .tree-iid { opacity: 0.5; text-decoration: line-through; }
+  .dep-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
   }
 
   .sidebar-scroll {
@@ -793,9 +836,11 @@
     font-family: var(--mono);
     color: var(--accent);
     background: var(--accent-light);
-    width: 18px;
+    min-width: 18px;
     height: 18px;
-    border-radius: 50%;
+    padding: 0 6px;
+    border-radius: 9px;
+    white-space: nowrap;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -814,12 +859,23 @@
     margin-bottom: 24px;
   }
   .entry-title {
-    font-size: 20px; /* 标题实为整句 summary,30px 会占多行;20px 既醒目又不臃肿 */
+    font-size: 24px; /* 标题已走精炼链(title 字段/H1),单行短句可以放大 */
     font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.45;
     margin-bottom: 16px;
     color: var(--text);
+  }
+  .detail-summary {
+    /* 归档 summary 全文——次级信息,置于 meta 卡与正文之间 */
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.8;
+    margin: 20px 0 8px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-left: 3px solid var(--border);
+    border-radius: 0 var(--radius) var(--radius) 0;
   }
 
   .metadata-grid {
@@ -836,6 +892,7 @@
   .meta-cell {
     display: flex;
     align-items: center;
+    min-width: 0;
     font-size: 12.5px;
     border-bottom: 1px solid rgba(0, 0, 0, 0.02);
     padding: 4px 0;
@@ -854,12 +911,22 @@
   .meta-value {
     color: var(--text);
     font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  /* flex 容器上 text-overflow 不生效:省略号责任下沉到叶子文本(截断补偿会补 title= 悬浮全文) */
+  .meta-value .meta-text,
+  .meta-value .pill .ptxt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meta-value .pill {
+    max-width: 100%;
+    min-width: 0;
   }
 
   /* Pills */
@@ -1165,6 +1232,14 @@
       <kbd class="search-kbd">/</kbd>
     </div>
     <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+      <nav class="view-tabs" id="viewtabs" aria-label="视图切换">
+        <span class="view-tab active">列表</span>
+        <a class="view-tab" id="graphtab" href="/graph">关联图</a>
+      </nav>
+      <div class="source-switch" id="sourceswitch" role="group" aria-label="数据源">
+        <button class="source-btn" data-all="0">本项目</button>
+        <button class="source-btn" data-all="1">全部</button>
+      </div>
       <button class="theme-toggle" id="themebtn">THEME: LIGHT</button>
       <div class="status">
         <span class="dot" id="livedot"></span>
@@ -1193,6 +1268,7 @@
           <button class="filter-btn" data-filter="scope:project:">项目</button>
           <button class="filter-btn" data-filter="type:decisions">决策</button>
           <button class="filter-btn" data-filter="type:pitfalls">踩坑</button>
+          <button class="filter-btn" id="depfilter" title="默认显示并标记已弃用条目;开启后隐藏">弃用·隐藏</button>
         </div>
       </div>
       <!-- Scrollable List -->
@@ -1215,6 +1291,7 @@
     byId: new Map(),
     selectedId: null,
     revision: null,
+    writeStore: null,
     query: "",
     sort: "tree", // "tree" | "id" | "recent" | "maturity"
     collapsedScopes: new Set(),
@@ -1284,7 +1361,7 @@
   function scopeLabel(scope) {
     if (scope === "team") return "团队通用 · Team";
     if (scope === "personal") return "个人空间 · Personal";
-    if (scope.startsWith("project:")) return "项目专属 · " + scope.slice("project:".length).toUpperCase();
+    if (scope.startsWith("project:")) return "项目专属 · " + scope.slice("project:".length);
     return scope;
   }
 
@@ -1476,65 +1553,81 @@
     });
   }
 
-  // Hierarchical Directory Tree Rendering
+  // 组标题恒含 store 名(D7):scope 词短化 + store 全名(不做缩写魔法)
+  function groupTitle(scope, store) {
+    if (scope === "team") return "团队 · " + store;
+    if (scope === "personal") return "个人 · " + store;
+    if (scope.startsWith("project:")) return "项目 " + scope.slice("project:".length) + " · " + store;
+    return scope + " · " + store;
+  }
+
+  // Hierarchical Directory Tree Rendering — (scope, store) 复合分组(D4):
+  // 同 scope 不同物理库各自成组,双 team 库混排由结构解决,不再拼 [store] 前缀
   function renderTreeSidebar(visible, sidebar) {
     const tree = {};
     for (const e of visible) {
-      if (!tree[e.scope]) tree[e.scope] = {};
-      if (!tree[e.scope][e.type]) tree[e.scope][e.type] = [];
-      tree[e.scope][e.type].push(e);
+      const key = e.scope + "|" + e.store;
+      if (!tree[key]) tree[key] = { scope: e.scope, store: e.store, types: {} };
+      if (!tree[key].types[e.type]) tree[key].types[e.type] = [];
+      tree[key].types[e.type].push(e);
     }
-    
-    const sortedScopes = Object.keys(tree).sort((a, b) => {
-      const ra = getScopeRank(a), rb = getScopeRank(b);
-      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]);
+
+    // 排序:当前项目 write store 优先,再按 scope 层级,再按 store 名
+    const sortedKeys = Object.keys(tree).sort((a, b) => {
+      const ga = tree[a], gb = tree[b];
+      const wa = ga.store === state.writeStore ? 0 : 1;
+      const wb = gb.store === state.writeStore ? 0 : 1;
+      if (wa !== wb) return wa - wb;
+      const ra = getScopeRank(ga.scope), rb = getScopeRank(gb.scope);
+      return ra[0] - rb[0] || ra[1].localeCompare(rb[1]) || ga.store.localeCompare(gb.store);
     });
-    
-    for (let sIdx = 0; sIdx < sortedScopes.length; sIdx++) {
-      const scope = sortedScopes[sIdx];
+
+    for (let sIdx = 0; sIdx < sortedKeys.length; sIdx++) {
+      const key = sortedKeys[sIdx];
+      const scope = tree[key].scope;
       const scopeColor = getScopeColor(scope);
-      const typesObj = tree[scope];
-      
+      const typesObj = tree[key].types;
+
       const activeTypes = Object.keys(typesObj).sort((a, b) => {
         return TYPE_SORT_ORDER.indexOf(a) - TYPE_SORT_ORDER.indexOf(b);
       });
-      
+
       let scopeTotalCount = 0;
       for (const t of activeTypes) {
         scopeTotalCount += typesObj[t].length;
       }
-      
-      const isScopeCollapsed = state.collapsedScopes.has(scope);
+
+      const isScopeCollapsed = state.collapsedScopes.has(key);
       const scopeRow = document.createElement("div");
       scopeRow.className = "tree-row scope";
       scopeRow.style.borderLeft = `3px solid ${scopeColor}`;
-      
+
       const scopeType = scope.startsWith("project:") ? "project" : scope;
-      
+
       scopeRow.innerHTML = `
         <span class="tree-toggle-icon">${isScopeCollapsed ? "▶" : "▼"}</span>
         <span class="scope-icon" style="color:${scopeColor}">${SVG[scopeType] || SVG.project}</span>
-        <span class="tree-label">${esc(scopeLabel(scope))}</span>
+        <span class="tree-label">${esc(groupTitle(scope, tree[key].store))}</span>
         <span class="tree-badge" style="background: ${scopeColor}16; color: ${scopeColor}">${scopeTotalCount}</span>
       `;
-      
+
       scopeRow.addEventListener("click", () => {
-        if (state.collapsedScopes.has(scope)) {
-          state.collapsedScopes.delete(scope);
+        if (state.collapsedScopes.has(key)) {
+          state.collapsedScopes.delete(key);
         } else {
-          state.collapsedScopes.add(scope);
+          state.collapsedScopes.add(key);
         }
         renderSidebar();
       });
       sidebar.appendChild(scopeRow);
-      
+
       if (isScopeCollapsed) continue;
-      
+
       for (let tIdx = 0; tIdx < activeTypes.length; tIdx++) {
         const type = activeTypes[tIdx];
         const entries = typesObj[type].sort((a, b) => a.id.localeCompare(b.id));
-        
-        const typeId = `${scope}:${type}`;
+
+        const typeId = `${key}:${type}`;
         const isTypeCollapsed = state.collapsedTypes.has(typeId);
         const typeRow = document.createElement("div");
         typeRow.className = "tree-row type";
@@ -1567,13 +1660,14 @@
           const entry = entries[eIdx];
           const entryRow = document.createElement("div");
           const isActive = entry.id === state.selectedId;
-          entryRow.className = `tree-row entry ${isActive ? 'active' : ''}`;
+          entryRow.className = `tree-row entry ${isActive ? 'active' : ''}${entry.deprecated ? ' is-deprecated' : ''}`;
 
           let maturityClass = entry.maturity ? `maturity-${entry.maturity}` : "";
 
           entryRow.innerHTML = `
             <span class="tree-iid">${esc(entry.id)}</span>
             <span class="tree-title">${esc(entry.title)}</span>
+            ${entry.deprecated ? '<span class="dep-badge" title="已弃用(deprecate-over-delete,理由保留可查)">弃</span>' : ''}
             ${entry.maturity ? `<span class="tree-maturity-indicator ${maturityClass}" title="成熟度: ${entry.maturity}"></span>` : ''}
           `;
           
@@ -1614,7 +1708,7 @@
       
       const row = document.createElement("div");
       const isActive = entry.id === state.selectedId;
-      row.className = `tree-row entry flat-row ${isActive ? 'active' : ''}`;
+      row.className = `tree-row entry flat-row ${isActive ? 'active' : ''}${entry.deprecated ? ' is-deprecated' : ''}`;
       
       const scopeIcon = SVG[scopeType] || SVG.project;
       let maturityClass = entry.maturity ? `maturity-${entry.maturity}` : "";
@@ -1625,6 +1719,7 @@
         <span class="tree-iid">${esc(entry.id)}</span>
         <span class="flat-type-badge" style="color: var(--type-${entry.type.slice(0,-1)}-color); background: var(--type-${entry.type.slice(0,-1)}-bg)">${esc(tLabel.toUpperCase())}</span>
         <span class="tree-title" title="${esc(entry.title)}">${esc(entry.title)}</span>
+        ${entry.deprecated ? '<span class="dep-badge" title="已弃用(deprecate-over-delete,理由保留可查)">弃</span>' : ''}
         ${entry.maturity ? `<span class="tree-maturity-indicator ${maturityClass}" title="成熟度: ${entry.maturity}"></span>` : ''}
       `;
       
@@ -1678,17 +1773,24 @@
     const tIcon = SVG[e.type] || SVG.decisions;
     const tLabel = TYPE_LABEL_ZH[e.type] || e.type;
 
+    // 标题已走精炼链（title 字段/H1）；summary 全文退居正文顶部段落。
+    // body 开头的 H1 与页头标题重复时跳过，避免双标题。
+    const summaryHtml = e.summary && e.summary !== e.title
+      ? `<p class="detail-summary">${esc(e.summary)}</p>`
+      : "";
+    const bodyMd = (e.body || "").replace(/^\s*#\s+[^\n]*\n?/, "");
+
     container.innerHTML = `
       <article class="entry-card">
         <header class="entry-header" style="border:none; background:none; padding:0; margin-bottom: 24px;">
-          <h1 class="entry-title">${esc(e.title)}</h1>
+          <h1 class="entry-title">${esc(e.title)}${e.deprecated ? ' <span class="dep-badge" style="vertical-align:middle;font-size:12px;padding:3px 8px;" title="deprecate-over-delete,理由保留可查">已弃用</span>' : ''}</h1>
         </header>
         
         <div class="metadata-grid">
           <div class="meta-cell">
             <span class="meta-label">${SVG.store}归属范围</span>
             <span class="meta-value">
-              <span class="pill pill-scope-${scopeType}" style="cursor:pointer;" onclick="filterByScope('${esc(e.scope)}')">${SVG[scopeType]}${esc(scopeLabel(e.scope))}</span>
+              <span class="pill pill-scope-${scopeType}" style="cursor:pointer;" title="${esc(scopeLabel(e.scope))}" onclick="filterByScope('${esc(e.scope)}')">${SVG[scopeType]}<span class="ptxt">${esc(scopeLabel(e.scope))}</span></span>
             </span>
           </div>
           <div class="meta-cell">
@@ -1707,15 +1809,15 @@
           </div>
           <div class="meta-cell">
             <span class="meta-label">${SVG.store}存储源</span>
-            <span class="meta-value">${esc(e.store)}</span>
+            <span class="meta-value"><span class="meta-text">${esc(e.store)}</span></span>
           </div>
           <div class="meta-cell" style="grid-column: span 2;">
             <span class="meta-label">${SVG.calendar}关联标签</span>
             <span class="meta-value">${tagsHtml}</span>
           </div>
         </div>
-        
-        <div class="md">${renderMarkdown(e.body || "")}</div>
+        ${summaryHtml}
+        <div class="md">${renderMarkdown(bodyMd)}</div>
       </article>
     `;
     
@@ -1897,20 +1999,48 @@
     document.getElementById("livedot").className = "dot" + (live ? " live" : "");
   }
 
+  // Source selection & deprecated filter (归位自原注入式浮动条,sessionStorage 键不变)
+  const ALLKEY = "fabricPreviewAllStores", DEPKEY = "fabricPreviewHideDeprecated";
+  function allOn() { try { return sessionStorage.getItem(ALLKEY) === "1"; } catch (e) { return false; } }
+  function hideDep() { try { return sessionStorage.getItem(DEPKEY) === "1"; } catch (e) { return false; } }
+  function paintSourceControls() {
+    document.querySelectorAll("#sourceswitch .source-btn").forEach((b) => {
+      b.classList.toggle("active", (b.dataset.all === "1") === allOn());
+    });
+    const dep = document.getElementById("depfilter");
+    dep.classList.toggle("active", hideDep());
+    dep.textContent = hideDep() ? "弃用·已隐藏" : "弃用·隐藏";
+    // 关联图带上当前数据源,图与列表同 scope
+    document.getElementById("graphtab").href = "/graph?all=" + (allOn() ? "1" : "0");
+  }
+
   // Data Loading & Polling
   async function loadKnowledge() {
     try {
-      const res = await fetch("/api/knowledge", { cache: "no-store" });
+      const res = await fetch("/api/knowledge?all=" + (allOn() ? "1" : "0"), { cache: "no-store" });
       const data = await res.json();
-      state.entries = data.entries || [];
+      let list = data.entries || [];
+      // 默认显示+标记已弃用(deprecate-over-delete 可发现性,KT-DEC-0055);开关开启才隐藏
+      if (hideDep()) list = list.filter((e) => !e.deprecated);
+      state.entries = list;
+      state.writeStore = data.writeStore || null;
       state.byId = new Map(state.entries.map((e) => [e.id, e]));
       
       renderSidebar();
-      
+
       if (state.selectedId && state.byId.has(state.selectedId)) {
         renderEntry(state.byId.get(state.selectedId));
       } else {
-        renderDashboard();
+        // 关联图侧板「查看详情」以 ?entry=<qualifiedId> 跳回列表定位条目
+        const entryParam = new URLSearchParams(location.search).get("entry");
+        const hit = entryParam
+          ? state.entries.find((e) => e.qualifiedId === entryParam || e.id === entryParam)
+          : null;
+        if (hit) {
+          selectEntry(hit.id);
+        } else {
+          renderDashboard();
+        }
       }
       
       setStatus(`${state.entries.length} 条知识 · 实时`, true);
@@ -2038,6 +2168,45 @@
   const initTheme = localStorage.getItem("pcf-theme") || "light";
   document.documentElement.setAttribute("data-theme", initTheme);
   themeBtn.textContent = initTheme === "dark" ? "☾ DARK" : "☀ LIGHT";
+
+  // 数据源切换(本项目|全部):写 sessionStorage 后直接重载数据,无需整页刷新
+  document.getElementById("sourceswitch").addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".source-btn");
+    if (!btn) return;
+    try { sessionStorage.setItem(ALLKEY, btn.dataset.all); } catch (e) {}
+    paintSourceControls();
+    loadKnowledge();
+  });
+  // 弃用开关:默认显示+标记,开启后隐藏。
+  // stopPropagation:本按钮也在 #quickfilters 容器内,不拦会同时触发容器的
+  // data-filter 搜索代理,产生双渲染竞态(旧数据覆盖过滤结果)。
+  document.getElementById("depfilter").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    try { sessionStorage.setItem(DEPKEY, hideDep() ? "0" : "1"); } catch (e) {}
+    paintSourceControls();
+    loadKnowledge();
+  });
+  paintSourceControls();
+
+  // 截断补偿(移植自原注入条):被 CSS 裁剪的叶子元素补 title= 悬浮全文
+  function titleTruncated() {
+    const els = document.body.querySelectorAll("*");
+    for (const el of els) {
+      if (el.childElementCount === 0 && el.scrollWidth > el.clientWidth + 1) {
+        const txt = (el.textContent || "").trim();
+        if (txt && el.getAttribute("title") !== txt) el.setAttribute("title", txt);
+      }
+    }
+  }
+  let titleQueue = null;
+  function scheduleTitles() {
+    if (titleQueue) return;
+    titleQueue = setTimeout(() => { titleQueue = null; try { titleTruncated(); } catch (e) {} }, 250);
+  }
+  scheduleTitles();
+  try {
+    new MutationObserver(scheduleTitles).observe(document.body, { childList: true, subtree: true, characterData: true });
+  } catch (e) {}
 
   // Bootstrapping
   loadKnowledge()
