@@ -542,7 +542,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
   "doctor.check.events_jsonl_health.remediation":
-    "运行 `fabric doctor --fix` —— 会按 .fabric/fabric-config.json 的 fabric_event_retention_days(7|30|90) 轮转 events.jsonl，并 flush metrics.jsonl。若告警仍持续，再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中，检查最近代码是否绕过 bumpCounter 直接写了 metric-managed event_type。",
+    "运行 `fabric doctor --fix` —— 会按 ~/.fabric/fabric-global.json 中 defaults.fabric_event_retention_days(7|30|90) 轮转 events.jsonl，并 flush metrics.jsonl。若告警仍持续，再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中，检查最近代码是否绕过 bumpCounter 直接写了 metric-managed event_type。",
   "doctor.check.event_ledger_partial_write.name": "事件账本半截写入",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "无需执行 partial-write 检查（ledger 缺失或不可写）。",
@@ -1134,7 +1134,7 @@ export const zhCNMessages: Messages = {
   // flat-design (G6): 装完最该做的事是重启客户端让 MCP 生效 —— 这才是默认锚点动作;
   // --reapply 维护提示退到 --verbose。
   "cli.install.next-step.restart": "重启已开的 Claude Code / Codex 会话以加载 Fabric(新会话自动生效)。",
-  "cli.install.next-step.nudge-mode": "人可见提示默认 minimal（每会话一条状态）。可在 .fabric/fabric-config.json 设 nudge_mode: \"silent\" 静音，或 FABRIC_NUDGE_MODE=silent；要更吵用 normal/verbose。",
+  "cli.install.next-step.nudge-mode": "人可见提示默认 minimal(每会话一条状态)。改它在 ~/.fabric/fabric-global.json 的 defaults.nudge_mode(silent | minimal | normal | verbose),或跑 fabric config --set nudge_mode --value silent,或 FABRIC_NUDGE_MODE=silent。",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

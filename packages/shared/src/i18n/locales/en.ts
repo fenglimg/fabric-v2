@@ -564,7 +564,7 @@ export const enMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
   "doctor.check.events_jsonl_health.remediation":
-    "Run `fabric doctor --fix` — it triggers events.jsonl rotation (honors fabric_event_retention_days: 7|30|90 in .fabric/fabric-config.json) AND flushes metrics.jsonl. If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
+    "Run `fabric doctor --fix` — it triggers events.jsonl rotation (honors fabric_event_retention_days: 7|30|90 in ~/.fabric/fabric-global.json under defaults) AND flushes metrics.jsonl. If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "No partial-write check needed (ledger missing or not writable).",
@@ -1165,7 +1165,7 @@ export const enMessages: Messages = {
   // so its MCP server loads — that is the default anchor; the --reapply maintenance
   // hint moves to --verbose.
   "cli.install.next-step.restart": "restart any open Claude Code / Codex session to load Fabric (new sessions pick it up automatically).",
-  "cli.install.next-step.nudge-mode": "Human breadcrumbs default to minimal (one status line/session). Mute with nudge_mode: \"silent\" in .fabric/fabric-config.json or FABRIC_NUDGE_MODE=silent; raise with normal/verbose.",
+  "cli.install.next-step.nudge-mode": "Human breadcrumbs default to minimal (one status line/session). Change it in ~/.fabric/fabric-global.json under defaults.nudge_mode (silent | minimal | normal | verbose), via fabric config --set nudge_mode --value silent, or FABRIC_NUDGE_MODE=silent.",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

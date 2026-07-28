@@ -187,21 +187,17 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const raw = readFileSync(configPath, "utf8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
 
-    for (const field of EXPECTED_FABRIC_CONFIG_FIELDS) {
-      expect(parsed, `missing field ${field}`).toHaveProperty(field);
-    }
-    // Verify the documented defaults explicitly so a silent default-shift
-    // is caught by the test. grill-6fixes (D1): the project config no longer
-    // carries `fabric_language` — language is global now.
+    // config-single-home W5: the scaffold no longer plants policy knobs here.
+    // The repo config is IDENTITY-ONLY (identity itself is written later by the
+    // store-binding stage), so a fresh scaffold is an empty object — the file
+    // exists purely as the upward marker ProjectRootResolver searches for.
+    expect(parsed).toEqual({});
     expect(parsed).not.toHaveProperty("fabric_language");
-    expect(parsed.archive_hint_hours).toBe(24);
-    expect(parsed.archive_hint_cooldown_hours).toBe(12);
-    expect(parsed.review_hint_pending_count).toBe(10);
-    expect(parsed.review_hint_pending_age_days).toBe(7);
-    expect(parsed.maintenance_hint_days).toBe(14);
-    expect(parsed.maintenance_hint_cooldown_days).toBe(7);
-    expect(parsed.archive_edit_threshold).toBe(20);
-    expect(parsed.underseed_node_threshold).toBe(10);
+    for (const field of EXPECTED_FABRIC_CONFIG_FIELDS) {
+      expect(parsed, `policy field ${field} must not be scaffolded into the repo`).not.toHaveProperty(
+        field,
+      );
+    }
   });
 
   it("test_init_does_not_overwrite_existing_fabric_config_json", async () => {

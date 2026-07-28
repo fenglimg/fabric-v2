@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
+import { GLOBAL_POLICY_DEFAULTS } from "../src/install/install-scaffold-config.ts";
 
 /**
  * G1 (ralph-v2-20260709) → ISS-20260713-058:
@@ -11,9 +12,12 @@ import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-te
  * (非 AI-only 静音)。原 G1 选 "silent" 但装完无披露,用户误以为 "Fabric 没生效",
  * 故改默认为 "minimal"。AI sink 两种模式都不受影响。
  *
- * 老用户 config 不动(scaffold 是 idempotent,不覆写现有文件 — 由
+ * config-single-home W5: 这条产品意图不变,但 nudge_mode 是 PREFERENCE 类旋钮,
+ * 它的家已从 repo 的 fabric-config.json 迁到 `~/.fabric/fabric-global.json` 的
+ * `defaults`。repo 侧只剩身份,scaffold 再写策略键只会种出 doctor 要报的失效残留。
+ *
+ * 老用户 config 不动(scaffold 幂等,不覆写现有文件 — 由
  * install-cli-surface.test.ts 的 preserve/reapply case 保证)。
- * 这里只锁"新装的 fresh 默认必为 minimal"。
  */
 const tempRoots: string[] = [];
 
@@ -24,7 +28,13 @@ afterEach(() => {
 });
 
 describe("install-scaffold nudge_mode default (G1 → ISS-20260713-058)", () => {
-  it("writes nudge_mode: 'minimal' when scaffolding a fresh .fabric/fabric-config.json", async () => {
+  it("ships nudge_mode: 'minimal' as a GLOBAL policy default", () => {
+    // The shipped default is declared once, in the global policy seed — that is
+    // what `install --global` writes into fabric-global.json → defaults.
+    expect(GLOBAL_POLICY_DEFAULTS.nudge_mode).toBe("minimal");
+  });
+
+  it("does NOT scaffold policy knobs into the repo config (identity-only)", async () => {
     const target = createWerewolfFixtureRoot("fab-init-nudge-minimal-default");
     tempRoots.push(target);
 
@@ -32,14 +42,18 @@ describe("install-scaffold nudge_mode default (G1 → ISS-20260713-058)", () => 
     await initFabric(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
+    // The file must still EXIST — it is the upward marker ProjectRootResolver
+    // searches for — but it must not carry policy.
     expect(existsSync(configPath)).toBe(true);
     const parsed = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
 
-    expect(parsed).toHaveProperty("nudge_mode");
-    expect(parsed.nudge_mode).toBe("minimal");
+    expect(parsed).not.toHaveProperty("nudge_mode");
+    for (const key of Object.keys(GLOBAL_POLICY_DEFAULTS)) {
+      expect(parsed).not.toHaveProperty(key);
+    }
   });
 
-  it("scaffolded value survives round-trip parse (byte-level check)", async () => {
+  it("scaffolds no stale nudge_mode bytes into the repo config", async () => {
     const target = createWerewolfFixtureRoot("fab-init-nudge-minimal-byte");
     tempRoots.push(target);
 
@@ -47,8 +61,6 @@ describe("install-scaffold nudge_mode default (G1 → ISS-20260713-058)", () => 
     await initFabric(target);
 
     const raw = readFileSync(join(target, ".fabric", "fabric-config.json"), "utf8");
-    // 直接抓 JSON 里的 nudge_mode:"minimal" 字节序,防实现被改成 nudge_mode:null + 运行时兜底
-    expect(raw).toContain('"nudge_mode": "minimal"');
-    expect(raw).not.toContain('"nudge_mode": "normal"');
+    expect(raw).not.toContain("nudge_mode");
   });
 });

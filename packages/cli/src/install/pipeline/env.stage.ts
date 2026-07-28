@@ -13,6 +13,7 @@ import { detectClientSupports } from "../../config/resolver.js";
 import { migrateRootConfig } from "../migrate-root-config.js";
 import type { Stage, InstallContext, StageResult, ScaffoldResult, DiffFileState, InitWriteAction } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
+import { writeDefaultFabricConfig as writeDefaultFabricConfigShared } from "../install-scaffold-config.js";
 
 // ---------------------------------------------------------------------------
 // Env Stage
@@ -185,27 +186,16 @@ export class EnvStage implements Stage {
     return "created";
   }
 
-  private writeDefaultFabricConfig(fabricDir: string, _targetRoot: string): boolean {
+  /**
+   * Delegates to the SINGLE owner in install-scaffold-config.ts. This method used
+   * to carry its own copy of the default object, which silently diverged: after
+   * config-single-home W5 emptied the shared one, installs running through this
+   * pipeline still planted nine now-inert policy keys.
+   */
+  private writeDefaultFabricConfig(fabricDir: string, targetRoot: string): boolean {
     const target = join(fabricDir, "fabric-config.json");
     if (existsSync(target)) return false;
-
-    const FABRIC_CONFIG_DEFAULTS = {
-      archive_hint_hours: 24,
-      archive_hint_cooldown_hours: 12,
-      review_hint_pending_count: 10,
-      review_hint_pending_age_days: 7,
-      maintenance_hint_days: 14,
-      maintenance_hint_cooldown_days: 7,
-      archive_edit_threshold: 20,
-      underseed_node_threshold: 10,
-      // ux-w2-3: import_*/archive_max_*/review_topic_result_cap skill thresholds
-      // hardcoded (✂ census Table 1) — no longer scaffolded; skills fall to a
-      // built-in default when the key is absent.
-      review_stale_pending_days: 14,
-    };
-
-    mkdirSync(fabricDir, { recursive: true });
-    writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
+    writeDefaultFabricConfigShared(fabricDir, targetRoot);
     return true;
   }
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { globalConfigSchema, initStore, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
 
 import { globalConfigPath, loadGlobalConfig, mutateGlobalConfig } from "../store/global-config-io.js";
+import { GLOBAL_POLICY_DEFAULTS } from "./install-scaffold-config.js";
 import { runInstallTransaction, type InstallReceipt } from "./transaction.js";
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,16 @@ export async function installGlobalCore(
         // rather than overwriting (the mutator returns null → no write).
         const persisted = await mutateGlobalConfig(
           (current) =>
-            current ?? globalConfigSchema.parse({ uid: options.uid, stores: [personalStore] }),
+            current ??
+            globalConfigSchema.parse({
+              uid: options.uid,
+              stores: [personalStore],
+              // config-single-home W5: the shipped policy defaults live here now
+              // (the repo config is identity-only). Seeded ONLY on first-time
+              // creation — the `current ??` branch above means an existing config
+              // is never touched, so a user's edits are safe.
+              defaults: { ...GLOBAL_POLICY_DEFAULTS },
+            }),
           options.globalRoot,
         );
         config = persisted;

@@ -194,7 +194,10 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     expect(raw.endsWith("\n")).toBe(true);
     expect(() => JSON.parse(raw)).not.toThrow();
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    expect(Object.keys(parsed).length).toBeGreaterThanOrEqual(9);
+    // config-single-home W5: identity-only, and identity is written by the
+    // store-binding stage — so the scaffolded artifact is a well-formed empty
+    // object whose EXISTENCE is the contract (project-root marker).
+    expect(parsed).toEqual({});
     // No .import-requested sentinel artifact is created.
     expect(existsSync(join(target, ".fabric", ".import-requested"))).toBe(false);
   });
