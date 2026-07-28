@@ -32,6 +32,7 @@
 | `pnpm test:strategy` | 本文件 ↔ scripts ↔ CI 锚点 |
 | `pnpm test:store-only-e2e` | 装/绑/写/审/召回黑盒（需先 build） |
 | `pnpm test:upgrade-e2e` | install 升级刷新 stale hook/skill（需先 build） |
+| `pnpm test:doc-drift` | README 版本/命令/事件名可 resolve（先跑 gate 自检） |
 
 包级脚本见各 `package.json`。
 
@@ -49,8 +50,9 @@
 6. `pnpm test:store-only-e2e`
 7. `pnpm test:upgrade-e2e`
 8. `node --experimental-strip-types scripts/lint-protected-tokens.ts`
-9. `NO_COLOR=1` + scoped CLI reskin/i18n snapshot tests (not full CLI suite)
-10. `node scripts/perf-benchmark.mjs`
+9. `pnpm test:doc-drift`
+10. `NO_COLOR=1` + scoped CLI reskin/i18n snapshot tests (not full CLI suite)
+11. `node scripts/perf-benchmark.mjs`
 
 Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--version`，不替代 Linux 全量。
 

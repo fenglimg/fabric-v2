@@ -251,7 +251,7 @@ fabric doctor / fabric audit 持续保持健康
 
 ## 状态
 
-**v2.3.0-rc.5** —— 活跃开发线。升级说明见 [docs/UPGRADE.md](./docs/UPGRADE.md)，版本历史见 [CHANGELOG.md](./CHANGELOG.md)。
+**v2.5.0-rc.3** —— 活跃开发线。升级说明见 [docs/UPGRADE.md](./docs/UPGRADE.md)，版本历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
 仓库：https://github.com/fenglimg/fabric
 
