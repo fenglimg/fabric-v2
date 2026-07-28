@@ -61,6 +61,7 @@ const { isAbsolute, join, relative } = require("node:path");
 const {
   readConfig,
   readGlobalConfig,
+  readPolicy,
   readConfigNumber,
   readConfigBoolean,
 } = require("./lib/config-cache.cjs");
@@ -103,11 +104,14 @@ function readNudgeEnabled(cwd) {
  * here keeps a single durable dismiss surface across all nudges. Any
  * read/parse failure → not dismissed (never-block).
  */
+// config-single-home W3: preference class — first policy layer that declares the
+// list wins. An empty array is meaningful ("dismiss nothing").
 function readCiteEvictDismissed(cwd) {
-  const projectSignals = readConfig(cwd).hint_dismiss_signals;
-  if (Array.isArray(projectSignals)) return projectSignals.includes("cite-evict");
-  const globalSignals = readGlobalConfig().hint_dismiss_signals;
-  if (Array.isArray(globalSignals)) return globalSignals.includes("cite-evict");
+  for (const layer of readPolicy(cwd)) {
+    if (Array.isArray(layer.hint_dismiss_signals)) {
+      return layer.hint_dismiss_signals.includes("cite-evict");
+    }
+  }
   return false;
 }
 
@@ -131,22 +135,35 @@ function readWindowMinutes(cwd) {
 const DEFAULT_CITE_NUDGE_IGNORE_GLOBS = [".workflow/**"];
 
 /**
- * Read `.fabric/fabric-config.json#cite_nudge_ignore_globs` (string[]) and MERGE
- * it with the built-in defaults. Any failure path (missing file, parse error,
- * non-array, non-string entries) → defaults only. User entries never shrink the
- * default exemption set; they only widen it.
+ * Read `cite_nudge_ignore_globs` (string[]) from the PREFERENCE policy layer
+ * (`global.projects[<project_id>]` → `global.defaults`) and MERGE it with the
+ * built-in defaults. Any failure path (no config, non-array, non-string entries)
+ * → defaults only. User entries never shrink the default exemption set; they only
+ * widen it.
+ *
+ * config-single-home W3: reads the policy layer rather than the repo config —
+ * an ignore-glob list is a user preference, and the repo file is identity-only.
  */
 function readIgnoreGlobs(cwd) {
   const out = [...DEFAULT_CITE_NUDGE_IGNORE_GLOBS];
+  const layers = [];
   try {
-    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.cite_nudge_ignore_globs)) {
-      for (const g of parsed.cite_nudge_ignore_globs) {
-        if (typeof g === "string" && g.length > 0 && !out.includes(g)) out.push(g);
-      }
+    const global = readGlobalConfig();
+    const projects = global && typeof global.projects === "object" && global.projects !== null ? global.projects : {};
+    const projectId = readConfig(cwd).project_id;
+    if (typeof projectId === "string" && projectId !== "" && Array.isArray(projects[projectId]?.cite_nudge_ignore_globs)) {
+      layers.push(projects[projectId].cite_nudge_ignore_globs);
+    }
+    if (global && typeof global.defaults === "object" && global.defaults !== null && Array.isArray(global.defaults.cite_nudge_ignore_globs)) {
+      layers.push(global.defaults.cite_nudge_ignore_globs);
     }
   } catch {
     // fall through to defaults
+  }
+  for (const list of layers) {
+    for (const g of list) {
+      if (typeof g === "string" && g.length > 0 && !out.includes(g)) out.push(g);
+    }
   }
   return out;
 }

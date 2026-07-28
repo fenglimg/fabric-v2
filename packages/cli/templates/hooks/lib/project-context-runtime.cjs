@@ -4145,33 +4145,48 @@ external_exports.object({
   // effect everywhere. Set by `fabric store switch-personal <alias>` and the
   // install personal slot. Absent ⇒ the resolver falls back to the first
   // mounted personal, so legacy single-personal configs are unchanged.
-  active_personal_store: external_exports.string().min(1).optional()
+  active_personal_store: external_exports.string().min(1).optional(),
+  // config-single-home W2 — the remote embedding transport as ONE object.
+  //
+  // Presence of this object IS the mode switch: set ⇒ remote embedding, absent
+  // ⇒ local fastembed. `model` lives INSIDE it because the two modes have
+  // incompatible model namespaces (remote `BAAI/bge-m3` vs local fastembed enum
+  // `fast-bge-small-zh-v1.5`), and endpoint/key/model must move as a unit — a
+  // remote endpoint paired with a local model name is an unusable combination.
+  // The local-mode model is a policy knob and lives in `defaults` instead, so
+  // no single key is writable in two places (KT-MOD "one key, one home").
+  embed_remote: external_exports.object({
+    endpoint: external_exports.string().min(1),
+    api_key: external_exports.string().min(1).optional(),
+    model: external_exports.string().min(1).optional()
+  }).optional(),
+  // config-single-home W2 — POLICY HOME. `defaults` holds the user's own
+  // machine-wide defaults for the preference-class knobs; `projects[<project_id>]`
+  // holds per-project exceptions, keyed by the `project_id` that stays in the
+  // repo's `.fabric/fabric-config.json`.
+  //
+  // Deliberately typed as an open bag rather than a field-by-field mirror of
+  // `fabricConfigSchema`:
+  //   1. store.ts must not import fabric-config.ts (that module already imports
+  //      this one — the same cycle that forced storeConfigSchema to inline its
+  //      field constraints).
+  //   2. A field-by-field mirror would carry `.default()`s, and a parse would
+  //      then materialise every default into `defaults` — which would shadow the
+  //      store layer for every knob and recreate the very "written but never
+  //      effective" failure this redesign removes.
+  // Per-knob range/enum validation happens at READ time in the config-loader's
+  // single-field guards (already the hot-path contract) and at WRITE time in
+  // `fabric config set` against the exported single-field schemas.
+  defaults: external_exports.record(external_exports.unknown()).optional(),
+  projects: external_exports.record(external_exports.record(external_exports.unknown())).optional()
 }).passthrough();
 external_exports.object({
-  // Retrieval knobs (mirror fabricConfigSchema).
-  plan_context_top_k: external_exports.number().int().min(1).max(200).optional(),
-  recall_relevance_ratio: external_exports.number().min(0).max(1).optional(),
-  // Embedding channel.
-  embed_enabled: external_exports.boolean().optional(),
-  embed_weight: external_exports.number().int().min(0).max(49).optional(),
-  embed_model: external_exports.enum([
-    "fast-bge-small-zh-v1.5",
-    "fast-multilingual-e5-large",
-    "fast-bge-small-en-v1.5",
-    "fast-bge-small-en",
-    "fast-bge-base-en-v1.5",
-    "fast-bge-base-en",
-    "fast-all-MiniLM-L6-v2"
-  ]).optional(),
-  fusion: external_exports.enum(["additive", "rrf", "auto"]).optional(),
-  // Recall layer / scale.
-  default_layer_filter: external_exports.enum(["team", "personal", "both"]).optional(),
+  // Corpus scale / shape.
   broad_index_backstop: external_exports.number().int().min(20).max(500).optional(),
+  underseed_node_threshold: external_exports.number().int().positive().optional(),
   // Knowledge hygiene / conflict lint.
   conflict_lint_similarity_threshold: external_exports.number().min(0).max(1).optional(),
   broad_review_recheck_days: external_exports.number().int().min(1).max(3650).optional(),
-  underseed_node_threshold: external_exports.number().int().positive().optional(),
-  selection_token_ttl_ms: external_exports.number().int().min(3e4).max(36e5).optional(),
   // Credibility content-age decay half-lives (per knowledge type).
   credibility_half_life_decisions_days: external_exports.number().int().min(1).max(3650).optional(),
   credibility_half_life_guidelines_days: external_exports.number().int().min(1).max(3650).optional(),
@@ -4876,7 +4891,17 @@ external_exports.object({
   // `<dir>/knowledge/pending` LIVE off these roots so nudge counts are always
   // fresh regardless of how store content changed (the underseed / review-
   // backlog false-positive root cure; pairs with knowledge_stats above).
-  knowledge_store_dirs: external_exports.array(external_exports.string().min(1)).optional()
+  knowledge_store_dirs: external_exports.array(external_exports.string().min(1)).optional(),
+  // config-single-home W3: resolved absolute ROOT dir of the WRITE-TARGET store
+  // — the single home of every CORPUS-class config knob (`store-config.json`
+  // sits directly under it). Hooks need this to resolve corpus knobs without
+  // re-implementing store path resolution.
+  //
+  // Deliberately its OWN field rather than an index into `knowledge_store_dirs`:
+  // that array is read-set-ordered and carries no uuid, so pairing it with
+  // `write_target` would rely on an implicit positional contract that nothing
+  // enforces. Absent when no write target resolves (personal-only / unbound).
+  write_target_store_dir: external_exports.string().min(1).optional()
 }).strict();
 
 // ../shared/src/store/bindings.ts

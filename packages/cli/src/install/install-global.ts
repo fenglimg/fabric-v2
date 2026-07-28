@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { globalConfigSchema, initStore, storeRelativePathForMount, type GlobalConfig } from "@fenglimg/fabric-shared";
 
-import { globalConfigPath, loadGlobalConfig, saveGlobalConfigAsync } from "../store/global-config-io.js";
+import { globalConfigPath, loadGlobalConfig, mutateGlobalConfig } from "../store/global-config-io.js";
 import { runInstallTransaction, type InstallReceipt } from "./transaction.js";
 
 // ---------------------------------------------------------------------------
@@ -82,12 +82,16 @@ export async function installGlobalCore(
     {
       name: "write-global-config",
       apply: async () => {
-        const next = globalConfigSchema.parse({
-          uid: options.uid,
-          stores: [personalStore],
-        });
-        await saveGlobalConfigAsync(next, options.globalRoot);
-        config = next;
+        // config-single-home W1: the `existing !== null` early-return at the top
+        // of installGlobalCore runs before the store init, so re-assert it inside
+        // the lock. When a concurrent install won the race, adopt ITS config
+        // rather than overwriting (the mutator returns null → no write).
+        const persisted = await mutateGlobalConfig(
+          (current) =>
+            current ?? globalConfigSchema.parse({ uid: options.uid, stores: [personalStore] }),
+          options.globalRoot,
+        );
+        config = persisted;
       },
       rollback: () => {
         rmSync(globalConfigPath(options.globalRoot), { force: true });

@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,8 +6,13 @@ import { fileURLToPath } from "node:url";
 import { cancel, isCancel, log, select, text } from "@clack/prompts";
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import {
+  STORE_LAYOUT,
+  buildStoreResolveInput,
+  createStoreResolver,
   getPanelFields,
   ONBOARD_SLOT_NAMES,
+  storeConfigSchema,
+  storeRelativePathForMount,
   type PanelFieldMeta,
 } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
@@ -22,8 +27,8 @@ import type { McpRootPolicy } from "../config/writer.js";
 import { t } from "../i18n.js";
 import {
   loadGlobalConfig,
+  mutateGlobalConfig,
   resolveGlobalRoot,
-  saveGlobalConfigAsync,
 } from "../store/global-config-io.js";
 
 // grill-6fixes (D1): the language base tone is a single machine-wide value in
@@ -54,7 +59,48 @@ type ConfigArgs = {
   set?: string;
   value?: string;
   json?: boolean;
+  // config-single-home W5: which home `--set` writes to.
+  scope?: string;
 };
+
+/**
+ * Resolve the TEAM write-target store ROOT for `--scope store` writes. Mirrors
+ * the server's config-loader.resolveStoreConfig target resolution so a value set
+ * here is read back by exactly the same layer. null on any miss (unbound repo,
+ * no write target) so the caller can fail with actionable guidance.
+ */
+function resolveWriteTargetStoreRoot(projectRoot: string): string | null {
+  try {
+    const input = buildStoreResolveInput(projectRoot);
+    if (input === null) {
+      return null;
+    }
+    let activeProject: string | undefined;
+    try {
+      const raw: unknown = JSON.parse(
+        readFileSync(join(projectRoot, ".fabric", "fabric-config.json"), "utf8"),
+      );
+      if (raw !== null && typeof raw === "object") {
+        const candidate = (raw as { active_project?: unknown }).active_project;
+        activeProject = typeof candidate === "string" ? candidate : undefined;
+      }
+    } catch {
+      activeProject = undefined;
+    }
+    const scope =
+      activeProject !== undefined && activeProject.length > 0 ? `project:${activeProject}` : "team";
+    const { target } = createStoreResolver().resolveWriteTarget(input, scope);
+    if (target === null) {
+      return null;
+    }
+    const mounted = input.mountedStores.find((s) => s.store_uuid === target.store_uuid) ?? {
+      store_uuid: target.store_uuid,
+    };
+    return join(resolveGlobalRoot(), storeRelativePathForMount(mounted));
+  } catch {
+    return null;
+  }
+}
 
 export type InstallMcpClientsOptions = {
   clients?: ClientKind[];
@@ -311,6 +357,12 @@ export const configCmd = defineCommand({
       type: "boolean",
       description: "Emit machine-readable JSON for list/get",
     },
+    scope: {
+      type: "string",
+      description:
+        "Where --set writes: defaults (machine-wide, default) | project (this repo's exception) | store (corpus knob, shared via the store repo)",
+      valueHint: "defaults|project|store",
+    },
   },
   subCommands: {
     "dismiss-slot": dismissSlotCmd,
@@ -419,12 +471,15 @@ export const configCmd = defineCommand({
               return;
             }
             const globalRoot = resolveGlobalRoot();
-            const global = loadGlobalConfig(globalRoot) ?? { uid: "local", stores: [] };
             // Runtime-validated above against the language field's enum_values
             // (fabricLanguageSchema = ["zh-CN", "en"]), so the narrowing cast to
             // the global config's language type is sound.
-            await saveGlobalConfigAsync(
-              { ...global, language: args.value as "zh-CN" | "en" },
+            // config-single-home W1: locked read-modify-write.
+            await mutateGlobalConfig(
+              (current) => ({
+                ...(current ?? { uid: "local", stores: [] }),
+                language: args.value as "zh-CN" | "en",
+              }),
               globalRoot,
             );
             console.log(`set ${setKey}=${args.value}`);
@@ -444,9 +499,69 @@ export const configCmd = defineCommand({
             }
             coerced = n;
           }
-          const merged = { ...parsed, [setKey]: coerced };
-          await atomicWriteJson(configPath, merged);
-          console.log(`set ${setKey}=${JSON.stringify(coerced)}`);
+          // config-single-home W5: route the write to the key's ONE home.
+          //   --scope defaults (default) → global `defaults`
+          //   --scope project           → global `projects[<project_id>]`
+          //   --scope store             → the write-target store's store-config.json
+          // The repo config is identity-only and is never a write target here.
+          const scope = args.scope ?? "defaults";
+          if (scope !== "defaults" && scope !== "project" && scope !== "store") {
+            console.error(`invalid --scope: ${scope} (allowed: defaults, project, store)`);
+            process.exitCode = 1;
+            return;
+          }
+          if (scope === "store") {
+            const storeRoot = resolveWriteTargetStoreRoot(workspaceRoot);
+            if (storeRoot === null) {
+              console.error(
+                "no team write-target store resolved — bind one with `fabric store bind <alias>` before setting a store-scoped key",
+              );
+              process.exitCode = 1;
+              return;
+            }
+            const storeConfigPath = join(storeRoot, STORE_LAYOUT.configFile);
+            let existing: Record<string, unknown> = {};
+            try {
+              const raw: unknown = JSON.parse(readFileSync(storeConfigPath, "utf8"));
+              if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+                existing = raw as Record<string, unknown>;
+              }
+            } catch {
+              // absent / malformed → start from an empty object
+            }
+            const next = storeConfigSchema.parse({ ...existing, [setKey]: coerced });
+            await atomicWriteJson(storeConfigPath, next);
+            console.log(`set ${setKey}=${JSON.stringify(coerced)} (store: ${storeRoot})`);
+            console.log("commit store-config.json in the store repo to share it with the team");
+            return;
+          }
+          const projectIdValue = parsed.project_id;
+          const projectId =
+            scope === "project" && typeof projectIdValue === "string" && projectIdValue.length > 0
+              ? projectIdValue
+              : null;
+          if (scope === "project" && projectId === null) {
+            console.error(
+              "this repo has no project_id — run `fabric install` first, or use --scope defaults",
+            );
+            process.exitCode = 1;
+            return;
+          }
+          await mutateGlobalConfig((current) => {
+            const base = current ?? { uid: "local", stores: [] };
+            if (scope === "defaults") {
+              return { ...base, defaults: { ...(base.defaults ?? {}), [setKey]: coerced } };
+            }
+            const projects = { ...(base.projects ?? {}) };
+            projects[projectId as string] = {
+              ...(projects[projectId as string] ?? {}),
+              [setKey]: coerced,
+            };
+            return { ...base, projects };
+          });
+          console.log(
+            `set ${setKey}=${JSON.stringify(coerced)} (global ${scope === "defaults" ? "defaults" : `projects.${projectId as string}`})`,
+          );
           return;
         }
       } catch (err: unknown) {
@@ -549,13 +664,16 @@ export const configCmd = defineCommand({
           // project file. The uninit gate guarantees `fabric install` already
           // ran, so a global config exists.
           const globalRoot = resolveGlobalRoot();
-          const globalConfig = loadGlobalConfig(globalRoot);
-          if (globalConfig === null) {
+          if (loadGlobalConfig(globalRoot) === null) {
             pendingError = t("cli.config.errors.uninit-workspace.message");
             continue;
           }
-          await saveGlobalConfigAsync(
-            { ...globalConfig, language: newValue as "zh-CN" | "en" },
+          // config-single-home W1: locked read-modify-write. The null guard above
+          // drives the user-facing error; the mutator re-checks inside the lock and
+          // skips the write if the config vanished in between.
+          await mutateGlobalConfig(
+            (current) =>
+              current === null ? null : { ...current, language: newValue as "zh-CN" | "en" },
             globalRoot,
           );
         } else {

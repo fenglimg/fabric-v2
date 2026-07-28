@@ -366,6 +366,41 @@ export const globalConfigSchema = z
     // install personal slot. Absent ⇒ the resolver falls back to the first
     // mounted personal, so legacy single-personal configs are unchanged.
     active_personal_store: z.string().min(1).optional(),
+    // config-single-home W2 — the remote embedding transport as ONE object.
+    //
+    // Presence of this object IS the mode switch: set ⇒ remote embedding, absent
+    // ⇒ local fastembed. `model` lives INSIDE it because the two modes have
+    // incompatible model namespaces (remote `BAAI/bge-m3` vs local fastembed enum
+    // `fast-bge-small-zh-v1.5`), and endpoint/key/model must move as a unit — a
+    // remote endpoint paired with a local model name is an unusable combination.
+    // The local-mode model is a policy knob and lives in `defaults` instead, so
+    // no single key is writable in two places (KT-MOD "one key, one home").
+    embed_remote: z
+      .object({
+        endpoint: z.string().min(1),
+        api_key: z.string().min(1).optional(),
+        model: z.string().min(1).optional(),
+      })
+      .optional(),
+    // config-single-home W2 — POLICY HOME. `defaults` holds the user's own
+    // machine-wide defaults for the preference-class knobs; `projects[<project_id>]`
+    // holds per-project exceptions, keyed by the `project_id` that stays in the
+    // repo's `.fabric/fabric-config.json`.
+    //
+    // Deliberately typed as an open bag rather than a field-by-field mirror of
+    // `fabricConfigSchema`:
+    //   1. store.ts must not import fabric-config.ts (that module already imports
+    //      this one — the same cycle that forced storeConfigSchema to inline its
+    //      field constraints).
+    //   2. A field-by-field mirror would carry `.default()`s, and a parse would
+    //      then materialise every default into `defaults` — which would shadow the
+    //      store layer for every knob and recreate the very "written but never
+    //      effective" failure this redesign removes.
+    // Per-knob range/enum validation happens at READ time in the config-loader's
+    // single-field guards (already the hot-path contract) and at WRITE time in
+    // `fabric config set` against the exported single-field schemas.
+    defaults: z.record(z.unknown()).optional(),
+    projects: z.record(z.record(z.unknown())).optional(),
   })
   // Root NOT strict: tolerate forward-compat keys without aborting the hot
   // read path, mirroring fabricConfigSchema's lenient-root convention.
@@ -374,14 +409,18 @@ export const globalConfigSchema = z
 export type GlobalConfig = z.infer<typeof globalConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// config-layering W1 (TASK-001) — STORE-layer config home (`store-config.json`
-// at the store root, STORE_LAYOUT.configFile). A store may DEFAULT the
-// corpus-shaping knobs for every repo bound to it (e.g. a team store pins
-// `embed_model` / `credibility_half_life_*` so the whole team recalls with the
-// same tuning). The cascade resolver layers this BENEATH the project config and
-// env overrides; only the knobs enumerated in STORE_OVERRIDABLE_KNOBS
-// (schemas/fabric-config.ts) are honored from this layer — machine-scoped keys
-// (nudge_mode/observe/hint_summary_max_len/remote endpoint+key) are NOT.
+// config-single-home W4 — the STORE config home (`store-config.json` at the store
+// root, STORE_LAYOUT.configFile). This schema is the SOLE definition of what a
+// store may configure, and every field in it is a CORPUS property: it describes
+// the knowledge base itself (how fast its entries go stale, how many it holds,
+// how similar two entries may be), so it travels with the store and applies to
+// every repo bound to it.
+//
+// Preference knobs (retrieval top_k, fusion, embedding channel, layer filter,
+// token TTL, every hint/nudge cadence) are NOT here — they describe how a PERSON
+// wants Fabric to behave and live in `~/.fabric/fabric-global.json`. Because no
+// key appears in both places, the resolver needs no allow-list and there is no
+// second registry that can drift out of sync with this shape.
 //
 // READ-TOLERANT (KT-DEC-0048, write-strict/read-tolerant): EVERY field is
 // `.optional()` with NO `.default()` and NO throwing `.refine()`, and the root
@@ -398,32 +437,12 @@ export type GlobalConfig = z.infer<typeof globalConfigSchema>;
 // ---------------------------------------------------------------------------
 export const storeConfigSchema = z
   .object({
-    // Retrieval knobs (mirror fabricConfigSchema).
-    plan_context_top_k: z.number().int().min(1).max(200).optional(),
-    recall_relevance_ratio: z.number().min(0).max(1).optional(),
-    // Embedding channel.
-    embed_enabled: z.boolean().optional(),
-    embed_weight: z.number().int().min(0).max(49).optional(),
-    embed_model: z
-      .enum([
-        "fast-bge-small-zh-v1.5",
-        "fast-multilingual-e5-large",
-        "fast-bge-small-en-v1.5",
-        "fast-bge-small-en",
-        "fast-bge-base-en-v1.5",
-        "fast-bge-base-en",
-        "fast-all-MiniLM-L6-v2",
-      ])
-      .optional(),
-    fusion: z.enum(["additive", "rrf", "auto"]).optional(),
-    // Recall layer / scale.
-    default_layer_filter: z.enum(["team", "personal", "both"]).optional(),
+    // Corpus scale / shape.
     broad_index_backstop: z.number().int().min(20).max(500).optional(),
+    underseed_node_threshold: z.number().int().positive().optional(),
     // Knowledge hygiene / conflict lint.
     conflict_lint_similarity_threshold: z.number().min(0).max(1).optional(),
     broad_review_recheck_days: z.number().int().min(1).max(3650).optional(),
-    underseed_node_threshold: z.number().int().positive().optional(),
-    selection_token_ttl_ms: z.number().int().min(30_000).max(3_600_000).optional(),
     // Credibility content-age decay half-lives (per knowledge type).
     credibility_half_life_decisions_days: z.number().int().min(1).max(3650).optional(),
     credibility_half_life_guidelines_days: z.number().int().min(1).max(3650).optional(),

@@ -31,7 +31,7 @@
  * behavior), nor block the hook.
  */
 
-const { readConfig, readGlobalConfig } = require("./config-cache.cjs");
+const { readPolicy } = require("./config-cache.cjs");
 
 const NUDGE_MODES = ["silent", "minimal", "normal", "verbose"];
 // G2 (GRL-STOPHOOK-AIONLY-20260709) boundary decision:
@@ -66,20 +66,15 @@ function readNudgeMode(projectRoot) {
   if (typeof envMode === "string" && NUDGE_MODES.includes(envMode)) {
     return envMode;
   }
-  // Layer 2: project config (existing behaviour). Uses readConfig cache.
+  // Layer 2/3: the global policy layer — projects[<project_id>] then defaults.
+  // config-single-home W3: nudge_mode is a preference knob, so the repo config is
+  // no longer consulted (a value left there is inert, same as every other knob).
   try {
-    const projectMode = readConfig(projectRoot).nudge_mode;
-    if (typeof projectMode === "string" && NUDGE_MODES.includes(projectMode)) {
-      return projectMode;
-    }
-  } catch {
-    // fall through
-  }
-  // Layer 3: shared machine-global config reader.
-  try {
-    const globalMode = readGlobalConfig().nudge_mode;
-    if (typeof globalMode === "string" && NUDGE_MODES.includes(globalMode)) {
-      return globalMode;
+    for (const layer of readPolicy(projectRoot)) {
+      const mode = layer.nudge_mode;
+      if (typeof mode === "string" && NUDGE_MODES.includes(mode)) {
+        return mode;
+      }
     }
   } catch {
     // fall through
@@ -96,10 +91,16 @@ function readNudgeMode(projectRoot) {
  */
 function readObserveOverride(projectRoot, event) {
   try {
-    const observe = readConfig(projectRoot).observe;
-    if (!observe || typeof observe !== "object") return undefined;
-    const v = observe[event];
-    return typeof v === "boolean" ? v : undefined;
+    // config-single-home W3: `observe` is a preference knob — first policy layer
+    // that carries an object wins (projects[<project_id>] then defaults).
+    for (const layer of readPolicy(projectRoot)) {
+      const observe = layer.observe;
+      if (observe && typeof observe === "object" && !Array.isArray(observe)) {
+        const v = observe[event];
+        if (typeof v === "boolean") return v;
+      }
+    }
+    return undefined;
   } catch {
     return undefined;
   }

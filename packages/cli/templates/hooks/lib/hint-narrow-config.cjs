@@ -9,7 +9,7 @@ const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 const {
   readConfig,
-  readGlobalConfig,
+  readPolicy,
   readConfigNumber,
   readConfigBoolean,
 } = require("./config-cache.cjs");
@@ -46,11 +46,15 @@ function readNarrowCooldownHours(projectRoot) {
   );
 }
 
+// config-single-home W3: preference class — the first policy layer that declares
+// the list wins (projects[<project_id>] then defaults). An empty array is a
+// MEANINGFUL value ("dismiss nothing"), so presence is what decides, not length.
 function readNarrowDismissed(projectRoot) {
-  const projectSignals = readConfig(projectRoot).hint_dismiss_signals;
-  if (Array.isArray(projectSignals)) return projectSignals.includes("narrow");
-  const globalSignals = readGlobalConfig().hint_dismiss_signals;
-  if (Array.isArray(globalSignals)) return globalSignals.includes("narrow");
+  for (const layer of readPolicy(projectRoot)) {
+    if (Array.isArray(layer.hint_dismiss_signals)) {
+      return layer.hint_dismiss_signals.includes("narrow");
+    }
+  }
   return false;
 }
 

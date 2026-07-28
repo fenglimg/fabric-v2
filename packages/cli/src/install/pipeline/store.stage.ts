@@ -13,7 +13,7 @@ import { isCancel, select, text } from "@clack/prompts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfigAsync } from "../../store/global-config-io.js";
+import { loadGlobalConfig, mutateGlobalConfig, resolveGlobalRoot } from "../../store/global-config-io.js";
 import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
 import { refreshLocale, t } from "../../i18n.js";
 import {
@@ -211,10 +211,13 @@ export class StoreStage implements Stage {
    */
   private async persistLanguageSelection(globalRoot: string, picked: "zh-CN" | "en" | undefined): Promise<void> {
     if (picked === undefined) return;
-    const config = loadGlobalConfig(globalRoot);
-    if (config !== null && config.language !== picked) {
-      await saveGlobalConfigAsync({ ...config, language: picked }, globalRoot);
-    }
+    // config-single-home W1: the "already matches" check runs INSIDE the lock —
+    // outside it, a concurrent writer could land between our read and our write.
+    await mutateGlobalConfig(
+      (current) =>
+        current !== null && current.language !== picked ? { ...current, language: picked } : null,
+      globalRoot,
+    );
     refreshLocale();
   }
 
@@ -774,18 +777,38 @@ export class StoreStage implements Stage {
     // "personal" store. Only fires when NO flagged personal exists.
     const legacyPersonal = config.stores.find((store) => store.alias === "personal");
     if (legacyPersonal !== undefined) {
-      const nextStores = config.stores.map((store) =>
-        store.alias === "personal" ? { ...store, personal: true } : store,
+      // config-single-home W1: re-read inside the lock and re-derive from the
+      // CURRENT stores — the `config` parameter is a snapshot taken before this
+      // call and may already be stale.
+      await mutateGlobalConfig(
+        (current) =>
+          current === null
+            ? null
+            : {
+                ...current,
+                stores: current.stores.map((store) =>
+                  store.alias === "personal" ? { ...store, personal: true } : store,
+                ),
+              },
+        globalRoot,
       );
-      await saveGlobalConfigAsync({ ...config, stores: nextStores }, globalRoot);
       return;
     }
     const uuid = randomUUID();
     const mounted = { store_uuid: uuid, alias: "personal", mount_name: "personal", personal: true };
+    // initStore does real filesystem work — keep it OUTSIDE the lock (the lock's
+    // 10s staleMs would let another process reclaim it mid-init).
     await initStore(
       join(globalRoot, storeRelativePathForMount(mounted)),
       { store_uuid: uuid, created_at: new Date().toISOString(), canonical_alias: "personal" },
     );
-    await saveGlobalConfigAsync({ ...config, stores: [mounted, ...config.stores] }, globalRoot);
+    await mutateGlobalConfig((current) => {
+      if (current === null) return null;
+      // Re-check the precondition inside the lock: a concurrent install may have
+      // minted a personal store since this method's entry check, and registering
+      // a second one directly contradicts the multi-personal model.
+      if (current.stores.some((store) => store.personal === true)) return null;
+      return { ...current, stores: [mounted, ...current.stores] };
+    }, globalRoot);
   }
 }

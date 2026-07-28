@@ -241,6 +241,7 @@ export const zhCNMessages: Messages = {
   "doctor.store.active-personal-unset": "已挂载 {count} 个 personal store 但无活动指针;运行 `fabric store switch-personal <alias>` 选一个(或 `fabric doctor --fix` 默认取第一个)",
   "doctor.store.related-broken": "{count} 条 `related` 链接指向语料中不存在的 id:{samples}{overflow} —— 通过 `fab_review` (modify) 修复 related 边,或编辑条目 frontmatter",
   "doctor.store.related-hub": "related 图谱枢纽(前 {shown} / 共 {total} 个被引用):{top}",
+  "doctor.store.config-key-relocated": "本仓配置仍留有已搬迁的键 '{key}' —— 策略已归 ~/.fabric/fabric-global.json(偏好类) 或 store 的 store-config.json(语料类);此处的值不再生效,可删除",
   "doctor.store.knob-repo-override": "本仓覆盖了 store 层旋钮 '{key}' —— project 层按设计优先(C-004 D2 用户在控);如非有意请对齐",
   "doctor.store.unreachable": "store '{alias}' 在 read-set 中但磁盘上不可达({reason});运行 `fabric store mount` / 重新 clone,再跑 `fabric doctor`",
   "doctor.store.unreachable-bound": "已绑定 store 的磁盘目录缺失：{stores} — 请 re-clone 或 remount，再跑 fabric doctor",

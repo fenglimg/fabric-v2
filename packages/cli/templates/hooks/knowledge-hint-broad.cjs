@@ -305,34 +305,23 @@ function countCanonicalNodes(projectRoot) {
  * Any read/parse failure → default (never block on config errors).
  */
 function readUnderseedThreshold(projectRoot) {
-  // config-layering W3 (TASK-004): env > project > store > default (project wins
-  // over store, C-004). The store layer (single-owner store-config-reader.cjs)
-  // is integer-strict + positive, matching storeConfigSchema's
-  // `underseed_node_threshold: z.number().int().positive()`.
-  if (storeConfigReader !== null) {
-    const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
-    if (typeof envVal === "number") {
-      return envVal;
-    }
+  // config-single-home W3: CORPUS class — `env > store > default`. "How many
+  // entries is too few" is a property of THIS knowledge base, so the store that
+  // owns the corpus is its only home; there is no project/global layer to lose
+  // to. The store layer (single-owner store-config-reader.cjs) is integer-strict
+  // + positive, matching `underseed_node_threshold: z.number().int().positive()`.
+  if (storeConfigReader === null) {
+    return DEFAULT_UNDERSEED_NODE_THRESHOLD;
   }
-  // Project layer: > 0 guard via min: Number.MIN_VALUE (any positive). undefined
-  // fallback so an absent/invalid project value falls through to the store layer.
-  const projectVal = readConfigNumber(projectRoot, "underseed_node_threshold", undefined, {
-    min: Number.MIN_VALUE,
+  const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
+  if (typeof envVal === "number") {
+    return envVal;
+  }
+  const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+  const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
+    min: 1,
   });
-  if (typeof projectVal === "number") {
-    return projectVal;
-  }
-  if (storeConfigReader !== null) {
-    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
-    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
-      min: 1,
-    });
-    if (typeof storeVal === "number") {
-      return storeVal;
-    }
-  }
-  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  return typeof storeVal === "number" ? storeVal : DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
 /**
@@ -342,33 +331,21 @@ function readUnderseedThreshold(projectRoot) {
  * silently falls back to the default.
  */
 function readBroadIndexBackstop(projectRoot) {
-  // config-layering W3 (TASK-004): env > project > store > default (project wins
-  // over store, C-004). Range 20..500 mirrors storeConfigSchema's
+  // config-single-home W3: CORPUS class — `env > store > default`. The backstop
+  // scales with how many broad entries a store actually holds, so it belongs to
+  // the store, not to a repo or a machine-wide preference. Range 20..500 mirrors
   // `broad_index_backstop: z.number().int().min(20).max(500)`.
   const range = { min: 20, max: 500 };
-  if (storeConfigReader !== null) {
-    const envVal = storeConfigReader.readEnvInt("FABRIC_BROAD_INDEX_BACKSTOP", range);
-    if (typeof envVal === "number") {
-      return envVal;
-    }
+  if (storeConfigReader === null) {
+    return DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
   }
-  // Project layer: undefined fallback so an absent/invalid value falls through.
-  const projectVal = readConfigNumber(projectRoot, "broad_index_backstop", undefined, {
-    min: 20,
-    max: 500,
-    floor: true,
-  });
-  if (typeof projectVal === "number") {
-    return projectVal;
+  const envVal = storeConfigReader.readEnvInt("FABRIC_BROAD_INDEX_BACKSTOP", range);
+  if (typeof envVal === "number") {
+    return envVal;
   }
-  if (storeConfigReader !== null) {
-    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
-    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "broad_index_backstop", range);
-    if (typeof storeVal === "number") {
-      return storeVal;
-    }
-  }
-  return DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
+  const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+  const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "broad_index_backstop", range);
+  return typeof storeVal === "number" ? storeVal : DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
 }
 
 /**

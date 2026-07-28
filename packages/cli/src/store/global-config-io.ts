@@ -8,14 +8,19 @@
 // symbols verbatim — every existing CLI importer keeps its `./global-config-io`
 // path unchanged.
 //
-// ISS-20260711-256: production mutation paths must use saveGlobalConfigAsync
-// (withFileLock + atomicWriteJson). saveGlobalConfig stays for test fixtures.
+// config-single-home W1: production paths that MUTATE an existing config must
+// use mutateGlobalConfig (load→mutate→save inside one lock).
+// saveGlobalConfigAsync only locks the write, so a load-outside/save-inside
+// caller still loses concurrent updates. saveGlobalConfigAsync stays valid for
+// whole-config writes with no read-modify step (e.g. first-time creation);
+// saveGlobalConfig stays for test fixtures.
 // ---------------------------------------------------------------------------
 
 export {
   resolveGlobalRoot,
   globalConfigPath,
   loadGlobalConfig,
+  mutateGlobalConfig,
   saveGlobalConfig,
   saveGlobalConfigAsync,
 } from "@fenglimg/fabric-shared";

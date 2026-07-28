@@ -45,6 +45,11 @@ const stateStore = require("../templates/hooks/lib/state-store.cjs") as {
 let tempDirs: string[] = [];
 
 afterEach(() => {
+  if (originalFabricHome !== undefined) {
+    if (originalFabricHome === null) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = originalFabricHome;
+    originalFabricHome = undefined;
+  }
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -67,6 +72,24 @@ function writeConfig(cwd: string, body: object): void {
   writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(body));
 }
 
+/**
+ * config-single-home W3: the typed getters resolve PREFERENCE knobs from the
+ * global policy layer (`<FABRIC_HOME>/.fabric/fabric-global.json` → `defaults`),
+ * not from the repo config. Point FABRIC_HOME at the temp dir for isolation.
+ */
+function writeDefaults(cwd: string, defaults: object): void {
+  if (originalFabricHome === undefined) originalFabricHome = process.env.FABRIC_HOME ?? null;
+  process.env.FABRIC_HOME = cwd;
+  const dir = join(cwd, ".fabric");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "fabric-global.json"),
+    JSON.stringify({ uid: "test-uid", stores: [], defaults }),
+  );
+}
+
+let originalFabricHome: string | null | undefined;
+
 describe("config-cache.cjs", () => {
   it("readConfig returns {} when file absent or corrupt (never throws)", () => {
     const cwd = mkTemp();
@@ -79,41 +102,66 @@ describe("config-cache.cjs", () => {
 
   it("readConfigNumber honours min/max range, else fallback", () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { n: 5 });
+    writeDefaults(cwd, { n: 5 });
     expect(configCache.readConfigNumber(cwd, "n", 99, { min: 1, max: 10 })).toBe(5);
     configCache.clearConfigCache();
-    writeConfig(cwd, { n: 50 });
+    writeDefaults(cwd, { n: 50 });
     expect(configCache.readConfigNumber(cwd, "n", 99, { min: 1, max: 10 })).toBe(99);
   });
 
   it("integer:true rejects fractional values to fallback (strict)", () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { n: 3.14 });
+    writeDefaults(cwd, { n: 3.14 });
     expect(configCache.readConfigNumber(cwd, "n", 10, { min: 0, integer: true })).toBe(10);
   });
 
   it("floor:true truncates fractional values (lenient)", () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { n: 3.99 });
+    writeDefaults(cwd, { n: 3.99 });
     expect(configCache.readConfigNumber(cwd, "n", 0, { min: 1, max: 50, floor: true })).toBe(3);
   });
 
   it("readConfigBoolean / readConfigString validate type", () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { b: true, s: "hello", bad: 1 });
+    writeDefaults(cwd, { b: true, s: "hello", bad: 1 });
     expect(configCache.readConfigBoolean(cwd, "b", false)).toBe(true);
     expect(configCache.readConfigBoolean(cwd, "bad", false)).toBe(false);
     expect(configCache.readConfigString(cwd, "s", "x")).toBe("hello");
     expect(configCache.readConfigString(cwd, "missing", "x")).toBe("x");
   });
 
+  it("projects[<project_id>] beats defaults", () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { project_id: "p1" });
+    if (originalFabricHome === undefined) originalFabricHome = process.env.FABRIC_HOME ?? null;
+    process.env.FABRIC_HOME = cwd;
+    writeFileSync(
+      join(cwd, ".fabric", "fabric-global.json"),
+      JSON.stringify({
+        uid: "test-uid",
+        stores: [],
+        defaults: { n: 5 },
+        projects: { p1: { n: 7 } },
+      }),
+    );
+    expect(configCache.readConfigNumber(cwd, "n", 0, { min: 1, max: 10 })).toBe(7);
+  });
+
+  it("a policy key left in the repo config is inert (identity-only)", () => {
+    const cwd = mkTemp();
+    writeDefaults(cwd, {});
+    writeConfig(cwd, { n: 42 });
+    configCache.clearConfigCache();
+    expect(configCache.readConfigNumber(cwd, "n", 0, { min: 1, max: 100 })).toBe(0);
+  });
+
   it("mtime-keyed cache invalidates when the config file changes", () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { n: 1 });
+    writeDefaults(cwd, { n: 1 });
     expect(configCache.readConfigNumber(cwd, "n", 0, {})).toBe(1);
     // Rewrite with a forced later mtime so the cache key differs.
-    const path = join(cwd, ".fabric", "fabric-config.json");
-    writeFileSync(path, JSON.stringify({ n: 2 }));
+    const path = join(cwd, ".fabric", "fabric-global.json");
+    writeFileSync(path, JSON.stringify({ uid: "test-uid", stores: [], defaults: { n: 2 } }));
     const later = new Date(Date.now() + 5000);
     // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
     require("node:fs").utimesSync(path, later, later);

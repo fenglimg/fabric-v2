@@ -61,36 +61,15 @@ export function migrateRequiredStores(config: {
   return { ...config, required_stores: [...personal, kept] };
 }
 
-// config-layering W1 (TASK-001): the registry of corpus-shaping knobs the STORE
-// layer (store-config.json, STORE_LAYOUT.configFile) is allowed to default.
-// Two consumers share this ONE source of truth:
-//   - `fabric doctor` uses it to detect repo-level overrides of store defaults.
-//   - the cascade resolver uses it as the store-layer ALLOW-LIST — only these
-//     keys are honored from store-config.json (env > project > store > builtin).
-// Grouped families are named ONCE (credibility_half_life / credibility_floor /
-// orphan_demote), so this tuple has EXACTLY 15 entries even though the concrete
-// storeConfigSchema fields expand to 23 (5 half-life + 3 floor + 3 orphan_demote).
+// config-single-home W4: the `STORE_OVERRIDABLE_KNOBS` allow-list is GONE.
 //
-// It MUST NOT include machine-scoped keys — a store may not dictate a repo's
-// human-output presets or remote transport: `nudge_mode`, `observe`,
-// `hint_summary_max_len`, and any remote endpoint/key are intentionally ABSENT.
-export const STORE_OVERRIDABLE_KNOBS = [
-  "plan_context_top_k",
-  "recall_relevance_ratio",
-  "embed_weight",
-  "embed_model",
-  "fusion",
-  "default_layer_filter",
-  "broad_index_backstop",
-  "conflict_lint_similarity_threshold",
-  "broad_review_recheck_days",
-  "underseed_node_threshold",
-  "selection_token_ttl_ms",
-  "credibility_half_life",
-  "credibility_floor",
-  "orphan_demote",
-  "embed_enabled",
-] as const;
+// It existed to answer one question — "may this key be written in BOTH a repo
+// config and a store-config?" — and that question no longer arises: every knob
+// now has exactly one home. `storeConfigSchema` (schemas/store.ts) enumerates the
+// corpus knobs the store owns, and it is the only list needed; a preference knob
+// written into a store-config is simply not in that shape and is ignored, with no
+// second list to keep in sync (the previous split is what let the declared 15 and
+// the effective 12 drift apart unnoticed).
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 

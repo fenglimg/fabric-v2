@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   STORE_LAYOUT,
+  loadGlobalConfig,
   resolveGlobalRoot,
   saveGlobalConfig,
   storeRelativePathForMount,
@@ -82,9 +83,38 @@ async function createProject(config: object): Promise<string> {
   return projectRoot;
 }
 
+// config-single-home W2: the repo config carries IDENTITY only. Everything else
+// a test passes to createTeamProject is a PREFERENCE knob and belongs in the
+// global policy layer, so route it there instead of writing it into the repo
+// file (where it would now be inert).
+const IDENTITY_KEYS = new Set([
+  "project_id",
+  "workspace_binding_id",
+  "required_stores",
+  "write_routes",
+  "active_project",
+  "active_write_store",
+  "default_write_store",
+]);
+
+/** Merge into `~/.fabric/fabric-global.json` → `defaults`, preserving the rest. */
+function writePolicyDefaults(defaults: Record<string, unknown>): void {
+  const current = (loadGlobalConfig() ?? { uid: "test-uid", stores: [] }) as Record<string, unknown>;
+  const merged = { ...((current.defaults as Record<string, unknown>) ?? {}), ...defaults };
+  saveGlobalConfig({ ...current, defaults: merged } as Parameters<typeof saveGlobalConfig>[0]);
+}
+
 /** The default project — declares the team store as required. */
 async function createTeamProject(extra: object = {}): Promise<string> {
-  return createProject({ required_stores: [{ id: "team" }], ...extra });
+  const identity: Record<string, unknown> = {};
+  const policy: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (IDENTITY_KEYS.has(key)) identity[key] = value;
+    else policy[key] = value;
+  }
+  const projectRoot = await createProject({ required_stores: [{ id: "team" }], ...identity });
+  if (Object.keys(policy).length > 0) writePolicyDefaults(policy);
+  return projectRoot;
 }
 
 type StoreEntryFields = {
@@ -160,7 +190,14 @@ function mountStores(opts: { personal?: boolean } = {}): void {
       personal: true,
     });
   }
-  saveGlobalConfig({ uid: "test-uid", stores });
+  // Preserve any policy defaults already written (createTeamProject may run
+  // before mountStores); a plain overwrite would silently drop them.
+  const current = loadGlobalConfig() as Record<string, unknown> | null;
+  saveGlobalConfig({
+    uid: "test-uid",
+    stores,
+    ...(current?.defaults !== undefined ? { defaults: current.defaults } : {}),
+  } as Parameters<typeof saveGlobalConfig>[0]);
 }
 
 describe("planContext", () => {
@@ -981,10 +1018,7 @@ describe("planContext top_k truncation (W1-T3)", () => {
   async function seedThreeTopicRegistry(topK?: number): Promise<string> {
     const projectRoot = await createTeamProject();
     if (topK !== undefined) {
-      await writeFile(
-        join(projectRoot, ".fabric", "fabric-config.json"),
-        `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: topK }, null, 2)}\n`,
-      );
+      writePolicyDefaults({ plan_context_top_k: topK });
     }
     const topics: Array<[string, string]> = [
       ["KT-DEC-9101", "Vector embedding semantic retrieval over the knowledge base"],
@@ -1265,10 +1299,7 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
       const projectRoot = await seedTwoOpaqueEntries();
       // embed_weight defaults to 30 (≤49 cap). BM25 is 0 for both candidates
       // (no shared token), so any positive vector weight is the deciding signal.
-      await writeFile(
-        join(projectRoot, ".fabric", "fabric-config.json"),
-        `${JSON.stringify({ required_stores: [{ id: "team" }], embed_enabled: true }, null, 2)}\n`,
-      );
+      writePolicyDefaults({ embed_enabled: true });
 
       // Query is 'a'-heavy and shares no lexical token with either summary, so
       // BM25 is 0 for both — the vector supplement is the deciding signal.
@@ -1289,10 +1320,7 @@ describe("planContext vector semantic supplement (W2-T7)", () => {
       // TASK-004: embed defaults ON, so the OFF path now requires an EXPLICIT
       // embed_enabled:false. With vectors off → vector path never runs →
       // alphabetic stable_id order.
-      await writeFile(
-        join(projectRoot, ".fabric", "fabric-config.json"),
-        `${JSON.stringify({ required_stores: [{ id: "team" }], embed_enabled: false }, null, 2)}\n`,
-      );
+      writePolicyDefaults({ embed_enabled: false });
       const result = await planContext(projectRoot, { paths: ["src/x.ts"], intent: "aaaaaa" });
       expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9301", "team:KT-DEC-9302"]);
     } finally {
@@ -1486,10 +1514,7 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
     const edgeId = opts.edgeId ?? "team:KT-DEC-9202";
     const projectRoot = await createTeamProject();
     if (opts.topK !== undefined) {
-      await writeFile(
-        join(projectRoot, ".fabric", "fabric-config.json"),
-        `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: opts.topK }, null, 2)}\n`,
-      );
+      writePolicyDefaults({ plan_context_top_k: opts.topK });
     }
     // KT-DEC-9201: strongly matches the intent (ranks top). KT-DEC-9202: the
     // neighbour, irrelevant to the intent (ranks last → dropped by topK=1).

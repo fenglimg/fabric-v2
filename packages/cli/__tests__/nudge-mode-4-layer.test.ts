@@ -18,7 +18,7 @@
  * os.homedir() returns the tmpdir (hermetic — no user's real ~/.fabric read).
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -57,28 +57,45 @@ afterEach(() => {
   }
 });
 
+const PROJECT_ID = "nudge-4layer-project";
+
+// config-single-home W3: the per-repo layer is now ,
+// NOT the repo file (which is identity-only). Writing the knob here keeps the
+// "per-repo setting" semantics the layer test is about.
 function makeProjectRoot(config?: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), "fab-nudge-4layer-proj-"));
   tempDirs.push(dir);
   mkdirSync(join(dir, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(dir, ".fabric", "fabric-config.json"),
+    JSON.stringify({ project_id: PROJECT_ID }),
+    "utf8",
+  );
   if (config !== undefined) {
-    writeFileSync(join(dir, ".fabric", "fabric-config.json"), JSON.stringify(config), "utf8");
+    const home = process.env.FABRIC_HOME as string;
+    const globalPath = join(home, ".fabric", "fabric-global.json");
+    let base = { uid: "test-uid", stores: [] };
+    try { base = JSON.parse(readFileSync(globalPath, "utf8")); } catch { /* fresh */ }
+    mkdirSync(join(home, ".fabric"), { recursive: true });
+    writeFileSync(globalPath, JSON.stringify({ ...base, projects: { [PROJECT_ID]: config } }), "utf8");
   }
   return dir;
 }
 
+// The machine-wide layer is . FABRIC_HOME (not HOME) is what the
+// readers resolve against — setting only HOME left these cases reading an empty
+// config and passing by coincidence on the identical default.
 function makeFakeHomeWithGlobal(globalConfig?: Record<string, unknown>): string {
   const home = mkdtempSync(join(tmpdir(), "fab-nudge-4layer-home-"));
   tempDirs.push(home);
   mkdirSync(join(home, ".fabric"), { recursive: true });
-  if (globalConfig !== undefined) {
-    writeFileSync(
-      join(home, ".fabric", "fabric-global.json"),
-      JSON.stringify(globalConfig),
-      "utf8",
-    );
-  }
+  writeFileSync(
+    join(home, ".fabric", "fabric-global.json"),
+    JSON.stringify({ uid: "test-uid", stores: [], defaults: globalConfig ?? {} }),
+    "utf8",
+  );
   process.env.HOME = home;
+  process.env.FABRIC_HOME = home;
   return home;
 }
 
