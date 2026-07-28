@@ -45,9 +45,37 @@ export async function installGlobalCore(
 ): Promise<InstallGlobalResult> {
   const existing = loadGlobalConfig(options.globalRoot);
   if (existing !== null) {
+    // config-single-home W6 — seed the policy defaults onto an ALREADY-EXISTING
+    // global config too. W5 seeded them only in the create branch below, so every
+    // machine that had a global config before the upgrade (i.e. every existing
+    // user) silently kept the library defaults and never received the shipped
+    // ones — the redesign's "defaults live in the global config" was true for
+    // fresh installs only.
+    //
+    // Deliberately narrow: seeds ONLY when the whole `defaults` segment is
+    // absent, and never merges into a segment the user already has. A user who
+    // tuned `defaults` — or who emptied it to `{}` — is left untouched.
+    const seeded =
+      existing.defaults === undefined
+        ? await mutateGlobalConfig(
+            (current) =>
+              current === null || current.defaults !== undefined
+                ? null
+                : { ...current, defaults: { ...GLOBAL_POLICY_DEFAULTS } },
+            options.globalRoot,
+          )
+        : existing;
     return {
-      receipt: { ok: true, steps: [{ name: "already-installed", status: "applied" }] },
-      config: existing,
+      receipt: {
+        ok: true,
+        steps: [
+          { name: "already-installed", status: "applied" },
+          ...(existing.defaults === undefined
+            ? [{ name: "seed-policy-defaults", status: "applied" as const }]
+            : []),
+        ],
+      },
+      config: seeded ?? existing,
       alreadyInstalled: true,
     };
   }

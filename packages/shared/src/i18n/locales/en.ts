@@ -152,6 +152,14 @@ export const enMessages: Messages = {
   "cli.config.menu.exit": "Exit",
   "cli.config.value.current": "current: {value}",
   "cli.config.value.default-marker": "(default)",
+  // config-single-home W6: which layer supplied the value. The same key can be
+  // set machine-wide, per-project, or by the team store — naming the source is
+  // what explains "why does this repo resolve a different value".
+  "cli.config.source.project": "this project",
+  "cli.config.source.defaults": "machine-wide",
+  "cli.config.source.store": "team store",
+  "cli.config.source.global": "global",
+  "cli.config.source.default": "built-in",
   "cli.config.prompt.select": "Choose a new value for {key} (current: {current}):",
   "cli.config.prompt.text": "Enter a new value for {key} (current: {current}):",
   "cli.config.write.success": "{key} = {value}",
@@ -169,6 +177,10 @@ export const enMessages: Messages = {
     "Workspace not initialized. Run `fabric install` first.",
   "cli.config.errors.invalid-int": "Must be a positive integer.",
   "cli.config.errors.unknown-field": "Unknown field selection — skipping.",
+  "cli.config.errors.no-store-target":
+    "no writable team store is bound to this repo — run `fabric store bind <alias>` before setting a knowledge-base-level key.",
+  "cli.config.errors.no-project-id":
+    "this repo has no project_id — run `fabric install` first, or use --scope defaults to write the machine-wide default.",
   "cli.config.errors.no-enum-options": "No enum options available for this field — skipping.",
   // Per-field labels (11 total: 2 Group A + 8 Group B + 1 Group C).
   "cli.config.fields.fabric_language.label": "Language",

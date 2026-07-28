@@ -143,6 +143,13 @@ export const zhCNMessages: Messages = {
   "cli.config.menu.exit": "退出",
   "cli.config.value.current": "当前：{value}",
   "cli.config.value.default-marker": "（默认）",
+  // config-single-home W6：值来自哪一层。同一个键可以在机器级、本项目级或团队
+  // store 里被设置，标出来源才解释得清"为什么这个仓库读到的不一样"。
+  "cli.config.source.project": "本项目",
+  "cli.config.source.defaults": "全机器",
+  "cli.config.source.store": "团队 store",
+  "cli.config.source.global": "全局",
+  "cli.config.source.default": "内置默认",
   "cli.config.prompt.select": "为 {key} 选择新值（当前：{current}）：",
   "cli.config.prompt.text": "为 {key} 输入新值（当前：{current}）：",
   "cli.config.write.success": "{key} = {value}",
@@ -160,6 +167,10 @@ export const zhCNMessages: Messages = {
     "工作区尚未初始化。请先运行 `fabric install`。",
   "cli.config.errors.invalid-int": "必须是正整数。",
   "cli.config.errors.unknown-field": "未知字段选择 — 已跳过。",
+  "cli.config.errors.no-store-target":
+    "本仓库没有绑定可写的团队 store — 先跑 `fabric store bind <alias>` 再设置这个知识库级配置。",
+  "cli.config.errors.no-project-id":
+    "本仓库还没有 project_id — 先跑 `fabric install`，或改用 --scope defaults 写到全机器默认。",
   "cli.config.errors.no-enum-options": "该字段没有可选枚举值 — 已跳过。",
   // 11 个面板字段标签（A 组 2 个 + B 组 8 个 + C 组 1 个）。
   "cli.config.fields.fabric_language.label": "语言",

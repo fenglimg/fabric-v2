@@ -26,6 +26,7 @@ import type { ClientKind } from "../config/writer.js";
 import type { McpRootPolicy } from "../config/writer.js";
 import { t } from "../i18n.js";
 import {
+  globalConfigPath,
   loadGlobalConfig,
   mutateGlobalConfig,
   resolveGlobalRoot,
@@ -100,6 +101,145 @@ function resolveWriteTargetStoreRoot(projectRoot: string): string | null {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// config-single-home W6 — the panel's read/write router.
+//
+// W5 moved every policy knob out of `.fabric/fabric-config.json` but only
+// rerouted the non-interactive `--set` path. The interactive panel and
+// `--list` / `--get` kept reading and writing the repo file, so the panel
+// showed `null` for every field (the repo config is identity-only) and an edit
+// made there was persisted into a file no reader consults. These helpers give
+// all three surfaces ONE resolver keyed off `PanelFieldMeta.home`, so what the
+// panel displays is what the hooks and the server actually resolve.
+// ---------------------------------------------------------------------------
+
+/** Which layer supplied the effective value (used for the panel's provenance tag). */
+type ValueSource = "project" | "defaults" | "store" | "global" | "default";
+
+interface PanelContext {
+  readonly workspaceRoot: string;
+  /** From the repo config — the key into the global `projects` map. */
+  readonly projectId: string | null;
+  readonly global: Record<string, unknown>;
+  readonly storeConfig: Record<string, unknown>;
+  readonly storeRoot: string | null;
+}
+
+function asPlainObject(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readJsonObject(path: string): Record<string, unknown> {
+  try {
+    return asPlainObject(JSON.parse(readFileSync(path, "utf8")));
+  } catch {
+    return {};
+  }
+}
+
+function loadPanelContext(workspaceRoot: string): PanelContext {
+  const repo = readJsonObject(join(workspaceRoot, ...PANEL_CONFIG_RELATIVE_PATH));
+  const projectIdRaw = repo.project_id;
+  const storeRoot = resolveWriteTargetStoreRoot(workspaceRoot);
+  return {
+    workspaceRoot,
+    projectId:
+      typeof projectIdRaw === "string" && projectIdRaw.length > 0 ? projectIdRaw : null,
+    global: asPlainObject(loadGlobalConfig(resolveGlobalRoot())),
+    storeConfig:
+      storeRoot === null ? {} : readJsonObject(join(storeRoot, STORE_LAYOUT.configFile)),
+    storeRoot,
+  };
+}
+
+/**
+ * The value a reader would actually resolve for this field, plus the layer it
+ * came from. Mirrors the server cascade (config-loader.resolvePreference /
+ * resolveCorpus) and the hook twin (lib/config-cache.readPolicy), minus the env
+ * layer — env is per-process and not every knob has an env reader, so claiming
+ * one here would be a display that lies.
+ */
+function resolveEffective(
+  field: PanelFieldMeta,
+  ctx: PanelContext,
+): { value: unknown; source: ValueSource } {
+  const key = field.key as string;
+  if (field.home === "global_root") {
+    const value = ctx.global.language;
+    return value === undefined ? { value: undefined, source: "default" } : { value, source: "global" };
+  }
+  if (field.home === "corpus") {
+    const value = ctx.storeConfig[key];
+    return value === undefined ? { value: undefined, source: "default" } : { value, source: "store" };
+  }
+  const projects = asPlainObject(ctx.global.projects);
+  const scoped = ctx.projectId === null ? {} : asPlainObject(projects[ctx.projectId]);
+  if (scoped[key] !== undefined) {
+    return { value: scoped[key], source: "project" };
+  }
+  const defaults = asPlainObject(ctx.global.defaults);
+  if (defaults[key] !== undefined) {
+    return { value: defaults[key], source: "defaults" };
+  }
+  return { value: undefined, source: "default" };
+}
+
+/**
+ * Persist a panel value into the field's ONE home. `preferProjectScope` picks
+ * between the two preference segments (`projects[<id>]` vs `defaults`); it is
+ * ignored for corpus / global-root fields, which have a single possible target.
+ * Returns a human-readable description of where the value landed.
+ */
+async function writeFieldValue(
+  field: PanelFieldMeta,
+  value: unknown,
+  ctx: PanelContext,
+  preferProjectScope: boolean,
+): Promise<string> {
+  const key = field.key as string;
+
+  if (field.home === "global_root") {
+    await mutateGlobalConfig(
+      (current) => ({
+        ...(current ?? { uid: "local", stores: [] }),
+        language: value as "zh-CN" | "en",
+      }),
+      resolveGlobalRoot(),
+    );
+    return "global language";
+  }
+
+  if (field.home === "corpus") {
+    if (ctx.storeRoot === null) {
+      throw new Error(t("cli.config.errors.no-store-target"));
+    }
+    const storeConfigPath = join(ctx.storeRoot, STORE_LAYOUT.configFile);
+    const next = storeConfigSchema.parse({ ...ctx.storeConfig, [key]: value });
+    await atomicWriteJson(storeConfigPath, next);
+    return `store: ${storeConfigPath}`;
+  }
+
+  const useProject = preferProjectScope && ctx.projectId !== null;
+  if (preferProjectScope && ctx.projectId === null) {
+    throw new Error(t("cli.config.errors.no-project-id"));
+  }
+  await mutateGlobalConfig((current) => {
+    const base = current ?? { uid: "local", stores: [] };
+    if (!useProject) {
+      return { ...base, defaults: { ...(base.defaults ?? {}), [key]: value } };
+    }
+    const projects = { ...(base.projects ?? {}) };
+    projects[ctx.projectId as string] = {
+      ...(projects[ctx.projectId as string] ?? {}),
+      [key]: value,
+    };
+    return { ...base, projects };
+  });
+  return useProject ? `global projects.${ctx.projectId as string}` : "global defaults";
 }
 
 export type InstallMcpClientsOptions = {
@@ -408,48 +548,56 @@ export const configCmd = defineCommand({
     const setKey = typeof args.set === "string" && args.set.length > 0 ? args.set : null;
     if (wantsList || getKey !== null || setKey !== null) {
       try {
-        const raw = await readFile(configPath, "utf8");
-        const parsed = JSON.parse(raw) as Record<string, unknown>;
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error(t("cli.config.errors.expected-object", { path: configPath }));
-        }
         const panel = getPanelFields();
-        const allowed = new Set<string>(panel.map((f) => f.key));
-        // fabric_language is global-routed in the interactive panel; expose via get/set too.
-        allowed.add(LANGUAGE_FIELD_KEY);
+        // W6: read through the same router the panel and the runtime readers use.
+        // Reading the repo file here is what made `--list` print `null` for every
+        // key while the hooks resolved real values from the global config.
+        const ctx = loadPanelContext(workspaceRoot);
 
         if (wantsList) {
-          const rows = panel.map((f) => ({
-            key: f.key,
-            value: parsed[f.key] ?? null,
-            type: f.type,
-          }));
+          const rows = panel.map((f) => {
+            const { value, source } = resolveEffective(f, ctx);
+            return {
+              key: f.key,
+              // `value` is the value a reader RESOLVES; when no layer set it,
+              // that is the shipped default, not `null`.
+              value: value ?? f.default,
+              type: f.type,
+              home: f.home,
+              source,
+            };
+          });
           if (args.json === true) {
-            console.log(JSON.stringify({ config_path: configPath, fields: rows }, null, 2));
+            console.log(
+              JSON.stringify(
+                { global_config: globalConfigPath(resolveGlobalRoot()), fields: rows },
+                null,
+                2,
+              ),
+            );
           } else {
             for (const r of rows) {
-              console.log(`${r.key}=${JSON.stringify(r.value)}`);
+              console.log(`${r.key}=${JSON.stringify(r.value)} (${r.source})`);
             }
           }
           return;
         }
 
         if (getKey !== null) {
-          if (!allowed.has(getKey) && !(getKey in parsed)) {
+          const field = panel.find((f) => (f.key as string) === getKey);
+          if (field === undefined) {
             console.error(`unknown config key: ${getKey}`);
             process.exitCode = 1;
             return;
           }
-          const value =
-            getKey === LANGUAGE_FIELD_KEY
-              ? (loadGlobalConfig(resolveGlobalRoot()) as { language?: string } | null)?.language ??
-                parsed[getKey] ??
-                null
-              : parsed[getKey] ?? null;
+          const { value, source } = resolveEffective(field, ctx);
+          const effective = value ?? field.default;
           if (args.json === true) {
-            console.log(JSON.stringify({ key: getKey, value }, null, 2));
+            console.log(
+              JSON.stringify({ key: getKey, value: effective, source, home: field.home }, null, 2),
+            );
           } else {
-            console.log(value === undefined ? "" : String(value));
+            console.log(String(effective));
           }
           return;
         }
@@ -460,90 +608,63 @@ export const configCmd = defineCommand({
             process.exitCode = 1;
             return;
           }
-          if (setKey === LANGUAGE_FIELD_KEY) {
-            const langField = panel.find((f) => f.key === LANGUAGE_FIELD_KEY);
-            const allowedLangs = langField?.enum_values ?? [];
-            if (!allowedLangs.includes(args.value)) {
-              console.error(
-                `invalid value for ${setKey}: ${args.value} (allowed: ${allowedLangs.join(", ")})`,
-              );
-              process.exitCode = 1;
-              return;
-            }
-            const globalRoot = resolveGlobalRoot();
-            // Runtime-validated above against the language field's enum_values
-            // (fabricLanguageSchema = ["zh-CN", "en"]), so the narrowing cast to
-            // the global config's language type is sound.
-            // config-single-home W1: locked read-modify-write.
-            await mutateGlobalConfig(
-              (current) => ({
-                ...(current ?? { uid: "local", stores: [] }),
-                language: args.value as "zh-CN" | "en",
-              }),
-              globalRoot,
-            );
-            console.log(`set ${setKey}=${args.value}`);
-            return;
-          }
-          // Coerce booleans/numbers for known panel fields
-          const meta = panel.find((f) => f.key === setKey);
-          let coerced: unknown = args.value;
-          if (meta?.type === "boolean") {
-            coerced = args.value === "true" || args.value === "1";
-          } else if (meta?.type === "number") {
-            const n = Number(args.value);
-            if (!Number.isFinite(n)) {
-              console.error(`invalid number for ${setKey}: ${args.value}`);
-              process.exitCode = 1;
-              return;
-            }
-            coerced = n;
-          }
-          // config-single-home W5: route the write to the key's ONE home.
-          //   --scope defaults (default) → global `defaults`
-          //   --scope project           → global `projects[<project_id>]`
-          //   --scope store             → the write-target store's store-config.json
-          // The repo config is identity-only and is never a write target here.
+          const meta = panel.find((f) => (f.key as string) === setKey);
           const scope = args.scope ?? "defaults";
           if (scope !== "defaults" && scope !== "project" && scope !== "store") {
             console.error(`invalid --scope: ${scope} (allowed: defaults, project, store)`);
             process.exitCode = 1;
             return;
           }
-          if (scope === "store") {
-            const storeRoot = resolveWriteTargetStoreRoot(workspaceRoot);
-            if (storeRoot === null) {
+
+          // Known panel field → validate + coerce through its own metadata, then
+          // route by its declared home. `--scope` only chooses BETWEEN the two
+          // preference segments; it can never send a key to a home whose readers
+          // do not look there (the W5 `--set` path allowed exactly that).
+          if (meta !== undefined) {
+            const validated = meta.validate(args.value);
+            if (!validated.ok) {
+              console.error(`invalid value for ${setKey}: ${validated.error}`);
+              process.exitCode = 1;
+              return;
+            }
+            if (meta.home !== "preference" && args.scope !== undefined) {
               console.error(
-                "no team write-target store resolved — bind one with `fabric store bind <alias>` before setting a store-scoped key",
+                `${setKey} is a ${meta.home === "corpus" ? "corpus" : "machine"} key — it has a single home, so --scope does not apply`,
               );
               process.exitCode = 1;
               return;
             }
-            const storeConfigPath = join(storeRoot, STORE_LAYOUT.configFile);
-            let existing: Record<string, unknown> = {};
-            try {
-              const raw: unknown = JSON.parse(readFileSync(storeConfigPath, "utf8"));
-              if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
-                existing = raw as Record<string, unknown>;
-              }
-            } catch {
-              // absent / malformed → start from an empty object
+            const where = await writeFieldValue(meta, validated.value, ctx, scope === "project");
+            console.log(`set ${setKey}=${JSON.stringify(validated.value)} (${where})`);
+            if (meta.home === "corpus") {
+              console.log("commit store-config.json in the store repo to share it with the team");
             }
-            const next = storeConfigSchema.parse({ ...existing, [setKey]: coerced });
+            return;
+          }
+
+          // Unknown-to-the-panel key (the power-user JSON surface). No metadata to
+          // validate against, so coerce leniently and honor --scope verbatim.
+          let coerced: unknown = args.value;
+          if (args.value === "true" || args.value === "false") {
+            coerced = args.value === "true";
+          } else if (args.value.trim() !== "" && Number.isFinite(Number(args.value))) {
+            coerced = Number(args.value);
+          }
+          if (scope === "store") {
+            if (ctx.storeRoot === null) {
+              console.error(t("cli.config.errors.no-store-target"));
+              process.exitCode = 1;
+              return;
+            }
+            const storeConfigPath = join(ctx.storeRoot, STORE_LAYOUT.configFile);
+            const next = storeConfigSchema.parse({ ...ctx.storeConfig, [setKey]: coerced });
             await atomicWriteJson(storeConfigPath, next);
-            console.log(`set ${setKey}=${JSON.stringify(coerced)} (store: ${storeRoot})`);
+            console.log(`set ${setKey}=${JSON.stringify(coerced)} (store: ${ctx.storeRoot})`);
             console.log("commit store-config.json in the store repo to share it with the team");
             return;
           }
-          const projectIdValue = parsed.project_id;
-          const projectId =
-            scope === "project" && typeof projectIdValue === "string" && projectIdValue.length > 0
-              ? projectIdValue
-              : null;
-          if (scope === "project" && projectId === null) {
-            console.error(
-              "this repo has no project_id — run `fabric install` first, or use --scope defaults",
-            );
+          if (scope === "project" && ctx.projectId === null) {
+            console.error(t("cli.config.errors.no-project-id"));
             process.exitCode = 1;
             return;
           }
@@ -553,14 +674,14 @@ export const configCmd = defineCommand({
               return { ...base, defaults: { ...(base.defaults ?? {}), [setKey]: coerced } };
             }
             const projects = { ...(base.projects ?? {}) };
-            projects[projectId as string] = {
-              ...(projects[projectId as string] ?? {}),
+            projects[ctx.projectId as string] = {
+              ...(projects[ctx.projectId as string] ?? {}),
               [setKey]: coerced,
             };
             return { ...base, projects };
           });
           console.log(
-            `set ${setKey}=${JSON.stringify(coerced)} (global ${scope === "defaults" ? "defaults" : `projects.${projectId as string}`})`,
+            `set ${setKey}=${JSON.stringify(coerced)} (global ${scope === "defaults" ? "defaults" : `projects.${ctx.projectId as string}`})`,
           );
           return;
         }
@@ -600,22 +721,28 @@ export const configCmd = defineCommand({
       writePanelHeader(editedKeys, pendingError);
       pendingError = null;
 
-      const current = await readPanelConfig(configPath);
-      // grill-6fixes (D1): overlay the global language onto the in-memory panel
-      // config so the language entry's menu label reflects the machine-wide
-      // tone (the project file no longer carries `fabric_language`).
-      const globalLanguage = loadGlobalConfig(resolveGlobalRoot())?.language;
-      if (globalLanguage !== undefined) {
-        current[LANGUAGE_FIELD_KEY] = globalLanguage;
-      }
       const fields = getPanelFields();
+      // W6: build the displayed values from the SAME router the runtime readers
+      // use, so the panel shows the value in force (and which layer set it)
+      // instead of the repo file, which holds no policy at all.
+      const ctx = loadPanelContext(workspaceRoot);
+      const effective = new Map(
+        fields.map((f) => [f.key as string, resolveEffective(f, ctx)] as const),
+      );
+      const current: PanelConfig = Object.fromEntries(
+        [...effective].map(([key, r]) => [key, r.value]),
+      );
 
       const fieldChoice = await select<string>({
         message: t("cli.config.menu.field-select"),
         options: [
           ...fields.map((field) => ({
             value: field.key as string,
-            label: formatFieldMenuLabel(field, current),
+            label: formatFieldMenuLabel(
+              field,
+              current,
+              effective.get(field.key as string)?.source ?? "default",
+            ),
           })),
           { value: EXIT_CHOICE, label: t("cli.config.menu.exit") },
         ],
@@ -659,28 +786,12 @@ export const configCmd = defineCommand({
       }
 
       try {
-        if ((field.key as string) === LANGUAGE_FIELD_KEY) {
-          // grill-6fixes (D1): language persists to the GLOBAL config, not the
-          // project file. The uninit gate guarantees `fabric install` already
-          // ran, so a global config exists.
-          const globalRoot = resolveGlobalRoot();
-          if (loadGlobalConfig(globalRoot) === null) {
-            pendingError = t("cli.config.errors.uninit-workspace.message");
-            continue;
-          }
-          // config-single-home W1: locked read-modify-write. The null guard above
-          // drives the user-facing error; the mutator re-checks inside the lock and
-          // skips the write if the config vanished in between.
-          await mutateGlobalConfig(
-            (current) =>
-              current === null ? null : { ...current, language: newValue as "zh-CN" | "en" },
-            globalRoot,
-          );
-        } else {
-          const refreshed = await readPanelConfig(configPath);
-          const merged: PanelConfig = { ...refreshed, [field.key as string]: newValue };
-          await atomicWriteJson(configPath, merged);
-        }
+        // W6: route to the field's single home. The panel used to write EVERY key
+        // into the repo config, where — since W5 made that file identity-only —
+        // no reader ever looked: every edit here was silently inert.
+        // Re-resolve the context so a concurrent edit is not clobbered by a stale
+        // snapshot taken at the top of this render pass.
+        await writeFieldValue(field, newValue, loadPanelContext(workspaceRoot), false);
         // Record the edit for the persistent "已改" header line (de-duped, order-preserving).
         if (!editedKeys.includes(field.key as string)) {
           editedKeys.push(field.key as string);
@@ -769,29 +880,32 @@ async function promptFieldValue(
   return finalResult.value as number;
 }
 
-function formatFieldMenuLabel(field: PanelFieldMeta, current: PanelConfig): string {
+function formatFieldMenuLabel(
+  field: PanelFieldMeta,
+  current: PanelConfig,
+  source: ValueSource,
+): string {
   const key = field.key as string;
   const rawValue = current[key];
   const display = field.format_for_display(rawValue);
   const isDefault = rawValue === undefined || rawValue === null;
   const labelText = t(field.label_i18n_key);
+  // W6: name the layer the value came from. Without it the panel cannot explain
+  // why a knob reads one way here and another way in a sibling repo (the same
+  // key can be set machine-wide, per-project, or by the shared store).
   const valueLabel = isDefault
     ? `${display} ${t("cli.config.value.default-marker")}`
-    : display;
+    : `${display} ${paint.muted(`[${t(`cli.config.source.${source}`)}]`)}`;
   // flat-design: drop the raw `[A_locale]`/`[B_hint_threshold]` group prefix —
   // machine-name noise repeated down the left column. Fields are still ordered by
   // group so same-category knobs cluster; the field label self-describes.
   return `${key} (${labelText}) — ${t("cli.config.value.current", { value: valueLabel })}`;
 }
 
-async function readPanelConfig(configPath: string): Promise<PanelConfig> {
-  const raw = await readFile(configPath, "utf8");
-  const parsed = JSON.parse(raw) as unknown;
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(t("cli.config.errors.expected-object", { path: configPath }));
-  }
-  return parsed as PanelConfig;
-}
+// W6: `readPanelConfig` is gone — reading the repo config was exactly the bug.
+// Panel values now come from `loadPanelContext` + `resolveEffective`, the same
+// cascade the hooks and the server resolve, so the panel cannot display a value
+// that differs from the one in force.
 
 function isInteractiveConfig(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);

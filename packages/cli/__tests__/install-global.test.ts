@@ -6,8 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { recognizeStoreDir } from "@fenglimg/fabric-shared";
 
-import { loadGlobalConfig } from "../src/store/global-config-io.js";
+import { loadGlobalConfig, mutateGlobalConfig } from "../src/store/global-config-io.js";
 import { installGlobalCore } from "../src/install/install-global.js";
+import { GLOBAL_POLICY_DEFAULTS } from "../src/install/install-scaffold-config.js";
 
 // v2.1.0-rc.1 P3 — `install --global` core: transactional global setup
 // (uid + personal store + global config), idempotent, isolated HOME.
@@ -63,5 +64,62 @@ describe("P3 install --global core", () => {
     const second = await installGlobalCore(opts);
     expect(second.alreadyInstalled).toBe(true);
     expect(second.receipt.ok).toBe(true);
+  });
+});
+
+// config-single-home W6 — the UPGRADE path for the shipped policy defaults.
+//
+// W5 seeded `defaults` only in the create branch, so every machine that already
+// had a global config (i.e. every existing user) kept the library defaults
+// forever: `nudge_mode` stayed `normal` where the shipped intent was `minimal`.
+// Seeding is deliberately narrow — whole-segment-absent only — so a user who
+// tuned or emptied `defaults` is never overwritten.
+describe("W6 install --global: policy defaults reach an existing global config", () => {
+  const opts = (globalRoot: string) => ({
+    globalRoot,
+    uid: "u-derived",
+    personalStoreUuid: PERSONAL,
+    now: "2026-05-30T00:00:00.000Z",
+  });
+
+  it("seeds `defaults` onto a pre-existing config that lacks the segment", async () => {
+    const globalRoot = isolatedGlobalRoot();
+    await installGlobalCore(opts(globalRoot));
+    // Simulate a config written before W5 introduced the segment.
+    await mutateGlobalConfig((current) => {
+      const { defaults: _dropped, ...rest } = current as Record<string, unknown>;
+      return rest as never;
+    }, globalRoot);
+    expect(loadGlobalConfig(globalRoot)?.defaults).toBeUndefined();
+
+    const result = await installGlobalCore(opts(globalRoot));
+
+    expect(result.alreadyInstalled).toBe(true);
+    expect(loadGlobalConfig(globalRoot)?.defaults).toEqual({ ...GLOBAL_POLICY_DEFAULTS });
+    expect(result.receipt.steps.map((s) => s.name)).toContain("seed-policy-defaults");
+  });
+
+  it("never overwrites a `defaults` segment the user already has", async () => {
+    const globalRoot = isolatedGlobalRoot();
+    await installGlobalCore(opts(globalRoot));
+    await mutateGlobalConfig(
+      (current) => ({ ...(current as never), defaults: { nudge_mode: "verbose" } }),
+      globalRoot,
+    );
+
+    const result = await installGlobalCore(opts(globalRoot));
+
+    expect(loadGlobalConfig(globalRoot)?.defaults).toEqual({ nudge_mode: "verbose" });
+    expect(result.receipt.steps.map((s) => s.name)).not.toContain("seed-policy-defaults");
+  });
+
+  it("leaves an intentionally-emptied `defaults` empty (present ≠ absent)", async () => {
+    const globalRoot = isolatedGlobalRoot();
+    await installGlobalCore(opts(globalRoot));
+    await mutateGlobalConfig((current) => ({ ...(current as never), defaults: {} }), globalRoot);
+
+    await installGlobalCore(opts(globalRoot));
+
+    expect(loadGlobalConfig(globalRoot)?.defaults).toEqual({});
   });
 });
