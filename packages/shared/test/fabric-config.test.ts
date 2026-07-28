@@ -324,16 +324,35 @@ describe("fabricConfigSchema — ux-w2-3: hardcoded skill thresholds dropped (le
     expect(parsed.hint_broad_top_k).toBeUndefined();
   });
 
-  it("keeps the still-wired narrow knobs (read by knowledge-hint-narrow.cjs)", () => {
-    const parsed = fabricConfigSchema.parse({});
-    expect(parsed.hint_narrow_top_k).toBe(5);
-    expect(parsed.hint_narrow_dedup_window_turns).toBe(5);
-    expect(parsed.hint_narrow_cooldown_hours).toBe(0);
-    // ISS-20260713-033: broad SessionStart cooldown ships a non-zero quiet
-    // default (24h) so repeat session-opens don't re-fire the full banner;
-    // knowledge-hint-broad.cjs mirrors DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 24.
-    // Set 0 for verbose/debug.
-    expect(parsed.hint_broad_cooldown_hours).toBe(24);
+  // config-single-home W7: the six presentation knobs are GONE from the schema —
+  // nudge_mode derives them (NUDGE_PRESETS in lib/nudge-policy.cjs). The
+  // preset-vs-legacy-default parity that guarantees zero behavior change is
+  // asserted on the CLI side, where the hook lib can be required directly
+  // (KT-DEC-0070: shared must not reach into the hook runtime).
+  it("no longer declares the six presentation knobs", () => {
+    const parsed = fabricConfigSchema.parse({}) as Record<string, unknown>;
+    for (const key of [
+      "hint_narrow_top_k",
+      "hint_narrow_dedup_window_turns",
+      "hint_narrow_cooldown_hours",
+      "hint_broad_cooldown_hours",
+      "hint_summary_max_len",
+      "hint_reminder_to_context",
+    ]) {
+      expect(parsed, `${key} must not be materialised by a schema default`).not.toHaveProperty(key);
+    }
+  });
+
+  it("drops a stale on-disk value for a retired presentation knob (zero migration)", () => {
+    const parsed = fabricConfigSchema.parse({
+      hint_narrow_top_k: 12,
+      hint_summary_max_len: 200,
+      archive_hint_hours: 24,
+    }) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty("hint_narrow_top_k");
+    expect(parsed).not.toHaveProperty("hint_summary_max_len");
+    // …while a live key alongside it is preserved.
+    expect(parsed.archive_hint_hours).toBe(24);
   });
 
   it("a minimal user config still parses with the retired keys absent", () => {

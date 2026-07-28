@@ -1617,9 +1617,11 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(ai).not.toMatch(/over budget/);
   });
 
-  it("ux-w1-3: always-active summary is bounded by hint_summary_max_len", () => {
+  // config-single-home W7: the cap is no longer its own `hint_summary_max_len`
+  // key — it comes from the nudge_mode preset (normal 80 / verbose 120).
+  it("ux-w1-3: always-active summary is bounded by the nudge_mode preset", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
-    writeConfig({ fabric_language: "en", hint_summary_max_len: 40 });
+    writeConfig({ fabric_language: "en", nudge_mode: "normal" });
     const longSummary = "L".repeat(200);
     const { out } = capture({
       payload: makePayload([]),
@@ -1633,14 +1635,33 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     // Truncated with the ellipsis marker; the raw 200-char summary never appears verbatim.
     expect(line).toContain("…");
     expect(line).not.toContain(longSummary);
-    // The summary segment after the id label is capped at hint_summary_max_len (40).
-    const summarySegment = line.split(" · ")[1] ?? "";
-    expect(summarySegment.length).toBeLessThanOrEqual(40);
+    expect((line.split(" · ")[1] ?? "").length).toBeLessThanOrEqual(80);
   });
 
-  it("reminder_to_context=false → no AI sink, human systemMessage still emitted", () => {
+  it("verbose widens the same summary cap to 120", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
-    writeConfig({ fabric_language: "en", hint_reminder_to_context: false });
+    writeConfig({ fabric_language: "en", nudge_mode: "verbose" });
+    const { out } = capture({
+      payload: makePayload([]),
+      census,
+      alwaysBodies: [
+        { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: "L".repeat(200), body: "b" },
+      ],
+    });
+    const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
+    const segment =
+      (ai.split("\n").find((l) => l.includes("team:KT-GLD-0001")) ?? "").split(" · ")[1] ?? "";
+    expect(segment.length).toBeGreaterThan(80);
+    expect(segment.length).toBeLessThanOrEqual(120);
+  });
+
+  // W7: `hint_reminder_to_context` is gone. The AI sink is unconditional — D5
+  // (flow ⊥ observation) means the model gets the knowledge no matter how quiet
+  // the human channel is, and a stale on-disk `false` must not resurrect the
+  // old opt-out.
+  it("the AI sink is emitted even under silent + a stale reminder_to_context=false", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en", nudge_mode: "silent", hint_reminder_to_context: false });
     const { out } = capture({
       payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
       census,
@@ -1648,8 +1669,9 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     });
     expect(out.length).toBe(1);
     const env = JSON.parse(out[0]);
-    expect(env.systemMessage).toMatch(/▸ \[fabric\]/);
-    expect(env.hookSpecificOutput).toBeUndefined();
+    expect(env.hookSpecificOutput.additionalContext).toBeTruthy();
+    // silent mutes the HUMAN channel only.
+    expect(env.systemMessage).toBeUndefined();
   });
 });
 

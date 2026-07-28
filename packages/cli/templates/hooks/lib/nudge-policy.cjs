@@ -84,6 +84,41 @@ function readNudgeMode(projectRoot) {
   return DEFAULT_NUDGE_MODE;
 }
 
+// ---------------------------------------------------------------------------
+// config-single-home W7 — presentation knobs DERIVED from nudge_mode.
+//
+// Six keys used to expose these numbers individually (hint_narrow_top_k,
+// hint_summary_max_len, hint_broad_cooldown_hours, hint_narrow_cooldown_hours,
+// hint_narrow_dedup_window_turns, hint_reminder_to_context). Nobody tunes six
+// numbers to say "be quieter" — they pick a volume. So the volume dial is the
+// only knob now, and it decides the numbers.
+//
+// The `normal` row is value-for-value identical to the retired per-key defaults,
+// so a workspace that never touched them sees NO behavior change. `silent` and
+// `minimal` share a row deliberately: `silent` mutes the HUMAN sink only, and
+// these numbers also shape the AI sink, which the mode must never touch
+// (flow ⊥ observation, D5).
+//
+//   narrowTopK          — max entries in one PreToolUse hint
+//   summaryMaxLen       — per-entry summary truncation (chars)
+//   broadCooldownHours  — min hours between SessionStart broad menus
+//   narrowCooldownHours — min hours between repeat per-edit hints
+// ---------------------------------------------------------------------------
+const NUDGE_PRESETS = {
+  silent: { narrowTopK: 3, summaryMaxLen: 80, broadCooldownHours: 24, narrowCooldownHours: 1 },
+  minimal: { narrowTopK: 3, summaryMaxLen: 80, broadCooldownHours: 24, narrowCooldownHours: 1 },
+  normal: { narrowTopK: 5, summaryMaxLen: 80, broadCooldownHours: 24, narrowCooldownHours: 0 },
+  verbose: { narrowTopK: 8, summaryMaxLen: 120, broadCooldownHours: 0, narrowCooldownHours: 0 },
+};
+
+/**
+ * The presentation numbers for this workspace's nudge_mode. Never throws — an
+ * unreadable config resolves to `normal`, matching readNudgeMode's contract.
+ */
+function resolveNudgePreset(projectRoot) {
+  return NUDGE_PRESETS[readNudgeMode(projectRoot)] ?? NUDGE_PRESETS[DEFAULT_NUDGE_MODE];
+}
+
 /**
  * Resolve the per-event observe.* override for one event. Returns a strict
  * boolean when explicitly set, otherwise undefined (preset decides). Tolerant of
@@ -161,7 +196,9 @@ module.exports = {
   readNudgeMode,
   readObserveOverride,
   resolveHumanSink,
+  resolveNudgePreset,
   NUDGE_MODES,
+  NUDGE_PRESETS,
   DEFAULT_NUDGE_MODE,
   OBSERVE_EVENTS,
 };

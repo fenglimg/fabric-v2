@@ -1,18 +1,25 @@
 // ISS-20260713-053: narrow hint config readers.
+//
+// config-single-home W7: these numbers are no longer individually configurable.
+// `hint_narrow_top_k` / `hint_narrow_cooldown_hours` / `hint_summary_max_len`
+// now come from the nudge_mode preset (lib/nudge-policy.cjs NUDGE_PRESETS), and
+// the dedup window / AI-sink switch are fixed. Rationale: a user asking for a
+// quieter experience picks a volume, not six numbers — and the six were never
+// individually tuned in practice. The reader signatures are unchanged so every
+// call site and telemetry field stays put; only where the value comes from moved.
 
 const FABRIC_DIR_REL = ".fabric";
 const FABRIC_CONFIG_FILE = "fabric-config.json";
-const DEFAULT_HINT_NARROW_TOP_K = 5;
+// Per-file dedup window (in PreToolUse turns) for the narrow hint. Fixed at 5:
+// it exists to stop one hot file re-firing the same hint until the agent learns
+// to ignore it — a correctness guard on the hint's usefulness, not a taste dial.
 const DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS = 5;
-const DEFAULT_HINT_NARROW_COOLDOWN_HOURS = 0;
+// The AI sink is unconditional (D5 flow ⊥ observation): nudge_mode governs the
+// HUMAN channel only, and knowledge that never reaches the model is Fabric not
+// working. Kept as a named constant because telemetry records the channel.
 const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
-const DEFAULT_SUMMARY_MAX_LEN = 80;
-const {
-  readConfig,
-  readPolicy,
-  readConfigNumber,
-  readConfigBoolean,
-} = require("./config-cache.cjs");
+const { readConfig, readPolicy } = require("./config-cache.cjs");
+const { resolveNudgePreset } = require("./nudge-policy.cjs");
 
 function _readNarrowConfigValue(projectRoot) {
   const parsed = readConfig(projectRoot);
@@ -20,30 +27,15 @@ function _readNarrowConfigValue(projectRoot) {
 }
 
 function readNarrowTopK(projectRoot) {
-  return readConfigNumber(projectRoot, "hint_narrow_top_k", DEFAULT_HINT_NARROW_TOP_K, {
-    min: 1,
-    max: 20,
-    floor: true,
-    globalFallback: true,
-  });
+  return resolveNudgePreset(projectRoot).narrowTopK;
 }
 
-function readNarrowDedupWindowTurns(projectRoot) {
-  return readConfigNumber(
-    projectRoot,
-    "hint_narrow_dedup_window_turns",
-    DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS,
-    { min: 1, max: 50, floor: true, globalFallback: true },
-  );
+function readNarrowDedupWindowTurns(_projectRoot) {
+  return DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS;
 }
 
 function readNarrowCooldownHours(projectRoot) {
-  return readConfigNumber(
-    projectRoot,
-    "hint_narrow_cooldown_hours",
-    DEFAULT_HINT_NARROW_COOLDOWN_HOURS,
-    { min: 0, max: 168, globalFallback: true },
-  );
+  return resolveNudgePreset(projectRoot).narrowCooldownHours;
 }
 
 // config-single-home W3: preference class — the first policy layer that declares
@@ -58,32 +50,19 @@ function readNarrowDismissed(projectRoot) {
   return false;
 }
 
-function readReminderToContext(projectRoot) {
-  return readConfigBoolean(
-    projectRoot,
-    "hint_reminder_to_context",
-    DEFAULT_HINT_REMINDER_TO_CONTEXT,
-    { globalFallback: true },
-  );
+function readReminderToContext(_projectRoot) {
+  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
 }
 
 function readSummaryMaxLen(projectRoot) {
-  return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
-    min: 40,
-    max: 240,
-    floor: true,
-    globalFallback: true,
-  });
+  return resolveNudgePreset(projectRoot).summaryMaxLen;
 }
 
 module.exports = {
   FABRIC_DIR_REL,
   FABRIC_CONFIG_FILE,
-  DEFAULT_HINT_NARROW_TOP_K,
   DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS,
-  DEFAULT_HINT_NARROW_COOLDOWN_HOURS,
   DEFAULT_HINT_REMINDER_TO_CONTEXT,
-  DEFAULT_SUMMARY_MAX_LEN,
   _readNarrowConfigValue,
   readNarrowTopK,
   readNarrowDedupWindowTurns,

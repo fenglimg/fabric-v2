@@ -145,30 +145,34 @@ describe("hook policy layer — projects[id] > defaults > default", () => {
     expect(hintConfig.readCooldownHours(projectRoot)).toBe(2);
   });
 
-  it("narrow hint readers inherit every behavior knob", () => {
+  // config-single-home W7: the narrow hint's presentation numbers are derived
+  // from nudge_mode, so what the policy layer carries for them is `nudge_mode`
+  // itself — the individual keys are retired and inert.
+  it("narrow hint numbers follow the nudge_mode carried by the policy layer", () => {
     writeGlobalPolicy({
       defaults: {
-        hint_narrow_top_k: 8,
-        hint_narrow_dedup_window_turns: 12,
-        hint_narrow_cooldown_hours: 4,
+        nudge_mode: "verbose",
         hint_dismiss_signals: ["narrow"],
+        // Stale keys from a pre-W7 config — must be ignored, not honored.
+        hint_narrow_top_k: 19,
+        hint_summary_max_len: 240,
         hint_reminder_to_context: false,
-        hint_summary_max_len: 120,
       },
     });
 
     expect(hintNarrowConfig.readNarrowTopK(projectRoot)).toBe(8);
-    expect(hintNarrowConfig.readNarrowDedupWindowTurns(projectRoot)).toBe(12);
-    expect(hintNarrowConfig.readNarrowCooldownHours(projectRoot)).toBe(4);
-    expect(hintNarrowConfig.readNarrowDismissed(projectRoot)).toBe(true);
-    expect(hintNarrowConfig.readReminderToContext(projectRoot)).toBe(false);
     expect(hintNarrowConfig.readSummaryMaxLen(projectRoot)).toBe(120);
+    expect(hintNarrowConfig.readNarrowCooldownHours(projectRoot)).toBe(0);
+    expect(hintNarrowConfig.readNarrowDedupWindowTurns(projectRoot)).toBe(5);
+    expect(hintNarrowConfig.readReminderToContext(projectRoot)).toBe(true);
+    // hint_dismiss_signals is still a real preference knob and still inherits.
+    expect(hintNarrowConfig.readNarrowDismissed(projectRoot)).toBe(true);
   });
 
-  it("narrow hint readers honour per-project exceptions", () => {
+  it("a per-project nudge_mode exception outranks the machine-wide one", () => {
     writeGlobalPolicy({
-      defaults: { hint_narrow_top_k: 8, hint_dismiss_signals: ["narrow"] },
-      projects: { [PROJECT_ID]: { hint_narrow_top_k: 3, hint_dismiss_signals: [] } },
+      defaults: { nudge_mode: "verbose", hint_dismiss_signals: ["narrow"] },
+      projects: { [PROJECT_ID]: { nudge_mode: "minimal", hint_dismiss_signals: [] } },
     });
     expect(hintNarrowConfig.readNarrowTopK(projectRoot)).toBe(3);
     expect(hintNarrowConfig.readNarrowDismissed(projectRoot)).toBe(false);
