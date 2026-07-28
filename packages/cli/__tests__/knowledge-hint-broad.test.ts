@@ -55,6 +55,19 @@ type HookModule = {
     env: { cwd?: string; payload?: Payload | null },
     stdio: { stderr: { write: (chunk: string) => void } },
   ) => void;
+  // G2: the real SessionStart output assembly point — the human sink the user
+  // actually sees, gated by nudge policy. Asserted directly so empty-KB
+  // guidance is verified end-to-end rather than at the renderer.
+  buildSessionStartSinks: (
+    cwd: string,
+    payload: Payload | null,
+    env?: { census?: unknown; alwaysBodies?: unknown[]; now?: number },
+  ) => {
+    human: string | null;
+    ai: string | null;
+    hasRenderedContent: boolean;
+    reminderToContext: boolean;
+  };
   renderSummary: (payload: Payload) => string[];
   renderFull: (narrow: NarrowEntry[]) => string[];
   renderTruncated: (narrow: NarrowEntry[]) => string[];
@@ -1861,5 +1874,107 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + backlog summary (H2/H
     const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
     expect(ai).toMatch(/Scope: broad only/);
     expect(ai).toMatch(/narrow .*surfaces via the PreToolUse hint/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// G2 — empty knowledge base must still speak on SessionStart.
+//
+// renderHumanCensus used to `return []` for an empty census, and EVERY human
+// sink segment downstream (store label / backlog / inspect pointer) plus the
+// final `humanLines.length > 0` gate keys off that array — so a brand-new user
+// with an empty KB got a completely silent SessionStart and no next step.
+// Assertions go through buildSessionStartSinks (the real assembly point the
+// user sees), not renderHumanCensus, and pin that the human gate is actually
+// open for the call so a `quiet` policy can never fake a pass or a fail.
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-broad.cjs — empty knowledge base first-run guidance (G2)", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "broad-empty-kb-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  function plantConfig(extra: Record<string, unknown> = {}): void {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ fabric_language: "en", ...extra }),
+      "utf8",
+    );
+  }
+
+  const emptyCensus = {
+    by_type: {},
+    by_layer: { team: 0, personal: 0, project: 0 },
+    broad_by_type: {},
+    narrow_total: 0,
+    dropped_other_project: 0,
+    total: 0,
+  };
+
+  function sinks(census: unknown) {
+    return hook.buildSessionStartSinks(
+      tempRoot,
+      { version: 2, revision_hash: "rev-empty", target_paths: ["**"], entries: [], broad_count: 0 } as unknown as Payload,
+      { census, alwaysBodies: [] },
+    );
+  }
+
+  it("emits an actionable human line when the knowledge base is empty", () => {
+    withIsolatedFabricHome(() => {
+      plantConfig();
+      // D3: the human gate must be OPEN for this call, otherwise a `silent`
+      // nudge_mode would swallow `human` and the assertion below would report a
+      // regression that isn't one (or pass a fix that isn't one).
+      const policy = require(
+        fileURLToPath(new URL("../templates/hooks/lib/nudge-policy.cjs", import.meta.url)),
+      ) as { resolveHumanSink: (root: string, event: string, gate: object) => { emitHuman: boolean } };
+      expect(policy.resolveHumanSink(tempRoot, "session_start", {}).emitHuman).toBe(true);
+
+      const { human, hasRenderedContent } = sinks(emptyCensus);
+
+      expect(human).not.toBeNull();
+      expect(String(human).length).toBeGreaterThan(0);
+      expect(hasRenderedContent).toBe(true);
+      // The count must be stated (0 entries), not implied by silence …
+      expect(String(human)).toContain("0");
+      // … and at least one runnable next step must be offered.
+      expect(String(human)).toContain("fabric store bind");
+      expect(String(human)).toContain("/fabric-archive source");
+    });
+  });
+
+  it("leaves the empty + dropped_other_project path on the existing render branch", () => {
+    withIsolatedFabricHome(() => {
+      plantConfig();
+      const { human } = sinks({ ...emptyCensus, dropped_other_project: 3 });
+
+      // D4: total 0 with cross-project drops already rendered the normal HUD
+      // header; the new branch must not swallow it.
+      expect(String(human)).toMatch(/▸ \[fabric\] 0 entries · team 0 · personal 0/);
+      expect(String(human)).not.toContain("knowledge base is empty");
+    });
+  });
+
+  it("leaves the non-empty census header byte-identical", () => {
+    withIsolatedFabricHome(() => {
+      plantConfig();
+      const { human } = sinks({
+        by_type: { decisions: 2 },
+        by_layer: { team: 2, personal: 0, project: 0 },
+        broad_by_type: { decisions: 2 },
+        narrow_total: 1,
+        dropped_other_project: 0,
+        total: 3,
+      });
+
+      expect(String(human).split("\n")[0]).toBe("▸ [fabric] 3 entries · team 2 · personal 0");
+      expect(String(human)).not.toContain("knowledge base is empty");
+    });
   });
 });

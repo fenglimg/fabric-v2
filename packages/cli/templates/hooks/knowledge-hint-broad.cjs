@@ -946,8 +946,23 @@ function renderHumanCensus(census, opts) {
   const { lang } = opts || {};
   const c = census || {};
   const total = typeof c.total === "number" ? c.total : 0;
-  if (total === 0 && (c.dropped_other_project || 0) === 0) return [];
   const zh = lang === "zh-CN";
+  // G2: an EMPTY knowledge base is exactly when a new user needs to hear
+  // something. This used to `return []`, and because every downstream human
+  // sink segment in buildSessionStartSinks — plus the final emit gate — keys
+  // off `humanLines.length > 0`, SessionStart went completely silent: no count,
+  // no next step, no way to tell "empty KB" from "hook broken". Returning two
+  // lines here re-opens all of those gates without touching any of them.
+  // (dropped_other_project > 0 keeps falling through to the normal HUD below —
+  // that path already renders "0 entries" plus the cross-project drop note.)
+  if (total === 0 && (c.dropped_other_project || 0) === 0) {
+    return [
+      zh ? "▸ [fabric] 共 0 条 —— 知识库为空" : "▸ [fabric] 0 entries — knowledge base is empty",
+      zh
+        ? "  下一步: /fabric-archive source 从 git/docs 回灌 · fabric store bind <alias> 绑定已有库"
+        : "  Next: /fabric-archive source to backfill from git/docs · fabric store bind <alias> to bind an existing store",
+    ];
+  }
 
   const broadByType = c.broad_by_type || {};
   const narrowTotal = typeof c.narrow_total === "number" ? c.narrow_total : 0;
