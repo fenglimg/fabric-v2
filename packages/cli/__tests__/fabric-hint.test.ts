@@ -667,6 +667,17 @@ function withGlobalDefaults(homeRoot: string, defaults: Record<string, unknown>)
   return restoreHomeFn(prev);
 }
 
+// Point FABRIC_HOME at a home that has no fabric-global.json, so a "config file
+// is missing" case is genuinely missing instead of falling through to the
+// developer's real ~/.fabric. Without this the assertion passes only while the
+// machine's global default happens to equal the code default — the KT-PIT-0062
+// "assertion value collides with the default" false-green.
+function withNoGlobalConfig(homeRoot: string): () => void {
+  const prev = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = homeRoot;
+  return restoreHomeFn(prev);
+}
+
 function withStoreCorpusConfig(
   homeRoot: string,
   projectRoot: string,
@@ -718,10 +729,15 @@ describe("fabric-hint.cjs — readArchiveEditThreshold", () => {
   });
 
   it("returns default 20 when config file is missing", () => {
-    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
-    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(
-      hook.CONSTANTS.DEFAULT_ARCHIVE_EDIT_THRESHOLD,
-    );
+    const restore = withNoGlobalConfig(tempRoot);
+    try {
+      expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+      expect(hook.readArchiveEditThreshold(tempRoot)).toBe(
+        hook.CONSTANTS.DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+      );
+    } finally {
+      restore();
+    }
   });
 
   it("returns global-defaults override when present and positive", () => {
