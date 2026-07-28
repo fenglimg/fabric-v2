@@ -563,6 +563,15 @@ export async function buildAlwaysActiveBodies(
       // (knowledge_type is today's always-active proxy; when Goal B lands
       // activation.tier this whole selector switches to tier === "always".)
       if (desc.relevance_scope === "narrow") continue;
+      // G3: `draft` is the unadjudicated maturity — the entry is a proposal, not
+      // a settled rule, so it must not ride the always-active tier where it is
+      // presented as unconditional. Draft entries remain fully reachable through
+      // the PreToolUse narrow hint and fab_recall; only this tier excludes them.
+      // Deliberately an exclusion (`=== "draft"`), not a verified/proven
+      // whitelist: `maturity` is optional (api-contracts `_maturityEnum`
+      // `.optional()`) and most existing entries omit it, so a whitelist would
+      // silently empty the tier instead of removing drafts.
+      if (desc.maturity === "draft") continue;
       out.push({
         stable_id: entry.qualifiedId,
         type,

@@ -123,12 +123,18 @@ async function seedPendingFile(
     sourceSession?: string;
     summary?: string;
     tags?: string[];
+    // G3: `approve` performs no draft→verified promotion (review.ts never reads
+    // maturity), so an approved fixture stays `draft` and is now excluded from
+    // the always-active tier. Tests that need a canonical entry in that tier
+    // opt in here. Default stays `draft` — several tests assert exactly that.
+    maturity?: "draft" | "verified" | "proven";
   } = {},
 ): Promise<string> {
   const layer = options.layer ?? "team";
   const sourceSession = options.sourceSession ?? "sess-test";
   const summary = options.summary ?? "Test summary body.";
   const tags = options.tags ?? [];
+  const maturity = options.maturity ?? "draft";
   // v2.2 全砍: seed into the resolved write-target STORE's pending dir (no
   // dual-root). review.list reports + approve accepts the absolute store path.
   const dir = storeKnowledgeDir(layer, "pending", type);
@@ -138,7 +144,7 @@ async function seedPendingFile(
   const frontmatter = [
     "---",
     `type: ${type}`,
-    "maturity: draft",
+    `maturity: ${maturity}`,
     `layer: ${layer}`,
     `created_at: ${new Date().toISOString()}`,
     `source_session: ${sourceSession}`,
@@ -2257,10 +2263,12 @@ describe("reviewKnowledge retire (W3-C)", () => {
     projectRoot: string,
     type: "decisions" | "guidelines",
     slug: string,
+    maturity?: "draft" | "verified" | "proven",
   ): Promise<{ canonicalPath: string; stableId: string; before: string }> {
     const pendingPath = await seedPendingFile(projectRoot, type, slug, {
       summary: `Rationale for ${slug} that must survive retirement.`,
       tags: ["keep-me"],
+      ...(maturity !== undefined ? { maturity } : {}),
     });
     const approve = await reviewKnowledge(projectRoot, {
       action: "approve",
@@ -2377,6 +2385,10 @@ describe("reviewKnowledge retire (W3-C)", () => {
       projectRoot,
       "guidelines",
       "always-active-drop",
+      // G3: this case verifies RETIRE, not maturity — the entry must legitimately
+      // be in the always-active tier before retire, which now requires a
+      // non-draft maturity (approve does not promote).
+      "verified",
     );
     const qualifiedId = `team:${stableId}`;
 
