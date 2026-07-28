@@ -41,7 +41,13 @@ const QUARANTINED_COMMANDS = new Set(["serve"]);
 
 /** Only these prefixes count as event tokens; other snake_case is config keys. */
 const EVENT_TOKEN_RE = /`((?:knowledge|edit|cite|store|session)_[a-z_]+)`/gu;
-const BOLD_VERSION_RE = /^\*\*v(\d+\.\d+\.\d+(?:-rc\.\d+)?)\*\*/u;
+// F06 (review fix): was `/^\*\*v(\d+\.\d+\.\d+(?:-rc\.\d+)?)\*\*/` — anchored at
+// column 0 and aware of `-rc.N` only, so turning README's version line into a
+// list item / blockquote, or moving to a `-beta.N` prerelease, silently removed
+// the ONLY claim this gate exists to check. Now: optional list/quote markers, and
+// any prerelease tag. Still line-LEADING (an inline version is prose recounting
+// history, not a claim about the present).
+const BOLD_VERSION_RE = /^(?:[-*>]\s+)*\*\*v(\d+\.\d+\.\d+(?:-[0-9a-z.]+)?)\*\*/u;
 const COMMAND_MENTION_RE = /`fabric ([a-z][a-z0-9-]*)/gu;
 
 function relativePath(filePath) {
@@ -120,6 +126,11 @@ async function readEventTypes() {
  */
 export function checkLines(file, lines, truth) {
   const violations = [];
+  // F06: how many claims of each class this document actually made. A checker
+  // that inspected NOTHING must not be reported as a passing check — that is the
+  // same fail-on-empty-parse discipline the truth parsers already apply (:88,
+  // :101, :113), extended to the assertion side.
+  const coverage = { versionClaims: 0, commandMentions: 0, eventTokens: 0 };
   const knownCommands = new Set([
     ...truth.liveCommands,
     ...truth.retiredCommands,
@@ -130,6 +141,7 @@ export function checkLines(file, lines, truth) {
     const lineNo = index + 1;
 
     const versionMatch = BOLD_VERSION_RE.exec(line);
+    if (versionMatch !== null) coverage.versionClaims += 1;
     if (versionMatch !== null && versionMatch[1] !== truth.version) {
       violations.push({
         file,
@@ -140,6 +152,7 @@ export function checkLines(file, lines, truth) {
     }
 
     for (const match of line.matchAll(COMMAND_MENTION_RE)) {
+      coverage.commandMentions += 1;
       if (!knownCommands.has(match[1])) {
         violations.push({
           file,
@@ -151,6 +164,7 @@ export function checkLines(file, lines, truth) {
     }
 
     for (const match of line.matchAll(EVENT_TOKEN_RE)) {
+      coverage.eventTokens += 1;
       if (!truth.eventTypes.has(match[1])) {
         violations.push({
           file,
@@ -162,7 +176,28 @@ export function checkLines(file, lines, truth) {
     }
   });
 
-  return violations;
+  return { violations, coverage };
+}
+
+/**
+ * F06: fail when a scanned corpus made ZERO version claims. Without this the gate
+ * prints OK after a cosmetic edit removes the only line it checks — a green that
+ * means "nothing was inspected", indistinguishable from "everything matched".
+ * Only the version class is asserted: it is the claim this gate was built for and
+ * the one guaranteed to exist (README states the active line). Command and event
+ * mentions are legitimately optional in an arbitrary scanned file.
+ */
+export function checkCoverage(files, coverage) {
+  if (coverage.versionClaims > 0) return [];
+  return [
+    {
+      file: files.join(", "),
+      line: 0,
+      code: "no_version_claim",
+      message:
+        "scanned document(s) contain no line-leading **vX.Y.Z** version claim — the version check inspected nothing (did the claim get reworded or moved?)",
+    },
+  ];
 }
 
 async function loadTruth() {
@@ -187,7 +222,7 @@ function selfTest(truth) {
     "Run `fabric notacommand --now` to do the thing.",
     "The hook writes a `knowledge_not_an_event` record.",
   ];
-  const found = checkLines("<self-test>", drifted, truth);
+  const { violations: found } = checkLines("<self-test>", drifted, truth);
   const codes = found.map((v) => v.code).sort();
   const expected = ["unknown_command", "unknown_event", "version_drift"];
   if (codes.join(",") !== expected.join(",")) {
@@ -205,15 +240,60 @@ function selfTest(truth) {
     "The hook writes a `knowledge_body_read` record.",
     "Isolated back in v2.0.0-rc.37 — historical prose, not a live claim.",
   ];
-  const noise = checkLines("<self-test>", clean, truth);
+  const { violations: noise, coverage: cleanCoverage } = checkLines("<self-test>", clean, truth);
   if (noise.length !== 0) {
     throw new Error(
       `self-test: clean fixture produced ${noise.length} violation(s): ${JSON.stringify(noise)}`,
     );
   }
 
+  // F06: the clean fixture must also prove the version check RAN — otherwise
+  // "silent" and "inspected nothing" are the same observation.
+  if (cleanCoverage.versionClaims !== 1) {
+    throw new Error(
+      `self-test: clean fixture should carry exactly 1 version claim, counted ${cleanCoverage.versionClaims}`,
+    );
+  }
+  if (checkCoverage(["<self-test>"], cleanCoverage).length !== 0) {
+    throw new Error("self-test: clean fixture with a version claim must pass the coverage check");
+  }
+
+  // A document that states no version at all must be REPORTED, not silently OK.
+  const claimless = ["Just prose about the project.", "Run `fabric doctor` when in doubt."];
+  const { violations: claimlessViolations, coverage: claimlessCoverage } = checkLines(
+    "<self-test>",
+    claimless,
+    truth,
+  );
+  if (claimlessViolations.length !== 0) {
+    throw new Error("self-test: claimless fixture should produce no per-line violations");
+  }
+  const zeroCoverage = checkCoverage(["<self-test>"], claimlessCoverage);
+  if (zeroCoverage.length !== 1 || zeroCoverage[0].code !== "no_version_claim") {
+    throw new Error(
+      `self-test: claimless fixture must report no_version_claim, got [${zeroCoverage.map((v) => v.code).join(", ")}]`,
+    );
+  }
+
+  // A version claim the OLD regex could not see (list item + non-rc prerelease)
+  // must still be compared against the truth.
+  const reworded = [`- **v0.0.1-beta.4** — active development line`];
+  const { violations: rewordedViolations, coverage: rewordedCoverage } = checkLines(
+    "<self-test>",
+    reworded,
+    truth,
+  );
+  if (rewordedCoverage.versionClaims !== 1) {
+    throw new Error("self-test: a list-item bold version must still count as a version claim");
+  }
+  if (rewordedViolations.length !== 1 || rewordedViolations[0].code !== "version_drift") {
+    throw new Error(
+      `self-test: reworded drifted version must report version_drift, got [${rewordedViolations.map((v) => v.code).join(", ")}]`,
+    );
+  }
+
   process.stdout.write(
-    "doc-drift-gate: self-test OK (drifted fixture reports version_drift + unknown_command + unknown_event; clean fixture is silent)\n",
+    "doc-drift-gate: self-test OK (drifted fixture reports version_drift + unknown_command + unknown_event; clean fixture is silent; claimless fixture reports no_version_claim; reworded version claim still compared)\n",
   );
 }
 
@@ -226,14 +306,20 @@ async function main() {
   }
 
   const violations = [];
+  const totals = { versionClaims: 0, commandMentions: 0, eventTokens: 0 };
   for (const relPath of SCANNED_FILES) {
     const source = await readFile(path.join(ROOT, relPath), "utf8");
-    violations.push(...checkLines(relPath, source.split("\n"), truth));
+    const { violations: found, coverage } = checkLines(relPath, source.split("\n"), truth);
+    violations.push(...found);
+    totals.versionClaims += coverage.versionClaims;
+    totals.commandMentions += coverage.commandMentions;
+    totals.eventTokens += coverage.eventTokens;
   }
+  violations.push(...checkCoverage(SCANNED_FILES, totals));
 
   if (violations.length === 0) {
     process.stdout.write(
-      `doc-drift-gate: OK (${SCANNED_FILES.join(", ")}, version ${truth.version}, ${truth.liveCommands.size} commands, ${truth.eventTypes.size} events)\n`,
+      `doc-drift-gate: OK (${SCANNED_FILES.join(", ")}, version ${truth.version}, ${truth.liveCommands.size} commands, ${truth.eventTypes.size} events; checked ${totals.versionClaims} version claim(s), ${totals.commandMentions} command mention(s), ${totals.eventTokens} event token(s))\n`,
     );
     return;
   }
