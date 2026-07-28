@@ -166,6 +166,21 @@ export type PreflightDiagnostic = {
   path?: string;
 };
 
+// G1 delivery observability: diagnostics describing what the DELIVERY stage cut,
+// as opposed to the preflight (corpus-quality) diagnostics above. Ledger-only by
+// design — `knowledgeContextPlannedEventSchema.diagnostics` is
+// `z.array(z.unknown())` and already accepts them, whereas
+// `_preflightDiagnosticSchema` is referenced by the plan-context WIRE contract,
+// so widening that enum would change the MCP response shape. The same truth is
+// already on the wire as `result.dropped[]`; this type carries it into the event
+// ledger, where every downstream auditor reads.
+export type DeliveryDiagnostic = {
+  code: "retrieval_budget_dropped" | "payload_budget_dropped" | "delivery_empty";
+  severity: "warn";
+  message: string;
+  stable_ids?: string[];
+};
+
 export type PlanContextResult = {
   revision_hash: string;
   stale: boolean;
@@ -558,6 +573,15 @@ export async function planContext(
     ...(payloadOverBudget ? { payload_over_budget: true } : {}),
   };
 
+  // G1 delivery observability: the ledger-only view of what delivery cut. Built
+  // from the SAME two drop sets that feed `result.dropped[]`, so the wire and the
+  // ledger can never disagree.
+  const deliveryDiagnostics = buildDeliveryDiagnostics({
+    retrievalDropped,
+    payloadDropped,
+    deliveredIds: sharedStableIds,
+  });
+
   // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. The audit event still
   // lands in events.jsonl because downstream lints (doctor.buildLastActiveIndex
   // walks `ai_selectable_stable_ids[]` for orphan/stale signals) need per-id
@@ -584,7 +608,42 @@ export async function planContext(
       client_hash: input.client_hash,
       intent: input.intent,
       known_tech: input.known_tech,
-      diagnostics: result.preflight_diagnostics,
+      // G1: preflight (corpus quality) + delivery (what got cut) in one array.
+      // Steady state — nothing dropped — leaves this byte-identical to the old
+      // bare `result.preflight_diagnostics`.
+      diagnostics: [...result.preflight_diagnostics, ...deliveryDiagnostics],
+      correlation_id: input.correlation_id,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    // G1: the first production emitter of `knowledge_selection`. The schema has
+    // lived in the shared union since rc.5 with zero real call sites — only test
+    // fixtures and doctor's read branch — so the selection stage was invisible in
+    // the ledger. This is the one point where selection is fully settled (the
+    // retrieval cut and the payload trim have both converged, the selection token
+    // is issued), and it shares that token with the planned event above so the two
+    // rows JOIN in the ledger.
+    //
+    // Since rc.37 A1 the server performs no separate "AI selection" pass — the
+    // delivered candidate set IS the selection result, so ai_selectable /
+    // ai_selected / final all resolve to `sharedStableIds` (the same
+    // ISS-20260711-217 recalled-id definition the planned event uses).
+    // `rejected` = never reached delivery consideration (retrieval_budget);
+    // `ignored` = reached it but was trimmed for bytes (payload_budget).
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_selection",
+      selection_token: selectionToken,
+      target_paths: uniquePaths,
+      required_stable_ids: [],
+      ai_selectable_stable_ids: sharedStableIds,
+      ai_selected_stable_ids: sharedStableIds,
+      final_stable_ids: sharedStableIds,
+      rejected_stable_ids: retrievalDropped.map((d) => d.id),
+      ignored_stable_ids: payloadDropped.map((d) => d.id),
+      // The only free-text explanation channel the schema offers; the drop reason
+      // is the only reason the server actually knows.
+      ai_selection_reasons: Object.fromEntries(
+        [...retrievalDropped, ...payloadDropped].map((d) => [d.id, d.reason]),
+      ),
       correlation_id: input.correlation_id,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
@@ -701,6 +760,49 @@ function isEmptyShellDescription(description: RuleDescription, stableId: string)
 // surfaced as candidates), so there is no "present-but-undefined" state left to
 // warn about. The empty_shell_suppressed warning (summary === stable_id)
 // survives via partitionEmptyShells.
+// G1 delivery observability: turn the two structured drop sets into ledger
+// diagnostics. `delivery_empty` is the case this goal exists for — a NON-EMPTY
+// candidate pool delivered as an EMPTY set previously wrote an empty diagnostics
+// array, so nothing downstream could tell "nothing matched" apart from
+// "everything matched but was cut".
+function buildDeliveryDiagnostics(args: {
+  retrievalDropped: { id: string; reason: "retrieval_budget" }[];
+  payloadDropped: { id: string; reason: "payload_budget" }[];
+  deliveredIds: string[];
+}): DeliveryDiagnostic[] {
+  const { retrievalDropped, payloadDropped, deliveredIds } = args;
+  const diagnostics: DeliveryDiagnostic[] = [];
+
+  if (retrievalDropped.length > 0) {
+    diagnostics.push({
+      code: "retrieval_budget_dropped",
+      severity: "warn",
+      stable_ids: retrievalDropped.map((d) => d.id).sort(),
+      message: `${retrievalDropped.length} candidate(s) dropped by retrieval_budget before delivery.`,
+    });
+  }
+
+  if (payloadDropped.length > 0) {
+    diagnostics.push({
+      code: "payload_budget_dropped",
+      severity: "warn",
+      stable_ids: payloadDropped.map((d) => d.id).sort(),
+      message: `${payloadDropped.length} candidate(s) dropped by payload_budget trim.`,
+    });
+  }
+
+  const totalDropped = retrievalDropped.length + payloadDropped.length;
+  if (deliveredIds.length === 0 && totalDropped > 0) {
+    diagnostics.push({
+      code: "delivery_empty",
+      severity: "warn",
+      message: `delivered 0 of ${totalDropped} candidate(s): retrieval_budget=${retrievalDropped.length}, payload_budget=${payloadDropped.length}.`,
+    });
+  }
+
+  return diagnostics;
+}
+
 function buildPreflightDiagnostics(suppressedStableIds: string[]): PreflightDiagnostic[] {
   const diagnostics: PreflightDiagnostic[] = [];
 
